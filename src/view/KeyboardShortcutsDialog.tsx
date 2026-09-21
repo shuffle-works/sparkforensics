@@ -1,4 +1,5 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import packageJson from '../../package.json';
 
 /** One visual keycap. Multiple `keys` render as alternatives ("Enter or
  * Space"), not a chord: this app has no multi-key chords to document. */
@@ -63,6 +64,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: { open: boolean;
             <Row keys={['?']}>Open this list</Row>
           </Group>
         </div>
+        <p className="text-center text-xs text-muted-foreground">SparkForensics v{packageJson.version}</p>
       </DialogContent>
     </Dialog>
   );
