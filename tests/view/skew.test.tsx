@@ -353,7 +353,7 @@ describe('Skew', () => {
     const catalog: Finding[] = [{
       ...skewFinding(1, 8),
       confidence: 'low',
-      validationRequired: 'The 0.5% runtime-floor percentage that gates this finding is our own noise floor, unvalidated.',
+      validationRequired: 'This finding is gated by a 0.5% runtime-floor threshold, our own noise floor for this metric.',
     }];
     const getTaskData = vi.fn(async () => TASK_DATA);
 

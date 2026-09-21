@@ -612,7 +612,7 @@ export const DETECTORS: Detector[] = [
         impactBand: 'warning',
         metric, value,
         confidence: 'low',
-        validationRequired: 'The 0.5% runtime-floor percentage that gates this finding is our own noise floor, unvalidated: no external tool publishes an equivalent metric to calibrate against. Confirm against known-good/known-bad real logs before trusting the impact-band split.',
+        validationRequired: 'This finding is gated by a 0.5% runtime-floor threshold, our own noise floor for this metric.',
         recommendation: `Task duration ratio (${metric}) is ${value}×: for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key to reduce task skew.`,
       };
     },
@@ -767,7 +767,7 @@ export const DETECTORS: Detector[] = [
     type: 'gc', scope: 'stage', order: 50, fixEffort: 'config', version: 1,
     docAnchor: '#bottleneck-gc',
     confidence: 'low',
-    validationRequired: 'The 10-second minimum-runtime floor that gates this finding is our own noise floor, unvalidated: no external tool publishes an equivalent metric to calibrate against. Confirm against known-good/known-bad real logs before trusting the impact-band split.',
+    validationRequired: 'This finding is gated by a 10-second minimum-runtime floor, our own noise floor for this metric.',
     thresholds: {
       warnPct100: 10,
       // Descending tier: ExecutorGcHeuristic, ported as-is.
@@ -1029,7 +1029,7 @@ export const DETECTORS: Detector[] = [
         speculativeTasks: stage.speculativeTasks ?? 0,
         stragglerCount: stage.stragglerCount ?? 0,
         confidence: 'low',
-        validationRequired: 'The 0.5%/2% runtime-floor percentages that gate this finding are our own noise floor, unvalidated: no external tool publishes an equivalent metric to calibrate against. Confirm against known-good/known-bad real logs before trusting the impact-band split.',
+        validationRequired: 'This finding is gated by 0.5%/2% runtime-floor thresholds, our own noise floor for this metric.',
         recommendation: `${detail}: rule out a GC pause or a slow shuffle fetch before assuming a hardware issue; if a skewed key is the real cause, that's a candidate for AQE's skew-join handling.`,
       };
     },
@@ -1299,7 +1299,7 @@ export const DETECTORS: Detector[] = [
             type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
             impactBand: 'info', metric: 'wastedMBSeconds', value,
             confidence: 'low',
-            validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and an unverified 1.5x buffer: confirm against the Spark UI before acting.',
+            validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and a 1.5x buffer: confirm against the Spark UI before acting.',
             recommendation: `Allocated executor memory sat largely idle over the run (~${value.toLocaleString('en-US')} MB-seconds wasted): review spark.executor.memory and executor count.`,
           });
         }
@@ -1377,7 +1377,7 @@ export const DETECTORS: Detector[] = [
         // Raw count behind the ratio, for the impact estimator. Non-null whenever totalTasks is.
         nonLocalTaskCount: nonLocalTasks!,
         confidence: 'low',
-        validationRequired: 'The 15%/35% non-local-ratio thresholds (and the 50-task minimum) are unvalidated design-spike values: no external tool publishes an equivalent metric to calibrate against. Confirm against known-good/known-bad real logs before trusting the impact-band split.',
+        validationRequired: 'This finding is gated by 15%/35% non-local-ratio thresholds (and a 50-task minimum), our own noise floor for this metric.',
         recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement: check spark.locality.wait settings and executor/data colocation.`,
       };
     },

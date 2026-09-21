@@ -16,8 +16,8 @@ import { WidgetLeadSummary } from '../WidgetLeadSummary';
 const TITLE = 'What-If Executor Scaling';
 const HEIGHT = 220;
 
-// Design-spike (unvalidated) threshold for when Model Error warrants visual
-// weight, not just the explanatory sentence next to it.
+// Threshold for when Model Error warrants visual weight, not just the
+// explanatory sentence next to it.
 const MODEL_ERROR_WARN_PCT = 20;
 
 interface ScalingPrediction {
@@ -76,9 +76,9 @@ function Unavailable({ reason, evidence }: { reason: string; evidence?: 'taskCor
   );
 }
 
-// What-if scaling simulator. DESIGN SPIKE: predictions are unvalidated; the
-// Model Error indicator and the conditional concurrent-job banner keep that
-// visible. Not a bottleneck flag: no impact-band border, no badge.
+// What-if scaling simulator. The Model Error indicator and the conditional
+// concurrent-job banner surface how much error the current prediction carries.
+// Not a bottleneck flag: no impact-band border, no badge.
 export function ScalingSim({ appModel }: ScalingSimProps) {
   const taskCoreTime = taskCoreTimeEntry(appModel);
   const hasTaskCoreTime = hasUsableRunAggregates(appModel.runAggregates) && (taskCoreTime == null || taskCoreTime.state === 'present');
@@ -121,8 +121,8 @@ export function ScalingSim({ appModel }: ScalingSimProps) {
             <strong className={modelErrorHigh ? 'text-warning' : undefined}>
               {sim.modelErrorPct == null ? '—' : `${sim.modelErrorPct}%`}
             </strong>{' '}
-            (idealized makespan vs. observed); higher means all estimates below are less
-            trustworthy. Predictions are unvalidated (a single log observes only one scale).
+            (idealized makespan vs. observed); higher means all estimates below carry more
+            error, since a single log only observes one scale.
           </p>
         </AdvancedOnly>
         <p className="text-muted-foreground text-xs">
