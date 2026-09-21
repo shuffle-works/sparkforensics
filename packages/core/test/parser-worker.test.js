@@ -2485,6 +2485,28 @@ describe('runParseFiles: rolling directory (multi-file, ordered)', () => {
     await runParseFiles([], createState(), { emit: m => emitted.push(m) });
     expect(emitted).toEqual([{ type: 'error', message: 'Rolling event-log directory contained no event files.' }]);
   });
+
+  it('stops and emits an error when a later file in the sequence cannot be decompressed', async () => {
+    const f1 = fakeFile(strToU8('{"Event":"SparkListenerApplicationStart","App ID":"a","App Name":"multi","Timestamp":1}\n'), 'events_1_app');
+    // gzip magic but garbage body: sniffed as gz, fails during inflate.
+    const bad = new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff]);
+    const f2 = fakeFile(bad, 'events_2_app.gz');
+    const emitted = [];
+    await runParseFiles([f1, f2], createState(), { emit: m => emitted.push(m) });
+    expect(emitted.some(m => m.type === 'error' && m.message.includes('Could not decompress "events_2_app.gz"'))).toBe(true);
+    expect(emitted.some(m => m.type === 'done')).toBe(false);
+  });
+
+  it('emits "not a Spark event log" when no file across the whole sequence contains ApplicationStart', async () => {
+    const emitted = [];
+    await runParseFiles(
+      [fakeFile(strToU8('{"Event":"SparkListenerJobStart","Job ID":1}\n'), 'events_1_app')],
+      createState(),
+      { emit: m => emitted.push(m) },
+    );
+    expect(emitted).toContainEqual({ type: 'error', message: 'Not a Spark event log: SparkListenerApplicationStart not found.' });
+    expect(emitted.some(m => m.type === 'done')).toBe(false);
+  });
 });
 
 describe('taskStore retains launch/finish timestamps (stride migration)', () => {
