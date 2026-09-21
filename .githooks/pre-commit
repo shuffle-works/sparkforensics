@@ -1,0 +1,12 @@
+#!/bin/sh
+# Lints staged JS files before commit. Wired via `git config core.hooksPath .githooks`
+# (done automatically by the "prepare" npm script: see package.json).
+staged=$(git diff --cached --name-only --diff-filter=ACM -- '*.js' '*.mjs')
+[ -z "$staged" ] && exit 0
+
+npx eslint $staged
+status=$?
+if [ $status -ne 0 ]; then
+  echo "eslint failed: fix the errors above or 'git commit --no-verify' to skip." >&2
+fi
+exit $status

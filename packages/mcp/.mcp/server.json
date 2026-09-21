@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.shuffle-works/sparkforensics-mcp",
+  "description": "MCP server for diagnosing Apache Spark event-log performance issues and comparing runs.",
+  "repository": {
+    "url": "https://github.com/shuffle-works/sparkforensics",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "sparkforensics-mcp",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" }
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+name: Deploy
+
+# Rebuilds the static site from main and force-pushes the output to the
+# `build` branch, so `dist/` never has to be manually rebuilt and committed
+# again (replaces the "chore: rebuild dist/ from current source" commits).
+on:
+  push:
+    branches: [main]
+
+# contents: write is required to push to the `build` branch.
+permissions:
+  contents: write
+
+# Only one deploy in flight; a newer push to main supersedes an in-progress one.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      # Defense in depth: ci.yml already built this commit, but a deploy
+      # should never ship on the strength of a stale check.
+      - run: npm run build
+
+      # force_orphan keeps `build` as a single squashed commit per deploy
+      # (it's a build artifact branch, not something anyone reviews history
+      # on) instead of growing forever.
+      - name: Push dist/ to the build branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: build
+          force_orphan: true

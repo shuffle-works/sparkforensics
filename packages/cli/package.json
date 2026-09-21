@@ -1,0 +1,42 @@
+{
+  "name": "sparkforensics-cli",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "CLI to analyze Apache Spark event logs for performance bottlenecks: skew, spill, GC pressure, stragglers, and more.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shuffle-works/sparkforensics.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shuffle-works/sparkforensics/issues"
+  },
+  "homepage": "https://github.com/shuffle-works/sparkforensics#readme",
+  "keywords": [
+    "apache-spark",
+    "spark",
+    "spark-history-server",
+    "cli",
+    "performance",
+    "diagnostics",
+    "event-log"
+  ],
+  "bin": {
+    "sparkforensics-analyze": "./bin/sparkforensics-analyze.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": ["bin/", "vendor-core/", "export-template/"],
+  "scripts": {
+    "prepack": "node ../../scripts/vendor-core.mjs . && node ../../scripts/vendor-export-template.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@sparkforensics/core": "*",
+    "vitest": "^4.1.10"
+  }
+}

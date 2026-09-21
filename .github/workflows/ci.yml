@@ -1,0 +1,137 @@
+name: CI
+
+# Push on main + PRs into main. Scoping push to main avoids double-running CI
+# (push + pull_request) on feature branches that have an open PR; the
+# concurrency group below still cancels superseded runs of each.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Least-privilege token: CI only reads the checkout.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same branch/PR instead of queuing redundant work.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      # dist/ is no longer committed (see deploy.yml): build it before
+      # `npm test` runs, since tests/vite-entry.test.js asserts against the
+      # production bundle's output.
+      - run: npm run build
+      - run: npm test
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - uses: dorny/paths-filter@v3
+        id: docs-filter
+        with:
+          filters: |
+            docs:
+              - 'docs-site/**'
+              - 'docs/**'
+      - name: Build docs site (validates internal links/anchors)
+        if: steps.docs-filter.outputs.docs == 'true'
+        run: npm run docs:build
+
+  # packages/core has no bin to pack-and-spawn: its unit tests run directly
+  # against packages/core/src, no vendoring involved.
+  core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run test:core
+
+  # cli and mcp each pack-and-spawn the real published tarball (see
+  # packages/cli/test/analyze.test.js, packages/mcp/test/mcp.test.js): this
+  # is what actually catches a broken vendor-core/files setup, matching the
+  # server job's existing bin.test.js pattern. Failing here, not just in
+  # release.yml, keeps a broken publish setup off main entirely.
+  cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run test:cli
+
+  mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run test:mcp
+
+  # The local-server deploy mode has its own package + suite that the root
+  # vitest glob (tests/**) never runs; guard it in a parallel job.
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            packages/server/package-lock.json
+      # The server bin test builds the root Vite frontend via
+      # scripts/copy-frontend.js (`npm run build` in the repo root), so the
+      # root deps must be installed alongside the server package's own.
+      # packages/server is an npm-workspaces member (root package-lock.json
+      # already has its entry), so this one root `npm ci` hoists everything
+      # it needs; a second, packages/server-scoped `npm ci` here used to
+      # prune the sibling @sparkforensics/core / cli / mcp symlinks out of
+      # the shared node_modules (leftover from before server/ became a
+      # workspace member, when it needed a fully independent install), which
+      # broke this job's own bin.test.js by making the root build unable to
+      # resolve @sparkforensics/core.
+      - run: npm ci
+      - run: npm test
+        working-directory: packages/server
+
+  changeset:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: ./scripts/check-changeset.sh "${{ github.base_ref }}"

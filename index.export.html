@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SparkForensics</title>
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg">
+    <script>
+      try {
+        var stored = localStorage.getItem('shuffle-works-theme');
+        // Persisted choice wins; otherwise honor the OS preference. Mirrors
+        // initialTheme() in src/store/store.ts. Runs before paint to avoid a
+        // dark-then-light flash on prefers-light systems.
+        if (stored === 'light' || (stored == null && window.matchMedia('(prefers-color-scheme: light)').matches))
+          document.documentElement.setAttribute('data-theme', 'light');
+      } catch (_) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Classic (non-module) script: runs synchronously during HTML parsing,
+         before the deferred module script below, so
+         window.__SPARKFORENSICS_RUN__ exists by the time main-export.tsx
+         runs. --export-html drops the real data.js next to this file. -->
+    <script src="./data.js"></script>
+    <script type="module" src="/src/export/main-export.tsx"></script>
+  </body>
+</html>

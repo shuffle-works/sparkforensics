@@ -1,0 +1,35 @@
+const THRESHOLD_SUMMARIES: Record<string, string> = {
+  spill: 'single-task disk spill above 1 GiB',
+  shuffle: 'shuffle read above the configured minimum byte threshold',
+  skew: 'task duration skew above the configured ratio',
+  gc: 'JVM GC time share above the configured ratio',
+  slowHost: 'a host running 2x+ slower than its peers by mean task duration (per-executor byte/time dimensions use a separate, narrower ratio ladder starting at 1.33x; only those can reach critical on ratio alone)',
+  stageSlowness: 'a stage running far longer than its peers, not attributable to a single slow host',
+  straggler: 'one or more tasks finishing far after the rest of their stage',
+  speculationWaste: 'speculative task attempts that completed after the original',
+  tinyTask: 'median task duration below the configured floor',
+  partitionSizing: 'partition byte size outside the configured target range',
+  stageShape: 'low parallelism, data explosion, or task-count skew relative to core count',
+  stageFailed: 'a stage that failed outright',
+  failures: 'task failures above the configured rate',
+  retryWaste: 'retried task attempts consuming executor time',
+  coldStart: 'executor startup time above the configured floor',
+  incompleteRun: 'an event log missing its terminal ApplicationEnd/job-completion event',
+  utilization: 'core occupancy below the configured floor across the run',
+  memoryUtilization: 'executor heap usage outside the configured band',
+  cacheUtilization: 'cached partitions evicted or spilled to disk',
+  coreLocality: 'task placement missing data-local core assignment',
+  cachingOpportunity: 'a dataset re-read from source multiple times with no cache/persist',
+  jobFailureRate: 'job failure rate above the configured threshold',
+  autoscalingChurn: 'executor add/remove churn above the configured rate',
+  configAudit: 'a Spark conf value outside the recommended range',
+  duplicatePlanSubtree: 'the same physical plan subtree executed more than once',
+  smallFiles: 'output files below the configured target size',
+  overBroadcast: 'a broadcast join above the configured size ceiling',
+  underBroadcast: 'a join below the configured size floor that skipped broadcast',
+  broadcastSizing: 'a broadcast join outside the configured size range in either direction',
+};
+
+export function getThresholdSummary(type: string): string {
+  return THRESHOLD_SUMMARIES[type] ?? 'criteria not met';
+}

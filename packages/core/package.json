@@ -1,0 +1,31 @@
+{
+  "name": "@sparkforensics/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/shuffle-works/sparkforensics/issues"
+  },
+  "homepage": "https://github.com/shuffle-works/sparkforensics#readme",
+  "keywords": [
+    "apache-spark",
+    "spark",
+    "event-log",
+    "parser",
+    "analyzer",
+    "diagnostics"
+  ],
+  "exports": {
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,568 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --bg: var(--color-bg, #080b0d); --surface: var(--color-bg-elevated, #11171a); --surface-2:#17202c;
+  --border:#233035; --border-soft:#1a232f;
+  --text: var(--color-text, #f4f4f5); --text-muted: var(--color-text-muted, #a9b5b4);
+  --critical:#ff5d57; --warning:#f0b429; --info:#5aa2ff; --clean:#48d17f;
+  --plan-aggregate:#bc8cff;
+  --accent:#ff6b2c; --accent-ink: var(--color-on-accent, #11110f); --accent-dim: color-mix(in srgb, var(--accent) 13%, transparent);
+  --accent-hover: var(--color-accent-hover, #ff8a4f);
+  --signal: var(--color-signal, #39d6b5);
+  --crit-dim:rgba(255,93,87,.12); --warn-dim:rgba(240,180,41,.12);
+  --info-dim:rgba(90,162,255,.12); --clean-dim:rgba(72,209,127,.13);
+  --radius:8px; --radius-lg:12px;
+  --font:'Recursive',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono',ui-monospace,'SF Mono','Cascadia Code',Menlo,Consolas,monospace;
+  --shadow-widget:0 1px 0 rgba(0,0,0,.4),0 12px 30px -18px rgba(0,0,0,.7);
+  --shadow-widget-hover:0 1px 0 rgba(0,0,0,.4),0 18px 40px -18px rgba(0,0,0,.8);
+  --overlay-scrim:rgba(0,0,0,.66);
+  color-scheme: dark;
+  /* shadcn semantic tokens (dark palette is the default, matching the app's
+     bare-:root-is-dark theme model). --accent and --border are intentionally
+     NOT redeclared here: they'd collide with and override the app's own
+     --accent/--border tokens above. --muted/--muted-foreground/--card/
+     --popover/--primary/--secondary/--destructive/--input/--ring are all
+     bridged to the app's own surface/text/accent/border/critical tokens
+     instead of shadcn's stock neutral-gray oklch defaults: otherwise Card/
+     Dialog/Popover backgrounds and the default Button variant (e.g.
+     DropZone's drag-over highlight, "Browse files"/"Fetch" CTAs) render a
+     flat neutral gray instead of the app's own themed surface/accent. */
+  --background:oklch(0.145 0 0);
+  --foreground:oklch(0.985 0 0);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-ink);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--text-muted);
+  --accent-foreground: var(--accent-ink);
+  --destructive: var(--critical);
+  --input: var(--border);
+  --ring: var(--accent);
+  --sidebar:oklch(0.205 0 0);
+  --sidebar-foreground:oklch(0.985 0 0);
+  --sidebar-primary:oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground:oklch(0.985 0 0);
+  --sidebar-accent:oklch(0.269 0 0);
+  --sidebar-accent-foreground:oklch(0.985 0 0);
+  --sidebar-border:oklch(1 0 0 / 10%);
+  --sidebar-ring:oklch(0.556 0 0);
+}
+:root[data-theme="light"] {
+  --bg: var(--color-bg, #f7f8f4); --surface: var(--color-bg-elevated, #ffffff); --surface-2:#f2f5f9;
+  --border:#dbe2df; --border-soft:#eef1f6;
+  --text: var(--color-text, #151b1e); --text-muted: var(--color-text-muted, #4f5f60);
+  /* Impact-band base colors double as badge text over their own 10% tint
+     (bg-<impact-band>/10): keep each >= 4.5:1 (WCAG AA) against that tint
+     composited over every light surface, incl. the darkest (--surface-2).
+     Guarded by tests/view/impact-badge-contrast.test.ts. */
+  --critical:#c0271b; --warning:#9a5200; --info:#175cd3; --clean:#0a7538;
+  --plan-aggregate:#8a4fd1;
+  --accent:#bf4413; --accent-ink: var(--color-on-accent, #ffffff); --accent-dim: color-mix(in srgb, var(--accent) 10%, transparent);
+  --accent-hover: var(--color-accent-hover, #aa3510);
+  --signal: var(--color-signal, #007e6b);
+  --crit-dim:rgba(192,39,27,.09); --warn-dim:rgba(154,82,0,.10);
+  --info-dim:rgba(23,92,211,.09); --clean-dim:rgba(10,117,56,.10);
+  --shadow-widget:0 1px 2px rgba(16,32,54,.04),0 8px 24px -14px rgba(16,32,54,.16);
+  --shadow-widget-hover:0 2px 6px rgba(16,32,54,.06),0 14px 34px -14px rgba(16,32,54,.22);
+  color-scheme: light;
+  /* shadcn semantic tokens: light palette override, mirroring the app's own
+     data-theme="light" override above. --accent/--border stay app-owned;
+     --card/--popover/--primary/--secondary/--destructive/--input/--ring
+     bridge to them the same way as the dark palette above. */
+  --background:oklch(1 0 0);
+  --foreground:oklch(0.145 0 0);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-ink);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--text);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--text-muted);
+  --accent-foreground: var(--accent-ink);
+  --destructive: var(--critical);
+  --input: var(--border);
+  --ring: var(--accent);
+  --sidebar:oklch(0.985 0 0);
+  --sidebar-foreground:oklch(0.145 0 0);
+  --sidebar-primary:oklch(0.205 0 0);
+  --sidebar-primary-foreground:oklch(0.985 0 0);
+  --sidebar-accent:oklch(0.97 0 0);
+  --sidebar-accent-foreground:oklch(0.205 0 0);
+  --sidebar-border:oklch(0.922 0 0);
+  --sidebar-ring:oklch(0.708 0 0);
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-foreground: var(--text);
+  --color-muted: var(--muted);
+  --color-critical: var(--critical);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-clean: var(--clean);
+  --color-plan-aggregate: var(--plan-aggregate);
+  --color-accent: var(--accent);
+  --radius-DEFAULT: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --font-sans: var(--font);
+  --font-mono: var(--font-mono);
+  --font-heading:var(--font-sans);
+  --color-sidebar-ring:var(--sidebar-ring);
+  --color-sidebar-border:var(--sidebar-border);
+  --color-sidebar-accent-foreground:var(--sidebar-accent-foreground);
+  --color-sidebar-accent:var(--sidebar-accent);
+  --color-sidebar-primary-foreground:var(--sidebar-primary-foreground);
+  --color-sidebar-primary:var(--sidebar-primary);
+  --color-sidebar-foreground:var(--sidebar-foreground);
+  --color-sidebar:var(--sidebar);
+  --color-ring:var(--ring);
+  --color-input:var(--input);
+  --color-destructive:var(--destructive);
+  --color-accent-foreground:var(--accent-foreground);
+  --color-muted-foreground:var(--muted-foreground);
+  --color-secondary-foreground:var(--secondary-foreground);
+  --color-secondary:var(--secondary);
+  --color-primary-foreground:var(--primary-foreground);
+  --color-primary:var(--primary);
+  --color-popover-foreground:var(--popover-foreground);
+  --color-popover:var(--popover);
+  --color-card-foreground:var(--card-foreground);
+  --color-card:var(--card);
+  --radius-sm:calc(var(--radius) * 0.6);
+  --radius-md:calc(var(--radius) * 0.8);
+  --radius-xl:calc(var(--radius) * 1.4);
+  --radius-2xl:calc(var(--radius) * 1.8);
+  --radius-3xl:calc(var(--radius) * 2.2);
+  --radius-4xl:calc(var(--radius) * 2.6);
+}
+
+/* CASL 0.15: matches the hub landing page's casual/rounded Recursive
+   letterform (design-audit parity across the product family); the
+   Recursive @font-face loaded in index.html already ships the CASL axis. */
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-variation-settings: "CASL" 0.15; }
+
+.landing-shell {
+  display: grid;
+  gap: clamp(3.5rem, 7vw, 6.5rem);
+  padding-block: clamp(1.5rem, 5vw, 5.5rem);
+}
+
+.landing-hero {
+  display: grid;
+  gap: clamp(1.5rem, 3vw, 2.75rem);
+  max-width: 68rem;
+}
+
+.landing-identity,
+.landing-proof,
+.landing-utilities {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .625rem 1rem;
+}
+
+.landing-identity {
+  color: var(--text);
+  font-size: .8125rem;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+
+/* Both icons stay mounted; :root[data-theme="light"] picks which one shows.
+   Mirrors spark-tuning-reference's landing.html so the markup drops in
+   unchanged for shuffle-works-product-bar.css. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.theme-toggle:hover { background: var(--muted); color: var(--text); }
+.theme-toggle .theme-icon { width: 1rem; height: 1rem; }
+.theme-toggle .theme-icon.moon,
+:root[data-theme="light"] .theme-toggle .theme-icon.sun { display: none; }
+:root[data-theme="light"] .theme-toggle .theme-icon.moon { display: block; }
+
+.landing-hero-copy h2,
+.landing-section-heading h2 {
+  margin: .45rem 0 0;
+  color: var(--text);
+  font-size: clamp(2.15rem, 4.3vw, 4.25rem);
+  font-weight: 700;
+  letter-spacing: -.03em;
+  line-height: 1.02;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+.landing-hero-copy > p:last-child {
+  max-width: 66ch;
+  margin: 1.4rem 0 0;
+  color: var(--text-muted);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.landing-kicker {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: .9375rem;
+  line-height: 1.5;
+}
+
+.landing-hero-copy .landing-kicker {
+  max-width: 60ch;
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .01em;
+}
+
+.landing-section-heading .landing-kicker { margin-bottom: .5rem; }
+
+.landing-proof {
+  max-width: 54rem;
+  color: var(--text-muted);
+  font-size: .8125rem;
+  line-height: 1.45;
+}
+
+.landing-proof span {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+}
+
+.landing-proof svg { color: var(--accent); height: 1rem; width: 1rem; }
+
+.landing-resources {
+  display: grid;
+  gap: .75rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  max-width: 54rem;
+  min-width: 0;
+}
+
+.landing-resource-card {
+  display: flex;
+  align-items: center;
+  gap: .875rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: .875rem 1rem;
+  text-align: left;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+}
+.landing-resource-card:hover,
+.landing-resource-card:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--surface-2);
+  box-shadow: var(--shadow-widget-hover);
+}
+.landing-resource-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.landing-resource-card > svg:first-child {
+  flex-shrink: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--accent);
+}
+
+.landing-resource-card > span:not(.landing-resource-arrow) {
+  display: grid;
+  gap: .2rem;
+  min-width: 0;
+}
+.landing-resource-card strong { font-size: .875rem; font-weight: 700; }
+.landing-resource-card span span {
+  color: var(--text-muted);
+  font-size: .8125rem;
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+
+.landing-resource-arrow {
+  flex-shrink: 0;
+  margin-left: auto;
+  width: 1rem;
+  height: 1rem;
+  color: var(--text-muted);
+}
+
+.landing-intake {
+  display: grid;
+  gap: 1.75rem;
+}
+
+.landing-section-heading {
+  display: grid;
+  align-items: end;
+  gap: 1rem 2rem;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, .75fr);
+}
+
+.landing-section-heading h2 { font-size: clamp(1.75rem, 3vw, 2.75rem); }
+
+.landing-section-heading > p {
+  max-width: 40ch;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: .9375rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.landing-drop-zone {
+  min-height: 23rem;
+}
+
+.landing-drop-zone:not(.border-primary) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--surface) 93%, var(--accent-dim));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.landing-intake .landing-drop-zone > svg {
+  color: var(--accent);
+}
+
+.landing-intake .landing-drop-zone > div > p:first-child {
+  color: var(--text);
+  font-size: 1.125rem;
+}
+
+.landing-intake .landing-drop-zone > section {
+  max-width: 40rem;
+}
+
+.landing-capability-list {
+  display: grid;
+  border-block: 1px solid var(--border);
+}
+
+.landing-capability-list article {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: .875rem;
+  padding: 1.5rem 0;
+}
+
+.landing-capability-list article + article { border-top: 1px solid var(--border); }
+.landing-capability-list > article > svg { color: var(--accent); margin-top: .2rem; }
+.landing-capability-list h3 { margin: 0; color: var(--text); font-size: 1rem; }
+.landing-capability-list p { max-width: 65ch; margin: .35rem 0 0; color: var(--text-muted); font-size: .9375rem; line-height: 1.55; text-wrap: pretty; }
+
+.landing-utilities {
+  align-items: center;
+  border-top: 1px solid var(--border-soft);
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  padding-top: 1.25rem;
+}
+.landing-utilities > button {
+  color: var(--text-muted);
+  font-size: .8125rem;
+}
+.landing-utilities > button:hover { color: var(--text); }
+.landing-utilities > [data-slot="collapsible"] { width: auto; }
+
+.landing-next-steps {
+  display: grid;
+  gap: 1.5rem;
+  padding-top: clamp(1.5rem, 3vw, 2.5rem);
+  border-top: 1px solid var(--border);
+}
+
+.landing-next-steps-label {
+  margin: 0 0 .45rem;
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+.landing-next-steps h2 {
+  max-width: 28ch;
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(1.5rem, 2.5vw, 2.25rem);
+  letter-spacing: -.02em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.landing-next-step-list {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+}
+
+.landing-next-step-list article {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: .875rem;
+  padding: 1.25rem 0;
+  border-top: 1px solid var(--border-soft);
+}
+
+.landing-next-step-list > article > svg { color: var(--accent); margin-top: .15rem; }
+.landing-next-step-list h3 { margin: 0; color: var(--text); font-size: 1rem; }
+.landing-next-step-list p { margin: .4rem 0 .85rem; color: var(--text-muted); font-size: .875rem; line-height: 1.55; text-wrap: pretty; }
+.landing-next-step-list [data-slot="collapsible"] { width: fit-content; }
+.landing-next-step-list [data-slot="collapsible-trigger"] { color: var(--text); font-size: .875rem; }
+
+
+.landing-secondary-tools,
+.landing-secondary,
+.landing-other-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem .875rem;
+  color: var(--text-muted);
+  font-size: .8125rem;
+}
+
+.landing-secondary-tools :is(button, a),
+.landing-secondary :is(button, a),
+.landing-other-sources > button {
+  color: var(--text-muted);
+  font-size: inherit;
+}
+
+.landing-compare-intro,
+.landing-compare {
+  max-width: 48rem;
+  margin: 0;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: .9375rem;
+  line-height: 1.55;
+}
+
+.landing-compare-intro :is(h2, h3),
+.landing-compare :is(h2, h3) { margin: 0; color: var(--text); font-size: clamp(1.5rem, 3vw, 2rem); letter-spacing: -.02em; text-wrap: balance; }
+.landing-compare-intro > p,
+.landing-compare > p { max-width: 62ch; margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-drop-zone { transition-duration: 0.01ms; }
+  .group\/button { transition-duration: 0.01ms; }
+}
+
+@media (max-width: 640px) {
+  .landing-shell { gap: 3.25rem; }
+  .landing-hero-copy h2 { font-size: clamp(2rem, 10vw, 2.8rem); }
+  .landing-section-heading { grid-template-columns: 1fr; }
+  .landing-drop-zone { min-height: 0; }
+  .landing-utilities { align-items: flex-start; flex-direction: column; }
+  .landing-utilities > [data-slot="collapsible"] { width: 100%; }
+  .landing-utilities [data-slot="collapsible-trigger"] { justify-content: flex-start; }
+}
+
+/* React Flow (plan graph view) ships light-mode-only default chrome for
+   anything rendered without an explicit override: Controls, MiniMap,
+   Background dots, and the attribution badge all read their colors from
+   `--xy-*` variables with a light default, falling back only when the
+   unsuffixed variable below is unset. Bridging them to the app's own
+   surface/border/text tokens keeps that chrome in sync with both themes
+   without duplicating the palette. */
+.react-flow {
+  --xy-background-pattern-dots-color: var(--border);
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-background-color-hover: var(--surface-2);
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-color-hover: var(--text);
+  --xy-controls-button-border-color: var(--border);
+  --xy-controls-box-shadow: var(--shadow-widget);
+  --xy-minimap-background-color: var(--surface);
+  --xy-minimap-mask-background-color: var(--overlay-scrim);
+  --xy-minimap-mask-stroke-color: var(--border);
+  --xy-minimap-node-background-color: var(--surface-2);
+  --xy-minimap-node-stroke-color: var(--border);
+  --xy-attribution-background-color: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+.react-flow .react-flow__attribution a {
+  color: var(--text-muted);
+}
+
+@layer utilities {
+  /* Coarse-pointer (touch) hit-area expansion. Grows a control's tap target to
+     ~44px via an absolutely-positioned overlay that overflows the box
+     symmetrically and forwards taps to the control; the visual size and the
+     surrounding layout are unchanged. Fine pointers (mouse) are untouched, so
+     desktop keeps the DESIGN.md-spec 32px control geometry exactly. */
+  @media (pointer: coarse) {
+    .tap-target-comfortable { position: relative; }
+    .tap-target-comfortable::after {
+      content: "";
+      position: absolute;
+      inset: -6px; /* 32px control + 6px each side = 44px */
+    }
+    /* Modifier for controls shorter than the 32px baseline (e.g. the widget-header
+       disclosure trigger, ~22px tall): -6px only reaches 34px there, so widen the
+       overlay to the inset this specific control needs. Same specificity as the
+       base rule above and declared after it, so it overrides `inset` only on
+       elements that opt in with this second class; every other
+       `tap-target-comfortable` consumer keeps the 32px-calibrated -6px. */
+    .tap-target-comfortable--sm::after {
+      inset: -11px; /* 22px control + 11px each side = 44px */
+    }
+    .tap-target-input { min-height: 44px; }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  /* `outline-ring/50` above only sets outline-color; outline-style stays the
+     browser default of `none`, so keyboard focus was invisible everywhere
+     that didn't separately opt into its own ring utility. This is the
+     fallback: real style/width, reusing the color already declared. Any
+     element with its own `focus-visible:ring-*` + `outline-none` pair
+     (several buttons already do) still wins, since Tailwind's utilities
+     layer is ordered after `base`. */
+  *:focus-visible {
+    outline-style: solid;
+    outline-width: 2px;
+    outline-offset: 2px;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

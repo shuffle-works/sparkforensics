@@ -1,0 +1,3 @@
+export function mcpError(code: string, message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code });
+}

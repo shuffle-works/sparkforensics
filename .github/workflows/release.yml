@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# id-token: write is required for npm Trusted Publishing (OIDC); no
+# NPM_TOKEN secret exists anywhere in this repo. contents: write is
+# required because changesets/action pushes the "Version Packages" PR
+# branch and tags.
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            packages/server/package-lock.json
+
+      - run: npm ci
+
+      # Defense in depth: ci.yml already ran these on the PR that's landing,
+      # but a release should never ship on the strength of a stale check.
+      # dist/ is no longer committed (see deploy.yml): build it before
+      # `npm test` runs, since tests/vite-entry.test.js asserts against the
+      # production bundle's output.
+      - run: npm run build
+      - run: npm test
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run test:core
+      - run: npm run test:cli
+      - run: npm run test:mcp
+      # packages/server is an npm-workspaces member, so the root `npm ci`
+      # above already hoists its dependencies (see ci.yml's server job
+      # comment) -- no second, server-scoped `npm ci` is needed here either.
+      - run: npm test
+        working-directory: packages/server
+
+      # Trusted Publishing needs npm CLI >= 11.5.1; GitHub's runner image
+      # bundles whatever version shipped with its pinned Node, which lags.
+      # Pinned to the documented minimum rather than floating to @latest, so
+      # a future npm release can't silently change OIDC/publish-flag
+      # behavior underneath a real release with no PR check ever exercising
+      # it first. Bumping this version is a deliberate, tested decision --
+      # confirm the runner's actually-bundled version (`npm --version` on a
+      # fresh ubuntu-latest runner) before assuming this step is still
+      # necessary at all.
+      - run: npm install -g npm@11.5.1
+
+      - name: Create Release Pull Request or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          publish: npm run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Non-fatal: the npm publish above already succeeded and the
+      # package is already usable via npm/npx. This step is
+      # discoverability on top (MCP Registry listing), not a functional
+      # dependency, hence continue-on-error. Auth is GitHub OIDC via
+      # `mcp-publisher login github-oidc` (id-token: write, already
+      # granted above for npm Trusted Publishing) -- no stored secret,
+      # confirmed against the registry's current publishing docs
+      # (docs/modelcontextprotocol-io/github-actions.mdx in
+      # modelcontextprotocol/registry) on 2026-09-06.
+      # publishedPackages is a JSON array of objects, e.g.
+      # [{"name":"sparkforensics-mcp","version":"0.2.0"}]. Parse it properly
+      # instead of substring-matching the raw text: a raw `contains(...,
+      # '"sparkforensics-mcp"')` check would silently stop matching forever
+      # if changesets/action ever reformats that JSON (whitespace, key
+      # order), with no failure signal anywhere. `.*.name` is GitHub Actions'
+      # documented object-filter syntax (an array-of-objects filter returning
+      # the named field from every element); `|| '[]'` guards the case where
+      # the output is empty/unset, since `fromJSON('')` throws ("Unexpected
+      # type of value '', expected type: Sequence") and empty string is
+      # falsy in Actions expressions so the fallback kicks in. Confirmed
+      # against GitHub's Actions expressions docs on 2026-09-06.
+      - name: Sync MCP Registry listing
+        id: mcp-sync
+        if: contains(fromJSON(steps.changesets.outputs.publishedPackages || '[]').*.name, 'sparkforensics-mcp')
+        continue-on-error: true
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+
+          # server.json's version is static in the repo and drifts from
+          # whatever changesets just bumped/published. By this point in the
+          # job, packages/mcp/package.json already holds the version that
+          # was just published (changesets bumps it in the merged "Version
+          # Packages" PR, on the main commit this job checked out; the
+          # `publish: npm run release` step above published exactly that
+          # version). Read it from there rather than from GITHUB_REF -- this
+          # workflow triggers on push to main, not on tags.
+          VERSION=$(node -p "require('./packages/mcp/package.json').version")
+          jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' packages/mcp/.mcp/server.json > packages/mcp/.mcp/server.json.tmp
+          mv packages/mcp/.mcp/server.json.tmp packages/mcp/.mcp/server.json
+
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish packages/mcp/.mcp/server.json
+
+      # The jq patch above only touches the ephemeral runner's checkout, so
+      # nothing ever commits the version bump back to the repo -- without
+      # this step, the git-tracked server.json silently diverges from the
+      # actually-published/registered version after the first real release.
+      # Gated on the sync step's own outcome (not just the same package-name
+      # condition) so a failed `mcp-publisher publish` -- which still leaves
+      # the jq-patched file sitting in the checkout, since the patch runs
+      # before the publish call in that step's script -- doesn't get
+      # committed to main as if the registry had actually been updated. Only
+      # commits if the patch actually changed the file (no no-op commits).
+      # Same continue-on-error semantics as the rest of this section: this
+      # sync is discoverability-only, not load-bearing, so a push failure
+      # here (e.g. a racing concurrent push to main) must not fail the
+      # release.
+      - name: Commit MCP Registry manifest version bump
+        if: steps.mcp-sync.outcome == 'success'
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          VERSION=$(node -p "require('./packages/mcp/package.json').version")
+          git diff --quiet -- packages/mcp/.mcp/server.json || (
+            git add packages/mcp/.mcp/server.json &&
+            git commit -m "chore: sync MCP registry manifest version to $VERSION" &&
+            git push origin HEAD:main
+          )

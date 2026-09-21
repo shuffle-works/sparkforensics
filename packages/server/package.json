@@ -1,0 +1,47 @@
+{
+  "name": "sparkforensics-server",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "Local companion server for the SparkForensics dashboard: serves the app and proxies Spark History Server fetches to avoid browser CORS restrictions.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shuffle-works/sparkforensics.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shuffle-works/sparkforensics/issues"
+  },
+  "homepage": "https://github.com/shuffle-works/sparkforensics#readme",
+  "keywords": [
+    "apache-spark",
+    "spark",
+    "spark-history-server",
+    "server",
+    "proxy",
+    "cors",
+    "dashboard"
+  ],
+  "bin": {
+    "sparkforensics-server": "index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "index.js",
+    "lib/",
+    "public/",
+    "vendor-core/"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "prepack": "node ../../scripts/vendor-core.mjs . && node scripts/copy-frontend.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
+  }
+}
