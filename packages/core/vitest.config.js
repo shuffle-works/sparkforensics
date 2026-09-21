@@ -13,6 +13,10 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['lcov', 'text'],
       include: ['src/**'],
+      // src/vendor/** is third-party decompressor code (fflate, fzstd) kept
+      // as plain JS per AGENTS.md; exclude it the same way the root config
+      // does so it isn't counted as uncovered source.
+      exclude: ['src/vendor/**'],
     },
   },
 });

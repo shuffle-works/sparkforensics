@@ -30,6 +30,37 @@ describe('createModelCallbacks', () => {
     expect(() => cb.onStageExecutorMetrics(new Map([[999, new Map()]]))).not.toThrow();
   });
 
+  it('patches a plan tree onto its sql execution when onSqlPlan arrives after onSql', () => {
+    const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map() };
+    const cb = createModelCallbacks(appModel, { onProgress: vi.fn(), onDone: vi.fn(), onError: vi.fn() });
+    cb.onSql({ id: 7, physicalPlanDescription: '' });
+    cb.onSqlPlan({ executionId: 7, planTree: { id: '0', operator: 'Project' } });
+    expect(appModel.sql.get(7).planTree).toEqual({ id: '0', operator: 'Project' });
+  });
+
+  it('ignores onSqlPlan for an execution id it has not seen without throwing', () => {
+    const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map() };
+    const cb = createModelCallbacks(appModel, { onProgress: vi.fn(), onDone: vi.fn(), onError: vi.fn() });
+    expect(() => cb.onSqlPlan({ executionId: 999, planTree: { id: '0', operator: 'Project' } })).not.toThrow();
+    expect(appModel.sql.has(999)).toBe(false);
+  });
+
+  it('routes onExecutor events to the added or removed list by kind', () => {
+    const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map() };
+    const cb = createModelCallbacks(appModel, { onProgress: vi.fn(), onDone: vi.fn(), onError: vi.fn() });
+    cb.onExecutor({ kind: 'added', executorId: '1' });
+    cb.onExecutor({ kind: 'removed', executorId: '1' });
+    expect(appModel.executors.added).toEqual([{ kind: 'added', executorId: '1' }]);
+    expect(appModel.executors.removed).toEqual([{ kind: 'removed', executorId: '1' }]);
+  });
+
+  it('assembles jobs by id via onJob', () => {
+    const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map() };
+    const cb = createModelCallbacks(appModel, { onProgress: vi.fn(), onDone: vi.fn(), onError: vi.fn() });
+    cb.onJob({ id: 3, status: 'RUNNING' });
+    expect(appModel.jobs.get(3)).toEqual({ id: 3, status: 'RUNNING' });
+  });
+
   it('keeps compact app evidence inputs on the normal app update path', () => {
     const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null };
     const cb = createModelCallbacks(appModel, { onProgress: vi.fn(), onDone: vi.fn(), onError: vi.fn() });
