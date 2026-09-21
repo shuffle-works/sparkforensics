@@ -448,13 +448,61 @@ describe('compareRuns confidence', () => {
     expect(m.reason).toMatch(/differ/i);
   });
 
-  it("is 'ok' for same-named runs even with zero matched stages", () => {
+  it("is 'ok' for same-named runs even with zero matched stages (coverage 1: both runs are stage-less)", () => {
     const b = run([{ rule: 'spill', impactBand: 'warn' }], { name: 'JobX', startTime: 0, endTime: 10 }, 'base');
     const c = run([], { name: 'JobX', startTime: 0, endTime: 20 }, 'cand');
     const m = compareRuns(b, c);
     expect(m.confidence).toBe('ok');
     expect(m.findings.resolved).toHaveLength(1);        // spill/warn present in base, absent in cand
     expect(m.metrics.find((x) => x.key === 'wallClock').delta).toBe(10);
+  });
+
+  it("is 'ok' when names match and most stages pair off (high coverage)", () => {
+    const stages = [
+      [1, { name: 'Exchange 1', sqlExecutionId: null }],
+      [2, { name: 'Filter 1', sqlExecutionId: null }],
+    ];
+    const b = { label: 'base', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), catalog: [] } };
+    const c = { label: 'cand', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), catalog: [] } };
+    const m = compareRuns(b, c);
+    expect(m.matchedCoverage).toBe(1);
+    expect(m.confidence).toBe('ok');
+    expect(m.reason).toBeNull();
+  });
+
+  it("is 'low' when names match but stage coverage is poor, and explains why", () => {
+    // Base has 4 stages, candidate shares only 1 identity with it: pairs.length
+    // = 1, total = 4 + 4 = 8, coverage = 2*1/8 = 0.25 (below the 0.5 threshold).
+    const b = run([], { name: 'JobX', startTime: 0, endTime: 10 }, 'base');
+    b.snapshot.stages = new Map([
+      [1, { name: 'Shared 1', sqlExecutionId: null }],
+      [2, { name: 'BaseOnly 1', sqlExecutionId: null }],
+      [3, { name: 'BaseOnly 2', sqlExecutionId: null }],
+      [4, { name: 'BaseOnly 3', sqlExecutionId: null }],
+    ]);
+    const c = run([], { name: 'JobX', startTime: 0, endTime: 10 }, 'cand');
+    c.snapshot.stages = new Map([
+      [11, { name: 'Shared 2', sqlExecutionId: null }],
+      [12, { name: 'CandOnly 1', sqlExecutionId: null }],
+      [13, { name: 'CandOnly 2', sqlExecutionId: null }],
+      [14, { name: 'CandOnly 3', sqlExecutionId: null }],
+    ]);
+    const m = compareRuns(b, c);
+    expect(m.matchedCoverage).toBeCloseTo(0.25);
+    expect(m.confidence).toBe('low');
+    expect(m.reason).toMatch(/25%/);
+    expect(m.reason).not.toMatch(/name/i); // names match here, so the reason must not blame naming
+  });
+
+  it("still reports 'low' with a name-mismatch reason when names differ even if coverage happens to be high", () => {
+    const stages = [[1, { name: 'Exchange 1', sqlExecutionId: null }]];
+    const b = { label: 'base', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), catalog: [] } };
+    const c = { label: 'cand', snapshot: { app: { name: 'JobY' }, stages: new Map(stages), sql: new Map(), catalog: [] } };
+    const m = compareRuns(b, c);
+    expect(m.matchedCoverage).toBe(1);
+    expect(m.confidence).toBe('low');
+    expect(m.reason).toMatch(/differ/i);
+    expect(m.reason).not.toMatch(/%/); // high coverage, so the reason should not also claim poor matching
   });
 });
 
