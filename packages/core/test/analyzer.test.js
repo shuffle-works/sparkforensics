@@ -1016,21 +1016,21 @@ describe('analyze: spill confidence metadata', () => {
     expect(b.confidence).toBe('low');
   });
 
-  it('marks skew as low confidence: its runtime-floor threshold is an unvalidated noise floor', () => {
+  it('marks skew as low confidence: its runtime-floor threshold is our own noise floor', () => {
     const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600 })]]);
     const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'skew');
     expect(b.confidence).toBe('low');
     expect(b.validationRequired).toMatch(/noise floor/);
   });
 
-  it('marks straggler as low confidence: its runtime-floor thresholds are an unvalidated noise floor', () => {
+  it('marks straggler as low confidence: its runtime-floor thresholds are our own noise floor', () => {
     const stages = new Map([[1, makeStage({ taskCount: 20, stragglerCount: 5, taskDurationP50: 100, taskDurationMax: 500 })]]);
     const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'straggler');
     expect(b.confidence).toBe('low');
     expect(b.validationRequired).toMatch(/noise floor/);
   });
 
-  it('marks gc as low confidence: its minimum-runtime floor is an unvalidated noise floor', () => {
+  it('marks gc as low confidence: its minimum-runtime floor is our own noise floor', () => {
     const stages = new Map([[1, makeStage({ gcPct: 15, executorRunTime: 60000 })]]);
     const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'gc' && x.direction !== 'low');
     expect(b.confidence).toBe('low');
