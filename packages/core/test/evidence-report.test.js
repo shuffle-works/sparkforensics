@@ -196,6 +196,11 @@ describe('buildEvidenceReport', () => {
     }
     const impactLines = markdown.split('\n').filter((l) => l.startsWith('- impact:'));
     expect(impactLines.length).toBe(renderable.length);
+    // Markdown is read outside the space-constrained web UI, so the wall-clock
+    // estimate prefix reads as a full word rather than the "Est." abbreviation.
+    const wallClockLines = impactLines.filter((l) => /\bEstimated\b/.test(l));
+    expect(wallClockLines.length).toBeGreaterThan(0);
+    expect(markdown).not.toContain('Est. ');
   });
 
   // Redaction must reach a slowHost's host where the builder nests it

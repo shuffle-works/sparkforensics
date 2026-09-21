@@ -269,7 +269,7 @@ function renderEvidenceValue(key: string, value: unknown): string {
 
 function formatWallClockRange(low: number, high: number): string {
   const fmtMs = (ms: number) => (ms === 0 ? '0s' : formatDuration(ms));
-  return low === high ? `Est. ${fmtMs(high)}` : `Est. ${fmtMs(low)}-${fmtMs(high)}`;
+  return low === high ? `Estimated ${fmtMs(high)}` : `Estimated ${fmtMs(low)}-${fmtMs(high)}`;
 }
 
 function formatRawWaste(rawWaste: RawWasteFigure): string {
