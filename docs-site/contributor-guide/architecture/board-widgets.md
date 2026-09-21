@@ -49,7 +49,8 @@ Plan Advisor, and Autoscaling Churn, all `region: 'action'` in
   the scan's `size of files read` metric (`0`/unknown for JDBC). Findings carry
   `executionReuse` (`value` = distinct-execution count), `relation`, `format`,
   `executionIds`, `totalReadBytes`, and a size-aware `recommendation`
-  (`confidence:'low'`, `validationRequired`). Renders nothing when clean (no card
+  (`confidence` scaled `low`/`medium`/`high` via `cachingReuseConfidence` off
+  reuse-execution count, plus `validationRequired`). Renders nothing when clean (no card
   in the DOM). One row per relation: name + format badge, reuse count, `Data
   read` (`formatBytes`, em-dash when unknown), recommendation, sorted by
   `totalReadBytes` then reuse count descending. Rows reveal 6 initially, then up
@@ -82,8 +83,9 @@ Plan Advisor, and Autoscaling Churn, all `region: 'action'` in
   `operator` (`'join'`|`'union'`), `relations` (leaf relations under the
   composite, for display), and `format:'derived'` (a sentinel: composites have
   no scan storage format). They render a `JOIN`/`UNION` operator badge (styled
-  distinct from the format badges) plus a low-confidence marker
-  (`confidence:'low'`, `validationRequired`) in `CachingOpportunity.tsx`.
+  distinct from the format badges) plus a confidence marker
+  (`confidence` scaled via `cachingReuseConfidence`, `validationRequired`) in
+  `CachingOpportunity.tsx`.
 - **Autoscaling Churn** (tag `CHRN`, `AutoscalingChurn.tsx`): app-level
   short-lived-executor detector (DETECTORS entry `autoscalingChurn` in
   `packages/core/src/detectors.ts`; reuses the same `executorsAdded`/`executorsRemoved`
@@ -174,7 +176,9 @@ Cache Storage all render through the ordinary active/clean paths instead):
   run-aggregates sweep vs. peak-cores × wall-clock), per-executor memory bands
   (peak heap vs. allocated, gated on `spark.eventLog.logStageExecutorMetrics`:
   a distinct `dataUnavailable` finding renders when that config was off), and
-  an unverified memory-waste model (`confidence:'low'`, a 1.5× buffer).
+  an unverified memory-waste model (`confidence` scales `low`/`medium`/`high`
+  via `memoryWasteConfidence`, off how far the wasted/used ratio sits past
+  the 1.5× buffer).
   The driver-memory half of the original spec is dropped: the worker only
   extracts *allocated* `spark.driver.memory`, never a driver actual-usage
   metric, so there is nothing to band against. The separate `utilization`
@@ -210,8 +214,11 @@ Cache Storage all render through the ordinary active/clean paths instead):
   `packages/core/src/core-locality-ratio.ts`). `NO_PREF` stays in the denominator only,
   since it's what shuffle-read stages legitimately report with no locality
   problem. Below 50 total tasks or below a 15% non-local ratio: no finding;
-  15%-35%: warning; >= 35%: critical (`confidence:'low'`, unvalidated
-  design-spike thresholds, same convention as the memory-waste model above).
+  15%-35%: warning; >= 35%: critical, still unvalidated design-spike
+  thresholds (`confidence` scales `low`/`medium`/`high` via
+  `coreLocalityConfidence`, off whichever is weaker of the non-local ratio
+  and the sampled task count, the same evidence-strength convention as the
+  memory-waste model above).
   The widget's always-rendered stacked-area chart (`packages/core/src/core-usage-locality.ts`)
   is unaffected. The finding only adds a threshold/impact-band section above it, a
   per-stage non-local breakdown below it (shown whenever any non-local tasks
