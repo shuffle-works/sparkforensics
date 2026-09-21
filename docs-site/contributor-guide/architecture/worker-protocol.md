@@ -165,7 +165,7 @@ The Markdown rendering mirrors the JSON's AC3 field set: each finding block
 prints its `detector version`, its sorted `evidence` entries (byte-magnitude
 keys humanized), and the report ends with a `## Detectors` catalog carrying the
 version + threshold set. A finding's `impactEstimate` (when its `basis` isn't
-`'informational'`) prints as its own `- impact: ` line (`Est. <low>-<high>`
+`'informational'`) prints as its own `- impact: ` line (`Estimated <low>-<high>`
 and/or the raw-waste figure, plus `estimateMethod`), via
 `renderImpactEstimate`/`formatWallClockRange`/`formatRawWaste` in
 `packages/core/src/evidence-report.ts`. `EvidenceExport` names downloads
