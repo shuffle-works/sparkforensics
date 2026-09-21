@@ -60,7 +60,7 @@ describe('EfficiencyModel', () => {
     expect(confidenceBadge).toBeInTheDocument();
     expect(confidenceBadge).toHaveAttribute(
       'title',
-      'This is a design-spike estimate; verify against wall-clock data before acting on it.',
+      'This estimate is derived from a simplified compute model; compare it against wall-clock data before acting on it.',
     );
     store.getState().setWidgetDensity('basic');
   });

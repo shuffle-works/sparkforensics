@@ -51,7 +51,10 @@ set both fields, not just the ones that happen to already have `RowStatusCluster
 their widget. `skew`, `straggler`, and `gc` set `confidence: 'low'` for exactly this reason:
 their runtime-floor thresholds carry the same kind of unvalidated-noise-floor caveat
 `coreLocality`, `autoscalingChurn`, and `memoryUtilization`'s `wasteModel` variant already
-disclose.
+disclose. None of these hardcode a single confidence value: each scales `'low' | 'medium' |
+'high'` off how far the finding sits past its own detector's threshold, via a small named helper
+placed just above the `DETECTORS` array (e.g. `skewConfidence`, `coreLocalityConfidence`,
+`cachingReuseConfidence`) rather than an inline literal.
 
 ## The `fixEffort` field
 

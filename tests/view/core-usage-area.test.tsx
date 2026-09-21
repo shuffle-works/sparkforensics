@@ -410,7 +410,7 @@ test('shows a confidence caveat when the coreLocality finding carries one', asyn
     type: 'coreLocality', stageId: null, impactBand: 'warning',
     metric: 'nonLocalRatio', value: 20, recommendation: 'x',
     confidence: 'low',
-    validationRequired: 'The 15%/35% non-local-ratio thresholds (and the 50-task minimum) are unvalidated design-spike values: no external tool publishes an equivalent metric to calibrate against. Confirm against known-good/known-bad real logs before trusting the impact-band split.',
+    validationRequired: 'This finding is gated by 15%/35% non-local-ratio thresholds (and a 50-task minimum), our own noise floor for this metric.',
   }];
 
   store.getState().setWidgetDensity('advanced');
@@ -424,14 +424,14 @@ test('shows a confidence caveat when the coreLocality finding carries one', asyn
   expect(caveat).toBeInTheDocument();
   expect(caveat).toHaveAttribute(
     'title',
-    'The 15%/35% non-local-ratio thresholds (and the 50-task minimum) are unvalidated design-spike values: no external tool publishes an equivalent metric to calibrate against. Confirm against known-good/known-bad real logs before trusting the impact-band split.',
+    'This finding is gated by 15%/35% non-local-ratio thresholds (and a 50-task minimum), our own noise floor for this metric.',
   );
   store.getState().setWidgetDensity('basic');
 });
 
 test('the approximation caption, confidence marker, and idle-core cross-link are hidden in basic mode', async () => {
   const catalog: Finding[] = [
-    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 40, recommendation: 'Check locality.', confidence: 'low', validationRequired: 'Unvalidated threshold.' },
+    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 40, recommendation: 'Check locality.', confidence: 'low', validationRequired: 'Threshold-gated finding.' },
     { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', metric: 'idleCoreRate', value: 75, recommendation: 'y' },
   ];
 
@@ -451,7 +451,7 @@ test('the approximation caption, confidence marker, and idle-core cross-link are
 
 test('the approximation caption, confidence marker, and idle-core cross-link are visible in advanced mode', async () => {
   const catalog: Finding[] = [
-    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 40, recommendation: 'Check locality.', confidence: 'low', validationRequired: 'Unvalidated threshold.' },
+    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 40, recommendation: 'Check locality.', confidence: 'low', validationRequired: 'Threshold-gated finding.' },
     { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', metric: 'idleCoreRate', value: 75, recommendation: 'y' },
   ];
 

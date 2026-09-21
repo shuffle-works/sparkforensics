@@ -92,7 +92,7 @@ test('shows a confidence caveat when the straggler finding carries one', () => {
       type: 'straggler', stageId: 9, impactBand: 'warning', metric: 'stragglerShare', value: 35, unit: 'pct',
       recommendation: '35% of tasks straggled: investigate stragglers.',
       confidence: 'low',
-      validationRequired: 'The 0.5%/2% runtime-floor percentages that gate this finding are our own noise floor, unvalidated.',
+      validationRequired: 'This finding is gated by 0.5%/2% runtime-floor thresholds, our own noise floor for this metric.',
     } as Finding,
   ];
   store.getState().setWidgetDensity('advanced');

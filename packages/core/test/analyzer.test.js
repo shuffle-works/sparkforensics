@@ -604,6 +604,15 @@ describe('analyze: caching opportunity (relation reuse)', () => {
     expect(f[0].totalReadBytes).toBe(350);
     expect(f[0].executionIds).toEqual([1, 2]);
     expect(f[0].impactBand).toBe('info');
+    // Exactly at minExecutions (2): the weakest reuse signal this detector can report.
+    expect(f[0].confidence).toBe('low');
+  });
+  it('marks relation-reuse confidence medium at 3 executions, high at 6+ (3x minExecutions)', () => {
+    const three = new Map([exec(1, parquetScan('precios', 100)), exec(2, parquetScan('precios', 100)), exec(3, parquetScan('precios', 100))]);
+    expect(caching(three)[0].confidence).toBe('medium');
+
+    const six = new Map(Array.from({ length: 6 }, (_, i) => exec(i + 1, parquetScan('precios', 100))));
+    expect(caching(six)[0].confidence).toBe('high');
   });
   it('does not flag when two executions scan different relations', () => {
     const sql = new Map([exec(1, parquetScan('precios', 100)), exec(2, parquetScan('ventas', 100))]);
@@ -667,6 +676,17 @@ describe('analyze: caching opportunity (relation reuse)', () => {
     expect(composites[0].value).toBe(2);
     expect(composites[0].operator).toBe('join');
     expect(composites[0].relation).toBe('mx.a join mx.b');
+    // Exactly at minExecutions (2): the weakest reuse signal this detector can report.
+    expect(composites[0].confidence).toBe('low');
+  });
+
+  it('composite: confidence rises to high once the same join shape repeats across 6+ executions (3x minExecutions)', () => {
+    const sql = new Map(Array.from({ length: 6 }, (_, i) =>
+      exec(i + 1, joinNode('', deltaScan('mx.a', 100), deltaScan('mx.b', 200)))));
+    const composites = caching(sql).filter(f => f.variant === 'composite');
+    expect(composites).toHaveLength(1);
+    expect(composites[0].value).toBe(6);
+    expect(composites[0].confidence).toBe('high');
   });
 
   it('composite: same tables joined with a DIFFERENT join condition -> no composite finding (structural mismatch); A/B still counted as separate leaf reuse', () => {
@@ -880,6 +900,7 @@ describe('analyze: speculation waste', () => {
 
   it('emits a speculationWaste finding at >=5 attempts and >=60s wasted, reconciled to critical here', () => {
     // Detector grades 'warning'; deriveImpactBand promotes to 'critical' (90s wasted is well over 2% of the 5s default).
+    // 90s is exactly 1.5x the 60s minWasteMs floor: the weakest confidence this detector reports.
     const stages = new Map([[1, makeStage({ speculationWastedAttempts: 5, speculationWasteMs: 90000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     const found = catalog.filter(b => b.type === 'speculationWaste');
@@ -889,10 +910,18 @@ describe('analyze: speculation waste', () => {
     expect(found[0].docAnchor).toBe('#bottleneck-straggler');
   });
 
-  it('emits critical at >=10 minutes wasted', () => {
+  it('emits critical at >=10 minutes wasted, with high confidence (4x+ the 60s floor)', () => {
     const stages = new Map([[1, makeStage({ speculationWastedAttempts: 6, speculationWasteMs: 700000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
-    expect(catalog.filter(b => b.type === 'speculationWaste')[0].impactBand).toBe('critical');
+    const found = catalog.filter(b => b.type === 'speculationWaste')[0];
+    expect(found.impactBand).toBe('critical');
+    expect(found.confidence).toBe('high');
+  });
+
+  it('marks speculationWaste confidence medium between 1.5x and 4x the 60s floor', () => {
+    const stages = new Map([[1, makeStage({ speculationWastedAttempts: 5, speculationWasteMs: 150000 })]]);
+    const catalog = analyze(makeApp(), stages, [], []);
+    expect(catalog.filter(b => b.type === 'speculationWaste')[0].confidence).toBe('medium');
   });
 
   it('does not fire retryWaste for a pure-speculation stage', () => {
@@ -1016,25 +1045,55 @@ describe('analyze: spill confidence metadata', () => {
     expect(b.confidence).toBe('low');
   });
 
-  it('marks skew as low confidence: its runtime-floor threshold is an unvalidated noise floor', () => {
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600 })]]);
+  it('marks skew confidence low just past ratioWarn (3.1x), medium a bit further out (6x)', () => {
+    const borderline = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 310 })]]);
+    const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'skew');
+    expect(b1.confidence).toBe('low');
+    expect(b1.validationRequired).toMatch(/noise floor/);
+
+    const mid = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600 })]]);
+    const b2 = analyze(makeApp(), mid, [], []).find(x => x.type === 'skew');
+    expect(b2.confidence).toBe('medium');
+  });
+
+  it('marks skew confidence high many multiples past ratioWarn (a 50x P95/median ratio)', () => {
+    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 5000 })]]);
     const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'skew');
-    expect(b.confidence).toBe('low');
-    expect(b.validationRequired).toMatch(/noise floor/);
+    expect(b.confidence).toBe('high');
   });
 
-  it('marks straggler as low confidence: its runtime-floor thresholds are an unvalidated noise floor', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 20, stragglerCount: 5, taskDurationP50: 100, taskDurationMax: 500 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'straggler');
-    expect(b.confidence).toBe('low');
-    expect(b.validationRequired).toMatch(/noise floor/);
+  it('marks straggler confidence low just past shareWarn, high once it clears critPct', () => {
+    // 6/100 = 6% straggler share, just past the 5% shareWarn floor.
+    const borderline = new Map([[1, makeStage({ taskCount: 100, stragglerCount: 6, taskDurationP50: 100, taskDurationMax: 500 })]]);
+    const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'straggler');
+    expect(b1.confidence).toBe('low');
+    expect(b1.validationRequired).toMatch(/noise floor/);
+
+    // 5/20 = 25% straggler share, well past critPct (20%).
+    const strong = new Map([[1, makeStage({ taskCount: 20, stragglerCount: 5, taskDurationP50: 100, taskDurationMax: 500 })]]);
+    const b2 = analyze(makeApp(), strong, [], []).find(x => x.type === 'straggler');
+    expect(b2.confidence).toBe('high');
   });
 
-  it('marks gc as low confidence: its minimum-runtime floor is an unvalidated noise floor', () => {
-    const stages = new Map([[1, makeStage({ gcPct: 15, executorRunTime: 60000 })]]);
-    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'gc' && x.direction !== 'low');
-    expect(b.confidence).toBe('low');
-    expect(b.validationRequired).toMatch(/noise floor/);
+  it('marks gc confidence low just past warnPct100 (10%), high several multiples out (35%)', () => {
+    const borderline = new Map([[1, makeStage({ gcPct: 15, executorRunTime: 60000 })]]);
+    const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'gc' && x.direction !== 'low');
+    expect(b1.confidence).toBe('low');
+    expect(b1.validationRequired).toMatch(/noise floor/);
+
+    const strong = new Map([[1, makeStage({ gcPct: 35, executorRunTime: 60000 })]]);
+    const b2 = analyze(makeApp(), strong, [], []).find(x => x.type === 'gc' && x.direction !== 'low');
+    expect(b2.confidence).toBe('high');
+  });
+
+  it('marks low-GC (over-provisioned) confidence high near zero, low just under lowInfoPct100', () => {
+    const borderline = new Map([[1, makeStage({ gcPct: 4, executorRunTime: 60000 })]]);
+    const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'gc' && x.direction === 'low');
+    expect(b1.confidence).toBe('low');
+
+    const strong = new Map([[1, makeStage({ gcPct: 0.5, executorRunTime: 60000 })]]);
+    const b2 = analyze(makeApp(), strong, [], []).find(x => x.type === 'gc' && x.direction === 'low');
+    expect(b2.confidence).toBe('high');
   });
 });
 
@@ -1529,14 +1588,25 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     expect(band?.dataUnavailable).toBe(true);
   });
 
-  it('1c: waste-model finding carries low confidence + validationRequired', () => {
+  it('1c: waste-model finding carries high confidence + validationRequired when waste is many multiples of the gate', () => {
     const app = makeApp({ startTime: 0, endTime: 3600000, resources: { executor: { cores: 4, memoryMB: 4096 } } });
     const added = Array.from({ length: 4 }, (_, i) => ({ executorId: String(i), timestamp: 0, totalCores: 4 }));
-    const stage = makeStage({ executorRunTime: 1000 }); // tiny used-time => large waste
+    const stage = makeStage({ executorRunTime: 1000 }); // tiny used-time => wasted is ~9600x the 1.5x-gated floor
+    const catalog = analyze(app, new Map([[1, stage]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
+    const waste = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
+    expect(waste?.confidence).toBe('high');
+    expect(waste?.validationRequired).toBeTruthy();
+  });
+
+  it('1c: waste-model finding is low confidence just past the 1.5x wasteBufferMultiplier floor', () => {
+    const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 1, memoryMB: 1000 } } });
+    const added = [{ executorId: '0', timestamp: 0, totalCores: 1 }];
+    // allocatedMBSeconds = 1*1000*100 = 100,000; usedMBSeconds = 1000*34 = 34,000; wasted = 66,000,
+    // which is ~1.3x (1.5 * 34,000) = 51,000: just past the gate, the weakest evidence this detector reports.
+    const stage = makeStage({ executorRunTime: 34000 });
     const catalog = analyze(app, new Map([[1, stage]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
     const waste = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
     expect(waste?.confidence).toBe('low');
-    expect(waste?.validationRequired).toBeTruthy();
   });
 
   it('1a (regression): executor churn does not inflate idleCores past the real peak concurrent capacity', () => {
@@ -1702,7 +1772,7 @@ describe('analyze, cacheUtilization detector', () => {
     expect(forRdd.every((f) => f.impactBand === 'warning')).toBe(true);
   });
 
-  it('carries rddId, rddName, medium confidence, and instance-derived partialCache recommendation text', () => {
+  it('carries rddId, rddName, high confidence (100 partitions is a large, stable sample), and instance-derived partialCache recommendation text', () => {
     const rddInfo = new Map([[3, makeRdd(3, {
       name: 'orders_cached',
       numPartitions: 100, numCachedPartitions: 62, // 0.62
@@ -1710,11 +1780,35 @@ describe('analyze, cacheUtilization detector', () => {
     const partial = cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'partialCache');
     expect(partial.rddId).toBe(3);
     expect(partial.rddName).toBe('orders_cached');
-    expect(partial.confidence).toBe('medium');
+    expect(partial.confidence).toBe('high');
     expect(partial.validationRequired).toMatch(/Storage tab/);
     expect(partial.recommendation).toBe(
       'RDD orders_cached is 38% evicted from cache (62% of partitions cached). Increase executor memory or reduce the cached dataset size.',
     );
+  });
+
+  it('confidence scales with numPartitions (sample size), not a flat medium, for both variants', () => {
+    // Old logic hardcoded 'medium' regardless of sample size; this would have failed under it.
+    const tiny = new Map([[1, makeRdd(1, { numPartitions: 4, numCachedPartitions: 1 })]]); // 0.25, <10 partitions
+    const mid = new Map([[2, makeRdd(2, { numPartitions: 20, numCachedPartitions: 5 })]]); // 0.25, 10-49 partitions
+    const large = new Map([[3, makeRdd(3, { numPartitions: 80, numCachedPartitions: 20 })]]); // 0.25, >=50 partitions
+
+    expect(cacheFindings(makeApp({ rddInfo: tiny })).find((f) => f.variant === 'partialCache').confidence).toBe('low');
+    expect(cacheFindings(makeApp({ rddInfo: mid })).find((f) => f.variant === 'partialCache').confidence).toBe('medium');
+    expect(cacheFindings(makeApp({ rddInfo: large })).find((f) => f.variant === 'partialCache').confidence).toBe('high');
+
+    const tinySpill = new Map([[4, makeRdd(4, {
+      numPartitions: 4,
+      storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 1 },
+      memorySize: 300, diskSize: 700,
+    })]]);
+    const largeSpill = new Map([[5, makeRdd(5, {
+      numPartitions: 80,
+      storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 1 },
+      memorySize: 300, diskSize: 700,
+    })]]);
+    expect(cacheFindings(makeApp({ rddInfo: tinySpill })).find((f) => f.variant === 'diskSpillover').confidence).toBe('low');
+    expect(cacheFindings(makeApp({ rddInfo: largeSpill })).find((f) => f.variant === 'diskSpillover').confidence).toBe('high');
   });
 
   it('carries the instance-derived diskSpillover recommendation text', () => {
@@ -1798,6 +1892,22 @@ describe('analyze, coreLocality detector', () => {
     const finding = catalog.find((b) => b.type === 'coreLocality');
     expect(finding.impactBand).toBe('critical');
     expect(finding.value).toBe(40);
+    // Ratio alone would be 'high' (>= critRatio), but the 100-task sample is still below
+    // minTasks*4 (200): confidence reports the weaker of the two signals, not the ratio alone.
+    expect(finding.confidence).toBe('medium');
+  });
+
+  it('marks coreLocality confidence high when both the ratio and the task sample are large', () => {
+    const stages = new Map([[1, makeStage({
+      localityStats: [
+        { locality: 'PROCESS_LOCAL', count: 180 },
+        { locality: 'ANY', count: 120 },
+      ],
+    })]]);
+    const catalog = analyze(makeApp(), stages, [], []);
+    const finding = catalog.find((b) => b.type === 'coreLocality');
+    expect(finding.value).toBe(40);
+    expect(finding.confidence).toBe('high');
   });
 
   it('never counts NO_PREF toward the numerator (shuffle-heavy stage with no real locality problem)', () => {
@@ -1951,6 +2061,19 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
     expect(finding.stageId).toBeNull();
   });
 
+  it('marks autoscalingChurn confidence medium between 1.5x warningPct and criticalPct', () => {
+    const app = makeApp({ startTime: 0, endTime: 600_000 });
+    const pairs = [
+      ...Array.from({ length: 50 }, () => ({ addedAt: 0, removedAt: 60_000 })),
+      ...Array.from({ length: 50 }, () => ({ addedAt: 0, removedAt: 600_000 })),
+    ];
+    const { added, removed } = addedAndRemoved(pairs);
+    const catalog = analyze(app, new Map(), added, removed);
+    const finding = catalog.find(b => b.type === 'autoscalingChurn');
+    expect(finding.value).toBe(50);
+    expect(finding.confidence).toBe('medium');
+  });
+
   it('emits a critical finding just over the 60% short-lived threshold', () => {
     const app = makeApp({ startTime: 0, endTime: 600_000 });
     // 100 executors, 61 short-lived => 61% > 60%.
@@ -1964,6 +2087,8 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
     expect(finding).toBeTruthy();
     expect(finding.impactBand).toBe('critical');
     expect(finding.value).toBe(61);
+    // 61% clears criticalPct (60%) outright: the high-confidence bar.
+    expect(finding.confidence).toBe('high');
   });
 
   it('does not fire at all at exactly the 30% boundary (thresholds are exclusive)', () => {

@@ -261,7 +261,7 @@ describe('GcPressure', () => {
       {
         type: 'gc', stageId: 1, impactBand: 'warning', value: 35, recommendation: 'r',
         confidence: 'low',
-        validationRequired: 'The 10-second minimum-runtime floor that gates this finding is our own noise floor, unvalidated.',
+        validationRequired: 'This finding is gated by a 10-second minimum-runtime floor, our own noise floor for this metric.',
       },
     ];
     store.getState().setWidgetDensity('advanced');

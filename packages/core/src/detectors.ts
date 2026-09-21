@@ -411,6 +411,22 @@ export function findDuplicateSubtrees(
   return results;
 }
 
+// Fingerprint matching compares operator + metric names only, not literal values or expr IDs
+// (see the finding's validationRequired text), so a small pattern repeated the bare minimum
+// number of times is the case most likely to be coincidental rather than real duplicated work.
+// A bigger matched subtree, or more repeats, are each on their own strong corroborating evidence
+// that the match is real: the odds of two semantically-different query branches producing an
+// identical operator-name sequence shrink fast as the sequence grows or repeats.
+function duplicateSubtreeConfidence(
+  subtreeSize: number,
+  occurrences: number,
+  thresholds: { minSubtreeSize: number; minOccurrences: number },
+): 'low' | 'medium' | 'high' {
+  if (subtreeSize <= thresholds.minSubtreeSize && occurrences <= thresholds.minOccurrences) return 'low';
+  if (subtreeSize >= thresholds.minSubtreeSize * 2 || occurrences >= thresholds.minOccurrences + 2) return 'high';
+  return 'medium';
+}
+
 // Exact metric names Spark emits, verified against a real SQLExecutionStart's sparkPlanInfo.
 // The write-side byte metric is "written output", not "size of written files".
 const FILES_READ_COUNT = 'number of files read';
@@ -519,6 +535,19 @@ function clippedWasteMs(wasteMs: number, stageId: number, ctx?: DetectorCtx): nu
 const CACHE_UTILIZATION_VALIDATION =
   "This ratio is a point-in-time storage snapshot from stage-submission events, not a runtime read-count. Confirm against the Spark UI's Storage tab before acting.";
 
+// Both cachedRatio and diskRatio are percentages of an RDD's partition/byte count: with few
+// partitions, one partition flipping cached/evicted (or disk-resident/memory-resident) swings the
+// reported percentage by a large amount, so the point estimate is noisy. More partitions average
+// that noise out into a stable ratio. numPartitions is the only sample-size signal
+// DetectorRddInfo carries, so it drives confidence for both variants rather than a flat guess.
+// 10/50 mirror this file's other "trust the sample" cutoffs (skew's minTasksForP95: 20,
+// coreLocality's minTasks: 50).
+function cacheSampleConfidence(numPartitions: number): 'low' | 'medium' | 'high' {
+  if (numPartitions < 10) return 'low';
+  if (numPartitions >= 50) return 'high';
+  return 'medium';
+}
+
 function partialCacheFinding(rdd: DetectorRddInfo, cachedRatio: number, impactBand: 'warning' | 'info'): Finding {
   const rddName = rdd.name || `RDD ${rdd.id}`;
   const cachedPct = Math.round(cachedRatio * 100);
@@ -527,7 +556,7 @@ function partialCacheFinding(rdd: DetectorRddInfo, cachedRatio: number, impactBa
     type: 'cacheUtilization', variant: 'partialCache', stageId: null,
     rddId: rdd.id, rddName,
     impactBand, metric: 'cachedRatio', value: cachedPct,
-    confidence: 'medium',
+    confidence: cacheSampleConfidence(rdd.numPartitions),
     validationRequired: CACHE_UTILIZATION_VALIDATION,
     memorySize: rdd.memorySize, diskSize: rdd.diskSize,
     numCachedPartitions: rdd.numCachedPartitions, numPartitions: rdd.numPartitions,
@@ -542,7 +571,7 @@ function diskSpilloverFinding(rdd: DetectorRddInfo, diskRatio: number, impactBan
     type: 'cacheUtilization', variant: 'diskSpillover', stageId: null,
     rddId: rdd.id, rddName,
     impactBand, metric: 'diskRatio', value: diskPct,
-    confidence: 'medium',
+    confidence: cacheSampleConfidence(rdd.numPartitions),
     validationRequired: CACHE_UTILIZATION_VALIDATION,
     memorySize: rdd.memorySize, diskSize: rdd.diskSize,
     numCachedPartitions: rdd.numCachedPartitions, numPartitions: rdd.numPartitions,
@@ -584,6 +613,103 @@ export interface Detector<TTarget = unknown> {
 export const STRAGGLER_FLOOR_PCT_WARN = 0.005;
 export const STRAGGLER_FLOOR_PCT_CRIT = 0.02;
 
+// A ratio just past ratioWarn is the case most likely to be ordinary task-duration variance
+// rather than real skew; a ratio many multiples past it (a 50x P95/median vs. a 3.1x one) is
+// unambiguous. 1.5x/5x mirror this file's other "just past the floor vs. clearly past it" splits
+// (duplicateSubtreeConfidence's 2x, cacheSampleConfidence's 10/50-partition cutoffs).
+function skewConfidence(ratio: number, ratioWarn: number): 'low' | 'medium' | 'high' {
+  if (ratio <= ratioWarn * 1.5) return 'low';
+  if (ratio >= ratioWarn * 5) return 'high';
+  return 'medium';
+}
+
+// warnPct100/lowInfoPct100 are this detector's own two thresholds; scale confidence as a multiple
+// of whichever one gates the branch that fired, the same way skewConfidence scales off ratioWarn.
+// High-GC: a pct just past warnPct100 (10%) is likely normal variance, 3x past it is unambiguous.
+// Low-GC ("cost", over-provisioned): a pct just under lowInfoPct100 (5%) is borderline, a pct near
+// zero is unambiguous idle GC.
+function gcConfidence(
+  pct: number,
+  thresholds: { warnPct100: number; lowInfoPct100: number },
+  direction: 'high' | 'low',
+): 'low' | 'medium' | 'high' {
+  if (direction === 'high') {
+    if (pct <= thresholds.warnPct100 * 1.5) return 'low';
+    if (pct >= thresholds.warnPct100 * 3) return 'high';
+    return 'medium';
+  }
+  if (pct >= thresholds.lowInfoPct100 * 0.66) return 'low';
+  if (pct <= thresholds.lowInfoPct100 * 0.2) return 'high';
+  return 'medium';
+}
+
+// warnFloor gates the finding, so a value just past it is the weakest evidence this detector can
+// produce. highFloor is critPct: straggler's own second (speculative-share) tier, 2x warnPct
+// (0.10 -> 0.20); reused as the high-confidence bar for the stragglerShare path too since that
+// metric has no dedicated critical tier of its own (see the "no dedicated critical tier" comment
+// on the straggler detector) but is the same 0-1 task-share magnitude.
+function stragglerConfidence(shareValue: number, warnFloor: number, highFloor: number): 'low' | 'medium' | 'high' {
+  if (shareValue < warnFloor * 1.5) return 'low';
+  if (shareValue >= highFloor) return 'high';
+  return 'medium';
+}
+
+// minWasteMs is speculationWaste's own floor; a run that barely clears it (under 1.5x) is the
+// weakest case, one that clears it several times over (4x, i.e. 4 minutes against a 1-minute
+// floor) is unambiguous.
+function speculationWasteConfidence(wastedMs: number, minWasteMs: number): 'low' | 'medium' | 'high' {
+  if (wastedMs <= minWasteMs * 1.5) return 'low';
+  if (wastedMs >= minWasteMs * 4) return 'high';
+  return 'medium';
+}
+
+// The finding already gates on wastedMBSeconds > wasteBufferMultiplier * usedMBSeconds, i.e. a
+// ratio of 1 at the floor; scale confidence off that same ratio the way skewConfidence scales off
+// ratioWarn, instead of introducing a second, unrelated multiplier.
+function memoryWasteConfidence(wastedMBSeconds: number, usedMBSeconds: number, wasteBufferMultiplier: number): 'low' | 'medium' | 'high' {
+  const ratio = usedMBSeconds > 0 ? wastedMBSeconds / (wasteBufferMultiplier * usedMBSeconds) : Infinity;
+  if (ratio <= 1.5) return 'low';
+  if (ratio >= 3) return 'high';
+  return 'medium';
+}
+
+// Two independent weak spots can each undercut this finding: a ratio just past warnRatio (could
+// be one bad stage), or too few sampled tasks (mirrors cacheSampleConfidence's use of
+// numPartitions as a sample-size signal). Report whichever signal is weaker rather than
+// averaging them away. critRatio is this detector's own existing second tier, reused directly as
+// the ratio high-bar; minTasks*2/*4 mirror the same "2x floor is still weak, 4x is strong" spread
+// used elsewhere in this file.
+function coreLocalityConfidence(
+  ratio: number,
+  totalTasks: number,
+  thresholds: { minTasks: number; warnRatio: number; critRatio: number },
+): 'low' | 'medium' | 'high' {
+  const rank = { low: 0, medium: 1, high: 2 } as const;
+  const ratioTier = ratio < thresholds.warnRatio * 1.5 ? 'low' : ratio >= thresholds.critRatio ? 'high' : 'medium';
+  const sampleTier = totalTasks < thresholds.minTasks * 2 ? 'low' : totalTasks >= thresholds.minTasks * 4 ? 'high' : 'medium';
+  return rank[ratioTier] <= rank[sampleTier] ? ratioTier : sampleTier;
+}
+
+// warningPct/criticalPct are this detector's own two tiers (0.30/0.60); a churn rate just past
+// warningPct is the borderline call the impact-band split already treats as the weaker tier, so
+// reuse criticalPct directly as the high-confidence bar instead of inventing a third figure.
+function autoscalingChurnConfidence(shortLivedPct: number, warningPct: number, criticalPct: number): 'low' | 'medium' | 'high' {
+  if (shortLivedPct <= warningPct * 1.5) return 'low';
+  if (shortLivedPct >= criticalPct) return 'high';
+  return 'medium';
+}
+
+// minExecutions is the bare minimum occurrence count this detector will even emit a finding for;
+// a match at exactly that count is the weakest reuse signal (as likely to be coincidental overlap
+// as real shared work), while 3x the floor is several independent executions all hitting the same
+// relation/composite shape, unambiguous. Mirrors duplicateSubtreeConfidence's occurrences handling
+// for the same reason: repetition count is the strength signal for a structural-match detector.
+function cachingReuseConfidence(occurrences: number, minExecutions: number): 'low' | 'medium' | 'high' {
+  if (occurrences <= minExecutions) return 'low';
+  if (occurrences >= minExecutions * 3) return 'high';
+  return 'medium';
+}
+
 export const DETECTORS: Detector[] = [
   {
     type: 'skew', scope: 'stage', order: 30, fixEffort: 'code', version: 1,
@@ -611,8 +737,8 @@ export const DETECTORS: Detector[] = [
         type: 'skew', stageId: stage.id,
         impactBand: 'warning',
         metric, value,
-        confidence: 'low',
-        validationRequired: 'The 0.5% runtime-floor percentage that gates this finding is our own noise floor, unvalidated: no external tool publishes an equivalent metric to calibrate against. Confirm against known-good/known-bad real logs before trusting the impact-band split.',
+        confidence: skewConfidence(ratio, this.thresholds.ratioWarn),
+        validationRequired: 'This finding is gated by a 0.5% runtime-floor threshold, our own noise floor for this metric.',
         recommendation: `Task duration ratio (${metric}) is ${value}×: for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key to reduce task skew.`,
       };
     },
@@ -766,8 +892,7 @@ export const DETECTORS: Detector[] = [
   {
     type: 'gc', scope: 'stage', order: 50, fixEffort: 'config', version: 1,
     docAnchor: '#bottleneck-gc',
-    confidence: 'low',
-    validationRequired: 'The 10-second minimum-runtime floor that gates this finding is our own noise floor, unvalidated: no external tool publishes an equivalent metric to calibrate against. Confirm against known-good/known-bad real logs before trusting the impact-band split.',
+    validationRequired: 'This finding is gated by a 10-second minimum-runtime floor, our own noise floor for this metric.',
     thresholds: {
       warnPct100: 10,
       // Descending tier: ExecutorGcHeuristic, ported as-is.
@@ -778,7 +903,7 @@ export const DETECTORS: Detector[] = [
     detect(
       this: {
         thresholds: { warnPct100: number; lowInfoPct100: number; minRunTimeMs: number };
-        confidence: string; validationRequired: string;
+        validationRequired: string;
       },
       stage: DetectorStage,
     ): Finding | null {
@@ -790,7 +915,7 @@ export const DETECTORS: Detector[] = [
           type: 'gc', stageId: stage.id,
           impactBand: 'warning',
           metric: 'gcPct', value,
-          confidence: this.confidence, validationRequired: this.validationRequired,
+          confidence: gcConfidence(pct, this.thresholds, 'high'), validationRequired: this.validationRequired,
           recommendation: `GC consumed ${value}% of executor run time: reduce object creation, use primitive types, avoid UDFs, increase executor memory.`,
         };
       }
@@ -802,7 +927,7 @@ export const DETECTORS: Detector[] = [
           type: 'gc', stageId: stage.id, direction: 'low',
           impactBand: 'info',
           metric: 'gcPct', value,
-          confidence: this.confidence, validationRequired: this.validationRequired,
+          confidence: gcConfidence(pct, this.thresholds, 'low'), validationRequired: this.validationRequired,
           recommendation: `GC consumed only ${value}% of executor run time: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.`,
         };
       }
@@ -1028,20 +1153,21 @@ export const DETECTORS: Detector[] = [
         unit: useSpeculativeMetric ? 'count' : 'pct',
         speculativeTasks: stage.speculativeTasks ?? 0,
         stragglerCount: stage.stragglerCount ?? 0,
-        confidence: 'low',
-        validationRequired: 'The 0.5%/2% runtime-floor percentages that gate this finding are our own noise floor, unvalidated: no external tool publishes an equivalent metric to calibrate against. Confirm against known-good/known-bad real logs before trusting the impact-band split.',
+        confidence: useSpeculativeMetric
+          ? stragglerConfidence(speculativeShare, this.thresholds.warnPct, this.thresholds.critPct)
+          : stragglerConfidence(stragglerShare, this.thresholds.shareWarn, this.thresholds.critPct),
+        validationRequired: 'This finding is gated by 0.5%/2% runtime-floor thresholds, our own noise floor for this metric.',
         recommendation: `${detail}: rule out a GC pause or a slow shuffle fetch before assuming a hardware issue; if a skewed key is the real cause, that's a candidate for AQE's skew-join handling.`,
       };
     },
   },
   {
     type: 'speculationWaste', scope: 'stage', order: 71, fixEffort: 'config', version: 1,
-    docAnchor: '#bottleneck-straggler', confidence: 'low',
+    docAnchor: '#bottleneck-straggler',
     thresholds: { minWasted: 5, minWasteMs: 60000 },
     detect(
       this: {
         thresholds: { minWasted: number; minWasteMs: number };
-        confidence: string;
       },
       stage: DetectorStage,
     ): Finding | null {
@@ -1052,7 +1178,7 @@ export const DETECTORS: Detector[] = [
         type: 'speculationWaste', stageId: stage.id,
         impactBand: 'warning',
         metric: 'speculationWasteMs', value: wastedMs,
-        confidence: this.confidence,
+        confidence: speculationWasteConfidence(wastedMs, this.thresholds.minWasteMs),
         recommendation: `Speculative execution discarded ${Math.round(wastedMs / 1000)}s of executor time in this stage; if task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile.`,
       };
     },
@@ -1298,8 +1424,8 @@ export const DETECTORS: Detector[] = [
           out.push({
             type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
             impactBand: 'info', metric: 'wastedMBSeconds', value,
-            confidence: 'low',
-            validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and an unverified 1.5x buffer: confirm against the Spark UI before acting.',
+            confidence: memoryWasteConfidence(wastedMBSeconds, usedMBSeconds, this.thresholds.wasteBufferMultiplier),
+            validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and a 1.5x buffer: confirm against the Spark UI before acting.',
             recommendation: `Allocated executor memory sat largely idle over the run (~${value.toLocaleString('en-US')} MB-seconds wasted): review spark.executor.memory and executor count.`,
           });
         }
@@ -1376,8 +1502,8 @@ export const DETECTORS: Detector[] = [
         metric: 'nonLocalRatio', value,
         // Raw count behind the ratio, for the impact estimator. Non-null whenever totalTasks is.
         nonLocalTaskCount: nonLocalTasks!,
-        confidence: 'low',
-        validationRequired: 'The 15%/35% non-local-ratio thresholds (and the 50-task minimum) are unvalidated design-spike values: no external tool publishes an equivalent metric to calibrate against. Confirm against known-good/known-bad real logs before trusting the impact-band split.',
+        confidence: coreLocalityConfidence(ratio!, totalTasks, this.thresholds),
+        validationRequired: 'This finding is gated by 15%/35% non-local-ratio thresholds (and a 50-task minimum), our own noise floor for this metric.',
         recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement: check spark.locality.wait settings and executor/data colocation.`,
       };
     },
@@ -1387,12 +1513,10 @@ export const DETECTORS: Detector[] = [
     // re-provisioning, not normal scale-down). Reuses utilization's add/remove matching, but
     // measures lifetime against a threshold instead of aggregate active-time.
     type: 'autoscalingChurn', scope: 'app', order: 103, fixEffort: 'config', version: 1,
-    confidence: 'low',
     thresholds: { shortLivedMs: 120_000, warningPct: 0.30, criticalPct: 0.60, minExecutors: 5 },
     detect(
       this: {
         thresholds: { shortLivedMs: number; warningPct: number; criticalPct: number; minExecutors: number };
-        confidence: string;
       },
       ctx: DetectorCtx,
     ): Finding | null {
@@ -1421,7 +1545,7 @@ export const DETECTORS: Detector[] = [
         metric: 'shortLivedExecutorPct', value: pct,
         // Raw count behind the percentage, for the impact estimator's startup-overhead figure.
         shortLivedExecutorCount: shortLivedCount,
-        confidence: this.confidence,
+        confidence: autoscalingChurnConfidence(shortLivedPct, this.thresholds.warningPct, this.thresholds.criticalPct),
         recommendation: `${pct}% of executors ran for under 2 minutes before being removed. This looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.`,
       };
     },
@@ -1562,7 +1686,7 @@ export const DETECTORS: Detector[] = [
           metric: 'executionReuse', value,
           format: 'derived', relations, operator: agg.operator, relation: relationDisplay,
           executionIds: finalExecutionIds, totalReadBytes,
-          confidence: 'low',
+          confidence: cachingReuseConfidence(value, this.thresholds.minExecutions),
           validationRequired:
             'Composite reuse is inferred from a structural plan-shape match (operator + normalized ' +
             'join/filter condition + child shapes) across SQL executions; confirm these executions ' +
@@ -1593,7 +1717,7 @@ export const DETECTORS: Detector[] = [
           relation: agg.relation, format: agg.format,
           executionIds: residualExecutionIds.sort((a, b) => a - b),
           totalReadBytes,
-          confidence: 'low',
+          confidence: cachingReuseConfidence(value, this.thresholds.minExecutions),
           validationRequired:
             'Relation-reuse is inferred from the pre-AQE plan scan identity across SQL ' +
             'executions; confirm the reads are the same data and cacheable within one ' +
@@ -1744,7 +1868,8 @@ export const DETECTORS: Detector[] = [
           // wallClock estimate (the common case). Only surfaces on the rare occupancy-sweep miss.
           impactBand: 'warning', metric: 'subtreeOccurrences', value: g.occurrences,
           rootName: g.rootName, subtreeSize: g.subtreeSize, sampleRelation: g.sampleRelation,
-          groupIndex: g.groupIndex, confidence: 'medium',
+          groupIndex: g.groupIndex,
+          confidence: duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, this.thresholds),
           validationRequired: 'Duplicate-subtree matching compares operator names and metric names only, not literal values or expr IDs: confirm the repeated work is real in the Spark SQL plan tab before acting.',
           recommendation: g.isExchangeRoot
             ? `A ${g.subtreeSize}-node subtree rooted at ${pathBasename(g.rootName)} repeats ${g.occurrences}x in this plan${touching}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`

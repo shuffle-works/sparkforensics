@@ -121,7 +121,7 @@ test('shows a low-confidence caveat for the waste-model finding', async () => {
       type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
       impactBand: 'info', metric: 'wastedMBSeconds', value: 12345,
       confidence: 'low',
-      validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and an unverified 1.5x buffer: confirm against the Spark UI before acting.',
+      validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and a 1.5x buffer: confirm against the Spark UI before acting.',
       recommendation: 'Allocated executor memory sat largely idle over the run: review spark.executor.memory and executor count.',
     },
   ];
@@ -133,7 +133,7 @@ test('shows a low-confidence caveat for the waste-model finding', async () => {
   expect(caveat).toBeInTheDocument();
   expect(caveat).toHaveAttribute(
     'title',
-    'Memory-waste estimate uses allocated-vs-used memory-time and an unverified 1.5x buffer: confirm against the Spark UI before acting.',
+    'Memory-waste estimate uses allocated-vs-used memory-time and a 1.5x buffer: confirm against the Spark UI before acting.',
   );
   store.getState().setWidgetDensity('basic');
 });
@@ -247,7 +247,7 @@ test('the header status badge (confidence + evidence) is Advanced-only', () => {
       type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
       impactBand: 'info', metric: 'wastedMBSeconds', value: 12345,
       confidence: 'low',
-      validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and an unverified 1.5x buffer: confirm against the Spark UI before acting.',
+      validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and a 1.5x buffer: confirm against the Spark UI before acting.',
       recommendation: 'Allocated executor memory sat largely idle over the run: review spark.executor.memory and executor count.',
     },
   ];
@@ -271,7 +271,7 @@ test('confidence and evidence markers stay out of the summary view until the car
       type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
       impactBand: 'info', metric: 'wastedMBSeconds', value: 12345,
       confidence: 'low',
-      validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and an unverified 1.5x buffer: confirm against the Spark UI before acting.',
+      validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and a 1.5x buffer: confirm against the Spark UI before acting.',
       recommendation: 'Allocated executor memory sat largely idle over the run: review spark.executor.memory and executor count.',
     },
   ];
