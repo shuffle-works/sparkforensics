@@ -30,7 +30,8 @@
   "files": ["bin/", "vendor-core/", "export-template/"],
   "scripts": {
     "prepack": "node ../../scripts/vendor-core.mjs . && node ../../scripts/vendor-export-template.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "zod": "^4.4.3"

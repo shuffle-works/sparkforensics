@@ -31,7 +31,8 @@
   "files": ["bin/", "vendor-core/"],
   "scripts": {
     "prepack": "node ../../scripts/vendor-core.mjs .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

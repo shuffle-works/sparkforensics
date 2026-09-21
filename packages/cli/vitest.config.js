@@ -13,5 +13,10 @@ export default defineConfig({
     // files at once race each other's writes. The suite is small; serialize
     // files to eliminate that race.
     fileParallelism: false,
+    coverage: {
+      provider: 'v8',
+      reporter: ['lcov', 'text'],
+      include: ['bin/**'],
+    },
   },
 });
