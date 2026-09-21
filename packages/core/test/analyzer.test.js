@@ -1702,7 +1702,7 @@ describe('analyze, cacheUtilization detector', () => {
     expect(forRdd.every((f) => f.impactBand === 'warning')).toBe(true);
   });
 
-  it('carries rddId, rddName, medium confidence, and instance-derived partialCache recommendation text', () => {
+  it('carries rddId, rddName, high confidence (100 partitions is a large, stable sample), and instance-derived partialCache recommendation text', () => {
     const rddInfo = new Map([[3, makeRdd(3, {
       name: 'orders_cached',
       numPartitions: 100, numCachedPartitions: 62, // 0.62
@@ -1710,11 +1710,35 @@ describe('analyze, cacheUtilization detector', () => {
     const partial = cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'partialCache');
     expect(partial.rddId).toBe(3);
     expect(partial.rddName).toBe('orders_cached');
-    expect(partial.confidence).toBe('medium');
+    expect(partial.confidence).toBe('high');
     expect(partial.validationRequired).toMatch(/Storage tab/);
     expect(partial.recommendation).toBe(
       'RDD orders_cached is 38% evicted from cache (62% of partitions cached). Increase executor memory or reduce the cached dataset size.',
     );
+  });
+
+  it('confidence scales with numPartitions (sample size), not a flat medium, for both variants', () => {
+    // Old logic hardcoded 'medium' regardless of sample size; this would have failed under it.
+    const tiny = new Map([[1, makeRdd(1, { numPartitions: 4, numCachedPartitions: 1 })]]); // 0.25, <10 partitions
+    const mid = new Map([[2, makeRdd(2, { numPartitions: 20, numCachedPartitions: 5 })]]); // 0.25, 10-49 partitions
+    const large = new Map([[3, makeRdd(3, { numPartitions: 80, numCachedPartitions: 20 })]]); // 0.25, >=50 partitions
+
+    expect(cacheFindings(makeApp({ rddInfo: tiny })).find((f) => f.variant === 'partialCache').confidence).toBe('low');
+    expect(cacheFindings(makeApp({ rddInfo: mid })).find((f) => f.variant === 'partialCache').confidence).toBe('medium');
+    expect(cacheFindings(makeApp({ rddInfo: large })).find((f) => f.variant === 'partialCache').confidence).toBe('high');
+
+    const tinySpill = new Map([[4, makeRdd(4, {
+      numPartitions: 4,
+      storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 1 },
+      memorySize: 300, diskSize: 700,
+    })]]);
+    const largeSpill = new Map([[5, makeRdd(5, {
+      numPartitions: 80,
+      storageLevel: { useMemory: true, useDisk: true, deserialized: false, replication: 1 },
+      memorySize: 300, diskSize: 700,
+    })]]);
+    expect(cacheFindings(makeApp({ rddInfo: tinySpill })).find((f) => f.variant === 'diskSpillover').confidence).toBe('low');
+    expect(cacheFindings(makeApp({ rddInfo: largeSpill })).find((f) => f.variant === 'diskSpillover').confidence).toBe('high');
   });
 
   it('carries the instance-derived diskSpillover recommendation text', () => {
