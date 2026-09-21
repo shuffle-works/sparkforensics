@@ -411,6 +411,22 @@ export function findDuplicateSubtrees(
   return results;
 }
 
+// Fingerprint matching compares operator + metric names only, not literal values or expr IDs
+// (see the finding's validationRequired text), so a small pattern repeated the bare minimum
+// number of times is the case most likely to be coincidental rather than real duplicated work.
+// A bigger matched subtree, or more repeats, are each on their own strong corroborating evidence
+// that the match is real: the odds of two semantically-different query branches producing an
+// identical operator-name sequence shrink fast as the sequence grows or repeats.
+function duplicateSubtreeConfidence(
+  subtreeSize: number,
+  occurrences: number,
+  thresholds: { minSubtreeSize: number; minOccurrences: number },
+): 'low' | 'medium' | 'high' {
+  if (subtreeSize <= thresholds.minSubtreeSize && occurrences <= thresholds.minOccurrences) return 'low';
+  if (subtreeSize >= thresholds.minSubtreeSize * 2 || occurrences >= thresholds.minOccurrences + 2) return 'high';
+  return 'medium';
+}
+
 // Exact metric names Spark emits, verified against a real SQLExecutionStart's sparkPlanInfo.
 // The write-side byte metric is "written output", not "size of written files".
 const FILES_READ_COUNT = 'number of files read';
@@ -519,6 +535,19 @@ function clippedWasteMs(wasteMs: number, stageId: number, ctx?: DetectorCtx): nu
 const CACHE_UTILIZATION_VALIDATION =
   "This ratio is a point-in-time storage snapshot from stage-submission events, not a runtime read-count. Confirm against the Spark UI's Storage tab before acting.";
 
+// Both cachedRatio and diskRatio are percentages of an RDD's partition/byte count: with few
+// partitions, one partition flipping cached/evicted (or disk-resident/memory-resident) swings the
+// reported percentage by a large amount, so the point estimate is noisy. More partitions average
+// that noise out into a stable ratio. numPartitions is the only sample-size signal
+// DetectorRddInfo carries, so it drives confidence for both variants rather than a flat guess.
+// 10/50 mirror this file's other "trust the sample" cutoffs (skew's minTasksForP95: 20,
+// coreLocality's minTasks: 50).
+function cacheSampleConfidence(numPartitions: number): 'low' | 'medium' | 'high' {
+  if (numPartitions < 10) return 'low';
+  if (numPartitions >= 50) return 'high';
+  return 'medium';
+}
+
 function partialCacheFinding(rdd: DetectorRddInfo, cachedRatio: number, impactBand: 'warning' | 'info'): Finding {
   const rddName = rdd.name || `RDD ${rdd.id}`;
   const cachedPct = Math.round(cachedRatio * 100);
@@ -527,7 +556,7 @@ function partialCacheFinding(rdd: DetectorRddInfo, cachedRatio: number, impactBa
     type: 'cacheUtilization', variant: 'partialCache', stageId: null,
     rddId: rdd.id, rddName,
     impactBand, metric: 'cachedRatio', value: cachedPct,
-    confidence: 'medium',
+    confidence: cacheSampleConfidence(rdd.numPartitions),
     validationRequired: CACHE_UTILIZATION_VALIDATION,
     memorySize: rdd.memorySize, diskSize: rdd.diskSize,
     numCachedPartitions: rdd.numCachedPartitions, numPartitions: rdd.numPartitions,
@@ -542,7 +571,7 @@ function diskSpilloverFinding(rdd: DetectorRddInfo, diskRatio: number, impactBan
     type: 'cacheUtilization', variant: 'diskSpillover', stageId: null,
     rddId: rdd.id, rddName,
     impactBand, metric: 'diskRatio', value: diskPct,
-    confidence: 'medium',
+    confidence: cacheSampleConfidence(rdd.numPartitions),
     validationRequired: CACHE_UTILIZATION_VALIDATION,
     memorySize: rdd.memorySize, diskSize: rdd.diskSize,
     numCachedPartitions: rdd.numCachedPartitions, numPartitions: rdd.numPartitions,
@@ -1744,7 +1773,8 @@ export const DETECTORS: Detector[] = [
           // wallClock estimate (the common case). Only surfaces on the rare occupancy-sweep miss.
           impactBand: 'warning', metric: 'subtreeOccurrences', value: g.occurrences,
           rootName: g.rootName, subtreeSize: g.subtreeSize, sampleRelation: g.sampleRelation,
-          groupIndex: g.groupIndex, confidence: 'medium',
+          groupIndex: g.groupIndex,
+          confidence: duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, this.thresholds),
           validationRequired: 'Duplicate-subtree matching compares operator names and metric names only, not literal values or expr IDs: confirm the repeated work is real in the Spark SQL plan tab before acting.',
           recommendation: g.isExchangeRoot
             ? `A ${g.subtreeSize}-node subtree rooted at ${pathBasename(g.rootName)} repeats ${g.occurrences}x in this plan${touching}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`

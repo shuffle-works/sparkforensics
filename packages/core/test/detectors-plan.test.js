@@ -37,6 +37,46 @@ describe('duplicatePlanSubtree', () => {
     expect(findings[0].stageIds).toEqual([1]);
   });
 
+  it('confidence is low for a match at the bare minimum subtreeSize and occurrences (old logic hardcoded medium here, the weakest evidence the matcher can produce)', () => {
+    const dup = () => node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]); // subtreeSize 3
+    const planTree = node('Project', [], [dup(), dup()]); // occurrences 2
+    const sql = new Map([[1, makeSqlExec(1, planTree)]]);
+    const findings = analyze(makeApp(), new Map(), [], [], new Map(), sql).filter(b => b.type === 'duplicatePlanSubtree');
+    expect(findings).toHaveLength(1);
+    expect(findings[0].subtreeSize).toBe(3);
+    expect(findings[0].value).toBe(2); // occurrences
+    expect(findings[0].confidence).toBe('low');
+  });
+
+  it('confidence is medium once the match clears the floor but not the high-confidence bar', () => {
+    const dup = () => node('Agg', ['a'], [node('L1'), node('L2'), node('L3')]); // subtreeSize 4
+    const planTree = node('Project', [], [dup(), dup()]); // occurrences 2
+    const sql = new Map([[1, makeSqlExec(1, planTree)]]);
+    const findings = analyze(makeApp(), new Map(), [], [], new Map(), sql).filter(b => b.type === 'duplicatePlanSubtree');
+    expect(findings).toHaveLength(1);
+    expect(findings[0].confidence).toBe('medium');
+  });
+
+  it('confidence rises to high once subtreeSize clears 2x minSubtreeSize, even at the minimum occurrences (old logic hardcoded medium here)', () => {
+    const dup = () => node('Agg', ['a'], [node('L1'), node('L2'), node('L3'), node('L4'), node('L5')]); // subtreeSize 6
+    const planTree = node('Project', [], [dup(), dup()]); // occurrences 2
+    const sql = new Map([[1, makeSqlExec(1, planTree)]]);
+    const findings = analyze(makeApp(), new Map(), [], [], new Map(), sql).filter(b => b.type === 'duplicatePlanSubtree');
+    expect(findings).toHaveLength(1);
+    expect(findings[0].subtreeSize).toBe(6);
+    expect(findings[0].confidence).toBe('high');
+  });
+
+  it('confidence rises to high once occurrences clears minOccurrences+2, even with a small subtree (old logic hardcoded medium here)', () => {
+    const dup = () => node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]); // subtreeSize 3
+    const planTree = node('Project', [], [dup(), dup(), dup(), dup()]); // occurrences 4
+    const sql = new Map([[1, makeSqlExec(1, planTree)]]);
+    const findings = analyze(makeApp(), new Map(), [], [], new Map(), sql).filter(b => b.type === 'duplicatePlanSubtree');
+    expect(findings).toHaveLength(1);
+    expect(findings[0].value).toBe(4); // occurrences
+    expect(findings[0].confidence).toBe('high');
+  });
+
   it('marks an Exchange-rooted repeated subtree as isExchangeRoot, which drives the recommendation text, not the impactBand', () => {
     const dup = () => node('Exchange', ['data size'], [node('Sort', ['b']), node('Sort', ['b'])]);
     const planTree = node('Project', [], [dup(), dup()]);
