@@ -9,5 +9,10 @@ export default defineConfig({
     include: ['test/**/*.test.js', 'test/*.test.ts'],
     globals: true,
     testTimeout: 15000,
+    coverage: {
+      provider: 'v8',
+      reporter: ['lcov', 'text'],
+      include: ['src/**'],
+    },
   },
 });
