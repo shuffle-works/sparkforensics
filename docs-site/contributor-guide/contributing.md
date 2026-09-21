@@ -19,17 +19,30 @@ To run the same linter by hand, use `npm run lint`.
 
 ## Changesets and releases
 
-`packages/cli`, `packages/mcp`, and `packages/server` publish to npm; a PR
-that touches any of them needs a changeset. Run `npx changeset add`, answer
-its prompts, and commit the generated `.changeset/*.md` file. CI's
+A changeset is required for a PR that touches `packages/cli`, `packages/mcp`,
+`packages/server`, or the root site app (`src/`, `index.html`,
+`vite.config.ts`, or the root `package.json`). Run `npx changeset add`,
+answer its prompts, and commit the generated `.changeset/*.md` file. CI's
 `changeset` job (`scripts/check-changeset.sh`) fails the PR otherwise, with
-instructions to fix it.
+instructions to fix it. `docs-site/` and `docs/` are exempt: doc-only changes
+don't need one.
+
+Needing a changeset doesn't mean getting published, though. Only
+`packages/cli`, `packages/mcp`, and `packages/server` publish to npm. The
+root site (`sparkforensics` itself) is `"private": true` and never published;
+its changeset only bumps its `package.json` version and writes a
+`CHANGELOG.md` entry, via `.changeset/config.json`'s `privatePackages.version`
+setting. `@sparkforensics/core` is the other private package but stays out
+of this entirely (`.changeset/config.json`'s `ignore` list): it's vendored
+into cli/mcp by filesystem copy at pack time, not read as a real dependency,
+so versioning it would have no consumer.
 
 A release itself is two merges, not one: merging your feature PR into `main`
 runs `.github/workflows/release.yml`, which opens (or updates) a "Version
 Packages" PR collecting all pending changesets. Nothing publishes yet.
-Merging *that* PR is what actually bumps versions and runs `npm publish` for
-whichever packages had pending changesets.
+Merging *that* PR is what actually bumps versions, writes changelogs, and
+runs `npm publish` for whichever of the three publishable packages had
+pending changesets.
 
 Maintainers: this pipeline depends on the three package names being claimed
 on npmjs.com and Trusted Publishing being registered against this repo (a

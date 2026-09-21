@@ -7,5 +7,6 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["sparkforensics", "@sparkforensics/core"]
+  "ignore": ["@sparkforensics/core"],
+  "privatePackages": { "version": true, "tag": false }
 }
