@@ -91,9 +91,11 @@ Plan Advisor, and Autoscaling Churn, all `region: 'action'` in
   removal event (falling back to `app.endTime` for an executor still alive when
   the log ends) and flags it short-lived if its lifetime is under 2 minutes
   (`thresholds.shortLivedMs`). Warns above 30% short-lived, escalates to
-  critical above 60% (`confidence: 'low'`: these percentages are an
-  unvalidated design-spike estimate, not yet checked against real
-  autoscaling-heavy logs). Returns no finding below 5 total executors (noise
+  critical above 60% (`confidence` scales `low`/`medium`/`high` via
+  `autoscalingChurnConfidence`, off how far the short-lived share sits past
+  `warningPct`/`criticalPct`: these thresholds are still an unvalidated
+  design-spike estimate, not yet checked against real autoscaling-heavy
+  logs). Returns no finding below 5 total executors (noise
   floor) or when `app.endTime` is missing (truncated/still-running log). The
   widget itself is unchanged apart from a finding-driven verdict banner
   (impact dot + `CHRN` tag + recommendation) above its existing add/remove
@@ -190,9 +192,11 @@ Cache Storage all render through the ordinary active/clean paths instead):
   (`numCachedPartitions / numPartitions < 0.90`, `< 0.50` for the warning
   tier) and disk spillover for `MEMORY_AND_DISK*` RDDs
   (`diskSize / (memorySize + diskSize) > 0.15`, `> 0.40` for the warning
-  tier; `DISK_ONLY` RDDs are never flagged). Every finding carries
-  `confidence: 'medium'`, because the ratio is a point-in-time storage snapshot
-  from stage-submission events, not a runtime read-count. The existing RDD
+  tier; `DISK_ONLY` RDDs are never flagged). `confidence` scales `low`/`medium`/`high`
+  via `cacheSampleConfidence(rdd.numPartitions)`, because the ratio is a
+  point-in-time storage snapshot from stage-submission events, not a runtime
+  read-count, and more partitions average that snapshot noise into a more
+  stable ratio. The existing RDD
   table (ported from the legacy `src/widgets/cache-utilization.js` canvas
   widget) still renders unconditionally; flagged rows get an inline `CSTOR`
   tag next to the RDD name, and every flagged RDD's recommendation renders

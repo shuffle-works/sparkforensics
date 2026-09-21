@@ -101,8 +101,10 @@ already-parsed snapshots, with no worker involved.
   consume the `matchStages` pairs, so low match coverage degrades those two
   surfaces without invalidating the aggregate deltas.
 
-`compareRuns` also flags `confidence: 'low'` when the two app names differ (a
-weak signal, not a hard gate). The view lives in `src/view/RunComparison.tsx`
+`compareRuns` also flags `confidence: 'low'` when the two app names differ, or
+independently when matched stage coverage falls below 0.5 (`LOW_COVERAGE_THRESHOLD`;
+either condition alone is enough, both are weak signals, not a hard gate). The view
+lives in `src/view/RunComparison.tsx`
 (the comparison page), `CompareLanding.tsx` (the two-slot Run A / Run B intake
 off the landing), and `PinnedStageDeltas.tsx` (the manual per-stage pinning
 panel fed by `baseStages`/`candStages`).
