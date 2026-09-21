@@ -395,6 +395,14 @@ export function buildComparison(
   );
 }
 
+// matchStages' coverage is a Dice coefficient: (2 * pairs.length) / (baseCount
+// + candCount). Below 0.5, more than half of each run's stages went unpaired,
+// so the stage-level rows (stageSkew, baseStages/candStages) mostly show
+// unrelated work side by side rather than the same stage before/after -- the
+// comparison is dominated by guesswork, not genuine pairing. 0.5 is thus the
+// natural midpoint for "more matched than not," not an arbitrary tuning knob.
+const LOW_COVERAGE_THRESHOLD = 0.5;
+
 export function compareRuns(
   baseline: { label: string; snapshot: SessionSnapshot },
   candidate: { label: string; snapshot: SessionSnapshot },
@@ -405,10 +413,21 @@ export function compareRuns(
   // is the normal way to label an A/B experiment, so a mismatch must not block
   // the (matching-free, name-independent) deltas. Surface it as `low` instead.
   const namesDiffer = namesConflict(baseSnap.app, candSnap.app);
+  // Coverage is the other half of the signal: identical names on two runs that
+  // barely share any stages are just as misleading as differing names on two
+  // runs that match well, so either condition alone drops confidence to `low`.
+  const lowCoverage = match.coverage < LOW_COVERAGE_THRESHOLD;
+  const reason = namesDiffer && lowCoverage
+    ? `Run names differ and only ${(match.coverage * 100).toFixed(0)}% of stages matched, so deltas may compare different work.`
+    : namesDiffer
+    ? 'Run names differ, so deltas may compare different work.'
+    : lowCoverage
+    ? `Only ${(match.coverage * 100).toFixed(0)}% of stages matched between runs, so per-stage rows mostly compare unrelated work.`
+    : null;
   return {
     baselineLabel: baseline.label, candidateLabel: candidate.label,
-    confidence: namesDiffer ? 'low' : 'ok',
-    reason: namesDiffer ? 'Run names differ, so deltas may compare different work.' : null,
+    confidence: namesDiffer || lowCoverage ? 'low' : 'ok',
+    reason,
     matchedCoverage: match.coverage,
     metrics: metricDeltas(baseSnap, candSnap),
     findings: findingsDelta(baseSnap, candSnap),
