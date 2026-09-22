@@ -280,18 +280,15 @@ an "unavailable data" message: the same component, same visual language,
 regardless of where it sits); and, since `skew`/`straggler`/`gc` started
 disclosing their own unvalidated noise-floor thresholds (confidence only,
 per-row, no `evidenceKey` passed), `GcPressure.tsx`'s rows, `Straggler.tsx`'s
-rows, and the shared `StageFindingGroup.tsx` row (adopted by
+rows, `CachingOpportunity.tsx`'s rows (the `cachingOpportunity` detector
+scales `confidence` per finding via `cachingReuseConfidence`, so the badge
+sits next to each row's recommendation rather than as a single caveat below
+the table), and the shared `StageFindingGroup.tsx` row (adopted by
 `Skew.tsx`/`StageShape.tsx`/`TinyTask.tsx`, though today only `skew`
 findings actually carry a `confidence` field).
 
-Two named exceptions:
+One named exception:
 
-- `CachingOpportunity.tsx`, kept exactly as it was before the 2026-09
-  redesign, since it isn't a per-row confidence/evidence signal: the
-  `cachingOpportunity` detector always emits `confidence: 'low'`, a constant
-  across every row, not a per-finding signal, so a single caveat sentence
-  below the table covers it instead of a `RowStatusCluster` repeated
-  identically on every row.
 - `Skew.tsx`/`StageShape.tsx`/`TinyTask.tsx`: their per-row histogram toggle
   (`ExpandToggleButton` + `useExpandableRow`) gates a lazily-fetched duration
   histogram, unrelated to confidence/evidence, so it was untouched by the

@@ -49,7 +49,8 @@ Plan Advisor, and Autoscaling Churn, all `region: 'action'` in
   the scan's `size of files read` metric (`0`/unknown for JDBC). Findings carry
   `executionReuse` (`value` = distinct-execution count), `relation`, `format`,
   `executionIds`, `totalReadBytes`, and a size-aware `recommendation`
-  (`confidence:'low'`, `validationRequired`). Renders nothing when clean (no card
+  (`confidence` scaled `low`/`medium`/`high` via `cachingReuseConfidence` off
+  reuse-execution count, plus `validationRequired`). Renders nothing when clean (no card
   in the DOM). One row per relation: name + format badge, reuse count, `Data
   read` (`formatBytes`, em-dash when unknown), recommendation, sorted by
   `totalReadBytes` then reuse count descending. Rows reveal 6 initially, then up
@@ -82,8 +83,9 @@ Plan Advisor, and Autoscaling Churn, all `region: 'action'` in
   `operator` (`'join'`|`'union'`), `relations` (leaf relations under the
   composite, for display), and `format:'derived'` (a sentinel: composites have
   no scan storage format). They render a `JOIN`/`UNION` operator badge (styled
-  distinct from the format badges) plus a low-confidence marker
-  (`confidence:'low'`, `validationRequired`) in `CachingOpportunity.tsx`.
+  distinct from the format badges) plus a confidence marker
+  (`confidence` scaled via `cachingReuseConfidence`, `validationRequired`) in
+  `CachingOpportunity.tsx`.
 - **Autoscaling Churn** (tag `CHRN`, `AutoscalingChurn.tsx`): app-level
   short-lived-executor detector (DETECTORS entry `autoscalingChurn` in
   `packages/core/src/detectors.ts`; reuses the same `executorsAdded`/`executorsRemoved`
@@ -91,9 +93,11 @@ Plan Advisor, and Autoscaling Churn, all `region: 'action'` in
   removal event (falling back to `app.endTime` for an executor still alive when
   the log ends) and flags it short-lived if its lifetime is under 2 minutes
   (`thresholds.shortLivedMs`). Warns above 30% short-lived, escalates to
-  critical above 60% (`confidence: 'low'`: these percentages are an
-  unvalidated design-spike estimate, not yet checked against real
-  autoscaling-heavy logs). Returns no finding below 5 total executors (noise
+  critical above 60% (`confidence` scales `low`/`medium`/`high` via
+  `autoscalingChurnConfidence`, off how far the short-lived share sits past
+  `warningPct`/`criticalPct`: these thresholds are still an unvalidated
+  design-spike estimate, not yet checked against real autoscaling-heavy
+  logs). Returns no finding below 5 total executors (noise
   floor) or when `app.endTime` is missing (truncated/still-running log). The
   widget itself is unchanged apart from a finding-driven verdict banner
   (impact dot + `CHRN` tag + recommendation) above its existing add/remove
@@ -172,7 +176,9 @@ Cache Storage all render through the ordinary active/clean paths instead):
   run-aggregates sweep vs. peak-cores × wall-clock), per-executor memory bands
   (peak heap vs. allocated, gated on `spark.eventLog.logStageExecutorMetrics`:
   a distinct `dataUnavailable` finding renders when that config was off), and
-  an unverified memory-waste model (`confidence:'low'`, a 1.5× buffer).
+  an unverified memory-waste model (`confidence` scales `low`/`medium`/`high`
+  via `memoryWasteConfidence`, off how far the wasted/used ratio sits past
+  the 1.5× buffer).
   The driver-memory half of the original spec is dropped: the worker only
   extracts *allocated* `spark.driver.memory`, never a driver actual-usage
   metric, so there is nothing to band against. The separate `utilization`
@@ -190,9 +196,11 @@ Cache Storage all render through the ordinary active/clean paths instead):
   (`numCachedPartitions / numPartitions < 0.90`, `< 0.50` for the warning
   tier) and disk spillover for `MEMORY_AND_DISK*` RDDs
   (`diskSize / (memorySize + diskSize) > 0.15`, `> 0.40` for the warning
-  tier; `DISK_ONLY` RDDs are never flagged). Every finding carries
-  `confidence: 'medium'`, because the ratio is a point-in-time storage snapshot
-  from stage-submission events, not a runtime read-count. The existing RDD
+  tier; `DISK_ONLY` RDDs are never flagged). `confidence` scales `low`/`medium`/`high`
+  via `cacheSampleConfidence(rdd.numPartitions)`, because the ratio is a
+  point-in-time storage snapshot from stage-submission events, not a runtime
+  read-count, and more partitions average that snapshot noise into a more
+  stable ratio. The existing RDD
   table (ported from the legacy `src/widgets/cache-utilization.js` canvas
   widget) still renders unconditionally; flagged rows get an inline `CSTOR`
   tag next to the RDD name, and every flagged RDD's recommendation renders
@@ -206,8 +214,11 @@ Cache Storage all render through the ordinary active/clean paths instead):
   `packages/core/src/core-locality-ratio.ts`). `NO_PREF` stays in the denominator only,
   since it's what shuffle-read stages legitimately report with no locality
   problem. Below 50 total tasks or below a 15% non-local ratio: no finding;
-  15%-35%: warning; >= 35%: critical (`confidence:'low'`, unvalidated
-  design-spike thresholds, same convention as the memory-waste model above).
+  15%-35%: warning; >= 35%: critical, still unvalidated design-spike
+  thresholds (`confidence` scales `low`/`medium`/`high` via
+  `coreLocalityConfidence`, off whichever is weaker of the non-local ratio
+  and the sampled task count, the same evidence-strength convention as the
+  memory-waste model above).
   The widget's always-rendered stacked-area chart (`packages/core/src/core-usage-locality.ts`)
   is unaffected. The finding only adds a threshold/impact-band section above it, a
   per-stage non-local breakdown below it (shown whenever any non-local tasks
