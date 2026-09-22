@@ -117,6 +117,16 @@ contributor should read; `docs/` stays flat internal engineering records
   the resolved `planTree` with lenient regex on each node's `detail`: silently
   omit unparseable fragments, never surface an error. (The old regex
   `plan-extractor.js` over `physicalPlanDescription` was removed.)
+- Two known stale-text bugs found auditing docs against source (2026-09,
+  user-docs rewrite), not yet fixed: the SHS-error recovery text in
+  `src/view/DropZone.tsx` links a "Local-server setup" label to
+  `docsUrl('#intro')`, which resolves to the vendored Spark tuning
+  reference's general intro page, not any server-setup content; and
+  `packages/mcp/bin/sparkforensics-mcp.mjs`'s `--help` usage string says
+  "five tools" and lists only 5, while `createMcpServer` in
+  `packages/core/src/mcp-server-factory.ts` registers 8 (also
+  `get_finding_documentation`, `get_reference_doc`, `list_runs`). Check
+  before trusting either as documentation of what the other surface says.
 
 ## Key documents
 

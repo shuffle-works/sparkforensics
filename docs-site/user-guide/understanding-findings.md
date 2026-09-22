@@ -3,10 +3,12 @@
 Every flagged problem carries a short ALL-CAPS tag. This page has one entry
 per tag: what it means, and what to do about it.
 
-A few tags share their in-app "Reference panel" background reading with
-another tag, because the underlying Spark-tuning material overlaps: `SFAIL`
-with `FAIL`, `PART` with `SHFL`, `SPEC` with `STRAG`, and `CACHE`/`LOCAL`
-with `UTIL`.
+Turn on [Advanced view](./getting-started#advanced-view) in the dashboard to
+see, per finding, the confidence level and a link to the same background
+reading collected here, opened in an in-app "Reference" panel next to the
+board. A few tags share that reading with another tag, because the
+underlying Spark-tuning material overlaps: `SFAIL` with `FAIL`, `PART` with
+`SHFL`, `SPEC` with `STRAG`, and `CACHE`/`LOCAL` with `UTIL`.
 
 ## Per-stage
 
