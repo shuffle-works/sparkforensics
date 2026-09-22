@@ -186,6 +186,63 @@ html {
   overflow-x: hidden;
 }
 
+/* Citation chips: footnote markers rendered as small rounded chips.
+   Hover/focus/click (wired in theme/index.ts + citation-chips.ts) pop up
+   the citation's title and link read live from the page's own
+   `<section class="footnotes">` list. */
+sup.footnote-ref {
+  vertical-align: baseline;
+}
+
+.citation-chip {
+  position: relative;
+  top: -0.3em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4em;
+  height: 1.4em;
+  padding: 0 0.3em;
+  margin: 0 1px;
+  border-radius: 999px;
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+  font-family: var(--vp-font-family-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.citation-chip:hover,
+.citation-chip:focus-visible,
+.citation-chip[aria-expanded='true'] {
+  background: var(--vp-c-brand-1);
+  color: var(--vp-button-brand-text);
+  outline: none;
+}
+
+.citation-popover {
+  position: fixed;
+  z-index: 100;
+  max-width: 320px;
+  padding: 0.5em 0.75em;
+  border: 1px solid var(--vp-c-border);
+  border-radius: var(--vp-radius);
+  background: var(--vp-c-bg-elv);
+  color: var(--vp-c-text-1);
+  font-family: var(--vp-font-family-base);
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.citation-popover a {
+  color: var(--vp-c-brand-1);
+  text-decoration: underline;
+}
+
 /* Tuning-reference diagrams ship a light and a dark SVG. `.dark` here is the
    same class VitePress's own appearance toggle flips (see theme/index.ts),
    so this reacts to the in-page switch, unlike a <picture>/prefers-color-

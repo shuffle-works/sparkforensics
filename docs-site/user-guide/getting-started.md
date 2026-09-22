@@ -1,7 +1,8 @@
 # Getting started
 
 SparkForensics reads a Spark History Server event log and turns it into a
-dashboard of flagged bottlenecks. No server or account required.
+dashboard of flagged bottlenecks. No install and no account: open the app in
+a browser and drop a log in.
 
 ## Load a run
 
@@ -9,14 +10,25 @@ Drop a log file onto the landing page, or click **Choose file** to pick one.
 Parsing runs in a background worker, off the browser's main thread, so a
 multi-hundred-megabyte event stream doesn't freeze the tab.
 
+No log of your own yet? Click **Try a sample run** on the landing page to
+load a bundled example run and see a populated dashboard right away.
+
 The app takes a newline-delimited JSON event log (one JSON event per line,
 the format Spark writes to `spark.eventLog.dir`), either plain or
 gzip/Zstandard/LZ4/Snappy-compressed.
 
-The same landing page has two other ways in: **Choose rolling-log folder**
-for an `eventlog_v2_*` rolling directory, and **Fetch from Spark History
-Server** to pull an application from a reachable History Server
-(local-server mode only).
+Click **Other sources** on the landing page for two more ways in:
+
+- **Choose rolling-log folder**, for an `eventlog_v2_*` rolling directory.
+  Drop the folder or point the picker at it; the app reassembles its parts
+  in order before parsing.
+- **Fetch from Spark History Server**, to pull an application straight from
+  a reachable History Server. This needs **local-server mode** (see below)
+  and an application ID in one of the forms Spark itself uses:
+  `application_<timestamp>_<id>`, `local-<timestamp>`, `app-<id>`,
+  `spark-<id>`, or `driver-<id>`. If the fetch fails, the panel names the
+  problem (server unreachable, application not found, local server not
+  running, and so on) and suggests what to try next.
 
 Can't reach the History Server directly (it's only reachable through an SSH
 bastion)? See [Alternative ways to get the logs](./alternative-log-retrieval).
@@ -28,6 +40,24 @@ yourself and drop the extracted file in. It needs no further decompressing.
 
 Files you have already loaded stay listed under **Recent files** on the
 landing page.
+
+### Local-server mode
+
+The plain browser app can't fetch from a History Server itself: the
+browser's CORS policy blocks a cross-origin request like that, and there's
+no server on the other end to proxy it. Local-server mode adds that server.
+Run it with:
+
+```sh
+npx sparkforensics-server
+```
+
+It listens on `http://127.0.0.1:4173` by default and binds to localhost
+only. Open that URL instead of the static build, and the **Fetch from Spark
+History Server** panel works because requests now go server-to-server. Full
+setup and its port/environment-variable overrides are in the [project
+README](https://github.com/shuffle-works/sparkforensics#readme), which also
+covers what changes for a static (no-server) deploy.
 
 ## Reading the dashboard
 
@@ -50,10 +80,15 @@ Below it, two tabs split the rest of the board:
    once; clicking the summary row expands its full list, and clicking any
    single row or widget jumps straight to that finding. Below the impact-band
    groups, memory and core-usage utilization always show, even on a clean
-   run, and widgets that found nothing fold away into a "Clean checks"
+   run. Widgets that found nothing fold away into a "Clean checks"
    disclosure. This is the tab you land on.
 2. **Full app report**: the wall-clock and executor timelines, the stage
    table, and the reference-only cards.
+
+Click a finding's documentation link (or the topbar's **Docs** button) to
+open the reference material in a slide-in panel beside the dashboard: the
+dashboard stays visible and interactive, so you can check a metric against
+the reference without losing your place.
 
 ### Advanced view
 
@@ -62,6 +97,20 @@ each widget to the finding itself and what to do about it. Turn it on to also
 show confidence levels, supporting evidence, and documentation links for each
 finding, plus a few extra table columns. Your choice is remembered across
 runs.
+
+### The rest of the topbar
+
+Once a run is loaded, the topbar also carries a few more controls.
+**New analysis** goes back to the landing page to load another run.
+**Plan graph** opens an interactive node-and-edge view of the run's SQL
+execution plan, filterable down to I/O operators (scan, exchange), a
+broader "basic" set, or every operator. **Export evidence** downloads the
+current run's findings as a portable Markdown or JSON report, the same
+shape the CLI and MCP tools produce; turn on **Redact identifiers** first if
+the report is headed outside the environment that produced it, since that
+pseudonymizes the app id and any host/IP tokens. **Keyboard shortcuts**
+(press `?` from anywhere) lists every shortcut. Rounding it out: a **Docs**
+link and a theme toggle.
 
 ## Compare two runs
 
@@ -106,3 +155,6 @@ Running in Airflow instead of a plain CI pipeline? See
 [sparkforensics-operator](https://github.com/shuffle-works/sparkforensics-operator),
 an Airflow operator that wraps the CLI and acts on the result after each
 Spark job, so you don't have to wire up the call yourself.
+
+Want an AI assistant to diagnose a run directly, without the dashboard or a
+CI gate? See [MCP tools reference](./mcp-tools).

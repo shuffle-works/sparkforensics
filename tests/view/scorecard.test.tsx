@@ -29,6 +29,12 @@ test('explains what a measured Efficiency percentage includes', () => {
   expect(screen.getByTestId('kpi-efficiency')).toHaveTextContent(/Ran 1\.0s · 59\.0s idle\/gap time/);
 });
 
+test('spells out zero stage activity instead of the "no measurable value" dash, so a run with no stages does not look like broken data', () => {
+  render(<Scorecard appModel={makeAppModel({ stages: new Map() })} catalog={[]} />);
+  expect(screen.getByTestId('kpi-wall-clock')).toHaveTextContent('No stage activity recorded');
+  expect(screen.getByTestId('kpi-efficiency')).toHaveTextContent(/No stage activity recorded · 1m 0s idle\/gap time/);
+});
+
 test.each([
   [{ startTime: 0 }],
   [{ startTime: 10, endTime: 10 }],

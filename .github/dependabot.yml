@@ -1,0 +1,23 @@
+version: 2
+
+updates:
+  # Root npm workspace: covers the root package.json plus every hoisted
+  # workspace member (packages/core, packages/cli, packages/mcp, and
+  # packages/server), all sharing the one root package-lock.json that CI
+  # actually reads (see ci.yml/release.yml). packages/server has no lockfile
+  # of its own to scope a separate entry to.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "DBOT"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "DBOT"

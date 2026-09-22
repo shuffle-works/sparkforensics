@@ -36,16 +36,19 @@ findings, built per detector *type* (`Object.keys(REGISTRY)`). Full app
 report stays structural-only (see "ReferenceSection" below).
 
 Tags carry their own docs links; there is no separate legend widget.
-`TagBadge` (`src/view/ImpactBadge.tsx`) resolves its own tooltip, and when
-its type resolves a single known documentation anchor (`docAnchorForType`,
-`src/view/finding-tag-help.ts`) it renders as a link into the docs panel. It
-also always renders a second icon link (`findingGuideUrl`,
-`packages/core/src/docs-site-config.ts`) to that tag's entry in
-`docs-site/user-guide/understanding-findings.md`, opened as a plain new-tab
-navigation rather than the in-app panel. `TagBadge`'s `plainBadge` prop
-suppresses both links together; a Findings-tab recommendation row is the one
-place that never sets it (see below), since its badge cell isn't nested
-inside a button.
+`TagBadge` (`src/view/ImpactBadge.tsx`) resolves its own tooltip. When its
+type resolves a single known documentation anchor (`docAnchorForType`,
+`src/view/finding-tag-help.ts`), the pill itself links into the docs panel,
+and (density `advanced` only) a second icon link opens that tag's entry in
+`docs-site/user-guide/understanding-findings.md` (`findingGuideUrl`,
+`packages/core/src/docs-site-config.ts`) as a plain new-tab navigation. When
+a type has no vendor-doc anchor (e.g. `incompleteRun`), the pill links
+straight to that same guide entry instead of rendering as inert text, and
+the second icon link is skipped as redundant. Either way, a linked pill gets
+a visible dotted underline, not just a hover tooltip. `TagBadge`'s
+`plainBadge` prop suppresses both links together; a Findings-tab
+recommendation row is the one place that never sets it (see below), since
+its badge cell isn't nested inside a button.
 
 ### Findings tab
 

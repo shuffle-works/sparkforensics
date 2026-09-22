@@ -103,10 +103,30 @@ contributor should read; `docs/` stays flat internal engineering records
   unchanged. Finding type → widget component mapping lives in
   `src/view/detector-registry.tsx`'s `REGISTRY`, not a `render:` field on the
   detector entry.
+- VitePress installs its own `window`-level, capture-phase click listener
+  (`node_modules/vitepress/dist/client/app/router.js`) that intercepts clicks
+  on any `<a href="#...">` pointing at the current page and scrolls to the
+  target itself, before a theme-added click handler on that same element ever
+  runs: calling `preventDefault()` there is too late to stop it. An
+  interactive control built over existing in-page anchors (e.g. the
+  `docs-site/.vitepress/theme/citation-chips.ts` footnote-marker popovers)
+  must drop the element's `href` (restoring `role`/`tabindex`/keyboard
+  handling by hand) to keep this interceptor from treating it as a navigable
+  link at all.
 - Plan summary is best-effort: `summarizePlanTree` (`src/plan-summary.js`) walks
   the resolved `planTree` with lenient regex on each node's `detail`: silently
   omit unparseable fragments, never surface an error. (The old regex
   `plan-extractor.js` over `physicalPlanDescription` was removed.)
+- Two known stale-text bugs found auditing docs against source (2026-09,
+  user-docs rewrite), not yet fixed: the SHS-error recovery text in
+  `src/view/DropZone.tsx` links a "Local-server setup" label to
+  `docsUrl('#intro')`, which resolves to the vendored Spark tuning
+  reference's general intro page, not any server-setup content; and
+  `packages/mcp/bin/sparkforensics-mcp.mjs`'s `--help` usage string says
+  "five tools" and lists only 5, while `createMcpServer` in
+  `packages/core/src/mcp-server-factory.ts` registers 8 (also
+  `get_finding_documentation`, `get_reference_doc`, `list_runs`). Check
+  before trusting either as documentation of what the other surface says.
 
 ## Key documents
 
@@ -170,6 +190,15 @@ Before adding a new widget test file, or a new per-widget/per-detector test:
   `../spark-log-examples/` (native `.zstd` files, drop in as-is). Includes
   several `run-compare-*-baseline-*`/`run-compare-*-candidate-*` pairs for the
   two-run comparison mode.
+- `dev/log-corpus` is a git submodule (`spark-event-corpus-data`); it's empty
+  until `git submodule update --init dev/log-corpus`. The landing page's "Try
+  a sample run" button (`src/view/DropZone.tsx`) fetches a bundled,
+  gzip-compressed copy of one of its logs from `public/sample-runs/`: it was
+  picked by running `packages/cli/bin/sparkforensics-analyze.mjs --format
+  json` over every corpus candidate and taking the one with the most
+  findings, not hand-picked. Re-run that scan (or re-run it against new
+  corpus commits) before swapping the bundled sample; don't just eyeball a
+  log's name.
 - Loading a file under playwright: the DropZone prefers `showOpenFilePicker`
   (native dialog, undrivable on localhost Chromium). Force the hidden-input
   fallback with `await page.evaluate(() => delete window.showOpenFilePicker)`
