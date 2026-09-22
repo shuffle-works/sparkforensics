@@ -95,6 +95,14 @@ function ActiveIdleBar({ active, total }: { active: number; total: number }) {
   );
 }
 
+// `formatDuration(0)` reads as '—' (its shared "no measurable value" glyph),
+// which for stage-active time on a real run looks like broken/missing data
+// rather than "nothing ran". Spell out the zero case instead of chaining
+// into that glyph.
+function formatRanLabel(activeMs: number): string {
+  return activeMs > 0 ? `Ran ${formatDuration(activeMs)}` : 'No stage activity recorded';
+}
+
 /** With no complete application timing interval, wall-clock, efficiency, and
  * wastage are all unavailable at once (each derives from
  * `hasCompleteApplicationInterval`), so one amber notice replaces the row
@@ -144,7 +152,7 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
           value={total > 0 ? formatDuration(total) : '—'}
           meta={
             <>
-              Ran {formatDuration(wc.stagesActive)}
+              {formatRanLabel(wc.stagesActive)}
               {coldStart ? ` · ${coldStart.value}s cold start` : ''}
             </>
           }
@@ -159,7 +167,7 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
             efficiency == null
               ? 'This run has no complete application timing interval.'
               : total > wc.stagesActive
-                ? `Ran ${formatDuration(wc.stagesActive)} · ${formatDuration(total - wc.stagesActive)} idle/gap time`
+                ? `${formatRanLabel(wc.stagesActive)} · ${formatDuration(total - wc.stagesActive)} idle/gap time`
                 : 'executors active the whole run'
           }
           bar={efficiency != null ? <ProportionBar pct={efficiency} flag={effFlag} label={`Efficiency ${efficiency}%`} /> : undefined}

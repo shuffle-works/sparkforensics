@@ -2504,7 +2504,7 @@ describe('runParseFiles: rolling directory (multi-file, ordered)', () => {
       createState(),
       { emit: m => emitted.push(m) },
     );
-    expect(emitted).toContainEqual({ type: 'error', message: 'Not a Spark event log: SparkListenerApplicationStart not found.' });
+    expect(emitted).toContainEqual({ type: 'error', message: 'Not a Spark event log: no application-start event found. Choose a Spark event log file, or check the docs for supported formats.' });
     expect(emitted.some(m => m.type === 'done')).toBe(false);
   });
 });
