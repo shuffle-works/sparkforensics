@@ -39,6 +39,7 @@ beforeEach(() => {
   vi.mocked(recentFiles.list).mockResolvedValue([]);
   store.getState().setError(null);
   store.getState().setShsParsing(false);
+  vi.unstubAllGlobals();
 });
 
 /** jsdom's file input has no real filesystem behind it, so multi-file
@@ -76,6 +77,40 @@ test('setting files on the hidden file input calls startLoad', async () => {
 
   expect(startLoad).toHaveBeenCalledTimes(1);
   expect(startLoad.mock.calls[0][0]).toBe(file);
+});
+
+test('clicking "Try a sample run" fetches the bundled sample and calls startLoad with it', async () => {
+  const blob = new Blob(['sample bytes']);
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, blob: async () => blob }) as unknown as Response));
+  renderDropZone();
+  const user = userEvent.setup();
+
+  await user.click(screen.getByRole('button', { name: 'Try a sample run' }));
+
+  expect(fetch).toHaveBeenCalledWith('sample-runs/sample-run.ndjson.gz');
+  await waitFor(() => expect(startLoad).toHaveBeenCalledTimes(1));
+  const loadedFile = startLoad.mock.calls[0][0] as File;
+  expect(loadedFile.name).toBe('sample-run.ndjson.gz');
+});
+
+test('a failed sample-run fetch surfaces a recoverable store error instead of throwing', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404 }) as unknown as Response));
+  renderDropZone();
+  const user = userEvent.setup();
+
+  await user.click(screen.getByRole('button', { name: 'Try a sample run' }));
+
+  await waitFor(() => expect(store.getState().errorMessage).toMatch(/could not load the sample run/i));
+  expect(startLoad).not.toHaveBeenCalled();
+});
+
+test('hides "Try a sample run" in compact mode (the two-run comparison slots)', () => {
+  render(
+    <DocsProvider>
+      <DropZone compact />
+    </DocsProvider>,
+  );
+  expect(screen.queryByRole('button', { name: 'Try a sample run' })).not.toBeInTheDocument();
 });
 
 test('keeps landing links and History Server inputs comfortable on touch devices', async () => {

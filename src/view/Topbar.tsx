@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Ellipsis, Keyboard, Moon, Sun, Workflow } from 'lucide-react';
+import { Ellipsis, FileText, Home, Keyboard, Moon, Sun, Workflow } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -22,6 +22,12 @@ import { stageIdsForSqlExec } from '@sparkforensics/core/detectors.ts';
 import { cn } from '@/lib/utils';
 import type { RecentFileEntry } from '@/view/RecentList';
 import type { AppModel, Finding, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
+
+// Relative, not `/docs/`: the app itself can be published under a subpath
+// (e.g. the hub's `/sparkforensics/`), and a leading slash would resolve
+// against the domain root instead of wherever this app actually loaded from.
+// Mirrors CompareLanding.tsx's DOCS_SITE_ROOT.
+const DOCS_SITE_ROOT = 'docs/';
 
 function verdictLabel(worst: ImpactBand, count: number): string {
   if (worst === 'warning') return `${count} warning${count === 1 ? '' : 's'}`;
@@ -165,6 +171,18 @@ export function Topbar({
           this is its one page heading. */}
       {sectionControls ? null : <h1 className="sr-only">SparkForensics</h1>}
       <div className="flex min-w-0 flex-1 items-center gap-3">
+        {!sectionControls && !exportMode ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="tap-target-comfortable shrink-0"
+            aria-label="New analysis"
+            title="Start a new analysis"
+            onClick={onLoadNew}
+          >
+            <Home aria-hidden="true" />
+          </Button>
+        ) : null}
         {exportMode ? (
           <div className="flex min-w-0 shrink flex-col items-start justify-center gap-0 py-1">
             <span className="min-w-0 truncate font-heading text-sm font-semibold">{name}</span>
@@ -230,6 +248,17 @@ export function Topbar({
             variant="ghost"
             size="icon"
             className="tap-target-comfortable"
+            aria-label="Docs"
+            title="Read the docs"
+            nativeButton={false}
+            render={<a href={DOCS_SITE_ROOT} target="_blank" rel="noopener noreferrer" />}
+          >
+            <FileText aria-hidden="true" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="tap-target-comfortable"
             aria-label="Keyboard shortcuts"
             title="Keyboard shortcuts (?)"
             onClick={() => setShortcutsOpen(true)}
@@ -280,6 +309,12 @@ export function Topbar({
               </DropdownMenuItem>
             ) : null}
             {!sectionControls ? <WidgetDensityMenuItem /> : null}
+            <DropdownMenuItem
+              nativeButton={false}
+              render={<a href={DOCS_SITE_ROOT} target="_blank" rel="noopener noreferrer" />}
+            >
+              Docs
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setShortcutsOpen(true)}>Keyboard shortcuts</DropdownMenuItem>
             <DropdownMenuItem onClick={toggle}>Toggle theme</DropdownMenuItem>
           </DropdownMenuContent>

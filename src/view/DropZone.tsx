@@ -14,6 +14,14 @@ import { isShsRequestValid, validateShsRequest } from '@sparkforensics/core/shs-
 
 type ShsField = 'baseUrl' | 'appId' | 'attemptId';
 
+// A real, gzip-compressed event log (`dev/log-corpus`'s pairwise-01.ndjson,
+// picked by actually running the analyzer over every corpus candidate and
+// taking the one with the most findings: 10, across skew/tiny-tasks/plan/
+// config/utilization) so a first-time visitor with no log of their own can
+// still see a populated board. Relative, not `/sample-runs/...`: same
+// subpath-safety reasoning as docsUrl()/DOCS_SITE_ROOT elsewhere in this app.
+const SAMPLE_RUN_URL = 'sample-runs/sample-run.ndjson.gz';
+
 const SHS_RECOVERY_MESSAGES = {
   'local-server-unavailable': 'The local server is unavailable. Start local-server mode, then try again.',
   'upstream-unreachable': 'The History Server could not be reached. Check the address and try again.',
@@ -69,6 +77,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
   const [touched, setTouched] = useState<Record<ShsField, boolean>>({ baseUrl: false, appId: false, attemptId: false });
   const [shsError, setShsError] = useState<keyof typeof SHS_RECOVERY_MESSAGES | null>(null);
   const shsAlertRef = useRef<HTMLParagraphElement | null>(null);
+  const [sampleLoading, setSampleLoading] = useState(false);
 
   const shsValidation = validateShsRequest({ baseUrl, appId, attemptId });
   const isShsPanelOpen = shsOpen || shsParsing;
@@ -90,6 +99,26 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
   useEffect(() => {
     refreshEntries();
   }, [refreshEntries]);
+
+  // Fetches the bundled sample event log and runs it through the exact same
+  // intake path as a locally picked file (onPick for a compare slot, else
+  // startLoad), so downstream code has no idea the bytes came from the
+  // network instead of the user's disk.
+  const loadSampleRun = useCallback(async () => {
+    setSampleLoading(true);
+    try {
+      const res = await fetch(SAMPLE_RUN_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const file = new File([blob], 'sample-run.ndjson.gz', { type: 'application/gzip' });
+      if (onPick) onPick({ kind: 'file', id: recentFiles.entryId(file.name, file.size, file.lastModified), label: file.name, file });
+      else startLoad(file);
+    } catch {
+      store.getState().setError('Could not load the sample run. Check your connection and try again, or choose a file below.');
+    } finally {
+      setSampleLoading(false);
+    }
+  }, [startLoad, onPick]);
 
   const openFilePicker = useCallback(async () => {
     if (recentFiles.isSupported()) {
@@ -398,6 +427,21 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
         <Button type="button" className="tap-target-comfortable" onClick={() => void openFilePicker()}>
           Choose file
         </Button>
+        {/* No log of your own yet? A real, populated run so the board isn't
+            the first thing a first-time visitor has to take on faith. Hidden
+            in compact mode (the two-run comparison slots): those need the
+            user's own baseline/candidate pair, not a canned single run. */}
+        {!compact ? (
+          <Button
+            type="button"
+            variant="outline"
+            className="tap-target-comfortable"
+            onClick={() => void loadSampleRun()}
+            disabled={sampleLoading}
+          >
+            {sampleLoading ? 'Loading sample…' : 'Try a sample run'}
+          </Button>
+        ) : null}
       </div>
 
       <input
