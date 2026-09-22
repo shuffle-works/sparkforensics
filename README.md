@@ -132,12 +132,12 @@ screen.
 
 History Server fetching requires local-server mode, a History Server
 reachable from the machine running that server, and a supported base
-application ID: `application_<timestamp>_<id>`, `local-<timestamp>`, or
-`app-<identifier>`. Enter an optional attempt separately from the base
-application ID. The local server sends no credentials and follows no
-upstream redirects. Its recoverable errors intentionally omit upstream
-response details; edit the fields or choose a local event-log file to
-recover.
+application ID (see [Getting started](docs-site/user-guide/getting-started.md#load-a-run)
+for the full list of accepted forms). Enter an optional attempt separately
+from the base application ID. The local server sends no credentials and
+follows no upstream redirects. Its recoverable errors intentionally omit
+upstream response details; edit the fields or choose a local event-log file
+to recover.
 
 During development from a checkout, `npm run local-server` does the same
 thing without publishing or installing the package.
