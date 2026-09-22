@@ -41,15 +41,27 @@ const theme: Theme = {
 
     if (!inBrowser) return; // this hook also runs during SSR's data pass
 
-    // Wire citation chips on first mount and after every client-side route
-    // change (each page renders its own footnotes list from scratch). In
-    // MPA export mode (see docs-site/.vitepress/config.ts) there is no
-    // client router, so only the initial call ever runs, which is correct
-    // since every page load is a real navigation there.
-    nextTick(() => setupCitationChips());
+    // Wire citation chips after every client-side route change (each page
+    // renders its own footnotes list from scratch).
     router.onAfterRouteChange = () => {
       nextTick(() => setupCitationChips());
     };
+
+    // The very first page load doesn't go through that same hook usefully:
+    // VitePress's client entry calls `onAfterRouteChange` for the initial
+    // route too, but strictly before handing off to `app.mount()`, so at
+    // that point there's no real DOM yet for `setupCitationChips()` to find
+    // (confirmed live: a direct load or hard refresh of a tuning-reference
+    // page left every footnote marker unwired). Wrap `app.mount` itself so
+    // the chip pass also runs once mounting actually lands content in the
+    // page, covering a bookmark, search hit, or refresh - not just in-app
+    // navigation.
+    const originalMount = app.mount.bind(app);
+    app.mount = ((...args: Parameters<typeof app.mount>) => {
+      const result = originalMount(...args);
+      nextTick(() => setupCitationChips());
+      return result;
+    }) as typeof app.mount;
 
     // useData() injects from the app's Vue context; outside a component
     // setup() function (which enhanceApp is) that requires runWithContext.
