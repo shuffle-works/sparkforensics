@@ -112,11 +112,32 @@ panel fed by `baseStages`/`candStages`).
 ## History Server intake and recovery
 
 `DropZone` keeps the History Server disclosure, Base URL, Application ID,
-optional Attempt ID, validation/touched state, and recoverable SHS error in
-mounted React state rather than Zustand. The local browser-first path is still
-the default: **Choose file** loads a single event log, while **Choose
-rolling-log folder** accepts only an `eventlog_v2_*` directory and directs a
-rejected folder back to the file picker.
+optional Attempt ID, validation/touched state, recoverable SHS error, and
+local-server reachability in mounted React state rather than Zustand. The
+local browser-first path is still the default: **Choose file** loads a single
+event log, while **Choose rolling-log folder** accepts only an
+`eventlog_v2_*` directory and directs a rejected folder back to the file
+picker.
+
+The three text fields also mirror to `window.localStorage`
+(`shuffle-works-shs-base-url`/`-app-id`/`-attempt-id`), read back as each
+`useState`'s initializer, so a returning visitor's values survive a reload;
+storage access is wrapped in try/catch and silently ignored when unavailable,
+matching `store.ts`'s `initialTheme`/`initialWidgetDensity` pattern. Both this
+disclosure's toggle and the **Other sources** toggle show a chevron
+(`ChevronDownIcon`/`ChevronUpIcon`) that flips with `aria-expanded`, so the
+open/closed state has a visual signal beyond the attribute.
+
+On mount (skipped in `compact` mode), `DropZone` probes reachability with an
+empty, short-timeout `fetch('/shs-proxy')`: a 400 means `validateShsRequest`
+(`packages/core/src/proxy.js`) rejected the empty request synchronously,
+which only happens when a local server is actually routing that path, so it
+flips `shsReachable` to `true`. A network error, a 404 (static deploy, no
+such route), or a probe still in flight all leave `shsReachable` at its
+default `false`, so nothing changes on screen after paint unless the server
+is confirmed present. When `shsReachable` is `true`, the landing page shows a
+neutral callout above the **Other sources** disclosure pointing the user at
+it; the disclosure itself doesn't move or auto-expand.
 
 The collapsed **Fetch from Spark History Server** disclosure requires
 local-server mode, a reachable History Server, and a supported base application
