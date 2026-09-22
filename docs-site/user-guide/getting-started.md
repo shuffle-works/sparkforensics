@@ -63,6 +63,10 @@ show confidence levels, supporting evidence, and documentation links for each
 finding, plus a few extra table columns. Your choice is remembered across
 runs.
 
+The topbar also carries a **New analysis** button (back to the landing page
+to load another run) and a **Docs** link, both available once a run is
+loaded.
+
 ## Compare two runs
 
 To compare a baseline run against a candidate, say to check whether a tuning
