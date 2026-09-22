@@ -15,8 +15,11 @@ export default defineConfig({
       include: ['src/**'],
       // src/vendor/** is third-party decompressor code (fflate, fzstd) kept
       // as plain JS per AGENTS.md; exclude it the same way the root config
-      // does so it isn't counted as uncovered source.
-      exclude: ['src/vendor/**'],
+      // does so it isn't counted as uncovered source. src/docs-content/**
+      // is markdown reference content bundled for the MCP doc tools, not
+      // code; vitest 5's coverage-v8 now tries to parse every include-glob
+      // match as JS to remap uncovered files and errors noisily on it.
+      exclude: ['src/vendor/**', 'src/docs-content/**'],
     },
   },
 });
