@@ -1,7 +1,8 @@
 import DefaultTheme from 'vitepress/theme';
 import { inBrowser, useData, type Theme } from 'vitepress';
-import { watch } from 'vue';
+import { nextTick, watch } from 'vue';
 import TuningLanding from './TuningLanding.vue';
+import { setupCitationChips } from './citation-chips';
 import './custom.css';
 
 // Shared theme contract used by every surface in the product family (the
@@ -35,10 +36,32 @@ function writeSharedTheme(isDark: boolean): void {
 
 const theme: Theme = {
   extends: DefaultTheme,
-  enhanceApp({ app }) {
+  enhanceApp({ app, router }) {
     app.component('TuningLanding', TuningLanding);
 
     if (!inBrowser) return; // this hook also runs during SSR's data pass
+
+    // Wire citation chips after every client-side route change (each page
+    // renders its own footnotes list from scratch).
+    router.onAfterRouteChange = () => {
+      nextTick(() => setupCitationChips());
+    };
+
+    // The very first page load doesn't go through that same hook usefully:
+    // VitePress's client entry calls `onAfterRouteChange` for the initial
+    // route too, but strictly before handing off to `app.mount()`, so at
+    // that point there's no real DOM yet for `setupCitationChips()` to find
+    // (confirmed live: a direct load or hard refresh of a tuning-reference
+    // page left every footnote marker unwired). Wrap `app.mount` itself so
+    // the chip pass also runs once mounting actually lands content in the
+    // page, covering a bookmark, search hit, or refresh - not just in-app
+    // navigation.
+    const originalMount = app.mount.bind(app);
+    app.mount = ((...args: Parameters<typeof app.mount>) => {
+      const result = originalMount(...args);
+      nextTick(() => setupCitationChips());
+      return result;
+    }) as typeof app.mount;
 
     // useData() injects from the app's Vue context; outside a component
     // setup() function (which enhanceApp is) that requires runWithContext.

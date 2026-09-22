@@ -84,6 +84,9 @@ function CachingRow({ finding }: { finding: Finding }) {
       <TableCell>
         <ImpactEstimate finding={finding} />
         <p className="mt-1">{finding.recommendation}</p>
+        <AdvancedOnly>
+          <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} />
+        </AdvancedOnly>
       </TableCell>
     </TableRow>
   );
@@ -143,10 +146,6 @@ export const CachingOpportunity = memo(function CachingOpportunity({ catalog, de
           </TableBody>
         </Table>
         <AdvancedOnly>
-          {/* Confidence is a per-detector constant here (every emitted finding is
-              'low'), so it's a single caveat below the table instead of a marker
-              repeated on every row. */}
-          <RowStatusCluster confidence="low" />
           <p className="text-xs text-muted-foreground">
             Reuse is inferred from plan structure, not confirmed by execution. Verify before caching.
           </p>

@@ -3,14 +3,17 @@
 SparkForensics has an MCP server with eight tools, so an MCP-aware client (or
 an AI agent) can diagnose a run without opening the dashboard.
 
-Four of the eight tools (`diagnose_run`, `get_run_summary`, `compare_runs`,
-`get_finding_evidence`) accept an optional `redact: boolean` parameter
-(default `false`) that pseudonymizes the app id and any host/IP tokens in the
-response (`app-1`, `host-1`, ...), so a result can be shared outside the
-environment that produced it. On `compare_runs`, `runIdA`/`runIdB` are
-caller-supplied identifiers, not Spark application ids, so there's no single
-app-id field to redact; `redact` instead scans stage names and other free
-text for embedded app ids and host/IP tokens and pseudonymizes those.
+Five of the eight tools (`list_runs`, `diagnose_run`, `get_run_summary`,
+`compare_runs`, `get_finding_evidence`) accept an optional `redact: boolean`
+parameter (default `false`) that pseudonymizes the app id and any host/IP
+tokens in the response (`app-1`, `host-1`, ...), so a result can be shared
+outside the environment that produced it. On `compare_runs`, `runIdA`/
+`runIdB` are caller-supplied identifiers, not Spark application ids, so
+there's no single app-id field to redact; `redact` instead scans stage names
+and other free text for embedded app ids and host/IP tokens and
+pseudonymizes those. `list_runs` pseudonymizes every run's app id and name
+consistently, so two attempts of the same app still redact to the same
+identity across the list.
 
 ## Connecting a client
 
@@ -375,9 +378,12 @@ Parameters:
   one of the two.
 - `namePattern` (string, optional): case-insensitive substring match against
   each run's name.
-- `minDate`/`maxDate` (string, optional): filter by start time.
+- `minDate`/`maxDate` (string, optional): filter by start time. A value
+  that doesn't parse as a date fails with `invalid-date-filter`.
 - `maxResults` (number, optional, default 100): caps the number of runs
   returned; when more candidates matched, `truncated` is `true`.
+- `redact` (boolean, optional, default `false`): pseudonymizes every run's
+  app id and name (see the note at the top of this page).
 
 Example call:
 
@@ -422,6 +428,8 @@ The codes:
 
 - `run-not-found`: no cached run for the `runId` you passed.
 - `finding-not-found`: that `findingId` isn't on that run.
+- `invalid-date-filter`: `list_runs`'s `minDate` or `maxDate` isn't a
+  parseable date.
 - `invalid-type`: that finding `type` isn't one `get_finding_documentation` recognizes.
 - `invalid-anchor`: that `anchor` doesn't resolve to a known `get_reference_doc` page.
 - `invalid-event-log`: the file doesn't exist, or the event log (or History

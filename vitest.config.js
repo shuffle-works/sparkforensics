@@ -8,15 +8,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     pool: 'threads',
-    poolOptions: {
-      threads: {
-        // Node 26 jsdom regression: experimental webstorage causes test failures
-        execArgv: ['--no-experimental-webstorage'],
-        // Cap below core count: full concurrency starves jsdom/React view specs
-        // of CPU and trips their userEvent timeouts under contention.
-        maxThreads: 4,
-      },
-    },
+    // Node 26 jsdom regression: experimental webstorage causes test failures
+    execArgv: ['--no-experimental-webstorage'],
+    // Cap below core count: full concurrency starves jsdom/React view specs
+    // of CPU and trips their userEvent timeouts under contention.
+    maxWorkers: 4,
     environmentMatchGlobs: [['tests/view/**', 'jsdom']],
     environmentOptions: {
       // Real origin for localStorage/postMessage consistency in jsdom
