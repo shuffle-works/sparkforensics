@@ -415,3 +415,36 @@ test('the narrow overflow menu also opens the shortcuts dialog', async () => {
   await userEvent.click(await screen.findByRole('menuitem', { name: 'Keyboard shortcuts' }));
   expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
 });
+
+test('clicking "New analysis" invokes onLoadNew', async () => {
+  const { onLoadNew } = renderTopbar();
+  await userEvent.click(screen.getByRole('button', { name: 'New analysis' }));
+  expect(onLoadNew).toHaveBeenCalledTimes(1);
+});
+
+test('sectionControls hides the "New analysis" button', () => {
+  renderTopbar({ sectionControls: <span>my-controls</span> });
+  expect(screen.queryByRole('button', { name: 'New analysis' })).not.toBeInTheDocument();
+});
+
+test('exportMode hides the "New analysis" button', () => {
+  store.setState({ exportMode: true });
+  renderTopbar();
+  expect(screen.queryByRole('button', { name: 'New analysis' })).not.toBeInTheDocument();
+});
+
+test('the Docs control links to the docs site in a new tab', () => {
+  renderTopbar();
+  const docsLink = screen.getByRole('button', { name: 'Docs' });
+  expect(docsLink).toHaveAttribute('href', 'docs/');
+  expect(docsLink).toHaveAttribute('target', '_blank');
+  expect(docsLink).toHaveAttribute('rel', 'noopener noreferrer');
+});
+
+test('the narrow overflow menu also offers a Docs link to the docs site', async () => {
+  renderTopbar();
+  await userEvent.click(screen.getByRole('button', { name: 'More options' }));
+  const docsMenuLink = await screen.findByRole('menuitem', { name: 'Docs' });
+  expect(docsMenuLink).toHaveAttribute('href', 'docs/');
+  expect(docsMenuLink).toHaveAttribute('target', '_blank');
+});
