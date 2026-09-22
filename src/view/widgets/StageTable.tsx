@@ -4,12 +4,23 @@ import {
   type ColumnDef,
   type PaginationState,
   type SortingState,
+  columnVisibilityFeature,
+  createPaginatedRowModel,
+  createSortedRowModel,
   flexRender,
-  getCoreRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useReactTable,
+  rowPaginationFeature,
+  rowSortingFeature,
+  tableFeatures,
+  useTable,
 } from '@tanstack/react-table';
+
+const stageTableFeatures = tableFeatures({
+  columnVisibilityFeature,
+  rowSortingFeature,
+  rowPaginationFeature,
+  sortedRowModel: createSortedRowModel(),
+  paginatedRowModel: createPaginatedRowModel(),
+});
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -195,7 +206,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
     return map;
   }, [catalog, onRoute]);
 
-  const columns = useMemo<ColumnDef<Row>[]>(
+  const columns = useMemo<ColumnDef<typeof stageTableFeatures, Row>[]>(
     () => [
       {
         id: 'id',
@@ -314,7 +325,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
               accessorFn: (r) => (r.stage.inputBytes ? (r.stage.outputBytes ?? 0) / r.stage.inputBytes : 0),
               cell: ({ row }) => ioRatioCell(row.original.stage.inputBytes ?? 0, row.original.stage.outputBytes ?? 0),
             },
-          ] satisfies ColumnDef<Row>[])
+          ] satisfies ColumnDef<typeof stageTableFeatures, Row>[])
         : []),
       {
         id: 'spill',
@@ -339,7 +350,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
                 return <>{v > 0 ? `${v.toFixed(1)}×` : '—'}</>;
               },
             },
-          ] satisfies ColumnDef<Row>[])
+          ] satisfies ColumnDef<typeof stageTableFeatures, Row>[])
         : []),
       {
         id: 'frequency',
@@ -355,7 +366,8 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
     [catalog, onRoute, triageTargets, openStage, density],
   );
 
-  const table = useReactTable({
+  const table = useTable({
+    features: stageTableFeatures,
     data: rows,
     columns,
     state: { sorting, pagination },
@@ -364,9 +376,6 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
     sortDescFirst: false,
     onSortingChange: setSorting,
     onPaginationChange: setPagination,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
   });
 
   function toggleView() {
