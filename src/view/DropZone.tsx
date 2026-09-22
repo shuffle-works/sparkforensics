@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react';
-import { Upload } from 'lucide-react';
+import { Server, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -74,6 +74,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
   const [attemptId, setAttemptId] = useState('');
   const [otherSourcesOpen, setOtherSourcesOpen] = useState(false);
   const [shsOpen, setShsOpen] = useState(false);
+  const [shsReachable, setShsReachable] = useState(false);
   const [touched, setTouched] = useState<Record<ShsField, boolean>>({ baseUrl: false, appId: false, attemptId: false });
   const [shsError, setShsError] = useState<keyof typeof SHS_RECOVERY_MESSAGES | null>(null);
   const shsAlertRef = useRef<HTMLParagraphElement | null>(null);
@@ -86,6 +87,31 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
   useEffect(() => {
     if (shsError) shsAlertRef.current?.focus();
   }, [shsError]);
+
+  // Local-server reachability probe: an empty /shs-proxy request fails
+  // validateShsRequest synchronously and returns 400 (packages/core/src/
+  // proxy.js), before any upstream fetch, whenever a local server is actually
+  // routing that path. A zero-backend static deploy has no such route, so the
+  // same request either network-errors or 404s. Compact instances (the
+  // two-run comparison slots) never render the callout this feeds, so they
+  // skip the probe entirely rather than firing it twice for no UI benefit.
+  // Defaults to (and stays) unreachable on any error, so nothing changes on
+  // screen after paint if the probe is inconclusive.
+  useEffect(() => {
+    if (compact) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 800);
+    fetch('/shs-proxy', { signal: controller.signal })
+      .then((res) => {
+        if (res.status === 400) setShsReachable(true);
+      })
+      .catch(() => {})
+      .finally(() => clearTimeout(timeout));
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [compact]);
 
   // Recent files are best-effort: IndexedDB or permissions can be
   // unavailable, in which case the section just stays empty.
@@ -470,30 +496,42 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
           <div className="w-full max-w-2xl">{historyServerSource}</div>
         </>
       ) : (
-        <section className="landing-other-sources w-full max-w-2xl text-left">
-          <button
-            type="button"
-            className="tap-target-comfortable w-full cursor-pointer rounded-md border border-border px-3 py-2 text-left text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-expanded={isOtherSourcesOpen}
-            aria-controls="other-sources-panel"
-            onClick={() => setOtherSourcesOpen((open) => !open)}
-          >
-            Other sources
-          </button>
-          {isOtherSourcesOpen ? (
-            <div id="other-sources-panel" className="mt-3 flex flex-col gap-3 rounded-md border border-border p-4">
+        <>
+          {shsReachable ? (
+            <div className="flex w-full max-w-2xl items-start gap-2 rounded-md border border-border p-4 text-left">
+              <Server aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
-                Use these for a rolling <code>eventlog_v2_*</code> directory or to fetch an application from a local Spark History Server.
+                If a Spark History Server is reachable, open{' '}
+                <strong className="font-medium text-foreground">Other sources</strong> below to
+                fetch a run from it directly.
               </p>
-              <div>
-                <Button type="button" variant="outline" className="tap-target-comfortable" onClick={() => folderInputRef.current?.click()}>
-                  Choose rolling-log folder
-                </Button>
-              </div>
-              {historyServerSource}
             </div>
           ) : null}
-        </section>
+          <section className="landing-other-sources w-full max-w-2xl text-left">
+            <button
+              type="button"
+              className="tap-target-comfortable w-full cursor-pointer rounded-md border border-border px-3 py-2 text-left text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-expanded={isOtherSourcesOpen}
+              aria-controls="other-sources-panel"
+              onClick={() => setOtherSourcesOpen((open) => !open)}
+            >
+              Other sources
+            </button>
+            {isOtherSourcesOpen ? (
+              <div id="other-sources-panel" className="mt-3 flex flex-col gap-3 rounded-md border border-border p-4">
+                <p className="text-sm text-muted-foreground">
+                  Use these for a rolling <code>eventlog_v2_*</code> directory or to fetch an application from a local Spark History Server.
+                </p>
+                <div>
+                  <Button type="button" variant="outline" className="tap-target-comfortable" onClick={() => folderInputRef.current?.click()}>
+                    Choose rolling-log folder
+                  </Button>
+                </div>
+                {historyServerSource}
+              </div>
+            ) : null}
+          </section>
+        </>
       )}
 
       {entries.length > 0 && (
