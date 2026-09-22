@@ -1,6 +1,7 @@
 # SparkForensics
 
 [![CI](https://github.com/shuffle-works/sparkforensics/actions/workflows/ci.yml/badge.svg)](https://github.com/shuffle-works/sparkforensics/actions/workflows/ci.yml)
+[![Coverage Status](https://coveralls.io/repos/github/shuffle-works/sparkforensics/badge.svg?branch=main)](https://coveralls.io/github/shuffle-works/sparkforensics?branch=main)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Your Spark job is slow. SparkForensics tells you why, and what to do about
