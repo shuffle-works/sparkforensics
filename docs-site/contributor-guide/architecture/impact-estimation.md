@@ -209,8 +209,9 @@ appends a "this overlaps with the X finding on this stage" sentence to both find
 value is lost). `skew`'s `P95/median` branch samples a different task from `straggler`'s own
 `taskDurationMax - taskDurationP50` delta, so it's excluded from the flag. The note rides the
 same confidence-caveat UI (`RowStatusCluster`) a reader already sees before trusting either
-finding's magnitude, since both detectors also carry `confidence: 'low'` (their runtime-floor
-thresholds are unvalidated; see the confidence-disclosure note in detector-contract.md).
+finding's magnitude, since both detectors also carry a `confidence` field that scales
+`low`/`medium`/`high` off how far the finding sits past its own runtime-floor threshold (still
+unvalidated; see the confidence-disclosure note in detector-contract.md).
 
 `stageShape`'s `taskStageSkew` rule no longer participates in this caveat: it reports a
 `resourceOnly` idle-core-ms figure (see the coverage table below) instead of a wall-clock

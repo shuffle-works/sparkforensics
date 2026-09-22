@@ -162,8 +162,8 @@ test('renders a union composite row with a UNION operator badge', async () => {
 test('defaults to collapsed and shows the top-relation summary with RowStatusCluster confidence note', async () => {
   store.getState().setWidgetDensity('advanced');
   const catalog: Finding[] = [
-    finding({ relation: 'ventas', value: 3, totalReadBytes: 5_000_000 }),
-    finding({ relation: 'dw.d_punto_venta', format: 'jdbc', value: 2, totalReadBytes: 900_000_000 }),
+    finding({ relation: 'ventas', value: 3, totalReadBytes: 5_000_000, confidence: 'low' }),
+    finding({ relation: 'dw.d_punto_venta', format: 'jdbc', value: 2, totalReadBytes: 900_000_000, confidence: 'low' }),
   ];
   renderCachingOpportunity(catalog, true);
 
@@ -175,9 +175,9 @@ test('defaults to collapsed and shows the top-relation summary with RowStatusClu
   expect(screen.getByText('2×')).toBeInTheDocument();
   expect(screen.getByText(/read by 2 queries: dw\.d_punto_venta/i)).toBeInTheDocument();
 
-  // RowStatusCluster renders the low-confidence badge; the caveat sentence is a
+  // RowStatusCluster renders a low-confidence badge per row; the caveat sentence is a
   // separate, plain always-legible paragraph (not a hover-only tooltip).
-  expect(screen.getByText(/low confidence/i)).toBeInTheDocument();
+  expect(screen.getAllByText(/low confidence/i).length).toBeGreaterThan(0);
   const caveat = screen.getByText(/Reuse is inferred from plan structure, not confirmed by execution/i);
   expect(caveat).toBeInTheDocument();
   expect(caveat).not.toHaveClass('sr-only');
@@ -204,6 +204,20 @@ test('the RowStatusCluster confidence note is Advanced-only', () => {
     </StageDetailProvider>,
   );
   expect(screen.getByText(/low confidence/i)).toBeInTheDocument();
+  store.getState().setWidgetDensity('basic');
+});
+
+test('each row shows its own finding confidence, not a single shared value', () => {
+  store.getState().setWidgetDensity('advanced');
+  const catalog: Finding[] = [
+    finding({ relation: 'ventas', value: 3, totalReadBytes: 5_000_000, confidence: 'medium' }),
+    finding({ relation: 'dw.d_punto_venta', format: 'jdbc', value: 2, totalReadBytes: 900_000_000, confidence: 'low' }),
+  ];
+  renderCachingOpportunity(catalog);
+
+  expect(screen.getByText(/medium confidence/i)).toBeInTheDocument();
+  expect(screen.getByText(/low confidence/i)).toBeInTheDocument();
+
   store.getState().setWidgetDensity('basic');
 });
 

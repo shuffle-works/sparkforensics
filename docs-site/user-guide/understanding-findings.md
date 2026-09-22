@@ -58,9 +58,10 @@ key is the real cause, that's a candidate for AQE's skew-join handling.
 ### `SPEC`: Speculation waste {#spec}
 
 Speculative task attempts used a lot of executor time without confirming a
-genuine straggler. Self-flagged low-confidence: a design spike, not yet
-validated against real-world runs. If task durations are just naturally
-variable rather than genuine stragglers, tune
+genuine straggler. Self-flags a confidence that scales with how far the
+wasted time sits past the threshold: these thresholds are still a design
+spike, not yet validated against real-world runs. If task durations are
+just naturally variable rather than genuine stragglers, tune
 `spark.speculation.multiplier`/`spark.speculation.quantile`.
 
 ### `RETRY`: Retry waste {#retry}
@@ -116,17 +117,18 @@ Executor memory or core capacity may be over- or under-provisioned. Some
 detail here needs `spark.eventLog.logStageExecutorMetrics=true` on the run
 being analyzed; without it, per-executor memory usage can't be broken down.
 Review `spark.executor.memory` and executor count if allocated memory sat
-largely idle over the run. That idle-memory variant is self-flagged
-low-confidence: it estimates waste from allocated-versus-used memory-time
-against a 1.5x buffer. Check it against
+largely idle over the run. That idle-memory variant self-flags a confidence
+that scales with how far the estimated waste sits past a 1.5x buffer: it
+estimates waste from allocated-versus-used memory-time. Check it against
 the Spark UI before resizing anything.
 
 ### `CACHE`: Caching opportunity {#cache}
 
 A reusable dataset (re-read via the same SQL relation more than once) may be
-worth persisting between stages. Self-flagged low-confidence: reuse is only
-inferred, from plan-scan identity across SQL executions, so confirm the reads
-really do hit the same data before you cache anything.
+worth persisting between stages. Self-flags a confidence that scales with
+how many executions reuse the same relation: reuse is only inferred, from
+plan-scan identity across SQL executions, so confirm the reads really do
+hit the same data before you cache anything.
 
 ### `CSTOR`: Cache storage {#cstor}
 
@@ -137,16 +139,18 @@ Raise executor memory, or shrink the cached dataset.
 
 Tasks run without process- or node-local data placement more often than
 expected. Check `spark.locality.wait` settings and executor/data colocation.
-Self-flagged low-confidence: the non-local-ratio thresholds are our own
-noise floor for this metric.
+Self-flags a confidence that scales with the non-local ratio and sample
+size: the thresholds are our own noise floor for this metric.
 
 ### `CHRN`: Autoscaling churn {#chrn}
 
 Executors are stood up and torn down again before they can do useful work:
 re-provisioning churn rather than normal scale-down. Raise
 `spark.dynamicAllocation.executorIdleTimeout`, or widen the
-`minExecutors`/`maxExecutors` bounds to reduce flapping. Self-flagged
-low-confidence: a design spike, not yet validated against real-world runs.
+`minExecutors`/`maxExecutors` bounds to reduce flapping. Self-flags a
+confidence that scales with how far the short-lived-executor share sits
+past the threshold: these thresholds are still a design spike, not yet
+validated against real-world runs.
 
 ### `JOBS`: Job failure rate {#jobs}
 
