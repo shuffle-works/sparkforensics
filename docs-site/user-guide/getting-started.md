@@ -9,6 +9,9 @@ Drop a log file onto the landing page, or click **Choose file** to pick one.
 Parsing runs in a background worker, off the browser's main thread, so a
 multi-hundred-megabyte event stream doesn't freeze the tab.
 
+No log of your own yet? Click **Try a sample run** on the landing page to
+load a bundled example run and see a populated dashboard right away.
+
 The app takes a newline-delimited JSON event log (one JSON event per line,
 the format Spark writes to `spark.eventLog.dir`), either plain or
 gzip/Zstandard/LZ4/Snappy-compressed.
@@ -62,6 +65,10 @@ each widget to the finding itself and what to do about it. Turn it on to also
 show confidence levels, supporting evidence, and documentation links for each
 finding, plus a few extra table columns. Your choice is remembered across
 runs.
+
+The topbar also carries a **New analysis** button (back to the landing page
+to load another run) and a **Docs** link, both available once a run is
+loaded.
 
 ## Compare two runs
 
