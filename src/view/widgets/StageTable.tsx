@@ -147,7 +147,7 @@ function dedupTagsByType(tags: Finding[]): Finding[] {
   });
 }
 
-/** Stage-by-stage summary table (shadcn `Table` + tanstack `useReactTable`).
+/** Stage-by-stage summary table (shadcn `Table` + tanstack `useTable`).
  * Defaults to the top-N-by-duration view; a toggle switches to the
  * problem-stage view (only stages any board widget flagged). Sorting and
  * pagination are local `useState`, not persisted. */
