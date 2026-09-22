@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react';
-import { Server, Upload } from 'lucide-react';
+import { ChevronDownIcon, ChevronUpIcon, Server, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,24 @@ import { cn } from '@/lib/utils';
 import { isShsRequestValid, validateShsRequest } from '@sparkforensics/core/shs-request.js';
 
 type ShsField = 'baseUrl' | 'appId' | 'attemptId';
+
+const SHS_FIELD_STORAGE_KEYS: Record<ShsField, string> = {
+  baseUrl: 'shuffle-works-shs-base-url',
+  appId: 'shuffle-works-shs-app-id',
+  attemptId: 'shuffle-works-shs-attempt-id',
+};
+
+// Persisted value wins, else empty: same "stored else default" shape as
+// store.ts's initialTheme/initialWidgetDensity, so a returning visitor's SHS
+// fields are pre-filled instead of starting blank every time.
+function initialShsField(field: ShsField): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(SHS_FIELD_STORAGE_KEYS[field]) ?? '';
+  } catch {
+    return '';
+  }
+}
 
 // A real, gzip-compressed event log (`dev/log-corpus`'s pairwise-01.ndjson,
 // picked by actually running the analyzer over every corpus candidate and
@@ -69,9 +87,9 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
 
   const [dragOver, setDragOver] = useState(false);
   const [entries, setEntries] = useState<RecentFileEntry[]>([]);
-  const [baseUrl, setBaseUrl] = useState('');
-  const [appId, setAppId] = useState('');
-  const [attemptId, setAttemptId] = useState('');
+  const [baseUrl, setBaseUrl] = useState(() => initialShsField('baseUrl'));
+  const [appId, setAppId] = useState(() => initialShsField('appId'));
+  const [attemptId, setAttemptId] = useState(() => initialShsField('attemptId'));
   const [otherSourcesOpen, setOtherSourcesOpen] = useState(false);
   const [shsOpen, setShsOpen] = useState(false);
   const [shsReachable, setShsReachable] = useState(false);
@@ -309,6 +327,13 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
     if (field === 'appId') setAppId(value);
     if (field === 'attemptId') setAttemptId(value);
     setShsError(null);
+    if (typeof window !== 'undefined') {
+      try {
+        window.localStorage.setItem(SHS_FIELD_STORAGE_KEYS[field], value);
+      } catch {
+        /* ignore unavailable storage */
+      }
+    }
   }, []);
 
   const markTouched = useCallback((field: ShsField) => {
@@ -342,12 +367,17 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
     <section className="landing-history-server w-full text-left">
       <button
         type="button"
-        className="tap-target-comfortable w-full cursor-pointer rounded-md border border-border px-3 py-2 text-left text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="tap-target-comfortable flex w-full cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2 text-left text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-expanded={isShsPanelOpen}
         aria-controls="shs-fetch-panel"
         onClick={() => setShsOpen((open) => !open)}
       >
         Fetch from Spark History Server
+        {isShsPanelOpen ? (
+          <ChevronUpIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <ChevronDownIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+        )}
       </button>
       {isShsPanelOpen ? (
         <div id="shs-fetch-panel" className="mt-3 rounded-md border border-border p-4">
@@ -510,12 +540,17 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
           <section className="landing-other-sources w-full max-w-2xl text-left">
             <button
               type="button"
-              className="tap-target-comfortable w-full cursor-pointer rounded-md border border-border px-3 py-2 text-left text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="tap-target-comfortable flex w-full cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2 text-left text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-expanded={isOtherSourcesOpen}
               aria-controls="other-sources-panel"
               onClick={() => setOtherSourcesOpen((open) => !open)}
             >
               Other sources
+              {isOtherSourcesOpen ? (
+                <ChevronUpIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronDownIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+              )}
             </button>
             {isOtherSourcesOpen ? (
               <div id="other-sources-panel" className="mt-3 flex flex-col gap-3 rounded-md border border-border p-4">

@@ -60,7 +60,7 @@ function setInputFiles(input: HTMLInputElement, files: File[]) {
 // seed it directly to render the "fetching" intake state.
 function renderDropZone({ shsParsing = false }: { shsParsing?: boolean } = {}) {
   store.getState().setShsParsing(shsParsing);
-  render(
+  return render(
     <DocsProvider>
       <DropZone />
     </DocsProvider>,
@@ -181,6 +181,53 @@ test('keeps alternative sources hidden until their disclosure is opened, then ke
 
   expect(trigger).toHaveAttribute('aria-expanded', 'true');
   expect(screen.getByLabelText(/spark history server base url/i)).toBeInTheDocument();
+});
+
+test('flips each disclosure\'s chevron between collapsed and expanded independently', async () => {
+  const { container } = renderDropZone();
+  const user = userEvent.setup();
+
+  const otherSources = screen.getByRole('button', { name: 'Other sources' });
+  expect(container.querySelector('.lucide-chevron-down')).toBeInTheDocument();
+  expect(container.querySelector('.lucide-chevron-up')).not.toBeInTheDocument();
+
+  await user.click(otherSources);
+
+  // "Other sources" now points up; the still-collapsed SHS trigger it reveals points down.
+  expect(container.querySelectorAll('.lucide-chevron-up')).toHaveLength(1);
+  expect(container.querySelectorAll('.lucide-chevron-down')).toHaveLength(1);
+
+  const shsTrigger = screen.getByRole('button', { name: /fetch from spark history server/i });
+  await user.click(shsTrigger);
+
+  expect(container.querySelectorAll('.lucide-chevron-up')).toHaveLength(2);
+  expect(container.querySelectorAll('.lucide-chevron-down')).toHaveLength(0);
+
+  await user.click(shsTrigger);
+
+  expect(container.querySelectorAll('.lucide-chevron-up')).toHaveLength(1);
+  expect(container.querySelectorAll('.lucide-chevron-down')).toHaveLength(1);
+});
+
+test('remembers the SHS text inputs across visits via localStorage', async () => {
+  const user = userEvent.setup();
+  const firstVisit = renderDropZone();
+  await openOtherSources(user);
+  await user.click(screen.getByRole('button', { name: /fetch from spark history server/i }));
+
+  await user.type(screen.getByLabelText(/spark history server base url/i), 'http://history-server:18080');
+  await user.type(screen.getByLabelText(/^application id$/i), 'application_1777489669889_56601');
+  await user.type(screen.getByLabelText(/attempt id/i), '3');
+
+  firstVisit.unmount();
+
+  renderDropZone();
+  await openOtherSources(user);
+  await user.click(screen.getByRole('button', { name: /fetch from spark history server/i }));
+
+  expect(screen.getByLabelText(/spark history server base url/i)).toHaveValue('http://history-server:18080');
+  expect(screen.getByLabelText(/^application id$/i)).toHaveValue('application_1777489669889_56601');
+  expect(screen.getByLabelText(/attempt id/i)).toHaveValue('3');
 });
 
 test('shows a local-server-detected callout above "Other sources" when the reachability probe returns 400', async () => {
