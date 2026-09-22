@@ -47,6 +47,16 @@ test('hides the guide link at Basic density, keeping the dot+tag pill', () => {
   expect(screen.getByText('SKEW')).toBeInTheDocument();
 });
 
+test('a type with no vendor-doc anchor (incompleteRun) still renders its pill as a real link, to the SparkForensics guide instead', () => {
+  render(<TagBadge type="incompleteRun" impactBand="warning" />);
+  const link = screen.getByRole('link', { name: 'INCMP' });
+  expect(link).toHaveAttribute('href', 'docs/user-guide/understanding-findings.html#incmp');
+  // No vendor anchor to show a second, redundant guide link for, even at Advanced density.
+  store.getState().setWidgetDensity('advanced');
+  expect(screen.queryByRole('link', { name: /sparkforensics guide/i })).not.toBeInTheDocument();
+  store.getState().setWidgetDensity('basic');
+});
+
 test('plainBadge suppresses both the vendor-doc link and the guide link', () => {
   // 'skew' has a real vendor-doc anchor, so this proves plainBadge suppresses the link, not that none existed.
   render(<TagBadge type="skew" impactBand="warning" plainBadge />);

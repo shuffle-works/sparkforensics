@@ -133,19 +133,39 @@ export function TagBadge({ type, impactBand, className, plainBadge }: TagBadgePr
   const title = plainBadge ? undefined : (help ? `${help.expansion}: ${help.description}` : undefined);
   const anchor = plainBadge ? undefined : docAnchorForType(type);
   const guideLabel = help?.expansion ?? tag;
-  const showGuideLink = !plainBadge && density === 'advanced';
+  const guidePath = findingGuideUrl(type);
+  // Every type has a real, CI-enforced entry in the SparkForensics guide
+  // (docs-site-tag-coverage.test.js), even one like incompleteRun with no
+  // matching vendor-doc anchor (no upstream Spark section covers it). So the
+  // pill still gets a real link for those types: the guide, not the vendor
+  // doc, instead of rendering as plain, inert text unlike every sibling tag.
+  const pillHref = anchor ? docsUrl(anchor) : (plainBadge ? undefined : guidePath);
+  // The separate small guide-icon link (below) only adds value when the pill
+  // itself points elsewhere (the vendor doc); when there's no vendor anchor
+  // the pill already *is* the guide link, so skip the redundant second one.
+  const showGuideLink = !plainBadge && density === 'advanced' && Boolean(anchor);
 
   const label = (
     <Badge
       title={title}
-      className={cn(severityBadgeVariants({ impactBand }), 'h-6', showGuideLink ? cn('rounded-r-none', className) : className)}
-      render={anchor ? (
+      // A pill that's a real link (`pillHref`) gets a visible, always-on
+      // underline, not just a `title` tooltip and a pointer cursor on hover:
+      // otherwise there's no way to tell which tags carry more info without
+      // hovering every single one.
+      className={cn(
+        severityBadgeVariants({ impactBand }),
+        'h-6',
+        pillHref && 'underline decoration-dotted underline-offset-2',
+        showGuideLink ? cn('rounded-r-none', className) : className,
+      )}
+      render={pillHref ? (
         <a
-          href={docsUrl(anchor)}
+          href={pillHref}
           onClick={(e) => {
             if (!docs || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
             e.preventDefault();
-            docs.open(anchor);
+            if (anchor) docs.open(anchor);
+            else docs.openSite(guidePath);
           }}
         />
       ) : undefined}
@@ -157,33 +177,36 @@ export function TagBadge({ type, impactBand, className, plainBadge }: TagBadgePr
 
   if (plainBadge) return label;
 
-  const guidePath = findingGuideUrl(type);
-
   return (
     <span className="inline-flex items-center">
       {label}
-      <AdvancedOnly>
-        <a
-          href={guidePath}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`SparkForensics guide: ${guideLabel}`}
-          title={`SparkForensics guide: ${guideLabel}`}
-          onClick={(e) => {
-            if (!docs || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-            e.preventDefault();
-            docs.openSite(guidePath);
-          }}
-          className={cn(
-            'tap-target-comfortable tap-target-comfortable--sm inline-flex h-6 shrink-0 items-center rounded-r-4xl border border-transparent py-0.5 pr-2 pl-1 text-xs font-medium whitespace-nowrap transition-colors',
-            severityBadgeVariants({ impactBand }),
-            className,
-            'text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-          )}
-        >
-          <FileText aria-hidden="true" className="size-3" />
-        </a>
-      </AdvancedOnly>
+      {/* Only when the pill itself links to the vendor doc: when there's no
+          vendor anchor, the pill already links to this same guide entry, so
+          a second identical link here would be redundant, not additive. */}
+      {showGuideLink ? (
+        <AdvancedOnly>
+          <a
+            href={guidePath}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`SparkForensics guide: ${guideLabel}`}
+            title={`SparkForensics guide: ${guideLabel}`}
+            onClick={(e) => {
+              if (!docs || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+              e.preventDefault();
+              docs.openSite(guidePath);
+            }}
+            className={cn(
+              'tap-target-comfortable tap-target-comfortable--sm inline-flex h-6 shrink-0 items-center rounded-r-4xl border border-transparent py-0.5 pr-2 pl-1 text-xs font-medium whitespace-nowrap transition-colors',
+              severityBadgeVariants({ impactBand }),
+              className,
+              'text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+            )}
+          >
+            <FileText aria-hidden="true" className="size-3" />
+          </a>
+        </AdvancedOnly>
+      ) : null}
     </span>
   );
 }
