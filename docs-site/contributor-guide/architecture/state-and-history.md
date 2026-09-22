@@ -117,6 +117,15 @@ event log, while **Choose rolling-log folder** accepts only an
 `eventlog_v2_*` directory and directs a rejected folder back to the file
 picker.
 
+The three text fields also mirror to `window.localStorage`
+(`shuffle-works-shs-base-url`/`-app-id`/`-attempt-id`), read back as each
+`useState`'s initializer, so a returning visitor's values survive a reload;
+storage access is wrapped in try/catch and silently ignored when unavailable,
+matching `store.ts`'s `initialTheme`/`initialWidgetDensity` pattern. Both this
+disclosure's toggle and the **Other sources** toggle show a chevron
+(`ChevronDownIcon`/`ChevronUpIcon`) that flips with `aria-expanded`, so the
+open/closed state has a visual signal beyond the attribute.
+
 On mount (skipped in `compact` mode), `DropZone` probes reachability with an
 empty, short-timeout `fetch('/shs-proxy')`: a 400 means `validateShsRequest`
 (`packages/core/src/proxy.js`) rejected the empty request synchronously,
