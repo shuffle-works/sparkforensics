@@ -103,6 +103,16 @@ contributor should read; `docs/` stays flat internal engineering records
   unchanged. Finding type → widget component mapping lives in
   `src/view/detector-registry.tsx`'s `REGISTRY`, not a `render:` field on the
   detector entry.
+- VitePress installs its own `window`-level, capture-phase click listener
+  (`node_modules/vitepress/dist/client/app/router.js`) that intercepts clicks
+  on any `<a href="#...">` pointing at the current page and scrolls to the
+  target itself, before a theme-added click handler on that same element ever
+  runs: calling `preventDefault()` there is too late to stop it. An
+  interactive control built over existing in-page anchors (e.g. the
+  `docs-site/.vitepress/theme/citation-chips.ts` footnote-marker popovers)
+  must drop the element's `href` (restoring `role`/`tabindex`/keyboard
+  handling by hand) to keep this interceptor from treating it as a navigable
+  link at all.
 - Plan summary is best-effort: `summarizePlanTree` (`src/plan-summary.js`) walks
   the resolved `planTree` with lenient regex on each node's `detail`: silently
   omit unparseable fragments, never surface an error. (The old regex
