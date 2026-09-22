@@ -1,7 +1,8 @@
 import DefaultTheme from 'vitepress/theme';
 import { inBrowser, useData, type Theme } from 'vitepress';
-import { watch } from 'vue';
+import { nextTick, watch } from 'vue';
 import TuningLanding from './TuningLanding.vue';
+import { setupCitationChips } from './citation-chips';
 import './custom.css';
 
 // Shared theme contract used by every surface in the product family (the
@@ -35,10 +36,20 @@ function writeSharedTheme(isDark: boolean): void {
 
 const theme: Theme = {
   extends: DefaultTheme,
-  enhanceApp({ app }) {
+  enhanceApp({ app, router }) {
     app.component('TuningLanding', TuningLanding);
 
     if (!inBrowser) return; // this hook also runs during SSR's data pass
+
+    // Wire citation chips on first mount and after every client-side route
+    // change (each page renders its own footnotes list from scratch). In
+    // MPA export mode (see docs-site/.vitepress/config.ts) there is no
+    // client router, so only the initial call ever runs, which is correct
+    // since every page load is a real navigation there.
+    nextTick(() => setupCitationChips());
+    router.onAfterRouteChange = () => {
+      nextTick(() => setupCitationChips());
+    };
 
     // useData() injects from the app's Vue context; outside a component
     // setup() function (which enhanceApp is) that requires runWithContext.
