@@ -147,7 +147,7 @@ export async function runParse(
   }
 
   if (!state.app) {
-    emit({ type: 'error', message: 'Not a Spark event log: SparkListenerApplicationStart not found.' });
+    emit({ type: 'error', message: 'Not a Spark event log: no application-start event found. Choose a Spark event log file, or check the docs for supported formats.' });
     return;
   }
 
@@ -203,7 +203,7 @@ export async function runParseFiles(
   }
 
   if (!state.app) {
-    emit({ type: 'error', message: 'Not a Spark event log: SparkListenerApplicationStart not found.' });
+    emit({ type: 'error', message: 'Not a Spark event log: no application-start event found. Choose a Spark event log file, or check the docs for supported formats.' });
     return;
   }
 

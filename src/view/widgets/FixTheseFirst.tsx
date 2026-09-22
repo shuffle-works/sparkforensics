@@ -271,6 +271,20 @@ function trailingStat(group: RollupGroup): string {
     .join(', ');
 }
 
+// Same cases as trailingStat(), spelled out for a hover/focus tooltip: the
+// row itself stays terse ("×2 · 476ms recoverable") to fit this dense
+// table's right-aligned column, but the shorthand ("×N", "recoverable")
+// isn't self-explanatory on first read.
+function trailingStatTitle(group: RollupGroup): string {
+  if (group.kind === 'time') {
+    return `${group.findingCount} findings of this type; up to ${formatWallClockRange(group.recoverableMsHigh, group.recoverableMsHigh)} of run time could be recovered by fixing them`;
+  }
+  if (group.kind === 'resource') {
+    return `${group.findingCount} findings of this type; a resource-cost estimate (not run time) is projected for fixing them`;
+  }
+  return `${group.findingCount} findings of this type, by impact`;
+}
+
 /** A type with more than one finding: a collapsed summary row (tag + the
  * highest-impact member's action label and recommendation + the group's trailing
  * stat) that expands to a paginated list of every finding in the group. The
@@ -328,7 +342,7 @@ export function TypeGroupRow({
           </button>
         </TableCell>
         <TableCell className="w-px text-right font-mono text-xs text-muted-foreground">
-          <span className="inline-flex items-center justify-end gap-1.5">
+          <span className="inline-flex items-center justify-end gap-1.5" title={trailingStatTitle(group)}>
             {trailingStat(group)}
             {expanded ? (
               <ChevronUpIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
