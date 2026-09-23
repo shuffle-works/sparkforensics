@@ -14,7 +14,9 @@ type StreamingDecoderCtor = new (onChunk: (chunk: Uint8Array) => void) => Stream
 
 // zstdDecompressSync materializes a whole frame, so a frame declaring more content than this, or
 // still incomplete after this many compressed bytes, is streamed through fzstd instead: a log
-// compressed as a single frame (the zstd CLI's default) must never be held whole in memory.
+// compressed as a single frame (the zstd CLI's default) must never be held whole in memory. A
+// frame that declares no size (every frame Spark writes, and `zstd < log > log.zst`) is decoded
+// with its output capped at this: past it, it streams too (decompressBounded).
 const MAX_NATIVE_FRAME_BYTES = 64 * 1024 * 1024;
 
 const ZSTD_MAGIC = 0xfd2fb528;
@@ -108,6 +110,9 @@ class FrameSplitter {
   private gatheredLength = 0;
   private walk: FrameWalk = freshWalk();
   private readonly maxFrameBytes: number;
+  // The current push's bytes after the last frame split() yielded, for rest().
+  private current: Uint8Array = new Uint8Array(0);
+  private restAt = 0;
 
   constructor(maxFrameBytes: number) {
     this.maxFrameBytes = maxFrameBytes;
@@ -139,8 +144,10 @@ class FrameSplitter {
         yield { fallback: held };
         return;
       }
-      yield { frame: held.subarray(0, end), data: readUint32LE(held, 0) === ZSTD_MAGIC };
       off = chunk.length - (held.length - end); // the rest of the chunk follows that frame
+      this.current = chunk;
+      this.restAt = off;
+      yield { frame: held.subarray(0, end), data: readUint32LE(held, 0) === ZSTD_MAGIC };
     }
     while (off < chunk.length) {
       this.walk = freshWalk();
@@ -150,6 +157,8 @@ class FrameSplitter {
         return;
       }
       if (end === INCOMPLETE) break;
+      this.current = chunk;
+      this.restAt = end;
       yield { frame: chunk.subarray(off, end), data: readUint32LE(chunk, off) === ZSTD_MAGIC };
       off = end;
     }
@@ -157,6 +166,23 @@ class FrameSplitter {
       if (final) yield { fallback: chunk.subarray(off) };
       else this.gather(chunk.subarray(off));
     }
+  }
+
+  // The current push's bytes after the frame split() last yielded, for a caller that stops there
+  // and hands the rest of the stream to fzstd. The splitter is not used after this.
+  rest(): Uint8Array {
+    return this.current.subarray(this.restAt);
+  }
+}
+
+// A frame's output, or null when it would pass `maxBytes`: without a declared content size
+// nothing else bounds it, and zstdDecompressSync would build the whole thing as one buffer.
+function decompressBounded(frame: Uint8Array, maxBytes: number): Uint8Array | null {
+  try {
+    return zlib.zstdDecompressSync(frame, { maxOutputLength: maxBytes });
+  } catch (err) {
+    if ((err as { code?: unknown }).code === 'ERR_BUFFER_TOO_LARGE') return null;
+    throw err;
   }
 }
 
@@ -178,7 +204,13 @@ export function createNativeZstdDecoder(
       if (fallback) { fallback.push(chunk, final); return; }
       for (const step of splitter.split(chunk, final)) {
         if (step.fallback) { toFallback(step.fallback, final); return; }
-        if (step.data) onChunk(zlib.zstdDecompressSync(step.frame));
+        if (!step.data) continue;
+        const output = decompressBounded(step.frame, maxFrameBytes);
+        if (output) { onChunk(output); continue; }
+        // Past the bound: fzstd streams this frame block by block, then the rest of the stream.
+        toFallback(step.frame, false);
+        toFallback(splitter.rest(), final);
+        return;
       }
     },
   };
@@ -197,17 +229,52 @@ const THREADED_CHUNK_BYTES = 256 * 1024;
 // no cap, a first version held most of the largest real log's output (RSS 0.6 -> 4.1 GB).
 const MAX_QUEUED_FRAMES = 64;
 
-// Node's zstd stream ends after one frame, so each frame gets its own. Its output chunks are kept
-// as they are: zstdDecompressSync would copy them into one buffer on the main thread.
-function decompressOffThread(frame: Uint8Array): Promise<Uint8Array[]> {
-  return new Promise((resolve, reject) => {
-    const chunks: Uint8Array[] = [];
-    const stream = zlib.createZstdDecompress({ chunkSize: THREADED_CHUNK_BYTES });
-    stream.on('data', (chunk: Uint8Array) => chunks.push(chunk));
-    stream.on('end', () => resolve(chunks));
-    stream.on('error', reject);
-    stream.end(frame);
-  });
+// One frame decompressing on the threadpool. Node's zstd stream ends after one frame, so each
+// frame gets its own. Its output chunks are kept as they are (zstdDecompressSync would copy them
+// into one buffer on the main thread) until deliver() hands them over, in its turn. Up to
+// `maxBufferedBytes` of them wait; then the stream pauses until deliver() drains them, so a frame
+// without a declared size is never held whole.
+class OffThreadFrame {
+  private chunks: Uint8Array[] = [];
+  private buffered = 0;
+  private ended = false;
+  private error: unknown = null;
+  private wake: (() => void) | null = null;
+  private readonly stream: ReturnType<typeof zlib.createZstdDecompress>;
+
+  constructor(frame: Uint8Array, maxBufferedBytes: number) {
+    this.stream = zlib.createZstdDecompress({ chunkSize: THREADED_CHUNK_BYTES });
+    this.stream.on('data', (chunk: Uint8Array) => {
+      this.chunks.push(chunk);
+      this.buffered += chunk.length;
+      if (this.buffered >= maxBufferedBytes) this.stream.pause();
+      this.signal();
+    });
+    this.stream.on('end', () => { this.ended = true; this.signal(); });
+    // Kept until deliver() reaches it: rethrown there, never an unhandled error before then.
+    this.stream.on('error', (err: unknown) => { this.error = err; this.ended = true; this.signal(); });
+    this.stream.end(frame);
+  }
+
+  private signal(): void {
+    const wake = this.wake;
+    this.wake = null;
+    wake?.();
+  }
+
+  async deliver(onChunk: (chunk: Uint8Array) => void): Promise<void> {
+    for (;;) {
+      const ready = this.chunks;
+      this.chunks = [];
+      this.buffered = 0;
+      for (const chunk of ready) onChunk(chunk);
+      if (this.error !== null) throw this.error;
+      if (this.ended) return;
+      const more = new Promise<void>((resolve) => { this.wake = resolve; });
+      this.stream.resume();
+      await more;
+    }
+  }
 }
 
 // createNativeZstdDecoder's contract, with large frames decompressed in parallel off the main
@@ -227,14 +294,20 @@ export function createThreadedZstdDecoder(
   let fallback: StreamingDecoder | null = null;
   // Frames not yet delivered, oldest first: off-thread output, or a small frame still compressed,
   // decompressed inline only when its turn comes so its output is fresh in cache for the parse.
-  type Queued = { output: Promise<Uint8Array[]>; frame?: never } | { frame: Uint8Array; output?: never };
+  type Queued = { output: OffThreadFrame; frame?: never } | { frame: Uint8Array; output?: never };
   const queued: Queued[] = [];
   let threadedQueued = 0;
+  // A small frame, inline; one whose output passes maxFrameBytes streams like an off-thread one.
+  const deliverInline = async (frame: Uint8Array): Promise<void> => {
+    const output = decompressBounded(frame, maxFrameBytes);
+    if (output) onChunk(output);
+    else await new OffThreadFrame(frame, maxFrameBytes).deliver(onChunk);
+  };
   const deliverOldest = async (): Promise<void> => {
     const entry = queued.shift()!;
-    if (entry.frame) { onChunk(zlib.zstdDecompressSync(entry.frame)); return; }
+    if (entry.frame) { await deliverInline(entry.frame); return; }
     threadedQueued--;
-    for (const chunk of await entry.output!) onChunk(chunk);
+    await entry.output!.deliver(onChunk);
   };
   const enqueue = async (entry: Queued): Promise<void> => {
     queued.push(entry);
@@ -257,11 +330,9 @@ export function createThreadedZstdDecoder(
         if (!step.data) continue;
         const frame = step.frame;
         if (frame.length >= threadedMinFrameBytes) {
-          const output = decompressOffThread(frame);
-          output.catch(() => {}); // rethrown where it's awaited; no unhandled rejection before then
-          await enqueue({ output });
+          await enqueue({ output: new OffThreadFrame(frame, maxFrameBytes) });
         } else if (queued.length === 0) {
-          onChunk(zlib.zstdDecompressSync(frame));
+          await deliverInline(frame);
         } else {
           await enqueue({ frame });
         }

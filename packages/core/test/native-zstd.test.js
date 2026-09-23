@@ -24,6 +24,21 @@ async function decode(createDecoder, bytes, pushSize, opts) {
   return new TextDecoder().decode(concat(out));
 }
 
+// Compressed as a stream, as `zstd < log > log.zst` and Spark do: one frame with no declared
+// content size.
+function compressUnsized(bytes) {
+  return new Promise((resolve) => {
+    const parts = [];
+    const z = createZstdCompress();
+    z.on('data', (c) => parts.push(new Uint8Array(c)));
+    z.on('end', () => resolve(concat(parts)));
+    z.end(bytes);
+  });
+}
+
+// 1.3 MB of text that compresses to a few KB: only its output can pass a frame-size bound.
+const bigText = enc.encode(text.repeat(80));
+
 // A zstd frame whose one compressed block is garbage: well-formed to frameEnd, so it reaches
 // Node's decoder rather than fzstd.
 const garbageFrame = new Uint8Array([0x28, 0xb5, 0x2f, 0xfd, 0x00, 0x58, 0x45, 0x00, 0x00, ...new Array(8).fill(0xff)]);
@@ -88,6 +103,19 @@ describe.skipIf(!nativeZstdAvailable).each(DECODERS)('%s', (_, createDecoder) =>
     expect(Buffer.from(concat(out)).equals(Buffer.from(noise))).toBe(true);
   });
 
+  // Nothing but its output tells how large a frame without a declared size is, so that output is
+  // bounded, not materialized whole: one 1.3 MB buffer here, 1.5 GB from a 60 MB real frame.
+  it('never hands over more than maxFrameBytes at once from a frame without a declared size', async () => {
+    const unsized = await compressUnsized(bigText);
+    expect(unsized[4] >> 6).toBe(0); // no Frame_Content_Size field
+    expect(unsized.length).toBeLessThan(256 * 1024);
+    const out = [];
+    const dec = createDecoder((c) => out.push(new Uint8Array(c)), { maxFrameBytes: 256 * 1024 });
+    for (let o = 0; o < unsized.length; o += 4096) await dec.push(unsized.subarray(o, o + 4096), o + 4096 >= unsized.length);
+    expect(Math.max(...out.map((c) => c.length))).toBeLessThanOrEqual(256 * 1024);
+    expect(Buffer.from(concat(out)).equals(Buffer.from(bigText))).toBe(true);
+  });
+
   it('fails a truncated last frame with fzstd\'s own error', async () => {
     const truncated = multiFrame.subarray(0, multiFrame.length - 5);
     await expect(decode(createDecoder, truncated, 64)).rejects.toThrow('unexpected EOF');
@@ -117,5 +145,22 @@ describe.skipIf(!nativeZstdAvailable)('createThreadedZstdDecoder queue', () => {
     expect(out.length).toBeGreaterThan(100);
     await dec.push(new Uint8Array(0), true);
     expect(concat(out)).toEqual(concat([noise, ...Array(12).fill(enc.encode(text))]));
+  });
+
+  // An off-thread frame's output waits for its turn up to maxFrameBytes, then its stream pauses and
+  // the rest is handed over as it decompresses: collecting it all first held the whole frame.
+  it('hands over an off-thread frame without a declared size while it is still decompressing', async () => {
+    const unsized = await compressUnsized(bigText);
+    let turn = 0;
+    let ticking = true;
+    const tick = () => { turn++; if (ticking) setImmediate(tick); };
+    setImmediate(tick);
+    const turns = new Set();
+    const out = [];
+    const dec = createThreadedZstdDecoder((c) => { turns.add(turn); out.push(new Uint8Array(c)); }, { threadedMinFrameBytes: 0, maxFrameBytes: 256 * 1024 });
+    await dec.push(unsized, true);
+    ticking = false;
+    expect(turns.size).toBeGreaterThan(1);
+    expect(Buffer.from(concat(out)).equals(Buffer.from(bigText))).toBe(true);
   });
 });
