@@ -66,7 +66,7 @@ any of the 15 real logs in `../spark-log-examples/`. `failures`,
 with unit tests only (`tests/view/failures.test.tsx`,
 `tests/view/job-failures.test.tsx`), not against a real log.
 
-`dev/log-corpus/` is a git submodule pointing at the private
+`dev/log-corpus/` is a git submodule pointing at the public
 `spark-event-corpus-data` repo, pinned to a tag. It backs
 `packages/server/test/shs-proxy-fixture.test.js`, which loads a real
 `*-parquet-baseline.ndjson` fixture and asserts the `/shs-proxy` route
