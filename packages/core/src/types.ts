@@ -77,6 +77,8 @@ export interface Stage {
   spillClassification?: 'skew' | 'volume' | 'unclassified';
   jvmGCTime?: number;
   executorRunTime?: number;
+  // Summed task CPU time, in nanoseconds (Spark's unit); 0 on logs that predate the metric.
+  executorCpuTime?: number;
   gcPct?: number;
   taskDurationP50?: number;
   taskDurationP95?: number;
@@ -89,6 +91,9 @@ export interface Stage {
   stragglerExcessMs?: number;
   // Longest task at or under 4x P50, the longest a straggler fix leaves (finalizeStage).
   longestNonStragglerMs?: number;
+  // Wall-clock a list-scheduling replay of the stage's tasks recovers with every task over 4x P50
+  // capped at P50 (finalizeStage's computeTailReplayRecoveryMs), ms.
+  tailReplayRecoveryMs?: number;
   // Most of the stage's tasks running at once (finalizeStage's computePeakConcurrentTasks).
   peakConcurrentTasks?: number;
   localityStats?: { locality: string; count: number }[];
