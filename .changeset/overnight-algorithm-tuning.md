@@ -33,7 +33,9 @@ Estimates: `stageSlowness` no longer claims "stage duration minus 15 minutes" as
 estimate is now what more partitions could recover: the time the stage's tasks were running, spread
 over the cores the stage left unused. A stage that sat queued with its one short task, or that
 already ran more tasks than the cluster had cores, no longer grades critical, and a long
-single-task stage now does. Stage messages carry a new `taskActiveMs` field for this.
+single-task stage that read data now does. One that read no input and no shuffle bytes claims
+nothing, since more partitions would have nothing to split. Stage messages carry a new `taskActiveMs`
+field for this.
 
 Parser: a stage whose `StageSubmitted` event carries no submission time (older Spark) now takes it
 from `StageCompleted`, instead of starting at epoch 0 and reading as a decades-long stage.
