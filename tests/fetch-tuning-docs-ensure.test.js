@@ -237,6 +237,7 @@ describe('withLock', () => {
     const { pid } = spawnSync(process.execPath, ['-e', '']);
     writeFileSync(lockFile, String(pid));
     expect(withLock(lockFile, () => 'ran', { timeoutMs: 1000 })).toBe('ran');
+    expect(readdirSync(tmp)).toEqual([]);
   });
 
   it('gives up after the timeout while the holder is alive', () => {

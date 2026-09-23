@@ -26,6 +26,9 @@ commit pinned in `packages/core/src/docs-content/upstream.json`: the first
 2s, no credentials) and later runs reuse the gitignored copy while it matches
 the pin. `npm run docs:fetch` does the same step on its own. Never edit those
 folders: fix the content upstream, then `npm run docs:bump` to move the pin.
+Running the MCP or CLI bins from source (`node packages/*/bin/...`) doesn't
+fetch it, so run `npm run docs:fetch` first: without it the MCP's
+tuning-reference lookups come back empty.
 
 Offline, a cached copy keeps working. If the pin has moved since, `npm test` and
 `docs:dev` warn and use the older copy, while `docs:build`, `npm pack` and

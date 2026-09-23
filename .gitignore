@@ -57,3 +57,4 @@ packages/core/src/docs-content/diagrams/
 packages/core/src/docs-content/.generated.json
 packages/core/src/docs-content/.fetch-staging/
 packages/core/src/docs-content/.fetch.lock
+packages/core/src/docs-content/.fetch.lock.*

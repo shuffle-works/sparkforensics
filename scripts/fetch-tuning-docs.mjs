@@ -40,6 +40,7 @@ import { execFileSync } from 'node:child_process';
 import {
   closeSync,
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   openSync,
@@ -48,6 +49,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  rmdirSync,
   writeFileSync,
   writeSync,
 } from 'node:fs';
@@ -66,7 +68,8 @@ export const DOCS_CONTENT_DIR = join(REPO_ROOT, 'packages', 'core', 'src', 'docs
 // one of them: it's generated from this repo's own findings guide.
 const GENERATED_DIRS = ['chapters', 'tuning', 'diagrams'];
 const STAMP_NAME = '.generated.json';
-// Inside docs-content/ so the swap is a same-filesystem rename.
+// Inside docs-content/ so the swap is a same-filesystem rename. Each process
+// renders into its own <pid> subdirectory.
 const STAGING_NAME = '.fetch-staging';
 const LOCK_NAME = '.fetch.lock';
 // docs-content/ entries that describe this checkout's cache, not the docs:
@@ -253,7 +256,8 @@ function docsPaths(docsContentDir) {
     root: docsContentDir,
     pin: join(docsContentDir, 'upstream.json'),
     stamp: join(docsContentDir, STAMP_NAME),
-    staging: join(docsContentDir, STAGING_NAME),
+    stagingRoot: join(docsContentDir, STAGING_NAME),
+    staging: join(docsContentDir, STAGING_NAME, String(process.pid)),
     lock: join(docsContentDir, LOCK_NAME),
     navIndex: join(docsContentDir, 'chapters', 'nav-index.json'),
   };
@@ -449,6 +453,11 @@ function writeGenerated(paths, upstreamDir, manifest, stamp) {
     writeFileSync(paths.stamp, JSON.stringify(stamp, null, 2) + '\n');
   } finally {
     rmSync(paths.staging, { recursive: true, force: true });
+    try {
+      rmdirSync(paths.stagingRoot);
+    } catch (err) {
+      if (err.code !== 'ENOTEMPTY' && err.code !== 'ENOENT') throw err;
+    }
   }
 }
 
@@ -458,6 +467,26 @@ function lockHolder(lockFile) {
     return Number.isInteger(pid) && pid > 0 ? pid : null;
   } catch {
     return null;
+  }
+}
+
+// Moves a dead holder's lock aside before deleting it, so two waiters that saw
+// the same dead pid can't delete each other's fresh lock. If the moved file
+// turns out to be a newer lock, it is linked back (never over a third one).
+function reclaimDeadLock(lockFile, deadPid) {
+  const aside = `${lockFile}.${process.pid}`;
+  try {
+    renameSync(lockFile, aside);
+  } catch (err) {
+    if (err.code === 'ENOENT') return;
+    throw err;
+  }
+  try {
+    if (lockHolder(aside) !== deadPid) linkSync(aside, lockFile);
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
+  } finally {
+    rmSync(aside, { force: true });
   }
 }
 
@@ -489,7 +518,7 @@ export function withLock(lockFile, fn, { timeoutMs = LOCK_WAIT_MS, pollMs = LOCK
     // null: the holder created the file but hasn't written its pid yet.
     const holder = lockHolder(lockFile);
     if (holder !== null && !processAlive(holder)) {
-      rmSync(lockFile, { force: true });
+      reclaimDeadLock(lockFile, holder);
       continue;
     }
     if (Date.now() >= deadline) {
