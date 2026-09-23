@@ -228,7 +228,8 @@ describe('withLock', () => {
     // The holder stays alive after releasing, so only the release can end the wait.
     const holder = spawn(process.execPath, [
       '-e',
-      `setTimeout(() => require('fs').rmSync(${JSON.stringify(lockFile)}), 400); setTimeout(() => {}, 5000);`,
+      "setTimeout(() => require('fs').rmSync(process.argv[1]), 400); setTimeout(() => {}, 5000);",
+      lockFile,
     ]);
     try {
       await new Promise((r) => holder.once('spawn', r));
