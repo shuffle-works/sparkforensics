@@ -171,7 +171,10 @@ out-of-order tolerance elsewhere.
 re-plans: `SparkListenerSQLAdaptiveExecutionUpdate` events overwrite the
 execution's `sparkPlanInfo` last-write-wins, so
 accumulator-ID evidence is matched against the plan that actually ran rather than
-a stale pre-AQE snapshot. The raw `sparkPlanInfo` stays worker-side and is released
+a stale pre-AQE snapshot. Since a superseded plan is never read, `dispatchLine`
+holds an open execution's latest update as unparsed text and parses only that one,
+when `SQLExecutionEnd` arrives or at parse completion (`deferAdaptiveUpdate`,
+`event-handlers.ts`). The raw `sparkPlanInfo` stays worker-side and is released
 once `SQLExecutionEnd` resolves it into `planTree`; `physicalPlanDescription` (Spark's
 text rendering of the plan, which nothing reads) is emptied before `JSON.parse` and
 never retained (`stripPlanDescription`, `event-handlers.ts`). When the value spans

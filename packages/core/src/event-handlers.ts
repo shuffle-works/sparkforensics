@@ -174,6 +174,9 @@ export interface ParserState {
   rddInfo: Map<number, RddInfoRecord>;
   taskAccumStages: Map<number, Set<number>>;
   evidenceInputs: EvidenceInputs;
+  // An open SQL execution's latest AQE update, as raw line text, not yet parsed (see
+  // deferAdaptiveUpdate). Applied when the execution ends, or at parse completion.
+  pendingAdaptiveUpdates: Map<number, string>;
 }
 
 // Splits decompressed byte chunks into NDJSON lines. Each chunk is decoded whole in one streaming
@@ -289,6 +292,7 @@ export function createState(): ParserState {
     accumState: new Map(),
     rddInfo: new Map(),
     taskAccumStages: new Map(),
+    pendingAdaptiveUpdates: new Map(),
     evidenceInputs: {
       environmentUpdates: 0,
       applicationEnds: 0,
@@ -1014,7 +1018,47 @@ export function stripPlanDescription(line: string): string {
   return line.slice(0, valueStart) + line.slice(quote);
 }
 
+const ADAPTIVE_UPDATE_PREFIX =
+  '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":';
+
+// An AQE update replaces its execution's whole plan, and nothing reads a plan an update replaced:
+// only the last one before SQLExecutionEnd is resolved. So while the execution is open, only its
+// latest update is kept, as unparsed text, and superseded ones are never parsed. On the largest
+// real log 541 of 664 updates were superseded, 1.1 MB of plan JSON each after the plan text is
+// cut. Returns false (parse it now, as any other line) unless the line is Spark's compact form
+// ending in an object-valued `sparkPlanInfo`, its last field: a null-plan update keeps the
+// previous plan, so it can't supersede one. Trade-off: a malformed superseded update is never
+// seen, so it no longer counts as a skipped line.
+function deferAdaptiveUpdate(line: string, state: ParserState, emit: (msg: unknown) => void): boolean {
+  if (!line.startsWith(ADAPTIVE_UPDATE_PREFIX)) return false;
+  let executionId = 0, i = ADAPTIVE_UPDATE_PREFIX.length;
+  for (; i < line.length && line.charCodeAt(i) >= 48 && line.charCodeAt(i) <= 57; i++) {
+    executionId = executionId * 10 + line.charCodeAt(i) - 48;
+  }
+  if (i === ADAPTIVE_UPDATE_PREFIX.length || line.charCodeAt(i) !== 0x2c) return false; // no `N,`
+  const exec = state.sqlExecutions.get(executionId);
+  if (!exec || exec.endTime != null) return false;
+  if (!line.endsWith('}}')) {
+    flushAdaptiveUpdate(executionId, state, emit); // keep this line's order after the pending one
+    return false;
+  }
+  state.pendingAdaptiveUpdates.set(executionId, line);
+  return true;
+}
+
+function flushAdaptiveUpdate(executionId: number, state: ParserState, emit: (msg: unknown) => void): void {
+  const line = state.pendingAdaptiveUpdates.get(executionId);
+  if (line === undefined) return;
+  state.pendingAdaptiveUpdates.delete(executionId);
+  parseAndDispatch(line, state, emit);
+}
+
 export function dispatchLine(line: string, state: ParserState, emit: (msg: unknown) => void): void {
+  if (deferAdaptiveUpdate(line, state, emit)) return;
+  parseAndDispatch(line, state, emit);
+}
+
+function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown) => void): void {
   let parsed: unknown;
   try {
     parsed = JSON.parse(stripPlanDescription(line));
@@ -1033,6 +1077,9 @@ export function dispatchLine(line: string, state: ParserState, emit: (msg: unkno
   if (!result.success) {
     state.skippedLines++;
     return;
+  }
+  if (result.data.Event === 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd') {
+    flushAdaptiveUpdate(result.data.executionId, state, emit);
   }
   let msg: unknown;
   try {
@@ -1062,6 +1109,8 @@ export function collectStageExecutorMetrics(state: ParserState): Map<number, Map
 }
 
 export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => void, linesProcessed: number): void {
+  // Executions that never ended keep their latest AQE update, as they did before it was deferred.
+  for (const executionId of [...state.pendingAdaptiveUpdates.keys()]) flushAdaptiveUpdate(executionId, state, emit);
   emit({ type: 'progress', pct: 1, linesProcessed });
   emit({ type: 'runAggregates', data: computeRunAggregates(state.taskStore) });
   emit({ type: 'stageExecutorMetrics', data: collectStageExecutorMetrics(state) });

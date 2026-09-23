@@ -89,3 +89,7 @@ not the driver's own startup before its first job. That removes 6 false positive
 and 6 on the corpus, where executors were up long before the first stage. `slowHost` byte-imbalance
 findings on stages shorter than 0.5% of the run are informational (66 of 90 warning/critical). A
 `smallFiles` read spreads its per-file cost over the tasks that opened the files in parallel.
+
+Parsing: an adaptive query execution update that a later update for the same running SQL
+execution replaces is no longer parsed, since only the last plan is ever used. Parsing the 14
+real logs is 13% faster (13.1s to 11.3s; the largest log 6.3s to 5.4s) with identical findings.

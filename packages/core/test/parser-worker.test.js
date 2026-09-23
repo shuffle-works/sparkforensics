@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { analyze } from '../src/analyzer.js';
-import { stripPlanDescription } from '../src/event-handlers.ts';
+import { stripPlanDescription, emitParseCompletion } from '../src/event-handlers.ts';
 import { computeTaskActiveMs, computePeakConcurrentTasks } from '../src/stage-quantiles.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
 import { zipSync, gzipSync, strToU8 } from '../src/vendor/fflate.js';
@@ -1405,6 +1405,48 @@ describe('dispatchLine', () => {
       return emitted.find((m) => m.type === 'sqlPlan').data.planTree;
     };
     expect(run({ physicalPlanDescription: '== Physical Plan ==\n* Scan "t" \\ "x\\"' })).toEqual(run({}));
+  });
+});
+
+// An open execution's AQE updates are held as text and only the last is parsed (deferAdaptiveUpdate).
+describe('dispatchLine: deferred AQE updates', () => {
+  const START = (id) => JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: id, description: 'q', sparkPlanInfo: { nodeName: 'Initial', children: [], metrics: [] }, time: 0 });
+  const UPDATE = (id, nodeName) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":${id},"physicalPlanDescription":"p","sparkPlanInfo":${nodeName == null ? 'null' : JSON.stringify({ nodeName, children: [], metrics: [] })}}`;
+  const END = (id) => JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd', executionId: id, time: 5 });
+  const run = (lines) => {
+    const state = createState();
+    const emitted = [];
+    for (const line of lines) dispatchLine(line, state, (m) => emitted.push(m));
+    return { state, emitted, planRoot: emitted.find((m) => m.type === 'sqlPlan')?.data.planTree.name };
+  };
+
+  it('resolves the last update\'s plan and never parses the ones it superseded', () => {
+    const malformed = UPDATE(1, 'First').slice(0, -2) + ',}}'; // superseded before anything reads it
+    const { state, planRoot } = run([START(1), malformed, UPDATE(1, 'Second'), UPDATE(1, 'Last'), END(1)]);
+    expect(planRoot).toBe('Last');
+    expect(state.skippedLines).toBe(0);
+    expect(state.sqlExecutions.get(1).hadAdaptiveUpdate).toBe(true);
+  });
+
+  it('keeps the previous plan when a later update carries none', () => {
+    expect(run([START(1), UPDATE(1, 'Planned'), UPDATE(1, null), END(1)]).planRoot).toBe('Planned');
+  });
+
+  it('parses updates at once for an execution that already ended or was never started', () => {
+    const { state } = run([START(1), END(1), UPDATE(1, 'Late'), UPDATE(2, 'Unknown')]);
+    expect(state.pendingAdaptiveUpdates.size).toBe(0);
+    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('Late');
+  });
+
+  it('applies a never-ended execution\'s latest update at parse completion', () => {
+    const appStart = '{"Event":"SparkListenerApplicationStart","App ID":"app-1","App Name":"t","Timestamp":0}';
+    const { state, emitted } = run([appStart, START(1), UPDATE(1, 'Latest')]);
+    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('Initial');
+    emitParseCompletion(state, (m) => emitted.push(m), 2);
+    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('Latest');
+    const sqlMsgs = emitted.filter((m) => m.type === 'sql');
+    expect(sqlMsgs[sqlMsgs.length - 1].data.hadAdaptiveUpdate).toBe(true);
+    expect(emitted.findIndex((m) => m.type === 'sql' && m.data.hadAdaptiveUpdate)).toBeLessThan(emitted.findIndex((m) => m.type === 'done'));
   });
 });
 

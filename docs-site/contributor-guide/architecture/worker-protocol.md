@@ -367,7 +367,10 @@ treat a validation failure the same way: a silent skip, not a distinct error.
   with no signal anywhere). An `Event` value outside the 15 modeled types is
   still silently ignored without incrementing `skippedLines`, unchanged from
   before migration (see the note below on why the broader design was
-  rejected).
+  rejected). One exception: an AQE update that a later update for the same
+  open execution supersedes is never parsed (`deferAdaptiveUpdate`, see
+  [the detector contract](./detector-contract.md)), so a malformed
+  superseded update is not counted.
 - `shs-fetch.ts`: on a non-OK response from the local SHS proxy, the JSON
   error envelope is validated against `ShsProxyErrorBodySchema`
   (`packages/core/src/shs-schemas.ts`, `{ code: string }`, `.passthrough()`). A body that
