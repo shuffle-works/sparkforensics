@@ -150,7 +150,7 @@ interface SqlExecutionRecord {
   startTime: number;
   endTime: number | null;
   stageIds: number[];
-  physicalPlanDescription: string;
+  // Released (set to null) by endSqlExecution once the plan tree is resolved and posted.
   sparkPlanInfo: SparkPlanInfo | null;
   // Set by applyAdaptiveExecutionUpdate when AQE re-plans this execution mid-run; a per-execution
   // signal for "did this SQL execution receive at least one AQE re-plan."
@@ -174,81 +174,166 @@ export interface ParserState {
   rddInfo: Map<number, RddInfoRecord>;
   taskAccumStages: Map<number, Set<number>>;
   evidenceInputs: EvidenceInputs;
+  // An open SQL execution's latest AQE update, as raw line text, not yet parsed (see
+  // deferAdaptiveUpdate). Applied when the execution ends, or at parse completion.
+  pendingAdaptiveUpdates: Map<number, string>;
+  // SQL executions whose plan tree endSqlExecution already resolved and posted.
+  resolvedPlanExecutions: Set<number>;
 }
 
-// Splits decompressed byte chunks into NDJSON lines. Each chunk is decoded whole in one
-// TextDecoder.decode call, newlines located by scanning raw bytes (indexOf(0x0A)), and each line
-// is a substring of the `pending + text` concatenation.
+// Splits decompressed byte chunks into NDJSON lines. Each chunk is decoded whole in one streaming
+// TextDecoder.decode call (per-line decode was ~8x slower: 227k calls vs ~36k on a 138MB / 3.5GB
+// log), then newlines are found with String.prototype.indexOf on that fresh, flat decoded text.
+// A '\n' char is exactly the 0x0A byte (0x0A never occurs inside a UTF-8 multibyte sequence), and
+// `{ stream: true }` reassembles a character split across a chunk boundary, so no byte-to-UTF-16
+// offset mapping is needed. Only the first line of a chunk joins the carried-over `pending` text.
 //
-// Why (profiled on a 138MB / 3.5GB-decompressed log, decode phase, each line JSON.parsed to force
-// materialization): per-line decode (227k calls) ~57s vs whole-chunk decode (~36k calls) ~7s;
-// scanning the decoded UTF-16 string for newlines costs 130-450s while scanning raw bytes ~7s;
-// the line MUST be a substring of the freshly concatenated string (V8 flattens once per chunk),
-// substrings of raw decode() output cost ~4x more. Combined ~14s, byte-identical output.
+// Measured 2026-09-23 against the previous raw-byte-scan version (identical output): 3.5s -> 2.8s
+// on that 3.5GB all-ASCII log, 0.37s -> 0.18s on 93MB of synthetic 2/3/4-byte-heavy NDJSON.
 //
-// 0x0A can't appear inside a UTF-8 multibyte sequence, so byte-scanning for it is UTF-8 safe. A
-// newline's byte offset equals its char offset only when the chunk is 1:1 byte<->char, detected by
-// text.length === buffer.length (the all-ASCII fast path); otherwise a byte walk recovers char
-// offsets. `{ stream: true }` reassembles a character split across the chunk boundary.
-const NEWLINE = 0x0a;
+// A SQL UI event's physicalPlanDescription value (see stripPlanDescription) that is still open
+// when a chunk ends is cut off the pending line, and the following bytes are dropped up to its
+// closing quote without being decoded. On the largest real log that value is 1.9 GB of the
+// 3.5 GB stream, so it is never decoded, joined or scanned as text. A chunk longer than
+// MAX_DECODE_SLICE is decoded in slices of that size, so the skip also applies within one chunk:
+// Node's native zstd emits whole frames, up to 39 MB on that log, which held all but 51 MB of the
+// value inside a single chunk.
+const MAX_DECODE_SLICE = 512 * 1024;
+
+// A line joined from text decoded in more than one slice is a V8 cons string, which the first
+// character read (startsWith, charCodeAt, endsWith) copies into one flat string. `head` and `tail`
+// are its flat first and last pieces, so dispatchLine can check a prefix or suffix without that
+// copy. `index` is the line's position in the array decode() returned.
+export interface JoinedLine {
+  index: number;
+  head: string;
+  tail: string;
+}
 
 export function buildChunkDecoder() {
   const decoder = new TextDecoder('utf-8');
-  // Decoded partial line after the last newline, carried to the next chunk. A character split
-  // across the boundary is reassembled by the streaming decoder, so this is already-decoded.
+  // Decoded partial line after the last newline, carried to the next chunk, and its flat first
+  // piece (pending itself until later text is appended to it).
   let pending = '';
+  let pendingHead = '';
+  // True once the pending line is known to need no plan-description skip.
+  let pendingSettled = false;
+  // While it isn't, how far its plan-key search got, so each slice searches only its own text:
+  // whether the line starts with the SQL UI event prefix, and the end of the text already searched
+  // (one char short of the key, so a key split across slices still matches). Searching the whole
+  // line again after every slice scanned about 10 GB on a 100 MB line.
+  let pendingIsSqlEvent = false;
+  let keyTail = '';
+  let skippingPlanDescription = false;
+  // Length of the backslash run the skipped bytes ended with, which escapes a quote at the start
+  // of the next chunk when odd.
+  let carriedBackslashes = 0;
+
+  // Where the plan key starts in `pending`, searching only `appended` (the text just added to its
+  // end) and the seam before it, or -1.
+  function findPlanKey(appended: string): number {
+    const seamLength = PLAN_DESCRIPTION_KEY.length - 1;
+    const before = pending.length - appended.length;
+    if (keyTail !== '') {
+      const inSeam = (keyTail + appended.slice(0, seamLength)).indexOf(PLAN_DESCRIPTION_KEY);
+      if (inSeam !== -1) return before - keyTail.length + inSeam;
+    }
+    const inText = appended.indexOf(PLAN_DESCRIPTION_KEY);
+    if (inText !== -1) return before + inText;
+    keyTail = appended.length >= seamLength ? appended.slice(-seamLength) : (keyTail + appended).slice(-seamLength);
+    return -1;
+  }
+
+  function settlePending(lastByte: number, appended: string): void {
+    if (!pendingIsSqlEvent) {
+      if (pending.length < SQL_UI_EVENT_PREFIX.length) {
+        pendingSettled = !SQL_UI_EVENT_PREFIX.startsWith(pending);
+        return;
+      }
+      // The flat first piece, when it is long enough: startsWith on the joined line would copy it.
+      const head = pendingHead.length >= SQL_UI_EVENT_PREFIX.length ? pendingHead : pending;
+      if (!head.startsWith(SQL_UI_EVENT_PREFIX)) { pendingSettled = true; return; }
+      pendingIsSqlEvent = true;
+      keyTail = '';
+      appended = pending; // nothing of it was searched while it was shorter than the prefix
+    }
+    const keyAt = findPlanKey(appended);
+    if (keyAt === -1) return; // the key may still arrive in a later chunk
+    pendingSettled = true;
+    const valueStart = keyAt + PLAN_DESCRIPTION_KEY.length;
+    if (closingQuoteIndex(pending, valueStart) !== -1) return; // complete: stripPlanDescription empties it
+    // Only a chunk whose last byte is a backslash carries a run over; any other last byte (such
+    // as part of a split multibyte char) ends it.
+    let run = 0;
+    if (lastByte === BACKSLASH) {
+      for (let i = pending.length - 1; i >= valueStart && pending.charCodeAt(i) === BACKSLASH; i--) run++;
+    }
+    carriedBackslashes = run;
+    pending = pending.substring(0, valueStart);
+    pendingHead = pending;
+    decoder.decode(); // discard a split multibyte char held from the dropped value
+    skippingPlanDescription = true;
+  }
+
+  function decodeSlice(buffer: Uint8Array, lines: string[], joined: JoinedLine[] | undefined): void {
+    let from = 0;
+    if (skippingPlanDescription) {
+      const lineEnd = buffer.indexOf(NEWLINE);
+      const close = closingQuoteAt(buffer, lineEnd === -1 ? buffer.length : lineEnd, carriedBackslashes);
+      if (close === -1 && lineEnd === -1) {
+        let i = buffer.length - 1;
+        while (i >= 0 && buffer[i] === BACKSLASH) i--;
+        carriedBackslashes = buffer.length - 1 - i + (i < 0 ? carriedBackslashes : 0);
+        return;
+      }
+      // Resume at the closing quote, or at the newline of an unterminated value: that line then
+      // ends in an open string and JSON.parse rejects it, as it would have the whole line.
+      skippingPlanDescription = false;
+      from = close !== -1 ? close : lineEnd;
+    }
+    const text = decoder.decode(from === 0 ? buffer : buffer.subarray(from), { stream: true });
+    let nl = text.indexOf('\n');
+    // The text this slice added to the end of `pending`.
+    let appended = text;
+    if (nl === -1) {
+      if (pending === '') {
+        pending = pendingHead = text;
+        pendingIsSqlEvent = false;
+      } else {
+        pending = pending + text;
+      }
+    } else {
+      // Zero-length lines are dropped to match a `.filter(l => l.length)`.
+      let first: string;
+      if (pending === '') {
+        first = text.substring(0, nl);
+      } else {
+        const tail = text.substring(0, nl);
+        first = pending + tail;
+        joined?.push({ index: lines.length, head: pendingHead, tail });
+      }
+      if (first.length > 0) lines.push(first);
+      let start = nl + 1;
+      nl = text.indexOf('\n', start);
+      while (nl !== -1) {
+        if (nl > start) lines.push(text.substring(start, nl));
+        start = nl + 1;
+        nl = text.indexOf('\n', start);
+      }
+      pending = pendingHead = appended = start < text.length ? text.substring(start) : '';
+      pendingSettled = false;
+      pendingIsSqlEvent = false;
+    }
+    if (!pendingSettled && pending !== '') settlePending(buffer[buffer.length - 1], appended);
+  }
 
   return {
-    decode(buffer: Uint8Array): string[] {
+    // `joined`, when given, receives a JoinedLine for each returned line that was joined across
+    // slices, in line order.
+    decode(buffer: Uint8Array, joined?: JoinedLine[]): string[] {
       const lines: string[] = [];
-      const text = decoder.decode(buffer, { stream: true });
-      const full = pending === '' ? text : pending + text;
-      const base = pending.length;
-      const len = buffer.length;
-      // Char offset in `full` of the current line's start. Zero-length lines
-      // (`cut === start`) are dropped to match a `.filter(l => l.length)`.
-      let start = 0;
-
-      if (text.length === len) {
-        // 1:1 byte<->char: a newline's byte offset is its char offset (+ base).
-        let nl = buffer.indexOf(NEWLINE, 0);
-        while (nl !== -1) {
-          const cut = base + nl;
-          if (cut > start) lines.push(full.substring(start, cut));
-          start = cut + 1;
-          nl = buffer.indexOf(NEWLINE, nl + 1);
-        }
-      } else {
-        // Some byte does not map 1:1. Walk the bytes counting UTF-16 units to
-        // turn each newline's byte offset into a char offset in `full`.
-        let unit = base;
-        let bpos = 0;
-        // A char whose lead byte was in the previous chunk arrives here as
-        // leading continuation bytes; the streaming decoder emits it as text[0].
-        // Count it once (a surrogate pair is two units), then skip its bytes.
-        if (len > 0 && (buffer[0] & 0xc0) === 0x80) {
-          const c0 = text.charCodeAt(0);
-          unit += c0 >= 0xd800 && c0 <= 0xdbff ? 2 : 1;
-          while (bpos < len && (buffer[bpos] & 0xc0) === 0x80) bpos++;
-        }
-        let nl = buffer.indexOf(NEWLINE, bpos);
-        while (nl !== -1) {
-          for (let i = bpos; i < nl; i++) {
-            const b = buffer[i];
-            if (b < 0x80) unit++; // ASCII
-            else if (b >= 0xf0) unit += 2; // 4-byte lead -> surrogate pair
-            else if (b >= 0xc0) unit++; // 2/3-byte lead -> one unit
-            // continuation byte (0x80..0xBF) -> zero units
-          }
-          if (unit > start) lines.push(full.substring(start, unit));
-          unit++; // the '\n' itself
-          start = unit;
-          bpos = nl + 1;
-          nl = buffer.indexOf(NEWLINE, bpos);
-        }
-      }
-
-      pending = start < full.length ? full.substring(start) : '';
+      if (buffer.length <= MAX_DECODE_SLICE) decodeSlice(buffer, lines, joined);
+      else for (let at = 0; at < buffer.length; at += MAX_DECODE_SLICE) decodeSlice(buffer.subarray(at, at + MAX_DECODE_SLICE), lines, joined);
       return lines;
     },
     flush(): string[] {
@@ -277,6 +362,8 @@ export function createState(): ParserState {
     accumState: new Map(),
     rddInfo: new Map(),
     taskAccumStages: new Map(),
+    pendingAdaptiveUpdates: new Map(),
+    resolvedPlanExecutions: new Set(),
     evidenceInputs: {
       environmentUpdates: 0,
       applicationEnds: 0,
@@ -785,11 +872,12 @@ export function startSqlExecution(event: z.infer<typeof SqlExecutionStartEventSc
   const exec: SqlExecutionRecord = {
     id: event.executionId, description: event.description ?? '',
     startTime: event.time, endTime: null, stageIds: [],
-    physicalPlanDescription: event.physicalPlanDescription ?? '',
     sparkPlanInfo,
     hadAdaptiveUpdate: false,
   };
   state.sqlExecutions.set(exec.id, exec);
+  // A restarted execution carries a new plan: its next end must resolve it again.
+  state.resolvedPlanExecutions.delete(exec.id);
   if (sparkPlanInfo !== null) {
     state.accumState.set(exec.id, new Map());
   }
@@ -802,6 +890,9 @@ export function endSqlExecution(
 ): { type: 'sql'; data: SqlExecutionRecord } | { type: 'sqlPlan'; data: { executionId: number; planTree: PlanNode } } | null {
   const exec = state.sqlExecutions.get(event.executionId);
   if (exec) exec.endTime = event.time;
+  // A repeated end for an execution whose plan was already posted: its raw plan is gone, and the
+  // plain 'sql' copy below would replace the model entry that holds the planTree (onSql overwrites).
+  if (state.resolvedPlanExecutions.has(event.executionId)) return null;
 
   const planInfo = exec?.sparkPlanInfo ?? null;
   if (!planInfo || !planInfo.nodeName) {
@@ -814,6 +905,10 @@ export function endSqlExecution(
     planInfo, accumMap, state.taskAccumStages, state.sqlExecStages.get(event.executionId), event.executionId,
   );
   state.accumState.delete(event.executionId);
+  // The resolved tree is all anything downstream reads; the raw plan (often megabytes per
+  // execution under AQE) would otherwise stay live for the rest of the parse.
+  exec!.sparkPlanInfo = null;
+  state.resolvedPlanExecutions.add(event.executionId);
 
   state.evidenceInputs.resolvedSqlPlans++;
   return { type: 'sqlPlan', data: { executionId: event.executionId, planTree } };
@@ -836,12 +931,13 @@ export function applyAdaptiveExecutionUpdate(
   const exec = state.sqlExecutions.get(event.executionId);
   if (!exec) return null; // late update for an unseen execution, discard (same pattern as applyDriverAccumUpdates)
   if (event.sparkPlanInfo != null) exec.sparkPlanInfo = event.sparkPlanInfo;
-  if (event.physicalPlanDescription != null) exec.physicalPlanDescription = event.physicalPlanDescription;
   exec.hadAdaptiveUpdate = true;
   // Re-emit a 'sql' message so the browser's structured-cloned appModel.sql copy sees the flip:
   // otherwise hadAdaptiveUpdate only reads true via collectRun's Node-path object aliasing, never
   // in the shipping worker. Shallow copy so the posted object isn't the mutable reference the worker keeps mutating.
-  return { type: 'sql', data: { ...exec } };
+  // The raw plan stays worker-side: the main thread only ever reads the resolved `sqlPlan` tree,
+  // and a copy here would keep a superseded plan alive after endSqlExecution releases it.
+  return { type: 'sql', data: { ...exec, sparkPlanInfo: null } };
 }
 
 export function addExecutor(event: z.infer<typeof ExecutorAddedEventSchema>, state: ParserState): { type: 'executor'; data: ExecutorAddedEvent } {
@@ -903,6 +999,10 @@ export function processEvent(event: SparkEvent, state: ParserState): unknown {
       const stage = state.stages.get(id);
       if (!stage) return null;
       stage.completedAt = info['Completion Time'] ?? 0;
+      // Older Spark (seen on 1.x-2.0 logs) posts StageSubmitted before the stage's submission
+      // time is set; StageCompleted carries it. Without this backfill submittedAt stays 0 and
+      // every stage-duration figure becomes the epoch timestamp itself (a "47-year" stage).
+      if (!stage.submittedAt && info['Submission Time'] != null) stage.submittedAt = info['Submission Time'];
       stage.stageFailureReason = info['Failure Reason'] ?? null;
       // finalizeStage keeps its `stage` parameter typed as a loose Record (see that module); bridge
       // StageRecord's more precise shape across that boundary with an explicit cast.
@@ -947,10 +1047,157 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set(
   SparkEventSchema.options.map((option) => option.shape.Event.value)
 );
 
-export function dispatchLine(line: string, state: ParserState, emit: (msg: unknown) => void): void {
+// SQLExecutionStart and SQLAdaptiveExecutionUpdate carry `physicalPlanDescription`, Spark's text
+// rendering of the plan. Nothing reads it (the plan tree comes from sparkPlanInfo), yet on a real
+// 3.5 GB log it was 72% of the AQE-update bytes, which were themselves 73% of the log. Cutting its
+// string value out before JSON.parse halves the parse cost of those lines.
+const SQL_UI_EVENT_PREFIX = '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQL';
+const PLAN_DESCRIPTION_KEY = '"physicalPlanDescription":"';
+
+const QUOTE = 0x22, BACKSLASH = 0x5c, NEWLINE = 0x0a;
+
+// Index of the closing quote of the JSON string whose content starts at `valueStart`: the first
+// quote preceded by an even number of backslashes. -1 when the string is unterminated.
+function closingQuoteIndex(line: string, valueStart: number): number {
+  for (let quote = line.indexOf('"', valueStart); quote !== -1; quote = line.indexOf('"', quote + 1)) {
+    let backslashes = 0;
+    for (let i = quote - 1; i >= valueStart && line.charCodeAt(i) === BACKSLASH; i--) backslashes++;
+    if (backslashes % 2 === 0) return quote;
+  }
+  return -1;
+}
+
+// Byte-level closingQuoteIndex over a chunk that starts inside the string, stopping at `limit`.
+// `carried` is the backslash run the previous chunk ended with, which continues into this one.
+// A quote byte never occurs inside a UTF-8 multibyte sequence.
+function closingQuoteAt(buf: Uint8Array, limit: number, carried: number): number {
+  for (let q = buf.indexOf(QUOTE); q !== -1 && q < limit; q = buf.indexOf(QUOTE, q + 1)) {
+    let i = q - 1;
+    while (i >= 0 && buf[i] === BACKSLASH) i--;
+    if ((q - 1 - i + (i < 0 ? carried : 0)) % 2 === 0) return q;
+  }
+  return -1;
+}
+
+// Returns `line` with the physicalPlanDescription string value emptied, or `line` unchanged when
+// the key isn't found in Spark's compact form. The key pattern can't match inside another JSON
+// string: there its quotes would be backslash-escaped. buildChunkDecoder already empties a value
+// that spans chunks, so here the value is empty or within one chunk.
+export function stripPlanDescription(line: string): string {
+  if (!line.startsWith(SQL_UI_EVENT_PREFIX)) return line;
+  const keyAt = line.indexOf(PLAN_DESCRIPTION_KEY);
+  if (keyAt === -1) return line;
+  const valueStart = keyAt + PLAN_DESCRIPTION_KEY.length;
+  if (line.charCodeAt(valueStart) === QUOTE) return line; // already empty
+  const quote = closingQuoteIndex(line, valueStart);
+  // Unterminated string (a truncated line): leave it for JSON.parse to reject.
+  if (quote === -1) return line;
+  return line.slice(0, valueStart) + line.slice(quote);
+}
+
+const TASK_END_PREFIX = '{"Event":"SparkListenerTaskEnd",';
+const ACCUMULABLES_KEY = '"Accumulables":[';
+const ACCUMULABLE_ID_KEY = '"ID":';
+// Beyond 15 digits the digit loop below could round differently from JSON.parse.
+const MAX_ACCUMULABLE_ID_DIGITS = 15;
+
+// Parses a TaskEnd line with its Task Info Accumulables array reduced to the `{ID}` entries
+// accumulateTask reads, or returns null for the caller to parse the line whole. That array is 71%
+// of TaskEnd bytes on the largest real log, where parsing its TaskEnd lines took 1.3s (0.5s here).
+// The IDs are read with a string scan and the array is cut out before JSON.parse, but only when
+// every entry has Spark's flat form (`{"ID":n,...}`, ID first, no nested array): any `{` that
+// doesn't open `{"ID":n` or any `[` in the array (updatedBlockStatuses) falls back. A `]` inside a
+// Name string cuts the array short and leaves invalid JSON, which falls back too.
+export function parseTaskEnd(line: string): unknown {
+  if (!line.startsWith(TASK_END_PREFIX)) return null;
+  const keyAt = line.indexOf(ACCUMULABLES_KEY);
+  if (keyAt === -1) return null;
+  const from = keyAt + ACCUMULABLES_KEY.length;
+  const close = line.indexOf(']', from);
+  if (close === -1) return null;
+  const nested = line.indexOf('[', from);
+  if (nested !== -1 && nested < close) return null;
+  const ids: number[] = [];
+  for (let brace = line.indexOf('{', from); brace !== -1 && brace < close; brace = line.indexOf('{', brace + 1)) {
+    if (!line.startsWith(ACCUMULABLE_ID_KEY, brace + 1)) return null;
+    const digitsFrom = brace + 1 + ACCUMULABLE_ID_KEY.length;
+    let i = digitsFrom, id = 0;
+    for (let c = line.charCodeAt(i); c >= 48 && c <= 57; c = line.charCodeAt(++i)) id = id * 10 + c - 48;
+    if (i === digitsFrom || i - digitsFrom > MAX_ACCUMULABLE_ID_DIGITS) return null;
+    const after = line.charCodeAt(i);
+    if (after !== 0x2c && after !== 0x7d) return null; // `,` or `}`
+    ids.push(id);
+  }
+  let parsed: { 'Task Info'?: { Accumulables?: unknown } } | null;
+  try {
+    parsed = JSON.parse(line.slice(0, from) + line.slice(close));
+  } catch {
+    return null;
+  }
+  const info = parsed?.['Task Info'];
+  if (!info || !Array.isArray(info.Accumulables) || info.Accumulables.length !== 0) return null;
+  info.Accumulables = ids.map((ID) => ({ ID }));
+  return parsed;
+}
+
+const ADAPTIVE_UPDATE_PREFIX =
+  '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":';
+// More digits than an executionId (a JVM long) has, so a head this long past the prefix holds the
+// id and the comma after it.
+const MAX_EXECUTION_ID_DIGITS = 20;
+
+// An AQE update replaces its execution's whole plan, and nothing reads a plan an update replaced:
+// only the last one before SQLExecutionEnd is resolved. So while the execution is open, only its
+// latest update is kept, as unparsed text, and superseded ones are never parsed. On the largest
+// real log 541 of 664 updates were superseded, 1.1 MB of plan JSON each after the plan text is
+// cut. Returns false (parse it now, as any other line) unless the line is Spark's compact form
+// ending in an object-valued `sparkPlanInfo`, its last field: a null-plan update keeps the
+// previous plan, so it can't supersede one. Trade-off: a malformed superseded update is never
+// seen, so it no longer counts as a skipped line.
+//
+// These updates span decode slices, so `line` is a cons string: the prefix and suffix checks read
+// `joined`'s flat pieces instead, or a superseded update is copied flat only to be dropped (541
+// copies of 1.1 MB on that log). A piece too short to hold what is checked falls back to `line`.
+function deferAdaptiveUpdate(
+  line: string, state: ParserState, emit: (msg: unknown) => void, joined?: JoinedLine,
+): boolean {
+  const head = joined && joined.head.length > ADAPTIVE_UPDATE_PREFIX.length + MAX_EXECUTION_ID_DIGITS
+    ? joined.head : line;
+  if (!head.startsWith(ADAPTIVE_UPDATE_PREFIX)) return false;
+  let executionId = 0, i = ADAPTIVE_UPDATE_PREFIX.length;
+  for (; i < head.length && head.charCodeAt(i) >= 48 && head.charCodeAt(i) <= 57; i++) {
+    executionId = executionId * 10 + head.charCodeAt(i) - 48;
+  }
+  if (i === ADAPTIVE_UPDATE_PREFIX.length || head.charCodeAt(i) !== 0x2c) return false; // no `N,`
+  const exec = state.sqlExecutions.get(executionId);
+  if (!exec || exec.endTime != null) return false;
+  const tail = joined && joined.tail.length >= 2 ? joined.tail : line;
+  if (!tail.endsWith('}}')) {
+    flushAdaptiveUpdate(executionId, state, emit); // keep this line's order after the pending one
+    return false;
+  }
+  state.pendingAdaptiveUpdates.set(executionId, line);
+  return true;
+}
+
+function flushAdaptiveUpdate(executionId: number, state: ParserState, emit: (msg: unknown) => void): void {
+  const line = state.pendingAdaptiveUpdates.get(executionId);
+  if (line === undefined) return;
+  state.pendingAdaptiveUpdates.delete(executionId);
+  parseAndDispatch(line, state, emit);
+}
+
+export function dispatchLine(
+  line: string, state: ParserState, emit: (msg: unknown) => void, joined?: JoinedLine,
+): void {
+  if (deferAdaptiveUpdate(line, state, emit, joined)) return;
+  parseAndDispatch(line, state, emit);
+}
+
+function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown) => void): void {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(line);
+    parsed = parseTaskEnd(line) ?? JSON.parse(stripPlanDescription(line));
   } catch {
     state.skippedLines++;
     return;
@@ -966,6 +1213,9 @@ export function dispatchLine(line: string, state: ParserState, emit: (msg: unkno
   if (!result.success) {
     state.skippedLines++;
     return;
+  }
+  if (result.data.Event === 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd') {
+    flushAdaptiveUpdate(result.data.executionId, state, emit);
   }
   let msg: unknown;
   try {
@@ -995,6 +1245,8 @@ export function collectStageExecutorMetrics(state: ParserState): Map<number, Map
 }
 
 export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => void, linesProcessed: number): void {
+  // Executions that never ended keep their latest AQE update, as they did before it was deferred.
+  for (const executionId of [...state.pendingAdaptiveUpdates.keys()]) flushAdaptiveUpdate(executionId, state, emit);
   emit({ type: 'progress', pct: 1, linesProcessed });
   emit({ type: 'runAggregates', data: computeRunAggregates(state.taskStore) });
   emit({ type: 'stageExecutorMetrics', data: collectStageExecutorMetrics(state) });

@@ -8,7 +8,8 @@ wallClock, estimateMethod, rawWaste?}` (`src/types.ts`), attached by
 `confidence` says how much to trust the finding itself,
 `estimateMethod` says how its impact number was derived. `'none'` marks a purely
 informational finding with no waste model at all (`configAudit`, `stageFailed`,
-`failures`, `incompleteRun`, `slowHost`'s byte-dimension multiDim shapes): it's distinct
+`failures`, `incompleteRun`, `slowHost`'s byte-dimension multiDim shapes, `gc`'s low-GC
+direction): it's distinct
 from `'measured'`/`'modeled'`, which both attach a real (if approximate) formula. `basis`
 is one of:
 
@@ -71,6 +72,59 @@ so a finding can never claim to save more than the portion of the stage's observ
 that sits above its own unbeatable floor. This is what fixes historical overclaim bugs (a
 `tinyTask` finding claiming 407.5s on a 13.1s stage capped to 8.9s; a `shuffle` finding
 claiming 1939.9s on a 991.3s/1688.3s stage capped to 610.3s/250.1s).
+
+`skew` and `straggler` are the exception (`estimateSingleStage`'s `shortensLongestTask`
+option, passed by both their `impact-estimator.ts` cases and `detectors.ts`'s
+`clippedWasteMs` runtime-floor gate, so firing and display agree; `stageSlowness`'s
+more-partitions estimate passes it too, since splitting partitions splits the longest task). Their claim shortens the
+stage's longest task itself, so `taskDurationMax` can't be their floor: clipping against it
+capped a stage gated by one straggler at `duration(S) − taskDurationMax`, about zero, exactly
+when the fix recovers the most. Their floor is instead the longest task the fix leaves plus
+the core work the fix leaves, `max(taskDurationMax − wasteMs_claimed, longestTaskAfterFixMs,
+(stage.executorRunTime − removed) / totalCores)`, where `removed` (`tailRemovedWorkMs`) is the
+larger of the longest task's excess over P50 and `stragglerExcessMs`, and
+`longestTaskAfterFixMs` is the longest task the fix leaves for `skew` and `straggler` (see below). Counting the stragglers' own run time as work
+the stage can't shed floored a stage whose tail is most of its core time near its observed
+duration: one real stage claimed 5.9s where the replay below recovers 38.7s, and now claims
+38.7s.
+Scored against a list-scheduling replay of each flagged stage's own tasks (slots = the
+stage's observed peak concurrent tasks; recoverable = replay with actual durations minus
+replay with every task over 4× P50 capped at P50), across 765 skew/straggler findings on 14
+real logs (2026-09-23, `dev/bench-analyze.mjs` snapshots): estimates more than 2× under the
+replay dropped from 199 to 11, estimates within 2× rose from 556 to 738, mean absolute error
+fell from 6.64s to 5.59s. Overclaims by more than 2× went from 10 to 16: stages where
+AQE or free slots absorbed the tail, which a stage-level model can't see.
+
+The claim itself is `tailRecoveryMs` (`occupancy.ts`): the larger of the single-task delta
+above and `stragglerExcessMs / peakConcurrentTasks`, the summed excess over P50 of every
+task slower than 4× P50, spread over the most tasks the stage ever ran at once (both from
+`finalizeStage`). A lone straggler costs its own excess; a bimodal stage with hundreds of
+slow tasks (26% of 1400 on a real log) costs far more than its longest one, and the
+single-task delta claimed 38-92s where the replay recovered 443-638s. Peak, not average,
+concurrency: a tail-dominated stage runs few tasks for most of its span (5.7 average vs 14
+peak on one real stage), and dividing by the average doubled the claim. Scored the same way
+over the 14 real logs plus the 17 complete corpus runs (non-info findings only): within 2×
+of the replay 56 of 78 → 79 of 85, more than 2× under 16 → 0, more than 2× over 6 → 6, mean
+absolute error 53.4s → 8.4s. The detectors' floor gates use the same figure, which lifted
+skew's recall from 0.60 to 0.73 at precision 0.97 → 0.98; straggler's scores didn't move.
+Taking the removed work out of the core-work floor, scored again over 65 runs (14 real logs
+plus the corpus, 103 non-info findings): within 2× 88 of 95 → 97 of 103, more than 2× under
+1 → 0, more than 2× over 6 → 6, mean absolute error 7.55s → 5.18s; skew recall 0.76 → 0.81 at
+precision 0.98 → 0.96, straggler recall 0.71 → 0.76 at precision 0.94 → 0.92, either detector
+recall 0.85 → 0.90.
+
+`straggler`'s single-task delta runs from `taskDurationMax` down to the longest task its fix
+leaves (`stragglerFixLongestTaskMs`), not down to P50: the fix brings every task over 4× P50 to
+the median, so the stage still waits on its longest task at or under that
+(`longestNonStragglerMs`, from `finalizeStage`), and that task is also passed as a floor
+(`longestTaskAfterFixMs`). A speculation-driven finding with no task over 4× P50 keeps the P50
+delta. `skew` keeps its P50 delta, since repartitioning may even out tasks under 4× P50 too,
+but takes the same `longestTaskAfterFixMs` floor: without it a 100 s stage whose next-longest
+task ran 39 s had skew claiming 90 s where straggler claimed 61 s.
+Scored the same way over the 65 runs: more than 2× over 6 → 4, mean absolute error 5.18s →
+4.49s, straggler precision 0.92 → 0.94 at recall 0.76 → 0.74 (one stage at 0.61% of the run
+now estimates under the 0.5% floor, one below it no longer fires). The skew floor, scored the same way: within 2× 97 → 98 of 101, more than 2× over 4 → 3,
+mean absolute error 4.49s → 4.12s, precision and recall unchanged.
 
 `analyzer.ts` feeds this `totalCores` from `src/core-count.ts`'s
 `computePeakConcurrentCores(app, executorsAdded, executorsRemoved)`, not the shared
@@ -186,8 +240,8 @@ mistaken for the same kind of claim.
 | Detector | Formula basis | Spot-check |
 |---|---|---|
 | gc | `jvmGCTime / (executorRunTime / stageDurationMs)` | `grupo-semanal-beauty-application_1785266278671_91660.zstd`, stage 507: `jvmGCTime`=1080ms, `executorRunTime`=27509ms, `stageDurationMs`=56279ms → `wasteMs` = 1080 / (27509/56279) ≈ 2209.5ms. That's ≈3.9% of the stage's 56.3s wall-clock duration, matching the finding's own reported `gcPct` (3.9%) exactly, as the formula guarantees by construction. Under the occupancy model this stage's `gate` is `0.041` (0.04145044590332269 exactly): `basis: 'contended'`, `wallClock: {low: 91.6, high: 2209.5}` (91.5850382272182 / 2209.506706895925 exactly, per the Step 1 script's per-stage output). |
-| shuffle | `shuffleReadBytes / SHUFFLE_THROUGHPUT_BPS` (fallback tier; real-metrics parser not yet built) | `ventas-mensual-multi-big-application_1785266278671_91510.zstd`, stage 99 (`SHFL` finding): `shuffleReadBytes`=204,172,518,504 → `wasteMs` = 204172518504 / 125,000,000 × 1000 ≈ 1,633,380ms, matching `rawWaste.value` exactly. Eyeball against the timeline: the stage's actual wall-clock duration is only 763,776ms, i.e. this run moved shuffle data at ≈267MB/s, roughly 2x the assumed 125MB/s (1Gbps) constant: expected for the fallback tier's deliberately conservative assumption, but worth knowing the modeled figure runs high on fast-network clusters. Under the occupancy model this stage's `gate` is `1`, `ceiling` is `≈434,568.1`ms (434568.1041666667 exactly): `wallClock` capped to `≈329,207.9`ms (329207.8958333333 exactly), since the raw 1,633,380ms claim vastly exceeds the stage's own 763,776ms duration. |
-| spill | `diskBytesSpilled / SPILL_IO_THROUGHPUT_BPS` | Same run and stage (99): `diskBytesSpilled`=145,978,433,675 (note: the `SPILL` finding's own `value`/`metric` report `memoryBytesSpilled`=913,686,966,448, ~6x larger; the formula correctly uses the smaller disk figure, not that one) → `wasteMs` = 145978433675 / 200,000,000 × 1000 ≈ 729,892ms, matching `rawWaste.value` exactly. Eyeball: that's ≈191MB/s of implied disk throughput against the stage's 763,776ms actual duration, close to the assumed 200MB/s constant. Same ceiling-clip caveat as the shuffle row above applies here too, on the same stage. |
+| shuffle | `shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS × executors that ran the stage)` | `ventas-mensual-multi-big-application_1785266278671_91510.zstd`, stage 99 (`SHFL` finding): `shuffleReadBytes`=204,172,518,504 over 8 executors → `wasteMs` = 204172518504 / (8 × 125,000,000) × 1000 ≈ 204,173ms, against the stage's 763,776ms duration. The tasks' own measured shuffle fetch wait on this stage is 25.2s of wall-clock (`fetchWaitTime` / average concurrency), so even the per-link model runs well above the network stall actually observed, and the claim is capped there: 25.2s, `measured`. The pre-2026-09-23 formula divided by one link's bandwidth (1,633,380ms, 2.1× the stage's whole duration); before the fetch-wait cap, the occupancy clip (gate `1`) held the per-link figure to `≈111,923.8`ms, the room above this stage's core-work floor. |
+| spill | `diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS × executors that ran the stage)` | Same run and stage (99): `diskBytesSpilled`=145,978,433,675 (note: the `SPILL` finding's own `value`/`metric` report `memoryBytesSpilled`=913,686,966,448, ~6x larger; the formula correctly uses the smaller disk figure, not that one) over 8 executors → `wasteMs` = 145978433675 / (8 × 200,000,000) × 1000 ≈ 91,237ms (91236.521046875 exactly, matching `wallClock`, below the clip). |
 
 ## Overlap caveat: skew / straggler
 
@@ -195,11 +249,11 @@ mistaken for the same kind of claim.
 stage from the same single dominant outlier task, and each is clipped independently. This
 phase does not dedupe or suppress either: each keeps its own independently-computed
 `wallClock`. Do not sum `wallClock.high` across multiple findings on the same stage: if
-both fire together, they describe the same underlying waste, not two separate wastes. This
-overlap caveat is orthogonal to (and compounds with) the ceiling clip above: a stage with
-one dominant outlier task trips both detectors *and* has a small `ceiling`-derived
-recoverable room, since `ceiling` is itself `>= taskDurationMax`, the very quantity these
-two detectors are reacting to.
+both fire together, they describe the same underlying waste, not two separate wastes. Both
+are clipped with the post-fix floor described under
+[Occupancy-weighted attribution](#occupancy-weighted-attribution), not the plain `ceiling`,
+so a stage gated by one dominant outlier task reports that task's excess as recoverable
+instead of the near-zero room `ceiling >= taskDurationMax` would leave.
 
 `analyzer.ts`'s `flagSkewStragglerOverlap` (run after `deriveImpactBand`, once per `analyze()`
 call) surfaces this caveat to the reader instead of leaving it as an internal-only comment:
@@ -239,21 +293,21 @@ formula per `variant`/`rule` on the same finding type; the basis column says whi
 
 | Finding type | Scope | Tag | Basis |
 |---|---|---|---|
-| `retryWaste` | stage | measured | `retryWasteMs`, gate-clipped; pre-clip figure kept as `rawWaste` in `ms` |
+| `retryWaste` | stage | measured / modeled | `retryWasteMs` is summed attempt time, and attempts of different tasks run side by side (one lost executor fails every task it was running at once). With every wasted attempt sampled (`retryTaskSamples`, capped at 20), modeled: the longest retry chain (highest sampled attempt number + 1) times the mean wasted attempt, or `retryWasteMs / peakConcurrentTasks` when larger, capped at `retryWasteMs`. Otherwise measured, `retryWasteMs` itself. Gate-clipped; the summed figure is kept as `rawWaste` in `ms`. On the 14 real logs the one non-info finding (4 first attempts on one lost executor, 41 slots) went from 146.6s to 36.6s |
 | `speculationWaste` | stage | measured | `speculationWasteMs`, gate-clipped; pre-clip figure kept as `rawWaste` in `ms` |
-| `coldStart` | app | measured | `gapSeconds × 1000`, unclipped, `basis: 'serial'` unconditionally (a pre-first-task gap can't overlap any stage) |
-| `gc` | stage | modeled | `jvmGCTime / (executorRunTime / stageDurationMs)`, gate-clipped: the concurrency division is an approximation, not a reconstruction, hence `modeled`; `rawWaste` in `coreMs` is the raw `jvmGCTime` sum before that conversion |
-| `skew` | stage | measured | `taskDurationP95` or `Max` minus `P50` (per `metric`), gate-clipped; pre-clip figure kept as `rawWaste` in `ms` |
-| `straggler` | stage | measured | `taskDurationMax − taskDurationP50`, gate-clipped |
+| `coldStart` | app | measured | `gapSeconds × 1000` (first stage submitted to first executor added), unclipped, `basis: 'serial'` unconditionally (a pre-first-task gap can't overlap any stage) |
+| `gc` | stage | modeled / informational-only | high-GC: `jvmGCTime / (executorRunTime / stageDurationMs)`, gate-clipped: the concurrency division is an approximation, not a reconstruction, hence `modeled`; `rawWaste` in `coreMs` is the raw `jvmGCTime` sum before that conversion. Low-GC (`direction: 'low'`): informational-only, since its fix (less executor memory) raises GC rather than recovering it; it used to claim the stage's GC time as savings, which promoted 10 of 679 low-GC findings on 14 real logs to warning/critical |
+| `skew` | stage | measured | `tailRecoveryMs`: the larger of `taskDurationP95` or `Max` minus `P50` (per `metric`) and `stragglerExcessMs / peakConcurrentTasks`, gate-clipped against the post-fix floor (`shortensLongestTask`) with the longest task the fix leaves as a floor (`longestTaskAfterFixMs`, as for `straggler`); pre-clip figure kept as `rawWaste` in `ms` |
+| `straggler` | stage | measured | `tailRecoveryMs`: the larger of `taskDurationMax` minus the longest task the fix leaves (`longestNonStragglerMs`, or `taskDurationP50` without stragglers) and `stragglerExcessMs / peakConcurrentTasks`, gate-clipped against the post-fix floor (`shortensLongestTask`, `longestTaskAfterFixMs`) |
 | `stageShape` | stage | cost-only | all three rules are `estimateMethod: 'measured'`, real per-stage fields, no assumed constant: `'lowParallelism'` → `rawWaste` in `coreMs` (idle cores × stage duration); `'dataExplosion'` → `rawWaste` in `bytes` (`outputBytes − inputBytes`); `'taskStageSkew'` → `rawWaste` in `coreMs` (`max(0, min(totalCores, taskCount) − 1) × (taskDurationMax − taskDurationP50)`, the cores idle during the straggler's tail at achieved concurrency) |
 | `slowHost` | stage | measured / informational-only | duration-based variants (`hostMeanRatio`, `durationShare`, `multiDim`+`taskTime`): `value − taskDurationP50`, gate-clipped; byte-based `multiDim` dimensions: no formula yet |
-| `duplicatePlanSubtree` | sql | measured | each contributing stage's real wall-clock duration × the redundant fraction `(occurrences − 1) / occurrences`, summed and capped at the finding's own `stageIds` union. `stageIds` is narrowed to the stages that actually ran the duplicated subtree's matched node instances (accumulator-ID evidence resolved onto each `PlanNode` at parse time, see [Stage-ID attribution for Plan Advisor findings](./detector-contract#stage-id-attribution-for-plan-advisor-findings)), falling back to the whole execution's stages only when no matched instance has any accumulator coverage |
-| `shuffle` | stage | modeled | `shuffleReadBytes / SHUFFLE_THROUGHPUT_BPS` (assumed ~125MB/s), gate-clipped; `rawWaste` in `bytes` is the measured `shuffleReadBytes` behind it |
-| `spill` | stage | modeled | `diskBytesSpilled / SPILL_IO_THROUGHPUT_BPS` (assumed ~200MB/s), gate-clipped; `rawWaste` in `bytes` is `diskBytesSpilled`, which is the number the formula uses and not the `memoryBytesSpilled` the finding's own `metric` displays |
-| `stageSlowness` | stage | modeled | stage duration minus the `stageSlowness` detector's own `infoMin` threshold, gate-clipped |
+| `duplicatePlanSubtree` | sql | measured | per stage in `stageShares`: its task-active time (`taskActiveMs`, the union of its task intervals; submit-to-complete only when absent) × the repeated operators' share of that stage × the redundant fraction `(occurrences − 1) / occurrences`, summed and capped at the union of those stages' spans. A stage shared with other operators (the consuming join, the other join side) contributes only its share, so sibling groups can't claim one stage twice, and a stage left waiting for cores (2491 s open, 60 s of tasks on a real log) claims only its task time. No claim (`informational`) when the repeats' details differ (`occurrencesIdentical: false`) or no repeated operator has a stage (the execution-wide `stageIds` fallback stays for linking only). On the 14 real logs: 2307 min claimed before, including more duplicate time than the whole run on 3 logs (1661 of 458 min, 257 of 61, 338 of 68); 108 min after, critical 65 → 2, warning 54 → 21 |
+| `shuffle` | stage | modeled / measured | `shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS × executors)` (assumed ~125MB/s per executor link; `executors` = `executorStats.length`, the executors that ran the stage, min 1), capped at the fetch wait the tasks measured in wall-clock (`fetchWaitTime / (executorRunTime / stage duration)`, the `gc` conversion; `measured` when that cap binds), gate-clipped; `rawWaste` in `bytes` is the measured `shuffleReadBytes` behind it. The link model can't see whether reads stalled the tasks: on 14 real logs (2026-09-23) it claimed 2780s over 284 shuffle findings where the capped figure is 256s, and 5 of the 10 non-info findings had about zero fetch wait (they are now `info`). Fetch wait misses disk reads and deserialization, so the cap is a floor on what a shuffle costs, not its total. Dividing by one link instead modeled the whole cluster as a single 1 Gbps pipe: on 14 real logs (2026-09-23) that claimed 721 minutes of shuffle+spill savings on a 458-minute app, on stages where 222 of 284 shuffle findings measured ~0s of task fetch wait |
+| `spill` | stage | modeled | `diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS × executors)` (assumed ~200MB/s per executor's local disk, same executor count as `shuffle`), gate-clipped; `rawWaste` in `bytes` is `diskBytesSpilled`, which is the number the formula uses and not the `memoryBytesSpilled` the finding's own `metric` displays |
+| `stageSlowness` | stage | modeled | what more partitions (the finding's recommendation) could recover: the stage's task-active time (`taskActiveMs`, the union of its tasks' launch-to-finish intervals from `finalizeStage`) × `max(0, 1 − taskCount / totalCores)`, gate-clipped with the post-fix floor (`shortensLongestTask`: splitting partitions splits the longest task too). A stage that already ran at least as many tasks as the cluster had cores claims 0, and so does one that read no input and no shuffle bytes (no data for more partitions to split: a 1-task `count` stage open 27 minutes on 5s of CPU had claimed 99%); time a stage sat open with no task running (queued for slots) claims nothing. No cluster core count: informational. Replaced "stage duration minus the detector's 15-minute `infoMin`", which on 14 real logs (2026-09-23) graded 29 of 35 findings critical, including 1-task stages open 20-40 minutes whose only task ran under a second, while scoring a 27-minute single-task stage 0; before that no-read gate, 1 critical (that single-task stage), 1 warning, 33 info, claims 539 → 30 minutes |
 | `partitionSizing` | stage | modeled | `maxPartitionTooBig`/`shufflePartitionSkew`: shuffle-throughput formulas, gate-clipped. `lowShuffleParallelism`: stage duration scaled down by the shortfall between actual and ideal-partition-count task counts (`stageDurationMs × (1 − taskCount / targetTaskCount)`), i.e. the serialized work more partitions would let run concurrently, not the scheduling cost of the tasks you'd add to fix it |
-| `tinyTask` | stage | modeled | excess task count over 10% of the stage's actual count, × assumed per-task scheduling overhead, gate-clipped; pre-clip figure kept as `rawWaste` in `ms` |
-| `smallFiles` | sql | modeled / cost-only | `excessFileCount × FILE_OPEN_OVERHEAD_MS`, summed and capped over `stageIds`'s union; with no `stageIds` to map to, cost-only with that same figure as `rawWaste` in `ms`. `stageIds` is narrowed the same way (see [Stage-ID attribution for Plan Advisor findings](./detector-contract#stage-id-attribution-for-plan-advisor-findings)); falls back to the whole execution's stages when the flagged node(s) have no accumulator coverage. |
+| `tinyTask` | stage | measured / modeled | excess task count over 10% of the stage's actual count, × the stage's own measured per-task overhead (summed task wall time from `executorStats` minus `executorRunTime`, over `taskCount`), ÷ the stage's achieved task concurrency (task time ÷ stage duration, floored at 1), gate-clipped; `measured`. A stage with no `executorStats` or no measurable overhead falls back to the assumed 50ms per task, undivided (`modeled`). Pre-clip figure kept as `rawWaste` in `ms`. Measured overhead on 14 real logs ran 6-62ms per task, near the old constant, but the old formula summed it serially across tasks that actually ran in parallel: total claimed savings fell from 576s to 270s over 160 findings (2026-09-23) |
+| `smallFiles` | sql | modeled / cost-only | `excessFileCount × FILE_OPEN_OVERHEAD_MS`, divided for a read by the most tasks its stages ran at once (`peakConcurrentTasks`: tasks open their files in parallel; 91,344 files claimed 76 s on a 117 s stage that ran 314 tasks at once) and kept serial for a write (the job commit moves each file on the driver), summed and capped over `stageIds`'s union; with no `stageIds` to map to, cost-only with that same figure as `rawWaste` in `ms`. `stageIds` is narrowed the same way (see [Stage-ID attribution for Plan Advisor findings](./detector-contract#stage-id-attribution-for-plan-advisor-findings)); falls back to the whole execution's stages when the flagged node(s) have no accumulator coverage. |
 | `overBroadcast` | sql | modeled / cost-only | `broadcastBytes / BROADCAST_BANDWIDTH_BPS`, summed and capped over `stageIds`'s union; cost-only with `rawWaste` in `ms` when not stage-mappable. `stageIds` is narrowed the same way; falls back to the whole execution's stages when the flagged node(s) have no accumulator coverage. |
 | `underBroadcast` | sql | modeled / cost-only | `smallerSideBytes / BROADCAST_BANDWIDTH_BPS`, summed and capped over `stageIds`'s union; cost-only with `rawWaste` in `ms` when not stage-mappable. `stageIds` is narrowed the same way; falls back to the whole execution's stages when the flagged node(s) have no accumulator coverage. |
 | `memoryUtilization` | app | cost-only / informational-only | Three of the four variants report `rawWaste` in `mbSeconds`: `variant: 'wasteModel'` passes through its own `wastedMBSeconds`; `'idleCores'` uses `idleRateFraction × allocatedMB × peakExecutors × appDurationSeconds`; `'memoryBand'` with `rule: 'heapOverProvisioned'` uses `(allocatedBytes − heap) in MB × appDurationSeconds`. `'memoryBand'` with `rule: 'heapNearCapacity'` is an OOM-risk signal rather than a waste, and the `dataUnavailable` shape has no inputs at all: both informational-only |

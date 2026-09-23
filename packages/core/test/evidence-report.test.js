@@ -10,7 +10,7 @@ function fixture() {
     },
     stages: new Map([
       [1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600 })],   // skew critical
-      [2, makeStage({ id: 2, shuffleReadBytes: 2 * 1024 * 1024 * 1024 })],     // shuffle critical
+      [2, makeStage({ id: 2, shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 10000 })], // shuffle critical
     ]),
     executors: { added: [], removed: [] },
     sql: new Map(),
@@ -24,6 +24,17 @@ function fixture() {
 }
 
 describe('buildEvidenceReport', () => {
+  it('leaves an undefined finding field out of the evidence instead of printing "undefined"', () => {
+    // 64 MB spilled clears no spill-magnitude tier, so the spill finding's spillMagnitude is undefined.
+    const fx = fixture();
+    fx.stages.set(3, makeStage({ id: 3, memoryBytesSpilled: 64 * 1024 * 1024 }));
+    const { markdown, json } = buildEvidenceReport(fx);
+    const spill = json.findings.find((f) => f.type === 'spill');
+    expect(spill).toBeTruthy();
+    expect('spillMagnitude' in spill.evidence).toBe(false);
+    expect(markdown).not.toContain('undefined');
+  });
+
   it('returns { markdown, json } with a documented numeric schemaVersion', () => {
     const { markdown, json } = buildEvidenceReport(fixture());
     expect(typeof markdown).toBe('string');
@@ -70,7 +81,7 @@ describe('buildEvidenceReport', () => {
     const planTree = { name: 'Project', detail: '', metrics: [], children: [readNode] };
     const fx = fixture();
     fx.sql = new Map([[1, {
-      id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree,
+      id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree,
     }]]);
 
     const { json, markdown } = buildEvidenceReport(fx);

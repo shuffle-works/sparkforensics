@@ -163,7 +163,7 @@ describe('Skew', () => {
     const appModel: AppModel = {
       ...makeAppModel([1]),
       stages: new Map([[1, makeStage(1, { sqlExecutionId: 1 })]]) as unknown as AppModel['stages'],
-      sql: new Map([[1, { executionId: 1, physicalPlanDescription: '', planTree }]]) as unknown as AppModel['sql'],
+      sql: new Map([[1, { executionId: 1, planTree }]]) as unknown as AppModel['sql'],
     };
     const catalog = [skewFinding(1, 8)];
     const getTaskData = vi.fn(async () => TASK_DATA);
@@ -183,7 +183,7 @@ describe('Skew', () => {
     const appModel: AppModel = {
       ...makeAppModel([1]),
       stages: new Map([[1, makeStage(1, { sqlExecutionId: 1 })]]) as unknown as AppModel['stages'],
-      sql: new Map([[1, { executionId: 1, physicalPlanDescription: '', planTree }]]) as unknown as AppModel['sql'],
+      sql: new Map([[1, { executionId: 1, planTree }]]) as unknown as AppModel['sql'],
     };
     const catalog = [skewFinding(1, 8)];
     const getTaskData = vi.fn(async () => TASK_DATA);

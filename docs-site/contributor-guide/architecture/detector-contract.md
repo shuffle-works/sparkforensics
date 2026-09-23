@@ -169,9 +169,19 @@ out-of-order tolerance elsewhere.
 
 `planTree` itself is kept current against Spark's adaptive query execution (AQE)
 re-plans: `SparkListenerSQLAdaptiveExecutionUpdate` events overwrite the
-execution's `sparkPlanInfo`/`physicalPlanDescription` last-write-wins, so
+execution's `sparkPlanInfo` last-write-wins, so
 accumulator-ID evidence is matched against the plan that actually ran rather than
-a stale pre-AQE snapshot.
+a stale pre-AQE snapshot. Since a superseded plan is never read, `dispatchLine`
+holds an open execution's latest update as unparsed text and parses only that one,
+when `SQLExecutionEnd` arrives or at parse completion (`deferAdaptiveUpdate`,
+`event-handlers.ts`). It recognizes an update from the flat first and last pieces
+`buildChunkDecoder` reports for a line joined across slices (`JoinedLine`), so a
+superseded update is never copied into one flat string either. The raw `sparkPlanInfo` stays worker-side and is released
+once `SQLExecutionEnd` resolves it into `planTree`; `physicalPlanDescription` (Spark's
+text rendering of the plan, which nothing reads) is emptied before `JSON.parse` and
+never retained (`stripPlanDescription`, `event-handlers.ts`). `buildChunkDecoder`
+decodes each decompressed chunk in slices of at most 512 KiB, and drops the bytes of a
+value that crosses a slice boundary without decoding them.
 
 No eviction/pruning is added to `taskAccumStages`, a deliberate choice, not an
 oversight: measured on real logs, it holds roughly 1,050 keys per compressed MB
@@ -195,6 +205,11 @@ event: `TaskEndEventSchema`'s `Accumulables` array is capped at
 plan's per-task metric count, so a single crafted `TaskEnd` can't grow the map
 past that per-event bound; a `TaskEnd` exceeding it fails schema validation and
 the line is skipped (counted in `skippedLines`) like any other malformed event.
+Each accumulable is checked for its numeric `ID` only: `Update`/`Value` are
+unread, and Spark writes some as JSON arrays (`internal.metrics.updatedBlockStatuses`),
+which a stricter check would reject along with the whole task. When every entry has
+Spark's flat `{"ID":n,...}` form, `parseTaskEnd` (`event-handlers.ts`) reads the IDs with a
+string scan and cuts the array out before `JSON.parse`; any other shape is parsed whole.
 
 ## Bottleneck thresholds (spec §4)
 
@@ -232,23 +247,23 @@ stays documented here in full.
 
 | Rule | Fires when | Fallback |
 |---|---|---|
-| Task skew | `taskDurationP95 / taskDurationP50 > 3×` (`taskDurationMax / P50` for stages under `minTasksForP95` = 20 tasks), **and** the occupancy-clipped P95−P50 (or max−P50) delta is ≥ `floorPctWarn` = 0.5% of app runtime | `warning` |
-| Shuffle read | `shuffleReadBytes > minBytes` = 50 MiB | `info` |
+| Task skew | `taskDurationP95 / taskDurationP50 > 3×` (`taskDurationMax / P50` for stages under `minTasksForP95` = 20 tasks), **and** the occupancy-clipped tail recovery (`tailRecoveryMs`: P95−P50, or max−P50, or the slow tasks' summed excess over the stage's peak slots when larger) is ≥ `floorPctWarn` = 0.5% of app runtime. The clip floors the claim at the longest task the fix leaves, not the current one, and at the core work the fix leaves over every core (see impact-estimation.md's occupancy section); `straggler`'s floors use the same clip | `warning` |
+| Shuffle read | `shuffleReadBytes > minBytes` = 50 MiB, on a stage that isn't shorter than `stageFloorPct` = 0.5% of the run (a zero-length stage or an unknown run duration passes; the claim is clipped to the stage, so a shorter one graded `info`: 182 of 284 on the 14 real logs, the shuffle itself still there) | `info` |
 | Partition sizing: skew | `shuffleReadMax > 5×` `shuffleReadP50` **and** `shuffleReadMax > 256 MiB` | `warning` |
 | Partition sizing: low parallelism | `shuffleReadBytes ≥ 1 GiB` **and** `taskCount ≤ 7` | `warning` |
 | Partition sizing: oversized partition | `shuffleReadMax ≥ 5 GiB` | `critical` |
 | GC | `executorRunTime ≥ minRunTimeMs` = 10 s **and** `gcPct > 10%` | `warning` |
-| GC (low / cost) | `executorRunTime ≥ 10 s` **and** `gcPct < lowInfoPct100` = 5% (checked only when the GC row above did not fire) | `info` |
-| Spill (magnitude v2) | any non-zero `memoryBytesSpilled`. The magnitude sub-table below classifies *how much*, but does not gate firing | `warning` |
-| Cold start | `firstStageSubmittedAt − app.startTime > gapSeconds` = 30 s | `warning` |
-| Slow host: mean-duration ratio | stage has ≥ `minHosts` = 3 hosts (or executors) and ≥ `minTasks` = 15 tasks; then per host: mean task duration / overall median ≥ `ratioWarn` = 2.0× **and** host task-share ≥ `minShare` = 20% **and** host mean ≥ `floorMs` = 1000 ms (absolute-magnitude floor, rules out sub-second noise) | `warning` |
+| GC (low / cost) | `executorRunTime ≥ 10 s` **and** `gcPct < lowInfoPct100` = 5% (checked only when the GC row above did not fire) **and** the stage lasts ≥ `lowInfoFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, such as one with no completion time). Gets no wall-clock estimate (an over-provisioning signal), so this band always stands. The floor dropped 464 of 685 low-GC notes on the 14 real logs (none on the corpus): low GC is still true on those stages, but a memory-sizing note from a stage that barely ran adds nothing | `info` |
+| Spill (magnitude v2) | any non-zero `memoryBytesSpilled`, on a stage that isn't shorter than `stageFloorPct` = 0.5% of the run (as for shuffle read: 12 of 38 on the 14 real logs, all `info`). The magnitude sub-table below classifies *how much*, but does not gate firing | `warning` |
+| Cold start | `firstExecutorAddedAt − firstStageSubmittedAt > gapSeconds` = 30 s (no finding without executor-added events): the time a runnable stage waited for its first executor. An executor added before the first stage and still alive at submission means no wait and no finding; one removed at or before submission is ignored, so the gap runs to the next executor added after it. It used to be `firstStageSubmittedAt − app.startTime`, the driver's own startup, which read 36-47 s on all 9 real logs that fired whatever the executors did, and flagged 6 corpus logs whose first executor was up 44-313 s before the first stage (5 of them) or arrived 4.4 s after it | `warning` |
+| Slow host: mean-duration ratio | stage has ≥ `minHosts` = 3 hosts (or executors) and ≥ `minTasks` = 15 tasks, and lasts ≥ `stageFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, which gets no estimate and keeps its fallback band; every slow-host finding on a shorter stage graded `info`, 324 of 452 on the 14 real logs, the imbalance itself still true; this gate covers every slowHost row); then per host: mean task duration / overall median ≥ `ratioWarn` = 2.0× **and** host task-share ≥ `minShare` = 20% **and** host mean ≥ `floorMs` = 1000 ms (absolute-magnitude floor, rules out sub-second noise) | `warning` |
 | Slow host: duration-share | same stage gate as the row above; then per host: ≥ `shareWarn` = 75% of the stage's total task-duration **and** ≥ `taskShareWarn` = 50% of its task count | `warning` |
-| Stage slowness: absolute fallback, suppressed when `slowHost` already fired | stage wall-clock duration ≥ `infoMin` = 15 min | `info` |
-| Straggler / speculative-execution | `taskCount ≥ minTasks` = 10, **and** either any speculative task ran **or** straggler share > `shareWarn` = 5%. `warnPct`/`critPct` (10%/20% speculative share) and `floorPctWarn`/`floorPctCrit` (0.5%/2% of app runtime) no longer set the band; they rank the straggler-vs-speculative tiers that pick which *metric* the finding reports | `info` |
+| Stage slowness: absolute fallback, suppressed when `slowHost` already fired | stage wall-clock duration ≥ `infoMin` = 15 min. The band then comes from the partitioning-headroom estimate (see impact-estimation.md), not the duration | `info` |
+| Straggler / speculative-execution | `taskCount ≥ minTasks` = 10, **and** the stage lasts ≥ `floorPctWarn` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, such as one with no completion time; a shorter stage's tail can't cost more than its own duration, so every finding there graded `info`: 671 of 753 on the 14 real logs, 3 on the corpus, the slow tail itself still true), **and** either any speculative task ran, **or** straggler share > `shareWarn` = 5%, **or** straggler share > `shareWarnAtFloor` = 2.5% with the occupancy-clipped tail recovery (`tailRecoveryMs`, as for skew, but its single-task delta stops at the longest task under 4× P50 rather than at P50) already ≥ `floorPctWarn` (0.5% of app runtime). The lower gate is scored against a task-level replay of every stage on 14 real logs (recoverable = list-scheduling replay with each task over 4× P50 capped at P50; positive = ≥ 0.5% of app runtime): it found 3 stages whose stragglers gated them for 10-48s at 2.7-4% of their tasks, for 1 borderline miss, lifting skew-or-straggler recall from 0.86 to 0.92 at precision 0.91 → 0.89. Admitting every 2.5% share instead would add 86 findings below the floor. The same sweep kept skew's `ratioWarn` = 3 (2.5 added false positives, 4 lost true ones) and the 0.5% floor (1% halved skew recall). `warnPct`/`critPct` (10%/20% speculative share) and `floorPctWarn`/`floorPctCrit` (0.5%/2% of app runtime) no longer set the band; they rank the straggler-vs-speculative tiers that pick which *metric* the finding reports | `info` |
 | Speculation waste (new) | `speculationWastedAttempts ≥ minWasted` = 5 **and** `speculationWasteMs ≥ minWasteMs` = 60 s | `warning` |
 | Retry waste | `wastedAttempts ≥ minWasted` = 3 **and** `retryWasteMs ≥ minWasteMs` = 30 s, on a stage that still completed | `warning` |
-| Tiny tasks | `taskCount ≥ minTasks` = 100 **and** `taskDurationP50 ≤ maxP50` = 500 ms **and** `taskDurationP95 ≤ maxP95` = 1000 ms | `info` |
-| Duplicate plan subtree | a subtree of ≥ `minSubtreeSize` = 3 nodes whose shape fingerprint repeats ≥ `minOccurrences` = 2× in the plan | `warning` |
+| Tiny tasks | `taskCount ≥ minTasks` = 100 **and** `taskDurationP50 ≤ maxP50` = 500 ms **and** `taskDurationP95 ≤ maxP95` = 1000 ms **and** the stage lasts ≥ `stageFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length; coalescing can't save more than the stage's own duration, so every finding on a shorter stage graded `info`: 132 of 151 on the 14 real logs, the tasks still tiny). Checked (2026-09-23) against each stage's measured per-task overhead (task wall time minus executor run time, the estimate's own input) on 14 real logs and the corpus: of 228 stages with 100+ tasks outside the P50/P95 gate, none would save 0.5% of its run by coalescing (median overhead 0.2-3% of task time); of 170 inside it, 25 would, and all 25 grade above `info` | `info` |
+| Duplicate plan subtree | a subtree of ≥ `minSubtreeSize` = 3 nodes whose shape fingerprint repeats ≥ `minOccurrences` = 2× in the plan, unless its linked stages together lasted less than `stageFloorPct` = 0.5% of the run (a repeat with no linked stage time, or an unknown run duration, is kept; the claim counts at most each stage's own task-active time, so such a repeat graded `info`: 340 of 545 on the 14 real logs, the repeat still in the plan). `occurrencesIdentical` records whether the repeats also agree node-for-node on normalized detail, ignoring AQE query-stage numbers; when they don't (same shape over another table, filter or projection: 270 of 546 groups on the 14 real logs) the finding is `info` with confidence `low` and no time claim. `stageShares` gives, per stage, the repeated operators' share of the stage's operators (WholeStageCodegen wrappers and Exchange write halves not counted); with no attributed stage the finding is `info` | `warning` |
 | Small files read/write | per read/write side: file count > `minFiles` = 100 **and** average file size < `maxAvgFileSizeMB` = 3 MiB | `warning` |
 | Broadcast sizing: missed | a 2-child `SortMergeJoin` whose smaller side is < 10 MiB (unconditional), or < 100 MiB with the larger side > 10 GiB, or < 1 GiB with larger > 300 GiB, or < 5 GiB with larger > 1 TiB (`broadcastTiers` × `comparisonTiers`) | `info` |
 | Broadcast sizing: oversized | a `BroadcastExchange` node whose `data size` metric > `overBroadcastBytes` = 1 GiB | `warning` |
@@ -275,12 +290,12 @@ thresholds sit well above their disk counterparts at every tier.
 
 | Rule | Warning | Critical |
 |---|---|---|
-| Stage shape: PRatio | `taskCount / totalCores < 0.5` (info, under-parallelized) | none |
+| Stage shape: PRatio | `taskCount / totalCores < 0.5` (info, under-parallelized), on a stage lasting ≥ `lowParallelismFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length): parallelizing can't save more than the stage's duration, and on the 14 real logs 2839 of 3005 firings were below it | none |
 | Stage shape: OIRatio | `outputBytes / inputBytes > 10×` (info, data explosion) | none |
 | Stage shape: TaskStageSkew | `taskDurationMax / stageDuration > 3×` (info) | none |
 | Failed tasks | failure rate > 5% (min 10 tasks) | > 20% |
 | Stage failed outright | none | any `stageFailureReason` present |
-| Slow host: multi-dimensional | max/median ratio across taskTime/inputBytes/shuffleBytes/storageMemory ≥ 1.33× (info); each dimension's sample must also clear an absolute floor (1000 ms for taskTime, 64 MiB for the byte dimensions) | ≥ 3.16× warning, ≥ 10× critical |
+| Slow host: multi-dimensional | max/median ratio across taskTime/inputBytes/shuffleBytes/storageMemory ≥ 1.33× (info); each dimension's sample must also clear an absolute floor (1000 ms for taskTime, 64 MiB for the byte dimensions). A stage lasting under `stageFloorPct` = 0.5% of the run is skipped (see the mean-duration row): a byte dimension there, which has no time estimate, used to keep its ratio tier (66 of 90 warning/critical on the 14 real logs) until 6298149 graded it `info` | ≥ 3.16× warning, ≥ 10× critical |
 | Utilization | avg active executors / peak < 60% (info) | none |
 | Autoscaling churn: short-lived executors (design spike, unvalidated thresholds) | > 30% of executors alive under 2 min (min 5 executors) | > 60% |
 | Job failure rate | ≥ 30% (≥ 10% info) | ≥ 50% |

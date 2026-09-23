@@ -560,8 +560,9 @@ describe('sparkforensics-analyze CLI', () => {
   });
 
   describe('--impact/--type/--stage findings filter', () => {
-    // ndjsonWithSkew() produces exactly 2 findings: memoryUtilization (info,
-    // no stage) and straggler (info, stage 1).
+    // ndjsonWithSkew() produces exactly 3 findings: memoryUtilization (info,
+    // no stage), plus skew and straggler (both critical, stage 1: its one
+    // 2000ms task gates the whole 2000ms stage).
     it('narrows findings by --type, leaving recommendations/cleanChecks/summary full', () => {
       const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-filter-'));
       const path = join(dir, 'eventlog');
@@ -589,8 +590,8 @@ describe('sparkforensics-analyze CLI', () => {
         const { stdout, status } = runCli([path, '--stage', '1']);
         expect(status).toBe(0);
         const { findings } = JSON.parse(stdout);
-        expect(findings).toHaveLength(1);
-        expect(findings[0].stageId).toBe(1);
+        expect(findings.map((f) => f.type).sort()).toEqual(['skew', 'straggler']);
+        expect(findings.every((f) => f.stageId === 1)).toBe(true);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -601,7 +602,7 @@ describe('sparkforensics-analyze CLI', () => {
       const path = join(dir, 'eventlog');
       writeFileSync(path, ndjsonWithSkew());
       try {
-        const { stdout, status } = runCli([path, '--impact', 'critical']);
+        const { stdout, status } = runCli([path, '--impact', 'warning']);
         expect(status).toBe(0);
         const { findings } = JSON.parse(stdout);
         expect(findings).toEqual([]);
@@ -615,7 +616,7 @@ describe('sparkforensics-analyze CLI', () => {
       const path = join(dir, 'eventlog');
       writeFileSync(path, ndjsonWithSkew());
       try {
-        const { stdout, status } = runCli([path, '--impact', 'info,warning', '--type', 'straggler', '--stage', '1']);
+        const { stdout, status } = runCli([path, '--impact', 'info,critical', '--type', 'straggler', '--stage', '1']);
         expect(status).toBe(0);
         const { findings } = JSON.parse(stdout);
         expect(findings).toHaveLength(1);

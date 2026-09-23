@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { createState, runParse, runParseFiles, reassembleRollingEntries } from '../parser-worker.ts';
+import { nodeParseCodecs } from './native-zstd.ts';
 import { createModelCallbacks } from '../model-assembler.ts';
 import { routeMessage, type IngestHandlers } from '../ingest.ts';
 import type { AppModel } from '../types.ts';
@@ -123,9 +124,9 @@ export async function collectRun(inputPath: string): Promise<{ appModel: AppMode
       const files = ordered.map((name) => nodeFileFromPath(join(inputPath, name)));
       // .catch(reject), not void: a throw past the parser's guards would otherwise leave
       // this Promise pending forever, surfacing only as an unhandled rejection.
-      runParseFiles(files, state, { emit }).catch(reject);
+      runParseFiles(files, state, { emit, ...nodeParseCodecs }).catch(reject);
     } else {
-      runParse(nodeFileFromPath(inputPath), state, { emit }).catch(reject);
+      runParse(nodeFileFromPath(inputPath), state, { emit, ...nodeParseCodecs }).catch(reject);
     }
   }, (msg) => new Error((msg as { message: string }).message));
 }

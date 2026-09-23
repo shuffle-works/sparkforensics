@@ -55,6 +55,10 @@ export function scanRelationId(name: string, detail: string): string | null {
   //    Delta tables). All catalog tables surface as `spark_catalog.<db>.<table>`.
   let format = null, table = null;
   const nameM = name.match(/^Scan\s+(parquet|orc|csv|json)\s+(spark_catalog\.\S+)$/i);
+  // Fast reject: every branch below that returns a key needs this name match, a FileScan
+  // detail or a JDBCRelation detail. Most plan nodes (Project, Filter, joins) have none, and
+  // their long details otherwise pay every regex below.
+  if (!nameM && !/FileScan/i.test(detail) && !detail.includes('JDBCRelation')) return null;
   if (nameM) { format = nameM[1].toLowerCase(); table = nameM[2]; }
   else {
     const detM = detail.match(/FileScan\s+(parquet|orc|csv|json)\s+(spark_catalog\.[^[\s]+)\[/i);

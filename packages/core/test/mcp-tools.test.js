@@ -418,8 +418,9 @@ describe('diagnoseRun / getFindingEvidence', () => {
       try {
         const { runId } = await resolveOrCreateRun({ source: { path } });
         const { findings } = diagnoseRun(runId, { stageId: 1 });
-        expect(findings).toHaveLength(1);
-        expect(findings[0].stageId).toBe(1);
+        // The fixture's one 2000ms task gates its whole 2000ms stage: both skew and straggler fire.
+        expect(findings.map((f) => f.type).sort()).toEqual(['skew', 'straggler']);
+        expect(findings.every((f) => f.stageId === 1)).toBe(true);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -429,7 +430,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const { dir, path } = tmpEventLogWithFindings();
       try {
         const { runId } = await resolveOrCreateRun({ source: { path } });
-        const { findings } = diagnoseRun(runId, { impactBand: ['critical'] });
+        const { findings } = diagnoseRun(runId, { impactBand: ['warning'] });
         expect(findings).toEqual([]);
       } finally {
         rmSync(dir, { recursive: true, force: true });
@@ -441,9 +442,9 @@ describe('diagnoseRun / getFindingEvidence', () => {
       try {
         const { runId, appModel } = await resolveOrCreateRun({ source: { path } });
         const direct = buildEvidenceReport(appModel, {
-          findingsFilter: { impactBand: ['info'], type: ['straggler'], stageId: 1 },
+          findingsFilter: { impactBand: ['critical'], type: ['straggler'], stageId: 1 },
         }).json;
-        const result = diagnoseRun(runId, { impactBand: ['info'], type: ['straggler'], stageId: 1 });
+        const result = diagnoseRun(runId, { impactBand: ['critical'], type: ['straggler'], stageId: 1 });
         expect(result.findings).toEqual(direct.findings);
         expect(result.findings).toHaveLength(1);
       } finally {

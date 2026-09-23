@@ -22,7 +22,8 @@ repartition on a better key.
 ### `SHFL`: Shuffle I/O {#shfl}
 
 Tasks move a large amount of intermediate data between stages. Raise
-`spark.sql.shuffle.partitions`, or add a broadcast join.
+`spark.sql.shuffle.partitions`, or add a broadcast join. Only flagged on
+stages that take at least 0.5% of the run.
 
 ### `SPILL`: Memory and disk spill {#spill}
 
@@ -30,12 +31,14 @@ Tasks are writing data out of memory, which slows execution. Two spill
 patterns get flagged differently: skew spill, where a few heavy tasks spill
 while most don't (rebalance partitioning), and volume spill, where most
 tasks spill because the data genuinely exceeds available memory (add
-partitions).
+partitions). Only flagged on stages that take at least 0.5% of the run.
 
 ### `GC`: Garbage collection pressure {#gc}
 
 Tasks spend an unusually large share of time reclaiming memory. Reduce
 object creation: use primitive types, avoid UDFs, or raise executor memory.
+A stage with very little GC gets an informational note that executor memory
+may be over-provisioned, only on stages that take at least 0.5% of the run.
 
 ### `FAIL`: Failed tasks {#fail}
 
@@ -53,7 +56,8 @@ it.
 
 A few tasks run much slower than the rest of their stage. Rule out a GC
 pause or a slow shuffle fetch before assuming a hardware issue; if a skewed
-key is the real cause, that's a candidate for AQE's skew-join handling.
+key is the real cause, that's a candidate for AQE's skew-join handling. Only
+flagged on stages that take at least 0.5% of the run.
 
 ### `SPEC`: Speculation waste {#spec}
 
@@ -72,7 +76,8 @@ completed. Investigate executor loss or fetch failures.
 ### `TINY`: Tiny tasks {#tiny}
 
 Many very short tasks add scheduling overhead out of proportion to the work
-each one does. Repartition to fewer, larger tasks.
+each one does. Repartition to fewer, larger tasks. Only flagged on stages that
+take at least 0.5% of the run.
 
 ### `PART`: Partition sizing {#part}
 
@@ -91,13 +96,15 @@ large per-task data volume driving heavy shuffle and spill.
 
 The stage has an inefficient task count, output shape, or task-to-stage
 balance: for example, one straggler task taking a large fraction of the
-stage's wall-clock time.
+stage's wall-clock time. A too-low task count is only flagged on stages that
+take at least 0.5% of the run.
 
 ### `HOST`: Slow host {#host}
 
 One executor is much slower than its peers. It may just hold data locality
 for its tasks or carry one heavy stage, rather than a hardware fault.
-Enable `spark.speculation` to relaunch a lagging task automatically.
+Enable `spark.speculation` to relaunch a lagging task automatically. Only
+flagged on stages that take at least 0.5% of the run.
 
 ## App-level
 
@@ -190,7 +197,9 @@ Flags patterns in the SQL execution plan worth reviewing. Four checks share
 this tag:
 
 - Duplicate plan subtree: the same subtree recomputed more than once in the
-  plan.
+  plan. When the repeats have the same shape but different filters, columns
+  or tables, the finding stays informational and claims no time. Only flagged
+  when the repeat's stages take at least 0.5% of the run.
 - Small files: reading an excessive number of small files.
 - Under-broadcast: the smaller side of a Sort Merge Join looks well under
   the broadcast threshold; consider a `broadcast()` hint or raising

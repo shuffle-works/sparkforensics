@@ -7,7 +7,7 @@ describe('createModelCallbacks', () => {
     const cb = createModelCallbacks(appModel, { onProgress: vi.fn(), onDone: vi.fn(), onError: vi.fn() });
     cb.onApp({ name: 'A' });
     cb.onStage({ id: 1 });
-    cb.onSql({ id: 7, physicalPlanDescription: '', stageIds: [1] });
+    cb.onSql({ id: 7, stageIds: [1] });
     expect(appModel.app.name).toBe('A');
     expect(appModel.stages.get(1)).toBeTruthy();
     expect(appModel.stages.get(1).sqlExecutionId).toBe(7);
@@ -33,7 +33,7 @@ describe('createModelCallbacks', () => {
   it('patches a plan tree onto its sql execution when onSqlPlan arrives after onSql', () => {
     const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map() };
     const cb = createModelCallbacks(appModel, { onProgress: vi.fn(), onDone: vi.fn(), onError: vi.fn() });
-    cb.onSql({ id: 7, physicalPlanDescription: '' });
+    cb.onSql({ id: 7 });
     cb.onSqlPlan({ executionId: 7, planTree: { id: '0', operator: 'Project' } });
     expect(appModel.sql.get(7).planTree).toEqual({ id: '0', operator: 'Project' });
   });

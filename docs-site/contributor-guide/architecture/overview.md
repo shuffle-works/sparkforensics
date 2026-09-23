@@ -76,6 +76,22 @@ Spark's custom `LZ4Block` framing, or Spark's Snappy framing (`org.xerial.snappy
 filename suffix. Both the dropped-file path and the SHS-fetch path stream
 block-by-block (fflate `Gunzip` / fzstd `Decompress` / the LZ4Block decoder /
 the Snappy block decoder) to keep one decompressed chunk live at a time.
+The Node CLI/MCP paths (`collectRun` for local files, `shs-load.ts` for SHS
+archives) swap fzstd for Node's native zlib zstd where the running Node has it
+(22.15+/23.8+), through the `zstdDecoder` option of `runParse`/`decodeShsArchive`: `packages/core/src/cli/native-zstd.ts` decompresses one frame at a
+time, since Node's own decoders stop after a stream's first frame and Spark
+writes thousands of small ones. A frame declaring more than 64 MiB of content,
+one still incomplete after 64 MiB compressed, a malformed one, or a truncated
+tail goes to fzstd instead. Spark's frames declare no content size, so each
+one's output is capped at 64 MiB as it decodes: past that, the inline decoder
+hands the frame to fzstd and the threaded one streams it, pausing while 64 MiB
+wait to be parsed. On the real logs this made parsing 42% faster. For local files (`nodeParseCodecs`, `createThreadedZstdDecoder`), frames of
+64 KB or more compressed decompress on libuv's threadpool, up to 4 at a time,
+while the main thread parses earlier output; `streamFile` awaits each `push`, and
+chunks still arrive in stream order. That took another 24% off the largest real
+log (4.2s to 3.2s) for 139 MB more peak RSS. `decodeShsArchive` decodes each
+archive entry in one synchronous call, so SHS archives keep the inline decoder
+(`nodeArchiveCodecs`).
 
 The SHS-fetch path does buffer the downloaded zip whole for `unzipSync`. But
 one-shotting the decompression of a single entry (fzstd's `decompress()`,

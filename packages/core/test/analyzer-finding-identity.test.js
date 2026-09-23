@@ -130,7 +130,7 @@ function sqlCollisionFixture() {
   const dupA = () => planNode('SortMergeJoin', [], [planNode('Sort'), planNode('Sort')]);
   const dupB = () => planNode('HashAggregate', [], [planNode('Exchange'), planNode('Exchange')]);
   const planTree = planNode('Project', [], [readScan, writeExec, dupA(), dupA(), dupB(), dupB()]);
-  const sqlExec = { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree };
+  const sqlExec = { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree };
   const sql = new Map([[1, sqlExec]]);
   const stages = new Map([[1, makeStage({ id: 1, sqlExecutionId: 1 })]]);
   return { app: makeApp(), stages, sql };

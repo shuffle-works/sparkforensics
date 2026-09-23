@@ -1,14 +1,75 @@
 import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, Stage } from './types.ts';
-import { computeOccupancy, estimateSingleStage, estimateMultiStage, type OccupancyStage, type StageOccupancyInfo } from './occupancy.ts';
-import { detectorCatalog } from './detectors.ts';
+import {
+  computeOccupancy, estimateSingleStage, estimateMultiStage, tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs,
+  type OccupancyStage, type SingleStageEstimateOptions, type StageOccupancyInfo,
+} from './occupancy.ts';
 
-// Assumed shuffle-network throughput, ~1 Gbps. Starting assumption, unvalidated.
+// Assumed shuffle-network throughput per executor link, ~1 Gbps. Starting assumption, unvalidated.
 const SHUFFLE_THROUGHPUT_BPS = 125_000_000;
-// Assumed disk I/O throughput for spilled data, ~200 MB/s (conservative HDD/SSD blend).
+// Assumed disk I/O throughput per executor for spilled data, ~200 MB/s (conservative HDD/SSD blend).
 const SPILL_IO_THROUGHPUT_BPS = 200_000_000;
+
+// A stage's own per-task overhead: task wall time (launch to finish, summed per executor by
+// finalizeStage) minus executorRunTime, i.e. deserialization, result serialization and the
+// launch round trip that coalescing tasks removes. `concurrency` is the stage's achieved task
+// concurrency (task time / stage duration). Null when the stage has no such data or no overhead.
+function measuredTaskOverhead(stage: Stage): { perTaskMs: number; concurrency: number } | null {
+  const executorStats = Array.isArray(stage.executorStats)
+    ? (stage.executorStats as { totalDuration?: number }[]) : [];
+  const taskTimeMs = executorStats.reduce((sum, e) => sum + (e.totalDuration ?? 0), 0);
+  const taskCount = stage.taskCount ?? 0;
+  const durationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
+  const overheadMs = taskTimeMs - (stage.executorRunTime ?? 0);
+  if (taskTimeMs <= 0 || taskCount <= 0 || durationMs <= 0 || overheadMs <= 0) return null;
+  return { perTaskMs: overheadMs / taskCount, concurrency: taskTimeMs / durationMs };
+}
+
+// Both constants above are single-device figures (one NIC, one local disk). A stage's shuffle
+// reads and spills are spread over every executor that ran its tasks, each moving its own share
+// in parallel, so the stage's aggregate bandwidth scales with that executor count. Dividing a
+// stage-wide byte total by one device's bandwidth modeled the whole cluster as one link: on 14
+// real logs that claimed up to 1,870s of shuffle time on stages whose tasks measured ~0s of
+// shuffle fetch wait (222 of 284 shuffle findings). No executor data falls back to one device.
+function stageIoParallelism(stage: Stage): number {
+  const executors = Array.isArray(stage.executorStats) ? stage.executorStats.length : 0;
+  return Math.max(1, executors);
+}
+
+// Wall-clock the stage's tasks spent blocked fetching shuffle blocks: fetchWaitTime is a
+// cross-task sum like executorRunTime, so dividing by the stage's average concurrency converts it
+// (the gc estimate's conversion). Null when the stage has no run time or duration to convert with.
+// On 14 real logs the link model claimed 2780s over 284 shuffle findings, 256s once capped at
+// this, with about zero fetch wait on 5 of the 10 non-info ones: reads that overlapped compute
+// stalled nothing.
+function fetchWaitWallClockMs(stage: Stage): number | null {
+  const fetchWaitMs = stage.fetchWaitTime;
+  const runTimeMs = stage.executorRunTime ?? 0;
+  const durationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
+  if (typeof fetchWaitMs !== 'number' || runTimeMs <= 0 || durationMs <= 0) return null;
+  return fetchWaitMs / (runTimeMs / durationMs);
+}
+
+// Wall-clock a stage's wasted (retried) attempts cost it. Each one delayed only its own task, and
+// attempts of different tasks ran side by side: one lost executor fails every task it was running
+// at once (4 wasted attempts of 36.6s each, all first attempts, on a real stage that ran 41 tasks
+// at once, claimed as 146.6s). So the stage lost at most its longest retry chain, the most attempts
+// one task wasted (its highest attempt number + 1) times the mean wasted attempt, or their summed
+// time spread over its slots, whichever is larger. Without a sample of every wasted attempt
+// (retryTaskSamples is capped), the chain isn't known: the summed time.
+function retryWallClockMs(stage: Stage): number {
+  const totalMs = (stage.retryWasteMs as number | undefined) ?? 0;
+  const attempts = (stage.wastedAttempts as number | undefined) ?? 0;
+  const samples = Array.isArray(stage.retryTaskSamples)
+    ? (stage.retryTaskSamples as { attemptNumber?: number }[]) : [];
+  if (totalMs <= 0 || attempts <= 0 || samples.length < attempts) return totalMs;
+  const chain = samples.reduce((longest, s) => Math.max(longest, (s.attemptNumber ?? 0) + 1), 1);
+  const slots = Math.max(1, stage.peakConcurrentTasks ?? 1);
+  return Math.min(totalMs, Math.max((chain * totalMs) / attempts, totalMs / slots));
+}
 // Spark's classic recommended shuffle partition size.
 const IDEAL_BYTES_PER_PARTITION_TASK = 128 * 1024 * 1024;
-// Assumed per-task scheduling/launch overhead.
+// Assumed per-task scheduling/launch overhead: the fallback when a stage lacks the per-executor
+// task-time sums measuredTaskOverhead needs.
 const TASK_SCHEDULING_OVERHEAD_MS = 50;
 // Assumed per-file open latency (small-file overhead).
 const FILE_OPEN_OVERHEAD_MS = 10;
@@ -21,15 +82,10 @@ const EXECUTOR_STARTUP_OVERHEAD_MS = 15000;
 // Assumed re-read throughput, shared by cachingOpportunity and cacheUtilization.
 const RE_READ_THROUGHPUT_BPS = 125_000_000;
 
-// stageSlowness flags a stage at `infoMin` minutes; that's the floor for the waste this estimate
-// reports. Read from the detector's catalog entry so the two stay in sync automatically.
-const STAGE_SLOWNESS_THRESHOLD_MINUTES = (() => {
-  const infoMin = detectorCatalog().find((d) => d.type === 'stageSlowness')?.thresholds?.infoMin;
-  if (typeof infoMin !== 'number') {
-    throw new Error("impact-estimator: stageSlowness detector's 'infoMin' threshold not found in detectorCatalog()");
-  }
-  return infoMin;
-})();
+// skew and straggler claim time off the stage's longest task itself, so the occupancy clip must
+// not floor them at that same task (see estimateSingleStage). detectors.ts's clippedWasteMs gates
+// both detectors on the same option so the firing floor and the displayed estimate agree.
+const TAIL_CLAIM: SingleStageEstimateOptions = { shortensLongestTask: true };
 
 // No quantifiable magnitude -> 'informational'; a rawWaste figure with no stage window ->
 // 'resourceOnly'. Never a fake {low:0, high:0}: wallClock is null in both cases.
@@ -46,8 +102,9 @@ function singleStageImpact(
   occupancy: Map<number, StageOccupancyInfo>,
   estimateMethod: ImpactEstimateMethod,
   rawWaste?: RawWasteFigure,
+  opts?: SingleStageEstimateOptions,
 ): ImpactEstimate {
-  const est = estimateSingleStage(wasteMs, stageId, stages as unknown as Map<number, OccupancyStage>, occupancy);
+  const est = estimateSingleStage(wasteMs, stageId, stages as unknown as Map<number, OccupancyStage>, occupancy, opts);
   if (est) return { basis: est.basis, wallClock: est.wallClock, estimateMethod, rawWaste };
   return costOnly(estimateMethod, rawWaste); // stage excluded from the sweep (duration <= 0)
 }
@@ -77,6 +134,7 @@ function computeEstimateForFinding(
   finding: Finding,
   stages: Map<number, Stage>,
   occupancy: Map<number, StageOccupancyInfo>,
+  totalCores: number,
 ): ImpactEstimate | null {
   switch (finding.type) {
     case 'retryWaste': {
@@ -85,7 +143,9 @@ function computeEstimateForFinding(
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
       const wasteMs = (stage.retryWasteMs as number | undefined) ?? 0;
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' });
+      const wallClockMs = retryWallClockMs(stage);
+      return singleStageImpact(wallClockMs, finding.stageId, stages, occupancy,
+        wallClockMs === wasteMs ? 'measured' : 'modeled', { value: wasteMs, unit: 'ms' });
     }
     case 'speculationWaste': {
       if (finding.stageId == null) return null;
@@ -103,6 +163,9 @@ function computeEstimateForFinding(
       return { basis: 'serial', wallClock: { low: wasteMs, high: wasteMs }, estimateMethod: 'measured' };
     }
     case 'gc': {
+      // The low-GC branch is an over-provisioning signal whose fix (less executor memory) raises
+      // GC rather than recovering it: the stage's GC time is no saving there, so no waste model.
+      if (finding.direction === 'low') return costOnly('none');
       if (finding.stageId == null) return null;
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
@@ -128,8 +191,11 @@ function computeEstimateForFinding(
       const p50 = stage.taskDurationP50 ?? 0;
       // computeSkewRatio's own metric labels (src/detectors.ts): 'P95/median' or 'max/median'.
       const usesP95Branch = finding.metric === 'P95/median';
-      const wasteMs = Math.max(0, usesP95Branch ? (stage.taskDurationP95 ?? 0) - p50 : (stage.taskDurationMax ?? 0) - p50);
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' });
+      const singleDelta = Math.max(0, usesP95Branch ? (stage.taskDurationP95 ?? 0) - p50 : (stage.taskDurationMax ?? 0) - p50);
+      const wasteMs = tailRecoveryMs(stage, singleDelta);
+      // Fixing the skew still waits on the longest task it leaves, as for straggler.
+      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' },
+        { ...TAIL_CLAIM, removedCoreWorkMs: tailRemovedWorkMs(stage, singleDelta), longestTaskAfterFixMs: stragglerFixLongestTaskMs(stage) });
     }
     case 'straggler':
     case 'stageShape': {
@@ -171,8 +237,11 @@ function computeEstimateForFinding(
       if (finding.stageId == null) return null;
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
-      const wasteMs = Math.max(0, (stage.taskDurationMax ?? 0) - (stage.taskDurationP50 ?? 0));
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' });
+      const longestTaskAfterFixMs = stragglerFixLongestTaskMs(stage);
+      const singleDelta = Math.max(0, (stage.taskDurationMax ?? 0) - longestTaskAfterFixMs);
+      const wasteMs = tailRecoveryMs(stage, singleDelta);
+      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' },
+        { ...TAIL_CLAIM, removedCoreWorkMs: tailRemovedWorkMs(stage, singleDelta), longestTaskAfterFixMs });
     }
     case 'slowHost': {
       // Three duration-based shapes, each carrying its absolute-ms figure under a different field
@@ -202,18 +271,31 @@ function computeEstimateForFinding(
       const occurrences = typeof finding.value === 'number' ? finding.value : 0;
       // Defensive only: minOccurrences guarantees occurrences >= 2 on real data; a malformed-value fallback.
       if (occurrences < 2) return costOnly('none');
+      // Same-shaped repeats whose details differ compute different data: nothing is known to be
+      // recomputed, so there is no time to claim.
+      if (finding.occurrencesIdentical === false) return costOnly('none');
+      // Each stage contributes the share of its operators inside the repeated subtree: a stage it
+      // shares with other operators (the consuming join, the join's other side) isn't all its
+      // time, and claiming whole stages let sibling groups claim the same stage twice. Findings
+      // built without the field (hand-made fixtures) count every linked stage whole.
+      const shares = (finding.stageShares ?? null) as Record<number, number> | null;
       const redundantFraction = (occurrences - 1) / occurrences;
       const wasteMsByStage = new Map<number, number>();
       for (const id of stageIds) {
         const s = stages.get(id);
-        if (s) {
-          const durationMs = Math.max(0, (s.completedAt ?? 0) - (s.submittedAt ?? 0));
-          wasteMsByStage.set(id, durationMs * redundantFraction);
+        const share = shares ? (shares[id] ?? 0) : 1;
+        if (s && share > 0) {
+          // Time with tasks running, not submit-to-complete: a stage left waiting for cores
+          // (2491s open, 60s of tasks on a real log) isn't recomputing anything while it waits.
+          const activeMs = s.taskActiveMs ?? Math.max(0, (s.completedAt ?? 0) - (s.submittedAt ?? 0));
+          wasteMsByStage.set(id, activeMs * share * redundantFraction);
         }
       }
+      // No operator of the subtree ran in a known stage: no time to attribute.
+      if (wasteMsByStage.size === 0) return costOnly('none');
       const totalWasteMs = [...wasteMsByStage.values()].reduce((sum, ms) => sum + ms, 0);
       const rawWaste: RawWasteFigure = { value: totalWasteMs, unit: 'ms' };
-      const est = estimateMultiStage(stageIds, wasteMsByStage, stages as unknown as Map<number, OccupancyStage>, occupancy);
+      const est = estimateMultiStage([...wasteMsByStage.keys()], wasteMsByStage, stages as unknown as Map<number, OccupancyStage>, occupancy);
       if (!est) return costOnly('measured', rawWaste);
       return { basis: est.basis, wallClock: est.wallClock, estimateMethod: 'measured', rawWaste };
     }
@@ -222,16 +304,21 @@ function computeEstimateForFinding(
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
       const shuffleReadBytes = stage.shuffleReadBytes ?? 0;
-      const wasteMs = (shuffleReadBytes / SHUFFLE_THROUGHPUT_BPS) * 1000;
-      // The measured byte volume driving the modeled ms figure above.
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: shuffleReadBytes, unit: 'bytes' });
+      const modeledMs = (shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
+      // The link model can't see whether the reads stalled the tasks: capped at the fetch wait the
+      // tasks measured, the claim never exceeds what the stage spent blocked on the network.
+      const measuredMs = fetchWaitWallClockMs(stage);
+      const wasteMs = measuredMs == null ? modeledMs : Math.min(modeledMs, measuredMs);
+      // rawWaste: the measured byte volume behind the modeled figure.
+      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy,
+        measuredMs != null && measuredMs < modeledMs ? 'measured' : 'modeled', { value: shuffleReadBytes, unit: 'bytes' });
     }
     case 'spill': {
       if (finding.stageId == null) return null;
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
       const diskBytesSpilled = stage.diskBytesSpilled ?? 0;
-      const wasteMs = (diskBytesSpilled / SPILL_IO_THROUGHPUT_BPS) * 1000;
+      const wasteMs = (diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
       // Surfaces the number the formula uses: the displayed metric is memoryBytesSpilled, but disk spill costs the I/O time.
       return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: diskBytesSpilled, unit: 'bytes' });
     }
@@ -239,9 +326,21 @@ function computeEstimateForFinding(
       if (finding.stageId == null) return null;
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
-      const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
-      const wasteMs = Math.max(0, stageDurationMs - STAGE_SLOWNESS_THRESHOLD_MINUTES * 60000);
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: wasteMs, unit: 'ms' });
+      // The recommended fix is more partitions, which only helps a stage that ran fewer tasks than
+      // the cluster has cores: the time its tasks were running could then spread over up to
+      // totalCores (lowShuffleParallelism's shape). Time the stage sat open with no task running
+      // is queueing no partition count recovers. Splitting partitions splits the longest task
+      // too, hence TAIL_CLAIM's post-fix floor. Unknown cluster size: no defensible figure.
+      if (totalCores <= 0) return costOnly('modeled');
+      // A stage that read no input and no shuffle has no data for more partitions to split (a
+      // 1-task count stage open 27 minutes on 5s of CPU was claimed 99% recoverable): claim 0.
+      const readBytes = (stage.inputBytes ?? 0) + (stage.shuffleReadBytes ?? 0);
+      const activeMs = typeof stage.taskActiveMs === 'number'
+        ? stage.taskActiveMs
+        : Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
+      const taskCount = stage.taskCount ?? 0;
+      const wasteMs = readBytes > 0 ? activeMs * Math.max(0, 1 - taskCount / totalCores) : 0;
+      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: wasteMs, unit: 'ms' }, TAIL_CLAIM);
     }
     case 'partitionSizing': {
       if (finding.stageId == null) return null;
@@ -275,12 +374,29 @@ function computeEstimateForFinding(
       if (!stage) return null;
       const taskCount = stage.taskCount ?? 0;
       const excessTaskCount = Math.max(0, taskCount - Math.round(taskCount / 10));
+      const measured = measuredTaskOverhead(stage);
+      if (measured) {
+        // Coalescing to a tenth of the tasks removes the excess tasks' per-task overhead: core
+        // time spent in parallel, so wall-clock at the stage's achieved concurrency (floored at
+        // 1: a mostly-idle stage can't save more wall-clock than the task time it removes).
+        const wasteMs = (excessTaskCount * measured.perTaskMs) / Math.max(1, measured.concurrency);
+        return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' });
+      }
       const wasteMs = excessTaskCount * TASK_SCHEDULING_OVERHEAD_MS;
       return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: wasteMs, unit: 'ms' });
     }
     case 'smallFiles': {
-      const wasteMs = ((finding.fileCount as number | undefined) ?? 0) * FILE_OPEN_OVERHEAD_MS;
-      return stageMappableWasteOrCostOnly(wasteMs, finding.stageIds as number[] | undefined, stages, occupancy);
+      const fileMs = ((finding.fileCount as number | undefined) ?? 0) * FILE_OPEN_OVERHEAD_MS;
+      // A read's files are opened by the scan's tasks, in parallel: spread the per-file cost over
+      // the most tasks its stages ran at once (91344 files x 10ms is 913s, claimed against a 117s
+      // stage that ran 314 tasks at once). A write keeps the serial sum: the job commit moves each
+      // output file on the driver, one after another.
+      const stageIds = finding.stageIds as number[] | undefined;
+      let slots = 1;
+      if (finding.direction === 'read') {
+        for (const id of stageIds ?? []) slots = Math.max(slots, stages.get(id)?.peakConcurrentTasks ?? 1);
+      }
+      return stageMappableWasteOrCostOnly(fileMs / slots, stageIds, stages, occupancy);
     }
     case 'overBroadcast': {
       // metric: 'broadcastBytes', value: <bytes>.
@@ -385,7 +501,7 @@ function computeEstimateForFinding(
 export function estimateImpact(findings: Finding[], stages: Map<number, Stage>, totalCores = 0): Finding[] {
   const occupancy = computeOccupancy(stages as unknown as Map<number, OccupancyStage>, totalCores);
   for (const f of findings) {
-    const estimate = computeEstimateForFinding(f, stages, occupancy);
+    const estimate = computeEstimateForFinding(f, stages, occupancy, totalCores);
     if (estimate) f.impactEstimate = estimate;
   }
   return findings;

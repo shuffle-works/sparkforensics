@@ -27,6 +27,7 @@ Docs site dev: `npm run docs:dev` (VitePress over `docs-site/`)
 Docs site build: `npm run docs:build` (fails on dead internal links)
 Docs site preview: `npm run docs:preview` (serves the built docs site)
 Analyze (CI): `node packages/cli/bin/sparkforensics-analyze.mjs <file|dir> [--max-runtime ms] [--max-skew ratio] [--max-spill gb] [--max-failed-task-rate pct] [--min-efficiency pct] [--out path] [--format md|json]` (or `--shs-base-url <url> --app-id <id> [--attempt-id <id>]` to fetch from a Spark History Server instead of a local file); also supports baseline regression gating (`--baseline`/`--max-regression-pct`/`--regression-metric`/`--fail-on-introduced`), `--redact`, finding filters (`--impact`/`--type`/`--stage`), and `--export-html <dir>` to write a self-contained `file://`-openable dashboard instead of a md/json report; `--help` for the full flag list.
+Detector/estimate tuning: `node dev/bench-analyze.mjs [--repeat N] --out snap.json <file|dir>...` snapshots every finding (band, estimate) plus parse/analyze timings, one child process per log; `--diff a.json b.json [--verbose]` shows added/removed/re-banded findings between two snapshots. `node --max-old-space-size=12000 dev/eval-tail-replay.mjs [--set detector.threshold=value] [--verbose] <file|dir>...` scores skew/straggler against a task-level replay (precision/recall, estimate error); `--verbose` lists each miss, false positive and estimate more than 2x off. `node dev/fuzz-fzstd.mjs --upstream <pristine fzstd esm/index.mjs> <log.zstd>...` checks the locally patched vendored fzstd against upstream, whole logs and randomly corrupted prefixes; run it after any fzstd edit. Record before/after numbers from these in the commit.
 
 The view is React + TypeScript (`src/view/`), built with Vite. The old
 zero-build `index.html`-loads-a-plain-script setup is gone: `index.html` is
@@ -113,20 +114,25 @@ contributor should read; `docs/` stays flat internal engineering records
   must drop the element's `href` (restoring `role`/`tabindex`/keyboard
   handling by hand) to keep this interceptor from treating it as a navigable
   link at all.
+- `packages/core/src/docs-content/detection/*.md` is generated from
+  `docs-site/user-guide/understanding-findings.md`: after editing that guide run
+  `npm run split-detection-docs` and commit the output, or
+  `tests/detection-docs-split.test.js` fails.
+- zstd decoding differs by runtime: the browser uses the vendored fzstd
+  (Chrome has no `DecompressionStream('zstd')`), while the Node CLI/MCP path
+  (`collectRun`, `shs-load.ts`) uses `packages/core/src/cli/native-zstd.ts`, which walks frame boundaries
+  itself because Node's own zstd decoders stop after the first frame and Spark
+  writes thousands of small ones. A parser change that depends on chunk shape
+  must hold for both: native chunks are whole frames, often one full event line
+  and up to tens of MB (`buildChunkDecoder` decodes those in 512 KiB slices).
+  For local files, frames of 64 KB+ decompress off the main thread and arrive
+  as 256 KB pieces, so a native `push()` is async and `streamFile` awaits it.
+  fzstd's chunks are views of one reused buffer, valid only until its
+  `ondata` callback returns: copy one before keeping it.
 - Plan summary is best-effort: `summarizePlanTree` (`src/plan-summary.js`) walks
   the resolved `planTree` with lenient regex on each node's `detail`: silently
   omit unparseable fragments, never surface an error. (The old regex
   `plan-extractor.js` over `physicalPlanDescription` was removed.)
-- Two known stale-text bugs found auditing docs against source (2026-09,
-  user-docs rewrite), not yet fixed: the SHS-error recovery text in
-  `src/view/DropZone.tsx` links a "Local-server setup" label to
-  `docsUrl('#intro')`, which resolves to the vendored Spark tuning
-  reference's general intro page, not any server-setup content; and
-  `packages/mcp/bin/sparkforensics-mcp.mjs`'s `--help` usage string says
-  "five tools" and lists only 5, while `createMcpServer` in
-  `packages/core/src/mcp-server-factory.ts` registers 8 (also
-  `get_finding_documentation`, `get_reference_doc`, `list_runs`). Check
-  before trusting either as documentation of what the other surface says.
 
 ## Key documents
 

@@ -347,7 +347,7 @@ test('shows a single Plan context toggle (collapsed by default) exposing PlanExp
     stages: new Map([
       [1, { id: 1, memoryBytesSpilled: 600 * 1024 * 1024, diskBytesSpilled: 0, spillClassification: 'volume', sqlExecutionId: 1 }],
     ]) as unknown as AppModel['stages'],
-    sql: new Map([[1, { executionId: 1, physicalPlanDescription: '', planTree }]]) as unknown as AppModel['sql'],
+    sql: new Map([[1, { executionId: 1, planTree }]]) as unknown as AppModel['sql'],
   };
   const catalog: Finding[] = [
     { type: 'spill', stageId: 1, impactBand: 'critical', value: 600 * 1024 * 1024, confidence: 'low' },

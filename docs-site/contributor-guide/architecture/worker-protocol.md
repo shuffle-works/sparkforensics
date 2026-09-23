@@ -7,7 +7,9 @@ Worker to main:
 - `app`, `stage`, `sql`, `executor`, `job`, `progress`: progressive, posted as
   the parser reads.
 - `sqlPlan` (`{ type: 'sqlPlan', data: { executionId, planTree } }`): posted by
-  `endSqlExecution` once a SQL execution's plan tree resolves.
+  `endSqlExecution` once a SQL execution's plan tree resolves. A repeated
+  `SQLExecutionEnd` for that execution posts nothing, so no later `sql` message
+  replaces the entry holding its `planTree`.
 - `runAggregates`: one whole-run core-time-series summary (busy-core-ms, peak
   concurrency, per-stage task-duration sums), emitted just before `done`.
 - `stageExecutorMetrics`: the post-completion re-post described in
@@ -367,7 +369,10 @@ treat a validation failure the same way: a silent skip, not a distinct error.
   with no signal anywhere). An `Event` value outside the 15 modeled types is
   still silently ignored without incrementing `skippedLines`, unchanged from
   before migration (see the note below on why the broader design was
-  rejected).
+  rejected). One exception: an AQE update that a later update for the same
+  open execution supersedes is never parsed (`deferAdaptiveUpdate`, see
+  [the detector contract](./detector-contract.md)), so a malformed
+  superseded update is not counted.
 - `shs-fetch.ts`: on a non-OK response from the local SHS proxy, the JSON
   error envelope is validated against `ShsProxyErrorBodySchema`
   (`packages/core/src/shs-schemas.ts`, `{ code: string }`, `.passthrough()`). A body that

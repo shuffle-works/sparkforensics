@@ -14,12 +14,12 @@ const node = (name: string, detail: string, children: PlanNode[] = []): PlanNode
   children,
 });
 
-function makeAppModel(planTree: PlanNode | null, stageId = 1, physicalPlanDescription = ''): AppModel {
+function makeAppModel(planTree: PlanNode | null, stageId = 1): AppModel {
   return {
     app: null,
     stages: new Map([[stageId, { id: stageId, sqlExecutionId: 1 }]]),
     executors: { added: [], removed: [] },
-    sql: new Map([[1, { id: 1, physicalPlanDescription, planTree }]]),
+    sql: new Map([[1, { id: 1, planTree }]]),
     jobs: new Map(),
     runAggregates: null,
     evidenceAvailability: null,

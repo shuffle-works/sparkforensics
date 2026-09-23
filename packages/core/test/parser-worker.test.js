@@ -1,8 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import { analyze } from '../src/analyzer.js';
+import { stripPlanDescription, emitParseCompletion, parseTaskEnd } from '../src/event-handlers.ts';
+import { computeTaskActiveMs, computePeakConcurrentTasks } from '../src/stage-quantiles.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
+import { createModelCallbacks } from '../src/model-assembler.ts';
+import { routeMessage } from '../src/ingest.ts';
 import { zipSync, gzipSync, strToU8 } from '../src/vendor/fflate.js';
-import { zstdCompressSync } from 'node:zlib';
+import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 import { existsSync, createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -78,6 +82,97 @@ describe('buildChunkDecoder', () => {
     const splitAt = full.indexOf(0xac); // split '€' (E2 82 AC) as 2 + 1
     expect(dec.decode(full.subarray(0, splitAt))).toEqual([]);
     expect(dec.decode(full.subarray(splitAt))).toEqual(['{"x":"€"}', '{"y":2}']);
+  });
+
+  // Every chunking of the same bytes, down to one byte at a time (splitting every multibyte char
+  // and every newline), yields exactly the lines of a whole-text split.
+  it('yields the same lines for any chunk size, including 1-byte chunks through multibyte chars', () => {
+    const text = '{"a":"café"}\n\n{"b":"€ 你好 🚀"}\n{"c":"' + 'x'.repeat(300) + '"}\n{"d":"ñ"}';
+    const bytes = enc.encode(text);
+    const expected = text.split('\n').filter((l) => l.length > 0);
+    for (const size of [1, 2, 3, 5, 7, 64, bytes.length]) {
+      const dec = buildChunkDecoder();
+      const got = [];
+      for (let o = 0; o < bytes.length; o += size) got.push(...dec.decode(bytes.subarray(o, o + size)));
+      got.push(...dec.flush());
+      expect(got).toEqual(expected);
+    }
+  });
+
+  // A plan-description value still open at a chunk's end is dropped as undecoded bytes; the result
+  // must match the text-level stripPlanDescription however the bytes are cut: backslash runs and
+  // escaped quotes split across chunks, the prefix or key split, and an unterminated value ending
+  // its line.
+  it('skips a chunk-spanning physicalPlanDescription value, matching stripPlanDescription for any cut', () => {
+    const alphabet = ['\\', '"', 'a', '€', '\n', ' ', '🚀'];
+    let seed = 7;
+    const rand = (k) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed % k; };
+    const planText = () => Array.from({ length: 40 }, () => alphabet[rand(alphabet.length)]).join('');
+    const start = (id) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":${id},"description":"q \\"x\\" €","physicalPlanDescription":${JSON.stringify(planText())},"sparkPlanInfo":{"nodeName":"N","simpleString":"a\\\\"},"time":1}`;
+    const update = (id) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":${id},"physicalPlanDescription":${JSON.stringify(planText() + '\\')},"sparkPlanInfo":{"nodeName":"M"}}`;
+    const unterminated = '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":9,"physicalPlanDescription":"cut \\" off';
+    const lines = [start(1), '{"Event":"SparkListenerJobEnd","physicalPlanDescription":"kept"}', update(1), unterminated, update(2), start(2)];
+    const text = lines.join('\n') + '\n';
+    const bytes = enc.encode(text);
+    const expected = lines.map(stripPlanDescription);
+    // The unterminated line (index 3) may come out whole or emptied; either way JSON.parse rejects it.
+    const terminated = (all) => all.filter((_, i) => i !== 3);
+    const decodeInChunks = (cuts) => {
+      const dec = buildChunkDecoder();
+      const got = [];
+      let from = 0;
+      for (const cut of [...cuts, bytes.length]) { got.push(...dec.decode(bytes.subarray(from, cut))); from = cut; }
+      got.push(...dec.flush());
+      expect(got).toHaveLength(lines.length);
+      expect(() => JSON.parse(got[3])).toThrow();
+      return got;
+    };
+    for (const size of [1, 2, 3, 5, 7, 13, 64, 200]) {
+      const cuts = [];
+      for (let o = size; o < bytes.length; o += size) cuts.push(o);
+      expect(terminated(decodeInChunks(cuts).map(stripPlanDescription))).toEqual(terminated(expected));
+    }
+    // Two chunks cut at every offset, so a cut lands inside every backslash run and escaped quote.
+    for (let cut = 0; cut <= bytes.length; cut++) {
+      expect(terminated(decodeInChunks([cut]).map(stripPlanDescription))).toEqual(terminated(expected));
+    }
+    // A cut just past line 2's key: its value is dropped by the decoder itself, not the text strip.
+    const keyEnd = text.indexOf('"physicalPlanDescription":"', text.indexOf(lines[2])) + '"physicalPlanDescription":"'.length;
+    expect(decodeInChunks([enc.encode(text.slice(0, keyEnd)).length + 3])[2]).toBe(expected[2]);
+  });
+
+  // A SQL event line without the plan key is searched for it once in all: searching the whole
+  // pending line again after every slice scanned about 10 GB on a 100 MB line.
+  it('searches a long SQL event line for the plan key only in text it has not searched yet', () => {
+    const line = `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":1,"description":"${'x'.repeat(4 << 20)}","time":1}`;
+    const bytes = enc.encode(`${line}\n`);
+    const key = '"physicalPlanDescription":"';
+    const indexOf = String.prototype.indexOf;
+    let searched = 0;
+    String.prototype.indexOf = function (search, from) {
+      if (search === key) searched += this.length - (from ?? 0);
+      return indexOf.call(this, search, from);
+    };
+    const dec = buildChunkDecoder();
+    const got = [];
+    try {
+      for (let o = 0; o < bytes.length; o += 64 * 1024) got.push(...dec.decode(bytes.subarray(o, o + 64 * 1024)));
+    } finally {
+      String.prototype.indexOf = indexOf;
+    }
+    expect(got).toEqual([line]);
+    expect(searched).toBeLessThan(2 * line.length);
+  });
+
+  // Node's native zstd emits whole frames (tens of MB), so a single chunk can hold a whole plan
+  // description: the decoder slices it and drops the value itself. The first line puts a '€'
+  // across the first 512 KiB slice boundary.
+  it('drops a plan description inside one chunk larger than a decode slice', () => {
+    const filler = `{"Event":"SparkListenerJobEnd","x":"${'€'.repeat(180000)}"}`;
+    const plan = `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":1,"physicalPlanDescription":${JSON.stringify('Scan \\ "t" '.repeat(100000))},"sparkPlanInfo":{"nodeName":"N"},"time":1}`;
+    const dec = buildChunkDecoder();
+    const got = [...dec.decode(enc.encode(`${filler}\n${plan}\n`)), ...dec.flush()];
+    expect(got).toEqual([filler, stripPlanDescription(plan)]);
   });
 });
 
@@ -284,7 +379,8 @@ describe('processEvent: SQLExecutionStart', () => {
     expect(s.sqlExecutions.has(7)).toBe(true);
     expect(msg.type).toBe('sql');
     expect(msg.data.id).toBe(7);
-    expect(msg.data.physicalPlanDescription).toBe('FileScan parquet ...');
+    // Nothing downstream reads the plan's text rendering, so it is never retained.
+    expect(msg.data.physicalPlanDescription).toBeUndefined();
   });
 });
 
@@ -433,6 +529,58 @@ describe('computeFieldQuantiles', () => {
     const arr = new Float64Array(10 * FIELDS.STRIDE);
     for (let i = 0; i < 10; i++) arr[i * FIELDS.STRIDE + FIELDS.DURATION] = i + 1;
     expect(computeDurationQuantiles(arr)).toEqual(computeFieldQuantiles(arr, FIELDS.DURATION));
+  });
+});
+
+describe('processEvent: StageCompleted backfills a missing submission time', () => {
+  it('takes Submission Time from StageCompleted when StageSubmitted carried none (older Spark)', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 0 } }, s);
+    const msg = processEvent({
+      Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 0, 'Submission Time': 1422981762069, 'Completion Time': 1422981762637 },
+    }, s);
+    expect(msg.data.submittedAt).toBe(1422981762069);
+    expect(msg.data.completedAt - msg.data.submittedAt).toBe(568);
+  });
+
+  it('keeps the StageSubmitted time when both events carry one', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 0, 'Submission Time': 1000 } }, s);
+    const msg = processEvent({
+      Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 0, 'Submission Time': 1200, 'Completion Time': 5000 },
+    }, s);
+    expect(msg.data.submittedAt).toBe(1000);
+  });
+});
+
+describe('computeTaskActiveMs', () => {
+  const tasks = (...pairs) => {
+    const arr = new Float64Array(pairs.length * FIELDS.STRIDE);
+    pairs.forEach(([launch, finish], i) => {
+      arr[i * FIELDS.STRIDE + FIELDS.LAUNCH_TIME] = launch;
+      arr[i * FIELDS.STRIDE + FIELDS.FINISH_TIME] = finish;
+      arr[i * FIELDS.STRIDE + FIELDS.DURATION] = finish - launch;
+    });
+    return arr;
+  };
+
+  it('unions overlapping task intervals and leaves out the gaps between them', () => {
+    // [1000,5000) and [2000,6000) merge to 5000ms; [20000,21000) adds 1000ms; the gap does not count.
+    expect(computeTaskActiveMs(tasks([2000, 6000], [1000, 5000], [20000, 21000]))).toBe(6000);
+  });
+
+  it('skips tasks missing a timestamp, and is 0 for a stage with no timed tasks', () => {
+    expect(computeTaskActiveMs(tasks([0, 5000], [3000, 3000]))).toBe(0);
+    expect(computeTaskActiveMs(new Float64Array(0))).toBe(0);
+  });
+
+  it('computePeakConcurrentTasks: counts the most tasks running at once; a finish frees its slot for a launch at the same instant', () => {
+    // [1000,5000) [2000,6000) [3000,4000) overlap 3-deep at 3000; [6000,7000) reuses a freed slot.
+    expect(computePeakConcurrentTasks(tasks([1000, 5000], [2000, 6000], [3000, 4000], [6000, 7000]))).toBe(3);
+    expect(computePeakConcurrentTasks(tasks([1000, 2000], [2000, 3000]))).toBe(1);
+    expect(computePeakConcurrentTasks(tasks([0, 5000]))).toBe(0);
   });
 });
 
@@ -771,7 +919,7 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
   }
   const simplePlan = (name) => ({ nodeName: name, simpleString: name, children: [], metadata: {}, metrics: [] });
 
-  it('overwrites sparkPlanInfo and physicalPlanDescription for a known execution', () => {
+  it('overwrites sparkPlanInfo for a known execution, never retaining physicalPlanDescription', () => {
     const state = createState();
     processEvent(makeExecStart(1, simplePlan('OldPlan')), state);
     processEvent({
@@ -782,7 +930,7 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
 
     const exec = state.sqlExecutions.get(1);
     expect(exec.sparkPlanInfo.nodeName).toBe('NewPlan');
-    expect(exec.physicalPlanDescription).toBe('new plan');
+    expect(exec.physicalPlanDescription).toBeUndefined();
   });
 
   it('last-write-wins across two successive updates for the same execution', () => {
@@ -839,8 +987,10 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
     expect(result.type).toBe('sql');
     expect(result.data.id).toBe(1);
     expect(result.data.hadAdaptiveUpdate).toBe(true);
-    expect(result.data.sparkPlanInfo.nodeName).toBe('NewPlan');
-    expect(result.data.physicalPlanDescription).toBe('new plan');
+    // The raw plan stays worker-side (the main thread reads the resolved sqlPlan tree instead).
+    expect(result.data.sparkPlanInfo).toBeNull();
+    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('NewPlan');
+    expect(result.data.physicalPlanDescription).toBeUndefined();
     // Shallow copy, not the same mutable reference the worker keeps mutating
     // (mirrors the real self.postMessage structured-clone boundary).
     expect(result.data).not.toBe(state.sqlExecutions.get(1));
@@ -855,8 +1005,7 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
     }, state);
 
     expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('OldPlan');
-    expect(result.data.sparkPlanInfo.nodeName).toBe('OldPlan');
-    expect(state.sqlExecutions.get(1).physicalPlanDescription).toBe('new plan');
+    expect(result.data.sparkPlanInfo).toBeNull();
   });
 });
 
@@ -889,11 +1038,11 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
   it('computes stragglerCount as tasks with duration > 4 * P50', () => {
     const s = createState();
     setupStage(s);
-    // 5 tasks: 4 short (100ms), 1 long (1000ms). P50 = 100, threshold = 400, straggler = 1.
-    for (let i = 0; i < 4; i++) {
+    // 5 tasks: 4 short (100-300ms), 1 long (1000ms). P50 = 100, threshold = 400, straggler = 1.
+    for (const finish of [100, 100, 100, 300]) {
       processEvent({
         Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
-        'Task Info': { 'Launch Time': 0, 'Finish Time': 100 },
+        'Task Info': { 'Launch Time': 0, 'Finish Time': finish },
         'Task Metrics': {},
       }, s);
     }
@@ -907,6 +1056,10 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 1100 },
     }, s);
     expect(msg.data.stragglerCount).toBe(1);
+    // The straggler's excess over P50, the input to impact-estimator's tail claim.
+    expect(msg.data.stragglerExcessMs).toBe(900);
+    // The longest task under the threshold: what a straggler fix leaves.
+    expect(msg.data.longestNonStragglerMs).toBe(300);
   });
 
   it('stragglerCount is 0 when all tasks are short', () => {
@@ -1075,6 +1228,31 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
     const child = tree.children[0];
     expect(child.name).toBe('Exchange');
     expect(child.children[0].metrics).toEqual([{ name: 'records written', value: 500, metricType: 'sum' }]);
+  });
+
+  it('keeps the resolved plan in the assembled model when SQLExecutionEnd repeats', () => {
+    // Each message is cloned, as the browser worker's postMessage does, so the model never shares
+    // the worker's own record.
+    const s = createState();
+    const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null };
+    const handlers = createModelCallbacks(appModel, {});
+    const post = (msg) => { if (msg) routeMessage(structuredClone(msg), handlers); };
+    post(processEvent(makeExecStart(1, { nodeName: 'Project', simpleString: 'Project [id]', children: [], metadata: {}, metrics: [] }), s));
+    post(processEvent(makeExecEnd(1), s));
+    post(processEvent(makeExecEnd(1, 3000), s));
+    expect(appModel.sql.get(1).planTree?.name).toBe('Project');
+  });
+
+  it('resolves the new plan when a whole SQL execution (start and end) repeats', () => {
+    const s = createState();
+    const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null };
+    const handlers = createModelCallbacks(appModel, {});
+    const post = (msg) => { if (msg) routeMessage(structuredClone(msg), handlers); };
+    post(processEvent(makeExecStart(1, { nodeName: 'Project', simpleString: 'Project [id]', children: [], metadata: {}, metrics: [] }), s));
+    post(processEvent(makeExecEnd(1), s));
+    post(processEvent(makeExecStart(1, { nodeName: 'Filter', simpleString: 'Filter', children: [], metadata: {}, metrics: [] }), s));
+    post(processEvent(makeExecEnd(1, 3000), s));
+    expect(appModel.sql.get(1).planTree?.name).toBe('Filter');
   });
 
   it('omits metrics whose accumulatorId has no value in accumState', () => {
@@ -1277,6 +1455,154 @@ describe('dispatchLine', () => {
 
   // Unrecognized-Event and known-Event-fails-schema cases are covered in the
   // 'processEvent: unknown event' describe block above.
+
+  it('resolves the same plan tree whether or not the line carries a physicalPlanDescription', () => {
+    const plan = { nodeName: 'Scan', simpleString: 'Scan "t"', children: [], metrics: [] };
+    const run = (extra) => {
+      const state = createState();
+      const emitted = [];
+      const emit = (m) => emitted.push(m);
+      dispatchLine(JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: 1, description: 'q', ...extra, sparkPlanInfo: plan, time: 0 }), state, emit);
+      dispatchLine(JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd', executionId: 1, time: 5 }), state, emit);
+      expect(state.skippedLines).toBe(0);
+      return emitted.find((m) => m.type === 'sqlPlan').data.planTree;
+    };
+    expect(run({ physicalPlanDescription: '== Physical Plan ==\n* Scan "t" \\ "x\\"' })).toEqual(run({}));
+  });
+});
+
+// A TaskEnd in Spark's flat accumulable form skips parsing its Accumulables array (parseTaskEnd).
+describe('parseTaskEnd', () => {
+  const SUBMIT = '{"Event":"SparkListenerStageSubmitted","Stage Info":{"Stage ID":7,"Stage Attempt ID":0,"Stage Name":"s","Number of Tasks":1,"Submission Time":0}}';
+  const taskEnd = (accumulables) => `{"Event":"SparkListenerTaskEnd","Stage ID":7,"Stage Attempt ID":0,"Task Type":"ResultTask","Task End Reason":{"Reason":"Success"},"Task Info":{"Task ID":1,"Index":0,"Launch Time":0,"Finish Time":100,"Failed":false,"Accumulables":[${accumulables}]},"Task Metrics":{"Executor Run Time":90}}`;
+  const FLAT = '{"ID":42,"Name":"number of output rows","Update":"1","Value":"1","Internal":true,"Count Failed Values":true,"Metadata":"sql"},{"ID":43,"Name":"internal.metrics.executorRunTime","Update":90,"Value":90,"Internal":true,"Count Failed Values":true}';
+  const OTHER_SHAPES = [
+    '{"ID":42,"Name":"internal.metrics.updatedBlockStatuses","Update":[{"Block ID":"rdd_1_0","Status":{"Memory Size":1}}],"Internal":true}',
+    '{"ID":42,"Name":"a]}{\\"ID\\":9","Update":1}', // brackets and an escaped `{"ID":` inside a Name
+    '{"Name":"x","ID":42}',
+    '{"ID":12345678901234567,"Name":"x"}',
+    '{"ID": 42}',
+  ];
+
+  it('reduces flat entries to their IDs and parses the rest of the line exactly', () => {
+    const line = taskEnd(FLAT);
+    const full = JSON.parse(line);
+    full['Task Info'].Accumulables = [{ ID: 42 }, { ID: 43 }];
+    expect(parseTaskEnd(line)).toEqual(full);
+    expect(parseTaskEnd(taskEnd(''))).toEqual(JSON.parse(taskEnd('')));
+  });
+
+  it('returns null for any other shape, a non-TaskEnd line or a malformed one', () => {
+    for (const accumulables of OTHER_SHAPES) expect(parseTaskEnd(taskEnd(accumulables))).toBeNull();
+    expect(parseTaskEnd(SUBMIT)).toBeNull();
+    expect(parseTaskEnd(taskEnd(FLAT).slice(0, -1))).toBeNull();
+  });
+
+  it('records the same accumulator IDs through dispatchLine as a whole-line parse', () => {
+    for (const accumulables of [FLAT, ...OTHER_SHAPES]) {
+      const viaLine = createState();
+      for (const line of [SUBMIT, taskEnd(accumulables)]) dispatchLine(line, viaLine, () => {});
+      const viaEvent = createState();
+      for (const line of [SUBMIT, taskEnd(accumulables)]) processEvent(JSON.parse(line), viaEvent);
+      expect(viaLine.skippedLines).toBe(0);
+      expect(viaLine.evidenceInputs.taskRecords).toBe(1);
+      expect(viaLine.taskAccumStages).toEqual(viaEvent.taskAccumStages);
+    }
+    const malformed = createState();
+    dispatchLine(taskEnd(FLAT).slice(0, -1), malformed, () => {});
+    expect(malformed.skippedLines).toBe(1);
+  });
+});
+
+// An open execution's AQE updates are held as text and only the last is parsed (deferAdaptiveUpdate).
+describe('dispatchLine: deferred AQE updates', () => {
+  const START = (id) => JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: id, description: 'q', sparkPlanInfo: { nodeName: 'Initial', children: [], metrics: [] }, time: 0 });
+  const UPDATE = (id, nodeName) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":${id},"physicalPlanDescription":"p","sparkPlanInfo":${nodeName == null ? 'null' : JSON.stringify({ nodeName, children: [], metrics: [] })}}`;
+  const END = (id) => JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd', executionId: id, time: 5 });
+  const run = (lines) => {
+    const state = createState();
+    const emitted = [];
+    for (const line of lines) dispatchLine(line, state, (m) => emitted.push(m));
+    return { state, emitted, planRoot: emitted.find((m) => m.type === 'sqlPlan')?.data.planTree.name };
+  };
+
+  it('resolves the last update\'s plan and never parses the ones it superseded', () => {
+    const malformed = UPDATE(1, 'First').slice(0, -2) + ',}}'; // superseded before anything reads it
+    const { state, planRoot } = run([START(1), malformed, UPDATE(1, 'Second'), UPDATE(1, 'Last'), END(1)]);
+    expect(planRoot).toBe('Last');
+    expect(state.skippedLines).toBe(0);
+    expect(state.sqlExecutions.get(1).hadAdaptiveUpdate).toBe(true);
+  });
+
+  it('keeps the previous plan when a later update carries none', () => {
+    expect(run([START(1), UPDATE(1, 'Planned'), UPDATE(1, null), END(1)]).planRoot).toBe('Planned');
+  });
+
+  it('checks a line joined across chunks on its first and last pieces, with the same result', () => {
+    const lines = [START(1), UPDATE(1, 'First').slice(0, -2) + ',}}', UPDATE(1, 'Second'), UPDATE(1, 'Last'), END(1)];
+    // A 5-char head is too short to hold the prefix and falls back to the line; 130 chars holds it.
+    for (const cut of [5, 130]) {
+      const decoder = buildChunkDecoder();
+      const state = createState();
+      const emitted = [];
+      const seen = [];
+      for (const line of lines) {
+        const bytes = new TextEncoder().encode(`${line}\n`);
+        for (const part of [bytes.subarray(0, cut), bytes.subarray(cut)]) {
+          const joined = [];
+          decoder.decode(part, joined).forEach((decoded, i) => {
+            const parts = joined.find((j) => j.index === i);
+            if (parts) seen.push(decoded.startsWith(parts.head) && decoded.endsWith(parts.tail) && parts.head.length === cut);
+            dispatchLine(decoded, state, (m) => emitted.push(m), parts);
+          });
+        }
+      }
+      expect(seen).toEqual(lines.filter((l) => l.length > cut).map(() => true)); // shorter lines aren't split
+      expect(emitted.find((m) => m.type === 'sqlPlan')?.data.planTree.name).toBe('Last');
+      expect(state.skippedLines).toBe(0);
+    }
+  });
+
+  it('parses updates at once for an execution that already ended or was never started', () => {
+    const { state } = run([START(1), END(1), UPDATE(1, 'Late'), UPDATE(2, 'Unknown')]);
+    expect(state.pendingAdaptiveUpdates.size).toBe(0);
+    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('Late');
+  });
+
+  it('applies a never-ended execution\'s latest update at parse completion', () => {
+    const appStart = '{"Event":"SparkListenerApplicationStart","App ID":"app-1","App Name":"t","Timestamp":0}';
+    const { state, emitted } = run([appStart, START(1), UPDATE(1, 'Latest')]);
+    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('Initial');
+    emitParseCompletion(state, (m) => emitted.push(m), 2);
+    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('Latest');
+    const sqlMsgs = emitted.filter((m) => m.type === 'sql');
+    expect(sqlMsgs[sqlMsgs.length - 1].data.hadAdaptiveUpdate).toBe(true);
+    expect(emitted.findIndex((m) => m.type === 'sql' && m.data.hadAdaptiveUpdate)).toBeLessThan(emitted.findIndex((m) => m.type === 'done'));
+  });
+});
+
+describe('stripPlanDescription', () => {
+  const PREFIX = '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":3,';
+
+  it('empties the description string, keeping every other field byte-identical', () => {
+    const line = `${PREFIX}"physicalPlanDescription":"plan text","sparkPlanInfo":{"nodeName":"N"}}`;
+    expect(stripPlanDescription(line)).toBe(`${PREFIX}"physicalPlanDescription":"","sparkPlanInfo":{"nodeName":"N"}}`);
+  });
+
+  it('skips escaped quotes and stops at a quote preceded by an escaped backslash', () => {
+    const value = JSON.stringify('a "quoted" name ending in a backslash \\');
+    const line = `${PREFIX}"physicalPlanDescription":${value},"sparkPlanInfo":null}`;
+    expect(JSON.parse(stripPlanDescription(line))).toEqual({ ...JSON.parse(line), physicalPlanDescription: '' });
+  });
+
+  it('leaves non-SQL lines, key-less lines and unterminated values untouched', () => {
+    const taskEnd = '{"Event":"SparkListenerTaskEnd","physicalPlanDescription":"x"}';
+    expect(stripPlanDescription(taskEnd)).toBe(taskEnd);
+    const noKey = `${PREFIX}"sparkPlanInfo":null}`;
+    expect(stripPlanDescription(noKey)).toBe(noKey);
+    const truncated = `${PREFIX}"physicalPlanDescription":"cut off \\"`;
+    expect(stripPlanDescription(truncated)).toBe(truncated);
+  });
 });
 
 function fakeFetchReturning(zipBytes, { contentLength = zipBytes.length, ok = true, status = 200, jsonBody = null, contentType = null } = {}) {
@@ -1553,6 +1879,22 @@ describe('decodeShsArchive', () => {
     const doneMsg = messages.find((m) => m.type === 'done');
     expect(appMsg.data.id).toBe('app-1');
     expect(doneMsg.skippedLines).toBe(0);
+  });
+
+  // shs-load.ts passes the Node-native zstd decoder; the browser's call leaves fzstd in place.
+  it('decodes a zstd entry through an injected zstdDecoder', () => {
+    const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"app-z","App Name":"t","Timestamp":0}\n'
+      + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n';
+    const zipBytes = zipSync({ 'eventlog.zstd': zstdSync(strToU8(ndjson)) });
+    let built = 0;
+    const zstdDecoder = (onChunk) => {
+      built++;
+      return { push: (chunk) => onChunk(new Uint8Array(zstdDecompressSync(chunk))) };
+    };
+    const messages = [];
+    decodeShsArchive(zipBytes, createState(), (msg) => messages.push(msg), { zstdDecoder });
+    expect(built).toBe(1);
+    expect(messages.find((m) => m.type === 'app').data.id).toBe('app-z');
   });
 
   it('emits invalid-event-log on a corrupt zip', () => {

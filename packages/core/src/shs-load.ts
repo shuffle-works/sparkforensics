@@ -2,6 +2,7 @@ import { validateShsRequest } from './shs-request.js';
 import { fetchShsEventLog } from './proxy.js';
 import { decodeShsArchive } from './parser-worker.ts';
 import { collectViaDispatch } from './cli/collect-run.ts';
+import { nodeArchiveCodecs } from './cli/native-zstd.ts';
 import { deriveEvidenceAvailability } from './evidence-availability.ts';
 import { mcpError } from './mcp-error.ts';
 import type { AppModel } from './types.ts';
@@ -18,7 +19,7 @@ export const DEFAULT_IDLE_TIMEOUT_MS = envInt('SPARKFORENSICS_SHS_TIMEOUT_MS', 3
 
 function collectShsAppModel(zipBytes: Uint8Array): Promise<{ appModel: AppModel; skippedLines: number }> {
   return collectViaDispatch(
-    (state, emit) => decodeShsArchive(zipBytes, state, emit),
+    (state, emit) => decodeShsArchive(zipBytes, state, emit, nodeArchiveCodecs),
     (msg) => {
       const m = msg as { code?: string; message?: string };
       return mcpError(m?.code ?? 'invalid-event-log', m?.message ?? 'Failed to decode SHS archive.');

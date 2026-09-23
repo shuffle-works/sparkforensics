@@ -14,7 +14,7 @@ const node = (name, metricNames = [], children = []) => ({
 });
 
 function makeSqlExec(id, planTree) {
-  return { id, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree };
+  return { id, description: '', startTime: 0, endTime: 100, stageIds: [], planTree };
 }
 
 // Not imported anywhere in this file today; detectors.ts defines these as module-private
@@ -22,11 +22,18 @@ function makeSqlExec(id, planTree) {
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
 
+// Attributes every node of `tree` to stage `sid`, as resolvePlanTree does from task accumulables.
+const inStage = (tree, sid) => {
+  const visit = (n) => { n.stageIds = [sid]; n.children.forEach(visit); };
+  visit(tree);
+  return tree;
+};
+
 describe('duplicatePlanSubtree', () => {
   it('flags a repeated 3-node subtree, reconciled to critical here', () => {
     // Fallback impactBand is 'warning'; deriveImpactBand promotes it to 'critical'
     // here because the matched stage's wallClock estimate clears the critical floor.
-    const dup = () => node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]);
+    const dup = () => inStage(node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]), 1);
     const planTree = node('Project', [], [dup(), dup()]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
     const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
@@ -35,6 +42,78 @@ describe('duplicatePlanSubtree', () => {
     expect(findings).toHaveLength(1);
     expect(findings[0].impactBand).toBe('critical');
     expect(findings[0].stageIds).toEqual([1]);
+    expect(findings[0].occurrencesIdentical).toBe(true);
+    expect(findings[0].stageShares).toEqual({ 1: 1 });
+  });
+
+  it('skips a repeat whose stages together lasted under 0.5% of the run, and keeps a longer one above info', () => {
+    const dup = () => inStage(node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]), 1);
+    const sql = new Map([[1, makeSqlExec(1, node('Project', [], [dup(), dup()]))]]);
+    const run = makeApp({ endTime: 400_000 });
+    const at = (completedAt) => analyze(run, new Map([[1, makeStage({ sqlExecutionId: 1, completedAt })]]), [], [], new Map(), sql)
+      .filter(b => b.type === 'duplicatePlanSubtree');
+    expect(at(1000)).toHaveLength(0); // 0.25% of the run: the repeat is real, the floor drops it
+    const kept = at(8000); // 2%
+    expect(kept).toHaveLength(1);
+    expect(kept[0].impactBand).not.toBe('info');
+  });
+
+  // Same operator shape over different data (another table, another filter) is no repeated
+  // work: the finding stays, flagged low-confidence and informational, with no time claimed.
+  it('makes repeats whose details differ informational, with no wall-clock claim', () => {
+    const dup = (filter) => {
+      const tree = inStage(node('Filter', ['a'], [node('ColumnarToRow', ['b'], [node('Scan parquet', ['c'])])]), 1);
+      tree.detail = filter;
+      return tree;
+    };
+    const planTree = node('Union', [], [dup('Filter (x = 1)'), dup('Filter (y = 2)')]);
+    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    const [finding] = analyze(makeApp(), stages, [], [], new Map(), new Map([[1, makeSqlExec(1, planTree)]]))
+      .filter(b => b.type === 'duplicatePlanSubtree');
+    expect(finding.occurrencesIdentical).toBe(false);
+    expect(finding.impactBand).toBe('info');
+    expect(finding.confidence).toBe('low');
+    expect(finding.impactEstimate.wallClock).toBeNull();
+    expect(finding.recommendation).toContain('may compute different data');
+  });
+
+  it('treats repeats that differ only in AQE query-stage numbering as identical', () => {
+    const dup = (n) => {
+      const leaf = node('ShuffleQueryStage', ['d']);
+      leaf.detail = `ShuffleQueryStage ${n}`;
+      return inStage(node('Sort', ['a'], [node('AQEShuffleRead', ['b'], [leaf])]), 1);
+    };
+    const planTree = node('SortMergeJoin', [], [dup(718), dup(720)]);
+    const [finding] = analyze(makeApp(), new Map([[1, makeStage({ sqlExecutionId: 1 })]]), [], [], new Map(), new Map([[1, makeSqlExec(1, planTree)]]))
+      .filter(b => b.type === 'duplicatePlanSubtree');
+    expect(finding.occurrencesIdentical).toBe(true);
+  });
+
+  // A stage that also runs operators outside the repeats contributes only its operators' share;
+  // WholeStageCodegen wrappers and Exchange write halves don't count as other operators.
+  it('claims only the repeated operators\' share of a stage shared with other work', () => {
+    const dup = () => inStage(node('Sort', ['a'], [node('Filter', ['b']), node('Filter', ['b'])]), 1);
+    const other = inStage(node('HashAggregate', ['e'], [node('Project', ['f'])]), 1);
+    const wrapper = inStage(node('WholeStageCodegen (1)', ['duration'], [dup()]), 1);
+    const write = inStage(node('Exchange', ['data size'], [dup()]), 1);
+    write.exchangeRole = 'write';
+    const planTree = node('Union', [], [wrapper, write, other]);
+    const [finding] = analyze(makeApp(), new Map([[1, makeStage({ sqlExecutionId: 1 })]]), [], [], new Map(), new Map([[1, makeSqlExec(1, planTree)]]))
+      .filter(b => b.type === 'duplicatePlanSubtree');
+    // 6 repeated operators of the stage's 8 (the wrapper and the write half excluded).
+    expect(finding.stageShares).toEqual({ 1: 0.75 });
+  });
+
+  it('claims no time when no operator of the repeats ran in a known stage', () => {
+    const dup = () => node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]);
+    const planTree = node('Project', [], [dup(), dup()]);
+    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    const [finding] = analyze(makeApp(), stages, [], [], new Map(), new Map([[1, makeSqlExec(1, planTree)]]))
+      .filter(b => b.type === 'duplicatePlanSubtree');
+    // stageIds still falls back to the execution's stages for linking, but none is attributable.
+    expect(finding.stageIds).toEqual([1]);
+    expect(finding.impactBand).toBe('info');
+    expect(finding.impactEstimate.wallClock).toBeNull();
   });
 
   it('confidence is low for a match at the bare minimum subtreeSize and occurrences (old logic hardcoded medium here, the weakest evidence the matcher can produce)', () => {
@@ -85,12 +164,12 @@ describe('duplicatePlanSubtree', () => {
     expect(groups[0].isExchangeRoot).toBe(true);
 
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    // No stages: no wallClock estimate, so impactBand stays the fallback 'warning'
+    // No stages: no wallClock estimate, so impactBand stays the no-coverage 'info'
     // regardless of isExchangeRoot; only the recommendation text differs.
     const catalog = analyze(makeApp(), new Map(), [], [], new Map(), sql);
     const findings = catalog.filter(b => b.type === 'duplicatePlanSubtree');
     expect(findings).toHaveLength(1);
-    expect(findings[0].impactBand).toBe('warning');
+    expect(findings[0].impactBand).toBe('info');
     expect(findings[0].recommendation).toContain('missed exchange reuse');
   });
 
@@ -229,6 +308,21 @@ describe('duplicatePlanSubtree', () => {
     // The Exchange's fingerprint must come from the write half's real "data size"
     // metric, not the read half's always-empty metrics.
     expect(shapeOf.get(read).fingerprint).toContain('data size');
+  });
+
+  it('computePlanShapes: fingerprints stay O(own size) on a deep plan, yet still tell apart subtrees that differ only at the leaf', () => {
+    const chain = (leafName) => {
+      let n = node(leafName, ['number of output rows']);
+      for (let i = 0; i < 300; i++) n = node('Project', ['number of output rows'], [n]);
+      return n;
+    };
+    const a = chain('Scan parquet a');
+    const b = chain('Scan parquet b');
+    const fa = computePlanShapes(a).shapeOf.get(a).fingerprint;
+    // Children fold in as fixed-length digests: embedding them whole made the root carry all
+    // 300 levels of text.
+    expect(fa.length).toBeLessThan(100);
+    expect(fa).not.toBe(computePlanShapes(b).shapeOf.get(b).fingerprint);
   });
 });
 
@@ -381,7 +475,7 @@ describe('smallFiles: narrowed stageIds', () => {
       children: [],
     };
     const planTree = { name: 'Project', detail: '', metrics: [], children: [readNode] };
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree }]]);
     const stages = new Map([[4, { id: 4, sqlExecutionId: 1 }], [5, { id: 5, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'smallFiles');
@@ -399,7 +493,7 @@ describe('smallFiles: narrowed stageIds', () => {
       children: [],
     };
     const planTree = { name: 'Project', detail: '', metrics: [], children: [readNode] };
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree }]]);
     const stages = new Map([[4, { id: 4, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'smallFiles');
@@ -523,7 +617,7 @@ describe('broadcastSizing: narrowed stageIds', () => {
   it('overBroadcast unions in only the flagged BroadcastExchange node\'s immediate child\'s stageIds (the node\'s own metrics never appear on a TaskEnd, so it never has stageIds of its own in real data)', () => {
     const child = sizeNode('Project', [], undefined, [20]);
     const bx = sizeNode('BroadcastExchange', [child], 2 * 1024 * 1024 * 1024);
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree: bx }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: bx }]]);
     const stages = new Map([[20, { id: 20, sqlExecutionId: 1 }], [21, { id: 21, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'overBroadcast');
@@ -535,7 +629,7 @@ describe('broadcastSizing: narrowed stageIds', () => {
     const deepLeft = sizeNode('Exchange', [sizeNode('Filter', [], 5 * 1024 * 1024, [30])]); // metric one level down
     const shallowRight = sizeNode('Exchange', [], 200 * 1024 * 1024 * 1024, [31]); // metric on the immediate child
     const join = sizeNode('SortMergeJoin', [deepLeft, shallowRight]);
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree: join }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: join }]]);
     const stages = new Map([[30, { id: 30, sqlExecutionId: 1 }], [31, { id: 31, sqlExecutionId: 1 }], [32, { id: 32, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'underBroadcast');
@@ -545,7 +639,7 @@ describe('broadcastSizing: narrowed stageIds', () => {
 
   it('falls back to execution-wide stageIds when no contributing node has coverage', () => {
     const bx = sizeNode('BroadcastExchange', [], 2 * 1024 * 1024 * 1024);
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree: bx }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: bx }]]);
     const stages = new Map([[20, { id: 20, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'overBroadcast');
@@ -561,7 +655,7 @@ describe('broadcastSizing: narrowed stageIds', () => {
     ]); // metric two levels down
     const shallowRight = sizeNode('Exchange', [], 200 * 1024 * 1024 * 1024, [31]); // metric on the immediate child
     const join = sizeNode('SortMergeJoin', [deepLeft, shallowRight]);
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree: join }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: join }]]);
     const stages = new Map([[30, { id: 30, sqlExecutionId: 1 }], [31, { id: 31, sqlExecutionId: 1 }], [32, { id: 32, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'underBroadcast');
@@ -644,6 +738,15 @@ describe('overBroadcast/underBroadcast: classifier + planNodeIds', () => {
 });
 
 describe('normalizeDetail', () => {
+  // An equality operand starts at the first letter of its identifier run, whatever precedes it:
+  // a dot (`).col`), a digit (`1abc`), or nothing identifier-like at all.
+  it('canonicalizes equality operands wherever their identifier starts', () => {
+    expect(normalizeDetail('f(x)).zeta.c = alpha(y)')).toBe('f(x)).alpha = zeta.c(y)');
+    expect(normalizeDetail('1zeta = alpha')).toBe('1alpha = zeta');
+    expect(normalizeDetail('(t2.b = t1.a) AND (a1b = a0)')).toBe('(t1.a = t2.b) AND (a0 = a1b)');
+    expect(normalizeDetail('notAnEquality(abc) >= xyz')).toBe('notAnEquality(abc) >= xyz');
+  });
+
   it('strips per-analysis expression ids (id#123L -> id)', () => {
     expect(normalizeDetail('SortMergeJoin [id#123L], [id#456], Inner'))
       .toBe(normalizeDetail('SortMergeJoin [id#789L], [id#12], Inner'));

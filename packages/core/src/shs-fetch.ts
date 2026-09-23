@@ -3,7 +3,7 @@ import { createLz4BlockDecoder } from './lz4-block.ts';
 import { Decompress as ZstdDecompress } from './vendor/fzstd.js';
 import { createSnappyBlockDecoder } from './snappy-block.ts';
 import { buildProxyRequestUrl, isShsErrorCode } from './shs-request.js';
-import { dispatchLine, buildChunkDecoder, emitParseCompletion, type ParserState } from './event-handlers.ts';
+import { dispatchLine, buildChunkDecoder, emitParseCompletion, type JoinedLine, type ParserState } from './event-handlers.ts';
 import { ShsProxyErrorBodySchema } from './shs-schemas.ts';
 import { naturalCompare, reassembleRollingEntries } from './rolling-log-reassembly.ts';
 
@@ -36,8 +36,14 @@ export function sniffCodec(bytes: Uint8Array): 'gz' | 'zstd' | 'lz4' | 'snappy' 
 // without touching the vendored files.
 type StreamingDecoder = { push(chunk: Uint8Array, final?: boolean): void };
 type StreamingDecoderCtor = new (onChunk: (chunk: Uint8Array) => void) => StreamingDecoder;
+// Like parser-worker.ts's RunOpts.zstdDecoder, but synchronous: decodeEntry never awaits push(),
+// so its result is typed `undefined` (not `void`, which would also accept an async decoder's
+// Promise). Node callers pass cli/native-zstd.ts's createNativeZstdDecoder (nodeArchiveCodecs).
+type ZstdDecoderFactory = (onChunk: (chunk: Uint8Array) => void) => { push(chunk: Uint8Array, final?: boolean): undefined };
 
-function decodeEntry(name: string, raw: Uint8Array, onChunk: (chunk: Uint8Array) => void): void {
+function decodeEntry(
+  name: string, raw: Uint8Array, onChunk: (chunk: Uint8Array) => void, zstdDecoder?: ZstdDecoderFactory,
+): void {
   const codec = sniffCodec(raw);
   if (codec === 'lz4' || name.endsWith('.lz4')) {
     const lz4 = createLz4BlockDecoder(onChunk);
@@ -46,7 +52,7 @@ function decodeEntry(name: string, raw: Uint8Array, onChunk: (chunk: Uint8Array)
   } else if (codec === 'gz' || name.endsWith('.gz')) {
     new (Gunzip as unknown as StreamingDecoderCtor)(onChunk).push(raw, true);
   } else if (codec === 'zstd' || name.endsWith('.zstd') || name.endsWith('.zst')) {
-    new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk).push(raw, true);
+    (zstdDecoder ? zstdDecoder(onChunk) : new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk)).push(raw, true);
   } else if (codec === 'snappy' || name.endsWith('.snappy')) {
     const snappy = createSnappyBlockDecoder(onChunk);
     snappy.push(raw);
@@ -138,7 +144,9 @@ export async function runParseFromUrl(
   decodeShsArchive(zipBytes, state, emit);
 }
 
-export function decodeShsArchive(zipBytes: Uint8Array, state: ParserState, emit: EmitFn): void {
+export function decodeShsArchive(
+  zipBytes: Uint8Array, state: ParserState, emit: EmitFn, { zstdDecoder }: { zstdDecoder?: ZstdDecoderFactory } = {},
+): void {
   let entries: Record<string, Uint8Array>;
   try {
     entries = unzipSync(zipBytes);
@@ -165,18 +173,21 @@ export function decodeShsArchive(zipBytes: Uint8Array, state: ParserState, emit:
   }
 
   const decoder = buildChunkDecoder();
+  const joined: JoinedLine[] = [];
   let linesProcessed = 0;
   for (const name of names) {
     try {
       decodeEntry(name, entries[name], (bytes) => {
-        for (const line of decoder.decode(bytes)) {
-          dispatchLine(line, state, emit);
+        joined.length = 0;
+        const lines = decoder.decode(bytes, joined);
+        for (let i = 0, j = 0; i < lines.length; i++) {
+          dispatchLine(lines[i], state, emit, joined[j]?.index === i ? joined[j++] : undefined);
           linesProcessed++;
           if (linesProcessed % 2000 === 0) {
             emit({ type: 'progress', pct: null, linesProcessed });
           }
         }
-      });
+      }, zstdDecoder);
     } catch {
       emitShsError(emit, 'invalid-event-log');
       return;

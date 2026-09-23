@@ -82,6 +82,15 @@ export interface Stage {
   taskDurationP95?: number;
   taskDurationMax?: number;
   peakExecutionMemoryMax?: number;
+  // Wall-clock ms during which at least one of the stage's tasks ran (finalizeStage's
+  // computeTaskActiveMs); absent on stages from before this field existed.
+  taskActiveMs?: number;
+  // Summed (duration - P50) over the tasks slower than 4x P50 (finalizeStage), core-ms.
+  stragglerExcessMs?: number;
+  // Longest task at or under 4x P50, the longest a straggler fix leaves (finalizeStage).
+  longestNonStragglerMs?: number;
+  // Most of the stage's tasks running at once (finalizeStage's computePeakConcurrentTasks).
+  peakConcurrentTasks?: number;
   localityStats?: { locality: string; count: number }[];
   details?: string;
   [key: string]: unknown;
@@ -107,7 +116,6 @@ export interface PlanNode {
 export interface SqlExecution {
   id: number;
   planTree?: PlanNode | null;
-  physicalPlanDescription?: string;
   [key: string]: unknown;
 }
 export interface PlanGraphNodeData {

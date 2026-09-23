@@ -33,6 +33,8 @@ describe('estimateImpact: false-zero regression guard (2026-08-30 N1 occupancy r
         const stageIds = f.stageId != null ? [f.stageId] : (Array.isArray(f.stageIds) ? f.stageIds : null);
         if (!stageIds || stageIds.length === 0) continue;
         if (f.type === 'stageShape') continue; // lowParallelism/dataExplosion/taskStageSkew are permanently resourceOnly by design, not a wall-clock claim ever
+        // A measured zero, not a clip artifact: the shuffle claim is capped at the fetch wait its tasks measured.
+        if (f.type === 'shuffle' && appModel.stages.get(f.stageId)?.fetchWaitTime === 0) continue;
         const infos = stageIds.map((id) => occupancy.get(id));
         if (infos.some((info) => !info)) continue; // some stage excluded from the sweep
         const minGate = Math.min(...infos.map((info) => info.gate));

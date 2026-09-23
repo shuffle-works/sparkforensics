@@ -61,12 +61,28 @@ describe('analyze: task skew', () => {
     expect(catalog.find(b => b.type === 'skew').impactBand).toBe('warning');
   });
 
-  it('suppresses a critical-ratio skew finding whose raw waste clears the floor but whose occupancy-clipped recoverable time does not', () => {
-    // The 5,000ms max task fills nearly the whole 5,005ms window, so the occupancy ceiling leaves only 5ms recoverable despite a 4,990ms raw delta that clears both floors: the critical-with-sub-second-recoverable-savings mismatch.
+  it('credits a one-task-dominated stage\'s tail as recoverable: the fix shortens the very task the ceiling used to floor it at', () => {
+    // The 5,000ms max task fills nearly the whole 5,005ms window. Fixing the skew brings the tail
+    // down to ~P50, so the recoverable time is the 4,990ms delta, not the 5ms left above that task.
     const stages = new Map([[1, makeStage({
       submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000,
     })]]);
     const catalog = analyze(makeApp({ startTime: 0, endTime: 100000 }), stages, [], []);
+    const skew = catalog.filter(b => b.type === 'skew');
+    expect(skew).toHaveLength(1);
+    expect(skew[0].impactEstimate.wallClock.high).toBe(4990);
+    expect(skew[0].impactBand).toBe('critical');
+  });
+
+  it('suppresses a critical-ratio skew finding whose raw waste clears the floor but whose occupancy-clipped recoverable time does not', () => {
+    // 14,990 core-ms less the 4,990ms the fix removes leaves 10,000 core-ms over 2 cores: 5,000ms of
+    // unavoidable work in the 5,005ms window, so only 5ms is recoverable despite a 4,990ms raw delta
+    // that clears both floors.
+    const stages = new Map([[1, makeStage({
+      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000, executorRunTime: 14990,
+    })]]);
+    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 2 }];
+    const catalog = analyze(makeApp({ startTime: 0, endTime: 100000 }), stages, executorsAdded, []);
     expect(catalog.filter(b => b.type === 'skew')).toHaveLength(0);
   });
 });
@@ -79,15 +95,41 @@ describe('analyze: shuffle I/O', () => {
 
   it('emits a shuffle finding above 50 MB, reconciled to critical against the default fixture duration', () => {
     // Detector grades 'info'; deriveImpactBand promotes to 'critical' (60 MB clears the 2% floor of the 5s default).
-    const stages = new Map([[1, makeStage({ shuffleReadBytes: 60 * 1024 * 1024 })]]);
+    // The tasks measured 500ms of fetch wait (5000 core-ms at the fixture's 10x concurrency), so the
+    // 503ms link model is claimed nearly whole.
+    const stages = new Map([[1, makeStage({ shuffleReadBytes: 60 * 1024 * 1024, fetchWaitTime: 5000 })]]);
     const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'shuffle');
     expect(b.impactBand).toBe('critical');
   });
 
   it('emits critical above 1 GB', () => {
-    const stages = new Map([[1, makeStage({ shuffleReadBytes: 2 * 1024 * 1024 * 1024 })]]);
+    const stages = new Map([[1, makeStage({ shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 10000 })]]);
     const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'shuffle');
     expect(b.impactBand).toBe('critical');
+  });
+
+  it('skips a shuffle or spill on a stage under 0.5% of the run, and keeps a longer stage\'s above info', () => {
+    const run = makeApp({ endTime: 400_000 });
+    const stage = (completedAt) => new Map([[1, makeStage({
+      shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 40_000, memoryBytesSpilled: 8 * 1024 * 1024 * 1024,
+      diskBytesSpilled: 4 * 1024 * 1024 * 1024, spillMemMax: 8 * 1024 * 1024 * 1024, spillDiskMax: 4 * 1024 * 1024 * 1024, completedAt,
+    })]]);
+    const of = (completedAt, type) => analyze(run, stage(completedAt), [], []).filter(b => b.type === type);
+    // 1s of a 400s run (0.25%): the bytes are real, the floor drops them.
+    expect(of(1000, 'shuffle')).toHaveLength(0);
+    expect(of(1000, 'spill')).toHaveLength(0);
+    // 8s (2%): both claim enough of the run to grade above info.
+    expect(of(8000, 'shuffle')[0].impactBand).not.toBe('info');
+    expect(of(8000, 'spill')[0].impactBand).not.toBe('info');
+    // A zero-length stage (no submission time on older Spark) isn't skipped.
+    expect(of(0, 'spill')).toHaveLength(1);
+  });
+
+  it('grades a large shuffle whose tasks never waited on a fetch informational: nothing stalled', () => {
+    const stages = new Map([[1, makeStage({ shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 0 })]]);
+    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'shuffle');
+    expect(b.impactEstimate.wallClock.high).toBe(0);
+    expect(b.impactBand).toBe('info');
   });
 });
 
@@ -167,6 +209,18 @@ describe('analyze: slow host', () => {
     expect(b.impactBand).toBe('critical');
   });
 
+  it('keeps a hostMeanRatio finding on a zero-length stage (no submission time on older Spark) in a long run', () => {
+    // No estimate there, so its warning fallback band stands: the 0.5% stage floor must not drop it.
+    const stages = new Map([[1, stageWithHosts([
+      { host: 'a', taskCount: 20, totalDuration: 600000 },
+      { host: 'b', taskCount: 20, totalDuration: 600000 },
+      { host: 'c', taskCount: 20, totalDuration: 2400000 },
+    ], { submittedAt: 5000, completedAt: 5000 })]]);
+    const b = analyze(makeApp({ endTime: 400_000 }), stages, [], []).find(b => b.type === 'slowHost' && b.metric === 'hostMeanRatio');
+    expect(b).toBeTruthy();
+    expect(b.impactBand).not.toBe('info');
+  });
+
   it('flags hostMeanRatio at exactly the 1000ms absolute floor (inclusive)', () => {
     const stages = new Map([[1, stageWithHosts([
       { host: 'a', taskCount: 20, totalDuration: 5000 },     // mean 250ms
@@ -183,13 +237,18 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
   const min = 60000;
   // Wall-clock (completedAt/submittedAt) drives the band; the guard is !(stageDurationMs > 0), not executorRunTime, which here is just realistic filler.
   const slow = (mins, execs) => makeStage({ id: 1, executorRunTime: mins * min * execs, executorStats: Array.from({ length: execs }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 })), hostStats: [], submittedAt: 0, completedAt: mins * min });
-  it('detector-own tiers are info at 15min, warning at 30/45, critical at 60; 30/45 reconcile up to critical here', () => {
-    // Detector grades info/warning/critical by wall-clock tier; at 15min recoverable is 0ms (stays info), 30/45min promote to critical against the 5s default.
-    const sev = (mins) => analyze(makeApp(), new Map([[1, slow(mins, 4)]]), [], []).find(b => b.type === 'stageSlowness')?.impactBand;
-    expect(sev(15)).toBe('info');
-    expect(sev(30)).toBe('critical');
-    expect(sev(46)).toBe('critical');
-    expect(sev(61)).toBe('critical');
+  it('fires from 15 minutes of wall-clock; its band comes from the partitioning headroom, not the duration', () => {
+    // 4 tasks on a 16-core cluster, running the whole window: more partitions could spread it over
+    // all 16 cores (critical against the 100-minute app). With 100 tasks there's no headroom (info).
+    // It reads 1 GB: a stage that reads nothing has no data for more partitions to split.
+    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 16 }];
+    const app = makeApp({ startTime: 0, endTime: 100 * min });
+    const run = (mins, taskCount) => analyze(app, new Map([[1, { ...slow(mins, 4), taskCount, taskActiveMs: mins * min, inputBytes: 1e9 }]]), executorsAdded, [])
+      .find(b => b.type === 'stageSlowness');
+    expect(run(14, 4)).toBeUndefined();
+    expect(run(15, 4).impactBand).toBe('critical');
+    expect(run(15, 4).impactEstimate.wallClock.high).toBeCloseTo(15 * min * (12 / 16), 6);
+    expect(run(61, 100).impactBand).toBe('info');
   });
   it('is suppressed when a slowHost finding exists on the same stage', () => {
     const hostStats = [ { host: 'hot', taskCount: 40, totalDuration: 8e6 }, { host: 'b', taskCount: 5, totalDuration: 5000 }, { host: 'c', taskCount: 5, totalDuration: 5000 } ];
@@ -216,19 +275,24 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
     expect(finding.stageId).toBe(0);
   });
 
-  it('fires on wall-clock duration alone when executorRunTime is 0 (stage stalled before any task ran)', () => {
-    // Guard checks stageDurationMs, not executorRunTime: a stage stalled before any task ran has executorRunTime 0 but can still be slow by wall clock.
+  it('fires on wall-clock duration alone when executorRunTime is 0 (stage stalled before any task ran), claiming nothing', () => {
+    // Guard checks stageDurationMs, not executorRunTime: a stage stalled before any task ran has
+    // executorRunTime 0 but can still be slow by wall clock. No task ran, so more partitions
+    // recover nothing: the finding stays at the detector's own 'info'.
     const stages = new Map([
       [0, makeStage({
         id: 0,
         executorRunTime: 0,
+        taskActiveMs: 0,
         submittedAt: 0,
         completedAt: 20 * 60 * 1000, // 20 minutes real wall-clock -> should still fire
       })],
     ]);
-    const finding = analyze(makeApp(), stages, [], []).find((f) => f.type === 'stageSlowness');
+    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 16 }];
+    const finding = analyze(makeApp(), stages, executorsAdded, []).find((f) => f.type === 'stageSlowness');
     expect(finding).toBeDefined();
-    expect(finding.impactBand).toBe('critical');
+    expect(finding.impactEstimate.wallClock.high).toBe(0);
+    expect(finding.impactBand).toBe('info');
   });
 
   it('does not fire when wall-clock duration is zero, even with executorRunTime > 0', () => {
@@ -321,6 +385,23 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('critical');
   });
+
+  // Byte imbalance carries no time estimate, so its ratio tier is its band. A stage too short
+  // (under 0.5% of the run) to cost that much is skipped, since everything there graded info.
+  it('skips a slow host on a stage under 0.5% of the run, and keeps its tier on a longer one', () => {
+    const executorStats = [
+      { executorId: 'e1', ...base, inputBytes: 200 * 1024 * 1024 },
+      { executorId: 'e2', ...base, inputBytes: 20 * 1024 * 1024 },
+      { executorId: 'e3', ...base, inputBytes: 20 * 1024 * 1024 },
+    ];
+    const longRun = makeApp({ startTime: 0, endTime: 400_000 });
+    const at = (completedAt) => analyze(longRun, new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [], submittedAt: 0, completedAt })]]), [], [])
+      .filter(b => b.type === 'slowHost');
+    expect(at(1000)).toHaveLength(0); // 0.25% of the run: the imbalance is real, the floor drops it
+    const kept = at(4000).filter(b => b.variant === 'multiDim' && b.dimension === 'inputBytes'); // 1%
+    expect(kept).toHaveLength(1);
+    expect(kept[0].impactBand).not.toBe('info');
+  });
 });
 
 describe('analyze: failed task rate', () => {
@@ -367,6 +448,25 @@ describe('analyze: speculative / straggler', () => {
   it('emits no straggler when no speculative tasks and straggler share <= 5%', () => {
     const stages = new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 4 })]]);
     expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'straggler')).toHaveLength(0);
+  });
+
+  it('admits a 2.5-5% straggler share only when its recoverable tail clears the runtime floor', () => {
+    // 4/100 = 4% stragglers. A 4,900ms tail on a 5,000ms stage in a 500,000ms app clears the 0.5%
+    // floor (2,500ms); a 400ms tail does not.
+    const app = makeApp({ startTime: 0, endTime: 500000 });
+    const stage = (max) => new Map([[1, makeStage({
+      taskCount: 100, speculativeTasks: 0, stragglerCount: 4, completedAt: 5000, taskDurationP50: 100, taskDurationMax: max,
+    })]]);
+    const gating = analyze(app, stage(5000), [], []).find(b => b.type === 'straggler');
+    expect(gating.metric).toBe('stragglerShare');
+    expect(gating.impactBand).toBe('warning');
+    expect(gating.confidence).toBe('low');
+    expect(analyze(app, stage(500), [], []).find(b => b.type === 'straggler')).toBeUndefined();
+    // At or under 2.5% nothing fires, however long the tail.
+    const two = new Map([[1, makeStage({ taskCount: 100, stragglerCount: 2, completedAt: 5000, taskDurationP50: 100, taskDurationMax: 5000 })]]);
+    expect(analyze(app, two, [], []).find(b => b.type === 'straggler')).toBeUndefined();
+    // No app end time (an incomplete run): the floor can't be checked, so the lower gate stays shut.
+    expect(analyze(makeApp({ startTime: 0, endTime: null }), stage(5000), [], []).find(b => b.type === 'straggler')).toBeUndefined();
   });
 
   it('skips stages with fewer than 10 tasks', () => {
@@ -420,14 +520,45 @@ describe('analyze: speculative / straggler', () => {
   });
 
   it('caps a large straggler share at info when the raw waste clears the floor but the occupancy-clipped recoverable time does not', () => {
-    // Like the skew ceiling test: the 5,000ms max task fills the 5,005ms window, so only 5ms is recoverable despite a raw delta that clears the 25ms warn floor.
+    // Like the skew ceiling test: the 10,000 core-ms left after the fix removes 4,990 fill the
+    // 5,005ms window over 2 cores, so only 5ms is recoverable despite a raw delta that clears the
+    // 25ms warn floor.
+    const stages = new Map([[1, makeStage({
+      taskCount: 100, speculativeTasks: 0, stragglerCount: 50,
+      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationMax: 5000, executorRunTime: 14990,
+    })]]);
+    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 2 }];
+    const b = analyze(makeApp(), stages, executorsAdded, []).find(b => b.type === 'straggler');
+    expect(b).toBeTruthy();
+    expect(b.impactBand).toBe('info');
+  });
+
+  it('grades a straggler that alone gates its stage on the recoverable tail, not on ~0', () => {
+    // Same 5,000ms straggler in a 5,005ms window, but no core work filling it: bringing the
+    // straggler down to P50 recovers the 4,990ms delta.
     const stages = new Map([[1, makeStage({
       taskCount: 100, speculativeTasks: 0, stragglerCount: 50,
       submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationMax: 5000,
     })]]);
     const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'straggler');
-    expect(b).toBeTruthy();
-    expect(b.impactBand).toBe('info');
+    expect(b.impactEstimate.wallClock.high).toBe(4990);
+    expect(b.impactBand).toBe('critical');
+  });
+
+  it('skips a stage shorter than 0.5% of the run, whose tail could only grade info, and keeps a warning one', () => {
+    const straggling = { taskCount: 100, speculativeTasks: 3, stragglerCount: 50, taskDurationP50: 10, taskDurationMax: 400 };
+    // A 1s stage in a 400s run (0.25%): the tail is real, but can't cost 0.5% of the run.
+    const short = new Map([[1, makeStage({ ...straggling, submittedAt: 0, completedAt: 1000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), short, [], []).filter(b => b.type === 'straggler')).toHaveLength(0);
+    // The same run without an end (duration unknown) keeps it, as the other runtime floors do.
+    expect(analyze(makeApp({ endTime: null }), short, [], []).filter(b => b.type === 'straggler')).toHaveLength(1);
+    // A stage with no completion time in a run that ended is zero-length, not short: kept.
+    const open = new Map([[1, makeStage({ ...straggling, submittedAt: 1000, completedAt: null })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), open, [], []).filter(b => b.type === 'straggler')).toHaveLength(1);
+    // A 5s stage (1.25%) whose 4.99s tail clears the floor still grades above info.
+    const long = new Map([[1, makeStage({ ...straggling, submittedAt: 0, completedAt: 5005, taskDurationMax: 5000 })]]);
+    const b = analyze(makeApp({ endTime: 400_000 }), long, [], []).find(b => b.type === 'straggler');
+    expect(b.impactBand).toBe('warning');
   });
 });
 
@@ -542,6 +673,20 @@ describe('analyze: stage shape smells (§7)', () => {
     const f = analyze(app, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism');
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('info');
+  });
+  // Parallelizing a stage saves at most its own duration, so one under the 0.5% runtime floor is
+  // skipped; with no known app duration the floor passes, as for the tiered detectors.
+  it('skips under-parallelization on a stage shorter than 0.5% of the run', () => {
+    const stage = makeStage({ taskCount: 3, executorStats: execs(4), submittedAt: 0, completedAt: 1000 }); // 1s
+    const longRun = makeApp({ resources: { executor: { cores: 4 } }, startTime: 0, endTime: 400_000 }); // 1s = 0.25%
+    expect(analyze(longRun, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(0);
+    const shortRun = makeApp({ resources: { executor: { cores: 4 } }, startTime: 0, endTime: 200_000 }); // 1s = 0.5%
+    expect(analyze(shortRun, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(1);
+    const unknownRun = makeApp({ resources: { executor: { cores: 4 } }, endTime: null });
+    expect(analyze(unknownRun, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(1);
+    // A stage with no completion time is zero-length, not short: kept, as the other stage floors do.
+    const open = makeStage({ taskCount: 3, executorStats: execs(4), submittedAt: 1000, completedAt: null });
+    expect(analyze(longRun, new Map([[1, open]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(1);
   });
   it('pluralizes "task" correctly for a single-task stage', () => {
     const app = makeApp({ resources: { executor: { cores: 4 } } });
@@ -945,6 +1090,16 @@ describe('analyze: tiny tasks', () => {
     const found = catalog.filter(b => b.type === 'tinyTask');
     expect(found).toHaveLength(1);
     expect(found[0].impactBand).toBe('critical');
+  });
+
+  it('skips a stage under 0.5% of the run, and keeps a longer one at its warning tier', () => {
+    const run = makeApp({ endTime: 400_000 });
+    const at = (completedAt) => analyze(run, new Map([[1, makeStage({ taskCount: 1000, taskDurationP50: 80, taskDurationP95: 150, completedAt })]]), [], [])
+      .filter(b => b.type === 'tinyTask');
+    expect(at(1000)).toHaveLength(0); // 0.25% of the run: the tasks are tiny, the floor drops it
+    const kept = at(4000); // 1%: 900 excess tasks x 50ms, clipped to the stage, clear the 0.5% floor
+    expect(kept).toHaveLength(1);
+    expect(kept[0].impactBand).toBe('warning');
   });
 
   it('does not fire when P95 exceeds the 1000ms ceiling despite a low P50', () => {
@@ -1378,6 +1533,19 @@ describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
     expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
   });
 
+  it('skips a low-GC note on a stage shorter than 0.5% of the run, but never a high-GC finding', () => {
+    // A 1s stage in a 400s run (0.25%): low GC is still true there, the floor is why it's dropped.
+    const low = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 0, completedAt: 1000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), low, [], []).find(b => b.type === 'gc')).toBeUndefined();
+    const lowLong = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 0, completedAt: 4000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), lowLong, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+    // A stage with no completion time is zero-length, not short: its note is kept.
+    const lowOpen = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 1000, completedAt: null })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), lowOpen, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+    const high = new Map([[1, makeStage({ gcPct: 15, jvmGCTime: 9000, executorRunTime: 60000, submittedAt: 0, completedAt: 1000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), high, [], []).find(b => b.type === 'gc' && b.direction !== 'low')).toBeTruthy();
+  });
+
   it('does not emit a low finding when GC is high', () => {
     const stages = new Map([[1, makeStage({ gcPct: 15, executorRunTime: 60000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
@@ -1508,12 +1676,40 @@ describe('analyze: coldStart/utilization do not silently skip on a literal start
   it('coldStart still fires when app.startTime is exactly 0', () => {
     // makeApp()'s own default startTime is 0 (fixtures/stage-app-fixtures.js); a falsy check on
     // app.startTime (`!app.startTime`) treats this exactly like a missing startTime and silently
-    // no-ops. Stage submitted well past the 30s default gap threshold.
+    // no-ops. The first executor arrives well past the 30s default gap after the first stage.
     const app = makeApp({ startTime: 0, endTime: 100000 });
-    const stages = new Map([[1, makeStage({ submittedAt: 41000 })]]);
-    const b = analyze(app, stages, [], []).find(x => x.type === 'coldStart');
+    const stages = new Map([[1, makeStage({ submittedAt: 1000 })]]);
+    const added = [{ executorId: '1', timestamp: 42000, totalCores: 4 }];
+    const b = analyze(app, stages, added, []).find(x => x.type === 'coldStart');
     expect(b).toBeTruthy();
     expect(b.value).toBe(41);
+  });
+
+  // The gap is first runnable stage -> first executor. The driver's own startup before its first
+  // job isn't executor wait, and with no executor events there's nothing to measure.
+  it('coldStart: ignores driver startup before the first stage, and needs executor events', () => {
+    const app = makeApp({ startTime: 0, endTime: 100000 });
+    const stages = new Map([[1, makeStage({ submittedAt: 41000 })]]);
+    const warm = [{ executorId: '1', timestamp: 30000, totalCores: 4 }];
+    expect(analyze(app, stages, warm, []).find(x => x.type === 'coldStart')).toBeUndefined();
+    expect(analyze(app, stages, [], []).find(x => x.type === 'coldStart')).toBeUndefined();
+    const late = [{ executorId: '2', timestamp: 80000, totalCores: 4 }, { executorId: '1', timestamp: 75000, totalCores: 4 }];
+    expect(analyze(app, stages, late, []).find(x => x.type === 'coldStart').value).toBe(34);
+  });
+
+  // Regression: an executor that idled out before the first stage can't run it, so the wait runs
+  // to the next executor added after submission.
+  it('coldStart: measures to the next executor when early ones were removed before the first stage', () => {
+    const app = makeApp({ startTime: 0, endTime: 300000 });
+    const stages = new Map([[1, makeStage({ submittedAt: 100000 })]]);
+    const added = [{ executorId: '1', timestamp: 5000, totalCores: 4 }, { executorId: '2', timestamp: 160000, totalCores: 4 }];
+    const removed = [{ executorId: '1', timestamp: 65000 }];
+    const b = analyze(app, stages, added, removed).find(x => x.type === 'coldStart');
+    expect(b).toBeTruthy();
+    expect(b.value).toBe(60);
+    const removedLater = [{ executorId: '1', timestamp: 200000 }];
+    expect(analyze(app, stages, added, removedLater).find(x => x.type === 'coldStart')).toBeUndefined();
+    expect(analyze(app, stages, added, []).find(x => x.type === 'coldStart')).toBeUndefined();
   });
 
   it('utilization still fires when app.startTime is exactly 0', () => {
@@ -2254,8 +2450,9 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
 
   it('coldStart: includes the startup gap in seconds', () => {
     const app = makeApp({ startTime: 1000, endTime: 100000 });
-    const stages = new Map([[1, makeStage({ submittedAt: 41000 })]]);
-    const b = analyze(app, stages, [], []).find(x => x.type === 'coldStart');
+    const stages = new Map([[1, makeStage({ submittedAt: 2000 })]]);
+    const added = [{ executorId: '1', timestamp: 42000, totalCores: 4 }];
+    const b = analyze(app, stages, added, []).find(x => x.type === 'coldStart');
     expect(b.recommendation).toContain(`${b.value}s`);
   });
 

@@ -135,13 +135,18 @@ export function finalizeStage(
   const { p50: spillMemP50, p95: spillMemP95, max: spillMemMax } = computeFieldQuantiles(arr, FIELDS.MEM_SPILLED);
   const { p50: spillDiskP50, p95: spillDiskP95, max: spillDiskMax } = computeFieldQuantiles(arr, FIELDS.DISK_SPILLED);
 
-  // Straggler count: tasks with duration > 4 * P50.
+  // Straggler count: tasks with duration > 4 * P50, their summed excess over P50, and the longest
+  // task that isn't one.
   const stragglerThreshold = 4 * p50;
   let stragglerCount = 0;
+  let stragglerExcessMs = 0;
+  let longestNonStragglerMs = 0;
   const taskArrCount = arr.length / FIELDS.STRIDE;
   if (p50 > 0) {
     for (let i = 0; i < taskArrCount; i++) {
-      if (arr[i * FIELDS.STRIDE + FIELDS.DURATION] > stragglerThreshold) stragglerCount++;
+      const duration = arr[i * FIELDS.STRIDE + FIELDS.DURATION];
+      if (duration > stragglerThreshold) { stragglerCount++; stragglerExcessMs += duration - p50; }
+      else if (duration > longestNonStragglerMs) longestNonStragglerMs = duration;
     }
   }
 
@@ -160,9 +165,11 @@ export function finalizeStage(
 
   const data: Record<string, unknown> = {
     ...stage,
-    hostStats: hostStatsArr, executorStats: executorStatsArr, failureReasons: failureReasonsArr, localityStats: localityStatsArr, stragglerCount,
+    hostStats: hostStatsArr, executorStats: executorStatsArr, failureReasons: failureReasonsArr, localityStats: localityStatsArr, stragglerCount, stragglerExcessMs, longestNonStragglerMs,
     failedTaskSamples,
     peakExecutionMemoryMax,
+    taskActiveMs: computeTaskActiveMs(arr),
+    peakConcurrentTasks: computePeakConcurrentTasks(arr),
     taskDurationP50: p50,
     taskDurationP95: p95,
     taskDurationMax: max,
@@ -176,6 +183,55 @@ export function finalizeStage(
   delete data.taskAttempts; // internal-only field, already nulled above; never part of the public message
 
   return { type: 'stage', data };
+}
+
+// Wall-clock time during which at least one of the stage's tasks was running: the union of its
+// [launch, finish) intervals. A stage's submittedAt..completedAt window also covers time it sat
+// open with no task running (waiting for a free slot, or between retried tasks), which no
+// task-level fix can compress. Tasks missing either timestamp are skipped.
+export function computeTaskActiveMs(arr: Float64Array): number {
+  const taskCount = arr.length / FIELDS.STRIDE;
+  const intervals: [number, number][] = [];
+  for (let i = 0; i < taskCount; i++) {
+    const launch = arr[i * FIELDS.STRIDE + FIELDS.LAUNCH_TIME];
+    const finish = arr[i * FIELDS.STRIDE + FIELDS.FINISH_TIME];
+    if (launch > 0 && finish > launch) intervals.push([launch, finish]);
+  }
+  intervals.sort((a, b) => a[0] - b[0]);
+  let activeMs = 0, start = -Infinity, end = -Infinity;
+  for (const [launch, finish] of intervals) {
+    if (launch > end) {
+      if (end > start) activeMs += end - start;
+      start = launch;
+      end = finish;
+    } else if (finish > end) {
+      end = finish;
+    }
+  }
+  if (end > start) activeMs += end - start;
+  return activeMs;
+}
+
+// Most tasks running at once, over the same [launch, finish) intervals as computeTaskActiveMs: the
+// slots the stage actually got. A task finishing at the instant another launches frees its slot.
+export function computePeakConcurrentTasks(arr: Float64Array): number {
+  const taskCount = arr.length / FIELDS.STRIDE;
+  const launches: number[] = [];
+  const finishes: number[] = [];
+  for (let i = 0; i < taskCount; i++) {
+    const launch = arr[i * FIELDS.STRIDE + FIELDS.LAUNCH_TIME];
+    const finish = arr[i * FIELDS.STRIDE + FIELDS.FINISH_TIME];
+    if (launch > 0 && finish > launch) { launches.push(launch); finishes.push(finish); }
+  }
+  launches.sort((a, b) => a - b);
+  finishes.sort((a, b) => a - b);
+  let peak = 0, running = 0, finished = 0;
+  for (const launch of launches) {
+    while (finished < finishes.length && finishes[finished] <= launch) { running--; finished++; }
+    running++;
+    if (running > peak) peak = running;
+  }
+  return peak;
 }
 
 export function computeFieldQuantiles(arr: Float64Array, fieldIndex: number): { p50: number; p95: number; max: number } {
