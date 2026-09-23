@@ -366,13 +366,40 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
     expect(findings[0].impactEstimate.wallClock.high).toBeGreaterThanOrEqual(0);
   });
 
-  it('tinyTask: excess task count beyond a coalesce-to-1/10th target', () => {
+  it('tinyTask: excess task count beyond a coalesce-to-1/10th target, at the assumed overhead when unmeasured', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], taskCount: 1000 }]]);
     const findings = [{ type: 'tinyTask', stageId: 0, impactBand: 'info' }];
     estimateImpact(findings, stages);
     const est = findings[0].impactEstimate;
+    expect(est.estimateMethod).toBe('modeled');
     expect(est.wallClock.high).toBe(900 * 50); // (1000 - round(1000/10)) excess tasks * 50ms
     expect(est.rawWaste).toEqual({ value: 900 * 50, unit: 'ms' });
+  });
+
+  it('tinyTask: uses the stage\'s own measured per-task overhead, spread over its achieved concurrency', () => {
+    // 1000 tasks, 80,000ms of task time of which 60,000ms ran compute: 20ms overhead per task.
+    // 80,000ms of task time in a 10,000ms stage is 8-way concurrency: 900 excess x 20ms / 8 = 2,250ms.
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskCount: 1000, executorRunTime: 60000,
+      executorStats: [{ executorId: '1', totalDuration: 40000 }, { executorId: '2', totalDuration: 40000 }],
+    }]]);
+    const findings = [{ type: 'tinyTask', stageId: 0, impactBand: 'info' }];
+    estimateImpact(findings, stages);
+    const est = findings[0].impactEstimate;
+    expect(est.estimateMethod).toBe('measured');
+    expect(est.wallClock.high).toBeCloseTo(2250, 6);
+  });
+
+  it('tinyTask: a mostly-idle stage never claims more wall-clock than the overhead it removes', () => {
+    // 400 tasks, 8,000ms of task time in a 600,000ms stage (concurrency 0.013): 900 would claim
+    // hours if divided by that concurrency; floored at 1 it is 360 excess x 5ms = 1,800ms.
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 600000, parentIds: [], taskCount: 400, executorRunTime: 6000,
+      executorStats: [{ executorId: '1', totalDuration: 8000 }],
+    }]]);
+    const findings = [{ type: 'tinyTask', stageId: 0, impactBand: 'info' }];
+    estimateImpact(findings, stages);
+    expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(1800, 6);
   });
 });
 

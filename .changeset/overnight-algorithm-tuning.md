@@ -24,3 +24,7 @@ Estimates: `shuffle` and `spill` recoverable time now spreads the stage's shuffl
 bytes over every executor that ran it (one ~1 Gbps link or ~200 MB/s disk each) instead of pushing
 the whole cluster's bytes through a single link or disk. On the largest real log the old figures
 claimed 721 minutes of shuffle and spill savings on a 458-minute run; they now claim 51.
+
+Estimates: `tinyTask` recoverable time now uses the stage's own measured per-task overhead (task
+wall time minus executor run time) spread over the stage's achieved concurrency, instead of an
+assumed 50ms per task summed serially across tasks that ran in parallel.

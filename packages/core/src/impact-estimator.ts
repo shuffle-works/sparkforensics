@@ -10,6 +10,21 @@ const SHUFFLE_THROUGHPUT_BPS = 125_000_000;
 // Assumed disk I/O throughput per executor for spilled data, ~200 MB/s (conservative HDD/SSD blend).
 const SPILL_IO_THROUGHPUT_BPS = 200_000_000;
 
+// A stage's own per-task overhead: task wall time (launch to finish, summed per executor by
+// finalizeStage) minus executorRunTime, i.e. deserialization, result serialization and the
+// launch round trip that coalescing tasks removes. `concurrency` is the stage's achieved task
+// concurrency (task time / stage duration). Null when the stage has no such data or no overhead.
+function measuredTaskOverhead(stage: Stage): { perTaskMs: number; concurrency: number } | null {
+  const executorStats = Array.isArray(stage.executorStats)
+    ? (stage.executorStats as { totalDuration?: number }[]) : [];
+  const taskTimeMs = executorStats.reduce((sum, e) => sum + (e.totalDuration ?? 0), 0);
+  const taskCount = stage.taskCount ?? 0;
+  const durationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
+  const overheadMs = taskTimeMs - (stage.executorRunTime ?? 0);
+  if (taskTimeMs <= 0 || taskCount <= 0 || durationMs <= 0 || overheadMs <= 0) return null;
+  return { perTaskMs: overheadMs / taskCount, concurrency: taskTimeMs / durationMs };
+}
+
 // Both constants above are single-device figures (one NIC, one local disk). A stage's shuffle
 // reads and spills are spread over every executor that ran its tasks, each moving its own share
 // in parallel, so the stage's aggregate bandwidth scales with that executor count. Dividing a
@@ -22,7 +37,8 @@ function stageIoParallelism(stage: Stage): number {
 }
 // Spark's classic recommended shuffle partition size.
 const IDEAL_BYTES_PER_PARTITION_TASK = 128 * 1024 * 1024;
-// Assumed per-task scheduling/launch overhead.
+// Assumed per-task scheduling/launch overhead: the fallback when a stage lacks the per-executor
+// task-time sums measuredTaskOverhead needs.
 const TASK_SCHEDULING_OVERHEAD_MS = 50;
 // Assumed per-file open latency (small-file overhead).
 const FILE_OPEN_OVERHEAD_MS = 10;
@@ -298,6 +314,14 @@ function computeEstimateForFinding(
       if (!stage) return null;
       const taskCount = stage.taskCount ?? 0;
       const excessTaskCount = Math.max(0, taskCount - Math.round(taskCount / 10));
+      const measured = measuredTaskOverhead(stage);
+      if (measured) {
+        // Coalescing to a tenth of the tasks removes the excess tasks' per-task overhead: core
+        // time spent in parallel, so wall-clock at the stage's achieved concurrency (floored at
+        // 1: a mostly-idle stage can't save more wall-clock than the task time it removes).
+        const wasteMs = (excessTaskCount * measured.perTaskMs) / Math.max(1, measured.concurrency);
+        return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' });
+      }
       const wasteMs = excessTaskCount * TASK_SCHEDULING_OVERHEAD_MS;
       return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: wasteMs, unit: 'ms' });
     }
