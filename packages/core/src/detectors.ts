@@ -857,7 +857,7 @@ export const DETECTORS: Detector[] = [
       const totalCores = execCount * cores;
       const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
       // PRatio: under-parallelization.
-      if (totalCores > 0 && meetsRuntimeFloor(stageDurationMs, computeAppDurationMs(ctx), this.thresholds.lowParallelismFloorPct)) {
+      if (totalCores > 0 && !stageBelowRuntimeFloor(stage, ctx, this.thresholds.lowParallelismFloorPct)) {
         const pRatio = stage.taskCount / totalCores;
         if (pRatio < this.thresholds.pRatioMax) {
           out.push({
@@ -1033,10 +1033,9 @@ export const DETECTORS: Detector[] = [
         };
       }
       // Low-GC (cost) branch: only for stages that ran long enough to be meaningful.
-      const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
       if ((stage.executorRunTime ?? 0) >= this.thresholds.minRunTimeMs
           && pct < this.thresholds.lowInfoPct100
-          && meetsRuntimeFloor(stageDurationMs, computeAppDurationMs(ctx), this.thresholds.lowInfoFloorPct)) {
+          && !stageBelowRuntimeFloor(stage, ctx, this.thresholds.lowInfoFloorPct)) {
         const value = Math.round(pct * 10) / 10;
         return {
           type: 'gc', stageId: stage.id, direction: 'low',
@@ -1257,8 +1256,7 @@ export const DETECTORS: Detector[] = [
     ): Finding | null {
       if (stage.taskCount < this.thresholds.minTasks) return null;
       const appDurationMs = computeAppDurationMs(ctx);
-      const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
-      if (!meetsRuntimeFloor(stageDurationMs, appDurationMs, this.thresholds.floorPctWarn)) return null;
+      if (stageBelowRuntimeFloor(stage, ctx, this.thresholds.floorPctWarn)) return null;
       const stragglerShare = (stage.stragglerCount ?? 0) / stage.taskCount;
       const useSpeculative = (stage.speculativeTasks ?? 0) > 0;
       if (!useSpeculative && stragglerShare <= this.thresholds.shareWarnAtFloor) return null;

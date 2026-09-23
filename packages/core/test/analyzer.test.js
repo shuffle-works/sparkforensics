@@ -552,6 +552,9 @@ describe('analyze: speculative / straggler', () => {
     expect(analyze(makeApp({ endTime: 400_000 }), short, [], []).filter(b => b.type === 'straggler')).toHaveLength(0);
     // The same run without an end (duration unknown) keeps it, as the other runtime floors do.
     expect(analyze(makeApp({ endTime: null }), short, [], []).filter(b => b.type === 'straggler')).toHaveLength(1);
+    // A stage with no completion time in a run that ended is zero-length, not short: kept.
+    const open = new Map([[1, makeStage({ ...straggling, submittedAt: 1000, completedAt: null })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), open, [], []).filter(b => b.type === 'straggler')).toHaveLength(1);
     // A 5s stage (1.25%) whose 4.99s tail clears the floor still grades above info.
     const long = new Map([[1, makeStage({ ...straggling, submittedAt: 0, completedAt: 5005, taskDurationMax: 5000 })]]);
     const b = analyze(makeApp({ endTime: 400_000 }), long, [], []).find(b => b.type === 'straggler');
@@ -681,6 +684,9 @@ describe('analyze: stage shape smells (§7)', () => {
     expect(analyze(shortRun, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(1);
     const unknownRun = makeApp({ resources: { executor: { cores: 4 } }, endTime: null });
     expect(analyze(unknownRun, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(1);
+    // A stage with no completion time is zero-length, not short: kept, as the other stage floors do.
+    const open = makeStage({ taskCount: 3, executorStats: execs(4), submittedAt: 1000, completedAt: null });
+    expect(analyze(longRun, new Map([[1, open]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(1);
   });
   it('pluralizes "task" correctly for a single-task stage', () => {
     const app = makeApp({ resources: { executor: { cores: 4 } } });
@@ -1533,6 +1539,9 @@ describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
     expect(analyze(makeApp({ endTime: 400_000 }), low, [], []).find(b => b.type === 'gc')).toBeUndefined();
     const lowLong = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 0, completedAt: 4000 })]]);
     expect(analyze(makeApp({ endTime: 400_000 }), lowLong, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+    // A stage with no completion time is zero-length, not short: its note is kept.
+    const lowOpen = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 1000, completedAt: null })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), lowOpen, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
     const high = new Map([[1, makeStage({ gcPct: 15, jvmGCTime: 9000, executorRunTime: 60000, submittedAt: 0, completedAt: 1000 })]]);
     expect(analyze(makeApp({ endTime: 400_000 }), high, [], []).find(b => b.type === 'gc' && b.direction !== 'low')).toBeTruthy();
   });
