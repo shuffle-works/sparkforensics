@@ -77,6 +77,8 @@ export interface Stage {
   spillClassification?: 'skew' | 'volume' | 'unclassified';
   jvmGCTime?: number;
   executorRunTime?: number;
+  // Summed task CPU time, in nanoseconds (Spark's unit); 0 on logs that predate the metric.
+  executorCpuTime?: number;
   gcPct?: number;
   taskDurationP50?: number;
   taskDurationP95?: number;
