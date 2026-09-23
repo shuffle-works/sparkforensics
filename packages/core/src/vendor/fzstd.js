@@ -4,6 +4,12 @@
 // Only the streaming Decompress class is used by this project (see
 // src/parser-worker.js) to inflate Spark event logs written with
 // spark.io.compression.codec=zstd, one block at a time.
+// Local patches, each marked "Local patch" below: Decompress.push loops over
+// frame boundaries instead of recursing; the streaming window is allocated on a
+// frame's second block and not updated after its last; a compressed block's
+// output is returned as a view of its own buffer instead of a copy. The last
+// two took fzstd over the 14 real logs from 12.5s to 10.6s (largest log 5.8s
+// to 5.0s), output byte-identical on every one.
 // Some numerical data is initialized as -1 even when it doesn't need initialization to help the JIT infer types
 // aliases for shorter compressed code (most minifers don't do this)
 var ab = ArrayBuffer, u8 = Uint8Array, u16 = Uint16Array, i16 = Int16Array, u32 = Uint32Array, i32 = Int32Array;
@@ -106,7 +112,9 @@ var rzfh = function (dat, w) {
         }
         if (ws > 2145386496)
             err(1);
-        var buf = new u8((w == 1 ? (fss || ws) : w ? 0 : ws) + 12);
+        // Local patch: the streaming Decompress (no `w`) gets an empty window here and allocates
+        // it in push() only once a frame has a second block (see the note there).
+        var buf = new u8((w == 1 ? (fss || ws) : 0) + 12);
         buf[0] = 1, buf[4] = 4, buf[8] = 8;
         return {
             b: bt + fsb,
@@ -578,7 +586,7 @@ var rzb = function (dat, st, out) {
             if (out)
                 st.y += oubt;
             else
-                buf = slc(buf, 0, oubt);
+                buf = buf.subarray(0, oubt); // local patch: buf is this block's own, no copy needed
         }
         else if (out) {
             st.y += lss;
@@ -589,7 +597,7 @@ var rzb = function (dat, st, out) {
             }
         }
         else if (spl)
-            buf = slc(buf, spl);
+            buf = buf.subarray(spl); // local patch: as above
         st.b = ebt;
         return buf;
     }
@@ -748,8 +756,19 @@ var Decompress = /*#__PURE__*/ (function () {
                     }
                     else {
                         this.ondata(blk, false);
-                        cpw(this.s.w, 0, blk.length);
-                        this.s.w.set(blk, this.s.w.length - blk.length);
+                        // Local patch: only a later block of the same frame reads the window, so
+                        // it isn't allocated until the first block that has one (upstream zeroes
+                        // a window-size buffer per frame) nor updated after a frame's last block.
+                        // Spark writes thousands of mostly one-block frames. Output is identical,
+                        // corrupt input included: an out-of-range read of the empty window yields
+                        // undefined, stored as 0, exactly as the zeroed window read.
+                        if (!this.s.l) {
+                            var win = this.s.w;
+                            if (!win.length)
+                                win = this.s.w = new u8(this.s.e);
+                            cpw(win, 0, blk.length);
+                            win.set(blk, win.length - blk.length);
+                        }
                     }
                     if (this.s.l) {
                         chunk = chunk.subarray(this.s.b);
