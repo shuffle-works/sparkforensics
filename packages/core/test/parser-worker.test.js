@@ -1243,6 +1243,18 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
     expect(appModel.sql.get(1).planTree?.name).toBe('Project');
   });
 
+  it('resolves the new plan when a whole SQL execution (start and end) repeats', () => {
+    const s = createState();
+    const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null };
+    const handlers = createModelCallbacks(appModel, {});
+    const post = (msg) => { if (msg) routeMessage(structuredClone(msg), handlers); };
+    post(processEvent(makeExecStart(1, { nodeName: 'Project', simpleString: 'Project [id]', children: [], metadata: {}, metrics: [] }), s));
+    post(processEvent(makeExecEnd(1), s));
+    post(processEvent(makeExecStart(1, { nodeName: 'Filter', simpleString: 'Filter', children: [], metadata: {}, metrics: [] }), s));
+    post(processEvent(makeExecEnd(1, 3000), s));
+    expect(appModel.sql.get(1).planTree?.name).toBe('Filter');
+  });
+
   it('omits metrics whose accumulatorId has no value in accumState', () => {
     const s = createState();
     const planInfo = {

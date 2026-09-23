@@ -876,6 +876,8 @@ export function startSqlExecution(event: z.infer<typeof SqlExecutionStartEventSc
     hadAdaptiveUpdate: false,
   };
   state.sqlExecutions.set(exec.id, exec);
+  // A restarted execution carries a new plan: its next end must resolve it again.
+  state.resolvedPlanExecutions.delete(exec.id);
   if (sparkPlanInfo !== null) {
     state.accumState.set(exec.id, new Map());
   }
