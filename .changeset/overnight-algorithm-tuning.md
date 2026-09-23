@@ -102,10 +102,10 @@ Parsing: a task-end event's accumulator IDs are read without parsing the rest of
 which is 71% of those events' bytes. Parsing the 14 real logs is 11% faster (10.6s to 9.4s) and
 the 52 corpus logs 8% faster, with identical findings.
 
-Dashboard: zstd event logs decompress 40% faster in the browser (the bundled decoder no longer
-allocates a fresh window for every frame or copies each block's output, and copies long runs
-natively), with byte-identical output on the 14 real logs. The largest one parses in 5.8s
-instead of 8.7s.
+Dashboard: zstd event logs decompress about 4x faster in the browser (the bundled decoder
+decodes every block into one reused buffer instead of allocating and shifting a window per frame
+and a buffer per block, and copies long runs natively), with byte-identical output on the 14 real
+logs. Decompressing the largest one in Chrome takes 2.9s instead of 11.6s.
 
 CLI and MCP: large zstd frames of a local event log decompress on Node's threadpool while the
 main thread parses. Parsing the 14 real logs is 14% faster (9.4s to 8.1s; the largest log 4.2s

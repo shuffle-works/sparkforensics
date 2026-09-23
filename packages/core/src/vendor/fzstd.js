@@ -5,13 +5,16 @@
 // src/parser-worker.js) to inflate Spark event logs written with
 // spark.io.compression.codec=zstd, one block at a time.
 // Local patches, each marked "Local patch" below: Decompress.push loops over
-// frame boundaries instead of recursing; the streaming window is allocated on a
-// frame's second block and not updated after its last; a compressed block's
-// output is returned as a view of its own buffer instead of a copy; the
-// sequence loop moves literal runs, non-overlapping matches and window reads
-// longer than CPW_MIN bytes with copyWithin/set instead of a byte loop. The
-// last three took fzstd over the 14 real logs from 12.5s to 7.5s (largest log
-// 5.7s to 3.1s), output byte-identical on every one.
+// frame boundaries instead of recursing; streaming decodes every block into one
+// reused [window | block] buffer (see the note above Decompress) instead of a
+// fresh window per frame and a fresh buffer per block; the sequence loop moves
+// literal runs, non-overlapping matches and window reads longer than CPW_MIN
+// bytes with copyWithin/set instead of a byte loop. On the largest real log
+// they took fzstd from 11.5s to 2.9s in Chrome (5.7s to 2.8s in Node), output
+// byte-identical on all 14 real logs. On 2400 randomly corrupted streams the
+// output and error matched upstream on every one but a corrupt window size
+// that overflows negative: both throw "Invalid typed array length" at the same
+// byte, with a different number in the message (the dev/fuzz-fzstd.mjs check).
 // Some numerical data is initialized as -1 even when it doesn't need initialization to help the JIT infer types
 // aliases for shorter compressed code (most minifers don't do this)
 var ab = ArrayBuffer, u8 = Uint8Array, u16 = Uint16Array, i16 = Int16Array, u32 = Uint32Array, i32 = Int32Array;
@@ -114,8 +117,8 @@ var rzfh = function (dat, w) {
         }
         if (ws > 2145386496)
             err(1);
-        // Local patch: the streaming Decompress (no `w`) gets an empty window here and allocates
-        // it in push() only once a frame has a second block (see the note there).
+        // Local patch: the streaming Decompress (no `w`) keeps its window in its own buffer (see
+        // the note above Decompress), so none is allocated here.
         var buf = new u8((w == 1 ? (fss || ws) : 0) + 12);
         buf[0] = 1, buf[4] = 4, buf[8] = 8;
         return {
@@ -404,11 +407,12 @@ var dhu4 = function (dat, out, hu) {
     dhu(dat.subarray(bt, bt += dat[4] | (dat[5] << 8)), out.subarray(sz2, sz3), hu);
     dhu(dat.subarray(bt), out.subarray(sz3), hu);
 };
-// Local patch: runs longer than this are copied natively. Only a match whose source ends before
-// its destination starts (offset >= length) may be: an overlapping match repeats its own output,
-// which a forward byte copy does and copyWithin (memmove) doesn't. A source range past the end
-// of its buffer (corrupt input) stays a loop, which reads undefined and so writes 0 there, as
-// upstream does. 16 and 32 measured the same, 8 and 64 slower.
+// Local patch: runs longer than this are copied natively, where a forward byte copy and
+// copyWithin (memmove) agree: a match whose source ends before its destination starts (offset >=
+// length), and a literal run whose destination doesn't pass its source (corrupt input can push
+// the output past the literals). An overlapping match repeats its own output, which only the byte
+// loop does. A source range past the end of its buffer (corrupt input) stays a loop, which reads
+// undefined and so writes 0 there, as upstream does. 16 and 32 measured the same, 8 and 64 slower.
 var CPW_MIN = 16;
 // read Zstandard block
 var rzb = function (dat, st, out) {
@@ -426,7 +430,7 @@ var rzb = function (dat, st, out) {
         st.b = bt + 1;
         if (out) {
             fill(out, dat[bt], st.y, st.y += sz);
-            return out;
+            return st.hv == null ? out : out.subarray(st.y - sz, st.y);
         }
         return fill(new u8(sz), dat[bt]);
     }
@@ -437,7 +441,7 @@ var rzb = function (dat, st, out) {
         if (out) {
             out.set(dat.subarray(bt, ebt), st.y);
             st.y += sz;
-            return out;
+            return st.hv == null ? out : out.subarray(st.y - sz, st.y);
         }
         return slc(dat, bt, ebt);
     }
@@ -564,7 +568,7 @@ var rzb = function (dat, st, out) {
                     else
                         off = st.o[0];
                 }
-                if (ll > CPW_MIN && spl + ll <= buf.length) // in range: see CPW_MIN
+                if (ll > CPW_MIN && spl + ll <= buf.length && oubt <= spl) // see CPW_MIN
                     buf.copyWithin(oubt, spl, spl + ll);
                 else
                     for (var i = 0; i < ll; ++i) {
@@ -577,10 +581,22 @@ var rzb = function (dat, st, out) {
                     var bs = st.e + stin;
                     if (len > ml)
                         len = ml;
+                    // Local patch: streaming keeps one window buffer for the whole stream (see
+                    // Decompress.push), so history the frame hasn't written yet reads as the 0s
+                    // of upstream's fresh zeroed window.
+                    if (st.hv != null && stin < -st.hv) {
+                        var z = Math.min(len, -st.hv - stin);
+                        fill(buf, 0, oubt, oubt + z);
+                        oubt += z, ml -= z, len -= z, bs += z;
+                    }
                     // Local patch: in bounds only; an out-of-range read stays a loop so it
                     // still yields 0 (subarray would wrap a negative start).
-                    if (len > CPW_MIN && bs >= 0 && bs + len <= st.w.length && oubt + len <= buf.length)
-                        buf.set(st.w.subarray(bs, bs + len), oubt);
+                    if (len > CPW_MIN && bs >= 0 && bs + len <= st.w.length && oubt + len <= buf.length) {
+                        if (st.w.buffer === buf.buffer)
+                            st.w.copyWithin(st.e + oubt, bs, bs + len);
+                        else
+                            buf.set(st.w.subarray(bs, bs + len), oubt);
+                    }
                     else
                         for (var i = 0; i < len; ++i) {
                             buf[oubt + i] = st.w[bs + i];
@@ -602,12 +618,12 @@ var rzb = function (dat, st, out) {
             }
             else
                 oubt = buf.length;
-            if (out)
+            if (out && st.hv == null)
                 st.y += oubt;
             else
                 buf = buf.subarray(0, oubt); // local patch: buf is this block's own, no copy needed
         }
-        else if (out) {
+        else if (out && st.hv == null) {
             st.y += lss;
             if (spl) {
                 for (var i = 0; i < lss; ++i) {
@@ -681,6 +697,15 @@ export function decompress(dat, buf) {
     }
     return cct(bufs, ol);
 }
+// Local patch: the streaming Decompress keeps one buffer, this.p, laid out as [window | block]:
+// its first st.e (window size) bytes hold the frame's latest output, and each block is decoded
+// right after them (st.hv tracks how much of the window this frame has written; older positions
+// read as 0, as upstream's fresh zeroed window). A back-reference into an earlier block is then a
+// copy within that one buffer. The block part is zeroed before each block, so a block sees
+// exactly what upstream's fresh block buffer held. Upstream allocated and zeroed a window per
+// frame, a buffer per block, then copied each block out and shifted the window. A chunk passed
+// to ondata is a view of this.p and is only valid until ondata returns: every caller in this
+// project decodes it at once.
 /**
  * Decompressor for Zstandard streamed data
  */
@@ -764,7 +789,22 @@ var Decompress = /*#__PURE__*/ (function () {
                 else
                     this.z = 0;
                 for (;;) {
-                    var blk = rzb(chunk, this.s);
+                    // Local patch: decode into this.p (see the note above Decompress), grown to fit
+                    // the block's declared size, keeping the window.
+                    var st = this.s;
+                    if (st.hv == null)
+                        st.hv = 0;
+                    var hb = st.b, need = Math.max(st.m, (chunk[hb] >> 3) | (chunk[hb + 1] << 5) | (chunk[hb + 2] << 13));
+                    var P = this.p;
+                    if (!P || this.pe != st.e || P.length < st.e + need) {
+                        var np = new u8(st.e + need);
+                        if (P && this.pe == st.e)
+                            np.set(P.subarray(0, st.e));
+                        P = this.p = np, this.pe = st.e;
+                    }
+                    st.w = P, st.y = st.e;
+                    P.fill(0, st.e, st.e + need);
+                    var blk = rzb(chunk, st, P);
                     if (!blk) {
                         if (final)
                             err(5);
@@ -775,19 +815,17 @@ var Decompress = /*#__PURE__*/ (function () {
                     }
                     else {
                         this.ondata(blk, false);
-                        // Local patch: only a later block of the same frame reads the window, so
-                        // it isn't allocated until the first block that has one (upstream zeroes
-                        // a window-size buffer per frame) nor updated after a frame's last block.
-                        // Spark writes thousands of mostly one-block frames. Output is identical,
-                        // corrupt input included: an out-of-range read of the empty window yields
-                        // undefined, stored as 0, exactly as the zeroed window read.
-                        if (!this.s.l) {
-                            var win = this.s.w;
-                            if (!win.length)
-                                win = this.s.w = new u8(this.s.e);
-                            cpw(win, 0, blk.length);
-                            win.set(blk, win.length - blk.length);
+                        // Local patch: upstream's window update, on the window part of this.p. It
+                        // is skipped after a frame's last block, which nothing reads, except
+                        // that a block longer than the window (corrupt input only) still throws
+                        // the RangeError upstream's update does.
+                        if (!st.l) {
+                            P.copyWithin(0, blk.length, st.e);
+                            P.set(blk, st.e - blk.length);
+                            st.hv = Math.min(st.e, st.hv + blk.length);
                         }
+                        else if (blk.length > st.e)
+                            P.set(blk, st.e - blk.length);
                     }
                     if (this.s.l) {
                         chunk = chunk.subarray(this.s.b);

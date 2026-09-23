@@ -27,7 +27,7 @@ Docs site dev: `npm run docs:dev` (VitePress over `docs-site/`)
 Docs site build: `npm run docs:build` (fails on dead internal links)
 Docs site preview: `npm run docs:preview` (serves the built docs site)
 Analyze (CI): `node packages/cli/bin/sparkforensics-analyze.mjs <file|dir> [--max-runtime ms] [--max-skew ratio] [--max-spill gb] [--max-failed-task-rate pct] [--min-efficiency pct] [--out path] [--format md|json]` (or `--shs-base-url <url> --app-id <id> [--attempt-id <id>]` to fetch from a Spark History Server instead of a local file); also supports baseline regression gating (`--baseline`/`--max-regression-pct`/`--regression-metric`/`--fail-on-introduced`), `--redact`, finding filters (`--impact`/`--type`/`--stage`), and `--export-html <dir>` to write a self-contained `file://`-openable dashboard instead of a md/json report; `--help` for the full flag list.
-Detector/estimate tuning: `node dev/bench-analyze.mjs [--repeat N] --out snap.json <file|dir>...` snapshots every finding (band, estimate) plus parse/analyze timings, one child process per log; `--diff a.json b.json [--verbose]` shows added/removed/re-banded findings between two snapshots. `node --max-old-space-size=12000 dev/eval-tail-replay.mjs [--set detector.threshold=value] <file|dir>...` scores skew/straggler against a task-level replay (precision/recall, estimate error). Record before/after numbers from these in the commit.
+Detector/estimate tuning: `node dev/bench-analyze.mjs [--repeat N] --out snap.json <file|dir>...` snapshots every finding (band, estimate) plus parse/analyze timings, one child process per log; `--diff a.json b.json [--verbose]` shows added/removed/re-banded findings between two snapshots. `node --max-old-space-size=12000 dev/eval-tail-replay.mjs [--set detector.threshold=value] <file|dir>...` scores skew/straggler against a task-level replay (precision/recall, estimate error). `node dev/fuzz-fzstd.mjs --upstream <pristine fzstd esm/index.mjs> <log.zstd>...` checks the locally patched vendored fzstd against upstream, whole logs and randomly corrupted prefixes; run it after any fzstd edit. Record before/after numbers from these in the commit.
 
 The view is React + TypeScript (`src/view/`), built with Vite. The old
 zero-build `index.html`-loads-a-plain-script setup is gone: `index.html` is
@@ -127,6 +127,8 @@ contributor should read; `docs/` stays flat internal engineering records
   and up to tens of MB (`buildChunkDecoder` decodes those in 512 KiB slices).
   For local files, frames of 64 KB+ decompress off the main thread and arrive
   as 256 KB pieces, so a native `push()` is async and `streamFile` awaits it.
+  fzstd's chunks are views of one reused buffer, valid only until its
+  `ondata` callback returns: copy one before keeping it.
 - Plan summary is best-effort: `summarizePlanTree` (`src/plan-summary.js`) walks
   the resolved `planTree` with lenient regex on each node's `detail`: silently
   omit unparseable fragments, never surface an error. (The old regex
