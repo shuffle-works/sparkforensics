@@ -1,5 +1,6 @@
-// Offline render step: turns the committed tuning-reference markdown (written
-// by scripts/fetch-tuning-docs.mjs from the pin in upstream.json) into
+// Offline render step: turns the generated, gitignored tuning-reference
+// markdown (written by scripts/fetch-tuning-docs.mjs from the pin in
+// upstream.json, which docs:dev/docs:build run first) into
 // VitePress pages under docs-site/, one per manifest entry. Only reshapes
 // markdown (inject manifest anchor onto each h1, rewrite same-page cross-refs
 // into sibling-page links); VitePress renders HTML.
@@ -48,7 +49,7 @@ export function rewriteDiagramPaths(md) {
   return md.replace(/(?:\.\.\/)?diagrams\//g, './diagrams/');
 }
 
-// Copies committed diagram SVGs next to the generated pages so each './diagrams/
+// Copies the generated diagram SVGs next to the generated pages so each './diagrams/
 // x.svg' resolves to a real file for Vite.
 function copyDiagrams() {
   rmSync(OUT_DIAGRAMS, { recursive: true, force: true });

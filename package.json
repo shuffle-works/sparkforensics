@@ -53,8 +53,8 @@
     "build": "npm run docs:build && vite build",
     "build:export": "DOCS_MPA=1 npm run docs:build && vite build --config vite.export.config.ts",
     "preview": "vite preview",
-    "docs:dev": "node scripts/build-tuning-reference.mjs && vitepress dev docs-site",
-    "docs:build": "node scripts/build-tuning-reference.mjs && vitepress build docs-site",
+    "docs:dev": "node scripts/fetch-tuning-docs.mjs --allow-stale && node scripts/build-tuning-reference.mjs && vitepress dev docs-site",
+    "docs:build": "node scripts/fetch-tuning-docs.mjs && node scripts/build-tuning-reference.mjs && vitepress build docs-site",
     "docs:preview": "vitepress preview docs-site"
   },
   "devDependencies": {

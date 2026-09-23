@@ -33,6 +33,9 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - run: npm ci
+      # The tuning reference isn't committed: generate it from the pin in
+      # packages/core/src/docs-content/upstream.json (see ci.yml's build job).
+      - run: npm run docs:fetch
 
       # Defense in depth: ci.yml already ran these on the PR that's landing,
       # but a release should never ship on the strength of a stale check.

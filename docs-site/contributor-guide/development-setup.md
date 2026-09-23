@@ -19,6 +19,27 @@ node packages/cli/bin/sparkforensics-analyze.mjs <file|dir>   # run the CLI anal
 `.githooks/`. After that, a pre-commit hook lints staged JS files on every
 commit. Fix what it reports, or skip it with `git commit --no-verify`.
 
+The tuning reference under `packages/core/src/docs-content/{chapters,tuning,diagrams}`
+isn't committed. It's generated from the `shuffle-works/spark-tuning-reference`
+commit pinned in `packages/core/src/docs-content/upstream.json`: the first
+`npm test`, `npm run docs:dev` or `npm run build` fetches it over HTTPS (about
+2s, no credentials) and later runs reuse the gitignored copy while it matches
+the pin. `npm run docs:fetch` does the same step on its own. Never edit those
+folders: fix the content upstream, then `npm run docs:bump` to move the pin.
+
+Offline, a cached copy keeps working. If the pin has moved since, `npm test` and
+`docs:dev` warn and use the older copy, while `docs:build`, `npm pack` and
+anything with `CI` set fail. To build from a local upstream checkout instead
+(offline, or to preview upstream edits in this docs site before they merge),
+set `SPARK_TUNING_REFERENCE_DIR`:
+
+```bash
+SPARK_TUNING_REFERENCE_DIR=../spark-tuning-reference npm run docs:dev
+```
+
+The same checks apply to that checkout. `npm pack` and CI accept it only when
+it sits at the pinned commit with no uncommitted `content/` changes.
+
 `dev/log-corpus` is a git submodule pointing at the public
 `spark-event-corpus-data` repo. It's optional: if you skip the
 `git submodule update` step above, `packages/server/test/shs-proxy-fixture.test.js`

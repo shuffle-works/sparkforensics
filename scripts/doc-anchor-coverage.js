@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DETECTORS } from '../packages/core/src/detectors.ts';
+import { DieError, ensureTuningDocs } from './fetch-tuning-docs.mjs';
 
 // Detector -> doc-anchor coverage contract: every detector docAnchor must
 // resolve to a real nav-index.json entry (else a dead deep-link), and every
@@ -46,6 +47,13 @@ export function isDirectExecution(scriptPath = process.argv[1], moduleUrl = impo
 // A maintainer health check, not part of `npm test` (that test stays warn-only;
 // detector<->anchor drift must never fail the suite).
 function main() {
+  try {
+    ensureTuningDocs({ allowStale: true });
+  } catch (err) {
+    if (!(err instanceof DieError)) throw err;
+    console.error(`doc-anchor coverage: fetch-tuning-docs: ${err.message}`);
+    return 1;
+  }
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
   const anchors = JSON.parse(readFileSync(join(root, 'packages/core/src/docs-content/chapters/nav-index.json'), 'utf8'));
   const { deadLinks, orphaned } = computeDocAnchorCoverage(DETECTORS, anchors);

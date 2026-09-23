@@ -8,6 +8,9 @@ export default defineConfig({
     // flattened alongside the rest, so both extensions need to be picked up.
     include: ['test/**/*.test.js', 'test/*.test.ts'],
     globals: true,
+    // Generates the gitignored tuning reference (src/docs-content/) from its
+    // pin before any test reads it; shared with the root config.
+    globalSetup: ['../../scripts/vitest-tuning-docs-setup.mjs'],
     testTimeout: 15000,
     coverage: {
       provider: 'v8',

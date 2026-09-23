@@ -239,7 +239,7 @@ export interface ReferenceDoc { anchor: string; title: string; content: string; 
 
 /** Full tuning-reference markdown for one doc anchor, run-independent. Resolves the anchor to its
  * owning page via pageForAnchor (so '#metric-task-duration' returns the 'metrics' page), looks it up
- * in the committed nav-index, and reads the markdown from the same docs-content store the website
+ * in the generated nav-index, and reads the markdown from the same docs-content store the website
  * renders from. The general-chapter counterpart to getFindingDocumentation (keyed by finding type). */
 export function getReferenceDoc(anchor: string): ReferenceDoc {
   const page = pageForAnchor(String(anchor).replace(/^#/, ''));
