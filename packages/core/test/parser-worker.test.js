@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { analyze } from '../src/analyzer.js';
 import { stripPlanDescription } from '../src/event-handlers.ts';
+import { computeTaskActiveMs } from '../src/stage-quantiles.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
 import { zipSync, gzipSync, strToU8 } from '../src/vendor/fflate.js';
 import { zstdCompressSync } from 'node:zlib';
@@ -435,6 +436,28 @@ describe('computeFieldQuantiles', () => {
     const arr = new Float64Array(10 * FIELDS.STRIDE);
     for (let i = 0; i < 10; i++) arr[i * FIELDS.STRIDE + FIELDS.DURATION] = i + 1;
     expect(computeDurationQuantiles(arr)).toEqual(computeFieldQuantiles(arr, FIELDS.DURATION));
+  });
+});
+
+describe('computeTaskActiveMs', () => {
+  const tasks = (...pairs) => {
+    const arr = new Float64Array(pairs.length * FIELDS.STRIDE);
+    pairs.forEach(([launch, finish], i) => {
+      arr[i * FIELDS.STRIDE + FIELDS.LAUNCH_TIME] = launch;
+      arr[i * FIELDS.STRIDE + FIELDS.FINISH_TIME] = finish;
+      arr[i * FIELDS.STRIDE + FIELDS.DURATION] = finish - launch;
+    });
+    return arr;
+  };
+
+  it('unions overlapping task intervals and leaves out the gaps between them', () => {
+    // [1000,5000) and [2000,6000) merge to 5000ms; [20000,21000) adds 1000ms; the gap does not count.
+    expect(computeTaskActiveMs(tasks([2000, 6000], [1000, 5000], [20000, 21000]))).toBe(6000);
+  });
+
+  it('skips tasks missing a timestamp, and is 0 for a stage with no timed tasks', () => {
+    expect(computeTaskActiveMs(tasks([0, 5000], [3000, 3000]))).toBe(0);
+    expect(computeTaskActiveMs(new Float64Array(0))).toBe(0);
   });
 });
 

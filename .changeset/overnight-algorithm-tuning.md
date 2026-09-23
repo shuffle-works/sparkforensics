@@ -28,3 +28,9 @@ claimed 721 minutes of shuffle and spill savings on a 458-minute run; they now c
 Estimates: `tinyTask` recoverable time now uses the stage's own measured per-task overhead (task
 wall time minus executor run time) spread over the stage's achieved concurrency, instead of an
 assumed 50ms per task summed serially across tasks that ran in parallel.
+
+Estimates: `stageSlowness` no longer claims "stage duration minus 15 minutes" as recoverable. Its
+estimate is now what more partitions could recover: the time the stage's tasks were running, spread
+over the cores the stage left unused. A stage that sat queued with its one short task, or that
+already ran more tasks than the cluster had cores, no longer grades critical, and a long
+single-task stage now does. Stage messages carry a new `taskActiveMs` field for this.

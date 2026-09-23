@@ -330,13 +330,45 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
 });
 
 describe('estimateImpact: stageSlowness', () => {
-  it('waste is stage duration minus the detector threshold, converted to ms', () => {
-    const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 20 * 60 * 1000, parentIds: [] }]]);
-    const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+  const min = 60 * 1000;
+
+  it('an under-partitioned stage: its task-active time spread over every core the cluster had', () => {
+    // 2 tasks on a 16-core cluster, running for 20 of the stage's 22 minutes: more partitions
+    // could spread those 20 minutes over all 16 cores, recovering 20 x (1 - 2/16) = 17.5 minutes.
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 22 * min, parentIds: [], taskCount: 2, taskActiveMs: 20 * min, taskDurationMax: 20 * min,
+    }]]);
+    const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
+    estimateImpact(findings, stages, 16);
     const est = findings[0].impactEstimate;
     expect(est.estimateMethod).toBe('modeled');
-    expect(est.wallClock.high).toBeGreaterThan(0);
+    expect(est.wallClock.high).toBeCloseTo(17.5 * min, 6);
+  });
+
+  it('a stage that already ran more tasks than cores gets nothing from more partitions', () => {
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 40 * min, parentIds: [], taskCount: 500, taskActiveMs: 40 * min,
+    }]]);
+    const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
+    estimateImpact(findings, stages, 16);
+    expect(findings[0].impactEstimate.wallClock.high).toBe(0);
+  });
+
+  it('time the stage sat open with no task running is queueing, not recoverable by partitioning', () => {
+    // Open 30 minutes, but its only task ran 2 seconds.
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 30 * min, parentIds: [], taskCount: 1, taskActiveMs: 2000, taskDurationMax: 2000,
+    }]]);
+    const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
+    estimateImpact(findings, stages, 16);
+    expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(2000 * (15 / 16), 6);
+  });
+
+  it('without a cluster core count there is no headroom figure: informational', () => {
+    const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 20 * min, parentIds: [], taskCount: 2 }]]);
+    const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
+    estimateImpact(findings, stages);
+    expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 });
 

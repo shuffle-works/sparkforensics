@@ -3,7 +3,6 @@ import {
   computeOccupancy, estimateSingleStage, estimateMultiStage,
   type OccupancyStage, type SingleStageEstimateOptions, type StageOccupancyInfo,
 } from './occupancy.ts';
-import { detectorCatalog } from './detectors.ts';
 
 // Assumed shuffle-network throughput per executor link, ~1 Gbps. Starting assumption, unvalidated.
 const SHUFFLE_THROUGHPUT_BPS = 125_000_000;
@@ -50,16 +49,6 @@ const NETWORK_FETCH_PENALTY_MS = 20;
 const EXECUTOR_STARTUP_OVERHEAD_MS = 15000;
 // Assumed re-read throughput, shared by cachingOpportunity and cacheUtilization.
 const RE_READ_THROUGHPUT_BPS = 125_000_000;
-
-// stageSlowness flags a stage at `infoMin` minutes; that's the floor for the waste this estimate
-// reports. Read from the detector's catalog entry so the two stay in sync automatically.
-const STAGE_SLOWNESS_THRESHOLD_MINUTES = (() => {
-  const infoMin = detectorCatalog().find((d) => d.type === 'stageSlowness')?.thresholds?.infoMin;
-  if (typeof infoMin !== 'number') {
-    throw new Error("impact-estimator: stageSlowness detector's 'infoMin' threshold not found in detectorCatalog()");
-  }
-  return infoMin;
-})();
 
 // skew and straggler claim time off the stage's longest task itself, so the occupancy clip must
 // not floor them at that same task (see estimateSingleStage). detectors.ts's clippedWasteMs gates
@@ -113,6 +102,7 @@ function computeEstimateForFinding(
   finding: Finding,
   stages: Map<number, Stage>,
   occupancy: Map<number, StageOccupancyInfo>,
+  totalCores: number,
 ): ImpactEstimate | null {
   switch (finding.type) {
     case 'retryWaste': {
@@ -278,9 +268,18 @@ function computeEstimateForFinding(
       if (finding.stageId == null) return null;
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
-      const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
-      const wasteMs = Math.max(0, stageDurationMs - STAGE_SLOWNESS_THRESHOLD_MINUTES * 60000);
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: wasteMs, unit: 'ms' });
+      // The recommended fix is more partitions, which only helps a stage that ran fewer tasks than
+      // the cluster has cores: the time its tasks were running could then spread over up to
+      // totalCores (lowShuffleParallelism's shape). Time the stage sat open with no task running
+      // is queueing no partition count recovers. Splitting partitions splits the longest task
+      // too, hence TAIL_CLAIM's post-fix floor. Unknown cluster size: no defensible figure.
+      if (totalCores <= 0) return costOnly('modeled');
+      const activeMs = typeof stage.taskActiveMs === 'number'
+        ? stage.taskActiveMs
+        : Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
+      const taskCount = stage.taskCount ?? 0;
+      const wasteMs = activeMs * Math.max(0, 1 - taskCount / totalCores);
+      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: wasteMs, unit: 'ms' }, TAIL_CLAIM);
     }
     case 'partitionSizing': {
       if (finding.stageId == null) return null;
@@ -432,7 +431,7 @@ function computeEstimateForFinding(
 export function estimateImpact(findings: Finding[], stages: Map<number, Stage>, totalCores = 0): Finding[] {
   const occupancy = computeOccupancy(stages as unknown as Map<number, OccupancyStage>, totalCores);
   for (const f of findings) {
-    const estimate = computeEstimateForFinding(f, stages, occupancy);
+    const estimate = computeEstimateForFinding(f, stages, occupancy, totalCores);
     if (estimate) f.impactEstimate = estimate;
   }
   return findings;

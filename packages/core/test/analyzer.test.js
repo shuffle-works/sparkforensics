@@ -198,13 +198,17 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
   const min = 60000;
   // Wall-clock (completedAt/submittedAt) drives the band; the guard is !(stageDurationMs > 0), not executorRunTime, which here is just realistic filler.
   const slow = (mins, execs) => makeStage({ id: 1, executorRunTime: mins * min * execs, executorStats: Array.from({ length: execs }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 })), hostStats: [], submittedAt: 0, completedAt: mins * min });
-  it('detector-own tiers are info at 15min, warning at 30/45, critical at 60; 30/45 reconcile up to critical here', () => {
-    // Detector grades info/warning/critical by wall-clock tier; at 15min recoverable is 0ms (stays info), 30/45min promote to critical against the 5s default.
-    const sev = (mins) => analyze(makeApp(), new Map([[1, slow(mins, 4)]]), [], []).find(b => b.type === 'stageSlowness')?.impactBand;
-    expect(sev(15)).toBe('info');
-    expect(sev(30)).toBe('critical');
-    expect(sev(46)).toBe('critical');
-    expect(sev(61)).toBe('critical');
+  it('fires from 15 minutes of wall-clock; its band comes from the partitioning headroom, not the duration', () => {
+    // 4 tasks on a 16-core cluster, running the whole window: more partitions could spread it over
+    // all 16 cores (critical against the 100-minute app). With 100 tasks there's no headroom (info).
+    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 16 }];
+    const app = makeApp({ startTime: 0, endTime: 100 * min });
+    const run = (mins, taskCount) => analyze(app, new Map([[1, { ...slow(mins, 4), taskCount, taskActiveMs: mins * min }]]), executorsAdded, [])
+      .find(b => b.type === 'stageSlowness');
+    expect(run(14, 4)).toBeUndefined();
+    expect(run(15, 4).impactBand).toBe('critical');
+    expect(run(15, 4).impactEstimate.wallClock.high).toBeCloseTo(15 * min * (12 / 16), 6);
+    expect(run(61, 100).impactBand).toBe('info');
   });
   it('is suppressed when a slowHost finding exists on the same stage', () => {
     const hostStats = [ { host: 'hot', taskCount: 40, totalDuration: 8e6 }, { host: 'b', taskCount: 5, totalDuration: 5000 }, { host: 'c', taskCount: 5, totalDuration: 5000 } ];
@@ -231,19 +235,24 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
     expect(finding.stageId).toBe(0);
   });
 
-  it('fires on wall-clock duration alone when executorRunTime is 0 (stage stalled before any task ran)', () => {
-    // Guard checks stageDurationMs, not executorRunTime: a stage stalled before any task ran has executorRunTime 0 but can still be slow by wall clock.
+  it('fires on wall-clock duration alone when executorRunTime is 0 (stage stalled before any task ran), claiming nothing', () => {
+    // Guard checks stageDurationMs, not executorRunTime: a stage stalled before any task ran has
+    // executorRunTime 0 but can still be slow by wall clock. No task ran, so more partitions
+    // recover nothing: the finding stays at the detector's own 'info'.
     const stages = new Map([
       [0, makeStage({
         id: 0,
         executorRunTime: 0,
+        taskActiveMs: 0,
         submittedAt: 0,
         completedAt: 20 * 60 * 1000, // 20 minutes real wall-clock -> should still fire
       })],
     ]);
-    const finding = analyze(makeApp(), stages, [], []).find((f) => f.type === 'stageSlowness');
+    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 16 }];
+    const finding = analyze(makeApp(), stages, executorsAdded, []).find((f) => f.type === 'stageSlowness');
     expect(finding).toBeDefined();
-    expect(finding.impactBand).toBe('critical');
+    expect(finding.impactEstimate.wallClock.high).toBe(0);
+    expect(finding.impactBand).toBe('info');
   });
 
   it('does not fire when wall-clock duration is zero, even with executorRunTime > 0', () => {

@@ -163,6 +163,7 @@ export function finalizeStage(
     hostStats: hostStatsArr, executorStats: executorStatsArr, failureReasons: failureReasonsArr, localityStats: localityStatsArr, stragglerCount,
     failedTaskSamples,
     peakExecutionMemoryMax,
+    taskActiveMs: computeTaskActiveMs(arr),
     taskDurationP50: p50,
     taskDurationP95: p95,
     taskDurationMax: max,
@@ -176,6 +177,33 @@ export function finalizeStage(
   delete data.taskAttempts; // internal-only field, already nulled above; never part of the public message
 
   return { type: 'stage', data };
+}
+
+// Wall-clock time during which at least one of the stage's tasks was running: the union of its
+// [launch, finish) intervals. A stage's submittedAt..completedAt window also covers time it sat
+// open with no task running (waiting for a free slot, or between retried tasks), which no
+// task-level fix can compress. Tasks missing either timestamp are skipped.
+export function computeTaskActiveMs(arr: Float64Array): number {
+  const taskCount = arr.length / FIELDS.STRIDE;
+  const intervals: [number, number][] = [];
+  for (let i = 0; i < taskCount; i++) {
+    const launch = arr[i * FIELDS.STRIDE + FIELDS.LAUNCH_TIME];
+    const finish = arr[i * FIELDS.STRIDE + FIELDS.FINISH_TIME];
+    if (launch > 0 && finish > launch) intervals.push([launch, finish]);
+  }
+  intervals.sort((a, b) => a[0] - b[0]);
+  let activeMs = 0, start = -Infinity, end = -Infinity;
+  for (const [launch, finish] of intervals) {
+    if (launch > end) {
+      if (end > start) activeMs += end - start;
+      start = launch;
+      end = finish;
+    } else if (finish > end) {
+      end = finish;
+    }
+  }
+  if (end > start) activeMs += end - start;
+  return activeMs;
 }
 
 export function computeFieldQuantiles(arr: Float64Array, fieldIndex: number): { p50: number; p95: number; max: number } {

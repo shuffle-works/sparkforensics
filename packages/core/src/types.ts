@@ -82,6 +82,9 @@ export interface Stage {
   taskDurationP95?: number;
   taskDurationMax?: number;
   peakExecutionMemoryMax?: number;
+  // Wall-clock ms during which at least one of the stage's tasks ran (finalizeStage's
+  // computeTaskActiveMs); absent on stages from before this field existed.
+  taskActiveMs?: number;
   localityStats?: { locality: string; count: number }[];
   details?: string;
   [key: string]: unknown;
