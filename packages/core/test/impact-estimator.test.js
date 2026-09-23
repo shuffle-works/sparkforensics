@@ -76,6 +76,15 @@ describe('estimateImpact: gc', () => {
     expect(est.rawWaste).toEqual({ value: 100000, unit: 'coreMs' });
   });
 
+  it('reports the low-GC (over-provisioning) direction as informational: cutting memory raises GC, it recovers none', () => {
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 25000, parentIds: [], jvmGCTime: 2000, executorRunTime: 100000,
+    }]]);
+    const findings = [{ type: 'gc', stageId: 0, direction: 'low', impactBand: 'info' }];
+    estimateImpact(findings, stages);
+    expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
+  });
+
   it('reports resourceOnly (not a wall-clock claim) when executorRunTime is zero (guards divide-by-zero)', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 1000, parentIds: [], jvmGCTime: 0, executorRunTime: 0 }]]);
     const findings = [{ type: 'gc', stageId: 0, impactBand: 'info' }];

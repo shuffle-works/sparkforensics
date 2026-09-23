@@ -112,6 +112,9 @@ function computeEstimateForFinding(
       return { basis: 'serial', wallClock: { low: wasteMs, high: wasteMs }, estimateMethod: 'measured' };
     }
     case 'gc': {
+      // The low-GC branch is an over-provisioning signal whose fix (less executor memory) raises
+      // GC rather than recovering it: the stage's GC time is no saving there, so no waste model.
+      if (finding.direction === 'low') return costOnly('none');
       if (finding.stageId == null) return null;
       const stage = stages.get(finding.stageId);
       if (!stage) return null;

@@ -241,7 +241,7 @@ stays documented here in full.
 | Partition sizing: low parallelism | `shuffleReadBytes ≥ 1 GiB` **and** `taskCount ≤ 7` | `warning` |
 | Partition sizing: oversized partition | `shuffleReadMax ≥ 5 GiB` | `critical` |
 | GC | `executorRunTime ≥ minRunTimeMs` = 10 s **and** `gcPct > 10%` | `warning` |
-| GC (low / cost) | `executorRunTime ≥ 10 s` **and** `gcPct < lowInfoPct100` = 5% (checked only when the GC row above did not fire) | `info` |
+| GC (low / cost) | `executorRunTime ≥ 10 s` **and** `gcPct < lowInfoPct100` = 5% (checked only when the GC row above did not fire). Gets no wall-clock estimate (an over-provisioning signal), so this band always stands | `info` |
 | Spill (magnitude v2) | any non-zero `memoryBytesSpilled`. The magnitude sub-table below classifies *how much*, but does not gate firing | `warning` |
 | Cold start | `firstStageSubmittedAt − app.startTime > gapSeconds` = 30 s | `warning` |
 | Slow host: mean-duration ratio | stage has ≥ `minHosts` = 3 hosts (or executors) and ≥ `minTasks` = 15 tasks; then per host: mean task duration / overall median ≥ `ratioWarn` = 2.0× **and** host task-share ≥ `minShare` = 20% **and** host mean ≥ `floorMs` = 1000 ms (absolute-magnitude floor, rules out sub-second noise) | `warning` |

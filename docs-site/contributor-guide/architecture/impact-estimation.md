@@ -8,7 +8,8 @@ wallClock, estimateMethod, rawWaste?}` (`src/types.ts`), attached by
 `confidence` says how much to trust the finding itself,
 `estimateMethod` says how its impact number was derived. `'none'` marks a purely
 informational finding with no waste model at all (`configAudit`, `stageFailed`,
-`failures`, `incompleteRun`, `slowHost`'s byte-dimension multiDim shapes): it's distinct
+`failures`, `incompleteRun`, `slowHost`'s byte-dimension multiDim shapes, `gc`'s low-GC
+direction): it's distinct
 from `'measured'`/`'modeled'`, which both attach a real (if approximate) formula. `basis`
 is one of:
 
@@ -257,7 +258,7 @@ formula per `variant`/`rule` on the same finding type; the basis column says whi
 | `retryWaste` | stage | measured | `retryWasteMs`, gate-clipped; pre-clip figure kept as `rawWaste` in `ms` |
 | `speculationWaste` | stage | measured | `speculationWasteMs`, gate-clipped; pre-clip figure kept as `rawWaste` in `ms` |
 | `coldStart` | app | measured | `gapSeconds × 1000`, unclipped, `basis: 'serial'` unconditionally (a pre-first-task gap can't overlap any stage) |
-| `gc` | stage | modeled | `jvmGCTime / (executorRunTime / stageDurationMs)`, gate-clipped: the concurrency division is an approximation, not a reconstruction, hence `modeled`; `rawWaste` in `coreMs` is the raw `jvmGCTime` sum before that conversion |
+| `gc` | stage | modeled / informational-only | high-GC: `jvmGCTime / (executorRunTime / stageDurationMs)`, gate-clipped: the concurrency division is an approximation, not a reconstruction, hence `modeled`; `rawWaste` in `coreMs` is the raw `jvmGCTime` sum before that conversion. Low-GC (`direction: 'low'`): informational-only, since its fix (less executor memory) raises GC rather than recovering it; it used to claim the stage's GC time as savings, which promoted 10 of 679 low-GC findings on 14 real logs to warning/critical |
 | `skew` | stage | measured | `taskDurationP95` or `Max` minus `P50` (per `metric`), gate-clipped against the post-fix floor (`shortensLongestTask`); pre-clip figure kept as `rawWaste` in `ms` |
 | `straggler` | stage | measured | `taskDurationMax − taskDurationP50`, gate-clipped against the post-fix floor (`shortensLongestTask`) |
 | `stageShape` | stage | cost-only | all three rules are `estimateMethod: 'measured'`, real per-stage fields, no assumed constant: `'lowParallelism'` → `rawWaste` in `coreMs` (idle cores × stage duration); `'dataExplosion'` → `rawWaste` in `bytes` (`outputBytes − inputBytes`); `'taskStageSkew'` → `rawWaste` in `coreMs` (`max(0, min(totalCores, taskCount) − 1) × (taskDurationMax − taskDurationP50)`, the cores idle during the straggler's tail at achieved concurrency) |

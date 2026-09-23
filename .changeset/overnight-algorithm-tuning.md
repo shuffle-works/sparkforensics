@@ -15,3 +15,7 @@ longest task, the very task their fix shortens. A stage gated by one straggler u
 about zero recoverable time, and could be dropped by the runtime floor. Their floor is now the
 longest task the fix leaves or the stage's core work over every core. Against a task-level
 replay of 765 flagged stages on 14 real logs, estimates more than 2x too low fell from 199 to 11.
+
+Estimates: low-GC `gc` findings (an over-provisioning signal) no longer claim the stage's GC time as
+recoverable wall-clock time, since their fix, less executor memory, raises GC rather than removing
+it. They are now informational and keep their `info` band.
