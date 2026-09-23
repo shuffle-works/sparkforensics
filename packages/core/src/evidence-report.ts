@@ -93,7 +93,9 @@ const NON_EVIDENCE_KEYS = new Set(['planNodeIds']);
 function findingRow(f: Finding): FindingRow {
   const evidence: Record<string, unknown> = {};
   for (const k of Object.keys(f).sort()) {
-    if (!CORE_KEYS.has(k) && !NON_EVIDENCE_KEYS.has(k)) evidence[k] = (f as Record<string, unknown>)[k];
+    // An undefined field (spill's spillMagnitude without a magnitude) is absent, as in the JSON.
+    const v = (f as Record<string, unknown>)[k];
+    if (!CORE_KEYS.has(k) && !NON_EVIDENCE_KEYS.has(k) && v !== undefined) evidence[k] = v;
   }
   const row: FindingRow = {
     id: f.id ?? null,

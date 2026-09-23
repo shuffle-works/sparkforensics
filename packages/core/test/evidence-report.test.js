@@ -24,6 +24,17 @@ function fixture() {
 }
 
 describe('buildEvidenceReport', () => {
+  it('leaves an undefined finding field out of the evidence instead of printing "undefined"', () => {
+    // 64 MB spilled clears no spill-magnitude tier, so the spill finding's spillMagnitude is undefined.
+    const fx = fixture();
+    fx.stages.set(3, makeStage({ id: 3, memoryBytesSpilled: 64 * 1024 * 1024 }));
+    const { markdown, json } = buildEvidenceReport(fx);
+    const spill = json.findings.find((f) => f.type === 'spill');
+    expect(spill).toBeTruthy();
+    expect('spillMagnitude' in spill.evidence).toBe(false);
+    expect(markdown).not.toContain('undefined');
+  });
+
   it('returns { markdown, json } with a documented numeric schemaVersion', () => {
     const { markdown, json } = buildEvidenceReport(fixture());
     expect(typeof markdown).toBe('string');
