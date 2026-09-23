@@ -33,6 +33,10 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      # The committed tuning reference (packages/core/src/docs-content/) must be
+      # exactly what the pin in its upstream.json generates: fails on a hand
+      # edit, or a pin bump committed without regenerating.
+      - run: npm run docs:fetch -- --check
       # dist/ is no longer committed (see deploy.yml): build it before
       # `npm test` runs, since tests/vite-entry.test.js asserts against the
       # production bundle's output.

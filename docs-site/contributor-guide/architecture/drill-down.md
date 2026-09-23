@@ -258,7 +258,8 @@ The topbar's "Reference" button and `DocsLink` (`src/view/DocsContext.tsx`) open
 a shadcn `Sheet` (`src/view/DocsSheet.tsx`, mounted once inside
 `DocsProvider`/`Dashboard.tsx`) that iframes a docs-site (VitePress) page,
 built from the tuning reference committed under `packages/core/src/docs-content/`
-and published as static HTML at `docs/tuning-reference/<page>.html`
+(generated from the `shuffle-works/spark-tuning-reference` commit pinned in its
+`upstream.json`; `npm run docs:bump` moves the pin) and published as static HTML at `docs/tuning-reference/<page>.html`
 (`docs-config.ts`'s `docsUrl()` resolves an anchor to that path plus a
 `#<anchor>` fragment). `useDocs().open(anchor)` sets React state (`isOpen`,
 `target`); Radix/Base UI's `Sheet` owns the slide-in animation, focus trap,

@@ -70,7 +70,7 @@ The three sizing calls, side by side:
 # Collapse many tiny output files without a shuffle (use when distribution is already even)
 df.coalesce(100).write.parquet(path)
 
-# Full reshuffle to a target count, use when the distribution itself needs rebalancing
+# Full reshuffle to a target count — use when the distribution itself needs rebalancing
 df = df.repartition(200)
 
 # Middle ground: reduce partition count but still rebalance (pays a shuffle)

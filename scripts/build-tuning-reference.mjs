@@ -1,7 +1,8 @@
-// Offline render step: turns the committed tuning-reference markdown (refreshed
-// by scripts/update-docs.mjs) into VitePress pages under docs-site/, one per
-// manifest entry. Only reshapes markdown (inject manifest anchor onto each h1,
-// rewrite same-page cross-refs into sibling-page links); VitePress renders HTML.
+// Offline render step: turns the committed tuning-reference markdown (written
+// by scripts/fetch-tuning-docs.mjs from the pin in upstream.json) into
+// VitePress pages under docs-site/, one per manifest entry. Only reshapes
+// markdown (inject manifest anchor onto each h1, rewrite same-page cross-refs
+// into sibling-page links); VitePress renders HTML.
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

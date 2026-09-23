@@ -13,10 +13,18 @@ more data than everyone else in the same stage.
 
 ## How it's detected
 
-| Signal | Warning | Critical |
-|---|---|---|
-| P95 / median task duration | > 3× | > 5× |
-| Max / median task duration (task count < 20) | > 3× | > 5× |
+| Signal | Fires when |
+|---|---|
+| P95 / median task duration (stage has ≥ 20 tasks) | > 3× |
+| Max / median task duration (stage has < 20 tasks) | > 3× |
+
+A 3× ratio marks a stage as skewed. Beyond that ratio, the estimated recoverable time (the
+P95-minus-median, or max-minus-median, delta) needs to clear 0.5% of the app's total
+runtime before it registers, a floor that filters out a 3× ratio sitting on a few
+milliseconds. Severity then tracks that same recoverable-time estimate as a share of the
+app's total runtime: ≥2% is critical, ≥0.5% is warning, anything smaller is info. A 3×
+ratio on a stage that barely dents an eight-hour run typically surfaces as info; the same
+ratio on a stage that dominates a short run reads as critical.
 
 ## Why it matters
 
@@ -53,12 +61,12 @@ The AQE toggle, plus the manual salting fallback as runnable code:
 ```python
 from pyspark.sql import functions as fn
 
-# AQE skew-join handling, active once AQE itself is enabled
+# AQE skew-join handling — active once AQE itself is enabled
 spark.conf.set("spark.sql.adaptive.enabled", "true")
 spark.conf.set("spark.sql.adaptive.skewJoin.enabled", "true")
 
 # Manual salting fallback (pre-AQE): spread the skewed key across N salted variants.
-# N is an example, size it to how badly the key is skewed.
+# N is an example — size it to how badly the key is skewed.
 N = 16
 salted_big = big.withColumn("salt", (fn.rand() * N).cast("int"))
 salted_small = small.withColumn(

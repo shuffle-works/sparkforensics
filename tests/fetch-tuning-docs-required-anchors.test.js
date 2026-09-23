@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { DETECTORS } from '@sparkforensics/core/detectors.ts';
 import { KNOWN_DOC_ANCHORS } from '@sparkforensics/core/docs-config.ts';
-import { collectRequiredAnchors } from '../scripts/update-docs.mjs';
+import { collectRequiredAnchors } from '../scripts/fetch-tuning-docs.mjs';
 
 describe('collectRequiredAnchors', () => {
   let root;

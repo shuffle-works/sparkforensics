@@ -160,6 +160,46 @@ the target executor count dynamic allocation would otherwise compute[^3]. Raise
 so proportionally reduces concurrent task slots per executor
 (`spark.executor.cores / spark.task.cpus`)[^3].
 
+## Autoscaling churn {#bottleneck-autoscaling-churn}
+
+<span class="tag">CHRN</span> <span class="tag">EXPERIMENTAL</span>
+
+Dynamic allocation adds executors once tasks back up and frees them once they go
+idle[^6]. Churn is a narrower failure mode inside that same mechanism: executors that get
+stood up and torn down again before they've done much useful work, cycling through
+provisioning and JVM startup cost repeatedly instead of running tasks.
+
+### How it's detected
+
+An executor counts as short-lived when its lifetime, from its `ExecutorAdded` event to
+either its `ExecutorRemoved` event or the end of the run if it was never removed, is
+under 2 minutes. This is evaluated once a run has added at least 5 executors, a floor
+that keeps a two- or three-executor job from registering on ordinary scale-down.
+
+| Signal | Warning | Critical |
+|---|---|---|
+| Share of added executors that are short-lived (< 2 min lifetime) | > 30% | > 60% |
+
+The 2-minute lifetime cutoff and the 30%/60% split are unvalidated heuristics rather than
+figures published in Spark's own documentation or benchmarks, so treat a finding here as
+a prompt to look at the executor timeline rather than a calibrated verdict.
+
+### Why it matters
+
+Every short-lived executor pays the same provisioning and JVM-startup cost as a
+long-lived one, but returns little task work in exchange. A run that keeps flapping
+between scaling up and down spends more of its wall-clock time paying that repeated
+overhead than one that settles into a stable executor count.
+
+### How to fix it
+
+- Raise `spark.dynamicAllocation.executorIdleTimeout` (default 60s[^3]) so an executor
+  survives a brief lull instead of being released the moment it goes idle, only to be
+  requested again shortly after.
+- Widen the gap between `spark.dynamicAllocation.minExecutors` and `.maxExecutors`[^3]:
+  bounds set too close together force Spark to repeatedly add and remove executors to
+  track small fluctuations in the task backlog instead of settling into a stable range.
+
 ## Sources
 
 [^1]: [Distribution of Executors, Cores and Memory for a Spark Application](https://raw.githubusercontent.com/spoddutur/spark-notes/master/distribution_of_executors_cores_and_memory_for_spark_application.md)

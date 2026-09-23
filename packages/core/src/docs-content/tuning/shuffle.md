@@ -26,11 +26,13 @@ read from local disk, and `totalBytesRead` is their sum[^6].
 
 ## How it's detected
 
-| Shuffle read/write bytes | Level |
+| Signal | Fires when |
 |---|---|
-| > 50 MB | Info |
-| > 500 MB | Warning |
-| > 1 GB | Critical |
+| Shuffle read bytes in a stage | > 50 MB |
+
+50 MB marks a stage as shuffle-heavy enough to flag. Severity then tracks the estimated
+recoverable time as a share of the app's total runtime: ≥2% is critical, ≥0.5% is
+warning, anything smaller is info.
 
 Beyond raw byte volume, the executor-side wait is captured by `fetchWaitTime`: time a task
 spends blocked on a remote shuffle block it needs next, not counting time spent prefetching
@@ -91,7 +93,25 @@ spark.shuffle.file.buffer=1m
 spark.reducer.maxSizeInFlight=48m
 ```
 
-## Partition sizing <span class="tag">PART</span>
+## Partition sizing {#bottleneck-partition-sizing}
+
+<span class="tag">PART</span>
+
+### How it's detected
+
+A stage's shuffle-read partition sizes surface three distinct problems:
+
+| Signal | Fires when | Level |
+|---|---|---|
+| Largest partition vs. median | > 5× the median **and** > 256 MB | Warning |
+| Low parallelism | ≥ 1 GB of shuffle read spread across ≤ 7 tasks | Warning |
+| Oversized partition | Largest partition ≥ 5 GB | Critical |
+
+Skew and low-parallelism severity track the estimated recoverable time as a share of the
+app's total runtime, the same wall-clock model used across this reference. An oversized
+partition is a fixed safety signal instead: it reports critical purely on its own size,
+because a partition past 5 GB is an OOM/crash risk regardless of how much wall-clock time
+fixing it would recover, so it stays critical even on a stage that barely dents the run.
 
 Adaptive Query Execution re-optimizes the plan while the query runs: as each shuffle stage
 materializes, it reads the real shuffle-file sizes and resizes partitions before launching the

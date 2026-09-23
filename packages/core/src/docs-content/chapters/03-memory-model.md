@@ -58,6 +58,45 @@ When enabling off-heap memory, always pair `spark.memory.offHeap.enabled=true` w
 
 > **PySpark:** if you need PySpark's own memory bounded rather than folded silently into the overhead, set `spark.executor.pyspark.memory` explicitly, though its enforcement relies on Python's `resource` module and won't work on Windows and won't actually limit anything on macOS[^4].
 
+## Cache utilization {#bottleneck-cache-utilization}
+
+<span class="tag">CSTOR</span>
+
+Spark's event log carries no block-access or hit-rate events, so cache utilization is read
+from periodic per-RDD storage snapshots instead: how much of a persisted RDD is actually
+resident where it was asked to be.
+
+### How it's detected
+
+A persisted RDD, one whose storage level requests memory and/or disk with at least one
+partition actually cached, is evaluated on two independent measures and can register on
+both at once:
+
+| Signal | Info | Warning |
+|---|---|---|
+| Cached ratio (cached partitions ÷ total partitions) | < 90% | < 50% |
+| Disk ratio (disk bytes ÷ (memory bytes + disk bytes)), `MEMORY_AND_DISK*` levels only | > 15% | > 40% |
+
+Both ratios come from a point-in-time storage snapshot taken at stage-submission events,
+not a runtime block-access count, so confirm against the Spark UI's Storage tab before
+acting. Confidence scales with the RDD's partition count: below 10 partitions the ratio
+is noisy enough to call low confidence, at 50 or more it's high.
+
+### Why it matters
+
+A partially cached RDD still pays the recomputation cost for its evicted share on every
+later read, undercutting the reason it was cached in the first place. Disk spillover
+under a `MEMORY_AND_DISK*` level keeps that data around instead of forcing a recompute,
+but a disk read is still far slower than serving it out of memory.
+
+### How to fix it
+
+- Increase executor memory, or reduce the size of the dataset being cached, so more of it
+  fits in the storage region without eviction.
+- If the RDD is only cached for the occasional narrow scan, weigh whether persisting it
+  at all is worth the partial-cache overhead, versus recomputing the slice you actually
+  need.
+
 ## Sources
 
 [^1]: [Task Memory Management in Spark](https://raw.githubusercontent.com/spoddutur/spark-notes/master/task_memory_management_in_spark.md)
