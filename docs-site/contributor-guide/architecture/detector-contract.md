@@ -174,7 +174,9 @@ accumulator-ID evidence is matched against the plan that actually ran rather tha
 a stale pre-AQE snapshot. Since a superseded plan is never read, `dispatchLine`
 holds an open execution's latest update as unparsed text and parses only that one,
 when `SQLExecutionEnd` arrives or at parse completion (`deferAdaptiveUpdate`,
-`event-handlers.ts`). The raw `sparkPlanInfo` stays worker-side and is released
+`event-handlers.ts`). It recognizes an update from the flat first and last pieces
+`buildChunkDecoder` reports for a line joined across slices (`JoinedLine`), so a
+superseded update is never copied into one flat string either. The raw `sparkPlanInfo` stays worker-side and is released
 once `SQLExecutionEnd` resolves it into `planTree`; `physicalPlanDescription` (Spark's
 text rendering of the plan, which nothing reads) is emptied before `JSON.parse` and
 never retained (`stripPlanDescription`, `event-handlers.ts`). `buildChunkDecoder`

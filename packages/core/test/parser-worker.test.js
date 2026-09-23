@@ -1488,6 +1488,31 @@ describe('dispatchLine: deferred AQE updates', () => {
     expect(run([START(1), UPDATE(1, 'Planned'), UPDATE(1, null), END(1)]).planRoot).toBe('Planned');
   });
 
+  it('checks a line joined across chunks on its first and last pieces, with the same result', () => {
+    const lines = [START(1), UPDATE(1, 'First').slice(0, -2) + ',}}', UPDATE(1, 'Second'), UPDATE(1, 'Last'), END(1)];
+    // A 5-char head is too short to hold the prefix and falls back to the line; 130 chars holds it.
+    for (const cut of [5, 130]) {
+      const decoder = buildChunkDecoder();
+      const state = createState();
+      const emitted = [];
+      const seen = [];
+      for (const line of lines) {
+        const bytes = new TextEncoder().encode(`${line}\n`);
+        for (const part of [bytes.subarray(0, cut), bytes.subarray(cut)]) {
+          const joined = [];
+          decoder.decode(part, joined).forEach((decoded, i) => {
+            const parts = joined.find((j) => j.index === i);
+            if (parts) seen.push(decoded.startsWith(parts.head) && decoded.endsWith(parts.tail) && parts.head.length === cut);
+            dispatchLine(decoded, state, (m) => emitted.push(m), parts);
+          });
+        }
+      }
+      expect(seen).toEqual(lines.filter((l) => l.length > cut).map(() => true)); // shorter lines aren't split
+      expect(emitted.find((m) => m.type === 'sqlPlan')?.data.planTree.name).toBe('Last');
+      expect(state.skippedLines).toBe(0);
+    }
+  });
+
   it('parses updates at once for an execution that already ended or was never started', () => {
     const { state } = run([START(1), END(1), UPDATE(1, 'Late'), UPDATE(2, 'Unknown')]);
     expect(state.pendingAdaptiveUpdates.size).toBe(0);

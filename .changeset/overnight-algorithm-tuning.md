@@ -122,3 +122,8 @@ fix leaves (the longest one at or under 4x the median), not down to the median: 
 task just under 4x the median still waits on it. Stage messages carry a new
 `longestNonStragglerMs` field for this. Against the task-level replay over 65 runs, estimates
 more than 2x too high fell from 6 to 4 and mean absolute error from 5.18s to 4.49s.
+
+Parsing: an adaptive query execution update is recognized from the first and last pieces of its
+line as decoded, so an update that a later one replaces is no longer copied into one string only
+to be dropped. Parsing the 14 real logs is 3% faster (8.05s to 7.80s; the largest log 6%, 3.16s
+to 2.97s) with identical findings.

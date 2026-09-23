@@ -198,10 +198,22 @@ export interface ParserState {
 // value inside a single chunk.
 const MAX_DECODE_SLICE = 512 * 1024;
 
+// A line joined from text decoded in more than one slice is a V8 cons string, which the first
+// character read (startsWith, charCodeAt, endsWith) copies into one flat string. `head` and `tail`
+// are its flat first and last pieces, so dispatchLine can check a prefix or suffix without that
+// copy. `index` is the line's position in the array decode() returned.
+export interface JoinedLine {
+  index: number;
+  head: string;
+  tail: string;
+}
+
 export function buildChunkDecoder() {
   const decoder = new TextDecoder('utf-8');
-  // Decoded partial line after the last newline, carried to the next chunk.
+  // Decoded partial line after the last newline, carried to the next chunk, and its flat first
+  // piece (pending itself until later text is appended to it).
   let pending = '';
+  let pendingHead = '';
   // True once the pending line is known to need no plan-description skip.
   let pendingSettled = false;
   let skippingPlanDescription = false;
@@ -228,11 +240,12 @@ export function buildChunkDecoder() {
     }
     carriedBackslashes = run;
     pending = pending.substring(0, valueStart);
+    pendingHead = pending;
     decoder.decode(); // discard a split multibyte char held from the dropped value
     skippingPlanDescription = true;
   }
 
-  function decodeSlice(buffer: Uint8Array, lines: string[]): void {
+  function decodeSlice(buffer: Uint8Array, lines: string[], joined: JoinedLine[] | undefined): void {
     let from = 0;
     if (skippingPlanDescription) {
       const lineEnd = buffer.indexOf(NEWLINE);
@@ -251,10 +264,18 @@ export function buildChunkDecoder() {
     const text = decoder.decode(from === 0 ? buffer : buffer.subarray(from), { stream: true });
     let nl = text.indexOf('\n');
     if (nl === -1) {
-      pending = pending === '' ? text : pending + text;
+      if (pending === '') pending = pendingHead = text;
+      else pending = pending + text;
     } else {
       // Zero-length lines are dropped to match a `.filter(l => l.length)`.
-      const first = pending === '' ? text.substring(0, nl) : pending + text.substring(0, nl);
+      let first: string;
+      if (pending === '') {
+        first = text.substring(0, nl);
+      } else {
+        const tail = text.substring(0, nl);
+        first = pending + tail;
+        joined?.push({ index: lines.length, head: pendingHead, tail });
+      }
       if (first.length > 0) lines.push(first);
       let start = nl + 1;
       nl = text.indexOf('\n', start);
@@ -263,17 +284,19 @@ export function buildChunkDecoder() {
         start = nl + 1;
         nl = text.indexOf('\n', start);
       }
-      pending = start < text.length ? text.substring(start) : '';
+      pending = pendingHead = start < text.length ? text.substring(start) : '';
       pendingSettled = false;
     }
     if (!pendingSettled && pending !== '') settlePending(buffer[buffer.length - 1]);
   }
 
   return {
-    decode(buffer: Uint8Array): string[] {
+    // `joined`, when given, receives a JoinedLine for each returned line that was joined across
+    // slices, in line order.
+    decode(buffer: Uint8Array, joined?: JoinedLine[]): string[] {
       const lines: string[] = [];
-      if (buffer.length <= MAX_DECODE_SLICE) decodeSlice(buffer, lines);
-      else for (let at = 0; at < buffer.length; at += MAX_DECODE_SLICE) decodeSlice(buffer.subarray(at, at + MAX_DECODE_SLICE), lines);
+      if (buffer.length <= MAX_DECODE_SLICE) decodeSlice(buffer, lines, joined);
+      else for (let at = 0; at < buffer.length; at += MAX_DECODE_SLICE) decodeSlice(buffer.subarray(at, at + MAX_DECODE_SLICE), lines, joined);
       return lines;
     },
     flush(): string[] {
@@ -1075,6 +1098,9 @@ export function parseTaskEnd(line: string): unknown {
 
 const ADAPTIVE_UPDATE_PREFIX =
   '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":';
+// More digits than an executionId (a JVM long) has, so a head this long past the prefix holds the
+// id and the comma after it.
+const MAX_EXECUTION_ID_DIGITS = 20;
 
 // An AQE update replaces its execution's whole plan, and nothing reads a plan an update replaced:
 // only the last one before SQLExecutionEnd is resolved. So while the execution is open, only its
@@ -1084,16 +1110,25 @@ const ADAPTIVE_UPDATE_PREFIX =
 // ending in an object-valued `sparkPlanInfo`, its last field: a null-plan update keeps the
 // previous plan, so it can't supersede one. Trade-off: a malformed superseded update is never
 // seen, so it no longer counts as a skipped line.
-function deferAdaptiveUpdate(line: string, state: ParserState, emit: (msg: unknown) => void): boolean {
-  if (!line.startsWith(ADAPTIVE_UPDATE_PREFIX)) return false;
+//
+// These updates span decode slices, so `line` is a cons string: the prefix and suffix checks read
+// `joined`'s flat pieces instead, or a superseded update is copied flat only to be dropped (541
+// copies of 1.1 MB on that log). A piece too short to hold what is checked falls back to `line`.
+function deferAdaptiveUpdate(
+  line: string, state: ParserState, emit: (msg: unknown) => void, joined?: JoinedLine,
+): boolean {
+  const head = joined && joined.head.length > ADAPTIVE_UPDATE_PREFIX.length + MAX_EXECUTION_ID_DIGITS
+    ? joined.head : line;
+  if (!head.startsWith(ADAPTIVE_UPDATE_PREFIX)) return false;
   let executionId = 0, i = ADAPTIVE_UPDATE_PREFIX.length;
-  for (; i < line.length && line.charCodeAt(i) >= 48 && line.charCodeAt(i) <= 57; i++) {
-    executionId = executionId * 10 + line.charCodeAt(i) - 48;
+  for (; i < head.length && head.charCodeAt(i) >= 48 && head.charCodeAt(i) <= 57; i++) {
+    executionId = executionId * 10 + head.charCodeAt(i) - 48;
   }
-  if (i === ADAPTIVE_UPDATE_PREFIX.length || line.charCodeAt(i) !== 0x2c) return false; // no `N,`
+  if (i === ADAPTIVE_UPDATE_PREFIX.length || head.charCodeAt(i) !== 0x2c) return false; // no `N,`
   const exec = state.sqlExecutions.get(executionId);
   if (!exec || exec.endTime != null) return false;
-  if (!line.endsWith('}}')) {
+  const tail = joined && joined.tail.length >= 2 ? joined.tail : line;
+  if (!tail.endsWith('}}')) {
     flushAdaptiveUpdate(executionId, state, emit); // keep this line's order after the pending one
     return false;
   }
@@ -1108,8 +1143,10 @@ function flushAdaptiveUpdate(executionId: number, state: ParserState, emit: (msg
   parseAndDispatch(line, state, emit);
 }
 
-export function dispatchLine(line: string, state: ParserState, emit: (msg: unknown) => void): void {
-  if (deferAdaptiveUpdate(line, state, emit)) return;
+export function dispatchLine(
+  line: string, state: ParserState, emit: (msg: unknown) => void, joined?: JoinedLine,
+): void {
+  if (deferAdaptiveUpdate(line, state, emit, joined)) return;
   parseAndDispatch(line, state, emit);
 }
 

@@ -2,7 +2,7 @@ import { Gunzip } from './vendor/fflate.js';
 import { createLz4BlockDecoder } from './lz4-block.ts';
 import { Decompress as ZstdDecompress } from './vendor/fzstd.js';
 import { createSnappyBlockDecoder } from './snappy-block.ts';
-import { createState, dispatchLine, buildChunkDecoder, emitParseCompletion, type ParserState } from './event-handlers.ts';
+import { createState, dispatchLine, buildChunkDecoder, emitParseCompletion, type JoinedLine, type ParserState } from './event-handlers.ts';
 import { TASK_FIELD_NAMES } from './stage-quantiles.ts';
 import { runParseFromUrl, sniffCodec } from './shs-fetch.ts';
 
@@ -133,10 +133,13 @@ export async function runParse(
   }
 
   const decoder = buildChunkDecoder();
+  const joined: JoinedLine[] = [];
   let linesProcessed = 0;
   const feed = (bytes: Uint8Array, pct?: number) => {
-    for (const line of decoder.decode(bytes)) {
-      dispatchLine(line, state, emit);
+    joined.length = 0;
+    const lines = decoder.decode(bytes, joined);
+    for (let i = 0, j = 0; i < lines.length; i++) {
+      dispatchLine(lines[i], state, emit, joined[j]?.index === i ? joined[j++] : undefined);
       linesProcessed++;
       if (linesProcessed % PROGRESS_EMIT_LINES === 0) {
         emit({ type: 'progress', pct: pct ?? null, linesProcessed });
@@ -181,13 +184,16 @@ export async function runParseFiles(
   }
 
   const decoder = buildChunkDecoder();
+  const joined: JoinedLine[] = [];
   let linesProcessed = 0;
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
   let bytesBeforeCurrentFile = 0;
   let currentFileSize = 0;
   const feed = (bytes: Uint8Array, pct?: number) => {
-    for (const line of decoder.decode(bytes)) {
-      dispatchLine(line, state, emit);
+    joined.length = 0;
+    const lines = decoder.decode(bytes, joined);
+    for (let i = 0, j = 0; i < lines.length; i++) {
+      dispatchLine(lines[i], state, emit, joined[j]?.index === i ? joined[j++] : undefined);
       linesProcessed++;
       if (linesProcessed % PROGRESS_EMIT_LINES === 0) {
         const overallPct = totalSize > 0 ? (bytesBeforeCurrentFile + (pct ?? 0) * currentFileSize) / totalSize : null;
