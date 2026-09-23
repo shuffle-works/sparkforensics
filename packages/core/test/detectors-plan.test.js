@@ -230,6 +230,21 @@ describe('duplicatePlanSubtree', () => {
     // metric, not the read half's always-empty metrics.
     expect(shapeOf.get(read).fingerprint).toContain('data size');
   });
+
+  it('computePlanShapes: fingerprints stay O(own size) on a deep plan, yet still tell apart subtrees that differ only at the leaf', () => {
+    const chain = (leafName) => {
+      let n = node(leafName, ['number of output rows']);
+      for (let i = 0; i < 300; i++) n = node('Project', ['number of output rows'], [n]);
+      return n;
+    };
+    const a = chain('Scan parquet a');
+    const b = chain('Scan parquet b');
+    const fa = computePlanShapes(a).shapeOf.get(a).fingerprint;
+    // Children fold in as fixed-length digests: embedding them whole made the root carry all
+    // 300 levels of text.
+    expect(fa.length).toBeLessThan(100);
+    expect(fa).not.toBe(computePlanShapes(b).shapeOf.get(b).fingerprint);
+  });
 });
 
 describe('findDuplicateSubtrees: node instance contract', () => {

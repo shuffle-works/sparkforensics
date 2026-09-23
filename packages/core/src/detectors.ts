@@ -5,6 +5,7 @@ import { walkPlanTree } from './plan-tree-walk.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
 import { estimateSingleStage, type OccupancyStage, type StageOccupancyInfo } from './occupancy.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
+import { cyrb53 } from './string-hash.ts';
 import type { Finding, PlanNode, FixEffort } from './types.ts';
 
 const MB = 1024 * 1024;
@@ -206,8 +207,10 @@ export function unionStageIds(nodes: PlanNode[], fallback: number[]): number[] {
 
 // Bottom-up shape computation for duplicate-subtree detection and the
 // cachingOpportunity composite detector. `size` is the subtree node count; the default
-// fingerprint encodes operator name + sorted metric NAMES (never values, per spec) + child
-// fingerprints, so two subtrees with the same shape but different values still collide.
+// fingerprint encodes operator name + sorted metric NAMES (never values, per spec) + a digest
+// of each child's fingerprint, so two subtrees with the same shape but different values still
+// collide. Digesting children keeps each fingerprint O(own size): embedding the full child
+// strings made every node carry its whole subtree, O(n x depth) text on deep real plans.
 //
 // opts.includeDetail (default false) folds root's own detail (via opts.normalizeDetail) into
 // ONLY root's fingerprint, never a child's: lets a caller match "this node's own detail + shape"
@@ -239,7 +242,7 @@ export function computePlanShapes(
     const childShapes = realChildren.map((c) => visit(c, false));
     const size = 1 + childShapes.reduce((sum, c) => sum + c.size, 0);
     const metricNames = (realMetrics ?? []).map((m) => m.name).sort().join(',');
-    const childFingerprints = childShapes.map((c) => c.fingerprint).join(',');
+    const childFingerprints = childShapes.map((c) => cyrb53(c.fingerprint)).join(',');
     const fingerprint = isRoot && includeDetail
       ? `${node.name}[${metricNames}]<${normalize(node.detail ?? '')}>{${childFingerprints}}`
       : `${node.name}[${metricNames}]{${childFingerprints}}`;
@@ -269,6 +272,21 @@ export function normalizeDetail(detail: string): string {
 }
 
 const JOIN_NAME_RE = /Join/i;
+
+// scanRelationId per plan node, memoized: cachingOpportunity's relation walk and
+// findCompositeCandidates both classify every node of every execution, and a JDBC scan's detail
+// carries its whole inner SQL, so the repeated regex passes were a measurable share of
+// analyze(). Keyed by node identity: a resolved plan tree is never mutated after the parser
+// posts it.
+const relationIdByNode = new WeakMap<PlanNode, string | null>();
+function relationIdOf(node: PlanNode): string | null {
+  let rid = relationIdByNode.get(node);
+  if (rid === undefined) {
+    rid = scanRelationId(node.name ?? '', node.detail ?? '');
+    relationIdByNode.set(node, rid);
+  }
+  return rid;
+}
 
 // Structural operator kind for cachingOpportunity's composite detection: 'join' covers every
 // Spark join physical operator; 'union' is Spark's exact `Union` node. CartesianProduct is
@@ -302,11 +320,12 @@ export function findCompositeCandidates(root: PlanNode): CompositeCandidate[] {
     path.pop();
 
     const metricNames = (node.metrics ?? []).map((m) => m.name).sort().join(',');
-    const childFingerprints = childResults.map((r) => r.fingerprint).join(',');
+    // Child digests, as in computePlanShapes: deterministic, so still comparable across executions.
+    const childFingerprints = childResults.map((r) => cyrb53(r.fingerprint)).join(',');
     const fingerprint = `${node.name}[${metricNames}]{${childFingerprints}}`;
 
     const leafRelationBytes = new Map<string, number>();
-    const rid = scanRelationId(node.name ?? '', node.detail ?? '');
+    const rid = relationIdOf(node);
     if (rid) {
       const bytesMetric = (node.metrics ?? []).find((m) => m.name === FILES_READ_BYTES);
       leafRelationBytes.set(rid, (leafRelationBytes.get(rid) ?? 0) + (bytesMetric ? bytesMetric.value : 0));
@@ -343,7 +362,7 @@ function firstLeafRelationId(node: PlanNode): string | null {
   let found: string | null = null;
   walkPlanTree(node, (n) => {
     if (found) return;
-    found = scanRelationId(n.name ?? '', n.detail ?? '');
+    found = relationIdOf(n);
   });
   return found;
 }
@@ -1597,7 +1616,7 @@ export const DETECTORS: Detector[] = [
         // Dedupe relations within one execution (self-joins count once), summing read bytes per relation.
         const perExec = new Map<string, number>();
         walkPlanTree(exec.planTree, (node) => {
-          const rid = scanRelationId(node.name ?? '', node.detail ?? '');
+          const rid = relationIdOf(node);
           if (!rid) return;
           const bytesMetric = (node.metrics ?? []).find(m => m.name === FILES_READ_BYTES);
           perExec.set(rid, (perExec.get(rid) ?? 0) + (bytesMetric ? bytesMetric.value : 0));

@@ -44,3 +44,8 @@ seconds can be under 5% of its tasks.
 
 Parser: the NDJSON line splitter finds newlines in the decoded text instead of mapping raw-byte
 offsets to UTF-16 offsets, 4.4% faster parsing across 14 real logs with identical output.
+
+Analyzer: plan-shape fingerprints fold each child in as a fixed-length digest instead of its
+full fingerprint string, and scan classification rejects non-scan plan nodes before running its
+regexes and is computed once per node. `analyze()` is 40% faster across 14 real logs (1131ms to
+678ms; 729ms to 311ms on the largest), with identical findings.
