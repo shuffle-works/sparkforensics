@@ -212,7 +212,7 @@ describe('duplicatePlanSubtree', () => {
     const broadcastOf = (table) => node('BroadcastExchange', [], [
       node('Project', [], [
         node('Filter', [], [
-          node(`Scan parquet spark_catalog.business_prd.${table}`, []),
+          node(`Scan parquet spark_catalog.warehouse.${table}`, []),
         ]),
       ]),
     ]);
@@ -503,7 +503,7 @@ describe('smallFiles: narrowed stageIds', () => {
 });
 
 describe('smallFiles: real-fixture metric-name integration', () => {
-  const fixturePath = fileURLToPath(new URL('../../../examples/big-application_1777489669889_51251_1', import.meta.url));
+  const fixturePath = fileURLToPath(new URL('../../../examples/private-log-06', import.meta.url));
 
   async function collectMatchingLines(filePath, substrings) {
     const rl = createInterface({ input: createReadStream(filePath), crlfDelay: Infinity });
@@ -515,7 +515,7 @@ describe('smallFiles: real-fixture metric-name integration', () => {
   }
 
   it.skipIf(!existsSync(fixturePath))(
-    'analyze() consumes real plan-node metric names without throwing, and at least one node carries the exact names this detector looks for (real big-application fixture: gitignored, local-only)',
+    'analyze() consumes real plan-node metric names without throwing, and at least one node carries the exact names this detector looks for (private-log-06: gitignored, local-only)',
     async () => {
       const lines = await collectMatchingLines(fixturePath, [
         '"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart"',

@@ -5,13 +5,14 @@ import { collectRun } from '../src/cli/collect-run.js';
 import { analyze } from '../src/analyzer.js';
 import { stageIdsForSqlExec } from '../src/detectors.js';
 
-const beautyPath = fileURLToPath(
-  new URL('../../../examples/grupo-semanal-beauty-application_1785266278671_91660.zstd', import.meta.url),
+// Private event logs, gitignored/local-only: each test skips unless its file
+// exists under examples/. The private-log table in
+// docs-site/contributor-guide/testing.md says which log goes under each name.
+const firstLogPath = fileURLToPath(
+  new URL('../../../examples/private-log-01.zstd', import.meta.url),
 );
-// Full app-id suffix filename per docs/architecture.md convention; the
-// shortened 'ventas-mensual-multi-big.zstd' does not exist as a fixture.
-const ventasPath = fileURLToPath(
-  new URL('../../../examples/ventas-mensual-multi-big-application_1785266278671_91510.zstd', import.meta.url),
+const secondLogPath = fileURLToPath(
+  new URL('../../../examples/private-log-02.zstd', import.meta.url),
 );
 
 async function analyzeFixture(path) {
@@ -24,10 +25,10 @@ async function analyzeFixture(path) {
 }
 
 describe('plan-node-to-stage mapping: real-log validation', () => {
-  it.skipIf(!existsSync(beautyPath))(
+  it.skipIf(!existsSync(firstLogPath))(
     'narrows at least one duplicatePlanSubtree/smallFiles/broadcastSizing finding below the execution-wide stage count on a real log',
     async () => {
-      const { appModel, findings } = await analyzeFixture(beautyPath);
+      const { appModel, findings } = await analyzeFixture(firstLogPath);
       const narrowingTargets = findings.filter((f) =>
         ['duplicatePlanSubtree', 'smallFiles', 'underBroadcast', 'overBroadcast'].includes(f.type));
       expect(narrowingTargets.length).toBeGreaterThan(0);
@@ -40,10 +41,10 @@ describe('plan-node-to-stage mapping: real-log validation', () => {
     },
   );
 
-  it.skipIf(!existsSync(beautyPath))(
+  it.skipIf(!existsSync(firstLogPath))(
     'never reports a stageId for a finding that does not belong to that finding\'s own SQL execution (cross-execution clip holds)',
     async () => {
-      const { appModel, findings } = await analyzeFixture(beautyPath);
+      const { appModel, findings } = await analyzeFixture(firstLogPath);
       const violations = [];
       for (const f of findings) {
         if (!Array.isArray(f.stageIds) || f.executionId == null) continue;
@@ -56,10 +57,10 @@ describe('plan-node-to-stage mapping: real-log validation', () => {
     },
   );
 
-  it.skipIf(!existsSync(ventasPath))(
+  it.skipIf(!existsSync(secondLogPath))(
     'holds the same narrowing and clip invariants on a second, independent real log',
     async () => {
-      const { appModel, findings } = await analyzeFixture(ventasPath);
+      const { appModel, findings } = await analyzeFixture(secondLogPath);
       const narrowingTargets = findings.filter((f) =>
         ['duplicatePlanSubtree', 'smallFiles', 'underBroadcast', 'overBroadcast'].includes(f.type));
       const violations = [];
@@ -74,10 +75,10 @@ describe('plan-node-to-stage mapping: real-log validation', () => {
     },
   );
 
-  it.skipIf(!existsSync(beautyPath))(
+  it.skipIf(!existsSync(firstLogPath))(
     'narrowing measurably changes the outcome for executions that received at least one AQE re-plan',
     async () => {
-      const { appModel, findings } = await analyzeFixture(beautyPath);
+      const { appModel, findings } = await analyzeFixture(firstLogPath);
       // hadAdaptiveUpdate is the per-execution AQE-replanned signal used here.
       const aqeReplannedExecIds = new Set(
         [...appModel.sql.values()].filter((e) => e.hadAdaptiveUpdate === true).map((e) => e.id),
@@ -85,7 +86,7 @@ describe('plan-node-to-stage mapping: real-log validation', () => {
       // No AQE-replanned executions: log a visible skip rather than silently
       // passing on empty input.
       if (aqeReplannedExecIds.size === 0) {
-        console.warn('No AQE-replanned executions found in the beauty fixture; AQE-interaction assertion skipped for this run.');
+        console.warn('No AQE-replanned executions found in the first private log; AQE-interaction assertion skipped for this run.');
         return;
       }
       const aqeTargets = findings.filter((f) =>

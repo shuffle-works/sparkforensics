@@ -125,7 +125,7 @@ describe('Timeline widget', () => {
 
   test('thins y-axis labels instead of overlapping once stage count exceeds the legible row height', () => {
     const stages = new Map<number, unknown>();
-    // Matches the real small-application fixture stage count (62) that
+    // Matches private-log-05's stage count (62) that
     // exposed the label collision at the fixed 320px chart height.
     const n = 62;
     // submittedAt/completedAt are absolute epoch ms in real data, so they're

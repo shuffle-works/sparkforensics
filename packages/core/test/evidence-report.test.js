@@ -5,7 +5,7 @@ import { makeStage } from './fixtures/stage-app-fixtures.js';
 function fixture() {
   return {
     app: {
-      id: 'application_1785266278671_91739', name: 'nightly-etl',
+      id: 'application_0000000000000_0001', name: 'nightly-etl',
       startTime: 0, endTime: 5000, sparkVersion: '3.4.0', config: {},
     },
     stages: new Map([
@@ -45,7 +45,7 @@ describe('buildEvidenceReport', () => {
   it('carries a run summary + findings with the required per-row fields', () => {
     const { json } = buildEvidenceReport(fixture());
     expect(json.summary).toBeTruthy();
-    expect(json.summary.app.id).toBe('application_1785266278671_91739');
+    expect(json.summary.app.id).toBe('application_0000000000000_0001');
     expect(Array.isArray(json.findings)).toBe(true);
     expect(json.findings.length).toBeGreaterThan(0);
     for (const row of json.findings) {
@@ -172,8 +172,8 @@ describe('buildEvidenceReport', () => {
   it('with { redact:true } routes output through redactReport', () => {
     const { markdown, json } = buildEvidenceReport(fixture(), { redact: true });
     expect(json.summary.app.id).toBe('app-1');
-    expect(JSON.stringify(json)).not.toContain('application_1785266278671_91739');
-    expect(markdown).not.toContain('application_1785266278671_91739');
+    expect(JSON.stringify(json)).not.toContain('application_0000000000000_0001');
+    expect(markdown).not.toContain('application_0000000000000_0001');
   });
 
   it('surfaces impactEstimate as a first-class FindingRow column, not buried in evidence', () => {

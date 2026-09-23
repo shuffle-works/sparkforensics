@@ -216,7 +216,7 @@ test('remembers the SHS text inputs across visits via localStorage', async () =>
   await user.click(screen.getByRole('button', { name: /fetch from spark history server/i }));
 
   await user.type(screen.getByLabelText(/spark history server base url/i), 'http://history-server:18080');
-  await user.type(screen.getByLabelText(/^application id$/i), 'application_1777489669889_56601');
+  await user.type(screen.getByLabelText(/^application id$/i), 'application_0000000000000_0001');
   await user.type(screen.getByLabelText(/attempt id/i), '3');
 
   firstVisit.unmount();
@@ -226,7 +226,7 @@ test('remembers the SHS text inputs across visits via localStorage', async () =>
   await user.click(screen.getByRole('button', { name: /fetch from spark history server/i }));
 
   expect(screen.getByLabelText(/spark history server base url/i)).toHaveValue('http://history-server:18080');
-  expect(screen.getByLabelText(/^application id$/i)).toHaveValue('application_1777489669889_56601');
+  expect(screen.getByLabelText(/^application id$/i)).toHaveValue('application_0000000000000_0001');
   expect(screen.getByLabelText(/attempt id/i)).toHaveValue('3');
 });
 
@@ -337,8 +337,8 @@ test('validates SHS fields after blur and associates errors with invalid inputs'
 });
 
 test.each([
-  'application_1777489669889_56601',
-  'local-1777489669889',
+  'application_0000000000000_0001',
+  'local-1700000000000',
   'app-standalone_01',
 ])('submits supported application ID %s as a normalized SHS request', async (appId) => {
   renderDropZone();

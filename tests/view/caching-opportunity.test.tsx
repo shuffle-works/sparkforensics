@@ -29,7 +29,7 @@ function finding(overrides: Partial<Finding> = {}): Finding {
     impactBand: 'info',
     metric: 'executionReuse',
     value: 2,
-    relation: 'precios',
+    relation: 'prices',
     format: 'parquet',
     executionIds: [1, 2],
     totalReadBytes: 100_000_000,
@@ -50,8 +50,8 @@ test('ignores findings of other types', () => {
 
 test('renders the widget heading, CACHE badge, and a row for every relation (not just the worst)', async () => {
   const catalog: Finding[] = [
-    finding({ relation: 'ventas', value: 3, totalReadBytes: 5_000_000 }),
-    finding({ relation: 'dw.d_punto_venta', format: 'jdbc', value: 6, totalReadBytes: 900_000_000 }),
+    finding({ relation: 'sales', value: 3, totalReadBytes: 5_000_000 }),
+    finding({ relation: 'dw.dim_store', format: 'jdbc', value: 6, totalReadBytes: 900_000_000 }),
   ];
   renderCachingOpportunity(catalog);
 
@@ -60,12 +60,12 @@ test('renders the widget heading, CACHE badge, and a row for every relation (not
   const rows = screen.getAllByRole('row');
   // header row + 2 data rows
   expect(rows).toHaveLength(3);
-  expect(rows[1]).toHaveTextContent('dw.d_punto_venta');
-  expect(rows[2]).toHaveTextContent('ventas');
+  expect(rows[1]).toHaveTextContent('dw.dim_store');
+  expect(rows[2]).toHaveTextContent('sales');
 });
 
 test('shows the format badge for each relation', async () => {
-  renderCachingOpportunity([finding({ relation: 'dw.d_punto_venta', format: 'jdbc' })]);
+  renderCachingOpportunity([finding({ relation: 'dw.dim_store', format: 'jdbc' })]);
   expect(screen.getByText('jdbc')).toBeInTheDocument();
 });
 
@@ -110,7 +110,7 @@ test('renders the recommendation unconditionally, with no per-row toggle', async
 
   const recommendation = /Cache the shared DataFrame, or broadcast it if it is a small join lookup/;
   expect(screen.getByText(recommendation)).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: /recommendation for precios/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /recommendation for prices/i })).not.toBeInTheDocument();
 });
 
 test('never renders a per-row confidence toggle: every finding here is low confidence', async () => {
@@ -162,8 +162,8 @@ test('renders a union composite row with a UNION operator badge', async () => {
 test('defaults to collapsed and shows the top-relation summary with RowStatusCluster confidence note', async () => {
   store.getState().setWidgetDensity('advanced');
   const catalog: Finding[] = [
-    finding({ relation: 'ventas', value: 3, totalReadBytes: 5_000_000, confidence: 'low' }),
-    finding({ relation: 'dw.d_punto_venta', format: 'jdbc', value: 2, totalReadBytes: 900_000_000, confidence: 'low' }),
+    finding({ relation: 'sales', value: 3, totalReadBytes: 5_000_000, confidence: 'low' }),
+    finding({ relation: 'dw.dim_store', format: 'jdbc', value: 2, totalReadBytes: 900_000_000, confidence: 'low' }),
   ];
   renderCachingOpportunity(catalog, true);
 
@@ -171,9 +171,9 @@ test('defaults to collapsed and shows the top-relation summary with RowStatusClu
   const rows = screen.queryAllByRole('row');
   expect(rows).toHaveLength(0);
 
-  // But summary shows the top finding (dw.d_punto_venta with 2 reuse count, highest bytes)
+  // But summary shows the top finding (dw.dim_store with 2 reuse count, highest bytes)
   expect(screen.getByText('2×')).toBeInTheDocument();
-  expect(screen.getByText(/read by 2 queries: dw\.d_punto_venta/i)).toBeInTheDocument();
+  expect(screen.getByText(/read by 2 queries: dw\.dim_store/i)).toBeInTheDocument();
 
   // RowStatusCluster renders a low-confidence badge per row; the caveat sentence is a
   // separate, plain always-legible paragraph (not a hover-only tooltip).
@@ -210,8 +210,8 @@ test('the RowStatusCluster confidence note is Advanced-only', () => {
 test('each row shows its own finding confidence, not a single shared value', () => {
   store.getState().setWidgetDensity('advanced');
   const catalog: Finding[] = [
-    finding({ relation: 'ventas', value: 3, totalReadBytes: 5_000_000, confidence: 'medium' }),
-    finding({ relation: 'dw.d_punto_venta', format: 'jdbc', value: 2, totalReadBytes: 900_000_000, confidence: 'low' }),
+    finding({ relation: 'sales', value: 3, totalReadBytes: 5_000_000, confidence: 'medium' }),
+    finding({ relation: 'dw.dim_store', format: 'jdbc', value: 2, totalReadBytes: 900_000_000, confidence: 'low' }),
   ];
   renderCachingOpportunity(catalog);
 

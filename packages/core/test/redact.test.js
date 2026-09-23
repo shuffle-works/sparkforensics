@@ -4,7 +4,7 @@ import { redactReport, redactAppIdentity, redactComparison, redactExportData } f
 function sampleReport() {
   return {
     schemaVersion: 1,
-    summary: { app: { id: 'application_1785266278671_91739', name: 'nightly-etl', sparkVersion: '3.4.0' } },
+    summary: { app: { id: 'application_0000000000000_0001', name: 'nightly-etl', sparkVersion: '3.4.0' } },
     findings: [
       { id: 'a', type: 'slowHost', stageId: 4, host: 'ip-10-1-2-3.ec2.internal',
         recommendation: 'Check executor logs for ip-10-1-2-3.ec2.internal: possible bad node.' },
@@ -26,7 +26,7 @@ describe('redactReport', () => {
   it('removes the original app id and host strings everywhere (incl. free text)', () => {
     const out = redactReport(sampleReport());
     const serialized = JSON.stringify(out);
-    expect(serialized).not.toContain('application_1785266278671_91739');
+    expect(serialized).not.toContain('application_0000000000000_0001');
     expect(serialized).not.toContain('ip-10-1-2-3.ec2.internal');
     expect(serialized).not.toContain('ip-10-9-8-7.ec2.internal');
   });
@@ -67,7 +67,7 @@ describe('redactReport', () => {
   it('does not mutate the input report', () => {
     const input = sampleReport();
     redactReport(input);
-    expect(input.summary.app.id).toBe('application_1785266278671_91739');
+    expect(input.summary.app.id).toBe('application_0000000000000_0001');
   });
 
   it('is idempotent at >=10 hosts (numeric-aware pseudonym ordering)', () => {
@@ -135,7 +135,7 @@ describe('redactReport', () => {
     // A second app id appears only in recommendation free text, never in summary.app.id.
     const report = {
       schemaVersion: 1,
-      summary: { app: { id: 'application_1785266278671_91739' } },
+      summary: { app: { id: 'application_0000000000000_0001' } },
       findings: [
         { id: 'a', type: 'retryWaste', stageId: 3,
           recommendation: 'Retried after application_1690000000000_0001 failed.' },
@@ -149,7 +149,7 @@ describe('redactReport', () => {
 
 describe('redactAppIdentity', () => {
   it('pseudonymizes a non-empty app id', () => {
-    const out = redactAppIdentity({ id: 'application_1785266278671_91739', name: 'nightly-etl', sparkVersion: '3.4.0' });
+    const out = redactAppIdentity({ id: 'application_0000000000000_0001', name: 'nightly-etl', sparkVersion: '3.4.0' });
     expect(out.id).toBe('app-1');
   });
 

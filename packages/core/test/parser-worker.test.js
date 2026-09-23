@@ -1203,10 +1203,10 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
 });
 
 describe('finalizeStage: shuffle-read + spill quantiles on a real fixture (item A)', () => {
-  const fixturePath = fileURLToPath(new URL('../../../examples/small-application_1777489669889_56601', import.meta.url));
+  const fixturePath = fileURLToPath(new URL('../../../examples/private-log-05', import.meta.url));
 
   it.skipIf(!existsSync(fixturePath))(
-    'includes numeric shuffleRead/spillMem/spillDisk P50/P95/max with P50 <= P95 <= max (real small-application fixture: gitignored, local-only)',
+    'includes numeric shuffleRead/spillMem/spillDisk P50/P95/max with P50 <= P95 <= max (private-log-05: gitignored, local-only)',
     async () => {
       const lines = await collectMatchingLines(fixturePath, [
         '"SparkListenerStageSubmitted"',

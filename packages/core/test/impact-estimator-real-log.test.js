@@ -6,11 +6,11 @@ import { analyze } from '../src/analyzer.js';
 import { computeOccupancy } from '../src/occupancy.js';
 import { computeTotalCores } from '../src/core-count.js';
 
-// Real event log, gitignored/local-only: copy it from the sibling
-// ../spark-log-examples/ checkout (see CLAUDE.md) into examples/ under this
-// exact name before this test can run locally.
+// Private event log, gitignored/local-only: the test skips unless
+// examples/private-log-01.zstd exists. The private-log table in
+// docs-site/contributor-guide/testing.md says which log to put there.
 const fixturePath = fileURLToPath(
-  new URL('../../../examples/grupo-semanal-beauty-application_1785266278671_91660.zstd', import.meta.url),
+  new URL('../../../examples/private-log-01.zstd', import.meta.url),
 );
 
 describe('estimateImpact: false-zero regression guard (2026-08-30 N1 occupancy redesign)', () => {

@@ -12,22 +12,22 @@ describe('SHS request contract', () => {
   it('normalizes a reverse-proxy base path and encodes a separate attempt', () => {
     const result = validateShsRequest({
       baseUrl: ' https://history.example/shs/ ',
-      appId: ' application_1777489669889_56601 ',
+      appId: ' application_0000000000000_0001 ',
       attemptId: ' 2 ',
     });
 
     expect(isShsRequestValid(result)).toBe(true);
     expect(result.request).toEqual({
       baseUrl: 'https://history.example/shs/',
-      appId: 'application_1777489669889_56601',
+      appId: 'application_0000000000000_0001',
       attemptId: '2',
     });
     expect(buildUpstreamUrl(result.request)).toBe(
-      'https://history.example/shs/api/v1/applications/application_1777489669889_56601/2/logs',
+      'https://history.example/shs/api/v1/applications/application_0000000000000_0001/2/logs',
     );
   });
 
-  it.each(['application_1_2', 'local-1777489669889', 'app-standalone_01', 'spark-abc123', 'spark-app_1.2~3', 'driver-1699900000'])(
+  it.each(['application_1_2', 'local-1700000000000', 'app-standalone_01', 'spark-abc123', 'spark-app_1.2~3', 'driver-1699900000'])(
     'accepts supported base app ID %s',
     (appId) => expect(isShsRequestValid(validateShsRequest({
       baseUrl: 'http://shs:18080', appId, attemptId: '',

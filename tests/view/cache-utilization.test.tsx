@@ -88,17 +88,17 @@ test('renders nothing when rddInfo is absent', () => {
 });
 
 test('shows a path-like RDD name as its basename with the full path in a tooltip', () => {
-  const rddInfo = new Map([[1, rdd(1, { name: 'hdfs://host:8020/u01/ds/datos/wimn/ventas/_delta_log' })]]);
+  const rddInfo = new Map([[1, rdd(1, { name: 'hdfs://host:8020/data/warehouse/sales/_delta_log' })]]);
   store.getState().setWidgetDensity('advanced');
   renderWidget(buildAppModel(rddInfo));
   const cell = screen.getByText('_delta_log');
-  expect(cell.getAttribute('title')).toBe('hdfs://host:8020/u01/ds/datos/wimn/ventas/_delta_log');
+  expect(cell.getAttribute('title')).toBe('hdfs://host:8020/data/warehouse/sales/_delta_log');
   store.getState().setWidgetDensity('basic');
 });
 
 test('truncates a long non-path RDD name and keeps the full text in a tooltip', () => {
   const longName =
-    '*(1) Project [PDV_CODIGO#58, PDV_NOMBRE#59, PDV_CLASIF_1#89] +- Scan JDBCRelation((SELECT * FROM ventas) SPARK_GEN_SUBQ_0) [numPartitions=8]';
+    '*(1) Project [STORE_ID#58, STORE_NAME#59, STORE_SEGMENT#89] +- Scan JDBCRelation((SELECT * FROM sales) SPARK_GEN_SUBQ_0) [numPartitions=8]';
   const rddInfo = new Map([[1, rdd(1, { name: longName })]]);
   store.getState().setWidgetDensity('advanced');
   const { container } = renderWidget(buildAppModel(rddInfo));

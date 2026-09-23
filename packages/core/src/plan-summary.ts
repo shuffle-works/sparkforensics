@@ -45,7 +45,7 @@ function pushLongFilterWarning(result: PlanSummary, len: number): void {
 }
 
 // Stable relation-identity key for a scan node: "<format>:<relation>" (e.g.
-// "delta:mx.t_emp_whitelist", "parquet:business_prd.sales", "jdbc:dw.d_producto")
+// "delta:mx.store_map", "parquet:warehouse.sales", "jdbc:dw.dim_product")
 // or null when the node is internal Delta metadata / a non-scan / un-nameable.
 // The single source of truth for scan identity, shared by `visitScan` (summary)
 // and the `cachingOpportunity` detector so the regexes live in one place.
