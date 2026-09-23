@@ -19,9 +19,9 @@ node packages/cli/bin/sparkforensics-analyze.mjs <file|dir>   # run the CLI anal
 `.githooks/`. After that, a pre-commit hook lints staged JS files on every
 commit. Fix what it reports, or skip it with `git commit --no-verify`.
 
-`dev/log-corpus` is a git submodule pointing at the private
-`spark-event-corpus-data` repo. If you don't have access to it, skip the
-`git submodule update` step above: `packages/server/test/shs-proxy-fixture.test.js`
+`dev/log-corpus` is a git submodule pointing at the public
+`spark-event-corpus-data` repo. It's optional: if you skip the
+`git submodule update` step above, `packages/server/test/shs-proxy-fixture.test.js`
 will report as skipped rather than failed, which is expected, not a bug.
 
 The `server/` package (the optional local-server deploy mode) keeps its own
@@ -31,9 +31,9 @@ dependencies and test suite. Run them separately:
 npm run test:server   # runs server/'s own suite, not part of `npm test`
 ```
 
-Build the docs site before packing or releasing `server/`: run
-`npm run docs:build` from the repo root, or the packed artifact ships
-without `/docs/`.
+Packing or releasing `server/` builds the docs site for you: its `prepack`
+runs `scripts/copy-frontend.js`, which runs the root `npm run build`
+(`docs:build` included), so the packed artifact always ships `/docs/`.
 
 This docs site has its own dev loop:
 

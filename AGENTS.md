@@ -218,14 +218,13 @@ Before adding a new widget test file, or a new per-widget/per-detector test:
   comparison page opens. There is no Topbar **Compare** button anymore; drill
   into a single run with **View run A/B dashboard** and return via **← Back to
   comparison**.
-- Embedding screenshots on a PR (repo is **private**): the `gh` token can't use
-  the browser-only attachment uploader, and CDN/`raw.githubusercontent` URLs
-  won't render for reviewers. Instead commit the PNGs to a throwaway asset
-  branch and embed them with
-  `https://github.com/<owner>/<repo>/blob/<sha>/<path>.png?raw=true`: GitHub
-  serves same-origin `blob...?raw=true` images to authenticated reviewers
-  (un-proxied; confirm via the comment's `body_html`). Keeps binaries out of
-  the feature diff.
+- Embedding screenshots on a PR: the `gh` token can't use the browser-only
+  attachment uploader. Instead commit the PNGs to a throwaway asset branch and
+  embed them by commit SHA with
+  `https://raw.githubusercontent.com/<owner>/<repo>/<sha>/<path>.png`: the repo
+  is public, so every reader's browser loads it (GitHub leaves
+  `raw.githubusercontent.com` images un-proxied). Keeps binaries out of the
+  feature diff.
 
 ## Debugging
 

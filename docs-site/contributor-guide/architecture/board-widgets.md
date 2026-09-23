@@ -130,9 +130,8 @@ Plan Advisor, and Autoscaling Churn, all `region: 'action'` in
   shared `PlanFindings.tsx` card): all four still share the `PLAN` tag and
   the same `--plan-aggregate` badge tint (`src/view/plan-finding-shared.ts`).
   Their `docAnchor`s (`#bottleneck-duplicate-plan-subtree`,
-  `#bottleneck-small-files`, `#bottleneck-broadcast-sizing`) are not yet live
-  in the vendored docs site, so `npm run update-docs` will abort until upstream
-  `spark-tuning-reference` adds them.
+  `#bottleneck-small-files`, `#bottleneck-broadcast-sizing`) each resolve to
+  their own page in the vendored tuning reference.
 
 `detector-registry.tsx`'s `REGISTRY` still carries `region: 'reference'` on
 four entries, each its own component now: `memoryUtilization`
