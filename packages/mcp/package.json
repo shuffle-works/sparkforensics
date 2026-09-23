@@ -23,7 +23,7 @@
     "performance"
   ],
   "bin": {
-    "sparkforensics-mcp": "./bin/sparkforensics-mcp.mjs"
+    "sparkforensics-mcp": "bin/sparkforensics-mcp.mjs"
   },
   "engines": {
     "node": ">=18"

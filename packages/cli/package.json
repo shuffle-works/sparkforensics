@@ -22,7 +22,7 @@
     "event-log"
   ],
   "bin": {
-    "sparkforensics-analyze": "./bin/sparkforensics-analyze.mjs"
+    "sparkforensics-analyze": "bin/sparkforensics-analyze.mjs"
   },
   "engines": {
     "node": ">=18"
