@@ -1028,6 +1028,51 @@ export function stripPlanDescription(line: string): string {
   return line.slice(0, valueStart) + line.slice(quote);
 }
 
+const TASK_END_PREFIX = '{"Event":"SparkListenerTaskEnd",';
+const ACCUMULABLES_KEY = '"Accumulables":[';
+const ACCUMULABLE_ID_KEY = '"ID":';
+// Beyond 15 digits the digit loop below could round differently from JSON.parse.
+const MAX_ACCUMULABLE_ID_DIGITS = 15;
+
+// Parses a TaskEnd line with its Task Info Accumulables array reduced to the `{ID}` entries
+// accumulateTask reads, or returns null for the caller to parse the line whole. That array is 71%
+// of TaskEnd bytes on the largest real log, where parsing its TaskEnd lines took 1.3s (0.5s here).
+// The IDs are read with a string scan and the array is cut out before JSON.parse, but only when
+// every entry has Spark's flat form (`{"ID":n,...}`, ID first, no nested array): any `{` that
+// doesn't open `{"ID":n` or any `[` in the array (updatedBlockStatuses) falls back. A `]` inside a
+// Name string cuts the array short and leaves invalid JSON, which falls back too.
+export function parseTaskEnd(line: string): unknown {
+  if (!line.startsWith(TASK_END_PREFIX)) return null;
+  const keyAt = line.indexOf(ACCUMULABLES_KEY);
+  if (keyAt === -1) return null;
+  const from = keyAt + ACCUMULABLES_KEY.length;
+  const close = line.indexOf(']', from);
+  if (close === -1) return null;
+  const nested = line.indexOf('[', from);
+  if (nested !== -1 && nested < close) return null;
+  const ids: number[] = [];
+  for (let brace = line.indexOf('{', from); brace !== -1 && brace < close; brace = line.indexOf('{', brace + 1)) {
+    if (!line.startsWith(ACCUMULABLE_ID_KEY, brace + 1)) return null;
+    const digitsFrom = brace + 1 + ACCUMULABLE_ID_KEY.length;
+    let i = digitsFrom, id = 0;
+    for (let c = line.charCodeAt(i); c >= 48 && c <= 57; c = line.charCodeAt(++i)) id = id * 10 + c - 48;
+    if (i === digitsFrom || i - digitsFrom > MAX_ACCUMULABLE_ID_DIGITS) return null;
+    const after = line.charCodeAt(i);
+    if (after !== 0x2c && after !== 0x7d) return null; // `,` or `}`
+    ids.push(id);
+  }
+  let parsed: { 'Task Info'?: { Accumulables?: unknown } } | null;
+  try {
+    parsed = JSON.parse(line.slice(0, from) + line.slice(close));
+  } catch {
+    return null;
+  }
+  const info = parsed?.['Task Info'];
+  if (!info || !Array.isArray(info.Accumulables) || info.Accumulables.length !== 0) return null;
+  info.Accumulables = ids.map((ID) => ({ ID }));
+  return parsed;
+}
+
 const ADAPTIVE_UPDATE_PREFIX =
   '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":';
 
@@ -1071,7 +1116,7 @@ export function dispatchLine(line: string, state: ParserState, emit: (msg: unkno
 function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown) => void): void {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(stripPlanDescription(line));
+    parsed = parseTaskEnd(line) ?? JSON.parse(stripPlanDescription(line));
   } catch {
     state.skippedLines++;
     return;

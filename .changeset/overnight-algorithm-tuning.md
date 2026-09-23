@@ -97,3 +97,7 @@ real logs is 13% faster (13.1s to 11.3s; the largest log 6.3s to 5.4s) with iden
 Parsing: large decompressed chunks are decoded in 512 KiB slices, so a SQL event's
 plan text is dropped undecoded even when one zstd frame holds all of it. On the largest real
 log that is 1.8 GB of text never decoded, and its parse is 13% faster (5.4s to 4.7s).
+
+Parsing: a task-end event's accumulator IDs are read without parsing the rest of each entry,
+which is 71% of those events' bytes. Parsing the 14 real logs is 11% faster (10.6s to 9.4s) and
+the 52 corpus logs 8% faster, with identical findings.

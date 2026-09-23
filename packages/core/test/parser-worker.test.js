@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { analyze } from '../src/analyzer.js';
-import { stripPlanDescription, emitParseCompletion } from '../src/event-handlers.ts';
+import { stripPlanDescription, emitParseCompletion, parseTaskEnd } from '../src/event-handlers.ts';
 import { computeTaskActiveMs, computePeakConcurrentTasks } from '../src/stage-quantiles.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
 import { zipSync, gzipSync, strToU8 } from '../src/vendor/fflate.js';
@@ -1416,6 +1416,49 @@ describe('dispatchLine', () => {
       return emitted.find((m) => m.type === 'sqlPlan').data.planTree;
     };
     expect(run({ physicalPlanDescription: '== Physical Plan ==\n* Scan "t" \\ "x\\"' })).toEqual(run({}));
+  });
+});
+
+// A TaskEnd in Spark's flat accumulable form skips parsing its Accumulables array (parseTaskEnd).
+describe('parseTaskEnd', () => {
+  const SUBMIT = '{"Event":"SparkListenerStageSubmitted","Stage Info":{"Stage ID":7,"Stage Attempt ID":0,"Stage Name":"s","Number of Tasks":1,"Submission Time":0}}';
+  const taskEnd = (accumulables) => `{"Event":"SparkListenerTaskEnd","Stage ID":7,"Stage Attempt ID":0,"Task Type":"ResultTask","Task End Reason":{"Reason":"Success"},"Task Info":{"Task ID":1,"Index":0,"Launch Time":0,"Finish Time":100,"Failed":false,"Accumulables":[${accumulables}]},"Task Metrics":{"Executor Run Time":90}}`;
+  const FLAT = '{"ID":42,"Name":"number of output rows","Update":"1","Value":"1","Internal":true,"Count Failed Values":true,"Metadata":"sql"},{"ID":43,"Name":"internal.metrics.executorRunTime","Update":90,"Value":90,"Internal":true,"Count Failed Values":true}';
+  const OTHER_SHAPES = [
+    '{"ID":42,"Name":"internal.metrics.updatedBlockStatuses","Update":[{"Block ID":"rdd_1_0","Status":{"Memory Size":1}}],"Internal":true}',
+    '{"ID":42,"Name":"a]}{\\"ID\\":9","Update":1}', // brackets and an escaped `{"ID":` inside a Name
+    '{"Name":"x","ID":42}',
+    '{"ID":12345678901234567,"Name":"x"}',
+    '{"ID": 42}',
+  ];
+
+  it('reduces flat entries to their IDs and parses the rest of the line exactly', () => {
+    const line = taskEnd(FLAT);
+    const full = JSON.parse(line);
+    full['Task Info'].Accumulables = [{ ID: 42 }, { ID: 43 }];
+    expect(parseTaskEnd(line)).toEqual(full);
+    expect(parseTaskEnd(taskEnd(''))).toEqual(JSON.parse(taskEnd('')));
+  });
+
+  it('returns null for any other shape, a non-TaskEnd line or a malformed one', () => {
+    for (const accumulables of OTHER_SHAPES) expect(parseTaskEnd(taskEnd(accumulables))).toBeNull();
+    expect(parseTaskEnd(SUBMIT)).toBeNull();
+    expect(parseTaskEnd(taskEnd(FLAT).slice(0, -1))).toBeNull();
+  });
+
+  it('records the same accumulator IDs through dispatchLine as a whole-line parse', () => {
+    for (const accumulables of [FLAT, ...OTHER_SHAPES]) {
+      const viaLine = createState();
+      for (const line of [SUBMIT, taskEnd(accumulables)]) dispatchLine(line, viaLine, () => {});
+      const viaEvent = createState();
+      for (const line of [SUBMIT, taskEnd(accumulables)]) processEvent(JSON.parse(line), viaEvent);
+      expect(viaLine.skippedLines).toBe(0);
+      expect(viaLine.evidenceInputs.taskRecords).toBe(1);
+      expect(viaLine.taskAccumStages).toEqual(viaEvent.taskAccumStages);
+    }
+    const malformed = createState();
+    dispatchLine(taskEnd(FLAT).slice(0, -1), malformed, () => {});
+    expect(malformed.skippedLines).toBe(1);
   });
 });
 
