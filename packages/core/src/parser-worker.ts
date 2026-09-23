@@ -34,7 +34,9 @@ const MIN_PROGRESS_STEPS = 100;
 const PROGRESS_EMIT_LINES = 300;
 
 type EmitFn = (msg: unknown) => void;
-type RunOpts = { emit?: EmitFn; chunkSize?: number };
+// zstdDecoder replaces the vendored fzstd for zstd input; the Node CLI/MCP path passes
+// cli/native-zstd.ts's native-zlib decoder, which a browser bundle can't import.
+type RunOpts = { emit?: EmitFn; chunkSize?: number; zstdDecoder?: ZstdDecoderFactory };
 
 // Minimal shape streamFile/runParse/runParseFiles read off `file` (name, size,
 // slice(start,end).arrayBuffer()): narrower than the full DOM `File`. A real
@@ -59,6 +61,7 @@ type WorkerIncomingMessage =
 // without touching the vendored files (mirrors shs-fetch.ts's shim).
 type StreamingDecoder = { push(chunk: Uint8Array, final?: boolean): void };
 type StreamingDecoderCtor = new (onChunk: (chunk: Uint8Array) => void) => StreamingDecoder;
+export type ZstdDecoderFactory = (onChunk: (chunk: Uint8Array) => void) => StreamingDecoder;
 
 // Stream one File's (possibly compressed) bytes through the codec dispatch,
 // in `chunkSize` slices, invoking `onChunk` with each decompressed buffer as
@@ -69,6 +72,7 @@ export async function streamFile(
   file: FileSource,
   onChunk: (chunk: Uint8Array, pct?: number) => void,
   chunkSize: number,
+  zstdDecoder?: ZstdDecoderFactory,
 ): Promise<void> {
   const header = new Uint8Array(await file.slice(0, Math.min(8, file.size)).arrayBuffer());
   const codec = sniffCodec(header);
@@ -81,7 +85,10 @@ export async function streamFile(
   let currentPct = 0;
   const gunzip = codec === 'gz' ? new (Gunzip as unknown as StreamingDecoderCtor)((inflated) => onChunk(inflated, currentPct)) : null;
   const lz4 = codec === 'lz4' ? createLz4BlockDecoder((inflated) => onChunk(inflated, currentPct)) : null;
-  const zstd = codec === 'zstd' ? new (ZstdDecompress as unknown as StreamingDecoderCtor)((inflated) => onChunk(inflated, currentPct)) : null;
+  const onZstdChunk = (inflated: Uint8Array) => onChunk(inflated, currentPct);
+  const zstd = codec !== 'zstd' ? null
+    : zstdDecoder ? zstdDecoder(onZstdChunk)
+      : new (ZstdDecompress as unknown as StreamingDecoderCtor)(onZstdChunk);
   const snappy = codec === 'snappy' ? createSnappyBlockDecoder((inflated) => onChunk(inflated, currentPct)) : null;
 
   // A fixed read size gives too few progress checkpoints on smaller files
@@ -115,7 +122,7 @@ export async function streamFile(
 export async function runParse(
   file: FileSource,
   state: ParserState,
-  { emit = (msg: unknown) => self.postMessage(msg), chunkSize = CHUNK_SIZE }: RunOpts = {},
+  { emit = (msg: unknown) => self.postMessage(msg), chunkSize = CHUNK_SIZE, zstdDecoder }: RunOpts = {},
 ): Promise<void> {
   if (file.size === 0) {
     emit({ type: 'error', message: 'File is empty.' });
@@ -135,7 +142,7 @@ export async function runParse(
   };
 
   try {
-    await streamFile(file, feed, chunkSize);
+    await streamFile(file, feed, chunkSize, zstdDecoder);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     emit({ type: 'error', message: `Could not decompress "${file.name}": ${message}` });
@@ -163,7 +170,7 @@ export async function runParse(
 export async function runParseFiles(
   files: FileSource[],
   state: ParserState,
-  { emit = (msg: unknown) => self.postMessage(msg), chunkSize = CHUNK_SIZE }: RunOpts = {},
+  { emit = (msg: unknown) => self.postMessage(msg), chunkSize = CHUNK_SIZE, zstdDecoder }: RunOpts = {},
 ): Promise<void> {
   if (files.length === 0) {
     emit({ type: 'error', message: 'Rolling event-log directory contained no event files.' });
@@ -189,7 +196,7 @@ export async function runParseFiles(
   for (const file of files) {
     currentFileSize = file.size;
     try {
-      await streamFile(file, feed, chunkSize);
+      await streamFile(file, feed, chunkSize, zstdDecoder);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       emit({ type: 'error', message: `Could not decompress "${file.name}": ${message}` });

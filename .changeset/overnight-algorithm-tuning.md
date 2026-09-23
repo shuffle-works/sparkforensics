@@ -70,3 +70,8 @@ time than their whole run.
 Thresholds: `stageShape`'s under-parallelization rule skips stages shorter than 0.5% of the run,
 the same runtime floor the tiered detectors use: parallelizing a stage can't save more than its
 own duration. That was 2839 of 3005 such findings across 14 real logs.
+
+CLI and MCP: zstd event logs decompress with Node's native zlib zstd, one frame at a time, when
+the running Node has it (22.15+ or 23.8+); older Nodes and the browser keep the bundled decoder.
+Parsing the 14 real logs is 42% faster (22.3s to 13.0s; the largest log 10.7s to 6.4s) with
+identical output.

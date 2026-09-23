@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { createState, runParse, runParseFiles, reassembleRollingEntries } from '../parser-worker.ts';
+import { createNativeZstdDecoder, nativeZstdAvailable } from './native-zstd.ts';
 import { createModelCallbacks } from '../model-assembler.ts';
 import { routeMessage, type IngestHandlers } from '../ingest.ts';
 import type { AppModel } from '../types.ts';
@@ -104,6 +105,9 @@ export function collectViaDispatch(
   });
 }
 
+// Node's native zstd where this Node has it (22.15+/23.8+); older Nodes keep the vendored fzstd.
+const PARSE_CODECS = nativeZstdAvailable ? { zstdDecoder: createNativeZstdDecoder } : {};
+
 export async function collectRun(inputPath: string): Promise<{ appModel: AppModel; skippedLines: number }> {
   const stat = statSync(inputPath);
   return collectViaDispatch((state, emit, reject) => {
@@ -123,9 +127,9 @@ export async function collectRun(inputPath: string): Promise<{ appModel: AppMode
       const files = ordered.map((name) => nodeFileFromPath(join(inputPath, name)));
       // .catch(reject), not void: a throw past the parser's guards would otherwise leave
       // this Promise pending forever, surfacing only as an unhandled rejection.
-      runParseFiles(files, state, { emit }).catch(reject);
+      runParseFiles(files, state, { emit, ...PARSE_CODECS }).catch(reject);
     } else {
-      runParse(nodeFileFromPath(inputPath), state, { emit }).catch(reject);
+      runParse(nodeFileFromPath(inputPath), state, { emit, ...PARSE_CODECS }).catch(reject);
     }
   }, (msg) => new Error((msg as { message: string }).message));
 }
