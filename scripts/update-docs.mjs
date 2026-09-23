@@ -4,10 +4,11 @@
 //
 // Run: npm run update-docs
 //
-// Requires `gh` (authenticated; upstream is private). Validates the clone
-// contains every docs anchor the app links to (manifest page anchor or
-// `{#anchor}` heading attr) before overwriting the committed copy; a missing
-// anchor aborts without touching packages/core/src/docs-content/.
+// Requires `git`: upstream is public, so it's cloned anonymously over HTTPS.
+// Validates the clone contains every docs anchor the app links to (manifest
+// page anchor or `{#anchor}` heading attr) before overwriting the committed
+// copy; a missing anchor aborts without touching
+// packages/core/src/docs-content/.
 //
 // Also projects the manifest into a committed nav-index.json (projectNavIndex
 // below), consumed by the docs-site sidebar and doc-anchor-coverage.
@@ -18,11 +19,14 @@ import { tmpdir } from 'node:os';
 import { basename, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { load as loadYaml } from 'js-yaml';
-import { tuningDocSlugForAnchor } from '../packages/core/src/docs-config.ts';
+import { KNOWN_DOC_ANCHORS, tuningDocSlugForAnchor } from '../packages/core/src/docs-config.ts';
 
 const SOURCE_REPO = 'shuffle-works/spark-tuning-reference';
+const SOURCE_URL = `https://github.com/${SOURCE_REPO}.git`;
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const SRC_DIR = join(REPO_ROOT, 'src');
+// The browser view (src/) and the shared core (packages/core/src/, where the
+// detectors, docs-config.ts and the MCP tools live) both link to docs anchors.
+const ANCHOR_SCAN_DIRS = [join(REPO_ROOT, 'src'), join(REPO_ROOT, 'packages', 'core', 'src')];
 const CHAPTERS_MD_DIR = join(REPO_ROOT, 'packages', 'core', 'src', 'docs-content', 'chapters');
 const TUNING_VENDOR_DIR = join(REPO_ROOT, 'packages', 'core', 'src', 'docs-content', 'tuning');
 const DIAGRAMS_VENDOR_DIR = join(REPO_ROOT, 'packages', 'core', 'src', 'docs-content', 'diagrams');
@@ -44,11 +48,14 @@ function have(bin) {
   }
 }
 
-// Collect every '#metric-*/#bottleneck-*/#config-*' anchor the app links to,
-// scanning src/ as text: detectors.ts pulls in DOM-touching widgets, so it
-// can't be imported under plain node.
-function requiredAnchors() {
-  const anchors = new Set();
+// Collects every anchor the app links to, bare (no '#'), sorted: each
+// '#metric-*/#bottleneck-*/#config-*' literal found by scanning scanDirs as
+// text, plus every allowlisted anchor (knownAnchors, the gate DocsLink renders
+// through, which adds page anchors like '#joins'). The text scan also catches
+// a JSX `DocsLink anchor="..."` literal missing from the allowlist. Exported
+// (defaults are the real repo) so it's unit-tested without a live clone.
+export function collectRequiredAnchors(scanDirs = ANCHOR_SCAN_DIRS, knownAnchors = KNOWN_DOC_ANCHORS) {
+  const anchors = new Set([...knownAnchors].map((a) => a.replace(/^#/, '')));
   const re = /#(?:metric|bottleneck|config)-[a-z0-9-]+/g;
   const walk = (dir) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -60,7 +67,7 @@ function requiredAnchors() {
       }
     }
   };
-  walk(SRC_DIR);
+  for (const dir of scanDirs) walk(dir);
   return [...anchors].sort();
 }
 
@@ -103,7 +110,7 @@ export function projectNavIndex(manifest) {
 
 // Maps required '#bottleneck-*' anchors to the content/bottlenecks/<slug>.md
 // filenames to vendor, via docs-config.ts's tuningDocSlugForAnchor. Exported
-// (no filesystem access) so it's unit-tested without a live gh clone.
+// (no filesystem access) so it's unit-tested without a live clone.
 export function requiredTuningSlugs(anchors) {
   const slugs = new Set();
   for (const a of anchors) {
@@ -114,22 +121,25 @@ export function requiredTuningSlugs(anchors) {
 }
 
 function main() {
-  if (!have('gh')) die('`gh` not found: install and authenticate the GitHub CLI (upstream repo is private).');
+  if (!have('git')) die('`git` not found: install git to clone the upstream docs repo.');
 
-  const anchors = requiredAnchors();
-  if (anchors.length === 0) die(`no docs anchors found under ${SRC_DIR}; refusing to run blind.`);
+  const anchors = collectRequiredAnchors();
+  if (anchors.length === 0) die(`no docs anchors found under ${ANCHOR_SCAN_DIRS.join(', ')}; refusing to run blind.`);
 
   const cloneDir = mkdtempSync(join(tmpdir(), 'spark-tuning-reference-'));
   try {
-    console.log(`update-docs: cloning ${SOURCE_REPO} (shallow) ...`);
+    console.log(`update-docs: cloning ${SOURCE_URL} (shallow) ...`);
     try {
-      execFileSync('gh', ['repo', 'clone', SOURCE_REPO, cloneDir, '--', '--depth=1', '--quiet'], {
+      // GIT_TERMINAL_PROMPT=0: if the repo ever moves or stops being public,
+      // fail at once instead of hanging on a credentials prompt.
+      execFileSync('git', ['clone', '--depth=1', '--quiet', SOURCE_URL, cloneDir], {
         stdio: ['ignore', 'ignore', 'pipe'],
         timeout: 120_000,
         encoding: 'utf8',
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
       });
     } catch (err) {
-      die(`clone failed: is \`gh\` authenticated for ${SOURCE_REPO}?\n${err.stderr || err.message}`);
+      die(`clone of ${SOURCE_URL} failed (network down, or the repo moved?):\n${err.stderr || err.message}`);
     }
 
     const sparkManifest = loadYaml(readFileSync(join(cloneDir, 'content', 'manifest.yaml'), 'utf8'));
@@ -198,9 +208,9 @@ function main() {
   }
 }
 
-// Guards main() behind direct execution: update-docs-tuning-slugs.test.js
-// imports this module for requiredTuningSlugs() alone, and an unguarded
-// top-level call would fire a real `gh repo clone` on every test run.
+// Guards main() behind direct execution: the update-docs-*.test.js files
+// import this module for its pure exports alone, and an unguarded top-level
+// call would fire a real `git clone` on every test run.
 function isDirectExecution() {
   return process.argv[1] && join(process.argv[1]) === fileURLToPath(import.meta.url);
 }
