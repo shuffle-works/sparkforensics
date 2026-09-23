@@ -100,11 +100,11 @@ Plan Advisor, and Autoscaling Churn, all `region: 'action'` in
   floor) or when `app.endTime` is missing (truncated/still-running log). The
   widget itself is unchanged apart from a finding-driven verdict banner
   (impact dot + `CHRN` tag + recommendation) above its existing add/remove
-  chart. The chart's muted scale-down bar coloring is untouched. No
-  `docAnchor` is set yet, so the `CHRN` tag renders with no docs-panel link.
-  The pinned tuning reference now has a `bottleneck-autoscaling-churn` section
-  (`docs-content/chapters/11-cluster-config.md`); wiring it is a tracked
-  follow-up.
+  chart. The chart's muted scale-down bar coloring is untouched. Its
+  `docAnchor` is `#bottleneck-autoscaling-churn`, a section of the
+  cluster-config chapter (`docs-content/chapters/11-cluster-config.md`), not
+  a bottleneck page of its own: `pageForAnchor` maps it there, so the `CHRN`
+  pill opens `cluster-config.html#bottleneck-autoscaling-churn`.
 - **Config Audit** (tag `CFG`): static Spark-config sanity findings derived from
   `app.config`/`app.resources` (parsed from `SparkListenerEnvironmentUpdate`):
   dynamic-allocation vs.

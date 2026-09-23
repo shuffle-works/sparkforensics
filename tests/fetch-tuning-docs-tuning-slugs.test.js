@@ -11,6 +11,13 @@ describe('requiredTuningSlugs', () => {
     expect(requiredTuningSlugs(['bottleneck-stage-slowness', 'bottleneck-slow-host'])).toEqual(['slow-host']);
   });
 
+  // A chapter-hosted sub-anchor mapped as its own page would demand a
+  // content/bottlenecks/autoscaling-churn.md that upstream never ships.
+  it('requires no bottleneck page for sub-anchors hosted on a chapter', () => {
+    expect(requiredTuningSlugs(['bottleneck-autoscaling-churn', 'bottleneck-cache-utilization'])).toEqual([]);
+    expect(requiredTuningSlugs(['bottleneck-partition-sizing', 'bottleneck-core-locality'])).toEqual(['shuffle', 'utilization']);
+  });
+
   it('ignores non-bottleneck anchors', () => {
     expect(requiredTuningSlugs(['metric-task-duration', 'config-serializer', 'bottleneck-gc'])).toEqual(['gc']);
   });

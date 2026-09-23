@@ -301,7 +301,7 @@ thresholds sit well above their disk counterparts at every tier.
 | Job failure rate | ≥ 30% (≥ 10% info) | ≥ 50% |
 | Idle cores | busy-core-time / (peak cores × wall-clock) idle > 50% (warning) | none |
 | Memory band | peak heap / allocated > 95% too-small (warning); < 70% over-provisioned (info) | none |
-| Caching opportunity | RDD read across ≥3 stages without `.persist()` | none (single tier, info) |
+| Caching opportunity | same input relation (or join/union subtree) scanned by ≥ `minExecutions` = 2 SQL executions in one run | none (single tier, info) |
 | Cache utilization: partial caching (this repo) | `numCachedPartitions / numPartitions < 0.90` (info) | `< 0.50` (warning) |
 | Cache utilization: disk spillover (this repo) | `diskSize / (memorySize + diskSize) > 0.15` (info), `MEMORY_AND_DISK*` only | `> 0.40` (warning) |
 

@@ -36,12 +36,18 @@ findings, built per detector *type* (`Object.keys(REGISTRY)`). Full app
 report stays structural-only (see "ReferenceSection" below).
 
 Tags carry their own docs links; there is no separate legend widget.
-`TagBadge` (`src/view/ImpactBadge.tsx`) resolves its own tooltip. When its
-type resolves a single known documentation anchor (`docAnchorForType`,
-`src/view/finding-tag-help.ts`), the pill itself links into the docs panel,
-and (density `advanced` only) a second icon link opens that tag's entry in
-`docs-site/user-guide/understanding-findings.md` (`findingGuideUrl`,
-`packages/core/src/docs-site-config.ts`) as a plain new-tab navigation. When
+`TagBadge` (`src/view/ImpactBadge.tsx`) resolves its own tooltip. Its
+documentation anchor is the caller's `docAnchor` prop when that is a known
+anchor (call sites holding the finding pass `finding.docAnchor`; a widget
+header or grouped row passes `sharedDocAnchor(findings)`), else the type's
+single known anchor (`docAnchorForType`, `src/view/finding-tag-help.ts`). The
+prop matters for `configAudit`, whose four entries carry different anchors,
+so the type lookup finds none. With an anchor, the pill itself links into
+the docs panel, and (density `advanced` only) a second icon link opens that
+tag's entry in `docs-site/user-guide/understanding-findings.md`
+(`findingGuideUrl`, `packages/core/src/docs-site-config.ts`) in the same
+in-app docs panel; its `target="_blank"` only applies to a modifier-click or
+when no `DocsProvider` is mounted. When
 a type has no vendor-doc anchor (e.g. `incompleteRun`), the pill links
 straight to that same guide entry instead of rendering as inert text, and
 the second icon link is skipped as redundant. Either way, a linked pill gets
