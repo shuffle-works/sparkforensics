@@ -286,6 +286,35 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
 
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 5_000, high: 5_000 });
   });
+
+  // stageShares (the repeated operators' share of each stage) and task-active time replace whole
+  // submit-to-complete durations: a stage shared with other work, or one left waiting for cores,
+  // isn't the subtree's time.
+  it('weights each stage by its operator share and counts only task-active time', () => {
+    const stages = new Map([
+      [0, { id: 0, submittedAt: 0, completedAt: 10_000, parentIds: [], taskActiveMs: 10_000 }],
+      [1, { id: 1, submittedAt: 10_000, completedAt: 40_000, parentIds: [0], taskActiveMs: 6_000 }], // mostly waiting
+      [2, { id: 2, submittedAt: 40_000, completedAt: 50_000, parentIds: [1], taskActiveMs: 10_000 }], // no share
+    ]);
+    const findings = [{
+      type: 'duplicatePlanSubtree', stageIds: [0, 1, 2], stageShares: { 0: 0.5, 1: 1 }, occurrencesIdentical: true,
+      metric: 'subtreeOccurrences', value: 2, impactBand: 'warning',
+    }];
+    estimateImpact(findings, stages);
+    // 1/2 redundant x (10_000 x 0.5 + 6_000 x 1) = 2_500 + 3_000.
+    expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 5_500, unit: 'ms' });
+    expect(findings[0].impactEstimate.wallClock.high).toBe(5_500);
+  });
+
+  it('claims nothing for repeats with differing details or with no attributable stage', () => {
+    const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10_000, parentIds: [] }]]);
+    const differing = [{ type: 'duplicatePlanSubtree', stageIds: [0], stageShares: { 0: 1 }, occurrencesIdentical: false, value: 2, impactBand: 'info' }];
+    const unattributed = [{ type: 'duplicatePlanSubtree', stageIds: [0], stageShares: {}, occurrencesIdentical: true, value: 2, impactBand: 'info' }];
+    estimateImpact(differing, stages);
+    estimateImpact(unattributed, stages);
+    expect(differing[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
+    expect(unattributed[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
+  });
 });
 
 describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, solo stage: numbers unaffected by the redesign)', () => {

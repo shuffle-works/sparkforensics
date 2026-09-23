@@ -59,3 +59,10 @@ Parser: a `TaskEnd` whose accumulator updates include a JSON array (Spark 2.x's
 `internal.metrics.updatedBlockStatuses`, or block-status tracking turned on) is no longer rejected
 and dropped from its stage's stats. Only the accumulable `ID` is validated now, which also makes
 parsing 3.7% faster across 14 real logs.
+
+Estimates: `duplicatePlanSubtree` claims only repeated work it can see. Repeats with the same
+shape but different filters, columns or tables are informational with low confidence. Each stage
+now counts only the repeated operators' share of it, and only for its task-active time, so a
+stage shared with a join or left waiting for cores no longer counts whole. Across 14 real logs,
+duplicate-subtree claims fell from 2307 to 108 minutes; before, three logs claimed more duplicate
+time than their whole run.

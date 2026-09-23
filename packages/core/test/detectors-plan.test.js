@@ -22,11 +22,18 @@ function makeSqlExec(id, planTree) {
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
 
+// Attributes every node of `tree` to stage `sid`, as resolvePlanTree does from task accumulables.
+const inStage = (tree, sid) => {
+  const visit = (n) => { n.stageIds = [sid]; n.children.forEach(visit); };
+  visit(tree);
+  return tree;
+};
+
 describe('duplicatePlanSubtree', () => {
   it('flags a repeated 3-node subtree, reconciled to critical here', () => {
     // Fallback impactBand is 'warning'; deriveImpactBand promotes it to 'critical'
     // here because the matched stage's wallClock estimate clears the critical floor.
-    const dup = () => node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]);
+    const dup = () => inStage(node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]), 1);
     const planTree = node('Project', [], [dup(), dup()]);
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
     const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
@@ -35,6 +42,66 @@ describe('duplicatePlanSubtree', () => {
     expect(findings).toHaveLength(1);
     expect(findings[0].impactBand).toBe('critical');
     expect(findings[0].stageIds).toEqual([1]);
+    expect(findings[0].occurrencesIdentical).toBe(true);
+    expect(findings[0].stageShares).toEqual({ 1: 1 });
+  });
+
+  // Same operator shape over different data (another table, another filter) is no repeated
+  // work: the finding stays, flagged low-confidence and informational, with no time claimed.
+  it('makes repeats whose details differ informational, with no wall-clock claim', () => {
+    const dup = (filter) => {
+      const tree = inStage(node('Filter', ['a'], [node('ColumnarToRow', ['b'], [node('Scan parquet', ['c'])])]), 1);
+      tree.detail = filter;
+      return tree;
+    };
+    const planTree = node('Union', [], [dup('Filter (x = 1)'), dup('Filter (y = 2)')]);
+    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    const [finding] = analyze(makeApp(), stages, [], [], new Map(), new Map([[1, makeSqlExec(1, planTree)]]))
+      .filter(b => b.type === 'duplicatePlanSubtree');
+    expect(finding.occurrencesIdentical).toBe(false);
+    expect(finding.impactBand).toBe('info');
+    expect(finding.confidence).toBe('low');
+    expect(finding.impactEstimate.wallClock).toBeNull();
+    expect(finding.recommendation).toContain('may compute different data');
+  });
+
+  it('treats repeats that differ only in AQE query-stage numbering as identical', () => {
+    const dup = (n) => {
+      const leaf = node('ShuffleQueryStage', ['d']);
+      leaf.detail = `ShuffleQueryStage ${n}`;
+      return inStage(node('Sort', ['a'], [node('AQEShuffleRead', ['b'], [leaf])]), 1);
+    };
+    const planTree = node('SortMergeJoin', [], [dup(718), dup(720)]);
+    const [finding] = analyze(makeApp(), new Map([[1, makeStage({ sqlExecutionId: 1 })]]), [], [], new Map(), new Map([[1, makeSqlExec(1, planTree)]]))
+      .filter(b => b.type === 'duplicatePlanSubtree');
+    expect(finding.occurrencesIdentical).toBe(true);
+  });
+
+  // A stage that also runs operators outside the repeats contributes only its operators' share;
+  // WholeStageCodegen wrappers and Exchange write halves don't count as other operators.
+  it('claims only the repeated operators\' share of a stage shared with other work', () => {
+    const dup = () => inStage(node('Sort', ['a'], [node('Filter', ['b']), node('Filter', ['b'])]), 1);
+    const other = inStage(node('HashAggregate', ['e'], [node('Project', ['f'])]), 1);
+    const wrapper = inStage(node('WholeStageCodegen (1)', ['duration'], [dup()]), 1);
+    const write = inStage(node('Exchange', ['data size'], [dup()]), 1);
+    write.exchangeRole = 'write';
+    const planTree = node('Union', [], [wrapper, write, other]);
+    const [finding] = analyze(makeApp(), new Map([[1, makeStage({ sqlExecutionId: 1 })]]), [], [], new Map(), new Map([[1, makeSqlExec(1, planTree)]]))
+      .filter(b => b.type === 'duplicatePlanSubtree');
+    // 6 repeated operators of the stage's 8 (the wrapper and the write half excluded).
+    expect(finding.stageShares).toEqual({ 1: 0.75 });
+  });
+
+  it('claims no time when no operator of the repeats ran in a known stage', () => {
+    const dup = () => node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]);
+    const planTree = node('Project', [], [dup(), dup()]);
+    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    const [finding] = analyze(makeApp(), stages, [], [], new Map(), new Map([[1, makeSqlExec(1, planTree)]]))
+      .filter(b => b.type === 'duplicatePlanSubtree');
+    // stageIds still falls back to the execution's stages for linking, but none is attributable.
+    expect(finding.stageIds).toEqual([1]);
+    expect(finding.impactBand).toBe('info');
+    expect(finding.impactEstimate.wallClock).toBeNull();
   });
 
   it('confidence is low for a match at the bare minimum subtreeSize and occurrences (old logic hardcoded medium here, the weakest evidence the matcher can produce)', () => {
@@ -85,12 +152,12 @@ describe('duplicatePlanSubtree', () => {
     expect(groups[0].isExchangeRoot).toBe(true);
 
     const sql = new Map([[1, makeSqlExec(1, planTree)]]);
-    // No stages: no wallClock estimate, so impactBand stays the fallback 'warning'
+    // No stages: no wallClock estimate, so impactBand stays the no-coverage 'info'
     // regardless of isExchangeRoot; only the recommendation text differs.
     const catalog = analyze(makeApp(), new Map(), [], [], new Map(), sql);
     const findings = catalog.filter(b => b.type === 'duplicatePlanSubtree');
     expect(findings).toHaveLength(1);
-    expect(findings[0].impactBand).toBe('warning');
+    expect(findings[0].impactBand).toBe('info');
     expect(findings[0].recommendation).toContain('missed exchange reuse');
   });
 

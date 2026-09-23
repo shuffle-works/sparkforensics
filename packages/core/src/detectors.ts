@@ -430,6 +430,58 @@ export function findDuplicateSubtrees(
   return results;
 }
 
+// True when every occurrence also agrees node-for-node on normalized detail (filters, columns,
+// scanned table, literals). The fingerprint ignores detail, so occurrences can be same-shaped
+// branches over different data; only identical ones are repeated work that computing once would
+// save. AQE query-stage numbers (`ShuffleQueryStage 718` vs `720`) name the same computation's
+// runtime stage and are ignored too. On the 14 real logs, 270 of 546 groups differed beyond that.
+function occurrencesHaveIdenticalDetails(occurrences: PlanNode[]): boolean {
+  const detailsOf = (root: PlanNode): string[] => {
+    const out: string[] = [];
+    walkPlanTree(root, (n) => out.push(n.detail ?? ''));
+    return out;
+  };
+  const normalize = (d: string): string => normalizeDetail(d).replace(/\b(\w+QueryStage)\s+\d+/g, '$1');
+  const first = detailsOf(occurrences[0]);
+  const firstNormalized: (string | undefined)[] = [];
+  for (const other of occurrences.slice(1)) {
+    const details = detailsOf(other);
+    if (details.length !== first.length) return false;
+    for (let i = 0; i < first.length; i++) {
+      if (details[i] === first[i]) continue;
+      firstNormalized[i] ??= normalize(first[i]);
+      if (normalize(details[i]) !== firstNormalized[i]) return false;
+    }
+  }
+  return true;
+}
+
+// Stages that run nothing but the duplicated occurrences' operators: every operator attributed to
+// the stage is inside `nodes`. A stage shared with operators outside them (the join consuming the
+// subtree, the other join side) does other work too, so its time isn't the subtree's to claim;
+// counting it also let sibling groups claim the same stage twice. A WholeStageCodegen wrapper and
+// an Exchange's write half aren't other work (the fused pipeline around an operator, the shuffle
+// write of its output), so they're left out of both counts; on the 14 real logs they were the
+// only outside node on 426 stages.
+function countsTowardStage(node: PlanNode): boolean {
+  return node.exchangeRole !== 'write' && !node.name.startsWith('WholeStageCodegen');
+}
+
+function operatorCountByStage(nodes: Iterable<PlanNode>): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const node of nodes) {
+    if (!countsTowardStage(node)) continue;
+    for (const sid of node.stageIds ?? []) counts.set(sid, (counts.get(sid) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function stageOperatorShares(nodes: PlanNode[], executionCounts: Map<number, number>): Record<number, number> {
+  const shares: Record<number, number> = {};
+  for (const [sid, count] of operatorCountByStage(nodes)) shares[sid] = count / (executionCounts.get(sid) ?? count);
+  return shares;
+}
+
 // Fingerprint matching compares operator + metric names only, not literal values or expr IDs
 // (see the finding's validationRequired text), so a small pattern repeated the bare minimum
 // number of times is the case most likely to be coincidental rather than real duplicated work.
@@ -1890,25 +1942,34 @@ export const DETECTORS: Detector[] = [
       const groups = findDuplicateSubtrees(sqlExec.planTree, this.thresholds);
       if (groups.length === 0) return null;
       const fallbackStageIds = stageIdsForSqlExec(sqlExec.id, ctx.stages);
+      const executionNodes: PlanNode[] = [];
+      walkPlanTree(sqlExec.planTree, (node) => executionNodes.push(node));
+      const operatorsByStage = operatorCountByStage(executionNodes);
       return groups.map((g) => {
         const nodes: PlanNode[] = [];
         for (const n of g.nodes) walkPlanTree(n, (node) => nodes.push(node));
         const stageIds = unionStageIds(nodes, fallbackStageIds);
+        const occurrencesIdentical = occurrencesHaveIdenticalDetails(g.nodes);
+        const stageShares = stageOperatorShares(nodes, operatorsByStage);
         // resolvePlanTree always sets id; safe downstream of it.
         const planNodeIds = nodes.map((n) => n.id!).filter(Boolean);
         const touching = g.sampleRelation ? ` (touching ${g.sampleRelation})` : '';
+        const differing = occurrencesIdentical ? '' : ' Their filters, columns or scanned tables differ, so the repeats may compute different data.';
         return {
           type: 'duplicatePlanSubtree', executionId: sqlExec.id, stageIds, planNodeIds,
+          stageShares, occurrencesIdentical,
           // Fixed fallback: overwritten by deriveImpactBand when this finding gets a real
-          // wallClock estimate (the common case). Only surfaces on the rare occupancy-sweep miss.
-          impactBand: 'warning', metric: 'subtreeOccurrences', value: g.occurrences,
+          // wallClock estimate. Repeats with differing details get no estimate (nothing is
+          // known to be recomputed), and neither does a subtree with no stage of its own.
+          impactBand: occurrencesIdentical && Object.keys(stageShares).length > 0 ? 'warning' : 'info',
+          metric: 'subtreeOccurrences', value: g.occurrences,
           rootName: g.rootName, subtreeSize: g.subtreeSize, sampleRelation: g.sampleRelation,
           groupIndex: g.groupIndex,
-          confidence: duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, this.thresholds),
+          confidence: occurrencesIdentical ? duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, this.thresholds) : 'low',
           validationRequired: 'Duplicate-subtree matching compares operator names and metric names only, not literal values or expr IDs: confirm the repeated work is real in the Spark SQL plan tab before acting.',
-          recommendation: g.isExchangeRoot
+          recommendation: (g.isExchangeRoot
             ? `A ${g.subtreeSize}-node subtree rooted at ${pathBasename(g.rootName)} repeats ${g.occurrences}x in this plan${touching}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`
-            : `A ${g.subtreeSize}-node subtree rooted at ${pathBasename(g.rootName)} repeats ${g.occurrences}x in this plan${touching}: consider caching/persisting the shared computation or check for a duplicated query branch.`,
+            : `A ${g.subtreeSize}-node subtree rooted at ${pathBasename(g.rootName)} repeats ${g.occurrences}x in this plan${touching}: consider caching/persisting the shared computation or check for a duplicated query branch.`) + differing,
         };
       });
     },

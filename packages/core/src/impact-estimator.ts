@@ -231,18 +231,31 @@ function computeEstimateForFinding(
       const occurrences = typeof finding.value === 'number' ? finding.value : 0;
       // Defensive only: minOccurrences guarantees occurrences >= 2 on real data; a malformed-value fallback.
       if (occurrences < 2) return costOnly('none');
+      // Same-shaped repeats whose details differ compute different data: nothing is known to be
+      // recomputed, so there is no time to claim.
+      if (finding.occurrencesIdentical === false) return costOnly('none');
+      // Each stage contributes the share of its operators inside the repeated subtree: a stage it
+      // shares with other operators (the consuming join, the join's other side) isn't all its
+      // time, and claiming whole stages let sibling groups claim the same stage twice. Findings
+      // built without the field (hand-made fixtures) count every linked stage whole.
+      const shares = (finding.stageShares ?? null) as Record<number, number> | null;
       const redundantFraction = (occurrences - 1) / occurrences;
       const wasteMsByStage = new Map<number, number>();
       for (const id of stageIds) {
         const s = stages.get(id);
-        if (s) {
-          const durationMs = Math.max(0, (s.completedAt ?? 0) - (s.submittedAt ?? 0));
-          wasteMsByStage.set(id, durationMs * redundantFraction);
+        const share = shares ? (shares[id] ?? 0) : 1;
+        if (s && share > 0) {
+          // Time with tasks running, not submit-to-complete: a stage left waiting for cores
+          // (2491s open, 60s of tasks on a real log) isn't recomputing anything while it waits.
+          const activeMs = s.taskActiveMs ?? Math.max(0, (s.completedAt ?? 0) - (s.submittedAt ?? 0));
+          wasteMsByStage.set(id, activeMs * share * redundantFraction);
         }
       }
+      // No operator of the subtree ran in a known stage: no time to attribute.
+      if (wasteMsByStage.size === 0) return costOnly('none');
       const totalWasteMs = [...wasteMsByStage.values()].reduce((sum, ms) => sum + ms, 0);
       const rawWaste: RawWasteFigure = { value: totalWasteMs, unit: 'ms' };
-      const est = estimateMultiStage(stageIds, wasteMsByStage, stages as unknown as Map<number, OccupancyStage>, occupancy);
+      const est = estimateMultiStage([...wasteMsByStage.keys()], wasteMsByStage, stages as unknown as Map<number, OccupancyStage>, occupancy);
       if (!est) return costOnly('measured', rawWaste);
       return { basis: est.basis, wallClock: est.wallClock, estimateMethod: 'measured', rawWaste };
     }
