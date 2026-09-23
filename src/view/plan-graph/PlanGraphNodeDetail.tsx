@@ -104,7 +104,7 @@ export function PlanGraphNodeDetail({
               <li key={f.id ?? `${f.type}-${i}`} className="flex items-start gap-1.5">
                 {/* TagBadge (not a bare dot + typeTag) so the pill links into the
                     docs panel like every finding pill on the dashboard. */}
-                <TagBadge type={f.type} impactBand={f.impactBand} className="shrink-0" />
+                <TagBadge type={f.type} impactBand={f.impactBand} docAnchor={f.docAnchor} className="shrink-0" />
                 <span className="break-words">{findingActionLabel(f)}</span>
               </li>
             ))}

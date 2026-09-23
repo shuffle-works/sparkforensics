@@ -5,6 +5,7 @@ import { buildRecommendationRollup, isEligible as coreIsEligible, rankFindings, 
 import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
 import { copyText } from '@/lib/clipboard';
 import { formatStageIdsLabel, pathBasename } from '@sparkforensics/core/format-utils.ts';
 import { REGISTRY } from '@/view/detector-registry';
@@ -171,7 +172,7 @@ export function FindingRow({
   return (
     <TableRow data-testid="fix-these-first-row" data-finding-type={finding.type}>
       <TableCell className="w-px">
-        <TagBadge type={finding.type} impactBand={finding.impactBand} />
+        <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
       </TableCell>
       <TableCell className="whitespace-normal">
         <button
@@ -327,7 +328,7 @@ export function TypeGroupRow({
     <>
       <TableRow data-testid="fix-these-first-group-row" data-finding-type={group.type}>
         <TableCell className="w-px">
-          <TagBadge type={group.type} impactBand={best.impactBand} />
+          <TagBadge type={group.type} impactBand={best.impactBand} docAnchor={sharedDocAnchor(group.findings)} />
         </TableCell>
         <TableCell className="whitespace-normal">
           <button

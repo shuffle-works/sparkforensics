@@ -16,6 +16,12 @@ import { DieError, ensureTuningDocs } from './fetch-tuning-docs.mjs';
 const KNOWN_SUB_ANCHORS = new Set([
   'bottleneck-stage-shape',
   'bottleneck-stage-slowness',
+  'bottleneck-partition-sizing',
+  'bottleneck-speculation-waste',
+  'bottleneck-core-locality',
+  'bottleneck-caching-opportunity',
+  'bottleneck-autoscaling-churn',
+  'bottleneck-cache-utilization',
   'config-shuffle-service',
   'config-autoscale-bounds',
   'config-serializer',

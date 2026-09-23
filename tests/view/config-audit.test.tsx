@@ -238,3 +238,20 @@ test('the evidence marker stays out of the summary view until the card is expand
   expect(screen.getByRole('button', { name: /evidence: spark configuration/i })).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
 });
+
+test('the header CFG pill links to the sub-check section when every finding shares one', () => {
+  // Kryo set, so only the shuffle-service check fires.
+  renderWidget({
+    config: { 'spark.dynamicAllocation.maxExecutors': '10', 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
+    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+  });
+  expect(screen.getByRole('link', { name: 'CFG' })).toHaveAttribute('href', 'docs/tuning-reference/config.html#config-shuffle-service');
+});
+
+test('the header CFG pill falls back to the guide entry when findings span several sub-checks', () => {
+  renderWidget({
+    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
+    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+  });
+  expect(screen.getByRole('link', { name: 'CFG' })).toHaveAttribute('href', 'docs/user-guide/understanding-findings.html#cfg');
+});

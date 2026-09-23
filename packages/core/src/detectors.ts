@@ -923,7 +923,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'partitionSizing', scope: 'stage', order: 22, fixEffort: 'config', version: 1,
-    docAnchor: '#bottleneck-shuffle',
+    docAnchor: '#bottleneck-partition-sizing',
     thresholds: { skewRatio: 5, skewFloorBytes: 256 * MB, lowParTotalBytes: GB, lowParMaxTasks: 7, maxPartBytes: 5 * GB },
     detect(
       this: {
@@ -1307,7 +1307,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'speculationWaste', scope: 'stage', order: 71, fixEffort: 'config', version: 1,
-    docAnchor: '#bottleneck-straggler',
+    docAnchor: '#bottleneck-speculation-waste',
     thresholds: { minWasted: 5, minWasteMs: 60000 },
     detect(
       this: {
@@ -1607,7 +1607,7 @@ export const DETECTORS: Detector[] = [
     // block-access events, so a literal cache hit rate isn't derivable). Two per-RDD tiered
     // checks over rddInfo snapshots: partial caching and disk spillover. An RDD can produce both.
     type: 'cacheUtilization', scope: 'app', order: 103, fixEffort: 'code', version: 1,
-    docAnchor: '#memory-model',
+    docAnchor: '#bottleneck-cache-utilization',
     thresholds: {
       cachedRatioWarn: 0.50, cachedRatioInfo: 0.90,
       diskRatioWarn: 0.40, diskRatioInfo: 0.15,
@@ -1651,7 +1651,7 @@ export const DETECTORS: Detector[] = [
     // half of the "Wasted Cores Ratio" (idle-core half is memoryUtilization's idleCores).
     // NO_PREF stays in the denominator only: shuffle-read stages legitimately report it.
     type: 'coreLocality', scope: 'app', order: 103, fixEffort: 'config', version: 1,
-    docAnchor: '#bottleneck-utilization',
+    docAnchor: '#bottleneck-core-locality',
     thresholds: { minTasks: 50, warnRatio: 0.15, critRatio: 0.35 },
     detect(
       this: { thresholds: { minTasks: number; warnRatio: number; critRatio: number } },
@@ -1681,6 +1681,7 @@ export const DETECTORS: Detector[] = [
     // re-provisioning, not normal scale-down). Reuses utilization's add/remove matching, but
     // measures lifetime against a threshold instead of aggregate active-time.
     type: 'autoscalingChurn', scope: 'app', order: 103, fixEffort: 'config', version: 1,
+    docAnchor: '#bottleneck-autoscaling-churn',
     thresholds: { shortLivedMs: 120_000, warningPct: 0.30, criticalPct: 0.60, minExecutors: 5 },
     detect(
       this: {
@@ -1722,7 +1723,7 @@ export const DETECTORS: Detector[] = [
     // Cross-execution relation reuse: flags an input relation scanned by two or more SQL
     // executions in one run, firing on real relation names (parquet:..., jdbc:...).
     type: 'cachingOpportunity', scope: 'app', order: 105, fixEffort: 'code', version: 1,
-    docAnchor: '#bottleneck-utilization',
+    docAnchor: '#bottleneck-caching-opportunity',
     thresholds: { minExecutions: 2 },
     detect(this: { thresholds: { minExecutions: number } }, ctx: DetectorCtx): Finding[] | null {
       const sql = ctx.sql;

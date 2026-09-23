@@ -2,7 +2,7 @@ import { cva } from 'class-variance-authority';
 import { FileText } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
-import { docsUrl } from '@sparkforensics/core/docs-config.ts';
+import { docsUrl, isKnownDocAnchor } from '@sparkforensics/core/docs-config.ts';
 import { findingGuideUrl } from '@sparkforensics/core/docs-site-config.ts';
 import { cn } from '@/lib/utils';
 import type { ImpactBand } from '@sparkforensics/core/types.ts';
@@ -87,6 +87,12 @@ export interface TagBadgeProps {
    * sites to suppress both the docs link and the title, keeping the plain
    * rendering (no TAG_HELP tooltip, no link) it has today. */
   plainBadge?: boolean;
+  /** The specific finding's own `docAnchor`, for call sites that render one
+   * finding (or a group sharing one anchor, `sharedDocAnchor`). Wins over the
+   * type-level `docAnchorForType(type)` lookup, which returns undefined when
+   * a type's entries disagree (configAudit's four sub-checks). Ignored when
+   * not in the known-anchor allowlist, falling back to the type lookup. */
+  docAnchor?: string;
 }
 
 /** Impact dot + ALL-CAPS tag (via `typeTag`): the fixed board vocabulary
@@ -94,8 +100,9 @@ export interface TagBadgeProps {
  * `typeTag(type)` so the vocabulary stays single-sourced.
  *
  * Also carries the tag's plain-language help as a `title` tooltip, and renders
- * as a real link into the docs panel when `type` resolves to a single, known
- * documentation anchor (`docAnchorForType`), with the same modifier-key/
+ * as a real link into the docs panel when the caller's `docAnchor` is a known
+ * anchor, or else when `type` resolves to a single, known documentation
+ * anchor (`docAnchorForType`), with the same modifier-key/
  * non-primary-button passthrough as `DocsLink`. Outside a `DocsProvider`
  * (most widget unit tests render bare) the link still renders with a real
  * `href` but clicking it falls through to native navigation instead of
@@ -125,13 +132,15 @@ export interface TagBadgeProps {
  * `tap-target-comfortable` hit-area overlay, which deliberately paints
  * outside the link's visual bounds to reach a touch-friendly size without
  * growing the pill. */
-export function TagBadge({ type, impactBand, className, plainBadge }: TagBadgeProps) {
+export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }: TagBadgeProps) {
   const docs = useOptionalDocs();
   const density = useWidgetDensity();
   const tag = typeTag(type);
   const help = TAG_HELP[tag];
   const title = plainBadge ? undefined : (help ? `${help.expansion}: ${help.description}` : undefined);
-  const anchor = plainBadge ? undefined : docAnchorForType(type);
+  const anchor = plainBadge
+    ? undefined
+    : (docAnchor && isKnownDocAnchor(docAnchor) ? docAnchor : docAnchorForType(type));
   const guideLabel = help?.expansion ?? tag;
   const guidePath = findingGuideUrl(type);
   // Every type has a real, CI-enforced entry in the SparkForensics guide

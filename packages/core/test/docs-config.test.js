@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { KNOWN_DOC_ANCHORS, isKnownDocAnchor, docAnchorForType, tuningDocSlugForAnchor, docsUrl } from '../src/docs-config.js';
+import { KNOWN_DOC_ANCHORS, isKnownDocAnchor, docAnchorForType, tuningDocSlugForAnchor, docsUrl, pageForAnchor, sharedDocAnchor } from '../src/docs-config.js';
 import { DETECTORS } from '../src/detectors.js';
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
@@ -40,6 +40,23 @@ describe('KNOWN_DOC_ANCHORS', () => {
       .sort();
     expect(missing).toEqual([]);
   });
+
+  // docsUrl() links to pageForAnchor(anchor).html#anchor, so a sub-anchor missing from
+  // pageForAnchor's map would point at a page that is never generated.
+  it('resolves every detector docAnchor to a nav-index page whose markdown carries that anchor', () => {
+    const navByAnchor = new Map(navIndex.map((e) => [e.anchor, e]));
+    const unresolved = [...new Set(DETECTORS.map((d) => d.docAnchor))]
+      .filter(Boolean)
+      .map((a) => a.replace(/^#/, ''))
+      .filter((a) => {
+        const entry = navByAnchor.get(pageForAnchor(a));
+        if (!entry) return true;
+        const md = readFileSync(resolve(root, 'packages/core/src/docs-content', entry.store, `${entry.slug}.md`), 'utf8');
+        return entry.anchor !== a && !md.includes(`{#${a}}`);
+      })
+      .sort();
+    expect(unresolved).toEqual([]);
+  });
 });
 
 describe('docAnchorForType', () => {
@@ -47,9 +64,10 @@ describe('docAnchorForType', () => {
     expect(docAnchorForType('skew')).toBe('#bottleneck-skew');
     expect(docAnchorForType('stageShape')).toBe('#bottleneck-stage-shape');
     expect(docAnchorForType('memoryUtilization')).toBe('#bottleneck-memory-utilization');
-    expect(docAnchorForType('coreLocality')).toBe('#bottleneck-utilization');
+    expect(docAnchorForType('coreLocality')).toBe('#bottleneck-core-locality');
     expect(docAnchorForType('jobFailureRate')).toBe('#bottleneck-job-failure-rate');
-    expect(docAnchorForType('cacheUtilization')).toBe('#memory-model');
+    expect(docAnchorForType('cacheUtilization')).toBe('#bottleneck-cache-utilization');
+    expect(docAnchorForType('autoscalingChurn')).toBe('#bottleneck-autoscaling-churn');
   });
 
   it('returns undefined for configAudit, whose four entries disagree on docAnchor', () => {
@@ -98,6 +116,27 @@ describe('docsUrl', () => {
     expect(docsUrl('#bottleneck-skew')).toBe('docs/tuning-reference/bottleneck-skew.html#bottleneck-skew');
     expect(docsUrl('#metric-task-duration')).toBe('docs/tuning-reference/metrics.html#metric-task-duration');
   });
+
+  it('resolves a bottleneck sub-anchor to its owning bottleneck or chapter page', () => {
+    expect(docsUrl('#bottleneck-partition-sizing')).toBe('docs/tuning-reference/bottleneck-shuffle.html#bottleneck-partition-sizing');
+    expect(docsUrl('#bottleneck-speculation-waste')).toBe('docs/tuning-reference/bottleneck-straggler.html#bottleneck-speculation-waste');
+    expect(docsUrl('#bottleneck-core-locality')).toBe('docs/tuning-reference/bottleneck-utilization.html#bottleneck-core-locality');
+    expect(docsUrl('#bottleneck-caching-opportunity')).toBe('docs/tuning-reference/bottleneck-utilization.html#bottleneck-caching-opportunity');
+    expect(docsUrl('#bottleneck-autoscaling-churn')).toBe('docs/tuning-reference/cluster-config.html#bottleneck-autoscaling-churn');
+    expect(docsUrl('#bottleneck-cache-utilization')).toBe('docs/tuning-reference/memory-model.html#bottleneck-cache-utilization');
+  });
+});
+
+describe('sharedDocAnchor', () => {
+  it('returns the anchor every finding shares', () => {
+    expect(sharedDocAnchor([{ docAnchor: '#config-serializer' }, { docAnchor: '#config-serializer' }])).toBe('#config-serializer');
+  });
+
+  it('returns undefined when findings disagree, any lacks one, or there are none', () => {
+    expect(sharedDocAnchor([{ docAnchor: '#config-serializer' }, { docAnchor: '#config-memory-overhead' }])).toBeUndefined();
+    expect(sharedDocAnchor([{ docAnchor: '#config-serializer' }, {}])).toBeUndefined();
+    expect(sharedDocAnchor([])).toBeUndefined();
+  });
 });
 
 describe('tuningDocSlugForAnchor', () => {
@@ -109,10 +148,19 @@ describe('tuningDocSlugForAnchor', () => {
   it('resolves a sub-anchor to its owning page slug, not its own name', () => {
     expect(tuningDocSlugForAnchor('#bottleneck-stage-shape')).toBe('skew');
     expect(tuningDocSlugForAnchor('#bottleneck-stage-slowness')).toBe('slow-host');
+    expect(tuningDocSlugForAnchor('#bottleneck-partition-sizing')).toBe('shuffle');
+    expect(tuningDocSlugForAnchor('#bottleneck-speculation-waste')).toBe('straggler');
+    expect(tuningDocSlugForAnchor('#bottleneck-core-locality')).toBe('utilization');
+    expect(tuningDocSlugForAnchor('#bottleneck-caching-opportunity')).toBe('utilization');
   });
 
   it('returns null for a non-bottleneck anchor', () => {
     expect(tuningDocSlugForAnchor('#memory-model')).toBeNull();
     expect(tuningDocSlugForAnchor('#config-serializer')).toBeNull();
+  });
+
+  it('returns null for a bottleneck sub-anchor hosted on a chapter page', () => {
+    expect(tuningDocSlugForAnchor('#bottleneck-autoscaling-churn')).toBeNull();
+    expect(tuningDocSlugForAnchor('#bottleneck-cache-utilization')).toBeNull();
   });
 });

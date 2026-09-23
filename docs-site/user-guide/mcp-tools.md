@@ -333,7 +333,10 @@ Example response:
 This isn't exhaustive, but two examples: `configAudit` (its four audited
 properties each have their own anchor rather than one shared page, so no
 single anchor resolves) and `incompleteRun` (no upstream tuning page covers
-this signal at all).
+this signal at all). A type whose section lives on a general chapter rather
+than a bottleneck page (`autoscalingChurn` on Cluster Tuning,
+`cacheUtilization` on Memory Management) returns that whole chapter, with
+`anchor` naming the section.
 
 ## `get_reference_doc`
 

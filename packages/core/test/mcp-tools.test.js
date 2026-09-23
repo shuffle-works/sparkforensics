@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  resolveOrCreateRun, diagnoseRun, getFindingEvidence, getFindingDocumentation, getRunSummary, compareRuns, evaluateBudgetsForRun,
+  resolveOrCreateRun, diagnoseRun, getFindingEvidence, getFindingDocumentation, getReferenceDoc, getRunSummary, compareRuns, evaluateBudgetsForRun,
 } from '../src/mcp-tools.js';
 import * as collectRunModule from '../src/cli/collect-run.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
@@ -473,6 +473,21 @@ describe('getFindingDocumentation', () => {
     expect(doc.tuningDoc.anchor).toBe('#bottleneck-stage-shape');
     // Same vendored content as skew's own tuning doc (one upstream page).
     expect(doc.tuningDoc.content).toBe(getFindingDocumentation('skew').tuningDoc.content);
+  });
+
+  it('resolves speculationWaste\'s tuning doc to the straggler page its sub-anchor lives on', () => {
+    const doc = getFindingDocumentation('speculationWaste');
+    expect(doc.tuningDoc.anchor).toBe('#bottleneck-speculation-waste');
+    expect(doc.tuningDoc.content).toBe(getFindingDocumentation('straggler').tuningDoc.content);
+    expect(doc.tuningDoc.content).toContain('{#bottleneck-speculation-waste}');
+  });
+
+  it('falls back to the owning chapter for a sub-anchor hosted on a chapter page', () => {
+    const doc = getFindingDocumentation('autoscalingChurn');
+    expect(doc.tuningDoc).not.toBeNull();
+    expect(doc.tuningDoc.anchor).toBe('#bottleneck-autoscaling-churn');
+    expect(doc.tuningDoc.content).toBe(getReferenceDoc('#cluster-config').content);
+    expect(doc.tuningDoc.content).toContain('{#bottleneck-autoscaling-churn}');
   });
 
   it('returns tuningDoc: null for a type whose docAnchorForType is ambiguous', () => {

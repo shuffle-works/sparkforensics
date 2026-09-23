@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from 'react';
 
 import { auditConfig } from '@sparkforensics/core/analyzer.ts';
+import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { DocsLink } from '@/view/DocsContext';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
@@ -144,7 +145,7 @@ export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings,
     <WidgetCard
       title="Config Sanity"
       impactBand={impactBand}
-      badges={<TagBadge type="configAudit" impactBand={impactBand ?? 'info'} />}
+      badges={<TagBadge type="configAudit" impactBand={impactBand ?? 'info'} docAnchor={sharedDocAnchor(findings)} />}
       statusBadge={
         <AdvancedOnly>
           <RowStatusCluster evidenceKey="sparkConfiguration" />
