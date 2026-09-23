@@ -3,7 +3,7 @@ import { createLz4BlockDecoder } from './lz4-block.ts';
 import { Decompress as ZstdDecompress } from './vendor/fzstd.js';
 import { createSnappyBlockDecoder } from './snappy-block.ts';
 import { buildProxyRequestUrl, isShsErrorCode } from './shs-request.js';
-import { dispatchLine, buildChunkDecoder, emitParseCompletion, type ParserState } from './event-handlers.ts';
+import { dispatchLine, buildChunkDecoder, emitParseCompletion, type JoinedLine, type ParserState } from './event-handlers.ts';
 import { ShsProxyErrorBodySchema } from './shs-schemas.ts';
 import { naturalCompare, reassembleRollingEntries } from './rolling-log-reassembly.ts';
 
@@ -173,12 +173,15 @@ export function decodeShsArchive(
   }
 
   const decoder = buildChunkDecoder();
+  const joined: JoinedLine[] = [];
   let linesProcessed = 0;
   for (const name of names) {
     try {
       decodeEntry(name, entries[name], (bytes) => {
-        for (const line of decoder.decode(bytes)) {
-          dispatchLine(line, state, emit);
+        joined.length = 0;
+        const lines = decoder.decode(bytes, joined);
+        for (let i = 0, j = 0; i < lines.length; i++) {
+          dispatchLine(lines[i], state, emit, joined[j]?.index === i ? joined[j++] : undefined);
           linesProcessed++;
           if (linesProcessed % 2000 === 0) {
             emit({ type: 'progress', pct: null, linesProcessed });
