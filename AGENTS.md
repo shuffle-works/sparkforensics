@@ -204,7 +204,11 @@ Before adding a new widget test file, or a new per-widget/per-detector test:
 - Real Spark event logs already sit outside the repo in the sibling folder
   `../spark-log-examples/` (native `.zstd` files, drop in as-is). Includes
   several `run-compare-*-baseline-*`/`run-compare-*-candidate-*` pairs for the
-  two-run comparison mode.
+  two-run comparison mode. They are private and this repo is public: never put
+  their file names, app IDs, app names, tables or paths in tracked files,
+  commits or PR text. Use the neutral `private-log-NN` labels in
+  `docs-site/contributor-guide/testing.md#test-fixtures`, and synthetic IDs
+  such as `application_0000000000000_0001`.
 - `dev/log-corpus` is a git submodule (`spark-event-corpus-data`); it's empty
   until `git submodule update --init dev/log-corpus`. The landing page's "Try
   a sample run" button (`src/view/DropZone.tsx`) fetches a bundled,

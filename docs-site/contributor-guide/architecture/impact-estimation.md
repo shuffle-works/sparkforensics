@@ -182,10 +182,10 @@ gets) with a real underlying magnitude (`rawWaste.value > 0`) must never report
 attached to every serial/contended-capable formula (see above), so it's blind only to
 `coldStart` and the purely informational (`estimateMethod: 'none'`) finding types.
 
-Real-log spot-check (2026-08-30, `grupo-semanal-beauty-application_1785266278671_91660.zstd`): median `gate` across stages was
+Real-log spot-check (2026-08-30, `private-log-01.zstd`): median `gate` across stages was
 `≈0.34` (0.3428060791718594 exactly); `collectRun` plus the occupancy sweep together took
 `≈6,589`ms on the largest fixture measured
-(`run-compare-calimax-candidate-application_1784568768686_119096.zstd`, `1169` stages):
+(`private-log-03.zstd`, `1169` stages):
 parse-dominated, the sweep alone was not isolated by this measurement, but not a magnitude
 that suggests a regression either. `54` previously-`{0,0}`
 stage-tied findings on stages that ran effectively alone now report a real `wallClock` range
@@ -254,8 +254,8 @@ mistaken for the same kind of claim.
 
 | Detector | Formula basis | Spot-check |
 |---|---|---|
-| gc | `jvmGCTime / (executorRunTime / stageDurationMs)` | `grupo-semanal-beauty-application_1785266278671_91660.zstd`, stage 507: `jvmGCTime`=1080ms, `executorRunTime`=27509ms, `stageDurationMs`=56279ms → `wasteMs` = 1080 / (27509/56279) ≈ 2209.5ms. That's ≈3.9% of the stage's 56.3s wall-clock duration, matching the finding's own reported `gcPct` (3.9%) exactly, as the formula guarantees by construction. Under the occupancy model this stage's `gate` is `0.041` (0.04145044590332269 exactly): `basis: 'contended'`, `wallClock: {low: 91.6, high: 2209.5}` (91.5850382272182 / 2209.506706895925 exactly, per the Step 1 script's per-stage output). |
-| shuffle | `shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS × executors that ran the stage)` | `ventas-mensual-multi-big-application_1785266278671_91510.zstd`, stage 99 (`SHFL` finding): `shuffleReadBytes`=204,172,518,504 over 8 executors → `wasteMs` = 204172518504 / (8 × 125,000,000) × 1000 ≈ 204,173ms, against the stage's 763,776ms duration. The tasks' own measured shuffle fetch wait on this stage is 25.2s of wall-clock (`fetchWaitTime` / average concurrency), so even the per-link model runs well above the network stall actually observed, and the claim is capped there: 25.2s, `measured`. The pre-2026-09-23 formula divided by one link's bandwidth (1,633,380ms, 2.1× the stage's whole duration); before the fetch-wait cap, the occupancy clip (gate `1`) held the per-link figure to `≈111,923.8`ms, the room above this stage's core-work floor. |
+| gc | `jvmGCTime / (executorRunTime / stageDurationMs)` | `private-log-01.zstd`, stage 507: `jvmGCTime`=1080ms, `executorRunTime`=27509ms, `stageDurationMs`=56279ms → `wasteMs` = 1080 / (27509/56279) ≈ 2209.5ms. That's ≈3.9% of the stage's 56.3s wall-clock duration, matching the finding's own reported `gcPct` (3.9%) exactly, as the formula guarantees by construction. Under the occupancy model this stage's `gate` is `0.041` (0.04145044590332269 exactly): `basis: 'contended'`, `wallClock: {low: 91.6, high: 2209.5}` (91.5850382272182 / 2209.506706895925 exactly, per the Step 1 script's per-stage output). |
+| shuffle | `shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS × executors that ran the stage)` | `private-log-02.zstd`, stage 99 (`SHFL` finding): `shuffleReadBytes`=204,172,518,504 over 8 executors → `wasteMs` = 204172518504 / (8 × 125,000,000) × 1000 ≈ 204,173ms, against the stage's 763,776ms duration. The tasks' own measured shuffle fetch wait on this stage is 25.2s of wall-clock (`fetchWaitTime` / average concurrency), so even the per-link model runs well above the network stall actually observed, and the claim is capped there: 25.2s, `measured`. The pre-2026-09-23 formula divided by one link's bandwidth (1,633,380ms, 2.1× the stage's whole duration); before the fetch-wait cap, the occupancy clip (gate `1`) held the per-link figure to `≈111,923.8`ms, the room above this stage's core-work floor. |
 | spill | `diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS × executors that ran the stage)` | Same run and stage (99): `diskBytesSpilled`=145,978,433,675 (note: the `SPILL` finding's own `value`/`metric` report `memoryBytesSpilled`=913,686,966,448, ~6x larger; the formula correctly uses the smaller disk figure, not that one) over 8 executors → `wasteMs` = 145978433675 / (8 × 200,000,000) × 1000 ≈ 91,237ms (91236.521046875 exactly, matching `wallClock`, below the clip). |
 
 ## Overlap caveat: skew / straggler

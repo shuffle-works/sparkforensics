@@ -13,10 +13,10 @@ const buildUpstream = (baseUrl, appId, attemptId = null) => {
 
 describe('isValidAppId', () => {
   it('accepts a standard app id', () => {
-    expect(isValidAppId('application_1777489669889_56601')).toBe(true);
+    expect(isValidAppId('application_0000000000000_0001')).toBe(true);
   });
   it('rejects an app id with a combined attempt suffix', () => {
-    expect(isValidAppId('application_1777489669889_56601_1')).toBe(false);
+    expect(isValidAppId('application_0000000000000_0001_1')).toBe(false);
   });
   it('rejects path-traversal and arbitrary strings', () => {
     expect(isValidAppId('../../etc/passwd')).toBe(false);
@@ -180,7 +180,7 @@ describe('handleShsProxy', () => {
   it('passes a validated separate attempt to the upstream SHS logs endpoint', async () => {
     const res = fakeStreamRes();
     let fetchedUrl = null;
-    await handleShsProxy(reqFor('https://shs.example/history/', 'local-1777489669889', '2'), res, {
+    await handleShsProxy(reqFor('https://shs.example/history/', 'local-1700000000000', '2'), res, {
       fetchImpl: async (url) => {
         fetchedUrl = url;
         return {
@@ -190,7 +190,7 @@ describe('handleShsProxy', () => {
         };
       },
     });
-    expect(fetchedUrl).toBe('https://shs.example/history/api/v1/applications/local-1777489669889/2/logs');
+    expect(fetchedUrl).toBe('https://shs.example/history/api/v1/applications/local-1700000000000/2/logs');
   });
 
   it('does not follow upstream redirects or send credentials', async () => {

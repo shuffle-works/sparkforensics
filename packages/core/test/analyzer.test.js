@@ -740,11 +740,11 @@ describe('analyze: caching opportunity (relation reuse)', () => {
   const caching = (sql) => analyze(makeApp(), new Map(), [], [], new Map(), sql).filter(b => b.type === 'cachingOpportunity');
 
   it('flags one relation scanned by two executions, summing read bytes over distinct execs', () => {
-    const sql = new Map([exec(1, parquetScan('precios', 100)), exec(2, parquetScan('precios', 250))]);
+    const sql = new Map([exec(1, parquetScan('prices', 100)), exec(2, parquetScan('prices', 250))]);
     const f = caching(sql);
     expect(f).toHaveLength(1);
     expect(f[0].value).toBe(2);
-    expect(f[0].relation).toBe('precios');
+    expect(f[0].relation).toBe('prices');
     expect(f[0].format).toBe('parquet');
     expect(f[0].totalReadBytes).toBe(350);
     expect(f[0].executionIds).toEqual([1, 2]);
@@ -753,31 +753,31 @@ describe('analyze: caching opportunity (relation reuse)', () => {
     expect(f[0].confidence).toBe('low');
   });
   it('marks relation-reuse confidence medium at 3 executions, high at 6+ (3x minExecutions)', () => {
-    const three = new Map([exec(1, parquetScan('precios', 100)), exec(2, parquetScan('precios', 100)), exec(3, parquetScan('precios', 100))]);
+    const three = new Map([exec(1, parquetScan('prices', 100)), exec(2, parquetScan('prices', 100)), exec(3, parquetScan('prices', 100))]);
     expect(caching(three)[0].confidence).toBe('medium');
 
-    const six = new Map(Array.from({ length: 6 }, (_, i) => exec(i + 1, parquetScan('precios', 100))));
+    const six = new Map(Array.from({ length: 6 }, (_, i) => exec(i + 1, parquetScan('prices', 100))));
     expect(caching(six)[0].confidence).toBe('high');
   });
   it('does not flag when two executions scan different relations', () => {
-    const sql = new Map([exec(1, parquetScan('precios', 100)), exec(2, parquetScan('ventas', 100))]);
+    const sql = new Map([exec(1, parquetScan('prices', 100)), exec(2, parquetScan('sales', 100))]);
     expect(caching(sql)).toHaveLength(0);
   });
   it('does not flag a relation scanned twice within a single execution (self-join dedupe)', () => {
-    const sql = new Map([exec(1, parquetScan('precios', 100), parquetScan('precios', 100))]);
+    const sql = new Map([exec(1, parquetScan('prices', 100), parquetScan('prices', 100))]);
     expect(caching(sql)).toHaveLength(0);
   });
   it('returns no caching findings for an empty ctx.sql', () => {
     expect(caching(new Map())).toHaveLength(0);
   });
   it('recommends cache/persist when total read is large (≥128 MiB)', () => {
-    const sql = new Map([exec(1, parquetScan('precios', 100 * MiB)), exec(2, parquetScan('precios', 100 * MiB))]);
+    const sql = new Map([exec(1, parquetScan('prices', 100 * MiB)), exec(2, parquetScan('prices', 100 * MiB))]);
     const recommendation = caching(sql)[0].recommendation;
     expect(recommendation).toMatch(/Cache\/persist the shared DataFrame/);
     expect(recommendation).not.toMatch(/—/);
   });
   it('recommends broadcast for a small shared lookup', () => {
-    const sql = new Map([exec(1, parquetScan('precios', 100)), exec(2, parquetScan('precios', 100))]);
+    const sql = new Map([exec(1, parquetScan('prices', 100)), exec(2, parquetScan('prices', 100))]);
     const recommendation = caching(sql)[0].recommendation;
     expect(recommendation).toMatch(/broadcast it if it is a small join lookup/);
     expect(recommendation).not.toMatch(/—/);

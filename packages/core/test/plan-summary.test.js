@@ -94,17 +94,17 @@ describe('describePlanNode: Exchange classification', () => {
 
 describe('summarizePlanTree: JDBC scan', () => {
   it('extracts table and sql from a Scan JDBCRelation node', () => {
-    const tree = node('Scan JDBCRelation', 'Scan JDBCRelation((SELECT id, name FROM dw.D_PRODUCTO) SPARK_GEN_SUBQ_0) [numPartitions=1]');
+    const tree = node('Scan JDBCRelation', 'Scan JDBCRelation((SELECT id, name FROM dw.DIM_PRODUCT) SPARK_GEN_SUBQ_0) [numPartitions=1]');
     const r = summarizePlanTree(tree);
     expect(r.scans[0].format).toBe('jdbc');
-    expect(r.scans[0].path).toBe('dw.d_producto');
-    expect(r.scans[0].sql).toContain('SELECT id, name FROM dw.D_PRODUCTO');
+    expect(r.scans[0].path).toBe('dw.dim_product');
+    expect(r.scans[0].sql).toContain('SELECT id, name FROM dw.DIM_PRODUCT');
   });
 });
 
 describe('summarizePlanTree: named catalog Delta data read', () => {
   it('pushes a delta scan using the catalog-qualified name (not the Location path)', () => {
-    const detail = 'FileScan parquet spark_catalog.mx.t[c#1] Batched: true, Location: PreparedDeltaFileIndex[hdfs://192.168.2.165:8020/u01/ds/mx/t], PushedFilters: []';
+    const detail = 'FileScan parquet spark_catalog.mx.t[c#1] Batched: true, Location: PreparedDeltaFileIndex[hdfs://192.0.2.10:8020/data/mx/t], PushedFilters: []';
     const tree = node('Scan parquet spark_catalog.mx.t', detail);
     const r = summarizePlanTree(tree);
     expect(r.scans).toHaveLength(1);
@@ -145,12 +145,12 @@ describe('summarizePlanTree: empty', () => {
 
 describe('scanRelationId', () => {
   it('returns "<format>:<basename>" for an anonymous InMemoryFileIndex FileScan', () => {
-    const detail = 'FileScan parquet [precio#1] Batched: true, Format: Parquet, Location: InMemoryFileIndex(1 paths)[hdfs://cluster/warehouse/precios], PushedFilters: [], ReadSchema: struct<precio:int>';
-    expect(scanRelationId('Scan parquet', detail)).toBe('parquet:precios');
+    const detail = 'FileScan parquet [price#1] Batched: true, Format: Parquet, Location: InMemoryFileIndex(1 paths)[hdfs://cluster/warehouse/prices], PushedFilters: [], ReadSchema: struct<precio:int>';
+    expect(scanRelationId('Scan parquet', detail)).toBe('parquet:prices');
   });
   it('uses the untruncated catalog name from the nodeName', () => {
-    const detail = 'FileScan parquet spark_catalog.mx.mapeo_pdvs[a#1] Location: InMemoryFileIndex[hdfs://cluster/wh/mx/mapeo_pdvs]';
-    expect(scanRelationId('Scan parquet spark_catalog.mx.mapeo_pdvs', detail)).toBe('parquet:mx.mapeo_pdvs');
+    const detail = 'FileScan parquet spark_catalog.mx.store_map[a#1] Location: InMemoryFileIndex[hdfs://cluster/wh/mx/store_map]';
+    expect(scanRelationId('Scan parquet spark_catalog.mx.store_map', detail)).toBe('parquet:mx.store_map');
   });
   it('marks a catalog-named PreparedDeltaFileIndex read as delta', () => {
     const detail = 'FileScan parquet spark_catalog.mx.t[c#1] Location: PreparedDeltaFileIndex[hdfs://cluster/wh/mx/t]';
@@ -165,27 +165,27 @@ describe('scanRelationId', () => {
     expect(scanRelationId('Scan parquet', detail)).toBeNull();
   });
   it('returns "<format>:<basename>" for an anonymous InMemoryFileIndex path', () => {
-    const detail = 'FileScan parquet [c#1] Location: InMemoryFileIndex(1 paths)[hdfs://cluster/wh/productos]';
-    expect(scanRelationId('Scan parquet', detail)).toBe('parquet:productos');
+    const detail = 'FileScan parquet [c#1] Location: InMemoryFileIndex(1 paths)[hdfs://cluster/wh/products]';
+    expect(scanRelationId('Scan parquet', detail)).toBe('parquet:products');
   });
   it('returns "jdbc:<table>" from a JDBCRelation FROM clause (lowercased)', () => {
-    const detail = 'Scan JDBCRelation((SELECT id, name FROM dw.d_punto_venta) SPARK_GEN_SUBQ_0) [numPartitions=1]';
-    expect(scanRelationId('Scan JDBCRelation', detail)).toBe('jdbc:dw.d_punto_venta');
+    const detail = 'Scan JDBCRelation((SELECT id, name FROM dw.dim_store) SPARK_GEN_SUBQ_0) [numPartitions=1]';
+    expect(scanRelationId('Scan JDBCRelation', detail)).toBe('jdbc:dw.dim_store');
   });
   it('extracts the real table from an aliased JDBC subquery without a trailing paren', () => {
-    const detail = 'Scan JDBCRelation((SELECT distinct pdv FROM tblbr.pdvs_incluir) as e) [numPartitions=1]';
-    expect(scanRelationId('Scan JDBCRelation', detail)).toBe('jdbc:tblbr.pdvs_incluir');
+    const detail = 'Scan JDBCRelation((SELECT distinct store_id FROM ref.store_allowlist) as e) [numPartitions=1]';
+    expect(scanRelationId('Scan JDBCRelation', detail)).toBe('jdbc:ref.store_allowlist');
   });
   it('returns null when the first FROM token is a subquery (CTE/UNION)', () => {
     const detail = 'Scan JDBCRelation((SELECT * FROM ( SELECT x FROM t )) SPARK_GEN_SUBQ_0) [numPartitions=1]';
     expect(scanRelationId('Scan JDBCRelation', detail)).toBeNull();
   });
   it('lowercases an uppercase JDBC table name', () => {
-    const detail = 'Scan JDBCRelation((SELECT a FROM DWCLA.D_X) SPARK_GEN_SUBQ_0) [numPartitions=1]';
-    expect(scanRelationId('Scan JDBCRelation', detail)).toBe('jdbc:dwcla.d_x');
+    const detail = 'Scan JDBCRelation((SELECT a FROM STAGING.D_X) SPARK_GEN_SUBQ_0) [numPartitions=1]';
+    expect(scanRelationId('Scan JDBCRelation', detail)).toBe('jdbc:staging.d_x');
   });
   it('returns null for a Scan ExistingRDD Delta Table State node', () => {
-    expect(scanRelationId('Scan ExistingRDD Delta Table State #36 - hdfs://192.168.2.165:8020/u01/ds/foo', 'Scan ExistingRDD Delta Table State')).toBeNull();
+    expect(scanRelationId('Scan ExistingRDD Delta Table State #36 - hdfs://192.0.2.10:8020/data/foo', 'Scan ExistingRDD Delta Table State')).toBeNull();
   });
   it('returns null for a non-scan node', () => {
     expect(scanRelationId('Project', '')).toBeNull();
@@ -308,16 +308,16 @@ describe('describePlanNode', () => {
   });
 
   it('extracts table and sql from a Scan JDBCRelation node', () => {
-    const n = node('Scan JDBCRelation', 'Scan JDBCRelation((SELECT id, name FROM dw.D_PRODUCTO) SPARK_GEN_SUBQ_0) [numPartitions=1]');
+    const n = node('Scan JDBCRelation', 'Scan JDBCRelation((SELECT id, name FROM dw.DIM_PRODUCT) SPARK_GEN_SUBQ_0) [numPartitions=1]');
     const d = describePlanNode(n);
     expect(d.kind).toBe('scan');
     expect(d.format).toBe('jdbc');
-    expect(d.path).toBe('dw.d_producto');
-    expect(d.sql).toContain('SELECT id, name FROM dw.D_PRODUCTO');
+    expect(d.path).toBe('dw.dim_product');
+    expect(d.sql).toContain('SELECT id, name FROM dw.DIM_PRODUCT');
   });
 
   it('pushes a delta scan using the catalog-qualified name (not the Location path)', () => {
-    const detail = 'FileScan parquet spark_catalog.mx.t[c#1] Batched: true, Location: PreparedDeltaFileIndex[hdfs://192.168.2.165:8020/u01/ds/mx/t], PushedFilters: []';
+    const detail = 'FileScan parquet spark_catalog.mx.t[c#1] Batched: true, Location: PreparedDeltaFileIndex[hdfs://192.0.2.10:8020/data/mx/t], PushedFilters: []';
     const n = node('Scan parquet spark_catalog.mx.t', detail);
     const d = describePlanNode(n);
     expect(d.kind).toBe('scan');

@@ -48,16 +48,27 @@ never an emitted `finding.type`, as the doc comment above `REGISTRY` in
 
 ## Test fixtures
 
-Example event logs live under `examples/`. They are real Spark History NDJSON
-logs, not text, and gitignored for size.
+Real Spark event logs from private workloads live under `examples/`,
+gitignored: they're large, and their file names and contents identify the
+jobs that produced them, so they never enter this public repo. Tests, docs and
+scripts refer to them only by the neutral labels below. A test that reads one
+skips when its file is missing, so the suite passes without any of them. To
+run those tests, copy or symlink your own logs into `examples/` under these
+names:
 
-- `small-application_1777489669889_56601` (~76 MB): fast end-to-end smoke test.
-- `big-application_1777489669889_51251_1` (~1.3 GB): stress-test the Web
-  Worker streaming path.
-- `lz4-application_1777393442674_464993` (~120 MB): decompressed from a real
-  Spark History Server download. Use it to check the `LZ4Block` codec decoder
-  by hand. The automated suite never touches it; `tests/lz4-block.test.js`
-  uses a small hardcoded byte array instead.
+| Label | Log it stands for | Used by |
+|---|---|---|
+| `private-log-01.zstd` | ~12 MB zstd run with Plan Advisor findings | `impact-estimator-real-log.test.js`, `plan-node-stage-mapping-real-log.test.js`, spot-checks in [Impact estimation](./architecture/impact-estimation) |
+| `private-log-02.zstd` | ~2 MB zstd run with a heavy shuffle-and-spill stage | `plan-node-stage-mapping-real-log.test.js`, spot-checks in [Impact estimation](./architecture/impact-estimation) |
+| `private-log-03.zstd` | ~28 MB zstd run with about 1,200 stages | timing spot-check in [Impact estimation](./architecture/impact-estimation) |
+| `private-log-04.zstd` | ~9 MB zstd run whose stage 394 plan became `plan-graph-stage-394.json` | `scripts/extract-plan-fixture.mjs` |
+| `private-log-05` | ~76 MB uncompressed NDJSON run, 62 stages | `parser-worker.test.js`; also a fast end-to-end smoke test |
+| `private-log-06` | ~1.3 GB uncompressed NDJSON run | `detectors-plan.test.js`; also a stress test for the Web Worker streaming path |
+| `private-log-07` | ~120 MB log from a Spark History Server download | none: check the `LZ4Block` codec decoder by hand; `tests/lz4-block.test.js` uses a small hardcoded byte array instead |
+
+`scripts/extract-plan-fixture.mjs` anonymizes every table, column, path and
+literal before it writes the committed fixture; keep it that way if you
+extract another one.
 
 Of the finding types moved onto the Gold Standard row/expand contract in the
 widget-gold-standard plan, only `retryWaste` and `autoscalingChurn` fire on
