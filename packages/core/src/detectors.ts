@@ -988,13 +988,19 @@ export const DETECTORS: Detector[] = [
       lowInfoPct100: 5,
       // NOT SOURCED: our own noise floor so a stage that barely ran doesn't flag either direction.
       minRunTimeMs: 10000,
+      // lowInfoFloorPct: the 0.5% runtime floor stageShape's lowParallelism uses. The low-GC note is
+      // an app-level memory-sizing signal; on a stage shorter than this share of the run it adds
+      // nothing to that call. On the 14 real logs that was 464 of 685 low-GC notes (of 701 gc
+      // findings); the low-GC pattern is still true on those stages, the floor is why they're dropped.
+      lowInfoFloorPct: 0.005,
     },
     detect(
       this: {
-        thresholds: { warnPct100: number; lowInfoPct100: number; minRunTimeMs: number };
+        thresholds: { warnPct100: number; lowInfoPct100: number; minRunTimeMs: number; lowInfoFloorPct: number };
         validationRequired: string;
       },
       stage: DetectorStage,
+      ctx?: DetectorCtx,
     ): Finding | null {
       const pct = stage.gcPct;
       if ((stage.executorRunTime ?? 0) >= this.thresholds.minRunTimeMs
@@ -1009,8 +1015,10 @@ export const DETECTORS: Detector[] = [
         };
       }
       // Low-GC (cost) branch: only for stages that ran long enough to be meaningful.
+      const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
       if ((stage.executorRunTime ?? 0) >= this.thresholds.minRunTimeMs
-          && pct < this.thresholds.lowInfoPct100) {
+          && pct < this.thresholds.lowInfoPct100
+          && meetsRuntimeFloor(stageDurationMs, computeAppDurationMs(ctx), this.thresholds.lowInfoFloorPct)) {
         const value = Math.round(pct * 10) / 10;
         return {
           type: 'gc', stageId: stage.id, direction: 'low',
@@ -1214,6 +1222,10 @@ export const DETECTORS: Detector[] = [
     // (recoverable = replay with each task over 4x P50 capped at P50), admitting 2.5-5% shares
     // whose clipped tail already clears floorPctWarn found 3 such stages (10-48s) for 1 borderline
     // miss; admitting every 2.5% share instead added 86 findings below the floor.
+    // A stage shorter than floorPctWarn of the run is skipped outright: its tail can't cost more
+    // than the stage's own duration, so every finding there graded info. On the 14 real logs that
+    // was 671 of 753 straggler findings, none above info; the slow tail is still real on those
+    // stages, the floor is why they're dropped.
     thresholds: { minTasks: 10, shareWarn: 0.05, shareWarnAtFloor: 0.025, warnPct: 0.10, critPct: 0.20, floorPctWarn: STRAGGLER_FLOOR_PCT_WARN, floorPctCrit: STRAGGLER_FLOOR_PCT_CRIT },
     detect(
       this: {
@@ -1226,6 +1238,9 @@ export const DETECTORS: Detector[] = [
       ctx?: DetectorCtx,
     ): Finding | null {
       if (stage.taskCount < this.thresholds.minTasks) return null;
+      const appDurationMs = computeAppDurationMs(ctx);
+      const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
+      if (!meetsRuntimeFloor(stageDurationMs, appDurationMs, this.thresholds.floorPctWarn)) return null;
       const stragglerShare = (stage.stragglerCount ?? 0) / stage.taskCount;
       const useSpeculative = (stage.speculativeTasks ?? 0) > 0;
       if (!useSpeculative && stragglerShare <= this.thresholds.shareWarnAtFloor) return null;
@@ -1236,7 +1251,6 @@ export const DETECTORS: Detector[] = [
       const longestTaskAfterFixMs = stragglerFixLongestTaskMs(stage);
       const singleDelta = Math.max(0, stage.taskDurationMax - longestTaskAfterFixMs);
       const wasteMs = tailRecoveryMs(stage, singleDelta);
-      const appDurationMs = computeAppDurationMs(ctx);
       const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx, tailRemovedWorkMs(stage, singleDelta), longestTaskAfterFixMs);
       const meetsWarnFloor = meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctWarn);
       const meetsCritFloor = meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctCrit);

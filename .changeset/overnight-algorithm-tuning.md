@@ -139,3 +139,9 @@ converted to wall-clock at the stage's average concurrency. The per-link bandwid
 see whether reads stalled the tasks: on 14 real logs it claimed 2780s over 284 shuffle findings,
 and the capped figure is 256s. Five of the ten warning or critical shuffle findings had about
 zero fetch wait and are now informational.
+
+Thresholds: low-GC notes and `straggler` findings skip stages shorter than 0.5% of the run, the
+floor `stageShape` already uses. Every such straggler finding graded info, since a tail can't
+cost more than its stage's own duration, and a memory-sizing note from a stage that barely ran
+adds nothing. On 14 real logs that drops 464 low-GC notes and 671 straggler findings, all
+informational; high-GC, warning and critical findings are unchanged.

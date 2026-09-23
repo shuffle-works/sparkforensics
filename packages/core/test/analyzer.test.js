@@ -512,6 +512,19 @@ describe('analyze: speculative / straggler', () => {
     expect(b.impactEstimate.wallClock.high).toBe(4990);
     expect(b.impactBand).toBe('critical');
   });
+
+  it('skips a stage shorter than 0.5% of the run, whose tail could only grade info, and keeps a warning one', () => {
+    const straggling = { taskCount: 100, speculativeTasks: 3, stragglerCount: 50, taskDurationP50: 10, taskDurationMax: 400 };
+    // A 1s stage in a 400s run (0.25%): the tail is real, but can't cost 0.5% of the run.
+    const short = new Map([[1, makeStage({ ...straggling, submittedAt: 0, completedAt: 1000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), short, [], []).filter(b => b.type === 'straggler')).toHaveLength(0);
+    // The same run without an end (duration unknown) keeps it, as the other runtime floors do.
+    expect(analyze(makeApp({ endTime: null }), short, [], []).filter(b => b.type === 'straggler')).toHaveLength(1);
+    // A 5s stage (1.25%) whose 4.99s tail clears the floor still grades above info.
+    const long = new Map([[1, makeStage({ ...straggling, submittedAt: 0, completedAt: 5005, taskDurationMax: 5000 })]]);
+    const b = analyze(makeApp({ endTime: 400_000 }), long, [], []).find(b => b.type === 'straggler');
+    expect(b.impactBand).toBe('warning');
+  });
 });
 
 describe('analyze: skew/straggler same-stage overlap disclosure (§4)', () => {
@@ -1470,6 +1483,16 @@ describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
     const stages = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 5000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
+  });
+
+  it('skips a low-GC note on a stage shorter than 0.5% of the run, but never a high-GC finding', () => {
+    // A 1s stage in a 400s run (0.25%): low GC is still true there, the floor is why it's dropped.
+    const low = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 0, completedAt: 1000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), low, [], []).find(b => b.type === 'gc')).toBeUndefined();
+    const lowLong = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000, submittedAt: 0, completedAt: 4000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), lowLong, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+    const high = new Map([[1, makeStage({ gcPct: 15, jvmGCTime: 9000, executorRunTime: 60000, submittedAt: 0, completedAt: 1000 })]]);
+    expect(analyze(makeApp({ endTime: 400_000 }), high, [], []).find(b => b.type === 'gc' && b.direction !== 'low')).toBeTruthy();
   });
 
   it('does not emit a low finding when GC is high', () => {
