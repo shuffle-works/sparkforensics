@@ -1113,18 +1113,26 @@ export const DETECTORS: Detector[] = [
     docAnchor: '#bottleneck-straggler',
     // floorPctWarn/floorPctCrit are re-exported as STRAGGLER_FLOOR_PCT_WARN/CRIT and reused as
     // impact-band.ts's global noise floor: keep the two in sync.
-    thresholds: { minTasks: 10, shareWarn: 0.05, warnPct: 0.10, critPct: 0.20, floorPctWarn: STRAGGLER_FLOOR_PCT_WARN, floorPctCrit: STRAGGLER_FLOOR_PCT_CRIT },
+    // shareWarnAtFloor: in a large stage, the few stragglers that gate it for tens of seconds can be
+    // only 2.5-5% of its tasks. Scored against a task-level replay of every stage on 14 real logs
+    // (recoverable = replay with each task over 4x P50 capped at P50), admitting 2.5-5% shares
+    // whose clipped tail already clears floorPctWarn found 3 such stages (10-48s) for 1 borderline
+    // miss; admitting every 2.5% share instead added 86 findings below the floor.
+    thresholds: { minTasks: 10, shareWarn: 0.05, shareWarnAtFloor: 0.025, warnPct: 0.10, critPct: 0.20, floorPctWarn: STRAGGLER_FLOOR_PCT_WARN, floorPctCrit: STRAGGLER_FLOOR_PCT_CRIT },
     detect(
       this: {
-        thresholds: { minTasks: number; shareWarn: number; warnPct: number; critPct: number; floorPctWarn: number; floorPctCrit: number };
+        thresholds: {
+          minTasks: number; shareWarn: number; shareWarnAtFloor: number; warnPct: number; critPct: number;
+          floorPctWarn: number; floorPctCrit: number;
+        };
       },
       stage: DetectorStage,
       ctx?: DetectorCtx,
     ): Finding | null {
       if (stage.taskCount < this.thresholds.minTasks) return null;
       const stragglerShare = (stage.stragglerCount ?? 0) / stage.taskCount;
-      if ((stage.speculativeTasks ?? 0) === 0 && stragglerShare <= this.thresholds.shareWarn) return null;
       const useSpeculative = (stage.speculativeTasks ?? 0) > 0;
+      if (!useSpeculative && stragglerShare <= this.thresholds.shareWarnAtFloor) return null;
       const speculativeShare = useSpeculative ? stage.speculativeTasks / stage.taskCount : 0;
       // Same absolute delta impact-estimator.ts's straggler/stageShape case reports as savings: a
       // high straggler/speculative share on a stage whose tasks barely vary models near-zero
@@ -1134,10 +1142,15 @@ export const DETECTORS: Detector[] = [
       const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx);
       const meetsWarnFloor = meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctWarn);
       const meetsCritFloor = meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctCrit);
+      // The lower gate needs positive evidence the tail matters: meetsRuntimeFloor passes by
+      // default when the app's duration is unknown (an incomplete run), which isn't that.
+      const stragglerShareFires = stragglerShare > this.thresholds.shareWarn
+        || (stragglerShare > this.thresholds.shareWarnAtFloor && appDurationMs != null && meetsWarnFloor);
+      if (!useSpeculative && !stragglerShareFires) return null;
       const speculativeTier = speculativeShare >= this.thresholds.critPct && meetsCritFloor ? 'critical'
                              : speculativeShare >= this.thresholds.warnPct && meetsWarnFloor ? 'warning' : 'info';
       // Straggler share has no dedicated critical tier per detector-contract.md; only warning.
-      const stragglerTier = stragglerShare > this.thresholds.shareWarn && meetsWarnFloor ? 'warning' : 'info';
+      const stragglerTier = stragglerShareFires && meetsWarnFloor ? 'warning' : 'info';
       // Fixed fallback: overwritten by deriveImpactBand when this finding gets a real wallClock
       // estimate (the common case). Only surfaces on the rare occupancy-sweep miss.
       const impactBand = 'info';

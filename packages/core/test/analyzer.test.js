@@ -393,6 +393,25 @@ describe('analyze: speculative / straggler', () => {
     expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'straggler')).toHaveLength(0);
   });
 
+  it('admits a 2.5-5% straggler share only when its recoverable tail clears the runtime floor', () => {
+    // 4/100 = 4% stragglers. A 4,900ms tail on a 5,000ms stage in a 500,000ms app clears the 0.5%
+    // floor (2,500ms); a 400ms tail does not.
+    const app = makeApp({ startTime: 0, endTime: 500000 });
+    const stage = (max) => new Map([[1, makeStage({
+      taskCount: 100, speculativeTasks: 0, stragglerCount: 4, completedAt: 5000, taskDurationP50: 100, taskDurationMax: max,
+    })]]);
+    const gating = analyze(app, stage(5000), [], []).find(b => b.type === 'straggler');
+    expect(gating.metric).toBe('stragglerShare');
+    expect(gating.impactBand).toBe('warning');
+    expect(gating.confidence).toBe('low');
+    expect(analyze(app, stage(500), [], []).find(b => b.type === 'straggler')).toBeUndefined();
+    // At or under 2.5% nothing fires, however long the tail.
+    const two = new Map([[1, makeStage({ taskCount: 100, stragglerCount: 2, completedAt: 5000, taskDurationP50: 100, taskDurationMax: 5000 })]]);
+    expect(analyze(app, two, [], []).find(b => b.type === 'straggler')).toBeUndefined();
+    // No app end time (an incomplete run): the floor can't be checked, so the lower gate stays shut.
+    expect(analyze(makeApp({ startTime: 0, endTime: null }), stage(5000), [], []).find(b => b.type === 'straggler')).toBeUndefined();
+  });
+
   it('skips stages with fewer than 10 tasks', () => {
     const stages = new Map([[1, makeStage({ taskCount: 8, speculativeTasks: 3, stragglerCount: 0 })]]);
     expect(analyze(makeApp(), stages, [], []).filter(b => b.type === 'straggler')).toHaveLength(0);

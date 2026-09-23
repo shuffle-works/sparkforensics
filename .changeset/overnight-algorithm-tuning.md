@@ -37,3 +37,7 @@ single-task stage now does. Stage messages carry a new `taskActiveMs` field for 
 
 Parser: a stage whose `StageSubmitted` event carries no submission time (older Spark) now takes it
 from `StageCompleted`, instead of starting at epoch 0 and reading as a decades-long stage.
+
+Thresholds: `straggler` also fires on a 2.5-5% straggler share when the stage's recoverable tail
+already clears the 0.5% runtime floor. In a large stage, the few tasks that gate it for tens of
+seconds can be under 5% of its tasks.
