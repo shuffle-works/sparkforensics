@@ -158,6 +158,7 @@ interface SpillThresholds {
   highDiskGiB: number; highTaskDiskMB: number; highMemGiB: number;
   medDiskMB: number; medMemGiB: number;
   skewRatio: number; skewDiskFloorMB: number; skewMemFloorMB: number; skewMinTasks: number;
+  stageFloorPct: number;
 }
 
 // SpillPressureDetector (5a) + SpillSkewDetector (5b).
@@ -599,6 +600,15 @@ function meetsRuntimeFloor(wasteMs: number, appDurationMs: number | null, floorP
   return appDurationMs == null || wasteMs >= appDurationMs * floorPct;
 }
 
+// A stage that ran for less than floorPct of the run (a known duration): an estimate clipped to
+// the stage can't reach floorPct, so every finding there grades info. A zero-length stage (no
+// submission time on older Spark) is not skipped: it gets no estimate and keeps its own band.
+function stageBelowRuntimeFloor(stage: DetectorStage, ctx: DetectorCtx | undefined, floorPct: number): boolean {
+  const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
+  const appDurationMs = computeAppDurationMs(ctx);
+  return appDurationMs != null && stageDurationMs > 0 && stageDurationMs < appDurationMs * floorPct;
+}
+
 // Runs a raw waste delta through the same occupancy clip impact-estimator.ts applies before
 // display, so the runtime floor checks recoverable wall-clock, not a delta a physical floor
 // leaves unrecoverable. Falls back to the raw delta when occupancy data is unavailable.
@@ -891,13 +901,18 @@ export const DETECTORS: Detector[] = [
   {
     type: 'shuffle', scope: 'stage', order: 20, fixEffort: 'config', version: 1,
     docAnchor: '#bottleneck-shuffle',
-    thresholds: { minBytes: 50 * MB },
+    // stageFloorPct: the 0.5% runtime floor. The shuffle claim is clipped to the stage, so on a
+    // shorter stage it graded info: 182 of 284 shuffle findings on the 14 real logs. The shuffle
+    // is still there on those stages; the floor is why they're dropped.
+    thresholds: { minBytes: 50 * MB, stageFloorPct: 0.005 },
     detect(
-      this: { thresholds: { minBytes: number } },
+      this: { thresholds: { minBytes: number; stageFloorPct: number } },
       stage: DetectorStage,
+      ctx?: DetectorCtx,
     ): Finding | null {
       const bytes = stage.shuffleReadBytes;
       if (bytes <= this.thresholds.minBytes) return null;
+      if (stageBelowRuntimeFloor(stage, ctx, this.thresholds.stageFloorPct)) return null;
       return {
         type: 'shuffle', stageId: stage.id,
         impactBand: 'info',
@@ -957,9 +972,12 @@ export const DETECTORS: Detector[] = [
   {
     type: 'spill', scope: 'stage', order: 10, fixEffort: 'code', version: 1,
     docAnchor: '#bottleneck-spill',
-    thresholds: { singleTaskDiskGiB: 1, singleTaskMemGiB: 4, highDiskGiB: 1, highTaskDiskMB: 512, highMemGiB: 4, medDiskMB: 256, medMemGiB: 1, skewRatio: 5, skewDiskFloorMB: 128, skewMemFloorMB: 256, skewMinTasks: 10 },
-    detect(this: { thresholds: SpillThresholds }, stage: DetectorStage): Finding | null {
+    // stageFloorPct: the 0.5% runtime floor, as for shuffle (12 of 38 spill findings on the 14 real
+    // logs, all info). The spill is still there on those stages; the floor is why they're dropped.
+    thresholds: { singleTaskDiskGiB: 1, singleTaskMemGiB: 4, highDiskGiB: 1, highTaskDiskMB: 512, highMemGiB: 4, medDiskMB: 256, medMemGiB: 1, skewRatio: 5, skewDiskFloorMB: 128, skewMemFloorMB: 256, skewMinTasks: 10, stageFloorPct: 0.005 },
+    detect(this: { thresholds: SpillThresholds }, stage: DetectorStage, ctx?: DetectorCtx): Finding | null {
       if (stage.memoryBytesSpilled === 0) return null;
+      if (stageBelowRuntimeFloor(stage, ctx, this.thresholds.stageFloorPct)) return null;
       const cls = stage.spillClassification;
       const classified = cls === 'skew' || cls === 'volume';
       const mag = computeSpillMagnitude(stage, this.thresholds);

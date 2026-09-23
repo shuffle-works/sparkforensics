@@ -150,3 +150,7 @@ Thresholds: `slowHost` and `tinyTask` skip stages shorter than 0.5% of the run t
 tiny tasks can't cost more than such a stage's own duration, so every finding there graded info.
 On 14 real logs that drops 324 slowHost and 132 tinyTask findings, all informational; warning and
 critical findings are unchanged.
+
+Thresholds: `shuffle` and `spill` findings skip stages shorter than 0.5% of the run as well. Their
+claims are clipped to the stage, so every such finding graded info. On 14 real logs that drops 182
+shuffle and 12 spill findings, all informational; warning and critical findings are unchanged.

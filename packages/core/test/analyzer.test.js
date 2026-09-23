@@ -108,6 +108,23 @@ describe('analyze: shuffle I/O', () => {
     expect(b.impactBand).toBe('critical');
   });
 
+  it('skips a shuffle or spill on a stage under 0.5% of the run, and keeps a longer stage\'s above info', () => {
+    const run = makeApp({ endTime: 400_000 });
+    const stage = (completedAt) => new Map([[1, makeStage({
+      shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 40_000, memoryBytesSpilled: 8 * 1024 * 1024 * 1024,
+      diskBytesSpilled: 4 * 1024 * 1024 * 1024, spillMemMax: 8 * 1024 * 1024 * 1024, spillDiskMax: 4 * 1024 * 1024 * 1024, completedAt,
+    })]]);
+    const of = (completedAt, type) => analyze(run, stage(completedAt), [], []).filter(b => b.type === type);
+    // 1s of a 400s run (0.25%): the bytes are real, the floor drops them.
+    expect(of(1000, 'shuffle')).toHaveLength(0);
+    expect(of(1000, 'spill')).toHaveLength(0);
+    // 8s (2%): both claim enough of the run to grade above info.
+    expect(of(8000, 'shuffle')[0].impactBand).not.toBe('info');
+    expect(of(8000, 'spill')[0].impactBand).not.toBe('info');
+    // A zero-length stage (no submission time on older Spark) isn't skipped.
+    expect(of(0, 'spill')).toHaveLength(1);
+  });
+
   it('grades a large shuffle whose tasks never waited on a fetch informational: nothing stalled', () => {
     const stages = new Map([[1, makeStage({ shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 0 })]]);
     const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'shuffle');
