@@ -1687,6 +1687,21 @@ describe('analyze: coldStart/utilization do not silently skip on a literal start
     expect(analyze(app, stages, late, []).find(x => x.type === 'coldStart').value).toBe(34);
   });
 
+  // Regression: an executor that idled out before the first stage can't run it, so the wait runs
+  // to the next executor added after submission.
+  it('coldStart: measures to the next executor when early ones were removed before the first stage', () => {
+    const app = makeApp({ startTime: 0, endTime: 300000 });
+    const stages = new Map([[1, makeStage({ submittedAt: 100000 })]]);
+    const added = [{ executorId: '1', timestamp: 5000, totalCores: 4 }, { executorId: '2', timestamp: 160000, totalCores: 4 }];
+    const removed = [{ executorId: '1', timestamp: 65000 }];
+    const b = analyze(app, stages, added, removed).find(x => x.type === 'coldStart');
+    expect(b).toBeTruthy();
+    expect(b.value).toBe(60);
+    const removedLater = [{ executorId: '1', timestamp: 200000 }];
+    expect(analyze(app, stages, added, removedLater).find(x => x.type === 'coldStart')).toBeUndefined();
+    expect(analyze(app, stages, added, []).find(x => x.type === 'coldStart')).toBeUndefined();
+  });
+
   it('utilization still fires when app.startTime is exactly 0', () => {
     const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4 } } });
     const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }];

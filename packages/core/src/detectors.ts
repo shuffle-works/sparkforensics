@@ -1401,7 +1401,7 @@ export const DETECTORS: Detector[] = [
       this: { thresholds: { gapSeconds: number } },
       ctx: DetectorCtx,
     ): Finding | null {
-      const { app, stages, executorsAdded } = ctx;
+      const { app, stages, executorsAdded, executorsRemoved } = ctx;
       // Nullish (not falsy) check: a literal startTime:0 must not be treated as "missing".
       if (!app || app.startTime == null || stages.size === 0) return null;
       let firstStageSubmitted = Infinity;
@@ -1415,9 +1415,19 @@ export const DETECTORS: Detector[] = [
       // executors did) isn't something executors could shorten. On the 9 real logs that fired,
       // the first executor arrived 146-192s after the first stage on two whose old gap read ~40s,
       // and 2s after it on one the old gap flagged critical at 42s.
+      // An executor added before the first stage only counts if it was still alive at submission:
+      // with dynamic allocation scaling to zero, early executors can idle out before any job runs.
+      const removedAt = new Map<string, number>();
+      for (const ev of executorsRemoved) removedAt.set(ev.executorId, ev.timestamp);
       let firstExecutorAdded = Infinity;
       for (const e of executorsAdded) {
-        if (e.timestamp > 0 && e.timestamp < firstExecutorAdded) firstExecutorAdded = e.timestamp;
+        if (!(e.timestamp > 0)) continue;
+        if (e.timestamp <= firstStageSubmitted) {
+          const removed = removedAt.get(e.executorId);
+          if (removed == null || removed > firstStageSubmitted) return null;
+        } else if (e.timestamp < firstExecutorAdded) {
+          firstExecutorAdded = e.timestamp;
+        }
       }
       if (!Number.isFinite(firstExecutorAdded)) return null;
       const gapSeconds = (firstExecutorAdded - firstStageSubmitted) / 1000;
