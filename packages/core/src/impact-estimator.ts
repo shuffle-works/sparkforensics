@@ -193,8 +193,9 @@ function computeEstimateForFinding(
       const usesP95Branch = finding.metric === 'P95/median';
       const singleDelta = Math.max(0, usesP95Branch ? (stage.taskDurationP95 ?? 0) - p50 : (stage.taskDurationMax ?? 0) - p50);
       const wasteMs = tailRecoveryMs(stage, singleDelta);
+      // Fixing the skew still waits on the longest task it leaves, as for straggler.
       return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' },
-        { ...TAIL_CLAIM, removedCoreWorkMs: tailRemovedWorkMs(stage, singleDelta) });
+        { ...TAIL_CLAIM, removedCoreWorkMs: tailRemovedWorkMs(stage, singleDelta), longestTaskAfterFixMs: stragglerFixLongestTaskMs(stage) });
     }
     case 'straggler':
     case 'stageShape': {

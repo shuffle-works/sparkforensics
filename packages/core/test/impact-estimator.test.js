@@ -183,6 +183,23 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 3500, high: 3500 });
   });
 
+  it('skew: floored at the longest task the fix leaves, the same as straggler on that stage', () => {
+    // A 100s stage whose one 100s task is over 4x P50 (40s) and whose next-longest is 39s: fixing
+    // the skew still waits on that 39s task, so skew can't claim more than straggler's 61s.
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 100_000, parentIds: [], taskCount: 20,
+      taskDurationP50: 10_000, taskDurationP95: 39_000, taskDurationMax: 100_000,
+      stragglerCount: 1, stragglerExcessMs: 90_000, peakConcurrentTasks: 4, longestNonStragglerMs: 39_000,
+    }]]);
+    const findings = [
+      { type: 'skew', stageId: 0, metric: 'max/median', impactBand: 'warning' },
+      { type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' },
+    ];
+    estimateImpact(findings, stages);
+    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 61_000, high: 61_000 });
+    expect(findings[1].impactEstimate.wallClock).toEqual({ low: 61_000, high: 61_000 });
+  });
+
   it('straggler: the stage\'s core work spread over every core still caps the claim', () => {
     // 44000 core-ms less the 8000 the fix removes = 36000 over 4 cores, 9000ms of unavoidable work
     // on a 10000ms stage: room 1000.

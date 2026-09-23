@@ -825,7 +825,7 @@ export const DETECTORS: Detector[] = [
       const singleDelta = Math.max(0, metric === 'P95/median' ? stage.taskDurationP95 - stage.taskDurationP50 : stage.taskDurationMax - stage.taskDurationP50);
       const wasteMs = tailRecoveryMs(stage, singleDelta);
       const appDurationMs = computeAppDurationMs(ctx);
-      const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx, tailRemovedWorkMs(stage, singleDelta));
+      const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx, tailRemovedWorkMs(stage, singleDelta), stragglerFixLongestTaskMs(stage));
       if (!meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctWarn)) return null;
       const value = Math.round(ratio * 10) / 10;
       return {

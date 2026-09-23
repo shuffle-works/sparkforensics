@@ -122,7 +122,9 @@ Estimates: a `straggler` claim runs from the stage's longest task down to the lo
 fix leaves (the longest one at or under 4x the median), not down to the median: a stage with a
 task just under 4x the median still waits on it. Stage messages carry a new
 `longestNonStragglerMs` field for this. Against the task-level replay over 65 runs, estimates
-more than 2x too high fell from 6 to 4 and mean absolute error from 5.18s to 4.49s.
+more than 2x too high fell from 6 to 4 and mean absolute error from 5.18s to 4.49s. `skew` now
+takes the same floor. Before, a 100s stage whose next-longest task ran 39s had skew claiming 90s
+where straggler claimed 61s. Overestimates fell to 3. Mean absolute error fell to 4.12s.
 
 Parsing: an adaptive query execution update is recognized from the first and last pieces of its
 line as decoded, so an update that a later one replaces is no longer copied into one string only
