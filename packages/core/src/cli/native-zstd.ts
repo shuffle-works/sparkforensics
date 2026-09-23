@@ -70,7 +70,8 @@ function frameEnd(buf: Uint8Array, off: number, maxFrameBytes: number): number {
   return p <= buf.length ? p : INCOMPLETE;
 }
 
-export const nativeZstdAvailable = typeof zlib.zstdDecompressSync === 'function';
+export const nativeZstdAvailable =
+  typeof zlib.zstdDecompressSync === 'function' && typeof zlib.createZstdDecompress === 'function';
 
 // Same push(chunk, final) contract as fzstd's Decompress. Once a frame falls back, fzstd takes
 // the rest of the stream from that frame's first byte; a truncated last frame goes to fzstd too,
@@ -78,7 +79,7 @@ export const nativeZstdAvailable = typeof zlib.zstdDecompressSync === 'function'
 export function createNativeZstdDecoder(
   onChunk: (chunk: Uint8Array) => void,
   { maxFrameBytes = MAX_NATIVE_FRAME_BYTES }: { maxFrameBytes?: number } = {},
-): StreamingDecoder {
+): { push(chunk: Uint8Array, final?: boolean): undefined } {
   let pending: Uint8Array | null = null;
   let fallback: StreamingDecoder | null = null;
   const toFallback = (bytes: Uint8Array, final: boolean): void => {
@@ -86,7 +87,7 @@ export function createNativeZstdDecoder(
     fallback.push(bytes, final);
   };
   return {
-    push(chunk: Uint8Array, final = false): void {
+    push(chunk: Uint8Array, final = false): undefined {
       if (fallback) { fallback.push(chunk, final); return; }
       let buf = chunk;
       if (pending) {
@@ -114,7 +115,117 @@ export function createNativeZstdDecoder(
   };
 }
 
-// The parse options every Node entry point (collectRun, the SHS archive loader) passes: Node's
-// native zstd where this Node has it (22.15+/23.8+); older Nodes keep the vendored fzstd.
-export const nodeParseCodecs: { zstdDecoder?: typeof createNativeZstdDecoder } =
+// Frames at least this big (compressed) are decompressed on libuv's threadpool, up to
+// MAX_FRAMES_IN_FLIGHT at a time, while the main thread parses the output of earlier ones.
+// Smaller frames cost less to decompress inline than to hand off (p50 is 5.8 KB of output on the
+// largest real log; 16-64 KB thresholds measured the same, 256 KB lost most of the gain). On that
+// log 4 in flight (the pool's default size) parsed in 3.1s at 711 MB peak RSS, 8 in 3.2s at 886 MB
+// and 2 in 3.5s at 607 MB. The pool's output chunk size barely mattered (64 KB to 1 MB).
+const THREADED_MIN_FRAME_BYTES = 64 * 1024;
+const MAX_FRAMES_IN_FLIGHT = 4;
+const THREADED_CHUNK_BYTES = 256 * 1024;
+// Small frames that arrive while an earlier frame is in flight wait in the queue behind it. With
+// no cap, a first version held most of the largest real log's output (RSS 0.6 -> 4.1 GB).
+const MAX_QUEUED_FRAMES = 64;
+
+// Node's zstd stream ends after one frame, so each frame gets its own. Its output chunks are kept
+// as they are: zstdDecompressSync would copy them into one buffer on the main thread.
+function decompressOffThread(frame: Uint8Array): Promise<Uint8Array[]> {
+  return new Promise((resolve, reject) => {
+    const chunks: Uint8Array[] = [];
+    const stream = zlib.createZstdDecompress({ chunkSize: THREADED_CHUNK_BYTES });
+    stream.on('data', (chunk: Uint8Array) => chunks.push(chunk));
+    stream.on('end', () => resolve(chunks));
+    stream.on('error', reject);
+    stream.end(frame);
+  });
+}
+
+// createNativeZstdDecoder's contract, with large frames decompressed in parallel off the main
+// thread: push() resolves once its complete frames are queued (or delivered, when the queue is
+// full), and a final push resolves after every chunk has reached onChunk, in stream order. Each
+// push must be awaited before the next. It keeps references to pushed bytes until their frames
+// are decoded, so callers must not reuse a pushed buffer. Fallback to fzstd, for the same frames
+// as createNativeZstdDecoder, happens only after every queued frame is delivered; a failed frame
+// rejects the push that reaches it. `threadedMinFrameBytes` is for tests. Measured on the 14 real
+// logs: parse 9.4s -> 8.1s; logs with few large frames (12 of 6455 on a 28 MB one) gain nothing.
+export function createThreadedZstdDecoder(
+  onChunk: (chunk: Uint8Array) => void,
+  { maxFrameBytes = MAX_NATIVE_FRAME_BYTES, threadedMinFrameBytes = THREADED_MIN_FRAME_BYTES }:
+    { maxFrameBytes?: number; threadedMinFrameBytes?: number } = {},
+): { push(chunk: Uint8Array, final?: boolean): Promise<void> } {
+  let pending: Uint8Array | null = null;
+  let fallback: StreamingDecoder | null = null;
+  // Frames not yet delivered, oldest first: off-thread output, or a small frame still compressed,
+  // decompressed inline only when its turn comes so its output is fresh in cache for the parse.
+  type Queued = { output: Promise<Uint8Array[]>; frame?: never } | { frame: Uint8Array; output?: never };
+  const queued: Queued[] = [];
+  let threadedQueued = 0;
+  const deliverOldest = async (): Promise<void> => {
+    const entry = queued.shift()!;
+    if (entry.frame) { onChunk(zlib.zstdDecompressSync(entry.frame)); return; }
+    threadedQueued--;
+    for (const chunk of await entry.output!) onChunk(chunk);
+  };
+  const enqueue = async (entry: Queued): Promise<void> => {
+    queued.push(entry);
+    if (entry.output) threadedQueued++;
+    while (threadedQueued >= MAX_FRAMES_IN_FLIGHT || queued.length >= MAX_QUEUED_FRAMES) await deliverOldest();
+  };
+  const deliverAll = async (): Promise<void> => {
+    while (queued.length > 0) await deliverOldest();
+  };
+  const toFallback = async (bytes: Uint8Array, final: boolean): Promise<void> => {
+    await deliverAll();
+    fallback ??= new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk);
+    fallback.push(bytes, final);
+  };
+  return {
+    async push(chunk: Uint8Array, final = false): Promise<void> {
+      if (fallback) { fallback.push(chunk, final); return; }
+      let buf = chunk;
+      if (pending) {
+        buf = new Uint8Array(pending.length + chunk.length);
+        buf.set(pending);
+        buf.set(chunk, pending.length);
+        pending = null;
+      }
+      let off = 0;
+      while (off < buf.length) {
+        const end = frameEnd(buf, off, maxFrameBytes);
+        if (end === NOT_NATIVE || (end === INCOMPLETE && buf.length - off > maxFrameBytes)) {
+          await toFallback(buf.subarray(off), final);
+          return;
+        }
+        if (end === INCOMPLETE) break;
+        if (readUint32LE(buf, off) === ZSTD_MAGIC) {
+          const frame = buf.subarray(off, end);
+          if (frame.length >= threadedMinFrameBytes) {
+            const output = decompressOffThread(frame);
+            output.catch(() => {}); // rethrown where it's awaited; no unhandled rejection before then
+            await enqueue({ output });
+          } else if (queued.length === 0) {
+            onChunk(zlib.zstdDecompressSync(frame));
+          } else {
+            await enqueue({ frame });
+          }
+        }
+        off = end;
+      }
+      if (off < buf.length) {
+        if (final) await toFallback(buf.subarray(off), true);
+        else pending = buf.slice(off);
+      } else if (final) {
+        await deliverAll();
+      }
+    },
+  };
+}
+
+// Node's native zstd where this Node has it (22.15+/23.8+); older Nodes keep the vendored fzstd.
+// runParse/runParseFiles (collectRun) take the threaded decoder. decodeShsArchive decodes each
+// archive entry in one synchronous call, so the SHS archive loader takes the inline one.
+export const nodeParseCodecs: { zstdDecoder?: typeof createThreadedZstdDecoder } =
+  nativeZstdAvailable ? { zstdDecoder: createThreadedZstdDecoder } : {};
+export const nodeArchiveCodecs: { zstdDecoder?: typeof createNativeZstdDecoder } =
   nativeZstdAvailable ? { zstdDecoder: createNativeZstdDecoder } : {};

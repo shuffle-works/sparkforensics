@@ -61,7 +61,10 @@ type WorkerIncomingMessage =
 // without touching the vendored files (mirrors shs-fetch.ts's shim).
 type StreamingDecoder = { push(chunk: Uint8Array, final?: boolean): void };
 type StreamingDecoderCtor = new (onChunk: (chunk: Uint8Array) => void) => StreamingDecoder;
-export type ZstdDecoderFactory = (onChunk: (chunk: Uint8Array) => void) => StreamingDecoder;
+// A Node decoder may decompress off the main thread: streamFile awaits each push.
+export type ZstdDecoderFactory = (onChunk: (chunk: Uint8Array) => void) => {
+  push(chunk: Uint8Array, final?: boolean): void | Promise<void>;
+};
 
 // Stream one File's (possibly compressed) bytes through the codec dispatch,
 // in `chunkSize` slices, invoking `onChunk` with each decompressed buffer as
@@ -106,7 +109,7 @@ export async function streamFile(
     currentPct = start / file.size;
     if (gunzip) gunzip.push(slice, final);
     else if (lz4) lz4.push(slice);
-    else if (zstd) zstd.push(slice, final);
+    else if (zstd) await zstd.push(slice, final);
     else if (snappy) snappy.push(slice);
     else onChunk(slice, currentPct);
   }

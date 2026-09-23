@@ -82,7 +82,13 @@ archives) swap fzstd for Node's native zlib zstd where the running Node has it
 time, since Node's own decoders stop after a stream's first frame and Spark
 writes thousands of small ones. A frame over 64 MiB, a malformed one, or a
 truncated tail goes to fzstd instead. On the real logs this made parsing 42%
-faster.
+faster. For local files (`nodeParseCodecs`, `createThreadedZstdDecoder`), frames of
+64 KB or more compressed decompress on libuv's threadpool, up to 4 at a time,
+while the main thread parses earlier output; `streamFile` awaits each `push`, and
+chunks still arrive in stream order. That took another 24% off the largest real
+log (4.2s to 3.2s) for 139 MB more peak RSS. `decodeShsArchive` decodes each
+archive entry in one synchronous call, so SHS archives keep the inline decoder
+(`nodeArchiveCodecs`).
 
 The SHS-fetch path does buffer the downloaded zip whole for `unzipSync`. But
 one-shotting the decompression of a single entry (fzstd's `decompress()`,

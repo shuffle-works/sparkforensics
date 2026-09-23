@@ -36,8 +36,10 @@ export function sniffCodec(bytes: Uint8Array): 'gz' | 'zstd' | 'lz4' | 'snappy' 
 // without touching the vendored files.
 type StreamingDecoder = { push(chunk: Uint8Array, final?: boolean): void };
 type StreamingDecoderCtor = new (onChunk: (chunk: Uint8Array) => void) => StreamingDecoder;
-// Same injectable as parser-worker.ts's RunOpts.zstdDecoder: Node callers pass cli/native-zstd.ts's.
-type ZstdDecoderFactory = (onChunk: (chunk: Uint8Array) => void) => StreamingDecoder;
+// Like parser-worker.ts's RunOpts.zstdDecoder, but synchronous: decodeEntry never awaits push(),
+// so its result is typed `undefined` (not `void`, which would also accept an async decoder's
+// Promise). Node callers pass cli/native-zstd.ts's createNativeZstdDecoder (nodeArchiveCodecs).
+type ZstdDecoderFactory = (onChunk: (chunk: Uint8Array) => void) => { push(chunk: Uint8Array, final?: boolean): undefined };
 
 function decodeEntry(
   name: string, raw: Uint8Array, onChunk: (chunk: Uint8Array) => void, zstdDecoder?: ZstdDecoderFactory,

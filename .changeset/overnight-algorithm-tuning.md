@@ -106,3 +106,7 @@ Dashboard: zstd event logs decompress 40% faster in the browser (the bundled dec
 allocates a fresh window for every frame or copies each block's output, and copies long runs
 natively), with byte-identical output on the 14 real logs. The largest one parses in 5.8s
 instead of 8.7s.
+
+CLI and MCP: large zstd frames of a local event log decompress on Node's threadpool while the
+main thread parses. Parsing the 14 real logs is 14% faster (9.4s to 8.1s; the largest log 4.2s
+to 3.2s) with identical findings, for up to 139 MB more peak memory.

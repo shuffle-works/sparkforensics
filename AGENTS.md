@@ -120,11 +120,13 @@ contributor should read; `docs/` stays flat internal engineering records
   `tests/detection-docs-split.test.js` fails.
 - zstd decoding differs by runtime: the browser uses the vendored fzstd
   (Chrome has no `DecompressionStream('zstd')`), while the Node CLI/MCP path
-  (`collectRun`) uses `src/cli/native-zstd.ts`, which walks frame boundaries
+  (`collectRun`, `shs-load.ts`) uses `src/cli/native-zstd.ts`, which walks frame boundaries
   itself because Node's own zstd decoders stop after the first frame and Spark
   writes thousands of small ones. A parser change that depends on chunk shape
   must hold for both: native chunks are whole frames, often one full event line
   and up to tens of MB (`buildChunkDecoder` decodes those in 512 KiB slices).
+  For local files, frames of 64 KB+ decompress off the main thread and arrive
+  as 256 KB pieces, so a native `push()` is async and `streamFile` awaits it.
 - Plan summary is best-effort: `summarizePlanTree` (`src/plan-summary.js`) walks
   the resolved `planTree` with lenient regex on each node's `detail`: silently
   omit unparseable fragments, never surface an error. (The old regex
