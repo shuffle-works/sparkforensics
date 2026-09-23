@@ -47,6 +47,10 @@ Four modules:
   `runParseFiles`, the `isWorker`/`self.onmessage` bus) that barrel-re-exports
   the other three. It is the only piece needing the File/Blob streaming API.
 
+Dropped zstd files also run a nested decompress worker, `src/zstd-worker.ts`,
+driven from the parse worker by `src/zstd-worker-client.ts` (see
+[Decompress worker](./worker-protocol#decompress-worker)).
+
 ## Streaming
 
 Worker reads the `File` in 4 MB chunks via `file.slice(...).arrayBuffer()`,
