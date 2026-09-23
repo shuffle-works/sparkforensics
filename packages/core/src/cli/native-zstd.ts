@@ -27,36 +27,52 @@ function readUint32LE(buf: Uint8Array, at: number): number {
   return (buf[at] | (buf[at + 1] << 8) | (buf[at + 2] << 16) | (buf[at + 3] << 24)) >>> 0;
 }
 
+// Where a walk of an incomplete frame stopped, relative to the frame's first byte: `next` is the
+// next block header (or the checksum once `blocksDone`), -1 while the frame header is incomplete.
+interface FrameWalk { next: number; checksum: boolean; blocksDone: boolean }
+
+const freshWalk = (): FrameWalk => ({ next: -1, checksum: false, blocksDone: false });
+
 // End offset of the zstd or skippable frame starting at `off` (RFC 8878), INCOMPLETE when `buf`
 // ends before it does, or NOT_NATIVE for a frame this path won't decode itself: oversized, or
-// not a well-formed frame (fzstd then reports the corruption exactly as the browser would).
-function frameEnd(buf: Uint8Array, off: number, maxFrameBytes: number): number {
-  if (off + 4 > buf.length) return INCOMPLETE;
-  const magic = readUint32LE(buf, off);
-  if ((magic & 0xfffffff0) === SKIPPABLE_MAGIC) {
-    if (off + 8 > buf.length) return INCOMPLETE;
-    const end = off + 8 + readUint32LE(buf, off + 4);
-    return end <= buf.length ? end : INCOMPLETE;
+// not a well-formed frame (fzstd then reports the corruption exactly as the browser would). An
+// INCOMPLETE walk leaves its place in `walk`, so the next call on more of the frame resumes there.
+function frameEnd(buf: Uint8Array, off: number, maxFrameBytes: number, walk: FrameWalk = freshWalk()): number {
+  let p: number;
+  let hasChecksum: boolean;
+  if (walk.next >= 0) {
+    p = off + walk.next;
+    hasChecksum = walk.checksum;
+  } else {
+    if (off + 4 > buf.length) return INCOMPLETE;
+    const magic = readUint32LE(buf, off);
+    if ((magic & 0xfffffff0) === SKIPPABLE_MAGIC) {
+      if (off + 8 > buf.length) return INCOMPLETE;
+      const end = off + 8 + readUint32LE(buf, off + 4);
+      return end <= buf.length ? end : INCOMPLETE;
+    }
+    if (magic !== ZSTD_MAGIC) return NOT_NATIVE;
+    p = off + 4;
+    if (p >= buf.length) return INCOMPLETE;
+    const descriptor = buf[p++];
+    const contentSizeFlag = descriptor >> 6;
+    const singleSegment = (descriptor >> 5) & 1;
+    hasChecksum = ((descriptor >> 2) & 1) === 1;
+    p += (singleSegment ? 0 : 1) + [0, 1, 2, 4][descriptor & 3];
+    const contentSizeBytes = contentSizeFlag === 0 ? singleSegment : [0, 2, 4, 8][contentSizeFlag];
+    if (p + contentSizeBytes > buf.length) return INCOMPLETE;
+    const contentSize =
+      contentSizeBytes === 1 ? buf[p]
+        : contentSizeBytes === 2 ? (buf[p] | (buf[p + 1] << 8)) + 256
+          : contentSizeBytes === 4 ? readUint32LE(buf, p)
+            : contentSizeBytes === 8 ? readUint32LE(buf, p) + readUint32LE(buf, p + 4) * 2 ** 32
+              : 0;
+    if (contentSize > maxFrameBytes) return NOT_NATIVE;
+    p += contentSizeBytes;
+    walk.checksum = hasChecksum;
   }
-  if (magic !== ZSTD_MAGIC) return NOT_NATIVE;
-  let p = off + 4;
-  if (p >= buf.length) return INCOMPLETE;
-  const descriptor = buf[p++];
-  const contentSizeFlag = descriptor >> 6;
-  const singleSegment = (descriptor >> 5) & 1;
-  const hasChecksum = (descriptor >> 2) & 1;
-  p += (singleSegment ? 0 : 1) + [0, 1, 2, 4][descriptor & 3];
-  const contentSizeBytes = contentSizeFlag === 0 ? singleSegment : [0, 2, 4, 8][contentSizeFlag];
-  if (p + contentSizeBytes > buf.length) return INCOMPLETE;
-  const contentSize =
-    contentSizeBytes === 1 ? buf[p]
-      : contentSizeBytes === 2 ? (buf[p] | (buf[p + 1] << 8)) + 256
-        : contentSizeBytes === 4 ? readUint32LE(buf, p)
-          : contentSizeBytes === 8 ? readUint32LE(buf, p) + readUint32LE(buf, p + 4) * 2 ** 32
-            : 0;
-  if (contentSize > maxFrameBytes) return NOT_NATIVE;
-  p += contentSizeBytes;
-  for (;;) {
+  while (!walk.blocksDone) {
+    walk.next = p - off;
     if (p + 3 > buf.length) return INCOMPLETE;
     const header = buf[p] | (buf[p + 1] << 8) | (buf[p + 2] << 16);
     p += 3;
@@ -64,7 +80,10 @@ function frameEnd(buf: Uint8Array, off: number, maxFrameBytes: number): number {
     if (blockType === 3) return NOT_NATIVE; // reserved: corrupt data
     p += blockType === 1 ? 1 : header >> 3; // an RLE block stores its one repeated byte
     if (p > buf.length) return INCOMPLETE;
-    if (header & 1) break; // last block
+    if (header & 1) { // last block
+      walk.blocksDone = true;
+      walk.next = p - off;
+    }
   }
   p += hasChecksum ? 4 : 0;
   return p <= buf.length ? p : INCOMPLETE;
@@ -79,37 +98,64 @@ type SplitStep = { frame: Uint8Array; data: boolean; fallback?: never } | { fall
 
 // Splits a zstd byte stream into whole frames as it arrives, for both decoders below. A frame
 // falls back to fzstd when frameEnd says NOT_NATIVE, when it is still incomplete after
-// `maxFrameBytes` compressed bytes, or when a final push ends inside it.
+// `maxFrameBytes` compressed bytes, or when a final push ends inside it. A frame that arrives
+// over many pushes is gathered into one buffer that grows by doubling, and its walk resumes where
+// the last push left it: copying the gathered bytes into a new buffer and walking the frame from
+// its start on every push cost about 4 GB of copying near the 64 MB limit.
 class FrameSplitter {
-  private pending: Uint8Array | null = null;
+  // The incomplete frame's bytes so far, gathered[0, gatheredLength); null when none is pending.
+  private gathered: Uint8Array | null = null;
+  private gatheredLength = 0;
+  private walk: FrameWalk = freshWalk();
   private readonly maxFrameBytes: number;
 
   constructor(maxFrameBytes: number) {
     this.maxFrameBytes = maxFrameBytes;
   }
 
-  *split(chunk: Uint8Array, final: boolean): Generator<SplitStep> {
-    let buf = chunk;
-    if (this.pending) {
-      buf = new Uint8Array(this.pending.length + chunk.length);
-      buf.set(this.pending);
-      buf.set(chunk, this.pending.length);
-      this.pending = null;
+  private gather(bytes: Uint8Array): Uint8Array {
+    const length = this.gatheredLength + bytes.length;
+    if (this.gathered === null || length > this.gathered.length) {
+      const grown = new Uint8Array(Math.max(length, (this.gathered?.length ?? 0) * 2));
+      if (this.gathered !== null) grown.set(this.gathered.subarray(0, this.gatheredLength));
+      this.gathered = grown;
     }
+    this.gathered.set(bytes, this.gatheredLength);
+    this.gatheredLength = length;
+    return this.gathered.subarray(0, length);
+  }
+
+  // Frames and fallback bytes yielded from a gathered buffer stay valid: a completed buffer is
+  // dropped, never reused.
+  *split(chunk: Uint8Array, final: boolean): Generator<SplitStep> {
     let off = 0;
-    while (off < buf.length) {
-      const end = frameEnd(buf, off, this.maxFrameBytes);
-      if (end === NOT_NATIVE || (end === INCOMPLETE && buf.length - off > this.maxFrameBytes)) {
-        yield { fallback: buf.subarray(off) };
+    if (this.gathered !== null) {
+      const held = this.gather(chunk);
+      const end = frameEnd(held, 0, this.maxFrameBytes, this.walk);
+      if (end === INCOMPLETE && held.length <= this.maxFrameBytes && !final) return;
+      this.gathered = null;
+      this.gatheredLength = 0;
+      if (end === NOT_NATIVE || end === INCOMPLETE) {
+        yield { fallback: held };
+        return;
+      }
+      yield { frame: held.subarray(0, end), data: readUint32LE(held, 0) === ZSTD_MAGIC };
+      off = chunk.length - (held.length - end); // the rest of the chunk follows that frame
+    }
+    while (off < chunk.length) {
+      this.walk = freshWalk();
+      const end = frameEnd(chunk, off, this.maxFrameBytes, this.walk);
+      if (end === NOT_NATIVE || (end === INCOMPLETE && chunk.length - off > this.maxFrameBytes)) {
+        yield { fallback: chunk.subarray(off) };
         return;
       }
       if (end === INCOMPLETE) break;
-      yield { frame: buf.subarray(off, end), data: readUint32LE(buf, off) === ZSTD_MAGIC };
+      yield { frame: chunk.subarray(off, end), data: readUint32LE(chunk, off) === ZSTD_MAGIC };
       off = end;
     }
-    if (off < buf.length) {
-      if (final) yield { fallback: buf.subarray(off) };
-      else this.pending = buf.slice(off);
+    if (off < chunk.length) {
+      if (final) yield { fallback: chunk.subarray(off) };
+      else this.gather(chunk.subarray(off));
     }
   }
 }

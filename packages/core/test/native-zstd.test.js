@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { zstdCompressSync, createZstdCompress } from 'node:zlib';
+import { zstdCompressSync, createZstdCompress, constants } from 'node:zlib';
 import { createNativeZstdDecoder, createThreadedZstdDecoder, nativeZstdAvailable } from '../src/cli/native-zstd.ts';
 
 const enc = new TextEncoder();
@@ -41,6 +41,9 @@ describe.skipIf(!nativeZstdAvailable).each(DECODERS)('%s', (_, createDecoder) =>
   it('decodes every frame of a multi-frame stream in order for any push size', async () => {
     expect(frames.length).toBeGreaterThan(10);
     for (const size of [1, 3, 64, 1000, multiFrame.length]) expect(await decode(createDecoder, multiFrame, size)).toBe(text);
+    // Frames ending in a checksum, which a walk resumed after the last block must not read as one.
+    const checked = concat(frames.map((_, i) => new Uint8Array(zstdCompressSync(enc.encode(text.slice(i * 1000, i * 1000 + 1000)), { params: { [constants.ZSTD_c_checksumFlag]: 1 } }))));
+    for (const size of [1, 3, 64]) expect(await decode(createDecoder, checked, size)).toBe(text);
   });
 
   it('skips skippable frames between data frames', async () => {
@@ -63,6 +66,26 @@ describe.skipIf(!nativeZstdAvailable).each(DECODERS)('%s', (_, createDecoder) =>
     // Native frames (~1 KB of content each) first, then fzstd takes over at the size-less frame
     // (1.3 KB compressed): its output still comes after theirs.
     expect(await decode(createDecoder, concat([...frames.slice(0, 12), streamed]), 64, { maxFrameBytes: 1200 })).toBe(text.slice(0, 12000) + text);
+  });
+
+  // A frame that arrives over many pushes is gathered once: re-copying what was already gathered on
+  // every push moved about 500 MB for this 1 MB frame pushed 1 KB at a time.
+  it('gathers a frame split over many pushes with linear copying', async () => {
+    let seed = 7;
+    const noise = Uint8Array.from({ length: 1 << 20 }, () => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) >>> 24);
+    const frame = new Uint8Array(zstdCompressSync(noise));
+    const out = [];
+    const dec = createDecoder((c) => out.push(new Uint8Array(c)));
+    const set = Uint8Array.prototype.set;
+    let copied = 0;
+    Uint8Array.prototype.set = function (source, offset) { copied += source.length; return set.call(this, source, offset); };
+    try {
+      for (let o = 0; o < frame.length; o += 1024) await dec.push(frame.subarray(o, o + 1024), o + 1024 >= frame.length);
+    } finally {
+      Uint8Array.prototype.set = set;
+    }
+    expect(copied).toBeLessThan(3 * frame.length);
+    expect(Buffer.from(concat(out)).equals(Buffer.from(noise))).toBe(true);
   });
 
   it('fails a truncated last frame with fzstd\'s own error', async () => {
