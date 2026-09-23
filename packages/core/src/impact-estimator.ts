@@ -1,4 +1,5 @@
 import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, Stage } from './types.ts';
+import { nsToMs } from './format-utils.ts';
 import {
   computeOccupancy, estimateSingleStage, estimateMultiStage, tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs,
   type OccupancyStage, type SingleStageEstimateOptions, type StageOccupancyInfo,
@@ -81,6 +82,24 @@ const NETWORK_FETCH_PENALTY_MS = 20;
 const EXECUTOR_STARTUP_OVERHEAD_MS = 15000;
 // Assumed re-read throughput, shared by cachingOpportunity and cacheUtilization.
 const RE_READ_THROUGHPUT_BPS = 125_000_000;
+
+// Below this share of executorRunTime spent on CPU, a stage's tasks were idle, waiting on something
+// outside Spark: on 14 real logs (2026-09-23) every non-Python stage under 1% was a JDBC read, a
+// file listing or a Delta log read, while file writes, which more partitions do parallelize,
+// start at 2%.
+const IDLE_CPU_SHARE_MAX = 0.01;
+
+// True when the stage's tasks spent under IDLE_CPU_SHARE_MAX of their run time on CPU. False when
+// the share can't be trusted: no CPU time recorded (older Spark logs omit the metric), or Python
+// code run through PythonRDD, whose worker-process CPU executorCpuTime (the JVM task thread's)
+// never counts (such stages read 0.1% on the same logs while computing).
+function tasksMostlyIdle(stage: Stage): boolean {
+  const runMs = stage.executorRunTime ?? 0;
+  const cpuMs = nsToMs(stage.executorCpuTime ?? 0);
+  if (runMs <= 0 || cpuMs <= 0) return false;
+  if (/PythonRDD/.test(stage.name ?? '') || /org\.apache\.spark\.api\.python\./.test(stage.details ?? '')) return false;
+  return cpuMs / runMs < IDLE_CPU_SHARE_MAX;
+}
 
 // skew and straggler claim time off the stage's longest task itself, so the occupancy clip must
 // not floor them at that same task (see estimateSingleStage). detectors.ts's clippedWasteMs gates
@@ -332,14 +351,15 @@ function computeEstimateForFinding(
       // is queueing no partition count recovers. Splitting partitions splits the longest task
       // too, hence TAIL_CLAIM's post-fix floor. Unknown cluster size: no defensible figure.
       if (totalCores <= 0) return costOnly('modeled');
-      // A stage that read no input and no shuffle has no data for more partitions to split (a
-      // 1-task count stage open 27 minutes on 5s of CPU was claimed 99% recoverable): claim 0.
+      // A stage that read no input and no shuffle, its tasks idle waiting on an external system,
+      // gains nothing from more partitions (a 1-task JDBC count stage open 27 minutes on 5s of CPU
+      // was claimed 99% recoverable): claim 0. Stages that read bytes keep their claim.
       const readBytes = (stage.inputBytes ?? 0) + (stage.shuffleReadBytes ?? 0);
       const activeMs = typeof stage.taskActiveMs === 'number'
         ? stage.taskActiveMs
         : Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
       const taskCount = stage.taskCount ?? 0;
-      const wasteMs = readBytes > 0 ? activeMs * Math.max(0, 1 - taskCount / totalCores) : 0;
+      const wasteMs = readBytes <= 0 && tasksMostlyIdle(stage) ? 0 : activeMs * Math.max(0, 1 - taskCount / totalCores);
       return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: wasteMs, unit: 'ms' }, TAIL_CLAIM);
     }
     case 'partitionSizing': {
