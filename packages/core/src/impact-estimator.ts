@@ -34,6 +34,24 @@ function stageIoParallelism(stage: Stage): number {
   const executors = Array.isArray(stage.executorStats) ? stage.executorStats.length : 0;
   return Math.max(1, executors);
 }
+
+// Wall-clock a stage's wasted (retried) attempts cost it. Each one delayed only its own task, and
+// attempts of different tasks ran side by side: one lost executor fails every task it was running
+// at once (4 wasted attempts of 36.6s each, all first attempts, on a real stage that ran 41 tasks
+// at once, claimed as 146.6s). So the stage lost at most its longest retry chain, the most attempts
+// one task wasted (its highest attempt number + 1) times the mean wasted attempt, or their summed
+// time spread over its slots, whichever is larger. Without a sample of every wasted attempt
+// (retryTaskSamples is capped), the chain isn't known: the summed time.
+function retryWallClockMs(stage: Stage): number {
+  const totalMs = (stage.retryWasteMs as number | undefined) ?? 0;
+  const attempts = (stage.wastedAttempts as number | undefined) ?? 0;
+  const samples = Array.isArray(stage.retryTaskSamples)
+    ? (stage.retryTaskSamples as { attemptNumber?: number }[]) : [];
+  if (totalMs <= 0 || attempts <= 0 || samples.length < attempts) return totalMs;
+  const chain = samples.reduce((longest, s) => Math.max(longest, (s.attemptNumber ?? 0) + 1), 1);
+  const slots = Math.max(1, stage.peakConcurrentTasks ?? 1);
+  return Math.min(totalMs, Math.max((chain * totalMs) / attempts, totalMs / slots));
+}
 // Spark's classic recommended shuffle partition size.
 const IDEAL_BYTES_PER_PARTITION_TASK = 128 * 1024 * 1024;
 // Assumed per-task scheduling/launch overhead: the fallback when a stage lacks the per-executor
@@ -111,7 +129,9 @@ function computeEstimateForFinding(
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
       const wasteMs = (stage.retryWasteMs as number | undefined) ?? 0;
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' });
+      const wallClockMs = retryWallClockMs(stage);
+      return singleStageImpact(wallClockMs, finding.stageId, stages, occupancy,
+        wallClockMs === wasteMs ? 'measured' : 'modeled', { value: wasteMs, unit: 'ms' });
     }
     case 'speculationWaste': {
       if (finding.stageId == null) return null;

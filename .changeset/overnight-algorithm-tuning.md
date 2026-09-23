@@ -127,3 +127,9 @@ Parsing: an adaptive query execution update is recognized from the first and las
 line as decoded, so an update that a later one replaces is no longer copied into one string only
 to be dropped. Parsing the 14 real logs is 3% faster (8.05s to 7.80s; the largest log 6%, 3.16s
 to 2.97s) with identical findings.
+
+Estimates: `retryWaste` no longer claims the summed time of its wasted attempts as wall-clock when
+those attempts ran side by side. When every wasted attempt is sampled, the claim is the longest
+retry chain (one task's repeated failures) times the mean wasted attempt, or the summed time spread
+over the stage's slots when larger. Four tasks lost with one executor on a real stage claimed
+146.6s and now claim 36.6s.

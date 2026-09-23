@@ -42,6 +42,40 @@ describe('estimateImpact: measured group A', () => {
     expect(est.rawWaste).toEqual({ value: 1200, unit: 'ms' });
   });
 
+  it('retryWaste: attempts of different tasks ran side by side, so the claim is one attempt, not their sum', () => {
+    // 4 first attempts (one lost executor's tasks) of 36.5s mean, on a stage with 40 slots:
+    // max(1 x 36.5s, 146s / 40) = 36.5s, modeled.
+    const samples = [0, 0, 0, 0].map((attemptNumber) => ({ attemptNumber }));
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 1_000_000, parentIds: [],
+      retryWasteMs: 146_000, wastedAttempts: 4, retryTaskSamples: samples, peakConcurrentTasks: 40,
+    }]]);
+    const findings = [{ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 146_000, impactBand: 'warning' }];
+    estimateImpact(findings, stages);
+    expect(findings[0].impactEstimate).toEqual({
+      basis: 'serial', wallClock: { low: 36_500, high: 36_500 }, estimateMethod: 'modeled',
+      rawWaste: { value: 146_000, unit: 'ms' },
+    });
+  });
+
+  it('retryWaste: one task failing again and again claims its whole chain, and unsampled attempts the sum', () => {
+    const at = (retryTaskSamples, wastedAttempts) => {
+      const stages = new Map([[0, {
+        id: 0, submittedAt: 0, completedAt: 1_000_000, parentIds: [],
+        retryWasteMs: 90_000, wastedAttempts, retryTaskSamples, peakConcurrentTasks: 40,
+      }]]);
+      const findings = [{ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 90_000, impactBand: 'warning' }];
+      estimateImpact(findings, stages);
+      return findings[0].impactEstimate;
+    };
+    // Attempts 0, 1, 2 of one task ran one after another: 3 x 30s.
+    expect(at([0, 1, 2].map((attemptNumber) => ({ attemptNumber })), 3).wallClock.high).toBe(90_000);
+    // 25 wasted attempts but only 20 sampled (the cap): the chain isn't known.
+    const capped = at(Array.from({ length: 20 }, () => ({ attemptNumber: 0 })), 25);
+    expect(capped.wallClock.high).toBe(90_000);
+    expect(capped.estimateMethod).toBe('measured');
+  });
+
   it('speculationWaste: clips the stage\'s own speculationWasteMs the same way', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], speculationWasteMs: 800 }]]);
     const findings = [{ type: 'speculationWaste', stageId: 0, metric: 'speculationWasteMs', value: 800, impactBand: 'info' }];
