@@ -5,6 +5,7 @@ import { createSnappyBlockDecoder } from './snappy-block.ts';
 import { createState, dispatchLine, buildChunkDecoder, emitParseCompletion, type JoinedLine, type ParserState } from './event-handlers.ts';
 import { TASK_FIELD_NAMES } from './stage-quantiles.ts';
 import { runParseFromUrl, sniffCodec } from './shs-fetch.ts';
+import { createWorkerZstdDecoders } from './zstd-worker-client.ts';
 
 export {
   buildChunkDecoder, createState, normalizeSparkProperties, parseSparkMemoryMB, extractResources,
@@ -61,9 +62,11 @@ type WorkerIncomingMessage =
 // without touching the vendored files (mirrors shs-fetch.ts's shim).
 type StreamingDecoder = { push(chunk: Uint8Array, final?: boolean): void };
 type StreamingDecoderCtor = new (onChunk: (chunk: Uint8Array) => void) => StreamingDecoder;
-// A Node decoder may decompress off the main thread: streamFile awaits each push.
+// A Node decoder, or the browser's decompress worker (zstd-worker-client.ts), may decompress off
+// the calling thread: streamFile awaits each push, and calls cancel() when it abandons the stream.
 export type ZstdDecoderFactory = (onChunk: (chunk: Uint8Array) => void) => {
   push(chunk: Uint8Array, final?: boolean): void | Promise<void>;
+  cancel?(): void;
 };
 
 // Stream one File's (possibly compressed) bytes through the codec dispatch,
@@ -89,7 +92,7 @@ export async function streamFile(
   const gunzip = codec === 'gz' ? new (Gunzip as unknown as StreamingDecoderCtor)((inflated) => onChunk(inflated, currentPct)) : null;
   const lz4 = codec === 'lz4' ? createLz4BlockDecoder((inflated) => onChunk(inflated, currentPct)) : null;
   const onZstdChunk = (inflated: Uint8Array) => onChunk(inflated, currentPct);
-  const zstd = codec !== 'zstd' ? null
+  const zstd: ReturnType<ZstdDecoderFactory> | null = codec !== 'zstd' ? null
     : zstdDecoder ? zstdDecoder(onZstdChunk)
       : new (ZstdDecompress as unknown as StreamingDecoderCtor)(onZstdChunk);
   const snappy = codec === 'snappy' ? createSnappyBlockDecoder((inflated) => onChunk(inflated, currentPct)) : null;
@@ -101,17 +104,22 @@ export async function streamFile(
   const stepSize = Math.max(1, Math.min(chunkSize, Math.ceil(file.size / MIN_PROGRESS_STEPS)));
 
   let offset = 0;
-  while (offset < file.size) {
-    const start = offset;
-    const slice = new Uint8Array(await file.slice(start, start + stepSize).arrayBuffer());
-    offset += stepSize;
-    const final = offset >= file.size;
-    currentPct = start / file.size;
-    if (gunzip) gunzip.push(slice, final);
-    else if (lz4) lz4.push(slice);
-    else if (zstd) await zstd.push(slice, final);
-    else if (snappy) snappy.push(slice);
-    else onChunk(slice, currentPct);
+  try {
+    while (offset < file.size) {
+      const start = offset;
+      const slice = new Uint8Array(await file.slice(start, start + stepSize).arrayBuffer());
+      offset += stepSize;
+      const final = offset >= file.size;
+      currentPct = start / file.size;
+      if (gunzip) gunzip.push(slice, final);
+      else if (lz4) lz4.push(slice);
+      else if (zstd) await zstd.push(slice, final);
+      else if (snappy) snappy.push(slice);
+      else onChunk(slice, currentPct);
+    }
+  } catch (e) {
+    zstd?.cancel?.();
+    throw e;
   }
   if (lz4) lz4.end();
   if (snappy) snappy.end();
@@ -232,17 +240,25 @@ const isWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof Wor
 
 if (isWorker) {
   let workerState: ParserState | null = null;
+  // Dropped zstd files decompress in a second worker, overlapping with parsing here. The
+  // `new Worker(new URL(...))` stays inline for Vite's worker detection (see ingest.ts). The SHS
+  // path (runParseFromUrl) decodes whole zip entries synchronously and keeps in-thread fzstd.
+  const zstdDecoder = createWorkerZstdDecoders(
+    () => new Worker(new URL('./zstd-worker.js', import.meta.url), { type: 'module' }),
+    (onChunk) => new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk),
+    { onFallback: (reason) => console.warn(`zstd: decompressing on the parse worker: ${reason}`) },
+  );
 
   self.onmessage = async ({ data }: MessageEvent<WorkerIncomingMessage>) => {
     if (data.type === 'parse') {
       workerState = createState();
-      await runParse(data.file, workerState);
+      await runParse(data.file, workerState, { zstdDecoder });
     } else if (data.type === 'parseFromUrl') {
       workerState = createState();
       await runParseFromUrl(data.request, workerState);
     } else if (data.type === 'parseFiles') {
       workerState = createState();
-      await runParseFiles(data.files, workerState);
+      await runParseFiles(data.files, workerState, { zstdDecoder });
     } else if (data.type === 'getTaskData') {
       const { stageId, reqId } = data;
       const stored = workerState?.taskStore.get(stageId) ?? new Float64Array(0);

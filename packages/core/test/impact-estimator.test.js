@@ -497,15 +497,41 @@ describe('estimateImpact: stageSlowness', () => {
     expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(2000 * (15 / 16), 6);
   });
 
-  it('a stage that read no input and no shuffle has nothing for more partitions to split', () => {
-    // A 1-task stage whose only task ran 27 minutes without reading any bytes.
-    const stages = new Map([[0, {
-      id: 0, submittedAt: 0, completedAt: 27 * min, parentIds: [], taskCount: 1, taskActiveMs: 27 * min, taskDurationMax: 27 * min,
-      inputBytes: 0, shuffleReadBytes: 0,
-    }]]);
+  // A 1-task stage that read no bytes, its only task running 27 minutes; cpuMs sets the task's
+  // executorCpuTime (Spark reports nanoseconds).
+  const oneTaskStage = (cpuMs, extra = {}) => new Map([[0, {
+    id: 0, submittedAt: 0, completedAt: 27 * min, parentIds: [], taskCount: 1, taskActiveMs: 27 * min, taskDurationMax: 27 * min,
+    executorRunTime: 27 * min, executorCpuTime: cpuMs * 1e6, inputBytes: 0, shuffleReadBytes: 0, ...extra,
+  }]]);
+  const claimFor = (stages) => {
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
     estimateImpact(findings, stages, 16);
-    expect(findings[0].impactEstimate.wallClock.high).toBe(0);
+    return findings[0].impactEstimate.wallClock.high;
+  };
+
+  it('tasks idle on an external system (a JDBC read on 5s of CPU in 27 minutes) claim nothing', () => {
+    expect(claimFor(oneTaskStage(5000))).toBe(0);
+  });
+
+  it('a stage that read no bytes but kept its task on CPU (generated data) is still claimed', () => {
+    expect(claimFor(oneTaskStage(25 * min))).toBeCloseTo(27 * min * (15 / 16), 6);
+  });
+
+  it('the idle cut-off is a CPU share of 1%: at 1% the stage is claimed, just under it is not', () => {
+    expect(claimFor(oneTaskStage(0.01 * 27 * min))).toBeCloseTo(27 * min * (15 / 16), 6);
+    expect(claimFor(oneTaskStage(0.0099 * 27 * min))).toBe(0);
+  });
+
+  it('a stage that read input keeps its claim whatever its CPU share', () => {
+    expect(claimFor(oneTaskStage(1000, { inputBytes: 1e9 }))).toBeCloseTo(27 * min * (15 / 16), 6);
+    expect(claimFor(oneTaskStage(1000, { shuffleReadBytes: 1e9 }))).toBeCloseTo(27 * min * (15 / 16), 6);
+  });
+
+  it('a CPU share it cannot trust leaves the claim: no CPU metric, or Python work behind PythonRDD', () => {
+    expect(claimFor(oneTaskStage(0))).toBeCloseTo(27 * min * (15 / 16), 6);
+    expect(claimFor(oneTaskStage(1000, {
+      name: 'runJob at PythonRDD.scala:181', details: 'org.apache.spark.api.python.PythonRDD$.runJob(PythonRDD.scala:181)',
+    }))).toBeCloseTo(27 * min * (15 / 16), 6);
   });
 
   it('without a cluster core count there is no headroom figure: informational', () => {
