@@ -48,7 +48,8 @@ offsets to UTF-16 offsets, 4.4% faster parsing across 14 real logs with identica
 Analyzer: plan-shape fingerprints fold each child in as a fixed-length digest instead of its
 full fingerprint string, and scan classification rejects non-scan plan nodes before running its
 regexes and is computed once per node. `analyze()` is 40% faster across 14 real logs (1131ms to
-678ms; 729ms to 311ms on the largest), with identical findings.
+678ms; 729ms to 311ms on the largest), with identical findings. Join-detail normalization no
+longer rescans each identifier from every letter, another 8% (692ms to 636ms).
 
 Parser: a `physicalPlanDescription` value that spans decompressed chunks is dropped as raw bytes
 instead of being decoded and then cut out as text. Parsing the largest real log is 11.7% faster

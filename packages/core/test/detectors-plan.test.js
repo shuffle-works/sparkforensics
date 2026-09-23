@@ -726,6 +726,15 @@ describe('overBroadcast/underBroadcast: classifier + planNodeIds', () => {
 });
 
 describe('normalizeDetail', () => {
+  // An equality operand starts at the first letter of its identifier run, whatever precedes it:
+  // a dot (`).col`), a digit (`1abc`), or nothing identifier-like at all.
+  it('canonicalizes equality operands wherever their identifier starts', () => {
+    expect(normalizeDetail('f(x)).zeta.c = alpha(y)')).toBe('f(x)).alpha = zeta.c(y)');
+    expect(normalizeDetail('1zeta = alpha')).toBe('1alpha = zeta');
+    expect(normalizeDetail('(t2.b = t1.a) AND (a1b = a0)')).toBe('(t1.a = t2.b) AND (a0 = a1b)');
+    expect(normalizeDetail('notAnEquality(abc) >= xyz')).toBe('notAnEquality(abc) >= xyz');
+  });
+
   it('strips per-analysis expression ids (id#123L -> id)', () => {
     expect(normalizeDetail('SortMergeJoin [id#123L], [id#456], Inner'))
       .toBe(normalizeDetail('SortMergeJoin [id#789L], [id#12], Inner'));
