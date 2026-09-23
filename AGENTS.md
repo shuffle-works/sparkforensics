@@ -27,6 +27,7 @@ Docs site dev: `npm run docs:dev` (VitePress over `docs-site/`)
 Docs site build: `npm run docs:build` (fails on dead internal links)
 Docs site preview: `npm run docs:preview` (serves the built docs site)
 Analyze (CI): `node packages/cli/bin/sparkforensics-analyze.mjs <file|dir> [--max-runtime ms] [--max-skew ratio] [--max-spill gb] [--max-failed-task-rate pct] [--min-efficiency pct] [--out path] [--format md|json]` (or `--shs-base-url <url> --app-id <id> [--attempt-id <id>]` to fetch from a Spark History Server instead of a local file); also supports baseline regression gating (`--baseline`/`--max-regression-pct`/`--regression-metric`/`--fail-on-introduced`), `--redact`, finding filters (`--impact`/`--type`/`--stage`), and `--export-html <dir>` to write a self-contained `file://`-openable dashboard instead of a md/json report; `--help` for the full flag list.
+Detector/estimate tuning: `node dev/bench-analyze.mjs [--repeat N] --out snap.json <file|dir>...` snapshots every finding (band, estimate) plus parse/analyze timings, one child process per log; `--diff a.json b.json [--verbose]` shows added/removed/re-banded findings between two snapshots. `node --max-old-space-size=12000 dev/eval-tail-replay.mjs [--set detector.threshold=value] <file|dir>...` scores skew/straggler against a task-level replay (precision/recall, estimate error). Record before/after numbers from these in the commit.
 
 The view is React + TypeScript (`src/view/`), built with Vite. The old
 zero-build `index.html`-loads-a-plain-script setup is gone: `index.html` is
@@ -113,6 +114,16 @@ contributor should read; `docs/` stays flat internal engineering records
   must drop the element's `href` (restoring `role`/`tabindex`/keyboard
   handling by hand) to keep this interceptor from treating it as a navigable
   link at all.
+- `packages/core/src/docs-content/detection/*.md` is generated from
+  `docs-site/user-guide/understanding-findings.md`: after editing that guide run
+  `npm run split-detection-docs` and commit the output, or
+  `tests/detection-docs-split.test.js` fails.
+- zstd decoding differs by runtime: the browser uses the vendored fzstd
+  (Chrome has no `DecompressionStream('zstd')`), while the Node CLI/MCP path
+  (`collectRun`) uses `src/cli/native-zstd.ts`, which walks frame boundaries
+  itself because Node's own zstd decoders stop after the first frame and Spark
+  writes thousands of small ones. A parser change that depends on chunk shape
+  must hold for both: native chunks are whole frames, often one full event line.
 - Plan summary is best-effort: `summarizePlanTree` (`src/plan-summary.js`) walks
   the resolved `planTree` with lenient regex on each node's `detail`: silently
   omit unparseable fragments, never surface an error. (The old regex
