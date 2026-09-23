@@ -356,19 +356,21 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
     expect(f[0].impactBand).toBe('critical');
   });
 
-  // Byte imbalance carries no time estimate, so its ratio tier is its band, except on a stage too
-  // short (under 0.5% of the run) to cost that much: still reported, as info.
-  it('reports a byte imbalance on a stage under 0.5% of the run as info', () => {
+  // Byte imbalance carries no time estimate, so its ratio tier is its band. A stage too short
+  // (under 0.5% of the run) to cost that much is skipped, since everything there graded info.
+  it('skips a slow host on a stage under 0.5% of the run, and keeps its tier on a longer one', () => {
     const executorStats = [
       { executorId: 'e1', ...base, inputBytes: 200 * 1024 * 1024 },
       { executorId: 'e2', ...base, inputBytes: 20 * 1024 * 1024 },
       { executorId: 'e3', ...base, inputBytes: 20 * 1024 * 1024 },
     ];
-    const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [], submittedAt: 0, completedAt: 1000 })]]);
-    const longRun = makeApp({ startTime: 0, endTime: 400_000 }); // the 1s stage is 0.25% of it
-    const f = analyze(longRun, stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'inputBytes');
-    expect(f).toHaveLength(1);
-    expect(f[0].impactBand).toBe('info');
+    const longRun = makeApp({ startTime: 0, endTime: 400_000 });
+    const at = (completedAt) => analyze(longRun, new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [], submittedAt: 0, completedAt })]]), [], [])
+      .filter(b => b.type === 'slowHost');
+    expect(at(1000)).toHaveLength(0); // 0.25% of the run: the imbalance is real, the floor drops it
+    const kept = at(4000).filter(b => b.variant === 'multiDim' && b.dimension === 'inputBytes'); // 1%
+    expect(kept).toHaveLength(1);
+    expect(kept[0].impactBand).not.toBe('info');
   });
 });
 
@@ -1052,6 +1054,16 @@ describe('analyze: tiny tasks', () => {
     const found = catalog.filter(b => b.type === 'tinyTask');
     expect(found).toHaveLength(1);
     expect(found[0].impactBand).toBe('critical');
+  });
+
+  it('skips a stage under 0.5% of the run, and keeps a longer one at its warning tier', () => {
+    const run = makeApp({ endTime: 400_000 });
+    const at = (completedAt) => analyze(run, new Map([[1, makeStage({ taskCount: 1000, taskDurationP50: 80, taskDurationP95: 150, completedAt })]]), [], [])
+      .filter(b => b.type === 'tinyTask');
+    expect(at(1000)).toHaveLength(0); // 0.25% of the run: the tasks are tiny, the floor drops it
+    const kept = at(4000); // 1%: 900 excess tasks x 50ms, clipped to the stage, clear the 0.5% floor
+    expect(kept).toHaveLength(1);
+    expect(kept[0].impactBand).toBe('warning');
   });
 
   it('does not fire when P95 exceeds the 1000ms ceiling despite a low P50', () => {

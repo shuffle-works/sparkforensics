@@ -1040,18 +1040,20 @@ export const DETECTORS: Detector[] = [
       // stages, sub-second/sub-64MB host differences produce huge noise ratios. 1s is above
       // per-task jitter but below genuine slow-host stages; 64MB mirrors the spill disk-skew floor.
       floorMs: 1000, floorBytes: 64 * MB,
-      // A byte-dimension imbalance has no time estimate, so its ratio tier is its band; on a stage
-      // shorter than this share of the run (the tiered detectors' 0.5% floor) nothing can cost
-      // that much, so it's info. On the 14 real logs that was 66 of the 90 warning/critical
-      // byte-dimension findings (9 of the 11 critical).
-      byteImbalanceFloorPct: 0.005,
+      // stageFloorPct: the tiered detectors' 0.5% runtime floor. On a stage shorter than this share
+      // of the run a slow host can't cost that much: duration findings are clipped to the stage
+      // and graded info, and a byte-dimension imbalance (no time estimate, so its ratio tier was
+      // its band) was graded info here since 6298149. So the stage is skipped: on the 14 real logs
+      // 324 of 452 slowHost findings, all info. The imbalance is still there on those stages; the
+      // floor is why they're dropped.
+      stageFloorPct: 0.005,
     },
     detect(
       this: {
         thresholds: {
           minHosts: number; minTasks: number; ratioWarn: number; minShare: number;
           shareWarn: number; taskShareWarn: number; ratioTiers: number[]; floorMs: number; floorBytes: number;
-          byteImbalanceFloorPct: number;
+          stageFloorPct: number;
         };
       },
       stage: DetectorStage,
@@ -1060,6 +1062,7 @@ export const DETECTORS: Detector[] = [
       const hosts = stage.hostStats ?? [];
       const execs0 = stage.executorStats ?? [];
       if ((hosts.length < this.thresholds.minHosts && execs0.length < this.thresholds.minHosts) || stage.taskCount < this.thresholds.minTasks) return null;
+      if (!meetsRuntimeFloor(stage.completedAt - stage.submittedAt, computeAppDurationMs(ctx), this.thresholds.stageFloorPct)) return null;
       const out: Finding[] = [];
       if (hosts.length >= this.thresholds.minHosts) {
         const means = hosts.map(h => ({ host: h.host, taskCount: h.taskCount, mean: h.totalDuration / h.taskCount }));
@@ -1115,9 +1118,6 @@ export const DETECTORS: Detector[] = [
       if (em && em.size >= 3) {
         dims.push({ dimension: 'storageMemory', floor: floorBytes, samples: [...em.entries()].map(([id, m]) => ({ key: id, value: (m.onHeapStorageMemory ?? 0) + (m.offHeapStorageMemory ?? 0) })) });
       }
-      const stageClearsByteFloor = meetsRuntimeFloor(
-        stage.completedAt - stage.submittedAt, computeAppDurationMs(ctx), this.thresholds.byteImbalanceFloorPct,
-      );
       for (const d of dims) {
         const r = maxMedianRatio(d.samples);
         if (!r || r.value < d.floor) continue; // absolute-magnitude floor: same ratio+floor shape as computeSpillMagnitude
@@ -1127,7 +1127,7 @@ export const DETECTORS: Detector[] = [
         // (its current floor case), overwritten by deriveImpactBand whenever this
         // finding gets a real wallClock estimate. The other three dimensions never
         // get a wallClock estimate, so they keep the dynamic tier unchanged.
-        const impactBand = d.dimension === 'taskTime' || !stageClearsByteFloor ? 'info' : tier;
+        const impactBand = d.dimension === 'taskTime' ? 'info' : tier;
         out.push({
           type: 'slowHost', stageId: stage.id, impactBand,
           variant: 'multiDim', dimension: d.dimension,
@@ -1337,12 +1337,17 @@ export const DETECTORS: Detector[] = [
   {
     type: 'tinyTask', scope: 'stage', order: 80, fixEffort: 'code', version: 1,
     docAnchor: '#bottleneck-tiny-tasks',
-    thresholds: { minTasks: 100, maxP50: 500, maxP95: 1000 },
+    // stageFloorPct: the tiered detectors' 0.5% runtime floor. Coalescing can't save more than the
+    // stage's own duration, so on a shorter stage every finding graded info: on the 14 real logs
+    // 132 of 151 tinyTask findings. The tasks are still tiny there; the floor is why they're dropped.
+    thresholds: { minTasks: 100, maxP50: 500, maxP95: 1000, stageFloorPct: 0.005 },
     detect(
-      this: { thresholds: { minTasks: number; maxP50: number; maxP95: number } },
+      this: { thresholds: { minTasks: number; maxP50: number; maxP95: number; stageFloorPct: number } },
       stage: DetectorStage,
+      ctx?: DetectorCtx,
     ): Finding | null {
       if (stage.taskCount < this.thresholds.minTasks) return null;
+      if (!meetsRuntimeFloor(stage.completedAt - stage.submittedAt, computeAppDurationMs(ctx), this.thresholds.stageFloorPct)) return null;
       if (stage.taskDurationP50 > this.thresholds.maxP50 || stage.taskDurationP95 > this.thresholds.maxP95) return null;
       const coalesceTo = Math.max(1, Math.round(stage.taskCount / 10));
       const fix = stage.shuffleReadBytes > 0

@@ -145,3 +145,8 @@ floor `stageShape` already uses. Every such straggler finding graded info, since
 cost more than its stage's own duration, and a memory-sizing note from a stage that barely ran
 adds nothing. On 14 real logs that drops 464 low-GC notes and 671 straggler findings, all
 informational; high-GC, warning and critical findings are unchanged.
+
+Thresholds: `slowHost` and `tinyTask` skip stages shorter than 0.5% of the run too. A slow host or
+tiny tasks can't cost more than such a stage's own duration, so every finding there graded info.
+On 14 real logs that drops 324 slowHost and 132 tinyTask findings, all informational; warning and
+critical findings are unchanged.
