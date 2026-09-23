@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { analyze } from '../src/analyzer.js';
 import { stripPlanDescription } from '../src/event-handlers.ts';
-import { computeTaskActiveMs } from '../src/stage-quantiles.ts';
+import { computeTaskActiveMs, computePeakConcurrentTasks } from '../src/stage-quantiles.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
 import { zipSync, gzipSync, strToU8 } from '../src/vendor/fflate.js';
 import { zstdCompressSync } from 'node:zlib';
@@ -539,6 +539,13 @@ describe('computeTaskActiveMs', () => {
     expect(computeTaskActiveMs(tasks([0, 5000], [3000, 3000]))).toBe(0);
     expect(computeTaskActiveMs(new Float64Array(0))).toBe(0);
   });
+
+  it('computePeakConcurrentTasks: counts the most tasks running at once; a finish frees its slot for a launch at the same instant', () => {
+    // [1000,5000) [2000,6000) [3000,4000) overlap 3-deep at 3000; [6000,7000) reuses a freed slot.
+    expect(computePeakConcurrentTasks(tasks([1000, 5000], [2000, 6000], [3000, 4000], [6000, 7000]))).toBe(3);
+    expect(computePeakConcurrentTasks(tasks([1000, 2000], [2000, 3000]))).toBe(1);
+    expect(computePeakConcurrentTasks(tasks([0, 5000]))).toBe(0);
+  });
 });
 
 describe('classifySpill', () => {
@@ -1013,6 +1020,8 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 1100 },
     }, s);
     expect(msg.data.stragglerCount).toBe(1);
+    // The straggler's excess over P50, the input to impact-estimator's tail claim.
+    expect(msg.data.stragglerExcessMs).toBe(900);
   });
 
   it('stragglerCount is 0 when all tasks are short', () => {

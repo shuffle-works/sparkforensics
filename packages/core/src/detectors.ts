@@ -3,7 +3,7 @@ import { scanRelationId } from './plan-summary.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
-import { estimateSingleStage, type OccupancyStage, type StageOccupancyInfo } from './occupancy.ts';
+import { estimateSingleStage, tailRecoveryMs, type OccupancyStage, type StageOccupancyInfo } from './occupancy.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { cyrb53 } from './string-hash.ts';
 import type { Finding, PlanNode, FixEffort } from './types.ts';
@@ -75,6 +75,8 @@ export interface DetectorStage {
   failureReasons?: DetectorFailureReason[];
   localityStats?: DetectorLocalityStat[];
   stragglerCount: number;
+  stragglerExcessMs?: number;
+  peakConcurrentTasks?: number;
   speculativeTasks: number;
   speculationWastedAttempts: number;
   speculationWasteMs: number;
@@ -802,7 +804,7 @@ export const DETECTORS: Detector[] = [
       if (ratio <= this.thresholds.ratioWarn) return null;
       // Same absolute delta impact-estimator.ts's 'skew' case reports as savings; clipped the
       // same way before the floor check so the gate agrees with what's displayed.
-      const wasteMs = Math.max(0, metric === 'P95/median' ? stage.taskDurationP95 - stage.taskDurationP50 : stage.taskDurationMax - stage.taskDurationP50);
+      const wasteMs = tailRecoveryMs(stage, Math.max(0, metric === 'P95/median' ? stage.taskDurationP95 - stage.taskDurationP50 : stage.taskDurationMax - stage.taskDurationP50));
       const appDurationMs = computeAppDurationMs(ctx);
       const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx);
       if (!meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctWarn)) return null;
@@ -1212,7 +1214,7 @@ export const DETECTORS: Detector[] = [
       // Same absolute delta impact-estimator.ts's straggler/stageShape case reports as savings: a
       // high straggler/speculative share on a stage whose tasks barely vary models near-zero
       // savings, so it must not outrank 'info'. Clipped the same way before the floor check.
-      const wasteMs = Math.max(0, stage.taskDurationMax - stage.taskDurationP50);
+      const wasteMs = tailRecoveryMs(stage, Math.max(0, stage.taskDurationMax - stage.taskDurationP50));
       const appDurationMs = computeAppDurationMs(ctx);
       const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx);
       const meetsWarnFloor = meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctWarn);

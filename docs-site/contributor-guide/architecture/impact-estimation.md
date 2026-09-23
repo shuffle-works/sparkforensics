@@ -89,6 +89,19 @@ replay dropped from 199 to 11, estimates within 2× rose from 556 to 738, mean a
 fell from 6.64s to 5.59s. Overclaims by more than 2× went from 10 to 16: stages where
 AQE or free slots absorbed the tail, which a stage-level model can't see.
 
+The claim itself is `tailRecoveryMs` (`occupancy.ts`): the larger of the single-task delta
+above and `stragglerExcessMs / peakConcurrentTasks`, the summed excess over P50 of every
+task slower than 4× P50, spread over the most tasks the stage ever ran at once (both from
+`finalizeStage`). A lone straggler costs its own excess; a bimodal stage with hundreds of
+slow tasks (26% of 1400 on a real log) costs far more than its longest one, and the
+single-task delta claimed 38-92s where the replay recovered 443-638s. Peak, not average,
+concurrency: a tail-dominated stage runs few tasks for most of its span (5.7 average vs 14
+peak on one real stage), and dividing by the average doubled the claim. Scored the same way
+over the 14 real logs plus the 17 complete corpus runs (non-info findings only): within 2×
+of the replay 56 of 78 → 79 of 85, more than 2× under 16 → 0, more than 2× over 6 → 6, mean
+absolute error 53.4s → 8.4s. The detectors' floor gates use the same figure, which lifted
+skew's recall from 0.60 to 0.73 at precision 0.97 → 0.98; straggler's scores didn't move.
+
 `analyzer.ts` feeds this `totalCores` from `src/core-count.ts`'s
 `computePeakConcurrentCores(app, executorsAdded, executorsRemoved)`, not the shared
 `computeTotalCores` helper. `computeTotalCores` sums every `ExecutorAdded` event's cores
@@ -260,8 +273,8 @@ formula per `variant`/`rule` on the same finding type; the basis column says whi
 | `speculationWaste` | stage | measured | `speculationWasteMs`, gate-clipped; pre-clip figure kept as `rawWaste` in `ms` |
 | `coldStart` | app | measured | `gapSeconds × 1000`, unclipped, `basis: 'serial'` unconditionally (a pre-first-task gap can't overlap any stage) |
 | `gc` | stage | modeled / informational-only | high-GC: `jvmGCTime / (executorRunTime / stageDurationMs)`, gate-clipped: the concurrency division is an approximation, not a reconstruction, hence `modeled`; `rawWaste` in `coreMs` is the raw `jvmGCTime` sum before that conversion. Low-GC (`direction: 'low'`): informational-only, since its fix (less executor memory) raises GC rather than recovering it; it used to claim the stage's GC time as savings, which promoted 10 of 679 low-GC findings on 14 real logs to warning/critical |
-| `skew` | stage | measured | `taskDurationP95` or `Max` minus `P50` (per `metric`), gate-clipped against the post-fix floor (`shortensLongestTask`); pre-clip figure kept as `rawWaste` in `ms` |
-| `straggler` | stage | measured | `taskDurationMax − taskDurationP50`, gate-clipped against the post-fix floor (`shortensLongestTask`) |
+| `skew` | stage | measured | `tailRecoveryMs`: the larger of `taskDurationP95` or `Max` minus `P50` (per `metric`) and `stragglerExcessMs / peakConcurrentTasks`, gate-clipped against the post-fix floor (`shortensLongestTask`); pre-clip figure kept as `rawWaste` in `ms` |
+| `straggler` | stage | measured | `tailRecoveryMs`: the larger of `taskDurationMax − taskDurationP50` and `stragglerExcessMs / peakConcurrentTasks`, gate-clipped against the post-fix floor (`shortensLongestTask`) |
 | `stageShape` | stage | cost-only | all three rules are `estimateMethod: 'measured'`, real per-stage fields, no assumed constant: `'lowParallelism'` → `rawWaste` in `coreMs` (idle cores × stage duration); `'dataExplosion'` → `rawWaste` in `bytes` (`outputBytes − inputBytes`); `'taskStageSkew'` → `rawWaste` in `coreMs` (`max(0, min(totalCores, taskCount) − 1) × (taskDurationMax − taskDurationP50)`, the cores idle during the straggler's tail at achieved concurrency) |
 | `slowHost` | stage | measured / informational-only | duration-based variants (`hostMeanRatio`, `durationShare`, `multiDim`+`taskTime`): `value − taskDurationP50`, gate-clipped; byte-based `multiDim` dimensions: no formula yet |
 | `duplicatePlanSubtree` | sql | measured | per stage in `stageShares`: its task-active time (`taskActiveMs`, the union of its task intervals; submit-to-complete only when absent) × the repeated operators' share of that stage × the redundant fraction `(occurrences − 1) / occurrences`, summed and capped at the union of those stages' spans. A stage shared with other operators (the consuming join, the other join side) contributes only its share, so sibling groups can't claim one stage twice, and a stage left waiting for cores (2491 s open, 60 s of tasks on a real log) claims only its task time. No claim (`informational`) when the repeats' details differ (`occurrencesIdentical: false`) or no repeated operator has a stage (the execution-wide `stageIds` fallback stays for linking only). On the 14 real logs: 2307 min claimed before, including more duplicate time than the whole run on 3 logs (1661 of 458 min, 257 of 61, 338 of 68); 108 min after, critical 65 → 2, warning 54 → 21 |

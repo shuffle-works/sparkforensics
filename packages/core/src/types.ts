@@ -85,6 +85,10 @@ export interface Stage {
   // Wall-clock ms during which at least one of the stage's tasks ran (finalizeStage's
   // computeTaskActiveMs); absent on stages from before this field existed.
   taskActiveMs?: number;
+  // Summed (duration - P50) over the tasks slower than 4x P50 (finalizeStage), core-ms.
+  stragglerExcessMs?: number;
+  // Most of the stage's tasks running at once (finalizeStage's computePeakConcurrentTasks).
+  peakConcurrentTasks?: number;
   localityStats?: { locality: string; count: number }[];
   details?: string;
   [key: string]: unknown;

@@ -75,3 +75,9 @@ CLI and MCP: zstd event logs decompress with Node's native zlib zstd, one frame 
 the running Node has it (22.15+ or 23.8+); older Nodes and the browser keep the bundled decoder.
 Parsing the 14 real logs is 42% faster (22.3s to 13.0s; the largest log 10.7s to 6.4s) with
 identical output.
+
+Estimates: `skew` and `straggler` count a tail of many slow tasks as their summed excess over
+the median spread across the stage's peak concurrent tasks, not just the longest task's excess.
+Against a task-level replay of 31 runs, estimates within 2x of the replay went from 56 of 78 to
+79 of 85, none are now more than 2x under (was 16), and skew recall rose from 0.60 to 0.73 with
+no loss of precision.

@@ -147,6 +147,24 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
     expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 8000, unit: 'ms' });
   });
 
+  // A bimodal stage (hundreds of tasks over 4x P50) recovers its tasks' summed excess spread over
+  // the slots it had, far more than the single longest task's excess.
+  it('skew and straggler: a tail of many slow tasks claims its summed excess over the stage\'s peak slots', () => {
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 1_000_000, parentIds: [], taskCount: 1400,
+      taskDurationP50: 6000, taskDurationP95: 30_000, taskDurationMax: 80_000,
+      stragglerExcessMs: 14_500_000, peakConcurrentTasks: 29,
+    }]]);
+    const findings = [
+      { type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' },
+      { type: 'skew', stageId: 0, metric: 'P95/median', impactBand: 'warning' },
+    ];
+    estimateImpact(findings, stages);
+    // 14_500_000 / 29 = 500_000, over max-P50 (74_000) and P95-P50 (24_000).
+    expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 500_000, unit: 'ms' });
+    expect(findings[1].impactEstimate.rawWaste).toEqual({ value: 500_000, unit: 'ms' });
+  });
+
   it('stageShape with an unrecognized rule: leaves impactEstimate unset (null, not undefined, internally)', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 500, taskDurationMax: 8000 }]]);
     const findings = [{ type: 'stageShape', rule: 'someOtherRule', stageId: 0, impactBand: 'warning' }];
