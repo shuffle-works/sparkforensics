@@ -16,6 +16,12 @@ const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 // href/src attributes and CSS `url()` calls.
 const DOCS_BASE_PREFIX = '/docs/';
 
+/** Escapes every regex metacharacter in `value`, not just `/`, so the result
+ * is safe to embed in a `new RegExp(...)` pattern and match only literally. */
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** Rewrites every root-absolute `/docs/...` reference a copied VitePress page
  * carries in its own attributes/CSS into the correct `../`-repeated relative
  * path for that file's actual depth under `docsRoot`. VitePress applies one
@@ -49,12 +55,6 @@ const DOCS_BASE_PREFIX = '/docs/';
  * segment has no extension already (an asset reference like `assets/x.css`
  * is left alone), preserving a trailing `#fragment` after the inserted
  * extension. */
-/** Escapes every regex metacharacter in `value`, not just `/`, so the result
- * is safe to embed in a `new RegExp(...)` pattern and match only literally. */
-export function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 export function rewriteAbsoluteDocsPaths(docsRoot: string, dir: string): void {
   const prefixPattern = new RegExp(`(["'(])${escapeRegExp(DOCS_BASE_PREFIX)}([^"')]*)`, 'g');
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
