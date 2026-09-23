@@ -240,9 +240,10 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
   it('fires from 15 minutes of wall-clock; its band comes from the partitioning headroom, not the duration', () => {
     // 4 tasks on a 16-core cluster, running the whole window: more partitions could spread it over
     // all 16 cores (critical against the 100-minute app). With 100 tasks there's no headroom (info).
+    // It reads 1 GB: a stage that reads nothing has no data for more partitions to split.
     const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 16 }];
     const app = makeApp({ startTime: 0, endTime: 100 * min });
-    const run = (mins, taskCount) => analyze(app, new Map([[1, { ...slow(mins, 4), taskCount, taskActiveMs: mins * min }]]), executorsAdded, [])
+    const run = (mins, taskCount) => analyze(app, new Map([[1, { ...slow(mins, 4), taskCount, taskActiveMs: mins * min, inputBytes: 1e9 }]]), executorsAdded, [])
       .find(b => b.type === 'stageSlowness');
     expect(run(14, 4)).toBeUndefined();
     expect(run(15, 4).impactBand).toBe('critical');
