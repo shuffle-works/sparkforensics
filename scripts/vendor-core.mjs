@@ -13,7 +13,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { rmSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DieError, DOCS_CONTENT_DIR, LOCAL_ONLY_ENTRIES, ensureTuningDocs } from './fetch-tuning-docs.mjs';
+import { DieError, DOCS_CONTENT_DIR, ensureTuningDocs, isLocalOnlyEntry } from './fetch-tuning-docs.mjs';
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(scriptsDir);
@@ -45,7 +45,7 @@ function copyTree(srcNode, destNode) {
     if (srcNode === coreSrcDir && BROWSER_ONLY_TOP_LEVEL_ENTRIES.has(entry.name)) continue;
     // The generated docs' stamp and fetch leftovers describe this checkout's
     // cache, not the docs.
-    if (srcNode === DOCS_CONTENT_DIR && LOCAL_ONLY_ENTRIES.has(entry.name)) continue;
+    if (srcNode === DOCS_CONTENT_DIR && isLocalOnlyEntry(entry.name)) continue;
     const srcPath = join(srcNode, entry.name);
     const destPath = join(destNode, entry.name);
     if (entry.isDirectory()) {

@@ -73,8 +73,12 @@ const STAMP_NAME = '.generated.json';
 const STAGING_NAME = '.fetch-staging';
 const LOCK_NAME = '.fetch.lock';
 // docs-content/ entries that describe this checkout's cache, not the docs:
-// vendor-core.mjs leaves them out of every published tarball.
-export const LOCAL_ONLY_ENTRIES = new Set([STAMP_NAME, STAGING_NAME, LOCK_NAME]);
+// vendor-core.mjs leaves them out of every published tarball. That includes
+// the <lock>.<pid> file reclaimDeadLock moves a dead lock to.
+const LOCAL_ONLY_ENTRIES = new Set([STAMP_NAME, STAGING_NAME, LOCK_NAME]);
+export function isLocalOnlyEntry(name) {
+  return LOCAL_ONLY_ENTRIES.has(name) || name.startsWith(`${LOCK_NAME}.`);
+}
 // Bump whenever renderDocsContent's output changes for the same upstream
 // commit (filters, normalization, nav-index shape), so existing caches
 // regenerate instead of passing as fresh.

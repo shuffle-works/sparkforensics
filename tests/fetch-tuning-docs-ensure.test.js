@@ -9,6 +9,7 @@ import {
   OVERRIDE_ENV,
   TRANSFORM_VERSION,
   ensureTuningDocs,
+  isLocalOnlyEntry,
   stampIsFresh,
   withLock,
 } from '../scripts/fetch-tuning-docs.mjs';
@@ -196,6 +197,17 @@ describe('stampIsFresh', () => {
     const local = { source: 'local', dir: '/x', commit: 'a'.repeat(40), dirty: true, transformVersion: TRANSFORM_VERSION };
     expect(stampIsFresh(local, local)).toBe(false);
     expect(stampIsFresh({ ...local, dirty: false }, local)).toBe(false);
+  });
+});
+
+describe('isLocalOnlyEntry', () => {
+  it('covers the stamp, staging dir, lock and reclaimed lock files, not the docs', () => {
+    for (const name of ['.generated.json', '.fetch-staging', '.fetch.lock', '.fetch.lock.12345']) {
+      expect(isLocalOnlyEntry(name)).toBe(true);
+    }
+    for (const name of ['chapters', 'tuning', 'diagrams', 'detection', 'upstream.json', '.fetch.lockfile']) {
+      expect(isLocalOnlyEntry(name)).toBe(false);
+    }
   });
 });
 
