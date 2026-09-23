@@ -61,12 +61,27 @@ describe('analyze: task skew', () => {
     expect(catalog.find(b => b.type === 'skew').impactBand).toBe('warning');
   });
 
-  it('suppresses a critical-ratio skew finding whose raw waste clears the floor but whose occupancy-clipped recoverable time does not', () => {
-    // The 5,000ms max task fills nearly the whole 5,005ms window, so the occupancy ceiling leaves only 5ms recoverable despite a 4,990ms raw delta that clears both floors: the critical-with-sub-second-recoverable-savings mismatch.
+  it('credits a one-task-dominated stage\'s tail as recoverable: the fix shortens the very task the ceiling used to floor it at', () => {
+    // The 5,000ms max task fills nearly the whole 5,005ms window. Fixing the skew brings the tail
+    // down to ~P50, so the recoverable time is the 4,990ms delta, not the 5ms left above that task.
     const stages = new Map([[1, makeStage({
       submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000,
     })]]);
     const catalog = analyze(makeApp({ startTime: 0, endTime: 100000 }), stages, [], []);
+    const skew = catalog.filter(b => b.type === 'skew');
+    expect(skew).toHaveLength(1);
+    expect(skew[0].impactEstimate.wallClock.high).toBe(4990);
+    expect(skew[0].impactBand).toBe('critical');
+  });
+
+  it('suppresses a critical-ratio skew finding whose raw waste clears the floor but whose occupancy-clipped recoverable time does not', () => {
+    // 10,000 core-ms over 2 cores is 5,000ms of unavoidable work in the 5,005ms window, so only 5ms
+    // is recoverable despite a 4,990ms raw delta that clears both floors.
+    const stages = new Map([[1, makeStage({
+      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000, executorRunTime: 10000,
+    })]]);
+    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 2 }];
+    const catalog = analyze(makeApp({ startTime: 0, endTime: 100000 }), stages, executorsAdded, []);
     expect(catalog.filter(b => b.type === 'skew')).toHaveLength(0);
   });
 });
@@ -420,14 +435,28 @@ describe('analyze: speculative / straggler', () => {
   });
 
   it('caps a large straggler share at info when the raw waste clears the floor but the occupancy-clipped recoverable time does not', () => {
-    // Like the skew ceiling test: the 5,000ms max task fills the 5,005ms window, so only 5ms is recoverable despite a raw delta that clears the 25ms warn floor.
+    // Like the skew ceiling test: 10,000 core-ms over 2 cores fills the 5,005ms window, so only
+    // 5ms is recoverable despite a raw delta that clears the 25ms warn floor.
+    const stages = new Map([[1, makeStage({
+      taskCount: 100, speculativeTasks: 0, stragglerCount: 50,
+      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationMax: 5000, executorRunTime: 10000,
+    })]]);
+    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 2 }];
+    const b = analyze(makeApp(), stages, executorsAdded, []).find(b => b.type === 'straggler');
+    expect(b).toBeTruthy();
+    expect(b.impactBand).toBe('info');
+  });
+
+  it('grades a straggler that alone gates its stage on the recoverable tail, not on ~0', () => {
+    // Same 5,000ms straggler in a 5,005ms window, but no core work filling it: bringing the
+    // straggler down to P50 recovers the 4,990ms delta.
     const stages = new Map([[1, makeStage({
       taskCount: 100, speculativeTasks: 0, stragglerCount: 50,
       submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationMax: 5000,
     })]]);
     const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'straggler');
-    expect(b).toBeTruthy();
-    expect(b.impactBand).toBe('info');
+    expect(b.impactEstimate.wallClock.high).toBe(4990);
+    expect(b.impactBand).toBe('critical');
   });
 });
 

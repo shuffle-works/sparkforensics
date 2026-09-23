@@ -72,6 +72,21 @@ that sits above its own unbeatable floor. This is what fixes historical overclai
 `tinyTask` finding claiming 407.5s on a 13.1s stage capped to 8.9s; a `shuffle` finding
 claiming 1939.9s on a 991.3s/1688.3s stage capped to 610.3s/250.1s).
 
+`skew` and `straggler` are the exception (`estimateSingleStage`'s `shortensLongestTask`
+option, passed by both their `impact-estimator.ts` cases and `detectors.ts`'s
+`clippedWasteMs` runtime-floor gate, so firing and display agree). Their claim shortens the
+stage's longest task itself, so `taskDurationMax` can't be their floor: clipping against it
+capped a stage gated by one straggler at `duration(S) − taskDurationMax`, about zero, exactly
+when the fix recovers the most. Their floor is instead the longest task the fix leaves plus
+the core-work term, `max(taskDurationMax − wasteMs_claimed, stage.executorRunTime / totalCores)`.
+Scored against a list-scheduling replay of each flagged stage's own tasks (slots = the
+stage's observed peak concurrent tasks; recoverable = replay with actual durations minus
+replay with every task over 4× P50 capped at P50), across 765 skew/straggler findings on 14
+real logs (2026-09-23, `dev/bench-analyze.mjs` snapshots): estimates more than 2× under the
+replay dropped from 199 to 11, estimates within 2× rose from 556 to 738, mean absolute error
+fell from 6.64s to 5.59s. Overclaims by more than 2× went from 10 to 16: stages where
+AQE or free slots absorbed the tail, which a stage-level model can't see.
+
 `analyzer.ts` feeds this `totalCores` from `src/core-count.ts`'s
 `computePeakConcurrentCores(app, executorsAdded, executorsRemoved)`, not the shared
 `computeTotalCores` helper. `computeTotalCores` sums every `ExecutorAdded` event's cores
@@ -195,11 +210,11 @@ mistaken for the same kind of claim.
 stage from the same single dominant outlier task, and each is clipped independently. This
 phase does not dedupe or suppress either: each keeps its own independently-computed
 `wallClock`. Do not sum `wallClock.high` across multiple findings on the same stage: if
-both fire together, they describe the same underlying waste, not two separate wastes. This
-overlap caveat is orthogonal to (and compounds with) the ceiling clip above: a stage with
-one dominant outlier task trips both detectors *and* has a small `ceiling`-derived
-recoverable room, since `ceiling` is itself `>= taskDurationMax`, the very quantity these
-two detectors are reacting to.
+both fire together, they describe the same underlying waste, not two separate wastes. Both
+are clipped with the post-fix floor described under
+[Occupancy-weighted attribution](#occupancy-weighted-attribution), not the plain `ceiling`,
+so a stage gated by one dominant outlier task reports that task's excess as recoverable
+instead of the near-zero room `ceiling >= taskDurationMax` would leave.
 
 `analyzer.ts`'s `flagSkewStragglerOverlap` (run after `deriveImpactBand`, once per `analyze()`
 call) surfaces this caveat to the reader instead of leaving it as an internal-only comment:
@@ -243,8 +258,8 @@ formula per `variant`/`rule` on the same finding type; the basis column says whi
 | `speculationWaste` | stage | measured | `speculationWasteMs`, gate-clipped; pre-clip figure kept as `rawWaste` in `ms` |
 | `coldStart` | app | measured | `gapSeconds × 1000`, unclipped, `basis: 'serial'` unconditionally (a pre-first-task gap can't overlap any stage) |
 | `gc` | stage | modeled | `jvmGCTime / (executorRunTime / stageDurationMs)`, gate-clipped: the concurrency division is an approximation, not a reconstruction, hence `modeled`; `rawWaste` in `coreMs` is the raw `jvmGCTime` sum before that conversion |
-| `skew` | stage | measured | `taskDurationP95` or `Max` minus `P50` (per `metric`), gate-clipped; pre-clip figure kept as `rawWaste` in `ms` |
-| `straggler` | stage | measured | `taskDurationMax − taskDurationP50`, gate-clipped |
+| `skew` | stage | measured | `taskDurationP95` or `Max` minus `P50` (per `metric`), gate-clipped against the post-fix floor (`shortensLongestTask`); pre-clip figure kept as `rawWaste` in `ms` |
+| `straggler` | stage | measured | `taskDurationMax − taskDurationP50`, gate-clipped against the post-fix floor (`shortensLongestTask`) |
 | `stageShape` | stage | cost-only | all three rules are `estimateMethod: 'measured'`, real per-stage fields, no assumed constant: `'lowParallelism'` → `rawWaste` in `coreMs` (idle cores × stage duration); `'dataExplosion'` → `rawWaste` in `bytes` (`outputBytes − inputBytes`); `'taskStageSkew'` → `rawWaste` in `coreMs` (`max(0, min(totalCores, taskCount) − 1) × (taskDurationMax − taskDurationP50)`, the cores idle during the straggler's tail at achieved concurrency) |
 | `slowHost` | stage | measured / informational-only | duration-based variants (`hostMeanRatio`, `durationShare`, `multiDim`+`taskTime`): `value − taskDurationP50`, gate-clipped; byte-based `multiDim` dimensions: no formula yet |
 | `duplicatePlanSubtree` | sql | measured | each contributing stage's real wall-clock duration × the redundant fraction `(occurrences − 1) / occurrences`, summed and capped at the finding's own `stageIds` union. `stageIds` is narrowed to the stages that actually ran the duplicated subtree's matched node instances (accumulator-ID evidence resolved onto each `PlanNode` at parse time, see [Stage-ID attribution for Plan Advisor findings](./detector-contract#stage-id-attribution-for-plan-advisor-findings)), falling back to the whole execution's stages only when no matched instance has any accumulator coverage |

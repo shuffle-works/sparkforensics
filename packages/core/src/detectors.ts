@@ -524,9 +524,12 @@ function meetsRuntimeFloor(wasteMs: number, appDurationMs: number | null, floorP
 // Runs a raw waste delta through the same occupancy clip impact-estimator.ts applies before
 // display, so the runtime floor checks recoverable wall-clock, not a delta a physical floor
 // leaves unrecoverable. Falls back to the raw delta when occupancy data is unavailable.
+// skew/straggler claims shorten the stage's longest task, hence shortensLongestTask (see occupancy.ts).
 function clippedWasteMs(wasteMs: number, stageId: number, ctx?: DetectorCtx): number {
   if (!ctx) return wasteMs;
-  const est = estimateSingleStage(wasteMs, stageId, ctx.stages as unknown as Map<number, OccupancyStage>, ctx.occupancy);
+  const est = estimateSingleStage(
+    wasteMs, stageId, ctx.stages as unknown as Map<number, OccupancyStage>, ctx.occupancy, { shortensLongestTask: true },
+  );
   return est ? est.wallClock.high : wasteMs;
 }
 

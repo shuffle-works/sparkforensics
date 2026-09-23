@@ -137,7 +137,7 @@ describe('computeOccupancy', () => {
       [1, stage(1, { submittedAt: 5000, completedAt: 5000 })], // excluded
     ]);
     const info = computeOccupancy(stages, 0);
-    expect(info.get(0)).toEqual({ gate: 1, ceiling: 1000 });
+    expect(info.get(0)).toEqual({ gate: 1, ceiling: 1000, coreWorkFloor: 0 });
     expect(info.has(1)).toBe(false);
   });
 });
@@ -167,6 +167,21 @@ describe('estimateSingleStage', () => {
     const info = computeOccupancy(stages, 0); // ceiling 9000, room 1000, gate 1 (solo)
     const est = estimateSingleStage(3000, 0, stages, info);
     expect(est).toEqual({ basis: 'serial', wallClock: { low: 1000, high: 1000 } });
+  });
+
+  it('shortensLongestTask: floors a tail claim at the longest task the fix leaves, not at the current one', () => {
+    const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 10000, taskDurationMax: 9500 })]]);
+    const info = computeOccupancy(stages, 0);
+    // Plain clip: ceiling 9500 leaves 500ms. Tail claim of 9000: post-fix longest task 500, room 9500.
+    expect(estimateSingleStage(9000, 0, stages, info).wallClock.high).toBe(500);
+    expect(estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true }).wallClock.high).toBe(9000);
+  });
+
+  it('shortensLongestTask: the core-work floor (executorRunTime / totalCores) still applies', () => {
+    const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 10000, taskDurationMax: 9500, executorRunTime: 32000 })]]);
+    const info = computeOccupancy(stages, 4); // coreWorkFloor 8000: room 2000
+    expect(info.get(0).coreWorkFloor).toBe(8000);
+    expect(estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true }).wallClock.high).toBe(2000);
   });
 
   it('returns null for a stage excluded from the sweep', () => {

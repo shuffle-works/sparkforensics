@@ -117,6 +117,9 @@ export function clipToCeiling(wasteMsClaimed: number, stage: OccupancyStage, cei
 export interface StageOccupancyInfo {
   gate: number;
   ceiling: number;
+  // The core-work half of `ceiling` (executorRunTime / totalCores, 0 without core data): the only
+  // floor left for a claim that itself shortens the stage's longest task.
+  coreWorkFloor: number;
 }
 
 export function computeOccupancy(
@@ -128,7 +131,11 @@ export function computeOccupancy(
   for (const s of stages.values()) {
     const g = gate.get(s.id);
     if (g === undefined) continue; // excluded from the sweep (duration <= 0)
-    info.set(s.id, { gate: g, ceiling: computeCeiling(s, totalCores) });
+    info.set(s.id, {
+      gate: g,
+      ceiling: computeCeiling(s, totalCores),
+      coreWorkFloor: totalCores > 0 ? (s.executorRunTime ?? 0) / totalCores : 0,
+    });
   }
   return info;
 }
@@ -138,6 +145,14 @@ const SERIAL_GATE_THRESHOLD = 0.999;
 export interface OccupancyEstimate {
   basis: 'serial' | 'contended';
   wallClock: { low: number; high: number };
+}
+
+export interface SingleStageEstimateOptions {
+  // The claim shortens the stage's longest task itself (skew, straggler): `ceiling`'s
+  // taskDurationMax term is the very quantity being fixed, so clipping against it would cap a
+  // one-straggler stage's claim at ~0. Such a claim is floored instead at the longest task the
+  // fix leaves (taskDurationMax - claim) or the stage's core work spread over every core.
+  shortensLongestTask?: boolean;
 }
 
 /**
@@ -151,11 +166,15 @@ export function estimateSingleStage(
   stageId: number,
   stages: Map<number, OccupancyStage>,
   info: Map<number, StageOccupancyInfo>,
+  { shortensLongestTask = false }: SingleStageEstimateOptions = {},
 ): OccupancyEstimate | null {
   const stage = stages.get(stageId);
   const stageInfo = info.get(stageId);
   if (!stage || !stageInfo) return null;
-  const clipped = clipToCeiling(wasteMsClaimed, stage, stageInfo.ceiling);
+  const ceiling = shortensLongestTask
+    ? Math.max((stage.taskDurationMax ?? 0) - wasteMsClaimed, stageInfo.coreWorkFloor)
+    : stageInfo.ceiling;
+  const clipped = clipToCeiling(wasteMsClaimed, stage, ceiling);
   if (stageInfo.gate >= SERIAL_GATE_THRESHOLD) {
     return { basis: 'serial', wallClock: { low: clipped, high: clipped } };
   }

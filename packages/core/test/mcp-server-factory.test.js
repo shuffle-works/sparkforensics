@@ -224,7 +224,7 @@ describe('createMcpServer', () => {
 
       const filtered = await client.callTool({
         name: 'diagnose_run',
-        arguments: { source: { path }, type: ['straggler'], stageId: 1, impactBand: ['info'] },
+        arguments: { source: { path }, type: ['straggler'], stageId: 1, impactBand: ['critical'] },
       });
       expect(filtered.isError).toBeFalsy();
       expect(filtered.structuredContent.findings).toHaveLength(1);

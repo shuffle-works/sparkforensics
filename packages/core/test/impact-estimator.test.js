@@ -87,8 +87,11 @@ describe('estimateImpact: gc', () => {
   });
 });
 
-describe('estimateImpact: skew / straggler: ceiling clips a dominant-outlier-task stage hard', () => {
-  it('skew: P95 branch, clipped by the stage\'s own longest task (ceiling 9000 on a 10000ms stage leaves only 1000ms of room)', () => {
+describe('estimateImpact: skew / straggler: the tail claim is floored at the longest task the fix leaves', () => {
+  // These claims shorten the stage's longest task itself, so ceiling(S)'s taskDurationMax term
+  // (the very task being fixed) can't be their floor: that used to cap a one-straggler stage's
+  // claim at ~0. The floor is taskDurationMax - claim, or the core work over every core.
+  it('skew: P95 branch, floored at the longest task the fix leaves (9000 - 3000 = 6000 on a 10000ms stage)', () => {
     const stages = new Map([[0, {
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [],
       taskCount: 50, taskDurationP50: 1000, taskDurationP95: 4000, taskDurationMax: 9000,
@@ -96,15 +99,13 @@ describe('estimateImpact: skew / straggler: ceiling clips a dominant-outlier-tas
     const findings = [{ type: 'skew', stageId: 0, metric: 'P95/median', impactBand: 'warning' }];
     estimateImpact(findings, stages);
     const est = findings[0].impactEstimate;
-    // Raw claim is P95-P50 = 3000, but ceiling(9000) leaves only 1000ms of
-    // room on this 10000ms stage: min(3000, 1000) = 1000.
-    expect(est.wallClock).toEqual({ low: 1000, high: 1000 });
+    // Raw claim P95-P50 = 3000; post-fix floor 6000 leaves 4000ms of room, so the claim fits whole.
+    expect(est.wallClock).toEqual({ low: 3000, high: 3000 });
     expect(est.basis).toBe('serial');
-    // rawWaste is the pre-clip magnitude, unaffected by the ceiling.
     expect(est.rawWaste).toEqual({ value: 3000, unit: 'ms' });
   });
 
-  it('skew: max-P50 fallback branch, same ceiling clip applies', () => {
+  it('skew: max-P50 fallback branch, a one-task-dominated stage recovers its whole tail', () => {
     const stages = new Map([[0, {
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [],
       taskCount: 5, taskDurationP50: 1000, taskDurationP95: 1500, taskDurationMax: 9000,
@@ -112,17 +113,29 @@ describe('estimateImpact: skew / straggler: ceiling clips a dominant-outlier-tas
     const findings = [{ type: 'skew', stageId: 0, metric: 'max/median', impactBand: 'warning' }];
     estimateImpact(findings, stages);
     const est = findings[0].impactEstimate;
-    // Raw claim max-P50 = 8000, ceiling(9000) leaves room 1000: min(8000,1000)=1000.
-    expect(est.wallClock).toEqual({ low: 1000, high: 1000 });
+    // Raw claim max-P50 = 8000; post-fix floor is P50 (1000), room 9000: the old
+    // taskDurationMax floor (9000) would have left only 1000.
+    expect(est.wallClock).toEqual({ low: 8000, high: 8000 });
     expect(est.rawWaste).toEqual({ value: 8000, unit: 'ms' });
   });
 
-  it('straggler: reconstructs max-P50, clipped by ceiling(taskDurationMax)', () => {
+  it('straggler: reconstructs max-P50, floored at P50 rather than at the straggler itself', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1000, taskDurationMax: 7000 }]]);
     const findings = [{ type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' }];
     estimateImpact(findings, stages);
-    // Raw claim max-P50 = 6000, ceiling(7000) leaves room 3000: min(6000,3000)=3000.
-    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 3000, high: 3000 });
+    // Raw claim max-P50 = 6000, room above the P50 floor is 9000: min(6000, 9000) = 6000.
+    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 6000, high: 6000 });
+  });
+
+  it('straggler: the stage\'s core work spread over every core still caps the claim', () => {
+    // 36000 core-ms over 4 cores = 9000ms of unavoidable work on a 10000ms stage: room 1000.
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1000, taskDurationMax: 9000, executorRunTime: 36000,
+    }]]);
+    const findings = [{ type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' }];
+    estimateImpact(findings, stages, 4);
+    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 1000, high: 1000 });
+    expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 8000, unit: 'ms' });
   });
 
   it('stageShape with an unrecognized rule: leaves impactEstimate unset (null, not undefined, internally)', () => {

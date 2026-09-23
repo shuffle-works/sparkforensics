@@ -1,5 +1,8 @@
 import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, Stage } from './types.ts';
-import { computeOccupancy, estimateSingleStage, estimateMultiStage, type OccupancyStage, type StageOccupancyInfo } from './occupancy.ts';
+import {
+  computeOccupancy, estimateSingleStage, estimateMultiStage,
+  type OccupancyStage, type SingleStageEstimateOptions, type StageOccupancyInfo,
+} from './occupancy.ts';
 import { detectorCatalog } from './detectors.ts';
 
 // Assumed shuffle-network throughput, ~1 Gbps. Starting assumption, unvalidated.
@@ -31,6 +34,11 @@ const STAGE_SLOWNESS_THRESHOLD_MINUTES = (() => {
   return infoMin;
 })();
 
+// skew and straggler claim time off the stage's longest task itself, so the occupancy clip must
+// not floor them at that same task (see estimateSingleStage). detectors.ts's clippedWasteMs gates
+// both detectors on the same option so the firing floor and the displayed estimate agree.
+const TAIL_CLAIM: SingleStageEstimateOptions = { shortensLongestTask: true };
+
 // No quantifiable magnitude -> 'informational'; a rawWaste figure with no stage window ->
 // 'resourceOnly'. Never a fake {low:0, high:0}: wallClock is null in both cases.
 function costOnly(estimateMethod: ImpactEstimateMethod, rawWaste?: RawWasteFigure): ImpactEstimate {
@@ -46,8 +54,9 @@ function singleStageImpact(
   occupancy: Map<number, StageOccupancyInfo>,
   estimateMethod: ImpactEstimateMethod,
   rawWaste?: RawWasteFigure,
+  opts?: SingleStageEstimateOptions,
 ): ImpactEstimate {
-  const est = estimateSingleStage(wasteMs, stageId, stages as unknown as Map<number, OccupancyStage>, occupancy);
+  const est = estimateSingleStage(wasteMs, stageId, stages as unknown as Map<number, OccupancyStage>, occupancy, opts);
   if (est) return { basis: est.basis, wallClock: est.wallClock, estimateMethod, rawWaste };
   return costOnly(estimateMethod, rawWaste); // stage excluded from the sweep (duration <= 0)
 }
@@ -129,7 +138,7 @@ function computeEstimateForFinding(
       // computeSkewRatio's own metric labels (src/detectors.ts): 'P95/median' or 'max/median'.
       const usesP95Branch = finding.metric === 'P95/median';
       const wasteMs = Math.max(0, usesP95Branch ? (stage.taskDurationP95 ?? 0) - p50 : (stage.taskDurationMax ?? 0) - p50);
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' });
+      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' }, TAIL_CLAIM);
     }
     case 'straggler':
     case 'stageShape': {
@@ -172,7 +181,7 @@ function computeEstimateForFinding(
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
       const wasteMs = Math.max(0, (stage.taskDurationMax ?? 0) - (stage.taskDurationP50 ?? 0));
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' });
+      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' }, TAIL_CLAIM);
     }
     case 'slowHost': {
       // Three duration-based shapes, each carrying its absolute-ms figure under a different field
