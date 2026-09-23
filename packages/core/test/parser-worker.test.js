@@ -439,6 +439,29 @@ describe('computeFieldQuantiles', () => {
   });
 });
 
+describe('processEvent: StageCompleted backfills a missing submission time', () => {
+  it('takes Submission Time from StageCompleted when StageSubmitted carried none (older Spark)', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 0 } }, s);
+    const msg = processEvent({
+      Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 0, 'Submission Time': 1422981762069, 'Completion Time': 1422981762637 },
+    }, s);
+    expect(msg.data.submittedAt).toBe(1422981762069);
+    expect(msg.data.completedAt - msg.data.submittedAt).toBe(568);
+  });
+
+  it('keeps the StageSubmitted time when both events carry one', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 0, 'Submission Time': 1000 } }, s);
+    const msg = processEvent({
+      Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 0, 'Submission Time': 1200, 'Completion Time': 5000 },
+    }, s);
+    expect(msg.data.submittedAt).toBe(1000);
+  });
+});
+
 describe('computeTaskActiveMs', () => {
   const tasks = (...pairs) => {
     const arr = new Float64Array(pairs.length * FIELDS.STRIDE);

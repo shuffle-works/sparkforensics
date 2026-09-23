@@ -214,6 +214,8 @@ export const StageCompletedEventSchema = z.object({
   Event: z.literal('SparkListenerStageCompleted'),
   'Stage Info': z.object({
     'Stage ID': z.number(),
+    // Backfills submittedAt when StageSubmitted lacked it (older Spark).
+    'Submission Time': z.number().optional(),
     'Completion Time': z.number().optional(),
     'Failure Reason': z.string().optional(),
   }),

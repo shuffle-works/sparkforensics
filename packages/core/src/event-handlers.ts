@@ -906,6 +906,10 @@ export function processEvent(event: SparkEvent, state: ParserState): unknown {
       const stage = state.stages.get(id);
       if (!stage) return null;
       stage.completedAt = info['Completion Time'] ?? 0;
+      // Older Spark (seen on 1.x-2.0 logs) posts StageSubmitted before the stage's submission
+      // time is set; StageCompleted carries it. Without this backfill submittedAt stays 0 and
+      // every stage-duration figure becomes the epoch timestamp itself (a "47-year" stage).
+      if (!stage.submittedAt && info['Submission Time'] != null) stage.submittedAt = info['Submission Time'];
       stage.stageFailureReason = info['Failure Reason'] ?? null;
       // finalizeStage keeps its `stage` parameter typed as a loose Record (see that module); bridge
       // StageRecord's more precise shape across that boundary with an explicit cast.

@@ -34,3 +34,6 @@ estimate is now what more partitions could recover: the time the stage's tasks w
 over the cores the stage left unused. A stage that sat queued with its one short task, or that
 already ran more tasks than the cluster had cores, no longer grades critical, and a long
 single-task stage now does. Stage messages carry a new `taskActiveMs` field for this.
+
+Parser: a stage whose `StageSubmitted` event carries no submission time (older Spark) now takes it
+from `StageCompleted`, instead of starting at epoch 0 and reading as a decades-long stage.
