@@ -128,7 +128,9 @@ contributor should read; `docs/` stays flat internal engineering records
   `npm run split-detection-docs` and commit the output, or
   `tests/detection-docs-split.test.js` fails.
 - zstd decoding differs by runtime: the browser uses the vendored fzstd
-  (Chrome has no `DecompressionStream('zstd')`), while the Node CLI/MCP path
+  (Chrome has no `DecompressionStream('zstd')`), for dropped files in a nested
+  decompress worker that posts 1 MiB batches (`zstd-worker.ts`, see
+  `worker-protocol.md#decompress-worker`), while the Node CLI/MCP path
   (`collectRun`, `shs-load.ts`) uses `packages/core/src/cli/native-zstd.ts`, which walks frame boundaries
   itself because Node's own zstd decoders stop after the first frame and Spark
   writes thousands of small ones. A parser change that depends on chunk shape

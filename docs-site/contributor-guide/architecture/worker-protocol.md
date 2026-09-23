@@ -39,6 +39,45 @@ Post-parse prefetch: after `done`, main runs `analyzer.ts` to build the
 bottleneck catalog, then fires parallel `getTaskData` for every flagged stage
 so their widgets render immediately. Unflagged stages are on-demand.
 
+### Decompress worker
+
+A dropped zstd file (`parse`, and each zstd file of a `parseFiles` directory)
+is decompressed in a second, nested worker, `packages/core/src/zstd-worker.ts`,
+so fzstd and the NDJSON parser run at the same time. On the largest real log,
+fzstd had been about 47% of the parse worker's time. The parse worker starts it
+on the first zstd file and reuses it for the rest of the parse. It dies with
+the parse worker, so the page's `terminate()` also cancels it. Other codecs and
+the SHS path (`parseFromUrl`, which decodes whole zip entries synchronously)
+still decompress on the parse worker.
+
+`packages/core/src/zstd-worker-client.ts` is the parse-worker end: it plugs into
+`streamFile` as the `zstdDecoder` option, like the Node CLI's native decoder.
+The messages, all buffers moved by transfer, never copied:
+
+- Parse to decompress: `start { id }` opens a stream, and replaces any open
+  one. `data { id, seq, bytes, final }` carries one compressed read slice.
+  `cancel { id }` drops the stream.
+- Decompress to parse: `ready` once, at startup. `chunk { id, bytes, length }`
+  carries decoded output in batches of up to 1 MiB. `consumed { id, seq }`
+  follows the last `chunk` of slice `seq`. `error { id, message }` ends the
+  stream, and its message becomes the usual `Could not decompress` error.
+
+Flow control is a window of three input slices: `push()` resolves while fewer
+than three slices wait for their `consumed`. Each `chunk` is parsed in its
+message handler, so a slice is acknowledged only after its output was parsed,
+and at most three slices' output is ever queued. The final `push()` resolves
+once every slice is acknowledged. When `streamFile` gives up mid-stream (a
+failed file read, a parse exception), it calls `cancel()`.
+
+When the nested worker cannot start (`new Worker` throws or its script fails to
+load), the parse worker logs a warning
+and decodes with in-thread fzstd, as it did before, with identical output. A
+crash after startup fails the stream it was decoding, and later streams fall
+back the same way. The progress
+`pct` is the read position, so it can run up to the window ahead of the slice
+being parsed. The self-contained `file://` export never parses in the browser
+(it opens with its run already analyzed), so it never starts either worker.
+
 ### Evidence-availability worker input
 
 `packages/core/src/event-handlers.ts`'s `createState()`/per-event handlers start and
