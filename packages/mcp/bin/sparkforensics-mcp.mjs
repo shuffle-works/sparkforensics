@@ -19,20 +19,26 @@ async function loadCreateMcpServer() {
   return mod.createMcpServer;
 }
 
-const USAGE = `Usage: sparkforensics-mcp
+// Tool names come from the server the bin actually builds, so --help can't drift
+// from the registered set. Building the server registers tools only: no transport,
+// no I/O. _registeredTools is the SDK's registry; the MCP package test checks that
+// this list matches what listTools reports.
+function usage(toolNames) {
+  return `Usage: sparkforensics-mcp
 
 Starts the SparkForensics MCP server, speaking the MCP protocol over
 stdio. Point an MCP client (Claude Desktop, Claude Code, etc.) at this
-command; it exposes five tools for diagnosing Apache Spark event logs:
-diagnose_run, get_run_summary, compare_runs, evaluate_budgets,
-get_finding_evidence.
+command; it exposes ${toolNames.length} tools for diagnosing Apache Spark event logs:
+${toolNames.join(', ')}.
 
 See https://github.com/shuffle-works/sparkforensics#readme for details.
 `;
+}
 
 async function main() {
   if (process.argv.includes('--help') || process.argv.includes('-h')) {
-    process.stderr.write(USAGE);
+    const createMcpServer = await loadCreateMcpServer();
+    process.stderr.write(usage(Object.keys(createMcpServer()._registeredTools)));
     return;
   }
   const createMcpServer = await loadCreateMcpServer();

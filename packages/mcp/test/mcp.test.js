@@ -73,4 +73,17 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     const { stderr } = await execFileAsync(binPath, ['--help']);
     expect(stderr).toMatch(/Usage: sparkforensics-mcp/);
   }, 10000);
+
+  it('--help lists exactly the tools the server registers', async () => {
+    const { stderr } = await execFileAsync(binPath, ['--help']);
+    const transport = new StdioClientTransport({ command: binPath, args: [] });
+    client = new Client({ name: 'test-client', version: '1.0.0' });
+    await client.connect(transport);
+    const { tools } = await client.listTools();
+    const listed = stderr.match(/exposes (\d+) tools[^:]*:\s*([^.]+)\./);
+    expect(listed).not.toBeNull();
+    const helpNames = listed[2].split(',').map((name) => name.trim());
+    expect(Number(listed[1])).toBe(tools.length);
+    expect(helpNames.sort()).toEqual(tools.map((t) => t.name).sort());
+  }, 30000);
 });
