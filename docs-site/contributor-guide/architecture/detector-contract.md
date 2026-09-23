@@ -174,7 +174,8 @@ accumulator-ID evidence is matched against the plan that actually ran rather tha
 a stale pre-AQE snapshot. The raw `sparkPlanInfo` stays worker-side and is released
 once `SQLExecutionEnd` resolves it into `planTree`; `physicalPlanDescription` (Spark's
 text rendering of the plan, which nothing reads) is emptied before `JSON.parse` and
-never retained (`stripPlanDescription`, `event-handlers.ts`).
+never retained (`stripPlanDescription`, `event-handlers.ts`). When the value spans
+decompressed chunks, `buildChunkDecoder` drops its bytes without decoding them.
 
 No eviction/pruning is added to `taskAccumStages`, a deliberate choice, not an
 oversight: measured on real logs, it holds roughly 1,050 keys per compressed MB

@@ -185,31 +185,82 @@ export interface ParserState {
 //
 // Measured 2026-09-23 against the previous raw-byte-scan version (identical output): 3.5s -> 2.8s
 // on that 3.5GB all-ASCII log, 0.37s -> 0.18s on 93MB of synthetic 2/3/4-byte-heavy NDJSON.
+//
+// A SQL UI event's physicalPlanDescription value (see stripPlanDescription) that is still open
+// when a chunk ends is cut off the pending line, and the following bytes are dropped up to its
+// closing quote without being decoded. On the largest real log that value is 1.9 GB of the
+// 3.5 GB stream and spans ~30 chunks per event, so it is never decoded, joined or scanned as text.
 export function buildChunkDecoder() {
   const decoder = new TextDecoder('utf-8');
   // Decoded partial line after the last newline, carried to the next chunk.
   let pending = '';
+  // True once the pending line is known to need no plan-description skip.
+  let pendingSettled = false;
+  let skippingPlanDescription = false;
+  // Length of the backslash run the skipped bytes ended with, which escapes a quote at the start
+  // of the next chunk when odd.
+  let carriedBackslashes = 0;
+
+  function settlePending(lastByte: number): void {
+    if (pending.length < SQL_UI_EVENT_PREFIX.length) {
+      pendingSettled = !SQL_UI_EVENT_PREFIX.startsWith(pending);
+      return;
+    }
+    if (!pending.startsWith(SQL_UI_EVENT_PREFIX)) { pendingSettled = true; return; }
+    const keyAt = pending.indexOf(PLAN_DESCRIPTION_KEY);
+    if (keyAt === -1) return; // the key may still arrive in a later chunk
+    pendingSettled = true;
+    const valueStart = keyAt + PLAN_DESCRIPTION_KEY.length;
+    if (closingQuoteIndex(pending, valueStart) !== -1) return; // complete: stripPlanDescription empties it
+    // Only a chunk whose last byte is a backslash carries a run over; any other last byte (such
+    // as part of a split multibyte char) ends it.
+    let run = 0;
+    if (lastByte === BACKSLASH) {
+      for (let i = pending.length - 1; i >= valueStart && pending.charCodeAt(i) === BACKSLASH; i--) run++;
+    }
+    carriedBackslashes = run;
+    pending = pending.substring(0, valueStart);
+    decoder.decode(); // discard a split multibyte char held from the dropped value
+    skippingPlanDescription = true;
+  }
 
   return {
     decode(buffer: Uint8Array): string[] {
       const lines: string[] = [];
-      const text = decoder.decode(buffer, { stream: true });
+      let from = 0;
+      if (skippingPlanDescription) {
+        const lineEnd = buffer.indexOf(NEWLINE);
+        const close = closingQuoteAt(buffer, lineEnd === -1 ? buffer.length : lineEnd, carriedBackslashes);
+        if (close === -1 && lineEnd === -1) {
+          let i = buffer.length - 1;
+          while (i >= 0 && buffer[i] === BACKSLASH) i--;
+          carriedBackslashes = buffer.length - 1 - i + (i < 0 ? carriedBackslashes : 0);
+          return lines;
+        }
+        // Resume at the closing quote, or at the newline of an unterminated value: that line then
+        // ends in an open string and JSON.parse rejects it, as it would have the whole line.
+        skippingPlanDescription = false;
+        from = close !== -1 ? close : lineEnd;
+      }
+      const text = decoder.decode(from === 0 ? buffer : buffer.subarray(from), { stream: true });
       let nl = text.indexOf('\n');
       if (nl === -1) {
         pending = pending === '' ? text : pending + text;
-        return lines;
-      }
-      // Zero-length lines are dropped to match a `.filter(l => l.length)`.
-      const first = pending === '' ? text.substring(0, nl) : pending + text.substring(0, nl);
-      if (first.length > 0) lines.push(first);
-      let start = nl + 1;
-      nl = text.indexOf('\n', start);
-      while (nl !== -1) {
-        if (nl > start) lines.push(text.substring(start, nl));
-        start = nl + 1;
+      } else {
+        // Zero-length lines are dropped to match a `.filter(l => l.length)`.
+        const first = pending === '' ? text.substring(0, nl) : pending + text.substring(0, nl);
+        if (first.length > 0) lines.push(first);
+        let start = nl + 1;
         nl = text.indexOf('\n', start);
+        while (nl !== -1) {
+          if (nl > start) lines.push(text.substring(start, nl));
+          start = nl + 1;
+          nl = text.indexOf('\n', start);
+        }
+        pending = start < text.length ? text.substring(start) : '';
+        pendingSettled = false;
       }
-      pending = start < text.length ? text.substring(start) : '';
+      if (!pendingSettled && pending !== '') settlePending(buffer[buffer.length - 1]);
       return lines;
     },
     flush(): string[] {
@@ -922,22 +973,42 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set(
 const SQL_UI_EVENT_PREFIX = '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQL';
 const PLAN_DESCRIPTION_KEY = '"physicalPlanDescription":"';
 
+const QUOTE = 0x22, BACKSLASH = 0x5c, NEWLINE = 0x0a;
+
+// Index of the closing quote of the JSON string whose content starts at `valueStart`: the first
+// quote preceded by an even number of backslashes. -1 when the string is unterminated.
+function closingQuoteIndex(line: string, valueStart: number): number {
+  for (let quote = line.indexOf('"', valueStart); quote !== -1; quote = line.indexOf('"', quote + 1)) {
+    let backslashes = 0;
+    for (let i = quote - 1; i >= valueStart && line.charCodeAt(i) === BACKSLASH; i--) backslashes++;
+    if (backslashes % 2 === 0) return quote;
+  }
+  return -1;
+}
+
+// Byte-level closingQuoteIndex over a chunk that starts inside the string, stopping at `limit`.
+// `carried` is the backslash run the previous chunk ended with, which continues into this one.
+// A quote byte never occurs inside a UTF-8 multibyte sequence.
+function closingQuoteAt(buf: Uint8Array, limit: number, carried: number): number {
+  for (let q = buf.indexOf(QUOTE); q !== -1 && q < limit; q = buf.indexOf(QUOTE, q + 1)) {
+    let i = q - 1;
+    while (i >= 0 && buf[i] === BACKSLASH) i--;
+    if ((q - 1 - i + (i < 0 ? carried : 0)) % 2 === 0) return q;
+  }
+  return -1;
+}
+
 // Returns `line` with the physicalPlanDescription string value emptied, or `line` unchanged when
 // the key isn't found in Spark's compact form. The key pattern can't match inside another JSON
-// string: there its quotes would be backslash-escaped.
+// string: there its quotes would be backslash-escaped. buildChunkDecoder already empties a value
+// that spans chunks, so here the value is empty or within one chunk.
 export function stripPlanDescription(line: string): string {
   if (!line.startsWith(SQL_UI_EVENT_PREFIX)) return line;
   const keyAt = line.indexOf(PLAN_DESCRIPTION_KEY);
   if (keyAt === -1) return line;
   const valueStart = keyAt + PLAN_DESCRIPTION_KEY.length;
-  // The closing quote is the first one preceded by an even number of backslashes.
-  let quote = line.indexOf('"', valueStart);
-  while (quote !== -1) {
-    let backslashes = 0;
-    for (let i = quote - 1; i >= valueStart && line.charCodeAt(i) === 0x5c; i--) backslashes++;
-    if (backslashes % 2 === 0) break;
-    quote = line.indexOf('"', quote + 1);
-  }
+  if (line.charCodeAt(valueStart) === QUOTE) return line; // already empty
+  const quote = closingQuoteIndex(line, valueStart);
   // Unterminated string (a truncated line): leave it for JSON.parse to reject.
   if (quote === -1) return line;
   return line.slice(0, valueStart) + line.slice(quote);

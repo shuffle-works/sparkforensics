@@ -96,6 +96,48 @@ describe('buildChunkDecoder', () => {
       expect(got).toEqual(expected);
     }
   });
+
+  // A plan-description value still open at a chunk's end is dropped as undecoded bytes; the result
+  // must match the text-level stripPlanDescription however the bytes are cut: backslash runs and
+  // escaped quotes split across chunks, the prefix or key split, and an unterminated value ending
+  // its line.
+  it('skips a chunk-spanning physicalPlanDescription value, matching stripPlanDescription for any cut', () => {
+    const alphabet = ['\\', '"', 'a', '€', '\n', ' ', '🚀'];
+    let seed = 7;
+    const rand = (k) => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed % k; };
+    const planText = () => Array.from({ length: 40 }, () => alphabet[rand(alphabet.length)]).join('');
+    const start = (id) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":${id},"description":"q \\"x\\" €","physicalPlanDescription":${JSON.stringify(planText())},"sparkPlanInfo":{"nodeName":"N","simpleString":"a\\\\"},"time":1}`;
+    const update = (id) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":${id},"physicalPlanDescription":${JSON.stringify(planText() + '\\')},"sparkPlanInfo":{"nodeName":"M"}}`;
+    const unterminated = '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":9,"physicalPlanDescription":"cut \\" off';
+    const lines = [start(1), '{"Event":"SparkListenerJobEnd","physicalPlanDescription":"kept"}', update(1), unterminated, update(2), start(2)];
+    const text = lines.join('\n') + '\n';
+    const bytes = enc.encode(text);
+    const expected = lines.map(stripPlanDescription);
+    // The unterminated line (index 3) may come out whole or emptied; either way JSON.parse rejects it.
+    const terminated = (all) => all.filter((_, i) => i !== 3);
+    const decodeInChunks = (cuts) => {
+      const dec = buildChunkDecoder();
+      const got = [];
+      let from = 0;
+      for (const cut of [...cuts, bytes.length]) { got.push(...dec.decode(bytes.subarray(from, cut))); from = cut; }
+      got.push(...dec.flush());
+      expect(got).toHaveLength(lines.length);
+      expect(() => JSON.parse(got[3])).toThrow();
+      return got;
+    };
+    for (const size of [1, 2, 3, 5, 7, 13, 64, 200]) {
+      const cuts = [];
+      for (let o = size; o < bytes.length; o += size) cuts.push(o);
+      expect(terminated(decodeInChunks(cuts).map(stripPlanDescription))).toEqual(terminated(expected));
+    }
+    // Two chunks cut at every offset, so a cut lands inside every backslash run and escaped quote.
+    for (let cut = 0; cut <= bytes.length; cut++) {
+      expect(terminated(decodeInChunks([cut]).map(stripPlanDescription))).toEqual(terminated(expected));
+    }
+    // A cut just past line 2's key: its value is dropped by the decoder itself, not the text strip.
+    const keyEnd = text.indexOf('"physicalPlanDescription":"', text.indexOf(lines[2])) + '"physicalPlanDescription":"'.length;
+    expect(decodeInChunks([enc.encode(text.slice(0, keyEnd)).length + 3])[2]).toBe(expected[2]);
+  });
 });
 
 describe('createState', () => {

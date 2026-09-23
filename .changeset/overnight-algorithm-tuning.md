@@ -49,3 +49,8 @@ Analyzer: plan-shape fingerprints fold each child in as a fixed-length digest in
 full fingerprint string, and scan classification rejects non-scan plan nodes before running its
 regexes and is computed once per node. `analyze()` is 40% faster across 14 real logs (1131ms to
 678ms; 729ms to 311ms on the largest), with identical findings.
+
+Parser: a `physicalPlanDescription` value that spans decompressed chunks is dropped as raw bytes
+instead of being decoded and then cut out as text. Parsing the largest real log is 11.7% faster
+(12.56s to 11.09s) with peak memory down from 708MB to 602MB; 6.8% faster across 14 real logs,
+with identical output.
