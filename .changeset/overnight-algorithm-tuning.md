@@ -82,3 +82,9 @@ the median spread across the stage's peak concurrent tasks, not just the longest
 Against a task-level replay of 31 runs, estimates within 2x of the replay went from 56 of 78 to
 79 of 85, none are now more than 2x under (was 16), and skew recall rose from 0.60 to 0.73 with
 no loss of precision.
+
+Estimates and bands: `coldStart` measures the wait from the first stage to the first executor,
+not the driver's own startup before its first job. That removes 6 false positives on 14 real logs
+and 6 on the corpus, where executors were up long before the first stage. `slowHost` byte-imbalance
+findings on stages shorter than 0.5% of the run are informational (66 of 90 warning/critical). A
+`smallFiles` read spreads its per-file cost over the tasks that opened the files in parallel.

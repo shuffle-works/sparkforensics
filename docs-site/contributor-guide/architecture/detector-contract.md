@@ -247,7 +247,7 @@ stays documented here in full.
 | GC | `executorRunTime ≥ minRunTimeMs` = 10 s **and** `gcPct > 10%` | `warning` |
 | GC (low / cost) | `executorRunTime ≥ 10 s` **and** `gcPct < lowInfoPct100` = 5% (checked only when the GC row above did not fire). Gets no wall-clock estimate (an over-provisioning signal), so this band always stands | `info` |
 | Spill (magnitude v2) | any non-zero `memoryBytesSpilled`. The magnitude sub-table below classifies *how much*, but does not gate firing | `warning` |
-| Cold start | `firstStageSubmittedAt − app.startTime > gapSeconds` = 30 s | `warning` |
+| Cold start | `firstExecutorAddedAt − firstStageSubmittedAt > gapSeconds` = 30 s (no finding without executor-added events): the time a runnable stage waited for its first executor. It used to be `firstStageSubmittedAt − app.startTime`, the driver's own startup, which read 36-47 s on all 9 real logs that fired whatever the executors did, and flagged 6 corpus logs whose first executor was up 44-313 s before the first stage (5 of them) or arrived 4.4 s after it | `warning` |
 | Slow host: mean-duration ratio | stage has ≥ `minHosts` = 3 hosts (or executors) and ≥ `minTasks` = 15 tasks; then per host: mean task duration / overall median ≥ `ratioWarn` = 2.0× **and** host task-share ≥ `minShare` = 20% **and** host mean ≥ `floorMs` = 1000 ms (absolute-magnitude floor, rules out sub-second noise) | `warning` |
 | Slow host: duration-share | same stage gate as the row above; then per host: ≥ `shareWarn` = 75% of the stage's total task-duration **and** ≥ `taskShareWarn` = 50% of its task count | `warning` |
 | Stage slowness: absolute fallback, suppressed when `slowHost` already fired | stage wall-clock duration ≥ `infoMin` = 15 min. The band then comes from the partitioning-headroom estimate (see impact-estimation.md), not the duration | `info` |
@@ -287,7 +287,7 @@ thresholds sit well above their disk counterparts at every tier.
 | Stage shape: TaskStageSkew | `taskDurationMax / stageDuration > 3×` (info) | none |
 | Failed tasks | failure rate > 5% (min 10 tasks) | > 20% |
 | Stage failed outright | none | any `stageFailureReason` present |
-| Slow host: multi-dimensional | max/median ratio across taskTime/inputBytes/shuffleBytes/storageMemory ≥ 1.33× (info); each dimension's sample must also clear an absolute floor (1000 ms for taskTime, 64 MiB for the byte dimensions) | ≥ 3.16× warning, ≥ 10× critical |
+| Slow host: multi-dimensional | max/median ratio across taskTime/inputBytes/shuffleBytes/storageMemory ≥ 1.33× (info); each dimension's sample must also clear an absolute floor (1000 ms for taskTime, 64 MiB for the byte dimensions). A byte dimension on a stage lasting under `byteImbalanceFloorPct` = 0.5% of the run stays `info` (66 of 90 warning/critical on the 14 real logs) | ≥ 3.16× warning, ≥ 10× critical |
 | Utilization | avg active executors / peak < 60% (info) | none |
 | Autoscaling churn: short-lived executors (design spike, unvalidated thresholds) | > 30% of executors alive under 2 min (min 5 executors) | > 60% |
 | Job failure rate | ≥ 30% (≥ 10% info) | ≥ 50% |

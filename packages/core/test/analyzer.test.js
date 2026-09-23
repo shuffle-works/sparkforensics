@@ -345,6 +345,21 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('critical');
   });
+
+  // Byte imbalance carries no time estimate, so its ratio tier is its band, except on a stage too
+  // short (under 0.5% of the run) to cost that much: still reported, as info.
+  it('reports a byte imbalance on a stage under 0.5% of the run as info', () => {
+    const executorStats = [
+      { executorId: 'e1', ...base, inputBytes: 200 * 1024 * 1024 },
+      { executorId: 'e2', ...base, inputBytes: 20 * 1024 * 1024 },
+      { executorId: 'e3', ...base, inputBytes: 20 * 1024 * 1024 },
+    ];
+    const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [], submittedAt: 0, completedAt: 1000 })]]);
+    const longRun = makeApp({ startTime: 0, endTime: 400_000 }); // the 1s stage is 0.25% of it
+    const f = analyze(longRun, stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'inputBytes');
+    expect(f).toHaveLength(1);
+    expect(f[0].impactBand).toBe('info');
+  });
 });
 
 describe('analyze: failed task rate', () => {
@@ -1576,12 +1591,25 @@ describe('analyze: coldStart/utilization do not silently skip on a literal start
   it('coldStart still fires when app.startTime is exactly 0', () => {
     // makeApp()'s own default startTime is 0 (fixtures/stage-app-fixtures.js); a falsy check on
     // app.startTime (`!app.startTime`) treats this exactly like a missing startTime and silently
-    // no-ops. Stage submitted well past the 30s default gap threshold.
+    // no-ops. The first executor arrives well past the 30s default gap after the first stage.
     const app = makeApp({ startTime: 0, endTime: 100000 });
-    const stages = new Map([[1, makeStage({ submittedAt: 41000 })]]);
-    const b = analyze(app, stages, [], []).find(x => x.type === 'coldStart');
+    const stages = new Map([[1, makeStage({ submittedAt: 1000 })]]);
+    const added = [{ executorId: '1', timestamp: 42000, totalCores: 4 }];
+    const b = analyze(app, stages, added, []).find(x => x.type === 'coldStart');
     expect(b).toBeTruthy();
     expect(b.value).toBe(41);
+  });
+
+  // The gap is first runnable stage -> first executor. The driver's own startup before its first
+  // job isn't executor wait, and with no executor events there's nothing to measure.
+  it('coldStart: ignores driver startup before the first stage, and needs executor events', () => {
+    const app = makeApp({ startTime: 0, endTime: 100000 });
+    const stages = new Map([[1, makeStage({ submittedAt: 41000 })]]);
+    const warm = [{ executorId: '1', timestamp: 30000, totalCores: 4 }];
+    expect(analyze(app, stages, warm, []).find(x => x.type === 'coldStart')).toBeUndefined();
+    expect(analyze(app, stages, [], []).find(x => x.type === 'coldStart')).toBeUndefined();
+    const late = [{ executorId: '2', timestamp: 80000, totalCores: 4 }, { executorId: '1', timestamp: 75000, totalCores: 4 }];
+    expect(analyze(app, stages, late, []).find(x => x.type === 'coldStart').value).toBe(34);
   });
 
   it('utilization still fires when app.startTime is exactly 0', () => {
@@ -2322,8 +2350,9 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
 
   it('coldStart: includes the startup gap in seconds', () => {
     const app = makeApp({ startTime: 1000, endTime: 100000 });
-    const stages = new Map([[1, makeStage({ submittedAt: 41000 })]]);
-    const b = analyze(app, stages, [], []).find(x => x.type === 'coldStart');
+    const stages = new Map([[1, makeStage({ submittedAt: 2000 })]]);
+    const added = [{ executorId: '1', timestamp: 42000, totalCores: 4 }];
+    const b = analyze(app, stages, added, []).find(x => x.type === 'coldStart');
     expect(b.recommendation).toContain(`${b.value}s`);
   });
 

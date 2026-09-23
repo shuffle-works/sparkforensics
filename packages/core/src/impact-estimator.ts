@@ -338,8 +338,17 @@ function computeEstimateForFinding(
       return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: wasteMs, unit: 'ms' });
     }
     case 'smallFiles': {
-      const wasteMs = ((finding.fileCount as number | undefined) ?? 0) * FILE_OPEN_OVERHEAD_MS;
-      return stageMappableWasteOrCostOnly(wasteMs, finding.stageIds as number[] | undefined, stages, occupancy);
+      const fileMs = ((finding.fileCount as number | undefined) ?? 0) * FILE_OPEN_OVERHEAD_MS;
+      // A read's files are opened by the scan's tasks, in parallel: spread the per-file cost over
+      // the most tasks its stages ran at once (91344 files x 10ms is 913s, claimed against a 117s
+      // stage that ran 314 tasks at once). A write keeps the serial sum: the job commit moves each
+      // output file on the driver, one after another.
+      const stageIds = finding.stageIds as number[] | undefined;
+      let slots = 1;
+      if (finding.direction === 'read') {
+        for (const id of stageIds ?? []) slots = Math.max(slots, stages.get(id)?.peakConcurrentTasks ?? 1);
+      }
+      return stageMappableWasteOrCostOnly(fileMs / slots, stageIds, stages, occupancy);
     }
     case 'overBroadcast': {
       // metric: 'broadcastBytes', value: <bytes>.

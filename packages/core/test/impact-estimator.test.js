@@ -497,6 +497,18 @@ describe('estimateImpact: Plan Advisor trio', () => {
     });
   });
 
+  // Reading tasks open their files in parallel; a write's job commit moves them one by one.
+  it('smallFiles: a read spreads its per-file cost over the stage\'s peak concurrent tasks, a write stays serial', () => {
+    const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100_000, parentIds: [], peakConcurrentTasks: 50 }]]);
+    const read = [{ type: 'smallFiles', direction: 'read', stageIds: [0], metric: 'avgFileSizeBytes', value: 1024, fileCount: 5000, impactBand: 'warning' }];
+    const write = [{ type: 'smallFiles', direction: 'write', stageIds: [0], metric: 'avgFileSizeBytes', value: 1024, fileCount: 5000, impactBand: 'warning' }];
+    estimateImpact(read, stages);
+    estimateImpact(write, stages);
+    // 5000 files x 10ms = 50_000ms of opens; over 50 slots, 1_000ms.
+    expect(read[0].impactEstimate.rawWaste).toEqual({ value: 1_000, unit: 'ms' });
+    expect(write[0].impactEstimate.rawWaste).toEqual({ value: 50_000, unit: 'ms' });
+  });
+
   it('smallFiles: resourceOnly when not stage-mappable, still reports the magnitude as rawWaste', () => {
     const findings = [{ type: 'smallFiles', stageIds: [], metric: 'avgFileSizeBytes', value: 1024, fileCount: 500, impactBand: 'warning' }];
     estimateImpact(findings, new Map());

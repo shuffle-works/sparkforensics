@@ -1027,15 +1027,22 @@ export const DETECTORS: Detector[] = [
       // stages, sub-second/sub-64MB host differences produce huge noise ratios. 1s is above
       // per-task jitter but below genuine slow-host stages; 64MB mirrors the spill disk-skew floor.
       floorMs: 1000, floorBytes: 64 * MB,
+      // A byte-dimension imbalance has no time estimate, so its ratio tier is its band; on a stage
+      // shorter than this share of the run (the tiered detectors' 0.5% floor) nothing can cost
+      // that much, so it's info. On the 14 real logs that was 66 of the 90 warning/critical
+      // byte-dimension findings (9 of the 11 critical).
+      byteImbalanceFloorPct: 0.005,
     },
     detect(
       this: {
         thresholds: {
           minHosts: number; minTasks: number; ratioWarn: number; minShare: number;
           shareWarn: number; taskShareWarn: number; ratioTiers: number[]; floorMs: number; floorBytes: number;
+          byteImbalanceFloorPct: number;
         };
       },
       stage: DetectorStage,
+      ctx?: DetectorCtx,
     ): Finding[] | null {
       const hosts = stage.hostStats ?? [];
       const execs0 = stage.executorStats ?? [];
@@ -1095,6 +1102,9 @@ export const DETECTORS: Detector[] = [
       if (em && em.size >= 3) {
         dims.push({ dimension: 'storageMemory', floor: floorBytes, samples: [...em.entries()].map(([id, m]) => ({ key: id, value: (m.onHeapStorageMemory ?? 0) + (m.offHeapStorageMemory ?? 0) })) });
       }
+      const stageClearsByteFloor = meetsRuntimeFloor(
+        stage.completedAt - stage.submittedAt, computeAppDurationMs(ctx), this.thresholds.byteImbalanceFloorPct,
+      );
       for (const d of dims) {
         const r = maxMedianRatio(d.samples);
         if (!r || r.value < d.floor) continue; // absolute-magnitude floor: same ratio+floor shape as computeSpillMagnitude
@@ -1104,7 +1114,7 @@ export const DETECTORS: Detector[] = [
         // (its current floor case), overwritten by deriveImpactBand whenever this
         // finding gets a real wallClock estimate. The other three dimensions never
         // get a wallClock estimate, so they keep the dynamic tier unchanged.
-        const impactBand = d.dimension === 'taskTime' ? 'info' : tier;
+        const impactBand = d.dimension === 'taskTime' || !stageClearsByteFloor ? 'info' : tier;
         out.push({
           type: 'slowHost', stageId: stage.id, impactBand,
           variant: 'multiDim', dimension: d.dimension,
@@ -1347,23 +1357,32 @@ export const DETECTORS: Detector[] = [
       this: { thresholds: { gapSeconds: number } },
       ctx: DetectorCtx,
     ): Finding | null {
-      const { app, stages } = ctx;
+      const { app, stages, executorsAdded } = ctx;
       // Nullish (not falsy) check: a literal startTime:0 must not be treated as "missing".
       if (!app || app.startTime == null || stages.size === 0) return null;
-      let firstTaskLaunch = Infinity;
+      let firstStageSubmitted = Infinity;
       for (const stage of stages.values()) {
-        if (stage.submittedAt > 0 && stage.submittedAt < firstTaskLaunch) firstTaskLaunch = stage.submittedAt;
+        if (stage.submittedAt > 0 && stage.submittedAt < firstStageSubmitted) firstStageSubmitted = stage.submittedAt;
       }
       // No stage ever recorded a submission timestamp: no basis to measure a startup gap against.
-      // Exposed now that a literal app.startTime:0 no longer short-circuits this detector entirely.
-      if (!Number.isFinite(firstTaskLaunch)) return null;
-      const gapSeconds = (firstTaskLaunch - app.startTime) / 1000;
+      if (!Number.isFinite(firstStageSubmitted)) return null;
+      // The wait is from the first runnable stage to the first executor, not from app start: the
+      // driver's own startup before its first job (36-47s on every real log, whatever the
+      // executors did) isn't something executors could shorten. On the 9 real logs that fired,
+      // the first executor arrived 146-192s after the first stage on two whose old gap read ~40s,
+      // and 2s after it on one the old gap flagged critical at 42s.
+      let firstExecutorAdded = Infinity;
+      for (const e of executorsAdded) {
+        if (e.timestamp > 0 && e.timestamp < firstExecutorAdded) firstExecutorAdded = e.timestamp;
+      }
+      if (!Number.isFinite(firstExecutorAdded)) return null;
+      const gapSeconds = (firstExecutorAdded - firstStageSubmitted) / 1000;
       if (gapSeconds <= this.thresholds.gapSeconds) return null;
       const value = Math.round(gapSeconds);
       return {
         type: 'coldStart', stageId: null, impactBand: 'warning',
         metric: 'startupGapSeconds', value,
-        recommendation: `The first task waited ${value}s for executors to become available: keep a warm pool of idle executors, or if using dynamic allocation, raise the minimum/initial executor count so it doesn't scale up from zero.`,
+        recommendation: `The first stage waited ${value}s for an executor to become available: keep a warm pool of idle executors, or if using dynamic allocation, raise the minimum/initial executor count so it doesn't scale up from zero.`,
       };
     },
   },
