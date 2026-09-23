@@ -49,8 +49,14 @@ const DOCS_BASE_PREFIX = '/docs/';
  * segment has no extension already (an asset reference like `assets/x.css`
  * is left alone), preserving a trailing `#fragment` after the inserted
  * extension. */
+/** Escapes every regex metacharacter in `value`, not just `/`, so the result
+ * is safe to embed in a `new RegExp(...)` pattern and match only literally. */
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function rewriteAbsoluteDocsPaths(docsRoot: string, dir: string): void {
-  const prefixPattern = new RegExp(`(["'(])${DOCS_BASE_PREFIX.replace(/\//g, '\\/')}([^"')]*)`, 'g');
+  const prefixPattern = new RegExp(`(["'(])${escapeRegExp(DOCS_BASE_PREFIX)}([^"')]*)`, 'g');
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {

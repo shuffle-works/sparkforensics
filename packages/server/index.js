@@ -85,7 +85,7 @@ export function createServer({
         await serveStatic(req, res, root);
       }
     } catch (err) {
-      console.error(`[server] ${req.method} ${req.url} failed:`, err?.stack ?? err);
+      console.error('[server] %s %s failed:', req.method, req.url, err?.stack ?? err);
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' });
       res.end(`Internal server error: ${err.message}`);
     }

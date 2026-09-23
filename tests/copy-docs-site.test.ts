@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { rewriteAbsoluteDocsPaths } from '../vite-plugins/copy-docs-site.ts';
+import { escapeRegExp, rewriteAbsoluteDocsPaths } from '../vite-plugins/copy-docs-site.ts';
 
 // The HTML export is opened via `file://`, where a root-absolute path
 // resolves against the filesystem root instead of the export folder — see
@@ -182,5 +182,20 @@ describe('rewriteAbsoluteDocsPaths', () => {
     expect(readFileSync(path.join(dir, 'index.html'), 'utf8')).toBe(
       '<a href="./tuning-reference/index.html#section">Tuning</a>',
     );
+  });
+});
+
+// A prior version only escaped `/` (`prefix.replace(/\//g, '\\/')`), leaving
+// every other regex metacharacter live. That is fine for today's literal
+// '/docs/' prefix, but breaks the moment a prefix contains one: an unescaped
+// '.' would match any character instead of a literal dot, corrupting the
+// rewrite for unrelated content that merely resembles the prefix.
+describe('escapeRegExp', () => {
+  it('escapes regex metacharacters beyond "/", not just slashes', () => {
+    const escaped = escapeRegExp('/do.s/');
+    const pattern = new RegExp(`^${escaped}$`);
+
+    expect(pattern.test('/do.s/')).toBe(true);
+    expect(pattern.test('/doXs/')).toBe(false);
   });
 });
