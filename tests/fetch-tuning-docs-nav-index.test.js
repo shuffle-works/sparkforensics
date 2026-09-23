@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { projectNavIndex } from '../scripts/update-docs.mjs';
+import { projectNavIndex } from '../scripts/fetch-tuning-docs.mjs';
 
 const sparkManifest = {
   groups: [

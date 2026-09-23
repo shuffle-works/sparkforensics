@@ -93,6 +93,40 @@ Validated.
 
 The 4x-median rule flags a slow task, but slow is not the same as broken. The same threshold trips on a skewed key that simply has more data to process, or on a task that spent its time in a GC pause rather than doing extra work, so a flagged task is not automatically a slow host. Small stages make this worse: with only a handful of tasks the median is unstable, and one moderately slow task can look like a straggler against a median computed from too few peers.
 
+## Speculation waste {#bottleneck-speculation-waste}
+
+<span class="tag">SPEC</span>
+
+A straggler is reported by whichever signal, straggler share or speculative-task count,
+best explains it. Speculation waste is a separate, narrower signal: the executor time
+speculative attempts burned without confirming a genuine straggler, whether the
+speculative copy lost the race to the original attempt or the other way around. Either
+way, the losing attempt's executor time is pure waste.
+
+### How it's detected
+
+| Signal | Fires when |
+|---|---|
+| Wasted speculative attempts in a stage | ≥ 5 |
+| Wasted executor time from those attempts | ≥ 60 seconds |
+
+Both conditions have to hold together. Severity tracks the estimated recoverable time as
+a share of the app's total runtime, the same model used across this page: ≥2% is
+critical, ≥0.5% is warning, anything smaller is info.
+
+### Why it matters
+
+Every wasted speculative attempt occupies an executor slot that could have run other
+work, so a stage generating a lot of speculative waste is trading cluster capacity for
+copies that never pay off.
+
+### How to fix it
+
+If task durations are naturally variable rather than genuine stragglers, speculation is
+firing too eagerly: tune `spark.speculation.multiplier` (require a bigger gap from the
+median before speculating) or `spark.speculation.quantile` (wait for more of the stage to
+finish first) so fewer ordinary slow tasks get speculated in the first place.
+
 ## Related
 
 - **When the real cause is a skewed key:** [Partitioning](#partitioning), [Adaptive Query Execution](#aqe)

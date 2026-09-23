@@ -4,17 +4,17 @@
 
 ## What it is
 
-Executor utilization measures how much of the cluster's allocated executor capacity a job actually keeps busy. When the average number of active executors trails the peak number allocated, the cluster is holding compute (cores and memory) that isn't running any tasks.
+Executor utilization measures how much of the cluster's allocated core-time a job actually keeps busy. When busy core-time trails the core-time available across the run, the cluster is holding compute (cores and memory) that isn't running any tasks.
 
 ## How it's detected
 
-The signal is the ratio of average active executors to the peak active executor count observed over the job's lifetime:
+The signal is the ratio of busy executor core-time to the core-time available over the run: peak concurrent cores multiplied by the app's duration.
 
-| avg active executors / peak | Level |
+| Signal | Fires when |
 |---|---|
-| < 60% | Info |
-| < 40% | Warning |
-| < 20% | Critical |
+| busy core-time / available core-time | < 60% |
+
+A finding here always reports at the info level.
 
 ## Why it matters
 
@@ -41,11 +41,61 @@ spark.conf.set("spark.dynamicAllocation.executorAllocationRatio", "0.5")  # 0.5 
 
 A low average-to-peak ratio isn't always waste. A bursty or I/O-bound job legitimately holds executors while tasks wait on external systems rather than burning cores, and the ratio is sensitive to short stages, where a brief spike in allocation skews the average without meaning the cluster was genuinely idle.
 
-## Caching opportunity
+## Core locality {#bottleneck-core-locality}
+
+<span class="tag">LOCAL</span>
+
+Idle cores are one half of wasted capacity; this is the other half. A core running a task
+without process- or node-local data placement is still busy, but that task now has to
+fetch its input across the network or from a different process instead of reading it in
+place, work the core wouldn't have to do at all if it were scheduled on data it already
+holds.
+
+### How it's detected
+
+The share of tasks that ran RACK_LOCAL or ANY, out of every task with a recorded locality
+level, is the non-local task share. NO_PREF tasks stay in the denominator only, since
+shuffle-read stages legitimately report that level without it indicating a placement
+problem. This applies once a run has logged at least 50 total tasks.
+
+| Signal | Warning | Critical |
+|---|---|---|
+| Non-local task share | ≥ 15% | ≥ 35% |
+
+### Why it matters
+
+A task denied process- or node-local placement pulls its input over the network or
+through inter-process I/O instead of reading it from local memory or disk, adding latency
+to every task that lands that way. Spread across a whole run, a high non-local share adds
+up to a meaningful share of total task time spent moving data that a better-placed
+schedule wouldn't have had to move.
+
+### How to fix it
+
+- Check `spark.locality.wait` (default 3s) and its per-level overrides
+  (`.process`/`.node`/`.rack`): a wait set too short gives Spark less time to find a
+  local slot before it falls back to a less-local one.
+- Check executor and data colocation: if the executors are running far from where the
+  data actually lives (a different rack, a different zone), no amount of locality-wait
+  tuning fixes a placement that isn't available to begin with.
+
+## Caching opportunity {#bottleneck-caching-opportunity}
 
 <span class="tag">CACHE</span>
 
 When the same DataFrame, RDD, or input is scanned more than once, low utilization can trace back to repeated recomputation rather than idle cores. Spark keeps nothing between actions: transformations only build a DAG, and once an action finishes its intermediate results are discarded[^6]. Call a second action on the same logic and Spark re-runs the whole DAG from the source, which can mean re-reading a terabyte from S3, re-reading Kafka, or repeating expensive decompression[^6]. Fork that logic into two pipeline branches and you sign up to recompute everything twice[^6].
+
+### How it's detected
+
+An input relation that recurs across at least 2 SQL executions in one run is flagged by
+its scan format and path identity. A join or union subtree that recurs across at least 2
+executions is matched by operator name, metric names, and its join or filter condition
+normalized to strip per-analysis ids and canonicalize commutative operand order, while
+columns and literal values are kept intact: two executions of the exact same join or
+filter still match even when Spark's internal ids differ between runs, but a genuinely
+different filter or join value does not. A qualifying join or union subtree is reported
+as one finding covering everything beneath it. Every finding here reports at the info
+level.
 
 <img class="light-only" src="../diagrams/duplicate-plan-subtree.svg" alt="How two branches that repeat the same scan and operators each recompute it, until a shared cached or reused node lets both read one materialized result.">
 <img class="dark-only" src="../diagrams/duplicate-plan-subtree.dark.svg" alt="How two branches that repeat the same scan and operators each recompute it, until a shared cached or reused node lets both read one materialized result.">

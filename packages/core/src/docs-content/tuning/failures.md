@@ -56,7 +56,7 @@ Config-only levers for memory-driven `ExecutorLostFailure`s and mid-shuffle exec
 
 ```properties
 # Cover off-heap + PySpark memory the default overhead budget does NOT include.
-# Default is max(384m, 10% of executor memory); 2g is an example, size to real off-heap/PySpark use.
+# Default is max(384m, 10% of executor memory); 2g is an example — size to real off-heap/PySpark use.
 spark.executor.memoryOverhead=2g
 
 # Keep shuffle output alive when dynamic allocation reclaims an executor mid-shuffle

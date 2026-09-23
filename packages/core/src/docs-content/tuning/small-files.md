@@ -21,15 +21,20 @@ inefficient to read a whole block when you only need a few rows[^5].
 
 ## How it's detected
 
-Reading the SQL plan surfaces write paths that will emit far more output files
-than the data warrants, keying off the one-file-per-output-partition rule[^4]. The signal is
-a high output-partition count against a modest data volume, which foreshadows a directory
-full of tiny files.
+Each SQL plan node carries file-count and file-size metrics Spark reports directly:
+`number of files read`/`size of files read` on the read side, `number of written
+files`/`written output` on the write side. A node reads as a small-files problem once
+its file count on a given side is high and the resulting average file size is small.
 
-| Signal | What it points to |
+| Signal (per plan node, checked separately for read and write) | Fires when |
 |---|---|
-| Output partition count high vs. data volume | Many tiny files on write |
-| Read partitioning below `spark.sql.files.maxPartitionBytes` (128 MB) | Over-split input, excess filesystem I/O[^2][^3] |
+| File count | > 100 |
+| Average file size (bytes ÷ file count) | < 3 MB |
+
+Both conditions have to hold together, so a node with thousands of files that are each
+big enough, or a handful of genuinely tiny ones, doesn't register. The signal comes
+entirely from those file-count and file-size metrics, independent of
+`spark.sql.files.maxPartitionBytes`.
 
 ## Why it matters
 

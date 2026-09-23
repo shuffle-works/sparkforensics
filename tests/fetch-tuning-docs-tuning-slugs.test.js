@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { requiredTuningSlugs } from '../scripts/update-docs.mjs';
+import { requiredTuningSlugs } from '../scripts/fetch-tuning-docs.mjs';
 
 describe('requiredTuningSlugs', () => {
   it('strips the bottleneck- prefix for page-owning anchors', () => {

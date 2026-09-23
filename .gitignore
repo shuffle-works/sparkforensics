@@ -47,3 +47,7 @@ tmp/
 docs-site/tuning-reference/*.md
 !docs-site/tuning-reference/index.md
 docs-site/tuning-reference/diagrams/
+
+# Transient staging dir and lock from scripts/fetch-tuning-docs.mjs
+packages/core/src/docs-content/.fetch-staging/
+packages/core/src/docs-content/.fetch.lock
