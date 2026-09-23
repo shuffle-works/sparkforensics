@@ -351,13 +351,5 @@ describe('worker-backed zstd decoding', () => {
       expect(port.terminated).toBe(true);
       expect(port.sent).toEqual([]);
     });
-
-    it('when the worker never reports ready', async () => {
-      const port = fakePort();
-      const onFallback = vi.fn();
-      await expectFallbackParse(createWorkerZstdDecoders(() => port, fzstdFallback, { readyTimeoutMs: 5, onFallback }));
-      expect(onFallback).toHaveBeenCalledWith('the decompress worker did not start in time');
-      expect(port.terminated).toBe(true);
-    });
   });
 });

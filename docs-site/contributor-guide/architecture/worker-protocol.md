@@ -69,8 +69,8 @@ and at most three slices' output is ever queued. The final `push()` resolves
 once every slice is acknowledged. When `streamFile` gives up mid-stream (a
 failed file read, a parse exception), it calls `cancel()`.
 
-When the nested worker cannot start (`new Worker` throws, its script fails to
-load, or it sends no `ready` within 5 seconds), the parse worker logs a warning
+When the nested worker cannot start (`new Worker` throws or its script fails to
+load), the parse worker logs a warning
 and decodes with in-thread fzstd, as it did before, with identical output. A
 crash after startup fails the stream it was decoding, and later streams fall
 back the same way. The progress

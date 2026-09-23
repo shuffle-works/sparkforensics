@@ -17,9 +17,6 @@ import type { ZstdWorkerReply, ZstdWorkerRequest } from './zstd-worker.ts';
 // Three 512 KiB slices of a ~20x-compressed log keep about 30 MB of output queued at most,
 // and give the decompress worker a slice of slack while the parse worker reads the next one.
 export const MAX_IN_FLIGHT_SLICES = 3;
-// A worker that neither reports ready nor fails (a script blocked without an error event)
-// must not hang the parse: fall back to in-thread decoding after this long.
-export const READY_TIMEOUT_MS = 5000;
 
 // The slice of the Worker API this client uses; tests pass a MessagePort adapter.
 export interface ZstdWorkerPort {
@@ -31,7 +28,6 @@ export interface ZstdWorkerPort {
 
 export interface WorkerZstdDecoderOptions {
   maxInFlight?: number;
-  readyTimeoutMs?: number;
   // Reports why decoding fell back to the parse worker's thread.
   onFallback?: (reason: string) => void;
 }
@@ -49,7 +45,7 @@ type Stream = {
 export function createWorkerZstdDecoders(
   spawn: () => ZstdWorkerPort,
   fallback: ZstdDecoderFactory,
-  { maxInFlight = MAX_IN_FLIGHT_SLICES, readyTimeoutMs = READY_TIMEOUT_MS, onFallback }: WorkerZstdDecoderOptions = {},
+  { maxInFlight = MAX_IN_FLIGHT_SLICES, onFallback }: WorkerZstdDecoderOptions = {},
 ): ZstdDecoderFactory {
   let port: ZstdWorkerPort | null = null;
   let ready: Promise<boolean> | null = null;
@@ -76,7 +72,6 @@ export function createWorkerZstdDecoders(
     const settle = (ok: boolean, reason = '') => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
       if (ok) port = candidate;
       else {
         candidate.terminate?.();
@@ -84,7 +79,6 @@ export function createWorkerZstdDecoders(
       }
       resolve(ok);
     };
-    const timer = setTimeout(() => settle(false, 'the decompress worker did not start in time'), readyTimeoutMs);
     candidate.onmessage = ({ data }) => {
       if (data.type === 'ready') settle(true);
       else if (active && 'id' in data && data.id === active.id) active.onReply(data);
