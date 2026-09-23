@@ -456,12 +456,18 @@ function writeGenerated(paths, upstreamDir, manifest, stamp) {
     }
     writeFileSync(paths.stamp, JSON.stringify(stamp, null, 2) + '\n');
   } finally {
-    rmSync(paths.staging, { recursive: true, force: true });
-    try {
-      rmdirSync(paths.stagingRoot);
-    } catch (err) {
-      if (err.code !== 'ENOTEMPTY' && err.code !== 'ENOENT') throw err;
-    }
+    removeStaging(paths);
+  }
+}
+
+// Drops this process's staging dir, and the shared staging root once no other
+// process still has one inside it.
+function removeStaging(paths) {
+  rmSync(paths.staging, { recursive: true, force: true });
+  try {
+    rmdirSync(paths.stagingRoot);
+  } catch (err) {
+    if (err.code !== 'ENOTEMPTY' && err.code !== 'ENOENT') throw err;
   }
 }
 
