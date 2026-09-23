@@ -123,7 +123,8 @@ contributor should read; `docs/` stays flat internal engineering records
   (`collectRun`) uses `src/cli/native-zstd.ts`, which walks frame boundaries
   itself because Node's own zstd decoders stop after the first frame and Spark
   writes thousands of small ones. A parser change that depends on chunk shape
-  must hold for both: native chunks are whole frames, often one full event line.
+  must hold for both: native chunks are whole frames, often one full event line
+  and up to tens of MB (`buildChunkDecoder` decodes those in 512 KiB slices).
 - Plan summary is best-effort: `summarizePlanTree` (`src/plan-summary.js`) walks
   the resolved `planTree` with lenient regex on each node's `detail`: silently
   omit unparseable fragments, never surface an error. (The old regex

@@ -177,8 +177,9 @@ when `SQLExecutionEnd` arrives or at parse completion (`deferAdaptiveUpdate`,
 `event-handlers.ts`). The raw `sparkPlanInfo` stays worker-side and is released
 once `SQLExecutionEnd` resolves it into `planTree`; `physicalPlanDescription` (Spark's
 text rendering of the plan, which nothing reads) is emptied before `JSON.parse` and
-never retained (`stripPlanDescription`, `event-handlers.ts`). When the value spans
-decompressed chunks, `buildChunkDecoder` drops its bytes without decoding them.
+never retained (`stripPlanDescription`, `event-handlers.ts`). `buildChunkDecoder`
+decodes each decompressed chunk in slices of at most 512 KiB, and drops the bytes of a
+value that crosses a slice boundary without decoding them.
 
 No eviction/pruning is added to `taskAccumStages`, a deliberate choice, not an
 oversight: measured on real logs, it holds roughly 1,050 keys per compressed MB

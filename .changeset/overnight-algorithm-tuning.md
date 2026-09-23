@@ -93,3 +93,7 @@ findings on stages shorter than 0.5% of the run are informational (66 of 90 warn
 Parsing: an adaptive query execution update that a later update for the same running SQL
 execution replaces is no longer parsed, since only the last plan is ever used. Parsing the 14
 real logs is 13% faster (13.1s to 11.3s; the largest log 6.3s to 5.4s) with identical findings.
+
+Parsing: large decompressed chunks are decoded in 512 KiB slices, so a SQL event's
+plan text is dropped undecoded even when one zstd frame holds all of it. On the largest real
+log that is 1.8 GB of text never decoded, and its parse is 13% faster (5.4s to 4.7s).

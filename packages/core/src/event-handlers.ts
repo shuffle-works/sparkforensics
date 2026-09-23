@@ -192,7 +192,12 @@ export interface ParserState {
 // A SQL UI event's physicalPlanDescription value (see stripPlanDescription) that is still open
 // when a chunk ends is cut off the pending line, and the following bytes are dropped up to its
 // closing quote without being decoded. On the largest real log that value is 1.9 GB of the
-// 3.5 GB stream and spans ~30 chunks per event, so it is never decoded, joined or scanned as text.
+// 3.5 GB stream, so it is never decoded, joined or scanned as text. A chunk longer than
+// MAX_DECODE_SLICE is decoded in slices of that size, so the skip also applies within one chunk:
+// Node's native zstd emits whole frames, up to 39 MB on that log, which held all but 51 MB of the
+// value inside a single chunk.
+const MAX_DECODE_SLICE = 512 * 1024;
+
 export function buildChunkDecoder() {
   const decoder = new TextDecoder('utf-8');
   // Decoded partial line after the last newline, carried to the next chunk.
@@ -227,43 +232,48 @@ export function buildChunkDecoder() {
     skippingPlanDescription = true;
   }
 
+  function decodeSlice(buffer: Uint8Array, lines: string[]): void {
+    let from = 0;
+    if (skippingPlanDescription) {
+      const lineEnd = buffer.indexOf(NEWLINE);
+      const close = closingQuoteAt(buffer, lineEnd === -1 ? buffer.length : lineEnd, carriedBackslashes);
+      if (close === -1 && lineEnd === -1) {
+        let i = buffer.length - 1;
+        while (i >= 0 && buffer[i] === BACKSLASH) i--;
+        carriedBackslashes = buffer.length - 1 - i + (i < 0 ? carriedBackslashes : 0);
+        return;
+      }
+      // Resume at the closing quote, or at the newline of an unterminated value: that line then
+      // ends in an open string and JSON.parse rejects it, as it would have the whole line.
+      skippingPlanDescription = false;
+      from = close !== -1 ? close : lineEnd;
+    }
+    const text = decoder.decode(from === 0 ? buffer : buffer.subarray(from), { stream: true });
+    let nl = text.indexOf('\n');
+    if (nl === -1) {
+      pending = pending === '' ? text : pending + text;
+    } else {
+      // Zero-length lines are dropped to match a `.filter(l => l.length)`.
+      const first = pending === '' ? text.substring(0, nl) : pending + text.substring(0, nl);
+      if (first.length > 0) lines.push(first);
+      let start = nl + 1;
+      nl = text.indexOf('\n', start);
+      while (nl !== -1) {
+        if (nl > start) lines.push(text.substring(start, nl));
+        start = nl + 1;
+        nl = text.indexOf('\n', start);
+      }
+      pending = start < text.length ? text.substring(start) : '';
+      pendingSettled = false;
+    }
+    if (!pendingSettled && pending !== '') settlePending(buffer[buffer.length - 1]);
+  }
+
   return {
     decode(buffer: Uint8Array): string[] {
       const lines: string[] = [];
-      let from = 0;
-      if (skippingPlanDescription) {
-        const lineEnd = buffer.indexOf(NEWLINE);
-        const close = closingQuoteAt(buffer, lineEnd === -1 ? buffer.length : lineEnd, carriedBackslashes);
-        if (close === -1 && lineEnd === -1) {
-          let i = buffer.length - 1;
-          while (i >= 0 && buffer[i] === BACKSLASH) i--;
-          carriedBackslashes = buffer.length - 1 - i + (i < 0 ? carriedBackslashes : 0);
-          return lines;
-        }
-        // Resume at the closing quote, or at the newline of an unterminated value: that line then
-        // ends in an open string and JSON.parse rejects it, as it would have the whole line.
-        skippingPlanDescription = false;
-        from = close !== -1 ? close : lineEnd;
-      }
-      const text = decoder.decode(from === 0 ? buffer : buffer.subarray(from), { stream: true });
-      let nl = text.indexOf('\n');
-      if (nl === -1) {
-        pending = pending === '' ? text : pending + text;
-      } else {
-        // Zero-length lines are dropped to match a `.filter(l => l.length)`.
-        const first = pending === '' ? text.substring(0, nl) : pending + text.substring(0, nl);
-        if (first.length > 0) lines.push(first);
-        let start = nl + 1;
-        nl = text.indexOf('\n', start);
-        while (nl !== -1) {
-          if (nl > start) lines.push(text.substring(start, nl));
-          start = nl + 1;
-          nl = text.indexOf('\n', start);
-        }
-        pending = start < text.length ? text.substring(start) : '';
-        pendingSettled = false;
-      }
-      if (!pendingSettled && pending !== '') settlePending(buffer[buffer.length - 1]);
+      if (buffer.length <= MAX_DECODE_SLICE) decodeSlice(buffer, lines);
+      else for (let at = 0; at < buffer.length; at += MAX_DECODE_SLICE) decodeSlice(buffer.subarray(at, at + MAX_DECODE_SLICE), lines);
       return lines;
     },
     flush(): string[] {

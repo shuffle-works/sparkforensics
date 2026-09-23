@@ -138,6 +138,17 @@ describe('buildChunkDecoder', () => {
     const keyEnd = text.indexOf('"physicalPlanDescription":"', text.indexOf(lines[2])) + '"physicalPlanDescription":"'.length;
     expect(decodeInChunks([enc.encode(text.slice(0, keyEnd)).length + 3])[2]).toBe(expected[2]);
   });
+
+  // Node's native zstd emits whole frames (tens of MB), so a single chunk can hold a whole plan
+  // description: the decoder slices it and drops the value itself. The first line puts a '€'
+  // across the first 512 KiB slice boundary.
+  it('drops a plan description inside one chunk larger than a decode slice', () => {
+    const filler = `{"Event":"SparkListenerJobEnd","x":"${'€'.repeat(180000)}"}`;
+    const plan = `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":1,"physicalPlanDescription":${JSON.stringify('Scan \\ "t" '.repeat(100000))},"sparkPlanInfo":{"nodeName":"N"},"time":1}`;
+    const dec = buildChunkDecoder();
+    const got = [...dec.decode(enc.encode(`${filler}\n${plan}\n`)), ...dec.flush()];
+    expect(got).toEqual([filler, stripPlanDescription(plan)]);
+  });
 });
 
 describe('createState', () => {
