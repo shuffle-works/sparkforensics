@@ -9,6 +9,10 @@
 //   npm run docs:bump [-- <sha>]    move the pin to <sha> (default: upstream's
 //                                   default-branch head), regenerate, and write
 //                                   a changeset
+//   npm run docs:bump -- --check [<sha>]
+//                                   run the anchor gate against <sha> (default:
+//                                   upstream head) and print the compare link,
+//                                   writing nothing (weekly drift workflow)
 //
 // Requires `git`: upstream is public, so the pinned commit is fetched
 // anonymously over HTTPS. Every mode first validates the fetched tree contains
@@ -166,6 +170,33 @@ export function normalizeEol(text) {
 
 export function compareUrl(repository, fromCommit, toCommit) {
   return `${repository.replace(/\.git$/, '')}/compare/${fromCommit}...${toCommit}`;
+}
+
+// Parses `bump`'s arguments: an optional `--check` and an optional full SHA,
+// in either order. Throws on anything else.
+export function parseBumpArgs(args) {
+  const positional = args.filter((a) => a !== '--check');
+  const checkFlags = args.length - positional.length;
+  if (checkFlags > 1 || positional.length > 1) {
+    throw new Error(`usage: fetch-tuning-docs.mjs bump [--check] [<sha>], got bump ${args.join(' ')}`);
+  }
+  const [sha] = positional;
+  if (sha !== undefined && !/^[0-9a-f]{40}$/.test(sha)) {
+    throw new Error(`bump takes a full 40-character lowercase commit SHA, got ${JSON.stringify(sha)}`);
+  }
+  return { check: checkFlags === 1, sha };
+}
+
+// The one-line result `bump --check` prints once upstream has moved past the
+// pin. Under GitHub Actions it's prefixed as a workflow annotation, so the
+// result and the compare link show on the run's summary page.
+export function driftReport(repository, fromCommit, toCommit, gatePassed, annotate = false) {
+  const url = compareUrl(repository, fromCommit, toCommit);
+  const text = gatePassed
+    ? `upstream ${toCommit.slice(0, 7)} differs from the pin ${fromCommit.slice(0, 7)} and passes the anchor gate; \`npm run docs:bump\` is safe: ${url}`
+    : `upstream ${toCommit.slice(0, 7)} fails the anchor gate, so a bump from ${fromCommit.slice(0, 7)} would break: ${url}`;
+  if (!annotate) return text;
+  return `::${gatePassed ? 'notice' : 'error'} title=Tuning reference drift::${text}`;
 }
 
 // The changeset a bump writes: every published package ships the vendored docs.
@@ -416,9 +447,6 @@ function runCheck() {
 
 function runBump(requested) {
   const { repository, commit: from } = readPin();
-  if (requested !== undefined && !/^[0-9a-f]{40}$/.test(requested)) {
-    die(`bump takes a full 40-character lowercase commit SHA, got ${JSON.stringify(requested)}`);
-  }
   const to = requested ?? resolveUpstreamHead(repository);
   if (to === from) {
     console.log(`fetch-tuning-docs: already pinned to ${to}; nothing to bump (\`npm run docs:fetch\` regenerates).`);
@@ -434,13 +462,43 @@ function runBump(requested) {
   );
 }
 
+// Fetches and gates `requested` (default: upstream head) like a bump would,
+// then reports instead of writing: the pin, docs-content/ and .changeset/ are
+// untouched. Exits 1 when the gate fails, so the scheduled workflow goes red.
+function runBumpCheck(requested) {
+  const { repository, commit: from } = readPin();
+  const to = requested ?? resolveUpstreamHead(repository);
+  if (to === from) {
+    console.log(`fetch-tuning-docs: upstream head is the pin ${to.slice(0, 7)}; no drift.`);
+    return;
+  }
+  let gatePassed = true;
+  try {
+    withValidatedClone(repository, to, () => {});
+  } catch (err) {
+    if (!(err instanceof DieError)) throw err;
+    console.error(`fetch-tuning-docs: ${err.message}`);
+    gatePassed = false;
+  }
+  console.log(driftReport(repository, from, to, gatePassed, process.env.GITHUB_ACTIONS === 'true'));
+  if (!gatePassed) process.exitCode = 1;
+}
+
 function main(args) {
   if (!have('git')) die('`git` not found: install git to fetch the upstream docs repo.');
   const [first, ...rest] = args;
   if (first === undefined) return runWrite();
   if (first === '--check' && rest.length === 0) return runCheck();
-  if (first === 'bump' && rest.length <= 1) return runBump(rest[0]);
-  die(`usage: fetch-tuning-docs.mjs [--check | bump [<sha>]], got ${args.join(' ')}`);
+  if (first === 'bump') {
+    let parsed;
+    try {
+      parsed = parseBumpArgs(rest);
+    } catch (err) {
+      die(err.message);
+    }
+    return parsed.check ? runBumpCheck(parsed.sha) : runBump(parsed.sha);
+  }
+  die(`usage: fetch-tuning-docs.mjs [--check | bump [--check] [<sha>]], got ${args.join(' ')}`);
 }
 
 // Guards main() behind direct execution: the fetch-tuning-docs-*.test.js
