@@ -3,7 +3,6 @@ import { ChevronDownIcon, ChevronUpIcon, Server, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
-import { docsUrl } from '@sparkforensics/core/docs-config.ts';
 import { RecentList, type RecentFileEntry } from '@/view/RecentList';
 import { type NormalizedShsRequest, type RunSource, useIngest } from '@/store/useIngest';
 import { store, useStore } from '@/store/store';
@@ -39,6 +38,8 @@ function initialShsField(field: ShsField): string {
 // still see a populated board. Relative, not `/sample-runs/...`: same
 // subpath-safety reasoning as docsUrl()/DOCS_SITE_ROOT elsewhere in this app.
 const SAMPLE_RUN_URL = 'sample-runs/sample-run.ndjson.gz';
+// Getting-started section that documents starting local-server mode.
+const LOCAL_SERVER_SETUP_URL = 'docs/user-guide/getting-started.html#local-server-mode';
 
 const SHS_RECOVERY_MESSAGES = {
   'local-server-unavailable': 'The local server is unavailable. Start local-server mode, then try again.',
@@ -436,7 +437,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
             {shsError ? (
               <p ref={shsAlertRef} role="alert" tabIndex={-1} className="text-sm text-destructive">
                 {SHS_RECOVERY_MESSAGES[shsError]}
-                {' '}Edit the fields, review <a href={docsUrl('#intro')} target="_blank" rel="noopener noreferrer" className="tap-target-comfortable text-primary underline-offset-4 hover:underline">Local-server setup</a>, or choose a local file.
+                {' '}Edit the fields, review <a href={LOCAL_SERVER_SETUP_URL} target="_blank" rel="noopener noreferrer" className="tap-target-comfortable text-primary underline-offset-4 hover:underline">Local-server setup</a>, or choose a local file.
               </p>
             ) : null}
             <div className="flex flex-wrap items-center gap-3">
