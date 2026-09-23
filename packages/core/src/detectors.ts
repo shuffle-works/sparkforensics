@@ -1080,7 +1080,7 @@ export const DETECTORS: Detector[] = [
       const hosts = stage.hostStats ?? [];
       const execs0 = stage.executorStats ?? [];
       if ((hosts.length < this.thresholds.minHosts && execs0.length < this.thresholds.minHosts) || stage.taskCount < this.thresholds.minTasks) return null;
-      if (!meetsRuntimeFloor(stage.completedAt - stage.submittedAt, computeAppDurationMs(ctx), this.thresholds.stageFloorPct)) return null;
+      if (stageBelowRuntimeFloor(stage, ctx, this.thresholds.stageFloorPct)) return null;
       const out: Finding[] = [];
       if (hosts.length >= this.thresholds.minHosts) {
         const means = hosts.map(h => ({ host: h.host, taskCount: h.taskCount, mean: h.totalDuration / h.taskCount }));
@@ -1365,7 +1365,7 @@ export const DETECTORS: Detector[] = [
       ctx?: DetectorCtx,
     ): Finding | null {
       if (stage.taskCount < this.thresholds.minTasks) return null;
-      if (!meetsRuntimeFloor(stage.completedAt - stage.submittedAt, computeAppDurationMs(ctx), this.thresholds.stageFloorPct)) return null;
+      if (stageBelowRuntimeFloor(stage, ctx, this.thresholds.stageFloorPct)) return null;
       if (stage.taskDurationP50 > this.thresholds.maxP50 || stage.taskDurationP95 > this.thresholds.maxP95) return null;
       const coalesceTo = Math.max(1, Math.round(stage.taskCount / 10));
       const fix = stage.shuffleReadBytes > 0

@@ -86,9 +86,8 @@ no loss of precision.
 
 Estimates and bands: `coldStart` measures the wait from the first stage to the first executor,
 not the driver's own startup before its first job. That removes 6 false positives on 14 real logs
-and 6 on the corpus, where executors were up long before the first stage. `slowHost` byte-imbalance
-findings on stages shorter than 0.5% of the run are informational (66 of 90 warning/critical). A
-`smallFiles` read spreads its per-file cost over the tasks that opened the files in parallel.
+and 6 on the corpus, where executors were up long before the first stage. A `smallFiles` read
+spreads its per-file cost over the tasks that opened the files in parallel.
 
 Parsing: an adaptive query execution update that a later update for the same running SQL
 execution replaces is no longer parsed, since only the last plan is ever used. Parsing the 14

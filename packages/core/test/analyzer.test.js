@@ -209,6 +209,18 @@ describe('analyze: slow host', () => {
     expect(b.impactBand).toBe('critical');
   });
 
+  it('keeps a hostMeanRatio finding on a zero-length stage (no submission time on older Spark) in a long run', () => {
+    // No estimate there, so its warning fallback band stands: the 0.5% stage floor must not drop it.
+    const stages = new Map([[1, stageWithHosts([
+      { host: 'a', taskCount: 20, totalDuration: 600000 },
+      { host: 'b', taskCount: 20, totalDuration: 600000 },
+      { host: 'c', taskCount: 20, totalDuration: 2400000 },
+    ], { submittedAt: 5000, completedAt: 5000 })]]);
+    const b = analyze(makeApp({ endTime: 400_000 }), stages, [], []).find(b => b.type === 'slowHost' && b.metric === 'hostMeanRatio');
+    expect(b).toBeTruthy();
+    expect(b.impactBand).not.toBe('info');
+  });
+
   it('flags hostMeanRatio at exactly the 1000ms absolute floor (inclusive)', () => {
     const stages = new Map([[1, stageWithHosts([
       { host: 'a', taskCount: 20, totalDuration: 5000 },     // mean 250ms
