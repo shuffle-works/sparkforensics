@@ -282,7 +282,7 @@ thresholds sit well above their disk counterparts at every tier.
 
 | Rule | Warning | Critical |
 |---|---|---|
-| Stage shape: PRatio | `taskCount / totalCores < 0.5` (info, under-parallelized) | none |
+| Stage shape: PRatio | `taskCount / totalCores < 0.5` (info, under-parallelized), on a stage lasting ≥ `lowParallelismFloorPct` = 0.5% of the run (passes when the run's duration is unknown): parallelizing can't save more than the stage's duration, and on the 14 real logs 2839 of 3005 firings were below it | none |
 | Stage shape: OIRatio | `outputBytes / inputBytes > 10×` (info, data explosion) | none |
 | Stage shape: TaskStageSkew | `taskDurationMax / stageDuration > 3×` (info) | none |
 | Failed tasks | failure rate > 5% (min 10 tasks) | > 20% |

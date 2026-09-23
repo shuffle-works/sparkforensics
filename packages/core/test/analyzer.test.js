@@ -600,6 +600,17 @@ describe('analyze: stage shape smells (§7)', () => {
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('info');
   });
+  // Parallelizing a stage saves at most its own duration, so one under the 0.5% runtime floor is
+  // skipped; with no known app duration the floor passes, as for the tiered detectors.
+  it('skips under-parallelization on a stage shorter than 0.5% of the run', () => {
+    const stage = makeStage({ taskCount: 3, executorStats: execs(4), submittedAt: 0, completedAt: 1000 }); // 1s
+    const longRun = makeApp({ resources: { executor: { cores: 4 } }, startTime: 0, endTime: 400_000 }); // 1s = 0.25%
+    expect(analyze(longRun, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(0);
+    const shortRun = makeApp({ resources: { executor: { cores: 4 } }, startTime: 0, endTime: 200_000 }); // 1s = 0.5%
+    expect(analyze(shortRun, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(1);
+    const unknownRun = makeApp({ resources: { executor: { cores: 4 } }, endTime: null });
+    expect(analyze(unknownRun, new Map([[1, stage]]), [], []).filter(b => b.rule === 'lowParallelism')).toHaveLength(1);
+  });
   it('pluralizes "task" correctly for a single-task stage', () => {
     const app = makeApp({ resources: { executor: { cores: 4 } } });
     const stage = makeStage({ taskCount: 1, executorStats: execs(4) });

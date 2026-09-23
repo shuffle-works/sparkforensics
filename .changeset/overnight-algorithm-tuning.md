@@ -66,3 +66,7 @@ now counts only the repeated operators' share of it, and only for its task-activ
 stage shared with a join or left waiting for cores no longer counts whole. Across 14 real logs,
 duplicate-subtree claims fell from 2307 to 108 minutes; before, three logs claimed more duplicate
 time than their whole run.
+
+Thresholds: `stageShape`'s under-parallelization rule skips stages shorter than 0.5% of the run,
+the same runtime floor the tiered detectors use: parallelizing a stage can't save more than its
+own duration. That was 2839 of 3005 such findings across 14 real logs.

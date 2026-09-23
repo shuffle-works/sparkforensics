@@ -820,9 +820,13 @@ export const DETECTORS: Detector[] = [
   {
     type: 'stageShape', scope: 'stage', order: 35, fixEffort: 'code', version: 1,
     docAnchor: '#bottleneck-stage-shape',
-    thresholds: { pRatioMax: 0.5, oiRatioMax: 10, skewWarn: 3 },
+    // lowParallelismFloorPct: the same 0.5% runtime floor the tiered detectors use. Parallelizing a
+    // stage can't save more than the stage's own duration, so a shorter stage can't clear it; on
+    // the 14 real logs that was 2839 of 3005 lowParallelism findings (2168 on sub-second stages).
+    // App-wide idle capacity stays covered by utilization.
+    thresholds: { pRatioMax: 0.5, oiRatioMax: 10, skewWarn: 3, lowParallelismFloorPct: 0.005 },
     detect(
-      this: { thresholds: { pRatioMax: number; oiRatioMax: number; skewWarn: number } },
+      this: { thresholds: { pRatioMax: number; oiRatioMax: number; skewWarn: number; lowParallelismFloorPct: number } },
       stage: DetectorStage,
       ctx?: DetectorCtx,
     ): Finding[] {
@@ -830,8 +834,9 @@ export const DETECTORS: Detector[] = [
       const execCount = (stage.executorStats ?? []).length;
       const cores = ctx?.app?.resources?.executor?.cores ?? 1;
       const totalCores = execCount * cores;
+      const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
       // PRatio: under-parallelization.
-      if (totalCores > 0) {
+      if (totalCores > 0 && meetsRuntimeFloor(stageDurationMs, computeAppDurationMs(ctx), this.thresholds.lowParallelismFloorPct)) {
         const pRatio = stage.taskCount / totalCores;
         if (pRatio < this.thresholds.pRatioMax) {
           out.push({
@@ -857,7 +862,6 @@ export const DETECTORS: Detector[] = [
       // TaskStageSkew: straggler cost vs stage wall-clock. Skip near-zero duration. Always info
       // like its siblings: this trigger forces the occupancy-clipped estimate to exactly zero on
       // every firing, so there's no wall-clock-backed tier left to gate on.
-      const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
       if (stageDurationMs > 0) {
         const ratio = stage.taskDurationMax / stageDurationMs;
         if (ratio > this.thresholds.skewWarn) {
