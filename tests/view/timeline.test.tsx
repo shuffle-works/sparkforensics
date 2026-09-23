@@ -161,7 +161,8 @@ describe('Timeline widget', () => {
     expect(gridlines.length).toBeGreaterThan(5);
   });
 
-  test('advanced tier shows every stage, uncapped by the top-N default', () => {
+  // The uncapped 3000-stage recharts render took 17.8s under CI coverage + contention.
+  test('advanced tier shows every stage, uncapped by the top-N default', { timeout: 30000 }, () => {
     store.getState().setWidgetDensity('advanced');
     const stages = new Map<number, unknown>();
     const n = 3000;
