@@ -154,3 +154,8 @@ critical findings are unchanged.
 Thresholds: `shuffle` and `spill` findings skip stages shorter than 0.5% of the run as well. Their
 claims are clipped to the stage, so every such finding graded info. On 14 real logs that drops 182
 shuffle and 12 spill findings, all informational; warning and critical findings are unchanged.
+
+Thresholds: a `duplicatePlanSubtree` repeat whose stages together lasted less than 0.5% of the run
+is no longer reported. Its claim counts at most those stages' own time, so every such finding
+graded info. On 14 real logs that drops 340 of 545, all informational; warning and critical
+findings are unchanged.

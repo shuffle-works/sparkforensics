@@ -46,6 +46,18 @@ describe('duplicatePlanSubtree', () => {
     expect(findings[0].stageShares).toEqual({ 1: 1 });
   });
 
+  it('skips a repeat whose stages together lasted under 0.5% of the run, and keeps a longer one above info', () => {
+    const dup = () => inStage(node('SortMergeJoin', ['a'], [node('Sort', ['b']), node('Sort', ['b'])]), 1);
+    const sql = new Map([[1, makeSqlExec(1, node('Project', [], [dup(), dup()]))]]);
+    const run = makeApp({ endTime: 400_000 });
+    const at = (completedAt) => analyze(run, new Map([[1, makeStage({ sqlExecutionId: 1, completedAt })]]), [], [], new Map(), sql)
+      .filter(b => b.type === 'duplicatePlanSubtree');
+    expect(at(1000)).toHaveLength(0); // 0.25% of the run: the repeat is real, the floor drops it
+    const kept = at(8000); // 2%
+    expect(kept).toHaveLength(1);
+    expect(kept[0].impactBand).not.toBe('info');
+  });
+
   // Same operator shape over different data (another table, another filter) is no repeated
   // work: the finding stays, flagged low-confidence and informational, with no time claimed.
   it('makes repeats whose details differ informational, with no wall-clock claim', () => {

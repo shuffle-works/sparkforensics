@@ -2005,9 +2005,13 @@ export const DETECTORS: Detector[] = [
   {
     type: 'duplicatePlanSubtree', scope: 'sql', order: 130, fixEffort: 'code', version: 2,
     docAnchor: '#bottleneck-duplicate-plan-subtree',
-    thresholds: { minSubtreeSize: 3, minOccurrences: 2 },
+    // stageFloorPct: the 0.5% runtime floor. The claim counts at most each linked stage's own
+    // task-active time, so a repeat whose stages together lasted less than this share of the run
+    // graded info: 340 of 545 findings on the 14 real logs. The repeat is still in the plan; the
+    // floor is why they're dropped. A repeat with no linked stage time is kept.
+    thresholds: { minSubtreeSize: 3, minOccurrences: 2, stageFloorPct: 0.005 },
     detect(
-      this: { thresholds: { minSubtreeSize: number; minOccurrences: number } },
+      this: { thresholds: { minSubtreeSize: number; minOccurrences: number; stageFloorPct: number } },
       sqlExec: DetectorSqlExec,
       ctx: DetectorCtx,
     ): Finding[] | null {
@@ -2018,10 +2022,17 @@ export const DETECTORS: Detector[] = [
       const executionNodes: PlanNode[] = [];
       walkPlanTree(sqlExec.planTree, (node) => executionNodes.push(node));
       const operatorsByStage = operatorCountByStage(executionNodes);
-      return groups.map((g) => {
+      const appDurationMs = computeAppDurationMs(ctx);
+      const findings = groups.map((g): Finding | null => {
         const nodes: PlanNode[] = [];
         for (const n of g.nodes) walkPlanTree(n, (node) => nodes.push(node));
         const stageIds = unionStageIds(nodes, fallbackStageIds);
+        let stagesMs = 0;
+        for (const id of stageIds) {
+          const stage = ctx.stages.get(id);
+          if (stage) stagesMs += Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
+        }
+        if (appDurationMs != null && stagesMs > 0 && stagesMs < appDurationMs * this.thresholds.stageFloorPct) return null;
         const occurrencesIdentical = occurrencesHaveIdenticalDetails(g.nodes);
         const stageShares = stageOperatorShares(nodes, operatorsByStage);
         // resolvePlanTree always sets id; safe downstream of it.
@@ -2044,7 +2055,8 @@ export const DETECTORS: Detector[] = [
             ? `A ${g.subtreeSize}-node subtree rooted at ${pathBasename(g.rootName)} repeats ${g.occurrences}x in this plan${touching}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`
             : `A ${g.subtreeSize}-node subtree rooted at ${pathBasename(g.rootName)} repeats ${g.occurrences}x in this plan${touching}: consider caching/persisting the shared computation or check for a duplicated query branch.`) + differing,
         };
-      });
+      }).filter((f): f is Finding => f !== null);
+      return findings.length > 0 ? findings : null;
     },
   },
   {
