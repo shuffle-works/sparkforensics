@@ -54,3 +54,8 @@ Parser: a `physicalPlanDescription` value that spans decompressed chunks is drop
 instead of being decoded and then cut out as text. Parsing the largest real log is 11.7% faster
 (12.56s to 11.09s) with peak memory down from 708MB to 602MB; 6.8% faster across 14 real logs,
 with identical output.
+
+Parser: a `TaskEnd` whose accumulator updates include a JSON array (Spark 2.x's
+`internal.metrics.updatedBlockStatuses`, or block-status tracking turned on) is no longer rejected
+and dropped from its stage's stats. Only the accumulable `ID` is validated now, which also makes
+parsing 3.7% faster across 14 real logs.

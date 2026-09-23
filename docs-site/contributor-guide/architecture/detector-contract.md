@@ -199,6 +199,9 @@ event: `TaskEndEventSchema`'s `Accumulables` array is capped at
 plan's per-task metric count, so a single crafted `TaskEnd` can't grow the map
 past that per-event bound; a `TaskEnd` exceeding it fails schema validation and
 the line is skipped (counted in `skippedLines`) like any other malformed event.
+Each accumulable is checked for its numeric `ID` only: `Update`/`Value` are
+unread, and Spark writes some as JSON arrays (`internal.metrics.updatedBlockStatuses`),
+which a stricter check would reject along with the whole task.
 
 ## Bottleneck thresholds (spec §4)
 

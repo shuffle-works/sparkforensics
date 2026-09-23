@@ -255,11 +255,12 @@ export const TaskEndEventSchema = z.object({
     'Task ID': z.number().optional(),
     'Attempt Number': z.number().optional(),
     // Bounded well above any real per-task metric count: caps how much a crafted TaskEnd can grow
-    // taskAccumStages, which is never pruned for the life of the parse.
+    // taskAccumStages, which is never pruned for the life of the parse. Only ID is read. Update and
+    // Value stay undeclared: Spark writes some as JSON arrays (internal.metrics.updatedBlockStatuses),
+    // and a string|number check on them rejected the whole TaskEnd, dropping the task from its
+    // stage's stats. They were also ~15% of TaskEnd validation time.
     Accumulables: z.array(z.object({
       ID: z.number(),
-      Update: z.union([z.string(), z.number()]).optional(),
-      Value: z.union([z.string(), z.number()]).optional(),
     })).max(MAX_ACCUMULABLES_PER_TASK).optional(),
   }).optional(),
   'Task Metrics': z.object({

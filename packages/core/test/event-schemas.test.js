@@ -319,6 +319,25 @@ describe('TaskEndEventSchema', () => {
     expect(result.data['Task Info']['Attempt Number']).toBeUndefined();
   });
 
+  // Spark writes internal.metrics.updatedBlockStatuses (Spark 2.x, or with block-status tracking
+  // on) as a JSON array; rejecting it dropped the whole task from its stage's stats.
+  it('accepts a TaskEnd whose accumulable Update/Value is a JSON array', () => {
+    const blockStatuses = [{ 'Block ID': 'broadcast_0', Status: { 'Memory Size': 1150, 'Disk Size': 0 } }];
+    const result = TaskEndEventSchema.safeParse({
+      Event: 'SparkListenerTaskEnd',
+      'Stage ID': 1,
+      'Task Info': {
+        Index: 0, 'Launch Time': 0, 'Finish Time': 1,
+        Accumulables: [
+          { ID: 1, Name: 'internal.metrics.executorRunTime', Update: 5, Value: 5 },
+          { ID: 10, Name: 'internal.metrics.updatedBlockStatuses', Update: blockStatuses, Value: blockStatuses },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data['Task Info'].Accumulables.map((a) => a.ID)).toEqual([1, 10]);
+  });
+
   it('rejects a TaskEnd whose Accumulables array exceeds the size limit', () => {
     const result = TaskEndEventSchema.safeParse({
       Event: 'SparkListenerTaskEnd',
