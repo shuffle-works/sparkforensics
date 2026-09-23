@@ -27,9 +27,8 @@ Plan Advisor, and Autoscaling Churn, all `region: 'action'` in
   [Evidence-availability contract](./worker-protocol#evidence-availability-contract-v1)):
   that ledger only downgrades *absence* conclusions for individual evidence
   categories, never becomes a `DETECTORS` finding itself, and this card does
-  not read it. No `docAnchor` is set, the same deviation as Autoscaling Churn
-  below: this is a tool-specific signal with no upstream
-  `spark-tuning-reference` section.
+  not read it. No `docAnchor` is set: this is a tool-specific signal with no
+  upstream `spark-tuning-reference` section.
 - **Job Failures** (tag `JOBS`): app-level job-failure-rate rollup
   (DETECTORS entry `jobFailureRate` in `packages/core/src/detectors.ts`), computed from
   `app.jobs` (`SparkListenerJobEnd` results):
@@ -102,10 +101,10 @@ Plan Advisor, and Autoscaling Churn, all `region: 'action'` in
   widget itself is unchanged apart from a finding-driven verdict banner
   (impact dot + `CHRN` tag + recommendation) above its existing add/remove
   chart. The chart's muted scale-down bar coloring is untouched. No
-  `docAnchor` is set yet: the upstream `shuffle-works/spark-tuning-reference`
-  docs repo has no `bottleneck-autoscaling-churn` section (verified 2026-08-19),
-  so the `CHRN` tag currently renders with no docs-panel link (a tracked
-  follow-up).
+  `docAnchor` is set yet, so the `CHRN` tag renders with no docs-panel link.
+  The pinned tuning reference now has a `bottleneck-autoscaling-churn` section
+  (`docs-content/chapters/11-cluster-config.md`); wiring it is a tracked
+  follow-up.
 - **Config Audit** (tag `CFG`): static Spark-config sanity findings derived from
   `app.config`/`app.resources` (parsed from `SparkListenerEnvironmentUpdate`):
   dynamic-allocation vs.
