@@ -133,3 +133,9 @@ those attempts ran side by side. When every wasted attempt is sampled, the claim
 retry chain (one task's repeated failures) times the mean wasted attempt, or the summed time spread
 over the stage's slots when larger. Four tasks lost with one executor on a real stage claimed
 146.6s and now claim 36.6s.
+
+Estimates: a `shuffle` claim can no longer exceed the shuffle fetch wait its tasks measured,
+converted to wall-clock at the stage's average concurrency. The per-link bandwidth model can't
+see whether reads stalled the tasks: on 14 real logs it claimed 2780s over 284 shuffle findings,
+and the capped figure is 256s. Five of the ten warning or critical shuffle findings had about
+zero fetch wait and are now informational.

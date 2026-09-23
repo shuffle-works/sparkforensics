@@ -95,15 +95,24 @@ describe('analyze: shuffle I/O', () => {
 
   it('emits a shuffle finding above 50 MB, reconciled to critical against the default fixture duration', () => {
     // Detector grades 'info'; deriveImpactBand promotes to 'critical' (60 MB clears the 2% floor of the 5s default).
-    const stages = new Map([[1, makeStage({ shuffleReadBytes: 60 * 1024 * 1024 })]]);
+    // The tasks measured 500ms of fetch wait (5000 core-ms at the fixture's 10x concurrency), so the
+    // 503ms link model is claimed nearly whole.
+    const stages = new Map([[1, makeStage({ shuffleReadBytes: 60 * 1024 * 1024, fetchWaitTime: 5000 })]]);
     const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'shuffle');
     expect(b.impactBand).toBe('critical');
   });
 
   it('emits critical above 1 GB', () => {
-    const stages = new Map([[1, makeStage({ shuffleReadBytes: 2 * 1024 * 1024 * 1024 })]]);
+    const stages = new Map([[1, makeStage({ shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 10000 })]]);
     const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'shuffle');
     expect(b.impactBand).toBe('critical');
+  });
+
+  it('grades a large shuffle whose tasks never waited on a fetch informational: nothing stalled', () => {
+    const stages = new Map([[1, makeStage({ shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 0 })]]);
+    const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'shuffle');
+    expect(b.impactEstimate.wallClock.high).toBe(0);
+    expect(b.impactBand).toBe('info');
   });
 });
 

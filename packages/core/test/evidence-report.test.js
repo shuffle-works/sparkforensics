@@ -10,7 +10,7 @@ function fixture() {
     },
     stages: new Map([
       [1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600 })],   // skew critical
-      [2, makeStage({ id: 2, shuffleReadBytes: 2 * 1024 * 1024 * 1024 })],     // shuffle critical
+      [2, makeStage({ id: 2, shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 10000 })], // shuffle critical
     ]),
     executors: { added: [], removed: [] },
     sql: new Map(),

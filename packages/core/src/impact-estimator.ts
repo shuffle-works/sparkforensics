@@ -35,6 +35,20 @@ function stageIoParallelism(stage: Stage): number {
   return Math.max(1, executors);
 }
 
+// Wall-clock the stage's tasks spent blocked fetching shuffle blocks: fetchWaitTime is a
+// cross-task sum like executorRunTime, so dividing by the stage's average concurrency converts it
+// (the gc estimate's conversion). Null when the stage has no run time or duration to convert with.
+// On 14 real logs the link model claimed 2780s over 284 shuffle findings, 256s once capped at
+// this, with about zero fetch wait on 5 of the 10 non-info ones: reads that overlapped compute
+// stalled nothing.
+function fetchWaitWallClockMs(stage: Stage): number | null {
+  const fetchWaitMs = stage.fetchWaitTime;
+  const runTimeMs = stage.executorRunTime ?? 0;
+  const durationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
+  if (typeof fetchWaitMs !== 'number' || runTimeMs <= 0 || durationMs <= 0) return null;
+  return fetchWaitMs / (runTimeMs / durationMs);
+}
+
 // Wall-clock a stage's wasted (retried) attempts cost it. Each one delayed only its own task, and
 // attempts of different tasks ran side by side: one lost executor fails every task it was running
 // at once (4 wasted attempts of 36.6s each, all first attempts, on a real stage that ran 41 tasks
@@ -289,9 +303,14 @@ function computeEstimateForFinding(
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
       const shuffleReadBytes = stage.shuffleReadBytes ?? 0;
-      const wasteMs = (shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
-      // The measured byte volume driving the modeled ms figure above.
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: shuffleReadBytes, unit: 'bytes' });
+      const modeledMs = (shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
+      // The link model can't see whether the reads stalled the tasks: capped at the fetch wait the
+      // tasks measured, the claim never exceeds what the stage spent blocked on the network.
+      const measuredMs = fetchWaitWallClockMs(stage);
+      const wasteMs = measuredMs == null ? modeledMs : Math.min(modeledMs, measuredMs);
+      // rawWaste: the measured byte volume behind the modeled figure.
+      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy,
+        measuredMs != null && measuredMs < modeledMs ? 'measured' : 'modeled', { value: shuffleReadBytes, unit: 'bytes' });
     }
     case 'spill': {
       if (finding.stageId == null) return null;

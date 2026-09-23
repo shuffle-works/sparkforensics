@@ -395,6 +395,27 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
     expect(est.rawWaste).toEqual({ value: 1_250_000_000, unit: 'bytes' });
   });
 
+  it('shuffle: the link model is capped at the fetch wait the tasks measured, in wall-clock', () => {
+    // 5 GB over one 125 MB/s link models 40s; the tasks blocked 80,000 core-ms on fetches at an
+    // average concurrency of 8 (800,000 core-ms over 100s): 10s measured, which the claim can't exceed.
+    const at = (fetchWaitTime) => {
+      const stages = new Map([[0, {
+        id: 0, submittedAt: 0, completedAt: 100000, parentIds: [],
+        shuffleReadBytes: 5_000_000_000, executorRunTime: 800_000, fetchWaitTime,
+      }]]);
+      const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }];
+      estimateImpact(findings, stages);
+      return findings[0].impactEstimate;
+    };
+    expect(at(80_000).wallClock.high).toBeCloseTo(10_000, 6);
+    expect(at(80_000).estimateMethod).toBe('measured');
+    expect(at(0).wallClock.high).toBe(0);
+    // More fetch wait than the model: the model stays the ceiling.
+    expect(at(800_000).wallClock.high).toBeCloseTo(40_000, 6);
+    expect(at(800_000).estimateMethod).toBe('modeled');
+    expect(at(80_000).rawWaste).toEqual({ value: 5_000_000_000, unit: 'bytes' });
+  });
+
   it('spill: uses diskBytesSpilled, not memoryBytesSpilled', () => {
     const stages = new Map([[0, {
       id: 0, submittedAt: 0, completedAt: 100000, parentIds: [],
