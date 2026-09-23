@@ -70,6 +70,10 @@ jobs:
         id: changesets
         uses: changesets/action@v2
         with:
+          # The script appends a `git-tag` record per published package to
+          # the file named by CHANGESETS_OUTPUT (set by this action); without
+          # those records the action creates no tags or GitHub Releases and
+          # leaves publishedPackages empty, which skips the MCP sync below.
           publish-script: npm run release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
