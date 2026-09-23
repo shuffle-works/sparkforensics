@@ -1,6 +1,6 @@
 {
   "name": "sparkforensics-cli",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "type": "module",
   "license": "MIT",
   "description": "CLI to analyze Apache Spark event logs for performance bottlenecks: skew, spill, GC pressure, stragglers, and more.",
