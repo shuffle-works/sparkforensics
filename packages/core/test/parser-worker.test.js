@@ -3,6 +3,8 @@ import { analyze } from '../src/analyzer.js';
 import { stripPlanDescription, emitParseCompletion, parseTaskEnd } from '../src/event-handlers.ts';
 import { computeTaskActiveMs, computePeakConcurrentTasks } from '../src/stage-quantiles.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
+import { createModelCallbacks } from '../src/model-assembler.ts';
+import { routeMessage } from '../src/ingest.ts';
 import { zipSync, gzipSync, strToU8 } from '../src/vendor/fflate.js';
 import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 import { existsSync, createReadStream } from 'node:fs';
@@ -1203,6 +1205,19 @@ describe('processEvent: SparkListenerSQLExecutionEnd tree resolution', () => {
     const child = tree.children[0];
     expect(child.name).toBe('Exchange');
     expect(child.children[0].metrics).toEqual([{ name: 'records written', value: 500, metricType: 'sum' }]);
+  });
+
+  it('keeps the resolved plan in the assembled model when SQLExecutionEnd repeats', () => {
+    // Each message is cloned, as the browser worker's postMessage does, so the model never shares
+    // the worker's own record.
+    const s = createState();
+    const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null };
+    const handlers = createModelCallbacks(appModel, {});
+    const post = (msg) => { if (msg) routeMessage(structuredClone(msg), handlers); };
+    post(processEvent(makeExecStart(1, { nodeName: 'Project', simpleString: 'Project [id]', children: [], metadata: {}, metrics: [] }), s));
+    post(processEvent(makeExecEnd(1), s));
+    post(processEvent(makeExecEnd(1, 3000), s));
+    expect(appModel.sql.get(1).planTree?.name).toBe('Project');
   });
 
   it('omits metrics whose accumulatorId has no value in accumState', () => {

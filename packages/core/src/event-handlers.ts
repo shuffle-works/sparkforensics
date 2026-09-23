@@ -177,6 +177,8 @@ export interface ParserState {
   // An open SQL execution's latest AQE update, as raw line text, not yet parsed (see
   // deferAdaptiveUpdate). Applied when the execution ends, or at parse completion.
   pendingAdaptiveUpdates: Map<number, string>;
+  // SQL executions whose plan tree endSqlExecution already resolved and posted.
+  resolvedPlanExecutions: Set<number>;
 }
 
 // Splits decompressed byte chunks into NDJSON lines. Each chunk is decoded whole in one streaming
@@ -326,6 +328,7 @@ export function createState(): ParserState {
     rddInfo: new Map(),
     taskAccumStages: new Map(),
     pendingAdaptiveUpdates: new Map(),
+    resolvedPlanExecutions: new Set(),
     evidenceInputs: {
       environmentUpdates: 0,
       applicationEnds: 0,
@@ -850,6 +853,9 @@ export function endSqlExecution(
 ): { type: 'sql'; data: SqlExecutionRecord } | { type: 'sqlPlan'; data: { executionId: number; planTree: PlanNode } } | null {
   const exec = state.sqlExecutions.get(event.executionId);
   if (exec) exec.endTime = event.time;
+  // A repeated end for an execution whose plan was already posted: its raw plan is gone, and the
+  // plain 'sql' copy below would replace the model entry that holds the planTree (onSql overwrites).
+  if (state.resolvedPlanExecutions.has(event.executionId)) return null;
 
   const planInfo = exec?.sparkPlanInfo ?? null;
   if (!planInfo || !planInfo.nodeName) {
@@ -865,6 +871,7 @@ export function endSqlExecution(
   // The resolved tree is all anything downstream reads; the raw plan (often megabytes per
   // execution under AQE) would otherwise stay live for the rest of the parse.
   exec!.sparkPlanInfo = null;
+  state.resolvedPlanExecutions.add(event.executionId);
 
   state.evidenceInputs.resolvedSqlPlans++;
   return { type: 'sqlPlan', data: { executionId: event.executionId, planTree } };
