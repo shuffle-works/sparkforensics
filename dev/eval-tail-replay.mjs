@@ -10,8 +10,10 @@
 // Reports, per detector and for "either fired": precision/recall of the non-info findings, and
 // how far each finding's wallClock.high sits from the replayed recoverable time.
 //
-// Usage: node dev/eval-tail-replay.mjs [--set detector.threshold=value ...] <file|dir>...
+// Usage: node dev/eval-tail-replay.mjs [--set detector.threshold=value ...] [--verbose] <file|dir>...
 //   e.g. --set straggler.shareWarn=0.03 to score a threshold change without editing code.
+//   --verbose also lists every missed or false-positive stage and every estimate more than 2x
+//   off the replay, with the stage's tail figures, to see what a change moved.
 import { readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createState, runParse, runParseFiles, reassembleRollingEntries } from '../packages/core/src/parser-worker.ts';
@@ -89,10 +91,19 @@ function expand(paths) {
   return out;
 }
 
-function score(runs) {
+// One line of a stage's tail figures and its skew/straggler findings, for --verbose.
+function describeStage(path, stage, recoverableMs, appMs, findings) {
+  const s = (ms) => `${((ms ?? 0) / 1000).toFixed(1)}s`;
+  const tail = findings.map((f) => `${f.type}:${f.impactBand}:${s(f.impactEstimate?.wallClock?.high)}:${f.metric}`).join(',') || 'none';
+  return `${path.split('/').pop()} stage ${stage.id}: replay ${s(recoverableMs)} (${(100 * recoverableMs / appMs).toFixed(2)}% of run), `
+    + `${stage.taskCount} tasks, p50 ${s(stage.taskDurationP50)}, max ${s(stage.taskDurationMax)}, ${stage.stragglerCount} over 4x p50, `
+    + `peak ${stage.peakConcurrentTasks} slots; findings ${tail}`;
+}
+
+function score(runs, verbose) {
   const tally = { skew: [0, 0, 0], straggler: [0, 0, 0], either: [0, 0, 0] };
   const ratios = [];
-  for (const { appModel: m, appMs, truth } of runs) {
+  for (const { path, appModel: m, appMs, truth } of runs) {
     const findings = analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates);
     const fired = { skew: new Map(), straggler: new Map() };
     for (const f of findings) {
@@ -100,6 +111,18 @@ function score(runs) {
     }
     for (const [stageId, recoverableMs] of truth) {
       const positive = recoverableMs >= FLOOR_PCT * appMs;
+      if (verbose) {
+        const hitAny = fired.skew.has(stageId) || fired.straggler.has(stageId);
+        const tailFindings = findings.filter((f) => f.stageId === stageId && (f.type === 'skew' || f.type === 'straggler'));
+        const line = () => describeStage(path, m.stages.get(stageId), recoverableMs, appMs, tailFindings);
+        if (positive !== hitAny) console.log(`${positive ? 'missed' : 'false positive'}: ${line()}`);
+        for (const key of ['skew', 'straggler']) {
+          const est = fired[key].get(stageId)?.impactEstimate?.wallClock?.high;
+          if (est != null && (est > 2 * recoverableMs + 1000 || est < 0.5 * recoverableMs)) {
+            console.log(`${key} estimate ${est > recoverableMs ? 'over' : 'under'} 2x: ${line()}`);
+          }
+        }
+      }
       for (const key of ['skew', 'straggler', 'either']) {
         const hit = key === 'either' ? fired.skew.has(stageId) || fired.straggler.has(stageId) : fired[key].has(stageId);
         if (positive && hit) tally[key][0]++;
@@ -126,8 +149,11 @@ function score(runs) {
 
 const argv = process.argv.slice(2);
 const paths = [];
+let verbose = false;
 for (let i = 0; i < argv.length; i++) {
-  if (argv[i] === '--set') {
+  if (argv[i] === '--verbose') {
+    verbose = true;
+  } else if (argv[i] === '--set') {
     const [key, value] = argv[++i].split('=');
     const [type, name] = key.split('.');
     const detector = DETECTORS.find((d) => d.type === type);
@@ -138,7 +164,7 @@ for (let i = 0; i < argv.length; i++) {
   }
 }
 if (paths.length === 0) {
-  console.error('Usage: node dev/eval-tail-replay.mjs [--set detector.threshold=value ...] <file|dir>...');
+  console.error('Usage: node dev/eval-tail-replay.mjs [--set detector.threshold=value ...] [--verbose] <file|dir>...');
   process.exit(2);
 }
 const runs = [];
@@ -147,4 +173,4 @@ for (const p of expand(paths)) {
   if (run) runs.push(run);
 }
 console.log(`${runs.length} runs, ${runs.reduce((s, r) => s + r.truth.size, 0)} stages with 2+ tasks`);
-score(runs);
+score(runs, verbose);
