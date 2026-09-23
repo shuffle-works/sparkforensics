@@ -176,79 +176,40 @@ export interface ParserState {
   evidenceInputs: EvidenceInputs;
 }
 
-// Splits decompressed byte chunks into NDJSON lines. Each chunk is decoded whole in one
-// TextDecoder.decode call, newlines located by scanning raw bytes (indexOf(0x0A)), and each line
-// is a substring of the `pending + text` concatenation.
+// Splits decompressed byte chunks into NDJSON lines. Each chunk is decoded whole in one streaming
+// TextDecoder.decode call (per-line decode was ~8x slower: 227k calls vs ~36k on a 138MB / 3.5GB
+// log), then newlines are found with String.prototype.indexOf on that fresh, flat decoded text.
+// A '\n' char is exactly the 0x0A byte (0x0A never occurs inside a UTF-8 multibyte sequence), and
+// `{ stream: true }` reassembles a character split across a chunk boundary, so no byte-to-UTF-16
+// offset mapping is needed. Only the first line of a chunk joins the carried-over `pending` text.
 //
-// Why (profiled on a 138MB / 3.5GB-decompressed log, decode phase, each line JSON.parsed to force
-// materialization): per-line decode (227k calls) ~57s vs whole-chunk decode (~36k calls) ~7s;
-// scanning the decoded UTF-16 string for newlines costs 130-450s while scanning raw bytes ~7s;
-// the line MUST be a substring of the freshly concatenated string (V8 flattens once per chunk),
-// substrings of raw decode() output cost ~4x more. Combined ~14s, byte-identical output.
-//
-// 0x0A can't appear inside a UTF-8 multibyte sequence, so byte-scanning for it is UTF-8 safe. A
-// newline's byte offset equals its char offset only when the chunk is 1:1 byte<->char, detected by
-// text.length === buffer.length (the all-ASCII fast path); otherwise a byte walk recovers char
-// offsets. `{ stream: true }` reassembles a character split across the chunk boundary.
-const NEWLINE = 0x0a;
-
+// Measured 2026-09-23 against the previous raw-byte-scan version (identical output): 3.5s -> 2.8s
+// on that 3.5GB all-ASCII log, 0.37s -> 0.18s on 93MB of synthetic 2/3/4-byte-heavy NDJSON.
 export function buildChunkDecoder() {
   const decoder = new TextDecoder('utf-8');
-  // Decoded partial line after the last newline, carried to the next chunk. A character split
-  // across the boundary is reassembled by the streaming decoder, so this is already-decoded.
+  // Decoded partial line after the last newline, carried to the next chunk.
   let pending = '';
 
   return {
     decode(buffer: Uint8Array): string[] {
       const lines: string[] = [];
       const text = decoder.decode(buffer, { stream: true });
-      const full = pending === '' ? text : pending + text;
-      const base = pending.length;
-      const len = buffer.length;
-      // Char offset in `full` of the current line's start. Zero-length lines
-      // (`cut === start`) are dropped to match a `.filter(l => l.length)`.
-      let start = 0;
-
-      if (text.length === len) {
-        // 1:1 byte<->char: a newline's byte offset is its char offset (+ base).
-        let nl = buffer.indexOf(NEWLINE, 0);
-        while (nl !== -1) {
-          const cut = base + nl;
-          if (cut > start) lines.push(full.substring(start, cut));
-          start = cut + 1;
-          nl = buffer.indexOf(NEWLINE, nl + 1);
-        }
-      } else {
-        // Some byte does not map 1:1. Walk the bytes counting UTF-16 units to
-        // turn each newline's byte offset into a char offset in `full`.
-        let unit = base;
-        let bpos = 0;
-        // A char whose lead byte was in the previous chunk arrives here as
-        // leading continuation bytes; the streaming decoder emits it as text[0].
-        // Count it once (a surrogate pair is two units), then skip its bytes.
-        if (len > 0 && (buffer[0] & 0xc0) === 0x80) {
-          const c0 = text.charCodeAt(0);
-          unit += c0 >= 0xd800 && c0 <= 0xdbff ? 2 : 1;
-          while (bpos < len && (buffer[bpos] & 0xc0) === 0x80) bpos++;
-        }
-        let nl = buffer.indexOf(NEWLINE, bpos);
-        while (nl !== -1) {
-          for (let i = bpos; i < nl; i++) {
-            const b = buffer[i];
-            if (b < 0x80) unit++; // ASCII
-            else if (b >= 0xf0) unit += 2; // 4-byte lead -> surrogate pair
-            else if (b >= 0xc0) unit++; // 2/3-byte lead -> one unit
-            // continuation byte (0x80..0xBF) -> zero units
-          }
-          if (unit > start) lines.push(full.substring(start, unit));
-          unit++; // the '\n' itself
-          start = unit;
-          bpos = nl + 1;
-          nl = buffer.indexOf(NEWLINE, bpos);
-        }
+      let nl = text.indexOf('\n');
+      if (nl === -1) {
+        pending = pending === '' ? text : pending + text;
+        return lines;
       }
-
-      pending = start < full.length ? full.substring(start) : '';
+      // Zero-length lines are dropped to match a `.filter(l => l.length)`.
+      const first = pending === '' ? text.substring(0, nl) : pending + text.substring(0, nl);
+      if (first.length > 0) lines.push(first);
+      let start = nl + 1;
+      nl = text.indexOf('\n', start);
+      while (nl !== -1) {
+        if (nl > start) lines.push(text.substring(start, nl));
+        start = nl + 1;
+        nl = text.indexOf('\n', start);
+      }
+      pending = start < text.length ? text.substring(start) : '';
       return lines;
     },
     flush(): string[] {

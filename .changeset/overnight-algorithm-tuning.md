@@ -41,3 +41,6 @@ from `StageCompleted`, instead of starting at epoch 0 and reading as a decades-l
 Thresholds: `straggler` also fires on a 2.5-5% straggler share when the stage's recoverable tail
 already clears the 0.5% runtime floor. In a large stage, the few tasks that gate it for tens of
 seconds can be under 5% of its tasks.
+
+Parser: the NDJSON line splitter finds newlines in the decoded text instead of mapping raw-byte
+offsets to UTF-16 offsets, 4.4% faster parsing across 14 real logs with identical output.

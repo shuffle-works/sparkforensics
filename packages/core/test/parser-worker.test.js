@@ -81,6 +81,21 @@ describe('buildChunkDecoder', () => {
     expect(dec.decode(full.subarray(0, splitAt))).toEqual([]);
     expect(dec.decode(full.subarray(splitAt))).toEqual(['{"x":"€"}', '{"y":2}']);
   });
+
+  // Every chunking of the same bytes, down to one byte at a time (splitting every multibyte char
+  // and every newline), yields exactly the lines of a whole-text split.
+  it('yields the same lines for any chunk size, including 1-byte chunks through multibyte chars', () => {
+    const text = '{"a":"café"}\n\n{"b":"€ 你好 🚀"}\n{"c":"' + 'x'.repeat(300) + '"}\n{"d":"ñ"}';
+    const bytes = enc.encode(text);
+    const expected = text.split('\n').filter((l) => l.length > 0);
+    for (const size of [1, 2, 3, 5, 7, 64, bytes.length]) {
+      const dec = buildChunkDecoder();
+      const got = [];
+      for (let o = 0; o < bytes.length; o += size) got.push(...dec.decode(bytes.subarray(o, o + size)));
+      got.push(...dec.flush());
+      expect(got).toEqual(expected);
+    }
+  });
 });
 
 describe('createState', () => {
