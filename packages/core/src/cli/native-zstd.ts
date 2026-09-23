@@ -73,6 +73,47 @@ function frameEnd(buf: Uint8Array, off: number, maxFrameBytes: number): number {
 export const nativeZstdAvailable =
   typeof zlib.zstdDecompressSync === 'function' && typeof zlib.createZstdDecompress === 'function';
 
+// One step of FrameSplitter.split: a whole frame (`data` false for a skippable one), or the bytes
+// from a frame this path won't decode natively to the end of the push, which fzstd then takes.
+type SplitStep = { frame: Uint8Array; data: boolean; fallback?: never } | { fallback: Uint8Array; frame?: never };
+
+// Splits a zstd byte stream into whole frames as it arrives, for both decoders below. A frame
+// falls back to fzstd when frameEnd says NOT_NATIVE, when it is still incomplete after
+// `maxFrameBytes` compressed bytes, or when a final push ends inside it.
+class FrameSplitter {
+  private pending: Uint8Array | null = null;
+  private readonly maxFrameBytes: number;
+
+  constructor(maxFrameBytes: number) {
+    this.maxFrameBytes = maxFrameBytes;
+  }
+
+  *split(chunk: Uint8Array, final: boolean): Generator<SplitStep> {
+    let buf = chunk;
+    if (this.pending) {
+      buf = new Uint8Array(this.pending.length + chunk.length);
+      buf.set(this.pending);
+      buf.set(chunk, this.pending.length);
+      this.pending = null;
+    }
+    let off = 0;
+    while (off < buf.length) {
+      const end = frameEnd(buf, off, this.maxFrameBytes);
+      if (end === NOT_NATIVE || (end === INCOMPLETE && buf.length - off > this.maxFrameBytes)) {
+        yield { fallback: buf.subarray(off) };
+        return;
+      }
+      if (end === INCOMPLETE) break;
+      yield { frame: buf.subarray(off, end), data: readUint32LE(buf, off) === ZSTD_MAGIC };
+      off = end;
+    }
+    if (off < buf.length) {
+      if (final) yield { fallback: buf.subarray(off) };
+      else this.pending = buf.slice(off);
+    }
+  }
+}
+
 // Same push(chunk, final) contract as fzstd's Decompress. Once a frame falls back, fzstd takes
 // the rest of the stream from that frame's first byte; a truncated last frame goes to fzstd too,
 // so it fails with fzstd's own "unexpected EOF", as it always has. `maxFrameBytes` is for tests.
@@ -80,7 +121,7 @@ export function createNativeZstdDecoder(
   onChunk: (chunk: Uint8Array) => void,
   { maxFrameBytes = MAX_NATIVE_FRAME_BYTES }: { maxFrameBytes?: number } = {},
 ): { push(chunk: Uint8Array, final?: boolean): undefined } {
-  let pending: Uint8Array | null = null;
+  const splitter = new FrameSplitter(maxFrameBytes);
   let fallback: StreamingDecoder | null = null;
   const toFallback = (bytes: Uint8Array, final: boolean): void => {
     fallback ??= new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk);
@@ -89,27 +130,9 @@ export function createNativeZstdDecoder(
   return {
     push(chunk: Uint8Array, final = false): undefined {
       if (fallback) { fallback.push(chunk, final); return; }
-      let buf = chunk;
-      if (pending) {
-        buf = new Uint8Array(pending.length + chunk.length);
-        buf.set(pending);
-        buf.set(chunk, pending.length);
-        pending = null;
-      }
-      let off = 0;
-      while (off < buf.length) {
-        const end = frameEnd(buf, off, maxFrameBytes);
-        if (end === NOT_NATIVE || (end === INCOMPLETE && buf.length - off > maxFrameBytes)) {
-          toFallback(buf.subarray(off), final);
-          return;
-        }
-        if (end === INCOMPLETE) break;
-        if (readUint32LE(buf, off) === ZSTD_MAGIC) onChunk(zlib.zstdDecompressSync(buf.subarray(off, end)));
-        off = end;
-      }
-      if (off < buf.length) {
-        if (final) toFallback(buf.subarray(off), true);
-        else pending = buf.slice(off);
+      for (const step of splitter.split(chunk, final)) {
+        if (step.fallback) { toFallback(step.fallback, final); return; }
+        if (step.data) onChunk(zlib.zstdDecompressSync(step.frame));
       }
     },
   };
@@ -154,7 +177,7 @@ export function createThreadedZstdDecoder(
   { maxFrameBytes = MAX_NATIVE_FRAME_BYTES, threadedMinFrameBytes = THREADED_MIN_FRAME_BYTES }:
     { maxFrameBytes?: number; threadedMinFrameBytes?: number } = {},
 ): { push(chunk: Uint8Array, final?: boolean): Promise<void> } {
-  let pending: Uint8Array | null = null;
+  const splitter = new FrameSplitter(maxFrameBytes);
   let fallback: StreamingDecoder | null = null;
   // Frames not yet delivered, oldest first: off-thread output, or a small frame still compressed,
   // decompressed inline only when its turn comes so its output is fresh in cache for the parse.
@@ -183,41 +206,21 @@ export function createThreadedZstdDecoder(
   return {
     async push(chunk: Uint8Array, final = false): Promise<void> {
       if (fallback) { fallback.push(chunk, final); return; }
-      let buf = chunk;
-      if (pending) {
-        buf = new Uint8Array(pending.length + chunk.length);
-        buf.set(pending);
-        buf.set(chunk, pending.length);
-        pending = null;
-      }
-      let off = 0;
-      while (off < buf.length) {
-        const end = frameEnd(buf, off, maxFrameBytes);
-        if (end === NOT_NATIVE || (end === INCOMPLETE && buf.length - off > maxFrameBytes)) {
-          await toFallback(buf.subarray(off), final);
-          return;
+      for (const step of splitter.split(chunk, final)) {
+        if (step.fallback) { await toFallback(step.fallback, final); return; }
+        if (!step.data) continue;
+        const frame = step.frame;
+        if (frame.length >= threadedMinFrameBytes) {
+          const output = decompressOffThread(frame);
+          output.catch(() => {}); // rethrown where it's awaited; no unhandled rejection before then
+          await enqueue({ output });
+        } else if (queued.length === 0) {
+          onChunk(zlib.zstdDecompressSync(frame));
+        } else {
+          await enqueue({ frame });
         }
-        if (end === INCOMPLETE) break;
-        if (readUint32LE(buf, off) === ZSTD_MAGIC) {
-          const frame = buf.subarray(off, end);
-          if (frame.length >= threadedMinFrameBytes) {
-            const output = decompressOffThread(frame);
-            output.catch(() => {}); // rethrown where it's awaited; no unhandled rejection before then
-            await enqueue({ output });
-          } else if (queued.length === 0) {
-            onChunk(zlib.zstdDecompressSync(frame));
-          } else {
-            await enqueue({ frame });
-          }
-        }
-        off = end;
       }
-      if (off < buf.length) {
-        if (final) await toFallback(buf.subarray(off), true);
-        else pending = buf.slice(off);
-      } else if (final) {
-        await deliverAll();
-      }
+      if (final) await deliverAll();
     },
   };
 }
