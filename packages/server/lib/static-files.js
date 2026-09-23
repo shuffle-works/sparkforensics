@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { join, normalize, sep, extname } from 'node:path';
+import { join, resolve, sep, extname } from 'node:path';
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -29,11 +29,12 @@ export async function serveStatic(req, res, root) {
   // Any directory-style request (trailing slash, including '/' itself) seeks
   // that directory's index.html, same as a browser navigating to it directly.
   const relative = pathname.endsWith('/') ? `${stripped}index.html` : stripped;
-  const target = normalize(join(root, relative));
+  const safeRoot = resolve(root);
+  const target = resolve(safeRoot, relative);
 
   // Path-traversal guard: the resolved path must stay within root.
-  const rootPrefix = normalize(root + sep);
-  if (target !== normalize(root) && !target.startsWith(rootPrefix)) {
+  const rootPrefix = safeRoot + sep;
+  if (target !== safeRoot && !target.startsWith(rootPrefix)) {
     res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('Forbidden');
     return;
