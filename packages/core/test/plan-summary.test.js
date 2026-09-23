@@ -145,7 +145,7 @@ describe('summarizePlanTree: empty', () => {
 
 describe('scanRelationId', () => {
   it('returns "<format>:<basename>" for an anonymous InMemoryFileIndex FileScan', () => {
-    const detail = 'FileScan parquet [price#1] Batched: true, Format: Parquet, Location: InMemoryFileIndex(1 paths)[hdfs://cluster/warehouse/prices], PushedFilters: [], ReadSchema: struct<precio:int>';
+    const detail = 'FileScan parquet [price#1] Batched: true, Format: Parquet, Location: InMemoryFileIndex(1 paths)[hdfs://cluster/warehouse/prices], PushedFilters: [], ReadSchema: struct<price:int>';
     expect(scanRelationId('Scan parquet', detail)).toBe('parquet:prices');
   });
   it('uses the untruncated catalog name from the nodeName', () => {

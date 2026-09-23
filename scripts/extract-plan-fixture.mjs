@@ -8,9 +8,9 @@
 // the tree shape, ids, exchange roles and metrics stay, while every table,
 // database, column, path and literal is replaced by a consistent neutral name.
 import { writeFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { collectRun } from '../packages/core/src/cli/collect-run.ts';
 
-const DEFAULT_LOG_PATH = 'examples/private-log-04.zstd';
+const LOG_PATH = process.argv[2] ?? 'examples/private-log-04.zstd';
 const STAGE_ID = 394;
 const FIXTURE_PATH = 'packages/core/test/fixtures/plan-graph-stage-394.json';
 
@@ -42,8 +42,9 @@ const PLAN_VOCABULARY = new Set([
 const PATH_PATTERN = /[a-z][a-z0-9+.-]*:\/\/[^\s,\])]+|(?<![\w.])\/[\w.\-=]+(?:\/[\w.\-=]*)+/g;
 const LITERAL_PATTERN = /'[^']*'/g;
 const WORD_PATTERN = /[\p{L}_][\p{L}\p{N}_]*/gu;
+const NUMERIC_SUFFIX_PATTERN = /^(?:[LDFSYB]|BD|E\d*)$/i;
 
-export function createPlanSanitizer() {
+function sanitizePlanTree(planTree) {
   const names = new Map();
   const paths = new Map();
   const literals = new Map();
@@ -58,8 +59,8 @@ export function createPlanSanitizer() {
       // Punctuation-only literals ('|', ' ', '') carry nothing private.
       .replace(LITERAL_PATTERN, (lit) => (/[\p{L}\p{N}]/u.test(lit) ? `'${neutral(literals, lit, 'lit')}'` : lit))
       .replace(WORD_PATTERN, (word, offset, whole) => {
-        // Words glued to a preceding digit are numeric suffixes (10L, 1e5).
-        if (offset > 0 && /\p{N}/u.test(whole[offset - 1])) return word;
+        // Numeric literal suffixes glued to a digit (10L, 1.5BD, 1E5) stay verbatim.
+        if (offset > 0 && /\p{N}/u.test(whole[offset - 1]) && NUMERIC_SUFFIX_PATTERN.test(word)) return word;
         if (PLAN_VOCABULARY.has(word) || /^(?:path|lit)_\d+$/.test(word)) return word;
         return neutral(names, word, 'name');
       });
@@ -74,34 +75,24 @@ export function createPlanSanitizer() {
     };
   }
 
-  return { sanitizeText, sanitizeNode };
+  return sanitizeNode(planTree);
 }
 
-export function sanitizePlanTree(planTree) {
-  return createPlanSanitizer().sanitizeNode(planTree);
-}
+const { appModel } = await collectRun(LOG_PATH);
+const stage = appModel.stages.get(STAGE_ID);
+if (!stage) throw new Error(`Stage ${STAGE_ID} not found in ${LOG_PATH}`);
+const sqlExec = appModel.sql.get(stage.sqlExecutionId);
+if (!sqlExec?.planTree) throw new Error(`No planTree for stage ${STAGE_ID}`);
 
-async function main() {
-  const { collectRun } = await import('../packages/core/src/cli/collect-run.ts');
-  const logPath = process.argv[2] ?? DEFAULT_LOG_PATH;
-  const { appModel } = await collectRun(logPath);
-  const stage = appModel.stages.get(STAGE_ID);
-  if (!stage) throw new Error(`Stage ${STAGE_ID} not found in ${logPath}`);
-  const sqlExec = appModel.sql.get(stage.sqlExecutionId);
-  if (!sqlExec?.planTree) throw new Error(`No planTree for stage ${STAGE_ID}`);
+const fixture = {
+  stageId: STAGE_ID,
+  sqlExecutionId: stage.sqlExecutionId,
+  stage: { submittedAt: stage.submittedAt, completedAt: stage.completedAt },
+  sqlExec: { executionId: sqlExec.executionId, stageIds: sqlExec.stageIds },
+  planTree: sanitizePlanTree(sqlExec.planTree),
+  // Real findings for this stage, to reproduce the skew/gc/straggler badge scenario.
+  findings: [],
+};
 
-  const fixture = {
-    stageId: STAGE_ID,
-    sqlExecutionId: stage.sqlExecutionId,
-    stage: { submittedAt: stage.submittedAt, completedAt: stage.completedAt },
-    sqlExec: { executionId: sqlExec.executionId, stageIds: sqlExec.stageIds },
-    planTree: sanitizePlanTree(sqlExec.planTree),
-    // Real findings for this stage, to reproduce the skew/gc/straggler badge scenario.
-    findings: [],
-  };
-
-  writeFileSync(FIXTURE_PATH, JSON.stringify(fixture, null, 2));
-  console.log(`Wrote ${FIXTURE_PATH}`);
-}
-
-if (import.meta.url === pathToFileURL(process.argv[1]).href) await main();
+writeFileSync(FIXTURE_PATH, JSON.stringify(fixture, null, 2));
+console.log(`Wrote ${FIXTURE_PATH}`);
