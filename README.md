@@ -49,14 +49,10 @@ turns them into findings.
   and exits non-zero on violation, so a regression can fail a build. The run
   can come from a local event-log file/directory or, with `--shs-base-url`,
   fetched directly from a Spark History Server.
-- An MCP server (`sparkforensics-mcp`) exposes
-  `diagnose_run` (thresholded findings + remediation text), `get_run_summary`
-  (app/stage/job/sql counts and duration), `compare_runs` (categorized
-  findings delta between two runs), `evaluate_budgets` (evaluate a run,
-  optionally against a second run, against pass/fail budget thresholds),
-  `get_finding_evidence` (raw evidence for one finding), and
-  `get_finding_documentation` (detection/tuning reference docs for one
-  finding type) so an LLM agent can investigate a run directly.
+- An MCP server (`sparkforensics-mcp`) exposes tools for diagnosing,
+  summarizing and comparing runs, so an LLM agent can investigate a run
+  directly. The full tool list is in
+  [MCP tools](docs-site/user-guide/mcp-tools.md).
 - For running the analyze CLI automatically after every Spark job instead of
   by hand, see
   [sparkforensics-operator](https://github.com/shuffle-works/sparkforensics-operator),
