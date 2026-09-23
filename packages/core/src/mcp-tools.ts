@@ -228,12 +228,29 @@ export function getFindingDocumentation(type: string): FindingDocumentation {
   if (tuningPath && anchor && existsSync(tuningPath)) {
     const tuningContent = readFileSync(tuningPath, 'utf8');
     tuningDoc = { anchor, title: extractDocTitle(tuningContent), content: tuningContent };
+  } else if (anchor && !slug) {
+    // A section hosted on a chapter page (e.g. autoscaling churn on cluster-config): return the
+    // owning chapter, the same page the web view's docs link opens.
+    const entry = findNavEntry(pageForAnchor(anchor.replace(/^#/, '')));
+    if (entry) tuningDoc = { anchor, title: entry.title, content: readNavEntryContent(entry) };
   }
 
   return { type, name: titleCase(label), detectionDoc, tuningDoc };
 }
 
 const CHAPTERS_NAV_FILE = join(DOCS_CONTENT_DIR, 'chapters', 'nav-index.json');
+
+interface NavEntry { anchor: string; title: string; store: string; slug: string; }
+
+function findNavEntry(page: string): NavEntry | undefined {
+  const nav = JSON.parse(readFileSync(CHAPTERS_NAV_FILE, 'utf8')) as NavEntry[];
+  return nav.find((e) => e.anchor === page);
+}
+
+function readNavEntryContent(entry: NavEntry): string {
+  const dir = entry.store === 'tuning' ? 'tuning' : 'chapters';
+  return readFileSync(join(DOCS_CONTENT_DIR, dir, `${entry.slug}.md`), 'utf8');
+}
 
 export interface ReferenceDoc { anchor: string; title: string; content: string; }
 
@@ -243,13 +260,9 @@ export interface ReferenceDoc { anchor: string; title: string; content: string; 
  * renders from. The general-chapter counterpart to getFindingDocumentation (keyed by finding type). */
 export function getReferenceDoc(anchor: string): ReferenceDoc {
   const page = pageForAnchor(String(anchor).replace(/^#/, ''));
-  const nav = JSON.parse(readFileSync(CHAPTERS_NAV_FILE, 'utf8')) as
-    Array<{ anchor: string; title: string; store: string; slug: string }>;
-  const entry = nav.find((e) => e.anchor === page);
+  const entry = findNavEntry(page);
   if (!entry) throw mcpError('invalid-anchor', `Unknown reference anchor: ${anchor}`);
-  const dir = entry.store === 'tuning' ? 'tuning' : 'chapters';
-  const content = readFileSync(join(DOCS_CONTENT_DIR, dir, `${entry.slug}.md`), 'utf8');
-  return { anchor: page, title: entry.title, content };
+  return { anchor: page, title: entry.title, content: readNavEntryContent(entry) };
 }
 
 export function getFindingEvidence(

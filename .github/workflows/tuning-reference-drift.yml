@@ -57,4 +57,5 @@ jobs:
         run: npm run test:core
       - name: Report the upstream changes that broke the check
         if: failure() && steps.upstream.outputs.compare != ''
-        run: echo "::error title=Tuning reference drift::upstream ${{ steps.upstream.outputs.head }} breaks a bump: ${{ steps.upstream.outputs.compare }}"
+        run: |
+          echo "::error title=Tuning reference drift::upstream ${{ steps.upstream.outputs.head }} breaks a bump: ${{ steps.upstream.outputs.compare }}"

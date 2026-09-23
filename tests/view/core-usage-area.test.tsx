@@ -85,7 +85,7 @@ test('renders a doc link pointing at the bottleneck-utilization anchor when no c
   store.getState().setWidgetDensity('basic');
 });
 
-test('drops the doc link in favor of the coreLocality tag badge, which already links to the same anchor', async () => {
+test('drops the doc link in favor of the coreLocality tag badge, which links to the core-locality section of the same page', async () => {
   const catalog: Finding[] = [
     { type: 'coreLocality', stageId: null, impactBand: 'warning', value: 40, recommendation: 'Check locality.' },
   ];
@@ -97,7 +97,7 @@ test('drops the doc link in favor of the coreLocality tag badge, which already l
 
   expect(screen.queryByText(/how utilization is measured/i)).not.toBeInTheDocument();
   const badgeLink = screen.getByRole('link', { name: 'LOCAL' });
-  expect(badgeLink.getAttribute('href')).toContain('#bottleneck-utilization');
+  expect(badgeLink.getAttribute('href')).toContain('bottleneck-utilization.html#bottleneck-core-locality');
 });
 
 test('renders a fallback message and no chart region when no stage has core-time', () => {

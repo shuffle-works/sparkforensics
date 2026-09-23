@@ -270,8 +270,11 @@ path or theme change.
 
 Most anchors the app links to are the page of the same name; a handful are
 in-page fragments on another page instead (config-audit sub-findings and the
-metric glossary live on the `config`/`metrics` pages; the two bottleneck
-"stage-*" sub-anchors live on the page of the bottleneck that owns them):
+metric glossary live on the `config`/`metrics` pages; bottleneck sub-anchors
+such as `bottleneck-stage-shape` live on the page of the bottleneck that owns
+them, and two, `bottleneck-autoscaling-churn` and
+`bottleneck-cache-utilization`, on the `cluster-config`/`memory-model`
+chapters):
 `docs-config.ts`'s `pageForAnchor()` is the one place that resolves an anchor
 to its owning page. `npm run docs:build` (run automatically by `npm run
 build`) renders `packages/core/src/docs-content/` into

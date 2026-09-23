@@ -295,6 +295,41 @@ describe('TypeGroupRow generic description', () => {
   });
 });
 
+describe('TypeGroupRow docs link', () => {
+  function configFinding(docAnchor: string, property: string): Finding {
+    return { type: 'configAudit', impactBand: 'warning', stageId: null, property, docAnchor, recommendation: `Fix ${property}.` };
+  }
+
+  function renderGroup(findings: Finding[]) {
+    const [group] = buildRecommendationRollup(findings, STAGES);
+    render(
+      <StageDetailProvider>
+        <Table>
+          <TableBody>
+            <TypeGroupRow group={group} allFindings={findings} expanded={false} onToggle={() => {}} onRoute={() => {}} />
+          </TableBody>
+        </Table>
+      </StageDetailProvider>,
+    );
+  }
+
+  it('links a configAudit group pill to the sub-check section its findings share', () => {
+    renderGroup([
+      configFinding('#config-autoscale-bounds', 'spark.dynamicAllocation.minExecutors'),
+      configFinding('#config-autoscale-bounds', 'spark.dynamicAllocation.maxExecutors'),
+    ]);
+    expect(screen.getByRole('link', { name: 'CFG' })).toHaveAttribute('href', 'docs/tuning-reference/config.html#config-autoscale-bounds');
+  });
+
+  it('falls back to the guide entry when the group spans several sub-checks', () => {
+    renderGroup([
+      configFinding('#config-autoscale-bounds', 'spark.dynamicAllocation.maxExecutors'),
+      configFinding('#config-serializer', 'spark.serializer'),
+    ]);
+    expect(screen.getByRole('link', { name: 'CFG' })).toHaveAttribute('href', 'docs/user-guide/understanding-findings.html#cfg');
+  });
+});
+
 describe('TypeGroupRow pagination', () => {
   it('paginates an expanded group of more than PAGE_SIZE (10) findings, 10-per-page, with Previous/Next controls', async () => {
     const user = userEvent.setup();

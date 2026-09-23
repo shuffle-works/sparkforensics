@@ -11,7 +11,7 @@ export function PlanGraphFindingChip({ finding, className }: { finding: Finding;
   const detail = formatFindingChipDetail(finding);
   return (
     <span className="inline-flex items-center gap-1">
-      <TagBadge type={finding.type} impactBand={finding.impactBand} className={className} />
+      <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} className={className} />
       {detail ? (
         <span className="font-mono text-[10px] leading-none whitespace-nowrap text-muted-foreground">{detail}</span>
       ) : null}

@@ -62,3 +62,15 @@ test('plainBadge suppresses both the vendor-doc link and the guide link', () => 
   render(<TagBadge type="skew" impactBand="warning" plainBadge />);
   expect(screen.queryByRole('link')).not.toBeInTheDocument();
 });
+
+test('a finding-level docAnchor wins over the type lookup, so a configAudit pill links its own sub-check', () => {
+  // docAnchorForType('configAudit') is undefined (its four sub-checks disagree), so without the
+  // prop the pill falls back to the guide entry.
+  render(<TagBadge type="configAudit" impactBand="warning" docAnchor="#config-serializer" />);
+  expect(screen.getByRole('link', { name: 'CFG' })).toHaveAttribute('href', 'docs/tuning-reference/config.html#config-serializer');
+});
+
+test('an unknown docAnchor falls back to the type-level anchor rather than rendering a dead link', () => {
+  render(<TagBadge type="skew" impactBand="warning" docAnchor="#not-a-real-section" />);
+  expect(screen.getByRole('link', { name: 'SKEW' })).toHaveAttribute('href', 'docs/tuning-reference/bottleneck-skew.html#bottleneck-skew');
+});

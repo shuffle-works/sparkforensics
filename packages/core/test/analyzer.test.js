@@ -1052,7 +1052,7 @@ describe('analyze: speculation waste', () => {
     expect(found).toHaveLength(1);
     expect(found[0].impactBand).toBe('critical');
     expect(found[0].confidence).toBe('low');
-    expect(found[0].docAnchor).toBe('#bottleneck-straggler');
+    expect(found[0].docAnchor).toBe('#bottleneck-speculation-waste');
   });
 
   it('emits critical at >=10 minutes wasted, with high confidence (4x+ the 60s floor)', () => {
@@ -1444,8 +1444,8 @@ describe('detector contract', () => {
       expect(typeof d.type).toBe('string');
       expect(['stage', 'app', 'config', 'sql']).toContain(d.scope);
       expect(typeof d.detect).toBe('function');
-      // autoscalingChurn and incompleteRun deliberately have no docAnchor (documented deviation)
-      if (d.type !== 'autoscalingChurn' && d.type !== 'incompleteRun') {
+      // incompleteRun deliberately has no docAnchor (documented deviation)
+      if (d.type !== 'incompleteRun') {
         expect(typeof d.docAnchor).toBe('string');
         expect(d.docAnchor.startsWith('#')).toBe(true);
       }

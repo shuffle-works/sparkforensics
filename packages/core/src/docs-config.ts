@@ -4,15 +4,27 @@ import { detectorCatalog } from './detectors.ts';
 // serves the tuning reference, relative to the app's origin.
 export const DOCS_BASE_DIR: string = 'docs/tuning-reference';
 
+// Bottleneck sub-anchors that are sections of another entry's page, not pages of their own.
+// Most live on a sibling bottleneck page; autoscaling-churn and cache-utilization live on the
+// cluster-config and memory-model chapters. Keep in sync with spark-tuning-reference's anchor-map.
+const SUB_ANCHOR_PAGES: Record<string, string> = {
+  'bottleneck-stage-shape': 'bottleneck-skew',
+  'bottleneck-stage-slowness': 'bottleneck-slow-host',
+  'bottleneck-partition-sizing': 'bottleneck-shuffle',
+  'bottleneck-speculation-waste': 'bottleneck-straggler',
+  'bottleneck-core-locality': 'bottleneck-utilization',
+  'bottleneck-caching-opportunity': 'bottleneck-utilization',
+  'bottleneck-autoscaling-churn': 'cluster-config',
+  'bottleneck-cache-utilization': 'memory-model',
+};
+
 // Some anchors are in-page fragments on another entry's page: config-audit sub-findings and
-// metric-glossary entries live on the 'config'/'metrics' pages, and the "stage-*" sub-anchors
-// live on their owning bottleneck's page. Keep in sync with spark-tuning-reference's anchor-map.
+// metric-glossary entries live on the 'config'/'metrics' pages, and SUB_ANCHOR_PAGES lists the
+// bottleneck sub-anchors.
 export function pageForAnchor(anchor: string): string {
   if (anchor.startsWith('metric-')) return 'metrics';
   if (anchor.startsWith('config-')) return 'config';
-  if (anchor === 'bottleneck-stage-shape') return 'bottleneck-skew';
-  if (anchor === 'bottleneck-stage-slowness') return 'bottleneck-slow-host';
-  return anchor;
+  return SUB_ANCHOR_PAGES[anchor] ?? anchor;
 }
 
 // Build a docs URL for an anchor like '#bottleneck-skew'. The leading '#' is
@@ -62,6 +74,9 @@ export const KNOWN_DOC_ANCHORS: Set<string> = new Set([
   '#bottleneck-memory-utilization', '#bottleneck-broadcast-sizing',
   '#bottleneck-duplicate-plan-subtree', '#bottleneck-small-files',
   '#bottleneck-stage-shape', '#bottleneck-stage-slowness',
+  '#bottleneck-partition-sizing', '#bottleneck-speculation-waste',
+  '#bottleneck-core-locality', '#bottleneck-caching-opportunity',
+  '#bottleneck-autoscaling-churn', '#bottleneck-cache-utilization',
   // Config-audit sections
   '#config-autoscale-bounds', '#config-memory-overhead', '#config-serializer',
   '#config-shuffle-service',
@@ -109,10 +124,21 @@ export function docAnchorForType(type: string): string | undefined {
   return anchor && isKnownDocAnchor(anchor) ? anchor : undefined;
 }
 
+/** The docAnchor every finding in `findings` carries, or undefined when they disagree or any lacks
+ * one. For a badge standing for several findings (a widget header, a grouped row) whose type-level
+ * docAnchorForType can't pick one: configAudit's sub-checks each stamp their own anchor. */
+export function sharedDocAnchor(findings: ReadonlyArray<{ docAnchor?: string }>): string | undefined {
+  const anchors = new Set(findings.map((f) => f.docAnchor));
+  if (anchors.size !== 1) return undefined;
+  const [anchor] = anchors;
+  return anchor;
+}
+
 // Resolves a docAnchorForType() result to the tuning-doc file slug under docs-content/tuning/.
 // Reuses pageForAnchor's sub-anchor resolution so a sub-anchor like bottleneck-stage-shape maps
 // to its owning page (skew.md), not a stage-shape.md that never exists. Returns null for anchors
-// with no bottleneck tuning doc (metric-/config-prefixed, or a page section like #memory-model).
+// with no bottleneck tuning doc (metric-/config-prefixed, a page section like #memory-model, or a
+// sub-anchor hosted on a chapter like #bottleneck-autoscaling-churn).
 export function tuningDocSlugForAnchor(anchor: string): string | null {
   const bare = String(anchor).replace(/^#/, '');
   const page = pageForAnchor(bare);
