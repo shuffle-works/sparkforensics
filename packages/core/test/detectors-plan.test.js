@@ -14,7 +14,7 @@ const node = (name, metricNames = [], children = []) => ({
 });
 
 function makeSqlExec(id, planTree) {
-  return { id, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree };
+  return { id, description: '', startTime: 0, endTime: 100, stageIds: [], planTree };
 }
 
 // Not imported anywhere in this file today; detectors.ts defines these as module-private
@@ -475,7 +475,7 @@ describe('smallFiles: narrowed stageIds', () => {
       children: [],
     };
     const planTree = { name: 'Project', detail: '', metrics: [], children: [readNode] };
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree }]]);
     const stages = new Map([[4, { id: 4, sqlExecutionId: 1 }], [5, { id: 5, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'smallFiles');
@@ -493,7 +493,7 @@ describe('smallFiles: narrowed stageIds', () => {
       children: [],
     };
     const planTree = { name: 'Project', detail: '', metrics: [], children: [readNode] };
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree }]]);
     const stages = new Map([[4, { id: 4, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'smallFiles');
@@ -617,7 +617,7 @@ describe('broadcastSizing: narrowed stageIds', () => {
   it('overBroadcast unions in only the flagged BroadcastExchange node\'s immediate child\'s stageIds (the node\'s own metrics never appear on a TaskEnd, so it never has stageIds of its own in real data)', () => {
     const child = sizeNode('Project', [], undefined, [20]);
     const bx = sizeNode('BroadcastExchange', [child], 2 * 1024 * 1024 * 1024);
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree: bx }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: bx }]]);
     const stages = new Map([[20, { id: 20, sqlExecutionId: 1 }], [21, { id: 21, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'overBroadcast');
@@ -629,7 +629,7 @@ describe('broadcastSizing: narrowed stageIds', () => {
     const deepLeft = sizeNode('Exchange', [sizeNode('Filter', [], 5 * 1024 * 1024, [30])]); // metric one level down
     const shallowRight = sizeNode('Exchange', [], 200 * 1024 * 1024 * 1024, [31]); // metric on the immediate child
     const join = sizeNode('SortMergeJoin', [deepLeft, shallowRight]);
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree: join }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: join }]]);
     const stages = new Map([[30, { id: 30, sqlExecutionId: 1 }], [31, { id: 31, sqlExecutionId: 1 }], [32, { id: 32, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'underBroadcast');
@@ -639,7 +639,7 @@ describe('broadcastSizing: narrowed stageIds', () => {
 
   it('falls back to execution-wide stageIds when no contributing node has coverage', () => {
     const bx = sizeNode('BroadcastExchange', [], 2 * 1024 * 1024 * 1024);
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree: bx }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: bx }]]);
     const stages = new Map([[20, { id: 20, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'overBroadcast');
@@ -655,7 +655,7 @@ describe('broadcastSizing: narrowed stageIds', () => {
     ]); // metric two levels down
     const shallowRight = sizeNode('Exchange', [], 200 * 1024 * 1024 * 1024, [31]); // metric on the immediate child
     const join = sizeNode('SortMergeJoin', [deepLeft, shallowRight]);
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree: join }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: join }]]);
     const stages = new Map([[30, { id: 30, sqlExecutionId: 1 }], [31, { id: 31, sqlExecutionId: 1 }], [32, { id: 32, sqlExecutionId: 1 }]]);
 
     const findings = analyze(makeApp(), stages, [], [], new Map(), sql).filter((f) => f.type === 'underBroadcast');

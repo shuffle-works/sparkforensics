@@ -116,7 +116,6 @@ export interface PlanNode {
 export interface SqlExecution {
   id: number;
   planTree?: PlanNode | null;
-  physicalPlanDescription?: string;
   [key: string]: unknown;
 }
 export interface PlanGraphNodeData {

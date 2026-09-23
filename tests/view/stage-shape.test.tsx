@@ -122,7 +122,7 @@ describe('StageShape', () => {
     const appModel: AppModel = {
       ...makeAppModel([1]),
       stages: new Map([[1, { id: 1, name: 'sql-scan-1', taskDurationP50: 100, taskDurationP95: 500, taskDurationMax: 900, sqlExecutionId: 1 }]]) as unknown as AppModel['stages'],
-      sql: new Map([[1, { executionId: 1, physicalPlanDescription: '', planTree }]]) as unknown as AppModel['sql'],
+      sql: new Map([[1, { executionId: 1, planTree }]]) as unknown as AppModel['sql'],
     };
     const catalog = [stageShapeFinding(1, 'lowParallelism', 0.3)];
 
@@ -141,7 +141,7 @@ describe('StageShape', () => {
     const appModel: AppModel = {
       ...makeAppModel([1]),
       stages: new Map([[1, { id: 1, name: 'sql-scan-1', taskDurationP50: 100, taskDurationP95: 500, taskDurationMax: 900, sqlExecutionId: 1 }]]) as unknown as AppModel['stages'],
-      sql: new Map([[1, { executionId: 1, physicalPlanDescription: '', planTree }]]) as unknown as AppModel['sql'],
+      sql: new Map([[1, { executionId: 1, planTree }]]) as unknown as AppModel['sql'],
     };
     const catalog = [stageShapeFinding(1, 'lowParallelism', 0.3)];
 

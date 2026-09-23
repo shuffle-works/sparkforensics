@@ -81,7 +81,7 @@ describe('buildEvidenceReport', () => {
     const planTree = { name: 'Project', detail: '', metrics: [], children: [readNode] };
     const fx = fixture();
     fx.sql = new Map([[1, {
-      id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], physicalPlanDescription: '', planTree,
+      id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree,
     }]]);
 
     const { json, markdown } = buildEvidenceReport(fx);
