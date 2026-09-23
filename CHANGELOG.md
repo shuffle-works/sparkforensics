@@ -1,5 +1,39 @@
 # sparkforensics
 
+## 0.24.3
+
+### Patch Changes
+
+- 97732c9: Bump @base-ui/react from 1.6.0 to 1.8.0.
+- 97732c9: Bump eslint from 10.8.0 to 10.11.0.
+- 97732c9: Bump globals from 17.8.0 to 17.12.0.
+- 97732c9: Bump js-yaml from 5.4.1 to 5.4.2.
+- 97732c9: Bump jsdom from 30.1.0 to 30.1.1.
+- 97732c9: Bump playwright from 1.62.1 to 1.63.0.
+- 97732c9: Bump react-resizable-panels from 4.12.4 to 4.13.2.
+- 97732c9: Bump tailwind-merge from 3.6.0 to 3.7.0.
+- 97732c9: Bump @tanstack/react-table from 8.21.3 to 9.2.4. Migrates `StageTable`'s `useReactTable` call to v9's explicit `tableFeatures`/`useTable` API (row sorting, row pagination, and column visibility, the last needed for `row.getVisibleCells()`); no behavior change.
+- 97732c9: Bump @testing-library/jest-dom from 6.9.1 to 7.0.1. No setup changes needed: the repo already registers matchers via the `@testing-library/jest-dom/vitest` subpath, and `@testing-library/dom` (now a required peer) is already satisfied transitively through `@testing-library/react`.
+- 97732c9: Bump @testing-library/user-event from 14.6.1 to 14.6.7.
+- 97732c9: Bump vite from 7.3.6 to 8.3.0. `@vitejs/plugin-react`, `@tailwindcss/vite`, and `vite-plugin-singlefile` all already declare Vite 8 support at their current pinned versions, so no plugin bumps were needed alongside it.
+- 97732c9: Bump vitest and @vitest/coverage-v8 from 4.1.11 to 5.0.1 everywhere (root, packages/core, packages/cli, packages/mcp). This also collapses packages/server's own already-bumped `vitest@^5.0.1` back into a single hoisted install, since every workspace member now shares the same major version.
+  
+  Two config changes went with it: `vitest.config.js`'s `poolOptions.threads.{execArgv,maxThreads}` moved to the top-level `execArgv`/`maxWorkers` options per v5's pool-options rework, and `packages/core/vitest.config.js` now excludes `src/docs-content/**` from coverage: v5's coverage-v8 remaps uncovered files through Rolldown, which errored trying to parse that directory's markdown reference content as JS.
+- 97732c9: Bump @xyflow/react from 12.11.3 to 12.11.6.
+- 97732c9: Bump zustand from 5.0.14 to 5.0.15.
+- d5b9987: `CachingOpportunity.tsx` now renders each finding's own confidence badge next to its row instead of a single shared low-confidence caveat below the table, matching the `cachingReuseConfidence` scaling the `cachingOpportunity` detector already applies per finding. Docs across `docs-content/detection` (`cache.md`, `chrn.md`, `local.md`, `mem.md`, `spec.md`) and `docs-site/contributor-guide/architecture` (`board-widgets.md`, `detector-contract.md`, `impact-estimation.md`, `state-and-history.md`, `widget-rendering.md`) now describe scaled `low`/`medium`/`high` confidence instead of a hardcoded value for `cachingOpportunity`, `autoscalingChurn`, `coreLocality`, and `memoryUtilization`'s waste-model, and `widget-rendering.md` drops `CachingOpportunity.tsx` from its confidence-exception list now that it's down to one named exception.
+- 649ab3c: Fixed three CodeQL security alerts: the local server no longer interpolates
+  the request method/URL into a `console.error` format string (a malformed
+  request could otherwise corrupt the logged message); the static-file server's
+  path-traversal guard now resolves the request path with `path.resolve`
+  instead of `path.normalize`/`path.join`, matching the pattern CodeQL
+  recognizes as sound; and the docs-site copy step's regex-escaping helper now
+  escapes every regex metacharacter, not only `/`, when building the pattern
+  used to rewrite absolute `/docs/...` references.
+- 5cb0779: The landing page now probes for a reachable local Spark History Server (an empty `fetch(/shs-proxy)` that returns 400 when a server is present, versus a network error or 404 on a static deploy) and, when one responds, shows a neutral callout above "Other sources" pointing the user at the disclosure to fetch a run from it directly. The disclosure itself still doesn't move or auto-expand, and nothing renders until the probe resolves, so a static deploy with no server sees no change.
+  
+  The "Fetch from Spark History Server" and "Other sources" toggles now show a chevron that flips between down and up as each opens and closes, instead of only changing `aria-expanded` with no visual difference. The Base URL, Application ID, and Attempt ID fields also remember their last values across visits, so a returning user isn't retyping them.
+
 ## 0.24.2
 
 ### Patch Changes
