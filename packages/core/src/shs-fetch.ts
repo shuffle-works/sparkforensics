@@ -36,8 +36,12 @@ export function sniffCodec(bytes: Uint8Array): 'gz' | 'zstd' | 'lz4' | 'snappy' 
 // without touching the vendored files.
 type StreamingDecoder = { push(chunk: Uint8Array, final?: boolean): void };
 type StreamingDecoderCtor = new (onChunk: (chunk: Uint8Array) => void) => StreamingDecoder;
+// Same injectable as parser-worker.ts's RunOpts.zstdDecoder: Node callers pass cli/native-zstd.ts's.
+type ZstdDecoderFactory = (onChunk: (chunk: Uint8Array) => void) => StreamingDecoder;
 
-function decodeEntry(name: string, raw: Uint8Array, onChunk: (chunk: Uint8Array) => void): void {
+function decodeEntry(
+  name: string, raw: Uint8Array, onChunk: (chunk: Uint8Array) => void, zstdDecoder?: ZstdDecoderFactory,
+): void {
   const codec = sniffCodec(raw);
   if (codec === 'lz4' || name.endsWith('.lz4')) {
     const lz4 = createLz4BlockDecoder(onChunk);
@@ -46,7 +50,7 @@ function decodeEntry(name: string, raw: Uint8Array, onChunk: (chunk: Uint8Array)
   } else if (codec === 'gz' || name.endsWith('.gz')) {
     new (Gunzip as unknown as StreamingDecoderCtor)(onChunk).push(raw, true);
   } else if (codec === 'zstd' || name.endsWith('.zstd') || name.endsWith('.zst')) {
-    new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk).push(raw, true);
+    (zstdDecoder ? zstdDecoder(onChunk) : new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk)).push(raw, true);
   } else if (codec === 'snappy' || name.endsWith('.snappy')) {
     const snappy = createSnappyBlockDecoder(onChunk);
     snappy.push(raw);
@@ -138,7 +142,9 @@ export async function runParseFromUrl(
   decodeShsArchive(zipBytes, state, emit);
 }
 
-export function decodeShsArchive(zipBytes: Uint8Array, state: ParserState, emit: EmitFn): void {
+export function decodeShsArchive(
+  zipBytes: Uint8Array, state: ParserState, emit: EmitFn, { zstdDecoder }: { zstdDecoder?: ZstdDecoderFactory } = {},
+): void {
   let entries: Record<string, Uint8Array>;
   try {
     entries = unzipSync(zipBytes);
@@ -176,7 +182,7 @@ export function decodeShsArchive(zipBytes: Uint8Array, state: ParserState, emit:
             emit({ type: 'progress', pct: null, linesProcessed });
           }
         }
-      });
+      }, zstdDecoder);
     } catch {
       emitShsError(emit, 'invalid-event-log');
       return;

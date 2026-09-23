@@ -113,3 +113,8 @@ export function createNativeZstdDecoder(
     },
   };
 }
+
+// The parse options every Node entry point (collectRun, the SHS archive loader) passes: Node's
+// native zstd where this Node has it (22.15+/23.8+); older Nodes keep the vendored fzstd.
+export const nodeParseCodecs: { zstdDecoder?: typeof createNativeZstdDecoder } =
+  nativeZstdAvailable ? { zstdDecoder: createNativeZstdDecoder } : {};

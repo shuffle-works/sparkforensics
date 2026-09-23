@@ -4,7 +4,7 @@ import { stripPlanDescription } from '../src/event-handlers.ts';
 import { computeTaskActiveMs, computePeakConcurrentTasks } from '../src/stage-quantiles.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
 import { zipSync, gzipSync, strToU8 } from '../src/vendor/fflate.js';
-import { zstdCompressSync } from 'node:zlib';
+import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
 import { existsSync, createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -1706,6 +1706,22 @@ describe('decodeShsArchive', () => {
     const doneMsg = messages.find((m) => m.type === 'done');
     expect(appMsg.data.id).toBe('app-1');
     expect(doneMsg.skippedLines).toBe(0);
+  });
+
+  // shs-load.ts passes the Node-native zstd decoder; the browser's call leaves fzstd in place.
+  it('decodes a zstd entry through an injected zstdDecoder', () => {
+    const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"app-z","App Name":"t","Timestamp":0}\n'
+      + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n';
+    const zipBytes = zipSync({ 'eventlog.zstd': zstdSync(strToU8(ndjson)) });
+    let built = 0;
+    const zstdDecoder = (onChunk) => {
+      built++;
+      return { push: (chunk) => onChunk(new Uint8Array(zstdDecompressSync(chunk))) };
+    };
+    const messages = [];
+    decodeShsArchive(zipBytes, createState(), (msg) => messages.push(msg), { zstdDecoder });
+    expect(built).toBe(1);
+    expect(messages.find((m) => m.type === 'app').data.id).toBe('app-z');
   });
 
   it('emits invalid-event-log on a corrupt zip', () => {

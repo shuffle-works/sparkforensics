@@ -75,7 +75,8 @@ own duration. That was 2839 of 3005 such findings across 14 real logs.
 CLI and MCP: zstd event logs decompress with Node's native zlib zstd, one frame at a time, when
 the running Node has it (22.15+ or 23.8+); older Nodes and the browser keep the bundled decoder.
 Parsing the 14 real logs is 42% faster (22.3s to 13.0s; the largest log 10.7s to 6.4s) with
-identical output.
+identical output. Logs fetched from a Spark History Server take the same path (2.3s to 1.0s on
+a 566MB log).
 
 Estimates: `skew` and `straggler` count a tail of many slow tasks as their summed excess over
 the median spread across the stage's peak concurrent tasks, not just the longest task's excess.
