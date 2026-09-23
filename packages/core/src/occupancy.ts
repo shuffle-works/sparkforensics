@@ -152,18 +152,19 @@ export interface TailStage {
   peakConcurrentTasks?: number;
   stragglerCount?: number;
   longestNonStragglerMs?: number;
+  tailReplayRecoveryMs?: number;
   taskDurationP50?: number;
   taskDurationMax?: number;
 }
 
-// Wall-clock a skew/straggler fix recovers, given the slowest task's excess over the median. A
-// lone straggler costs that excess; a tail of many slow tasks (a bimodal stage: 26% of 1400
-// tasks over 4x P50 on a real log) costs its summed excess (stragglerExcessMs) spread over the
-// slots the stage had (peakConcurrentTasks), far more than one task's. The task-level replay in
-// dev/eval-tail-replay.mjs recovers about the larger of the two. Average concurrency would be the
-// wrong divisor: a tail-dominated stage runs few tasks for most of its span (5.7 average vs 14
-// peak on one real stage), which doubled the claim.
+// Wall-clock a skew/straggler fix recovers: finalizeStage's task-level replay
+// (tailReplayRecoveryMs, computeTailReplayRecoveryMs) when the stage carries it. Without it (a
+// stage built by hand, as in detector tests) an estimate from the slowest task's excess over the
+// median: a lone straggler costs that excess; a tail of many slow tasks costs its summed excess
+// (stragglerExcessMs) spread over the slots the stage had (peakConcurrentTasks), and the replay
+// recovers about the larger of the two.
 export function tailRecoveryMs(stage: TailStage, singleTaskExcessMs: number): number {
+  if (stage.tailReplayRecoveryMs != null) return stage.tailReplayRecoveryMs;
   const excessMs = stage.stragglerExcessMs ?? 0;
   const slots = stage.peakConcurrentTasks ?? 0;
   if (excessMs <= 0 || slots <= 0) return singleTaskExcessMs;

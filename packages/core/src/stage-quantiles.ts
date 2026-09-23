@@ -150,6 +150,11 @@ export function finalizeStage(
     }
   }
 
+  const peakConcurrentTasks = computePeakConcurrentTasks(arr);
+  const tailReplayRecoveryMs = stragglerCount > 0
+    ? computeTailReplayRecoveryMs(arr, p50, peakConcurrentTasks)
+    : 0; // no task over 4x P50: both replays schedule the same durations
+
   const hostStatsArr = [...hostStats.entries()].map(
     ([host, s]) => ({ host, taskCount: s.taskCount, totalDuration: s.totalDuration })
   );
@@ -166,10 +171,11 @@ export function finalizeStage(
   const data: Record<string, unknown> = {
     ...stage,
     hostStats: hostStatsArr, executorStats: executorStatsArr, failureReasons: failureReasonsArr, localityStats: localityStatsArr, stragglerCount, stragglerExcessMs, longestNonStragglerMs,
+    tailReplayRecoveryMs,
     failedTaskSamples,
     peakExecutionMemoryMax,
     taskActiveMs: computeTaskActiveMs(arr),
-    peakConcurrentTasks: computePeakConcurrentTasks(arr),
+    peakConcurrentTasks,
     taskDurationP50: p50,
     taskDurationP95: p95,
     taskDurationMax: max,
@@ -232,6 +238,52 @@ export function computePeakConcurrentTasks(arr: Float64Array): number {
     if (running > peak) peak = running;
   }
   return peak;
+}
+
+// Wall-clock a tail fix recovers, replayed from the stage's own tasks: list scheduling (tasks in
+// launch order, each on the slot that frees first) over `slots` slots, once with the real
+// durations and once with every task over 4x P50 (the straggler definition above) capped at P50.
+// The difference is the claim; dev/eval-tail-replay.mjs keeps an independent copy as its ground
+// truth. Equal free times are interchangeable slots, so which one a min-heap picks can't change
+// the result. Equal launch times keep the task array's order.
+export function computeTailReplayRecoveryMs(arr: Float64Array, p50: number, slots: number): number {
+  const taskCount = arr.length / FIELDS.STRIDE;
+  if (taskCount < 2 || !(p50 > 0)) return 0;
+  const order = new Uint32Array(taskCount);
+  for (let i = 0; i < taskCount; i++) order[i] = i;
+  order.sort((a, b) => arr[a * FIELDS.STRIDE + FIELDS.LAUNCH_TIME] - arr[b * FIELDS.STRIDE + FIELDS.LAUNCH_TIME] || a - b);
+  const free = new Float64Array(Math.max(1, Math.min(slots, taskCount)));
+  const capAboveMs = 4 * p50;
+  const actualEndMs = listScheduleEndMs(arr, order, free, Infinity, p50);
+  const fixedEndMs = listScheduleEndMs(arr, order, free, capAboveMs, p50);
+  return Math.max(0, actualEndMs - fixedEndMs);
+}
+
+// End of a list schedule over `free` (a min-heap of slot free times, reset here), each task's
+// duration replaced by `cappedMs` when over `capAboveMs`.
+function listScheduleEndMs(
+  arr: Float64Array, order: Uint32Array, free: Float64Array, capAboveMs: number, cappedMs: number,
+): number {
+  free.fill(0);
+  const n = free.length;
+  let endMs = 0;
+  for (let t = 0; t < order.length; t++) {
+    const duration = arr[order[t] * FIELDS.STRIDE + FIELDS.DURATION];
+    const finish = free[0] + (duration > capAboveMs ? cappedMs : duration);
+    if (finish > endMs) endMs = finish;
+    // Replace the root (earliest free slot) and sift it down.
+    let i = 0;
+    for (;;) {
+      const left = 2 * i + 1;
+      if (left >= n) break;
+      const child = left + 1 < n && free[left + 1] < free[left] ? left + 1 : left;
+      if (free[child] >= finish) break;
+      free[i] = free[child];
+      i = child;
+    }
+    free[i] = finish;
+  }
+  return endMs;
 }
 
 export function computeFieldQuantiles(arr: Float64Array, fieldIndex: number): { p50: number; p95: number; max: number } {

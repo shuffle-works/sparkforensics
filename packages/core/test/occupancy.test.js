@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeOccupancyMs, computeGate, computeCeiling, clipToCeiling, computeOccupancy, estimateSingleStage, estimateMultiStage, tailRemovedWorkMs, stragglerFixLongestTaskMs } from '../src/occupancy.js';
+import { computeOccupancyMs, computeGate, computeCeiling, clipToCeiling, computeOccupancy, estimateSingleStage, estimateMultiStage, tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs } from '../src/occupancy.js';
 import { mergeIntervals } from '../src/wall-clock.js';
 
 function stage(id, opts) {
@@ -205,6 +205,16 @@ describe('estimateSingleStage', () => {
     // Speculation-driven (no stragglers) or no field: the median.
     expect(stragglerFixLongestTaskMs({ ...tail, stragglerCount: 0 })).toBe(1000);
     expect(stragglerFixLongestTaskMs({ ...tail, longestNonStragglerMs: undefined })).toBe(1000);
+  });
+
+  it('tailRecoveryMs: the stage\'s replayed recovery when present, else the P50/max estimate', () => {
+    const tail = { stragglerExcessMs: 6000, peakConcurrentTasks: 4 };
+    expect(tailRecoveryMs({ ...tail, tailReplayRecoveryMs: 2500 }, 5000)).toBe(2500);
+    expect(tailRecoveryMs({ ...tail, tailReplayRecoveryMs: 0 }, 5000)).toBe(0);
+    // Estimate: max(single-task excess, 6000 / 4).
+    expect(tailRecoveryMs(tail, 1000)).toBe(1500);
+    expect(tailRecoveryMs(tail, 5000)).toBe(5000);
+    expect(tailRecoveryMs({}, 5000)).toBe(5000);
   });
 
   it('returns null for a stage excluded from the sweep', () => {

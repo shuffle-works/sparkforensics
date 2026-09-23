@@ -9,6 +9,9 @@
 //
 // Reports, per detector and for "either fired": precision/recall of the non-info findings, and
 // how far each finding's wallClock.high sits from the replayed recoverable time.
+// The detectors claim the same replay (finalizeStage's computeTailReplayRecoveryMs); this copy
+// is kept independent so it checks that one. An estimate off the replay here comes from the
+// occupancy clip, not from the claim.
 //
 // Usage: node dev/eval-tail-replay.mjs [--set detector.threshold=value ...] [--verbose] <file|dir>...
 //   e.g. --set straggler.shareWarn=0.03 to score a threshold change without editing code.

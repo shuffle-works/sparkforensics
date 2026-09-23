@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { analyze } from '../src/analyzer.js';
 import { stripPlanDescription, emitParseCompletion, parseTaskEnd } from '../src/event-handlers.ts';
-import { computeTaskActiveMs, computePeakConcurrentTasks } from '../src/stage-quantiles.ts';
+import { computeTaskActiveMs, computePeakConcurrentTasks, computeTailReplayRecoveryMs } from '../src/stage-quantiles.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
 import { createModelCallbacks } from '../src/model-assembler.ts';
 import { routeMessage } from '../src/ingest.ts';
@@ -584,6 +584,62 @@ describe('computeTaskActiveMs', () => {
   });
 });
 
+describe('computeTailReplayRecoveryMs', () => {
+  // [launch, duration] pairs, in task-array order.
+  const tasks = (...pairs) => {
+    const arr = new Float64Array(pairs.length * FIELDS.STRIDE);
+    pairs.forEach(([launch, duration], i) => {
+      arr[i * FIELDS.STRIDE + FIELDS.LAUNCH_TIME] = launch;
+      arr[i * FIELDS.STRIDE + FIELDS.FINISH_TIME] = launch + duration;
+      arr[i * FIELDS.STRIDE + FIELDS.DURATION] = duration;
+    });
+    return arr;
+  };
+
+  it('is 0 for a single-task stage, an empty one, or a zero median', () => {
+    expect(computeTailReplayRecoveryMs(tasks([0, 10000]), 10000, 1)).toBe(0);
+    expect(computeTailReplayRecoveryMs(new Float64Array(0), 100, 1)).toBe(0);
+    expect(computeTailReplayRecoveryMs(tasks([0, 0], [0, 500]), 0, 2)).toBe(0);
+  });
+
+  it('a lone late straggler: recovers its whole excess over the median', () => {
+    // 2 slots, launch order: four 100ms tasks end at 200 on both slots, then the 1000ms one ends at
+    // 1200. Capped at P50 (100) it ends at 300: 900 recovered.
+    const arr = tasks([0, 100], [0, 100], [100, 100], [100, 100], [200, 1000]);
+    expect(computeTailReplayRecoveryMs(arr, 100, 2)).toBe(900);
+  });
+
+  it('a straggler launched first overlaps the other tasks: recovers less than its excess', () => {
+    // 2 slots: the 1000ms task holds slot 0 while nine 100ms tasks run back to back on slot 1 (end
+    // 900), so the stage ends at 1000. Capped at 100, the ten 100ms tasks split 5/5: end 500.
+    // The P50/max estimate claimed max(1000 - 100, 900 / 2) = 900.
+    const arr = tasks([0, 1000], ...Array.from({ length: 9 }, (_, i) => [i * 100, 100]));
+    expect(computeTailReplayRecoveryMs(arr, 100, 2)).toBe(500);
+  });
+
+  it('ties: equal free slots are interchangeable, equal launch times keep the task-array order', () => {
+    // All launch at 0 on 2 slots. [100,100,100,900]: the third 100ms takes one of two slots tied at
+    // 100 (either gives 200), the 900ms one the other: end 1000; capped, end 200: 800.
+    expect(computeTailReplayRecoveryMs(tasks([0, 100], [0, 100], [0, 100], [0, 900]), 100, 2)).toBe(800);
+    // [900,100,100,100]: the 900ms task first, the three 100ms run 300 on the other slot: end 900;
+    // capped, end 200: 700.
+    expect(computeTailReplayRecoveryMs(tasks([0, 900], [0, 100], [0, 100], [0, 100]), 100, 2)).toBe(700);
+    // Two identical stragglers tied at the same launch: both slots end at 1100; capped, 200: 900.
+    expect(computeTailReplayRecoveryMs(tasks([0, 100], [0, 100], [100, 1000], [100, 1000]), 100, 2)).toBe(900);
+  });
+
+  it('no observed slots runs serially; more slots than tasks runs every task at once', () => {
+    // 1 slot: 100 + 100 + 1000 = 1200, capped 300: 900.
+    expect(computeTailReplayRecoveryMs(tasks([0, 100], [0, 100], [0, 1000]), 100, 0)).toBe(900);
+    // 100 slots for 3 tasks: end 1000, capped 100: 900.
+    expect(computeTailReplayRecoveryMs(tasks([0, 100], [0, 100], [0, 1000]), 100, 100)).toBe(900);
+  });
+
+  it('a task exactly at 4x P50 is not capped', () => {
+    expect(computeTailReplayRecoveryMs(tasks([0, 100], [0, 100], [0, 400]), 100, 1)).toBe(0);
+  });
+});
+
 describe('classifySpill', () => {
   it('returns unclassified for empty array', () => {
     expect(classifySpill(new Float64Array(0))).toBe('unclassified');
@@ -1060,6 +1116,9 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
     expect(msg.data.stragglerExcessMs).toBe(900);
     // The longest task under the threshold: what a straggler fix leaves.
     expect(msg.data.longestNonStragglerMs).toBe(300);
+    // Every task launches at 0 (no timed slots, so one): 1600ms serially, 700ms with the straggler
+    // capped at P50.
+    expect(msg.data.tailReplayRecoveryMs).toBe(900);
   });
 
   it('stragglerCount is 0 when all tasks are short', () => {
@@ -1077,6 +1136,7 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 200 },
     }, s);
     expect(msg.data.stragglerCount).toBe(0);
+    expect(msg.data.tailReplayRecoveryMs).toBe(0);
   });
 
   it('stragglerCount is 0 when all task durations are 0 (p50 === 0 guard)', () => {
