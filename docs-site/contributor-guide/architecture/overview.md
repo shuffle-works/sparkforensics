@@ -76,6 +76,9 @@ Spark's custom `LZ4Block` framing, or Spark's Snappy framing (`org.xerial.snappy
 filename suffix. Both the dropped-file path and the SHS-fetch path stream
 block-by-block (fflate `Gunzip` / fzstd `Decompress` / the LZ4Block decoder /
 the Snappy block decoder) to keep one decompressed chunk live at a time.
+In the browser, a dropped zstd file decompresses in a second worker while the
+parse worker parses earlier output, with a three-slice window bounding what is
+queued between them (see [Decompress worker](./worker-protocol#decompress-worker)).
 The Node CLI/MCP paths (`collectRun` for local files, `shs-load.ts` for SHS
 archives) swap fzstd for Node's native zlib zstd where the running Node has it
 (22.15+/23.8+), through the `zstdDecoder` option of `runParse`/`decodeShsArchive`: `packages/core/src/cli/native-zstd.ts` decompresses one frame at a
