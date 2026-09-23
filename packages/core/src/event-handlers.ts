@@ -150,7 +150,7 @@ interface SqlExecutionRecord {
   startTime: number;
   endTime: number | null;
   stageIds: number[];
-  physicalPlanDescription: string;
+  // Released (set to null) by endSqlExecution once the plan tree is resolved and posted.
   sparkPlanInfo: SparkPlanInfo | null;
   // Set by applyAdaptiveExecutionUpdate when AQE re-plans this execution mid-run; a per-execution
   // signal for "did this SQL execution receive at least one AQE re-plan."
@@ -785,7 +785,6 @@ export function startSqlExecution(event: z.infer<typeof SqlExecutionStartEventSc
   const exec: SqlExecutionRecord = {
     id: event.executionId, description: event.description ?? '',
     startTime: event.time, endTime: null, stageIds: [],
-    physicalPlanDescription: event.physicalPlanDescription ?? '',
     sparkPlanInfo,
     hadAdaptiveUpdate: false,
   };
@@ -814,6 +813,9 @@ export function endSqlExecution(
     planInfo, accumMap, state.taskAccumStages, state.sqlExecStages.get(event.executionId), event.executionId,
   );
   state.accumState.delete(event.executionId);
+  // The resolved tree is all anything downstream reads; the raw plan (often megabytes per
+  // execution under AQE) would otherwise stay live for the rest of the parse.
+  exec!.sparkPlanInfo = null;
 
   state.evidenceInputs.resolvedSqlPlans++;
   return { type: 'sqlPlan', data: { executionId: event.executionId, planTree } };
@@ -836,12 +838,13 @@ export function applyAdaptiveExecutionUpdate(
   const exec = state.sqlExecutions.get(event.executionId);
   if (!exec) return null; // late update for an unseen execution, discard (same pattern as applyDriverAccumUpdates)
   if (event.sparkPlanInfo != null) exec.sparkPlanInfo = event.sparkPlanInfo;
-  if (event.physicalPlanDescription != null) exec.physicalPlanDescription = event.physicalPlanDescription;
   exec.hadAdaptiveUpdate = true;
   // Re-emit a 'sql' message so the browser's structured-cloned appModel.sql copy sees the flip:
   // otherwise hadAdaptiveUpdate only reads true via collectRun's Node-path object aliasing, never
   // in the shipping worker. Shallow copy so the posted object isn't the mutable reference the worker keeps mutating.
-  return { type: 'sql', data: { ...exec } };
+  // The raw plan stays worker-side: the main thread only ever reads the resolved `sqlPlan` tree,
+  // and a copy here would keep a superseded plan alive after endSqlExecution releases it.
+  return { type: 'sql', data: { ...exec, sparkPlanInfo: null } };
 }
 
 export function addExecutor(event: z.infer<typeof ExecutorAddedEventSchema>, state: ParserState): { type: 'executor'; data: ExecutorAddedEvent } {
@@ -947,10 +950,38 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set(
   SparkEventSchema.options.map((option) => option.shape.Event.value)
 );
 
+// SQLExecutionStart and SQLAdaptiveExecutionUpdate carry `physicalPlanDescription`, Spark's text
+// rendering of the plan. Nothing reads it (the plan tree comes from sparkPlanInfo), yet on a real
+// 3.5 GB log it was 72% of the AQE-update bytes, which were themselves 73% of the log. Cutting its
+// string value out before JSON.parse halves the parse cost of those lines.
+const SQL_UI_EVENT_PREFIX = '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQL';
+const PLAN_DESCRIPTION_KEY = '"physicalPlanDescription":"';
+
+// Returns `line` with the physicalPlanDescription string value emptied, or `line` unchanged when
+// the key isn't found in Spark's compact form. The key pattern can't match inside another JSON
+// string: there its quotes would be backslash-escaped.
+export function stripPlanDescription(line: string): string {
+  if (!line.startsWith(SQL_UI_EVENT_PREFIX)) return line;
+  const keyAt = line.indexOf(PLAN_DESCRIPTION_KEY);
+  if (keyAt === -1) return line;
+  const valueStart = keyAt + PLAN_DESCRIPTION_KEY.length;
+  // The closing quote is the first one preceded by an even number of backslashes.
+  let quote = line.indexOf('"', valueStart);
+  while (quote !== -1) {
+    let backslashes = 0;
+    for (let i = quote - 1; i >= valueStart && line.charCodeAt(i) === 0x5c; i--) backslashes++;
+    if (backslashes % 2 === 0) break;
+    quote = line.indexOf('"', quote + 1);
+  }
+  // Unterminated string (a truncated line): leave it for JSON.parse to reject.
+  if (quote === -1) return line;
+  return line.slice(0, valueStart) + line.slice(quote);
+}
+
 export function dispatchLine(line: string, state: ParserState, emit: (msg: unknown) => void): void {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(line);
+    parsed = JSON.parse(stripPlanDescription(line));
   } catch {
     state.skippedLines++;
     return;

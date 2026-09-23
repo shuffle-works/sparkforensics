@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { analyze } from '../src/analyzer.js';
+import { stripPlanDescription } from '../src/event-handlers.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
 import { zipSync, gzipSync, strToU8 } from '../src/vendor/fflate.js';
 import { zstdCompressSync } from 'node:zlib';
@@ -284,7 +285,8 @@ describe('processEvent: SQLExecutionStart', () => {
     expect(s.sqlExecutions.has(7)).toBe(true);
     expect(msg.type).toBe('sql');
     expect(msg.data.id).toBe(7);
-    expect(msg.data.physicalPlanDescription).toBe('FileScan parquet ...');
+    // Nothing downstream reads the plan's text rendering, so it is never retained.
+    expect(msg.data.physicalPlanDescription).toBeUndefined();
   });
 });
 
@@ -771,7 +773,7 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
   }
   const simplePlan = (name) => ({ nodeName: name, simpleString: name, children: [], metadata: {}, metrics: [] });
 
-  it('overwrites sparkPlanInfo and physicalPlanDescription for a known execution', () => {
+  it('overwrites sparkPlanInfo for a known execution, never retaining physicalPlanDescription', () => {
     const state = createState();
     processEvent(makeExecStart(1, simplePlan('OldPlan')), state);
     processEvent({
@@ -782,7 +784,7 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
 
     const exec = state.sqlExecutions.get(1);
     expect(exec.sparkPlanInfo.nodeName).toBe('NewPlan');
-    expect(exec.physicalPlanDescription).toBe('new plan');
+    expect(exec.physicalPlanDescription).toBeUndefined();
   });
 
   it('last-write-wins across two successive updates for the same execution', () => {
@@ -839,8 +841,10 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
     expect(result.type).toBe('sql');
     expect(result.data.id).toBe(1);
     expect(result.data.hadAdaptiveUpdate).toBe(true);
-    expect(result.data.sparkPlanInfo.nodeName).toBe('NewPlan');
-    expect(result.data.physicalPlanDescription).toBe('new plan');
+    // The raw plan stays worker-side (the main thread reads the resolved sqlPlan tree instead).
+    expect(result.data.sparkPlanInfo).toBeNull();
+    expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('NewPlan');
+    expect(result.data.physicalPlanDescription).toBeUndefined();
     // Shallow copy, not the same mutable reference the worker keeps mutating
     // (mirrors the real self.postMessage structured-clone boundary).
     expect(result.data).not.toBe(state.sqlExecutions.get(1));
@@ -855,8 +859,7 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
     }, state);
 
     expect(state.sqlExecutions.get(1).sparkPlanInfo.nodeName).toBe('OldPlan');
-    expect(result.data.sparkPlanInfo.nodeName).toBe('OldPlan');
-    expect(state.sqlExecutions.get(1).physicalPlanDescription).toBe('new plan');
+    expect(result.data.sparkPlanInfo).toBeNull();
   });
 });
 
@@ -1277,6 +1280,44 @@ describe('dispatchLine', () => {
 
   // Unrecognized-Event and known-Event-fails-schema cases are covered in the
   // 'processEvent: unknown event' describe block above.
+
+  it('resolves the same plan tree whether or not the line carries a physicalPlanDescription', () => {
+    const plan = { nodeName: 'Scan', simpleString: 'Scan "t"', children: [], metrics: [] };
+    const run = (extra) => {
+      const state = createState();
+      const emitted = [];
+      const emit = (m) => emitted.push(m);
+      dispatchLine(JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: 1, description: 'q', ...extra, sparkPlanInfo: plan, time: 0 }), state, emit);
+      dispatchLine(JSON.stringify({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd', executionId: 1, time: 5 }), state, emit);
+      expect(state.skippedLines).toBe(0);
+      return emitted.find((m) => m.type === 'sqlPlan').data.planTree;
+    };
+    expect(run({ physicalPlanDescription: '== Physical Plan ==\n* Scan "t" \\ "x\\"' })).toEqual(run({}));
+  });
+});
+
+describe('stripPlanDescription', () => {
+  const PREFIX = '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":3,';
+
+  it('empties the description string, keeping every other field byte-identical', () => {
+    const line = `${PREFIX}"physicalPlanDescription":"plan text","sparkPlanInfo":{"nodeName":"N"}}`;
+    expect(stripPlanDescription(line)).toBe(`${PREFIX}"physicalPlanDescription":"","sparkPlanInfo":{"nodeName":"N"}}`);
+  });
+
+  it('skips escaped quotes and stops at a quote preceded by an escaped backslash', () => {
+    const value = JSON.stringify('a "quoted" name ending in a backslash \\');
+    const line = `${PREFIX}"physicalPlanDescription":${value},"sparkPlanInfo":null}`;
+    expect(JSON.parse(stripPlanDescription(line))).toEqual({ ...JSON.parse(line), physicalPlanDescription: '' });
+  });
+
+  it('leaves non-SQL lines, key-less lines and unterminated values untouched', () => {
+    const taskEnd = '{"Event":"SparkListenerTaskEnd","physicalPlanDescription":"x"}';
+    expect(stripPlanDescription(taskEnd)).toBe(taskEnd);
+    const noKey = `${PREFIX}"sparkPlanInfo":null}`;
+    expect(stripPlanDescription(noKey)).toBe(noKey);
+    const truncated = `${PREFIX}"physicalPlanDescription":"cut off \\"`;
+    expect(stripPlanDescription(truncated)).toBe(truncated);
+  });
 });
 
 function fakeFetchReturning(zipBytes, { contentLength = zipBytes.length, ok = true, status = 200, jsonBody = null, contentType = null } = {}) {

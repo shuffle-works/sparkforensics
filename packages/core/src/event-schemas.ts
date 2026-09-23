@@ -290,16 +290,15 @@ export const SqlExecutionStartEventSchema = z.object({
   executionId: z.number(),
   description: z.string().optional(),
   time: z.number(),
-  physicalPlanDescription: z.string().optional(),
   sparkPlanInfo: SparkPlanInfoFieldSchema,
 });
 
 // applyAdaptiveExecutionUpdate: AQE re-plans mid-query and re-emits sparkPlanInfo for the same
-// executionId; last write wins.
+// executionId; last write wins. Neither SQL schema declares physicalPlanDescription: nothing reads
+// it, so zod strips it (dispatchLine already empties it before JSON.parse, see stripPlanDescription).
 export const SqlAdaptiveExecutionUpdateEventSchema = z.object({
   Event: z.literal('org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate'),
   executionId: z.number(),
-  physicalPlanDescription: z.string().optional(),
   sparkPlanInfo: SparkPlanInfoFieldSchema,
 });
 

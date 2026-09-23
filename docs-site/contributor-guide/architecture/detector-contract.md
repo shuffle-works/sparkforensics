@@ -169,9 +169,12 @@ out-of-order tolerance elsewhere.
 
 `planTree` itself is kept current against Spark's adaptive query execution (AQE)
 re-plans: `SparkListenerSQLAdaptiveExecutionUpdate` events overwrite the
-execution's `sparkPlanInfo`/`physicalPlanDescription` last-write-wins, so
+execution's `sparkPlanInfo` last-write-wins, so
 accumulator-ID evidence is matched against the plan that actually ran rather than
-a stale pre-AQE snapshot.
+a stale pre-AQE snapshot. The raw `sparkPlanInfo` stays worker-side and is released
+once `SQLExecutionEnd` resolves it into `planTree`; `physicalPlanDescription` (Spark's
+text rendering of the plan, which nothing reads) is emptied before `JSON.parse` and
+never retained (`stripPlanDescription`, `event-handlers.ts`).
 
 No eviction/pruning is added to `taskAccumStages`, a deliberate choice, not an
 oversight: measured on real logs, it holds roughly 1,050 keys per compressed MB
