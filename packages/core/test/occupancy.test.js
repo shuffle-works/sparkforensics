@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeOccupancyMs, computeGate, computeCeiling, clipToCeiling, computeOccupancy, estimateSingleStage, estimateMultiStage, tailRemovedWorkMs } from '../src/occupancy.js';
+import { computeOccupancyMs, computeGate, computeCeiling, clipToCeiling, computeOccupancy, estimateSingleStage, estimateMultiStage, tailRemovedWorkMs, stragglerFixLongestTaskMs } from '../src/occupancy.js';
 import { mergeIntervals } from '../src/wall-clock.js';
 
 function stage(id, opts) {
@@ -192,6 +192,19 @@ describe('estimateSingleStage', () => {
     expect(est.wallClock.high).toBe(6000);
     expect(tailRemovedWorkMs({ stragglerExcessMs: 16000 }, 9000)).toBe(16000);
     expect(tailRemovedWorkMs({ stragglerExcessMs: 0 }, 9000)).toBe(9000);
+  });
+
+  it('longestTaskAfterFixMs: the stage can\'t finish before the longest task the fix leaves', () => {
+    const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 10000, taskDurationMax: 9500 })]]);
+    const info = computeOccupancy(stages, 4);
+    // Floor max(9500 - 9000, 7000) = 7000: room 3000 of the 9000 claimed.
+    const est = estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true, longestTaskAfterFixMs: 7000 });
+    expect(est.wallClock.high).toBe(3000);
+    const tail = { taskDurationP50: 1000, stragglerCount: 2, longestNonStragglerMs: 3500 };
+    expect(stragglerFixLongestTaskMs(tail)).toBe(3500);
+    // Speculation-driven (no stragglers) or no field: the median.
+    expect(stragglerFixLongestTaskMs({ ...tail, stragglerCount: 0 })).toBe(1000);
+    expect(stragglerFixLongestTaskMs({ ...tail, longestNonStragglerMs: undefined })).toBe(1000);
   });
 
   it('returns null for a stage excluded from the sweep', () => {

@@ -116,3 +116,9 @@ removes. A stage whose stragglers were most of its core time was floored near it
 one real stage claimed 5.9s where a task-level replay recovers 38.7s. Against that replay over 65
 runs, estimates within 2x of it went from 88 of 95 to 97 of 103 and mean absolute error from
 7.55s to 5.18s; skew recall rose from 0.76 to 0.81 (precision 0.98 to 0.96).
+
+Estimates: a `straggler` claim runs from the stage's longest task down to the longest task the
+fix leaves (the longest one at or under 4x the median), not down to the median: a stage with a
+task just under 4x the median still waits on it. Stage messages carry a new
+`longestNonStragglerMs` field for this. Against the task-level replay over 65 runs, estimates
+more than 2x too high fell from 6 to 4 and mean absolute error from 5.18s to 4.49s.

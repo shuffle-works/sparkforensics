@@ -87,6 +87,8 @@ export interface Stage {
   taskActiveMs?: number;
   // Summed (duration - P50) over the tasks slower than 4x P50 (finalizeStage), core-ms.
   stragglerExcessMs?: number;
+  // Longest task at or under 4x P50, the longest a straggler fix leaves (finalizeStage).
+  longestNonStragglerMs?: number;
   // Most of the stage's tasks running at once (finalizeStage's computePeakConcurrentTasks).
   peakConcurrentTasks?: number;
   localityStats?: { locality: string; count: number }[];

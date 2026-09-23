@@ -1,6 +1,6 @@
 import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, Stage } from './types.ts';
 import {
-  computeOccupancy, estimateSingleStage, estimateMultiStage, tailRecoveryMs, tailRemovedWorkMs,
+  computeOccupancy, estimateSingleStage, estimateMultiStage, tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs,
   type OccupancyStage, type SingleStageEstimateOptions, type StageOccupancyInfo,
 } from './occupancy.ts';
 
@@ -202,10 +202,11 @@ function computeEstimateForFinding(
       if (finding.stageId == null) return null;
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
-      const singleDelta = Math.max(0, (stage.taskDurationMax ?? 0) - (stage.taskDurationP50 ?? 0));
+      const longestTaskAfterFixMs = stragglerFixLongestTaskMs(stage);
+      const singleDelta = Math.max(0, (stage.taskDurationMax ?? 0) - longestTaskAfterFixMs);
       const wasteMs = tailRecoveryMs(stage, singleDelta);
       return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' },
-        { ...TAIL_CLAIM, removedCoreWorkMs: tailRemovedWorkMs(stage, singleDelta) });
+        { ...TAIL_CLAIM, removedCoreWorkMs: tailRemovedWorkMs(stage, singleDelta), longestTaskAfterFixMs });
     }
     case 'slowHost': {
       // Three duration-based shapes, each carrying its absolute-ms figure under a different field

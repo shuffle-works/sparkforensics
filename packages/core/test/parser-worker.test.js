@@ -1013,11 +1013,11 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
   it('computes stragglerCount as tasks with duration > 4 * P50', () => {
     const s = createState();
     setupStage(s);
-    // 5 tasks: 4 short (100ms), 1 long (1000ms). P50 = 100, threshold = 400, straggler = 1.
-    for (let i = 0; i < 4; i++) {
+    // 5 tasks: 4 short (100-300ms), 1 long (1000ms). P50 = 100, threshold = 400, straggler = 1.
+    for (const finish of [100, 100, 100, 300]) {
       processEvent({
         Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
-        'Task Info': { 'Launch Time': 0, 'Finish Time': 100 },
+        'Task Info': { 'Launch Time': 0, 'Finish Time': finish },
         'Task Metrics': {},
       }, s);
     }
@@ -1033,6 +1033,8 @@ describe('finalizeStage: converts Maps to arrays + computes stragglerCount', () 
     expect(msg.data.stragglerCount).toBe(1);
     // The straggler's excess over P50, the input to impact-estimator's tail claim.
     expect(msg.data.stragglerExcessMs).toBe(900);
+    // The longest task under the threshold: what a straggler fix leaves.
+    expect(msg.data.longestNonStragglerMs).toBe(300);
   });
 
   it('stragglerCount is 0 when all tasks are short', () => {

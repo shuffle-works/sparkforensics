@@ -150,6 +150,10 @@ export interface OccupancyEstimate {
 export interface TailStage {
   stragglerExcessMs?: number;
   peakConcurrentTasks?: number;
+  stragglerCount?: number;
+  longestNonStragglerMs?: number;
+  taskDurationP50?: number;
+  taskDurationMax?: number;
 }
 
 // Wall-clock a skew/straggler fix recovers, given the slowest task's excess over the median. A
@@ -172,6 +176,15 @@ export function tailRemovedWorkMs(stage: TailStage, singleTaskExcessMs: number):
   return Math.max(singleTaskExcessMs, stage.stragglerExcessMs ?? 0);
 }
 
+// Longest task a straggler fix leaves: every task over 4x P50 comes down to the median, so the
+// longest one at or under that (finalizeStage's longestNonStragglerMs). Without stragglers (a
+// speculation-driven finding) or the field (older snapshots), the median.
+export function stragglerFixLongestTaskMs(stage: TailStage): number {
+  const p50 = stage.taskDurationP50 ?? 0;
+  if (!((stage.stragglerCount ?? 0) > 0) || stage.longestNonStragglerMs == null) return p50;
+  return Math.max(p50, stage.longestNonStragglerMs);
+}
+
 export interface SingleStageEstimateOptions {
   // The claim shortens the stage's longest task itself (skew, straggler): `ceiling`'s
   // taskDurationMax term is the very quantity being fixed, so clipping against it would cap a
@@ -182,6 +195,9 @@ export interface SingleStageEstimateOptions {
   // the work left after it. Flooring a tail fix at the stage's work before the fix held back most
   // of the claim on stages whose stragglers were a large part of their core time.
   removedCoreWorkMs?: number;
+  // Longest task the fix leaves, when known (stragglerFixLongestTaskMs): the stage can't finish
+  // before it, however much of the tail the claim spreads over the stage's slots.
+  longestTaskAfterFixMs?: number;
 }
 
 /**
@@ -195,7 +211,7 @@ export function estimateSingleStage(
   stageId: number,
   stages: Map<number, OccupancyStage>,
   info: Map<number, StageOccupancyInfo>,
-  { shortensLongestTask = false, removedCoreWorkMs = 0 }: SingleStageEstimateOptions = {},
+  { shortensLongestTask = false, removedCoreWorkMs = 0, longestTaskAfterFixMs = 0 }: SingleStageEstimateOptions = {},
 ): OccupancyEstimate | null {
   const stage = stages.get(stageId);
   const stageInfo = info.get(stageId);
@@ -205,7 +221,7 @@ export function estimateSingleStage(
     ? stageInfo.coreWorkFloor * Math.max(0, 1 - removedCoreWorkMs / coreWork)
     : stageInfo.coreWorkFloor;
   const ceiling = shortensLongestTask
-    ? Math.max((stage.taskDurationMax ?? 0) - wasteMsClaimed, coreWorkFloor)
+    ? Math.max((stage.taskDurationMax ?? 0) - wasteMsClaimed, longestTaskAfterFixMs, coreWorkFloor)
     : stageInfo.ceiling;
   const clipped = clipToCeiling(wasteMsClaimed, stage, ceiling);
   if (stageInfo.gate >= SERIAL_GATE_THRESHOLD) {

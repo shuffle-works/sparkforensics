@@ -137,6 +137,18 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 6000, high: 6000 });
   });
 
+  it('straggler: claims the straggler down to the longest task the fix leaves, not to P50', () => {
+    // Tasks over 4x P50 (4000) come down to the median; the 3500ms one under it stays. The claim is
+    // 7000 - 3500, not 7000 - 1000.
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1000, taskDurationMax: 7000,
+      stragglerCount: 1, stragglerExcessMs: 6000, peakConcurrentTasks: 4, longestNonStragglerMs: 3500,
+    }]]);
+    const findings = [{ type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' }];
+    estimateImpact(findings, stages);
+    expect(findings[0].impactEstimate.wallClock).toEqual({ low: 3500, high: 3500 });
+  });
+
   it('straggler: the stage\'s core work spread over every core still caps the claim', () => {
     // 44000 core-ms less the 8000 the fix removes = 36000 over 4 cores, 9000ms of unavoidable work
     // on a 10000ms stage: room 1000.

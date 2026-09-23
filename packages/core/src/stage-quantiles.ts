@@ -135,15 +135,18 @@ export function finalizeStage(
   const { p50: spillMemP50, p95: spillMemP95, max: spillMemMax } = computeFieldQuantiles(arr, FIELDS.MEM_SPILLED);
   const { p50: spillDiskP50, p95: spillDiskP95, max: spillDiskMax } = computeFieldQuantiles(arr, FIELDS.DISK_SPILLED);
 
-  // Straggler count: tasks with duration > 4 * P50, and their summed excess over P50.
+  // Straggler count: tasks with duration > 4 * P50, their summed excess over P50, and the longest
+  // task that isn't one.
   const stragglerThreshold = 4 * p50;
   let stragglerCount = 0;
   let stragglerExcessMs = 0;
+  let longestNonStragglerMs = 0;
   const taskArrCount = arr.length / FIELDS.STRIDE;
   if (p50 > 0) {
     for (let i = 0; i < taskArrCount; i++) {
       const duration = arr[i * FIELDS.STRIDE + FIELDS.DURATION];
       if (duration > stragglerThreshold) { stragglerCount++; stragglerExcessMs += duration - p50; }
+      else if (duration > longestNonStragglerMs) longestNonStragglerMs = duration;
     }
   }
 
@@ -162,7 +165,7 @@ export function finalizeStage(
 
   const data: Record<string, unknown> = {
     ...stage,
-    hostStats: hostStatsArr, executorStats: executorStatsArr, failureReasons: failureReasonsArr, localityStats: localityStatsArr, stragglerCount, stragglerExcessMs,
+    hostStats: hostStatsArr, executorStats: executorStatsArr, failureReasons: failureReasonsArr, localityStats: localityStatsArr, stragglerCount, stragglerExcessMs, longestNonStragglerMs,
     failedTaskSamples,
     peakExecutionMemoryMax,
     taskActiveMs: computeTaskActiveMs(arr),

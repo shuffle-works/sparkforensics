@@ -80,9 +80,10 @@ more-partitions estimate passes it too, since splitting partitions splits the lo
 stage's longest task itself, so `taskDurationMax` can't be their floor: clipping against it
 capped a stage gated by one straggler at `duration(S) − taskDurationMax`, about zero, exactly
 when the fix recovers the most. Their floor is instead the longest task the fix leaves plus
-the core work the fix leaves, `max(taskDurationMax − wasteMs_claimed, (stage.executorRunTime −
-removed) / totalCores)`, where `removed` (`tailRemovedWorkMs`) is the larger of the longest
-task's excess over P50 and `stragglerExcessMs`. Counting the stragglers' own run time as work
+the core work the fix leaves, `max(taskDurationMax − wasteMs_claimed, longestTaskAfterFixMs,
+(stage.executorRunTime − removed) / totalCores)`, where `removed` (`tailRemovedWorkMs`) is the
+larger of the longest task's excess over P50 and `stragglerExcessMs`, and
+`longestTaskAfterFixMs` is 0 except for `straggler` (see below). Counting the stragglers' own run time as work
 the stage can't shed floored a stage whose tail is most of its core time near its observed
 duration: one real stage claimed 5.9s where the replay below recovers 38.7s, and now claims
 38.7s.
@@ -111,6 +112,16 @@ plus the corpus, 103 non-info findings): within 2× 88 of 95 → 97 of 103, more
 1 → 0, more than 2× over 6 → 6, mean absolute error 7.55s → 5.18s; skew recall 0.76 → 0.81 at
 precision 0.98 → 0.96, straggler recall 0.71 → 0.76 at precision 0.94 → 0.92, either detector
 recall 0.85 → 0.90.
+
+`straggler`'s single-task delta runs from `taskDurationMax` down to the longest task its fix
+leaves (`stragglerFixLongestTaskMs`), not down to P50: the fix brings every task over 4× P50 to
+the median, so the stage still waits on its longest task at or under that
+(`longestNonStragglerMs`, from `finalizeStage`), and that task is also passed as a floor
+(`longestTaskAfterFixMs`). A speculation-driven finding with no task over 4× P50 keeps the P50
+delta. `skew` keeps its P50 delta, since repartitioning evens out tasks under 4× P50 too.
+Scored the same way over the 65 runs: more than 2× over 6 → 4, mean absolute error 5.18s →
+4.49s, straggler precision 0.92 → 0.94 at recall 0.76 → 0.74 (one stage at 0.61% of the run
+now estimates under the 0.5% floor, one below it no longer fires).
 
 `analyzer.ts` feeds this `totalCores` from `src/core-count.ts`'s
 `computePeakConcurrentCores(app, executorsAdded, executorsRemoved)`, not the shared
@@ -284,7 +295,7 @@ formula per `variant`/`rule` on the same finding type; the basis column says whi
 | `coldStart` | app | measured | `gapSeconds × 1000` (first stage submitted to first executor added), unclipped, `basis: 'serial'` unconditionally (a pre-first-task gap can't overlap any stage) |
 | `gc` | stage | modeled / informational-only | high-GC: `jvmGCTime / (executorRunTime / stageDurationMs)`, gate-clipped: the concurrency division is an approximation, not a reconstruction, hence `modeled`; `rawWaste` in `coreMs` is the raw `jvmGCTime` sum before that conversion. Low-GC (`direction: 'low'`): informational-only, since its fix (less executor memory) raises GC rather than recovering it; it used to claim the stage's GC time as savings, which promoted 10 of 679 low-GC findings on 14 real logs to warning/critical |
 | `skew` | stage | measured | `tailRecoveryMs`: the larger of `taskDurationP95` or `Max` minus `P50` (per `metric`) and `stragglerExcessMs / peakConcurrentTasks`, gate-clipped against the post-fix floor (`shortensLongestTask`); pre-clip figure kept as `rawWaste` in `ms` |
-| `straggler` | stage | measured | `tailRecoveryMs`: the larger of `taskDurationMax − taskDurationP50` and `stragglerExcessMs / peakConcurrentTasks`, gate-clipped against the post-fix floor (`shortensLongestTask`) |
+| `straggler` | stage | measured | `tailRecoveryMs`: the larger of `taskDurationMax` minus the longest task the fix leaves (`longestNonStragglerMs`, or `taskDurationP50` without stragglers) and `stragglerExcessMs / peakConcurrentTasks`, gate-clipped against the post-fix floor (`shortensLongestTask`, `longestTaskAfterFixMs`) |
 | `stageShape` | stage | cost-only | all three rules are `estimateMethod: 'measured'`, real per-stage fields, no assumed constant: `'lowParallelism'` → `rawWaste` in `coreMs` (idle cores × stage duration); `'dataExplosion'` → `rawWaste` in `bytes` (`outputBytes − inputBytes`); `'taskStageSkew'` → `rawWaste` in `coreMs` (`max(0, min(totalCores, taskCount) − 1) × (taskDurationMax − taskDurationP50)`, the cores idle during the straggler's tail at achieved concurrency) |
 | `slowHost` | stage | measured / informational-only | duration-based variants (`hostMeanRatio`, `durationShare`, `multiDim`+`taskTime`): `value − taskDurationP50`, gate-clipped; byte-based `multiDim` dimensions: no formula yet |
 | `duplicatePlanSubtree` | sql | measured | per stage in `stageShares`: its task-active time (`taskActiveMs`, the union of its task intervals; submit-to-complete only when absent) × the repeated operators' share of that stage × the redundant fraction `(occurrences − 1) / occurrences`, summed and capped at the union of those stages' spans. A stage shared with other operators (the consuming join, the other join side) contributes only its share, so sibling groups can't claim one stage twice, and a stage left waiting for cores (2491 s open, 60 s of tasks on a real log) claims only its task time. No claim (`informational`) when the repeats' details differ (`occurrencesIdentical: false`) or no repeated operator has a stage (the execution-wide `stageIds` fallback stays for linking only). On the 14 real logs: 2307 min claimed before, including more duplicate time than the whole run on 3 logs (1661 of 458 min, 257 of 61, 338 of 68); 108 min after, critical 65 → 2, warning 54 → 21 |
