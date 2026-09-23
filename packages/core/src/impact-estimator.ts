@@ -351,13 +351,15 @@ function computeEstimateForFinding(
       // is queueing no partition count recovers. Splitting partitions splits the longest task
       // too, hence TAIL_CLAIM's post-fix floor. Unknown cluster size: no defensible figure.
       if (totalCores <= 0) return costOnly('modeled');
-      // Tasks that sat idle waiting on an external system gain nothing from more partitions (a
-      // 1-task JDBC count stage open 27 minutes on 5s of CPU was claimed 99% recoverable): claim 0.
+      // A stage that read no input and no shuffle, its tasks idle waiting on an external system,
+      // gains nothing from more partitions (a 1-task JDBC count stage open 27 minutes on 5s of CPU
+      // was claimed 99% recoverable): claim 0. Stages that read bytes keep their claim.
+      const readBytes = (stage.inputBytes ?? 0) + (stage.shuffleReadBytes ?? 0);
       const activeMs = typeof stage.taskActiveMs === 'number'
         ? stage.taskActiveMs
         : Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
       const taskCount = stage.taskCount ?? 0;
-      const wasteMs = tasksMostlyIdle(stage) ? 0 : activeMs * Math.max(0, 1 - taskCount / totalCores);
+      const wasteMs = readBytes <= 0 && tasksMostlyIdle(stage) ? 0 : activeMs * Math.max(0, 1 - taskCount / totalCores);
       return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: wasteMs, unit: 'ms' }, TAIL_CLAIM);
     }
     case 'partitionSizing': {

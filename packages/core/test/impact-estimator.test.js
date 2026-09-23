@@ -522,6 +522,11 @@ describe('estimateImpact: stageSlowness', () => {
     expect(claimFor(oneTaskStage(0.0099 * 27 * min))).toBe(0);
   });
 
+  it('a stage that read input keeps its claim whatever its CPU share', () => {
+    expect(claimFor(oneTaskStage(1000, { inputBytes: 1e9 }))).toBeCloseTo(27 * min * (15 / 16), 6);
+    expect(claimFor(oneTaskStage(1000, { shuffleReadBytes: 1e9 }))).toBeCloseTo(27 * min * (15 / 16), 6);
+  });
+
   it('a CPU share it cannot trust leaves the claim: no CPU metric, or Python work behind PythonRDD', () => {
     expect(claimFor(oneTaskStage(0))).toBeCloseTo(27 * min * (15 / 16), 6);
     expect(claimFor(oneTaskStage(1000, {
