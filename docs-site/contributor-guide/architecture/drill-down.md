@@ -257,9 +257,10 @@ its four siblings above, app-scoped with no `stageId`).
 The topbar's "Reference" button and `DocsLink` (`src/view/DocsContext.tsx`) open
 a shadcn `Sheet` (`src/view/DocsSheet.tsx`, mounted once inside
 `DocsProvider`/`Dashboard.tsx`) that iframes a docs-site (VitePress) page,
-built from the tuning reference committed under `packages/core/src/docs-content/`
-(generated from the `shuffle-works/spark-tuning-reference` commit pinned in its
-`upstream.json`; `npm run docs:bump` moves the pin) and published as static HTML at `docs/tuning-reference/<page>.html`
+built from the tuning reference under `packages/core/src/docs-content/`
+(generated at build and test time, not committed, from the
+`shuffle-works/spark-tuning-reference` commit pinned in its `upstream.json`;
+`npm run docs:bump` moves the pin) and published as static HTML at `docs/tuning-reference/<page>.html`
 (`docs-config.ts`'s `docsUrl()` resolves an anchor to that path plus a
 `#<anchor>` fragment). `useDocs().open(anchor)` sets React state (`isOpen`,
 `target`); Radix/Base UI's `Sheet` owns the slide-in animation, focus trap,
@@ -277,7 +278,8 @@ them, and two, `bottleneck-autoscaling-churn` and
 chapters):
 `docs-config.ts`'s `pageForAnchor()` is the one place that resolves an anchor
 to its owning page. `npm run docs:build` (run automatically by `npm run
-build`) renders `packages/core/src/docs-content/` into
+build`) generates `packages/core/src/docs-content/` from the pin if needed,
+then renders it into
 `docs-site/.vitepress/dist`, and `vite.config.ts`'s `copyDocsSite` plugin
 copies that output to `dist/docs`; Vite's relative asset base keeps the app
 and docs usable when `dist/` is deployed under a URL subpath.
@@ -287,8 +289,7 @@ against every detector's `docAnchor` and warns (never fails) on dead links
 Detector Catalog anchors (no detector points at them); see
 `scripts/doc-anchor-coverage.js`. The ported landing page
 (`docs-site/tuning-reference/index.md`, the symptom-picker entry page) is
-hand-authored, committed markdown like the rest of the corpus, not a
-build-time copy.
+hand-authored, committed markdown, unlike the generated pages next to it.
 
 A docs-site page has no channel back to this app: it's a plain static page
 with no `postMessage` listener. `DocsSheet.tsx` reassigns the iframe's `src`

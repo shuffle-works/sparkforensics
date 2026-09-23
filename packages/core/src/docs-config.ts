@@ -57,7 +57,7 @@ export const METRIC_ANCHORS: Record<string, string> = {
   'stage-duration': '#metric-stage-duration',
 };
 
-// Allowlist of every anchor that exists in the committed tuning-reference markdown. DocsLink
+// Allowlist of every anchor that exists in the generated tuning-reference markdown. DocsLink
 // renders a link only for anchors here: a detector may declare a docAnchor for an unwritten
 // section, and gating keeps that from becoming a dead "Learn more" link. docs-config.test.js
 // asserts this stays a subset of the real ids so it can't drift.
@@ -84,7 +84,7 @@ export const KNOWN_DOC_ANCHORS: Set<string> = new Set([
   ...Object.values(METRIC_ANCHORS),
 ]);
 
-// True when `anchor` resolves to a real section in the committed
+// True when `anchor` resolves to a real section in the generated
 // tuning-reference markdown.
 export function isKnownDocAnchor(anchor: unknown): boolean {
   return KNOWN_DOC_ANCHORS.has(String(anchor));

@@ -23,6 +23,9 @@ export default defineConfig({
     // own recursive glob below.
     include: ['tests/**/*.test.js', 'tests/*.test.ts', 'tests/view/**/*.test.ts', 'tests/view/**/*.test.tsx'],
     setupFiles: ['tests/view/setup.ts'],
+    // Generates the gitignored tuning reference (packages/core/src/docs-content/)
+    // from its pin before any test reads it; a no-op when the cache is fresh.
+    globalSetup: ['scripts/vitest-tuning-docs-setup.mjs'],
     globals: true,
     // Some view tests (React Flow + dagre layout, 3000-row recharts render)
     // outrun the 5000ms default under thread contention; give all the headroom.

@@ -10,7 +10,7 @@ const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const chaptersDir = resolve(root, 'packages/core/src/docs-content/chapters');
 const tuningDir = resolve(root, 'packages/core/src/docs-content/tuning');
 const navIndex = JSON.parse(readFileSync(resolve(chaptersDir, 'nav-index.json'), 'utf8'));
-// Real ids: every manifest anchor plus every {#id} heading attr across the committed markdown.
+// Real ids: every manifest anchor plus every {#id} heading attr across the generated markdown.
 const docIds = new Set(navIndex.map((e) => e.anchor));
 for (const dir of [chaptersDir, tuningDir]) {
   for (const f of readdirSync(dir)) {
@@ -20,8 +20,8 @@ for (const dir of [chaptersDir, tuningDir]) {
 }
 
 describe('KNOWN_DOC_ANCHORS', () => {
-  // The allowlist must never claim an anchor the committed docs lack, or DocsLink surfaces a dead link.
-  it('stays a subset of the real ids across the committed spark markdown', () => {
+  // The allowlist must never claim an anchor the generated docs lack, or DocsLink surfaces a dead link.
+  it('stays a subset of the real ids across the generated spark markdown', () => {
     const phantom = [...KNOWN_DOC_ANCHORS].filter((a) => !docIds.has(a.replace(/^#/, '')));
     expect(phantom).toEqual([]);
   });
@@ -85,8 +85,9 @@ describe('docAnchorForType', () => {
 });
 
 describe('docs-content/tuning/ vendored corpus', () => {
-  // Drift guard: nothing else asserts the committed docs-content/tuning/ files stay
-  // complete, and getFindingDocumentation degrades silently to null on a missing file.
+  // Drift guard behind scripts/fetch-tuning-docs.mjs's own gate: the generated
+  // docs-content/tuning/ files must stay complete, and getFindingDocumentation
+  // degrades silently to null on a missing file.
   // Expected slugs derive from resolving every real '#bottleneck-*' anchor through
   // tuningDocSlugForAnchor, reusing its sub-anchor logic.
   const tuningDir = resolve(root, 'packages/core/src/docs-content/tuning');
@@ -101,7 +102,7 @@ describe('docs-content/tuning/ vendored corpus', () => {
     expect(expectedSlugs.length).toBeGreaterThan(0);
   });
 
-  it('has a non-empty committed .md file for every expected tuning-doc slug', () => {
+  it('has a non-empty generated .md file for every expected tuning-doc slug', () => {
     for (const slug of expectedSlugs) {
       const file = resolve(tuningDir, `${slug}.md`);
       expect(() => statSync(file), `missing ${file}`).not.toThrow();

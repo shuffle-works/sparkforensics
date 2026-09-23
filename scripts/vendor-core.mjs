@@ -1,6 +1,9 @@
 // Vendors packages/core/src/ into <target-package-dir>/vendor-core/, pre-
 // stripping TypeScript to plain .js. Run at `prepack` by cli/mcp/server so each
 // published tarball is self-contained (no git access or build at install time).
+// The generated tuning reference under docs-content/ is made to match its pin
+// first (strict: no stale cache, no unpinned override), so a pack can never
+// silently ship without docs or with the wrong ones.
 //
 // Node refuses to type-strip .ts under node_modules
 // (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), and a published vendor-core/
@@ -10,6 +13,7 @@ import { stripTypeScriptTypes } from 'node:module';
 import { rmSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DieError, DOCS_CONTENT_DIR, ensureTuningDocs, isLocalOnlyEntry } from './fetch-tuning-docs.mjs';
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(scriptsDir);
@@ -39,6 +43,9 @@ function rewriteImportSpecifiers(code) {
 function copyTree(srcNode, destNode) {
   for (const entry of readdirSync(srcNode, { withFileTypes: true })) {
     if (srcNode === coreSrcDir && BROWSER_ONLY_TOP_LEVEL_ENTRIES.has(entry.name)) continue;
+    // The generated docs' stamp and fetch leftovers describe this checkout's
+    // cache, not the docs.
+    if (srcNode === DOCS_CONTENT_DIR && isLocalOnlyEntry(entry.name)) continue;
     const srcPath = join(srcNode, entry.name);
     const destPath = join(destNode, entry.name);
     if (entry.isDirectory()) {
@@ -54,6 +61,14 @@ function copyTree(srcNode, destNode) {
       writeFileSync(destPath, rewriteImportSpecifiers(readFileSync(srcPath, 'utf8')));
     }
   }
+}
+
+try {
+  ensureTuningDocs({ strict: true });
+} catch (err) {
+  if (!(err instanceof DieError)) throw err;
+  console.error(`vendor-core: fetch-tuning-docs: ${err.message}`);
+  process.exit(1);
 }
 
 rmSync(vendorDir, { recursive: true, force: true });
