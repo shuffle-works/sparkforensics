@@ -1,6 +1,6 @@
 {
   "name": "sparkforensics",
-  "version": "0.24.3",
+  "version": "0.24.4",
   "description": "Zero-backend browser dashboard that parses Apache Spark event logs to diagnose performance bottlenecks: skew, spill, GC pressure, stragglers, cache utilization, and more.",
   "private": true,
   "type": "module",

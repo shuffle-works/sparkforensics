@@ -1,6 +1,6 @@
 {
   "name": "sparkforensics-mcp",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "mcpName": "io.github.shuffle-works/sparkforensics-mcp",
   "type": "module",
   "license": "MIT",
