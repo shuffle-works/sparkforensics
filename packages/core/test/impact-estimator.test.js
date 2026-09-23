@@ -452,7 +452,7 @@ describe('estimateImpact: stageSlowness', () => {
     // 2 tasks on a 16-core cluster, running for 20 of the stage's 22 minutes: more partitions
     // could spread those 20 minutes over all 16 cores, recovering 20 x (1 - 2/16) = 17.5 minutes.
     const stages = new Map([[0, {
-      id: 0, submittedAt: 0, completedAt: 22 * min, parentIds: [], taskCount: 2, taskActiveMs: 20 * min, taskDurationMax: 20 * min,
+      id: 0, submittedAt: 0, completedAt: 22 * min, parentIds: [], taskCount: 2, taskActiveMs: 20 * min, taskDurationMax: 20 * min, shuffleReadBytes: 1e9,
     }]]);
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
     estimateImpact(findings, stages, 16);
@@ -463,7 +463,7 @@ describe('estimateImpact: stageSlowness', () => {
 
   it('a stage that already ran more tasks than cores gets nothing from more partitions', () => {
     const stages = new Map([[0, {
-      id: 0, submittedAt: 0, completedAt: 40 * min, parentIds: [], taskCount: 500, taskActiveMs: 40 * min,
+      id: 0, submittedAt: 0, completedAt: 40 * min, parentIds: [], taskCount: 500, taskActiveMs: 40 * min, shuffleReadBytes: 1e9,
     }]]);
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
     estimateImpact(findings, stages, 16);
@@ -473,11 +473,22 @@ describe('estimateImpact: stageSlowness', () => {
   it('time the stage sat open with no task running is queueing, not recoverable by partitioning', () => {
     // Open 30 minutes, but its only task ran 2 seconds.
     const stages = new Map([[0, {
-      id: 0, submittedAt: 0, completedAt: 30 * min, parentIds: [], taskCount: 1, taskActiveMs: 2000, taskDurationMax: 2000,
+      id: 0, submittedAt: 0, completedAt: 30 * min, parentIds: [], taskCount: 1, taskActiveMs: 2000, taskDurationMax: 2000, inputBytes: 1e6,
     }]]);
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
     estimateImpact(findings, stages, 16);
     expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(2000 * (15 / 16), 6);
+  });
+
+  it('a stage that read no input and no shuffle has nothing for more partitions to split', () => {
+    // A 1-task stage whose only task ran 27 minutes without reading any bytes.
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 27 * min, parentIds: [], taskCount: 1, taskActiveMs: 27 * min, taskDurationMax: 27 * min,
+      inputBytes: 0, shuffleReadBytes: 0,
+    }]]);
+    const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
+    estimateImpact(findings, stages, 16);
+    expect(findings[0].impactEstimate.wallClock.high).toBe(0);
   });
 
   it('without a cluster core count there is no headroom figure: informational', () => {
