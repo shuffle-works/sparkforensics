@@ -7,9 +7,11 @@
 // Local patches, each marked "Local patch" below: Decompress.push loops over
 // frame boundaries instead of recursing; the streaming window is allocated on a
 // frame's second block and not updated after its last; a compressed block's
-// output is returned as a view of its own buffer instead of a copy. The last
-// two took fzstd over the 14 real logs from 12.5s to 10.6s (largest log 5.8s
-// to 5.0s), output byte-identical on every one.
+// output is returned as a view of its own buffer instead of a copy; the
+// sequence loop moves literal runs, non-overlapping matches and window reads
+// longer than CPW_MIN bytes with copyWithin/set instead of a byte loop. The
+// last three took fzstd over the 14 real logs from 12.5s to 7.5s (largest log
+// 5.7s to 3.1s), output byte-identical on every one.
 // Some numerical data is initialized as -1 even when it doesn't need initialization to help the JIT infer types
 // aliases for shorter compressed code (most minifers don't do this)
 var ab = ArrayBuffer, u8 = Uint8Array, u16 = Uint16Array, i16 = Int16Array, u32 = Uint32Array, i32 = Int32Array;
@@ -402,6 +404,12 @@ var dhu4 = function (dat, out, hu) {
     dhu(dat.subarray(bt, bt += dat[4] | (dat[5] << 8)), out.subarray(sz2, sz3), hu);
     dhu(dat.subarray(bt), out.subarray(sz3), hu);
 };
+// Local patch: runs longer than this are copied natively. Only a match whose source ends before
+// its destination starts (offset >= length) may be: an overlapping match repeats its own output,
+// which a forward byte copy does and copyWithin (memmove) doesn't. A source range past the end
+// of its buffer (corrupt input) stays a loop, which reads undefined and so writes 0 there, as
+// upstream does. 16 and 32 measured the same, 8 and 64 slower.
+var CPW_MIN = 16;
 // read Zstandard block
 var rzb = function (dat, st, out) {
     var _a;
@@ -556,9 +564,12 @@ var rzb = function (dat, st, out) {
                     else
                         off = st.o[0];
                 }
-                for (var i = 0; i < ll; ++i) {
-                    buf[oubt + i] = buf[spl + i];
-                }
+                if (ll > CPW_MIN && spl + ll <= buf.length) // in range: see CPW_MIN
+                    buf.copyWithin(oubt, spl, spl + ll);
+                else
+                    for (var i = 0; i < ll; ++i) {
+                        buf[oubt + i] = buf[spl + i];
+                    }
                 oubt += ll, spl += ll;
                 var stin = oubt - off;
                 if (stin < 0) {
@@ -566,14 +577,22 @@ var rzb = function (dat, st, out) {
                     var bs = st.e + stin;
                     if (len > ml)
                         len = ml;
-                    for (var i = 0; i < len; ++i) {
-                        buf[oubt + i] = st.w[bs + i];
-                    }
+                    // Local patch: in bounds only; an out-of-range read stays a loop so it
+                    // still yields 0 (subarray would wrap a negative start).
+                    if (len > CPW_MIN && bs >= 0 && bs + len <= st.w.length && oubt + len <= buf.length)
+                        buf.set(st.w.subarray(bs, bs + len), oubt);
+                    else
+                        for (var i = 0; i < len; ++i) {
+                            buf[oubt + i] = st.w[bs + i];
+                        }
                     oubt += len, ml -= len, stin = 0;
                 }
-                for (var i = 0; i < ml; ++i) {
-                    buf[oubt + i] = buf[stin + i];
-                }
+                if (ml > CPW_MIN && oubt - stin >= ml)
+                    buf.copyWithin(oubt, stin, stin + ml);
+                else
+                    for (var i = 0; i < ml; ++i) {
+                        buf[oubt + i] = buf[stin + i];
+                    }
                 oubt += ml;
             }
             if (oubt != spl) {
