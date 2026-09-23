@@ -141,6 +141,29 @@ describe('buildChunkDecoder', () => {
     expect(decodeInChunks([enc.encode(text.slice(0, keyEnd)).length + 3])[2]).toBe(expected[2]);
   });
 
+  // A SQL event line without the plan key is searched for it once in all: searching the whole
+  // pending line again after every slice scanned about 10 GB on a 100 MB line.
+  it('searches a long SQL event line for the plan key only in text it has not searched yet', () => {
+    const line = `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":1,"description":"${'x'.repeat(4 << 20)}","time":1}`;
+    const bytes = enc.encode(`${line}\n`);
+    const key = '"physicalPlanDescription":"';
+    const indexOf = String.prototype.indexOf;
+    let searched = 0;
+    String.prototype.indexOf = function (search, from) {
+      if (search === key) searched += this.length - (from ?? 0);
+      return indexOf.call(this, search, from);
+    };
+    const dec = buildChunkDecoder();
+    const got = [];
+    try {
+      for (let o = 0; o < bytes.length; o += 64 * 1024) got.push(...dec.decode(bytes.subarray(o, o + 64 * 1024)));
+    } finally {
+      String.prototype.indexOf = indexOf;
+    }
+    expect(got).toEqual([line]);
+    expect(searched).toBeLessThan(2 * line.length);
+  });
+
   // Node's native zstd emits whole frames (tens of MB), so a single chunk can hold a whole plan
   // description: the decoder slices it and drops the value itself. The first line puts a '€'
   // across the first 512 KiB slice boundary.

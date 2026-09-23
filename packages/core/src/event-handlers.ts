@@ -218,18 +218,46 @@ export function buildChunkDecoder() {
   let pendingHead = '';
   // True once the pending line is known to need no plan-description skip.
   let pendingSettled = false;
+  // While it isn't, how far its plan-key search got, so each slice searches only its own text:
+  // whether the line starts with the SQL UI event prefix, and the end of the text already searched
+  // (one char short of the key, so a key split across slices still matches). Searching the whole
+  // line again after every slice scanned about 10 GB on a 100 MB line.
+  let pendingIsSqlEvent = false;
+  let keyTail = '';
   let skippingPlanDescription = false;
   // Length of the backslash run the skipped bytes ended with, which escapes a quote at the start
   // of the next chunk when odd.
   let carriedBackslashes = 0;
 
-  function settlePending(lastByte: number): void {
-    if (pending.length < SQL_UI_EVENT_PREFIX.length) {
-      pendingSettled = !SQL_UI_EVENT_PREFIX.startsWith(pending);
-      return;
+  // Where the plan key starts in `pending`, searching only `appended` (the text just added to its
+  // end) and the seam before it, or -1.
+  function findPlanKey(appended: string): number {
+    const seamLength = PLAN_DESCRIPTION_KEY.length - 1;
+    const before = pending.length - appended.length;
+    if (keyTail !== '') {
+      const inSeam = (keyTail + appended.slice(0, seamLength)).indexOf(PLAN_DESCRIPTION_KEY);
+      if (inSeam !== -1) return before - keyTail.length + inSeam;
     }
-    if (!pending.startsWith(SQL_UI_EVENT_PREFIX)) { pendingSettled = true; return; }
-    const keyAt = pending.indexOf(PLAN_DESCRIPTION_KEY);
+    const inText = appended.indexOf(PLAN_DESCRIPTION_KEY);
+    if (inText !== -1) return before + inText;
+    keyTail = appended.length >= seamLength ? appended.slice(-seamLength) : (keyTail + appended).slice(-seamLength);
+    return -1;
+  }
+
+  function settlePending(lastByte: number, appended: string): void {
+    if (!pendingIsSqlEvent) {
+      if (pending.length < SQL_UI_EVENT_PREFIX.length) {
+        pendingSettled = !SQL_UI_EVENT_PREFIX.startsWith(pending);
+        return;
+      }
+      // The flat first piece, when it is long enough: startsWith on the joined line would copy it.
+      const head = pendingHead.length >= SQL_UI_EVENT_PREFIX.length ? pendingHead : pending;
+      if (!head.startsWith(SQL_UI_EVENT_PREFIX)) { pendingSettled = true; return; }
+      pendingIsSqlEvent = true;
+      keyTail = '';
+      appended = pending; // nothing of it was searched while it was shorter than the prefix
+    }
+    const keyAt = findPlanKey(appended);
     if (keyAt === -1) return; // the key may still arrive in a later chunk
     pendingSettled = true;
     const valueStart = keyAt + PLAN_DESCRIPTION_KEY.length;
@@ -265,9 +293,15 @@ export function buildChunkDecoder() {
     }
     const text = decoder.decode(from === 0 ? buffer : buffer.subarray(from), { stream: true });
     let nl = text.indexOf('\n');
+    // The text this slice added to the end of `pending`.
+    let appended = text;
     if (nl === -1) {
-      if (pending === '') pending = pendingHead = text;
-      else pending = pending + text;
+      if (pending === '') {
+        pending = pendingHead = text;
+        pendingIsSqlEvent = false;
+      } else {
+        pending = pending + text;
+      }
     } else {
       // Zero-length lines are dropped to match a `.filter(l => l.length)`.
       let first: string;
@@ -286,10 +320,11 @@ export function buildChunkDecoder() {
         start = nl + 1;
         nl = text.indexOf('\n', start);
       }
-      pending = pendingHead = start < text.length ? text.substring(start) : '';
+      pending = pendingHead = appended = start < text.length ? text.substring(start) : '';
       pendingSettled = false;
+      pendingIsSqlEvent = false;
     }
-    if (!pendingSettled && pending !== '') settlePending(buffer[buffer.length - 1]);
+    if (!pendingSettled && pending !== '') settlePending(buffer[buffer.length - 1], appended);
   }
 
   return {
