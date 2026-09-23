@@ -19,3 +19,8 @@ replay of 765 flagged stages on 14 real logs, estimates more than 2x too low fel
 Estimates: low-GC `gc` findings (an over-provisioning signal) no longer claim the stage's GC time as
 recoverable wall-clock time, since their fix, less executor memory, raises GC rather than removing
 it. They are now informational and keep their `info` band.
+
+Estimates: `shuffle` and `spill` recoverable time now spreads the stage's shuffle-read or disk-spill
+bytes over every executor that ran it (one ~1 Gbps link or ~200 MB/s disk each) instead of pushing
+the whole cluster's bytes through a single link or disk. On the largest real log the old figures
+claimed 721 minutes of shuffle and spill savings on a 458-minute run; they now claim 51.

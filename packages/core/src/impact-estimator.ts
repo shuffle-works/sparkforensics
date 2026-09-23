@@ -5,10 +5,21 @@ import {
 } from './occupancy.ts';
 import { detectorCatalog } from './detectors.ts';
 
-// Assumed shuffle-network throughput, ~1 Gbps. Starting assumption, unvalidated.
+// Assumed shuffle-network throughput per executor link, ~1 Gbps. Starting assumption, unvalidated.
 const SHUFFLE_THROUGHPUT_BPS = 125_000_000;
-// Assumed disk I/O throughput for spilled data, ~200 MB/s (conservative HDD/SSD blend).
+// Assumed disk I/O throughput per executor for spilled data, ~200 MB/s (conservative HDD/SSD blend).
 const SPILL_IO_THROUGHPUT_BPS = 200_000_000;
+
+// Both constants above are single-device figures (one NIC, one local disk). A stage's shuffle
+// reads and spills are spread over every executor that ran its tasks, each moving its own share
+// in parallel, so the stage's aggregate bandwidth scales with that executor count. Dividing a
+// stage-wide byte total by one device's bandwidth modeled the whole cluster as one link: on 14
+// real logs that claimed up to 1,870s of shuffle time on stages whose tasks measured ~0s of
+// shuffle fetch wait (222 of 284 shuffle findings). No executor data falls back to one device.
+function stageIoParallelism(stage: Stage): number {
+  const executors = Array.isArray(stage.executorStats) ? stage.executorStats.length : 0;
+  return Math.max(1, executors);
+}
 // Spark's classic recommended shuffle partition size.
 const IDEAL_BYTES_PER_PARTITION_TASK = 128 * 1024 * 1024;
 // Assumed per-task scheduling/launch overhead.
@@ -234,7 +245,7 @@ function computeEstimateForFinding(
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
       const shuffleReadBytes = stage.shuffleReadBytes ?? 0;
-      const wasteMs = (shuffleReadBytes / SHUFFLE_THROUGHPUT_BPS) * 1000;
+      const wasteMs = (shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
       // The measured byte volume driving the modeled ms figure above.
       return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: shuffleReadBytes, unit: 'bytes' });
     }
@@ -243,7 +254,7 @@ function computeEstimateForFinding(
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
       const diskBytesSpilled = stage.diskBytesSpilled ?? 0;
-      const wasteMs = (diskBytesSpilled / SPILL_IO_THROUGHPUT_BPS) * 1000;
+      const wasteMs = (diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
       // Surfaces the number the formula uses: the displayed metric is memoryBytesSpilled, but disk spill costs the I/O time.
       return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'modeled', { value: diskBytesSpilled, unit: 'bytes' });
     }
