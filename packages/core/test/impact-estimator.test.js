@@ -99,7 +99,8 @@ describe('estimateImpact: gc', () => {
 describe('estimateImpact: skew / straggler: the tail claim is floored at the longest task the fix leaves', () => {
   // These claims shorten the stage's longest task itself, so ceiling(S)'s taskDurationMax term
   // (the very task being fixed) can't be their floor: that used to cap a one-straggler stage's
-  // claim at ~0. The floor is taskDurationMax - claim, or the core work over every core.
+  // claim at ~0. The floor is taskDurationMax - claim, or the core work the fix leaves over every
+  // core.
   it('skew: P95 branch, floored at the longest task the fix leaves (9000 - 3000 = 6000 on a 10000ms stage)', () => {
     const stages = new Map([[0, {
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [],
@@ -137,9 +138,10 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
   });
 
   it('straggler: the stage\'s core work spread over every core still caps the claim', () => {
-    // 36000 core-ms over 4 cores = 9000ms of unavoidable work on a 10000ms stage: room 1000.
+    // 44000 core-ms less the 8000 the fix removes = 36000 over 4 cores, 9000ms of unavoidable work
+    // on a 10000ms stage: room 1000.
     const stages = new Map([[0, {
-      id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1000, taskDurationMax: 9000, executorRunTime: 36000,
+      id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1000, taskDurationMax: 9000, executorRunTime: 44000,
     }]]);
     const findings = [{ type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' }];
     estimateImpact(findings, stages, 4);

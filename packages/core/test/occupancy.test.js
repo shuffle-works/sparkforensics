@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeOccupancyMs, computeGate, computeCeiling, clipToCeiling, computeOccupancy, estimateSingleStage, estimateMultiStage } from '../src/occupancy.js';
+import { computeOccupancyMs, computeGate, computeCeiling, clipToCeiling, computeOccupancy, estimateSingleStage, estimateMultiStage, tailRemovedWorkMs } from '../src/occupancy.js';
 import { mergeIntervals } from '../src/wall-clock.js';
 
 function stage(id, opts) {
@@ -182,6 +182,16 @@ describe('estimateSingleStage', () => {
     const info = computeOccupancy(stages, 4); // coreWorkFloor 8000: room 2000
     expect(info.get(0).coreWorkFloor).toBe(8000);
     expect(estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true }).wallClock.high).toBe(2000);
+  });
+
+  it('shortensLongestTask: the core-work floor counts only the work the fix leaves', () => {
+    const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 10000, taskDurationMax: 9500, executorRunTime: 32000 })]]);
+    const info = computeOccupancy(stages, 4);
+    // Removing 16000 of the 32000ms of task time halves the floor to 4000: room 6000.
+    const est = estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true, removedCoreWorkMs: 16000 });
+    expect(est.wallClock.high).toBe(6000);
+    expect(tailRemovedWorkMs({ stragglerExcessMs: 16000 }, 9000)).toBe(16000);
+    expect(tailRemovedWorkMs({ stragglerExcessMs: 0 }, 9000)).toBe(9000);
   });
 
   it('returns null for a stage excluded from the sweep', () => {

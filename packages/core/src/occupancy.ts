@@ -166,12 +166,22 @@ export function tailRecoveryMs(stage: TailStage, singleTaskExcessMs: number): nu
   return Math.max(singleTaskExcessMs, excessMs / slots);
 }
 
+// Task time a skew/straggler fix removes, by the same measure: the tasks over 4x P50 capped at the
+// median (stragglerExcessMs), or the slowest task's excess when that alone is larger.
+export function tailRemovedWorkMs(stage: TailStage, singleTaskExcessMs: number): number {
+  return Math.max(singleTaskExcessMs, stage.stragglerExcessMs ?? 0);
+}
+
 export interface SingleStageEstimateOptions {
   // The claim shortens the stage's longest task itself (skew, straggler): `ceiling`'s
   // taskDurationMax term is the very quantity being fixed, so clipping against it would cap a
   // one-straggler stage's claim at ~0. Such a claim is floored instead at the longest task the
   // fix leaves (taskDurationMax - claim) or the stage's core work spread over every core.
   shortensLongestTask?: boolean;
+  // Core work (task time) the fix itself removes (tailRemovedWorkMs): the core-work floor is then
+  // the work left after it. Flooring a tail fix at the stage's work before the fix held back most
+  // of the claim on stages whose stragglers were a large part of their core time.
+  removedCoreWorkMs?: number;
 }
 
 /**
@@ -185,13 +195,17 @@ export function estimateSingleStage(
   stageId: number,
   stages: Map<number, OccupancyStage>,
   info: Map<number, StageOccupancyInfo>,
-  { shortensLongestTask = false }: SingleStageEstimateOptions = {},
+  { shortensLongestTask = false, removedCoreWorkMs = 0 }: SingleStageEstimateOptions = {},
 ): OccupancyEstimate | null {
   const stage = stages.get(stageId);
   const stageInfo = info.get(stageId);
   if (!stage || !stageInfo) return null;
+  const coreWork = stage.executorRunTime ?? 0;
+  const coreWorkFloor = removedCoreWorkMs > 0 && coreWork > 0
+    ? stageInfo.coreWorkFloor * Math.max(0, 1 - removedCoreWorkMs / coreWork)
+    : stageInfo.coreWorkFloor;
   const ceiling = shortensLongestTask
-    ? Math.max((stage.taskDurationMax ?? 0) - wasteMsClaimed, stageInfo.coreWorkFloor)
+    ? Math.max((stage.taskDurationMax ?? 0) - wasteMsClaimed, coreWorkFloor)
     : stageInfo.ceiling;
   const clipped = clipToCeiling(wasteMsClaimed, stage, ceiling);
   if (stageInfo.gate >= SERIAL_GATE_THRESHOLD) {

@@ -80,7 +80,12 @@ more-partitions estimate passes it too, since splitting partitions splits the lo
 stage's longest task itself, so `taskDurationMax` can't be their floor: clipping against it
 capped a stage gated by one straggler at `duration(S) − taskDurationMax`, about zero, exactly
 when the fix recovers the most. Their floor is instead the longest task the fix leaves plus
-the core-work term, `max(taskDurationMax − wasteMs_claimed, stage.executorRunTime / totalCores)`.
+the core work the fix leaves, `max(taskDurationMax − wasteMs_claimed, (stage.executorRunTime −
+removed) / totalCores)`, where `removed` (`tailRemovedWorkMs`) is the larger of the longest
+task's excess over P50 and `stragglerExcessMs`. Counting the stragglers' own run time as work
+the stage can't shed floored a stage whose tail is most of its core time near its observed
+duration: one real stage claimed 5.9s where the replay below recovers 38.7s, and now claims
+38.7s.
 Scored against a list-scheduling replay of each flagged stage's own tasks (slots = the
 stage's observed peak concurrent tasks; recoverable = replay with actual durations minus
 replay with every task over 4× P50 capped at P50), across 765 skew/straggler findings on 14
@@ -101,6 +106,11 @@ over the 14 real logs plus the 17 complete corpus runs (non-info findings only):
 of the replay 56 of 78 → 79 of 85, more than 2× under 16 → 0, more than 2× over 6 → 6, mean
 absolute error 53.4s → 8.4s. The detectors' floor gates use the same figure, which lifted
 skew's recall from 0.60 to 0.73 at precision 0.97 → 0.98; straggler's scores didn't move.
+Taking the removed work out of the core-work floor, scored again over 65 runs (14 real logs
+plus the corpus, 103 non-info findings): within 2× 88 of 95 → 97 of 103, more than 2× under
+1 → 0, more than 2× over 6 → 6, mean absolute error 7.55s → 5.18s; skew recall 0.76 → 0.81 at
+precision 0.98 → 0.96, straggler recall 0.71 → 0.76 at precision 0.94 → 0.92, either detector
+recall 0.85 → 0.90.
 
 `analyzer.ts` feeds this `totalCores` from `src/core-count.ts`'s
 `computePeakConcurrentCores(app, executorsAdded, executorsRemoved)`, not the shared

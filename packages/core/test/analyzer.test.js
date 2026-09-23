@@ -75,10 +75,11 @@ describe('analyze: task skew', () => {
   });
 
   it('suppresses a critical-ratio skew finding whose raw waste clears the floor but whose occupancy-clipped recoverable time does not', () => {
-    // 10,000 core-ms over 2 cores is 5,000ms of unavoidable work in the 5,005ms window, so only 5ms
-    // is recoverable despite a 4,990ms raw delta that clears both floors.
+    // 14,990 core-ms less the 4,990ms the fix removes leaves 10,000 core-ms over 2 cores: 5,000ms of
+    // unavoidable work in the 5,005ms window, so only 5ms is recoverable despite a 4,990ms raw delta
+    // that clears both floors.
     const stages = new Map([[1, makeStage({
-      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000, executorRunTime: 10000,
+      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000, executorRunTime: 14990,
     })]]);
     const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 2 }];
     const catalog = analyze(makeApp({ startTime: 0, endTime: 100000 }), stages, executorsAdded, []);
@@ -478,11 +479,12 @@ describe('analyze: speculative / straggler', () => {
   });
 
   it('caps a large straggler share at info when the raw waste clears the floor but the occupancy-clipped recoverable time does not', () => {
-    // Like the skew ceiling test: 10,000 core-ms over 2 cores fills the 5,005ms window, so only
-    // 5ms is recoverable despite a raw delta that clears the 25ms warn floor.
+    // Like the skew ceiling test: the 10,000 core-ms left after the fix removes 4,990 fill the
+    // 5,005ms window over 2 cores, so only 5ms is recoverable despite a raw delta that clears the
+    // 25ms warn floor.
     const stages = new Map([[1, makeStage({
       taskCount: 100, speculativeTasks: 0, stragglerCount: 50,
-      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationMax: 5000, executorRunTime: 10000,
+      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationMax: 5000, executorRunTime: 14990,
     })]]);
     const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 2 }];
     const b = analyze(makeApp(), stages, executorsAdded, []).find(b => b.type === 'straggler');

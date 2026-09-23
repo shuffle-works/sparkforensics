@@ -110,3 +110,9 @@ logs. Decompressing the largest one in Chrome takes 2.9s instead of 11.6s.
 CLI and MCP: large zstd frames of a local event log decompress on Node's threadpool while the
 main thread parses. Parsing the 14 real logs is 14% faster (9.4s to 8.1s; the largest log 4.2s
 to 3.2s) with identical findings, for up to 139 MB more peak memory.
+
+Estimates: the `skew` and `straggler` core-work floor now leaves out the task time their fix
+removes. A stage whose stragglers were most of its core time was floored near its own duration:
+one real stage claimed 5.9s where a task-level replay recovers 38.7s. Against that replay over 65
+runs, estimates within 2x of it went from 88 of 95 to 97 of 103 and mean absolute error from
+7.55s to 5.18s; skew recall rose from 0.76 to 0.81 (precision 0.98 to 0.96).

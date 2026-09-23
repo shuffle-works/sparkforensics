@@ -245,7 +245,7 @@ stays documented here in full.
 
 | Rule | Fires when | Fallback |
 |---|---|---|
-| Task skew | `taskDurationP95 / taskDurationP50 > 3×` (`taskDurationMax / P50` for stages under `minTasksForP95` = 20 tasks), **and** the occupancy-clipped tail recovery (`tailRecoveryMs`: P95−P50, or max−P50, or the slow tasks' summed excess over the stage's peak slots when larger) is ≥ `floorPctWarn` = 0.5% of app runtime. The clip floors the claim at the longest task the fix leaves, not the current one (see impact-estimation.md's occupancy section); `straggler`'s floors use the same clip | `warning` |
+| Task skew | `taskDurationP95 / taskDurationP50 > 3×` (`taskDurationMax / P50` for stages under `minTasksForP95` = 20 tasks), **and** the occupancy-clipped tail recovery (`tailRecoveryMs`: P95−P50, or max−P50, or the slow tasks' summed excess over the stage's peak slots when larger) is ≥ `floorPctWarn` = 0.5% of app runtime. The clip floors the claim at the longest task the fix leaves, not the current one, and at the core work the fix leaves over every core (see impact-estimation.md's occupancy section); `straggler`'s floors use the same clip | `warning` |
 | Shuffle read | `shuffleReadBytes > minBytes` = 50 MiB | `info` |
 | Partition sizing: skew | `shuffleReadMax > 5×` `shuffleReadP50` **and** `shuffleReadMax > 256 MiB` | `warning` |
 | Partition sizing: low parallelism | `shuffleReadBytes ≥ 1 GiB` **and** `taskCount ≤ 7` | `warning` |

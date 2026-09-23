@@ -3,7 +3,7 @@ import { scanRelationId } from './plan-summary.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
-import { estimateSingleStage, tailRecoveryMs, type OccupancyStage, type StageOccupancyInfo } from './occupancy.ts';
+import { estimateSingleStage, tailRecoveryMs, tailRemovedWorkMs, type OccupancyStage, type StageOccupancyInfo } from './occupancy.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { cyrb53 } from './string-hash.ts';
 import type { Finding, PlanNode, FixEffort } from './types.ts';
@@ -602,10 +602,11 @@ function meetsRuntimeFloor(wasteMs: number, appDurationMs: number | null, floorP
 // display, so the runtime floor checks recoverable wall-clock, not a delta a physical floor
 // leaves unrecoverable. Falls back to the raw delta when occupancy data is unavailable.
 // skew/straggler claims shorten the stage's longest task, hence shortensLongestTask (see occupancy.ts).
-function clippedWasteMs(wasteMs: number, stageId: number, ctx?: DetectorCtx): number {
+function clippedWasteMs(wasteMs: number, stageId: number, ctx: DetectorCtx | undefined, removedCoreWorkMs: number): number {
   if (!ctx) return wasteMs;
   const est = estimateSingleStage(
-    wasteMs, stageId, ctx.stages as unknown as Map<number, OccupancyStage>, ctx.occupancy, { shortensLongestTask: true },
+    wasteMs, stageId, ctx.stages as unknown as Map<number, OccupancyStage>, ctx.occupancy,
+    { shortensLongestTask: true, removedCoreWorkMs },
   );
   return est ? est.wallClock.high : wasteMs;
 }
@@ -808,9 +809,10 @@ export const DETECTORS: Detector[] = [
       if (ratio <= this.thresholds.ratioWarn) return null;
       // Same absolute delta impact-estimator.ts's 'skew' case reports as savings; clipped the
       // same way before the floor check so the gate agrees with what's displayed.
-      const wasteMs = tailRecoveryMs(stage, Math.max(0, metric === 'P95/median' ? stage.taskDurationP95 - stage.taskDurationP50 : stage.taskDurationMax - stage.taskDurationP50));
+      const singleDelta = Math.max(0, metric === 'P95/median' ? stage.taskDurationP95 - stage.taskDurationP50 : stage.taskDurationMax - stage.taskDurationP50);
+      const wasteMs = tailRecoveryMs(stage, singleDelta);
       const appDurationMs = computeAppDurationMs(ctx);
-      const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx);
+      const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx, tailRemovedWorkMs(stage, singleDelta));
       if (!meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctWarn)) return null;
       const value = Math.round(ratio * 10) / 10;
       return {
@@ -1228,9 +1230,10 @@ export const DETECTORS: Detector[] = [
       // Same absolute delta impact-estimator.ts's straggler/stageShape case reports as savings: a
       // high straggler/speculative share on a stage whose tasks barely vary models near-zero
       // savings, so it must not outrank 'info'. Clipped the same way before the floor check.
-      const wasteMs = tailRecoveryMs(stage, Math.max(0, stage.taskDurationMax - stage.taskDurationP50));
+      const singleDelta = Math.max(0, stage.taskDurationMax - stage.taskDurationP50);
+      const wasteMs = tailRecoveryMs(stage, singleDelta);
       const appDurationMs = computeAppDurationMs(ctx);
-      const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx);
+      const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx, tailRemovedWorkMs(stage, singleDelta));
       const meetsWarnFloor = meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctWarn);
       const meetsCritFloor = meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctCrit);
       // The lower gate needs positive evidence the tail matters: meetsRuntimeFloor passes by

@@ -1,6 +1,6 @@
 import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, Stage } from './types.ts';
 import {
-  computeOccupancy, estimateSingleStage, estimateMultiStage, tailRecoveryMs,
+  computeOccupancy, estimateSingleStage, estimateMultiStage, tailRecoveryMs, tailRemovedWorkMs,
   type OccupancyStage, type SingleStageEstimateOptions, type StageOccupancyInfo,
 } from './occupancy.ts';
 
@@ -157,8 +157,10 @@ function computeEstimateForFinding(
       const p50 = stage.taskDurationP50 ?? 0;
       // computeSkewRatio's own metric labels (src/detectors.ts): 'P95/median' or 'max/median'.
       const usesP95Branch = finding.metric === 'P95/median';
-      const wasteMs = tailRecoveryMs(stage, Math.max(0, usesP95Branch ? (stage.taskDurationP95 ?? 0) - p50 : (stage.taskDurationMax ?? 0) - p50));
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' }, TAIL_CLAIM);
+      const singleDelta = Math.max(0, usesP95Branch ? (stage.taskDurationP95 ?? 0) - p50 : (stage.taskDurationMax ?? 0) - p50);
+      const wasteMs = tailRecoveryMs(stage, singleDelta);
+      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' },
+        { ...TAIL_CLAIM, removedCoreWorkMs: tailRemovedWorkMs(stage, singleDelta) });
     }
     case 'straggler':
     case 'stageShape': {
@@ -200,8 +202,10 @@ function computeEstimateForFinding(
       if (finding.stageId == null) return null;
       const stage = stages.get(finding.stageId);
       if (!stage) return null;
-      const wasteMs = tailRecoveryMs(stage, Math.max(0, (stage.taskDurationMax ?? 0) - (stage.taskDurationP50 ?? 0)));
-      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' }, TAIL_CLAIM);
+      const singleDelta = Math.max(0, (stage.taskDurationMax ?? 0) - (stage.taskDurationP50 ?? 0));
+      const wasteMs = tailRecoveryMs(stage, singleDelta);
+      return singleStageImpact(wasteMs, finding.stageId, stages, occupancy, 'measured', { value: wasteMs, unit: 'ms' },
+        { ...TAIL_CLAIM, removedCoreWorkMs: tailRemovedWorkMs(stage, singleDelta) });
     }
     case 'slowHost': {
       // Three duration-based shapes, each carrying its absolute-ms figure under a different field
