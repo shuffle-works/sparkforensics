@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
-import { bumpChangeset, compareUrl, normalizeEol, parsePin } from '../scripts/fetch-tuning-docs.mjs';
+import { bumpChangeset, compareUrl, driftReport, normalizeEol, parseBumpArgs, parsePin } from '../scripts/fetch-tuning-docs.mjs';
 
 const REPO = 'https://github.com/shuffle-works/spark-tuning-reference.git';
 const A = '0574da5300c7c4ecb4da71298e85608d2fc20b71';
@@ -44,5 +44,43 @@ describe('bump output', () => {
     const text = bumpChangeset(REPO, A, B);
     expect(text).toMatch(/^---\n"sparkforensics": patch\n"sparkforensics-cli": patch\n"sparkforensics-mcp": patch\n"sparkforensics-server": patch\n---\n\n/);
     expect(text).toContain(`spark-tuning-reference@1d0f90d (${compareUrl(REPO, A, B)})`);
+  });
+});
+
+describe('parseBumpArgs', () => {
+  it.each([
+    [[], { check: false, sha: undefined }],
+    [[B], { check: false, sha: B }],
+    [['--check'], { check: true, sha: undefined }],
+    [['--check', B], { check: true, sha: B }],
+    [[B, '--check'], { check: true, sha: B }],
+  ])('parses %j', (args, expected) => {
+    expect(parseBumpArgs(args)).toEqual(expected);
+  });
+
+  it.each([
+    ['a short SHA', ['1d0f90d']],
+    ['a branch name', ['--check', 'master']],
+    ['two SHAs', [A, B]],
+    ['a repeated --check', ['--check', '--check']],
+  ])('rejects %s', (_label, args) => {
+    expect(() => parseBumpArgs(args)).toThrow();
+  });
+});
+
+describe('driftReport', () => {
+  it('says a bump is safe and links the compare view when the gate passes', () => {
+    const text = driftReport(REPO, A, B, true);
+    expect(text).toContain('passes the anchor gate');
+    expect(text).toContain(compareUrl(REPO, A, B));
+  });
+
+  it('says a bump would break when the gate fails', () => {
+    expect(driftReport(REPO, A, B, false)).toMatch(/fails the anchor gate.*compare\//);
+  });
+
+  it('emits a notice or an error annotation under GitHub Actions', () => {
+    expect(driftReport(REPO, A, B, true, true)).toMatch(/^::notice title=Tuning reference drift::upstream 1d0f90d /);
+    expect(driftReport(REPO, A, B, false, true)).toMatch(/^::error title=Tuning reference drift::upstream 1d0f90d /);
   });
 });

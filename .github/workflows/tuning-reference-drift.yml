@@ -1,0 +1,60 @@
+name: Tuning reference drift
+
+# Weekly early warning for shuffle-works/spark-tuning-reference: checks
+# whether upstream head would still pass the anchor gate and test:core, so an
+# upstream change that drops an anchor the app links to shows up before anyone
+# tries `npm run docs:bump`. Check-only: nothing is committed or pushed, and
+# no bump PR is opened.
+on:
+  schedule:
+    - cron: '23 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      # Resolved once, so the gate and the regenerated docs test the same commit.
+      - name: Resolve upstream head
+        id: upstream
+        run: |
+          pin_file=packages/core/src/docs-content/upstream.json
+          repo=$(node -p "require('./$pin_file').repository")
+          pin=$(node -p "require('./$pin_file').commit")
+          head=$(git ls-remote "$repo" HEAD | cut -f1)
+          test -n "$head" || { echo "::error::git ls-remote $repo HEAD returned no commit"; exit 1; }
+          {
+            echo "head=$head"
+            echo "moved=$([ "$head" = "$pin" ] && echo false || echo true)"
+            echo "compare=${repo%.git}/compare/$pin...$head"
+          } >> "$GITHUB_OUTPUT"
+      # Fails with the compare link when head lacks an anchor or tuning doc the
+      # app links to; passes with a notice when head is newer and still clean.
+      - name: Anchor gate against upstream head
+        run: npm run docs:bump -- --check "${{ steps.upstream.outputs.head }}"
+      # Rewrites the pin, docs-content/ and a changeset in this throwaway
+      # checkout only, so test:core runs against the content a bump would ship.
+      - name: Regenerate docs from upstream head
+        if: steps.upstream.outputs.moved == 'true'
+        run: npm run docs:bump -- "${{ steps.upstream.outputs.head }}"
+      - name: Core tests against upstream head
+        if: steps.upstream.outputs.moved == 'true'
+        run: npm run test:core
+      - name: Report the upstream changes that broke the check
+        if: failure() && steps.upstream.outputs.compare != ''
+        run: echo "::error title=Tuning reference drift::upstream ${{ steps.upstream.outputs.head }} breaks a bump: ${{ steps.upstream.outputs.compare }}"
