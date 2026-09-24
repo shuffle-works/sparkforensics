@@ -17,8 +17,6 @@ own event log. No install, no account, no upload. Read the
 
 <a href=".github/assets/demo.mp4"><img src=".github/assets/demo.gif" alt="Demo: dropping a Spark event log into SparkForensics and browsing its findings" width="100%"></a>
 
-The animation above is a preview; [open the full-quality demo video](.github/assets/demo.mp4).
-
 Spark's own History Server gives you raw metrics. It won't tell you that
 stage 14 spilled 40GB because of a skewed join key, or that cold start is
 eating a third of the job. SparkForensics reads the same event logs and
