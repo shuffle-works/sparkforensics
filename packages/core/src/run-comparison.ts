@@ -187,6 +187,14 @@ function skewRatios(stages: Stage[]): number[] {
 // shared by the view (RunComparison.tsx, for Δ coloring) and by
 // src/cli/budgets.ts's checkRegression (so a `--regression-metric inputBytes`
 // budget can't misread "processed more data" as a regression).
+// Every key metricDeltas() emits, in emission order. The CLI validates
+// --regression-metric against it, so a misspelled key is a usage error rather
+// than an inconclusive budget. A contract test keeps it in sync.
+export const COMPARISON_METRIC_KEYS: readonly string[] = [
+  'wallClock', 'shuffleSpill', 'taskSkew', 'failedTaskRate', 'diskSpill', 'gcTime',
+  'inputBytes', 'outputBytes', 'executorRunTime', 'taskCount', 'executorsAdded',
+];
+
 export const NEUTRAL_METRIC_KEYS: ReadonlySet<string> = new Set(['inputBytes', 'outputBytes', 'taskCount', 'executorsAdded']);
 
 function direction(key: string, baseline: number | null, candidate: number | null): MetricDeltaRow['direction'] {

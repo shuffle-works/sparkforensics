@@ -369,6 +369,35 @@ describe('sparkforensics-analyze CLI', () => {
     }
   });
 
+  it('exits 2 with usage on an unknown flag', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-unknownflag-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, ndjsonWithSkew());
+    try {
+      const { status, stderr } = runCli([path, '--max-skw', '3']);
+      expect(status).toBe(2);
+      expect(stderr).toMatch(/--max-skw/);
+      expect(stderr).toMatch(/^Usage: sparkforensics-analyze/m);
+      expect(stderr).not.toMatch(/at .*\.mjs:\d+/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('exits 2 with usage when a flag is missing its value', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-novalue-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, ndjsonWithSkew());
+    try {
+      const { status, stderr } = runCli([path, '--max-skew']);
+      expect(status).toBe(2);
+      expect(stderr).toMatch(/--max-skew/);
+      expect(stderr).toMatch(/^Usage: sparkforensics-analyze/m);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   describe('--baseline comparison mode', () => {
     // Baseline: 9 fast + 1 slow (skewed). Candidate: same shape, single-task
     // runtime longer (2000 -> 4000), a real wallClock regression.
@@ -473,14 +502,15 @@ describe('sparkforensics-analyze CLI', () => {
       });
     });
 
-    it('is inconclusive when checking a metric key that is not a known comparison metric', () => {
+    it('exits 2 with usage when checking a metric key that is not a known comparison metric', () => {
       withBaselineAndCandidate(({ baselinePath, candidatePath }) => {
         const { status, stderr } = runCli([
           candidatePath, '--baseline', baselinePath,
           '--max-regression-pct', '1', '--regression-metric', 'notARealMetric',
         ]);
-        expect(status).toBe(3);
-        expect(stderr).toMatch(/\[inconclusive\] max-regression/);
+        expect(status).toBe(2);
+        expect(stderr).toMatch(/Unknown --regression-metric "notARealMetric"/);
+        expect(stderr).toMatch(/^Usage: sparkforensics-analyze/m);
       });
     });
 

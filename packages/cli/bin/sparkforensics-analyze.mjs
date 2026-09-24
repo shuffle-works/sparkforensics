@@ -26,7 +26,7 @@ const { analyze, auditConfig } = await loadCore('analyzer');
 const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
 const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
 const { evaluateBudgets } = await loadCore('cli/budgets');
-const { buildComparison, renderComparisonMarkdown } = await loadCore('run-comparison');
+const { buildComparison, renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
 const { redactComparison, redactExportData } = await loadCore('redact');
 const { buildExportRunData } = await loadCore('export-data');
 
@@ -153,7 +153,16 @@ async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redac
 }
 
 export async function main(argv, { fetchImpl } = {}) {
-  const { values, positionals } = parseCliArgs(argv);
+  let parsed;
+  try {
+    parsed = parseCliArgs(argv);
+  } catch (e) {
+    // node:util parseArgs throws a TypeError with an ERR_PARSE_ARGS_* code for
+    // unknown flags and flags missing their value: a usage error, not exit 1.
+    if (!e?.code?.startsWith('ERR_PARSE_ARGS_')) throw e;
+    return bail(`${e.message}\n${USAGE}`, 2);
+  }
+  const { values, positionals } = parsed;
   if (values.help) {
     process.stderr.write(USAGE);
     process.exitCode = 0;
@@ -207,6 +216,9 @@ export async function main(argv, { fetchImpl } = {}) {
   }
   if (values['regression-metric'] !== undefined && values['max-regression-pct'] === undefined) {
     return bail(`--regression-metric requires --max-regression-pct.\n${USAGE}`, 2);
+  }
+  if (values['regression-metric'] !== undefined && !COMPARISON_METRIC_KEYS.includes(values['regression-metric'])) {
+    return bail(`Unknown --regression-metric "${values['regression-metric']}" (expected one of: ${COMPARISON_METRIC_KEYS.join(', ')}).\n${USAGE}`, 2);
   }
 
   const budgets = {
