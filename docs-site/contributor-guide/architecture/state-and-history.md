@@ -142,7 +142,7 @@ it; the disclosure itself doesn't move or auto-expand.
 The collapsed **Fetch from Spark History Server** disclosure requires
 local-server mode, a reachable History Server, and a supported base application
 ID: `application_<timestamp>_<id>`, `local-<timestamp>`, or
-`app-<identifier>`. `server/lib/shs-request.js` trims and validates the three
+`app-<identifier>`. `packages/core/src/shs-request.js` trims and validates the three
 request fields, accepts only absolute credential-free `http:`/`https:` base
 URLs without a query or fragment, preserves a reverse-proxy path prefix, and
 canonicalizes the base URL to one trailing slash. The optional attempt is a

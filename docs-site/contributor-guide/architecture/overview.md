@@ -5,7 +5,7 @@
 Task data must never live on the main thread. A Spark job can emit millions of
 `SparkListenerTaskEnd` events (240 MB+ of metrics); parsing them on the UI thread
 freezes Chrome. The design below enforces that in both deploy modes: the static
-zero-backend app, and the optional local-server mode in `server/`, which also
+zero-backend app, and the optional local-server mode in `packages/server/`, which also
 proxies Spark History Server fetches to sidestep CORS.
 
 ## Two actors
@@ -150,5 +150,5 @@ the entry's first bytes, with the entry name's suffix as fallback. One-shotting
 the decompression of an entry (fzstd's `decompress()`, fflate's `gunzipSync()`)
 would allocate its full declared content size as one ArrayBuffer, which fails
 outright for a multi-GB event log. Decompressors are vendored under
-`src/vendor/` (`fflate.js`, `fzstd.js`) plus `src/lz4-block.ts` and
-`src/snappy-block.ts`.
+`packages/core/src/vendor/` (`fflate.js`, `fzstd.js`) plus
+`packages/core/src/lz4-block.ts` and `packages/core/src/snappy-block.ts`.
