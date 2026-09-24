@@ -147,8 +147,8 @@ function diff(beforePath, afterPath, verbose) {
 }
 
 // Returns the number of finding-level changes (added, removed, re-banded, value- or estimate-changed)
-// plus logs that appeared, disappeared, changed error or changed stage/SQL/skipped-line counts, so
-// --check can fail on any of them.
+// plus logs that appeared, disappeared, changed error or changed stage/SQL/skipped-line or
+// duplicate-finding counts, so --check can fail on any of them.
 function diffSnapshots(snapA, snapB, verbose) {
   const a = new Map(snapA.logs.map((l) => [l.name, l]));
   const b = new Map(snapB.logs.map((l) => [l.name, l]));
@@ -187,6 +187,8 @@ function diffSnapshots(snapA, snapB, verbose) {
     for (const [k, g] of fb) {
       if (!fa.has(k)) { totAdded++; bump(g.type, 'added'); lines.push(`  + ${g.band.padEnd(8)} ${k}  wc=${fmtMs(g.wcHigh)}`); }
     }
+    const dupA = la.findings.length - fa.size; const dupB = lb.findings.length - fb.size;
+    if (dupA !== dupB) { logChanges++; lines.push(`  ! duplicate-key findings ${dupA} -> ${dupB}`); }
     const speed = la.parseMs == null || lb.parseMs == null ? '' : `parse ${la.parseMs.toFixed(0)}->${lb.parseMs.toFixed(0)}ms analyze ${la.analyzeMs.toFixed(0)}->${lb.analyzeMs.toFixed(0)}ms rss ${la.maxRssMB.toFixed(0)}->${lb.maxRssMB.toFixed(0)}MB`;
     if (lines.length || verbose) console.log(`${name}: ${la.findings.length} -> ${lb.findings.length} findings${speed ? `; ${speed}` : ''}`);
     for (const l of lines) console.log(l);
