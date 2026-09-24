@@ -308,7 +308,8 @@ whose required evidence is missing (e.g. the run never emitted
 `ApplicationEnd`, or has no usable per-task `runAggregates`) is reported as
 inconclusive (`stderr` warning) rather than silently passing, and gets its own
 exit code distinct from both pass and violation. Exit codes: `0` pass, `1`
-a configured budget was violated, `2` the input could not be parsed at all,
+a configured budget was violated, `2` bad arguments (unknown or value-less
+flag, unknown `--regression-metric` key) or input that could not be parsed at all,
 `3` no violations but at least one budget was inconclusive. A violation always
 wins over an inconclusive result in the same run (exit `1`, not `3`).
 

@@ -243,7 +243,7 @@ describe('matchStages', () => {
 });
 
 // --- metric deltas ---
-import { metricDeltas } from '../src/run-comparison.js';
+import { metricDeltas, COMPARISON_METRIC_KEYS } from '../src/run-comparison.js';
 
 function stageFull(over) {
   return { name: 'Exchange 1', sqlExecutionId: null, submittedAt: 0, completedAt: 1000,
@@ -252,6 +252,11 @@ function stageFull(over) {
 function fullSnap(stages, app) { return { app, stages: new Map(stages), sql: new Map(), catalog: [] }; }
 
 describe('metricDeltas', () => {
+  it('emits exactly COMPARISON_METRIC_KEYS, in order', () => {
+    const snap = fullSnap([[1, stageFull()]], { name: 'A', startTime: 0, endTime: 1 });
+    expect(metricDeltas(snap, snap).map((m) => m.key)).toEqual([...COMPARISON_METRIC_KEYS]);
+  });
+
   it('reports wall-clock, spill, skew p95, and failed-task-rate with direction', () => {
     const base = fullSnap([[1, stageFull({ memoryBytesSpilled: 1000, failedTasks: 2, taskCount: 10 })]],
                           { name: 'A', startTime: 0, endTime: 2000 });
