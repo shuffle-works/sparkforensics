@@ -1,6 +1,6 @@
 {
   "name": "sparkforensics",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "type": "module",
   "license": "MIT",
   "description": "Installs the sparkforensics-analyze command from sparkforensics-cli: analyze Apache Spark event logs for skew, spill, GC pressure, stragglers, and more.",
@@ -31,6 +31,6 @@
     "bin/"
   ],
   "dependencies": {
-    "sparkforensics-cli": "^0.2.4"
+    "sparkforensics-cli": "^0.3.0"
   }
 }
