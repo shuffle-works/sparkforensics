@@ -95,7 +95,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
   const [shsOpen, setShsOpen] = useState(false);
   const [shsReachable, setShsReachable] = useState(false);
   const [touched, setTouched] = useState<Record<ShsField, boolean>>({ baseUrl: false, appId: false, attemptId: false });
-  const [shsError, setShsError] = useState<keyof typeof SHS_RECOVERY_MESSAGES | null>(null);
+  const [shsError, setShsError] = useState<{ code: keyof typeof SHS_RECOVERY_MESSAGES; message?: string } | null>(null);
   const shsAlertRef = useRef<HTMLParagraphElement | null>(null);
   const [sampleLoading, setSampleLoading] = useState(false);
 
@@ -356,7 +356,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
       // `startLoadFromUrl` owns the store's `shsParsing` flag (set on start,
       // cleared on any error), so this handler only surfaces the error copy.
       startLoadFromUrl(request, (error) => {
-        setShsError(error.code as keyof typeof SHS_RECOVERY_MESSAGES);
+        setShsError({ code: error.code as keyof typeof SHS_RECOVERY_MESSAGES, message: error.message });
       });
     },
     [shsValidation, startLoadFromUrl, onPick],
@@ -436,8 +436,9 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
             {shsParsing ? <p role="status" aria-live="polite" className="text-sm text-muted-foreground">Fetching event log…</p> : null}
             {shsError ? (
               <p ref={shsAlertRef} role="alert" tabIndex={-1} className="text-sm text-destructive">
-                {SHS_RECOVERY_MESSAGES[shsError]}
+                {SHS_RECOVERY_MESSAGES[shsError.code]}
                 {' '}Edit the fields, review <a href={LOCAL_SERVER_SETUP_URL} target="_blank" rel="noopener noreferrer" className="tap-target-comfortable text-primary underline-offset-4 hover:underline">Local-server setup</a>, or choose a local file.
+                {shsError.message ? <span data-testid="shs-error-detail" className="mt-1 block">{shsError.message}</span> : null}
               </p>
             ) : null}
             <div className="flex flex-wrap items-center gap-3">
