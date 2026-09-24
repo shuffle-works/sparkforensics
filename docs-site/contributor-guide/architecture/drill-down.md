@@ -222,7 +222,7 @@ It opens a `planGraph: { active, stageId }` Zustand slice
 `buildPlanGraphModel`'s output is memoized per `(activeFileId, stageId, scope)`
 in `PlanGraphRoute.tsx`, since `stageId` alone isn't unique across loaded runs
 and `applySnapshot` mutates `appModel` in place rather than replacing it (see
-[State model](./state-and-history#state-model)). The memo cache is a
+[State model](./state-and-history.md#state-model)). The memo cache is a
 module-level `Map`, so it survives across route open/close: re-opening the same
 stage in the same run reuses the cached model instead of rebuilding it. It must
 still be evicted on a fresh parse or reload. `resetModel()` (`store.ts`) bumps a

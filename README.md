@@ -12,11 +12,12 @@ stages are slow, why, and how to fix them. Nothing installs on your
 cluster and nothing leaves your machine.
 
 **[Try it now →](https://shuffle-works.github.io/sparkforensics/)** with your
-own event log. No install, no account, no upload.
+own event log. No install, no account, no upload. Read the
+[documentation](https://shuffle-works.github.io/sparkforensics/docs/) for a guided tour.
 
-<video src="https://github.com/user-attachments/assets/dcea1204-cb44-480c-a91b-96e520b9e61b" controls muted playsinline width="100%">
-  Your browser doesn't support inline video. <a href=".github/assets/demo.mp4">Download the demo</a> instead.
-</video>
+<a href=".github/assets/demo.mp4"><img src=".github/assets/demo.gif" alt="Demo: dropping a Spark event log into SparkForensics and browsing its findings" width="100%"></a>
+
+The animation above is a preview; [open the full-quality demo video](.github/assets/demo.mp4).
 
 Spark's own History Server gives you raw metrics. It won't tell you that
 stage 14 spilled 40GB because of a skewed join key, or that cold start is
@@ -35,7 +36,7 @@ turns them into findings.
   pressure, stragglers, cold start, cache/memory utilization, autoscaling
   churn, job/stage failures and partition sizing, plus a SQL Plan Advisor
   (duplicate subtrees, small files, broadcast sizing) and a config audit.
-  Full roster in [`docs-site/contributor-guide/architecture/detector-contract.md`](docs-site/contributor-guide/architecture/detector-contract.md).
+  Full roster in the [detector contract](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract).
 - Fix These First orders every finding by its estimated wall-clock impact,
   not severity alone, so the top row is the fix worth doing first.
 - Run comparison (A/B) mode structurally matches stages across two
@@ -52,7 +53,7 @@ turns them into findings.
 - An MCP server (`sparkforensics-mcp`) exposes tools for diagnosing,
   summarizing and comparing runs, so an LLM agent can investigate a run
   directly. The full tool list is in
-  [MCP tools](docs-site/user-guide/mcp-tools.md).
+  [MCP tools](https://shuffle-works.github.io/sparkforensics/docs/user-guide/mcp-tools).
 - For running the analyze CLI automatically after every Spark job instead of
   by hand, see
   [sparkforensics-operator](https://github.com/shuffle-works/sparkforensics-operator),
@@ -133,7 +134,7 @@ screen.
 
 History Server fetching requires local-server mode, a History Server
 reachable from the machine running that server, and a supported base
-application ID (see [Getting started](docs-site/user-guide/getting-started.md#load-a-run)
+application ID (see [Getting started](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started#load-a-run)
 for the full list of accepted forms). Enter an optional attempt separately
 from the base application ID. The local server sends no credentials and
 follows no upstream redirects. Its recoverable errors intentionally omit
@@ -181,7 +182,11 @@ contributor who touches that route.
 ```bash
 npm test              # single run
 npm run test:watch    # watch mode
-npm test -- tests/parser-worker.test.js   # single file
+npm test -- tests/finding-filter.test.js  # single file
+npm run test:core     # packages/core: detectors, analyzer, parser, MCP tools
+npm run test:cli      # packages/cli
+npm run test:mcp      # packages/mcp
+npm run test:server   # packages/server
 ```
 
 ## Command-line reference
@@ -245,12 +250,17 @@ inconclusive (e.g. missing evidence for a regression check).
 
 ## Learn more
 
-- [Getting started guide](docs-site/user-guide/getting-started.md): reading
+The full documentation is published at
+[shuffle-works.github.io/sparkforensics/docs](https://shuffle-works.github.io/sparkforensics/docs/).
+
+- [Getting started guide](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started): reading
   the dashboard, run comparison, CI and automation
-- [Detector roster](docs-site/contributor-guide/architecture/detector-contract.md)
-- [Worker protocol](docs-site/contributor-guide/architecture/worker-protocol.md)
-- [Streaming/parsing design](docs-site/contributor-guide/architecture/overview.md#streaming)
-- [Widget layout](docs-site/contributor-guide/architecture/widget-rendering.md)
+- [Understanding findings](https://shuffle-works.github.io/sparkforensics/docs/user-guide/understanding-findings)
+- [MCP tools](https://shuffle-works.github.io/sparkforensics/docs/user-guide/mcp-tools)
+- [Detector roster](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract)
+- [Worker protocol](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/worker-protocol)
+- [Streaming/parsing design](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/overview#streaming)
+- [Widget layout](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/widget-rendering)
 
 ## Contributing
 

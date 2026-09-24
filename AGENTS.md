@@ -200,9 +200,9 @@ Before adding a new widget test file, or a new per-widget/per-detector test:
   captures the app's own real outerHTML + compiled CSS for the topbar, any
   widget, or the docs site.
 - Sample logs: download from a Spark History Server with
-  `curl -o app.zip "<baseUrl>/api/v1/applications/<appId>/logs"`: the zip
-  holds a `.zstd` eventlog, which is the app's native input format (drop it in
-  as-is).
+  `curl -o app.zip "<baseUrl>/api/v1/applications/<appId>/logs"`: drop the
+  zip in as-is (single-file and rolling logs both unwrap), or the `.zstd`
+  eventlog inside it.
 - Real Spark event logs already sit outside the repo in the sibling folder
   `../spark-log-examples/` (native `.zstd` files, drop in as-is). Includes
   several `run-compare-*-baseline-*`/`run-compare-*-candidate-*` pairs for the

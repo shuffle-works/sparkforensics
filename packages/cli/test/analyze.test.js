@@ -3,13 +3,14 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { zstdCompressSync } from 'node:zlib';
 import { collectRun } from '@sparkforensics/core/cli/collect-run.ts';
 import { deriveEvidenceAvailability } from '@sparkforensics/core/evidence-availability.ts';
 import { buildEvidenceReport } from '@sparkforensics/core/evidence-report.ts';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 // tests/helpers/ stays at the repo root because packages/core/test/mcp-tools.test.js
 // shares this same fixture helper.
-import { shsZipFetch } from '../../../tests/helpers/shs-fixtures.js';
+import { shsZipFetch, historyServerZip } from '../../../tests/helpers/shs-fixtures.js';
 import { packAndInstall } from '../../../tests/helpers/pack-and-install.js';
 
 // Regression coverage for the published `sparkforensics-analyze` bin, not just
@@ -97,6 +98,39 @@ describe('sparkforensics-analyze CLI', () => {
 
       expect(cliJson.findings).toEqual(directJson.findings);
       expect(cliJson.schemaVersion).toBe(directJson.schemaVersion);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A History Server download (deflated zip, data descriptors): single-entry, and a rolling
+  // log whose parts sit under eventlog_v2_<appId>/ and split mid-line.
+  it('analyzes a single-entry or rolling History Server zip like the plain log', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-zip-'));
+    const appId = 'application_0000000000000_0001';
+    const ndjson = Buffer.from(ndjsonWithSkew());
+    const half = Math.floor(ndjson.length / 2);
+    const zstd = (bytes) => new Uint8Array(zstdCompressSync(bytes));
+    const logPath = join(dir, 'eventlog');
+    const singlePath = join(dir, 'single.zip');
+    const rollingPath = join(dir, 'rolling.zip');
+    writeFileSync(logPath, ndjson);
+    writeFileSync(singlePath, historyServerZip({ [`${appId}.zstd`]: zstd(ndjson) }));
+    writeFileSync(rollingPath, historyServerZip({
+      [`eventlog_v2_${appId}/`]: new Uint8Array(0),
+      [`eventlog_v2_${appId}/appstatus_${appId}`]: new Uint8Array(0),
+      [`eventlog_v2_${appId}/events_1_${appId}.zstd`]: zstd(ndjson.subarray(0, half)),
+      [`eventlog_v2_${appId}/events_2_${appId}.zstd`]: zstd(ndjson.subarray(half)),
+    }));
+    try {
+      const plain = runCli([logPath]);
+      expect(plain.status).toBe(0);
+      for (const path of [singlePath, rollingPath]) {
+        const { stdout, stderr, status } = runCli([path]);
+        expect(stderr).toBe('');
+        expect(status).toBe(0);
+        expect(JSON.parse(stdout)).toEqual(JSON.parse(plain.stdout));
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -369,6 +403,29 @@ describe('sparkforensics-analyze CLI', () => {
     }
   });
 
+  it('exits 2 with usage on an unknown flag', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-unknownflag-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, ndjsonWithSkew());
+    try {
+      const { status, stderr } = runCli([path, '--max-skw', '3']);
+      expect(status).toBe(2);
+      expect(stderr).toMatch(/--max-skw/);
+      expect(stderr).toMatch(/^Usage: sparkforensics-analyze/m);
+      expect(stderr).not.toMatch(/at .*\.mjs:\d+/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('exits 2 with usage when a flag is missing its value', async () => {
+    // Rejected during argument parsing, before the input path is read.
+    const { status, stderr } = await runMainInProcess(['eventlog', '--max-skew']);
+    expect(status).toBe(2);
+    expect(stderr).toMatch(/--max-skew/);
+    expect(stderr).toMatch(/^Usage: sparkforensics-analyze/m);
+  });
+
   describe('--baseline comparison mode', () => {
     // Baseline: 9 fast + 1 slow (skewed). Candidate: same shape, single-task
     // runtime longer (2000 -> 4000), a real wallClock regression.
@@ -473,15 +530,15 @@ describe('sparkforensics-analyze CLI', () => {
       });
     });
 
-    it('is inconclusive when checking a metric key that is not a known comparison metric', () => {
-      withBaselineAndCandidate(({ baselinePath, candidatePath }) => {
-        const { status, stderr } = runCli([
-          candidatePath, '--baseline', baselinePath,
-          '--max-regression-pct', '1', '--regression-metric', 'notARealMetric',
-        ]);
-        expect(status).toBe(3);
-        expect(stderr).toMatch(/\[inconclusive\] max-regression/);
-      });
+    it('exits 2 with usage when checking a metric key that is not a known comparison metric', async () => {
+      // Rejected during flag validation, before either run is read.
+      const { status, stderr } = await runMainInProcess([
+        'candidate', '--baseline', 'baseline',
+        '--max-regression-pct', '1', '--regression-metric', 'notARealMetric',
+      ]);
+      expect(status).toBe(2);
+      expect(stderr).toMatch(/Unknown --regression-metric "notARealMetric"/);
+      expect(stderr).toMatch(/^Usage: sparkforensics-analyze/m);
     });
 
     it('exits 2 when --regression-metric is given with --baseline but without --max-regression-pct', () => {

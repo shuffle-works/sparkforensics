@@ -21,6 +21,7 @@ export interface NormalizedShsRequest {
 export interface ShsLoadError {
   source: 'shs';
   code: string;
+  message?: string;
 }
 
 /** A chosen-but-not-yet-parsed run for the two-slot compare flow; parsing is

@@ -69,7 +69,7 @@ since-deleted `src/quadrant-bucket.ts`, gated behind a
 as dead code in the recommendations-consolidation redesign:
 `FixTheseFirst` (`src/view/widgets/FixTheseFirst.tsx`) ranks purely by impact
 magnitude. See
-[Widget rendering order](./widget-rendering#widget-rendering-order-fixed-spec-§5)
+[Widget rendering order](./widget-rendering.md#widget-rendering-order-fixed-spec-§5)
 for how it ranks findings today.
 
 Two shared helpers back multiple detectors and reports. `packages/core/src/plan-tree-walk.ts`'s

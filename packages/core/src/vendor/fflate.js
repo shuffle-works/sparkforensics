@@ -1,6 +1,6 @@
 // Vendored from fflate@0.8.3 (esm/browser.js), MIT license.
 // https://github.com/101arrowz/fflate — sha256 b7ca4450b19559a1d50eb381adcee94b82449674be4cd17789d9beba7e6122a1
-// Only unzipSync/gunzipSync/zipSync/strToU8/strFromU8 are used by this project (see src/lz4-block.js, src/parser-worker.js).
+// Only Gunzip/UnzipInflate/gunzipSync/strFromU8 are used by this project's source (see src/shs-fetch.ts, src/zip-archive.ts); tests also use the zip writers and strToU8.
 // DEFLATE is a complex format; to read this code, you should probably check the RFC first:
 // https://tools.ietf.org/html/rfc1951
 // You may also wish to take a look at the guide I made about this program:

@@ -1,13 +1,15 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { analyze } from '../src/analyzer.js';
 import { stripPlanDescription, emitParseCompletion, parseTaskEnd } from '../src/event-handlers.ts';
 import { computeTaskActiveMs, computePeakConcurrentTasks, computeTailReplayRecoveryMs } from '../src/stage-quantiles.ts';
 import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
 import { createModelCallbacks } from '../src/model-assembler.ts';
 import { routeMessage } from '../src/ingest.ts';
+import { listZipEntries } from '../src/zip-archive.ts';
+import { historyServerZip } from '../../../tests/helpers/shs-fixtures.js';
 import { zipSync, gzipSync, strToU8 } from '../src/vendor/fflate.js';
-import { zstdCompressSync, zstdDecompressSync } from 'node:zlib';
-import { existsSync, createReadStream } from 'node:fs';
+import { zstdCompressSync, zstdDecompressSync, gunzipSync } from 'node:zlib';
+import { existsSync, createReadStream, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
@@ -1864,7 +1866,7 @@ describe('runParseFromUrl', () => {
       fetchImpl: fakeFetchReturning(zipBytes),
       emit: msg => emitted.push(msg),
     })).resolves.toBeUndefined();
-    expect(emitted).toContainEqual({ type: 'error', source: 'shs', code: 'invalid-event-log' });
+    expect(emitted).toContainEqual({ type: 'error', source: 'shs', code: 'invalid-event-log', message: expect.stringMatching(/missing file\(s\)/) });
     expect(emitted.some(m => m.type === 'app')).toBe(false);
   });
 
@@ -1921,7 +1923,7 @@ describe('runParseFromUrl', () => {
     });
     expect(emitted).toEqual([
       { type: 'progress', pct: 0.5, linesProcessed: 0 },
-      { type: 'error', source: 'shs', code: 'invalid-event-log' },
+      { type: 'error', source: 'shs', code: 'invalid-event-log', message: expect.stringMatching(/^Could not read the zip archive/) },
     ]);
   });
 });
@@ -1933,8 +1935,7 @@ describe('decodeShsArchive', () => {
     const zipBytes = zipSync({ 'eventlog': strToU8(ndjson) });
     const state = createState();
     const messages = [];
-    decodeShsArchive(zipBytes, state, (msg) => messages.push(msg));
-    await new Promise((r) => setTimeout(r, 0)); // let any pending microtasks flush
+    await decodeShsArchive(zipBytes, state, (msg) => messages.push(msg));
     const appMsg = messages.find((m) => m.type === 'app');
     const doneMsg = messages.find((m) => m.type === 'done');
     expect(appMsg.data.id).toBe('app-1');
@@ -1942,7 +1943,7 @@ describe('decodeShsArchive', () => {
   });
 
   // shs-load.ts passes the Node-native zstd decoder; the browser's call leaves fzstd in place.
-  it('decodes a zstd entry through an injected zstdDecoder', () => {
+  it('decodes a zstd entry through an injected zstdDecoder', async () => {
     const ndjson = '{"Event":"SparkListenerApplicationStart","App ID":"app-z","App Name":"t","Timestamp":0}\n'
       + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n';
     const zipBytes = zipSync({ 'eventlog.zstd': zstdSync(strToU8(ndjson)) });
@@ -1952,16 +1953,236 @@ describe('decodeShsArchive', () => {
       return { push: (chunk) => onChunk(new Uint8Array(zstdDecompressSync(chunk))) };
     };
     const messages = [];
-    decodeShsArchive(zipBytes, createState(), (msg) => messages.push(msg), { zstdDecoder });
+    await decodeShsArchive(zipBytes, createState(), (msg) => messages.push(msg), { zstdDecoder });
     expect(built).toBe(1);
     expect(messages.find((m) => m.type === 'app').data.id).toBe('app-z');
   });
 
-  it('emits invalid-event-log on a corrupt zip', () => {
+  it('emits invalid-event-log on a corrupt zip', async () => {
     const state = createState();
     const messages = [];
-    decodeShsArchive(new Uint8Array([1, 2, 3, 4]), state, (msg) => messages.push(msg));
-    expect(messages).toEqual([{ type: 'error', source: 'shs', code: 'invalid-event-log' }]);
+    await decodeShsArchive(new Uint8Array([1, 2, 3, 4]), state, (msg) => messages.push(msg));
+    expect(messages).toEqual([{ type: 'error', source: 'shs', code: 'invalid-event-log', message: expect.stringMatching(/^Could not read the zip archive/) }]);
+  });
+});
+
+// The History Server's download (its UI link, or GET /api/v1/applications/<id>/logs) is
+// written by Java's ZipOutputStream; historyServerZip mirrors it (deflate, data descriptors).
+// Every expectation compares against parsing the same public corpus log unzipped.
+describe('History Server zip archives', () => {
+  const appId = 'application_0000000000000_0001';
+  const sample = new Uint8Array(gunzipSync(readFileSync(fileURLToPath(new URL('../../../public/sample-runs/sample-run.ndjson.gz', import.meta.url)))));
+  const withoutProgress = (messages) => messages.filter((m) => m.type !== 'progress');
+
+  async function parse(file, opts = {}) {
+    const emitted = [];
+    await runParse(file, createState(), { emit: (m) => emitted.push(m), ...opts });
+    return emitted;
+  }
+
+  // Splits the log into 11 zstd parts at fixed byte offsets (so parts end mid-line) and
+  // stores them under the rolling directory in lexicographic order, the order a History
+  // Server listing yields: events_10 and events_11 come before events_2.
+  function rollingEntries() {
+    const parts = 11;
+    const step = Math.ceil(sample.length / parts);
+    const files = {};
+    for (let i = 1; i <= parts; i++) files[`events_${i}_${appId}.zstd`] = zstdSync(sample.subarray((i - 1) * step, i * step));
+    files[`appstatus_${appId}`] = new Uint8Array(0);
+    const entries = { [`eventlog_v2_${appId}/`]: new Uint8Array(0) };
+    for (const name of Object.keys(files).sort()) entries[`eventlog_v2_${appId}/${name}`] = files[name];
+    return entries;
+  }
+
+  let expected;
+  beforeAll(async () => {
+    expected = withoutProgress(await parse(fakeFile(sample)));
+    expect(expected.some((m) => m.type === 'done')).toBe(true);
+  });
+
+  it('builds fixtures in the History Server format: deflated, sizes in a data descriptor', async () => {
+    const zip = historyServerZip(rollingEntries());
+    const entries = await listZipEntries(fakeFile(zip));
+    expect(entries).toHaveLength(13);
+    for (const entry of entries) {
+      expect(entry.compression).toBe(8);
+      const generalPurposeFlags = zip[entry.localHeaderOffset + 6];
+      expect(generalPurposeFlags & 0x08).toBe(0x08);
+    }
+  });
+
+  it('runParse unwraps a single-entry zip', async () => {
+    const zip = historyServerZip({ [`${appId}.zstd`]: zstdSync(sample) });
+    const emitted = await parse(fakeFile(zip, `${appId}.zip`));
+    expect(withoutProgress(emitted)).toEqual(expected);
+    const pcts = emitted.filter((m) => m.type === 'progress').map((m) => m.pct);
+    expect(pcts.length).toBeGreaterThan(0);
+    expect(pcts.every((p) => p >= 0 && p <= 1)).toBe(true);
+  });
+
+  it('runParse reassembles a rolling zip in index order, across mid-line part boundaries', async () => {
+    const zip = historyServerZip(rollingEntries());
+    // A small chunk size streams every entry through many inflate pushes.
+    expect(withoutProgress(await parse(fakeFile(zip, `${appId}.zip`), { chunkSize: 4096 }))).toEqual(expected);
+  });
+
+  it('runParse awaits an asynchronous zstd decoder', async () => {
+    const zip = historyServerZip(rollingEntries());
+    const zstdDecoder = (onChunk) => {
+      const pending = [];
+      return {
+        async push(chunk, final) {
+          pending.push(chunk.slice());
+          if (!final) return;
+          await new Promise((r) => setTimeout(r, 0));
+          const joined = new Uint8Array(pending.reduce((n, c) => n + c.length, 0));
+          let offset = 0;
+          for (const c of pending) { joined.set(c, offset); offset += c.length; }
+          onChunk(new Uint8Array(zstdDecompressSync(joined)));
+        },
+      };
+    };
+    expect(withoutProgress(await parse(fakeFile(zip), { zstdDecoder, chunkSize: 4096 }))).toEqual(expected);
+  });
+
+  it('decodeShsArchive reassembles a rolling zip under the eventlog_v2_ directory', async () => {
+    const messages = [];
+    await decodeShsArchive(historyServerZip(rollingEntries()), createState(), (m) => messages.push(m));
+    expect(withoutProgress(messages)).toEqual(expected);
+  });
+
+  it('reports a rolling zip with a missing part', async () => {
+    const entries = rollingEntries();
+    delete entries[`eventlog_v2_${appId}/events_3_${appId}.zstd`];
+    const emitted = await parse(fakeFile(historyServerZip(entries)));
+    expect(emitted.at(-1)).toEqual({ type: 'error', message: expect.stringMatching(/missing file\(s\) between index 2 and 4/) });
+  });
+
+  it('reports a zip entry whose compressed data is corrupt', async () => {
+    const zip = historyServerZip({ [`${appId}.zstd`]: zstdSync(sample) });
+    const [entry] = await listZipEntries(fakeFile(zip));
+    zip.fill(0xff, entry.localHeaderOffset + 100, entry.localHeaderOffset + 200);
+    const emitted = await parse(fakeFile(zip));
+    expect(emitted.at(-1)).toEqual({ type: 'error', message: expect.stringMatching(/^Could not decompress ".*\.zstd" in the zip archive/) });
+  });
+
+  it('reports a truncated zip', async () => {
+    const zip = historyServerZip({ [`${appId}.zstd`]: zstdSync(sample) });
+    const emitted = await parse(fakeFile(zip.subarray(0, zip.length - 30)));
+    expect(emitted).toEqual([{ type: 'error', message: expect.stringMatching(/^Could not read the zip archive/) }]);
+  });
+
+  const multiAttemptError = /^The zip archive holds 2 application attempts\. Download a single attempt, for example GET \/api\/v1\/applications\/<appId>\/<attemptId>\/logs\.$/;
+
+  it('rejects a zip holding two single-file attempts', async () => {
+    const zip = historyServerZip({
+      [`${appId}_1.zstd`]: zstdSync(sample),
+      [`${appId}_2.zstd`]: zstdSync(sample),
+    });
+    const emitted = await parse(fakeFile(zip, `${appId}.zip`));
+    expect(emitted).toEqual([{ type: 'error', message: expect.stringMatching(multiAttemptError) }]);
+  });
+
+  it('rejects a zip holding two rolling attempts', async () => {
+    const entries = {};
+    for (const attempt of [1, 2]) {
+      const dir = `eventlog_v2_${appId}_${attempt}/`;
+      entries[dir] = new Uint8Array(0);
+      entries[`${dir}appstatus_${appId}_${attempt}`] = new Uint8Array(0);
+      entries[`${dir}events_1_${appId}_${attempt}.zstd`] = zstdSync(sample);
+    }
+    const zip = historyServerZip(entries);
+    const emitted = await parse(fakeFile(zip, `${appId}.zip`));
+    expect(emitted).toEqual([{ type: 'error', message: expect.stringMatching(multiAttemptError) }]);
+    const messages = [];
+    await decodeShsArchive(zip, createState(), (m) => messages.push(m));
+    expect(messages).toEqual([{ type: 'error', source: 'shs', code: 'invalid-event-log', message: expect.stringMatching(multiAttemptError) }]);
+  });
+
+  it('reports a zip that holds only a directory entry', async () => {
+    const emitted = await parse(fakeFile(historyServerZip({ [`eventlog_v2_${appId}/`]: new Uint8Array(0) })));
+    expect(emitted).toEqual([{ type: 'error', message: 'The zip archive contains no event log.' }]);
+  });
+
+  it('reports a zip that holds no Spark event log', async () => {
+    const emitted = await parse(fakeFile(historyServerZip({ 'notes.txt': strToU8('not an event log\n') })));
+    expect(emitted.at(-1)).toEqual({ type: 'error', message: expect.stringMatching(/^Not a Spark event log/) });
+  });
+
+  // A one-entry stored zip in zip64 form, as ZipOutputStream writes one past 4 GiB: every
+  // 32-bit size/offset field is 0xFFFFFFFF and the real values sit in zip64 records. The
+  // central directory's extra area puts an unrelated field before the zip64 one.
+  function zip64Archive(name, data) {
+    const nameBytes = strToU8(name);
+    const localExtra = 20, centralExtra = 9 + 28;
+    const localSize = 30 + nameBytes.length + localExtra;
+    const cdOffset = localSize + data.length, cdSize = 46 + nameBytes.length + centralExtra;
+    const zip64EocdOffset = cdOffset + cdSize;
+    const out = new Uint8Array(zip64EocdOffset + 56 + 20 + 22);
+    const v = new DataView(out.buffer);
+    const u64 = (at, n) => { v.setUint32(at, n % 2 ** 32, true); v.setUint32(at + 4, Math.floor(n / 2 ** 32), true); };
+    v.setUint32(0, 0x04034b50, true);
+    v.setUint32(18, 0xffffffff, true); v.setUint32(22, 0xffffffff, true);
+    v.setUint16(26, nameBytes.length, true); v.setUint16(28, localExtra, true);
+    out.set(nameBytes, 30);
+    let p = 30 + nameBytes.length;
+    v.setUint16(p, 0x0001, true); v.setUint16(p + 2, 16, true); u64(p + 4, data.length); u64(p + 12, data.length);
+    out.set(data, localSize);
+    p = cdOffset;
+    v.setUint32(p, 0x02014b50, true);
+    v.setUint32(p + 20, 0xffffffff, true); v.setUint32(p + 24, 0xffffffff, true);
+    v.setUint16(p + 28, nameBytes.length, true); v.setUint16(p + 30, centralExtra, true);
+    v.setUint32(p + 42, 0xffffffff, true);
+    out.set(nameBytes, p + 46);
+    p += 46 + nameBytes.length;
+    v.setUint16(p, 0x5455, true); v.setUint16(p + 2, 5, true);
+    p += 9;
+    v.setUint16(p, 0x0001, true); v.setUint16(p + 2, 24, true); u64(p + 4, data.length); u64(p + 12, data.length); u64(p + 20, 0);
+    p = zip64EocdOffset;
+    v.setUint32(p, 0x06064b50, true); u64(p + 4, 44); u64(p + 24, 1); u64(p + 32, 1); u64(p + 40, cdSize); u64(p + 48, cdOffset);
+    p += 56;
+    v.setUint32(p, 0x07064b50, true); u64(p + 8, zip64EocdOffset); v.setUint32(p + 16, 1, true);
+    p += 20;
+    v.setUint32(p, 0x06054b50, true);
+    v.setUint16(p + 8, 0xffff, true); v.setUint16(p + 10, 0xffff, true);
+    v.setUint32(p + 12, 0xffffffff, true); v.setUint32(p + 16, 0xffffffff, true);
+    return out;
+  }
+
+  it('reads sizes and offsets from zip64 records', async () => {
+    const data = zstdSync(sample);
+    const zip = zip64Archive(`${appId}.zstd`, data);
+    expect(await listZipEntries(fakeFile(zip))).toEqual([
+      { name: `${appId}.zstd`, compression: 0, compressedSize: data.length, localHeaderOffset: 0 },
+    ]);
+    expect(withoutProgress(await parse(fakeFile(zip, `${appId}.zip`)))).toEqual(expected);
+  });
+
+  it('reports a zip64 locator that points at no zip64 record', async () => {
+    const zip = zip64Archive(`${appId}.zstd`, zstdSync(sample));
+    const locator = zip.length - 22 - 20;
+    new DataView(zip.buffer).setUint32(locator + 8, 0, true);
+    const emitted = await parse(fakeFile(zip));
+    expect(emitted).toEqual([{ type: 'error', message: 'Could not read the zip archive: bad zip64 end-of-central-directory record' }]);
+  });
+
+  it('reports an entry with an unsupported compression method', async () => {
+    const zip = historyServerZip({ [`${appId}.zstd`]: zstdSync(sample) });
+    const [entry] = await listZipEntries(fakeFile(zip));
+    const view = new DataView(zip.buffer, zip.byteOffset);
+    const cdStart = view.getUint32(zip.length - 22 + 16, true);
+    view.setUint16(cdStart + 10, 12, true);
+    view.setUint16(entry.localHeaderOffset + 8, 12, true);
+    const emitted = await parse(fakeFile(zip));
+    expect(emitted.at(-1)).toEqual({ type: 'error', message: `Could not decompress "${appId}.zstd" in the zip archive: "${appId}.zstd" uses unsupported zip compression method 12` });
+  });
+
+  it('reports a rolling part whose local header is missing', async () => {
+    const zip = historyServerZip(rollingEntries());
+    const part = (await listZipEntries(fakeFile(zip))).find((e) => e.name.includes('/events_1_'));
+    zip[part.localHeaderOffset + 3] = 0;
+    const emitted = await parse(fakeFile(zip));
+    expect(emitted.at(-1)).toEqual({ type: 'error', message: `Could not decompress "${part.name}" in the zip archive: bad local header for "${part.name}"` });
   });
 });
 

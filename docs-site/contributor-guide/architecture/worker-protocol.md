@@ -13,7 +13,7 @@ Worker to main:
 - `runAggregates`: one whole-run core-time-series summary (busy-core-ms, peak
   concurrency, per-stage task-duration sums), emitted just before `done`.
 - `stageExecutorMetrics`: the post-completion re-post described in
-  [Streaming](./overview#streaming), also emitted just before `done`.
+  [Streaming](./overview.md#streaming), also emitted just before `done`.
 - `done`, `taskData`, `error`.
 
 A History Server failure is always the typed, display-safe payload
@@ -47,8 +47,9 @@ so fzstd and the NDJSON parser run at the same time. On the largest real log,
 fzstd had been about 47% of the parse worker's time. The parse worker starts it
 on the first zstd file and reuses it for the rest of the parse. It dies with
 the parse worker, so the page's `terminate()` also cancels it. Other codecs and
-the SHS path (`parseFromUrl`, which decodes whole zip entries synchronously)
-still decompress on the parse worker.
+the SHS path (`parseFromUrl`) still decompress on the parse worker. A dropped
+History Server zip (`parse`) streams its zstd entries through the decompress
+worker too.
 
 `packages/core/src/zstd-worker-client.ts` is the parse-worker end: it plugs into
 `streamFile` as the `zstdDecoder` option, like the Node CLI's native decoder.
@@ -232,7 +233,7 @@ surface grew. A future reader who notices `impactEstimate` in the JSON without a
 looking at this deliberate call, not an oversight.
 
 2026-08-30 update: `EVIDENCE_SCHEMA_VERSION` was bumped to `2` for the occupancy-weighted
-attribution redesign (see [Occupancy-weighted attribution](./impact-estimation#occupancy-weighted-attribution)):
+attribution redesign (see [Occupancy-weighted attribution](./impact-estimation.md#occupancy-weighted-attribution)):
 `ImpactEstimate`'s shape changed from `{low, high}` to `{basis, wallClock, estimateMethod,
 rawWaste?}`, a real, non-additive breaking change to a field this same Decision 9 previously
 shipped without a bump. `impactEstimate` had zero consumers outside `packages/core/src/impact-estimator.ts`
@@ -246,7 +247,7 @@ columns (`id`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendati
 `detectorVersion`, plus optional but pinned `confidence`, `validationRequired`, `docAnchor`)
 without displacing any of them; byte-for-byte deserializability of existing reports is
 preserved. `FindingRow.impactEstimate` carries the full contract documented in
-[Impact estimation](./impact-estimation#occupancy-weighted-attribution) (basis, wallClock,
+[Impact estimation](./impact-estimation.md#occupancy-weighted-attribution) (basis, wallClock,
 estimateMethod, rawWaste).
 
 2026-09-03 update: the "Fix These First" dashboard redesign (impact-ranked recommendation
@@ -314,7 +315,8 @@ whose required evidence is missing (e.g. the run never emitted
 `ApplicationEnd`, or has no usable per-task `runAggregates`) is reported as
 inconclusive (`stderr` warning) rather than silently passing, and gets its own
 exit code distinct from both pass and violation. Exit codes: `0` pass, `1`
-a configured budget was violated, `2` the input could not be parsed at all,
+a configured budget was violated, `2` bad arguments (unknown or value-less
+flag, unknown `--regression-metric` key) or input that could not be parsed at all,
 `3` no violations but at least one budget was inconclusive. A violation always
 wins over an inconclusive result in the same run (exit `1`, not `3`).
 

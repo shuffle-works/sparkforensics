@@ -399,6 +399,30 @@ test.each([
   expect(alert).not.toHaveTextContent('404');
 });
 
+test('shows the detail an invalid-event-log SHS error carries below the recovery copy', async () => {
+  renderDropZone();
+  const user = userEvent.setup();
+  await openOtherSources(user);
+  await user.click(screen.getByRole('button', { name: /fetch from spark history server/i }));
+  await user.type(screen.getByLabelText(/spark history server base url/i), 'http://history-server:18080');
+  await user.type(screen.getByLabelText(/^application id/i), 'application_1_9');
+  await user.click(screen.getByRole('button', { name: 'Fetch' }));
+
+  const onShsError = startLoadFromUrl.mock.calls[0][1] as (error: { source: 'shs'; code: string; message?: string }) => void;
+  const detail = 'The zip archive holds 2 application attempts. Download a single attempt, for example GET /api/v1/applications/<appId>/<attemptId>/logs.';
+  act(() => onShsError({ source: 'shs', code: 'invalid-event-log', message: detail }));
+
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent(/did not contain a supported event log/i);
+  expect(screen.getByTestId('shs-error-detail')).toHaveTextContent(detail);
+  expect(alert).toContainElement(screen.getByTestId('shs-error-detail'));
+  expect(alert).toHaveFocus();
+
+  act(() => onShsError({ source: 'shs', code: 'invalid-event-log' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/did not contain a supported event log/i);
+  expect(screen.queryByTestId('shs-error-detail')).not.toBeInTheDocument();
+});
+
 test('re-focuses the recovery alert when the same SHS failure occurs after a retry', async () => {
   renderDropZone();
   const user = userEvent.setup();

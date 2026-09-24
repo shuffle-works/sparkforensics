@@ -157,7 +157,7 @@ action-region type. Caching Opportunities, Config Audit, and the four split
 Plan Advisor widgets (Redundant Plan Subtree, Excessive Small Files, Missed
 Broadcast Join, Oversized Broadcast Join) render through the ordinary
 active/clean paths above (see
-[Board widgets beyond the fixed six](./board-widgets#board-widgets-beyond-the-fixed-six)).
+[Board widgets beyond the fixed six](./board-widgets.md#board-widgets-beyond-the-fixed-six)).
 One consequence of this always-visible grid sitting below every impact
 band: a `critical`-band `coreLocality` finding still renders in that lower
 grid, below the `info`-band widgets above it, a deliberate tradeoff the
@@ -357,7 +357,7 @@ section; it now renders once, above the tabs themselves, in
 `FilteredBoard` (`src/view/Dashboard.tsx`), so it stays visible regardless
 of which tab is active rather than living inside either one (a three-tile
 run-info row: Wall-clock, Efficiency, Wastage; see
-[Board widgets beyond the fixed six](./board-widgets#board-widgets-beyond-the-fixed-six)).
+[Board widgets beyond the fixed six](./board-widgets.md#board-widgets-beyond-the-fixed-six)).
 WallClock, Timeline, StageTable and every tile in the grid beside them
 (Evidence availability included) all render immediately and fully
 expanded. No detector-driven `REGISTRY` card renders in this
@@ -368,7 +368,7 @@ when they have an active finding; Core Usage by Locality alone is
 always-mounted).
 
 The Evidence availability card is the persistent, non-impact-band ledger
-[defined in the worker protocol](./worker-protocol#evidence-availability-contract-v1),
+[defined in the worker protocol](./worker-protocol.md#evidence-availability-contract-v1),
 not an alert or detector widget. An `Evidence: …`
 control appears only where a conclusion or unavailable report lens declares
 a relevant ledger dependency. `revealEvidence`
@@ -409,7 +409,7 @@ the clean-check list bypasses `orderedWidgets()` entirely, iterating
 `Object.keys(REGISTRY)` per type instead (see "Findings tab" above). `DETECTORS`'
 own array order and iteration, plus its cross-detector `suppressWhen` logic
 (e.g. `stageSlowness` deferring to `slowHost`, see
-[Detector contract](./detector-contract#detector-contract)), live entirely in
+[Detector contract](./detector-contract.md#detector-contract)), live entirely in
 `packages/core/src/detectors.ts`/`packages/core/src/analyzer.ts`, untouched by this redesign. Which React
 component each finding type resolves to is still registry-owned.
 
@@ -451,7 +451,7 @@ catalog (`catalog.includes(finding)` in `selectTriageTargetForFinding`,
 new finding object references, so reference presence alone detects
 staleness. It is not persisted and does not extend the core `Finding`
 contract; cross-session consumers (exports, future URL-restored state) use
-the core `Finding.id` instead (see [Finding identity](./worker-protocol#finding-identity)).
+the core `Finding.id` instead (see [Finding identity](./worker-protocol.md#finding-identity)).
 
 `Dashboard` owns disclosure and navigation. Every routeable `REGISTRY`
 widget now lives in the Findings tab (no `REGISTRY` widget renders inside

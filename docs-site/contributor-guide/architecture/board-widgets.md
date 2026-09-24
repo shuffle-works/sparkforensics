@@ -18,13 +18,13 @@ Plan Advisor, and Autoscaling Churn, all `region: 'action'` in
   card is first among the Findings tab's `action`-region active widgets when
   present. The Findings tab's recommendation rollup (rendered by `FixTheseFirst.tsx`)
   excludes `incompleteRun` from that list outright (see
-  [Widget rendering order](./widget-rendering#widget-rendering-order-fixed-spec-§5)):
+  [Widget rendering order](./widget-rendering.md#widget-rendering-order-fixed-spec-§5)):
   it's a pipeline-completeness caveat, not an addressable fix, so it never
   competes with other findings for a ranked slot there. Self-gates to `null`
   (no card in the DOM) once the run completed normally. Unrelated to
   `evidence-availability.ts`'s own
   `trustworthy` gate (see
-  [Evidence-availability contract](./worker-protocol#evidence-availability-contract-v1)):
+  [Evidence-availability contract](./worker-protocol.md#evidence-availability-contract-v1)):
   that ledger only downgrades *absence* conclusions for individual evidence
   categories, never becomes a `DETECTORS` finding itself, and this card does
   not read it. No `docAnchor` is set: this is a tool-specific signal with no
@@ -147,7 +147,7 @@ alongside `utilization`/`memoryUtilization`, was deliberately given `action`
 rather than `reference` (see "Beyond the fixed six" above).
 
 `region` decides one thing (see
-[Widget rendering order](./widget-rendering#widget-rendering-order-fixed-spec-§5)):
+[Widget rendering order](./widget-rendering.md#widget-rendering-order-fixed-spec-§5)):
 whether a widget always mounts. `isAlwaysMountedType()` flags exactly one
 of the four `reference`-region types: Core Usage by Locality. That one
 mounts unconditionally from `appModel` in its own small grid inside the
