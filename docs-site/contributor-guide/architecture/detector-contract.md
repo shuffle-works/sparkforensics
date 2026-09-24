@@ -349,8 +349,9 @@ informative failure elsewhere in the stage is ever sampled.
 `packages/core/src/task-failure.ts` reads the details from `Task End Reason`
 (`Class Name`, `Description`, `Full Stack Trace`, `Loss Reason`, FetchFailed
 `Message`, `Kill Reason`) and bounds them at ingest: a message or loss reason
-to its first line, 300 characters; an excerpt to the header, 8 frames and the
-last `Caused by:` line, 2000 characters in all. While parsing, a stage keeps at
+to its first line (for a Python traceback, its final error line), 300
+characters; an excerpt to the header, 8 frames, a Python traceback's error line
+and the last `Caused by:` line, 2000 characters in all. While parsing, a stage keeps at
 most 50 distinct failures (`StageRecord.failureDetails`, freed at finalize);
 later ones count only toward the tag. Redaction (`redact.ts`) replaces every
 `failureGroups[].message` and strips message text from `stackExcerpt`.
