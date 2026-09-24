@@ -94,9 +94,10 @@ these tests run there.
 
 `dev/corpus-snapshot.json` records every finding (type, location, band,
 confidence, value, impact estimate) that the detectors produce on each
-public corpus log, with timings and memory left out so it is deterministic.
-CI's `core` job re-analyzes the corpus and fails on any difference, printing
-the added, removed, re-banded and re-estimated findings per log:
+public corpus log, plus its stage, SQL execution and skipped-line counts,
+with timings and memory left out so it is deterministic. CI's `core` job
+re-analyzes the corpus and fails on any difference, printing the added,
+removed, re-banded and re-estimated findings and changed counts per log:
 
 ```bash
 node dev/bench-analyze.mjs --check dev/corpus-snapshot.json
@@ -114,8 +115,9 @@ Both default to `dev/log-corpus/logs` and its `external/` folder. Only
 public corpus logs belong in the snapshot: never pass private logs to
 `--update`.
 
-CI also runs a `node18` job, because the published `cli` and `mcp`
-packages declare `engines.node >=18` while vitest needs Node 22+. It packs
-both tarballs on `.nvmrc`'s Node, installs them on Node 18, runs the CLI
-over every corpus log plus a zstd copy of one, and checks that the MCP
-server answers `initialize`.
+CI also runs a `node18` job, because the published `cli`, `mcp` and
+`server` packages declare `engines.node >=18` while vitest needs Node 22+.
+It packs the three tarballs on `.nvmrc`'s Node, installs them on Node 18,
+runs the CLI over every corpus log plus a zstd copy of one, checks that the
+MCP server answers `initialize`, and starts `sparkforensics-server` to check
+it serves the app and answers `initialize` on `/mcp`.

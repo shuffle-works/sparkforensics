@@ -146,8 +146,9 @@ function diff(beforePath, afterPath, verbose) {
   return diffSnapshots(JSON.parse(readFileSync(beforePath, 'utf8')), JSON.parse(readFileSync(afterPath, 'utf8')), verbose);
 }
 
-// Returns the number of finding-level changes (added, removed, re-banded, estimate-changed) plus
-// logs that appeared, disappeared or changed error state, so --check can fail on any of them.
+// Returns the number of finding-level changes (added, removed, re-banded, value- or estimate-changed)
+// plus logs that appeared, disappeared, changed error or changed stage/SQL/skipped-line counts, so
+// --check can fail on any of them.
 function diffSnapshots(snapA, snapB, verbose) {
   const a = new Map(snapA.logs.map((l) => [l.name, l]));
   const b = new Map(snapB.logs.map((l) => [l.name, l]));
@@ -155,7 +156,12 @@ function diffSnapshots(snapA, snapB, verbose) {
   for (const [name, la] of a) {
     const lb = b.get(name);
     if (!lb) { logChanges++; console.log(`${name}: missing from the new run`); }
-    else if (Boolean(la.error) !== Boolean(lb.error)) { logChanges++; console.log(`${name}: error ${la.error ?? 'none'} -> ${lb.error ?? 'none'}`); }
+    else if ((la.error ?? null) !== (lb.error ?? null)) { logChanges++; console.log(`${name}: error ${la.error ?? 'none'} -> ${lb.error ?? 'none'}`); }
+    else {
+      for (const field of ['stages', 'sqlExecutions', 'skippedLines']) {
+        if (la[field] !== lb[field]) { logChanges++; console.log(`${name}: ${field} ${la[field]} -> ${lb[field]}`); }
+      }
+    }
   }
   for (const name of b.keys()) if (!a.has(name)) { logChanges++; console.log(`${name}: new log, not in the snapshot`); }
   let totAdded = 0; let totRemoved = 0; let totRebanded = 0; let totEst = 0;
@@ -173,9 +179,9 @@ function diffSnapshots(snapA, snapB, verbose) {
       if (!fb.has(k)) { totRemoved++; bump(f.type, 'removed'); lines.push(`  - ${f.band.padEnd(8)} ${k}  wc=${fmtMs(f.wcHigh)}`); continue; }
       const g = fb.get(k);
       if (f.band !== g.band) { totRebanded++; bump(f.type, 'rebanded'); lines.push(`  ~ ${f.band}->${g.band} ${k}  wc=${fmtMs(f.wcHigh)}->${fmtMs(g.wcHigh)}`); }
-      else if (f.wcHigh !== g.wcHigh || f.wcLow !== g.wcLow || f.basis !== g.basis || JSON.stringify(f.rawWaste) !== JSON.stringify(g.rawWaste) || f.confidence !== g.confidence) {
+      else if (f.wcHigh !== g.wcHigh || f.wcLow !== g.wcLow || f.value !== g.value || f.method !== g.method || f.basis !== g.basis || JSON.stringify(f.rawWaste) !== JSON.stringify(g.rawWaste) || f.confidence !== g.confidence) {
         totEst++; bump(f.type, 'est');
-        if (verbose) lines.push(`  = ${k}  wc=[${fmtMs(f.wcLow)},${fmtMs(f.wcHigh)}]->[${fmtMs(g.wcLow)},${fmtMs(g.wcHigh)}] ${f.basis}->${g.basis} conf ${f.confidence}->${g.confidence}`);
+        if (verbose) lines.push(`  = ${k}  wc=[${fmtMs(f.wcLow)},${fmtMs(f.wcHigh)}]->[${fmtMs(g.wcLow)},${fmtMs(g.wcHigh)}] ${f.basis}->${g.basis} conf ${f.confidence}->${g.confidence} value ${f.value}->${g.value} method ${f.method}->${g.method}`);
       }
     }
     for (const [k, g] of fb) {

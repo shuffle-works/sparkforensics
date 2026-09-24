@@ -181,14 +181,15 @@ jobs:
           flag-name: server
           parallel: true
 
-  # The published cli/mcp packages declare engines node >=18, but the suites
-  # above run on .nvmrc's Node only, and vitest itself needs Node 22+. So pack
-  # the real tarballs on .nvmrc's Node, then install and run the bins on Node 18:
-  # the CLI over every corpus log (plus one zstd copy, which takes the fzstd
-  # fallback since Node 18 has no native zstd) and an MCP initialize handshake.
+  # The published cli/mcp/server packages declare engines node >=18, but the
+  # suites above run on .nvmrc's Node only, and vitest itself needs Node 22+. So
+  # pack the real tarballs on .nvmrc's Node, then install and run the bins on
+  # Node 18: the CLI over every corpus log (plus one zstd copy, which takes the
+  # fzstd fallback since Node 18 has no native zstd), an MCP initialize
+  # handshake, and a server start that serves the app and answers /mcp.
   node18:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -201,10 +202,10 @@ jobs:
       - run: npm ci
       # Generates the uncommitted tuning reference; see the build job.
       - run: npm run docs:fetch
-      - name: Pack cli and mcp
+      - name: Pack cli, mcp and server
         run: |
           mkdir -p "$RUNNER_TEMP/packs"
-          npm pack --workspace packages/cli --workspace packages/mcp --pack-destination "$RUNNER_TEMP/packs"
+          npm pack --workspace packages/cli --workspace packages/mcp --workspace packages/server --pack-destination "$RUNNER_TEMP/packs"
       - uses: actions/setup-node@v7
         with:
           node-version: 18
@@ -228,6 +229,16 @@ jobs:
           printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
             | timeout 20 "$RUNNER_TEMP/smoke/node_modules/.bin/sparkforensics-mcp" | tee "$RUNNER_TEMP/mcp.out" | head -c 300
           grep -q '"serverInfo"' "$RUNNER_TEMP/mcp.out"
+      - name: Server starts and answers on Node 18
+        run: |
+          "$RUNNER_TEMP/smoke/node_modules/.bin/sparkforensics-server" --port 4199 &
+          trap 'kill $!' EXIT
+          curl -sf --retry 20 --retry-connrefused --retry-delay 1 -o "$RUNNER_TEMP/index.html" http://127.0.0.1:4199/
+          grep -q '<div id="root"' "$RUNNER_TEMP/index.html"
+          curl -sf -o "$RUNNER_TEMP/server-mcp.out" -X POST http://127.0.0.1:4199/mcp \
+            -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
+          grep -q '"serverInfo"' "$RUNNER_TEMP/server-mcp.out"
 
   changeset:
     if: github.event_name == 'pull_request'
