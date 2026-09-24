@@ -7,9 +7,10 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Keep in sync with the publishable-path regex in scripts/check-changeset.sh
-// and the mcp-package-name check in .github/workflows/release.yml: a 4th
-// package would need updating in all three places.
-const PACKAGES = ['cli', 'mcp', 'server'];
+// and the mcp-package-name check in .github/workflows/release.yml: a new
+// package would need updating in all three places. analyze and sparkforensics
+// are aliases that depend on sparkforensics-cli, so they come after cli.
+const PACKAGES = ['cli', 'analyze', 'sparkforensics', 'mcp', 'server'];
 
 function publishedVersion(name) {
   try {
@@ -38,6 +39,12 @@ export function recordPublishedTag(outputPath, name, version) {
   appendFileSync(outputPath, `${JSON.stringify(record)}\n`);
 }
 
+// A package whose dependency failed to publish in this run would point at a
+// version missing from the registry, so it must not be published either.
+export function failedDependency(manifest, failedNames) {
+  return Object.keys(manifest.dependencies ?? {}).find((dep) => failedNames.has(dep));
+}
+
 function main() {
   const outputPath = process.env.CHANGESETS_OUTPUT;
   // Create the file up front, like the Changesets CLI does, so a run that
@@ -45,6 +52,7 @@ function main() {
   if (outputPath) appendFileSync(outputPath, '');
 
   const results = { published: [], skipped: [], failed: [] };
+  const failedNames = new Set();
 
   for (const pkg of PACKAGES) {
     const dir = join('packages', pkg);
@@ -56,6 +64,11 @@ function main() {
         console.log(`${name}@${version} already published, skipping.`);
         results.skipped.push(`${name}@${version}`);
         continue;
+      }
+
+      const blockedBy = failedDependency(manifest, failedNames);
+      if (blockedBy) {
+        throw new Error(`dependency ${blockedBy} failed to publish in this run`);
       }
 
       console.log(`Dry-run publishing ${name}@${version}...`);
@@ -70,10 +83,12 @@ function main() {
       recordPublishedTag(outputPath, name, version);
       results.published.push(`${name}@${version}`);
     } catch (err) {
-      // One package's failure must not abort the loop; the others are
-      // independent. Record it and move on; the summary below still exits non-zero.
+      // One package's failure must not abort the loop: packages that don't
+      // depend on it still publish. Record it and move on; the summary below
+      // still exits non-zero.
       console.error(`Failed to publish ${name}@${version}:`, err.message);
       results.failed.push(`${name}@${version}`);
+      failedNames.add(name);
     }
   }
 

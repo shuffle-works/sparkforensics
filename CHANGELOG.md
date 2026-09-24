@@ -1,4 +1,4 @@
-# sparkforensics
+# sparkforensics-web
 
 ## 0.24.5
 

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Fails a PR that changes packages/cli, packages/core, packages/mcp,
-# packages/server, or the root site app without also adding a changeset.
+# packages/server, the alias packages (packages/analyze,
+# packages/sparkforensics), or the root site app without also adding a changeset.
 # Run only on pull_request CI events (BASE_REF is the PR's target branch,
 # e.g. "main").
 set -e
@@ -17,7 +18,7 @@ CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD")
 # package is never published at all, see .changeset/config.json's
 # privatePackages.version), so don't merge the lists, just check all three
 # when a new package is added.
-TOUCHES_PUBLISHABLE=$(echo "$CHANGED" | grep -E '^packages/(cli|core|mcp|server)/' || true)
+TOUCHES_PUBLISHABLE=$(echo "$CHANGED" | grep -E '^packages/(cli|core|mcp|server|analyze|sparkforensics)/' || true)
 
 # The root site app: src/ and its top-level build config. Deliberately
 # excludes docs-site/ -- that content ships inside the same dist/ but isn't
@@ -27,7 +28,7 @@ TOUCHES_PUBLISHABLE=$(echo "$CHANGED" | grep -E '^packages/(cli|core|mcp|server)
 TOUCHES_SITE=$(echo "$CHANGED" | grep -E '^src/|^index\.html$|^vite\.config\.ts$|^package\.json$' || true)
 
 if [ -z "$TOUCHES_PUBLISHABLE" ] && [ -z "$TOUCHES_SITE" ]; then
-  echo "No changes under packages/cli, packages/core, packages/mcp, packages/server, or the root site app; no changeset required."
+  echo "No changes under packages/cli, packages/core, packages/mcp, packages/server, packages/analyze, packages/sparkforensics, or the root site app; no changeset required."
   exit 0
 fi
 

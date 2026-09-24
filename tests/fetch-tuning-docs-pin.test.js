@@ -42,7 +42,7 @@ describe('bump output', () => {
 
   it('writes a patch changeset for every published package', () => {
     const text = bumpChangeset(REPO, A, B);
-    expect(text).toMatch(/^---\n"sparkforensics": patch\n"sparkforensics-cli": patch\n"sparkforensics-mcp": patch\n"sparkforensics-server": patch\n---\n\n/);
+    expect(text).toMatch(/^---\n"sparkforensics-web": patch\n"sparkforensics-cli": patch\n"sparkforensics-mcp": patch\n"sparkforensics-server": patch\n---\n\n/);
     expect(text).toContain(`spark-tuning-reference@1d0f90d (${compareUrl(REPO, A, B)})`);
   });
 });
