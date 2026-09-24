@@ -38,6 +38,36 @@ describe('extractTaskFailureDetail', () => {
     expect(extractTaskFailureDetail({ Reason: 'TaskKilled', 'Kill Reason': 'another attempt succeeded' }).message).toBe('another attempt succeeded');
   });
 
+  it('names a PySpark failure by its Python error line, so distinct Python errors get distinct keys', () => {
+    const pyFrames = Array.from({ length: 6 }, (_, i) => [`  File "/jobs/etl.py", line ${i + 1}, in step${i}`, `    step${i + 1}(row)`]).flat();
+    const pythonFailure = (error) => {
+      const traceback = ['Traceback (most recent call last):', ...pyFrames, error].join('\n');
+      return {
+        Reason: 'ExceptionFailure', 'Class Name': 'org.apache.spark.api.python.PythonException', Description: traceback,
+        'Full Stack Trace': [`org.apache.spark.api.python.PythonException: ${traceback}`, '', ...frames(3)].join('\n'),
+      };
+    };
+    const valueError = extractTaskFailureDetail(pythonFailure('ValueError: bad row'));
+    const keyError = extractTaskFailureDetail(pythonFailure(`KeyError: '${'k'.repeat(400)}'`));
+    expect(valueError.message).toBe('ValueError: bad row');
+    expect(keyError.message.length).toBe(300);
+    expect(taskFailureKey(valueError)).not.toBe(taskFailureKey(keyError));
+    expect(formatTaskFailureHeadline(valueError)).toBe('org.apache.spark.api.python.PythonException: ValueError: bad row');
+    const excerpt = valueError.stackExcerpt.split('\n');
+    expect(excerpt.slice(9)).toEqual(['\t...', 'ValueError: bad row', '\t...']);
+    expect(redactTaskFailureGroup({ ...valueError, count: 1 })).toMatchObject({ message: REDACTED_TEXT });
+    expect(redactTaskFailureGroup({ ...valueError, count: 1 }).stackExcerpt).not.toContain('bad row');
+  });
+
+  it('reads the Python error line after the newer Python-worker preamble', () => {
+    const d = extractTaskFailureDetail({
+      Reason: 'ExceptionFailure', 'Class Name': 'org.apache.spark.api.python.PythonException',
+      Description: ['An exception was thrown from the Python worker. Please see the stack trace below.', 'Traceback (most recent call last):',
+        '  File "/jobs/etl.py", line 3, in parse', '    int(row)', 'ValueError: invalid literal', ''].join('\n'),
+    });
+    expect(d.message).toBe('ValueError: invalid literal');
+  });
+
   it('returns null without an end reason and bounds a long message', () => {
     expect(extractTaskFailureDetail(undefined)).toBeNull();
     const d = extractTaskFailureDetail({ Reason: 'ExceptionFailure', Description: 'x'.repeat(5000) });

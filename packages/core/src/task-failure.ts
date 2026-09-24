@@ -45,8 +45,29 @@ function firstLine(s: string | null): string | null {
   return line ? truncate(line.replace(/\s+/g, ' '), MAX_TEXT_CHARS) : null;
 }
 
-/** Header line, the first frames, and (when cut off) the last `Caused by:` line, which usually
- * names the root cause. Bounded by frame count, line length and total length. */
+const PYTHON_TRACEBACK_HEAD = /(?:^|: )(?:Traceback \(most recent call last\):|An exception was thrown from the Python worker)/;
+const JAVA_FRAME = /^\s*at \S/;
+
+// A PySpark error's text is a whole Python traceback whose own error line (`ValueError: bad row`)
+// comes last, before any JVM frames: index of that line among non-blank `lines`, or -1.
+function pythonErrorLineIndex(lines: string[]): number {
+  if (lines.length < 2 || !PYTHON_TRACEBACK_HEAD.test(lines[0].trim())) return -1;
+  let last = -1;
+  for (let i = 1; i < lines.length && !JAVA_FRAME.test(lines[i]); i++) last = i;
+  return last;
+}
+
+// The message's headline: its first line, or a Python traceback's error line.
+function messageLine(s: string | null): string | null {
+  if (s == null) return null;
+  const lines = s.split('\n').filter((l) => l.trim().length > 0);
+  const pyIdx = pythonErrorLineIndex(lines);
+  return pyIdx >= 0 ? firstLine(lines[pyIdx]) : firstLine(s);
+}
+
+/** Header line, the first frames, and (when cut off) a Python traceback's error line and the last
+ * `Caused by:` line, which usually name the root cause. Bounded by frame count, line length and
+ * total length. */
 export function buildStackExcerpt(trace: string | null): string | null {
   if (trace == null) return null;
   const lines = trace.split('\n').map((l) => l.replace(/\s+$/, '')).filter((l) => l.trim().length > 0);
@@ -54,11 +75,13 @@ export function buildStackExcerpt(trace: string | null): string | null {
   const headCount = 1 + MAX_EXCERPT_FRAMES;
   const kept = lines.slice(0, headCount);
   if (lines.length > headCount) {
+    const pyIdx = pythonErrorLineIndex(lines);
     let causeIdx = -1;
     for (let i = lines.length - 1; i >= headCount; i--) {
       if (lines[i].startsWith('Caused by:')) { causeIdx = i; break; }
     }
-    kept.push('\t...');
+    if (pyIdx >= headCount) kept.push('\t...', lines[pyIdx]);
+    if (pyIdx < lines.length - 1) kept.push('\t...');
     if (causeIdx >= 0) kept.push(...lines.slice(causeIdx, causeIdx + 2));
   }
   return truncate(kept.map((l) => truncate(l, MAX_EXCERPT_LINE_CHARS)).join('\n'), MAX_EXCERPT_CHARS);
@@ -75,7 +98,7 @@ export function extractTaskFailureDetail(endReason: Record<string, unknown> | un
   return {
     reason,
     className: firstLine(text(endReason['Class Name'])),
-    message: firstLine(rawMessage),
+    message: messageLine(rawMessage),
     lossReason: firstLine(text(endReason['Loss Reason'])),
     stackExcerpt: buildStackExcerpt(trace),
   };
