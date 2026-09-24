@@ -4,7 +4,7 @@ Before opening a PR:
 
 1. Run the full suite: `npm test` (root), plus `npm run test:core`,
    `npm run test:cli`, `npm run test:mcp` and `npm run test:server` for the
-   packages you touched. Each package under `packages/` has its own Vitest
+   packages you touched. Each of those four packages has its own Vitest
    config and suite, none of them covered by the root `npm test`.
 2. Typecheck: `npx tsc --noEmit`.
 3. Lint: `npm run lint`. This also runs automatically on every commit via

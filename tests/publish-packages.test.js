@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -51,9 +52,14 @@ describe('failedDependency', () => {
 });
 
 describe('published package licenses', () => {
-  // npm always packs a LICENSE at the package root, whatever `files` says, and
   // MIT asks for the notice to travel with every copy.
-  it.each(PACKAGES)('packages/%s ships the root LICENSE', (pkg) => {
-    expect(readFileSync(`packages/${pkg}/LICENSE`, 'utf8')).toBe(readFileSync('LICENSE', 'utf8'));
+  it.each(PACKAGES)('packages/%s packs LICENSE into its tarball', (pkg) => {
+    const [packed] = JSON.parse(
+      execFileSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
+        cwd: `packages/${pkg}`,
+        encoding: 'utf8',
+      }),
+    );
+    expect(packed.files.map((file) => file.path)).toContain('LICENSE');
   });
 });
