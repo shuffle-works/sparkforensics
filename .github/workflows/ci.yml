@@ -64,11 +64,16 @@ jobs:
 
   # packages/core has no bin to pack-and-spawn: its unit tests run directly
   # against packages/core/src, no vendoring involved.
+  # Checks out dev/log-corpus (the public spark-event-corpus-data submodule) so
+  # the corpus-backed tests run instead of skipping, and so the detector
+  # regression gate below has its logs.
   core:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -78,6 +83,12 @@ jobs:
       # Generates the uncommitted tuning reference; see the build job.
       - run: npm run docs:fetch
       - run: npm run test:core
+      # Detector regression gate: re-analyzes every corpus log and fails on any
+      # finding added, removed, re-banded or re-estimated against the committed
+      # snapshot. For an intended change, refresh it (see
+      # docs-site/contributor-guide/testing.md#corpus-regression-snapshot).
+      - name: Corpus findings match dev/corpus-snapshot.json
+        run: node dev/bench-analyze.mjs --check dev/corpus-snapshot.json
       - uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -139,6 +150,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+        # For test/shs-proxy-fixture.test.js, which reads a corpus log.
+        with:
+          submodules: true
       - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
@@ -166,6 +180,65 @@ jobs:
           path-to-lcov: packages/server/coverage/lcov.info
           flag-name: server
           parallel: true
+
+  # The published cli/mcp/server packages declare engines node >=18, but the
+  # suites above run on .nvmrc's Node only, and vitest itself needs Node 22+. So
+  # pack the real tarballs on .nvmrc's Node, then install and run the bins on
+  # Node 18: the CLI over every corpus log (plus one zstd copy, which takes the
+  # fzstd fallback since Node 18 has no native zstd), an MCP initialize
+  # handshake, and a server start that serves the app and answers /mcp.
+  node18:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      # Generates the uncommitted tuning reference; see the build job.
+      - run: npm run docs:fetch
+      - name: Pack cli, mcp and server
+        run: |
+          mkdir -p "$RUNNER_TEMP/packs"
+          npm pack --workspace packages/cli --workspace packages/mcp --workspace packages/server --pack-destination "$RUNNER_TEMP/packs"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 18
+      - name: Install the packed tarballs on Node 18
+        working-directory: ${{ runner.temp }}
+        run: |
+          node --version
+          mkdir smoke && cd smoke
+          echo '{}' > package.json
+          npm install "$RUNNER_TEMP"/packs/*.tgz
+      - name: CLI analyzes every corpus log on Node 18
+        run: |
+          bin="$RUNNER_TEMP/smoke/node_modules/.bin/sparkforensics-analyze"
+          for log in dev/log-corpus/logs/*.ndjson dev/log-corpus/logs/external/*.ndjson; do
+            "$bin" "$log" --format json > /dev/null || { echo "failed: $log"; exit 1; }
+          done
+          zstd -q -o "$RUNNER_TEMP/sample.zstd" dev/log-corpus/logs/spark-4.1.3-parquet-baseline.ndjson
+          "$bin" "$RUNNER_TEMP/sample.zstd" --format json > /dev/null
+      - name: MCP server answers initialize on Node 18
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            | timeout 20 "$RUNNER_TEMP/smoke/node_modules/.bin/sparkforensics-mcp" | tee "$RUNNER_TEMP/mcp.out" | head -c 300
+          grep -q '"serverInfo"' "$RUNNER_TEMP/mcp.out"
+      - name: Server starts and answers on Node 18
+        run: |
+          "$RUNNER_TEMP/smoke/node_modules/.bin/sparkforensics-server" --port 4199 &
+          trap 'kill $!' EXIT
+          curl -sf --retry 20 --retry-connrefused --retry-delay 1 -o "$RUNNER_TEMP/index.html" http://127.0.0.1:4199/
+          grep -q '<div id="root"' "$RUNNER_TEMP/index.html"
+          curl -sf -o "$RUNNER_TEMP/server-mcp.out" -X POST http://127.0.0.1:4199/mcp \
+            -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
+          grep -q '"serverInfo"' "$RUNNER_TEMP/server-mcp.out"
 
   changeset:
     if: github.event_name == 'pull_request'

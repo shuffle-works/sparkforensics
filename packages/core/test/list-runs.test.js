@@ -6,8 +6,8 @@ import { join, dirname } from 'node:path';
 import { listRunsLocal, listRunsShs, listRuns } from '../src/list-runs.js';
 
 // Real multi-attempt fixtures: same appId, disambiguated only by the `_1`/`_2` filename suffix.
-// dev/log-corpus is a git submodule (private repo): CI doesn't fetch submodules, so any test
-// depending on these is skipped there. Locally: `git submodule update --init dev/log-corpus`.
+// dev/log-corpus is a git submodule (public corpus repo), checked out in CI; tests depending on
+// these skip locally until `git submodule update --init dev/log-corpus`.
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
 const ATTEMPT_FIXTURE_1 = join(FIXTURES_DIR, 'external-local-1430917381535_1.ndjson');
 const ATTEMPT_FIXTURE_2 = join(FIXTURES_DIR, 'external-local-1430917381535_2.ndjson');

@@ -87,4 +87,37 @@ with unit tests only (`tests/view/task-failures.test.tsx`,
 `*-parquet-baseline.ndjson` fixture and asserts the `/shs-proxy` route
 streams it back unmodified. Populate it locally with
 `git submodule update --init dev/log-corpus`; without it, the test suite
-skips (see [Development setup](./development-setup.md)).
+skips (see [Development setup](./development-setup.md)). CI checks it out, so
+these tests run there.
+
+### Corpus regression snapshot
+
+`dev/corpus-snapshot.json` records every finding (type, location, band,
+confidence, value, impact estimate) that the detectors produce on each
+public corpus log, plus its stage, SQL execution and skipped-line counts,
+with timings and memory left out so it is deterministic. CI's `core` job
+re-analyzes the corpus and fails on any difference, printing the added,
+removed, re-banded and re-estimated findings and changed counts per log:
+
+```bash
+node dev/bench-analyze.mjs --check dev/corpus-snapshot.json
+```
+
+When a detector, threshold or estimator change is meant to alter findings,
+read that diff, confirm each change is the one you intended, then refresh
+the snapshot and commit it with the change:
+
+```bash
+node dev/bench-analyze.mjs --update dev/corpus-snapshot.json
+```
+
+Both default to `dev/log-corpus/logs` and its `external/` folder. Only
+public corpus logs belong in the snapshot: never pass private logs to
+`--update`.
+
+CI also runs a `node18` job, because the published `cli`, `mcp` and
+`server` packages declare `engines.node >=18` while vitest needs Node 22+.
+It packs the three tarballs on `.nvmrc`'s Node, installs them on Node 18,
+runs the CLI over every corpus log plus a zstd copy of one, checks that the
+MCP server answers `initialize`, and starts `sparkforensics-server` to check
+it serves the app and answers `initialize` on `/mcp`.

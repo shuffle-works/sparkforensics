@@ -47,9 +47,11 @@ The same checks apply to that checkout. `npm pack` and CI accept it only when
 it sits at the pinned commit with no uncommitted `content/` changes.
 
 `dev/log-corpus` is a git submodule pointing at the public
-`spark-event-corpus-data` repo. It's optional: if you skip the
-`git submodule update` step above, `packages/server/test/shs-proxy-fixture.test.js`
-will report as skipped rather than failed, which is expected, not a bug.
+`spark-event-corpus-data` repo. It's optional locally: if you skip the
+`git submodule update` step above, the corpus-backed tests (such as
+`packages/server/test/shs-proxy-fixture.test.js`) report as skipped rather
+than failed, which is expected, not a bug. CI always checks it out and runs
+them, plus the [corpus regression snapshot](./testing#corpus-regression-snapshot).
 
 The `packages/server/` package (the optional local-server deploy mode) keeps
 its own dependencies and test suite. Run it from the repo root: a second

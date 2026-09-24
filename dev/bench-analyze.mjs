@@ -10,6 +10,8 @@
 // Usage:
 //   node dev/bench-analyze.mjs [--out snap.json] [--repeat N] <file|dir>...
 //   node dev/bench-analyze.mjs --diff before.json after.json [--verbose]
+//   node dev/bench-analyze.mjs --update dev/corpus-snapshot.json   (rewrite the committed snapshot)
+//   node dev/bench-analyze.mjs --check dev/corpus-snapshot.json    (CI gate: exit 1 on any finding change)
 //
 // Directories are expanded one level (every regular file inside, sorted), except Spark
 // rolling-log directories (events_<n>_* files), which are analyzed as one run. With no paths
@@ -129,9 +131,39 @@ function runAll(paths, repeat) {
 
 function fmtMs(v) { return v == null ? '-' : `${(v / 1000).toFixed(1)}s`; }
 
+// The committed regression snapshot keeps only what is deterministic for a given log: timings
+// and memory vary per machine, so they are dropped and the diff below treats them as absent.
+function stableSnapshot(logs) {
+  return {
+    logs: logs.map((l) => (l.error ? { name: l.name, error: l.error } : {
+      name: l.name, stages: l.stages, sqlExecutions: l.sqlExecutions, skippedLines: l.skippedLines,
+      findings: [...l.findings].sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0)),
+    })),
+  };
+}
+
 function diff(beforePath, afterPath, verbose) {
-  const a = new Map(JSON.parse(readFileSync(beforePath, 'utf8')).logs.map((l) => [l.name, l]));
-  const b = new Map(JSON.parse(readFileSync(afterPath, 'utf8')).logs.map((l) => [l.name, l]));
+  return diffSnapshots(JSON.parse(readFileSync(beforePath, 'utf8')), JSON.parse(readFileSync(afterPath, 'utf8')), verbose);
+}
+
+// Returns the number of finding-level changes (added, removed, re-banded, value- or estimate-changed)
+// plus logs that appeared, disappeared, changed error or changed stage/SQL/skipped-line or
+// duplicate-finding counts, so --check can fail on any of them.
+function diffSnapshots(snapA, snapB, verbose) {
+  const a = new Map(snapA.logs.map((l) => [l.name, l]));
+  const b = new Map(snapB.logs.map((l) => [l.name, l]));
+  let logChanges = 0;
+  for (const [name, la] of a) {
+    const lb = b.get(name);
+    if (!lb) { logChanges++; console.log(`${name}: missing from the new run`); }
+    else if ((la.error ?? null) !== (lb.error ?? null)) { logChanges++; console.log(`${name}: error ${la.error ?? 'none'} -> ${lb.error ?? 'none'}`); }
+    else {
+      for (const field of ['stages', 'sqlExecutions', 'skippedLines']) {
+        if (la[field] !== lb[field]) { logChanges++; console.log(`${name}: ${field} ${la[field]} -> ${lb[field]}`); }
+      }
+    }
+  }
+  for (const name of b.keys()) if (!a.has(name)) { logChanges++; console.log(`${name}: new log, not in the snapshot`); }
   let totAdded = 0; let totRemoved = 0; let totRebanded = 0; let totEst = 0;
   const typeDelta = new Map();
   const bump = (t, k) => { const e = typeDelta.get(t) ?? { added: 0, removed: 0, rebanded: 0, est: 0 }; e[k]++; typeDelta.set(t, e); };
@@ -139,7 +171,7 @@ function diff(beforePath, afterPath, verbose) {
   for (const [name, la] of a) {
     const lb = b.get(name);
     if (!lb || la.error || lb.error) continue;
-    parseA += la.parseMs; parseB += lb.parseMs; anA += la.analyzeMs; anB += lb.analyzeMs;
+    parseA += la.parseMs ?? 0; parseB += lb.parseMs ?? 0; anA += la.analyzeMs ?? 0; anB += lb.analyzeMs ?? 0;
     const fa = new Map(la.findings.map((f) => [f.key, f]));
     const fb = new Map(lb.findings.map((f) => [f.key, f]));
     const lines = [];
@@ -147,21 +179,24 @@ function diff(beforePath, afterPath, verbose) {
       if (!fb.has(k)) { totRemoved++; bump(f.type, 'removed'); lines.push(`  - ${f.band.padEnd(8)} ${k}  wc=${fmtMs(f.wcHigh)}`); continue; }
       const g = fb.get(k);
       if (f.band !== g.band) { totRebanded++; bump(f.type, 'rebanded'); lines.push(`  ~ ${f.band}->${g.band} ${k}  wc=${fmtMs(f.wcHigh)}->${fmtMs(g.wcHigh)}`); }
-      else if (f.wcHigh !== g.wcHigh || f.wcLow !== g.wcLow || f.basis !== g.basis || JSON.stringify(f.rawWaste) !== JSON.stringify(g.rawWaste) || f.confidence !== g.confidence) {
+      else if (f.wcHigh !== g.wcHigh || f.wcLow !== g.wcLow || f.value !== g.value || f.method !== g.method || f.basis !== g.basis || JSON.stringify(f.rawWaste) !== JSON.stringify(g.rawWaste) || f.confidence !== g.confidence) {
         totEst++; bump(f.type, 'est');
-        if (verbose) lines.push(`  = ${k}  wc=[${fmtMs(f.wcLow)},${fmtMs(f.wcHigh)}]->[${fmtMs(g.wcLow)},${fmtMs(g.wcHigh)}] ${f.basis}->${g.basis} conf ${f.confidence}->${g.confidence}`);
+        if (verbose) lines.push(`  = ${k}  wc=[${fmtMs(f.wcLow)},${fmtMs(f.wcHigh)}]->[${fmtMs(g.wcLow)},${fmtMs(g.wcHigh)}] ${f.basis}->${g.basis} conf ${f.confidence}->${g.confidence} value ${f.value}->${g.value} method ${f.method}->${g.method}`);
       }
     }
     for (const [k, g] of fb) {
       if (!fa.has(k)) { totAdded++; bump(g.type, 'added'); lines.push(`  + ${g.band.padEnd(8)} ${k}  wc=${fmtMs(g.wcHigh)}`); }
     }
-    const speed = `parse ${la.parseMs.toFixed(0)}->${lb.parseMs.toFixed(0)}ms analyze ${la.analyzeMs.toFixed(0)}->${lb.analyzeMs.toFixed(0)}ms rss ${la.maxRssMB.toFixed(0)}->${lb.maxRssMB.toFixed(0)}MB`;
-    if (lines.length || verbose) console.log(`${name}: ${la.findings.length} -> ${lb.findings.length} findings; ${speed}`);
+    const dupA = la.findings.length - fa.size; const dupB = lb.findings.length - fb.size;
+    if (dupA !== dupB) { logChanges++; lines.push(`  ! duplicate-key findings ${dupA} -> ${dupB}`); }
+    const speed = la.parseMs == null || lb.parseMs == null ? '' : `parse ${la.parseMs.toFixed(0)}->${lb.parseMs.toFixed(0)}ms analyze ${la.analyzeMs.toFixed(0)}->${lb.analyzeMs.toFixed(0)}ms rss ${la.maxRssMB.toFixed(0)}->${lb.maxRssMB.toFixed(0)}MB`;
+    if (lines.length || verbose) console.log(`${name}: ${la.findings.length} -> ${lb.findings.length} findings${speed ? `; ${speed}` : ''}`);
     for (const l of lines) console.log(l);
   }
   console.log(`\nTotals: +${totAdded} -${totRemoved} rebanded ${totRebanded} estimate-changed ${totEst}`);
-  console.log(`Parse ${parseA.toFixed(0)} -> ${parseB.toFixed(0)}ms (${(((parseB - parseA) / parseA) * 100).toFixed(1)}%), analyze ${anA.toFixed(0)} -> ${anB.toFixed(0)}ms (${(((anB - anA) / anA) * 100).toFixed(1)}%)`);
+  if (parseA > 0 && anA > 0) console.log(`Parse ${parseA.toFixed(0)} -> ${parseB.toFixed(0)}ms (${(((parseB - parseA) / parseA) * 100).toFixed(1)}%), analyze ${anA.toFixed(0)} -> ${anB.toFixed(0)}ms (${(((anB - anA) / anA) * 100).toFixed(1)}%)`);
   for (const [t, e] of [...typeDelta].sort()) console.log(`  ${t.padEnd(22)} +${e.added} -${e.removed} ~${e.rebanded} =${e.est}`);
+  return totAdded + totRemoved + totRebanded + totEst + logChanges;
 }
 
 const argv = process.argv.slice(2);
@@ -170,13 +205,25 @@ if (argv[0] === '--child') {
 } else if (argv[0] === '--diff') {
   diff(argv[1], argv[2], argv.includes('--verbose'));
 } else {
-  let out = null; let repeat = 1; const paths = [];
+  let out = null; let repeat = 1; let check = null; let update = null; const paths = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--out') out = argv[++i];
+    else if (argv[i] === '--check') check = argv[++i];
+    else if (argv[i] === '--update') update = argv[++i];
     else if (argv[i] === '--repeat') repeat = Number(argv[++i]);
     else paths.push(resolve(argv[i]));
   }
   if (paths.length === 0) paths.push(join(HERE, 'log-corpus', 'logs'), join(HERE, 'log-corpus', 'logs', 'external'));
   const logs = runAll(expandPaths(paths), repeat);
   if (out) writeFileSync(out, JSON.stringify({ createdAt: new Date().toISOString(), logs }, null, 1));
+  if (update) writeFileSync(update, `${JSON.stringify(stableSnapshot(logs), null, 1)}\n`);
+  if (check) {
+    const changes = diffSnapshots(JSON.parse(readFileSync(check, 'utf8')), stableSnapshot(logs), true);
+    if (changes > 0) {
+      console.log(`\n${changes} change(s) against ${check}. If the detector change is intended, refresh it with`);
+      console.log(`  node dev/bench-analyze.mjs --update ${check}\nand commit the result.`);
+      process.exit(1);
+    }
+    console.log(`\nNo finding changes against ${check}.`);
+  }
 }

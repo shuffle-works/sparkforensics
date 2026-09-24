@@ -28,6 +28,14 @@ npm run test:cli
 npm run test:mcp
 ```
 
+If your change can alter detector findings, also run the
+[corpus regression snapshot](docs-site/contributor-guide/testing.md#corpus-regression-snapshot)
+check (needs the `dev/log-corpus` submodule):
+
+```bash
+node dev/bench-analyze.mjs --check dev/corpus-snapshot.json
+```
+
 The local-server deploy mode in `packages/server/` has its own package and
 test suite. Run it from the repo root, without a separate `cd`/install
 (a second `npm install`/`npm ci` inside `packages/server` prunes the shared
