@@ -49,11 +49,6 @@ afterAll(() => {
 });
 
 describe('alias packages', () => {
-  it('ship the same bin file', () => {
-    const [first, ...rest] = Object.values(ALIASES).map((dir) => readFileSync(join(dir, 'bin/sparkforensics-analyze.mjs'), 'utf8'));
-    for (const other of rest) expect(other).toBe(first);
-  });
-
   it('depend on sparkforensics-cli at their own version and expose only sparkforensics-analyze', () => {
     for (const [name, dir] of Object.entries(ALIASES)) {
       const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));

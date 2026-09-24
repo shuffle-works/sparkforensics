@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { recordPublishedTag } from '../scripts/publish-packages.mjs';
+import { failedDependency, recordPublishedTag } from '../scripts/publish-packages.mjs';
 
 function tempOutputPath() {
   return join(mkdtempSync(join(tmpdir(), 'changesets-output-')), 'out.ndjson');
@@ -28,5 +28,24 @@ describe('recordPublishedTag', () => {
     recordPublishedTag(undefined, 'sparkforensics-cli', '0.2.3');
     recordPublishedTag('', 'sparkforensics-cli', '0.2.3');
     expect(existsSync(outputPath)).toBe(false);
+  });
+});
+
+describe('failedDependency', () => {
+  it('blocks the alias packages when sparkforensics-cli failed, but not the independent ones', () => {
+    const failed = new Set(['sparkforensics-cli']);
+    for (const dir of ['packages/analyze', 'packages/sparkforensics']) {
+      const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+      expect(failedDependency(manifest, failed)).toBe('sparkforensics-cli');
+    }
+    for (const dir of ['packages/mcp', 'packages/server']) {
+      const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+      expect(failedDependency(manifest, failed)).toBeUndefined();
+    }
+  });
+
+  it('blocks nothing when no package failed', () => {
+    const manifest = JSON.parse(readFileSync('packages/analyze/package.json', 'utf8'));
+    expect(failedDependency(manifest, new Set())).toBeUndefined();
   });
 });
