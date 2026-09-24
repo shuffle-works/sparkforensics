@@ -1,5 +1,37 @@
 # sparkforensics-mcp
 
+## 0.3.0
+
+### Minor Changes
+
+- daf8d62: The Failed Tasks (`FAIL`) finding now names the error behind failed tasks instead of only Spark's
+  end-reason tag: the exception class, or the executor loss reason such as "Container killed by YARN
+  for exceeding memory limits". A PySpark failure's message is its Python error line (such as
+  `ValueError: bad row`), not the traceback header. It lists up to five distinct failures, each with its message, loss
+  reason and one bounded stack excerpt (header, first 8 frames, a Python traceback's error line and the
+  last `Caused by:` line, at most 2000 characters), plus a count of failed tasks the list leaves out. The finding's `dominantReason`
+  is unchanged; new evidence fields are `dominantError`, `failureGroups` and `otherFailedTasks`, and
+  the `failures` detector version is now 2. With `--redact` (and `redact` in the MCP tools), messages
+  and the message text inside stack excerpts are replaced, since they can carry file paths and data
+  values; class names, stack frames and loss reasons stay, with hosts pseudonymized as before.
+
+### Patch Changes
+
+- 8891e15: Parser: the dashboard, `sparkforensics-analyze` and the MCP `path` source now take a Spark History
+  Server download as-is, the `.zip` the Spark UI's download link or `GET
+  /api/v1/applications/<appId>/logs` returns. A single-file log is unwrapped; a rolling log's parts
+  under `eventlog_v2_<appId>/` are reassembled in index order, like a dropped rolling folder.
+  Before, the dashboard reported that the file was not an event log and the CLI exited 2 with "Not a
+  Spark event log", so the log had to be unzipped by hand first. Dropped zips and History Server
+  fetches share one zip reader, which reads the archive's central directory and inflates one entry
+  at a time in 512 KiB slices, so it never holds a decompressed entry whole. History Server fetches
+  of a compacted rolling log no longer re-read the parts already merged into its `.compact` file,
+  which the directory prefix used to hide from the rolling-log check.
+- 13b3ccb: Package READMEs now show a working install command and one example instead of only linking to the main README.
+- 6b09caf: Include the MIT `LICENSE` file in the published `sparkforensics-cli`, `sparkforensics-mcp` and
+  `sparkforensics-server` tarballs, as the `sparkforensics-analyze` and `sparkforensics` packages
+  already do.
+
 ## 0.2.4
 
 ### Patch Changes
