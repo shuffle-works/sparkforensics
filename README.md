@@ -26,10 +26,9 @@ turns them into findings.
 
 ## Why SparkForensics
 
-- No install: it's a static web app. Drop a log file and read the
-  dashboard; nothing is uploaded anywhere. An optional local-server mode
-  adds a small Node companion for when a Spark History Server blocks
-  direct browser fetches with CORS.
+- Your data stays on your machine. Drop a log file and read the
+  dashboard; nothing is uploaded anywhere. Local-server mode adds a small
+  Node companion that can also pull runs from a Spark History Server.
 - Event logs are streamed and parsed off the main thread in a Web Worker,
   so a 240MB+ (or multi-GB) NDJSON log doesn't freeze the tab.
 - About 25 built-in detectors cover skew, shuffle, spill, GC
@@ -67,16 +66,16 @@ are enough.
 
 ## Get started
 
+Run the dashboard locally:
+
 ```bash
-git clone git@github.com:shuffle-works/sparkforensics.git
-cd sparkforensics
-npm install
-npm run dev
+npx sparkforensics-server
 ```
 
-Open the URL Vite prints and drop a Spark event log onto the page. Rather
-skip the install? Use the [live demo](https://shuffle-works.github.io/sparkforensics/)
-instead.
+The [Getting started guide](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started#local-server-mode)
+covers what it serves, the [live demo](https://shuffle-works.github.io/sparkforensics/)
+alternative, and loading a run. To work on SparkForensics itself, see
+[Development](#development).
 
 For a one-shot check with no browser, the kind a CI pipeline can gate on:
 
@@ -97,8 +96,16 @@ Server fetching, baseline comparisons, and redaction.
 
 ### Install and run
 
-Run `npm install` first if you haven't (see [Get started](#get-started)
-above). For a production bundle: `npm run build`, then serve `dist/` with
+From a checkout:
+
+```bash
+git clone git@github.com:shuffle-works/sparkforensics.git
+cd sparkforensics
+npm install
+npm run dev
+```
+
+Open the URL Vite prints. For a production bundle: `npm run build`, then serve `dist/` with
 any static file server. Asset URLs are relative, so the bundle also works
 under a URL subpath.
 
