@@ -4,7 +4,8 @@ import { Decompress as ZstdDecompress } from './vendor/fzstd.js';
 import { createSnappyBlockDecoder } from './snappy-block.ts';
 import { createState, dispatchLine, buildChunkDecoder, emitParseCompletion, type JoinedLine, type ParserState } from './event-handlers.ts';
 import { TASK_FIELD_NAMES } from './stage-quantiles.ts';
-import { runParseFromUrl, sniffCodec } from './shs-fetch.ts';
+import { runParseFromUrl, sniffCodec, parseZipArchive } from './shs-fetch.ts';
+import { isZip } from './zip-archive.ts';
 import { createWorkerZstdDecoders } from './zstd-worker-client.ts';
 
 export {
@@ -35,6 +36,8 @@ const MIN_PROGRESS_STEPS = 100;
 const PROGRESS_EMIT_LINES = 300;
 
 type EmitFn = (msg: unknown) => void;
+const NOT_AN_EVENT_LOG = 'Not a Spark event log: no application-start event found. Choose a Spark event log file, or check the docs for supported formats.';
+
 // zstdDecoder replaces the vendored fzstd for zstd input; the Node CLI/MCP path passes
 // cli/native-zstd.ts's native-zlib decoder, which a browser bundle can't import.
 type RunOpts = { emit?: EmitFn; chunkSize?: number; zstdDecoder?: ZstdDecoderFactory };
@@ -140,6 +143,20 @@ export async function runParse(
     return;
   }
 
+  // A Spark History Server download (the UI's download link, or GET
+  // /api/v1/applications/<id>/logs) is a zip holding the log file, or a
+  // rolling log's parts: unwrap it through the same path the SHS fetch uses.
+  if (isZip(new Uint8Array(await file.slice(0, Math.min(4, file.size)).arrayBuffer()))) {
+    await parseZipArchive(file, state, emit, {
+      zstdDecoder,
+      chunkSize,
+      progressEvery: PROGRESS_EMIT_LINES,
+      reportPct: true,
+      onInvalid: (detail) => emit({ type: 'error', message: detail ?? NOT_AN_EVENT_LOG }),
+    });
+    return;
+  }
+
   const decoder = buildChunkDecoder();
   const joined: JoinedLine[] = [];
   let linesProcessed = 0;
@@ -168,7 +185,7 @@ export async function runParse(
   }
 
   if (!state.app) {
-    emit({ type: 'error', message: 'Not a Spark event log: no application-start event found. Choose a Spark event log file, or check the docs for supported formats.' });
+    emit({ type: 'error', message: NOT_AN_EVENT_LOG });
     return;
   }
 
@@ -227,7 +244,7 @@ export async function runParseFiles(
   }
 
   if (!state.app) {
-    emit({ type: 'error', message: 'Not a Spark event log: no application-start event found. Choose a Spark event log file, or check the docs for supported formats.' });
+    emit({ type: 'error', message: NOT_AN_EVENT_LOG });
     return;
   }
 
@@ -242,7 +259,7 @@ if (isWorker) {
   let workerState: ParserState | null = null;
   // Dropped zstd files decompress in a second worker, overlapping with parsing here. The
   // `new Worker(new URL(...))` stays inline for Vite's worker detection (see ingest.ts). The SHS
-  // path (runParseFromUrl) decodes whole zip entries synchronously and keeps in-thread fzstd.
+  // path (runParseFromUrl) keeps in-thread fzstd.
   const zstdDecoder = createWorkerZstdDecoders(
     () => new Worker(new URL('./zstd-worker.js', import.meta.url), { type: 'module' }),
     (onChunk) => new (ZstdDecompress as unknown as StreamingDecoderCtor)(onChunk),

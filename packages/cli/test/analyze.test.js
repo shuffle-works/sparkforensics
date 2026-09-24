@@ -3,13 +3,14 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { zstdCompressSync } from 'node:zlib';
 import { collectRun } from '@sparkforensics/core/cli/collect-run.ts';
 import { deriveEvidenceAvailability } from '@sparkforensics/core/evidence-availability.ts';
 import { buildEvidenceReport } from '@sparkforensics/core/evidence-report.ts';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 // tests/helpers/ stays at the repo root because packages/core/test/mcp-tools.test.js
 // shares this same fixture helper.
-import { shsZipFetch } from '../../../tests/helpers/shs-fixtures.js';
+import { shsZipFetch, historyServerZip } from '../../../tests/helpers/shs-fixtures.js';
 import { packAndInstall } from '../../../tests/helpers/pack-and-install.js';
 
 // Regression coverage for the published `sparkforensics-analyze` bin, not just
@@ -97,6 +98,39 @@ describe('sparkforensics-analyze CLI', () => {
 
       expect(cliJson.findings).toEqual(directJson.findings);
       expect(cliJson.schemaVersion).toBe(directJson.schemaVersion);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A History Server download (deflated zip, data descriptors): single-entry, and a rolling
+  // log whose parts sit under eventlog_v2_<appId>/ and split mid-line.
+  it('analyzes a single-entry or rolling History Server zip like the plain log', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-zip-'));
+    const appId = 'application_0000000000000_0001';
+    const ndjson = Buffer.from(ndjsonWithSkew());
+    const half = Math.floor(ndjson.length / 2);
+    const zstd = (bytes) => new Uint8Array(zstdCompressSync(bytes));
+    const logPath = join(dir, 'eventlog');
+    const singlePath = join(dir, 'single.zip');
+    const rollingPath = join(dir, 'rolling.zip');
+    writeFileSync(logPath, ndjson);
+    writeFileSync(singlePath, historyServerZip({ [`${appId}.zstd`]: zstd(ndjson) }));
+    writeFileSync(rollingPath, historyServerZip({
+      [`eventlog_v2_${appId}/`]: new Uint8Array(0),
+      [`eventlog_v2_${appId}/appstatus_${appId}`]: new Uint8Array(0),
+      [`eventlog_v2_${appId}/events_1_${appId}.zstd`]: zstd(ndjson.subarray(0, half)),
+      [`eventlog_v2_${appId}/events_2_${appId}.zstd`]: zstd(ndjson.subarray(half)),
+    }));
+    try {
+      const plain = runCli([logPath]);
+      expect(plain.status).toBe(0);
+      for (const path of [singlePath, rollingPath]) {
+        const { stdout, stderr, status } = runCli([path]);
+        expect(stderr).toBe('');
+        expect(status).toBe(0);
+        expect(JSON.parse(stdout)).toEqual(JSON.parse(plain.stdout));
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 // and the mcp-package-name check in .github/workflows/release.yml: a new
 // package would need updating in all three places. analyze and sparkforensics
 // are aliases that depend on sparkforensics-cli, so they come after cli.
-const PACKAGES = ['cli', 'analyze', 'sparkforensics', 'mcp', 'server'];
+export const PACKAGES = ['cli', 'analyze', 'sparkforensics', 'mcp', 'server'];
 
 function publishedVersion(name) {
   try {
