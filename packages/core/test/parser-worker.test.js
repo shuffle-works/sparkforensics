@@ -2261,6 +2261,62 @@ describe('finalizeStage: failedTaskSamples', () => {
   });
 });
 
+describe('finalizeStage: failureGroups', () => {
+  function failedEnd(index, endReason, extraInfo = {}) {
+    return {
+      Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
+      'Task End Reason': endReason,
+      'Task Info': { Index: index, 'Task ID': index, 'Launch Time': 0, 'Finish Time': 100, Failed: true, ...extraInfo },
+      'Task Metrics': {},
+    };
+  }
+  const exception = (description) => ({
+    Reason: 'ExceptionFailure', 'Class Name': 'java.lang.IllegalStateException', Description: description,
+    'Full Stack Trace': `java.lang.IllegalStateException: ${description}\n\tat com.example.Job.run(Job.scala:10)`,
+  });
+  function runStage(events) {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
+    for (const e of events) processEvent(e, s);
+    return processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 300 } }, s).data;
+  }
+
+  it('groups surviving failed tasks by distinct error, most frequent first, one excerpt each', () => {
+    const lost = { Reason: 'ExecutorLostFailure', 'Executor ID': '3', 'Loss Reason': 'Container killed by YARN for exceeding memory limits.' };
+    const data = runStage([
+      failedEnd(0, lost), failedEnd(1, exception('bad row')), failedEnd(2, lost), failedEnd(3, lost),
+    ]);
+    expect(data.failureGroups).toEqual([
+      { reason: 'ExecutorLostFailure', className: null, message: null, lossReason: 'Container killed by YARN for exceeding memory limits.', stackExcerpt: null, count: 3 },
+      {
+        reason: 'ExceptionFailure', className: 'java.lang.IllegalStateException', message: 'bad row', lossReason: null,
+        stackExcerpt: 'java.lang.IllegalStateException: bad row\n\tat com.example.Job.run(Job.scala:10)', count: 1,
+      },
+    ]);
+    expect(data).not.toHaveProperty('failureDetails');
+  });
+
+  it('keeps a failed attempt that a retry later won out of the groups', () => {
+    const data = runStage([
+      failedEnd(0, exception('transient')),
+      { Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Task Info': { Index: 0, 'Task ID': 9, 'Launch Time': 100, 'Finish Time': 200 }, 'Task Metrics': {} },
+    ]);
+    expect(data.failureGroups).toEqual([]);
+  });
+
+  it('stops adding distinct errors at 50 per stage; later ones still count as failed tasks', () => {
+    const data = runStage(Array.from({ length: 60 }, (_, i) => failedEnd(i, exception(`value ${i}`))));
+    expect(data.failedTasks).toBe(60);
+    expect(data.failureGroups).toHaveLength(50);
+  });
+
+  it('ignores a non-string end-reason field instead of dropping the task', () => {
+    const data = runStage([failedEnd(0, { Reason: 'ExceptionFailure', 'Class Name': 42, Description: ['x'] })]);
+    expect(data.failedTasks).toBe(1);
+    expect(data.failureGroups).toEqual([{ reason: 'ExceptionFailure', className: null, message: null, lossReason: null, stackExcerpt: null, count: 1 }]);
+  });
+});
+
 describe('accumulateTask: locality', () => {
   it('aggregates locality counts per stage', () => {
     const s = createState();

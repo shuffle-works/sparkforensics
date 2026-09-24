@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { TaskFailures } from '../../src/view/widgets/TaskFailures';
@@ -72,6 +72,31 @@ describe('TaskFailures', () => {
     render_(catalog);
     expect(screen.getByText('Investigate driver logs for stage 1.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /confidence|evidence|task detail/i })).not.toBeInTheDocument();
+  });
+
+  it('names the dominant error and shows one stack excerpt per distinct failure', async () => {
+    const user = userEvent.setup();
+    const catalog: Finding[] = [{
+      type: 'failures', stageId: 1, impactBand: 'critical', metric: 'failureRate', value: 30, failedTasks: 9,
+      dominantReason: 'ExceptionFailure', dominantError: 'java.lang.IllegalStateException', otherFailedTasks: 2,
+      failureGroups: [
+        { reason: 'ExceptionFailure', className: 'java.lang.IllegalStateException', message: 'bad row', lossReason: null, count: 5,
+          stackExcerpt: 'java.lang.IllegalStateException: bad row\n\tat com.example.Job.run(Job.scala:10)' },
+        { reason: 'ExecutorLostFailure', className: null, message: null, lossReason: 'Container killed by YARN for exceeding memory limits.', stackExcerpt: null, count: 2 },
+      ],
+    }];
+    const { container } = render_(catalog);
+    await user.click(screen.getByRole('button', { name: 'Failed Tasks' }));
+    expect(screen.getByText('java.lang.IllegalStateException')).toBeInTheDocument();
+    const groups = within(screen.getByRole('list', { name: 'Distinct failures' })).getAllByRole('listitem');
+    expect(groups.map((g) => g.textContent)).toEqual([
+      expect.stringContaining('5 tasks: java.lang.IllegalStateException: bad row'),
+      expect.stringContaining('2 tasks: ExecutorLostFailure: Container killed by YARN for exceeding memory limits.'),
+      '2 more failed tasks not shown',
+    ]);
+    const excerpts = container.querySelectorAll('pre');
+    expect(excerpts).toHaveLength(1);
+    expect(excerpts[0].textContent).toBe('java.lang.IllegalStateException: bad row\n\tat com.example.Job.run(Job.scala:10)');
   });
 
   it('paginates the stage list 6-at-a-time, resetting to page 1 on a fresh appModel', async () => {

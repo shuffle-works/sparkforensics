@@ -8,6 +8,7 @@
 // and non-mutating (returns a fresh, deep-copied tree).
 
 import type { ExportRunData } from './export-data.ts';
+import { redactTaskFailureGroup, type TaskFailureDetail } from './task-failure.ts';
 
 // Host / IP identifier patterns. Used to enumerate host names that surface only
 // inside free text: recommendation strings, `stageFailed`'s failure-reason
@@ -77,6 +78,25 @@ function collectHostFields(node: unknown, hosts: Set<string>): void {
       else collectHostFields(v, hosts);
     }
   }
+}
+
+// A failed-task error's message and stack text can carry file paths and data values that no
+// host/app-id pattern recognizes, so they are dropped rather than pseudonymized: every array under
+// a key named `failureGroups` (a `failures` finding's, or a stage's in the HTML export) gets
+// redactTaskFailureGroup applied. Walking by key name, like collectHostFields, needs no path list.
+// Returns a fresh tree.
+function redactFailureGroups<T>(node: T): T {
+  if (Array.isArray(node)) return node.map((n) => redactFailureGroups(n)) as T;
+  if (node && typeof node === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node)) {
+      out[k] = k === 'failureGroups' && Array.isArray(v)
+        ? v.map((g) => (g && typeof g === 'object' ? redactTaskFailureGroup(g as TaskFailureDetail) : g))
+        : redactFailureGroups(v);
+    }
+    return out as T;
+  }
+  return node;
 }
 
 // Spark config keys ending in `host`/`hostname` (e.g. spark.driver.host,
@@ -172,7 +192,8 @@ function applyReplacements<T>(node: T, ids: { appIds?: Set<string>; hosts: Set<s
   return deepReplace(node, merged) as T;
 }
 
-export function redactReport<T extends RedactableReport>(report: T): T {
+export function redactReport<T extends RedactableReport>(input: T): T {
+  const report = redactFailureGroups(input);
   const { appIds, hosts } = collectIds(report);
   return applyReplacements(report, { appIds, hosts });
 }
@@ -216,7 +237,8 @@ export function redactComparison<T>(comparison: T): T {
 // this also walks executors.added/removed for their literal `host` field
 // (ExecutorAddedEvent.host), since raw executor records: not just findings
 //: reach data.js.
-export function redactExportData(data: ExportRunData): ExportRunData {
+export function redactExportData(input: ExportRunData): ExportRunData {
+  const data = redactFailureGroups(input);
   const appIds = new Set<string>();
   const hosts = new Set<string>();
   const appId = data.app?.id;

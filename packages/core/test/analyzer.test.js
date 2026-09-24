@@ -438,6 +438,36 @@ describe('analyze: failed task rate', () => {
     expect(analyze(makeApp(), stages, [], []).find(b => b.type === 'failures').dominantReason).toBe('FetchFailed');
   });
 
+  it('names the dominant error from the largest group under the dominant tag, with up to 5 groups', () => {
+    const group = (reason, extra, count) => ({ reason, className: null, message: null, lossReason: null, stackExcerpt: null, ...extra, count });
+    const failureGroups = [
+      group('ExecutorLostFailure', { lossReason: 'Container killed by YARN for exceeding memory limits.' }, 6),
+      ...Array.from({ length: 6 }, (_, i) => group('ExceptionFailure', { className: 'java.lang.ArithmeticException', message: `row ${i}` }, 2)),
+    ];
+    const stages = new Map([[1, makeStage({
+      taskCount: 100, failedTasks: 20,
+      failureReasons: [{ reason: 'ExecutorLostFailure', count: 6 }, { reason: 'ExceptionFailure', count: 12 }],
+      failureGroups,
+    })]]);
+    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'failures');
+    expect(b.dominantReason).toBe('ExceptionFailure');
+    expect(b.dominantError).toBe('java.lang.ArithmeticException');
+    expect(b.recommendation).toContain('(dominant error: java.lang.ArithmeticException)');
+    expect(b.failureGroups).toEqual(failureGroups.slice(0, 5));
+    expect(b.otherFailedTasks).toBe(20 - (6 + 4 * 2));
+  });
+
+  it('names an executor loss by its loss reason', () => {
+    const stages = new Map([[1, makeStage({
+      taskCount: 100, failedTasks: 10,
+      failureReasons: [{ reason: 'ExecutorLostFailure', count: 10 }],
+      failureGroups: [{ reason: 'ExecutorLostFailure', className: null, message: null, lossReason: 'Executor heartbeat timed out', stackExcerpt: null, count: 10 }],
+    })]]);
+    const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'failures');
+    expect(b.dominantError).toBe('ExecutorLostFailure: Executor heartbeat timed out');
+    expect(b.otherFailedTasks).toBe(0);
+  });
+
   it('dominantReason is null when failureReasons is empty', () => {
     const stages = new Map([[1, makeStage({ taskCount: 100, failedTasks: 10 })]]);
     expect(analyze(makeApp(), stages, [], []).find(b => b.type === 'failures').dominantReason).toBeNull();

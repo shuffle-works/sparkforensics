@@ -1,4 +1,5 @@
 import type { FailedTaskSample } from './event-handlers.ts';
+import type { TaskFailureDetail, TaskFailureGroup } from './task-failure.ts';
 
 // Single source of truth for the packed per-task numeric array: FIELDS (offset
 // constants), TASK_FIELD_NAMES (display labels), and the finalizeStage hot-loop
@@ -74,6 +75,8 @@ export function finalizeStage(
   const executorStats = new Map();
   const failureReasons = new Map();
   const failedTaskSamples: FailedTaskSample[] = [];
+  // Keyed by the interned detail object: accumulateTask shares one per distinct failure.
+  const failureGroups = new Map<TaskFailureDetail, number>();
   const localityStats = new Map();
   let peakExecutionMemoryMax = 0;
 
@@ -82,6 +85,8 @@ export function finalizeStage(
     if (t.failed) {
       failedTasks++;
       if (t.reason) failureReasons.set(t.reason, (failureReasons.get(t.reason) ?? 0) + 1);
+      const failure = (t as unknown as { failure?: TaskFailureDetail | null }).failure;
+      if (failure) failureGroups.set(failure, (failureGroups.get(failure) ?? 0) + 1);
       if (failedTaskSamples.length < MAX_TASK_SAMPLES) {
         failedTaskSamples.push({
           taskId: t.taskId, attemptNumber: t.attemptNumber, host: t.host, executorId: t.executorId,
@@ -125,6 +130,7 @@ export function finalizeStage(
   stage.failedTasks = failedTasks;
   stage.speculativeTasks = speculativeTasks;
   stage.taskAttempts = null; // no longer needed after finalize, freeing memory
+  stage.failureDetails = null;
 
   const arr = new Float64Array(buf);
   state.taskStore.set(stageId, arr);
@@ -164,6 +170,10 @@ export function finalizeStage(
   const failureReasonsArr = [...failureReasons.entries()].map(
     ([reason, count]) => ({ reason, count })
   );
+  // Most frequent first; ties keep first-seen order (Array.prototype.sort is stable).
+  const failureGroupsArr: TaskFailureGroup[] = [...failureGroups.entries()]
+    .map(([detail, count]) => ({ ...detail, count }))
+    .sort((a, b) => b.count - a.count);
   const localityStatsArr = [...localityStats.entries()].map(
     ([locality, count]) => ({ locality, count })
   );
@@ -173,6 +183,7 @@ export function finalizeStage(
     hostStats: hostStatsArr, executorStats: executorStatsArr, failureReasons: failureReasonsArr, localityStats: localityStatsArr, stragglerCount, stragglerExcessMs, longestNonStragglerMs,
     tailReplayRecoveryMs,
     failedTaskSamples,
+    failureGroups: failureGroupsArr,
     peakExecutionMemoryMax,
     taskActiveMs: computeTaskActiveMs(arr),
     peakConcurrentTasks,
@@ -187,6 +198,7 @@ export function finalizeStage(
     stageType: acc.shuffleReadBytes > 0 ? 'REDUCE' : 'MAP',
   };
   delete data.taskAttempts; // internal-only field, already nulled above; never part of the public message
+  delete data.failureDetails; // internal-only intern table, summarized by failureGroups
 
   return { type: 'stage', data };
 }

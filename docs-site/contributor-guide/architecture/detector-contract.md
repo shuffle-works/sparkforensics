@@ -332,6 +332,25 @@ Both sample arrays are capped at 20 entries, filled in first-encountered
 order (finalize order for `failedTaskDetails`, discard order for
 `retriedTaskDetails`), not spread across distinct hosts/executors: a stage
 with failures clustered on one bad host could fill the cap before a more
-informative failure elsewhere in the stage is ever sampled. This is the
-first evidence-shape documentation in this file; no other finding type has
-one yet.
+informative failure elsewhere in the stage is ever sampled.
+
+#### Evidence fields (`failures`)
+
+- `dominantReason`: the most frequent end-reason tag (`ExceptionFailure`,
+  `ExecutorLostFailure`, ...) among tasks still failed at finalize.
+- `dominantError`: the error behind that tag, from its largest failure group:
+  the exception class, or `<tag>: <loss reason>`; falls back to the tag. The
+  recommendation names it and never embeds a message.
+- `failureGroups`: up to 5 `TaskFailureGroup`s (`reason`, `className`,
+  `message`, `lossReason`, `stackExcerpt`, `count`), most frequent first: one
+  group per distinct tag, class, message and loss reason, one excerpt each.
+- `otherFailedTasks`: failed tasks that no shown group covers.
+
+`packages/core/src/task-failure.ts` reads the details from `Task End Reason`
+(`Class Name`, `Description`, `Full Stack Trace`, `Loss Reason`, FetchFailed
+`Message`, `Kill Reason`) and bounds them at ingest: a message or loss reason
+to its first line, 300 characters; an excerpt to the header, 8 frames and the
+last `Caused by:` line, 2000 characters in all. While parsing, a stage keeps at
+most 50 distinct failures (`StageRecord.failureDetails`, freed at finalize);
+later ones count only toward the tag. Redaction (`redact.ts`) replaces every
+`failureGroups[].message` and strips message text from `stackExcerpt`.

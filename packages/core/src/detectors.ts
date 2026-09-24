@@ -6,6 +6,7 @@ import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
 import { estimateSingleStage, tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type OccupancyStage, type StageOccupancyInfo } from './occupancy.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { cyrb53 } from './string-hash.ts';
+import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort } from './types.ts';
 
 const MB = 1024 * 1024;
@@ -73,6 +74,7 @@ export interface DetectorStage {
   executorStats?: DetectorExecutorStat[];
   executorMetrics: Map<string, DetectorExecutorMetricsSnapshot>;
   failureReasons?: DetectorFailureReason[];
+  failureGroups?: TaskFailureGroup[];
   localityStats?: DetectorLocalityStat[];
   stragglerCount: number;
   stragglerExcessMs?: number;
@@ -1206,7 +1208,7 @@ export const DETECTORS: Detector[] = [
     },
   },
   {
-    type: 'failures', scope: 'stage', order: 40, fixEffort: 'code', version: 1,
+    type: 'failures', scope: 'stage', order: 40, fixEffort: 'code', version: 2,
     docAnchor: '#bottleneck-failures',
     thresholds: { minTasks: 10, warnRate: 0.05, critRate: 0.20 },
     detect(
@@ -1219,13 +1221,25 @@ export const DETECTORS: Detector[] = [
       if (failureRate <= this.thresholds.warnRate) return null;
       const value = Math.round(failureRate * 1000) / 10;
       const dominantReason = pickDominantReason(stage.failureReasons);
+      // Groups arrive most frequent first. Name the dominant error from the largest group under the
+      // dominant tag, so the error and the tag agree even when one tag splits into many messages.
+      const allGroups = stage.failureGroups ?? [];
+      const dominantGroup = allGroups.find((g) => g.reason === dominantReason);
+      const dominantError = (dominantGroup ? describeTaskFailure(dominantGroup) : null) ?? dominantReason;
+      const failureGroups = allGroups.slice(0, MAX_FAILURE_GROUPS);
+      const groupedTasks = failureGroups.reduce((sum, g) => sum + g.count, 0);
       return {
         type: 'failures', stageId: stage.id,
         impactBand: failureRate > this.thresholds.critRate ? 'critical' : 'warning',
         metric: 'failureRate', value,
         failedTasks: stage.failedTasks,
         dominantReason,
-        recommendation: `${value}% of tasks failed${dominantReason ? ` (dominant reason: ${dominantReason})` : ''}: investigate driver logs for executor instability or data-driven errors.`,
+        dominantError,
+        // One entry per distinct error (tag, class, message, loss reason), each with one bounded
+        // stack excerpt; otherFailedTasks counts the failed tasks no shown group covers.
+        failureGroups,
+        otherFailedTasks: Math.max(0, stage.failedTasks - groupedTasks),
+        recommendation: `${value}% of tasks failed${dominantError ? ` (dominant error: ${dominantError})` : ''}: investigate driver logs for executor instability or data-driven errors.`,
       };
     },
   },

@@ -19,6 +19,7 @@ import {
 } from './event-schemas.ts';
 import { assertNever } from './assert-never.ts';
 import { finalizeStage } from './stage-quantiles.ts';
+import { MAX_FAILURE_DETAILS_PER_STAGE, extractTaskFailureDetail, taskFailureKey, type TaskFailureDetail } from './task-failure.ts';
 import { computeRunAggregates } from './run-aggregates.ts';
 import type {
   Job, ExecutorAddedEvent, ExecutorRemovedEvent, PlanNode, SparkAppInfo, EvidenceInputs,
@@ -94,6 +95,9 @@ interface TaskRecord {
   launchTime: number;
   finishTime: number;
   reason: string | null;
+  // Failed attempts only: shared with every other attempt that failed the same way (see
+  // internTaskFailure), null past the per-stage distinct-failure cap.
+  failure: TaskFailureDetail | null;
   speculative: boolean;
   host: string;
   executorId: string;
@@ -136,6 +140,8 @@ interface StageRecord {
   failureReasons: Map<string, number>;
   stageFailureReason: string | null;
   taskAttempts: Map<string | symbol, TaskRecord> | null;
+  // Distinct failures seen so far, by taskFailureKey; freed with taskAttempts at finalize.
+  failureDetails: Map<string, TaskFailureDetail> | null;
   retryTaskSamples: FailedTaskSample[];
   retryWasteMs: number;
   wastedAttempts: number;
@@ -485,6 +491,19 @@ function taskRecordToSample(t: TaskRecord): FailedTaskSample {
   };
 }
 
+// One shared detail object per distinct failure, so a stage with thousands of failed attempts
+// holds each bounded stack excerpt once. Past the cap an attempt keeps only its reason tag.
+function internTaskFailure(stage: StageRecord, endReason: Record<string, unknown> | undefined): TaskFailureDetail | null {
+  const detail = extractTaskFailureDetail(endReason);
+  if (!detail || !stage.failureDetails) return null;
+  const key = taskFailureKey(detail);
+  const known = stage.failureDetails.get(key);
+  if (known) return known;
+  if (stage.failureDetails.size >= MAX_FAILURE_DETAILS_PER_STAGE) return null;
+  stage.failureDetails.set(key, detail);
+  return detail;
+}
+
 export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state: ParserState): null {
   const stageId = event['Stage ID'];
   const stage = state.stages.get(stageId);
@@ -521,6 +540,7 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
     launchTime: info['Launch Time'] ?? 0,
     finishTime: info['Finish Time'] ?? 0,
     reason: event['Task End Reason']?.['Reason'] ?? null,
+    failure: failed ? internTaskFailure(stage, event['Task End Reason']) : null,
     speculative: info['Speculative'] === true,
     host: info['Host'] ?? '',
     executorId: info['Executor ID'] ?? '',
@@ -802,6 +822,7 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
     failureReasons: new Map(),
     stageFailureReason: null,
     taskAttempts: new Map(),
+    failureDetails: new Map(),
     retryTaskSamples: [],
     retryWasteMs: 0,
     wastedAttempts: 0,
