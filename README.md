@@ -26,10 +26,9 @@ turns them into findings.
 
 ## Why SparkForensics
 
-- No install: it's a static web app. Drop a log file and read the
-  dashboard; nothing is uploaded anywhere. An optional local-server mode
-  adds a small Node companion for when a Spark History Server blocks
-  direct browser fetches with CORS.
+- Your data stays on your machine. Drop a log file and read the
+  dashboard; nothing is uploaded anywhere. Local-server mode adds a small
+  Node companion that can also pull runs from a Spark History Server.
 - Event logs are streamed and parsed off the main thread in a Web Worker,
   so a 240MB+ (or multi-GB) NDJSON log doesn't freeze the tab.
 - About 25 built-in detectors cover skew, shuffle, spill, GC
