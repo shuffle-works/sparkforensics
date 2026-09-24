@@ -166,8 +166,8 @@ bands, types, or a stage (`--impact`/`--type`/`--stage`). Run it with
 
 Four more keys, `inputBytes`, `outputBytes`, `taskCount` and
 `executorsAdded`, measure workload volume rather than performance. They have
-no better or worse direction, so a regression budget on one of them always
-reports `inconclusive`.
+no better or worse direction, so a regression budget on one of them reports
+`inconclusive` whenever the value changes, and passes when it doesn't.
 
 Same caveat as above: if the History Server is only reachable through an SSH
 bastion, `--shs-base-url` can't reach it either: see
