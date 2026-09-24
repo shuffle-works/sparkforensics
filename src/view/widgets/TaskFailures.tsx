@@ -7,6 +7,7 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { formatTaskFailureHeadline, type TaskFailureGroup } from '@sparkforensics/core/task-failure.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
@@ -22,8 +23,33 @@ function hasStage(f: Finding): f is Finding & { stageId: number } {
   return f.stageId != null;
 }
 
+// One entry per distinct error, each with its bounded stack excerpt (task-failure.ts).
+function FailureGroupList({ groups, otherFailedTasks }: { groups: TaskFailureGroup[]; otherFailedTasks: number }) {
+  if (groups.length === 0) return null;
+  return (
+    <ul className="space-y-2" aria-label="Distinct failures">
+      {groups.map((g, i) => (
+        <li key={i} className="flex flex-col gap-1">
+          <p className="text-xs text-muted-foreground">
+            {g.count} task{g.count === 1 ? '' : 's'}: <strong className="break-words">{formatTaskFailureHeadline(g)}</strong>
+          </p>
+          {g.stackExcerpt ? (
+            <pre className="max-h-40 overflow-auto rounded-md bg-muted p-2 text-xs whitespace-pre">{g.stackExcerpt}</pre>
+          ) : null}
+        </li>
+      ))}
+      {otherFailedTasks > 0 ? (
+        <li className="text-xs text-muted-foreground">
+          {otherFailedTasks} more failed task{otherFailedTasks === 1 ? '' : 's'} not shown
+        </li>
+      ) : null}
+    </ul>
+  );
+}
+
 function TaskFailureRow({ finding }: { finding: Finding & { stageId: number } }) {
   const anchor = useAnchoredRow([finding]);
+  const dominantError = (finding.dominantError as string | null | undefined) ?? (finding.dominantReason as string | null | undefined);
   return (
     <li
       ref={anchor.ref}
@@ -37,8 +63,12 @@ function TaskFailureRow({ finding }: { finding: Finding & { stageId: number } })
       </div>
       <p className="text-xs text-muted-foreground">
         Failure rate: <strong>{finding.value}%</strong> ({String(finding.failedTasks)} tasks) &middot; Dominant
-        reason: <strong>{(finding.dominantReason as string | null | undefined) ?? '—'}</strong>
+        error: <strong className="break-words">{dominantError ?? '—'}</strong>
       </p>
+      <FailureGroupList
+        groups={(finding.failureGroups as TaskFailureGroup[] | undefined) ?? []}
+        otherFailedTasks={(finding.otherFailedTasks as number | undefined) ?? 0}
+      />
       <ImpactEstimate finding={finding} />
       {finding.recommendation ? <p className="text-xs text-muted-foreground">{finding.recommendation}</p> : null}
     </li>

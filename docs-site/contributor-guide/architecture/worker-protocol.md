@@ -203,6 +203,13 @@ tokens. So identifiers that surface only in free text (recommendation copy, a
 uses a numeric-aware sort, so re-redacting an already-redacted report is a
 no-op even past `host-10`.
 
+Failed-task error text is dropped rather than pseudonymized, since a message
+or stack trace can carry file paths and data values that no host pattern
+matches: every array under a key named `failureGroups` has its `message`
+replaced and the message text stripped from its `stackExcerpt`
+(`redactTaskFailureGroup` in `task-failure.ts`). That covers the evidence
+report and both the findings and the stage records of the HTML export.
+
 The Markdown rendering mirrors the JSON's AC3 field set: each finding block
 prints its `detector version`, its sorted `evidence` entries (byte-magnitude
 keys humanized), and the report ends with a `## Detectors` catalog carrying the

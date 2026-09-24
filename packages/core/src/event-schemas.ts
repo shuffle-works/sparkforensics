@@ -238,6 +238,14 @@ export const TaskEndEventSchema = z.object({
   'Stage Attempt ID': z.number().optional(),
   'Task End Reason': z.object({
     Reason: z.string().optional(),
+    // The error behind a failed attempt, read by extractTaskFailureDetail (task-failure.ts), which
+    // keeps only string values: unknown here so an unexpected shape drops the detail, never the task.
+    'Class Name': z.unknown().optional(),
+    Description: z.unknown().optional(),
+    'Full Stack Trace': z.unknown().optional(),
+    'Loss Reason': z.unknown().optional(),
+    Message: z.unknown().optional(),
+    'Kill Reason': z.unknown().optional(),
   }).optional(),
   'Task Info': z.object({
     'Launch Time': z.number().optional(),

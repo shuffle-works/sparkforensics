@@ -242,6 +242,36 @@ describe('buildEvidenceReport', () => {
     expect(slow.recommendation).not.toContain(badHost);
   });
 
+  describe('failures finding', () => {
+    const failingFixture = () => {
+      const fx = fixture();
+      fx.stages.set(7, makeStage({
+        id: 7, taskCount: 100, failedTasks: 30,
+        failureReasons: [{ reason: 'ExceptionFailure', count: 30 }],
+        failureGroups: [{
+          reason: 'ExceptionFailure', className: 'java.lang.NumberFormatException', count: 30, lossReason: null,
+          message: 'For input string: "4111-1111"',
+          stackExcerpt: 'java.lang.NumberFormatException: For input string: "4111-1111"\n\tat com.example.Parse.row(Parse.scala:3)',
+        }],
+      }));
+      return fx;
+    };
+
+    it('renders each distinct error with its stack excerpt as a code block', () => {
+      const { markdown } = buildEvidenceReport(failingFixture());
+      expect(markdown).toContain('(dominant error: java.lang.NumberFormatException)');
+      expect(markdown).toContain('    - 30 task(s): java.lang.NumberFormatException: For input string: "4111-1111"');
+      expect(markdown).toContain('          \tat com.example.Parse.row(Parse.scala:3)');
+    });
+
+    it('with { redact:true } leaves no exception message in the JSON or the Markdown', () => {
+      const { markdown, json } = buildEvidenceReport(failingFixture(), { redact: true });
+      expect(JSON.stringify(json)).not.toContain('4111-1111');
+      expect(markdown).not.toContain('4111-1111');
+      expect(markdown).toContain('30 task(s): java.lang.NumberFormatException: [redacted]');
+    });
+  });
+
   describe('actionLabel', () => {
     it('gives every finding row a non-empty actionLabel', () => {
       const { json } = buildEvidenceReport(fixture());

@@ -6,6 +6,7 @@ import { detectorCatalog } from './detectors.ts';
 import { typeTag, formatBytes, formatDuration, IMPACT_BAND_ORDER } from './format-utils.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { redactReport } from './redact.ts';
+import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
 import { coreFindingActionLabel } from './finding-action-label.ts';
 import { matchesFindingFilterCriteria } from './finding-filter-predicate.ts';
 import { buildRecommendationRollup, isEligible, rankFindings, type RollupGroup } from './recommendation-rollup.ts';
@@ -269,6 +270,21 @@ function renderEvidenceValue(key: string, value: unknown): string {
   return String(value);
 }
 
+// The `failures` finding's distinct errors: a headline per group, its stack excerpt as an indented
+// code block (indented, not fenced, so no excerpt content can close it early).
+function renderFailureGroups(groups: TaskFailureGroup[]): string[] {
+  const lines = [`  - failureGroups: ${groups.length}`];
+  for (const g of groups) {
+    lines.push(`    - ${g.count} task(s): ${formatTaskFailureHeadline(g)}`);
+    if (g.stackExcerpt) {
+      lines.push('');
+      for (const l of g.stackExcerpt.split('\n')) lines.push(`          ${l}`);
+      lines.push('');
+    }
+  }
+  return lines;
+}
+
 function formatWallClockRange(low: number, high: number): string {
   const fmtMs = (ms: number) => (ms === 0 ? '0s' : formatDuration(ms));
   return low === high ? `Estimated ${fmtMs(high)}` : `Estimated ${fmtMs(low)}-${fmtMs(high)}`;
@@ -336,7 +352,10 @@ function renderMarkdown(json: EvidenceReportJson): string {
     const evidence = Object.entries(r.evidence ?? {}).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     if (evidence.length) {
       lines.push('- evidence:');
-      for (const [k, v] of evidence) lines.push(`  - ${k}: ${renderEvidenceValue(k, v)}`);
+      for (const [k, v] of evidence) {
+        if (k === 'failureGroups' && Array.isArray(v)) lines.push(...renderFailureGroups(v as TaskFailureGroup[]));
+        else lines.push(`  - ${k}: ${renderEvidenceValue(k, v)}`);
+      }
     }
     lines.push('');
   }

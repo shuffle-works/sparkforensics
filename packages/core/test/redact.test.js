@@ -147,6 +147,50 @@ describe('redactReport', () => {
   });
 });
 
+describe('failure groups', () => {
+  const group = () => ({
+    reason: 'ExceptionFailure', className: 'java.io.FileNotFoundException', count: 3, lossReason: null,
+    message: '/warehouse/customers/part-0007 (No such file)',
+    stackExcerpt: 'java.io.FileNotFoundException: /warehouse/customers/part-0007 (No such file)\n\tat com.example.Load.open(Load.scala:9)',
+  });
+  const expectScrubbed = (g) => {
+    expect(g.message).toBe('[redacted]');
+    expect(g.stackExcerpt).toBe('java.io.FileNotFoundException\n\tat com.example.Load.open(Load.scala:9)');
+    expect(g.className).toBe('java.io.FileNotFoundException');
+  };
+
+  it('redactReport drops failed-task messages and stack message text from a failures finding', () => {
+    const report = sampleReport();
+    report.findings.push({ id: 'c', type: 'failures', stageId: 6, evidence: { failureGroups: [group()] } });
+    const out = redactReport(report);
+    expectScrubbed(out.findings[2].evidence.failureGroups[0]);
+    expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
+    expect(report.findings[2].evidence.failureGroups[0].message).toContain('/warehouse'); // input untouched
+  });
+
+  it('redactExportData scrubs both the catalog finding and the stage record', () => {
+    const data = {
+      schemaVersion: 1, app: { id: 'application_1690000000000_0001', name: 'n', sparkVersion: '3.5.0', config: {} },
+      stages: [{ id: 1, name: 's', failureGroups: [group()] }], jobs: [], sql: [],
+      executors: { added: [], removed: [] }, runAggregates: null, evidenceAvailability: null,
+      catalog: [{ type: 'failures', stageId: 1, impactBand: 'warning', failureGroups: [group()] }], configFindings: [], skippedLines: 0,
+    };
+    const out = redactExportData(data);
+    expectScrubbed(out.stages[0].failureGroups[0]);
+    expectScrubbed(out.catalog[0].failureGroups[0]);
+    expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
+  });
+
+  it('pseudonymizes a host inside a loss reason, which is kept', () => {
+    const report = sampleReport();
+    report.findings.push({ id: 'c', type: 'failures', stageId: 6, evidence: { failureGroups: [
+      { reason: 'ExecutorLostFailure', className: null, message: null, stackExcerpt: null, count: 1, lossReason: 'Container marked as failed on host: ip-10-5-5-5.ec2.internal' },
+    ] } });
+    const out = redactReport(report);
+    expect(out.findings[2].evidence.failureGroups[0].lossReason).toMatch(/^Container marked as failed on host: host-\d+$/);
+  });
+});
+
 describe('redactAppIdentity', () => {
   it('pseudonymizes a non-empty app id', () => {
     const out = redactAppIdentity({ id: 'application_0000000000000_0001', name: 'nightly-etl', sparkVersion: '3.4.0' });
