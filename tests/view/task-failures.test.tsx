@@ -99,6 +99,24 @@ describe('TaskFailures', () => {
     expect(excerpts[0].textContent).toBe('java.lang.IllegalStateException: bad row\n\tat com.example.Job.run(Job.scala:10)');
   });
 
+  it('uses singular wording for a one-task group and one hidden task, and omits the hidden line when none are hidden', async () => {
+    const user = userEvent.setup();
+    const group = { reason: 'ExceptionFailure', className: 'java.lang.IllegalStateException', message: 'bad row', lossReason: null, stackExcerpt: null, count: 1 };
+    const catalog: Finding[] = [
+      { type: 'failures', stageId: 1, impactBand: 'critical', metric: 'failureRate', value: 30, failedTasks: 2,
+        dominantReason: 'ExceptionFailure', otherFailedTasks: 1, failureGroups: [group] },
+      { type: 'failures', stageId: 2, impactBand: 'critical', metric: 'failureRate', value: 20, failedTasks: 1,
+        dominantReason: 'ExceptionFailure', failureGroups: [group] },
+    ];
+    render_(catalog);
+    await user.click(screen.getByRole('button', { name: 'Failed Tasks' }));
+    const lists = screen.getAllByRole('list', { name: 'Distinct failures' });
+    expect(lists.map((l) => within(l).getAllByRole('listitem').map((g) => g.textContent))).toEqual([
+      ['1 task: java.lang.IllegalStateException: bad row', '1 more failed task not shown'],
+      ['1 task: java.lang.IllegalStateException: bad row'],
+    ]);
+  });
+
   it('paginates the stage list 6-at-a-time, resetting to page 1 on a fresh appModel', async () => {
     const user = userEvent.setup();
     const catalog: Finding[] = Array.from({ length: 8 }, (_, i) => ({
