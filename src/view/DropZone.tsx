@@ -476,7 +476,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
         <p className="text-sm text-muted-foreground">Drop an event log file here, or choose a file below.</p>
         <p className="mt-1 max-w-xl text-xs text-muted-foreground">
           Accepts a Spark event log file: newline-delimited JSON, one event per line, optionally
-          gzip/Zstandard/LZ4/Snappy-compressed.
+          gzip/Zstandard/LZ4/Snappy-compressed, or the .zip a Spark History Server download returns.
         </p>
       </div>
 

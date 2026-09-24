@@ -15,7 +15,10 @@ load a bundled example run and see a populated dashboard right away.
 
 The app takes a newline-delimited JSON event log (one JSON event per line,
 the format Spark writes to `spark.eventLog.dir`), either plain or
-gzip/Zstandard/LZ4/Snappy-compressed.
+gzip/Zstandard/LZ4/Snappy-compressed. It also takes the zip a Spark History
+Server hands back, from the Spark UI's download link or from `GET
+/api/v1/applications/<appId>/logs`, as-is: drop the `.zip` and the app
+unwraps the log inside it, or reassembles the parts of a rolling log.
 
 Click **Other sources** on the landing page for two more ways in:
 
@@ -32,11 +35,6 @@ Click **Other sources** on the landing page for two more ways in:
 
 Can't reach the History Server directly (it's only reachable through an SSH
 bastion)? See [Alternative ways to get the logs](./alternative-log-retrieval).
-
-A History Server export needs one manual step. `GET
-/api/v1/applications/<appId>/logs` hands back a zip, and the drop zone does
-not unwrap zip containers. Extract the `.zstd` event log from that zip
-yourself and drop the extracted file in. It needs no further decompressing.
 
 Files you have already loaded stay listed under **Recent files** on the
 landing page.

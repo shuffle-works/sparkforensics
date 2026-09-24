@@ -47,8 +47,9 @@ so fzstd and the NDJSON parser run at the same time. On the largest real log,
 fzstd had been about 47% of the parse worker's time. The parse worker starts it
 on the first zstd file and reuses it for the rest of the parse. It dies with
 the parse worker, so the page's `terminate()` also cancels it. Other codecs and
-the SHS path (`parseFromUrl`, which decodes whole zip entries synchronously)
-still decompress on the parse worker.
+the SHS path (`parseFromUrl`) still decompress on the parse worker. A dropped
+History Server zip (`parse`) streams its zstd entries through the decompress
+worker too.
 
 `packages/core/src/zstd-worker-client.ts` is the parse-worker end: it plugs into
 `streamFile` as the `zstdDecoder` option, like the Node CLI's native decoder.
