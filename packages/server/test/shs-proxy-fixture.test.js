@@ -23,9 +23,8 @@ function listen(opts) {
   return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
 }
 
-// dev/log-corpus is a git submodule (private repo). CI doesn't fetch submodules
-// and its token can't auth against a different private repo, so this suite is
-// always skipped in CI. Locally: `git submodule update --init dev/log-corpus`.
+// dev/log-corpus is a git submodule (public corpus repo), checked out in CI; this
+// suite skips locally until `git submodule update --init dev/log-corpus`.
 describe.skipIf(!existsSync(FIXTURE_DIR))('SHS proxy against a static corpus fixture (no Docker, no live Spark)', () => {
   it('streams a real event log through /shs-proxy as a valid ZIP', async () => {
     const ndjson = firstBaselineFixture();
