@@ -3,7 +3,7 @@
 Every flagged problem carries a short ALL-CAPS tag. This page has one entry
 per tag: what it means, and what to do about it.
 
-Turn on [Advanced view](./getting-started#advanced-view) in the dashboard to
+Turn on [Advanced view](./getting-started.md#advanced-view) in the dashboard to
 see, per finding, the confidence level and a link to the same background
 reading collected here, opened in an in-app "Reference" panel next to the
 board. A few tags share that reading with another tag, because the

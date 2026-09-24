@@ -23,7 +23,7 @@ store's setters directly (`setParse`, `setCatalog`, `setStatus`,
 every new parse or reset-to-drop-zone, and bumps `modelResetCount`. That
 counter has no setter of its own; only `PlanGraphRoute.tsx`'s `store.subscribe`
 reads it, to evict the plan-graph model memo cache (see
-[Plan graph view](./drill-down#plan-graph-view)).
+[Plan graph view](./drill-down.md#plan-graph-view)).
 
 ### Finding filter state
 

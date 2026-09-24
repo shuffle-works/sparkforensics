@@ -26,7 +26,7 @@ flagged-stage task data.
 `src/App.tsx` routes on store `status`: idle/error → `DropZone`, parsing → a
 live progress readout, ready → `Dashboard`. `src/view/Dashboard.tsx` and
 `src/view/detector-registry.tsx` replace `dashboard-renderer.js`'s widget board
-(see [Widget rendering](./widget-rendering)).
+(see [Widget rendering](./widget-rendering.md)).
 
 ### Worker (Web Worker, core JS)
 
@@ -52,7 +52,7 @@ Four modules:
 
 Dropped zstd files also run a nested decompress worker, `src/zstd-worker.ts`,
 driven from the parse worker by `src/zstd-worker-client.ts` (see
-[Decompress worker](./worker-protocol#decompress-worker)).
+[Decompress worker](./worker-protocol.md#decompress-worker)).
 
 ## Streaming
 
@@ -66,7 +66,7 @@ When `spark.eventLog.logStageExecutorMetrics=true` (default `false`),
 `SparkListenerStageExecutorMetrics` events populate
 `stage.executorMetrics: Map<execId, {...}>` with the 23 raw peak-memory/GC
 fields verbatim (camelCased), consumed by the `memoryUtilization` detector's
-per-executor memory bands (see [Memory Utilization](./board-widgets)).
+per-executor memory bands (see [Memory Utilization](./board-widgets.md)).
 
 These events can arrive *after* `SparkListenerStageCompleted` for the same
 stage, so the per-stage `StageAggregate` message posted at completion time
@@ -85,7 +85,7 @@ block-by-block (fflate `Gunzip` / fzstd `Decompress` / the LZ4Block decoder /
 the Snappy block decoder) to keep one decompressed chunk live at a time.
 In the browser, a dropped zstd file decompresses in a second worker while the
 parse worker parses earlier output, with a three-slice window bounding what is
-queued between them (see [Decompress worker](./worker-protocol#decompress-worker)).
+queued between them (see [Decompress worker](./worker-protocol.md#decompress-worker)).
 The Node CLI/MCP paths (`collectRun` for local files, `shs-load.ts` for SHS
 archives) swap fzstd for Node's native zlib zstd where the running Node has it
 (22.15+/23.8+), through the `zstdDecoder` option of `runParse`/`decodeShsArchive`: `packages/core/src/cli/native-zstd.ts` decompresses one frame at a

@@ -9,8 +9,10 @@ npm install
 npm run dev
 ```
 
-Drop a file from `examples/` (or a real Spark event log) onto the running
-dev server to try changes live.
+Drop a Spark event log onto the running dev server to try changes live, or
+click **Try a sample run** on the landing page to load the bundled sample.
+Public event logs are also in the `dev/log-corpus` submodule
+(`git submodule update --init dev/log-corpus`).
 
 ## Before opening a PR
 
@@ -37,9 +39,10 @@ npm run test:server
 
 ## Scope notes
 
-- All of `src/` is TypeScript, except the two vendored third-party
-  decompressors `src/vendor/fflate.js` and `src/vendor/fzstd.js`, which stay
-  plain JS. See the
+- All of `src/` (the browser app) and `packages/core/src/` (shared analysis
+  logic) is TypeScript, except the two vendored third-party decompressors
+  `packages/core/src/vendor/fflate.js` and `packages/core/src/vendor/fzstd.js`,
+  which stay plain JS. See the
   [detector roster](docs-site/contributor-guide/architecture/detector-contract.md),
   [worker protocol](docs-site/contributor-guide/architecture/worker-protocol.md),
   and [render sequence](docs-site/contributor-guide/architecture/widget-rendering.md)

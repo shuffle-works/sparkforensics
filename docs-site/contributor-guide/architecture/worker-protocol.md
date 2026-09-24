@@ -13,7 +13,7 @@ Worker to main:
 - `runAggregates`: one whole-run core-time-series summary (busy-core-ms, peak
   concurrency, per-stage task-duration sums), emitted just before `done`.
 - `stageExecutorMetrics`: the post-completion re-post described in
-  [Streaming](./overview#streaming), also emitted just before `done`.
+  [Streaming](./overview.md#streaming), also emitted just before `done`.
 - `done`, `taskData`, `error`.
 
 A History Server failure is always the typed, display-safe payload
@@ -226,7 +226,7 @@ surface grew. A future reader who notices `impactEstimate` in the JSON without a
 looking at this deliberate call, not an oversight.
 
 2026-08-30 update: `EVIDENCE_SCHEMA_VERSION` was bumped to `2` for the occupancy-weighted
-attribution redesign (see [Occupancy-weighted attribution](./impact-estimation#occupancy-weighted-attribution)):
+attribution redesign (see [Occupancy-weighted attribution](./impact-estimation.md#occupancy-weighted-attribution)):
 `ImpactEstimate`'s shape changed from `{low, high}` to `{basis, wallClock, estimateMethod,
 rawWaste?}`, a real, non-additive breaking change to a field this same Decision 9 previously
 shipped without a bump. `impactEstimate` had zero consumers outside `packages/core/src/impact-estimator.ts`
@@ -240,7 +240,7 @@ columns (`id`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendati
 `detectorVersion`, plus optional but pinned `confidence`, `validationRequired`, `docAnchor`)
 without displacing any of them; byte-for-byte deserializability of existing reports is
 preserved. `FindingRow.impactEstimate` carries the full contract documented in
-[Impact estimation](./impact-estimation#occupancy-weighted-attribution) (basis, wallClock,
+[Impact estimation](./impact-estimation.md#occupancy-weighted-attribution) (basis, wallClock,
 estimateMethod, rawWaste).
 
 2026-09-03 update: the "Fix These First" dashboard redesign (impact-ranked recommendation

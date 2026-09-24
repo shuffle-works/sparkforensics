@@ -5,14 +5,17 @@ Clone the repo, then:
 ```bash
 git submodule update --init dev/log-corpus   # or: git clone --recurse-submodules
 npm install
-npm test              # vitest run: the full unit/component suite
+npm test              # vitest run: the root suite (site app and dev tooling)
 npm run test:watch    # vitest, watch mode
+npm run test:core     # packages/core's suite: detectors, analyzer, parser, MCP tools
+npm run test:cli      # packages/cli's suite (packs and spawns the real tarball)
+npm run test:mcp      # packages/mcp's suite (packs and spawns the real tarball)
 npm run dev           # Vite dev server for the app itself
 npm run build         # production build, outputs dist/
 npm run preview       # serves dist/ locally
-npx tsc --noEmit      # typecheck (strict TypeScript across src/)
+npx tsc --noEmit      # typecheck (strict TypeScript across src/ and packages/core/src/)
 npm run lint          # eslint over the repo
-node packages/cli/bin/sparkforensics-analyze.mjs <file|dir>   # run the CLI analyzer against a log, outside the browser
+node packages/cli/bin/sparkforensics-analyze.mjs <file|rolling-log-dir>   # run the CLI analyzer against a log, outside the browser
 ```
 
 `npm install` also runs the `prepare` script, which points git at
@@ -48,15 +51,17 @@ it sits at the pinned commit with no uncommitted `content/` changes.
 `git submodule update` step above, `packages/server/test/shs-proxy-fixture.test.js`
 will report as skipped rather than failed, which is expected, not a bug.
 
-The `server/` package (the optional local-server deploy mode) keeps its own
-dependencies and test suite. Run them separately:
+The `packages/server/` package (the optional local-server deploy mode) keeps
+its own dependencies and test suite. Run it from the repo root: a second
+`npm install` inside `packages/server` prunes the shared root
+`node_modules`'s workspace symlinks.
 
 ```bash
-npm run test:server   # runs server/'s own suite, not part of `npm test`
+npm run test:server   # runs packages/server's own suite, not part of `npm test`
 ```
 
-Packing or releasing `server/` builds the docs site for you: its `prepack`
-runs `scripts/copy-frontend.js`, which runs the root `npm run build`
+Packing or releasing `packages/server/` builds the docs site for you: its
+`prepack` runs `packages/server/scripts/copy-frontend.js`, which runs the root `npm run build`
 (`docs:build` included), so the packed artifact always ships `/docs/`.
 
 This docs site has its own dev loop:
