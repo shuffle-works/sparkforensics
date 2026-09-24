@@ -1,0 +1,36 @@
+{
+  "name": "sparkforensics",
+  "version": "0.2.4",
+  "type": "module",
+  "license": "MIT",
+  "description": "Installs the sparkforensics-analyze command from sparkforensics-cli: analyze Apache Spark event logs for skew, spill, GC pressure, stragglers, and more.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shuffle-works/sparkforensics.git"
+  },
+  "bugs": {
+    "url": "https://github.com/shuffle-works/sparkforensics/issues"
+  },
+  "homepage": "https://github.com/shuffle-works/sparkforensics#readme",
+  "keywords": [
+    "apache-spark",
+    "spark",
+    "spark-history-server",
+    "cli",
+    "performance",
+    "diagnostics",
+    "event-log"
+  ],
+  "bin": {
+    "sparkforensics-analyze": "bin/sparkforensics-analyze.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "bin/"
+  ],
+  "dependencies": {
+    "sparkforensics-cli": "^0.2.4"
+  }
+}

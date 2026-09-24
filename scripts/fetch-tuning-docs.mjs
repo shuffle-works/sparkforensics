@@ -84,7 +84,7 @@ export function isLocalOnlyEntry(name) {
 // regenerate instead of passing as fresh.
 export const TRANSFORM_VERSION = 1;
 export const OVERRIDE_ENV = 'SPARK_TUNING_REFERENCE_DIR';
-const CHANGESET_PACKAGES = ['sparkforensics', 'sparkforensics-cli', 'sparkforensics-mcp', 'sparkforensics-server'];
+const CHANGESET_PACKAGES = ['sparkforensics-web', 'sparkforensics-cli', 'sparkforensics-mcp', 'sparkforensics-server'];
 const GIT_TIMEOUT_MS = 120_000;
 // Longer than a worst-case fetch (two attempts at GIT_TIMEOUT_MS), so a
 // waiter outlasts a slow holder rather than failing beside it.
