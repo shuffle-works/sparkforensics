@@ -12,17 +12,13 @@ npx sparkforensics-server
 ```
 
 Open `http://127.0.0.1:4173` and drop a log in. This is **local-server
-mode**: the package serves the dashboard on localhost only, next to a small
-proxy that fetches runs from a Spark History Server server-to-server. A
-static build can't do that fetch itself, because the browser's CORS policy
-blocks the cross-origin request and there's no server to proxy it. Port and
-environment-variable overrides, and what changes for a static deploy, are
-in the [project README](https://github.com/shuffle-works/sparkforensics#deploy-modes).
+mode**: it also fetches runs from a Spark History Server on your behalf.
+Port and environment-variable overrides, and what changes for a static
+deploy, are in the [project README](https://github.com/shuffle-works/sparkforensics#deploy-modes).
 
 The [hosted demo](https://shuffle-works.github.io/sparkforensics/) runs the
-same dashboard as a static page: everything works there except History
-Server fetching. To work on SparkForensics itself, see [Development
-setup](../contributor-guide/development-setup.md).
+same dashboard but can't fetch from a History Server. To work on
+SparkForensics itself, see [Development setup](../contributor-guide/development-setup.md).
 
 ## Load a run
 
