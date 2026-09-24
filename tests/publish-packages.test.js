@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { failedDependency, recordPublishedTag } from '../scripts/publish-packages.mjs';
+import { PACKAGES, failedDependency, recordPublishedTag } from '../scripts/publish-packages.mjs';
 
 function tempOutputPath() {
   return join(mkdtempSync(join(tmpdir(), 'changesets-output-')), 'out.ndjson');
@@ -47,5 +47,13 @@ describe('failedDependency', () => {
   it('blocks nothing when no package failed', () => {
     const manifest = JSON.parse(readFileSync('packages/analyze/package.json', 'utf8'));
     expect(failedDependency(manifest, new Set())).toBeUndefined();
+  });
+});
+
+describe('published package licenses', () => {
+  // npm always packs a LICENSE at the package root, whatever `files` says, and
+  // MIT asks for the notice to travel with every copy.
+  it.each(PACKAGES)('packages/%s ships the root LICENSE', (pkg) => {
+    expect(readFileSync(`packages/${pkg}/LICENSE`, 'utf8')).toBe(readFileSync('LICENSE', 'utf8'));
   });
 });
