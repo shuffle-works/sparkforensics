@@ -1,8 +1,28 @@
 # Getting started
 
 SparkForensics reads a Spark History Server event log and turns it into a
-dashboard of flagged bottlenecks. No install and no account: open the app in
-a browser and drop a log in.
+dashboard of flagged bottlenecks. No account needed.
+
+## Run it locally
+
+The recommended way to run SparkForensics on your machine is one command,
+with no checkout and no build:
+
+```sh
+npx sparkforensics-server
+```
+
+Open `http://127.0.0.1:4173` and drop a log in. This is **local-server
+mode**: the package serves the dashboard and, beside it, a small proxy that
+lets the app fetch runs from a Spark History Server. It binds to localhost
+only. Port and environment-variable overrides are in the [project
+README](https://github.com/shuffle-works/sparkforensics#deploy-modes).
+
+To try it without installing anything, open the [hosted
+demo](https://shuffle-works.github.io/sparkforensics/) instead. It runs the
+same dashboard as a static page, so everything except History Server
+fetching works. To work on SparkForensics itself, see [Development
+setup](../contributor-guide/development-setup.md).
 
 ## Load a run
 
@@ -28,7 +48,7 @@ Click **Other sources** on the landing page for two more ways in:
   Drop the folder or point the picker at it; the app reassembles its parts
   in order before parsing.
 - **Fetch from Spark History Server**, to pull an application straight from
-  a reachable History Server. This needs **local-server mode** (see below)
+  a reachable History Server. This needs **local-server mode** (see [Run it locally](#run-it-locally))
   and an application ID in one of the forms Spark itself uses:
   `application_<timestamp>_<id>`, `local-<timestamp>`, `app-<id>`,
   `spark-<id>`, or `driver-<id>`. If the fetch fails, the panel names the
@@ -43,21 +63,14 @@ landing page.
 
 ### Local-server mode
 
-The plain browser app can't fetch from a History Server itself: the
-browser's CORS policy blocks a cross-origin request like that, and there's
-no server on the other end to proxy it. Local-server mode adds that server.
-Run it with:
-
-```sh
-npx sparkforensics-server
-```
-
-It listens on `http://127.0.0.1:4173` by default and binds to localhost
-only. Open that URL instead of the static build, and the **Fetch from Spark
-History Server** panel works because requests now go server-to-server. Full
-setup and its port/environment-variable overrides are in the [project
-README](https://github.com/shuffle-works/sparkforensics#readme), which also
-covers what changes for a static (no-server) deploy.
+The static build (the hosted demo, or any plain file server) can't fetch
+from a History Server itself: the browser's CORS policy blocks a
+cross-origin request like that, and there's no server on the other end to
+proxy it. The server started by `npx sparkforensics-server` (see [Run it
+locally](#run-it-locally)) sends those requests server-to-server instead, so
+the **Fetch from Spark History Server** panel works there. The [project
+README](https://github.com/shuffle-works/sparkforensics#deploy-modes) covers
+what changes for a static deploy.
 
 ## Reading the dashboard
 

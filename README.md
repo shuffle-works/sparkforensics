@@ -67,16 +67,22 @@ are enough.
 
 ## Get started
 
+Run the dashboard locally with one command. No checkout, no build:
+
 ```bash
-git clone git@github.com:shuffle-works/sparkforensics.git
-cd sparkforensics
-npm install
-npm run dev
+npx sparkforensics-server
 ```
 
-Open the URL Vite prints and drop a Spark event log onto the page. Rather
-skip the install? Use the [live demo](https://shuffle-works.github.io/sparkforensics/)
-instead.
+Open `http://127.0.0.1:4173` and drop a Spark event log onto the page. The
+server binds to localhost only, and it can also fetch runs straight from a
+Spark History Server (see [Deploy modes](#deploy-modes)).
+
+Nothing to install at all? The [live demo](https://shuffle-works.github.io/sparkforensics/)
+runs the same dashboard in your browser, without History Server fetching.
+
+Working on SparkForensics itself? Clone the repo and run `npm install` then
+`npm run dev`; see [Development](#development) and the [development setup
+guide](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/development-setup).
 
 For a one-shot check with no browser, the kind a CI pipeline can gate on:
 
@@ -97,8 +103,16 @@ Server fetching, baseline comparisons, and redaction.
 
 ### Install and run
 
-Run `npm install` first if you haven't (see [Get started](#get-started)
-above). For a production bundle: `npm run build`, then serve `dist/` with
+From a checkout:
+
+```bash
+git clone git@github.com:shuffle-works/sparkforensics.git
+cd sparkforensics
+npm install
+npm run dev
+```
+
+Open the URL Vite prints. For a production bundle: `npm run build`, then serve `dist/` with
 any static file server. Asset URLs are relative, so the bundle also works
 under a URL subpath.
 

@@ -1,5 +1,9 @@
 # Development setup
 
+This page is for working on SparkForensics itself. To just run the dashboard
+locally, `npx sparkforensics-server` needs no checkout: see [Run it
+locally](../user-guide/getting-started.md#run-it-locally).
+
 Clone the repo, then:
 
 ```bash
