@@ -143,8 +143,8 @@ Example response:
 ## `evaluate_budgets`
 
 Evaluate a run against pass/fail thresholds: the MCP equivalent of the CLI's
-`--max-runtime`/`--max-spill-gb`/etc. budget flags, thin-wrapped over the same
-`evaluateBudgets()` used by `npm run analyze`.
+`--max-runtime`/`--max-spill`/etc. budget flags, thin-wrapped over the same
+`evaluateBudgets()` the `sparkforensics-analyze` CLI uses.
 
 Parameters (all optional):
 
@@ -156,9 +156,10 @@ Parameters (all optional):
   regression budgets can be evaluated. Same `runId`/`source` shape, resolved
   the same way. Omit both to skip regression budgets.
 - `maxRegressionPct`, `regressionMetric`: fail if `regressionMetric` (default
-  `wallClock`; see the CLI docs for the full metric key list) regressed by
-  more than `maxRegressionPct`% between the first run (baseline) and the
-  second run (candidate). Requires `runIdB`/`sourceB`.
+  `wallClock`; see [Regression metric keys](./getting-started.md#regression-metric-keys)
+  for the full list) regressed by more than `maxRegressionPct`% between the
+  first run (baseline) and the second run (candidate). Requires
+  `runIdB`/`sourceB`.
 - `failOnIntroduced`: fail if the second run introduces any finding in the
   given impact band (`"all"` or one of the impact band names). Requires
   `runIdB`/`sourceB`.
@@ -442,7 +443,7 @@ The codes:
 - `upstream-unreachable`: the History Server response stalled mid-body.
   Override the idle timeout with `SPARKFORENSICS_SHS_TIMEOUT_MS`. If the
   server is unreachable entirely (an SSH-only cluster), see
-  [Alternative ways to get the logs](./alternative-log-retrieval).
+  [Alternative ways to get the logs](./alternative-log-retrieval.md).
 - `archive-too-large`: the History Server archive blew the byte cap.
   Override it with `SPARKFORENSICS_MAX_ARCHIVE_BYTES`.
 - `directory-not-found`: `list_runs`'s `dir` doesn't exist or isn't readable.

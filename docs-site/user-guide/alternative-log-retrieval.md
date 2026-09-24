@@ -38,11 +38,11 @@ only reachable from inside a bastion, that request never lands: there's no
 4. Point SparkForensics at the local copy instead of a `shsBaseUrl`:
 
    - Browser: drop the file onto the landing page, same as any other run
-     (see [Getting started](./getting-started)).
+     (see [Getting started](./getting-started.md)).
    - CLI: `npx -p sparkforensics-cli sparkforensics-analyze ./application_XXXX_XXXX` (full flag
-     list in [Getting started](./getting-started#ci-and-automation)).
+     list in [Getting started](./getting-started.md#ci-and-automation)).
    - MCP: call a tool with `{ "source": { "path": "./application_XXXX_XXXX" } }`
-     (tool reference in [MCP tools reference](./mcp-tools)).
+     (tool reference in [MCP tools reference](./mcp-tools.md)).
 
 The file is the app's native input format either way: a single event-log
 file, optionally `.gz`/`.zstd`/`.lz4`/`.snappy`-compressed, or a rolling

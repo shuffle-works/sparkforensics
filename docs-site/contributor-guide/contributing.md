@@ -55,21 +55,20 @@ runs `npm publish` for whichever publishable packages had pending changesets.
 The release workflow publishes through npm Trusted Publishing, which can't
 create a package name that doesn't exist on npmjs.com yet. A new publishable
 package needs one manual publish from a maintainer's npm account first, then
-a Trusted Publisher entry. `sparkforensics-cli`, `sparkforensics-mcp` and
-`sparkforensics-server` are set up. `sparkforensics-analyze` and
-`sparkforensics` need this once, after the PR that adds them merges and before
-the next release run publishes. Until then that run fails at their publish
-step (the other packages still publish).
+a Trusted Publisher entry. All five current packages (`sparkforensics-cli`,
+`sparkforensics-mcp`, `sparkforensics-server`, `sparkforensics-analyze` and
+`sparkforensics`) are already set up; this only applies to a package added
+later. Until it's done, the release run fails at that package's publish step
+(the other packages still publish).
 
-1. From a clean checkout of `main`, logged in with `npm login`, publish each
-   package at the version in its `package.json`:
+1. From a clean checkout of `main`, logged in with `npm login`, publish the
+   new package at the version in its `package.json`:
 
    ```bash
-   (cd packages/analyze && npm publish --access public)
-   (cd packages/sparkforensics && npm publish --access public)
+   (cd packages/<new-package> && npm publish --access public)
    ```
 
-2. On npmjs.com, open each package's **Settings**, add a **Trusted
+2. On npmjs.com, open the package's **Settings**, add a **Trusted
    Publisher** for GitHub Actions with organization `shuffle-works`,
    repository `sparkforensics`, workflow filename `release.yml` and no
    environment, and save.

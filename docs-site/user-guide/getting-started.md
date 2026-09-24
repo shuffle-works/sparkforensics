@@ -36,7 +36,7 @@ Click **Other sources** on the landing page for two more ways in:
   running, and so on) and suggests what to try next.
 
 Can't reach the History Server directly (it's only reachable through an SSH
-bastion)? See [Alternative ways to get the logs](./alternative-log-retrieval).
+bastion)? See [Alternative ways to get the logs](./alternative-log-retrieval.md).
 
 Files you have already loaded stay listed under **Recent files** on the
 landing page.
@@ -65,7 +65,7 @@ When parsing finishes, the dashboard shows a board of widgets, each in its
 own card with a title. Every widget that flags a problem uses the same
 convention: a colored impact dot (critical / warning / info) and an ALL-CAPS
 tag for the bottleneck category (`SKEW`, `SPILL`, `GC`, and so on: see
-[Understanding findings](./understanding-findings)). Widgets list every
+[Understanding findings](./understanding-findings.md)). Widgets list every
 affected stage, not just the worst one. The dot's color tracks how much run
 time the finding could save you rather than how unusual the metric looks, so
 a small-looking anomaly with a big payoff can outrank a dramatic one that
@@ -115,7 +115,7 @@ link and a theme toggle.
 ## Compare two runs
 
 To compare a baseline run against a candidate, say to check whether a tuning
-change helped, see [Run comparison mode](./run-comparison).
+change helped, see [Run comparison mode](./run-comparison.md).
 
 ## CI and automation
 
@@ -132,8 +132,9 @@ npx -p sparkforensics-cli sparkforensics-analyze <file|dir> [--max-runtime ms] [
 The command ships in the `sparkforensics-cli` package. To install it once:
 `npm i -g sparkforensics-cli`, then run `sparkforensics-analyze` directly.
 
-Point it at a single event log or a directory of them. Pass `--out` to also
-write the findings to a file.
+Point it at a single event-log file, or at one run's `eventlog_v2_*`
+rolling-log directory; any other directory is rejected. Output goes to
+stdout; pass `--out <path>` to write it to that file instead.
 
 Pass `--export-html <dir>` to write a self-contained HTML dashboard for the
 run into `<dir>` (which must not already exist or must be empty). Open
@@ -150,9 +151,27 @@ sharing output (`--redact`), and narrowing the findings to certain impact
 bands, types, or a stage (`--impact`/`--type`/`--stage`). Run it with
 `--help` for the full flag list.
 
+### Regression metric keys
+
+`--regression-metric` (and the MCP `evaluate_budgets` tool's
+`regressionMetric`) takes one of these keys; the default is `wallClock`:
+
+- `wallClock`: wall-clock duration
+- `executorRunTime`: summed executor run time
+- `shuffleSpill`: shuffle spill
+- `diskSpill`: disk spill
+- `gcTime`: JVM GC time
+- `taskSkew`: p95 task skew
+- `failedTaskRate`: failed-task rate
+
+Four more keys, `inputBytes`, `outputBytes`, `taskCount` and
+`executorsAdded`, measure workload volume rather than performance. They have
+no better or worse direction, so a regression budget on one of them reports
+`inconclusive` whenever the value changes, and passes when it doesn't.
+
 Same caveat as above: if the History Server is only reachable through an SSH
 bastion, `--shs-base-url` can't reach it either: see
-[Alternative ways to get the logs](./alternative-log-retrieval).
+[Alternative ways to get the logs](./alternative-log-retrieval.md).
 
 Running in Airflow instead of a plain CI pipeline? See
 [sparkforensics-operator](https://github.com/shuffle-works/sparkforensics-operator),
@@ -160,4 +179,4 @@ an Airflow operator that wraps the CLI and acts on the result after each
 Spark job, so you don't have to wire up the call yourself.
 
 Want an AI assistant to diagnose a run directly, without the dashboard or a
-CI gate? See [MCP tools reference](./mcp-tools).
+CI gate? See [MCP tools reference](./mcp-tools.md).
