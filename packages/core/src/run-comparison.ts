@@ -180,13 +180,6 @@ function skewRatios(stages: Stage[]): number[] {
   return out;
 }
 
-// Volume/count metrics, not cost metrics: more or less input/output data, or
-// tasks/executors, isn't inherently better or worse (it may just reflect a
-// differently-sized job), unlike wall-clock, spill, GC, etc. Exported as the
-// single source of truth for "which metrics have no better/worse direction",
-// shared by the view (RunComparison.tsx, for Δ coloring) and by
-// src/cli/budgets.ts's checkRegression (so a `--regression-metric inputBytes`
-// budget can't misread "processed more data" as a regression).
 // Every key metricDeltas() emits, in emission order. The CLI validates
 // --regression-metric against it, so a misspelled key is a usage error rather
 // than an inconclusive budget. A contract test keeps it in sync.
@@ -195,6 +188,13 @@ export const COMPARISON_METRIC_KEYS: readonly string[] = [
   'inputBytes', 'outputBytes', 'executorRunTime', 'taskCount', 'executorsAdded',
 ];
 
+// Volume/count metrics, not cost metrics: more or less input/output data, or
+// tasks/executors, isn't inherently better or worse (it may just reflect a
+// differently-sized job), unlike wall-clock, spill, GC, etc. Exported as the
+// single source of truth for "which metrics have no better/worse direction",
+// shared by the view (RunComparison.tsx, for Δ coloring) and by
+// src/cli/budgets.ts's checkRegression (so a `--regression-metric inputBytes`
+// budget can't misread "processed more data" as a regression).
 export const NEUTRAL_METRIC_KEYS: ReadonlySet<string> = new Set(['inputBytes', 'outputBytes', 'taskCount', 'executorsAdded']);
 
 function direction(key: string, baseline: number | null, candidate: number | null): MetricDeltaRow['direction'] {
