@@ -343,8 +343,8 @@ export function createThreadedZstdDecoder(
 }
 
 // Node's native zstd where this Node has it (22.15+/23.8+); older Nodes keep the vendored fzstd.
-// runParse/runParseFiles (collectRun) take the threaded decoder. decodeShsArchive decodes each
-// archive entry in one synchronous call, so the SHS archive loader takes the inline one.
+// runParse/runParseFiles (collectRun) take the threaded decoder; the SHS archive loader
+// (decodeShsArchive over an in-memory download) takes the inline one.
 export const nodeParseCodecs: { zstdDecoder?: typeof createThreadedZstdDecoder } =
   nativeZstdAvailable ? { zstdDecoder: createThreadedZstdDecoder } : {};
 export const nodeArchiveCodecs: { zstdDecoder?: typeof createNativeZstdDecoder } =
