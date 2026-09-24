@@ -18,7 +18,9 @@ the format Spark writes to `spark.eventLog.dir`), either plain or
 gzip/Zstandard/LZ4/Snappy-compressed. It also takes the zip a Spark History
 Server hands back, from the Spark UI's download link or from `GET
 /api/v1/applications/<appId>/logs`, as-is: drop the `.zip` and the app
-unwraps the log inside it, or reassembles the parts of a rolling log.
+unwraps the log inside it, or reassembles the parts of a rolling log. The zip
+must hold one attempt: for an application that ran more than once, download
+`/api/v1/applications/<appId>/<attemptId>/logs` instead.
 
 Click **Other sources** on the landing page for two more ways in:
 

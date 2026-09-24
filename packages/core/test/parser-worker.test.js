@@ -1866,7 +1866,7 @@ describe('runParseFromUrl', () => {
       fetchImpl: fakeFetchReturning(zipBytes),
       emit: msg => emitted.push(msg),
     })).resolves.toBeUndefined();
-    expect(emitted).toContainEqual({ type: 'error', source: 'shs', code: 'invalid-event-log' });
+    expect(emitted).toContainEqual({ type: 'error', source: 'shs', code: 'invalid-event-log', message: expect.stringMatching(/missing file\(s\)/) });
     expect(emitted.some(m => m.type === 'app')).toBe(false);
   });
 
@@ -1923,7 +1923,7 @@ describe('runParseFromUrl', () => {
     });
     expect(emitted).toEqual([
       { type: 'progress', pct: 0.5, linesProcessed: 0 },
-      { type: 'error', source: 'shs', code: 'invalid-event-log' },
+      { type: 'error', source: 'shs', code: 'invalid-event-log', message: expect.stringMatching(/^Could not read the zip archive/) },
     ]);
   });
 });
@@ -1962,7 +1962,7 @@ describe('decodeShsArchive', () => {
     const state = createState();
     const messages = [];
     await decodeShsArchive(new Uint8Array([1, 2, 3, 4]), state, (msg) => messages.push(msg));
-    expect(messages).toEqual([{ type: 'error', source: 'shs', code: 'invalid-event-log' }]);
+    expect(messages).toEqual([{ type: 'error', source: 'shs', code: 'invalid-event-log', message: expect.stringMatching(/^Could not read the zip archive/) }]);
   });
 });
 
@@ -2070,6 +2070,33 @@ describe('History Server zip archives', () => {
     const zip = historyServerZip({ [`${appId}.zstd`]: zstdSync(sample) });
     const emitted = await parse(fakeFile(zip.subarray(0, zip.length - 30)));
     expect(emitted).toEqual([{ type: 'error', message: expect.stringMatching(/^Could not read the zip archive/) }]);
+  });
+
+  const multiAttemptError = /^The zip archive holds 2 application attempts\. Download a single attempt, for example GET \/api\/v1\/applications\/<appId>\/<attemptId>\/logs\.$/;
+
+  it('rejects a zip holding two single-file attempts', async () => {
+    const zip = historyServerZip({
+      [`${appId}_1.zstd`]: zstdSync(sample),
+      [`${appId}_2.zstd`]: zstdSync(sample),
+    });
+    const emitted = await parse(fakeFile(zip, `${appId}.zip`));
+    expect(emitted).toEqual([{ type: 'error', message: expect.stringMatching(multiAttemptError) }]);
+  });
+
+  it('rejects a zip holding two rolling attempts', async () => {
+    const entries = {};
+    for (const attempt of [1, 2]) {
+      const dir = `eventlog_v2_${appId}_${attempt}/`;
+      entries[dir] = new Uint8Array(0);
+      entries[`${dir}appstatus_${appId}_${attempt}`] = new Uint8Array(0);
+      entries[`${dir}events_1_${appId}_${attempt}.zstd`] = zstdSync(sample);
+    }
+    const zip = historyServerZip(entries);
+    const emitted = await parse(fakeFile(zip, `${appId}.zip`));
+    expect(emitted).toEqual([{ type: 'error', message: expect.stringMatching(multiAttemptError) }]);
+    const messages = [];
+    await decodeShsArchive(zip, createState(), (m) => messages.push(m));
+    expect(messages).toEqual([{ type: 'error', source: 'shs', code: 'invalid-event-log', message: expect.stringMatching(multiAttemptError) }]);
   });
 
   it('reports a zip that holds no Spark event log', async () => {

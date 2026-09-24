@@ -102,8 +102,8 @@ function createEntryDecoder(name: string, onChunk: (chunk: Uint8Array) => void, 
 
 type EmitFn = (msg: unknown) => void;
 
-function emitShsError(emit: EmitFn, code: string): void {
-  emit({ type: 'error', source: 'shs', code });
+function emitShsError(emit: EmitFn, code: string, message?: string): void {
+  emit({ type: 'error', source: 'shs', code, ...(message ? { message } : {}) });
 }
 
 export async function runParseFromUrl(
@@ -196,24 +196,39 @@ export function decodeShsArchive(
 ): Promise<void> {
   return parseZipArchive(bytesZipSource(zipBytes), state, emit, {
     zstdDecoder,
-    onInvalid: () => emitShsError(emit, 'invalid-event-log'),
+    onInvalid: (detail) => emitShsError(emit, 'invalid-event-log', detail ?? undefined),
   });
 }
 
-// The event-log entries a History Server zip holds, in parse order. A rolling
-// log's parts sit under an `eventlog_v2_<appId>/` directory entry; they are
-// matched and reassembled by base name. A single-file log is one entry at the
-// root. Directory entries and the rolling log's `appstatus` marker are skipped.
+const baseName = (e: ZipEntry) => e.name.slice(e.name.lastIndexOf('/') + 1);
+const isRollingPart = (e: ZipEntry) => /^events_\d+_/.test(baseName(e));
+
+// The application attempts a History Server zip holds. Without an attempt ID
+// the History Server packs every attempt into one download: each single-file
+// log is its own root entry, each rolling log its own `eventlog_v2_` directory.
+// Directory entries and `appstatus` markers are not attempts.
+function countLogAttempts(entries: ZipEntry[]): number {
+  const attempts = new Set<string>();
+  for (const e of entries) {
+    if (e.name.endsWith('/') || baseName(e).toLowerCase().startsWith('appstatus')) continue;
+    const dir = e.name.slice(0, e.name.indexOf('/') + 1);
+    attempts.add(dir || (isRollingPart(e) ? '' : e.name));
+  }
+  return attempts.size;
+}
+
+// The event-log entries a single-attempt History Server zip holds, in parse
+// order. A rolling log's parts sit under an `eventlog_v2_<appId>/` directory
+// entry; they are matched and reassembled by base name. A single-file log is
+// one entry at the root. Directory entries and the rolling log's `appstatus`
+// marker are skipped.
 function selectLogEntries(entries: ZipEntry[]): ZipEntry[] {
   const files = entries.filter((e) => !e.name.endsWith('/'));
-  const baseName = (e: ZipEntry) => e.name.slice(e.name.lastIndexOf('/') + 1);
-  if (files.some((e) => /^events_\d+_/.test(baseName(e)))) {
+  if (files.some(isRollingPart)) {
     const byBase = new Map(files.map((e) => [baseName(e), e]));
     return reassembleRollingEntries(files.map(baseName)).map((n) => byBase.get(n)!);
   }
-  return files
-    .filter((e) => baseName(e).toLowerCase() !== 'appstatus')
-    .sort((a, b) => naturalCompare(a.name, b.name));
+  return files.filter((e) => baseName(e).toLowerCase() !== 'appstatus');
 }
 
 export interface ZipParseOpts {
@@ -239,10 +254,17 @@ export async function parseZipArchive(
   { zstdDecoder, chunkSize = 512 * 1024, onInvalid, progressEvery = 2000, reportPct = false }: ZipParseOpts,
 ): Promise<void> {
   let logEntries: ZipEntry[];
+  let attempts: number;
   try {
-    logEntries = selectLogEntries(await listZipEntries(source));
+    const entries = await listZipEntries(source);
+    attempts = countLogAttempts(entries);
+    logEntries = attempts > 1 ? [] : selectLogEntries(entries);
   } catch (e) {
     onInvalid(`Could not read the zip archive: ${e instanceof Error ? e.message : String(e)}`);
+    return;
+  }
+  if (attempts > 1) {
+    onInvalid(`The zip archive holds ${attempts} application attempts. Download a single attempt, for example GET /api/v1/applications/<appId>/<attemptId>/logs.`);
     return;
   }
   if (logEntries.length === 0) {

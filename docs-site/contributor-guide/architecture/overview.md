@@ -139,7 +139,11 @@ find each entry's end by scanning compressed bytes for a signature, and it
 would hand rolling parts over in archive order (`events_10` before
 `events_2`). A single-file log is one entry at the root. A rolling log's
 parts sit under an `eventlog_v2_<appId>/` directory entry and are matched by
-base name.
+base name. The zip must hold a single application attempt. Without an attempt
+ID the History Server packs every attempt into one download (several root
+entries, or several `eventlog_v2_` directories), and `parseZipArchive` rejects
+that before parsing with the attempt count and a pointer to `GET
+/api/v1/applications/<appId>/<attemptId>/logs`.
 
 Each entry's bytes then go through the codec's streaming decoder, sniffed from
 the entry's first bytes, with the entry name's suffix as fallback. One-shotting
