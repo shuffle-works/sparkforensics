@@ -124,10 +124,13 @@ dashboard. It parses the same event logs and exits non-zero when a run
 crosses a threshold you set, so it can gate a build:
 
 ```sh
-npx sparkforensics-analyze <file|dir> [--max-runtime ms] [--max-skew ratio] \
+npx -p sparkforensics-cli sparkforensics-analyze <file|dir> [--max-runtime ms] [--max-skew ratio] \
   [--max-spill gb] [--max-failed-task-rate pct] [--min-efficiency pct] \
   [--out path]
 ```
+
+The command ships in the `sparkforensics-cli` package. To install it once:
+`npm i -g sparkforensics-cli`, then run `sparkforensics-analyze` directly.
 
 Point it at a single event log or a directory of them. Pass `--out` to also
 write the findings to a file.

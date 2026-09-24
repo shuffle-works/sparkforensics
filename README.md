@@ -80,8 +80,13 @@ instead.
 For a one-shot check with no browser, the kind a CI pipeline can gate on:
 
 ```bash
-npx sparkforensics-analyze path/to/eventlog --max-runtime 3600000 --max-skew 3
+npx -p sparkforensics-cli sparkforensics-analyze path/to/eventlog --max-runtime 3600000 --max-skew 3
 ```
+
+The command ships in the `sparkforensics-cli` package. To install it once
+instead: `npm i -g sparkforensics-cli`, then run `sparkforensics-analyze`
+directly. The `sparkforensics-analyze` alias package also works:
+`npx sparkforensics-analyze`.
 
 That's a headless run against budget thresholds. See [Command-line
 reference](#command-line-reference) below for HTML export, Spark History
@@ -188,28 +193,28 @@ Write a self-contained HTML dashboard for the run instead of a JSON/Markdown
 report, viewable offline over `file://` with no server:
 
 ```bash
-npx sparkforensics-analyze path/to/eventlog --export-html path/to/output-dir
+npx -p sparkforensics-cli sparkforensics-analyze path/to/eventlog --export-html path/to/output-dir
 ```
 
 Fetch the run straight from a Spark History Server instead of a local file
 (mutually exclusive with the positional path):
 
 ```bash
-npx sparkforensics-analyze --shs-base-url http://history-server:18080 --app-id application_1234_0001 --max-skew 3
+npx -p sparkforensics-cli sparkforensics-analyze --shs-base-url http://history-server:18080 --app-id application_1234_0001 --max-skew 3
 ```
 
 Compare a candidate run against a baseline (A/B) and fail the build on a
 regression or a newly introduced critical finding:
 
 ```bash
-npx sparkforensics-analyze path/to/candidate --baseline path/to/baseline --max-regression-pct 10 --fail-on-introduced critical
+npx -p sparkforensics-cli sparkforensics-analyze path/to/candidate --baseline path/to/baseline --max-regression-pct 10 --fail-on-introduced critical
 ```
 
 Redact the app id and any host/IP tokens before sharing the output outside
 the environment that produced it:
 
 ```bash
-npx sparkforensics-analyze path/to/eventlog --redact
+npx -p sparkforensics-cli sparkforensics-analyze path/to/eventlog --redact
 ```
 
 Narrow the output's `findings` array to certain impact bands, types, or a
@@ -217,7 +222,7 @@ stage (`recommendations`/`cleanChecks` and the summary counts stay on the
 full, unfiltered set):
 
 ```bash
-npx sparkforensics-analyze path/to/eventlog --impact critical,warning --type stageSlowness --stage 12
+npx -p sparkforensics-cli sparkforensics-analyze path/to/eventlog --impact critical,warning --type stageSlowness --stage 12
 ```
 
 Other budget flags round out the checks: `--max-spill <gb>`,
@@ -229,7 +234,7 @@ pairs with `--shs-base-url`/`--app-id` for a non-default attempt;
 `0` pass, `1` a budget was violated, `2` bad input/usage, `3` a budget was
 inconclusive (e.g. missing evidence for a regression check).
 
-> **Node version:** the published `sparkforensics-analyze`, `sparkforensics-mcp`,
+> **Node version:** the published `sparkforensics-cli`, `sparkforensics-mcp`,
 > and `sparkforensics-server` packages all pre-strip their vendored
 > TypeScript to plain JS at publish time, so `npx`-installed use only needs
 > Node `>=18` (see each package's `engines` field). A checkout running any of
