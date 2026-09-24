@@ -1,0 +1,2961 @@
+{
+ "logs": [
+  {
+   "name": "pairwise-01.ndjson",
+   "stages": 5,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "duplicatePlanSubtree|0|subtreeOccurrences||||||||0|||",
+     "type": "duplicatePlanSubtree",
+     "band": "info",
+     "confidence": "low",
+     "value": 2,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 60,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|7|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 4.6,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2421,
+     "wcHigh": 2421,
+     "rawWaste": {
+      "value": 2421,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 108514,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 1990,
+     "wcHigh": 1990,
+     "rawWaste": {
+      "value": 1990,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|7|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 6,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2421,
+     "wcHigh": 2421,
+     "rawWaste": {
+      "value": 2421,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|7|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 58,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2277.778149337792,
+     "wcHigh": 2277.778149337792,
+     "rawWaste": {
+      "value": 2277.778149337792,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 40,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.011517777777777778,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "pairwise-02.ndjson",
+   "stages": 5,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "duplicatePlanSubtree|0|subtreeOccurrences||||||||0|||",
+     "type": "duplicatePlanSubtree",
+     "band": "info",
+     "confidence": "low",
+     "value": 2,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "gc|7|gcPct|||||||||||",
+     "type": "gc",
+     "band": "critical",
+     "confidence": "low",
+     "value": 13.2,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 3032.3594335798966,
+     "wcHigh": 3032.3594335798966,
+     "rawWaste": {
+      "value": 5203,
+      "unit": "coreMs"
+     }
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 27812,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 8070,
+     "wcHigh": 8070,
+     "rawWaste": {
+      "value": 8070,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|7|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 38,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 12011.552589590581,
+     "wcHigh": 12011.552589590581,
+     "rawWaste": {
+      "value": 12011.552589590581,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
+   "name": "pairwise-03.ndjson",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|6|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 7.6,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 7406,
+     "wcHigh": 7406,
+     "rawWaste": {
+      "value": 7406,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 31782,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 8070,
+     "wcHigh": 8070,
+     "rawWaste": {
+      "value": 8070,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|6|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 7,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 7406,
+     "wcHigh": 7406,
+     "rawWaste": {
+      "value": 7406,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 25,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 13584.57926283843,
+     "wcHigh": 13584.57926283843,
+     "rawWaste": {
+      "value": 13584.57926283843,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
+   "name": "pairwise-04.ndjson",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 54,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 124784,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 1990,
+     "wcHigh": 1990,
+     "rawWaste": {
+      "value": 1990,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|3|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 3,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 3367,
+     "wcHigh": 3367,
+     "rawWaste": {
+      "value": 3367,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|3|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 69,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2313.59808806489,
+     "wcHigh": 2313.59808806489,
+     "rawWaste": {
+      "value": 2313.59808806489,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 46,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.009839722222222222,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "pairwise-05.ndjson",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|3|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "low",
+     "value": 4.2,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1082,
+     "wcHigh": 1082,
+     "rawWaste": {
+      "value": 1082,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 108535,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 1990,
+     "wcHigh": 1990,
+     "rawWaste": {
+      "value": 1990,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|3|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 6,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1082,
+     "wcHigh": 1082,
+     "rawWaste": {
+      "value": 1082,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|3|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 93,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1882.4074087821539,
+     "wcHigh": 1882.4074087821539,
+     "rawWaste": {
+      "value": 1882.4074087821539,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
+   "name": "pairwise-06.ndjson",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|3|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 8,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 7258,
+     "wcHigh": 7258,
+     "rawWaste": {
+      "value": 7258,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 27811,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 8070,
+     "wcHigh": 8070,
+     "rawWaste": {
+      "value": 8070,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|3|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 10,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 7258,
+     "wcHigh": 7258,
+     "rawWaste": {
+      "value": 7258,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|3|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 25,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 13938.27349599639,
+     "wcHigh": 13938.27349599639,
+     "rawWaste": {
+      "value": 13938.27349599639,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
+   "name": "pairwise-07.ndjson",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 31781,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 8070,
+     "wcHigh": 8070,
+     "rawWaste": {
+      "value": 8070,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|3|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 33,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 10438.674450057435,
+     "wcHigh": 10438.674450057435,
+     "rawWaste": {
+      "value": 10438.674450057435,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spark-3.5.9-delta-baseline.ndjson",
+   "stages": 5,
+   "sqlExecutions": 4,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "gc|6|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "low",
+     "value": 4.5,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 59,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|6|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "low",
+     "value": 3.9,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2665,
+     "wcHigh": 2665,
+     "rawWaste": {
+      "value": 2665,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|6|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 5,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2665,
+     "wcHigh": 2665,
+     "rawWaste": {
+      "value": 2665,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 84,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2104.2663338088446,
+     "wcHigh": 2104.2663338088446,
+     "rawWaste": {
+      "value": 2104.2663338088446,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 41,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.015017777777777776,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spark-3.5.9-iceberg-baseline.ndjson",
+   "stages": 4,
+   "sqlExecutions": 2,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "gc|6|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "medium",
+     "value": 2.2,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 63,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|6|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "low",
+     "value": 3.8,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1702,
+     "wcHigh": 1702,
+     "rawWaste": {
+      "value": 1702,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|6|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 5,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1702,
+     "wcHigh": 1702,
+     "rawWaste": {
+      "value": 1702,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 46,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1113.0374882555589,
+     "wcHigh": 1113.0374882555589,
+     "rawWaste": {
+      "value": 1113.0374882555589,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 37,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.011783333333333331,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spark-3.5.9-parquet-baseline.ndjson",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 74,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|6|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "low",
+     "value": 3.4,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1565,
+     "wcHigh": 1565,
+     "rawWaste": {
+      "value": 1565,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 124749,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 1990,
+     "wcHigh": 1990,
+     "rawWaste": {
+      "value": 1990,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|6|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 5,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1565,
+     "wcHigh": 1565,
+     "rawWaste": {
+      "value": 1565,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 66,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1549.2562990499796,
+     "wcHigh": 1549.2562990499796,
+     "rawWaste": {
+      "value": 1549.2562990499796,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 26,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.02201527777777778,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spark-4.0.4-delta-baseline.ndjson",
+   "stages": 4,
+   "sqlExecutions": 3,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "gc|6|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "medium",
+     "value": 2.7,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 61,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|6|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "low",
+     "value": 3.2,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2202,
+     "wcHigh": 2202,
+     "rawWaste": {
+      "value": 2202,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|6|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 4,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2202,
+     "wcHigh": 2202,
+     "rawWaste": {
+      "value": 2202,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 97,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 3028.7914388955805,
+     "wcHigh": 3028.7914388955805,
+     "rawWaste": {
+      "value": 3028.7914388955805,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 39,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.016236666666666663,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spark-4.0.4-iceberg-baseline.ndjson",
+   "stages": 4,
+   "sqlExecutions": 2,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "gc|6|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "medium",
+     "value": 1.7,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 63,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|6|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "low",
+     "value": 3.8,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1216,
+     "wcHigh": 1216,
+     "rawWaste": {
+      "value": 1216,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|6|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 5,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1216,
+     "wcHigh": 1216,
+     "rawWaste": {
+      "value": 1216,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 54,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1158.5482206405693,
+     "wcHigh": 1158.5482206405693,
+     "rawWaste": {
+      "value": 1158.5482206405693,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 37,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.011910833333333334,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spark-4.0.4-parquet-baseline.ndjson",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "gc|6|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "medium",
+     "value": 2.5,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 62,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|6|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "low",
+     "value": 3.6,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1091,
+     "wcHigh": 1091,
+     "rawWaste": {
+      "value": 1091,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 124890,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 1990,
+     "wcHigh": 1990,
+     "rawWaste": {
+      "value": 1990,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|6|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 3,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1091,
+     "wcHigh": 1091,
+     "rawWaste": {
+      "value": 1091,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 72,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2426.191953470066,
+     "wcHigh": 2426.191953470066,
+     "rawWaste": {
+      "value": 2426.191953470066,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 38,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.012778055555555558,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spark-4.1.3-delta-baseline.ndjson",
+   "stages": 4,
+   "sqlExecutions": 3,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 62,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 93,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 3042.174114616871,
+     "wcHigh": 3042.174114616871,
+     "rawWaste": {
+      "value": 3042.174114616871,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 38,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.014966111111111109,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spark-4.1.3-iceberg-baseline.ndjson",
+   "stages": 4,
+   "sqlExecutions": 2,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "gc|6|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "low",
+     "value": 5,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 66,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 63,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1230.7484335359018,
+     "wcHigh": 1230.7484335359018,
+     "rawWaste": {
+      "value": 1230.7484335359018,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 34,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.01167888888888889,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spark-4.1.3-parquet-baseline.ndjson",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "gc|6|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "low",
+     "value": 3.4,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 66,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 124787,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 1990,
+     "wcHigh": 1990,
+     "rawWaste": {
+      "value": 1990,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|6|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 4,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1118,
+     "wcHigh": 1118,
+     "rawWaste": {
+      "value": 1118,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 69,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2318.375802568218,
+     "wcHigh": 2318.375802568218,
+     "rawWaste": {
+      "value": 2318.375802568218,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 34,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.012320833333333331,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spark-4.2.0-delta-baseline.ndjson",
+   "stages": 4,
+   "sqlExecutions": 3,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 63,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 97,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 3153.865515270584,
+     "wcHigh": 3153.865515270584,
+     "rawWaste": {
+      "value": 3153.865515270584,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 37,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.01452972222222222,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "spark-4.2.0-parquet-baseline.ndjson",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 63,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 124770,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 1990,
+     "wcHigh": 1990,
+     "rawWaste": {
+      "value": 1990,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 78,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2344.5142999006953,
+     "wcHigh": 2344.5142999006953,
+     "rawWaste": {
+      "value": 2344.5142999006953,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 37,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.01199666666666667,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-app-20161115172038-0000.ndjson",
+   "stages": 1,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 100,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|0|max/median|||||||||||",
+     "type": "skew",
+     "band": "warning",
+     "confidence": "high",
+     "value": 19.8,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 781,
+     "wcHigh": 781,
+     "rawWaste": {
+      "value": 781,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|0|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "warning",
+     "confidence": "high",
+     "value": 50,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 781,
+     "wcHigh": 781,
+     "rawWaste": {
+      "value": 781,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 0,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.4507361111111111,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-app-20161116163331-0000.ndjson",
+   "stages": 1,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 97,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|0|max/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "high",
+     "value": 20.8,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 737,
+     "wcHigh": 737,
+     "rawWaste": {
+      "value": 737,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|0|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "high",
+     "value": 50,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 737,
+     "wcHigh": 737,
+     "rawWaste": {
+      "value": 737,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 3,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.04586972222222222,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-app-20180109111548-0000.ndjson",
+   "stages": 2,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 100,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 0,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.29707,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-app-20200706201101-0003.ndjson",
+   "stages": 3,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "gc|2|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "low",
+     "value": 3.9,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 99,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 1,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 1.602508611111111,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-application_1516285256255_0012.ndjson",
+   "stages": 2,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 100,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 4824188.928,
+      "unit": "mbSeconds"
+     }
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||wastedMBSeconds||wasteModel|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": "high",
+     "value": 4834241,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 4834241,
+      "unit": "mbSeconds"
+     }
+    },
+    {
+     "key": "straggler|0|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "info",
+     "confidence": "high",
+     "value": 30,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1853,
+     "wcHigh": 1853,
+     "rawWaste": {
+      "value": 1853,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 0,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.6543225,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-application_1553914137147_0018.ndjson",
+   "stages": 3,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "gc|0|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "high",
+     "value": 0.8,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "gc|1|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "high",
+     "value": 0.1,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "gc|2|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "high",
+     "value": 0.3,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||heapUsedRatio|heapOverProvisioned|memoryBand||1|||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 13,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 387237.13830847165,
+      "unit": "mbSeconds"
+     }
+    },
+    {
+     "key": "memoryUtilization||heapUsedRatio|heapOverProvisioned|memoryBand||2|||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 6,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 418221.11229589843,
+      "unit": "mbSeconds"
+     }
+    },
+    {
+     "key": "memoryUtilization||heapUsedRatio|heapOverProvisioned|memoryBand||3|||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 10,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 400592.1856769409,
+      "unit": "mbSeconds"
+     }
+    },
+    {
+     "key": "memoryUtilization||heapUsedRatio|heapOverProvisioned|memoryBand||driver|||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 3,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 433176.61665570067,
+      "unit": "mbSeconds"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 57,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.022301944444444444,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-application_1555004656427_0144.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 100,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 0,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.010441111111111111,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-application_1578436911597_0052.ndjson",
+   "stages": 1,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 100,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 0,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.15491472222222222,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-application_1628109047826_1317105.ndjson",
+   "stages": 1,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "gc|0|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "high",
+     "value": 0,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 97,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 10956685.312,
+      "unit": "mbSeconds"
+     }
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||wastedMBSeconds||wasteModel|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": "high",
+     "value": 11011195,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 11011195,
+      "unit": "mbSeconds"
+     }
+    },
+    {
+     "key": "skew|0|max/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "high",
+     "value": 24.1,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 58649,
+     "wcHigh": 58649,
+     "rawWaste": {
+      "value": 58649,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 3,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.7430477777777778,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-failed-eventlog.ndjson",
+   "stages": 1,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "jobFailureRate||jobFailureRate|||||||||||",
+     "type": "jobFailureRate",
+     "band": "critical",
+     "confidence": null,
+     "value": 100,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.0011111111111111111,
+      "unit": "coreHours"
+     }
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "stageFailed|13|stageFailureReason||stageFailure|||||||||",
+     "type": "stageFailed",
+     "band": "critical",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-local-1422981759269.ndjson",
+   "stages": 5,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-local-1422981780767.ndjson",
+   "stages": 4,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "jobFailureRate||jobFailureRate|||||||||||",
+     "type": "jobFailureRate",
+     "band": "warning",
+     "confidence": null,
+     "value": 33.3,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0,
+      "unit": "coreHours"
+     }
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "stageFailed|2|stageFailureReason||stageFailure|||||||||",
+     "type": "stageFailed",
+     "band": "critical",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-local-1425081759269.ndjson",
+   "stages": 5,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-local-1426533911241.ndjson",
+   "stages": 1,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-local-1426633911242.ndjson",
+   "stages": 1,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-local-1430917381534.ndjson",
+   "stages": 2,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|0|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 10.5,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 254,
+     "wcHigh": 254,
+     "rawWaste": {
+      "value": 254,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|0|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 8,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 254,
+     "wcHigh": 254,
+     "rawWaste": {
+      "value": 254,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|0|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "warning",
+     "confidence": null,
+     "value": 40,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 199.6740301585256,
+     "wcHigh": 199.6740301585256,
+     "rawWaste": {
+      "value": 199.6740301585256,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-local-1430917381535_1.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-local-1430917381535_2.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-local-1430917381536.ndjson",
+   "stages": 1,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 100,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|0|max/median|||||||||||",
+     "type": "skew",
+     "band": "warning",
+     "confidence": "high",
+     "value": 18.9,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2615,
+     "wcHigh": 2615,
+     "rawWaste": {
+      "value": 2615,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 0,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.18341666666666667,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-local-1642039451826.ndjson",
+   "stages": 6,
+   "sqlExecutions": 2,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 99,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 1,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.18991555555555556,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-low-shuffle-parallelism-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-memory-spill-skew-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-minimal-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-oversized-shuffle-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-real-spark-eventlog.ndjson",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 92,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|0|max/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 7.3,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 64,
+     "wcHigh": 64,
+     "rawWaste": {
+      "value": 64,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "skew|2|max/median|||||||||||",
+     "type": "skew",
+     "band": "warning",
+     "confidence": "medium",
+     "value": 7.9,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 48,
+     "wcHigh": 48,
+     "rawWaste": {
+      "value": 48,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 8,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.001581111111111111,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "external-retry-waste-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-shuffle-skewed-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-skewed-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-speculation-heavy-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-spill-heavy-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-sql-duplicate-exchange-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "duplicatePlanSubtree|21|subtreeOccurrences||||||||0|||",
+     "type": "duplicatePlanSubtree",
+     "band": "info",
+     "confidence": "low",
+     "value": 2,
+     "basis": null,
+     "method": null,
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-sql-many-exchanges-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-tiny-tasks-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "external-worker-imbalanced-eventlog.ndjson",
+   "stages": 0,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  }
+ ]
+}

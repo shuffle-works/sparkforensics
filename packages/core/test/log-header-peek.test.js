@@ -21,8 +21,8 @@ function fileFromBytes(name, bytes) {
 }
 
 describe('peekLogHeader', () => {
-  // dev/log-corpus is a git submodule (private repo): CI doesn't fetch submodules, so this is
-  // always skipped there. Locally: `git submodule update --init dev/log-corpus`.
+  // dev/log-corpus is a git submodule (public corpus repo), checked out in CI; skipped locally
+  // until `git submodule update --init dev/log-corpus`.
   it.skipIf(!existsSync(MINIMAL_FIXTURE))('extracts appId/name/sparkVersion/startTime from a real uncompressed fixture', async () => {
     const raw = readFileSync(MINIMAL_FIXTURE);
     const bytes = new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength);
