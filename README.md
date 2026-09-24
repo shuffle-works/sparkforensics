@@ -67,22 +67,16 @@ are enough.
 
 ## Get started
 
-Run the dashboard locally with one command. No checkout, no build:
+Run the dashboard locally:
 
 ```bash
 npx sparkforensics-server
 ```
 
-Open `http://127.0.0.1:4173` and drop a Spark event log onto the page. The
-server binds to localhost only, and it can also fetch runs straight from a
-Spark History Server (see [Deploy modes](#deploy-modes)).
-
-Nothing to install at all? The [live demo](https://shuffle-works.github.io/sparkforensics/)
-runs the same dashboard in your browser, without History Server fetching.
-
-Working on SparkForensics itself? Clone the repo and run `npm install` then
-`npm run dev`; see [Development](#development) and the [development setup
-guide](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/development-setup).
+The [Getting started guide](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started#local-server-mode)
+covers what it serves, the [live demo](https://shuffle-works.github.io/sparkforensics/)
+alternative, and loading a run. To work on SparkForensics itself, see
+[Development](#development).
 
 For a one-shot check with no browser, the kind a CI pipeline can gate on:
 
