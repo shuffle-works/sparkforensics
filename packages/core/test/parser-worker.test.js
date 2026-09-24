@@ -2099,9 +2099,90 @@ describe('History Server zip archives', () => {
     expect(messages).toEqual([{ type: 'error', source: 'shs', code: 'invalid-event-log', message: expect.stringMatching(multiAttemptError) }]);
   });
 
+  it('reports a zip that holds only a directory entry', async () => {
+    const emitted = await parse(fakeFile(historyServerZip({ [`eventlog_v2_${appId}/`]: new Uint8Array(0) })));
+    expect(emitted).toEqual([{ type: 'error', message: 'The zip archive contains no event log.' }]);
+  });
+
   it('reports a zip that holds no Spark event log', async () => {
     const emitted = await parse(fakeFile(historyServerZip({ 'notes.txt': strToU8('not an event log\n') })));
     expect(emitted.at(-1)).toEqual({ type: 'error', message: expect.stringMatching(/^Not a Spark event log/) });
+  });
+
+  // A one-entry stored zip in zip64 form, as ZipOutputStream writes one past 4 GiB: every
+  // 32-bit size/offset field is 0xFFFFFFFF and the real values sit in zip64 records. The
+  // central directory's extra area puts an unrelated field before the zip64 one.
+  function zip64Archive(name, data) {
+    const nameBytes = strToU8(name);
+    const localExtra = 20, centralExtra = 9 + 28;
+    const localSize = 30 + nameBytes.length + localExtra;
+    const cdOffset = localSize + data.length, cdSize = 46 + nameBytes.length + centralExtra;
+    const zip64EocdOffset = cdOffset + cdSize;
+    const out = new Uint8Array(zip64EocdOffset + 56 + 20 + 22);
+    const v = new DataView(out.buffer);
+    const u64 = (at, n) => { v.setUint32(at, n % 2 ** 32, true); v.setUint32(at + 4, Math.floor(n / 2 ** 32), true); };
+    v.setUint32(0, 0x04034b50, true);
+    v.setUint32(18, 0xffffffff, true); v.setUint32(22, 0xffffffff, true);
+    v.setUint16(26, nameBytes.length, true); v.setUint16(28, localExtra, true);
+    out.set(nameBytes, 30);
+    let p = 30 + nameBytes.length;
+    v.setUint16(p, 0x0001, true); v.setUint16(p + 2, 16, true); u64(p + 4, data.length); u64(p + 12, data.length);
+    out.set(data, localSize);
+    p = cdOffset;
+    v.setUint32(p, 0x02014b50, true);
+    v.setUint32(p + 20, 0xffffffff, true); v.setUint32(p + 24, 0xffffffff, true);
+    v.setUint16(p + 28, nameBytes.length, true); v.setUint16(p + 30, centralExtra, true);
+    v.setUint32(p + 42, 0xffffffff, true);
+    out.set(nameBytes, p + 46);
+    p += 46 + nameBytes.length;
+    v.setUint16(p, 0x5455, true); v.setUint16(p + 2, 5, true);
+    p += 9;
+    v.setUint16(p, 0x0001, true); v.setUint16(p + 2, 24, true); u64(p + 4, data.length); u64(p + 12, data.length); u64(p + 20, 0);
+    p = zip64EocdOffset;
+    v.setUint32(p, 0x06064b50, true); u64(p + 4, 44); u64(p + 24, 1); u64(p + 32, 1); u64(p + 40, cdSize); u64(p + 48, cdOffset);
+    p += 56;
+    v.setUint32(p, 0x07064b50, true); u64(p + 8, zip64EocdOffset); v.setUint32(p + 16, 1, true);
+    p += 20;
+    v.setUint32(p, 0x06054b50, true);
+    v.setUint16(p + 8, 0xffff, true); v.setUint16(p + 10, 0xffff, true);
+    v.setUint32(p + 12, 0xffffffff, true); v.setUint32(p + 16, 0xffffffff, true);
+    return out;
+  }
+
+  it('reads sizes and offsets from zip64 records', async () => {
+    const data = zstdSync(sample);
+    const zip = zip64Archive(`${appId}.zstd`, data);
+    expect(await listZipEntries(fakeFile(zip))).toEqual([
+      { name: `${appId}.zstd`, compression: 0, compressedSize: data.length, localHeaderOffset: 0 },
+    ]);
+    expect(withoutProgress(await parse(fakeFile(zip, `${appId}.zip`)))).toEqual(expected);
+  });
+
+  it('reports a zip64 locator that points at no zip64 record', async () => {
+    const zip = zip64Archive(`${appId}.zstd`, zstdSync(sample));
+    const locator = zip.length - 22 - 20;
+    new DataView(zip.buffer).setUint32(locator + 8, 0, true);
+    const emitted = await parse(fakeFile(zip));
+    expect(emitted).toEqual([{ type: 'error', message: 'Could not read the zip archive: bad zip64 end-of-central-directory record' }]);
+  });
+
+  it('reports an entry with an unsupported compression method', async () => {
+    const zip = historyServerZip({ [`${appId}.zstd`]: zstdSync(sample) });
+    const [entry] = await listZipEntries(fakeFile(zip));
+    const view = new DataView(zip.buffer, zip.byteOffset);
+    const cdStart = view.getUint32(zip.length - 22 + 16, true);
+    view.setUint16(cdStart + 10, 12, true);
+    view.setUint16(entry.localHeaderOffset + 8, 12, true);
+    const emitted = await parse(fakeFile(zip));
+    expect(emitted.at(-1)).toEqual({ type: 'error', message: `Could not decompress "${appId}.zstd" in the zip archive: "${appId}.zstd" uses unsupported zip compression method 12` });
+  });
+
+  it('reports a rolling part whose local header is missing', async () => {
+    const zip = historyServerZip(rollingEntries());
+    const part = (await listZipEntries(fakeFile(zip))).find((e) => e.name.includes('/events_1_'));
+    zip[part.localHeaderOffset + 3] = 0;
+    const emitted = await parse(fakeFile(zip));
+    expect(emitted.at(-1)).toEqual({ type: 'error', message: `Could not decompress "${part.name}" in the zip archive: bad local header for "${part.name}"` });
   });
 });
 
