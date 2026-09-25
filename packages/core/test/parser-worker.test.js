@@ -2459,6 +2459,15 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
       expect(finishParse(s, stageMsg).stages.get(1)).toMatchObject({ speculationWasteMs: 0, speculationWastedAttempts: 0, retryWasteMs: 0 });
     });
 
+    it('ignores a late TaskEnd without Task Info, which cannot be paired to a task', () => {
+      const s = startRun();
+      processEvent(specTaskEnd(1, 0, { launch: 50, finish: 100, speculative: true }), s);
+      const stageMsg = complete(s, 100);
+      processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Stage Attempt ID': 0 }, s);
+
+      expect(finishParse(s, stageMsg).stages.get(1)).toMatchObject({ speculationWasteMs: 0, speculationWastedAttempts: 0 });
+    });
+
     it('keeps the pairing state out of the posted stage message', () => {
       const s = startRun();
       processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, speculative: true }), s);

@@ -149,7 +149,7 @@ interface StageRecord {
   speculationWastedAttempts: number;
   // Keys (`attempt:index`) whose recorded winner is a speculative copy. Kept past finalize so a
   // late TaskEnd for the original it beat still pairs as speculation waste (accountLateSpeculativeLoser).
-  speculativeWinners: Set<string>;
+  speculativeWinners: Set<string | symbol>;
   // Set once a late TaskEnd adds speculation waste after finalize, so the stage is re-posted
   // via `stageSpeculationWaste` before `done`.
   lateSpeculationWaste: boolean;
@@ -576,7 +576,7 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
 
   if (!existing) {
     stage.taskAttempts.set(key, record);
-    if (record.speculative && !record.failed && typeof key === 'string') stage.speculativeWinners.add(key);
+    if (record.speculative && !record.failed) stage.speculativeWinners.add(key);
   } else if (existing.failed && !record.failed) {
     // A retry succeeded where the earlier attempt failed: the earlier attempt's time was wasted.
     // Spark marks only the speculative COPY's Speculative flag, never the original it raced, so
@@ -592,7 +592,7 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
       }
     }
     stage.taskAttempts.set(key, record);
-    if (record.speculative && typeof key === 'string') stage.speculativeWinners.add(key);
+    if (record.speculative) stage.speculativeWinners.add(key);
   } else {
     // Non-winning duplicate (both failed, or a race where a winner is
     // already recorded): its time is waste, its metrics are discarded.
@@ -618,9 +618,8 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
 // of a late attempt stays excluded, as the finalized stage already posted them.
 function accountLateSpeculativeLoser(event: z.infer<typeof TaskEndEventSchema>, stage: StageRecord): void {
   const info = event['Task Info'];
-  const index = info?.['Index'];
-  if (!info || index == null) return;
-  const key = `${event['Stage Attempt ID'] ?? 0}:${index}`;
+  if (info?.['Index'] == null) return;
+  const key = `${event['Stage Attempt ID'] ?? 0}:${info['Index']}`;
   if (info['Speculative'] !== true && !stage.speculativeWinners.has(key)) return;
   stage.speculationWasteMs += (info['Finish Time'] ?? 0) - (info['Launch Time'] ?? 0);
   stage.speculationWastedAttempts++;

@@ -66,7 +66,6 @@ export function createModelCallbacks(
     // Patch speculation totals that grew after StageCompleted: Spark kills a losing speculative
     // copy only once its stage finishes. `data` is Map<stageId, { speculationWasteMs, speculationWastedAttempts }>.
     onStageSpeculationWaste(data: unknown) {
-      if (!(data instanceof Map)) return;
       const totalsByStage = data as Map<number, { speculationWasteMs: number; speculationWastedAttempts: number }>;
       for (const [stageId, totals] of totalsByStage) {
         const stage = appModel.stages.get(stageId);
