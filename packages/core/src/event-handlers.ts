@@ -965,7 +965,14 @@ export function recordBlockUpdate(event: z.infer<typeof BlockUpdatedEventSchema>
     rdd.blocks.delete(key);
   }
   if (resident) {
-    const block = { partition, memorySize: info['Memory Size'] ?? 0, diskSize: info['Disk Size'] ?? 0 };
+    // Sizes count only where the level says the block lives, as Spark's AppStatusListener does: a
+    // drop from memory to disk reports Use Memory false but still carries the dropped bytes as
+    // Memory Size (BlockManager reports max(memSize, droppedMemorySize)).
+    const block = {
+      partition,
+      memorySize: sl['Use Memory'] ? info['Memory Size'] ?? 0 : 0,
+      diskSize: sl['Use Disk'] ? info['Disk Size'] ?? 0 : 0,
+    };
     rdd.blocks.set(key, block);
     rdd.memorySize += block.memorySize;
     rdd.diskSize += block.diskSize;

@@ -1,6 +1,708 @@
 {
  "logs": [
   {
+   "name": "cache-memory-and-disk.ndjson",
+   "stages": 7,
+   "sqlExecutions": 2,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "cacheUtilization||diskRatio||diskSpillover|||||||4||",
+     "type": "cacheUtilization",
+     "band": "warning",
+     "confidence": "medium",
+     "value": 100,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 295.01699199999996,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "duplicatePlanSubtree|0|subtreeOccurrences||||||||0|||",
+     "type": "duplicatePlanSubtree",
+     "band": "info",
+     "confidence": "low",
+     "value": 2,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 62,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|0|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 14.9,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 611.2346683216023,
+     "wcHigh": 1048,
+     "rawWaste": {
+      "value": 1048,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "skew|1|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "high",
+     "value": 29.8,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 411.0946643221193,
+     "wcHigh": 1269,
+     "rawWaste": {
+      "value": 1269,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 124789,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 1990,
+     "wcHigh": 1990,
+     "rawWaste": {
+      "value": 1990,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|0|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 10,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 611.2346683216023,
+     "wcHigh": 1048,
+     "rawWaste": {
+      "value": 1048,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|1|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "high",
+     "value": 20,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 411.0946643221193,
+     "wcHigh": 1269,
+     "rawWaste": {
+      "value": 1269,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|8|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "info",
+     "confidence": "medium",
+     "value": 10,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 124,
+     "wcHigh": 124,
+     "rawWaste": {
+      "value": 124,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|10|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 11,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 784.1810810810811,
+     "wcHigh": 784.1810810810811,
+     "rawWaste": {
+      "value": 784.1810810810811,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|7|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 114,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 3827.643787037908,
+     "wcHigh": 3827.643787037908,
+     "rawWaste": {
+      "value": 3827.643787037908,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 38,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.023686944444444444,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "cache-memory-only.ndjson",
+   "stages": 7,
+   "sqlExecutions": 2,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "cacheUtilization||cachedRatio||partialCache|||||||4||",
+     "type": "cacheUtilization",
+     "band": "info",
+     "confidence": "medium",
+     "value": 70,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 88.49860457142857,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "duplicatePlanSubtree|0|subtreeOccurrences||||||||0|||",
+     "type": "duplicatePlanSubtree",
+     "band": "info",
+     "confidence": "low",
+     "value": 2,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|0|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "high",
+     "value": 22.7,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 342.2875431552146,
+     "wcHigh": 852,
+     "rawWaste": {
+      "value": 852,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "skew|2|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "high",
+     "value": 22.1,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 668.6448055719953,
+     "wcHigh": 1511,
+     "rawWaste": {
+      "value": 1511,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "skew|3|P95/median|||||||||||",
+     "type": "skew",
+     "band": "warning",
+     "confidence": "low",
+     "value": 4.4,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 283.44326285910796,
+     "wcHigh": 325,
+     "rawWaste": {
+      "value": 325,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 124812,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 1990,
+     "wcHigh": 1990,
+     "rawWaste": {
+      "value": 1990,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|0|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 10,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 342.2875431552146,
+     "wcHigh": 852,
+     "rawWaste": {
+      "value": 852,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|2|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "high",
+     "value": 20,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 668.6448055719953,
+     "wcHigh": 1511,
+     "rawWaste": {
+      "value": 1511,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|3|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "warning",
+     "confidence": "medium",
+     "value": 10,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 283.44326285910796,
+     "wcHigh": 325,
+     "rawWaste": {
+      "value": 325,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|10|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 39,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1010.991452991453,
+     "wcHigh": 1010.991452991453,
+     "rawWaste": {
+      "value": 1010.991452991453,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|7|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 168,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2664.9644018792915,
+     "wcHigh": 2664.9644018792915,
+     "rawWaste": {
+      "value": 2664.9644018792915,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
+   "name": "failure-job.ndjson",
+   "stages": 3,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "gc|1|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "high",
+     "value": 0,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "jobFailureRate||jobFailureRate|||||||||||",
+     "type": "jobFailureRate",
+     "band": "warning",
+     "confidence": null,
+     "value": 33.3,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.011501666666666667,
+      "unit": "coreHours"
+     }
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 88,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "retryWaste|1|retryWasteMs|||||||||||",
+     "type": "retryWaste",
+     "band": "critical",
+     "confidence": null,
+     "value": 52114,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 26057,
+     "wcHigh": 26057,
+     "rawWaste": {
+      "value": 52114,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "stageFailed|1|stageFailureReason||stageFailure|||||||||",
+     "type": "stageFailed",
+     "band": "critical",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 12,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.046455,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "failure-killed-run.ndjson",
+   "stages": 1,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "incompleteRun||applicationEnd|||||||||||",
+     "type": "incompleteRun",
+     "band": "warning",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    }
+   ]
+  },
+  {
+   "name": "failure-stage-abort.ndjson",
+   "stages": 1,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "failures|0|failureRate|||||||||||",
+     "type": "failures",
+     "band": "warning",
+     "confidence": null,
+     "value": 20,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "gc|0|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "high",
+     "value": 0,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "jobFailureRate||jobFailureRate|||||||||||",
+     "type": "jobFailureRate",
+     "band": "critical",
+     "confidence": null,
+     "value": 100,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.012403333333333334,
+      "unit": "coreHours"
+     }
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 76,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "retryWaste|0|retryWasteMs|||||||||||",
+     "type": "retryWaste",
+     "band": "critical",
+     "confidence": null,
+     "value": 91378,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 18275.6,
+     "wcHigh": 18275.6,
+     "rawWaste": {
+      "value": 91378,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "skew|0|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "high",
+     "value": 138.6,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 10858,
+     "wcHigh": 10858,
+     "rawWaste": {
+      "value": 10858,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "stageFailed|0|stageFailureReason||stageFailure|||||||||",
+     "type": "stageFailed",
+     "band": "critical",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "straggler|0|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "high",
+     "value": 40,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 10858,
+     "wcHigh": 10858,
+     "rawWaste": {
+      "value": 10858,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 24,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.040495277777777776,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "failure-task-retry.ndjson",
+   "stages": 1,
+   "sqlExecutions": 0,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 99,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "retryWaste|0|retryWasteMs|||||||||||",
+     "type": "retryWaste",
+     "band": "critical",
+     "confidence": null,
+     "value": 43909,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 14849,
+     "wcHigh": 14849,
+     "rawWaste": {
+      "value": 43909,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 1,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.01916638888888889,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
    "name": "pairwise-01.ndjson",
    "stages": 5,
    "sqlExecutions": 1,

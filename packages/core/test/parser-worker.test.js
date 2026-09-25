@@ -3663,7 +3663,8 @@ describe('processEvent: SparkListenerBlockUpdated', () => {
     const s = createState();
     submitWithRdd(s, 1, MEMORY_AND_DISK);
     processEvent(blockEvent('rdd_4_0', MEMORY_AND_DISK, 100, 0), s);
-    processEvent(blockEvent('rdd_4_0', ON_DISK, 0, 100), s);
+    // Spark still reports the dropped bytes as Memory Size on a drop to disk; only the level counts.
+    processEvent(blockEvent('rdd_4_0', ON_DISK, 100, 100), s);
     expect(s.rddInfo.get(4)).toMatchObject({ numCachedPartitions: 1, memorySize: 0, diskSize: 100 });
   });
 

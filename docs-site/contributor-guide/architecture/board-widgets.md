@@ -195,7 +195,10 @@ Cache Storage all render through the ordinary active/clean paths instead):
   only written with `spark.eventLog.logBlockUpdates.enabled=true`): each
   RDD's peak count of resident partitions, with the memory/disk bytes at the
   latest moment that peak held, so an `unpersist()` before the log ends
-  doesn't erase it. Without block updates they fall back to
+  doesn't erase it. A block's bytes count only where its storage level says
+  it lives (as in Spark's `AppStatusListener`): a drop from memory to disk
+  still reports the dropped bytes as `Memory Size`. The corpus
+  `cache-memory-only` and `cache-memory-and-disk` logs exercise both rules. Without block updates they fall back to
   `SparkListenerStageSubmitted`'s RDD Info, which is always 0 since Spark 2.3
   and real only on Spark 1.x logs (`storageSource` records which). The two
   proxies are partial caching

@@ -145,7 +145,9 @@ contributor should read; `docs/` stays flat internal engineering records
   them only on `StageCompleted`). Real cache evidence is
   `SparkListenerBlockUpdated`, written only with
   `spark.eventLog.logBlockUpdates.enabled=true` (`recordBlockUpdate` in
-  `event-handlers.ts`); no public corpus log has it yet.
+  `event-handlers.ts`); the corpus `cache-memory-only`/`cache-memory-and-disk`
+  logs carry it. Count a block's sizes only where its level says it lives: a
+  drop to disk still reports the dropped bytes as `Memory Size`.
 - Plan summary is best-effort: `summarizePlanTree` (`src/plan-summary.js`) walks
   the resolved `planTree` with lenient regex on each node's `detail`: silently
   omit unparseable fragments, never surface an error. (The old regex
