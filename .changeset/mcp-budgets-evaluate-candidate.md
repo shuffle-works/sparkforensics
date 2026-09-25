@@ -1,6 +1,7 @@
 ---
 "sparkforensics-mcp": minor
 "sparkforensics-cli": patch
+"sparkforensics-server": minor
 ---
 
 **Breaking (MCP):** `evaluate_budgets` with two runs now applies the absolute budgets
