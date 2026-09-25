@@ -101,12 +101,17 @@ describe('renderPage frontmatter', () => {
     expect(new Set(descriptions).size).toBe(nav.length);
   });
 
-  it('survives quotes and colons in a brief, and falls back when the brief is missing', () => {
+  it('survives quotes and colons in a brief', () => {
     const tricky = { anchor: 'x', title: 'A "quoted": title', brief: 'Brief: with "quotes".' };
     expect(parsePage(renderPage(tricky, '# X\n', () => false, (a) => a)).front)
       .toEqual({ title: tricky.title, titleTemplate: TITLE_TEMPLATE, description: tricky.brief });
-    const bare = { anchor: 'x', title: 'X', brief: '' };
-    expect(parsePage(renderPage(bare, '# X\n', () => false, (a) => a)).front.description).toBe(REFERENCE_DESCRIPTION);
+  });
+
+  it('fails the build naming the entry when its brief is missing or blank', () => {
+    for (const brief of [undefined, '', '   ']) {
+      expect(() => renderPage({ anchor: 'bottleneck-x', title: 'X', brief }, '# X\n', () => false, (a) => a))
+        .toThrow(/"bottleneck-x" has no brief/);
+    }
   });
 
   it('keeps the landing page on the reference title and description', () => {

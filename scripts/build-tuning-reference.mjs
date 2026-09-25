@@ -47,12 +47,14 @@ export const REFERENCE_DESCRIPTION =
 
 // JSON.stringify yields a valid YAML double-quoted scalar for any string.
 export function pageFrontmatter(entry) {
-  const description = entry.brief?.trim() || REFERENCE_DESCRIPTION;
+  if (!entry.brief?.trim()) {
+    throw new Error(`Tuning reference entry "${entry.anchor}" has no brief in content/manifest.yaml; every page needs one for its meta description.`);
+  }
   return [
     '---',
     `title: ${JSON.stringify(entry.title)}`,
     `titleTemplate: ${JSON.stringify(TITLE_TEMPLATE)}`,
-    `description: ${JSON.stringify(description)}`,
+    `description: ${JSON.stringify(entry.brief)}`,
     '---',
     '',
     '',
