@@ -199,6 +199,8 @@ export function finalizeStage(
   };
   delete data.taskAttempts; // internal-only field, already nulled above; never part of the public message
   delete data.failureDetails; // internal-only intern table, summarized by failureGroups
+  delete data.speculativeWinners; // internal-only late-TaskEnd pairing state, kept worker-side
+  delete data.lateSpeculationWaste;
 
   return { type: 'stage', data };
 }

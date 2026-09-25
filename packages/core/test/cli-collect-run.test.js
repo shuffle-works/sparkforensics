@@ -228,6 +228,7 @@ describe('dispatch', () => {
     ['job', 'onJob'],
     ['runAggregates', 'onRunAggregates'],
     ['stageExecutorMetrics', 'onStageExecutorMetrics'],
+    ['stageSpeculationWaste', 'onStageSpeculationWaste'],
   ];
 
   it.each(dataTypes)('routes a %s message\'s data to %s', (type, handlerName) => {

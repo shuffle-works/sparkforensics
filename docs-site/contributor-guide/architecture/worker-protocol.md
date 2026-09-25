@@ -14,6 +14,9 @@ Worker to main:
   concurrency, per-stage task-duration sums), emitted just before `done`.
 - `stageExecutorMetrics`: the post-completion re-post described in
   [Streaming](./overview.md#streaming), also emitted just before `done`.
+- `stageSpeculationWaste`: the speculation totals of stages that gained
+  waste from a TaskEnd after their StageCompleted, also described in
+  [Streaming](./overview.md#streaming) and emitted just before `done`.
 - `done`, `taskData`, `error`.
 
 A History Server failure is always the typed, display-safe payload

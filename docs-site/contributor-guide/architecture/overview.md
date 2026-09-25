@@ -40,7 +40,8 @@ Four modules:
   `FIELDS`, and `TASK_FIELD_NAMES` for the task-field packed-array layout.
 - `src/event-handlers.ts`, holding `processEvent` and the per-event handler
   functions, `accumulateTask`, `createState`, `dispatchLine`,
-  `buildChunkDecoder`, `emitParseCompletion`, `collectStageExecutorMetrics`.
+  `buildChunkDecoder`, `emitParseCompletion`, `collectStageExecutorMetrics`,
+  `collectLateSpeculationWaste`.
 - `src/shs-fetch.ts`, the SHS zip-fetch/decompress path: `runParseFromUrl`,
   `decodeShsArchive`, `parseZipArchive`, `naturalCompare`,
   `reassembleRollingEntries`, `sniffCodec`.
@@ -75,6 +76,17 @@ stage once more just before `done`, and the worker re-posts a single
 `stageExecutorMetrics` message (`Map<stageId, Map<execId, metrics>>`, empty
 when the log has no such data). Main-thread consumers get every stage's
 metrics without a per-stage race.
+
+A TaskEnd that arrives after its stage's StageCompleted is otherwise dropped,
+since the finalized stage already posted its stats. The exception is the
+losing copy of a speculative race: Spark kills it only once the stage
+finishes ("Stage cancelled: Stage finished"), so its TaskEnd is normally late.
+`accumulateTask` adds its time to the stage's `speculationWasteMs` and
+`speculationWastedAttempts` and nothing else, pairing it with a speculative
+winner kept for that purpose. `collectLateSpeculationWaste(state)` re-posts
+the updated totals of those stages once, just before `done`, as a
+`stageSpeculationWaste` message (`Map<stageId, { speculationWasteMs,
+speculationWastedAttempts }>`, empty when no speculative attempt ended late).
 
 Compressed logs are inflated inline. `sniffCodec` reads the leading magic bytes:
 gzip (`1f 8b`), Zstandard (`28 b5 2f fd`, Spark's `spark.io.compression.codec=zstd`),
