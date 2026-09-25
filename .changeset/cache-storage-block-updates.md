@@ -11,8 +11,8 @@ Cache storage (`CSTOR`): the cached-partition counts and memory/disk sizes now c
 stage-submission events, whose cache figures Spark has written as 0 since 2.3, so it could not fire
 on any current Spark version. Each RDD reports its peak cache residency, so an `unpersist()` before
 the log ends no longer hides partitions that never fit. Thresholds are unchanged. RDD Info stays as
-the fallback and is now also read from stage-completion events, where Spark 1.x logs carry the real
-figures. When a run persists RDDs but its log has neither source, the check reports that cache
+the fallback. When a run persists RDDs but its log has neither source and block-update logging was
+off, the check reports that cache
 storage was not logged, naming `spark.eventLog.logBlockUpdates.enabled`, instead of listing Cache
 Storage as a passed check. Block-update lines for broadcast and shuffle blocks are dropped before
 JSON parsing.

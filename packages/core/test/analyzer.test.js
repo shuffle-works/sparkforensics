@@ -2004,6 +2004,12 @@ describe('analyze, cacheUtilization detector', () => {
       expect(cacheFindings(makeApp({ rddInfo, rddBlockUpdates: 5 }))).toEqual([]);
     });
 
+    it('stays silent when block-update logging was on but no RDD block was ever cached', () => {
+      const rddInfo = new Map([[1, unobservedRdd(1)]]);
+      const config = { 'spark.eventLog.logBlockUpdates.enabled': 'true' };
+      expect(cacheFindings(makeApp({ rddInfo, rddBlockUpdates: 0, config }))).toEqual([]);
+    });
+
     it('stays silent when another RDD carries real RDD Info figures (a Spark 1.x log)', () => {
       const rddInfo = new Map([[1, unobservedRdd(1)], [2, makeRdd(2)]]);
       expect(cacheFindings(makeApp({ rddInfo }))).toEqual([]);

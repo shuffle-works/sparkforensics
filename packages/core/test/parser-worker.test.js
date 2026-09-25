@@ -3574,18 +3574,6 @@ describe('processEvent: app-level RDD-info map', () => {
     expect(s.rddInfo.get(7).memorySize).toBe(200);
   });
 
-  it('merges RDD Info from StageCompleted, where Spark 1.x first reports the cache figures, without counting it as a snapshot', () => {
-    const s = createState();
-    const rdd = (cached, mem) => ({ 'RDD ID': 7, 'Name': 'blocks', 'Storage Level': { 'Use Memory': true },
-      'Number of Partitions': 8, 'Number of Cached Partitions': cached, 'Memory Size': mem, 'Disk Size': 0 });
-    processEvent({ Event: 'SparkListenerStageSubmitted',
-      'Stage Info': { 'Stage ID': 0, 'Submission Time': 0, 'RDD Info': [rdd(0, 0)] } }, s);
-    processEvent({ Event: 'SparkListenerStageCompleted',
-      'Stage Info': { 'Stage ID': 0, 'Completion Time': 10, 'RDD Info': [rdd(8, 2800)] } }, s);
-    expect(s.rddInfo.get(7)).toMatchObject({ numCachedPartitions: 8, memorySize: 2800, storageSource: 'rddInfo' });
-    expect(s.evidenceInputs.rddStorageSnapshots).toBe(1);
-  });
-
   it('carries rddInfo on the ApplicationEnd message', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerApplicationStart',
@@ -3684,6 +3672,35 @@ describe('processEvent: SparkListenerBlockUpdated', () => {
     expect(s.rddInfo.get(4)).toMatchObject({
       numCachedPartitions: 1, memorySize: 100, storageSource: 'blockUpdates', stageIds: new Set([1, 2]),
     });
+  });
+
+  it('keeps the persisted storage level when a stage after unpersist() lists the RDD as NONE', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0), s);
+    processEvent(blockEvent('rdd_4_0', NONE, 0, 0), s);
+    submitWithRdd(s, 2, NONE);
+    expect(s.rddInfo.get(4)).toMatchObject({
+      storageLevel: { useMemory: true, useDisk: false }, numCachedPartitions: 1, memorySize: 100,
+    });
+  });
+
+  it('takes the storage level from RDD Info when it has no block updates', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    submitWithRdd(s, 2, NONE);
+    expect(s.rddInfo.get(4).storageLevel).toMatchObject({ useMemory: false, useDisk: false });
+  });
+
+  it('drops a removed executor\'s blocks, so a partition re-cached elsewhere is counted once', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    for (const p of [0, 1]) processEvent(blockEvent(`rdd_4_${p}`, MEMORY_ONLY, 100, 0, '1'), s);
+    processEvent(blockEvent('rdd_4_2', MEMORY_ONLY, 100, 0, '11'), s);
+    // Spark writes no BlockUpdated for blocks lost with their executor.
+    processEvent({ Event: 'SparkListenerExecutorRemoved', 'Timestamp': 50, 'Executor ID': '1', 'Removed Reason': 'lost' }, s);
+    for (const p of [0, 1]) processEvent(blockEvent(`rdd_4_${p}`, MEMORY_ONLY, 100, 0, '2'), s);
+    expect(s.rddInfo.get(4)).toMatchObject({ numCachedPartitions: 3, memorySize: 300 });
   });
 
   it('creates the RDD from its block when no stage has listed it yet', () => {

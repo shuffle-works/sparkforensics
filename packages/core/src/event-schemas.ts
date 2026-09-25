@@ -238,9 +238,6 @@ export const StageCompletedEventSchema = z.object({
     'Submission Time': z.number().optional(),
     'Completion Time': z.number().optional(),
     'Failure Reason': z.string().optional(),
-    // Spark 1.x fills RDD Info's cache figures in only once the stage has run (always 0 on
-    // StageSubmitted); merged through mergeStageRddInfo like StageSubmitted's.
-    'RDD Info': z.array(RddInfoSchema).optional(),
   }),
 });
 

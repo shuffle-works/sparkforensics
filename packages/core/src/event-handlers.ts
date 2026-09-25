@@ -886,30 +886,29 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
   return null;
 }
 
-// countSnapshots is false for StageCompleted: the evidence ledger's rddStorageSnapshots counts
-// stage-submission snapshots only.
 export function mergeStageRddInfo(
-  info: Pick<z.infer<typeof StageSubmittedEventSchema>['Stage Info'], 'RDD Info'>,
+  info: z.infer<typeof StageSubmittedEventSchema>['Stage Info'],
   id: number,
-  state: ParserState,
-  countSnapshots = true,
+  state: ParserState
 ): void {
   for (const rdd of (info['RDD Info'] ?? [])) {
     const rddId = rdd['RDD ID'];
     if (rddId == null) continue;
-    if (countSnapshots) state.evidenceInputs.rddStorageSnapshots++;
+    state.evidenceInputs.rddStorageSnapshots++;
     const sl = rdd['Storage Level'] ?? {};
     const prev = state.rddInfo.get(rddId);
     const stageIds = prev?.stageIds ?? new Set<number>();
     stageIds.add(id);
     // Block updates are the authoritative source once seen: never let a later RDD Info snapshot
-    // (0 on Spark 2.3+) replace them.
+    // (0 on Spark 2.3+) replace them, nor the NONE level an unpersist() leaves on ancestor RDDs
+    // listed by later stages.
     const fromBlocks = prev?.storageSource === 'blockUpdates';
+    const persisted = Boolean(sl['Use Disk'] || sl['Use Memory']);
     state.rddInfo.set(rddId, {
       id: rddId,
       name: rdd['Name'] ?? '',
       callsite: rdd['Callsite'] ?? '',
-      storageLevel: {
+      storageLevel: fromBlocks && !persisted ? prev.storageLevel : {
         useDisk: sl['Use Disk'] ?? false,
         useMemory: sl['Use Memory'] ?? false,
         deserialized: sl['Deserialized'] ?? false,
@@ -929,6 +928,17 @@ export function mergeStageRddInfo(
 }
 
 const RDD_BLOCK_ID = /^rdd_(\d+)_(\d+)$/;
+
+function dropRddBlock(rdd: RddBlockState, key: string): void {
+  const prev = rdd.blocks.get(key);
+  if (!prev) return;
+  rdd.memorySize -= prev.memorySize;
+  rdd.diskSize -= prev.diskSize;
+  const replicas = (rdd.replicasByPartition.get(prev.partition) ?? 1) - 1;
+  if (replicas > 0) rdd.replicasByPartition.set(prev.partition, replicas);
+  else rdd.replicasByPartition.delete(prev.partition);
+  rdd.blocks.delete(key);
+}
 
 /**
  * Folds one SparkListenerBlockUpdated into its RDD's live residency, then publishes the RDD's
@@ -955,15 +965,7 @@ export function recordBlockUpdate(event: z.infer<typeof BlockUpdatedEventSchema>
     state.rddBlocks.set(rddId, rdd);
   }
   const key = `${partition}@${info['Block Manager ID']?.['Executor ID'] ?? ''}`;
-  const prev = rdd.blocks.get(key);
-  if (prev) {
-    rdd.memorySize -= prev.memorySize;
-    rdd.diskSize -= prev.diskSize;
-    const replicas = (rdd.replicasByPartition.get(partition) ?? 1) - 1;
-    if (replicas > 0) rdd.replicasByPartition.set(partition, replicas);
-    else rdd.replicasByPartition.delete(partition);
-    rdd.blocks.delete(key);
-  }
+  dropRddBlock(rdd, key);
   if (resident) {
     // Sizes count only where the level says the block lives, as Spark's AppStatusListener does: a
     // drop from memory to disk reports Use Memory false but still carries the dropped bytes as
@@ -1111,6 +1113,14 @@ export function removeExecutor(event: z.infer<typeof ExecutorRemovedEventSchema>
     reason: event['Removed Reason'] ?? '',
   };
   state.executors.removed.push(ev);
+  // Blocks lost with their executor get no BlockUpdated; drop them as Spark's AppStatusListener
+  // does, so a partition re-cached elsewhere isn't counted twice.
+  const suffix = `@${ev.executorId}`;
+  for (const rdd of state.rddBlocks.values()) {
+    for (const key of rdd.blocks.keys()) {
+      if (key.endsWith(suffix)) dropRddBlock(rdd, key);
+    }
+  }
   return { type: 'executor', data: ev };
 }
 
@@ -1148,7 +1158,6 @@ export function processEvent(event: SparkEvent, state: ParserState): unknown {
       const id = info['Stage ID'];
       const stage = state.stages.get(id);
       if (!stage) return null;
-      mergeStageRddInfo(info, id, state, false);
       stage.completedAt = info['Completion Time'] ?? 0;
       // Older Spark (seen on 1.x-2.0 logs) posts StageSubmitted before the stage's submission
       // time is set; StageCompleted carries it. Without this backfill submittedAt stays 0 and

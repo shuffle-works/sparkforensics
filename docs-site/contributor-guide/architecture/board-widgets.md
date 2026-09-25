@@ -197,7 +197,10 @@ Cache Storage all render through the ordinary active/clean paths instead):
   latest moment that peak held, so an `unpersist()` before the log ends
   doesn't erase it. A block's bytes count only where its storage level says
   it lives (as in Spark's `AppStatusListener`): a drop from memory to disk
-  still reports the dropped bytes as `Memory Size`. The corpus
+  still reports the dropped bytes as `Memory Size`. A removed executor's
+  blocks are dropped with it (Spark logs no update for them), and once an RDD
+  has block updates a later stage's RDD Info can't reset its storage level
+  to `NONE` after an `unpersist()`. The corpus
   `cache-memory-only` and `cache-memory-and-disk` logs exercise both rules. Without block updates they fall back to
   `SparkListenerStageSubmitted`'s RDD Info, which is always 0 since Spark 2.3
   and real only on Spark 1.x logs (`storageSource` records which). The two
@@ -209,7 +212,8 @@ Cache Storage all render through the ordinary active/clean paths instead):
   via `cacheSampleConfidence(rdd.numPartitions)`, because the ratio is a
   storage snapshot, not a runtime read-count, and more partitions average
   that snapshot noise into a more stable ratio. When persisted RDDs have no
-  storage evidence at all (no block updates, and every RDD Info figure 0),
+  storage evidence at all (no block updates, block-update logging not
+  enabled in the app config, and every RDD Info figure 0),
   the detector emits one `storageUnobserved` caveat (`dataUnavailable: true`,
   `info`) naming `spark.eventLog.logBlockUpdates.enabled`. Unlike
   `memoryUtilization`'s caveat it counts for `isRealFinding`, so the card
