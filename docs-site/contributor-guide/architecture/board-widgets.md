@@ -202,8 +202,9 @@ Cache Storage all render through the ordinary active/clean paths instead):
   has block updates a later stage's RDD Info can't reset its storage level
   to `NONE` after an `unpersist()`. The corpus
   `cache-memory-only` and `cache-memory-and-disk` logs exercise both rules. Without block updates they fall back to
-  `SparkListenerStageSubmitted`'s RDD Info, which is always 0 since Spark 2.3
-  and real only on Spark 1.x logs (`storageSource` records which). The two
+  `SparkListenerStageSubmitted`'s RDD Info (`storageSource` records which),
+  which is always 0 since Spark 2.3; Spark 1.x fills it only on
+  `StageCompleted`, which isn't read. The two
   proxies are partial caching
   (`numCachedPartitions / numPartitions < 0.90`, `< 0.50` for the warning
   tier) and disk spillover for `MEMORY_AND_DISK*` RDDs
@@ -213,7 +214,8 @@ Cache Storage all render through the ordinary active/clean paths instead):
   storage snapshot, not a runtime read-count, and more partitions average
   that snapshot noise into a more stable ratio. When persisted RDDs have no
   storage evidence at all (no block updates, block-update logging not
-  enabled in the app config, and every RDD Info figure 0),
+  enabled in the app config, Spark 2.3+ or an unknown version, and every RDD
+  Info figure 0),
   the detector emits one `storageUnobserved` caveat (`dataUnavailable: true`,
   `info`) naming `spark.eventLog.logBlockUpdates.enabled`. Unlike
   `memoryUtilization`'s caveat it counts for `isRealFinding`, so the card

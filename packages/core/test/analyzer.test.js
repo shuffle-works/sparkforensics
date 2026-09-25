@@ -2004,6 +2004,19 @@ describe('analyze, cacheUtilization detector', () => {
       expect(cacheFindings(makeApp({ rddInfo, rddBlockUpdates: 5 }))).toEqual([]);
     });
 
+    it('stays silent before Spark 2.3, which has no block-update logging to enable', () => {
+      const rddInfo = new Map([[1, unobservedRdd(1)]]);
+      expect(cacheFindings(makeApp({ rddInfo, sparkVersion: '1.2.0' }))).toEqual([]);
+      expect(cacheFindings(makeApp({ rddInfo, sparkVersion: '2.2.1' }))).toEqual([]);
+    });
+
+    it('still reports the caveat on Spark 2.3 and when the version is unknown', () => {
+      const rddInfo = new Map([[1, unobservedRdd(1)]]);
+      for (const sparkVersion of ['2.3.0', null, 'unknown']) {
+        expect(cacheFindings(makeApp({ rddInfo, sparkVersion })).map((f) => f.variant)).toEqual(['storageUnobserved']);
+      }
+    });
+
     it('stays silent when block-update logging was on but no RDD block was ever cached', () => {
       const rddInfo = new Map([[1, unobservedRdd(1)]]);
       const config = { 'spark.eventLog.logBlockUpdates.enabled': 'true' };

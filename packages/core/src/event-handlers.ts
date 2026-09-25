@@ -64,7 +64,7 @@ interface RddInfoRecord {
   memorySize: number;
   diskSize: number;
   // Where numCachedPartitions/memorySize/diskSize came from: 'rddInfo' is StageSubmitted's RDD Info
-  // snapshot (always 0 since Spark 2.3, real only on Spark 1.x logs); 'blockUpdates' is the
+  // snapshot (always 0 since Spark 2.3; Spark 1.x fills it only on StageCompleted); 'blockUpdates' is the
   // per-block SparkListenerBlockUpdated stream (spark.eventLog.logBlockUpdates.enabled=true).
   storageSource: 'rddInfo' | 'blockUpdates';
   stageIds: Set<number>;

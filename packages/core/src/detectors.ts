@@ -116,6 +116,7 @@ interface DetectorApp {
     serializer?: string;
   };
   config?: Record<string, string>;
+  sparkVersion?: string | null;
   rddInfo?: Map<number, DetectorRddInfo>;
   // SparkListenerBlockUpdated events seen for rdd_* blocks (0 when logBlockUpdates was off).
   rddBlockUpdates?: number;
@@ -1638,8 +1639,8 @@ export const DETECTORS: Detector[] = [
     // block-access events, so a literal cache hit rate isn't derivable). Two per-RDD tiered
     // checks over rddInfo: partial caching and disk spillover. An RDD can produce both. rddInfo's
     // sizes come from SparkListenerBlockUpdated when the log has it, else from StageSubmitted's
-    // RDD Info (real only on Spark 1.x); with neither and logBlockUpdates off, a storageUnobserved
-    // caveat replaces them.
+    // RDD Info (0 since Spark 2.3; Spark 1.x fills it only on StageCompleted); with neither, on
+    // Spark 2.3+ with logBlockUpdates off, a storageUnobserved caveat replaces them.
     type: 'cacheUtilization', scope: 'app', order: 103, fixEffort: 'code', version: 2,
     docAnchor: '#bottleneck-cache-utilization',
     thresholds: {
@@ -1660,7 +1661,11 @@ export const DETECTORS: Detector[] = [
       let persistedRddCount = 0;
       // With block-update logging on, zero rdd_* updates means nothing was ever cached, not a gap.
       const blockUpdatesLogged = String(ctx.app?.config?.['spark.eventLog.logBlockUpdates.enabled']).toLowerCase() === 'true';
-      let anyStorageEvidence = blockUpdatesLogged || (ctx.app?.rddBlockUpdates ?? 0) > 0;
+      // Spark before 2.3 has no block-update logging and writes RDD Info's cache figures only on
+      // StageCompleted, which isn't read: the caveat's advice doesn't apply there.
+      const version = /^(\d+)\.(\d+)/.exec(ctx.app?.sparkVersion ?? '');
+      const preBlockUpdates = version != null && (Number(version[1]) < 2 || (Number(version[1]) === 2 && Number(version[2]) < 3));
+      let anyStorageEvidence = blockUpdatesLogged || preBlockUpdates || (ctx.app?.rddBlockUpdates ?? 0) > 0;
       for (const rdd of rddInfo.values()) {
         const sl = rdd.storageLevel ?? {};
         if (!(sl.useMemory || sl.useDisk)) continue;
