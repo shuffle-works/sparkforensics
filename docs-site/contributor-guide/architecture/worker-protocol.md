@@ -301,8 +301,11 @@ intentional breaking change and must bump `EVIDENCE_SCHEMA_VERSION`
 `packages/cli/bin/sparkforensics-analyze.mjs` runs the same parser + detector contracts outside the
 browser, for CI. It accepts a single event-log file or a rolling-log
 directory, drives `runParse`/`runParseFiles` (`packages/core/src/parser-worker.ts`) with a
-Node-only File-like shim (`packages/core/src/cli/collect-run.ts`), and writes the exact
+Node-only File-like shim (`nodeFileFromPath` in `packages/core/src/cli/collect-run.ts`), and writes the exact
 `buildEvidenceReport` JSON schema described above: one format, not a second.
+The shim reads each requested slice with a positioned `readSync`, so a local log is never
+loaded whole and has no 2 GiB size limit; `collectRun` closes every descriptor it opened once
+parsing settles, on success and on error.
 Alternatively, `--shs-base-url <url> --app-id <id> [--attempt-id <id>]` fetches
 the run from a Spark History Server instead (mutually exclusive with the
 positional file/directory argument), calling `resolveFromShs`
