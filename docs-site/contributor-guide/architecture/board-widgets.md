@@ -214,7 +214,7 @@ Cache Storage all render through the ordinary active/clean paths instead):
   storage snapshot, not a runtime read-count, and more partitions average
   that snapshot noise into a more stable ratio. When persisted RDDs have no
   storage evidence at all (no block updates, block-update logging not
-  enabled in the app config, Spark 2.3+ or an unknown version, and every RDD
+  enabled in the app config, a recorded Spark version of 2.3 or later, and every RDD
   Info figure 0),
   the detector emits one `storageUnobserved` caveat (`dataUnavailable: true`,
   `info`) naming `spark.eventLog.logBlockUpdates.enabled`. Unlike

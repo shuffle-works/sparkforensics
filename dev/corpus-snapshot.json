@@ -3048,18 +3048,6 @@
    "skippedLines": 0,
    "findings": [
     {
-     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
-     "type": "cacheUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": 1,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
      "type": "memoryUtilization",
      "band": "info",
@@ -3079,18 +3067,6 @@
    "sqlExecutions": 0,
    "skippedLines": 0,
    "findings": [
-    {
-     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
-     "type": "cacheUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": 1,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
     {
      "key": "jobFailureRate||jobFailureRate|||||||||||",
      "type": "jobFailureRate",
@@ -3138,18 +3114,6 @@
    "sqlExecutions": 0,
    "skippedLines": 0,
    "findings": [
-    {
-     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
-     "type": "cacheUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": 1,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
      "type": "memoryUtilization",

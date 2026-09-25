@@ -1662,9 +1662,10 @@ export const DETECTORS: Detector[] = [
       // With block-update logging on, zero rdd_* updates means nothing was ever cached, not a gap.
       const blockUpdatesLogged = String(ctx.app?.config?.['spark.eventLog.logBlockUpdates.enabled']).toLowerCase() === 'true';
       // Spark before 2.3 has no block-update logging and writes RDD Info's cache figures only on
-      // StageCompleted, which isn't read: the caveat's advice doesn't apply there.
+      // StageCompleted, which isn't read: the caveat's advice doesn't apply there. A log with no
+      // version is pre-1.3 (no SparkListenerLogStart); every 2.3+ log records one.
       const version = /^(\d+)\.(\d+)/.exec(ctx.app?.sparkVersion ?? '');
-      const preBlockUpdates = version != null && (Number(version[1]) < 2 || (Number(version[1]) === 2 && Number(version[2]) < 3));
+      const preBlockUpdates = version == null || Number(version[1]) < 2 || (Number(version[1]) === 2 && Number(version[2]) < 3);
       let anyStorageEvidence = blockUpdatesLogged || preBlockUpdates || (ctx.app?.rddBlockUpdates ?? 0) > 0;
       for (const rdd of rddInfo.values()) {
         const sl = rdd.storageLevel ?? {};

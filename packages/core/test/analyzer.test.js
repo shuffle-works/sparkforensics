@@ -2010,9 +2010,16 @@ describe('analyze, cacheUtilization detector', () => {
       expect(cacheFindings(makeApp({ rddInfo, sparkVersion: '2.2.1' }))).toEqual([]);
     });
 
-    it('still reports the caveat on Spark 2.3 and when the version is unknown', () => {
+    it('stays silent when the log records no Spark version (pre-1.3, no SparkListenerLogStart)', () => {
       const rddInfo = new Map([[1, unobservedRdd(1)]]);
-      for (const sparkVersion of ['2.3.0', null, 'unknown']) {
+      for (const sparkVersion of [null, undefined]) {
+        expect(cacheFindings(makeApp({ rddInfo, sparkVersion }))).toEqual([]);
+      }
+    });
+
+    it('still reports the caveat from Spark 2.3 on', () => {
+      const rddInfo = new Map([[1, unobservedRdd(1)]]);
+      for (const sparkVersion of ['2.3.0', '3.5.1']) {
         expect(cacheFindings(makeApp({ rddInfo, sparkVersion })).map((f) => f.variant)).toEqual(['storageUnobserved']);
       }
     });
