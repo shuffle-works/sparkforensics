@@ -2409,6 +2409,80 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     expect(msg.data.retryTaskSamples[0]).toMatchObject({ taskId: 9, attemptNumber: 1 });
   });
 
+  // Spark kills a losing speculative copy only once its stage finishes ("Stage cancelled: Stage
+  // finished"), so the loser's TaskEnd lands after StageCompleted has already finalized the stage.
+  describe('late TaskEnd after StageCompleted', () => {
+    // emitParseCompletion posts the final app message, so the run needs an ApplicationStart.
+    function startRun() {
+      const s = createState();
+      processEvent({ Event: 'SparkListenerApplicationStart', 'App ID': 'application_0000000000000_0001', 'App Name': 't', Timestamp: 0 }, s);
+      setupStage(s);
+      return s;
+    }
+    const complete = (s, at) => processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': at } }, s);
+    // Collects the pre-done patch messages into an appModel holding the stage message posted at completion.
+    function finishParse(s, stageMsg) {
+      const appModel = { app: null, stages: new Map([[1, stageMsg.data]]), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map() };
+      const cb = createModelCallbacks(appModel, {});
+      emitParseCompletion(s, (m) => routeMessage(m, cb), 0);
+      return appModel;
+    }
+
+    it('counts a late killed speculative copy as speculation waste, and nothing else', () => {
+      const s = startRun();
+      processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100 }), s);
+      const stageMsg = complete(s, 100);
+      processEvent(specTaskEnd(1, 0, { launch: 10, finish: 130, killed: true, speculative: true, taskId: 5, attemptNumber: 1 }), s);
+
+      const stage = finishParse(s, stageMsg).stages.get(1);
+      expect(stage).toMatchObject({ speculationWasteMs: 120, speculationWastedAttempts: 1 });
+      // Every other late-attempt stat stays excluded.
+      expect(stage).toMatchObject({ taskCount: 1, failedTasks: 0, speculativeTasks: 0, retryWasteMs: 0, wastedAttempts: 0, executorRunTime: 100 });
+      expect(s.evidenceInputs.taskRecords).toBe(1);
+    });
+
+    it('counts a late killed original whose speculative copy already won', () => {
+      const s = startRun();
+      processEvent(specTaskEnd(1, 0, { launch: 50, finish: 100, speculative: true, taskId: 5, attemptNumber: 1 }), s);
+      const stageMsg = complete(s, 100);
+      processEvent(specTaskEnd(1, 0, { launch: 0, finish: 400, killed: true }), s);
+
+      expect(finishParse(s, stageMsg).stages.get(1)).toMatchObject({ speculationWasteMs: 400, speculationWastedAttempts: 1 });
+    });
+
+    it('ignores a late non-speculative attempt that raced no speculative copy', () => {
+      const s = startRun();
+      processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100 }), s);
+      const stageMsg = complete(s, 100);
+      processEvent(specTaskEnd(1, 0, { launch: 0, finish: 300, killed: true, taskId: 6, attemptNumber: 1 }), s);
+
+      expect(finishParse(s, stageMsg).stages.get(1)).toMatchObject({ speculationWasteMs: 0, speculationWastedAttempts: 0, retryWasteMs: 0 });
+    });
+
+    it('keeps the pairing state out of the posted stage message', () => {
+      const s = startRun();
+      processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, speculative: true }), s);
+      const stageMsg = complete(s, 100);
+      expect(stageMsg.data).not.toHaveProperty('speculativeWinners');
+      expect(stageMsg.data).not.toHaveProperty('lateSpeculationWaste');
+    });
+
+    it('lets speculationWaste fire on losers that all end after StageCompleted', () => {
+      const s = startRun();
+      for (let i = 0; i < 6; i++) processEvent(specTaskEnd(1, i, { launch: 0, finish: 1000, taskId: i }), s);
+      const stageMsg = complete(s, 1000);
+      // Six losing copies, 21.5 s each: 129 s total, over the 5-attempt, 60 s floor.
+      for (let i = 0; i < 6; i++) {
+        processEvent(specTaskEnd(1, i, { launch: 500, finish: 22000, killed: true, speculative: true, taskId: 100 + i, attemptNumber: 1 }), s);
+      }
+      expect(analyze(null, new Map([[1, stageMsg.data]]), [], []).some((f) => f.type === 'speculationWaste')).toBe(false);
+
+      const appModel = finishParse(s, stageMsg);
+      const finding = analyze(null, appModel.stages, [], []).find((f) => f.type === 'speculationWaste');
+      expect(finding).toMatchObject({ stageId: 1, value: 129000 });
+    });
+  });
+
   it('does not add a speculative retry to retryTaskSamples', () => {
     const s = createState();
     setupStage(s);
@@ -3005,7 +3079,8 @@ describe('runParse: dropped-file path', () => {
       data: { evidenceInputs: { applicationEnds: 1, environmentUpdates: 0 } },
     });
     expect(emitted[doneIndex - 2].type).toBe('stageExecutorMetrics');
-    expect(emitted[doneIndex - 3].type).toBe('runAggregates');
+    expect(emitted[doneIndex - 3].type).toBe('stageSpeculationWaste');
+    expect(emitted[doneIndex - 4].type).toBe('runAggregates');
   });
 
   it('decompresses and parses a dropped gzip log', async () => {

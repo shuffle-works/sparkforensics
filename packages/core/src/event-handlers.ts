@@ -147,6 +147,12 @@ interface StageRecord {
   wastedAttempts: number;
   speculationWasteMs: number;
   speculationWastedAttempts: number;
+  // Keys (`attempt:index`) whose recorded winner is a speculative copy. Kept past finalize so a
+  // late TaskEnd for the original it beat still pairs as speculation waste (accountLateSpeculativeLoser).
+  speculativeWinners: Set<string>;
+  // Set once a late TaskEnd adds speculation waste after finalize, so the stage is re-posted
+  // via `stageSpeculationWaste` before `done`.
+  lateSpeculationWaste: boolean;
   executorMetrics: Map<string, Record<string, number>>;
 }
 
@@ -509,8 +515,12 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
   const stage = state.stages.get(stageId);
   if (!stage) return null;
   // Late TaskEnd for a stage whose StageCompleted already freed taskAttempts (finalizeStage): its
-  // stats are already baked into the finalized stage, don't re-add.
-  if (stage.taskAttempts === null) return null;
+  // stats are already baked into the finalized stage, don't re-add. The one exception is a losing
+  // speculative attempt, whose wasted time the finalized stage never saw.
+  if (stage.taskAttempts === null) {
+    accountLateSpeculativeLoser(event, stage);
+    return null;
+  }
 
   state.evidenceInputs.taskRecords++;
 
@@ -566,6 +576,7 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
 
   if (!existing) {
     stage.taskAttempts.set(key, record);
+    if (record.speculative && !record.failed && typeof key === 'string') stage.speculativeWinners.add(key);
   } else if (existing.failed && !record.failed) {
     // A retry succeeded where the earlier attempt failed: the earlier attempt's time was wasted.
     // Spark marks only the speculative COPY's Speculative flag, never the original it raced, so
@@ -581,6 +592,7 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
       }
     }
     stage.taskAttempts.set(key, record);
+    if (record.speculative && typeof key === 'string') stage.speculativeWinners.add(key);
   } else {
     // Non-winning duplicate (both failed, or a race where a winner is
     // already recorded): its time is waste, its metrics are discarded.
@@ -597,6 +609,22 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
   }
 
   return null;
+}
+
+// Spark kills the losing copy of a speculative race only once the stage finishes ("Stage
+// cancelled: Stage finished"), so that loser's TaskEnd normally lands after StageCompleted. Count
+// its time as speculation waste, pairing it the same way accumulateTask does: the late attempt is
+// the speculative copy itself, or the original that a speculative winner beat. Every other stat
+// of a late attempt stays excluded, as the finalized stage already posted them.
+function accountLateSpeculativeLoser(event: z.infer<typeof TaskEndEventSchema>, stage: StageRecord): void {
+  const info = event['Task Info'];
+  const index = info?.['Index'];
+  if (!info || index == null) return;
+  const key = `${event['Stage Attempt ID'] ?? 0}:${index}`;
+  if (info['Speculative'] !== true && !stage.speculativeWinners.has(key)) return;
+  stage.speculationWasteMs += (info['Finish Time'] ?? 0) - (info['Launch Time'] ?? 0);
+  stage.speculationWastedAttempts++;
+  stage.lateSpeculationWaste = true;
 }
 
 export function resolvePlanTree(
@@ -828,6 +856,8 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
     wastedAttempts: 0,
     speculationWasteMs: 0,
     speculationWastedAttempts: 0,
+    speculativeWinners: new Set(),
+    lateSpeculationWaste: false,
     executorMetrics: new Map(),
   });
   mergeStageRddInfo(info, id, state);
@@ -1265,11 +1295,26 @@ export function collectStageExecutorMetrics(state: ParserState): Map<number, Map
   return out;
 }
 
+// Speculation totals of every stage a late TaskEnd added waste to (accountLateSpeculativeLoser),
+// re-posted once before `done`: the stage message posted at completion carried the earlier totals.
+export function collectLateSpeculationWaste(
+  state: ParserState,
+): Map<number, { speculationWasteMs: number; speculationWastedAttempts: number }> {
+  const out = new Map<number, { speculationWasteMs: number; speculationWastedAttempts: number }>();
+  for (const [id, stage] of state.stages) {
+    if (stage.lateSpeculationWaste) {
+      out.set(id, { speculationWasteMs: stage.speculationWasteMs, speculationWastedAttempts: stage.speculationWastedAttempts });
+    }
+  }
+  return out;
+}
+
 export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => void, linesProcessed: number): void {
   // Executions that never ended keep their latest AQE update, as they did before it was deferred.
   for (const executionId of [...state.pendingAdaptiveUpdates.keys()]) flushAdaptiveUpdate(executionId, state, emit);
   emit({ type: 'progress', pct: 1, linesProcessed });
   emit({ type: 'runAggregates', data: computeRunAggregates(state.taskStore) });
+  emit({ type: 'stageSpeculationWaste', data: collectLateSpeculationWaste(state) });
   emit({ type: 'stageExecutorMetrics', data: collectStageExecutorMetrics(state) });
   emit(appMessage(state));
   emit({ type: 'done', skippedLines: state.skippedLines });
