@@ -346,13 +346,8 @@ export async function main(argv, { fetchImpl } = {}) {
     else if (r.status === 'violation') process.stderr.write(`[violation] ${r.name}: ${r.detail}\n`);
   }
 
-  // Always checked, unlike the opt-in budgets: a run with no ApplicationEnd is
-  // inconclusive by default, not only when --max-runtime is passed.
-  const incompleteRunFinding = catalog.find((f) => f.type === 'incompleteRun');
-  if (incompleteRunFinding) process.stderr.write(`[inconclusive] run-complete: ${incompleteRunFinding.recommendation}\n`);
-
   if (violated) process.exitCode = 1;
-  else if (inconclusive || incompleteRunFinding) process.exitCode = 3;
+  else if (inconclusive) process.exitCode = 3;
   else process.exitCode = 0;
 }
 

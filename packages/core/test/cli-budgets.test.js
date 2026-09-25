@@ -57,6 +57,14 @@ describe('evaluateBudgets', () => {
     expect(inconclusive).toBe(true);
   });
 
+  it('reports run-complete inconclusive with no budgets set when the catalog has an incompleteRun finding', () => {
+    const catalog = [{ type: 'incompleteRun', impactBand: 'warning', recommendation: 'No ApplicationEnd.' }];
+    const { results, violated, inconclusive } = evaluateBudgets({ appModel: baseAppModel(), catalog, budgets: {} });
+    expect(results).toEqual([{ name: 'run-complete', status: 'inconclusive', detail: 'No ApplicationEnd.' }]);
+    expect(violated).toBe(false);
+    expect(inconclusive).toBe(true);
+  });
+
   it('flags a spill violation from the finding catalog', () => {
     const catalog = [{ type: 'spill', stageId: 1, impactBand: 'critical', value: 5 * 1024 ** 3 }];
     const { results, violated } = evaluateBudgets({

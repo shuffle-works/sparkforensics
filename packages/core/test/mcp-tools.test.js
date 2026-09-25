@@ -777,6 +777,57 @@ describe('evaluateBudgetsForRun', () => {
     }
   });
 
+  it('applies absolute budgets to the candidate run, not the baseline, when given two runs', async () => {
+    const baseline = tmpEventLogWithDuration('app-a', 1000);
+    const candidate = tmpEventLogWithDuration('app-b', 2000);
+    try {
+      const { runId: baselineId } = await resolveOrCreateRun({ source: { path: baseline.path } });
+      const { runId: candidateId } = await resolveOrCreateRun({ source: { path: candidate.path } });
+      const result = await evaluateBudgetsForRun({ runId: baselineId }, { maxRuntimeMs: 1500 }, { runId: candidateId });
+      expect(result).toEqual({
+        runId: candidateId,
+        baselineRunId: baselineId,
+        results: [{ name: 'max-runtime', status: 'violation', detail: 'Runtime 2000ms exceeds budget 1500ms.' }],
+        violated: true,
+        inconclusive: false,
+      });
+    } finally {
+      rmSync(baseline.dir, { recursive: true, force: true });
+      rmSync(candidate.dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports run-complete inconclusive for a run with no ApplicationEnd, even with no budgets set', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, '{"Event":"SparkListenerApplicationStart","App ID":"app-i","App Name":"t","Timestamp":0}\n');
+    try {
+      const { results, violated, inconclusive } = await evaluateBudgetsForRun({ source: { path } }, {});
+      expect(results).toMatchObject([{ name: 'run-complete', status: 'inconclusive' }]);
+      expect(violated).toBe(false);
+      expect(inconclusive).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('checks the candidate, not the baseline, for run-complete when given two runs', async () => {
+    const baselineDir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    const baselinePath = join(baselineDir, 'eventlog');
+    writeFileSync(baselinePath, '{"Event":"SparkListenerApplicationStart","App ID":"app-i","App Name":"t","Timestamp":0}\n');
+    const candidate = tmpEventLogWithDuration('app-b', 1000);
+    try {
+      const { results, inconclusive } = await evaluateBudgetsForRun(
+        { source: { path: baselinePath } }, {}, { source: { path: candidate.path } },
+      );
+      expect(results).toEqual([]);
+      expect(inconclusive).toBe(false);
+    } finally {
+      rmSync(baselineDir, { recursive: true, force: true });
+      rmSync(candidate.dir, { recursive: true, force: true });
+    }
+  });
+
   it('passes a fail-on-introduced budget when the candidate introduces no matching findings', async () => {
     const a = tmpEventLogWithDuration('app-a', 1000);
     const b = tmpEventLogWithDuration('app-b', 1000);

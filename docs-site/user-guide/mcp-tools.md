@@ -149,10 +149,13 @@ Evaluate a run against pass/fail thresholds: the MCP equivalent of the CLI's
 Parameters (all optional):
 
 - `source` / `runId`: identify the run to evaluate (same shape as
-  `diagnose_run`)
+  `diagnose_run`). When `runIdB`/`sourceB` is also given, this run is the
+  regression baseline instead.
 - `maxRuntimeMs`, `maxSpillGb`, `maxSkewRatio`, `maxFailedTaskRatePct`,
-  `minEfficiencyPct`: single-run budgets, each evaluated only if provided
-- `runIdB` / `sourceB`: a second run to compare the first against, so
+  `minEfficiencyPct`: absolute budgets, each evaluated only if provided. With
+  two runs they apply to the candidate (`runIdB`/`sourceB`), the same as the
+  CLI's `--baseline` mode.
+- `runIdB` / `sourceB`: a candidate run to compare against the first, so
   regression budgets can be evaluated. Same `runId`/`source` shape, resolved
   the same way. Omit both to skip regression budgets.
 - `maxRegressionPct`, `regressionMetric`: fail if `regressionMetric` (default
@@ -166,7 +169,13 @@ Parameters (all optional):
 
 A budget whose required evidence is missing (e.g. no `runIdB`/`sourceB` for a
 regression budget, or a run with no trustworthy task-level evidence) reports
-`inconclusive`, not a false pass.
+`inconclusive`, not a false pass. Independent of which budgets you pass, an
+evaluated run with no ApplicationEnd event adds a `run-complete` result with
+status `inconclusive`, the same check that makes the CLI exit `3`.
+
+The response's `runId` is the run the absolute budgets were evaluated on (the
+candidate when two runs are given). With two runs, `baselineRunId` names the
+baseline.
 
 Example call:
 
@@ -186,7 +195,8 @@ Example response:
 
 ```json
 {
-  "runId": "aaaa1111-...",
+  "runId": "bbbb2222-...",
+  "baselineRunId": "aaaa1111-...",
   "results": [
     {
       "name": "max-regression",
