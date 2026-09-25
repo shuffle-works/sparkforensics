@@ -103,6 +103,7 @@ interface DetectorRddInfo {
   numCachedPartitions: number;
   memorySize: number;
   diskSize: number;
+  storageSource?: 'rddInfo' | 'blockUpdates';
 }
 
 interface DetectorApp {
@@ -116,6 +117,8 @@ interface DetectorApp {
   };
   config?: Record<string, string>;
   rddInfo?: Map<number, DetectorRddInfo>;
+  // SparkListenerBlockUpdated events seen for rdd_* blocks (0 when logBlockUpdates was off).
+  rddBlockUpdates?: number;
 }
 
 interface DetectorExecutorAddedEvent { executorId: string; timestamp: number; totalCores?: number; }
@@ -626,10 +629,12 @@ function clippedWasteMs(
   return est ? est.wallClock.high : wasteMs;
 }
 
-// Shared by cacheUtilization's two variants: the ratio is a point-in-time storage snapshot from
-// stage-submission events, not a runtime block-access read-count.
-const CACHE_UTILIZATION_VALIDATION =
-  "This ratio is a point-in-time storage snapshot from stage-submission events, not a runtime read-count. Confirm against the Spark UI's Storage tab before acting.";
+// Shared by cacheUtilization's two variants, worded per storage source: neither is a runtime
+// block-access read-count.
+const CACHE_UTILIZATION_VALIDATION = {
+  rddInfo: "This ratio is a point-in-time storage snapshot from stage-submission events, not a runtime read-count. Confirm against the Spark UI's Storage tab before acting.",
+  blockUpdates: "This ratio is the RDD's peak cache residency rebuilt from block-update events, not a runtime read-count. Confirm against the Spark UI's Storage tab before acting.",
+} as const;
 
 // Both cachedRatio and diskRatio are percentages of an RDD's partition/byte count: with few
 // partitions, one partition flipping cached/evicted (or disk-resident/memory-resident) swings the
@@ -653,7 +658,7 @@ function partialCacheFinding(rdd: DetectorRddInfo, cachedRatio: number, impactBa
     rddId: rdd.id, rddName,
     impactBand, metric: 'cachedRatio', value: cachedPct,
     confidence: cacheSampleConfidence(rdd.numPartitions),
-    validationRequired: CACHE_UTILIZATION_VALIDATION,
+    validationRequired: CACHE_UTILIZATION_VALIDATION[rdd.storageSource ?? 'rddInfo'],
     memorySize: rdd.memorySize, diskSize: rdd.diskSize,
     numCachedPartitions: rdd.numCachedPartitions, numPartitions: rdd.numPartitions,
     recommendation: `RDD ${rddName} is ${evictedPct}% evicted from cache (${cachedPct}% of partitions cached). Increase executor memory or reduce the cached dataset size.`,
@@ -668,10 +673,22 @@ function diskSpilloverFinding(rdd: DetectorRddInfo, diskRatio: number, impactBan
     rddId: rdd.id, rddName,
     impactBand, metric: 'diskRatio', value: diskPct,
     confidence: cacheSampleConfidence(rdd.numPartitions),
-    validationRequired: CACHE_UTILIZATION_VALIDATION,
+    validationRequired: CACHE_UTILIZATION_VALIDATION[rdd.storageSource ?? 'rddInfo'],
     memorySize: rdd.memorySize, diskSize: rdd.diskSize,
     numCachedPartitions: rdd.numCachedPartitions, numPartitions: rdd.numPartitions,
     recommendation: `RDD ${rddName} is ${diskPct}% spilled to disk despite requesting MEMORY_AND_DISK. Executor memory may be too small for this cached dataset.`,
+  };
+}
+
+// Persisted RDDs with no storage evidence at all: no block updates in the log, and RDD Info's
+// sizes are the 0 that Spark 2.3+ always writes. Reports the gap instead of a clean result, the
+// same missing-evidence shape as memoryUtilization's dataUnavailable caveat.
+function storageUnobservedFinding(persistedRddCount: number): Finding {
+  const rdds = persistedRddCount === 1 ? '1 persisted RDD has' : `${persistedRddCount} persisted RDDs have`;
+  return {
+    type: 'cacheUtilization', variant: 'storageUnobserved', stageId: null,
+    impactBand: 'info', metric: 'persistedRdds', value: persistedRddCount, dataUnavailable: true,
+    recommendation: `${rdds} no cache-storage evidence in this log, so eviction and disk spillover can't be checked: Spark 2.3+ records cached sizes only as block updates, which need spark.eventLog.logBlockUpdates.enabled=true.`,
   };
 }
 
@@ -1619,8 +1636,10 @@ export const DETECTORS: Detector[] = [
   {
     // Per-RDD cache-utilization proxies (this repo's own design: Spark event logs carry no
     // block-access events, so a literal cache hit rate isn't derivable). Two per-RDD tiered
-    // checks over rddInfo snapshots: partial caching and disk spillover. An RDD can produce both.
-    type: 'cacheUtilization', scope: 'app', order: 103, fixEffort: 'code', version: 1,
+    // checks over rddInfo: partial caching and disk spillover. An RDD can produce both. rddInfo's
+    // sizes come from SparkListenerBlockUpdated when the log has it, else from StageSubmitted's
+    // RDD Info (real only on Spark 1.x); with neither, a storageUnobserved caveat replaces them.
+    type: 'cacheUtilization', scope: 'app', order: 103, fixEffort: 'code', version: 2,
     docAnchor: '#bottleneck-cache-utilization',
     thresholds: {
       cachedRatioWarn: 0.50, cachedRatioInfo: 0.90,
@@ -1637,10 +1656,14 @@ export const DETECTORS: Detector[] = [
       const rddInfo = ctx.app?.rddInfo;
       if (!(rddInfo instanceof Map)) return null;
       const out: Finding[] = [];
+      let persistedRddCount = 0;
+      let anyStorageEvidence = (ctx.app?.rddBlockUpdates ?? 0) > 0;
       for (const rdd of rddInfo.values()) {
         const sl = rdd.storageLevel ?? {};
         if (!(sl.useMemory || sl.useDisk)) continue;
+        persistedRddCount++;
         if (!((rdd.numCachedPartitions ?? 0) > 0)) continue;
+        anyStorageEvidence = true;
 
         if ((rdd.numPartitions ?? 0) > 0) {
           const cachedRatio = rdd.numCachedPartitions / rdd.numPartitions;
@@ -1657,6 +1680,7 @@ export const DETECTORS: Detector[] = [
           }
         }
       }
+      if (persistedRddCount > 0 && !anyStorageEvidence) out.push(storageUnobservedFinding(persistedRddCount));
       return out;
     },
   },

@@ -14,6 +14,7 @@ import {
   DriverAccumUpdatesEventSchema,
   ExecutorAddedEventSchema,
   ExecutorRemovedEventSchema,
+  BlockUpdatedEventSchema,
   type SparkEvent,
   type SparkPlanInfo,
 } from './event-schemas.ts';
@@ -62,7 +63,22 @@ interface RddInfoRecord {
   numCachedPartitions: number;
   memorySize: number;
   diskSize: number;
+  // Where numCachedPartitions/memorySize/diskSize came from: 'rddInfo' is StageSubmitted's RDD Info
+  // snapshot (always 0 since Spark 2.3, real only on Spark 1.x logs); 'blockUpdates' is the
+  // per-block SparkListenerBlockUpdated stream (spark.eventLog.logBlockUpdates.enabled=true).
+  storageSource: 'rddInfo' | 'blockUpdates';
   stageIds: Set<number>;
+}
+
+// Live per-RDD block residency rebuilt from SparkListenerBlockUpdated. Keyed by partition and
+// executor because a block's status is per BlockManager: replicas and re-caches on another
+// executor are separate entries, as in Spark's own AppStatusListener.
+interface RddBlockState {
+  blocks: Map<string, { partition: number; memorySize: number; diskSize: number }>;
+  replicasByPartition: Map<number, number>;
+  memorySize: number;
+  diskSize: number;
+  peakCachedPartitions: number;
 }
 
 type PostableRddInfoRecord = Omit<RddInfoRecord, 'stageIds'> & { stageIds: number[] };
@@ -184,6 +200,10 @@ export interface ParserState {
   skippedLines: number;
   accumState: Map<number, Map<number, number>>;
   rddInfo: Map<number, RddInfoRecord>;
+  rddBlocks: Map<number, RddBlockState>;
+  // SparkListenerBlockUpdated events for rdd_* blocks. Zero means the log carries no block-level
+  // cache evidence (logBlockUpdates off, or nothing was ever cached).
+  rddBlockUpdates: number;
   taskAccumStages: Map<number, Set<number>>;
   evidenceInputs: EvidenceInputs;
   // An open SQL execution's latest AQE update, as raw line text, not yet parsed (see
@@ -373,6 +393,8 @@ export function createState(): ParserState {
     skippedLines: 0,
     accumState: new Map(),
     rddInfo: new Map(),
+    rddBlocks: new Map(),
+    rddBlockUpdates: 0,
     taskAccumStages: new Map(),
     pendingAdaptiveUpdates: new Map(),
     resolvedPlanExecutions: new Set(),
@@ -484,6 +506,7 @@ function snapshotEvidenceInputs(state: ParserState): EvidenceInputs {
 function appMessage(state: ParserState): { type: 'app'; data: Record<string, unknown> } {
   const evidenceInputs = snapshotEvidenceInputs(state);
   state.app!.evidenceInputs = evidenceInputs;
+  state.app!.rddBlockUpdates = state.rddBlockUpdates;
   return {
     type: 'app',
     data: { ...state.app!, rddInfo: snapshotRddInfo(state.rddInfo) },
@@ -863,19 +886,25 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
   return null;
 }
 
+// countSnapshots is false for StageCompleted: the evidence ledger's rddStorageSnapshots counts
+// stage-submission snapshots only.
 export function mergeStageRddInfo(
-  info: z.infer<typeof StageSubmittedEventSchema>['Stage Info'],
+  info: Pick<z.infer<typeof StageSubmittedEventSchema>['Stage Info'], 'RDD Info'>,
   id: number,
-  state: ParserState
+  state: ParserState,
+  countSnapshots = true,
 ): void {
   for (const rdd of (info['RDD Info'] ?? [])) {
     const rddId = rdd['RDD ID'];
     if (rddId == null) continue;
-    state.evidenceInputs.rddStorageSnapshots++;
+    if (countSnapshots) state.evidenceInputs.rddStorageSnapshots++;
     const sl = rdd['Storage Level'] ?? {};
     const prev = state.rddInfo.get(rddId);
     const stageIds = prev?.stageIds ?? new Set<number>();
     stageIds.add(id);
+    // Block updates are the authoritative source once seen: never let a later RDD Info snapshot
+    // (0 on Spark 2.3+) replace them.
+    const fromBlocks = prev?.storageSource === 'blockUpdates';
     state.rddInfo.set(rddId, {
       id: rddId,
       name: rdd['Name'] ?? '',
@@ -890,12 +919,76 @@ export function mergeStageRddInfo(
       // Merge forward, don't overwrite: an RDD cached for the first time in THIS stage legitimately
       // reports 0 (snapshot reflects BlockManager state at submission). Keep the last real value on
       // a resubmission instead of regressing to 0.
-      numCachedPartitions: rdd['Number of Cached Partitions'] || prev?.numCachedPartitions || 0,
-      memorySize: rdd['Memory Size'] || prev?.memorySize || 0,
-      diskSize: rdd['Disk Size'] || prev?.diskSize || 0,
+      numCachedPartitions: fromBlocks ? prev.numCachedPartitions : rdd['Number of Cached Partitions'] || prev?.numCachedPartitions || 0,
+      memorySize: fromBlocks ? prev.memorySize : rdd['Memory Size'] || prev?.memorySize || 0,
+      diskSize: fromBlocks ? prev.diskSize : rdd['Disk Size'] || prev?.diskSize || 0,
+      storageSource: prev?.storageSource ?? 'rddInfo',
       stageIds,
     });
   }
+}
+
+const RDD_BLOCK_ID = /^rdd_(\d+)_(\d+)$/;
+
+/**
+ * Folds one SparkListenerBlockUpdated into its RDD's live residency, then publishes the RDD's
+ * peak state to rddInfo: the most partitions resident at once, with the memory/disk bytes at the
+ * latest moment that peak held. A peak rather than the final state, because an unpersist() (or
+ * the app's own cleanup) removes every block before the log ends, and a final snapshot would
+ * read as "nothing was cached". Ties refresh, so a partition dropping from memory to disk after
+ * the peak still shows up in diskSize. Non-RDD blocks (broadcast, shuffle, task results) are ignored.
+ */
+export function recordBlockUpdate(event: z.infer<typeof BlockUpdatedEventSchema>, state: ParserState): null {
+  const info = event['Block Updated Info'];
+  const match = RDD_BLOCK_ID.exec(info['Block ID']);
+  if (!match) return null;
+  state.rddBlockUpdates++;
+  const rddId = Number(match[1]);
+  const partition = Number(match[2]);
+  const sl = info['Storage Level'] ?? {};
+  // Spark's StorageLevel.isValid: a removal or eviction reports level NONE.
+  const resident = Boolean(sl['Use Memory'] || sl['Use Disk']) && (sl['Replication'] ?? 1) > 0;
+
+  let rdd = state.rddBlocks.get(rddId);
+  if (!rdd) {
+    rdd = { blocks: new Map(), replicasByPartition: new Map(), memorySize: 0, diskSize: 0, peakCachedPartitions: 0 };
+    state.rddBlocks.set(rddId, rdd);
+  }
+  const key = `${partition}@${info['Block Manager ID']?.['Executor ID'] ?? ''}`;
+  const prev = rdd.blocks.get(key);
+  if (prev) {
+    rdd.memorySize -= prev.memorySize;
+    rdd.diskSize -= prev.diskSize;
+    const replicas = (rdd.replicasByPartition.get(partition) ?? 1) - 1;
+    if (replicas > 0) rdd.replicasByPartition.set(partition, replicas);
+    else rdd.replicasByPartition.delete(partition);
+    rdd.blocks.delete(key);
+  }
+  if (resident) {
+    const block = { partition, memorySize: info['Memory Size'] ?? 0, diskSize: info['Disk Size'] ?? 0 };
+    rdd.blocks.set(key, block);
+    rdd.memorySize += block.memorySize;
+    rdd.diskSize += block.diskSize;
+    rdd.replicasByPartition.set(partition, (rdd.replicasByPartition.get(partition) ?? 0) + 1);
+  }
+
+  const record = state.rddInfo.get(rddId) ?? {
+    // A block reported before any stage listed its RDD: name and partition count arrive with
+    // the next StageSubmitted (mergeStageRddInfo keeps the block-derived sizes).
+    id: rddId, name: '', callsite: '',
+    storageLevel: { useDisk: Boolean(sl['Use Disk']), useMemory: Boolean(sl['Use Memory']), deserialized: false, replication: sl['Replication'] ?? 1 },
+    numPartitions: 0, numCachedPartitions: 0, memorySize: 0, diskSize: 0,
+    storageSource: 'blockUpdates' as const, stageIds: new Set<number>(),
+  };
+  record.storageSource = 'blockUpdates';
+  if (rdd.replicasByPartition.size >= rdd.peakCachedPartitions) {
+    rdd.peakCachedPartitions = rdd.replicasByPartition.size;
+    record.numCachedPartitions = rdd.peakCachedPartitions;
+    record.memorySize = rdd.memorySize;
+    record.diskSize = rdd.diskSize;
+  }
+  state.rddInfo.set(rddId, record);
+  return null;
 }
 
 // Spark logs these AFTER SparkListenerStageCompleted, so finalizeStage has already posted the
@@ -1048,6 +1141,7 @@ export function processEvent(event: SparkEvent, state: ParserState): unknown {
       const id = info['Stage ID'];
       const stage = state.stages.get(id);
       if (!stage) return null;
+      mergeStageRddInfo(info, id, state, false);
       stage.completedAt = info['Completion Time'] ?? 0;
       // Older Spark (seen on 1.x-2.0 logs) posts StageSubmitted before the stage's submission
       // time is set; StageCompleted carries it. Without this backfill submittedAt stays 0 and
@@ -1086,6 +1180,9 @@ export function processEvent(event: SparkEvent, state: ParserState): unknown {
 
     case 'SparkListenerExecutorRemoved':
       return removeExecutor(event, state);
+
+    case 'SparkListenerBlockUpdated':
+      return recordBlockUpdate(event, state);
 
     default:
       return assertNever(event);
@@ -1244,7 +1341,14 @@ export function dispatchLine(
   parseAndDispatch(line, state, emit);
 }
 
+// With logBlockUpdates on, most BlockUpdated lines are broadcast/shuffle blocks recordBlockUpdate
+// ignores. Spark writes "Event" first and "Block ID" as a plain string, so those lines can be
+// dropped on a substring test before paying for JSON.parse.
+const BLOCK_UPDATED_PREFIX = '{"Event":"SparkListenerBlockUpdated",';
+const RDD_BLOCK_ID_FRAGMENT = '"Block ID":"rdd_';
+
 function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown) => void): void {
+  if (line.startsWith(BLOCK_UPDATED_PREFIX) && !line.includes(RDD_BLOCK_ID_FRAGMENT)) return;
   let parsed: unknown;
   try {
     parsed = parseTaskEnd(line) ?? JSON.parse(stripPlanDescription(line));

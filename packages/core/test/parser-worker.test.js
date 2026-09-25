@@ -3521,7 +3521,7 @@ describe('processEvent: app-level RDD-info map', () => {
     expect(s.rddInfo.get(7)).toEqual({
       id: 7, name: 'blocks', callsite: 'collect at /u02/hadoop/app/utils.py:1869',
       storageLevel: { useDisk: false, useMemory: true, deserialized: true, replication: 1 },
-      numPartitions: 10, numCachedPartitions: 3, memorySize: 100, diskSize: 0,
+      numPartitions: 10, numCachedPartitions: 3, memorySize: 100, diskSize: 0, storageSource: 'rddInfo',
       stageIds: new Set([1]),
     });
   });
@@ -3574,6 +3574,18 @@ describe('processEvent: app-level RDD-info map', () => {
     expect(s.rddInfo.get(7).memorySize).toBe(200);
   });
 
+  it('merges RDD Info from StageCompleted, where Spark 1.x first reports the cache figures, without counting it as a snapshot', () => {
+    const s = createState();
+    const rdd = (cached, mem) => ({ 'RDD ID': 7, 'Name': 'blocks', 'Storage Level': { 'Use Memory': true },
+      'Number of Partitions': 8, 'Number of Cached Partitions': cached, 'Memory Size': mem, 'Disk Size': 0 });
+    processEvent({ Event: 'SparkListenerStageSubmitted',
+      'Stage Info': { 'Stage ID': 0, 'Submission Time': 0, 'RDD Info': [rdd(0, 0)] } }, s);
+    processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 0, 'Completion Time': 10, 'RDD Info': [rdd(8, 2800)] } }, s);
+    expect(s.rddInfo.get(7)).toMatchObject({ numCachedPartitions: 8, memorySize: 2800, storageSource: 'rddInfo' });
+    expect(s.evidenceInputs.rddStorageSnapshots).toBe(1);
+  });
+
   it('carries rddInfo on the ApplicationEnd message', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerApplicationStart',
@@ -3597,6 +3609,104 @@ describe('processEvent: app-level RDD-info map', () => {
     }
     submit(1, 7); submit(2, 7); submit(3, 7);
     expect(s.rddInfo.get(7).stageIds).toEqual(new Set([1, 2, 3]));
+  });
+});
+
+describe('processEvent: SparkListenerBlockUpdated', () => {
+  const MEMORY_ONLY = { 'Use Disk': false, 'Use Memory': true, 'Deserialized': true, 'Replication': 1 };
+  const MEMORY_AND_DISK = { 'Use Disk': true, 'Use Memory': true, 'Deserialized': true, 'Replication': 1 };
+  const ON_DISK = { 'Use Disk': true, 'Use Memory': false, 'Deserialized': true, 'Replication': 1 };
+  const NONE = { 'Use Disk': false, 'Use Memory': false, 'Deserialized': false, 'Replication': 1 };
+  const blockEvent = (blockId, level, mem, disk, executorId = '1') => ({
+    Event: 'SparkListenerBlockUpdated',
+    'Block Updated Info': {
+      'Block Manager ID': { 'Executor ID': executorId, 'Host': 'h', 'Port': 1 },
+      'Block ID': blockId, 'Storage Level': level, 'Memory Size': mem, 'Disk Size': disk,
+    },
+  });
+  // Spark 2.3+ RDD Info: the storage level and partition count are real, the cache figures are 0.
+  const submitWithRdd = (s, stageId, level) => processEvent({ Event: 'SparkListenerStageSubmitted',
+    'Stage Info': { 'Stage ID': stageId, 'Submission Time': 0, 'RDD Info': [
+      { 'RDD ID': 4, 'Name': 'cached', 'Storage Level': level, 'Number of Partitions': 10,
+        'Number of Cached Partitions': 0, 'Memory Size': 0, 'Disk Size': 0 },
+    ] } }, s);
+
+  it('folds rdd_* blocks into the RDD\'s cached-partition count and memory/disk bytes', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_AND_DISK);
+    processEvent(blockEvent('rdd_4_0', MEMORY_AND_DISK, 100, 0), s);
+    processEvent(blockEvent('rdd_4_1', ON_DISK, 0, 300), s);
+    expect(s.rddInfo.get(4)).toMatchObject({
+      name: 'cached', numPartitions: 10, numCachedPartitions: 2, memorySize: 100, diskSize: 300,
+      storageSource: 'blockUpdates',
+    });
+    expect(s.rddBlockUpdates).toBe(2);
+  });
+
+  it('ignores broadcast and other non-RDD blocks', () => {
+    const s = createState();
+    processEvent(blockEvent('broadcast_0_piece0', MEMORY_ONLY, 512, 0, 'driver'), s);
+    processEvent(blockEvent('rdd_4_x', MEMORY_ONLY, 512, 0), s);
+    expect(s.rddInfo.size).toBe(0);
+    expect(s.rddBlockUpdates).toBe(0);
+  });
+
+  it('counts a partition replicated on two executors once, summing both replicas\' bytes', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0, '1'), s);
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0, '2'), s);
+    expect(s.rddInfo.get(4)).toMatchObject({ numCachedPartitions: 1, memorySize: 200 });
+  });
+
+  it('moves a block\'s bytes from memory to disk when it is dropped to disk', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_AND_DISK);
+    processEvent(blockEvent('rdd_4_0', MEMORY_AND_DISK, 100, 0), s);
+    processEvent(blockEvent('rdd_4_0', ON_DISK, 0, 100), s);
+    expect(s.rddInfo.get(4)).toMatchObject({ numCachedPartitions: 1, memorySize: 0, diskSize: 100 });
+  });
+
+  it('keeps the peak residency after unpersist removes every block', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    for (const p of [0, 1, 2]) processEvent(blockEvent(`rdd_4_${p}`, MEMORY_ONLY, 100, 0), s);
+    for (const p of [0, 1, 2]) processEvent(blockEvent(`rdd_4_${p}`, NONE, 0, 0), s);
+    expect(s.rddInfo.get(4)).toMatchObject({ numCachedPartitions: 3, memorySize: 300 });
+  });
+
+  it('keeps block-derived figures when a later stage\'s RDD Info reports 0 again', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0), s);
+    submitWithRdd(s, 2, MEMORY_ONLY);
+    expect(s.rddInfo.get(4)).toMatchObject({
+      numCachedPartitions: 1, memorySize: 100, storageSource: 'blockUpdates', stageIds: new Set([1, 2]),
+    });
+  });
+
+  it('creates the RDD from its block when no stage has listed it yet', () => {
+    const s = createState();
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0), s);
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    expect(s.rddInfo.get(4)).toMatchObject({ name: 'cached', numPartitions: 10, numCachedPartitions: 1, memorySize: 100 });
+  });
+
+  it('posts the rdd block-update count on the app message', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerApplicationStart', 'App ID': 'app_r', 'App Name': 'r', 'Timestamp': 1 }, s);
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0), s);
+    const msg = processEvent({ Event: 'SparkListenerApplicationEnd', 'Timestamp': 100 }, s);
+    expect(msg.data.rddBlockUpdates).toBe(1);
+  });
+
+  it('drops non-RDD block-update lines before parsing them, without counting them as skipped', () => {
+    const s = createState();
+    // Not valid JSON past the prefix: only the pre-parse fast path can keep this from counting as skipped.
+    dispatchLine('{"Event":"SparkListenerBlockUpdated","Block Updated Info":{"Block ID":"broadcast_1"', s, () => {});
+    dispatchLine(JSON.stringify(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0)), s, () => {});
+    expect(s.skippedLines).toBe(0);
+    expect(s.rddBlockUpdates).toBe(1);
   });
 });
 

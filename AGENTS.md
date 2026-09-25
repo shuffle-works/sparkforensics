@@ -140,6 +140,12 @@ contributor should read; `docs/` stays flat internal engineering records
   as 256 KB pieces, so a native `push()` is async and `streamFile` awaits it.
   fzstd's chunks are views of one reused buffer, valid only until its
   `ondata` callback returns: copy one before keeping it.
+- RDD cache figures (`Number of Cached Partitions`, `Memory Size`, `Disk Size`)
+  in stage events' RDD Info are always 0 since Spark 2.3 (Spark 1.x fills
+  them only on `StageCompleted`). Real cache evidence is
+  `SparkListenerBlockUpdated`, written only with
+  `spark.eventLog.logBlockUpdates.enabled=true` (`recordBlockUpdate` in
+  `event-handlers.ts`); no public corpus log has it yet.
 - Plan summary is best-effort: `summarizePlanTree` (`src/plan-summary.js`) walks
   the resolved `planTree` with lenient regex on each node's `detail`: silently
   omit unparseable fragments, never surface an error. (The old regex

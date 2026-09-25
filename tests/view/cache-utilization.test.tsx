@@ -319,3 +319,18 @@ test('the total cached-bytes figure stays visible at Basic, even with the RDD ta
   expect(screen.getByText('600 MB')).toBeInTheDocument();
   expect(screen.getByText('cached across memory + disk')).toBeInTheDocument();
 });
+
+test('renders the storageUnobserved caveat when persisted RDDs have no storage evidence', () => {
+  const rddInfo = new Map([[1, rdd(1, { numCachedPartitions: 0, memorySize: 0, diskSize: 0 })]]);
+  const caveat = {
+    id: 'c1', type: 'cacheUtilization', variant: 'storageUnobserved', stageId: null, impactBand: 'info',
+    metric: 'persistedRdds', value: 1, dataUnavailable: true,
+    recommendation: '1 persisted RDD has no cache-storage evidence in this log: needs spark.eventLog.logBlockUpdates.enabled=true.',
+  } as unknown as Finding;
+  renderWidget(buildAppModel(rddInfo), [caveat]);
+
+  expect(screen.getByRole('heading', { name: /cache storage/i })).toBeInTheDocument();
+  expect(screen.getByText('Cache storage not logged')).toBeInTheDocument();
+  expect(screen.getByText(/spark\.eventLog\.logBlockUpdates\.enabled=true/)).toBeInTheDocument();
+  expect(screen.queryByRole('table')).toBeNull();
+});

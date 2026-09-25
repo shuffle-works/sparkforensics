@@ -7,6 +7,18 @@
    "skippedLines": 0,
    "findings": [
     {
+     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
+     "type": "cacheUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 1,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
      "key": "duplicatePlanSubtree|0|subtreeOccurrences||||||||0|||",
      "type": "duplicatePlanSubtree",
      "band": "info",
@@ -125,6 +137,18 @@
    "sqlExecutions": 1,
    "skippedLines": 0,
    "findings": [
+    {
+     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
+     "type": "cacheUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 1,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
     {
      "key": "duplicatePlanSubtree|0|subtreeOccurrences||||||||0|||",
      "type": "duplicatePlanSubtree",
@@ -282,6 +306,18 @@
    "sqlExecutions": 1,
    "skippedLines": 0,
    "findings": [
+    {
+     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
+     "type": "cacheUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 1,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
     {
      "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
      "type": "memoryUtilization",
@@ -534,6 +570,18 @@
    "sqlExecutions": 1,
    "skippedLines": 0,
    "findings": [
+    {
+     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
+     "type": "cacheUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 1,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
      "type": "memoryUtilization",
@@ -1933,6 +1981,18 @@
    "sqlExecutions": 0,
    "skippedLines": 0,
    "findings": [
+    {
+     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
+     "type": "cacheUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 1,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
     {
      "key": "gc|0|gcPct||||||low|||||",
      "type": "gc",

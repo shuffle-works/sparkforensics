@@ -106,6 +106,8 @@ test('branches on the variant field for cacheUtilization', () => {
     .toMatch(/executor memory|cached dataset/);
   expect(coreFindingGenericRecommendation(finding({ type: 'cacheUtilization', variant: 'diskSpillover' })))
     .toMatch(/executor memory/);
+  expect(coreFindingGenericRecommendation(finding({ type: 'cacheUtilization', variant: 'storageUnobserved', dataUnavailable: true })))
+    .toBeUndefined();
 });
 
 test('branches on the variant field for cachingOpportunity', () => {
