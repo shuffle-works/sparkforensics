@@ -347,7 +347,7 @@ export async function evaluateBudgetsForRun(
   primary: RunRef,
   budgets: BudgetsConfig,
   secondary?: RunRef,
-): Promise<{ runId: string; baselineRunId?: string; results: BudgetResult[]; violated: boolean; inconclusive: boolean }> {
+): Promise<{ runId: string; results: BudgetResult[]; violated: boolean; inconclusive: boolean }> {
   // Mirrors the CLI's --regression-metric/--max-regression-pct pairing guard: unlike the CLI, this
   // tool never defaults regressionMetric, so seeing it set here means the caller asked for a
   // regression check and forgot the threshold, evaluateBudgets() would otherwise skip it silently.
@@ -375,9 +375,5 @@ export async function evaluateBudgetsForRun(
     appModel: candidate.appModel, catalog: candidate.catalog, budgets, comparison,
   });
 
-  return {
-    runId: candidate.runId,
-    ...(baseline ? { baselineRunId: baseline.runId } : {}),
-    results, violated, inconclusive,
-  };
+  return { runId: first.runId, results, violated, inconclusive };
 }

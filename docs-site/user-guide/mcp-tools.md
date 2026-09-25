@@ -171,11 +171,8 @@ A budget whose required evidence is missing (e.g. no `runIdB`/`sourceB` for a
 regression budget, or a run with no trustworthy task-level evidence) reports
 `inconclusive`, not a false pass. Independent of which budgets you pass, an
 evaluated run with no ApplicationEnd event adds a `run-complete` result with
-status `inconclusive`, the same check that makes the CLI exit `3`.
-
-The response's `runId` is the run the absolute budgets were evaluated on (the
-candidate when two runs are given). With two runs, `baselineRunId` names the
-baseline.
+status `inconclusive`, the same check that makes the CLI exit `3`. With two
+runs, the check applies to the candidate.
 
 Example call:
 
@@ -195,8 +192,7 @@ Example response:
 
 ```json
 {
-  "runId": "bbbb2222-...",
-  "baselineRunId": "aaaa1111-...",
+  "runId": "aaaa1111-...",
   "results": [
     {
       "name": "max-regression",

@@ -785,8 +785,7 @@ describe('evaluateBudgetsForRun', () => {
       const { runId: candidateId } = await resolveOrCreateRun({ source: { path: candidate.path } });
       const result = await evaluateBudgetsForRun({ runId: baselineId }, { maxRuntimeMs: 1500 }, { runId: candidateId });
       expect(result).toEqual({
-        runId: candidateId,
-        baselineRunId: baselineId,
+        runId: baselineId,
         results: [{ name: 'max-runtime', status: 'violation', detail: 'Runtime 2000ms exceeds budget 1500ms.' }],
         violated: true,
         inconclusive: false,
