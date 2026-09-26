@@ -451,3 +451,18 @@ test('the narrow overflow menu also offers a Docs link to the docs site', async 
   expect(docsMenuLink).toHaveAttribute('href', 'docs/');
   expect(docsMenuLink).toHaveAttribute('target', '_blank');
 });
+
+test('offers Compare with another run for an open run, and calls onCompare', async () => {
+  const user = userEvent.setup();
+  const onCompare = vi.fn();
+  // Not paused behind "Back to comparison", which hides this action.
+  store.setState({ comparison: { active: false, baselineId: null, candidateId: null } });
+  renderTopbar({ activeFileId: 'a::1::2', onCompare });
+  await user.click(screen.getByRole('button', { name: 'Compare with another run' }));
+  expect(onCompare).toHaveBeenCalledOnce();
+});
+
+test('has no Compare with another run without an open run', () => {
+  renderTopbar({ onCompare: vi.fn() });
+  expect(screen.queryByRole('button', { name: 'Compare with another run' })).not.toBeInTheDocument();
+});

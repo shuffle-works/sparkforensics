@@ -14,6 +14,12 @@ A (baseline)** and **Run B (candidate)**.
 The runs parse one after the other through the same background worker. When
 both finish, the comparison view opens.
 
+Already looking at a run, for example the one before a change? Click
+**Compare with another run** in the top bar (or the **More options** menu on
+a phone). The compare view opens with that run as Run A, so you only load
+Run B, and the open run is not parsed again. **Back to the run** returns to
+its dashboard.
+
 ## Reading the comparison
 
 The page opens with a verdict: whether run B finished faster or slower than

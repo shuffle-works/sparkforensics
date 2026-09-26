@@ -12,8 +12,10 @@ import { store } from '@/store/store';
 // in an effect. useIngest is fully mocked so the DropZone-visible calls stay
 // inert while startCompareLoad stays a spied fn CompareLanding can call.
 const startCompareLoad = vi.fn();
+const drillIntoRun = vi.fn();
 vi.mock('@/store/useIngest', () => ({
   useIngest: () => ({
+    drillIntoRun,
     startLoad: vi.fn(),
     startLoadFolder: vi.fn(),
     startLoadFromUrl: vi.fn(),
@@ -140,4 +142,25 @@ test('re-focuses the alert when errorNonce advances even though the message text
     <ThemeProvider><DocsProvider><CompareLanding errorMessage="Permission to read this file was denied." errorNonce={2} /></DocsProvider></ThemeProvider>,
   );
   expect(screen.getByRole('alert')).toHaveFocus();
+});
+
+test('opened from a dashboard, compare mode starts with that run as Run A and Back returns to it', async () => {
+  const user = userEvent.setup();
+  store.setState({ compareSeed: { id: 'a::1::2', label: 'first-run.log' } });
+  render(
+    <ThemeProvider>
+      <DocsProvider>
+        <CompareLanding />
+      </DocsProvider>
+    </ThemeProvider>,
+  );
+
+  expect(screen.getByRole('heading', { name: 'Compare two runs' })).toBeInTheDocument();
+  expect(within(screen.getByTestId('compare-slot-a')).getByText('first-run.log')).toBeInTheDocument();
+  expect(screen.getByText(/Run A is the run you had open/)).toBeInTheDocument();
+  // The seed is consumed: a later visit to the landing starts plain.
+  expect(store.getState().compareSeed).toBeNull();
+
+  await user.click(screen.getByRole('button', { name: 'Back to the run' }));
+  expect(drillIntoRun).toHaveBeenCalledWith('a::1::2');
 });

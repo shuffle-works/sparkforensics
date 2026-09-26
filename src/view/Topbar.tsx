@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Ellipsis, FileText, Home, Keyboard, Moon, Sun, Workflow } from 'lucide-react';
+import { Ellipsis, FileText, GitCompareArrows, Home, Keyboard, Moon, Sun, Workflow } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -91,6 +91,9 @@ export interface TopbarProps {
   activeFileId: string | null;
   onPickRecent: (id: string) => void;
   onRemoveRecent: (id: string) => void;
+  /** Opens the two-run comparison with the open run as Run A. Omitted where
+   * there is nothing to compare from (the export bundle). */
+  onCompare?: () => void;
   /** When provided, replaces the impact chip and the whole dashboard
    * action cluster (comparison button, evidence export, plan-graph button)
    * with this content, used by non-dashboard routes (e.g. the plan graph
@@ -110,6 +113,7 @@ export function Topbar({
   activeFileId,
   onPickRecent,
   onRemoveRecent,
+  onCompare,
   sectionControls,
   leadingContent,
 }: TopbarProps) {
@@ -120,6 +124,9 @@ export function Topbar({
   const { theme, toggle } = useTheme();
   const moreOptionsTriggerRef = useRef<HTMLButtonElement>(null);
   const comparison = useStore((s) => s.comparison);
+  // Not while a comparison is paused behind "Back to comparison": that
+  // control already leads back to one.
+  const showCompare = onCompare != null && !sectionControls && !exportMode && activeFileId != null && !comparison.baselineId;
   const evidence = useEvidenceExport();
   const appModel = useStore((s) => s.appModel);
   const graphEntries = useMemo(() => eligibleGraphExecutions(appModel, catalog), [appModel, catalog]);
@@ -236,6 +243,21 @@ export function Topbar({
           </Button>
         ) : null}
         <div className="hidden items-center gap-1 sm:flex">
+          {showCompare ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="tap-target-comfortable"
+              aria-label="Compare with another run"
+              title="Compare with another run"
+              onClick={onCompare}
+            >
+              <GitCompareArrows aria-hidden="true" />
+              {/* Short below xl so the run name keeps its room in the bar. */}
+              <span aria-hidden="true" className="xl:hidden">Compare</span>
+              <span aria-hidden="true" className="hidden xl:inline">Compare with another run</span>
+            </Button>
+          ) : null}
           {!sectionControls ? <EvidenceExport /> : null}
           {!sectionControls && graphEntries.length > 0 ? (
             <Button variant="ghost" size="sm" className="tap-target-comfortable" onClick={handleOpenGraphView}>
@@ -296,6 +318,12 @@ export function Topbar({
             <Ellipsis aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {showCompare ? (
+              <DropdownMenuItem onClick={onCompare}>
+                <GitCompareArrows aria-hidden="true" />
+                Compare with another run
+              </DropdownMenuItem>
+            ) : null}
             {!sectionControls ? (
               <>
                 <EvidenceExportMenuItems {...evidence} />

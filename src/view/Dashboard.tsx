@@ -219,7 +219,7 @@ function FilteredBoard({
  * owns a lightweight drag-to-load overlay so dropping a new file anywhere
  * over the dashboard starts a fresh parse. */
 function DashboardContent() {
-  const { resetToDropZone, startLoad, getTaskData } = useIngest();
+  const { resetToDropZone, startLoad, getTaskData, compareWithAnotherRun } = useIngest();
   const appModel = useStore((s) => s.appModel);
   const catalog = useStore((s) => s.catalog);
   const activeFileId = useStore((s) => s.activeFileId);
@@ -456,6 +456,7 @@ function DashboardContent() {
     >
       <Topbar
         onLoadNew={resetToDropZone}
+        onCompare={compareWithAnotherRun}
         recentEntries={recentEntries}
         activeFileId={activeFileId}
         onPickRecent={onPickRecent}

@@ -31,7 +31,10 @@ export type RunSource =
   | { kind: 'file'; id: string; label: string; file: File; handle?: unknown }
   | { kind: 'folder'; id: string; label: string; files: File[] }
   | { kind: 'url'; id: string; label: string; request: NormalizedShsRequest }
-  | { kind: 'recent'; id: string; label: string; handle?: unknown };
+  | { kind: 'recent'; id: string; label: string; handle?: unknown }
+  /** Already parsed this session: its snapshot is in `sessionCache`, so the
+   * compare load reuses it instead of parsing it again. */
+  | { kind: 'cached'; id: string; label: string };
 
 /** recent-files.js stores FileSystemFileHandles as opaque `unknown`; callers
  * narrow only what they actually call. */
@@ -231,6 +234,8 @@ export function useIngest(opts: Opts = {}) {
     if (source.kind === 'file') return { start: (h) => clientRef.current!.startParse(source.file, h) };
     if (source.kind === 'folder') return { start: (h) => clientRef.current!.startParseFiles(source.files, h) };
     if (source.kind === 'url') return { start: (h) => clientRef.current!.startParseFromUrl(source.request, h) };
+    // `load` in startCompareLoad never parses a cached source.
+    if (source.kind === 'cached') return null;
     // recent: resolve the persisted handle to a File, re-granting permission.
     const handle = (source.handle as FileHandleLike | undefined) ?? (await recentFiles.getHandle(source.id));
     if (!handle) { store.getState().setError(`Run ${which}: this recent file is no longer available.`); return null; }
@@ -289,10 +294,24 @@ export function useIngest(opts: Opts = {}) {
       resolved.start(cb);
     };
 
-    void parseInto(a, 'A', (skippedLines) => {
-      snapshotParsedRun(a.id, skippedLines);
-      void parseInto(b, 'B', (skippedLines) => {
-        snapshotParsedRun(b.id, skippedLines);
+    // A cached source is already snapshotted: skip straight to the next run.
+    const load = (source: RunSource, which: 'A' | 'B', next: () => void) => {
+      if (source.kind === 'cached') {
+        if (!store.getState().sessionCache.has(source.id)) {
+          store.getState().setError(`Run ${which}: this run is no longer loaded. Load its event log again.`);
+          return;
+        }
+        next();
+        return;
+      }
+      void parseInto(source, which, (skippedLines) => {
+        snapshotParsedRun(source.id, skippedLines);
+        next();
+      });
+    };
+
+    load(a, 'A', () => {
+      load(b, 'B', () => {
         store.getState().setCompareLoad(null);
         // Clear activeFileId so openComparison's auto-snapshot guard skips it:
         // both runs are already cached via snapshotParsedRun, and re-snapshotting
@@ -302,6 +321,16 @@ export function useIngest(opts: Opts = {}) {
       });
     });
   }, [make, resolveSourceInput, snapshotParsedRun]);
+
+  // "Compare with another run" from a dashboard: keep the open run as Run A
+  // (resetToDropZone snapshots it) and open the landing's compare view with
+  // that slot already filled, so the reader only picks the other run.
+  const compareWithAnotherRun = useCallback(() => {
+    const id = store.getState().activeFileId;
+    if (id == null) return;
+    resetToDropZone();
+    store.getState().setCompareSeed({ id, label: runLabel(id) });
+  }, [resetToDropZone]);
 
   // Drill from the comparison page into one cached run's dashboard, keeping the
   // comparison paused (ids retained) and the other run's snapshot intact.
@@ -319,5 +348,5 @@ export function useIngest(opts: Opts = {}) {
     store.getState().setComparisonActive(false);
   }, []);
 
-  return { startLoad, startLoadFolder, startLoadFromUrl, resetToDropZone, cancelParse, getTaskData, pickRecent, prepareComparison, startCompareLoad, drillIntoRun };
+  return { startLoad, startLoadFolder, startLoadFromUrl, resetToDropZone, cancelParse, getTaskData, pickRecent, prepareComparison, startCompareLoad, drillIntoRun, compareWithAnotherRun };
 }
