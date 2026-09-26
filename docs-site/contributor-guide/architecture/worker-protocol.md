@@ -173,14 +173,32 @@ detectors over an `appModel` and serializes the result for sharing outside the
 tool. Raw task records are never included; identifier redaction (app id + host
 names → `app-1`/`host-1` pseudonyms via `packages/core/src/redact.ts`) is opt-in with
 `{ redact: true }`. The JSON is pinned by `EVIDENCE_SCHEMA_VERSION` (currently
-`3`, surfaced as `json.schemaVersion`) and has this fixed top-level key order:
+`4`, surfaced as `json.schemaVersion`) and has this fixed top-level key order:
 
 ```text
-schemaVersion, summary, evidenceAvailability, detectors, findings, recommendations, cleanChecks
+schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, recommendations, cleanChecks, notRunChecks
 ```
 
 - `summary` is the run header: `{ app: { id, name, sparkVersion }, stageCount,
-  jobCount, sqlExecutionCount, findingCount, impactBandCounts }`.
+  jobCount, sqlExecutionCount, findingCount, impactBandCounts,
+  actionableFindingCount, actionableImpactBandCounts, clean, outcome, runShape }`. `findingCount`
+  counts every row in `findings`; the `actionable*` counts leave out evidence
+  caveats and the `incompleteRun` row, the same set the dashboard's top bar and
+  verdict count. `clean` is `isCleanRun` from `packages/core/src/check-coverage.ts`, and
+  `outcome` is `{ failedJobs, totalJobs, failureReason, failureReasonStageId }` from
+  `summarizeRunOutcome` (`packages/core/src/run-outcome.ts`), the job results the dashboard
+  verdict leads with; the Markdown prints it as an `- Outcome:` header line. `runShape`
+  (`computeRunShape`, `packages/core/src/run-shape.ts`) is the Scorecard's wall-clock,
+  Efficiency and Unused core time, the ETL phases' summed stage time and Core Usage by
+  Locality's peak busy cores, each `null` where the dashboard shows none; MCP
+  `get_run_summary` returns it too.
+- `verdict` is the dashboard's run verdict from `buildRunVerdict`
+  (`packages/core/src/run-verdict.ts`): `{ title, summary, steps, remainingPlaces, copyText }`.
+  `steps` holds the first three places to look in the verdict card's order, each
+  `{ key, stageId, type, tag, leadFindingId, actionLabel, recommendation, impact, impactMeaning,
+  relatedTypes, text }`, where `text` is that step's line of the "Copy next steps" checklist and
+  `copyText` is the whole checklist. The Markdown opens with it as `## Verdict`. The
+  `recommendations` rollup stays alongside: it ranks fix types, the verdict ranks places.
 - `evidenceAvailability` is the ledger above (or `null` when absent).
 - `detectors` is `detectorCatalog()` output: one `{ type, version, scope,
   thresholds, docAnchor }` per detector, in `DETECTORS` order, so the exact
@@ -191,7 +209,9 @@ schemaVersion, summary, evidenceAvailability, detectors, findings, recommendatio
   `validationRequired`/`docAnchor` appear only when the detector emitted them.
 - `recommendations` is the impact-ranked `buildRecommendationRollup` output
   (`packages/core/src/recommendation-rollup.ts`), and `cleanChecks` lists every detector type
-  that fired zero findings this run: see the 2026-09-03 update below.
+  that fired zero findings this run and could run: see the 2026-09-03 update below.
+- `notRunChecks` lists the zero-finding types the log lacked the data to run, each with a
+  `reason`: see the schema-4 update below.
 
 Determinism holds because detector order, finding sort, and object key order
 are all fixed, so a given `appModel` serializes identically across calls.
@@ -216,11 +236,17 @@ report and both the findings and the stage records of the HTML export.
 The Markdown rendering mirrors the JSON's AC3 field set: each finding block
 prints its `detector version`, its sorted `evidence` entries (byte-magnitude
 keys humanized), and the report ends with a `## Detectors` catalog carrying the
-version + threshold set. A finding's `impactEstimate` (when its `basis` isn't
-`'informational'`) prints as its own `- impact: ` line (`Estimated <low>-<high>`
-and/or the raw-waste figure, plus `estimateMethod`), via
-`renderImpactEstimate`/`formatWallClockRange`/`formatRawWaste` in
-`packages/core/src/evidence-report.ts`. `EvidenceExport` names downloads
+version + threshold set. A finding's `impactEstimate` prints as its own `- impact: ` line
+worded as the dashboard's "Potential savings": the wall-clock range, or the raw
+waste only when there is no range, followed by what it counts ("of run time", "of
+unused executor memory") and `estimateMethod`, and nothing for an informational or
+zero estimate. A `- estimate: ` line carries the Advanced view's provenance sentence
+(`estimateProvenance`). Both come from `packages/core/src/impact-format.ts`, the
+formatters every dashboard surface uses, so memory reads in GB-h from 0.1 GB-h up,
+core time in core-s or core-h, and a time figure has no "Estimated" prefix. JSON finding
+rows carry the same figure as `impact`/`impactMeaning` when there is one, and each
+`recommendations` row an `impactMeaning` next to its `impact`, which is null for a
+resource figure that rounds to zero. `EvidenceExport` names downloads
 `evidence-<appId>[-redacted].<md|json>`, taking the app id from the (already
 pseudonymized when redacting) report so a redacted file never leaks the real id
 and is never name-identical to a raw export.
@@ -275,6 +301,16 @@ it deliberately includes the one "always-mounted" reference type (`coreLocality`
 has no findings, since a flat evidence report has no separate always-visible surface for it to
 already appear on the way that widget does on the board.
 
+Schema `4` update: a check the log could not run is no longer listed as clean.
+`packages/core/src/check-coverage.ts` holds the one rule, shared with the dashboard's verdict,
+top bar and Clean checks: a type whose only finding is an evidence caveat, every `scope: 'stage'`
+type on a log where no stage recorded an end, and the run-span types (`utilization`,
+`memoryUtilization`, `autoscalingChurn`) on a log with no ApplicationEnd. Those types move from
+`cleanChecks` to `notRunChecks`, each `{ type, tag, thresholdSummary, reason }`, where `reason` is
+the caveat's own recommendation (it names the setting to turn on) or the log-wide sentence. The
+Markdown gains a `## Not checked on this log` section above `## Clean checks`, and a
+`Findings to act on` header line.
+
 ### Finding identity
 
 Every finding `analyzer.ts` emits carries a stable `id` (`push()`'s
@@ -316,7 +352,10 @@ to `stderr` and exits `2`, same as a local file that can't be parsed.
 Optional CLI-flag budgets (`--max-runtime <ms>`, `--max-spill <gb>`,
 `--max-skew <ratio>`, `--max-failed-task-rate <pct>`, `--min-efficiency <pct>`)
 are evaluated in `packages/core/src/cli/budgets.ts` against the existing finding catalog
-(`analyze()`) and `computeEfficiencyModel`; there is no second rule engine. A budget
+(`analyze()`) and `computeEfficiencyModel`; there is no second rule engine.
+`--min-efficiency` compares `100 - wastagePct` (busy core time, the complement of
+the dashboard's Unused core time) and says so in its detail ("Busy core time 26% below
+budget 90%."); it is not the Scorecard's Efficiency tile (`stagesActive / total`). A budget
 whose required evidence is missing (e.g. the run never emitted
 `ApplicationEnd`, or has no usable per-task `runAggregates`) is reported as
 inconclusive (`stderr` warning) rather than silently passing, and gets its own
@@ -336,7 +375,10 @@ absolute budgets and this check apply to the candidate run; the MCP
 `packages/core/src/mcp-server-factory.ts`'s `createMcpServer()` registers 6 tools:
 `diagnose_run` (thresholded findings + remediation text), `get_run_summary`
 (app/stage/job/sql counts and duration, no findings), `compare_runs`
-(categorized findings delta + metric deltas between two runs),
+(the comparison verdict from `comparisonVerdict` in `packages/core/src/comparison-verdict.ts`,
+the dashboard comparison page's own headline, plus categorized findings delta + metric deltas
+between two runs; `CompareRunsResult.jobOutcomes` carries each run's failed jobs and incomplete
+flag for it),
 `evaluate_budgets` (pass/fail budget thresholds against one run, optionally
 with a second run for regression/fail-on-introduced budgets: the MCP side
 of the CLI's `evaluateBudgets()` gating), `get_finding_evidence` (raw
@@ -376,9 +418,12 @@ the whole archive in memory, unlike the streaming `/shs-proxy` route).
 into each package's own `vendor-core/` at pack time, pre-stripping TypeScript
 to plain `.js` (Node's native TS stripping refuses to run on `.ts` files
 under `node_modules`, which is exactly where a published `vendor-core/`
-lands). Each package's bin/entry point resolves its needed module from
-`vendor-core/` if present, else falls back to the real `packages/core/src/`
-sibling loaded as `.ts` directly (`packages/server/index.js` mirrors
+lands). Each package's bin/entry point resolves its needed module through
+`packages/core/src/load-vendored.js`: from `vendor-core/` if present, else from
+the real `packages/core/src/` sibling loaded as `.ts` directly. In a monorepo
+checkout a leftover `vendor-core/` is used only while its `core-source-hash.txt`
+(written by `vendor-core.mjs`) matches `packages/core/src`; otherwise the bin warns
+on stderr and loads `packages/core/src` (`packages/server/index.js` mirrors
 `resolveStaticRoot`'s `public/`-vs-`../dist` pattern for this same
 fallback).
 

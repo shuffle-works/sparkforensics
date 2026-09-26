@@ -157,7 +157,8 @@ describe('evaluateBudgets', () => {
       appModel: baseAppModel(), catalog: [], budgets: { minEfficiencyPct: 90 },
     });
     expect(violated).toBe(true);
-    expect(results[0]).toMatchObject({ name: 'min-efficiency', status: 'violation' });
+    // Worded as busy core time, so it never reads as the dashboard's Efficiency tile.
+    expect(results[0]).toMatchObject({ name: 'min-efficiency', status: 'violation', detail: 'Busy core time 0% below budget 90%.' });
   });
 
   it('reports efficiency inconclusive when taskCoreTime evidence is absent', () => {

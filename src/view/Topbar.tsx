@@ -11,8 +11,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Chip, severityBadgeVariants } from '@/view/ImpactBadge';
-import { summarizeRunOutcome } from '@/view/run-outcome';
-import { isCleanRun } from '@/view/run-verdict';
+import { isCleanRun } from '@sparkforensics/core/check-coverage.ts';
+import { summarizeRunOutcome } from '@sparkforensics/core/run-outcome.ts';
 import { isEligible } from '@/view/widgets/FixTheseFirst';
 import { EvidenceExport, EvidenceExportMenuItems, useEvidenceExport } from '@/view/EvidenceExport';
 import { FileSwitcher } from '@/view/FileSwitcher';

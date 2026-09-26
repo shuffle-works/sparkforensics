@@ -39,6 +39,12 @@ test('stage dimension excludes stageId:null findings when active', () => {
   expect(matchesFilter(f({ stageId: null, type: 'coldStart' }), sel)).toBe(false);
 });
 
+test('stage dimension keeps dropping a sql-scope finding, even one on exactly that stage', () => {
+  const sel = { ...emptySelection(), stages: new Set([3]) };
+  expect(matchesFilter(f({ stageId: null, stageIds: [3], type: 'smallFiles' }), sel)).toBe(false);
+  expect(matchesFilter(f({ stageId: null, stageIds: [3, 4], type: 'smallFiles' }), sel)).toBe(false);
+});
+
 test('dimensions combine with AND', () => {
   const sel = { impactBands: new Set(['critical']), types: new Set(['spill']), stages: new Set([2]) };
   expect(matchesFilter(f({ impactBand: 'critical', type: 'spill', stageId: 2 }), sel)).toBe(true);

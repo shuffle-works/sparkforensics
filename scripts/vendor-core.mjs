@@ -14,6 +14,7 @@ import { rmSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'nod
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DieError, DOCS_CONTENT_DIR, ensureTuningDocs, isLocalOnlyEntry } from './fetch-tuning-docs.mjs';
+import { coreSourceHash, SOURCE_HASH_FILE } from '../packages/core/src/load-vendored.js';
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = dirname(scriptsDir);
@@ -74,5 +75,7 @@ try {
 rmSync(vendorDir, { recursive: true, force: true });
 mkdirSync(vendorDir, { recursive: true });
 copyTree(coreSrcDir, vendorDir);
+// Lets a monorepo run tell this copy from a newer core/src (see load-vendored.js).
+writeFileSync(join(vendorDir, SOURCE_HASH_FILE), `${coreSourceHash(coreSrcDir)}\n`);
 
 console.log(`Vendored packages/core/src/ into ${vendorDir}, stripped TS types to .js`);

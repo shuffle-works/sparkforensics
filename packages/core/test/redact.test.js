@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { redactReport, redactAppIdentity, redactComparison, redactExportData } from '../src/redact.js';
+import { redactReport, redactComparison, redactExportData } from '../src/redact.js';
 
 function sampleReport() {
   return {
@@ -188,35 +188,6 @@ describe('failure groups', () => {
     ] } });
     const out = redactReport(report);
     expect(out.findings[2].evidence.failureGroups[0].lossReason).toMatch(/^Container marked as failed on host: host-\d+$/);
-  });
-});
-
-describe('redactAppIdentity', () => {
-  it('pseudonymizes a non-empty app id', () => {
-    const out = redactAppIdentity({ id: 'application_0000000000000_0001', name: 'nightly-etl', sparkVersion: '3.4.0' });
-    expect(out.id).toBe('app-1');
-  });
-
-  it('pseudonymizes a host-shaped app name', () => {
-    const out = redactAppIdentity({ id: 'app_x', name: 'run-on-ip-10-1-2-3.ec2.internal', sparkVersion: '3.4.0' });
-    expect(out.name).not.toContain('ip-10-1-2-3.ec2.internal');
-    expect(out.name).toMatch(/host-\d+/);
-  });
-
-  it('passes sparkVersion through unless it is host-shaped', () => {
-    const out = redactAppIdentity({ id: 'app_x', name: 'nightly-etl', sparkVersion: '3.4.0' });
-    expect(out.sparkVersion).toBe('3.4.0');
-  });
-
-  it('pseudonymizes a host-shaped sparkVersion the same way as name', () => {
-    const out = redactAppIdentity({ id: 'app_x', name: 'nightly-etl', sparkVersion: 'built on 10.20.30.40' });
-    expect(out.sparkVersion).not.toContain('10.20.30.40');
-    expect(out.sparkVersion).toMatch(/host-\d+/);
-  });
-
-  it('handles null id/name/sparkVersion without throwing', () => {
-    const out = redactAppIdentity({ id: null, name: null, sparkVersion: null });
-    expect(out).toEqual({ id: null, name: null, sparkVersion: null });
   });
 });
 

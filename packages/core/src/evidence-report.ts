@@ -8,14 +8,22 @@ import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { redactReport } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
 import { coreFindingActionLabel } from './finding-action-label.ts';
-import { matchesFindingFilterCriteria } from './finding-filter-predicate.ts';
-import { buildRecommendationRollup, isEligible, rankFindings, type RollupGroup } from './recommendation-rollup.ts';
+import { matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
+import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, type RollupGroup } from './recommendation-rollup.ts';
+import { checkCoverage, isCleanRun } from './check-coverage.ts';
+import { buildRunVerdict, findingActionLabel, stepCopyRecommendation, stepCopyText, type RunVerdictModel } from './run-verdict.ts';
+import {
+  estimateProvenance, formatRawWaste, formatWallClockRange, impactEstimateFigure, impactFigure, rawWasteMeaning, readsAsZero,
+  savingsMeaning,
+} from './impact-format.ts';
+import { computeRunShape, type RunShape } from './run-shape.ts';
+import { formatCores } from './core-usage-locality.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
 import type {
-  AppModel, Finding, EvidenceAvailability, ImpactEstimate, RawWasteFigure, RawWasteUnit, ImpactBand,
+  AppModel, Finding, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,
 } from './types.ts';
 
-export const EVIDENCE_SCHEMA_VERSION: number = 3;
+export const EVIDENCE_SCHEMA_VERSION: number = 4;
 
 // findingRow always sets id/metric/value/recommendation via `?? null` (never omits the key), and
 // buildJson does the same for evidenceAvailability and summary.app.{id,name,sparkVersion}: these
@@ -35,6 +43,10 @@ export interface FindingRow {
   actionLabel: string;
   confidence?: string; validationRequired?: string; docAnchor?: string;
   impactEstimate?: ImpactEstimate;
+  // The impactEstimate as the dashboard prints it ("2.0s", "0.1 GB-h"), and what it counts; only
+  // when there is a figure to show (none for an informational or zero estimate).
+  impact?: string;
+  impactMeaning?: string | null;
 }
 
 // The `Fix these first` rollup row: one entry per buildRecommendationRollup
@@ -51,29 +63,92 @@ export interface RecommendationRow {
   unit?: RawWasteUnit;
   total?: number;
   byImpactBand?: Partial<Record<ImpactBand, number>>;
+  // The group's savings figure in the dashboard's units ("26.1s", "0.4 GB-h", "12.3 core-s"), or
+  // null for a count group or a resource figure that rounds to zero; `impactMeaning` says what it
+  // counts ("of run time", "of core time", ...).
   impact: string | null;
+  impactMeaning: string | null;
 }
 
-// One line per detector `type` that fired zero findings, so a flat report can state "these were
-// checked and came back clean" like the dashboard's clean-checks table.
+// One line per detector `type` that fired zero findings and could run, so a flat report can state
+// "these were checked and came back clean" like the dashboard's clean-checks table.
 export interface CleanCheckEntry {
   type: string;
   tag: string;
   thresholdSummary: string;
 }
 
+// A detector `type` with zero findings that the log lacked the data to run (the dashboard's "Not
+// checked on this log" group), so it is not reported as passed. `reason` says why, naming the
+// setting to turn on where the detector gives one.
+export interface NotRunCheckEntry extends CleanCheckEntry {
+  reason: string;
+}
+
+type ImpactBandCounts = { critical: number; warning: number; info: number };
+
+// How the run ended, as far as its jobs say (run-outcome.ts, the same summary the dashboard's
+// verdict leads with). Counts only jobs with an end record; `failureReason` is the first line of
+// Spark's own recorded reason, only when a job failed, and `failureReasonStageId` the stage it came
+// from (null when there is no reason or it came from a job's exception).
+// One verdict step: a place to look (a stage, or an app-level problem), led by its best-ranked
+// finding, with the other finding types flagged there. `text` is the step's line in the
+// dashboard's "Copy next steps" checklist.
+export interface VerdictStepRow {
+  key: string;
+  stageId: number | null;
+  type: string;
+  tag: string;
+  leadFindingId: string | null;
+  actionLabel: string;
+  recommendation: string;
+  impact: string | null;
+  impactMeaning: string | null;
+  relatedTypes: string[];
+  text: string;
+}
+
+// The dashboard's run verdict (run-verdict.ts): title, summary sentences, the first steps in the
+// same order, how many more places the full list holds, and the "Copy next steps" text.
+export interface VerdictJson {
+  title: string;
+  summary: string[];
+  steps: VerdictStepRow[];
+  remainingPlaces: number;
+  copyText: string | null;
+}
+
+export interface RunOutcomeSummary {
+  failedJobs: number;
+  totalJobs: number;
+  failureReason: string | null;
+  failureReasonStageId: number | null;
+}
+
 export interface EvidenceReportJson {
   schemaVersion: number;
   summary: {
     app: { id?: string | null; name?: string | null; sparkVersion?: string | null };
-    stageCount: number; jobCount: number; sqlExecutionCount: number; findingCount: number;
-    impactBandCounts: { critical: number; warning: number; info: number };
+    stageCount: number; jobCount: number; sqlExecutionCount: number;
+    // Every row in `findings`, evidence caveats and the run-completeness check included.
+    findingCount: number;
+    impactBandCounts: ImpactBandCounts;
+    // Only the findings the dashboard counts and ranks (top bar, verdict): no evidence caveat and
+    // no incompleteRun row.
+    actionableFindingCount: number;
+    actionableImpactBandCounts: ImpactBandCounts;
+    // The dashboard's clean-run rule: no finding at all, no failed job, and every check could run.
+    clean: boolean;
+    outcome: RunOutcomeSummary;
+    runShape: RunShape;
   };
+  verdict: VerdictJson;
   evidenceAvailability: EvidenceAvailability | null;
   detectors: unknown;
   findings: FindingRow[];
   recommendations: RecommendationRow[];
   cleanChecks: CleanCheckEntry[];
+  notRunChecks: NotRunCheckEntry[];
 }
 
 // Fields surfaced as first-class report columns. Everything else on a finding
@@ -120,6 +195,11 @@ function findingRow(f: Finding): FindingRow {
   if (f.validationRequired != null) row.validationRequired = f.validationRequired;
   if (f.docAnchor != null) row.docAnchor = f.docAnchor;
   if (f.impactEstimate != null) row.impactEstimate = f.impactEstimate;
+  const figure = impactEstimateFigure(f.impactEstimate);
+  if (figure) {
+    row.impact = figure.text;
+    row.impactMeaning = figure.meaning;
+  }
   return row;
 }
 
@@ -170,15 +250,19 @@ function buildRecommendations(
         // A point estimate, not a range: matches FixTheseFirst.tsx's trailingStat for time groups,
         // which prints the same figure twice rather than the finding-level spread computeStageUnionMs collapsed.
         impact: formatWallClockRange(group.recoverableMsHigh, group.recoverableMsHigh),
+        impactMeaning: 'of run time',
       };
     }
     if (group.kind === 'resource') {
+      const text = formatRawWaste({ value: group.total, unit: group.unit });
+      const shown = readsAsZero(text) ? null : text;
       return {
         ...base,
         kind: 'resource',
         unit: group.unit,
         total: group.total,
-        impact: formatRawWaste({ value: group.total, unit: group.unit }),
+        impact: shown,
+        impactMeaning: shown ? rawWasteMeaning(group.unit) : null,
       };
     }
     return {
@@ -188,26 +272,67 @@ function buildRecommendations(
       // No single quantifiable figure for a count group; the impact-band tally
       // (byImpactBand above) is the payload instead.
       impact: null,
+      impactMeaning: null,
     };
   });
 }
 
-// Detector types that fired zero findings, so a flat report can state "checked and clean". Differs
-// from the dashboard's Alerts.tsx "Clean checks", which excludes coreLocality (the one remaining
-// always-mounted reference widget, shown elsewhere); a flat report has no such separate surface,
-// so this includes it too when it has zero findings.
-function buildCleanChecks(findings: Finding[]): CleanCheckEntry[] {
-  const firedTypes = new Set(findings.map((f) => f.type));
+// Detector types with no real finding, split into those that passed and those the log could not
+// run (the rule the dashboard's Clean checks uses, from check-coverage.ts). Differs from
+// Alerts.tsx in one way: the dashboard excludes coreLocality (the one always-mounted reference
+// widget, shown elsewhere); a flat report has no such separate surface, so this includes it too.
+function buildCheckLists(
+  findings: Finding[], stages: AppModel['stages'],
+): { cleanChecks: CleanCheckEntry[]; notRunChecks: NotRunCheckEntry[] } {
+  // isRealFinding: a type whose only finding is an evidence caveat (memoryUtilization's
+  // dataUnavailable variant) had nothing to check, so it lands in notRunChecks.
+  const firedTypes = new Set(findings.filter(isRealFinding).map((f) => f.type));
+  const coverage = checkCoverage(stages, findings);
   const seen = new Set<string>();
-  const entries: CleanCheckEntry[] = [];
+  const cleanChecks: CleanCheckEntry[] = [];
+  const notRunChecks: NotRunCheckEntry[] = [];
   // detectorCatalog() can list the same type more than once (configAudit has 4 entries); dedupe by
-  // type, keeping first, so a type with sibling entries contributes exactly one clean-check line.
+  // type, keeping first, so a type with sibling entries contributes exactly one line.
   for (const d of detectorCatalog() as Array<{ type: string }>) {
     if (firedTypes.has(d.type) || seen.has(d.type)) continue;
     seen.add(d.type);
-    entries.push({ type: d.type, tag: typeTag(d.type), thresholdSummary: getThresholdSummary(d.type) });
+    const entry = { type: d.type, tag: typeTag(d.type), thresholdSummary: getThresholdSummary(d.type) };
+    const reason = coverage.notRunReason(d.type);
+    if (reason) notRunChecks.push({ ...entry, reason });
+    else cleanChecks.push(entry);
   }
-  return entries;
+  return { cleanChecks, notRunChecks };
+}
+
+function countByImpactBand(findings: Array<{ impactBand: string }>): ImpactBandCounts {
+  const counts: ImpactBandCounts = { critical: 0, warning: 0, info: 0 };
+  for (const f of findings) if (f.impactBand in counts) counts[f.impactBand as keyof ImpactBandCounts] += 1;
+  return counts;
+}
+
+function verdictJson(model: RunVerdictModel): VerdictJson {
+  return {
+    title: model.title,
+    summary: model.summary,
+    steps: model.shown.map((step): VerdictStepRow => {
+      const recommendation = stepCopyRecommendation(step, model.outcome);
+      return {
+        key: step.key,
+        stageId: step.stageId,
+        type: step.lead.type,
+        tag: typeTag(step.lead.type),
+        leadFindingId: step.lead.id ?? null,
+        actionLabel: findingActionLabel(step.lead),
+        recommendation,
+        impact: impactFigure(step.lead),
+        impactMeaning: savingsMeaning(step.lead),
+        relatedTypes: step.related.map((f) => f.type),
+        text: stepCopyText(step.lead, recommendation, step.stageId),
+      };
+    }),
+    remainingPlaces: model.remaining,
+    copyText: model.copyText,
+  };
 }
 
 // Keyed by appModel object identity: mcp-tools.ts caches one fixed appModel per runId (never
@@ -229,10 +354,13 @@ function buildJson(appModel: AppModel): EvidenceReportJson {
   const allFindings = [...catalog, ...config];
   const rows = sortFindings(allFindings.map(findingRow));
   const recommendations = buildRecommendations(allFindings, stages ?? new Map());
-  const cleanChecks = buildCleanChecks(allFindings);
-
-  const impactBandCounts = { critical: 0, warning: 0, info: 0 };
-  for (const r of rows) if (r.impactBand in impactBandCounts) impactBandCounts[r.impactBand] += 1;
+  const { cleanChecks, notRunChecks } = buildCheckLists(allFindings, stages ?? new Map());
+  const actionable = allFindings.filter(isEligible);
+  const fullModel: AppModel = {
+    ...appModel, stages: stages ?? new Map(), jobs: jobs ?? new Map(), executors: executors ?? { added: [], removed: [] },
+  };
+  const runVerdict = buildRunVerdict(fullModel, allFindings);
+  const runOutcome = runVerdict.outcome;
 
   const result: EvidenceReportJson = {
     schemaVersion: EVIDENCE_SCHEMA_VERSION,
@@ -248,8 +376,19 @@ function buildJson(appModel: AppModel): EvidenceReportJson {
       jobCount: jobs?.size ?? 0,
       sqlExecutionCount: sql?.size ?? 0,
       findingCount: rows.length,
-      impactBandCounts,
+      impactBandCounts: countByImpactBand(rows),
+      actionableFindingCount: actionable.length,
+      actionableImpactBandCounts: countByImpactBand(actionable),
+      clean: isCleanRun({ jobs: jobs ?? new Map(), stages: stages ?? new Map() }, allFindings),
+      outcome: {
+        failedJobs: runOutcome.failedJobs,
+        totalJobs: runOutcome.totalJobs,
+        failureReason: runOutcome.reason,
+        failureReasonStageId: runOutcome.reason != null ? runOutcome.reasonStageId : null,
+      },
+      runShape: computeRunShape(fullModel),
     },
+    verdict: verdictJson(runVerdict),
     evidenceAvailability: evidenceAvailability ?? null,
     // Detector metadata so the threshold set that produced each finding travels with the evidence.
     // Order follows DETECTORS (stable) => byte-stable serialization.
@@ -257,6 +396,7 @@ function buildJson(appModel: AppModel): EvidenceReportJson {
     findings: rows,
     recommendations,
     cleanChecks,
+    notRunChecks,
   };
   jsonCache.set(appModel, result);
   return result;
@@ -285,35 +425,76 @@ function renderFailureGroups(groups: TaskFailureGroup[]): string[] {
   return lines;
 }
 
-function formatWallClockRange(low: number, high: number): string {
-  const fmtMs = (ms: number) => (ms === 0 ? '0s' : formatDuration(ms));
-  return low === high ? `Estimated ${fmtMs(high)}` : `Estimated ${fmtMs(low)}-${fmtMs(high)}`;
-}
-
-function formatRawWaste(rawWaste: RawWasteFigure): string {
-  const rounded = Math.round(rawWaste.value * 10) / 10;
-  switch (rawWaste.unit) {
-    case 'bytes': return formatBytes(rawWaste.value);
-    case 'ms': return formatDuration(rawWaste.value);
-    case 'mbSeconds': return `${rounded} MB-s`;
-    case 'coreHours': return `${rounded.toFixed(1)} core-h`;
-    case 'coreMs': return `${rounded} core-ms`;
-    default: return String(rawWaste.value);
-  }
-}
-
-// `basis: 'informational'` findings carry no wallClock/rawWaste at all, so
-// there's nothing quantifiable to print; the caller skips the line entirely.
+// The finding's "Potential savings" figure as the dashboard shows it (impactEstimateFigure: the
+// range, or the raw waste only without a range, nothing for a zero or informational estimate),
+// followed by what it counts. `basis: 'informational'` findings carry nothing to print.
 function renderImpactEstimate(estimate: ImpactEstimate): string | null {
-  const rangeText = estimate.wallClock ? formatWallClockRange(estimate.wallClock.low, estimate.wallClock.high) : null;
-  const wasteText = estimate.rawWaste ? formatRawWaste(estimate.rawWaste) : null;
-  if (!rangeText && !wasteText) return null;
-  const parts = [rangeText, wasteText].filter((p): p is string => p != null).join(' · ');
-  return `${parts} (estimateMethod: ${estimate.estimateMethod})`;
+  const figure = impactEstimateFigure(estimate);
+  if (!figure) return null;
+  return `${figure.text}${figure.meaning ? ` ${figure.meaning}` : ''} (estimateMethod: ${estimate.estimateMethod})`;
 }
 
-function renderMarkdown(json: EvidenceReportJson): string {
-  const { summary, findings, evidenceAvailability, detectors, recommendations, cleanChecks } = json;
+// The run's job results in one line, worded like the dashboard verdict: failures first, with
+// Spark's recorded reason; null when the log records no ended job.
+function renderOutcome(outcome: RunOutcomeSummary, incomplete: boolean): string | null {
+  const { failedJobs, totalJobs, failureReason, failureReasonStageId } = outcome;
+  if (totalJobs === 0) return null;
+  if (failedJobs > 0) {
+    const failed = failedJobs < totalJobs
+      ? `${failedJobs} of ${totalJobs} jobs failed.`
+      : totalJobs === 1 ? 'The run\'s one job failed.' : `All ${totalJobs} jobs failed.`;
+    if (!failureReason) return failed;
+    const where = failureReasonStageId != null ? ` (stage ${failureReasonStageId})` : '';
+    return `${failed} Spark's recorded reason${where}: ${failureReason}`;
+  }
+  const succeeded = totalJobs === 1 ? 'Its one job succeeded.' : `All ${totalJobs} jobs succeeded.`;
+  return incomplete ? `${succeeded} The log has no end-of-run record, so jobs still running when it stops are not counted.` : succeeded;
+}
+
+// The Scorecard, ETL phases and core-usage figures, each worded to say what it measures, since
+// "efficiency" and "unused core time" are different shares. A figure the dashboard cannot show is
+// left out.
+function renderRunShape(shape: RunShape): string[] {
+  const lines: string[] = [];
+  if (shape.wallClockMs != null) lines.push(`- Wall-clock: ${formatDuration(shape.wallClockMs)}`);
+  if (shape.efficiencyPct != null) lines.push(`- Efficiency: ${shape.efficiencyPct}% (share of the run with a stage running)`);
+  if (shape.unusedCoreTimePct != null) {
+    lines.push(`- Unused core time: ${shape.unusedCoreTimePct}% (driver idle plus executor slack, as a share of available core time)`);
+  }
+  if (shape.peakBusyCores != null) lines.push(`- Peak busy cores: ${formatCores(shape.peakBusyCores)}`);
+  if (shape.etlPhasesMs) {
+    const { extract, transform, load } = shape.etlPhasesMs;
+    lines.push(`- ETL phases (summed stage time): extract ${formatDuration(extract)}, transform ${formatDuration(transform)}, load ${formatDuration(load)}`);
+  }
+  return lines;
+}
+
+// The dashboard verdict card as text: title, summary, then the numbered steps worded as its
+// "Copy next steps" checklist, each followed by the other finding types flagged at that place.
+function renderVerdict(verdict: VerdictJson): string[] {
+  const lines = ['## Verdict', '', verdict.title];
+  if (verdict.summary.length > 0) lines.push('', verdict.summary.join(' '));
+  if (verdict.steps.length > 0) {
+    lines.push('');
+    verdict.steps.forEach((step, i) => {
+      lines.push(`${i + 1}. [${step.tag}] ${step.text}`);
+      if (step.relatedTypes.length > 0) {
+        const related = step.relatedTypes.map((type) => FINDING_NAMES[type] ?? type).join(', ');
+        lines.push(`   - Also flagged here: ${related}. These often share this cause, so the same fix may clear them too.`);
+      }
+    });
+    if (verdict.remainingPlaces > 0) {
+      const places = `${verdict.remainingPlaces} more place${verdict.remainingPlaces === 1 ? '' : 's'}`;
+      lines.push('', `${places} to look at in the Findings section below.`);
+    }
+  }
+  lines.push('');
+  return lines;
+}
+
+// `incomplete` comes from the unfiltered findings, since a findingsFilter can drop the incompleteRun row.
+function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
+  const { summary, verdict, findings, evidenceAvailability, detectors, recommendations, cleanChecks, notRunChecks } = json;
   const lines: string[] = [];
   lines.push('# Spark run evidence report');
   lines.push('');
@@ -321,7 +502,14 @@ function renderMarkdown(json: EvidenceReportJson): string {
   lines.push(`- Spark version: ${summary.app.sparkVersion ?? 'n/a'}`);
   lines.push(`- Stages: ${summary.stageCount} · Jobs: ${summary.jobCount} · SQL executions: ${summary.sqlExecutionCount}`);
   lines.push(`- Findings: ${summary.findingCount} (critical ${summary.impactBandCounts.critical}, warning ${summary.impactBandCounts.warning}, info ${summary.impactBandCounts.info})`);
+  const actionableCounts = summary.actionableImpactBandCounts;
+  lines.push(`- Findings to act on: ${summary.actionableFindingCount} (critical ${actionableCounts.critical}, warning ${actionableCounts.warning}, info ${actionableCounts.info})`);
+  const outcomeLine = renderOutcome(summary.outcome, incomplete);
+  if (outcomeLine) lines.push(`- Outcome: ${outcomeLine}`);
+  if (summary.clean) lines.push('- Clean run: no findings, no failed jobs, and every check could run.');
+  lines.push(...renderRunShape(summary.runShape));
   lines.push('');
+  lines.push(...renderVerdict(verdict));
   if (recommendations.length > 0) {
     lines.push(`## Fix these first (${recommendations.length})`);
     lines.push('');
@@ -329,8 +517,8 @@ function renderMarkdown(json: EvidenceReportJson): string {
       lines.push(`${i + 1}. [${r.tag}] ${r.actionLabel}`);
       const detail = r.kind === 'count'
         ? Object.entries(r.byImpactBand ?? {}).map(([impactBand, count]) => `${count} ${impactBand}`).join(', ')
-        : r.impact;
-      lines.push(`   - ${detail} · ×${r.findingCount} finding(s)`);
+        : r.impact && `${r.impact}${r.impactMeaning ? ` ${r.impactMeaning}` : ''}`;
+      lines.push(`   - ${detail ? `${detail} · ` : ''}×${r.findingCount} finding(s)`);
     });
     lines.push('');
   }
@@ -346,6 +534,8 @@ function renderMarkdown(json: EvidenceReportJson): string {
     if (r.validationRequired) lines.push(`- validation: ${r.validationRequired}`);
     const impactText = r.impactEstimate ? renderImpactEstimate(r.impactEstimate) : null;
     if (impactText) lines.push(`- impact: ${impactText}`);
+    const provenance = r.impactEstimate ? estimateProvenance(r) : null;
+    if (provenance) lines.push(`- estimate: ${provenance}`);
     lines.push(`- detector version: ${r.detectorVersion}`);
     // Evidence payload (sorted for stable order) so two rows differing only by evidence (two
     // smallFiles by direction, two partitionSizing by rule) render distinctly.
@@ -376,6 +566,16 @@ function renderMarkdown(json: EvidenceReportJson): string {
     }
     lines.push('');
   }
+  if (notRunChecks.length > 0) {
+    lines.push(`## Not checked on this log (${notRunChecks.length})`);
+    lines.push('');
+    lines.push('The log lacked the data these checks need, so they neither passed nor failed.');
+    lines.push('');
+    for (const c of notRunChecks) {
+      lines.push(`- [${c.tag}] ${c.type}: ${c.reason}`);
+    }
+    lines.push('');
+  }
   if (cleanChecks.length > 0) {
     lines.push(`## Clean checks (${cleanChecks.length})`);
     lines.push('');
@@ -396,7 +596,10 @@ export interface FindingsFilter {
 // CLI/MCP-facing filter over FindingRow, delegating to the shared core predicate that also backs
 // the dashboard's finding-filter.
 function matchesFindingsFilter(row: FindingRow, filter: FindingsFilter): boolean {
-  return matchesFindingFilterCriteria(row, filter);
+  // A sql-scope finding carries its stages in evidence.stageIds, not a stageId column: it matches
+  // the one stage it touches, as the dashboard's Stage details lists it.
+  const stageIds = Array.isArray(row.evidence?.stageIds) ? (row.evidence.stageIds as number[]) : null;
+  return matchesFindingFilterCriteria({ ...row, stageId: singleStageId({ stageId: row.stageId, stageIds }) }, filter);
 }
 
 /** Build a FindingsFilter from the three optional CLI/MCP filter dimensions, or undefined when
@@ -411,7 +614,7 @@ export function toFindingsFilter(
  * Build a portable evidence report from an appModel.
  * @param opts redact=true pseudonymizes app ids / hosts; markdown=false skips the Markdown string;
  *   findingsFilter narrows json.findings (and the Markdown Findings section) only, summary,
- *   recommendations, and cleanChecks stay computed from the full set, so a narrow filter never
+ *   recommendations, cleanChecks and notRunChecks stay computed from the full set, so a narrow filter never
  *   hides that other checks passed or other fixes exist.
  */
 export function buildEvidenceReport(
@@ -422,9 +625,10 @@ export function buildEvidenceReport(
 ): { markdown: string; json: EvidenceReportJson } {
   let json = buildJson(appModel);
   if (redact) json = redactReport(json);
+  const incomplete = json.findings.some((row) => row.type === 'incompleteRun');
   // Filter after redact, not before: redaction only replaces string values on surviving rows,
   // never adds/removes rows, so the two orderings produce identical final content.
   if (findingsFilter) json = { ...json, findings: json.findings.filter((row) => matchesFindingsFilter(row, findingsFilter)) };
-  const markdown = computeMarkdown ? renderMarkdown(json) : '';
+  const markdown = computeMarkdown ? renderMarkdown(json, incomplete) : '';
   return { markdown, json };
 }

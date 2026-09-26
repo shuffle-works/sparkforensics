@@ -7,8 +7,8 @@ import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { IMPACT_BG_CLASS, IMPACT_TEXT_CLASS, ImpactDot } from '@/view/ImpactBadge';
 import { useWidgetDensity } from '@/store/store';
-import { hasFinishedStage } from '@/view/run-verdict';
-import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates';
+import { hasFinishedStage } from '@sparkforensics/core/check-coverage.ts';
+import { getScorecardEstimates, hasCompleteApplicationInterval } from '@sparkforensics/core/scorecard-estimates.ts';
 
 // Run-info stats row: wall-clock, efficiency, unused core time (not problem
 // counts, which live in RunVerdict and the Findings tab). Basic view

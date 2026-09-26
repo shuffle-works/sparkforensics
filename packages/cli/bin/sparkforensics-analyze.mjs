@@ -11,12 +11,13 @@ import { gzipSync } from 'node:zlib';
 const binDir = dirname(fileURLToPath(import.meta.url));
 const pkgDir = dirname(binDir);
 
-// vendor-core/ exists only in a published install (populated by vendor-core.mjs
-// at pack time); the monorepo falls back to the packages/core/src/ sibling.
+// vendor-core/ is populated by vendor-core.mjs at pack time. In the monorepo the
+// packages/core/src/ sibling's load-vendored.js is used, which prefers a leftover
+// vendor-core/ only while it still matches core/src and warns when it does not.
 // load-vendored.js is the one module located by hand; the rest load through its
 // exported loadVendored().
-const vendoredHelper = join(pkgDir, 'vendor-core', 'load-vendored.js');
-const helperPath = existsSync(vendoredHelper) ? vendoredHelper : join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
+const srcHelper = join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
+const helperPath = existsSync(srcHelper) ? srcHelper : join(pkgDir, 'vendor-core', 'load-vendored.js');
 const { loadVendored } = await import(pathToFileURL(helperPath).href);
 const loadCore = (moduleName) => loadVendored(pkgDir, moduleName);
 
@@ -27,6 +28,7 @@ const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
 const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
 const { evaluateBudgets } = await loadCore('cli/budgets');
 const { buildComparison, renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
+const { comparisonVerdict } = await loadCore('comparison-verdict');
 const { redactComparison, redactExportData } = await loadCore('redact');
 const { buildExportRunData } = await loadCore('export-data');
 
@@ -44,7 +46,9 @@ Options:
   --max-spill <gb>                  Fail if any stage spills more than this many GB.
   --max-skew <ratio>                Fail if any stage's P95/median duration ratio exceeds this.
   --max-failed-task-rate <pct>      Fail if the task failure rate exceeds this percent.
-  --min-efficiency <pct>            Fail if compute efficiency falls below this percent.
+  --min-efficiency <pct>            Fail if busy core time (the share of executor core time
+                                    that ran tasks, 100 minus the dashboard's Unused core time)
+                                    falls below this percent. Not the dashboard's Efficiency tile.
   --shs-base-url <url>              Fetch the run from a Spark History Server instead of a
                                     local file (mutually exclusive with the positional argument).
   --app-id <id>                     Spark application ID to fetch. Required with --shs-base-url.
@@ -62,10 +66,12 @@ Options:
                                     (app-1, host-1, ...), so a report can be shared outside the
                                     environment that produced it.
   --impact <band[,band]>            Filter the output's findings array to these impact bands
-                                    (critical, warning, info). recommendations/cleanChecks and
-                                    the summary counts stay on the full, unfiltered set.
+                                    (critical, warning, info). recommendations, cleanChecks,
+                                    notRunChecks and the summary counts stay on the full,
+                                    unfiltered set.
   --type <type[,type]>              Filter the output's findings array to these finding types.
-  --stage <id>                      Filter the output's findings array to this stage id.
+  --stage <id>                      Filter the output's findings array to this stage id,
+                                    including a SQL plan finding whose only stage it is.
 
 Exit codes: 0 pass, 1 budget violated, 2 bad arguments, the local input could not be parsed, or the --shs-base-url fetch failed, 3 a budget was inconclusive.
 `;
@@ -321,12 +327,13 @@ export async function main(argv, { fetchImpl } = {}) {
   const { markdown, json } = buildEvidenceReport(appModel, { redact: values.redact, findingsFilter, markdown: values.format === 'md' });
   let output;
   if (values.format === 'md') {
-    output = comparison ? `${markdown}${renderComparisonMarkdown(comparison)}\n` : `${markdown}\n`;
+    output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonVerdict(comparison))}\n` : `${markdown}\n`;
   } else {
     const payload = comparison
       ? {
         candidate: json,
         comparison: {
+          verdict: comparisonVerdict(comparison),
           confidence: comparison.confidence,
           reason: comparison.reason,
           matchedCoverage: comparison.matchedCoverage,

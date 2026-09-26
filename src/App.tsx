@@ -11,8 +11,6 @@ import { CompareLanding } from '@/view/CompareLanding';
 import { DocsProvider } from '@/view/DocsContext';
 import { DocsSheet } from '@/view/DocsSheet';
 import { RunComparison } from '@/view/RunComparison';
-import { summarizeRunOutcome } from '@/view/run-outcome';
-import { isIncompleteRun } from '@/view/run-verdict';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { usePlanGraphRouteProps } from '@/view/usePlanGraphRouteProps';
 
@@ -39,16 +37,8 @@ function RunComparisonRoute() {
         ? prepareComparison(comparison.baselineId, comparison.candidateId)
         : null;
     if (!prepared) return null;
-    // Failed jobs come from each run's own job results, as its run verdict
-    // counts them; an incomplete log's time covers only what it captured.
-    const outcome = (snap: typeof prepared.baseline.snapshot) => ({
-      ...summarizeRunOutcome(snap.jobs, snap.catalog),
-      incomplete: isIncompleteRun(snap.catalog),
-    });
-    return {
-      ...compareRuns(prepared.baseline, prepared.candidate),
-      jobOutcomes: { baseline: outcome(prepared.baseline.snapshot), candidate: outcome(prepared.candidate.snapshot) },
-    };
+    // compareRuns carries each run's job outcome (failed jobs, incomplete log) for the verdict.
+    return compareRuns(prepared.baseline, prepared.candidate);
   }, [comparison.baselineId, comparison.candidateId, prepareComparison]);
   // A missing snapshot means the comparison can't be shown; close it from an
   // effect (never mutate the store during render).

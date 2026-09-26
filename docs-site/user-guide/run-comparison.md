@@ -62,8 +62,9 @@ run B dashboard**. **← Back to comparison** takes you back.
 
 ## Comparing without the dashboard
 
-The same comparison runs headlessly. The CLI's `--baseline` flag adds a
-comparison section to its output and can gate a build on it
+The same comparison runs headlessly, and opens with the same verdict: the
+positional run is run B, the `--baseline` run is run A. The CLI's `--baseline` flag adds a
+comparison section to its output (`comparison.verdict` in JSON) and can gate a build on it
 (`--max-regression-pct`, `--fail-on-introduced`; see [Getting
 started](./getting-started.md#ci-and-automation)). The MCP server's
 `compare_runs` and `evaluate_budgets` tools do the same for an AI assistant;

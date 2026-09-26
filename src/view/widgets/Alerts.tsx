@@ -3,13 +3,13 @@ import type { ComponentType } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { Table, TableBody } from '@/components/ui/table';
+import { checkCoverage, hasFinishedStage, verdictGaps } from '@sparkforensics/core/check-coverage.ts';
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import { getThresholdSummary } from '@sparkforensics/core/threshold-summary.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { RUN_SPAN_CHECK_TYPES, hasFinishedStage, isEvidenceCaveat, isIncompleteRun, verdictGaps } from '@/view/run-verdict';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
 
 export const SUGGESTED_IMPROVEMENTS_ANCHOR_ID = 'suggested-improvements';
@@ -109,14 +109,11 @@ export function CleanChecks({ appModel, catalog, configFindings = [] }: Pick<Wid
   const combined = [...catalog, ...configFindings].filter(isRealFinding);
 
   // A check the log could not run is not a pass: the same rule the verdict
-  // uses to withhold "clean" (an evidence caveat, a per-stage check on a log
-  // where no stage finished, or a run-span check on a log with no
-  // ApplicationEnd).
+  // and the CLI/MCP report use to withhold "clean" (an evidence caveat, a
+  // per-stage check on a log where no stage finished, or a run-span check on
+  // a log with no ApplicationEnd).
   const noFinishedStages = !hasFinishedStage(appModel.stages);
-  const incomplete = isIncompleteRun(catalog);
-  const caveatTypes = new Set([...catalog, ...configFindings].filter(isEvidenceCaveat).map((finding) => finding.type));
-  const isNotRun = (type: string) =>
-    caveatTypes.has(type) || (noFinishedStages && SCOPE[type] === 'per-stage') || (incomplete && RUN_SPAN_CHECK_TYPES.has(type));
+  const { isNotRun } = checkCoverage(appModel.stages, [...catalog, ...configFindings]);
 
   const zeroFindingTypes = Object.keys(REGISTRY)
     .filter((type) => !isAlwaysMountedType(type))

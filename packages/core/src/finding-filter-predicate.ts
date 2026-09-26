@@ -18,6 +18,15 @@ export interface FindingFilterCriteria {
   stageId?: number | Membership<number>;
 }
 
+/** The one stage a finding is about: its own `stageId`, or the only entry of a sql-scope
+ * finding's `stageIds`. Null for an app-level, config or multi-stage finding. The same rule the
+ * run verdict groups steps by and the stage dialog lists a stage's findings by. */
+export function singleStageId(row: { stageId?: number | null; stageIds?: readonly number[] | null }): number | null {
+  if (typeof row.stageId === 'number') return row.stageId;
+  if (row.stageIds && row.stageIds.length === 1) return row.stageIds[0];
+  return null;
+}
+
 export function matchesFindingFilterCriteria(
   row: { impactBand: string; type: string; stageId?: number | null },
   criteria: FindingFilterCriteria,

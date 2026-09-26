@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { makeStage } from './fixtures/stage-app-fixtures.js';
+import { PER_STAGE_CHECK_TYPES } from '../src/check-coverage.ts';
 
 function fixture() {
   return {
@@ -39,7 +40,7 @@ describe('buildEvidenceReport', () => {
     const { markdown, json } = buildEvidenceReport(fixture());
     expect(typeof markdown).toBe('string');
     expect(typeof json.schemaVersion).toBe('number');
-    expect(json.schemaVersion).toBe(3);
+    expect(json.schemaVersion).toBe(4);
   });
 
   it('carries a run summary + findings with the required per-row fields', () => {
@@ -136,8 +137,8 @@ describe('buildEvidenceReport', () => {
     const raw = buildEvidenceReport(fixture()).json;
     expect(JSON.stringify(raw)).toBe(JSON.stringify(buildEvidenceReport(fixture()).json));
     expect(Object.keys(raw)).toEqual([
-      'schemaVersion', 'summary', 'evidenceAvailability', 'detectors', 'findings',
-      'recommendations', 'cleanChecks',
+      'schemaVersion', 'summary', 'verdict', 'evidenceAvailability', 'detectors', 'findings',
+      'recommendations', 'cleanChecks', 'notRunChecks',
     ]);
     // Core construction order (optional confidence/validation/docAnchor trail it).
     expect(Object.keys(raw.findings[0]).slice(0, 11)).toEqual([
@@ -196,22 +197,18 @@ describe('buildEvidenceReport', () => {
     const { markdown, json } = buildEvidenceReport(fixture());
     const withEstimate = json.findings.filter((f) => f.impactEstimate != null);
     expect(withEstimate.length).toBeGreaterThan(0);
-    // 'informational'-basis estimates have no wallClock/rawWaste to print;
-    // only the quantifiable ones are expected to produce an `- impact:` line.
-    const renderable = withEstimate.filter(
-      (f) => f.impactEstimate.wallClock != null || f.impactEstimate.rawWaste != null,
-    );
+    // Only findings with a figure the dashboard would show (impactEstimateFigure) print an
+    // `- impact:` line; an informational or zero estimate prints none.
+    const renderable = withEstimate.filter((f) => f.impact != null);
     expect(renderable.length).toBeGreaterThan(0);
     for (const f of renderable) {
-      expect(markdown).toContain(`estimateMethod: ${f.impactEstimate.estimateMethod}`);
+      expect(markdown).toContain(`- impact: ${f.impact}${f.impactMeaning ? ` ${f.impactMeaning}` : ''} (estimateMethod: ${f.impactEstimate.estimateMethod})`);
     }
     const impactLines = markdown.split('\n').filter((l) => l.startsWith('- impact:'));
     expect(impactLines.length).toBe(renderable.length);
-    // Markdown is read outside the space-constrained web UI, so the wall-clock
-    // estimate prefix reads as a full word rather than the "Est." abbreviation.
-    const wallClockLines = impactLines.filter((l) => /\bEstimated\b/.test(l));
-    expect(wallClockLines.length).toBeGreaterThan(0);
-    expect(markdown).not.toContain('Est. ');
+    // Time figures read as the dashboard prints them: no "Estimated" prefix.
+    expect(impactLines.some((l) => /of run time/.test(l))).toBe(true);
+    expect(markdown).not.toMatch(/\bEstimated\b|Est\. /);
   });
 
   // Redaction must reach a slowHost's host where the builder nests it
@@ -306,9 +303,9 @@ describe('buildEvidenceReport', () => {
   }
 
   describe('recommendations', () => {
-    it('is an additive top-level array, no schema bump', () => {
+    it('is an additive top-level array', () => {
       const { json } = buildEvidenceReport(fixture());
-      expect(json.schemaVersion).toBe(3);
+      expect(json.schemaVersion).toBe(4);
       expect(Array.isArray(json.recommendations)).toBe(true);
       expect(json.recommendations.length).toBeGreaterThan(0);
     });
@@ -412,6 +409,98 @@ describe('buildEvidenceReport', () => {
       expect(types).toContain('coreLocality');
     });
 
+    it('moves every per-stage check to notRunChecks when no stage finished', () => {
+      const fx = fixture();
+      fx.stages = new Map([[1, makeStage({ id: 1, completedAt: undefined })]]);
+      const { json, markdown } = buildEvidenceReport(fx);
+      const notRun = json.notRunChecks.map((c) => c.type);
+      // A per-stage type either fired on the unfinished stage or could not run; none passed.
+      for (const type of ['skew', 'spill', 'stageFailed', 'straggler']) expect(notRun).toContain(type);
+      const clean = json.cleanChecks.map((c) => c.type);
+      for (const type of PER_STAGE_CHECK_TYPES) expect(clean).not.toContain(type);
+      expect(json.notRunChecks.find((c) => c.type === 'skew').reason).toMatch(/No stage in this log recorded an end/);
+      expect(json.summary.clean).toBe(false);
+      expect(markdown).toContain(`## Not checked on this log (${json.notRunChecks.length})`);
+      expect(markdown).toContain('- [SKEW] skew: No stage in this log recorded an end');
+      expect(markdown.indexOf('## Not checked on this log')).toBeLessThan(markdown.indexOf('## Clean checks'));
+    });
+
+    it('moves the run-span checks to notRunChecks on a log with no end-of-run record', () => {
+      const fx = fixture();
+      fx.app = { ...fx.app, endTime: null };
+      const { json } = buildEvidenceReport(fx);
+      const notRun = new Map(json.notRunChecks.map((c) => [c.type, c.reason]));
+      for (const type of ['utilization', 'autoscalingChurn']) {
+        expect(notRun.get(type)).toMatch(/no end-of-run record/);
+      }
+      expect(json.cleanChecks.map((c) => c.type)).not.toContain('utilization');
+    });
+
+    it('counts only actionable findings in the actionable summary fields', () => {
+      const fx = fixture();
+      fx.app = { ...fx.app, endTime: null };
+      const { json, markdown } = buildEvidenceReport(fx);
+      const s = json.summary;
+      expect(json.findings.some((f) => f.type === 'incompleteRun')).toBe(true);
+      expect(s.actionableFindingCount).toBe(json.findings.filter((f) => f.type !== 'incompleteRun' && f.evidence.dataUnavailable !== true).length);
+      expect(s.actionableFindingCount).toBeLessThan(s.findingCount);
+      const sum = s.actionableImpactBandCounts.critical + s.actionableImpactBandCounts.warning + s.actionableImpactBandCounts.info;
+      expect(sum).toBe(s.actionableFindingCount);
+      expect(markdown).toContain(`- Findings to act on: ${s.actionableFindingCount} (`);
+    });
+
+    it('reports the run outcome in the summary and as a Markdown header line', () => {
+      const fx = fixture();
+      fx.jobs = new Map([
+        [0, { id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [1] }],
+        [1, { id: 1, result: 'JobSucceeded', succeeded: true, stageIds: [2] }],
+      ]);
+      const { json, markdown } = buildEvidenceReport(fx);
+      expect(json.summary.outcome).toEqual({ failedJobs: 0, totalJobs: 2, failureReason: null, failureReasonStageId: null });
+      expect(markdown).toContain('- Outcome: All 2 jobs succeeded.');
+      // No ended job, no outcome line.
+      expect(buildEvidenceReport(fixture()).markdown).not.toContain('- Outcome:');
+    });
+
+    it('gives no failure stage when a failed stage attempt was retried and every job succeeded', () => {
+      const fx = fixture();
+      fx.stages.set(2, makeStage({ id: 2, stageFailureReason: 'FetchFailed: lost executor' }));
+      fx.jobs = new Map([[0, { id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [1, 2] }]]);
+      const { json } = buildEvidenceReport(fx);
+      expect(json.findings.some((f) => f.type === 'stageFailed')).toBe(true);
+      expect(json.summary.outcome).toEqual({ failedJobs: 0, totalJobs: 1, failureReason: null, failureReasonStageId: null });
+    });
+
+    it('carries the run-shape figures and prints each with what it measures', () => {
+      const { json, markdown } = buildEvidenceReport(fixture());
+      const shape = json.summary.runShape;
+      expect(Object.keys(shape)).toEqual(['wallClockMs', 'efficiencyPct', 'unusedCoreTimePct', 'etlPhasesMs', 'peakBusyCores']);
+      expect(shape.wallClockMs).toBe(5000);
+      expect(typeof shape.efficiencyPct).toBe('number');
+      expect(typeof shape.peakBusyCores).toBe('number');
+      expect(markdown).toContain(`- Efficiency: ${shape.efficiencyPct}% (share of the run with a stage running)`);
+      expect(markdown).toMatch(/- Peak busy cores: \d/);
+      // No stage recorded an end: Efficiency is not measured, as the Scorecard says.
+      const unfinished = fixture();
+      unfinished.stages = new Map([[1, makeStage({ id: 1, completedAt: undefined })]]);
+      expect(buildEvidenceReport(unfinished).json.summary.runShape.efficiencyPct).toBeNull();
+    });
+
+    it('carries the run verdict and opens the Markdown with it', () => {
+      const { json, markdown } = buildEvidenceReport(fixture());
+      const { verdict } = json;
+      expect(verdict.title).toMatch(/^Start with Stage \d$/);
+      expect(verdict.steps.length).toBeGreaterThan(0);
+      const [step] = verdict.steps;
+      expect(Object.keys(step)).toEqual([
+        'key', 'stageId', 'type', 'tag', 'leadFindingId', 'actionLabel', 'recommendation', 'impact', 'impactMeaning', 'relatedTypes', 'text',
+      ]);
+      expect(verdict.copyText).toContain(`1. ${step.text}`);
+      expect(markdown).toContain(`## Verdict\n\n${verdict.title}`);
+      expect(markdown).toContain(`1. [${step.tag}] ${step.text}`);
+      expect(markdown.indexOf('## Verdict')).toBeLessThan(markdown.indexOf('## Findings'));
+    });
+
     it('markdown lists clean checks after the Detectors section', () => {
       const { markdown, json } = buildEvidenceReport(fixture());
       expect(markdown).toContain(`## Clean checks (${json.cleanChecks.length})`);
@@ -455,6 +544,29 @@ describe('buildEvidenceReport', () => {
       const { json } = buildEvidenceReport(fixtureWithVariety(), { findingsFilter: { stageId: 1 } });
       expect(json.findings.length).toBeGreaterThan(0);
       expect(json.findings.every((f) => f.stageId === 1)).toBe(true);
+    });
+
+    it('keeps a SQL finding on exactly the filtered stage, and drops one spanning several stages', () => {
+      const withSql = (stageIds) => {
+        const readNode = {
+          id: 'node-1', name: 'Scan parquet', detail: '', children: [], stageIds,
+          metrics: [
+            { name: 'number of files read', value: 150, metricType: 'sum' },
+            { name: 'size of files read', value: 150 * 1024 * 1024, metricType: 'sum' },
+          ],
+        };
+        const fx = fixture();
+        fx.sql = new Map([[1, {
+          id: 1, description: '', startTime: 0, endTime: 100, stageIds: [],
+          planTree: { name: 'Project', detail: '', metrics: [], children: [readNode] },
+        }]]);
+        return fx;
+      };
+      const smallFilesAt = (stageIds, stageId) => buildEvidenceReport(withSql(stageIds), { findingsFilter: { stageId } })
+        .json.findings.some((r) => r.type === 'smallFiles');
+      expect(smallFilesAt([2], 2)).toBe(true);
+      expect(smallFilesAt([2], 1)).toBe(false);
+      expect(smallFilesAt([1, 2], 2)).toBe(false);
     });
 
     it('combines all three dimensions (AND, not OR)', () => {

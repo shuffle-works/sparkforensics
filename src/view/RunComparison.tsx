@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { TagBadge } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
-import { summarizeComparison, type ComparisonTone, type VerdictJobOutcome } from '@/view/comparison-verdict';
+import { summarizeComparison, type ComparisonTone, type VerdictJobOutcome } from '@sparkforensics/core/comparison-verdict.ts';
 import { PinnedStageDeltas, type StageSummary } from '@/view/PinnedStageDeltas';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 import { cn } from '@/lib/utils';
