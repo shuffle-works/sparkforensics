@@ -17,10 +17,15 @@ store's setters directly (`setParse`, `setCatalog`, `setStatus`,
 `setSkippedLines`, ...). Components never talk to the worker: they use
 `useIngest()`'s returned actions
 (`startLoad`/`startLoadFolder`/`startLoadFromUrl`/`pickRecent`/`getTaskData`/
-`resetToDropZone`) and the store's read state.
+`resetToDropZone`/`cancelParse`) and the store's read state.
+`resetToDropZone` snapshots the current run into `sessionCache` before
+resetting; `cancelParse` (the parse screen's **Cancel**) terminates the worker
+and never snapshots, so a half-parsed model with no findings can't be restored
+later.
 
 `resetModel()` empties `appModel`/`catalog`/`taskDataCache`/`skippedLines` on
-every new parse or reset-to-drop-zone, and bumps `modelResetCount`. That
+every new parse, reset-to-drop-zone or cancelled parse, and bumps
+`modelResetCount`. That
 counter has no setter of its own; only `PlanGraphRoute.tsx`'s `store.subscribe`
 reads it, to evict the plan-graph model memo cache (see
 [Plan graph view](./drill-down.md#plan-graph-view)).
