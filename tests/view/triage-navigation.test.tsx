@@ -451,6 +451,22 @@ test('an alert target opens only its exact card and leaves Full app report and C
   expect(screen.getByRole('button', { name: /clean checks/i })).toHaveAttribute('aria-expanded', 'false');
 });
 
+test('a core-locality target switches to Full app report, where its always-mounted card lives, and focuses it', async () => {
+  const user = userEvent.setup();
+  const locality: Finding = { type: 'coreLocality', stageId: null, impactBand: 'warning', value: 40, recommendation: 'Check locality.' };
+  renderReady([locality], [1]);
+
+  await waitForDashboard();
+  await user.click(fixTheseFirstRow('coreLocality'));
+
+  expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
+  const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
+  const heading = await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' });
+  const card = heading.closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
+  await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
+  expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+});
+
 test('initial render never scrolls or moves focus', async () => {
   renderReady([spillFinding(1)], [1]);
 

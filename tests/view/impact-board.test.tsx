@@ -70,12 +70,13 @@ describe('ImpactBoard', () => {
     expect(screen.queryByRole('heading', { name: 'Critical' })).not.toBeInTheDocument();
   });
 
-  it('a clean catalog shows no impact-band headings, but keeps the always-visible grid', async () => {
+  it('a clean catalog shows no impact-band headings, and leaves Core Usage by Locality to the Full app report', async () => {
     // The clean-run message belongs to RunVerdict above the tabs, not the board.
     renderBoard([]);
     expect(screen.queryByText('No findings to fix right now.')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Warning' })).not.toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Clean checks' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Core Usage by Locality' })).not.toBeInTheDocument();
   });
 
   it('keeps a row in its own impact band even when it shares a widget card with a worse-band finding of another type', async () => {

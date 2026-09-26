@@ -123,16 +123,15 @@ Below it, two tabs split the rest of the board:
    its recommendation rows; its detail widgets (the charts and per-stage
    numbers behind them) sit under **Show the evidence**, and **Show
    evidence** on any finding opens them for you. Advanced view shows the
-   widgets without that step. Below the impact-band
-   groups, memory and core-usage utilization always show, even on a clean
-   run. Widgets that found nothing fold away into a "Clean checks"
+   widgets without that step. Widgets that found nothing fold away into a "Clean checks"
    disclosure. A check the log lacked the data for is listed there under
    **Not checked on this log**, not as a pass, with the reason and the
    setting to turn on: for example every per-stage check when no stage
    finished, or core usage, memory and executor churn when the log has no
    end-of-run record. This is the tab you land on.
 2. **Full app report**: the wall-clock and executor timelines, the stage
-   table, and the reference-only cards.
+   table, and the reference-only cards, led by core usage by locality, which
+   shows even on a clean run.
 
 Click a finding's documentation link (or the topbar's **Docs** button) to
 open the reference material in a slide-in panel beside the dashboard: the

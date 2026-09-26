@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { AlwaysVisibleAndCleanChecks, computeActiveWidgets } from '../../src/view/widgets/Alerts';
+import { CleanChecks, computeActiveWidgets } from '../../src/view/widgets/Alerts';
 import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
@@ -54,20 +54,6 @@ describe('computeActiveWidgets', () => {
   });
 });
 
-describe('AlwaysVisibleAndCleanChecks', () => {
-  it('passes defaultCollapsed to Widget components from alwaysMountedWidgets', () => {
-    // This test documents that Widget components rendered via alwaysMountedWidgets
-    // should receive the defaultCollapsed prop. The actual rendering behavior is
-    // verified by checking that Alerts.tsx passes defaultCollapsed to each Widget.
-    const fs = require('fs');
-    const path = require('path');
-    const source = fs.readFileSync(path.join(__dirname, '../../src/view/widgets/Alerts.tsx'), 'utf-8');
-
-    // Verify that the code passes defaultCollapsed prop to Widget components
-    expect(source).toContain('defaultCollapsed />');
-  });
-});
-
 describe('Clean checks on a log that could not be fully checked', () => {
   afterEach(cleanup);
 
@@ -75,7 +61,7 @@ describe('Clean checks on a log that could not be fully checked', () => {
     const appModel = { ...emptyAppModel(), stages } as ReturnType<typeof emptyAppModel>;
     render(
       <DocsProvider>
-        <AlwaysVisibleAndCleanChecks appModel={appModel} catalog={catalog} getTaskData={async () => ({}) as never} />
+        <CleanChecks appModel={appModel} catalog={catalog} />
       </DocsProvider>,
     );
     await userEvent.setup().click(screen.getByRole('button', { name: 'Clean checks' }));

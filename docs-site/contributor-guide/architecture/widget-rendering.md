@@ -15,8 +15,8 @@ prior three stacked sections: All recommendations, Suggested Improvements,
 Full app report, with a merged, impact-grouped Findings tab and an
 always-reachable Full app report tab). Base-ui `Tabs` fully unmount the
 inactive `TabsContent` panel rather than hiding it: a widget mounted only in
-Findings (every routeable `REGISTRY` widget; see "First investigation
-routing" below) is not in the DOM at all while Full app report is active, and
+Findings (every routeable `REGISTRY` widget but Core Usage by Locality;
+see "First investigation routing" below) is not in the DOM at all while Full app report is active, and
 remounts fresh, with its own state reset, when the user switches back.
 
 `region` on `RegistryEntry` (`src/view/detector-registry.tsx`) is read again,
@@ -148,36 +148,32 @@ Advanced view, shows its grid directly.
 Storage, Memory Utilization, or Executor Utilization card with an active
 finding surfaces in its own impact band like any other active widget.
 
-Below the impact bands, `Alerts.tsx`'s exported
-`AlwaysVisibleAndCleanChecks` (shared verbatim with the retired standalone
-`Alerts` component) renders the same two tiers it always did, now living
-outside the impact-band grouping entirely rather than as this section's
-second and third tier: a small always-visible grid holding just Core Usage
-by Locality (`coreLocality`, resolving to `CoreUsageArea`), mounted
-unconditionally from `appModel` regardless of finding state
-(`alwaysMountedWidgets()`/`isAlwaysMountedType()`), carrying its own
-impact-band indicator when a finding is active instead of collapsing to a
-clean-check line on a clean run; and a collapsed "Clean checks" disclosure
+Below the impact bands, `Alerts.tsx`'s exported `CleanChecks` renders a
+collapsed "Clean checks" disclosure
 of `CleanCheckRow` lines (`src/view/widgets/CleanCheckRow.tsx`: label, the
 threshold it was measured against via `getThresholdSummary`, and "No fix
 needed.") built per detector *type* (every `REGISTRY` key except that one
 always-mounted key). Types the log could not check (an `isEvidenceCaveat`
 finding of that type, every per-stage type when no stage finished, or the
 run-span types `RUN_SPAN_CHECK_TYPES` on an `incompleteRun` log, the same
-rule as the verdict's gap list) render first under **Not checked on
-this log** as `CleanCheckRow status="notRun"`, drawn neutral rather than
-clean green. A clean run lands `cacheUtilization`,
+rule that keeps the verdict from calling the run clean) render first under
+**Not checked on this log** as `CleanCheckRow status="notRun"`, drawn
+neutral rather than clean green, after the `verdictGaps` lines saying why
+and naming the setting to turn on. A clean run lands `cacheUtilization`,
 `memoryUtilization`, and `utilization` here too, same as any ordinary
 action-region type. Caching Opportunities, Config Audit, and the four split
 Plan Advisor widgets (Redundant Plan Subtree, Excessive Small Files, Missed
 Broadcast Join, Oversized Broadcast Join) render through the ordinary
 active/clean paths above (see
 [Board widgets beyond the fixed six](./board-widgets.md#board-widgets-beyond-the-fixed-six)).
-One consequence of this always-visible grid sitting below every impact
-band: a `critical`-band `coreLocality` finding still renders in that lower
-grid, below the `info`-band widgets above it, a deliberate tradeoff the
-spec accepted in exchange for never losing the widget on a clean run, not a
-ranking bug.
+Core Usage by Locality (`coreLocality`, resolving to `CoreUsageArea`) is
+not in the Findings tab at all: it mounts unconditionally from `appModel`
+at the head of the Full app report's reference grid
+(`alwaysMountedWidgets()`/`isAlwaysMountedType()`), carrying its own
+impact-band indicator when a finding is active instead of collapsing to a
+clean-check line on a clean run. A `coreLocality` finding still lists in
+its impact band's recommendation rows, and its **Show evidence** switches
+to the Full app report tab.
 
 ### Per-widget list sort mode
 
@@ -364,7 +360,8 @@ until the user clicks the Full app report tab. Its exact order is WallClock
 → Timeline → Executor Count Over Time (`ExecutorCountChart.tsx`, the
 executor add/remove count chart extracted out of the former combined
 `ExecutorTimeline.tsx`; not driven by any finding, so it isn't a
-`REGISTRY` entry) → StageTable → a `WidgetGrid` holding Evidence
+`REGISTRY` entry) → StageTable → a `WidgetGrid` holding Core
+Usage by Locality (the one always-mounted `REGISTRY` card) → Evidence
 availability → ETL Phase Attribution → What-If Executor Scaling →
 Compute Efficiency → Wasted Core-Hours → Core-Usage Distribution.
 Scorecard used to lead this
@@ -375,12 +372,10 @@ run-info row: Wall-clock, Efficiency, Unused core time; see
 [Board widgets beyond the fixed six](./board-widgets.md#board-widgets-beyond-the-fixed-six)).
 WallClock, Timeline, StageTable and every tile in the grid beside them
 (Evidence availability included) all render immediately and fully
-expanded. No detector-driven `REGISTRY` card renders in this
-section any more: Memory Utilization, Executor Utilization, Core Usage by
-Locality, and Cache Storage all moved to the Findings tab above (Cache
-Storage, Memory Utilization, and Executor Utilization only surface there
-when they have an active finding; Core Usage by Locality alone is
-always-mounted).
+expanded. Core Usage by Locality is the only detector-driven `REGISTRY`
+card in this section, always mounted; Memory Utilization, Executor
+Utilization, and Cache Storage live in the Findings tab above and surface
+there only when they have an active finding.
 
 The Evidence availability card is the persistent, non-impact-band ledger
 [defined in the worker protocol](./worker-protocol.md#evidence-availability-contract-v1),
@@ -466,12 +461,12 @@ contract; cross-session consumers (exports, future URL-restored state) use
 the core `Finding.id` instead (see [Finding identity](./worker-protocol.md#finding-identity)).
 
 `Dashboard` owns disclosure and navigation. Every routeable `REGISTRY`
-widget now lives in the Findings tab (no `REGISTRY` widget renders inside
-Full app report any more; see "Render order" above), so
-`requestRoute` (`DashboardContent`, `src/view/Dashboard.tsx`) starts with an
-unconditional `setActiveTab('findings')`, whether the request came from a
-control already on that tab or from Full app report's own Stage Summary
-route link. That tab switch can unmount and remount the whole Findings
+widget lives in the Findings tab except the always-mounted Core Usage by
+Locality, which lives in Full app report (see "Render order" above), so
+`requestRoute` (`DashboardContent`, `src/view/Dashboard.tsx`) starts by
+switching to the tab holding the target's widget
+(`isAlwaysMountedType(target.finding.type)` picks Full app report), whether
+the request came from a control already on that tab or from the other. That tab switch can unmount and remount the whole Findings
 subtree in the same commit as the route landing (base-ui `Tabs` fully
 unmounts the inactive panel; see "Render order" above), which two
 routing paths have to account for: `reportWidgetOpen` no longer clears a

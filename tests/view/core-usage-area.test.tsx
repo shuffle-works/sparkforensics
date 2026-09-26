@@ -479,7 +479,7 @@ test('defaults collapsed with a peak-cores summary', () => {
 
   // When collapsed, the summary shows the peak cores figure
   expect(screen.getByText(/\d+(\.\d)? cores/)).toBeInTheDocument();
-  expect(screen.getByText(/busy at the peak, by locality/)).toBeInTheDocument();
+  expect(screen.getByText(/busy at the peak$/)).toBeInTheDocument();
 
   // Chart is hidden when collapsed
   expect(screen.queryByRole('img', { name: /concurrent core usage/i })).not.toBeInTheDocument();

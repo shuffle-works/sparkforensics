@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 
 import { store, useStore, useWidgetDensity } from '@/store/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { REGISTRY, type WidgetProps } from '@/view/detector-registry';
+import { alwaysMountedWidgets, isAlwaysMountedType, REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import { NoMatchBanner } from '@/view/EmptyStateBanners';
 import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from '@/view/EvidenceAvailabilityContext';
 import { FindingFilterBar } from '@/view/FindingFilterBar';
@@ -34,6 +34,7 @@ import { EvidenceAvailability } from '@/view/widgets/EvidenceAvailability';
 import { WallClock } from '@/view/widgets/WallClock';
 import { WastedCoreHours } from '@/view/widgets/WastedCoreHours';
 import { Topbar } from '@/view/Topbar';
+import { WidgetCardSkeleton } from '@/view/WidgetCard';
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
 import { useIngest } from '@/store/useIngest';
 import { useTriageShortcuts } from '@/view/useTriageShortcuts';
@@ -60,13 +61,16 @@ interface RouteRequest {
  * Timeline, Executor Count, Stage Summary, Evidence Availability) plus the
  * fixed-order tail of non-detector report lenses ("Widget rendering order" in
  * docs-site/contributor-guide/architecture/widget-rendering.md).
- * `REGISTRY` widgets render unconditionally inside the Findings tab's
- * `ImpactBoard`, not here; selecting the tab is itself the disclosure. The
+ * `REGISTRY` widgets render inside the Findings tab's `ImpactBoard`, not
+ * here, except the always-mounted Core Usage by Locality chart
+ * (`alwaysMountedWidgets`), a run-wide reference view that sits beside the
+ * executor timeline. Selecting the tab is itself the disclosure. The
  * Scorecard lives in its own strip above the tabs, shared by both.
  */
 function ReferenceSection({
   appModel,
   catalog,
+  configFindings,
   getTaskData,
   activeFileId,
   onRoute,
@@ -79,6 +83,14 @@ function ReferenceSection({
       <ExecutorCountChart appModel={appModel} activeFileId={activeFileId} />
       <StageTable appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={onRoute} />
       <WidgetGrid>
+        {alwaysMountedWidgets().map(({ component: Widget, widgetId }) => (
+          // widgetId registers the card as a route target for Show evidence.
+          <WidgetGridItem key={widgetId} cardId={`reference-${widgetId}`} widgetId={widgetId} collapsedTile>
+            <Suspense fallback={<WidgetCardSkeleton />}>
+              <Widget appModel={appModel} catalog={catalog} configFindings={configFindings} getTaskData={getTaskData} activeFileId={activeFileId} defaultCollapsed />
+            </Suspense>
+          </WidgetGridItem>
+        ))}
         <WidgetGridItem cardId="reference-evidence-availability" collapsedTile>
           <EvidenceAvailability ledger={appModel.evidenceAvailability} />
         </WidgetGridItem>
@@ -318,11 +330,11 @@ function DashboardContent() {
   }, []);
 
   const requestRoute = useCallback((target: TriageTarget) => {
-    // Every routeable REGISTRY widget lives in the Findings tab (see
-    // ReferenceSection's doc comment above): a route request always needs
-    // that tab active, whether it was initiated from Findings itself or
-    // from a Full app report control like Stage Summary's own route link.
-    setActiveTab('findings');
+    // Routeable REGISTRY widgets live in the Findings tab, except the
+    // always-mounted one in Full app report (see ReferenceSection's doc
+    // comment above): show the tab that holds the target's widget, whichever
+    // tab the request came from.
+    setActiveTab(isAlwaysMountedType(target.finding.type) ? 'full-report' : 'findings');
     const token = tokenRef.current + 1;
     tokenRef.current = token;
     const { catalog: currentCatalog, configFindings: currentConfig, activeFileId: currentFileId } = store.getState();

@@ -133,7 +133,10 @@ test('the Findings tab shows every REGISTRY widget with findings, while Full app
   await user.click(reportTab);
   const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
   expect(within(reportPanel).getByRole('heading', { name: 'Stage Summary' })).toBeInTheDocument();
-  // REGISTRY widgets only mount in ImpactBoard (Findings tab), never in Full app report.
+  // REGISTRY widgets mount in ImpactBoard (Findings tab), except the
+  // always-mounted Core Usage by Locality, which lives in Full app report.
+  expect(await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
+  expect(within(findingsPanel).queryByRole('heading', { name: 'Core Usage by Locality' })).not.toBeInTheDocument();
   expect(within(reportPanel).queryByRole('heading', { name: 'Memory Utilization' })).not.toBeInTheDocument();
   expect(within(reportPanel).queryByRole('heading', { name: 'Spill' })).not.toBeInTheDocument();
 });
@@ -152,18 +155,16 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
   await waitForDashboard();
 
   const findingsPanel = screen.getByRole('tabpanel', { name: 'Findings' });
-  // Core Usage by Locality is the one remaining always-mounted reference
-  // widget and is code-split; wait for it before asserting the heading list.
   // Memory/Executor Utilization and Cache Storage are not always-mounted, so
-  // they're absent from this catalog-less run.
-  await within(findingsPanel).findByRole('heading', { name: 'Core Usage by Locality' });
+  // they're absent from this catalog-less run; Core Usage by Locality lives
+  // in Full app report.
+  await within(findingsPanel).findByRole('heading', { name: 'Info alert' });
   expect(within(findingsPanel).getAllByRole('heading').map((node) => node.textContent))
     .toEqual([
       'Findings',
       'Critical', 'Critical alert',
       'Warning', 'Warning alert',
       'Info', 'Info alert',
-      'Core Usage by Locality',
       'Clean checks',
     ]);
   // Clean widgets render a CleanCheckRow, not their real component, so there is no "Clean alert" heading.
@@ -206,16 +207,17 @@ test('a clean type still gets its own clean-check line when a sibling sharing it
   expect(screen.getByText('Stage shape')).toBeInTheDocument();
 });
 
-test('empty catalog shows the "no findings to fix" empty state alongside the always-visible grid and the Full app report tab', async () => {
+test('empty catalog shows the "no findings to fix" empty state alongside the Full app report tab and its always-mounted chart', async () => {
   store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [] });
 
   render(<App />);
   await waitForDashboard();
 
   expect(screen.getByText(/no findings to fix/i)).toBeInTheDocument();
-  // The empty state is additive: the always-visible grid and Full app report remain available.
-  expect(await screen.findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
-  expect(screen.getByRole('tab', { name: 'Full app report' })).toBeInTheDocument();
+  // The empty state is additive: Full app report and its always-mounted chart remain available.
+  await userEvent.setup().click(screen.getByRole('tab', { name: 'Full app report' }));
+  const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
+  expect(await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
 });
 
 test('shows real Config Audit findings as a row in All recommendations without adding them to the catalog', async () => {

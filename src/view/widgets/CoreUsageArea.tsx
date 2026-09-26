@@ -150,7 +150,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ appModel, catalog, ac
       impactBand={coreLocalityFinding?.impactBand}
       badges={coreLocalityFinding ? <TagBadge type="coreLocality" impactBand={coreLocalityFinding.impactBand} /> : null}
       defaultCollapsed={defaultCollapsed}
-      summary={<WidgetLeadSummary value={`${formatCores(peakCores)} cores`} context="busy at the peak, by locality" />}
+      summary={<WidgetLeadSummary value={`${formatCores(peakCores)} cores`} context="busy at the peak" />}
     >
       <div className="space-y-2">
         <AdvancedOnly>

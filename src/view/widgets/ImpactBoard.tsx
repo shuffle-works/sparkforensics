@@ -9,7 +9,7 @@ import type { WidgetProps } from '@/view/detector-registry';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import type { TriageTarget } from '@/view/triage-target';
 import {
-  AlwaysVisibleAndCleanChecks,
+  CleanChecks,
   computeActiveWidgets,
   SUGGESTED_IMPROVEMENTS_ANCHOR_ID,
   type ActiveWidget,
@@ -193,7 +193,7 @@ export function ImpactBoard({ appModel, catalog, configFindings = [], stages, ge
           activeFileId={activeFileId}
         />
       ))}
-      <AlwaysVisibleAndCleanChecks appModel={appModel} catalog={catalog} configFindings={configFindings} getTaskData={getTaskData} activeFileId={activeFileId} />
+      <CleanChecks appModel={appModel} catalog={catalog} configFindings={configFindings} />
     </div>
   );
 }
