@@ -21,6 +21,15 @@ describe('Vite entry template', () => {
     expect(built).toMatch(/\b(?:src|href)="\.\/assets\//);
   });
 
+  it('ships the single-file HTML export template as a static file beside the app', async () => {
+    const template = await readFile(resolve(root, 'dist/export-template.html'), 'utf8');
+    // The dashboard's HTML download splices the run into exactly this one tag
+    // (src/export/single-file.ts); everything else must already be inline.
+    const parts = template.split('<script src="./data.js"></script>');
+    expect(parts).toHaveLength(2);
+    expect(parts.join('')).not.toMatch(/<link\b[^>]*\bhref="\.\//);
+  });
+
   it('includes the tuning reference in the production bundle', () => {
     expect(existsSync(resolve(root, 'dist/docs/tuning-reference/intro.html'))).toBe(true);
     expect(existsSync(resolve(root, 'dist/docs/tuning-reference/bottleneck-skew.html'))).toBe(true);

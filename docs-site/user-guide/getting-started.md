@@ -176,9 +176,13 @@ for the other one (see [Run comparison mode](./run-comparison.md)).
 execution plan, filterable down to I/O operators (scan, exchange), a
 broader "basic" set, or every operator. **Export evidence** downloads the
 current run's findings as a portable Markdown or JSON report, the same
-shape the CLI and MCP tools produce; turn on **Redact identifiers** first if
-the report is headed outside the environment that produced it, since that
-pseudonymizes the app id and any host/IP tokens. **Keyboard shortcuts**
+shape the CLI and MCP tools produce, or as **Download HTML dashboard**: one
+`.html` file holding this dashboard for the run, which opens in any browser
+with no server, like the CLI's `--export-html` folder. Its docs links go to
+the published docs site, so reading them needs a network connection. Turn on
+**Redact identifiers** first if the export is headed outside the environment
+that produced it, since that pseudonymizes the app id and any host/IP tokens
+in all three formats. **Keyboard shortcuts**
 (press `?` from anywhere) lists every shortcut. Rounding it out: a **Docs**
 link and a theme toggle.
 

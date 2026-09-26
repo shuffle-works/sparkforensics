@@ -6,6 +6,7 @@ import { XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/theme/ThemeProvider';
 import { useDocs } from '@/view/DocsContext';
+import { docsHref } from '@/view/docs-href';
 
 /** What's currently loaded in the iframe: the resolved `path` and the theme
  * the load was made with. A docs-site page has no live channel back to this
@@ -132,7 +133,7 @@ export function DocsSheet() {
     const loaded = currentTargetRef.current;
     if (loaded && loaded.path === path && loaded.theme === theme) return;
     currentTargetRef.current = { kind: 'site', path, theme };
-    setLoadedSrc(siteFrameSrc(path, theme));
+    setLoadedSrc(siteFrameSrc(docsHref(path), theme));
   }, [isOpen, target, theme]);
 
   // Same panel, same chrome, either way; only the title admits which doc

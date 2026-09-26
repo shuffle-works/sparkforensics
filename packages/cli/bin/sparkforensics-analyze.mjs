@@ -22,13 +22,13 @@ const loadCore = (moduleName) => loadVendored(pkgDir, moduleName);
 
 const { collectRun } = await loadCore('cli/collect-run');
 const { resolveFromShs } = await loadCore('shs-load');
-const { analyze, auditConfig } = await loadCore('analyzer');
+const { analyze } = await loadCore('analyzer');
 const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
 const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
 const { evaluateBudgets } = await loadCore('cli/budgets');
 const { buildComparison, renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
-const { redactComparison, redactExportData } = await loadCore('redact');
-const { buildExportRunData } = await loadCore('export-data');
+const { redactComparison } = await loadCore('redact');
+const { buildHtmlExportData, runPayloadScript } = await loadCore('html-export');
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id> [--attempt-id <id>] [options]
@@ -117,9 +117,7 @@ async function collectWithEvidence(path) {
 }
 
 async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redact }) {
-  const configFindings = auditConfig(appModel.app);
-  let exportData = buildExportRunData(appModel, catalog, configFindings, skippedLines);
-  if (redact) exportData = redactExportData(exportData);
+  const exportData = buildHtmlExportData(appModel, catalog, skippedLines, { redact });
 
   // Published install: packages/cli/export-template/ (populated by
   // scripts/vendor-export-template.mjs at prepack time). Monorepo dev mode:
@@ -137,11 +135,10 @@ async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redac
   try {
     cpSync(templateDir, tempDir, { recursive: true });
     // gzip + base64 to shrink the artifact; decodeRunPayload (hydrate-store.ts)
-    // reverses it. base64's alphabet (A-Za-z0-9+/=) can't contain "<", so log
-    // free text can't inject a "</script>" break-out — no escaping needed.
+    // reverses it. runPayloadScript explains why base64 needs no escaping.
     const json = JSON.stringify(exportData);
     const base64 = gzipSync(json).toString('base64');
-    writeFileSync(join(tempDir, 'data.js'), `window.__SPARKFORENSICS_RUN_GZ__ = "${base64}";\n`);
+    writeFileSync(join(tempDir, 'data.js'), `${runPayloadScript(base64)}\n`);
     // Clear destDir (confirmed empty-or-absent by the caller) right before the
     // rename to avoid platform rename-onto-dir quirks. Kept inside the try so a
     // rename failure surfaces the same actionable error as a write failure.

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 import { docsUrl, isKnownDocAnchor } from '@sparkforensics/core/docs-config.ts';
+import { docsHref } from '@/view/docs-href';
 
 const DEFAULT_ANCHOR = '#intro';
 
@@ -78,7 +79,7 @@ export function DocsLink({ anchor, children }: DocsLinkProps) {
   if (!isKnownDocAnchor(anchor)) return null;
   return (
     <a
-      href={docsUrl(anchor)}
+      href={docsHref(docsUrl(anchor))}
       className="text-primary underline-offset-4 hover:underline"
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
