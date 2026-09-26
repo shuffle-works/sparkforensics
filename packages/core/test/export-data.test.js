@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildExportRunData, EXPORT_DATA_SCHEMA_VERSION } from '../src/export-data.js';
+import { buildExportRunData, EXPORT_DATA_SCHEMA_VERSION, reviveExportCollections } from '../src/export-data.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
 function makeAppModel(overrides = {}) {
@@ -30,9 +30,9 @@ describe('buildExportRunData', () => {
     expect(data.stages).toEqual([appModel.stages.get(1)]);
     expect(data.jobs).toEqual([appModel.jobs.get(1)]);
     expect(data.sql).toEqual([]);
-    expect(data.executors).toBe(appModel.executors);
-    expect(data.catalog).toBe(catalog);
-    expect(data.configFindings).toBe(configFindings);
+    expect(data.executors).toEqual(appModel.executors);
+    expect(data.catalog).toEqual(catalog);
+    expect(data.configFindings).toEqual(configFindings);
     expect(data.skippedLines).toBe(2);
   });
 
@@ -42,5 +42,24 @@ describe('buildExportRunData', () => {
     const roundTripped = JSON.parse(JSON.stringify(data));
     expect(Array.isArray(roundTripped.stages)).toBe(true);
     expect(roundTripped.stages).toEqual(data.stages);
+  });
+
+  it('keeps nested Maps and Sets through JSON and back, where plain JSON would leave {}', () => {
+    const rddInfo = new Map([[3, { id: 3, name: 'cached', stageIds: [1, 2] }]]);
+    const executorMetrics = new Map([['exec-1', { JVMHeapMemory: 10 }]]);
+    const appModel = makeAppModel({
+      app: { ...makeApp(), rddInfo },
+      stages: new Map([[1, makeStage({ id: 1, executorMetrics })]]),
+    });
+    const json = JSON.stringify(buildExportRunData(appModel, [], [], 0));
+    expect(JSON.parse(json).app.rddInfo).not.toEqual({});
+
+    const revived = JSON.parse(json, reviveExportCollections);
+    expect(revived.app.rddInfo).toBeInstanceOf(Map);
+    expect([...revived.app.rddInfo.values()]).toEqual([...rddInfo.values()]);
+    expect(revived.stages[0].executorMetrics).toEqual(executorMetrics);
+    expect(JSON.parse(JSON.stringify({ tags: new Set(['a']) }), reviveExportCollections).tags).toEqual({});
+    expect(JSON.parse(JSON.stringify(buildExportRunData(makeAppModel({ app: { ...makeApp(), tags: new Set(['a', 'b']) } }), [], [], 0)), reviveExportCollections).app.tags)
+      .toEqual(new Set(['a', 'b']));
   });
 });

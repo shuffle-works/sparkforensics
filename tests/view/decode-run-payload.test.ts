@@ -2,7 +2,9 @@
 import { test, expect } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import { decodeRunPayload } from '@/export/hydrate-store';
-import type { ExportRunData } from '@sparkforensics/core/export-data.ts';
+import { buildExportRunData, type ExportRunData } from '@sparkforensics/core/export-data.ts';
+import type { AppModel } from '@sparkforensics/core/types.ts';
+import { emptyAppModel } from '@/store/store';
 
 function sampleData(overrides: Partial<ExportRunData> = {}): ExportRunData {
   return {
@@ -42,4 +44,15 @@ test('decodes non-ASCII text as UTF-8, not latin1', () => {
   const decoded = decodeRunPayload(encode(data));
   expect(decoded.stages[0].name).toBe('Cálculo de ratón: órdenes de España');
   expect(decoded.app?.name).toBe('Consulta de facturación');
+});
+
+test('revives the Maps the CLI tags, so a widget can call .values() on app.rddInfo', () => {
+  const rddInfo = new Map([[3, { id: 3, name: 'cached', stageIds: [1] }]]);
+  const data = buildExportRunData(
+    { ...emptyAppModel(), app: { id: 'app-1', rddInfo } as unknown as AppModel['app'] },
+    [], [], 0,
+  );
+  const decoded = decodeRunPayload(encode(data));
+  expect(decoded.app?.rddInfo).toBeInstanceOf(Map);
+  expect([...(decoded.app!.rddInfo as Map<number, unknown>).values()]).toEqual([...rddInfo.values()]);
 });
