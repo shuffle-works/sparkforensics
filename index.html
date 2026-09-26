@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SparkForensics</title>
+    <meta name="description" content="SparkForensics is a zero-backend browser app that parses Spark History Server event logs to surface stage-level bottlenecks (skew, spill, GC, shuffle, cold start) without uploading cluster data anywhere.">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://shuffle-works.github.io/sparkforensics/">
+    <meta property="og:title" content="SparkForensics">
+    <meta property="og:description" content="Zero-backend browser dashboard that parses Apache Spark event logs to diagnose performance bottlenecks: skew, spill, GC pressure, stragglers, cache utilization, and more.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Recursive:wght,CASL@400..700,0..1&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+      try {
+        var stored = localStorage.getItem('shuffle-works-theme');
+        // Persisted choice wins; otherwise honor the OS preference. Mirrors
+        // initialTheme() in src/store/store.ts. Runs before paint to avoid a
+        // dark-then-light flash on prefers-light systems.
+        if (stored === 'light' || (stored == null && window.matchMedia('(prefers-color-scheme: light)').matches))
+          document.documentElement.setAttribute('data-theme', 'light');
+      } catch (_) {}
+    </script>
+    <script type="module" crossorigin src="./assets/index-DgqTHa_z.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-hePW80VL.js">
+    <link rel="modulepreload" crossorigin href="./assets/charts-vendor-0VMaLVLN.js">
+    <link rel="modulepreload" crossorigin href="./assets/plan-graph-vendor-B0sEms9Z.js">
+    <link rel="modulepreload" crossorigin href="./assets/react-vendor-BAKt3vny.js">
+    <link rel="modulepreload" crossorigin href="./assets/ImpactEstimate-CK0VeSXH.js">
+    <link rel="modulepreload" crossorigin href="./assets/button-CN-c3Ruk.js">
+    <link rel="stylesheet" crossorigin href="./assets/plan-graph-vendor-DLioOiRN.css">
+    <link rel="stylesheet" crossorigin href="./assets/index-CgvYmC-h.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
