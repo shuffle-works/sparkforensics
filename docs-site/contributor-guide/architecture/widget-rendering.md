@@ -570,7 +570,10 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    `prioritizeIdleCapacity` is skipped. Evidence caveats (a finding with
    `dataUnavailable`, or one `isRealFinding` drops) and a log with no
    finished stage are listed under "Not checked on this log", each caveat by
-   its own recommendation text, which names the setting to enable; any gap
+   its own recommendation text, which names the setting to enable
+   (`gapSettings` in `src/view/run-verdict.ts` gathers every named
+   `spark.*=value` into one `--conf` line with **Copy settings**, also
+   appended to **Copy next steps**); any gap
    keeps the run from being called clean, and a log with no finished stage
    and no finding gets its own title. In Advanced view each step adds an
    "Estimate:" line from `estimateProvenance` (`src/view/run-verdict.ts`:
