@@ -518,6 +518,7 @@ describe('getRunSummary', () => {
       expect(summary.stageCount).toBe(0);
       expect(summary.durationMs).toBe(100);
       expect(summary.executorCount).toEqual({ added: 0, removed: 0 });
+      expect(summary.runShape).toMatchObject({ wallClockMs: 100, etlPhasesMs: null, peakBusyCores: null });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

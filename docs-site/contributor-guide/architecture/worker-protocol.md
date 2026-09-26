@@ -181,13 +181,17 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, reco
 
 - `summary` is the run header: `{ app: { id, name, sparkVersion }, stageCount,
   jobCount, sqlExecutionCount, findingCount, impactBandCounts,
-  actionableFindingCount, actionableImpactBandCounts, clean, outcome }`. `findingCount`
+  actionableFindingCount, actionableImpactBandCounts, clean, outcome, runShape }`. `findingCount`
   counts every row in `findings`; the `actionable*` counts leave out evidence
   caveats and the `incompleteRun` row, the same set the dashboard's top bar and
   verdict count. `clean` is `isCleanRun` from `packages/core/src/check-coverage.ts`, and
   `outcome` is `{ failedJobs, totalJobs, failureReason, failureReasonStageId }` from
   `summarizeRunOutcome` (`packages/core/src/run-outcome.ts`), the job results the dashboard
-  verdict leads with; the Markdown prints it as an `- Outcome:` header line.
+  verdict leads with; the Markdown prints it as an `- Outcome:` header line. `runShape`
+  (`computeRunShape`, `packages/core/src/run-shape.ts`) is the Scorecard's wall-clock,
+  Efficiency and Unused core time, the ETL phases' summed stage time and Core Usage by
+  Locality's peak busy cores, each `null` where the dashboard shows none; MCP
+  `get_run_summary` returns it too.
 - `verdict` is the dashboard's run verdict from `buildRunVerdict`
   (`packages/core/src/run-verdict.ts`): `{ title, summary, steps, remainingPlaces, copyText }`.
   `steps` holds the first three places to look in the verdict card's order, each

@@ -17,6 +17,7 @@ import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { docAnchorForType, tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
 import { typeTag } from './format-utils.ts';
 import type { AppModel, Finding, SparkAppInfo } from './types.ts';
+import type { RunShape } from './run-shape.ts';
 
 export type RunSource = { path: string } | { shsBaseUrl: string; appId: string; attemptId?: string };
 // RunRef uses a nested `source` key, matching every real call site (resolveOrCreateRun's
@@ -39,6 +40,8 @@ export interface RunSummary {
   totalJobs: number;
   failureReason: string | null;
   failureReasonStageId: number | null;
+  // Efficiency, unused core time, ETL phases and peak busy cores, as the dashboard shows them.
+  runShape: RunShape;
 }
 // compareRuns returns a smaller MCP-facing projection of CompareRunsResult
 // (runIdA/runIdB/verdict/findingsDelta/metricDeltas/confidence/reason/matchedCoverage), not the full
@@ -311,6 +314,7 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean }): RunSu
     durationMs,
     runComplete: app?.endTime != null,
     ...outcome,
+    runShape: summary.runShape,
   };
 }
 

@@ -74,6 +74,9 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     expect(result.structuredContent.verdict.title).toBe('This log looks incomplete, so results cover only part of the run');
     const runSummary = await client.callTool({ name: 'get_run_summary', arguments: { source: { path } } });
     expect(runSummary.structuredContent).toMatchObject({ runComplete: false, failedJobs: 0, totalJobs: 0, failureReason: null, failureReasonStageId: null });
+    expect(runSummary.structuredContent.runShape).toEqual({
+      wallClockMs: null, efficiencyPct: null, unusedCoreTimePct: null, etlPhasesMs: null, peakBusyCores: null,
+    });
   }, 30000);
 
   it('get_finding_documentation returns detection reference doc content for a finding type', async () => {

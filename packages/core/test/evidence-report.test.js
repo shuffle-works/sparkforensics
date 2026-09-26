@@ -462,6 +462,21 @@ describe('buildEvidenceReport', () => {
       expect(buildEvidenceReport(fixture()).markdown).not.toContain('- Outcome:');
     });
 
+    it('carries the run-shape figures and prints each with what it measures', () => {
+      const { json, markdown } = buildEvidenceReport(fixture());
+      const shape = json.summary.runShape;
+      expect(Object.keys(shape)).toEqual(['wallClockMs', 'efficiencyPct', 'unusedCoreTimePct', 'etlPhasesMs', 'peakBusyCores']);
+      expect(shape.wallClockMs).toBe(5000);
+      expect(typeof shape.efficiencyPct).toBe('number');
+      expect(typeof shape.peakBusyCores).toBe('number');
+      expect(markdown).toContain(`- Efficiency: ${shape.efficiencyPct}% (share of the run with a stage running)`);
+      expect(markdown).toMatch(/- Peak busy cores: \d/);
+      // No stage recorded an end: Efficiency is not measured, as the Scorecard says.
+      const unfinished = fixture();
+      unfinished.stages = new Map([[1, makeStage({ id: 1, completedAt: undefined })]]);
+      expect(buildEvidenceReport(unfinished).json.summary.runShape.efficiencyPct).toBeNull();
+    });
+
     it('carries the run verdict and opens the Markdown with it', () => {
       const { json, markdown } = buildEvidenceReport(fixture());
       const { verdict } = json;

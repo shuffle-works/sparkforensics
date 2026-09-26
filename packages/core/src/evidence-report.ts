@@ -3,7 +3,7 @@
 // Raw task records are never included (privacy baseline); redaction is opt-in via { redact: true }.
 import { analyze, auditConfig } from './analyzer.ts';
 import { detectorCatalog } from './detectors.ts';
-import { typeTag, formatBytes, IMPACT_BAND_ORDER } from './format-utils.ts';
+import { typeTag, formatBytes, formatDuration, IMPACT_BAND_ORDER } from './format-utils.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { redactReport } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
@@ -16,6 +16,8 @@ import {
   estimateProvenance, formatRawWaste, formatWallClockRange, impactEstimateFigure, impactFigure, rawWasteMeaning, readsAsZero,
   savingsMeaning,
 } from './impact-format.ts';
+import { computeRunShape, type RunShape } from './run-shape.ts';
+import { formatCores } from './core-usage-locality.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
 import type {
   AppModel, Finding, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,
@@ -138,6 +140,7 @@ export interface EvidenceReportJson {
     // The dashboard's clean-run rule: no finding at all, no failed job, and every check could run.
     clean: boolean;
     outcome: RunOutcomeSummary;
+    runShape: RunShape;
   };
   verdict: VerdictJson;
   evidenceAvailability: EvidenceAvailability | null;
@@ -353,9 +356,10 @@ function buildJson(appModel: AppModel): EvidenceReportJson {
   const recommendations = buildRecommendations(allFindings, stages ?? new Map());
   const { cleanChecks, notRunChecks } = buildCheckLists(allFindings, stages ?? new Map());
   const actionable = allFindings.filter(isEligible);
-  const runVerdict = buildRunVerdict({
+  const fullModel: AppModel = {
     ...appModel, stages: stages ?? new Map(), jobs: jobs ?? new Map(), executors: executors ?? { added: [], removed: [] },
-  }, allFindings);
+  };
+  const runVerdict = buildRunVerdict(fullModel, allFindings);
   const runOutcome = runVerdict.outcome;
 
   const result: EvidenceReportJson = {
@@ -382,6 +386,7 @@ function buildJson(appModel: AppModel): EvidenceReportJson {
         failureReason: runOutcome.reason,
         failureReasonStageId: runOutcome.reasonStageId,
       },
+      runShape: computeRunShape(fullModel),
     },
     verdict: verdictJson(runVerdict),
     evidenceAvailability: evidenceAvailability ?? null,
@@ -446,6 +451,24 @@ function renderOutcome(outcome: RunOutcomeSummary, incomplete: boolean): string 
   return incomplete ? `${succeeded} The log has no end-of-run record, so jobs still running when it stops are not counted.` : succeeded;
 }
 
+// The Scorecard, ETL phases and core-usage figures, each worded to say what it measures, since
+// "efficiency" and "unused core time" are different shares. A figure the dashboard cannot show is
+// left out.
+function renderRunShape(shape: RunShape): string[] {
+  const lines: string[] = [];
+  if (shape.wallClockMs != null) lines.push(`- Wall-clock: ${formatDuration(shape.wallClockMs)}`);
+  if (shape.efficiencyPct != null) lines.push(`- Efficiency: ${shape.efficiencyPct}% (share of the run with a stage running)`);
+  if (shape.unusedCoreTimePct != null) {
+    lines.push(`- Unused core time: ${shape.unusedCoreTimePct}% (driver idle plus executor slack, as a share of available core time)`);
+  }
+  if (shape.peakBusyCores != null) lines.push(`- Peak busy cores: ${formatCores(shape.peakBusyCores)}`);
+  if (shape.etlPhasesMs) {
+    const { extract, transform, load } = shape.etlPhasesMs;
+    lines.push(`- ETL phases (summed stage time): extract ${formatDuration(extract)}, transform ${formatDuration(transform)}, load ${formatDuration(load)}`);
+  }
+  return lines;
+}
+
 // The dashboard verdict card as text: title, summary, then the numbered steps worded as its
 // "Copy next steps" checklist, each followed by the other finding types flagged at that place.
 function renderVerdict(verdict: VerdictJson): string[] {
@@ -484,6 +507,7 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
   const outcomeLine = renderOutcome(summary.outcome, incomplete);
   if (outcomeLine) lines.push(`- Outcome: ${outcomeLine}`);
   if (summary.clean) lines.push('- Clean run: no findings, no failed jobs, and every check could run.');
+  lines.push(...renderRunShape(summary.runShape));
   lines.push('');
   lines.push(...renderVerdict(verdict));
   if (recommendations.length > 0) {
@@ -572,7 +596,9 @@ export interface FindingsFilter {
 // CLI/MCP-facing filter over FindingRow, delegating to the shared core predicate that also backs
 // the dashboard's finding-filter.
 function matchesFindingsFilter(row: FindingRow, filter: FindingsFilter): boolean {
-  return matchesFindingFilterCriteria(row, filter);
+  // A sql-scope finding carries its stages in evidence.stageIds, not a stageId column.
+  const stageIds = Array.isArray(row.evidence?.stageIds) ? (row.evidence.stageIds as number[]) : null;
+  return matchesFindingFilterCriteria({ ...row, stageIds }, filter);
 }
 
 /** Build a FindingsFilter from the three optional CLI/MCP filter dimensions, or undefined when

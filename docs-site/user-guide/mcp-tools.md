@@ -72,7 +72,9 @@ a `runId` for one already loaded in this session):
   narrows the `findings` array to only these bands
 - `type`: array of finding `type` values, narrows `findings` to only these
   types
-- `stageId`: number, narrows `findings` to only findings on this stage
+- `stageId`: number, narrows `findings` to only findings on this stage,
+  including a SQL plan finding whose only stage it is (the dashboard's stage
+  details rule)
 - `format`: `"json" | "md"` (default `"json"`), switches `content[0].text` to
   a rendered Markdown report instead of JSON. `structuredContent` always
   stays JSON-shaped, regardless of `format`.
@@ -128,6 +130,13 @@ App/stage/job/sql counts, duration, and how the run ended: no findings.
 `failureReason` is the first line of Spark's own recorded reason when a job
 failed, the same line the dashboard verdict quotes (`failureReasonStageId` is
 the stage it came from, or `null` when it came from a job's exception).
+`runShape` carries the dashboard's run-shape figures: `wallClockMs`,
+`efficiencyPct` (the share of the run with a stage running, the Scorecard's
+Efficiency), `unusedCoreTimePct` (driver idle plus executor slack as a share of
+available core time; `minEfficiencyPct` checks 100 minus this), `etlPhasesMs`
+(`extract`/`transform`/`load` summed stage time, so a phase can exceed the run)
+and `peakBusyCores` (busy cores at the peak of Core Usage by Locality). Each is
+`null` where the dashboard shows "Not measured" or "Unavailable".
 
 Parameters: same as `diagnose_run` (`source`, `runId`, `redact`, all optional).
 
@@ -152,7 +161,8 @@ Example response:
   "failedJobs": 0,
   "totalJobs": 0,
   "failureReason": null,
-  "failureReasonStageId": null
+  "failureReasonStageId": null,
+  "runShape": { "wallClockMs": 100, "efficiencyPct": 0, "unusedCoreTimePct": null, "etlPhasesMs": null, "peakBusyCores": null }
 }
 ```
 
