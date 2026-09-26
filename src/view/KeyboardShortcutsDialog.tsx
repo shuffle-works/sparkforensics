@@ -62,7 +62,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: { open: boolean;
           </Group>
           <Group title="Triage (Advanced view only)">
             <Row keys={['j', 'k']}>Next or previous finding, starting with the verdict's steps</Row>
-            <Row keys={['Enter']}>Show the focused finding's evidence</Row>
+            <Row keys={['Enter']}>Show the focused finding's evidence, or expand a grouped finding</Row>
             <Row keys={['f']}>Jump to the finding filters</Row>
             <Row keys={['1', '2']}>Switch to Findings or Full app report</Row>
           </Group>

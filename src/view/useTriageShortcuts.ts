@@ -10,13 +10,14 @@ const FINDING_CONTROL_SELECTOR = [
 ].join(', ');
 
 /** True while the key belongs to something else: typing in a field, a
- * modifier chord, or an open dialog/menu that owns its own keyboard model. */
+ * modifier chord, or an open dialog/menu/listbox that owns its own keyboard
+ * model. */
 function shouldIgnore(event: KeyboardEvent): boolean {
   if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return true;
   const target = event.target as HTMLElement | null;
   const tag = target?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return true;
-  return document.querySelector('[role="dialog"], [role="menu"], [role="alertdialog"]') != null;
+  return document.querySelector('[role="dialog"], [role="menu"], [role="alertdialog"], [role="listbox"]') != null;
 }
 
 function visibleControls(): HTMLElement[] {

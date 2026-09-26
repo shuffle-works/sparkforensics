@@ -4,6 +4,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { store, emptyAppModel } from '@/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
 
@@ -108,4 +109,26 @@ test('shortcuts stay out of the way while typing and while a dialog is open', as
   });
   await user.keyboard('2');
   await waitFor(() => expect(screen.getByRole('tab', { name: 'Findings' })).toHaveAttribute('aria-selected', 'true'));
+});
+
+test('an open Select popup keeps its typeahead keys', async () => {
+  const user = userEvent.setup();
+  await load('advanced');
+  render(
+    <Select defaultValue="a">
+      <SelectTrigger aria-label="Jump to stage">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="a">Stage 1</SelectItem>
+        <SelectItem value="b">Stage 2</SelectItem>
+      </SelectContent>
+    </Select>,
+  );
+
+  await user.click(screen.getByRole('combobox', { name: 'Jump to stage' }));
+  const listbox = await screen.findByRole('listbox');
+  await user.keyboard('2');
+  expect(screen.getByRole('tab', { name: 'Findings' })).toHaveAttribute('aria-selected', 'true');
+  expect(listbox).toBeInTheDocument();
 });
