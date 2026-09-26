@@ -68,7 +68,7 @@ function KpiTile({ eyebrow, value, meta, flag = null, bar, dataTestid }: KpiTile
   );
 }
 
-/** Efficiency/Wastage's compact instrument: the metric's own percentage as a
+/** Efficiency/Unused core time's compact instrument: the metric's own percentage as a
  * fill width, colored by the tile's flag (or the healthy `clean` token when
  * unflagged) so severity reads pre-attentively instead of requiring the user
  * to read the number and the color separately. */
