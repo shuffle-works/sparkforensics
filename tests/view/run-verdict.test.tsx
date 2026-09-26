@@ -27,10 +27,10 @@ function appModel(): AppModel {
   } as AppModel;
 }
 
-function renderVerdict(catalog: Finding[], onRoute = vi.fn()) {
+function renderVerdict(catalog: Finding[], onRoute = vi.fn(), model: AppModel = appModel()) {
   render(
     <StageDetailProvider>
-      <RunVerdict appModel={appModel()} catalog={catalog} onRoute={onRoute} />
+      <RunVerdict appModel={model} catalog={catalog} onRoute={onRoute} />
     </StageDetailProvider>,
   );
   return onRoute;
@@ -62,6 +62,8 @@ describe('buildNextSteps', () => {
     expect(locationKey({ type: 'smallFiles', impactBand: 'info', stageIds: [4] })).toEqual({ key: 'stage:4', stageId: 4 });
     expect(locationKey({ type: 'duplicatePlanSubtree', impactBand: 'info', stageIds: [2, 0] }))
       .toEqual({ key: 'stages:duplicatePlanSubtree:0,2', stageId: null });
+    expect(locationKey({ type: 'memoryUtilization', variant: 'idleCores', impactBand: 'warning', stageId: null }).key)
+      .toBe('app:memoryUtilization:idleCores');
   });
 });
 
@@ -80,6 +82,19 @@ describe('prioritizeIdleCapacity', () => {
     expect(prioritizeIdleCapacity(steps(), 50, 3_100)[0].lead.finding).toBe(idleCores);
     // 64ms of a 1s run is 6.4%: the time-based fix keeps the lead.
     expect(prioritizeIdleCapacity(steps(), 50, 1_000)[0].lead.finding.type).toBe('skew');
+  });
+
+  it('never promotes a heap-pressure memoryUtilization finding as idle capacity, and keeps idleCores as its own step', () => {
+    const heapNearCapacity: Finding = {
+      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity', stageId: null, impactBand: 'warning',
+      recommendation: 'Raise spark.executor.memory to avoid OOM.',
+    };
+    const withHeap = buildNextSteps([timed('skew', 0, 64), heapNearCapacity]);
+    expect(prioritizeIdleCapacity(withHeap, 92, 3_100)[0].lead.finding.type).toBe('skew');
+
+    const both = buildNextSteps([timed('skew', 0, 64), heapNearCapacity, { ...idleCores, impactBand: 'info' }]);
+    expect(both.map((step) => step.key)).toContain('app:memoryUtilization:idleCores');
+    expect(prioritizeIdleCapacity(both, 92, 3_100)[0].lead.finding.variant).toBe('idleCores');
   });
 
   it('keeps the savings order below 40% idle, or when no idle-capacity step exists', () => {
@@ -137,6 +152,45 @@ describe('RunVerdict', () => {
     expect(writeText).toHaveBeenCalledWith('Reduce spill: Fix spill in Stage 4. Potential savings: 12.0s');
     expect(copyButton).toHaveTextContent('Copied');
     await waitFor(() => expect(copyButton).toHaveTextContent('Copy'), { timeout: 3000 });
+  });
+
+  it('titles a heap-pressure lead by its own fix, not by cluster size', () => {
+    renderVerdict([{
+      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity', stageId: null, impactBand: 'warning',
+      recommendation: 'Raise spark.executor.memory to avoid OOM.',
+    }]);
+    expect(screen.getByRole('heading', { level: 2 })).not.toHaveTextContent(/cluster size/i);
+    expect(screen.getByTestId('run-verdict')).not.toHaveTextContent('idle cores');
+  });
+
+  it('never calls an incomplete run clean, and says what the figures cover', () => {
+    const incompleteRun: Finding = { type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'No ApplicationEnd.' };
+    const model = { ...appModel(), app: { startTime: 0 } } as AppModel;
+    renderVerdict([incompleteRun], vi.fn(), model);
+
+    expect(screen.getByRole('heading', { level: 2, name: 'This log looks incomplete, so results cover only part of the run' }))
+      .toBeInTheDocument();
+    const verdict = screen.getByTestId('run-verdict');
+    expect(verdict).not.toHaveTextContent('Every check passed');
+    expect(verdict).toHaveTextContent('cover only the part of the run it captured');
+    expect(verdict.querySelector('svg')).toBeNull();
+  });
+
+  it('flags an incomplete run alongside its next steps', () => {
+    const incompleteRun: Finding = { type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'No ApplicationEnd.' };
+    renderVerdict([timed('skew', 7, 2_400), incompleteRun]);
+    expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
+    expect(screen.getByTestId('run-verdict')).toHaveTextContent('cover only the part of the run it captured');
+  });
+
+  it('does not call a run clean when only evidence caveats were found', () => {
+    renderVerdict([{
+      type: 'cacheUtilization', variant: 'storageUnobserved', stageId: null, impactBand: 'info', dataUnavailable: true,
+      recommendation: 'Enable block updates.',
+    }]);
+    expect(screen.getByRole('heading', { level: 2, name: 'Nothing to fix, but some checks could not run on this log' }))
+      .toBeInTheDocument();
+    expect(screen.getByTestId('run-verdict')).not.toHaveTextContent('Every check passed');
   });
 
   it('says a clean run is clean', () => {

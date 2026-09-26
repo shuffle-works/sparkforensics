@@ -1404,16 +1404,37 @@ test('DuplicatePlanSubtree.tsx jumps its own pagination to the page containing a
 // --- CacheUtilization.tsx routing/anchor coverage. Its findings' `stageId` is
 // always `null`, so routing goes through FixTheseFirst/SeverityBoard's
 // recommendation row (`fixTheseFirstRow`) rather than StageTable.
-//
-// NOTE: ConfigAudit.tsx's own findings list is NOT covered here. Its findings
-// live only in the store's `configFindings` slot (never `catalog`), but
-// Dashboard's route coordinator resolves a target via
-// `selectTriageTargetForFinding(finding, catalog)` and never merges in
-// `configFindings`. So a route to any configAudit finding fails
-// `catalog.includes(finding)` and is silently cancelled: clicking its
-// recommendation row is a dead click in the real app. This is a real bug in the
-// shared route coordinator (ConfigAudit's own routeIndex wiring is correct), so
-// no ConfigAudit routing test is added here.
+
+// ConfigAudit.tsx's findings live only in the store's `configFindings` slot,
+// never `catalog`, so this covers the route coordinator resolving against both.
+test('a real ConfigAudit.tsx row is anchor-routable from its recommendation row', async () => {
+  const finding: Finding = {
+    type: 'configAudit', property: 'spark.serializer', value: 'java', stageId: null,
+    impactBand: 'warning', recommendation: 'Use KryoSerializer.',
+  };
+  try {
+    store.setState({ configFindings: [finding] });
+    renderReady([]);
+    await waitForDashboard();
+
+    act(() => {
+      fixTheseFirstRow('configAudit').click();
+    });
+
+    const row = await waitFor(() => {
+      const found = screen
+        .getAllByText('Use KryoSerializer.', { exact: false })
+        .map((element) => element.closest('[data-flashed]') as HTMLElement | null)
+        .find(Boolean);
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    await waitFor(() => expect(document.activeElement).toBe(row));
+    expect(row).toHaveAttribute('data-flashed', 'true');
+  } finally {
+    store.setState({ configFindings: [] });
+  }
+});
 
 test('a real CacheUtilization.tsx row is anchor-routable: focus and the flash land on the row, not the disclosure title, and the flash clears after 2000ms', async () => {
   const rddInfo = new Map([[1, rddRow(1)]]);

@@ -523,14 +523,18 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
 1. `RunVerdict` (`src/view/widgets/RunVerdict.tsx`): the run's verdict
    title, a summary sentence, and up to three numbered next steps built by
    `buildNextSteps` (`src/view/run-verdict.ts`). Steps group routeable
-   eligible findings by location (one stage, or one app-level/multi-stage
-   finding type), ordered by `rankTriageTargets` (potential savings, then
-   impact band, then widget order); `prioritizeIdleCapacity` moves an
-   idle-capacity step (memoryUtilization/utilization) first when the
-   Scorecard's Wastage figure is at least 70%, or at least 40% while the best
-   time-based fix is under 5% of wall-clock. Always the unfiltered catalog:
-   a board filter never changes the verdict. The clean-run message ("No
-   findings to fix right now.") lives here.
+   eligible findings by location (one stage, one multi-stage finding type,
+   or one app-level finding type and variant), ordered by
+   `rankTriageTargets` (potential savings, then impact band, then widget
+   order); `prioritizeIdleCapacity` moves an idle-capacity step
+   (`utilization`, or `memoryUtilization`'s `idleCores` variant only, never
+   its heap variants) first when the Scorecard's Wastage figure is at least
+   70%, or at least 40% while the best time-based fix is under 5% of
+   wall-clock. Always the unfiltered catalog: a board filter never changes
+   the verdict. The clean-run message ("No findings to fix right now.")
+   lives here and shows only when no finding at all was emitted; an
+   `incompleteRun` finding gets its own non-clean title and a sentence
+   saying the figures cover only the captured part of the run.
 2. `Scorecard`: a three-tile run-info row (Wall-clock, Efficiency, Wastage),
    rendered once regardless of which tab is active.
 3. `FindingFilterBar`, only in Advanced view or while a filter is active

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { formatDuration, typeTag } from '@sparkforensics/core/format-utils.ts';
 import { computeWallClock } from '@sparkforensics/core/wall-clock.ts';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import { REGISTRY } from '@/view/detector-registry';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
@@ -51,9 +52,15 @@ interface RunFacts {
   runMs: number | null;
   /** The Scorecard's Wastage figure: allocated executor capacity that ran no task. */
   idlePct: number | null;
+  /** The log has no end-of-run record, so it covers only part of the run. */
+  incomplete: boolean;
+  /** No finding at all, ranked or not: the only state the verdict calls clean. */
+  clean: boolean;
 }
 
 function verdictTitle(eligible: Finding[], steps: NextStep[], facts: RunFacts): string {
+  if (eligible.length === 0 && facts.incomplete) return 'This log looks incomplete, so results cover only part of the run';
+  if (eligible.length === 0 && !facts.clean) return 'Nothing to fix, but some checks could not run on this log';
   if (eligible.length === 0) return 'No findings to fix right now.';
   // Every real detector writes a recommendation, so an eligible finding with
   // no route is a defensive case: still never call such a run clean.
@@ -70,20 +77,24 @@ function verdictTitle(eligible: Finding[], steps: NextStep[], facts: RunFacts): 
 function verdictSummary(eligible: Finding[], steps: NextStep[], facts: RunFacts): string[] {
   const sentences: string[] = [];
   if (eligible.length === 0) {
-    sentences.push('Every check passed for this run.');
+    if (facts.clean) sentences.push('Every check passed for this run.');
+    else if (!facts.incomplete) sentences.push('See Findings for what they could not cover.');
   } else if (steps.length === 0) {
     sentences.push('They are listed by impact under Findings.');
   } else {
     sentences.push(`${plural(eligible.length, 'finding')} in ${plural(steps.length, 'place')}.`);
     const wallClock = steps[0].lead.finding.impactEstimate?.wallClock;
     if (isIdleCapacityStep(steps[0])) {
-      sentences.push('Most of the cores this run held did no work, so a smaller cluster or dynamic allocation would free them for other jobs.');
+      sentences.push('A smaller cluster or dynamic allocation would free the idle cores for other jobs.');
     } else if (wallClock && facts.runMs != null) {
       sentences.push(`The first fix could save up to ${formatDuration(wallClock.high)} of this ${formatDuration(facts.runMs)} run.`);
     }
     if (steps.some((step) => step.related.length > 0)) {
       sentences.push('Findings in the same stage usually share one cause, so they are grouped together and their savings overlap rather than add up.');
     }
+  }
+  if (facts.incomplete) {
+    sentences.push('The log has no end-of-run record, so these figures cover only the part of the run it captured.');
   }
   const leadIsIdle = steps.length > 0 && isIdleCapacityStep(steps[0]);
   if (!leadIsIdle && facts.idlePct != null && facts.idlePct >= IDLE_NOTABLE_PCT) {
@@ -186,15 +197,18 @@ function NextStepItem({ step, index, onRoute }: { step: NextStep; index: number;
  * each with a plain-language explanation, the concrete fix, and a route to its
  * evidence. The full, band-grouped finding list stays in the Findings tab. */
 export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: RunVerdictProps) {
-  const eligible = [...catalog, ...configFindings].filter(isEligible);
+  const allFindings = [...catalog, ...configFindings];
+  const eligible = allFindings.filter(isEligible);
   const facts: RunFacts = {
     runMs: hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null,
     idlePct: getScorecardEstimates(appModel).wastage.value,
+    incomplete: catalog.some((finding) => finding.type === 'incompleteRun'),
+    clean: !allFindings.some(isRealFinding),
   };
   const steps = prioritizeIdleCapacity(buildNextSteps(eligible), facts.idlePct, facts.runMs);
   const shown = steps.slice(0, NEXT_STEP_LIMIT);
   const remaining = steps.length - shown.length;
-  const clean = eligible.length === 0;
+  const { clean } = facts;
 
   return (
     <section

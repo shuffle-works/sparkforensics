@@ -126,10 +126,8 @@ function FilteredBoard({
       )}
       {filteredToEmpty && <NoMatchBanner />}
       {/* Filtering to nothing at all is already covered by NoMatchBanner
-          above; ImpactBoard's own "no findings to fix" empty state is for
-          a genuinely clean run, not a filter that happens to exclude every
-          finding, so skip the whole tab set here to avoid showing both
-          banners at once. */}
+          above, so skip the whole tab set here rather than render an empty
+          board under it. */}
       {!filteredToEmpty && (
         <Tabs value={activeTab} onValueChange={(value) => onActiveTabChange(value as ActiveTab)}>
           <TabsList variant="chrome" aria-label="Report view">
@@ -237,9 +235,9 @@ function DashboardContent() {
   // stale (never scroll/focus).
   const resolveRoute = useCallback((route: RouteRequest): TriageTarget | null => {
     if (routeRef.current?.token !== route.token) return null;
-    const { catalog: currentCatalog, activeFileId: currentFileId } = store.getState();
+    const { catalog: currentCatalog, configFindings: currentConfig, activeFileId: currentFileId } = store.getState();
     if (routeFileRef.current !== currentFileId) return null;
-    const resolved = selectTriageTargetForFinding(route.target.finding, currentCatalog);
+    const resolved = selectTriageTargetForFinding(route.target.finding, [...currentCatalog, ...currentConfig]);
     if (!resolved || resolved.widgetId !== route.target.widgetId || resolved.region !== route.target.region) {
       return null;
     }
@@ -254,8 +252,8 @@ function DashboardContent() {
     setActiveTab('findings');
     const token = tokenRef.current + 1;
     tokenRef.current = token;
-    const { catalog: currentCatalog, activeFileId: currentFileId } = store.getState();
-    const resolved = selectTriageTargetForFinding(target.finding, currentCatalog);
+    const { catalog: currentCatalog, configFindings: currentConfig, activeFileId: currentFileId } = store.getState();
+    const resolved = selectTriageTargetForFinding(target.finding, [...currentCatalog, ...currentConfig]);
     if (!resolved || resolved.widgetId !== target.widgetId || resolved.region !== target.region) {
       routeRef.current = null;
       routeFileRef.current = null;

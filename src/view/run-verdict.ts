@@ -18,8 +18,9 @@ export interface NextStep {
 
 /** A finding's location identity for grouping. Per-stage findings (and
  * sql-scope findings that touch exactly one stage) group by that stage; a
- * multi-stage or app-level finding stands alone by its own type, since two
- * different app-level problems are not the same place. */
+ * multi-stage or app-level finding stands alone by its own type (and variant,
+ * for app-level ones), since two different app-level problems are not the
+ * same place. */
 export function locationKey(finding: Finding): { key: string; stageId: number | null } {
   if (typeof finding.stageId === 'number') return { key: `stage:${finding.stageId}`, stageId: finding.stageId };
   if (finding.stageIds && finding.stageIds.length === 1) {
@@ -28,7 +29,7 @@ export function locationKey(finding: Finding): { key: string; stageId: number | 
   if (finding.stageIds && finding.stageIds.length > 1) {
     return { key: `stages:${finding.type}:${[...finding.stageIds].sort((a, b) => a - b).join(',')}`, stageId: null };
   }
-  return { key: `app:${finding.type}`, stageId: null };
+  return { key: finding.variant ? `app:${finding.type}:${finding.variant}` : `app:${finding.type}`, stageId: null };
 }
 
 /** Groups every routeable finding by location, ordered by the location's
@@ -49,8 +50,12 @@ export function buildNextSteps(findings: Finding[]): NextStep[] {
   return [...steps.values()];
 }
 
-/** Finding types whose step is about executor capacity sitting idle. */
-const IDLE_CAPACITY_TYPES = new Set(['memoryUtilization', 'utilization']);
+/** True for findings about executor capacity sitting idle. memoryUtilization
+ * also reports heap pressure and over-provisioning, which are not idle
+ * capacity, so only its idleCores variant counts. */
+function isIdleCapacityFinding(finding: Finding): boolean {
+  return finding.type === 'utilization' || (finding.type === 'memoryUtilization' && finding.variant === 'idleCores');
+}
 
 /** Idle-capacity share (the Scorecard's Wastage tile) that the verdict treats
  * as the run's main story on its own: the Wastage tile's critical flag. */
@@ -67,7 +72,7 @@ const SMALL_FIRST_FIX_SHARE = 0.05;
  * steps unchanged when no idle-capacity step exists. */
 export function prioritizeIdleCapacity(steps: NextStep[], idlePct: number | null, runMs: number | null): NextStep[] {
   if (idlePct == null || steps.length < 2) return steps;
-  const idleIndex = steps.findIndex((step) => IDLE_CAPACITY_TYPES.has(step.lead.finding.type));
+  const idleIndex = steps.findIndex(isIdleCapacityStep);
   if (idleIndex <= 0) return steps;
   const leadSavings = steps[0].lead.finding.impactEstimate?.wallClock?.high ?? 0;
   const smallFirstFix = runMs != null && runMs > 0 && leadSavings / runMs < SMALL_FIRST_FIX_SHARE;
@@ -77,5 +82,5 @@ export function prioritizeIdleCapacity(steps: NextStep[], idlePct: number | null
 }
 
 export function isIdleCapacityStep(step: NextStep): boolean {
-  return IDLE_CAPACITY_TYPES.has(step.lead.finding.type);
+  return isIdleCapacityFinding(step.lead.finding);
 }
