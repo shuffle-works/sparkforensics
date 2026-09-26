@@ -207,6 +207,9 @@ function FilteredBoard({
           </TabsContent>
         </Tabs>
       )}
+      {/* Full, unfiltered catalog: a stage pill must still open evidence even
+          when the finding is filtered out of the board lists. */}
+      <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={routeToVisible} />
     </main>
   );
 }
@@ -482,10 +485,6 @@ function DashboardContent() {
           />
         </TriageNavigationProvider>
       </FindingFilterProvider>
-
-      {/* Full, unfiltered catalog: a stage pill must still open evidence even
-          when the finding is filtered out of the board lists. */}
-      <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={requestRoute} />
 
       {dragOver && (
         <div

@@ -194,6 +194,31 @@ test('Basic mode still shows the filter bar when a filter is active, so it can b
   expect(screen.getByText('1 finding matches the active filters')).toBeInTheDocument();
 });
 
+test('Show evidence in the stage dialog clears the filter that hides the target, and says so', async () => {
+  const user = userEvent.setup();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() });
+  window.history.replaceState({}, '', '/?type=spill');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Fix spill.' },
+      { type: 'skew', stageId: 1, impactBand: 'warning', recommendation: 'Fix skew.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(hasFixTheseFirstRow('skew')).toBe(false);
+
+  await user.click(screen.getByRole('button', { name: 'Stage 1 details' }));
+  const dialog = await screen.findByRole('dialog');
+  const skewStep = within(dialog).getAllByTestId('stage-finding').find((step) => step.textContent?.includes('Fix skew.'))!;
+  await user.click(within(skewStep).getByRole('button', { name: /show evidence/i }));
+
+  expect(screen.getByText('Cleared the spill filter to show this finding.')).toHaveAttribute('role', 'status');
+  expect(hasFixTheseFirstRow('skew')).toBe(true);
+  expect(new URLSearchParams(window.location.search).get('type')).toBeNull();
+});
+
 test('a verdict step hidden by the active filter clears only the dimension that hides it, and says so', async () => {
   const user = userEvent.setup();
   const scrollIntoView = vi.fn();

@@ -429,6 +429,32 @@ describe('StageDetailDialog reads like a verdict step', () => {
     expect(steps[0]).toHaveTextContent("Fix task skewWhat's happening: A small number of tasks take much longer than their peers.What to try: Rebalance partitioning.");
   });
 
+  it('orders finding types the way the run verdict ranks them: a quantified warning leads an unquantified critical', async () => {
+    const user = userEvent.setup();
+    const quantifiedWarning = { ...skew, impactBand: 'warning' } as Finding;
+    renderHarness(withRun(), vi.fn(async () => TASK_DATA), [straggler, quantifiedWarning]);
+    await user.click(screen.getByRole('button', { name: 'open stage 1' }));
+    const steps = within(await screen.findByRole('dialog')).getAllByTestId('stage-finding');
+
+    expect(steps[0]).toHaveTextContent('Rebalance partitioning.');
+    expect(steps[1]).toHaveTextContent('Check slow hosts.');
+  });
+
+  it('puts a stage failure first on a run whose job failed at that stage, as the verdict does', async () => {
+    const user = userEvent.setup();
+    const stageFailed = { type: 'stageFailed', stageId: 1, impactBand: 'warning', recommendation: 'Inspect the failure.', value: 'boom' } as Finding;
+    const failedRun = {
+      ...withRun(),
+      jobs: new Map([[0, { id: 0, stageIds: [1], result: 'JobFailed', succeeded: false }]]),
+    } as unknown as AppModel;
+    renderHarness(failedRun, vi.fn(async () => TASK_DATA), [skew, stageFailed]);
+    await user.click(screen.getByRole('button', { name: 'open stage 1' }));
+    const steps = within(await screen.findByRole('dialog')).getAllByTestId('stage-finding');
+
+    expect(steps[0]).toHaveTextContent('Inspect the failure.');
+    expect(steps[1]).toHaveTextContent('Rebalance partitioning.');
+  });
+
   it('says when nothing was flagged on the stage', async () => {
     const user = userEvent.setup();
     renderHarness(withRun());

@@ -13,6 +13,8 @@ import { Section } from '@/view/Section';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
+import { buildNextSteps } from '@/view/run-verdict';
+import { summarizeRunOutcome } from '@/view/run-outcome';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 import { hasCompleteApplicationInterval } from '@/view/widgets/scorecard-estimates';
 import { useStageDetail } from '@/view/StageDetailContext';
@@ -93,10 +95,13 @@ interface RecEntry {
 }
 
 /** Groups a stage's findings by `type`, one chip per type with its distinct
- * recommendations underneath, worst-impact-band-first. Tracks the
+ * recommendations underneath, in the run verdict's order. Tracks the
  * worst-impact-band finding itself (not just its band) so the compact chip and
  * expanded `<ImpactEstimate>` reuse the finding that drove the displayed band. */
-function groupFindingsByType(findings: Finding[]): [string, { impactBand: ImpactBand; finding: Finding; recs: Map<string, RecEntry> }][] {
+function groupFindingsByType(
+  findings: Finding[],
+  failedJobStageIds: ReadonlySet<number> | null,
+): [string, { impactBand: ImpactBand; finding: Finding; recs: Map<string, RecEntry> }][] {
   const groups = new Map<string, { impactBand: ImpactBand; finding: Finding; recs: Map<string, RecEntry> }>();
   for (const f of findings) {
     if (!groups.has(f.type)) groups.set(f.type, { impactBand: f.impactBand, finding: f, recs: new Map() });
@@ -111,11 +116,14 @@ function groupFindingsByType(findings: Finding[]): [string, { impactBand: Impact
       });
     }
   }
-  // Worst band first, then biggest potential savings, the same order the
-  // run verdict ranks its steps in, so "start with the first" agrees with it.
-  const savings = (f: Finding) => f.impactEstimate?.wallClock?.high ?? 0;
+  // The run verdict's own step order (buildNextSteps: potential savings, and
+  // failures first on a failed run), so "start with the first" agrees with
+  // it. Types the verdict can't route follow, worst band first.
+  const [step] = buildNextSteps(findings, failedJobStageIds ? { failedJobStageIds } : {});
+  const verdictOrder = step ? [step.lead.finding.type, ...step.related.map((f) => f.type)] : [];
+  const rank = (type: string) => (verdictOrder.includes(type) ? verdictOrder.indexOf(type) : verdictOrder.length);
   return [...groups.entries()].sort(
-    ([, a], [, b]) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand] || savings(b.finding) - savings(a.finding),
+    ([aType, a], [bType, b]) => rank(aType) - rank(bType) || IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand],
   );
 }
 
@@ -178,15 +186,17 @@ function StageVerdict({
   findings,
   catalog,
   runMs,
+  failedJobStageIds,
   onShowEvidence,
 }: {
   stage: Stage;
   findings: Finding[];
   catalog: Finding[];
   runMs: number | null;
+  failedJobStageIds: ReadonlySet<number> | null;
   onShowEvidence?: (target: TriageTarget) => void;
 }) {
-  const groups = groupFindingsByType(findings);
+  const groups = groupFindingsByType(findings, failedJobStageIds);
 
   return (
     <section aria-label="Why this stage was flagged" className="space-y-3">
@@ -294,6 +304,7 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence
   const ioRatio =
     (stage.inputBytes ?? 0) > 0 ? ((stage.outputBytes ?? 0) / (stage.inputBytes ?? 0)).toFixed(2) : null;
   const localityStats = stage.localityStats ?? [];
+  const outcome = summarizeRunOutcome(appModel.jobs, catalog);
 
   return (
     <div className="space-y-6">
@@ -302,6 +313,7 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence
         findings={findings}
         catalog={catalog}
         runMs={hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null}
+        failedJobStageIds={outcome.failedJobs > 0 ? outcome.failedJobStageIds : null}
         onShowEvidence={onShowEvidence}
       />
 

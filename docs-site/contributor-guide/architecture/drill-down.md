@@ -13,9 +13,12 @@ with one sentence placing the stage in the run (duration, share of the run's
 wall-clock, task count, how many finding types it carries), then lists each
 finding type the way `RunVerdict` lists a step: tag and action label, the
 `TAG_HELP` plain explanation, "What to try", the impact estimate, and a
-**Show evidence** button. Types sort worst band first, then by potential
-wall-clock savings, the verdict's own order. Show evidence closes the dialog
-and calls the optional `onRoute` prop (`requestRoute` from `Dashboard.tsx`);
+**Show evidence** button. Types follow the verdict's own order
+(`buildNextSteps`: potential savings first, failure findings first on a run
+whose jobs failed), with types the verdict can't route after them, worst band
+first. Show evidence closes the dialog and calls the optional `onRoute` prop
+(`routeToVisible` from `Dashboard.tsx`, which clears any board filter that
+hides the target, as the verdict's own route does);
 `finalFocus` skips returning focus to the opener in that case, so the route's
 own focus on the evidence stands. Without `onRoute` the button is not shown.
 
