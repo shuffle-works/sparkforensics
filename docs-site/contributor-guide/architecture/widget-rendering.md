@@ -545,7 +545,8 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    filter dimensions that hide it (`excludingDimensions` in
    `src/view/finding-filter.ts`, synced to the URL as usual) and shows a
    one-line notice naming what it cleared. The clean-run message ("No findings to fix right now.")
-   lives here and shows only when no finding at all was emitted; an
+   lives here and shows only when no finding at all was emitted and nothing
+   is listed under "Not checked on this log" (below); an
    `incompleteRun` finding gets its own non-clean title and a sentence
    saying the figures cover only the captured part of the run. Job results
    (`summarizeRunOutcome` in `src/view/run-outcome.ts`) set the run outcome:
