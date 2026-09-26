@@ -186,6 +186,14 @@ describe('RunVerdict', () => {
     expect(verdict).not.toHaveTextContent('sat idle');
   });
 
+  it('keeps the action label\'s own casing after "Start here:", lowering only its first letter', () => {
+    renderVerdict([{
+      type: 'configAudit', stageId: null, impactBand: 'warning', property: 'spark.serializer',
+      recommendation: 'Set spark.serializer to KryoSerializer.',
+    } as Finding]);
+    expect(screen.getByRole('heading', { level: 2, name: 'Start here: switch to Kryo' })).toBeInTheDocument();
+  });
+
   it('titles a heap-pressure lead by its own fix, not by cluster size', () => {
     renderVerdict([{
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity', stageId: null, impactBand: 'warning',

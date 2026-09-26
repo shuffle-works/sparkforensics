@@ -72,6 +72,14 @@ function failedTitle({ failedJobs, totalJobs }: RunOutcome): string {
   return totalJobs === 1 ? 'This run failed: its job did not finish' : `This run failed: all ${totalJobs} jobs did not finish`;
 }
 
+/** An action label as it reads after "Start here:": only its first letter
+ * drops to lower case, so a name inside it ("Switch to Kryo") keeps its
+ * capital, and a leading acronym ("GC", "OOM") is left alone. */
+function lowerFirst(label: string): string {
+  if (/^[A-Z]{2}/.test(label)) return label;
+  return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
 function verdictTitle(eligible: Finding[], steps: NextStep[], facts: RunFacts): string {
   if (isFailedRun(facts)) return failedTitle(facts.outcome);
   if (eligible.length === 0 && facts.incomplete) return 'This log looks incomplete, so results cover only part of the run';
@@ -84,7 +92,7 @@ function verdictTitle(eligible: Finding[], steps: NextStep[], facts: RunFacts): 
   const lead = steps[0];
   if (isIdleCapacityStep(lead) && facts.idlePct != null) return `Start with cluster size: ${facts.idlePct}% of executor capacity sat idle`;
   if (lead.stageId != null) return `Start with Stage ${lead.stageId}`;
-  return `Start here: ${findingActionLabel(lead.lead.finding).toLowerCase()}`;
+  return `Start here: ${lowerFirst(findingActionLabel(lead.lead.finding))}`;
 }
 
 /** The run-level summary under the title: how much was found and where, what
