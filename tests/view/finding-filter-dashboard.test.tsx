@@ -305,6 +305,26 @@ test('the top bar count chip clears the filter that hides the band it counts, an
   expect(params.get('stage')).toBe('1');
 });
 
+test('the top bar count chip reveals a band whose only finding is core locality', async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, '', '/?type=spill');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
+      { type: 'coreLocality', stageId: null, impactBand: 'critical', value: 40, recommendation: 'Check locality.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+
+  await user.click(screen.getByRole('button', { name: '1 critical: show them in Findings' }));
+
+  expect(screen.getByText('Cleared the spill filter to show the critical findings.')).toHaveAttribute('role', 'status');
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Critical' })));
+  expect(new URLSearchParams(window.location.search).get('type')).toBeNull();
+});
+
 test('the top bar count chip still lands when the filter empties the board', async () => {
   const user = userEvent.setup();
   window.history.replaceState({}, '', '/?impact=info');
