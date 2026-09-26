@@ -82,7 +82,7 @@ export function isLocalOnlyEntry(name) {
 // Bump whenever renderDocsContent's output changes for the same upstream
 // commit (filters, normalization, nav-index shape), so existing caches
 // regenerate instead of passing as fresh.
-export const TRANSFORM_VERSION = 1;
+export const TRANSFORM_VERSION = 2;
 export const OVERRIDE_ENV = 'SPARK_TUNING_REFERENCE_DIR';
 const CHANGESET_PACKAGES = ['sparkforensics-web', 'sparkforensics-cli', 'sparkforensics-mcp', 'sparkforensics-server'];
 const GIT_TIMEOUT_MS = 120_000;
@@ -140,7 +140,8 @@ export function collectRequiredAnchors(scanDirs = ANCHOR_SCAN_DIRS, knownAnchors
 
 // Projects a parsed content manifest into the generated nav index consumed by
 // the render step, the docs-site sidebar, and doc-anchor-coverage. `store`/
-// `slug` locate each entry's generated markdown.
+// `slug` locate each entry's generated markdown; `brief` becomes the page's
+// meta description.
 export function projectNavIndex(manifest) {
   const out = [];
   for (const group of manifest.groups) {
@@ -151,6 +152,7 @@ export function projectNavIndex(manifest) {
         anchor: entry.anchor,
         section: group.title,
         title: entry.title,
+        brief: entry.brief ?? '',
         keywords: entry.keywords ?? [],
         store,
         slug,
