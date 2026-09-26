@@ -479,9 +479,21 @@ test('defaults collapsed with a peak-cores summary', () => {
   );
 
   // When collapsed, the summary shows the peak cores figure
-  expect(screen.getByText(/\d+ cores/)).toBeInTheDocument();
-  expect(screen.getByText(/peak concurrent, by locality/)).toBeInTheDocument();
+  expect(screen.getByText(/\d+(\.\d)? cores/)).toBeInTheDocument();
+  expect(screen.getByText(/busy at the peak, by locality/)).toBeInTheDocument();
 
   // Chart is hidden when collapsed
   expect(screen.queryByRole('img', { name: /concurrent core usage/i })).not.toBeInTheDocument();
+});
+
+test('a run shorter than one chart bucket reports its real busy cores, not a figure diluted to "0 cores"', () => {
+  // 20s of task time packed into a 10s stage (2 busy cores) in a 17s run: the
+  // 60s bucket covers only 17s of the run, so the peak is 2 x 10/17 = 1.2 cores.
+  const appModel = { ...buildAppModel({ 1: { completedAt: 10_000, executorRunTime: 20_000 } }), app: { startTime: 0, endTime: 17_000 } };
+  render(
+    <DocsProvider>
+      <CoreUsageArea appModel={appModel as AppModel} catalog={[]} defaultCollapsed={true} />
+    </DocsProvider>,
+  );
+  expect(screen.getByText('1.2 cores')).toBeInTheDocument();
 });

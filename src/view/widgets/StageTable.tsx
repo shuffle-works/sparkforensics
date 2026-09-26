@@ -34,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { formatBytes, formatDuration, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE, stageWidgetFrequency, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, formatDuration, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { Chip, TagBadge } from '@/view/ImpactBadge';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useWidgetDensity } from '@/store/store';
@@ -46,13 +46,12 @@ import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-t
 const PAGE_SIZE = 10;
 const TOP_N = 10;
 const RIGHT_ALIGNED_COLUMNS = new Set([
-  'duration', 'taskCount', 'shuffleRead', 'fetchWait', 'gcPct', 'skew', 'spill',
+  'duration', 'taskCount', 'shuffleRead', 'fetchWait', 'gcPct', 'skew', 'spill', 'findingCount',
 ]);
 
 interface Row {
   stage: Stage;
   tags: Finding[];
-  frequency: number;
 }
 
 export interface StageTableProps {
@@ -159,7 +158,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
   const [sorting, setSorting] = useState<SortingState>([]);
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: 0, pageSize: PAGE_SIZE });
 
-  const { catalogByStage, flaggedStageIds, frequency } = useMemo(() => {
+  const { catalogByStage, flaggedStageIds } = useMemo(() => {
     const byStage = new Map<number, Finding[]>();
     const flagged = new Set<number>();
     for (const b of catalog) {
@@ -168,7 +167,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
       if (!byStage.has(b.stageId as number)) byStage.set(b.stageId as number, []);
       byStage.get(b.stageId as number)!.push(b);
     }
-    return { catalogByStage: byStage, flaggedStageIds: flagged, frequency: stageWidgetFrequency(catalog) };
+    return { catalogByStage: byStage, flaggedStageIds: flagged };
   }, [catalog]);
 
   const rows: Row[] = useMemo(() => {
@@ -188,9 +187,8 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
     return filtered.map((stage) => ({
       stage,
       tags: dedupTagsByType(catalogByStage.get(stage.id) ?? []),
-      frequency: frequency.get(stage.id) ?? 0,
     }));
-  }, [appModel.stages, showProblems, flaggedStageIds, catalogByStage, frequency, nameFilter]);
+  }, [appModel.stages, showProblems, flaggedStageIds, catalogByStage, nameFilter]);
 
   // Resolve triage targets once per catalog change instead of on every
   // rendered tag (each resolution is several linear scans over `catalog`, and
@@ -353,13 +351,17 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
           ] satisfies ColumnDef<typeof stageTableFeatures, Row>[])
         : []),
       {
-        id: 'frequency',
-        header: 'Flagged',
-        accessorFn: (r) => r.frequency,
+        // How many finding types flag this stage: the same count as the
+        // row's chips, so a sort by this column puts the most-flagged stages
+        // first. (It used to count distinct board widgets, which showed "—"
+        // for a stage flagged by skew, straggler and tiny-task findings,
+        // since those share one widget.)
+        id: 'findingCount',
+        header: 'Findings',
+        accessorFn: (r) => r.tags.length,
         cell: ({ getValue }) => {
           const v = getValue<number>();
-          if (v <= 1) return <>{'—'}</>;
-          return <Badge variant="outline">{`Flagged by ${v}`}</Badge>;
+          return <>{v > 0 ? v : '—'}</>;
         },
       },
     ],

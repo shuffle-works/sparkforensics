@@ -79,6 +79,15 @@ function Unavailable({ reason, evidence }: { reason: string; evidence?: 'taskCor
 // What-if scaling simulator. The Model Error indicator and the conditional
 // concurrent-job banner surface how much error the current prediction carries.
 // Not a bottleneck flag: no impact-band border, no badge.
+/** The executor count a prediction assumes, relative to this run's: "5×
+ * the executors" reads plainer than "500% executors". */
+function scalePhrase(pct: number): string {
+  if (pct === 100) return 'with the current executors';
+  if (pct < 100) return `with ${pct}% of the executors`;
+  const multiple = pct / 100;
+  return `with ${Number.isInteger(multiple) ? multiple : multiple.toFixed(1)}× the executors`;
+}
+
 export function ScalingSim({ appModel }: ScalingSimProps) {
   const taskCoreTime = taskCoreTimeEntry(appModel);
   const hasTaskCoreTime = hasUsableRunAggregates(appModel.runAggregates) && (taskCoreTime == null || taskCoreTime.state === 'present');
@@ -110,7 +119,7 @@ export function ScalingSim({ appModel }: ScalingSimProps) {
       summary={
         <WidgetLeadSummary
           value={formatDuration(best.estMakespanMs)}
-          context={`best case at ${best.pct}% executors`}
+          context={`best case, ${scalePhrase(best.pct)}`}
         />
       }
     >

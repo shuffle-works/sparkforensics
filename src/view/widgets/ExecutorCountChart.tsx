@@ -96,12 +96,11 @@ export const ExecutorCountChart = memo(function ExecutorCountChart({ appModel, a
           <CartesianGrid vertical={false} stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
           <XAxis dataKey="label" tick={{ fontSize: 10 }} minTickGap={24} />
           <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={32} />
-          <Tooltip
-            formatter={(value) => [`${value} executor${value === 1 ? '' : 's'} active`, '']}
-            labelFormatter={() => ''}
-          />
+          <Tooltip formatter={(value) => [value, 'Active executors']} labelFormatter={(label) => `At ${label}`} />
+          {/* stepAfter: the count changes only when an executor is added or
+              removed, so a smoothed curve would draw fractional executors. */}
           <Area
-            type="monotone"
+            type="stepAfter"
             dataKey="count"
             name="Active executors"
             stroke={CHART_COLORS.clean}

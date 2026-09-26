@@ -30,7 +30,7 @@ export function EtlPhases({ appModel }: EtlPhasesProps) {
     <WidgetCard
       title="ETL Phase Attribution"
       defaultCollapsed
-      summary={<WidgetLeadSummary value={`${dominant.label} ${formatDuration(phases[dominant.key])}`} context="dominant phase" />}
+      summary={<WidgetLeadSummary value={`${dominant.label} ${formatDuration(phases[dominant.key])}`} context="largest phase, in summed stage time" />}
     >
       <div className="space-y-1">
         {PHASES.map(({ label, key }) => (
@@ -41,6 +41,12 @@ export function EtlPhases({ appModel }: EtlPhasesProps) {
             <strong>{label}</strong>: {formatDuration(phases[key])}
           </div>
         ))}
+        {/* Plain in both views: a phase can read longer than the whole run,
+            which looks like a bug unless the reader knows the times are summed. */}
+        <div className="text-xs text-muted-foreground">
+          Each phase adds up the run time of its stages. Stages that run at the same time both count, so a phase
+          can add up to more than the run's wall-clock.
+        </div>
         <AdvancedOnly>
           <div className="text-xs text-muted-foreground">
             Heuristic: a stage that both shuffles and writes counts in Transform and Load, so

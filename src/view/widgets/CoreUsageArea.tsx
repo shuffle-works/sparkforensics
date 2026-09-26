@@ -64,6 +64,12 @@ type LocalityChartModel =
 // memo: skip recomputing computeLocalityAreaSeries when only the finding filter
 // changes. Always mounted by `Alerts.tsx`, so the `hasActivity`/finding branches
 // below are the only gating this widget does on its own.
+/** Whole cores from 10 up; one decimal below, so a small run's peak never
+ * rounds down to "0 cores". */
+function formatCores(cores: number): string {
+  return cores >= 10 ? String(Math.round(cores)) : cores.toFixed(1).replace(/\.0$/, '');
+}
+
 export const CoreUsageArea = memo(function CoreUsageArea({ appModel, catalog, activeFileId, defaultCollapsed = true }: CoreUsageAreaProps) {
   const [nonLocalPage, setNonLocalPage] = useState(0);
   // Whole derived-series pipeline (including the `hasActivity` guard) in one
@@ -87,12 +93,22 @@ export const CoreUsageArea = memo(function CoreUsageArea({ appModel, catalog, ac
 
     const points: AreaPoint[] = labels.map((t, i) => {
       const point: AreaPoint = { t: Math.round((t - start) / 1000) };
-      for (const tier of order) point[tier] = series[tier]?.[i] ?? 0;
+      // The series averages each bucket over its full width, so a last bucket
+      // that runs past the app's end (or a run shorter than one bucket) reads
+      // diluted: a 17s run in a 60s bucket showed well under one busy core.
+      // Rescale to the part of the bucket the run actually covers.
+      const coveredMs = Math.min(bucketWidthMs, Math.max(1, end - t));
+      const scale = bucketWidthMs / coveredMs;
+      for (const tier of order) if (tier !== 'idle') point[tier] = (series[tier]?.[i] ?? 0) * scale;
       return point;
     });
-    const sampled = downsample(points);
     const busyTiers = order.filter((t) => t !== 'idle');
-    const peakCores = points.reduce((max, p) => Math.max(max, busyTiers.reduce((sum, t) => sum + p[t], 0)), 0);
+    const busyTotal = (p: AreaPoint) => busyTiers.reduce((sum, t) => sum + p[t], 0);
+    const peakCores = points.reduce((max, p) => Math.max(max, busyTotal(p)), 0);
+    // Same rule as the core series (peak busy minus each bucket's busy), redone
+    // on the rescaled values so the stack still tops out at the peak.
+    for (const p of points) p.idle = Math.max(0, peakCores - busyTotal(p));
+    const sampled = downsample(points);
 
     return { hasActivity: true, order, points, sampled, peakCores };
   }, [appModel, activeFileId]);
@@ -133,7 +149,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ appModel, catalog, ac
       impactBand={coreLocalityFinding?.impactBand}
       badges={coreLocalityFinding ? <TagBadge type="coreLocality" impactBand={coreLocalityFinding.impactBand} /> : null}
       defaultCollapsed={defaultCollapsed}
-      summary={<WidgetLeadSummary value={`${Math.round(peakCores)} cores`} context="peak concurrent, by locality" />}
+      summary={<WidgetLeadSummary value={`${formatCores(peakCores)} cores`} context="busy at the peak, by locality" />}
     >
       <div className="space-y-2">
         <AdvancedOnly>
