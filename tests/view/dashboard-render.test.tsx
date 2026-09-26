@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { test, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
@@ -380,4 +380,29 @@ test('Reference-section grid items render with collapsedTile', async () => {
     const card = heading.closest('[data-slot="card"]');
     expect(card).toHaveClass('min-h-[6.5rem]');
   }
+});
+
+test('the first Tab stop skips past the top bar to the verdict', async () => {
+  const user = userEvent.setup();
+  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [], configFindings: [] });
+  render(<App />);
+  await waitForDashboard();
+
+  await user.tab();
+  expect(document.activeElement).toHaveTextContent('Skip to the verdict');
+  await user.keyboard('{Enter}');
+  expect(document.activeElement).toBe(screen.getByTestId('run-verdict'));
+});
+
+test('the top bar count chip opens Findings on the band it counts', async () => {
+  const user = userEvent.setup();
+  const skew: Finding = { type: 'skew', stageId: 1, impactBand: 'warning', recommendation: 'Rebalance Stage 1.' };
+  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [skew], configFindings: [] });
+  render(<App />);
+  await waitForDashboard();
+
+  await user.click(screen.getByRole('tab', { name: 'Full app report' }));
+  await user.click(screen.getByRole('button', { name: '1 warning: show them in Findings' }));
+  expect(screen.getByRole('tab', { name: 'Findings' })).toHaveAttribute('aria-selected', 'true');
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Warning' })));
 });

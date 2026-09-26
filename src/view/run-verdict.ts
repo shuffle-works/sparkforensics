@@ -1,5 +1,6 @@
-import type { Finding } from '@sparkforensics/core/types.ts';
-import { FAILURE_TYPES } from '@/view/run-outcome';
+import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
+import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { FAILURE_TYPES, summarizeRunOutcome } from '@/view/run-outcome';
 import { rankTriageTargets, type TriageTarget } from '@/view/triage-target';
 
 /** How many next steps the verdict lists before pointing at the full list. */
@@ -116,4 +117,37 @@ function reportedIdlePct(finding: Finding): number | null {
 export function verdictIdlePct(steps: NextStep[], fallbackPct: number | null): number | null {
   const idleStep = steps.find(isIdleCapacityStep);
   return (idleStep ? reportedIdlePct(idleStep.lead.finding) : null) ?? fallbackPct;
+}
+
+/** True when at least one stage recorded both a start and an end, so the
+ * stage checks had something to measure. */
+export function hasFinishedStage(stages: AppModel['stages']): boolean {
+  return [...stages.values()].some((stage) => stage.submittedAt != null && stage.completedAt != null);
+}
+
+/** A finding that reports a check could not run for lack of evidence (cache
+ * storage without block updates, memory without executor metrics), rather
+ * than a problem found. Its recommendation names the setting to turn on. */
+export function isEvidenceCaveat(finding: Finding): boolean {
+  return finding.dataUnavailable === true || !isRealFinding(finding);
+}
+
+/** What this log could not check, in plain sentences, each saying what to
+ * turn on for the next run where the detector names it. */
+export function verdictGaps(allFindings: Finding[], noFinishedStages: boolean): string[] {
+  const gaps = new Set<string>();
+  if (noFinishedStages) gaps.add('No stage in this log recorded an end, so the stage checks had nothing to measure.');
+  for (const finding of allFindings) {
+    if (isEvidenceCaveat(finding) && finding.recommendation) gaps.add(finding.recommendation);
+  }
+  return [...gaps];
+}
+
+/** The one rule for calling a run clean, shared by the verdict and the top
+ * bar: no finding at all, no failed job, and nothing the log lacked to run a
+ * check. */
+export function isCleanRun(appModel: Pick<AppModel, 'jobs' | 'stages'>, allFindings: Finding[]): boolean {
+  if (summarizeRunOutcome(appModel.jobs, allFindings).failedJobs > 0) return false;
+  if (allFindings.some(isRealFinding)) return false;
+  return verdictGaps(allFindings, !hasFinishedStage(appModel.stages)).length === 0;
 }

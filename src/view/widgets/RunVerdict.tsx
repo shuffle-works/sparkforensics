@@ -20,7 +20,9 @@ import {
   IDLE_NOTABLE_PCT,
   isIdleCapacityStep,
   NEXT_STEP_LIMIT,
+  hasFinishedStage,
   prioritizeIdleCapacity,
+  verdictGaps,
   verdictIdlePct,
   type NextStep,
 } from '@/view/run-verdict';
@@ -57,24 +59,6 @@ interface RunFacts {
   /** The log has stages but none recorded an end, so no stage check had
    * anything to measure. */
   noFinishedStages: boolean;
-}
-
-/** A finding that reports a check could not run for lack of evidence (cache
- * storage without block updates, memory without executor metrics), rather
- * than a problem found. Its recommendation names the setting to turn on. */
-function isEvidenceCaveat(finding: Finding): boolean {
-  return finding.dataUnavailable === true || !isRealFinding(finding);
-}
-
-/** What this log could not check, in plain sentences, each saying what to
- * turn on for the next run where the detector names it. */
-function verdictGaps(allFindings: Finding[], facts: RunFacts): string[] {
-  const gaps = new Set<string>();
-  if (facts.noFinishedStages) gaps.add('No stage in this log recorded an end, so the stage checks had nothing to measure.');
-  for (const finding of allFindings) {
-    if (isEvidenceCaveat(finding) && finding.recommendation) gaps.add(finding.recommendation);
-  }
-  return [...gaps];
 }
 
 function isFailedRun(facts: RunFacts): boolean {
@@ -343,9 +327,9 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
     incomplete: catalog.some((finding) => finding.type === 'incompleteRun'),
     clean: false,
     outcome,
-    noFinishedStages: ![...appModel.stages.values()].some((stage) => stage.submittedAt != null && stage.completedAt != null),
+    noFinishedStages: !hasFinishedStage(appModel.stages),
   };
-  const gaps = verdictGaps(allFindings, facts);
+  const gaps = verdictGaps(allFindings, facts.noFinishedStages);
   facts.clean = !failed && !allFindings.some(isRealFinding) && gaps.length === 0;
   // A failed run keeps its failure steps first; idle capacity never jumps them.
   const steps = failed ? rankedSteps : prioritizeIdleCapacity(rankedSteps, facts.idlePct, facts.runMs);
@@ -356,10 +340,13 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
 
   return (
     <section
+      id="run-verdict"
+      // Target of the dashboard's "Skip to the verdict" link.
+      tabIndex={-1}
       aria-labelledby="run-verdict-title"
       data-testid="run-verdict"
       className={cn(
-        'space-y-4 rounded-xl border bg-card p-4 sm:p-5',
+        'scroll-mt-20 space-y-4 rounded-xl border bg-card p-4 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5',
         clean ? 'border-clean/40' : failed ? 'border-critical/40' : 'border-border',
       )}
     >

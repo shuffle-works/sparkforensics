@@ -227,6 +227,18 @@ function DashboardContent() {
   const { recentEntries, onPickRecent, onRemoveRecent } = useRecentFiles(activeFileId);
   const [dragOver, setDragOver] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('findings');
+  // The top bar's count chip: show Findings, then land on the band it named
+  // (next frame, once the tab panel is visible).
+  const jumpToFindings = useCallback((impactBand: Finding['impactBand']) => {
+    setActiveTab('findings');
+    requestAnimationFrame(() => {
+      const heading = document.getElementById(`impact-band-${impactBand}-heading`);
+      if (!heading) return;
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      heading.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
+      heading.focus({ preventScroll: true });
+    });
+  }, []);
   const density = useWidgetDensity();
   const showFindings = useCallback(() => setActiveTab('findings'), []);
   const showFullReport = useCallback(() => setActiveTab('full-report'), []);
@@ -454,7 +466,20 @@ function DashboardContent() {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
+      {/* First in tab order: past the top bar's controls to the verdict. */}
+      <button
+        type="button"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow focus:ring-2 focus:ring-ring"
+        onClick={() => {
+          const verdict = document.getElementById('run-verdict');
+          verdict?.scrollIntoView?.({ block: 'start' });
+          verdict?.focus({ preventScroll: true });
+        }}
+      >
+        Skip to the verdict
+      </button>
       <Topbar
+        onJumpToFindings={jumpToFindings}
         onLoadNew={resetToDropZone}
         onCompare={compareWithAnotherRun}
         recentEntries={recentEntries}

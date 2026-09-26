@@ -88,7 +88,10 @@ function ImpactGroup({
   const showEvidence = !foldEvidence || evidenceOpen || routedHere;
   return (
     <section aria-labelledby={headingId} className="space-y-3">
-      <h2 id={headingId} className="font-heading text-base font-semibold">{IMPACT_BAND_LABEL[impactBand]}</h2>
+      {/* tabIndex -1: the top bar's count chip focuses the band it names. */}
+      <h2 id={headingId} tabIndex={-1} className="scroll-mt-20 rounded-sm font-heading text-base font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        {IMPACT_BAND_LABEL[impactBand]}
+      </h2>
       {groups.length > 0 && (
         <Table>
           <TableBody>

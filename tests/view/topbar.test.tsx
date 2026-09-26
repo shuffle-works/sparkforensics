@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { test, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { store, emptyAppModel } from '@/store/store';
@@ -19,6 +19,7 @@ if (!window.ResizeObserver) {
 beforeEach(() => store.setState({
   ...store.getState(),
   catalog: [],
+  configFindings: [],
   appModel: emptyAppModel(),
   skippedLines: 0,
   planGraph: { active: false, stageId: null, initialScope: 'segment' },
@@ -159,9 +160,54 @@ test('wires the file switcher to the recent-files list', async () => {
   expect(await screen.findByText('Distinct Recent App')).toBeInTheDocument();
 });
 
+// A run with one finished stage: the checks had something to measure.
+const checkedAppModel = () => ({ ...emptyAppModel(), stages: new Map([[1, { id: 1, submittedAt: 0, completedAt: 1_000 }]]) }) as any;
+
 test('shows an all-clear verdict when catalog is empty', () => {
+  store.setState({ appModel: checkedAppModel(), configFindings: [] });
   renderTopbar();
   expect(screen.getByText(/no findings/i)).toBeInTheDocument();
+});
+
+test('says "Not fully checked" instead of all-clear when the log had nothing to check or lacked evidence', () => {
+  store.setState({ configFindings: [] });
+  renderTopbar();
+  expect(screen.getByText('Not fully checked')).toBeInTheDocument();
+
+  cleanup();
+  store.setState({
+    appModel: checkedAppModel(),
+    catalog: [{ type: 'memoryUtilization', variant: 'memoryBand', stageId: null, impactBand: 'info', dataUnavailable: true, recommendation: 'Enable executor metrics.' }],
+  });
+  renderTopbar();
+  // The caveat is not counted as a finding ("1 info"), and the run is not called clean.
+  expect(screen.queryByText(/1 info/)).not.toBeInTheDocument();
+  expect(screen.getByText('Not fully checked')).toBeInTheDocument();
+});
+
+test('says the run failed when a job failed even with no finding to rank', () => {
+  store.setState({
+    configFindings: [],
+    appModel: { ...checkedAppModel(), jobs: new Map([[1, { id: 1, stageIds: [], result: 'JobFailed', succeeded: false, exception: null }]]) },
+  });
+  renderTopbar();
+  expect(screen.getByText('Run failed')).toBeInTheDocument();
+});
+
+test('the count chip jumps to that band of the Findings list', async () => {
+  const user = userEvent.setup();
+  const onJumpToFindings = vi.fn();
+  store.setState({
+    appModel: checkedAppModel(),
+    configFindings: [],
+    catalog: [
+      { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Rebalance.' },
+      { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Add memory.' },
+    ],
+  });
+  renderTopbar({ onJumpToFindings });
+  await user.click(screen.getByRole('button', { name: '2 critical: show them in Findings' }));
+  expect(onJumpToFindings).toHaveBeenCalledWith('critical');
 });
 
 test('size="sm" secondary buttons carry the comfortable tap-target class', () => {
