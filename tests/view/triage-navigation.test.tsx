@@ -1426,7 +1426,7 @@ test('a real ConfigAudit.tsx row is anchor-routable from its recommendation row'
         .getAllByText('Use KryoSerializer.', { exact: false })
         .map((element) => element.closest('[data-flashed]') as HTMLElement | null)
         .find(Boolean);
-      expect(found).not.toBeNull();
+      expect(found).toBeTruthy();
       return found!;
     });
     await waitFor(() => expect(document.activeElement).toBe(row));
