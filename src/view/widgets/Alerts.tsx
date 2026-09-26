@@ -9,6 +9,7 @@ import { getThresholdSummary } from '@sparkforensics/core/threshold-summary.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { alwaysMountedWidgets, isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { hasFinishedStage, isEvidenceCaveat } from '@/view/run-verdict';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
 import { WidgetCardSkeleton } from '@/view/WidgetCard';
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
@@ -110,10 +111,19 @@ export function AlwaysVisibleAndCleanChecks({ appModel, catalog, configFindings 
   // dataUnavailable variant) doesn't keep a type out of the Clean-checks list.
   const combined = [...catalog, ...configFindings].filter(isRealFinding);
 
-  const cleanWidgets = Object.keys(REGISTRY)
+  // A check the log could not run is not a pass: the same rule as the
+  // verdict's "Not checked on this log" list (an evidence caveat, or a
+  // per-stage check on a log where no stage finished).
+  const noFinishedStages = !hasFinishedStage(appModel.stages);
+  const caveatTypes = new Set([...catalog, ...configFindings].filter(isEvidenceCaveat).map((finding) => finding.type));
+  const isNotRun = (type: string) => caveatTypes.has(type) || (noFinishedStages && SCOPE[type] === 'per-stage');
+
+  const zeroFindingTypes = Object.keys(REGISTRY)
     .filter((type) => !isAlwaysMountedType(type))
     .filter((type) => !combined.some((finding) => finding.type === type))
     .map((type) => ({ type, findingLabel: REGISTRY[type].findingLabel }));
+  const cleanWidgets = zeroFindingTypes.filter(({ type }) => !isNotRun(type));
+  const notRunWidgets = zeroFindingTypes.filter(({ type }) => isNotRun(type));
 
   // Grouped by detector scope so a clean run's 20+ rows read as four short
   // labeled lists instead of one flat wall; `SCOPE_ORDER` fixes the order and
@@ -143,8 +153,24 @@ export function AlwaysVisibleAndCleanChecks({ appModel, catalog, configFindings 
         <AccordionItem value="clean-checks">
           <AccordionTrigger>Clean checks</AccordionTrigger>
           <AccordionContent>
+            {notRunWidgets.length > 0 ? (
+              <div data-testid="clean-checks-not-run" className="pb-4">
+                <p className="pb-1 text-xs font-medium text-muted-foreground">Not checked on this log</p>
+                <p className="pb-2 text-xs text-muted-foreground">
+                  The log lacked the data these checks need, so they neither passed nor failed. The verdict's Not
+                  checked on this log list says why.
+                </p>
+                <Table>
+                  <TableBody>
+                    {notRunWidgets.map(({ type, findingLabel }) => (
+                      <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={getThresholdSummary(type)} status="notRun" />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : null}
             <p className="pb-2 text-xs text-muted-foreground">
-              Every check below passed. No fix needed.
+              {cleanWidgets.length === 0 ? 'No check could run on this log.' : 'Every check below passed. No fix needed.'}
               <AdvancedOnly> Each line's caption states the threshold it was measured against.</AdvancedOnly>
             </p>
             {SCOPE_ORDER.map((scope) => {

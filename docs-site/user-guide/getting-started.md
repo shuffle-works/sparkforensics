@@ -128,7 +128,9 @@ Below it, two tabs split the rest of the board:
    widgets without that step. Below the impact-band
    groups, memory and core-usage utilization always show, even on a clean
    run. Widgets that found nothing fold away into a "Clean checks"
-   disclosure. This is the tab you land on.
+   disclosure. A check the log lacked the data for is listed there under
+   **Not checked on this log**, not as a pass: for example every per-stage
+   check when no stage finished. This is the tab you land on.
 2. **Full app report**: the wall-clock and executor timelines, the stage
    table, and the reference-only cards.
 

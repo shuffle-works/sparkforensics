@@ -161,7 +161,11 @@ clean-check line on a clean run; and a collapsed "Clean checks" disclosure
 of `CleanCheckRow` lines (`src/view/widgets/CleanCheckRow.tsx`: label, the
 threshold it was measured against via `getThresholdSummary`, and "No fix
 needed.") built per detector *type* (every `REGISTRY` key except that one
-always-mounted key): a clean run lands `cacheUtilization`,
+always-mounted key). Types the log could not check (an `isEvidenceCaveat`
+finding of that type, or every per-stage type when no stage finished, the
+same rule as the verdict's gap list) render first under **Not checked on
+this log** as `CleanCheckRow status="notRun"`, drawn neutral rather than
+clean green. A clean run lands `cacheUtilization`,
 `memoryUtilization`, and `utilization` here too, same as any ordinary
 action-region type. Caching Opportunities, Config Audit, and the four split
 Plan Advisor widgets (Redundant Plan Subtree, Excessive Small Files, Missed
