@@ -90,7 +90,7 @@ type ImpactBandCounts = { critical: number; warning: number; info: number };
 // How the run ended, as far as its jobs say (run-outcome.ts, the same summary the dashboard's
 // verdict leads with). Counts only jobs with an end record; `failureReason` is the first line of
 // Spark's own recorded reason, only when a job failed, and `failureReasonStageId` the stage it came
-// from (null when it came from a job's exception).
+// from (null when there is no reason or it came from a job's exception).
 // One verdict step: a place to look (a stage, or an app-level problem), led by its best-ranked
 // finding, with the other finding types flagged there. `text` is the step's line in the
 // dashboard's "Copy next steps" checklist.

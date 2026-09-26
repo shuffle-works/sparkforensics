@@ -418,9 +418,12 @@ the whole archive in memory, unlike the streaming `/shs-proxy` route).
 into each package's own `vendor-core/` at pack time, pre-stripping TypeScript
 to plain `.js` (Node's native TS stripping refuses to run on `.ts` files
 under `node_modules`, which is exactly where a published `vendor-core/`
-lands). Each package's bin/entry point resolves its needed module from
-`vendor-core/` if present, else falls back to the real `packages/core/src/`
-sibling loaded as `.ts` directly (`packages/server/index.js` mirrors
+lands). Each package's bin/entry point resolves its needed module through
+`packages/core/src/load-vendored.js`: from `vendor-core/` if present, else from
+the real `packages/core/src/` sibling loaded as `.ts` directly. In a monorepo
+checkout a leftover `vendor-core/` is used only while its `core-source-hash.txt`
+(written by `vendor-core.mjs`) matches `packages/core/src`; otherwise the bin warns
+on stderr and loads `packages/core/src` (`packages/server/index.js` mirrors
 `resolveStaticRoot`'s `public/`-vs-`../dist` pattern for this same
 fallback).
 

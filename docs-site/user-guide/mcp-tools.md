@@ -129,7 +129,8 @@ App/stage/job/sql counts, duration, and how the run ended: no findings.
 `failedJobs`/`totalJobs` count only jobs with an end record, and
 `failureReason` is the first line of Spark's own recorded reason when a job
 failed, the same line the dashboard verdict quotes (`failureReasonStageId` is
-the stage it came from, or `null` when it came from a job's exception).
+the stage it came from, or `null` when there is no reason or it came from a
+job's exception).
 `runShape` carries the dashboard's run-shape figures: `wallClockMs`,
 `efficiencyPct` (the share of the run with a stage running, the Scorecard's
 Efficiency), `unusedCoreTimePct` (driver idle plus executor slack as a share of
