@@ -147,7 +147,8 @@ screen-reader user. Your choice is remembered across runs.
 
 Once a run is loaded, the topbar also carries a few more controls. The
 count chip ("4 critical") counts the same findings the verdict ranks; click
-it to jump to that band of the Findings list. It reads **No findings** only
+it to jump to that band of the Findings list (a board filter hiding the band
+is cleared, with a notice saying so). It reads **No findings** only
 when the verdict calls the run clean, **Not fully checked** when the log
 lacked evidence for some checks, and **Run failed** when a job failed. For
 keyboard users, the first Tab stop is **Skip to the verdict**.

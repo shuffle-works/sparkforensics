@@ -544,7 +544,9 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    **Show evidence** on a finding the active filter hides clears only the
    filter dimensions that hide it (`excludingDimensions` in
    `src/view/finding-filter.ts`, synced to the URL as usual) and shows a
-   one-line notice naming what it cleared. The clean-run message ("No findings to fix right now.")
+   one-line notice naming what it cleared; the Topbar count chip's jump to
+   its impact band (`jumpToFindings` in `Dashboard.tsx`) uses the same path.
+   The clean-run message ("No findings to fix right now.")
    lives here and shows only when no finding at all was emitted and nothing
    is listed under "Not checked on this log" (below); an
    `incompleteRun` finding gets its own non-clean title and a sentence
