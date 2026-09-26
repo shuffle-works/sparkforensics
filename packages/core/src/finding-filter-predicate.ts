@@ -1,6 +1,6 @@
 // Core-owned finding-filter predicate, shared by the CLI/MCP evidence report and the dashboard's
 // filter bar (its view counterpart wraps this instead of reimplementing). Each dimension is
-// unconstrained when empty; a stageId criterion matches a row on a single stage (singleStageId).
+// unconstrained when empty; a stageId criterion only matches a row whose own stageId is present.
 type Membership<T> = ReadonlySet<T> | readonly T[];
 
 function isNonEmpty<T>(m: Membership<T> | undefined): m is Membership<T> {
@@ -28,17 +28,16 @@ export function singleStageId(row: { stageId?: number | null; stageIds?: readonl
 }
 
 export function matchesFindingFilterCriteria(
-  row: { impactBand: string; type: string; stageId?: number | null; stageIds?: readonly number[] | null },
+  row: { impactBand: string; type: string; stageId?: number | null },
   criteria: FindingFilterCriteria,
 ): boolean {
   if (isNonEmpty(criteria.impactBand) && !has(criteria.impactBand, row.impactBand)) return false;
   if (isNonEmpty(criteria.type) && !has(criteria.type, row.type)) return false;
   const { stageId } = criteria;
-  const rowStageId = singleStageId(row);
   if (typeof stageId === 'number') {
-    if (rowStageId !== stageId) return false;
+    if (row.stageId !== stageId) return false;
   } else if (isNonEmpty(stageId)) {
-    if (rowStageId == null || !has(stageId, rowStageId)) return false;
+    if (row.stageId == null || !has(stageId, row.stageId)) return false;
   }
   return true;
 }

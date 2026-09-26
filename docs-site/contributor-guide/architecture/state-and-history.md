@@ -36,10 +36,7 @@ The board-wide finding filter (impact band, raw `finding.type`, stage) lives
 outside the Zustand store, in `FindingFilterContext`
 (`src/view/FindingFilterContext.tsx`): a `createContext`+`useState`
 `FilterSelection` (`src/view/finding-filter.ts`, three `Set`s) that every widget
-filters `catalog` through via `filterFindings`. The stage dimension keeps a finding
-on one stage: its own `stageId`, or a SQL plan finding whose `stageIds` names only
-that stage (`singleStageId` in `packages/core/src/finding-filter-predicate.ts`, the
-rule Stage details and the CLI/MCP `--stage`/`stageId` filter share). It is seeded from the URL's
+filters `catalog` through via `filterFindings`. It is seeded from the URL's
 `impact`/`type`/`stage` query params on mount and nowhere else, so a reload with no
 params gives the unfiltered board. Every change writes those params back with
 `history.replaceState`, never `push`, so filtering doesn't grow Back history. A

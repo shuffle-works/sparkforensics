@@ -43,7 +43,7 @@ function useVendored(pkgDir) {
   const vendorDir = join(pkgDir, 'vendor-core');
   const srcDir = join(pkgDir, '..', 'core', 'src');
   let use = existsSync(vendorDir);
-  if (use && existsSync(srcDir)) {
+  if (use && existsSync(join(srcDir, 'load-vendored.js'))) {
     const stampPath = join(vendorDir, SOURCE_HASH_FILE);
     const stamp = existsSync(stampPath) ? readFileSync(stampPath, 'utf8').trim() : null;
     if (stamp !== coreSourceHash(srcDir)) {

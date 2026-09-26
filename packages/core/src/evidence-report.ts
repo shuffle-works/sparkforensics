@@ -8,7 +8,7 @@ import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { redactReport } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
 import { coreFindingActionLabel } from './finding-action-label.ts';
-import { matchesFindingFilterCriteria } from './finding-filter-predicate.ts';
+import { matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
 import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
 import { buildRunVerdict, findingActionLabel, stepCopyRecommendation, stepCopyText, type RunVerdictModel } from './run-verdict.ts';
@@ -384,7 +384,7 @@ function buildJson(appModel: AppModel): EvidenceReportJson {
         failedJobs: runOutcome.failedJobs,
         totalJobs: runOutcome.totalJobs,
         failureReason: runOutcome.reason,
-        failureReasonStageId: runOutcome.reasonStageId,
+        failureReasonStageId: runOutcome.reason != null ? runOutcome.reasonStageId : null,
       },
       runShape: computeRunShape(fullModel),
     },
@@ -596,9 +596,10 @@ export interface FindingsFilter {
 // CLI/MCP-facing filter over FindingRow, delegating to the shared core predicate that also backs
 // the dashboard's finding-filter.
 function matchesFindingsFilter(row: FindingRow, filter: FindingsFilter): boolean {
-  // A sql-scope finding carries its stages in evidence.stageIds, not a stageId column.
+  // A sql-scope finding carries its stages in evidence.stageIds, not a stageId column: it matches
+  // the one stage it touches, as the dashboard's Stage details lists it.
   const stageIds = Array.isArray(row.evidence?.stageIds) ? (row.evidence.stageIds as number[]) : null;
-  return matchesFindingFilterCriteria({ ...row, stageIds }, filter);
+  return matchesFindingFilterCriteria({ ...row, stageId: singleStageId({ stageId: row.stageId, stageIds }) }, filter);
 }
 
 /** Build a FindingsFilter from the three optional CLI/MCP filter dimensions, or undefined when

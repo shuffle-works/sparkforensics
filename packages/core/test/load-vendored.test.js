@@ -5,11 +5,12 @@ import { tmpdir } from 'node:os';
 import { coreSourceHash, resolveVendored, SOURCE_HASH_FILE } from '../src/load-vendored.js';
 
 // A monorepo-shaped tree: <root>/core/src next to <root>/<pkg>/vendor-core.
-function tree(stamp) {
+function tree(stamp, { monorepo = true } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'sparkforensics-vendored-'));
   const srcDir = join(root, 'core', 'src');
   mkdirSync(srcDir, { recursive: true });
   writeFileSync(join(srcDir, 'analyzer.ts'), 'export const v = 2;\n');
+  if (monorepo) writeFileSync(join(srcDir, 'load-vendored.js'), '');
   const pkgDir = join(root, 'pkg');
   mkdirSync(join(pkgDir, 'vendor-core'), { recursive: true });
   writeFileSync(join(pkgDir, 'vendor-core', 'analyzer.js'), 'export const v = 1;\n');
@@ -43,5 +44,13 @@ describe('resolveVendored in a monorepo checkout', () => {
       expect(String(stderr.mock.calls[0][0])).toMatch(/built from older packages\/core sources/);
       vi.restoreAllMocks();
     }
+  });
+
+  it('uses vendor-core, silently, when the sibling core/src belongs to an unrelated package', () => {
+    const { root, pkgDir } = tree(undefined, { monorepo: false });
+    dirs.push(root);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    expect(resolveVendored(pkgDir, 'analyzer')).toBe(join(pkgDir, 'vendor-core', 'analyzer.js'));
+    expect(stderr).not.toHaveBeenCalled();
   });
 });

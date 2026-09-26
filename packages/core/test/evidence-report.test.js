@@ -462,6 +462,15 @@ describe('buildEvidenceReport', () => {
       expect(buildEvidenceReport(fixture()).markdown).not.toContain('- Outcome:');
     });
 
+    it('gives no failure stage when a failed stage attempt was retried and every job succeeded', () => {
+      const fx = fixture();
+      fx.stages.set(2, makeStage({ id: 2, stageFailureReason: 'FetchFailed: lost executor' }));
+      fx.jobs = new Map([[0, { id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [1, 2] }]]);
+      const { json } = buildEvidenceReport(fx);
+      expect(json.findings.some((f) => f.type === 'stageFailed')).toBe(true);
+      expect(json.summary.outcome).toEqual({ failedJobs: 0, totalJobs: 1, failureReason: null, failureReasonStageId: null });
+    });
+
     it('carries the run-shape figures and prints each with what it measures', () => {
       const { json, markdown } = buildEvidenceReport(fixture());
       const shape = json.summary.runShape;
@@ -535,6 +544,29 @@ describe('buildEvidenceReport', () => {
       const { json } = buildEvidenceReport(fixtureWithVariety(), { findingsFilter: { stageId: 1 } });
       expect(json.findings.length).toBeGreaterThan(0);
       expect(json.findings.every((f) => f.stageId === 1)).toBe(true);
+    });
+
+    it('keeps a SQL finding on exactly the filtered stage, and drops one spanning several stages', () => {
+      const withSql = (stageIds) => {
+        const readNode = {
+          id: 'node-1', name: 'Scan parquet', detail: '', children: [], stageIds,
+          metrics: [
+            { name: 'number of files read', value: 150, metricType: 'sum' },
+            { name: 'size of files read', value: 150 * 1024 * 1024, metricType: 'sum' },
+          ],
+        };
+        const fx = fixture();
+        fx.sql = new Map([[1, {
+          id: 1, description: '', startTime: 0, endTime: 100, stageIds: [],
+          planTree: { name: 'Project', detail: '', metrics: [], children: [readNode] },
+        }]]);
+        return fx;
+      };
+      const smallFilesAt = (stageIds, stageId) => buildEvidenceReport(withSql(stageIds), { findingsFilter: { stageId } })
+        .json.findings.some((r) => r.type === 'smallFiles');
+      expect(smallFilesAt([2], 2)).toBe(true);
+      expect(smallFilesAt([2], 1)).toBe(false);
+      expect(smallFilesAt([1, 2], 2)).toBe(false);
     });
 
     it('combines all three dimensions (AND, not OR)', () => {

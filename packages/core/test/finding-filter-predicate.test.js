@@ -9,9 +9,9 @@ describe('stage criterion', () => {
     expect(singleStageId({ stageId: null })).toBeNull();
   });
 
-  it('matches a sql-scope row on a single stage', () => {
+  it('matches only on the row\'s own stageId, leaving the dashboard filter bar unchanged', () => {
     const row = { impactBand: 'info', type: 'smallFiles', stageId: null, stageIds: [3] };
-    expect(matchesFindingFilterCriteria(row, { stageId: 3 })).toBe(true);
-    expect(matchesFindingFilterCriteria(row, { stageId: 4 })).toBe(false);
+    expect(matchesFindingFilterCriteria(row, { stageId: 3 })).toBe(false);
+    expect(matchesFindingFilterCriteria({ ...row, stageId: 3 }, { stageId: 3 })).toBe(true);
   });
 });

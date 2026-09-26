@@ -21,10 +21,8 @@ export function isEmptySelection(sel: FilterSelection): boolean {
 
 /**
  * One predicate for both the catalog and the config-audit stream. Each empty
- * dimension is unconstrained. The stage clause matches a finding on one stage:
- * its own `stageId`, or a sql-scope finding whose `stageIds` names only that
- * stage (the stage dialog's rule); app-level, config and multi-stage findings
- * drop out of a non-empty stage filter.
+ * dimension is unconstrained. The stage clause requires a real `stageId`, so a
+ * non-empty stage filter drops every `stageId: null` finding (app/SQL/config).
  * Delegates to the shared core predicate (src/finding-filter-predicate.ts)
  * that also backs the CLI/MCP evidence report's FindingsFilter.
  */
