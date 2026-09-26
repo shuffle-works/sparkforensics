@@ -63,6 +63,18 @@ export function createModelCallbacks(
         if (stage) stage.executorMetrics = execMetrics;
       }
     },
+    // Patch speculation totals that grew after StageCompleted: Spark kills a losing speculative
+    // copy only once its stage finishes. `data` is Map<stageId, { speculationWasteMs, speculationWastedAttempts }>.
+    onStageSpeculationWaste(data: unknown) {
+      const totalsByStage = data as Map<number, { speculationWasteMs: number; speculationWastedAttempts: number }>;
+      for (const [stageId, totals] of totalsByStage) {
+        const stage = appModel.stages.get(stageId);
+        if (stage) {
+          stage.speculationWasteMs = totals.speculationWasteMs;
+          stage.speculationWastedAttempts = totals.speculationWastedAttempts;
+        }
+      }
+    },
     onDone, onError,
   };
 }

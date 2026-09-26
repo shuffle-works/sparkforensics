@@ -494,6 +494,8 @@ function computeEstimateForFinding(
       return costOnly('modeled', { value: wasteMs, unit: 'ms' });
     }
     case 'cacheUtilization': {
+      // storageUnobserved reports missing evidence: no sizes, so nothing to model.
+      if (finding.dataUnavailable) return costOnly('none');
       const memorySize = (finding.memorySize as number | undefined) ?? 0;
       const diskSize = (finding.diskSize as number | undefined) ?? 0;
       const numCachedPartitions = (finding.numCachedPartitions as number | undefined) ?? 0;

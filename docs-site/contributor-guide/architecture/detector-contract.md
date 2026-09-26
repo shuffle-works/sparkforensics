@@ -304,6 +304,7 @@ thresholds sit well above their disk counterparts at every tier.
 | Caching opportunity | same input relation (or join/union subtree) scanned by ≥ `minExecutions` = 2 SQL executions in one run | none (single tier, info) |
 | Cache utilization: partial caching (this repo) | `numCachedPartitions / numPartitions < 0.90` (info) | `< 0.50` (warning) |
 | Cache utilization: disk spillover (this repo) | `diskSize / (memorySize + diskSize) > 0.15` (info), `MEMORY_AND_DISK*` only | `> 0.40` (warning) |
+| Cache utilization: storage unobserved | persisted RDDs, but no `SparkListenerBlockUpdated` for any `rdd_*` block and every RDD Info figure 0 (`spark.eventLog.logBlockUpdates.enabled` off on Spark 2.3+): a missing-evidence caveat, not a threshold | none (single tier, info) |
 
 Spill classification: ≥80% tasks with zero spill → `skew`; <20% zero →
 `volume`; else `unclassified`. The classification badge is always shown in

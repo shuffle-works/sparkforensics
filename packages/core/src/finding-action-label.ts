@@ -60,7 +60,7 @@ export function coreFindingActionLabel(finding: Finding): string | undefined {
       }
       break;
     case 'cacheUtilization':
-      return 'Increase cache memory';
+      return finding.dataUnavailable ? 'Enable block-update logging' : 'Increase cache memory';
     case 'coreLocality':
       return 'Fix data locality';
     case 'autoscalingChurn':

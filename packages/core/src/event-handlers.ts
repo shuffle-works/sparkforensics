@@ -14,6 +14,7 @@ import {
   DriverAccumUpdatesEventSchema,
   ExecutorAddedEventSchema,
   ExecutorRemovedEventSchema,
+  BlockUpdatedEventSchema,
   type SparkEvent,
   type SparkPlanInfo,
 } from './event-schemas.ts';
@@ -62,7 +63,22 @@ interface RddInfoRecord {
   numCachedPartitions: number;
   memorySize: number;
   diskSize: number;
+  // Where numCachedPartitions/memorySize/diskSize came from: 'rddInfo' is StageSubmitted's RDD Info
+  // snapshot (always 0 since Spark 2.3; Spark 1.x fills it only on StageCompleted); 'blockUpdates' is the
+  // per-block SparkListenerBlockUpdated stream (spark.eventLog.logBlockUpdates.enabled=true).
+  storageSource: 'rddInfo' | 'blockUpdates';
   stageIds: Set<number>;
+}
+
+// Live per-RDD block residency rebuilt from SparkListenerBlockUpdated. Keyed by partition and
+// executor because a block's status is per BlockManager: replicas and re-caches on another
+// executor are separate entries, as in Spark's own AppStatusListener.
+interface RddBlockState {
+  blocks: Map<string, { partition: number; memorySize: number; diskSize: number }>;
+  replicasByPartition: Map<number, number>;
+  memorySize: number;
+  diskSize: number;
+  peakCachedPartitions: number;
 }
 
 type PostableRddInfoRecord = Omit<RddInfoRecord, 'stageIds'> & { stageIds: number[] };
@@ -147,6 +163,12 @@ interface StageRecord {
   wastedAttempts: number;
   speculationWasteMs: number;
   speculationWastedAttempts: number;
+  // Keys (`attempt:index`) whose recorded winner is a speculative copy. Kept past finalize so a
+  // late TaskEnd for the original it beat still pairs as speculation waste (accountLateSpeculativeLoser).
+  speculativeWinners: Set<string | symbol>;
+  // Set once a late TaskEnd adds speculation waste after finalize, so the stage is re-posted
+  // via `stageSpeculationWaste` before `done`.
+  lateSpeculationWaste: boolean;
   executorMetrics: Map<string, Record<string, number>>;
 }
 
@@ -178,6 +200,10 @@ export interface ParserState {
   skippedLines: number;
   accumState: Map<number, Map<number, number>>;
   rddInfo: Map<number, RddInfoRecord>;
+  rddBlocks: Map<number, RddBlockState>;
+  // SparkListenerBlockUpdated events for rdd_* blocks. Zero means the log carries no block-level
+  // cache evidence (logBlockUpdates off, or nothing was ever cached).
+  rddBlockUpdates: number;
   taskAccumStages: Map<number, Set<number>>;
   evidenceInputs: EvidenceInputs;
   // An open SQL execution's latest AQE update, as raw line text, not yet parsed (see
@@ -367,6 +393,8 @@ export function createState(): ParserState {
     skippedLines: 0,
     accumState: new Map(),
     rddInfo: new Map(),
+    rddBlocks: new Map(),
+    rddBlockUpdates: 0,
     taskAccumStages: new Map(),
     pendingAdaptiveUpdates: new Map(),
     resolvedPlanExecutions: new Set(),
@@ -478,6 +506,7 @@ function snapshotEvidenceInputs(state: ParserState): EvidenceInputs {
 function appMessage(state: ParserState): { type: 'app'; data: Record<string, unknown> } {
   const evidenceInputs = snapshotEvidenceInputs(state);
   state.app!.evidenceInputs = evidenceInputs;
+  state.app!.rddBlockUpdates = state.rddBlockUpdates;
   return {
     type: 'app',
     data: { ...state.app!, rddInfo: snapshotRddInfo(state.rddInfo) },
@@ -509,8 +538,12 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
   const stage = state.stages.get(stageId);
   if (!stage) return null;
   // Late TaskEnd for a stage whose StageCompleted already freed taskAttempts (finalizeStage): its
-  // stats are already baked into the finalized stage, don't re-add.
-  if (stage.taskAttempts === null) return null;
+  // stats are already baked into the finalized stage, don't re-add. The one exception is a losing
+  // speculative attempt, whose wasted time the finalized stage never saw.
+  if (stage.taskAttempts === null) {
+    accountLateSpeculativeLoser(event, stage);
+    return null;
+  }
 
   state.evidenceInputs.taskRecords++;
 
@@ -566,6 +599,7 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
 
   if (!existing) {
     stage.taskAttempts.set(key, record);
+    if (record.speculative && !record.failed) stage.speculativeWinners.add(key);
   } else if (existing.failed && !record.failed) {
     // A retry succeeded where the earlier attempt failed: the earlier attempt's time was wasted.
     // Spark marks only the speculative COPY's Speculative flag, never the original it raced, so
@@ -581,6 +615,7 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
       }
     }
     stage.taskAttempts.set(key, record);
+    if (record.speculative) stage.speculativeWinners.add(key);
   } else {
     // Non-winning duplicate (both failed, or a race where a winner is
     // already recorded): its time is waste, its metrics are discarded.
@@ -597,6 +632,21 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
   }
 
   return null;
+}
+
+// Spark kills the losing copy of a speculative race only once the stage finishes ("Stage
+// cancelled: Stage finished"), so that loser's TaskEnd normally lands after StageCompleted. Count
+// its time as speculation waste, pairing it the same way accumulateTask does: the late attempt is
+// the speculative copy itself, or the original that a speculative winner beat. Every other stat
+// of a late attempt stays excluded, as the finalized stage already posted them.
+function accountLateSpeculativeLoser(event: z.infer<typeof TaskEndEventSchema>, stage: StageRecord): void {
+  const info = event['Task Info'];
+  if (info?.['Index'] == null) return;
+  const key = `${event['Stage Attempt ID'] ?? 0}:${info['Index']}`;
+  if (info['Speculative'] !== true && !stage.speculativeWinners.has(key)) return;
+  stage.speculationWasteMs += (info['Finish Time'] ?? 0) - (info['Launch Time'] ?? 0);
+  stage.speculationWastedAttempts++;
+  stage.lateSpeculationWaste = true;
 }
 
 export function resolvePlanTree(
@@ -828,6 +878,8 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
     wastedAttempts: 0,
     speculationWasteMs: 0,
     speculationWastedAttempts: 0,
+    speculativeWinners: new Set(),
+    lateSpeculationWaste: false,
     executorMetrics: new Map(),
   });
   mergeStageRddInfo(info, id, state);
@@ -847,11 +899,16 @@ export function mergeStageRddInfo(
     const prev = state.rddInfo.get(rddId);
     const stageIds = prev?.stageIds ?? new Set<number>();
     stageIds.add(id);
+    // Block updates are the authoritative source once seen: never let a later RDD Info snapshot
+    // (0 on Spark 2.3+) replace them, nor the NONE level an unpersist() leaves on ancestor RDDs
+    // listed by later stages.
+    const fromBlocks = prev?.storageSource === 'blockUpdates';
+    const persisted = Boolean(sl['Use Disk'] || sl['Use Memory']);
     state.rddInfo.set(rddId, {
       id: rddId,
       name: rdd['Name'] ?? '',
       callsite: rdd['Callsite'] ?? '',
-      storageLevel: {
+      storageLevel: fromBlocks && !persisted ? prev.storageLevel : {
         useDisk: sl['Use Disk'] ?? false,
         useMemory: sl['Use Memory'] ?? false,
         deserialized: sl['Deserialized'] ?? false,
@@ -861,12 +918,86 @@ export function mergeStageRddInfo(
       // Merge forward, don't overwrite: an RDD cached for the first time in THIS stage legitimately
       // reports 0 (snapshot reflects BlockManager state at submission). Keep the last real value on
       // a resubmission instead of regressing to 0.
-      numCachedPartitions: rdd['Number of Cached Partitions'] || prev?.numCachedPartitions || 0,
-      memorySize: rdd['Memory Size'] || prev?.memorySize || 0,
-      diskSize: rdd['Disk Size'] || prev?.diskSize || 0,
+      numCachedPartitions: fromBlocks ? prev.numCachedPartitions : rdd['Number of Cached Partitions'] || prev?.numCachedPartitions || 0,
+      memorySize: fromBlocks ? prev.memorySize : rdd['Memory Size'] || prev?.memorySize || 0,
+      diskSize: fromBlocks ? prev.diskSize : rdd['Disk Size'] || prev?.diskSize || 0,
+      storageSource: prev?.storageSource ?? 'rddInfo',
       stageIds,
     });
   }
+}
+
+const RDD_BLOCK_ID = /^rdd_(\d+)_(\d+)$/;
+
+function dropRddBlock(rdd: RddBlockState, key: string): void {
+  const prev = rdd.blocks.get(key);
+  if (!prev) return;
+  rdd.memorySize -= prev.memorySize;
+  rdd.diskSize -= prev.diskSize;
+  const replicas = (rdd.replicasByPartition.get(prev.partition) ?? 1) - 1;
+  if (replicas > 0) rdd.replicasByPartition.set(prev.partition, replicas);
+  else rdd.replicasByPartition.delete(prev.partition);
+  rdd.blocks.delete(key);
+}
+
+/**
+ * Folds one SparkListenerBlockUpdated into its RDD's live residency, then publishes the RDD's
+ * peak state to rddInfo: the most partitions resident at once, with the memory/disk bytes at the
+ * latest moment that peak held. A peak rather than the final state, because an unpersist() (or
+ * the app's own cleanup) removes every block before the log ends, and a final snapshot would
+ * read as "nothing was cached". Ties refresh, so a partition dropping from memory to disk after
+ * the peak still shows up in diskSize. Non-RDD blocks (broadcast, shuffle, task results) are ignored.
+ */
+export function recordBlockUpdate(event: z.infer<typeof BlockUpdatedEventSchema>, state: ParserState): null {
+  const info = event['Block Updated Info'];
+  const match = RDD_BLOCK_ID.exec(info['Block ID']);
+  if (!match) return null;
+  state.rddBlockUpdates++;
+  const rddId = Number(match[1]);
+  const partition = Number(match[2]);
+  const sl = info['Storage Level'] ?? {};
+  // Spark's StorageLevel.isValid: a removal or eviction reports level NONE.
+  const resident = Boolean(sl['Use Memory'] || sl['Use Disk']) && (sl['Replication'] ?? 1) > 0;
+
+  let rdd = state.rddBlocks.get(rddId);
+  if (!rdd) {
+    rdd = { blocks: new Map(), replicasByPartition: new Map(), memorySize: 0, diskSize: 0, peakCachedPartitions: 0 };
+    state.rddBlocks.set(rddId, rdd);
+  }
+  const key = `${partition}@${info['Block Manager ID']?.['Executor ID'] ?? ''}`;
+  dropRddBlock(rdd, key);
+  if (resident) {
+    // Sizes count only where the level says the block lives, as Spark's AppStatusListener does: a
+    // drop from memory to disk reports Use Memory false but still carries the dropped bytes as
+    // Memory Size (BlockManager reports max(memSize, droppedMemorySize)).
+    const block = {
+      partition,
+      memorySize: sl['Use Memory'] ? info['Memory Size'] ?? 0 : 0,
+      diskSize: sl['Use Disk'] ? info['Disk Size'] ?? 0 : 0,
+    };
+    rdd.blocks.set(key, block);
+    rdd.memorySize += block.memorySize;
+    rdd.diskSize += block.diskSize;
+    rdd.replicasByPartition.set(partition, (rdd.replicasByPartition.get(partition) ?? 0) + 1);
+  }
+
+  const record = state.rddInfo.get(rddId) ?? {
+    // A block reported before any stage listed its RDD: name and partition count arrive with
+    // the next StageSubmitted (mergeStageRddInfo keeps the block-derived sizes).
+    id: rddId, name: '', callsite: '',
+    storageLevel: { useDisk: Boolean(sl['Use Disk']), useMemory: Boolean(sl['Use Memory']), deserialized: false, replication: sl['Replication'] ?? 1 },
+    numPartitions: 0, numCachedPartitions: 0, memorySize: 0, diskSize: 0,
+    storageSource: 'blockUpdates' as const, stageIds: new Set<number>(),
+  };
+  record.storageSource = 'blockUpdates';
+  if (rdd.replicasByPartition.size >= rdd.peakCachedPartitions) {
+    rdd.peakCachedPartitions = rdd.replicasByPartition.size;
+    record.numCachedPartitions = rdd.peakCachedPartitions;
+    record.memorySize = rdd.memorySize;
+    record.diskSize = rdd.diskSize;
+  }
+  state.rddInfo.set(rddId, record);
+  return null;
 }
 
 // Spark logs these AFTER SparkListenerStageCompleted, so finalizeStage has already posted the
@@ -982,6 +1113,14 @@ export function removeExecutor(event: z.infer<typeof ExecutorRemovedEventSchema>
     reason: event['Removed Reason'] ?? '',
   };
   state.executors.removed.push(ev);
+  // Blocks lost with their executor get no BlockUpdated; drop them as Spark's AppStatusListener
+  // does, so a partition re-cached elsewhere isn't counted twice.
+  const suffix = `@${ev.executorId}`;
+  for (const rdd of state.rddBlocks.values()) {
+    for (const key of rdd.blocks.keys()) {
+      if (key.endsWith(suffix)) dropRddBlock(rdd, key);
+    }
+  }
   return { type: 'executor', data: ev };
 }
 
@@ -1057,6 +1196,9 @@ export function processEvent(event: SparkEvent, state: ParserState): unknown {
 
     case 'SparkListenerExecutorRemoved':
       return removeExecutor(event, state);
+
+    case 'SparkListenerBlockUpdated':
+      return recordBlockUpdate(event, state);
 
     default:
       return assertNever(event);
@@ -1215,7 +1357,14 @@ export function dispatchLine(
   parseAndDispatch(line, state, emit);
 }
 
+// With logBlockUpdates on, most BlockUpdated lines are broadcast/shuffle blocks recordBlockUpdate
+// ignores. Spark writes "Event" first and "Block ID" as a plain string, so those lines can be
+// dropped on a substring test before paying for JSON.parse.
+const BLOCK_UPDATED_PREFIX = '{"Event":"SparkListenerBlockUpdated",';
+const RDD_BLOCK_ID_FRAGMENT = '"Block ID":"rdd_';
+
 function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown) => void): void {
+  if (line.startsWith(BLOCK_UPDATED_PREFIX) && !line.includes(RDD_BLOCK_ID_FRAGMENT)) return;
   let parsed: unknown;
   try {
     parsed = parseTaskEnd(line) ?? JSON.parse(stripPlanDescription(line));
@@ -1265,11 +1414,26 @@ export function collectStageExecutorMetrics(state: ParserState): Map<number, Map
   return out;
 }
 
+// Speculation totals of every stage a late TaskEnd added waste to (accountLateSpeculativeLoser),
+// re-posted once before `done`: the stage message posted at completion carried the earlier totals.
+export function collectLateSpeculationWaste(
+  state: ParserState,
+): Map<number, { speculationWasteMs: number; speculationWastedAttempts: number }> {
+  const out = new Map<number, { speculationWasteMs: number; speculationWastedAttempts: number }>();
+  for (const [id, stage] of state.stages) {
+    if (stage.lateSpeculationWaste) {
+      out.set(id, { speculationWasteMs: stage.speculationWasteMs, speculationWastedAttempts: stage.speculationWastedAttempts });
+    }
+  }
+  return out;
+}
+
 export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => void, linesProcessed: number): void {
   // Executions that never ended keep their latest AQE update, as they did before it was deferred.
   for (const executionId of [...state.pendingAdaptiveUpdates.keys()]) flushAdaptiveUpdate(executionId, state, emit);
   emit({ type: 'progress', pct: 1, linesProcessed });
   emit({ type: 'runAggregates', data: computeRunAggregates(state.taskStore) });
+  emit({ type: 'stageSpeculationWaste', data: collectLateSpeculationWaste(state) });
   emit({ type: 'stageExecutorMetrics', data: collectStageExecutorMetrics(state) });
   emit(appMessage(state));
   emit({ type: 'done', skippedLines: state.skippedLines });

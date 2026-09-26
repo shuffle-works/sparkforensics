@@ -24,6 +24,15 @@ describe('createModelCallbacks', () => {
     expect(appModel.stages.get(1).executorMetrics.get('7')).toEqual({ jvmHeapMemory: 99 });
   });
 
+  it('patches per-stage speculation totals from the pre-done stageSpeculationWaste message', () => {
+    const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map() };
+    const cb = createModelCallbacks(appModel, { onProgress: vi.fn(), onDone: vi.fn(), onError: vi.fn() });
+    cb.onStage({ id: 1, speculationWasteMs: 100, speculationWastedAttempts: 1, retryWasteMs: 7 });
+    cb.onStageSpeculationWaste(new Map([[1, { speculationWasteMs: 900, speculationWastedAttempts: 4 }], [999, { speculationWasteMs: 1, speculationWastedAttempts: 1 }]]));
+    expect(appModel.stages.get(1)).toMatchObject({ speculationWasteMs: 900, speculationWastedAttempts: 4, retryWasteMs: 7 });
+    expect(appModel.stages.has(999)).toBe(false);
+  });
+
   it('ignores stageExecutorMetrics for unknown stage ids without throwing', () => {
     const appModel = { app: null, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map() };
     const cb = createModelCallbacks(appModel, { onProgress: vi.fn(), onDone: vi.fn(), onError: vi.fn() });

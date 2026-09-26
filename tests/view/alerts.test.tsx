@@ -36,6 +36,15 @@ describe('computeActiveWidgets', () => {
     expect(widgets.some((w) => w.widgetId === 'memory-utilization')).toBe(false);
   });
 
+  it('mounts cache-utilization for its storageUnobserved caveat, so missing block updates never read as a clean check', () => {
+    const caveat = {
+      type: 'cacheUtilization', variant: 'storageUnobserved', stageId: null, impactBand: 'info', value: 2,
+      dataUnavailable: true, recommendation: 'r',
+    } as Finding;
+    const widgets = computeActiveWidgets([caveat], []);
+    expect(widgets.some((w) => w.widgetId === 'cache-utilization')).toBe(true);
+  });
+
   it('returns an empty list for a clean catalog', () => {
     expect(computeActiveWidgets([], [])).toEqual([]);
   });

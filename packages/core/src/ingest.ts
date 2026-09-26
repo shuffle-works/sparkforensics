@@ -13,6 +13,7 @@ export interface IngestHandlers {
   onJob?: (data: unknown) => void;
   onRunAggregates?: (data: unknown) => void;
   onStageExecutorMetrics?: (data: unknown) => void;
+  onStageSpeculationWaste?: (data: unknown) => void;
   onDone?: (data: unknown) => void;
   onError?: (data: unknown) => void;
 }
@@ -37,6 +38,7 @@ export function routeMessage(
     case 'job':      handlers.onJob?.(data.data); break;
     case 'runAggregates': handlers.onRunAggregates?.(data.data); break;
     case 'stageExecutorMetrics': handlers.onStageExecutorMetrics?.(data.data); break;
+    case 'stageSpeculationWaste': handlers.onStageSpeculationWaste?.(data.data); break;
     case 'done': {
       const { skippedLines } = data;
       handlers.onDone?.({ skippedLines });
