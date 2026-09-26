@@ -24,10 +24,14 @@ SparkForensics itself, see [Development setup](../contributor-guide/development-
 
 Drop a log file onto the landing page, or click **Choose file** to pick one.
 Parsing runs in a background worker, off the browser's main thread, so a
-multi-hundred-megabyte event stream doesn't freeze the tab.
+multi-hundred-megabyte event stream doesn't freeze the tab. While it runs,
+the progress screen shows how far along it is and roughly how long is left;
+**Cancel** returns to the landing page.
 
 No log of your own yet? Click **Try a sample run** on the landing page to
-load a bundled example run and see a populated dashboard right away.
+load a bundled example run and see a populated dashboard right away. **Where
+do I find my event log?**, under the buttons, is a short guide to turning
+event logging on and downloading a log from a History Server.
 
 The app takes a newline-delimited JSON event log (one JSON event per line,
 the format Spark writes to `spark.eventLog.dir`), either plain or

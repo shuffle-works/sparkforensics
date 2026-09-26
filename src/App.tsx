@@ -1,8 +1,10 @@
 import { lazy, Suspense, useEffect, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Toaster } from '@/components/ui/sonner';
 import { useStore } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
+import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import { compareRuns } from '@sparkforensics/core/run-comparison.ts';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { CompareLanding } from '@/view/CompareLanding';
@@ -77,6 +79,36 @@ function PlanGraphRouteContainer() {
   );
 }
 
+/** The local-parse screen: what is happening, how far along, roughly how long
+ * is left, a reminder that nothing is uploaded, and (single-run loads only) a
+ * way out. A large log can take a while, and a bare percentage gave a
+ * first-time visitor no reason to wait or way to stop. */
+function ParseProgress({ label, onCancel }: { label: string; onCancel?: () => void }) {
+  const parse = useStore((s) => s.parse);
+  const pctRounded = Math.round(parse.pct * 100);
+  const lineStr = parse.lines > 0 ? ` · ${parse.lines.toLocaleString()} lines` : '';
+  const eta = parse.etaMs != null && parse.etaMs > 0 ? `About ${formatDuration(parse.etaMs)} left. ` : '';
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center p-10">
+      <div className="flex w-full max-w-md flex-col items-center gap-3 text-center">
+        <p className="font-heading text-lg font-semibold">Reading the event log</p>
+        <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
+          {label}… {pctRounded}%{lineStr}
+        </p>
+        <Progress value={parse.pct * 100} className="w-full" />
+        <p className="text-xs text-muted-foreground">
+          {eta}Parsing runs in your browser, so the log stays on this machine.
+        </p>
+        {onCancel ? (
+          <Button variant="ghost" size="sm" className="tap-target-comfortable" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : null}
+      </div>
+    </main>
+  );
+}
+
 /** Routes on store `status`: idle/error show the drop zone (with the error,
  * if any); local parsing shows page progress, while an SHS parse retains the
  * intake so its form can show progress or recover in place. */
@@ -84,22 +116,14 @@ function AppRoutes() {
   const status = useStore((s) => s.status);
   const errorMessage = useStore((s) => s.errorMessage);
   const errorNonce = useStore((s) => s.errorNonce);
-  const parse = useStore((s) => s.parse);
   const shsParsing = useStore((s) => s.shsParsing);
+  const { resetToDropZone } = useIngest();
   const planGraphActive = useStore((s) => s.planGraph.active);
   const comparisonActive = useStore((s) => s.comparison.active);
   const compareLoad = useStore((s) => s.compareLoad);
 
   if (compareLoad) {
-    const pctRounded = Math.round(parse.pct * 100);
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-10">
-        <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
-          Parsing run {compareLoad.current} of 2… {pctRounded}%
-        </p>
-        <Progress value={parse.pct * 100} className="w-full max-w-md" />
-      </main>
-    );
+    return <ParseProgress label={`Parsing run ${compareLoad.current} of 2`} />;
   }
 
   if (planGraphActive) return <PlanGraphRouteContainer />;
@@ -120,16 +144,7 @@ function AppRoutes() {
   }
 
   if (status === 'parsing' && !shsParsing) {
-    const pctRounded = Math.round(parse.pct * 100);
-    const lineStr = parse.lines > 0 ? ` · ${parse.lines.toLocaleString()} lines` : '';
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-4 p-10">
-        <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
-          Parsing… {pctRounded}%{lineStr}
-        </p>
-        <Progress value={parse.pct * 100} className="w-full max-w-md" />
-      </main>
-    );
+    return <ParseProgress label="Parsing" onCancel={resetToDropZone} />;
   }
 
   return (

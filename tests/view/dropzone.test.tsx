@@ -184,10 +184,13 @@ test('keeps alternative sources hidden until their disclosure is opened, then ke
 });
 
 test('flips each disclosure\'s chevron between collapsed and expanded independently', async () => {
-  const { container } = renderDropZone();
+  renderDropZone();
   const user = userEvent.setup();
 
   const otherSources = screen.getByRole('button', { name: 'Other sources' });
+  // Scoped to the Other sources section: the "Where do I find my event log?"
+  // guide carries its own independent chevron.
+  const container = otherSources.closest('section') as HTMLElement;
   expect(container.querySelector('.lucide-chevron-down')).toBeInTheDocument();
   expect(container.querySelector('.lucide-chevron-up')).not.toBeInTheDocument();
 
@@ -538,4 +541,39 @@ test('a directory-read failure while dropping surfaces a store error instead of 
   await waitFor(() => expect(store.getState().errorMessage).toBe('Could not read the dropped folder.'));
   expect(startLoadFolder).not.toHaveBeenCalled();
   expect(store.getState().status).toBe('error');
+});
+
+test('the "Where do I find my event log?" guide explains where Spark writes logs and links onward', async () => {
+  const user = userEvent.setup();
+  renderDropZone();
+
+  const toggle = screen.getByRole('button', { name: /where do i find my event log/i });
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByText(/spark\.eventLog\.dir/)).not.toBeInTheDocument();
+
+  await user.click(toggle);
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByText('spark.eventLog.enabled')).toBeInTheDocument();
+  expect(screen.getByText('spark.eventLog.dir')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'More ways to get a log' }))
+    .toHaveAttribute('href', 'docs/user-guide/alternative-log-retrieval.html');
+});
+
+test('the guide\'s sample-run link loads the bundled sample like the main button', async () => {
+  const user = userEvent.setup();
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, blob: async () => new Blob(['{}']) }) as unknown as Response));
+  renderDropZone();
+
+  await user.click(screen.getByRole('button', { name: /where do i find my event log/i }));
+  await user.click(screen.getByRole('button', { name: 'Load the sample run' }));
+  await waitFor(() => expect(startLoad).toHaveBeenCalledTimes(1));
+});
+
+test('compact mode (comparison slots) has no event-log guide', () => {
+  render(
+    <DocsProvider>
+      <DropZone compact onPick={vi.fn()} />
+    </DocsProvider>,
+  );
+  expect(screen.queryByRole('button', { name: /where do i find my event log/i })).not.toBeInTheDocument();
 });

@@ -13,6 +13,7 @@ const startLoadFromUrl = vi.fn((_request: unknown, _onShsError: unknown) => {
   store.getState().setStatus('parsing');
   store.getState().setShsParsing(true);
 });
+const resetToDropZone = vi.fn();
 const startLoad = vi.fn(() => {
   store.getState().setShsParsing(false);
   store.getState().setStatus('parsing');
@@ -23,7 +24,7 @@ vi.mock('@/store/useIngest', () => ({
     startLoad,
     startLoadFolder: vi.fn(),
     startLoadFromUrl,
-    resetToDropZone: vi.fn(),
+    resetToDropZone,
     getTaskData: vi.fn(),
     pickRecent: vi.fn(),
   }),
@@ -85,6 +86,25 @@ test('parsing status announces live percent and line count via role=status', () 
   render(<App />);
   const label = screen.getByRole('status');
   expect(label).toHaveTextContent(`Parsing… 42% · ${(5000).toLocaleString()} lines`);
+});
+
+test('the parsing screen says the log stays local, estimates time left, and can be cancelled', async () => {
+  const user = userEvent.setup();
+  store.setState({ status: 'parsing', parse: { pct: 0.1, lines: 100, etaMs: 20_000 } });
+  render(<App />);
+  expect(screen.getByText('Reading the event log')).toBeInTheDocument();
+  expect(screen.getByText(/About 20\.0s left\. Parsing runs in your browser, so the log stays on this machine\./)).toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(resetToDropZone).toHaveBeenCalledTimes(1);
+});
+
+test('a two-run comparison load shows which run is parsing and offers no cancel', () => {
+  store.setState({ status: 'parsing', compareLoad: { current: 2 }, parse: { pct: 0.5, lines: 0, etaMs: null } });
+  render(<App />);
+  expect(screen.getByRole('status')).toHaveTextContent('Parsing run 2 of 2… 50%');
+  expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+  store.setState({ compareLoad: null });
 });
 
 test('an SHS parse keeps the intake mounted and renders its local progress state', async () => {

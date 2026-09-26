@@ -61,10 +61,14 @@ test('single-run landing prioritizes one Spark event log and presents next inves
 
   expect(screen.getByRole('heading', { name: /analyze a spark event log/i })).toBeVisible();
   expect(screen.getByText(/nothing leaves your machine/i)).toBeVisible();
-  expect(screen.getByRole('heading', { name: /analyze a single run first/i })).toBeVisible();
-  expect(screen.getByRole('heading', { name: /go further with the evidence/i })).toBeVisible();
+  expect(screen.getByRole('heading', { name: /go further with the same evidence/i })).toBeVisible();
   expect(screen.getByRole('button', { name: /compare two runs/i })).toBeVisible();
   expect(screen.getByTestId('drop-zone')).toBeVisible();
+  // The intake lives in the hero itself, so its actions are part of the first
+  // thing a visitor reads rather than a section further down the page.
+  const hero = screen.getByRole('heading', { name: /analyze a spark event log/i }).closest('section') as HTMLElement;
+  expect(within(hero).getByTestId('drop-zone')).toBeInTheDocument();
+  expect(within(hero).getByRole('button', { name: 'Try a sample run' })).toBeInTheDocument();
 });
 
 test('keeps landing actions comfortable to tap and compare slots stacked below the large breakpoint', async () => {

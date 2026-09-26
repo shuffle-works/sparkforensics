@@ -111,8 +111,7 @@ function NextStepsRail({ onCompare }: { onCompare: () => void }) {
   return (
     <section className="landing-next-steps" aria-labelledby="next-steps-title">
       <div>
-        <p className="landing-next-steps-label">After your first run</p>
-        <h2 id="next-steps-title">Go further with the evidence you already have.</h2>
+        <h2 id="next-steps-title">After your first run, go further with the same evidence.</h2>
       </div>
       <div className="landing-next-step-list">
         <article>
@@ -184,10 +183,10 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
             </button>
           </ProductBarPortal>
           <div className="landing-hero-copy">
-            <p className="landing-kicker">Private by default</p>
             <h2 id="landing-title">Analyze a Spark event log.</h2>
             <p>
-              Read stages, timelines, shuffle reads, and executor behavior from the log Spark already produced.
+              Load the log from one Spark run. You get a verdict on how it went, the stages worth fixing first, and the
+              evidence behind each suggestion.
             </p>
           </div>
           <div className="landing-proof" aria-label="SparkForensics guarantees">
@@ -195,18 +194,16 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
             <span><Bot aria-hidden="true" /> Bring your AI into the investigation</span>
             <span><GitCompareArrows aria-hidden="true" /> Compare one run against another</span>
           </div>
-          <ResourceLinks />
+          {/* The intake sits in the hero, not in a section of its own below
+              it: a first-time visitor's only job here is loading a log, so
+              Choose file and Try a sample run must be in the first viewport. */}
+          <div className="landing-intake">
+            {errorMessage ? <FileLoadAlert message={errorMessage} nonce={errorNonce} /> : null}
+            <DropZone />
+          </div>
         </section>
 
-        <section className="landing-intake" aria-labelledby="start-investigation-title">
-          <div className="landing-section-heading">
-            <div>
-              <h2 id="start-investigation-title">Analyze a single run first.</h2>
-            </div>
-          </div>
-          {errorMessage ? <FileLoadAlert message={errorMessage} nonce={errorNonce} /> : null}
-          <DropZone />
-        </section>
+        <ResourceLinks />
 
         <NextStepsRail onCompare={() => setCompareMode(true)} />
       </div>
