@@ -25,7 +25,10 @@ its dashboard.
 The page opens with a verdict: whether run B finished faster or slower than
 run A, and by how much (a change under 2% reads as "about as long"). When
 either run had failed jobs, the verdict leads with that instead, for example
-"Run B had 2 of 5 jobs fail (run A: none)", and the run-time line follows. It then
+"Run B had 2 of 5 jobs fail (run A: none)" or "Run B's only job failed", and
+the run-time line follows. When either log has no end-of-run record (the run
+was killed or the log cut off), the verdict says how much run time each log
+covers, in a neutral tone, instead of calling the shorter run faster. It then
 lists which cost metrics got worse or better in run B (again ignoring changes
 under 2%), and which finding categories became more or less frequent. Volume and count metrics (input,
 output, tasks, executors) are left out, since more or less of them is not
