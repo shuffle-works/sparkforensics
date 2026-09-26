@@ -162,8 +162,9 @@ of `CleanCheckRow` lines (`src/view/widgets/CleanCheckRow.tsx`: label, the
 threshold it was measured against via `getThresholdSummary`, and "No fix
 needed.") built per detector *type* (every `REGISTRY` key except that one
 always-mounted key). Types the log could not check (an `isEvidenceCaveat`
-finding of that type, or every per-stage type when no stage finished, the
-same rule as the verdict's gap list) render first under **Not checked on
+finding of that type, every per-stage type when no stage finished, or the
+run-span types `RUN_SPAN_CHECK_TYPES` on an `incompleteRun` log, the same
+rule as the verdict's gap list) render first under **Not checked on
 this log** as `CleanCheckRow status="notRun"`, drawn neutral rather than
 clean green. A clean run lands `cacheUtilization`,
 `memoryUtilization`, and `utilization` here too, same as any ordinary

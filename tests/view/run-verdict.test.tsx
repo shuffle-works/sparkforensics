@@ -214,6 +214,7 @@ describe('RunVerdict', () => {
     const verdict = screen.getByTestId('run-verdict');
     expect(verdict).not.toHaveTextContent('Every check passed');
     expect(verdict).toHaveTextContent('cover only the part of the run it captured');
+    expect(verdict).toHaveTextContent('core usage, memory and executor churn checks had no run length to measure');
     // No clean-run check icon in the title.
     expect(screen.getByRole('heading', { level: 2 }).querySelector('svg')).toBeNull();
   });

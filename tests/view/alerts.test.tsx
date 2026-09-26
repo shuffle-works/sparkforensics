@@ -102,6 +102,15 @@ describe('Clean checks on a log that could not be fully checked', () => {
     expect(rowStatus('skew')).toBe('passed');
   });
 
+  it('lists the checks that need the run end as not checked on a log with no ApplicationEnd', async () => {
+    const incompleteRun = { type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'No ApplicationEnd.' } as Finding;
+    await renderCleanChecks([incompleteRun], finished);
+    expect(rowStatus('utilization')).toBe('notRun');
+    expect(rowStatus('memoryUtilization')).toBe('notRun');
+    expect(rowStatus('autoscalingChurn')).toBe('notRun');
+    expect(rowStatus('skew')).toBe('passed');
+  });
+
   it('lists every check as passed on a fully checked clean log', async () => {
     await renderCleanChecks([], finished);
     expect(screen.queryByTestId('clean-checks-not-run')).not.toBeInTheDocument();

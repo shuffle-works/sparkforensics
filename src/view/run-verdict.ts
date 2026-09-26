@@ -133,11 +133,22 @@ export function isEvidenceCaveat(finding: Finding): boolean {
   return finding.dataUnavailable === true || !isRealFinding(finding);
 }
 
+/** App-level checks measured over the run's full span, which a log with no
+ * ApplicationEnd (an `incompleteRun` finding) cannot give them. */
+export const RUN_SPAN_CHECK_TYPES: ReadonlySet<string> = new Set(['utilization', 'memoryUtilization', 'autoscalingChurn']);
+
+export function isIncompleteRun(allFindings: Finding[]): boolean {
+  return allFindings.some((finding) => finding.type === 'incompleteRun');
+}
+
 /** What this log could not check, in plain sentences, each saying what to
  * turn on for the next run where the detector names it. */
 export function verdictGaps(allFindings: Finding[], noFinishedStages: boolean): string[] {
   const gaps = new Set<string>();
   if (noFinishedStages) gaps.add('No stage in this log recorded an end, so the stage checks had nothing to measure.');
+  if (isIncompleteRun(allFindings)) {
+    gaps.add('The log has no end-of-run record, so the core usage, memory and executor churn checks had no run length to measure.');
+  }
   for (const finding of allFindings) {
     if (isEvidenceCaveat(finding) && finding.recommendation) gaps.add(finding.recommendation);
   }

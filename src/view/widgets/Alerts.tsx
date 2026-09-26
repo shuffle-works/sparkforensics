@@ -9,7 +9,7 @@ import { getThresholdSummary } from '@sparkforensics/core/threshold-summary.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { alwaysMountedWidgets, isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { hasFinishedStage, isEvidenceCaveat } from '@/view/run-verdict';
+import { RUN_SPAN_CHECK_TYPES, hasFinishedStage, isEvidenceCaveat, isIncompleteRun } from '@/view/run-verdict';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
 import { WidgetCardSkeleton } from '@/view/WidgetCard';
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
@@ -112,11 +112,14 @@ export function AlwaysVisibleAndCleanChecks({ appModel, catalog, configFindings 
   const combined = [...catalog, ...configFindings].filter(isRealFinding);
 
   // A check the log could not run is not a pass: the same rule as the
-  // verdict's "Not checked on this log" list (an evidence caveat, or a
-  // per-stage check on a log where no stage finished).
+  // verdict's "Not checked on this log" list (an evidence caveat, a
+  // per-stage check on a log where no stage finished, or a run-span check on
+  // a log with no ApplicationEnd).
   const noFinishedStages = !hasFinishedStage(appModel.stages);
+  const incomplete = isIncompleteRun(catalog);
   const caveatTypes = new Set([...catalog, ...configFindings].filter(isEvidenceCaveat).map((finding) => finding.type));
-  const isNotRun = (type: string) => caveatTypes.has(type) || (noFinishedStages && SCOPE[type] === 'per-stage');
+  const isNotRun = (type: string) =>
+    caveatTypes.has(type) || (noFinishedStages && SCOPE[type] === 'per-stage') || (incomplete && RUN_SPAN_CHECK_TYPES.has(type));
 
   const zeroFindingTypes = Object.keys(REGISTRY)
     .filter((type) => !isAlwaysMountedType(type))
