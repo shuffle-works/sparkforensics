@@ -11,12 +11,13 @@ import { gzipSync } from 'node:zlib';
 const binDir = dirname(fileURLToPath(import.meta.url));
 const pkgDir = dirname(binDir);
 
-// vendor-core/ exists only in a published install (populated by vendor-core.mjs
-// at pack time); the monorepo falls back to the packages/core/src/ sibling.
+// vendor-core/ is populated by vendor-core.mjs at pack time. In the monorepo the
+// packages/core/src/ sibling's load-vendored.js is used, which prefers a leftover
+// vendor-core/ only while it still matches core/src and warns when it does not.
 // load-vendored.js is the one module located by hand; the rest load through its
 // exported loadVendored().
-const vendoredHelper = join(pkgDir, 'vendor-core', 'load-vendored.js');
-const helperPath = existsSync(vendoredHelper) ? vendoredHelper : join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
+const srcHelper = join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
+const helperPath = existsSync(srcHelper) ? srcHelper : join(pkgDir, 'vendor-core', 'load-vendored.js');
 const { loadVendored } = await import(pathToFileURL(helperPath).href);
 const loadCore = (moduleName) => loadVendored(pkgDir, moduleName);
 
@@ -69,7 +70,8 @@ Options:
                                     notRunChecks and the summary counts stay on the full,
                                     unfiltered set.
   --type <type[,type]>              Filter the output's findings array to these finding types.
-  --stage <id>                      Filter the output's findings array to this stage id.
+  --stage <id>                      Filter the output's findings array to this stage id,
+                                    including a SQL plan finding whose only stage it is.
 
 Exit codes: 0 pass, 1 budget violated, 2 bad arguments, the local input could not be parsed, or the --shs-base-url fetch failed, 3 a budget was inconclusive.
 `;
