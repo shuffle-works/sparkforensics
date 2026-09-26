@@ -29,7 +29,9 @@ the progress screen shows how far along it is and roughly how long is left;
 **Cancel** returns to the landing page.
 
 No log of your own yet? Click **Try a sample run** on the landing page to
-load a bundled example run and see a populated dashboard right away. **Where
+load a bundled example run and see a populated dashboard right away. A line
+above its verdict says it is the sample, with **Load my event log** and a
+link to where to find one, so you can switch to your own run from there. **Where
 do I find my event log?**, under the buttons, is a short guide to turning
 event logging on and downloading a log from a History Server.
 

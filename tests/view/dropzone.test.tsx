@@ -96,6 +96,8 @@ test('clicking "Try a sample run" fetches the bundled sample and calls startLoad
   await waitFor(() => expect(startLoad).toHaveBeenCalledTimes(1));
   const loadedFile = startLoad.mock.calls[0][0] as File;
   expect(loadedFile.name).toBe('sample-run.ndjson.gz');
+  // Loaded under the fixed sample id, so the dashboard can say it is the sample.
+  expect(startLoad.mock.calls[0][1]).toEqual({ id: 'sample-run' });
 });
 
 test('a failed sample-run fetch surfaces a recoverable store error instead of throwing', async () => {

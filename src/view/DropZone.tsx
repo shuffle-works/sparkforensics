@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { RecentList, type RecentFileEntry } from '@/view/RecentList';
 import { type NormalizedShsRequest, type RunSource, useIngest } from '@/store/useIngest';
 import { store, useStore } from '@/store/store';
+import { SAMPLE_RUN_ID } from '@/view/sample-run';
 import * as recentFiles from '@sparkforensics/core/recent-files.ts';
 import { reassembleRollingEntries } from '@sparkforensics/core/rolling-log-reassembly.ts';
 import { cn } from '@/lib/utils';
@@ -41,7 +42,7 @@ const SAMPLE_RUN_URL = 'sample-runs/sample-run.ndjson.gz';
 // Getting-started section that documents starting local-server mode.
 const LOCAL_SERVER_SETUP_URL = 'docs/user-guide/getting-started.html#local-server-mode';
 // Every other way to get a log (cloud consoles, bastions, copying from storage).
-const ALTERNATIVE_LOG_RETRIEVAL_URL = 'docs/user-guide/alternative-log-retrieval.html';
+export const ALTERNATIVE_LOG_RETRIEVAL_URL = 'docs/user-guide/alternative-log-retrieval.html';
 
 const SHS_RECOVERY_MESSAGES = {
   'local-server-unavailable': 'The local server is unavailable. Start local-server mode, then try again.',
@@ -160,7 +161,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
       const blob = await res.blob();
       const file = new File([blob], 'sample-run.ndjson.gz', { type: 'application/gzip' });
       if (onPick) onPick({ kind: 'file', id: recentFiles.entryId(file.name, file.size, file.lastModified), label: file.name, file });
-      else startLoad(file);
+      else startLoad(file, { id: SAMPLE_RUN_ID });
     } catch {
       store.getState().setError('Could not load the sample run. Check your connection and try again, or choose a file below.');
     } finally {

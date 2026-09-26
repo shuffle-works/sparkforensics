@@ -23,6 +23,7 @@ import { EtlPhases } from '@/view/widgets/EtlPhases';
 import { ExecutorCountChart } from '@/view/widgets/ExecutorCountChart';
 import { ScalingSim } from '@/view/widgets/ScalingSim';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
+import { SampleRunNotice } from '@/view/SampleRunNotice';
 import { Scorecard } from '@/view/widgets/Scorecard';
 import { ImpactBoard } from '@/view/widgets/ImpactBoard';
 import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
@@ -174,6 +175,7 @@ function FilteredBoard({
     <>
     {renderTopbar(jumpToFindings)}
     <main className="flex-1 space-y-6 p-4">
+      <SampleRunNotice />
       {/* Verdict first, from the unfiltered catalog: it answers "how did this
           run go and where do I start", which a board filter must not change. */}
       <RunVerdict appModel={appModel} catalog={catalog} configFindings={configFindings} onRoute={routeToVisible} />
