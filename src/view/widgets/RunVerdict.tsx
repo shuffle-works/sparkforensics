@@ -126,11 +126,20 @@ function verdictSummary(eligible: Finding[], steps: NextStep[], facts: RunFacts)
   return sentences;
 }
 
-function CopyStepButton({ finding }: { finding: Finding }) {
+/** What a failure step tells the reader once the verdict quotes Spark's own
+ * reason: the detector's "inspect the driver log for the reason" would send a
+ * newcomer looking for something already on screen. */
+const QUOTED_REASON_STEP_TEXT = "Spark's recorded reason is quoted above. Open the driver log only if you need the full stack trace.";
+
+function stepRecommendation(finding: Finding, reasonQuoted: boolean): string {
+  return reasonQuoted && FAILURE_TYPES.has(finding.type) ? QUOTED_REASON_STEP_TEXT : recommendationText(finding);
+}
+
+function CopyStepButton({ finding, recommendation }: { finding: Finding; recommendation: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
     const impact = impactFigure(finding);
-    const headline = `${findingActionLabel(finding)}: ${recommendationText(finding)}`;
+    const headline = `${findingActionLabel(finding)}: ${recommendation}`;
     const summary = [/[.!?]$/.test(headline) ? headline : `${headline}.`, impact ? `Potential savings: ${impact}` : null]
       .filter(Boolean)
       .join(' ');
@@ -151,9 +160,20 @@ function CopyStepButton({ finding }: { finding: Finding }) {
   );
 }
 
-function NextStepItem({ step, index, onRoute }: { step: NextStep; index: number; onRoute: (target: TriageTarget) => void }) {
+function NextStepItem({
+  step,
+  index,
+  reasonQuoted,
+  onRoute,
+}: {
+  step: NextStep;
+  index: number;
+  reasonQuoted: boolean;
+  onRoute: (target: TriageTarget) => void;
+}) {
   const { openStage } = useStageDetail();
   const { finding } = step.lead;
+  const recommendation = stepRecommendation(finding, reasonQuoted);
   const help = TAG_HELP[typeTag(finding.type)];
   const impact = impactFigure(finding);
   const titleId = `next-step-${index}-title`;
@@ -190,7 +210,7 @@ function NextStepItem({ step, index, onRoute }: { step: NextStep; index: number;
         ) : null}
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">What to try: </span>
-          {recommendationText(finding)}
+          {recommendation}
         </p>
         {step.related.length > 0 ? (
           <p className="text-xs text-muted-foreground">
@@ -208,7 +228,7 @@ function NextStepItem({ step, index, onRoute }: { step: NextStep; index: number;
               Stage {step.stageId} details
             </Button>
           ) : null}
-          <CopyStepButton finding={finding} />
+          <CopyStepButton finding={finding} recommendation={recommendation} />
         </div>
       </div>
     </li>
@@ -333,7 +353,7 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
       {shown.length > 0 ? (
         <ol aria-label="Next steps" className="space-y-4">
           {shown.map((step, index) => (
-            <NextStepItem key={step.key} step={step} index={index} onRoute={onRoute} />
+            <NextStepItem key={step.key} step={step} index={index} reasonQuoted={outcome.reason != null} onRoute={onRoute} />
           ))}
         </ol>
       ) : null}

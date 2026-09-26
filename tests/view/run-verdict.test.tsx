@@ -299,6 +299,32 @@ describe('RunVerdict on a failed run', () => {
     expect(steps[0]).toHaveTextContent('Inspect stage failure in Stage 13');
   });
 
+  it('points the failure step at the quoted reason instead of the driver log, in the step and its copied text', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const failure = { ...stageFailed(13, 'Fetch failed: executor lost'), recommendation: 'Inspect the driver log for the failure reason.' };
+    renderVerdict([failure], vi.fn(), withJobs([failedJob(1, [13])]));
+
+    const step = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')[0];
+    const pointer = "Spark's recorded reason is quoted above. Open the driver log only if you need the full stack trace.";
+    expect(step).toHaveTextContent(`What to try: ${pointer}`);
+    expect(step).not.toHaveTextContent('Inspect the driver log for the failure reason.');
+    await user.click(within(step).getByTestId('copy-finding-button'));
+    expect(writeText).toHaveBeenCalledWith(`Inspect stage failure: ${pointer}`);
+  });
+
+  it('keeps the detector\'s advice on a failure step when no reason is recorded', () => {
+    const failure: Finding = {
+      type: 'stageFailed', stageId: 13, impactBand: 'critical', recommendation: 'Inspect the driver log for the failure reason.',
+    };
+    renderVerdict([failure], vi.fn(), withJobs([failedJob(1, [13])]));
+
+    expect(screen.queryByTestId('run-failure-reason')).not.toBeInTheDocument();
+    const step = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')[0];
+    expect(step).toHaveTextContent('What to try: Inspect the driver log for the failure reason.');
+  });
+
   it('counts a partial failure, falls back to the job exception, and never calls the run clean', () => {
     renderVerdict([], vi.fn(), withJobs([okJob(1), failedJob(2, [], 'Job aborted: out of memory'), okJob(3)]));
 
