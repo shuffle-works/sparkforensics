@@ -19,6 +19,13 @@ export interface VerdictCategory {
   candCount: number;
 }
 
+/** How many of a run's ended jobs failed, counted as `summarizeRunOutcome`
+ * counts them. */
+export interface VerdictJobOutcome {
+  failedJobs: number;
+  totalJobs: number;
+}
+
 export type ComparisonTone = 'better' | 'worse' | 'same' | 'unknown';
 
 export interface ComparisonVerdictText {
@@ -68,15 +75,32 @@ function namesWhere(net: Map<string, number>, keep: (change: number) => boolean)
   return [...net].filter(([, change]) => keep(change)).map(([name]) => name);
 }
 
+function jobsFailed(outcome: VerdictJobOutcome): string {
+  return `${outcome.failedJobs} of ${outcome.totalJobs} jobs fail`;
+}
+
+/** The headline when either run had failed jobs, as the run verdict leads
+ * with a failure: a faster run B that dropped work is not an improvement.
+ * Null when both runs completed. */
+function failureHeadline(base: VerdictJobOutcome, cand: VerdictJobOutcome): { title: string; tone: ComparisonTone | null } | null {
+  if (base.failedJobs === 0 && cand.failedJobs === 0) return null;
+  const tone = cand.failedJobs > base.failedJobs ? 'worse' : cand.failedJobs < base.failedJobs ? 'better' : null;
+  if (cand.failedJobs === 0) return { title: `Run A had ${jobsFailed(base)}; run B completed`, tone };
+  const baseText = base.failedJobs === 0 ? 'none' : `${base.failedJobs} of ${base.totalJobs}`;
+  return { title: `Run B had ${jobsFailed(cand)} (run A: ${baseText})`, tone };
+}
+
 /** One plain answer to "did run B get better or worse than run A", from the
  * comparison's own whole-run metrics and finding-category tallies: run time
  * first, then which cost metrics moved each way past run-to-run noise, then which finding
- * categories appeared or went away. Volume and count metrics (input, output,
+ * categories appeared or went away. When either run had failed jobs, that
+ * leads instead and run time becomes the first sentence. Volume and count metrics (input, output,
  * tasks, executors) are left out because more or less of them is not
  * inherently better or worse. */
 export function summarizeComparison(
   metrics: VerdictMetric[],
   findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[] },
+  jobs?: { baseline: VerdictJobOutcome; candidate: VerdictJobOutcome },
 ): ComparisonVerdictText {
   const wall = metrics.find((metric) => metric.key === 'wallClock');
   let title = 'Run time could not be compared between run A and run B';
@@ -99,6 +123,12 @@ export function summarizeComparison(
   const worse = moved.filter((metric) => metric.direction === 'regression').map((metric) => metric.label);
   const better = moved.filter((metric) => metric.direction === 'improvement').map((metric) => metric.label);
   const sentences: string[] = [];
+  const failure = jobs ? failureHeadline(jobs.baseline, jobs.candidate) : null;
+  if (failure) {
+    sentences.push(`${title}.`);
+    title = failure.title;
+    tone = failure.tone ?? tone;
+  }
   if (worse.length > 0) sentences.push(`Worse in run B: ${worse.join(', ')}.`);
   if (better.length > 0) sentences.push(`Better in run B: ${better.join(', ')}.`);
   if (cost.length > 0 && worse.length === 0 && better.length === 0) sentences.push('Other measured cost metrics look about the same.');

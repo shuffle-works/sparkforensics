@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { TagBadge } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
-import { summarizeComparison, type ComparisonTone } from '@/view/comparison-verdict';
+import { summarizeComparison, type ComparisonTone, type VerdictJobOutcome } from '@/view/comparison-verdict';
 import { PinnedStageDeltas, type StageSummary } from '@/view/PinnedStageDeltas';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 import { cn } from '@/lib/utils';
@@ -32,6 +32,8 @@ interface ComparisonModel {
   stageSkew: Array<{ identity: string; baseId: number; candId: number; baseline: number | null; candidate: number | null; delta: number | null }>;
   baseStages?: StageSummary[];
   candStages?: StageSummary[];
+  /** Failed-job counts per run, when the caller has each run's job results. */
+  jobOutcomes?: { baseline: VerdictJobOutcome; candidate: VerdictJobOutcome };
 }
 
 // Per-unit formatting: raw ms/bytes rendered through a bare NumberFormat read as
@@ -162,7 +164,7 @@ const VERDICT_TONE_CLASS: Record<ComparisonTone, string> = {
  * cost metrics moved each way, which finding categories came or went, and
  * where to go next. The tables below stay the evidence for each claim. */
 function ComparisonVerdict({ model, onDrillIn }: { model: ComparisonModel; onDrillIn?: (which: 'baseline' | 'candidate') => void }) {
-  const verdict = summarizeComparison(model.metrics, model.findings);
+  const verdict = summarizeComparison(model.metrics, model.findings, model.jobOutcomes);
   return (
     <section
       aria-labelledby="comparison-verdict-title"

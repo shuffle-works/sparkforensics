@@ -92,6 +92,35 @@ describe('summarizeComparison', () => {
   });
 });
 
+describe('summarizeComparison with failed jobs', () => {
+  const sameTime = [metric('wallClock', 'Wall-clock duration', 100_000, 100_500, 'regression')];
+
+  it('leads with a failed run B, keeping run time as the first sentence', () => {
+    const verdict = summarizeComparison(sameTime, noFindings, {
+      baseline: { failedJobs: 0, totalJobs: 5 },
+      candidate: { failedJobs: 2, totalJobs: 5 },
+    });
+    expect(verdict).toMatchObject({ title: 'Run B had 2 of 5 jobs fail (run A: none)', tone: 'worse' });
+    expect(verdict.sentences[0]).toBe('Run B took about as long as run A.');
+  });
+
+  it('leads with a failed run A when run B completed', () => {
+    expect(summarizeComparison(sameTime, noFindings, {
+      baseline: { failedJobs: 1, totalJobs: 4 },
+      candidate: { failedJobs: 0, totalJobs: 4 },
+    })).toMatchObject({ title: 'Run A had 1 of 4 jobs fail; run B completed', tone: 'better' });
+  });
+
+  it('keeps the run-time headline when both runs completed', () => {
+    const verdict = summarizeComparison(sameTime, noFindings, {
+      baseline: { failedJobs: 0, totalJobs: 5 },
+      candidate: { failedJobs: 0, totalJobs: 5 },
+    });
+    expect(verdict).toMatchObject({ title: 'Run B took about as long as run A', tone: 'same' });
+    expect(verdict.sentences).not.toContain('Run B took about as long as run A.');
+  });
+});
+
 describe('RunComparison verdict', () => {
   const model = {
     baselineLabel: 'base.log', candidateLabel: 'cand.log',
@@ -109,6 +138,13 @@ describe('RunComparison verdict', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Run B finished 5.0s faster than run A (25%)' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /see where to start in run b/i }));
     expect(onDrillIn).toHaveBeenCalledWith('candidate');
+  });
+
+  it('heads the verdict with run B\'s failed jobs', () => {
+    const failed = { ...model, jobOutcomes: { baseline: { failedJobs: 0, totalJobs: 5 }, candidate: { failedJobs: 2, totalJobs: 5 } } };
+    render(<RunComparison model={failed as any} onClose={vi.fn()} />);
+    expect(screen.getByRole('heading', { level: 2, name: 'Run B had 2 of 5 jobs fail (run A: none)' })).toBeInTheDocument();
+    expect(screen.getByTestId('comparison-verdict')).toHaveTextContent('Run B finished 5.0s faster than run A (25%).');
   });
 
   it('has no drill-in button when there is nowhere to drill into', () => {
