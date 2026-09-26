@@ -254,3 +254,44 @@ test('a verdict step hidden by the active filter clears only the dimension that 
   // @ts-expect-error -- restore jsdom's default (no scrollIntoView)
   delete Element.prototype.scrollIntoView;
 });
+
+test('the top bar count chip clears the filter that hides the band it counts, and lands on it', async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, '', '/?type=spill&stage=1');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
+      { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' },
+      { type: 'skew', stageId: 2, impactBand: 'critical', recommendation: 'Fix skew.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(screen.queryByRole('heading', { level: 2, name: 'Critical' })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: '2 critical: show them in Findings' }));
+
+  expect(screen.getByText('Cleared the spill filter to show the critical findings.')).toHaveAttribute('role', 'status');
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Critical' })));
+  const params = new URLSearchParams(window.location.search);
+  expect(params.get('type')).toBeNull();
+  expect(params.get('stage')).toBe('1');
+});
+
+test('the top bar count chip still lands when the filter empties the board', async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, '', '/?impact=info');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [{ type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' }],
+  });
+  render(<App />);
+  const chip = await screen.findByRole('button', { name: '1 critical: show them in Findings' });
+  expect(screen.queryByRole('tab', { name: 'Findings' })).not.toBeInTheDocument();
+
+  await user.click(chip);
+
+  expect(screen.getByText('Cleared the info impact filter to show the critical findings.')).toBeInTheDocument();
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Critical' })));
+});

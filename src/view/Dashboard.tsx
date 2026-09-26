@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 
 import { store, useStore, useWidgetDensity } from '@/store/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -26,6 +26,7 @@ import { RunVerdict } from '@/view/widgets/RunVerdict';
 import { Scorecard } from '@/view/widgets/Scorecard';
 import { ImpactBoard } from '@/view/widgets/ImpactBoard';
 import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
+import { isEligible } from '@/view/widgets/FixTheseFirst';
 import { StageTable } from '@/view/widgets/StageTable';
 import { Timeline } from '@/view/widgets/Timeline';
 import { EvidenceAvailability } from '@/view/widgets/EvidenceAvailability';
@@ -91,13 +92,13 @@ function ReferenceSection({
 }
 
 /** Names the filter values a route cleared, for the notice that says so. */
-function clearedFilterNotice(dimensions: FilterDimension[], selection: FilterSelection): string {
+function clearedFilterNotice(dimensions: FilterDimension[], selection: FilterSelection, subject: string): string {
   const parts = dimensions.map((dimension) => {
     if (dimension === 'impactBands') return `${[...selection.impactBands].join(', ')} impact`;
     if (dimension === 'types') return [...selection.types].map((type) => REGISTRY[type]?.findingLabel ?? type).join(', ');
     return [...selection.stages].map((stageId) => `Stage ${stageId}`).join(', ');
   });
-  return `Cleared the ${parts.join(' and ')} filter${parts.length === 1 ? '' : 's'} to show this finding.`;
+  return `Cleared the ${parts.join(' and ')} filter${parts.length === 1 ? '' : 's'} to show ${subject}.`;
 }
 
 /** The filtered board body: reads the active filter, derives the filtered
@@ -114,29 +115,51 @@ function FilteredBoard({
   onRoute,
   activeTab,
   onActiveTabChange,
+  renderTopbar,
 }: WidgetProps & {
   options: FilterOptions;
   onRoute: (target: TriageTarget) => void;
   activeTab: ActiveTab;
   onActiveTabChange: (tab: ActiveTab) => void;
+  renderTopbar: (onJumpToFindings: (impactBand: Finding['impactBand']) => void) => ReactNode;
 }) {
   const { selection, replaceSelection } = useFindingFilter();
   const density = useWidgetDensity();
   // Tied to the selection the route produced, so any later filter change hides it.
   const [filterNotice, setFilterNotice] = useState<{ text: string; selection: FilterSelection } | null>(null);
 
-  // A route target must be on the board to land: clear only the filter
-  // dimensions that hide it (the verdict routes from the unfiltered catalog).
+  // A jump from an unfiltered surface (verdict, stage dialog, top bar chip)
+  // must land on the board: clear only the filter dimensions that hide it.
+  const revealFinding = useCallback((finding: Finding, subject: string) => {
+    const dimensions = excludingDimensions(finding, selection);
+    if (dimensions.length === 0) return;
+    const next = { ...selection };
+    for (const dimension of dimensions) Object.assign(next, { [dimension]: emptySelection()[dimension] });
+    replaceSelection(next);
+    setFilterNotice({ text: clearedFilterNotice(dimensions, selection, subject), selection: next });
+  }, [selection, replaceSelection]);
   const routeToVisible = useCallback((target: TriageTarget) => {
-    const dimensions = excludingDimensions(target.finding, selection);
-    if (dimensions.length > 0) {
-      const next = { ...selection };
-      for (const dimension of dimensions) Object.assign(next, { [dimension]: emptySelection()[dimension] });
-      replaceSelection(next);
-      setFilterNotice({ text: clearedFilterNotice(dimensions, selection), selection: next });
-    }
+    revealFinding(target.finding, 'this finding');
     onRoute(target);
-  }, [selection, replaceSelection, onRoute]);
+  }, [revealFinding, onRoute]);
+  // The top bar's count chip: reveal the band it counts (the finding needing
+  // the fewest cleared dimensions), show Findings, then land on the band once
+  // the tab panel is visible.
+  const jumpToFindings = useCallback((impactBand: Finding['impactBand']) => {
+    const counted = [...catalog, ...(configFindings ?? [])].filter((f) => isEligible(f) && f.impactBand === impactBand);
+    const closest = counted.reduce<Finding | null>((best, finding) => (
+      !best || excludingDimensions(finding, selection).length < excludingDimensions(best, selection).length ? finding : best
+    ), null);
+    if (closest) revealFinding(closest, `the ${impactBand} findings`);
+    onActiveTabChange('findings');
+    requestAnimationFrame(() => {
+      const heading = document.getElementById(`impact-band-${impactBand}-heading`);
+      if (!heading) return;
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      heading.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
+      heading.focus({ preventScroll: true });
+    });
+  }, [catalog, configFindings, selection, revealFinding, onActiveTabChange]);
   const filteredCatalog = useMemo(() => filterFindings(catalog, selection), [catalog, selection]);
   const filteredConfig = useMemo(() => filterFindings(configFindings ?? [], selection), [configFindings, selection]);
 
@@ -148,6 +171,8 @@ function FilteredBoard({
   const filteredToEmpty = (catalog.length + (configFindings ?? []).length) > 0 && totalFilteredCount === 0;
 
   return (
+    <>
+    {renderTopbar(jumpToFindings)}
     <main className="flex-1 space-y-6 p-4">
       {/* Verdict first, from the unfiltered catalog: it answers "how did this
           run go and where do I start", which a board filter must not change. */}
@@ -211,6 +236,7 @@ function FilteredBoard({
           when the finding is filtered out of the board lists. */}
       <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={routeToVisible} />
     </main>
+    </>
   );
 }
 
@@ -227,18 +253,6 @@ function DashboardContent() {
   const { recentEntries, onPickRecent, onRemoveRecent } = useRecentFiles(activeFileId);
   const [dragOver, setDragOver] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('findings');
-  // The top bar's count chip: show Findings, then land on the band it named
-  // (next frame, once the tab panel is visible).
-  const jumpToFindings = useCallback((impactBand: Finding['impactBand']) => {
-    setActiveTab('findings');
-    requestAnimationFrame(() => {
-      const heading = document.getElementById(`impact-band-${impactBand}-heading`);
-      if (!heading) return;
-      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-      heading.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
-      heading.focus({ preventScroll: true });
-    });
-  }, []);
   const density = useWidgetDensity();
   const showFindings = useCallback(() => setActiveTab('findings'), []);
   const showFullReport = useCallback(() => setActiveTab('full-report'), []);
@@ -478,15 +492,6 @@ function DashboardContent() {
       >
         Skip to the verdict
       </button>
-      <Topbar
-        onJumpToFindings={jumpToFindings}
-        onLoadNew={resetToDropZone}
-        onCompare={compareWithAnotherRun}
-        recentEntries={recentEntries}
-        activeFileId={activeFileId}
-        onPickRecent={onPickRecent}
-        onRemoveRecent={onRemoveRecent}
-      />
 
       <FindingFilterProvider options={options} fileId={activeFileId}>
         <TriageNavigationProvider
@@ -508,6 +513,17 @@ function DashboardContent() {
             onRoute={requestRoute}
             activeTab={activeTab}
             onActiveTabChange={setActiveTab}
+            renderTopbar={(onJumpToFindings) => (
+              <Topbar
+                onJumpToFindings={onJumpToFindings}
+                onLoadNew={resetToDropZone}
+                onCompare={compareWithAnotherRun}
+                recentEntries={recentEntries}
+                activeFileId={activeFileId}
+                onPickRecent={onPickRecent}
+                onRemoveRecent={onRemoveRecent}
+              />
+            )}
           />
         </TriageNavigationProvider>
       </FindingFilterProvider>

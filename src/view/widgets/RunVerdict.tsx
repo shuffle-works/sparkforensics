@@ -7,7 +7,6 @@ import { cn } from '@/lib/utils';
 import { formatDuration, typeTag } from '@sparkforensics/core/format-utils.ts';
 import { computeWallClock } from '@sparkforensics/core/wall-clock.ts';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
-import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import { useWidgetDensity } from '@/store/store';
 import { REGISTRY } from '@/view/detector-registry';
 import { useOptionalDocs } from '@/view/DocsContext';
@@ -21,6 +20,7 @@ import {
   isIdleCapacityStep,
   NEXT_STEP_LIMIT,
   hasFinishedStage,
+  isCleanRun,
   prioritizeIdleCapacity,
   verdictGaps,
   verdictIdlePct,
@@ -325,12 +325,11 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
     runMs: hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null,
     idlePct: verdictIdlePct(rankedSteps, getScorecardEstimates(appModel).wastage.value),
     incomplete: catalog.some((finding) => finding.type === 'incompleteRun'),
-    clean: false,
+    clean: isCleanRun(appModel, allFindings),
     outcome,
     noFinishedStages: !hasFinishedStage(appModel.stages),
   };
   const gaps = verdictGaps(allFindings, facts.noFinishedStages);
-  facts.clean = !failed && !allFindings.some(isRealFinding) && gaps.length === 0;
   // A failed run keeps its failure steps first; idle capacity never jumps them.
   const steps = failed ? rankedSteps : prioritizeIdleCapacity(rankedSteps, facts.idlePct, facts.runMs);
   const shown = steps.slice(0, NEXT_STEP_LIMIT);
