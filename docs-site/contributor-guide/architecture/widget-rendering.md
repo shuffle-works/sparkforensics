@@ -3,7 +3,8 @@
 ## Render order (fixed, spec §5) {#widget-rendering-order-fixed-spec-§5}
 
 `src/view/Dashboard.tsx`'s `FilteredBoard` renders inside a `<main>` that
-opens with `RunVerdict` (built from the unfiltered catalog), then a single
+opens with `SampleRunNotice` (only while the bundled sample run is open),
+then `RunVerdict` (built from the unfiltered catalog), then a single
 `Scorecard` strip, then `FindingFilterBar` (Advanced view, or any active
 filter) and (only when an active filter empties both finding streams)
 `NoMatchBanner`, then (when
@@ -527,7 +528,12 @@ renders inside the Full app report tab, not as a standalone board section.
 
 Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
 
-1. `RunVerdict` (`src/view/widgets/RunVerdict.tsx`): the run's verdict
+1. `SampleRunNotice` (`src/view/SampleRunNotice.tsx`), only while the
+   bundled sample run is open (the landing's **Try a sample run** loads it
+   under `SAMPLE_RUN_ID`, `src/view/sample-run.ts`) and never in the export
+   bundle: says the board shows the sample, with **Load my event log** and a
+   docs-panel link to the log-retrieval guide.
+2. `RunVerdict` (`src/view/widgets/RunVerdict.tsx`): the run's verdict
    title, a summary sentence, and up to three numbered next steps built by
    `buildNextSteps` (`src/view/run-verdict.ts`). Steps group routeable
    eligible findings by location (one stage, one multi-stage finding type,
@@ -569,14 +575,14 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    measured; nothing for `estimateMethod: 'none'` or a zero figure), the
    finding's `confidence` when not `high`, and the list ends with the
    ordering rule.
-2. `Scorecard`: a three-tile run-info row (Wall-clock, Efficiency, Unused
+3. `Scorecard`: a three-tile run-info row (Wall-clock, Efficiency, Unused
    core time; Basic view captions say what each measures and which direction
    is better, Advanced view shows the raw run/idle breakdown),
    rendered once regardless of which tab is active.
-3. `FindingFilterBar`, only in Advanced view or while a filter is active
+4. `FindingFilterBar`, only in Advanced view or while a filter is active
    (plus `NoMatchBanner` when the active filter empties both finding
    streams).
-4. A two-tab `Tabs` (skipped entirely when the active filter empties both
+5. A two-tab `Tabs` (skipped entirely when the active filter empties both
    finding streams; `NoMatchBanner` above already covers that case), tab
    labels **Findings** and **Full app report**:
    - **Findings** (`ImpactBoard`): one `<section>`
