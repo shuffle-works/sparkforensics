@@ -232,11 +232,17 @@ report and both the findings and the stage records of the HTML export.
 The Markdown rendering mirrors the JSON's AC3 field set: each finding block
 prints its `detector version`, its sorted `evidence` entries (byte-magnitude
 keys humanized), and the report ends with a `## Detectors` catalog carrying the
-version + threshold set. A finding's `impactEstimate` (when its `basis` isn't
-`'informational'`) prints as its own `- impact: ` line (`Estimated <low>-<high>`
-and/or the raw-waste figure, plus `estimateMethod`), via
-`renderImpactEstimate`/`formatWallClockRange`/`formatRawWaste` in
-`packages/core/src/evidence-report.ts`. `EvidenceExport` names downloads
+version + threshold set. A finding's `impactEstimate` prints as its own `- impact: ` line
+worded as the dashboard's "Potential savings": the wall-clock range, or the raw
+waste only when there is no range, followed by what it counts ("of run time", "of
+unused executor memory") and `estimateMethod`, and nothing for an informational or
+zero estimate. A `- estimate: ` line carries the Advanced view's provenance sentence
+(`estimateProvenance`). Both come from `packages/core/src/impact-format.ts`, the
+formatters every dashboard surface uses, so memory reads in GB-h from 0.1 GB-h up,
+core time in core-s or core-h, and a time figure has no "Estimated" prefix. JSON finding
+rows carry the same figure as `impact`/`impactMeaning` when there is one, and each
+`recommendations` row an `impactMeaning` next to its `impact`, which is null for a
+resource figure that rounds to zero. `EvidenceExport` names downloads
 `evidence-<appId>[-redacted].<md|json>`, taking the app id from the (already
 pseudonymized when redacting) report so a redacted file never leaks the real id
 and is never name-identical to a raw export.
@@ -342,7 +348,10 @@ to `stderr` and exits `2`, same as a local file that can't be parsed.
 Optional CLI-flag budgets (`--max-runtime <ms>`, `--max-spill <gb>`,
 `--max-skew <ratio>`, `--max-failed-task-rate <pct>`, `--min-efficiency <pct>`)
 are evaluated in `packages/core/src/cli/budgets.ts` against the existing finding catalog
-(`analyze()`) and `computeEfficiencyModel`; there is no second rule engine. A budget
+(`analyze()`) and `computeEfficiencyModel`; there is no second rule engine.
+`--min-efficiency` compares `100 - wastagePct` (busy core time, the complement of
+the dashboard's Unused core time) and says so in its detail ("Busy core time 26% below
+budget 90%."); it is not the Scorecard's Efficiency tile (`stagesActive / total`). A budget
 whose required evidence is missing (e.g. the run never emitted
 `ApplicationEnd`, or has no usable per-task `runAggregates`) is reported as
 inconclusive (`stderr` warning) rather than silently passing, and gets its own

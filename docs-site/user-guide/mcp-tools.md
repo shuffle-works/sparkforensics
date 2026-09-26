@@ -170,7 +170,9 @@ Parameters (all optional):
 - `maxRuntimeMs`, `maxSpillGb`, `maxSkewRatio`, `maxFailedTaskRatePct`,
   `minEfficiencyPct`: absolute budgets, each evaluated only if provided. With
   two runs they apply to the candidate (`runIdB`/`sourceB`), the same as the
-  CLI's `--baseline` mode.
+  CLI's `--baseline` mode. `minEfficiencyPct` measures busy core time, the
+  share of executor core time that ran tasks (100 minus the dashboard's
+  Unused core time), not the dashboard's Efficiency tile.
 - `runIdB` / `sourceB`: a candidate run to compare against the first, so
   regression budgets can be evaluated. Same `runId`/`source` shape, resolved
   the same way. Omit both to skip regression budgets.

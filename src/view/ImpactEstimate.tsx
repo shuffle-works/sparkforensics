@@ -1,6 +1,8 @@
 import { useId } from 'react';
 import type { Finding, ImpactEstimate as ImpactEstimateType } from '@sparkforensics/core/types.ts';
-import { fmtMs, formatRawWaste, formatWallClockRange, readsAsZero } from '@sparkforensics/core/impact-format.ts';
+import {
+  fmtMs, formatRawWaste, formatWallClockRange, impactEstimateFigure, readsAsZero,
+} from '@sparkforensics/core/impact-format.ts';
 
 export { formatRawWaste, formatWallClockRange, readsAsZero };
 
@@ -40,12 +42,7 @@ export function ImpactEstimate({ finding }: { finding: Finding }) {
   // suppressed the same as the 'informational' basis below: "Potential
   // savings: 0s" reads as a real, measured figure in the exact spot a real
   // one would go, not as "there's nothing to recover here."
-  const highText = estimate.wallClock && estimate.wallClock.high > 0 ? fmtMs(estimate.wallClock.high) : null;
-  const rangeText =
-    highText && !readsAsZero(highText) ? formatWallClockRange(estimate.wallClock!.low, estimate.wallClock!.high) : null;
-  const rawWasteText = estimate.rawWaste && estimate.rawWaste.value > 0 ? formatRawWaste(estimate.rawWaste) : null;
-  const wasteText = !rangeText && rawWasteText && !readsAsZero(rawWasteText) ? rawWasteText : null;
-  const valueText = rangeText ?? wasteText;
+  const valueText = impactEstimateFigure(estimate)?.text;
   if (!valueText) return null; // basis: 'informational', or a zero-value estimate
 
   const title = `Estimate method: ${estimate.estimateMethod}`;

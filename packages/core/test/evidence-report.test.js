@@ -197,22 +197,18 @@ describe('buildEvidenceReport', () => {
     const { markdown, json } = buildEvidenceReport(fixture());
     const withEstimate = json.findings.filter((f) => f.impactEstimate != null);
     expect(withEstimate.length).toBeGreaterThan(0);
-    // 'informational'-basis estimates have no wallClock/rawWaste to print;
-    // only the quantifiable ones are expected to produce an `- impact:` line.
-    const renderable = withEstimate.filter(
-      (f) => f.impactEstimate.wallClock != null || f.impactEstimate.rawWaste != null,
-    );
+    // Only findings with a figure the dashboard would show (impactEstimateFigure) print an
+    // `- impact:` line; an informational or zero estimate prints none.
+    const renderable = withEstimate.filter((f) => f.impact != null);
     expect(renderable.length).toBeGreaterThan(0);
     for (const f of renderable) {
-      expect(markdown).toContain(`estimateMethod: ${f.impactEstimate.estimateMethod}`);
+      expect(markdown).toContain(`- impact: ${f.impact}${f.impactMeaning ? ` ${f.impactMeaning}` : ''} (estimateMethod: ${f.impactEstimate.estimateMethod})`);
     }
     const impactLines = markdown.split('\n').filter((l) => l.startsWith('- impact:'));
     expect(impactLines.length).toBe(renderable.length);
-    // Markdown is read outside the space-constrained web UI, so the wall-clock
-    // estimate prefix reads as a full word rather than the "Est." abbreviation.
-    const wallClockLines = impactLines.filter((l) => /\bEstimated\b/.test(l));
-    expect(wallClockLines.length).toBeGreaterThan(0);
-    expect(markdown).not.toContain('Est. ');
+    // Time figures read as the dashboard prints them: no "Estimated" prefix.
+    expect(impactLines.some((l) => /of run time/.test(l))).toBe(true);
+    expect(markdown).not.toMatch(/\bEstimated\b|Est\. /);
   });
 
   // Redaction must reach a slowHost's host where the builder nests it

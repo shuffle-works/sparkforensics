@@ -44,7 +44,9 @@ Options:
   --max-spill <gb>                  Fail if any stage spills more than this many GB.
   --max-skew <ratio>                Fail if any stage's P95/median duration ratio exceeds this.
   --max-failed-task-rate <pct>      Fail if the task failure rate exceeds this percent.
-  --min-efficiency <pct>            Fail if compute efficiency falls below this percent.
+  --min-efficiency <pct>            Fail if busy core time (the share of executor core time
+                                    that ran tasks, 100 minus the dashboard's Unused core time)
+                                    falls below this percent. Not the dashboard's Efficiency tile.
   --shs-base-url <url>              Fetch the run from a Spark History Server instead of a
                                     local file (mutually exclusive with the positional argument).
   --app-id <id>                     Spark application ID to fetch. Required with --shs-base-url.

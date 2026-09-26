@@ -236,7 +236,9 @@ npx -p sparkforensics-cli sparkforensics-analyze path/to/eventlog --impact criti
 ```
 
 Other budget flags round out the checks: `--max-spill <gb>`,
-`--max-failed-task-rate <pct>`, and `--min-efficiency <pct>`. `--attempt-id`
+`--max-failed-task-rate <pct>`, and `--min-efficiency <pct>` (busy core time:
+the share of executor core time that ran tasks, 100 minus the dashboard's
+Unused core time, not its Efficiency tile). `--attempt-id`
 pairs with `--shs-base-url`/`--app-id` for a non-default attempt;
 `--regression-metric` picks which metric `--max-regression-pct` checks
 (default `wallClock`); `--format md` switches output to Markdown (default

@@ -3,7 +3,7 @@
 // Raw task records are never included (privacy baseline); redaction is opt-in via { redact: true }.
 import { analyze, auditConfig } from './analyzer.ts';
 import { detectorCatalog } from './detectors.ts';
-import { typeTag, formatBytes, formatDuration, IMPACT_BAND_ORDER } from './format-utils.ts';
+import { typeTag, formatBytes, IMPACT_BAND_ORDER } from './format-utils.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { redactReport } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
@@ -12,10 +12,13 @@ import { matchesFindingFilterCriteria } from './finding-filter-predicate.ts';
 import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
 import { buildRunVerdict, findingActionLabel, stepCopyRecommendation, stepCopyText, type RunVerdictModel } from './run-verdict.ts';
-import { impactFigure, savingsMeaning } from './impact-format.ts';
+import {
+  estimateProvenance, formatRawWaste, formatWallClockRange, impactEstimateFigure, impactFigure, rawWasteMeaning, readsAsZero,
+  savingsMeaning,
+} from './impact-format.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
 import type {
-  AppModel, Finding, EvidenceAvailability, ImpactEstimate, RawWasteFigure, RawWasteUnit, ImpactBand,
+  AppModel, Finding, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,
 } from './types.ts';
 
 export const EVIDENCE_SCHEMA_VERSION: number = 4;
@@ -38,6 +41,10 @@ export interface FindingRow {
   actionLabel: string;
   confidence?: string; validationRequired?: string; docAnchor?: string;
   impactEstimate?: ImpactEstimate;
+  // The impactEstimate as the dashboard prints it ("2.0s", "0.1 GB-h"), and what it counts; only
+  // when there is a figure to show (none for an informational or zero estimate).
+  impact?: string;
+  impactMeaning?: string | null;
 }
 
 // The `Fix these first` rollup row: one entry per buildRecommendationRollup
@@ -54,7 +61,11 @@ export interface RecommendationRow {
   unit?: RawWasteUnit;
   total?: number;
   byImpactBand?: Partial<Record<ImpactBand, number>>;
+  // The group's savings figure in the dashboard's units ("26.1s", "0.4 GB-h", "12.3 core-s"), or
+  // null for a count group or a resource figure that rounds to zero; `impactMeaning` says what it
+  // counts ("of run time", "of core time", ...).
   impact: string | null;
+  impactMeaning: string | null;
 }
 
 // One line per detector `type` that fired zero findings and could run, so a flat report can state
@@ -181,6 +192,11 @@ function findingRow(f: Finding): FindingRow {
   if (f.validationRequired != null) row.validationRequired = f.validationRequired;
   if (f.docAnchor != null) row.docAnchor = f.docAnchor;
   if (f.impactEstimate != null) row.impactEstimate = f.impactEstimate;
+  const figure = impactEstimateFigure(f.impactEstimate);
+  if (figure) {
+    row.impact = figure.text;
+    row.impactMeaning = figure.meaning;
+  }
   return row;
 }
 
@@ -231,15 +247,19 @@ function buildRecommendations(
         // A point estimate, not a range: matches FixTheseFirst.tsx's trailingStat for time groups,
         // which prints the same figure twice rather than the finding-level spread computeStageUnionMs collapsed.
         impact: formatWallClockRange(group.recoverableMsHigh, group.recoverableMsHigh),
+        impactMeaning: 'of run time',
       };
     }
     if (group.kind === 'resource') {
+      const text = formatRawWaste({ value: group.total, unit: group.unit });
+      const shown = readsAsZero(text) ? null : text;
       return {
         ...base,
         kind: 'resource',
         unit: group.unit,
         total: group.total,
-        impact: formatRawWaste({ value: group.total, unit: group.unit }),
+        impact: shown,
+        impactMeaning: shown ? rawWasteMeaning(group.unit) : null,
       };
     }
     return {
@@ -249,6 +269,7 @@ function buildRecommendations(
       // No single quantifiable figure for a count group; the impact-band tally
       // (byImpactBand above) is the payload instead.
       impact: null,
+      impactMeaning: null,
     };
   });
 }
@@ -399,31 +420,13 @@ function renderFailureGroups(groups: TaskFailureGroup[]): string[] {
   return lines;
 }
 
-function formatWallClockRange(low: number, high: number): string {
-  const fmtMs = (ms: number) => (ms === 0 ? '0s' : formatDuration(ms));
-  return low === high ? `Estimated ${fmtMs(high)}` : `Estimated ${fmtMs(low)}-${fmtMs(high)}`;
-}
-
-function formatRawWaste(rawWaste: RawWasteFigure): string {
-  const rounded = Math.round(rawWaste.value * 10) / 10;
-  switch (rawWaste.unit) {
-    case 'bytes': return formatBytes(rawWaste.value);
-    case 'ms': return formatDuration(rawWaste.value);
-    case 'mbSeconds': return `${rounded} MB-s`;
-    case 'coreHours': return `${rounded.toFixed(1)} core-h`;
-    case 'coreMs': return `${rounded} core-ms`;
-    default: return String(rawWaste.value);
-  }
-}
-
-// `basis: 'informational'` findings carry no wallClock/rawWaste at all, so
-// there's nothing quantifiable to print; the caller skips the line entirely.
+// The finding's "Potential savings" figure as the dashboard shows it (impactEstimateFigure: the
+// range, or the raw waste only without a range, nothing for a zero or informational estimate),
+// followed by what it counts. `basis: 'informational'` findings carry nothing to print.
 function renderImpactEstimate(estimate: ImpactEstimate): string | null {
-  const rangeText = estimate.wallClock ? formatWallClockRange(estimate.wallClock.low, estimate.wallClock.high) : null;
-  const wasteText = estimate.rawWaste ? formatRawWaste(estimate.rawWaste) : null;
-  if (!rangeText && !wasteText) return null;
-  const parts = [rangeText, wasteText].filter((p): p is string => p != null).join(' · ');
-  return `${parts} (estimateMethod: ${estimate.estimateMethod})`;
+  const figure = impactEstimateFigure(estimate);
+  if (!figure) return null;
+  return `${figure.text}${figure.meaning ? ` ${figure.meaning}` : ''} (estimateMethod: ${estimate.estimateMethod})`;
 }
 
 // The run's job results in one line, worded like the dashboard verdict: failures first, with
@@ -490,8 +493,8 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
       lines.push(`${i + 1}. [${r.tag}] ${r.actionLabel}`);
       const detail = r.kind === 'count'
         ? Object.entries(r.byImpactBand ?? {}).map(([impactBand, count]) => `${count} ${impactBand}`).join(', ')
-        : r.impact;
-      lines.push(`   - ${detail} · ×${r.findingCount} finding(s)`);
+        : r.impact && `${r.impact}${r.impactMeaning ? ` ${r.impactMeaning}` : ''}`;
+      lines.push(`   - ${detail ? `${detail} · ` : ''}×${r.findingCount} finding(s)`);
     });
     lines.push('');
   }
@@ -507,6 +510,8 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
     if (r.validationRequired) lines.push(`- validation: ${r.validationRequired}`);
     const impactText = r.impactEstimate ? renderImpactEstimate(r.impactEstimate) : null;
     if (impactText) lines.push(`- impact: ${impactText}`);
+    const provenance = r.impactEstimate ? estimateProvenance(r) : null;
+    if (provenance) lines.push(`- estimate: ${provenance}`);
     lines.push(`- detector version: ${r.detectorVersion}`);
     // Evidence payload (sorted for stable order) so two rows differing only by evidence (two
     // smallFiles by direction, two partitionSizing by rule) render distinctly.

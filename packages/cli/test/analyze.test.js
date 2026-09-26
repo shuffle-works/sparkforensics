@@ -312,6 +312,7 @@ describe('sparkforensics-analyze CLI', () => {
       expect(parsed.verdict.steps.length).toBeGreaterThan(0);
       expect(Object.keys(parsed.summary.outcome).sort()).toEqual(['failedJobs', 'failureReason', 'failureReasonStageId', 'totalJobs']);
       expect(parsed.recommendations.length).toBeGreaterThan(0);
+      expect(parsed.recommendations.every((r) => 'impactMeaning' in r && !/^Estimated/.test(r.impact ?? ''))).toBe(true);
       expect(parsed.cleanChecks.length).toBeGreaterThan(0);
       expect(parsed.findings.every((f) => typeof f.actionLabel === 'string')).toBe(true);
     } finally {
