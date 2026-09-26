@@ -545,7 +545,11 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    least 40% while the best time-based fix is under 5% of wall-clock. The
    idle share (`verdictIdlePct`) is the figure that idle-capacity step itself
    reports, falling back to the Scorecard's Unused core time figure only when no step
-   carries one, so the title and the step never disagree. Always the
+   carries one, so the title and the step never disagree. Each step's
+   savings figure is followed by what it counts (`savingsMeaning` in
+   `src/view/run-verdict.ts`: run time for a wall-clock figure, otherwise the
+   resource its `rawWaste` unit measures), and **Copy next steps** copies the
+   whole verdict as a plain-text checklist (`planCopyText` in `RunVerdict.tsx`). Always the
    unfiltered catalog: a board filter never changes the verdict. A step's
    **Show evidence** on a finding the active filter hides clears only the
    filter dimensions that hide it (`excludingDimensions` in
