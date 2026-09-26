@@ -85,19 +85,20 @@ export const CoreUsageArea = memo(function CoreUsageArea({ appModel, catalog, ac
     const start = app?.startTime ?? 0;
     const end = app?.endTime ?? start;
     const bucketWidthMs = Math.max(60_000, Math.ceil(Math.max(1, end - start) / TARGET_BUCKETS));
-    const { labels, series } = computeLocalityAreaSeries(stages, { bucketWidthMs }) as {
+    const { labels, series, endTime: seriesEnd } = computeLocalityAreaSeries(stages, { bucketWidthMs }) as {
       labels: number[];
       series: Record<string, number[]>;
+      endTime: number;
     };
     const order = [...LOCALITY_TIERS.filter((t: string) => series[t]), ...(series.OTHER ? ['OTHER'] : []), 'idle'];
 
     const points: AreaPoint[] = labels.map((t, i) => {
       const point: AreaPoint = { t: Math.round((t - start) / 1000) };
       // The series averages each bucket over its full width, so a last bucket
-      // that runs past the app's end (or a run shorter than one bucket) reads
-      // diluted: a 17s run in a 60s bucket showed well under one busy core.
-      // Rescale to the part of the bucket the run actually covers.
-      const coveredMs = Math.min(bucketWidthMs, Math.max(1, end - t));
+      // that runs past the series' own end (or a run shorter than one bucket)
+      // reads diluted: a 10s stage in a 60s bucket showed well under its busy
+      // cores. Rescale to the part of the bucket the series actually covers.
+      const coveredMs = Math.min(bucketWidthMs, seriesEnd - t);
       const scale = bucketWidthMs / coveredMs;
       for (const tier of order) if (tier !== 'idle') point[tier] = (series[tier]?.[i] ?? 0) * scale;
       return point;

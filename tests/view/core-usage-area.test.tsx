@@ -117,7 +117,7 @@ test('downsamples a large bucketed series before handing it to the chart', () =>
     PROCESS_LOCAL: new Array(bigLength).fill(1),
     idle: new Array(bigLength).fill(0),
   };
-  (computeLocalityAreaSeries as Mock).mockReturnValueOnce({ labels, series });
+  (computeLocalityAreaSeries as Mock).mockReturnValueOnce({ labels, series, endTime: bigLength * 1000 });
 
   render(
     <DocsProvider>
@@ -487,13 +487,25 @@ test('defaults collapsed with a peak-cores summary', () => {
 });
 
 test('a run shorter than one chart bucket reports its real busy cores, not a figure diluted to "0 cores"', () => {
-  // 20s of task time packed into a 10s stage (2 busy cores) in a 17s run: the
-  // 60s bucket covers only 17s of the run, so the peak is 2 x 10/17 = 1.2 cores.
-  const appModel = { ...buildAppModel({ 1: { completedAt: 10_000, executorRunTime: 20_000 } }), app: { startTime: 0, endTime: 17_000 } };
+  // 3s of task time packed into a 10s stage (0.3 busy cores) in a 17s run: the
+  // 60s bucket holds only the stage's 10s, so the peak is 0.3 cores.
+  const appModel = { ...buildAppModel({ 1: { completedAt: 10_000, executorRunTime: 3_000 } }), app: { startTime: 0, endTime: 17_000 } };
   render(
     <DocsProvider>
       <CoreUsageArea appModel={appModel as AppModel} catalog={[]} defaultCollapsed={true} />
     </DocsProvider>,
   );
-  expect(screen.getByText('1.2 cores')).toBeInTheDocument();
+  expect(screen.getByText('0.3 cores')).toBeInTheDocument();
+});
+
+test('an incomplete run with no application end time still reports the stage\'s real busy cores', () => {
+  // No ApplicationEnd, so app.endTime is null: 80s of task time over a 10s
+  // stage is 8 busy cores, and the peak must not scale past that.
+  const appModel = { ...buildAppModel({ 1: { submittedAt: 5_000, completedAt: 15_000, executorRunTime: 80_000 } }), app: { startTime: 0, endTime: null } };
+  render(
+    <DocsProvider>
+      <CoreUsageArea appModel={appModel as unknown as AppModel} catalog={[]} defaultCollapsed={true} />
+    </DocsProvider>,
+  );
+  expect(screen.getByText('8 cores')).toBeInTheDocument();
 });
