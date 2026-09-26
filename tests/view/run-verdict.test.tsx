@@ -425,8 +425,8 @@ describe('savingsMeaning', () => {
   it('says a wall-clock figure is run time, and names the resource behind a cost-only one', () => {
     expect(savingsMeaning(withEstimate({ basis: 'serial', wallClock: { low: 1, high: 1 }, estimateMethod: 'measured' }))).toBe('of run time');
     expect(savingsMeaning(costOnly('mbSeconds'))).toBe('of unused executor memory');
-    expect(savingsMeaning(costOnly('coreHours'))).toBe('of idle core time');
-    expect(savingsMeaning(costOnly('coreMs'))).toBe('of idle core time');
+    expect(savingsMeaning(costOnly('coreHours'))).toBe('of core time');
+    expect(savingsMeaning(costOnly('coreMs'))).toBe('of core time');
     expect(savingsMeaning(costOnly('bytes'))).toBe('of extra data written');
     expect(savingsMeaning(withEstimate({ basis: 'informational', wallClock: null, estimateMethod: 'none' }))).toBeNull();
     expect(savingsMeaning(withEstimate(undefined))).toBeNull();

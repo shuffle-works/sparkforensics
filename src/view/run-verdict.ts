@@ -165,7 +165,7 @@ export function savingsMeaning(finding: Finding): string | null {
   switch (estimate.rawWaste?.unit) {
     case 'mbSeconds': return 'of unused executor memory';
     case 'coreHours':
-    case 'coreMs': return 'of idle core time';
+    case 'coreMs': return 'of core time';
     case 'bytes': return 'of extra data written';
     case 'ms': return 'of task time';
     default: return null;

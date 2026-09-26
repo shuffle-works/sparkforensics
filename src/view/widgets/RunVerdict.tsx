@@ -363,9 +363,9 @@ function NewcomerPrimer() {
           </p>
           <p>
             <span className="font-medium text-foreground">Potential savings and colors.</span> A time figure, such as
-            58.6s of run time, estimates how much sooner the run could finish; it is not a guarantee. A capacity
-            figure in core-hours (core-h) or gigabyte-hours of memory (GB-h) is cluster capacity paid for but left
-            unused: fixing it cuts cost, but may not shorten the run. Red (critical), amber (warning) and blue (info) show how
+            58.6s of run time, estimates how much sooner the run could finish; it is not a guarantee. A resource
+            figure in core-hours (core-h) or gigabyte-hours of memory (GB-h) is cluster time a fix would free up: it
+            cuts cost, but may not shorten the run. Red (critical), amber (warning) and blue (info) show how
             serious each finding is. When a finding shows a time-savings figure, its color usually follows that figure.
           </p>
           <a
