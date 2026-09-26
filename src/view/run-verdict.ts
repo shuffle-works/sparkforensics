@@ -144,6 +144,22 @@ export function verdictGaps(allFindings: Finding[], noFinishedStages: boolean): 
   return [...gaps];
 }
 
+// A `spark.*` key written with a value, as the gap lines name them
+// ("...requires spark.eventLog.logStageExecutorMetrics=true: ..."). The value
+// may hold dots but never ends on one, so a sentence's full stop stays out.
+const NAMED_SETTING = /\bspark\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*=[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/g;
+
+/** Every setting the gap lines name with its value, once each, in order: what
+ * to turn on so the next run's log can be fully checked. */
+export function gapSettings(gaps: string[]): string[] {
+  return [...new Set(gaps.flatMap((gap) => gap.match(NAMED_SETTING) ?? []))];
+}
+
+/** The settings as spark-submit flags, ready to paste into the next run. */
+export function sparkSubmitFlags(settings: string[]): string {
+  return settings.map((setting) => `--conf ${setting}`).join(' ');
+}
+
 /** The one rule for calling a run clean, shared by the verdict and the top
  * bar: no finding at all, no failed job, and nothing the log lacked to run a
  * check. */

@@ -100,8 +100,10 @@ finish before its speed matters.
 When the log lacked something a check needs, the verdict ends with **Not
 checked on this log**: each line says what could not be checked and, where
 Spark has one, the setting to turn on for the next run (for example
-`spark.eventLog.logStageExecutorMetrics=true` for per-executor memory). A run
-is called clean only when nothing is missing.
+`spark.eventLog.logStageExecutorMetrics=true` for per-executor memory). Those
+settings are gathered below the list as one line of `--conf` flags, with
+**Copy settings**, to paste into the next run's spark-submit command (or set
+in `spark-defaults.conf`). A run is called clean only when nothing is missing.
 
 A run scorecard sits under the verdict: **Wall-clock** (total run time),
 **Efficiency** (the share of that time with a stage running; higher is

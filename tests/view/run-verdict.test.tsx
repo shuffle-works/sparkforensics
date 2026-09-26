@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { buildNextSteps, estimateProvenance, locationKey, prioritizeIdleCapacity, savingsMeaning, verdictIdlePct } from '@/view/run-verdict';
+import { buildNextSteps, estimateProvenance, gapSettings, locationKey, prioritizeIdleCapacity, savingsMeaning, sparkSubmitFlags, verdictIdlePct } from '@/view/run-verdict';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
 import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 
@@ -526,7 +526,43 @@ describe('RunVerdict Copy next steps', () => {
       '',
       'Not checked on this log:',
       '- Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true.',
+      '',
+      'For the next run: --conf spark.eventLog.logStageExecutorMetrics=true',
     ].join('\n'));
     expect(screen.getByTestId('copy-plan-button')).toHaveTextContent('Copied');
+  });
+});
+
+describe('settings for the next run', () => {
+  const executorMetrics = 'Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true: not enabled for this run.';
+  const blockUpdates = "1 persisted RDD has no cache-storage evidence in this log, so eviction can't be checked: Spark 2.3+ records cached sizes only as block updates, which need spark.eventLog.logBlockUpdates.enabled=true.";
+
+  it('collects each named setting once, with its value and without the sentence punctuation around it', () => {
+    expect(gapSettings([executorMetrics, blockUpdates, executorMetrics, 'No stage in this log recorded an end.']))
+      .toEqual(['spark.eventLog.logStageExecutorMetrics=true', 'spark.eventLog.logBlockUpdates.enabled=true']);
+    expect(gapSettings(['Turn on spark.eventLog.logBlockUpdates.enabled for this.'])).toEqual([]);
+    expect(sparkSubmitFlags(['spark.a=true', 'spark.b.c=1'])).toBe('--conf spark.a=true --conf spark.b.c=1');
+  });
+
+  it('offers the settings as one spark-submit line to copy, and nothing when no gap names one', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const caveat = (recommendation: string, variant: string) =>
+      ({ type: 'memoryUtilization', variant, stageId: null, impactBand: 'info', dataUnavailable: true, recommendation }) as Finding;
+    renderVerdict([timed('skew', 7, 2_400), caveat(executorMetrics, 'memoryBand'), caveat(blockUpdates, 'cacheStorage')]);
+
+    const settings = screen.getByTestId('verdict-gap-settings');
+    const flags = '--conf spark.eventLog.logStageExecutorMetrics=true --conf spark.eventLog.logBlockUpdates.enabled=true';
+    expect(within(settings).getByText('--conf spark.eventLog.logStageExecutorMetrics=true')).toBeInTheDocument();
+    expect(within(settings).getByText('--conf spark.eventLog.logBlockUpdates.enabled=true')).toBeInTheDocument();
+    await user.click(within(settings).getByTestId('copy-settings-button'));
+    expect(writeText).toHaveBeenCalledWith(flags);
+    expect(within(settings).getByTestId('copy-settings-button')).toHaveTextContent('Copied');
+
+    cleanup();
+    renderVerdict([timed('skew', 7, 2_400)], vi.fn(), { ...appModel(), stages: new Map() } as AppModel);
+    expect(screen.getByTestId('verdict-gaps')).toHaveTextContent('No stage in this log recorded an end');
+    expect(screen.queryByTestId('verdict-gap-settings')).not.toBeInTheDocument();
   });
 });

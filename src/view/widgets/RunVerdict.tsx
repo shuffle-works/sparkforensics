@@ -20,10 +20,12 @@ import {
   isIdleCapacityStep,
   NEXT_STEP_LIMIT,
   estimateProvenance,
+  gapSettings,
   hasFinishedStage,
   isCleanRun,
   prioritizeIdleCapacity,
   savingsMeaning,
+  sparkSubmitFlags,
   verdictGaps,
   verdictIdlePct,
   type NextStep,
@@ -175,16 +177,18 @@ function planCopyText(input: {
   });
   if (input.remaining > 0) lines.push('', `${plural(input.remaining, 'more place')} to look at in the full findings list.`);
   if (input.gaps.length > 0) lines.push('', 'Not checked on this log:', ...input.gaps.map((gap) => `- ${gap}`));
+  const settings = gapSettings(input.gaps);
+  if (settings.length > 0) lines.push('', `For the next run: ${sparkSubmitFlags(settings)}`);
   return lines.join('\n');
 }
 
-function CopyPlanButton({ text }: { text: string }) {
+function CopyTextButton({ text, label, testId }: { text: string; label: string; testId: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <Button
       variant="outline"
       size="sm"
-      data-testid="copy-plan-button"
+      data-testid={testId}
       onClick={() => {
         copyText(text)
           .then(() => {
@@ -197,7 +201,7 @@ function CopyPlanButton({ text }: { text: string }) {
       }}
     >
       {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
-      {copied ? 'Copied' : 'Copy next steps'}
+      {copied ? 'Copied' : label}
     </Button>
   );
 }
@@ -220,6 +224,32 @@ function CopyStepButton({ finding, recommendation }: { finding: Finding; recomme
       {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
       {copied ? 'Copied' : 'Copy'}
     </Button>
+  );
+}
+
+/** The settings the gap lines name, as one spark-submit line to paste into
+ * the next run, so the reader does not assemble the flags by hand. */
+function GapSettings({ settings }: { settings: string[] }) {
+  if (settings.length === 0) return null;
+  const flags = sparkSubmitFlags(settings);
+  return (
+    <div data-testid="verdict-gap-settings" className="space-y-1.5 pt-1">
+      <p className="text-muted-foreground">
+        {settings.length === 1
+          ? 'Turn this on for the next run: pass it to spark-submit as below, or set it in spark-defaults.conf.'
+          : 'Turn these on for the next run: pass them to spark-submit as below, or set them in spark-defaults.conf.'}
+      </p>
+      <div className="flex flex-col items-start gap-2 sm:flex-row">
+        {/* One flag per line, so a narrow screen breaks inside a long key
+            rather than between "--conf" and its setting. */}
+        <code className="w-full min-w-0 flex-1 rounded-md bg-muted px-2 py-1.5 font-mono text-xs text-foreground [overflow-wrap:anywhere]">
+          {settings.map((setting) => (
+            <span key={setting} className="block">--conf {setting}</span>
+          ))}
+        </code>
+        <CopyTextButton label="Copy settings" testId="copy-settings-button" text={flags} />
+      </div>
+    </div>
   );
 }
 
@@ -467,7 +497,9 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
           ) : (
             <span />
           )}
-          <CopyPlanButton
+          <CopyTextButton
+            label="Copy next steps"
+            testId="copy-plan-button"
             text={planCopyText({
               runName: appModel.app?.name ?? null,
               title: verdictTitle(eligible, steps, facts),
@@ -500,6 +532,7 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
               <li key={gap}>{gap}</li>
             ))}
           </ul>
+          <GapSettings settings={gapSettings(gaps)} />
         </div>
       ) : null}
     </section>
