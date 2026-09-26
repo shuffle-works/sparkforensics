@@ -13,7 +13,7 @@ export interface BudgetsConfig {
 }
 export interface BudgetResult {
   name: 'max-runtime' | 'max-spill' | 'max-skew' | 'max-failed-task-rate' | 'min-efficiency'
-    | 'max-regression' | 'fail-on-introduced';
+    | 'max-regression' | 'fail-on-introduced' | 'run-complete';
   status: 'pass' | 'violation' | 'inconclusive';
   detail: string;
 }
@@ -180,6 +180,12 @@ export function evaluateBudgets({ appModel, catalog, budgets, comparison }: {
   if (budgets.failOnIntroduced !== undefined) {
     pushComparisonBudget(results, comparison, 'fail-on-introduced',
       (c) => checkFailOnIntroduced(c, budgets.failOnIntroduced!));
+  }
+  // Always checked, unlike the opt-in budgets above: a run with no ApplicationEnd is
+  // inconclusive by default, so a passing budget can't hide a truncated log.
+  const incompleteRunFinding = catalog.find((f) => f.type === 'incompleteRun');
+  if (incompleteRunFinding) {
+    results.push({ name: 'run-complete', status: 'inconclusive', detail: incompleteRunFinding.recommendation ?? 'Event log has no ApplicationEnd event.' });
   }
   return {
     results,

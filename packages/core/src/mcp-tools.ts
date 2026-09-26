@@ -354,20 +354,26 @@ export async function evaluateBudgetsForRun(
   if (budgets.regressionMetric !== undefined && budgets.maxRegressionPct === undefined) {
     throw mcpError('access-or-upstream-failure', 'regressionMetric requires maxRegressionPct.');
   }
-  const [{ runId, appModel, catalog }, second] = await Promise.all([
+  const [first, second] = await Promise.all([
     resolveAndAnalyze(primary),
     secondary ? resolveAndAnalyze(secondary) : Promise.resolve(undefined),
   ]);
 
-  let comparison: CompareRunsResult | undefined;
-  if (second) {
-    comparison = buildComparison(
-      { label: runId, appModel, catalog },
-      { label: second.runId, appModel: second.appModel, catalog: second.catalog },
-    );
-  }
+  // Same roles as the CLI's positional run + --baseline: with a second run, `primary` is the
+  // baseline and `secondary` the candidate, and absolute budgets plus the run-complete check
+  // apply to the candidate.
+  const candidate = second ?? first;
+  const baseline = second ? first : undefined;
+  const comparison: CompareRunsResult | undefined = baseline
+    ? buildComparison(
+      { label: baseline.runId, appModel: baseline.appModel, catalog: baseline.catalog },
+      { label: candidate.runId, appModel: candidate.appModel, catalog: candidate.catalog },
+    )
+    : undefined;
 
-  const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison });
+  const { results, violated, inconclusive } = evaluateBudgets({
+    appModel: candidate.appModel, catalog: candidate.catalog, budgets, comparison,
+  });
 
-  return { runId, results, violated, inconclusive };
+  return { runId: first.runId, results, violated, inconclusive };
 }

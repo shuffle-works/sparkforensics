@@ -100,13 +100,13 @@ export function createMcpServer(): McpServer {
   ));
 
   server.registerTool('evaluate_budgets', {
-    description: 'Evaluate a run (optionally against a second run for regression budgets) against pass/fail thresholds.',
+    description: 'Evaluate a run against pass/fail thresholds, optionally against a baseline run for regression budgets. With two runs, absolute budgets apply to the candidate (sourceB/runIdB), matching the CLI. A run with no ApplicationEnd always adds an inconclusive run-complete result.',
     inputSchema: {
-      source: sourceSchema.optional().describe('The run to evaluate. Also the regression baseline when sourceB/runIdB is given.'),
+      source: sourceSchema.optional().describe('The run to evaluate. When sourceB/runIdB is given, this is the regression baseline instead, and the absolute budgets apply to sourceB/runIdB.'),
       runId: runRefSchema.runId.describe('Same as `source`, referencing an already-resolved run by id.'),
       maxRuntimeMs: z.number().optional(), maxSpillGb: z.number().optional(), maxSkewRatio: z.number().optional(),
       maxFailedTaskRatePct: z.number().optional(), minEfficiencyPct: z.number().optional(),
-      sourceB: sourceSchema.optional().describe('Optional candidate run, compared against source/runId as the regression baseline (maxRegressionPct/failOnIntroduced).'),
+      sourceB: sourceSchema.optional().describe('Optional candidate run, compared against source/runId as the regression baseline (maxRegressionPct/failOnIntroduced). When given, the absolute budgets (maxRuntimeMs etc.) are evaluated on this run.'),
       runIdB: secondRunRefSchema.runIdB.describe('Same as `sourceB`, referencing an already-resolved run by id.'),
       maxRegressionPct: z.number().optional(), regressionMetric: z.string().optional(), failOnIntroduced: z.string().optional(),
     },

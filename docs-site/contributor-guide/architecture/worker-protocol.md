@@ -325,6 +325,11 @@ a configured budget was violated, `2` bad arguments (unknown or value-less
 flag, unknown `--regression-metric` key) or input that could not be parsed at all,
 `3` no violations but at least one budget was inconclusive. A violation always
 wins over an inconclusive result in the same run (exit `1`, not `3`).
+`evaluateBudgets()` also always adds an inconclusive `run-complete` result
+when the catalog has an `incompleteRun` finding, so a run with no
+`ApplicationEnd` exits `3` even with no budget flags. With `--baseline`, the
+absolute budgets and this check apply to the candidate run; the MCP
+`evaluate_budgets` tool below uses the same function with the same roles.
 
 ### MCP server (V1)
 
