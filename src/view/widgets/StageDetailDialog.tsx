@@ -13,7 +13,7 @@ import { Section } from '@/view/Section';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
-import { buildNextSteps } from '@/view/run-verdict';
+import { buildNextSteps, locationKey } from '@/view/run-verdict';
 import { summarizeRunOutcome } from '@/view/run-outcome';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 import { hasCompleteApplicationInterval } from '@/view/widgets/scorecard-estimates';
@@ -273,7 +273,9 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence
   const [taskDataError, setTaskDataError] = useState(false);
   const [taskDataRetryCount, setTaskDataRetryCount] = useState(0);
   const hasTaskHist = (stage.taskCount ?? 0) > 0;
-  const findings = catalog.filter((f) => f.stageId === stage.id);
+  // Same stage rule the verdict groups its steps by, so a sql-scope finding
+  // that touches only this stage (stageIds: [id]) is listed here too.
+  const findings = catalog.filter((f) => locationKey(f).key === `stage:${stage.id}`);
 
   // One fetch per dialog open (or manual retry, bumping `taskDataRetryCount`):
   // the caller mounts a fresh `StageDetailBody` keyed by stage id per stage.
