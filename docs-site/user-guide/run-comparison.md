@@ -16,10 +16,18 @@ both finish, the comparison view opens.
 
 ## Reading the comparison
 
+The page opens with a verdict: whether run B finished faster or slower than
+run A, and by how much (a change under 2% reads as "about as long"). It then
+lists which cost metrics got worse or better in run B, and which finding
+categories became more or less frequent. Volume and count metrics (input,
+output, tasks, executors) are left out, since more or less of them is not
+better or worse on its own. **See where to start in run B** opens run B's
+dashboard, whose own verdict names the first thing to fix.
+
 The **Metrics** table covers the whole run: wall-clock duration, shuffle
 spill, task skew, failed-task rate, disk spill, GC time, input/output bytes,
 executor run-time, and task/executor counts, baseline against candidate with
-the delta. **Findings by category** lists which finding types appeared or
+the change. **Findings by category** lists which finding types appeared or
 disappeared between the two runs, with the affected stages for each.
 
 Stage-level detail depends on matching a stage in the baseline to its
