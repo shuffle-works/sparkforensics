@@ -177,6 +177,12 @@ describe('isEligible', () => {
     expect(isEligible({ type: 'memoryUtilization', variant: 'memoryBand', dataUnavailable: true, impactBand: 'info' })).toBe(false);
   });
 
+  it('excludes cacheUtilization\'s storageUnobserved caveat, which isRealFinding keeps for its widget card', () => {
+    const caveat = { type: 'cacheUtilization', variant: 'storageUnobserved', dataUnavailable: true, impactBand: 'info' };
+    expect(isRealFinding(caveat)).toBe(true);
+    expect(isEligible(caveat)).toBe(false);
+  });
+
   it('includes an ordinary finding', () => {
     expect(isEligible({ type: 'skew', impactBand: 'critical' })).toBe(true);
   });

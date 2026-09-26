@@ -2409,6 +2409,89 @@ describe('accumulateTask: retry vs. speculation waste classification', () => {
     expect(msg.data.retryTaskSamples[0]).toMatchObject({ taskId: 9, attemptNumber: 1 });
   });
 
+  // Spark kills a losing speculative copy only once its stage finishes ("Stage cancelled: Stage
+  // finished"), so the loser's TaskEnd lands after StageCompleted has already finalized the stage.
+  describe('late TaskEnd after StageCompleted', () => {
+    // emitParseCompletion posts the final app message, so the run needs an ApplicationStart.
+    function startRun() {
+      const s = createState();
+      processEvent({ Event: 'SparkListenerApplicationStart', 'App ID': 'application_0000000000000_0001', 'App Name': 't', Timestamp: 0 }, s);
+      setupStage(s);
+      return s;
+    }
+    const complete = (s, at) => processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': at } }, s);
+    // Collects the pre-done patch messages into an appModel holding the stage message posted at completion.
+    function finishParse(s, stageMsg) {
+      const appModel = { app: null, stages: new Map([[1, stageMsg.data]]), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map() };
+      const cb = createModelCallbacks(appModel, {});
+      emitParseCompletion(s, (m) => routeMessage(m, cb), 0);
+      return appModel;
+    }
+
+    it('counts a late killed speculative copy as speculation waste, and nothing else', () => {
+      const s = startRun();
+      processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100 }), s);
+      const stageMsg = complete(s, 100);
+      processEvent(specTaskEnd(1, 0, { launch: 10, finish: 130, killed: true, speculative: true, taskId: 5, attemptNumber: 1 }), s);
+
+      const stage = finishParse(s, stageMsg).stages.get(1);
+      expect(stage).toMatchObject({ speculationWasteMs: 120, speculationWastedAttempts: 1 });
+      // Every other late-attempt stat stays excluded.
+      expect(stage).toMatchObject({ taskCount: 1, failedTasks: 0, speculativeTasks: 0, retryWasteMs: 0, wastedAttempts: 0, executorRunTime: 100 });
+      expect(s.evidenceInputs.taskRecords).toBe(1);
+    });
+
+    it('counts a late killed original whose speculative copy already won', () => {
+      const s = startRun();
+      processEvent(specTaskEnd(1, 0, { launch: 50, finish: 100, speculative: true, taskId: 5, attemptNumber: 1 }), s);
+      const stageMsg = complete(s, 100);
+      processEvent(specTaskEnd(1, 0, { launch: 0, finish: 400, killed: true }), s);
+
+      expect(finishParse(s, stageMsg).stages.get(1)).toMatchObject({ speculationWasteMs: 400, speculationWastedAttempts: 1 });
+    });
+
+    it('ignores a late non-speculative attempt that raced no speculative copy', () => {
+      const s = startRun();
+      processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100 }), s);
+      const stageMsg = complete(s, 100);
+      processEvent(specTaskEnd(1, 0, { launch: 0, finish: 300, killed: true, taskId: 6, attemptNumber: 1 }), s);
+
+      expect(finishParse(s, stageMsg).stages.get(1)).toMatchObject({ speculationWasteMs: 0, speculationWastedAttempts: 0, retryWasteMs: 0 });
+    });
+
+    it('ignores a late TaskEnd without Task Info, which cannot be paired to a task', () => {
+      const s = startRun();
+      processEvent(specTaskEnd(1, 0, { launch: 50, finish: 100, speculative: true }), s);
+      const stageMsg = complete(s, 100);
+      processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Stage Attempt ID': 0 }, s);
+
+      expect(finishParse(s, stageMsg).stages.get(1)).toMatchObject({ speculationWasteMs: 0, speculationWastedAttempts: 0 });
+    });
+
+    it('keeps the pairing state out of the posted stage message', () => {
+      const s = startRun();
+      processEvent(specTaskEnd(1, 0, { launch: 0, finish: 100, speculative: true }), s);
+      const stageMsg = complete(s, 100);
+      expect(stageMsg.data).not.toHaveProperty('speculativeWinners');
+      expect(stageMsg.data).not.toHaveProperty('lateSpeculationWaste');
+    });
+
+    it('lets speculationWaste fire on losers that all end after StageCompleted', () => {
+      const s = startRun();
+      for (let i = 0; i < 6; i++) processEvent(specTaskEnd(1, i, { launch: 0, finish: 1000, taskId: i }), s);
+      const stageMsg = complete(s, 1000);
+      // Six losing copies, 21.5 s each: 129 s total, over the 5-attempt, 60 s floor.
+      for (let i = 0; i < 6; i++) {
+        processEvent(specTaskEnd(1, i, { launch: 500, finish: 22000, killed: true, speculative: true, taskId: 100 + i, attemptNumber: 1 }), s);
+      }
+      expect(analyze(null, new Map([[1, stageMsg.data]]), [], []).some((f) => f.type === 'speculationWaste')).toBe(false);
+
+      const appModel = finishParse(s, stageMsg);
+      const finding = analyze(null, appModel.stages, [], []).find((f) => f.type === 'speculationWaste');
+      expect(finding).toMatchObject({ stageId: 1, value: 129000 });
+    });
+  });
+
   it('does not add a speculative retry to retryTaskSamples', () => {
     const s = createState();
     setupStage(s);
@@ -3005,7 +3088,8 @@ describe('runParse: dropped-file path', () => {
       data: { evidenceInputs: { applicationEnds: 1, environmentUpdates: 0 } },
     });
     expect(emitted[doneIndex - 2].type).toBe('stageExecutorMetrics');
-    expect(emitted[doneIndex - 3].type).toBe('runAggregates');
+    expect(emitted[doneIndex - 3].type).toBe('stageSpeculationWaste');
+    expect(emitted[doneIndex - 4].type).toBe('runAggregates');
   });
 
   it('decompresses and parses a dropped gzip log', async () => {
@@ -3437,7 +3521,7 @@ describe('processEvent: app-level RDD-info map', () => {
     expect(s.rddInfo.get(7)).toEqual({
       id: 7, name: 'blocks', callsite: 'collect at /u02/hadoop/app/utils.py:1869',
       storageLevel: { useDisk: false, useMemory: true, deserialized: true, replication: 1 },
-      numPartitions: 10, numCachedPartitions: 3, memorySize: 100, diskSize: 0,
+      numPartitions: 10, numCachedPartitions: 3, memorySize: 100, diskSize: 0, storageSource: 'rddInfo',
       stageIds: new Set([1]),
     });
   });
@@ -3513,6 +3597,134 @@ describe('processEvent: app-level RDD-info map', () => {
     }
     submit(1, 7); submit(2, 7); submit(3, 7);
     expect(s.rddInfo.get(7).stageIds).toEqual(new Set([1, 2, 3]));
+  });
+});
+
+describe('processEvent: SparkListenerBlockUpdated', () => {
+  const MEMORY_ONLY = { 'Use Disk': false, 'Use Memory': true, 'Deserialized': true, 'Replication': 1 };
+  const MEMORY_AND_DISK = { 'Use Disk': true, 'Use Memory': true, 'Deserialized': true, 'Replication': 1 };
+  const ON_DISK = { 'Use Disk': true, 'Use Memory': false, 'Deserialized': true, 'Replication': 1 };
+  const NONE = { 'Use Disk': false, 'Use Memory': false, 'Deserialized': false, 'Replication': 1 };
+  const blockEvent = (blockId, level, mem, disk, executorId = '1') => ({
+    Event: 'SparkListenerBlockUpdated',
+    'Block Updated Info': {
+      'Block Manager ID': { 'Executor ID': executorId, 'Host': 'h', 'Port': 1 },
+      'Block ID': blockId, 'Storage Level': level, 'Memory Size': mem, 'Disk Size': disk,
+    },
+  });
+  // Spark 2.3+ RDD Info: the storage level and partition count are real, the cache figures are 0.
+  const submitWithRdd = (s, stageId, level) => processEvent({ Event: 'SparkListenerStageSubmitted',
+    'Stage Info': { 'Stage ID': stageId, 'Submission Time': 0, 'RDD Info': [
+      { 'RDD ID': 4, 'Name': 'cached', 'Storage Level': level, 'Number of Partitions': 10,
+        'Number of Cached Partitions': 0, 'Memory Size': 0, 'Disk Size': 0 },
+    ] } }, s);
+
+  it('folds rdd_* blocks into the RDD\'s cached-partition count and memory/disk bytes', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_AND_DISK);
+    processEvent(blockEvent('rdd_4_0', MEMORY_AND_DISK, 100, 0), s);
+    processEvent(blockEvent('rdd_4_1', ON_DISK, 0, 300), s);
+    expect(s.rddInfo.get(4)).toMatchObject({
+      name: 'cached', numPartitions: 10, numCachedPartitions: 2, memorySize: 100, diskSize: 300,
+      storageSource: 'blockUpdates',
+    });
+    expect(s.rddBlockUpdates).toBe(2);
+  });
+
+  it('ignores broadcast and other non-RDD blocks', () => {
+    const s = createState();
+    processEvent(blockEvent('broadcast_0_piece0', MEMORY_ONLY, 512, 0, 'driver'), s);
+    processEvent(blockEvent('rdd_4_x', MEMORY_ONLY, 512, 0), s);
+    expect(s.rddInfo.size).toBe(0);
+    expect(s.rddBlockUpdates).toBe(0);
+  });
+
+  it('counts a partition replicated on two executors once, summing both replicas\' bytes', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0, '1'), s);
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0, '2'), s);
+    expect(s.rddInfo.get(4)).toMatchObject({ numCachedPartitions: 1, memorySize: 200 });
+  });
+
+  it('moves a block\'s bytes from memory to disk when it is dropped to disk', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_AND_DISK);
+    processEvent(blockEvent('rdd_4_0', MEMORY_AND_DISK, 100, 0), s);
+    // Spark still reports the dropped bytes as Memory Size on a drop to disk; only the level counts.
+    processEvent(blockEvent('rdd_4_0', ON_DISK, 100, 100), s);
+    expect(s.rddInfo.get(4)).toMatchObject({ numCachedPartitions: 1, memorySize: 0, diskSize: 100 });
+  });
+
+  it('keeps the peak residency after unpersist removes every block', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    for (const p of [0, 1, 2]) processEvent(blockEvent(`rdd_4_${p}`, MEMORY_ONLY, 100, 0), s);
+    for (const p of [0, 1, 2]) processEvent(blockEvent(`rdd_4_${p}`, NONE, 0, 0), s);
+    expect(s.rddInfo.get(4)).toMatchObject({ numCachedPartitions: 3, memorySize: 300 });
+  });
+
+  it('keeps block-derived figures when a later stage\'s RDD Info reports 0 again', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0), s);
+    submitWithRdd(s, 2, MEMORY_ONLY);
+    expect(s.rddInfo.get(4)).toMatchObject({
+      numCachedPartitions: 1, memorySize: 100, storageSource: 'blockUpdates', stageIds: new Set([1, 2]),
+    });
+  });
+
+  it('keeps the persisted storage level when a stage after unpersist() lists the RDD as NONE', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0), s);
+    processEvent(blockEvent('rdd_4_0', NONE, 0, 0), s);
+    submitWithRdd(s, 2, NONE);
+    expect(s.rddInfo.get(4)).toMatchObject({
+      storageLevel: { useMemory: true, useDisk: false }, numCachedPartitions: 1, memorySize: 100,
+    });
+  });
+
+  it('takes the storage level from RDD Info when it has no block updates', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    submitWithRdd(s, 2, NONE);
+    expect(s.rddInfo.get(4).storageLevel).toMatchObject({ useMemory: false, useDisk: false });
+  });
+
+  it('drops a removed executor\'s blocks, so a partition re-cached elsewhere is counted once', () => {
+    const s = createState();
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    for (const p of [0, 1]) processEvent(blockEvent(`rdd_4_${p}`, MEMORY_ONLY, 100, 0, '1'), s);
+    processEvent(blockEvent('rdd_4_2', MEMORY_ONLY, 100, 0, '11'), s);
+    // Spark writes no BlockUpdated for blocks lost with their executor.
+    processEvent({ Event: 'SparkListenerExecutorRemoved', 'Timestamp': 50, 'Executor ID': '1', 'Removed Reason': 'lost' }, s);
+    for (const p of [0, 1]) processEvent(blockEvent(`rdd_4_${p}`, MEMORY_ONLY, 100, 0, '2'), s);
+    expect(s.rddInfo.get(4)).toMatchObject({ numCachedPartitions: 3, memorySize: 300 });
+  });
+
+  it('creates the RDD from its block when no stage has listed it yet', () => {
+    const s = createState();
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0), s);
+    submitWithRdd(s, 1, MEMORY_ONLY);
+    expect(s.rddInfo.get(4)).toMatchObject({ name: 'cached', numPartitions: 10, numCachedPartitions: 1, memorySize: 100 });
+  });
+
+  it('posts the rdd block-update count on the app message', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerApplicationStart', 'App ID': 'app_r', 'App Name': 'r', 'Timestamp': 1 }, s);
+    processEvent(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0), s);
+    const msg = processEvent({ Event: 'SparkListenerApplicationEnd', 'Timestamp': 100 }, s);
+    expect(msg.data.rddBlockUpdates).toBe(1);
+  });
+
+  it('drops non-RDD block-update lines before parsing them, without counting them as skipped', () => {
+    const s = createState();
+    // Not valid JSON past the prefix: only the pre-parse fast path can keep this from counting as skipped.
+    dispatchLine('{"Event":"SparkListenerBlockUpdated","Block Updated Info":{"Block ID":"broadcast_1"', s, () => {});
+    dispatchLine(JSON.stringify(blockEvent('rdd_4_0', MEMORY_ONLY, 100, 0)), s, () => {});
+    expect(s.skippedLines).toBe(0);
+    expect(s.rddBlockUpdates).toBe(1);
   });
 });
 

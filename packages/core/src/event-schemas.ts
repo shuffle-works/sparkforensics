@@ -209,6 +209,26 @@ export const StageSubmittedEventSchema = z.object({
   }),
 });
 
+// recordBlockUpdate. Written only with spark.eventLog.logBlockUpdates.enabled=true; one event per
+// block status change reported to the driver's BlockManagerMaster (a removal or eviction carries
+// storage level NONE with zero sizes). Only 'rdd_<rddId>_<partition>' blocks are read.
+export const BlockUpdatedEventSchema = z.object({
+  Event: z.literal('SparkListenerBlockUpdated'),
+  'Block Updated Info': z.object({
+    'Block Manager ID': z.object({
+      'Executor ID': z.string().optional(),
+    }).optional(),
+    'Block ID': z.string(),
+    'Storage Level': z.object({
+      'Use Disk': z.boolean().optional(),
+      'Use Memory': z.boolean().optional(),
+      Replication: z.number().optional(),
+    }).optional(),
+    'Memory Size': z.number().optional(),
+    'Disk Size': z.number().optional(),
+  }),
+});
+
 // inline StageCompleted case.
 export const StageCompletedEventSchema = z.object({
   Event: z.literal('SparkListenerStageCompleted'),
@@ -345,5 +365,6 @@ export const SparkEventSchema = z.discriminatedUnion('Event', [
   DriverAccumUpdatesEventSchema,
   ExecutorAddedEventSchema,
   ExecutorRemovedEventSchema,
+  BlockUpdatedEventSchema,
 ]);
 export type SparkEvent = z.infer<typeof SparkEventSchema>;

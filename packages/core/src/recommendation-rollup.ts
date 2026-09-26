@@ -150,6 +150,10 @@ export function isEligible(finding: Finding): boolean {
   // `isRealFinding`, this exclusion doesn't apply beyond the rollup: an
   // incompleteRun finding still backs its own ordinary active widget card.
   if (finding.type === 'incompleteRun') return false;
+  // A missing-evidence caveat (memoryUtilization's is already excluded by isRealFinding;
+  // cacheUtilization's storageUnobserved keeps its widget card, so a run with no block updates
+  // never lists Cache Storage as a passed check) is never a fix to rank.
+  if (finding.dataUnavailable) return false;
   return isRealFinding(finding);
 }
 

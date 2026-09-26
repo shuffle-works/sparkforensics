@@ -24,7 +24,8 @@ import type { WidgetProps } from '@/view/detector-registry';
 
 // App-wide RDD cache/persist surfacing, backed by the `cacheUtilization`
 // detector for per-RDD partial-cache / disk-spillover impact band. Per-executor
-// block attribution is deferred (needs a block-manager event stream not parsed).
+// block attribution is deferred: the parser folds block updates into per-RDD
+// totals only.
 
 interface StorageLevel {
   useMemory?: boolean;
@@ -49,10 +50,11 @@ interface AppWithRddInfo {
   rddInfo?: Map<number, RddInfoRow>;
 }
 
-// The `cacheUtilization` detector emits two variants from one `type`, neither
+// The `cacheUtilization` detector emits three variants from one `type`, none
 // declared on the frozen `Finding` interface; bridged with a single cast.
 interface CacheUtilizationFinding extends Finding {
-  variant?: 'partialCache' | 'diskSpillover';
+  variant?: 'partialCache' | 'diskSpillover' | 'storageUnobserved';
+  dataUnavailable?: boolean;
   rddId?: number;
   rddName?: string;
   memorySize?: number;
@@ -86,6 +88,9 @@ function rowShortName(r: RddInfoRow): string {
 /** Surface each `cacheUtilization` variant's ratio, memory/disk sizes and
  * partition counts up front rather than in the expanded recommendation prose. */
 function cacheFindingDetail(f: CacheUtilizationFinding): string {
+  if (f.variant === 'storageUnobserved') {
+    return 'No block updates logged: cached partition counts and sizes are unknown';
+  }
   const pct = formatMetricValue('pct', numericValue(f));
   if (f.variant === 'diskSpillover') {
     return `${pct} spilled to disk: ${formatBytes(f.diskSize ?? 0)} disk / ${formatBytes(f.memorySize ?? 0)} memory`;
@@ -98,7 +103,7 @@ function cacheFindingDetail(f: CacheUtilizationFinding): string {
  * The recommendation is always visible. */
 function CacheFindingRow({ finding }: { finding: CacheUtilizationFinding }) {
   const anchor = useAnchoredRow([finding]);
-  const label = finding.rddName ?? `RDD ${finding.rddId}`;
+  const label = finding.dataUnavailable ? 'Cache storage not logged' : finding.rddName ?? `RDD ${finding.rddId}`;
 
   return (
     <div
@@ -147,7 +152,10 @@ export const CacheUtilization = memo(function CacheUtilization({ appModel, catal
   const findingsRouteIndex = activeRouteTarget ? allFindings.findIndex((f) => f === activeRouteTarget.finding) : null;
   const findingsPaged = usePagedRows(allFindings, findingsPage, setFindingsPage, findingsRouteIndex);
 
-  if (rows.length === 0) return null;
+  // Persisted RDDs with no storage evidence still mount the card, so the run
+  // reads as "not checked" instead of a clean Cache Storage result.
+  const unobserved = allFindings.find((f) => f.dataUnavailable);
+  if (rows.length === 0 && !unobserved) return null;
 
   const findingsForRdd = (rddId: number) => allFindings.filter((f) => f.rddId === rddId);
   const totalBytes = rows.reduce((sum, r) => sum + (r.memorySize ?? 0) + (r.diskSize ?? 0), 0);
@@ -163,54 +171,60 @@ export const CacheUtilization = memo(function CacheUtilization({ appModel, catal
               <TagBadge type="cacheUtilization" impactBand={worstImpactBand(allFindings) ?? 'info'} />
             ) : null}
             <span className="text-xs text-muted-foreground">
-              {rows.length} cached RDD{rows.length === 1 ? '' : 's'}, see{' '}
+              {rows.length > 0 ? `${rows.length} cached RDD${rows.length === 1 ? '' : 's'}` : 'cache storage not logged'}, see{' '}
               <DocsLink anchor="#memory-model">how Spark accounts cached memory</DocsLink>
             </span>
           </>
         }
         defaultCollapsed
-        summary={<WidgetLeadSummary value={formatBytes(totalBytes)} context="cached across memory + disk" />}
+        summary={rows.length > 0
+          ? <WidgetLeadSummary value={formatBytes(totalBytes)} context="cached across memory + disk" />
+          : <WidgetLeadSummary value="Unknown" context={`${numericValue(unobserved!)} persisted, no block updates`} />}
       >
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>RDD</TableHead>
-              <TableHead>Storage level</TableHead>
-              <TableHead className="text-right">Cached partitions</TableHead>
-              <TableHead className="text-right">Memory</TableHead>
-              <TableHead className="text-right">Disk</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {table.visible.map((r) => {
-              const name = rowName(r);
-              const shortName = rowShortName(r);
-              const rowFindings = findingsForRdd(r.id);
-              return (
-                <TableRow key={r.id}>
-                  <TableCell className="max-w-80 truncate" title={name !== shortName ? name : undefined}>
-                    {shortName}
-                    {rowFindings.length > 0 && (
-                      <ImpactDot impactBand={worstImpactBand(rowFindings) ?? 'info'} className="ml-1.5" />
-                    )}
-                  </TableCell>
-                  <TableCell>{storageLevelLabel(r.storageLevel)}</TableCell>
-                  <TableCell className="text-right">
-                    {r.numCachedPartitions} / {r.numPartitions}
-                  </TableCell>
-                  <TableCell className="text-right">{formatBytes(r.memorySize ?? 0)}</TableCell>
-                  <TableCell className="text-right">{formatBytes(r.diskSize ?? 0)}</TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-        <RowPagination
-          page={table.effectivePage}
-          totalPages={table.totalPages}
-          onPrev={() => setTablePage((p) => p - 1)}
-          onNext={() => setTablePage((p) => p + 1)}
-        />
+        {rows.length > 0 ? (
+          <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>RDD</TableHead>
+                <TableHead>Storage level</TableHead>
+                <TableHead className="text-right">Cached partitions</TableHead>
+                <TableHead className="text-right">Memory</TableHead>
+                <TableHead className="text-right">Disk</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {table.visible.map((r) => {
+                const name = rowName(r);
+                const shortName = rowShortName(r);
+                const rowFindings = findingsForRdd(r.id);
+                return (
+                  <TableRow key={r.id}>
+                    <TableCell className="max-w-80 truncate" title={name !== shortName ? name : undefined}>
+                      {shortName}
+                      {rowFindings.length > 0 && (
+                        <ImpactDot impactBand={worstImpactBand(rowFindings) ?? 'info'} className="ml-1.5" />
+                      )}
+                    </TableCell>
+                    <TableCell>{storageLevelLabel(r.storageLevel)}</TableCell>
+                    <TableCell className="text-right">
+                      {r.numCachedPartitions} / {r.numPartitions}
+                    </TableCell>
+                    <TableCell className="text-right">{formatBytes(r.memorySize ?? 0)}</TableCell>
+                    <TableCell className="text-right">{formatBytes(r.diskSize ?? 0)}</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+          <RowPagination
+            page={table.effectivePage}
+            totalPages={table.totalPages}
+            onPrev={() => setTablePage((p) => p - 1)}
+            onNext={() => setTablePage((p) => p + 1)}
+          />
+          </>
+        ) : null}
         {allFindings.length > 0 ? (
           <div className="mt-3 space-y-2 text-sm">
             {findingsPaged.visible.map((f) => (

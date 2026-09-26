@@ -189,16 +189,39 @@ Cache Storage all render through the ordinary active/clean paths instead):
   owned this type, despite the tag's letters).
 - **Cache Storage** (tag `CSTOR`): app-level card driven by the
   `cacheUtilization` DETECTORS entry (`packages/core/src/detectors.ts`), evaluating two
-  per-RDD proxies over `ctx.app.rddInfo` storage snapshots since Spark event
-  logs carry no runtime block-access/read-count data: partial caching
+  per-RDD proxies over `ctx.app.rddInfo` since Spark event logs carry no
+  runtime block-access/read-count data. `rddInfo`'s cache figures come from
+  `SparkListenerBlockUpdated` (`recordBlockUpdate` in `event-handlers.ts`,
+  only written with `spark.eventLog.logBlockUpdates.enabled=true`): each
+  RDD's peak count of resident partitions, with the memory/disk bytes at the
+  latest moment that peak held, so an `unpersist()` before the log ends
+  doesn't erase it. A block's bytes count only where its storage level says
+  it lives (as in Spark's `AppStatusListener`): a drop from memory to disk
+  still reports the dropped bytes as `Memory Size`. A removed executor's
+  blocks are dropped with it (Spark logs no update for them), and once an RDD
+  has block updates a later stage's RDD Info can't reset its storage level
+  to `NONE` after an `unpersist()`. The corpus
+  `cache-memory-only` and `cache-memory-and-disk` logs exercise both rules. Without block updates they fall back to
+  `SparkListenerStageSubmitted`'s RDD Info (`storageSource` records which),
+  which is always 0 since Spark 2.3; Spark 1.x fills it only on
+  `StageCompleted`, which isn't read. The two
+  proxies are partial caching
   (`numCachedPartitions / numPartitions < 0.90`, `< 0.50` for the warning
   tier) and disk spillover for `MEMORY_AND_DISK*` RDDs
   (`diskSize / (memorySize + diskSize) > 0.15`, `> 0.40` for the warning
   tier; `DISK_ONLY` RDDs are never flagged). `confidence` scales `low`/`medium`/`high`
   via `cacheSampleConfidence(rdd.numPartitions)`, because the ratio is a
-  point-in-time storage snapshot from stage-submission events, not a runtime
-  read-count, and more partitions average that snapshot noise into a more
-  stable ratio. The existing RDD
+  storage snapshot, not a runtime read-count, and more partitions average
+  that snapshot noise into a more stable ratio. When persisted RDDs have no
+  storage evidence at all (no block updates, block-update logging not
+  enabled in the app config, a recorded Spark version of 2.3 or later, and every RDD
+  Info figure 0),
+  the detector emits one `storageUnobserved` caveat (`dataUnavailable: true`,
+  `info`) naming `spark.eventLog.logBlockUpdates.enabled`. Unlike
+  `memoryUtilization`'s caveat it counts for `isRealFinding`, so the card
+  still mounts (with the caveat and no table) and Cache Storage never lands
+  in Clean checks for a run that couldn't be checked; `isEligible` keeps it
+  out of Fix these first. The existing RDD
   table (ported from the legacy `src/widgets/cache-utilization.js` canvas
   widget) still renders unconditionally; flagged rows get an inline `CSTOR`
   tag next to the RDD name, and every flagged RDD's recommendation renders
