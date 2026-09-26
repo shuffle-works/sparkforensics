@@ -358,7 +358,7 @@ Scorecard used to lead this
 section; it now renders once, above the tabs themselves, in
 `FilteredBoard` (`src/view/Dashboard.tsx`), so it stays visible regardless
 of which tab is active rather than living inside either one (a three-tile
-run-info row: Wall-clock, Efficiency, Idle capacity; see
+run-info row: Wall-clock, Efficiency, Unused core time; see
 [Board widgets beyond the fixed six](./board-widgets.md#board-widgets-beyond-the-fixed-six)).
 WallClock, Timeline, StageTable and every tile in the grid beside them
 (Evidence availability included) all render immediately and fully
@@ -531,7 +531,7 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    its heap variants) first when the idle share is at least 70%, or at
    least 40% while the best time-based fix is under 5% of wall-clock. The
    idle share (`verdictIdlePct`) is the figure that idle-capacity step itself
-   reports, falling back to the Scorecard's Idle capacity figure only when no step
+   reports, falling back to the Scorecard's Unused core time figure only when no step
    carries one, so the title and the step never disagree. Always the
    unfiltered catalog: a board filter never changes the verdict. A step's
    **Show evidence** on a finding the active filter hides clears only the

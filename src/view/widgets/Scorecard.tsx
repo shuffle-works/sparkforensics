@@ -9,10 +9,10 @@ import { IMPACT_BG_CLASS, IMPACT_TEXT_CLASS, ImpactDot } from '@/view/ImpactBadg
 import { useWidgetDensity } from '@/store/store';
 import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates';
 
-// Run-info stats row: wall-clock, efficiency, idle capacity (not problem
+// Run-info stats row: wall-clock, efficiency, unused core time (not problem
 // counts, which live in RunVerdict and the Findings tab). Basic view
 // captions say what each number measures and which direction is better, so
-// Efficiency (a share of time) and Idle capacity (a share of cores) never
+// Efficiency (a share of time) and Unused core time (a share of core-hours) never
 // read as contradicting each other; Advanced view keeps the raw breakdowns.
 export type ScorecardProps = Pick<WidgetProps, 'appModel' | 'catalog'>;
 
@@ -116,7 +116,7 @@ function TimingUnavailableNotice() {
       <ImpactDot impactBand="warning" className="mt-1.5" />
       <p className="text-sm text-warning">
         <span className="font-semibold tracking-wide uppercase">Timing unavailable</span>
-        {'. This run has no complete application timing interval, so wall-clock, efficiency, and idle capacity can’t be measured.'}
+        {'. This run has no complete application timing interval, so wall-clock, efficiency, and unused core time can’t be measured.'}
       </p>
     </div>
   );
@@ -182,22 +182,22 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
           bar={efficiency != null ? <ProportionBar pct={efficiency} flag={effFlag} label={`Efficiency ${efficiency}%`} /> : undefined}
         />
         <KpiTile
-          eyebrow="Idle capacity"
+          eyebrow="Unused core time"
           dataTestid="kpi-wastage"
           value={wastagePct == null ? 'Unavailable' : (<>{wastagePct}<small>%</small></>)}
           flag={wastageFlag}
           meta={
             estimates.wastage.unavailableReason === 'application-timing'
-              ? 'Idle capacity needs complete application timing.'
+              ? 'Unused core time needs complete application timing.'
               : estimates.wastage.unavailableReason === 'core-usage-summary'
-                ? 'Idle capacity needs the core-usage summary.'
+                ? 'Unused core time needs the core-usage summary.'
                 : estimates.wastage.unavailableReason === 'executor-capacity'
-                  ? 'Idle capacity needs usable executor-capacity data.'
+                  ? 'Unused core time needs usable executor-capacity data.'
                   : density === 'advanced'
                     ? 'Driver-idle + executor-slack core-hours as a share of available capacity. Directional, not a cost figure.'
-                    : 'Share of executor cores that ran no task, even while stages ran. Lower is better. Not a cost figure.'
+                    : 'Driver idle plus executor slack across the whole run, so it can run higher than the idle capacity above. Lower is better. Not a cost figure.'
           }
-          bar={wastagePct != null ? <ProportionBar pct={wastagePct} flag={wastageFlag} label={`Idle capacity ${wastagePct}%`} /> : undefined}
+          bar={wastagePct != null ? <ProportionBar pct={wastagePct} flag={wastageFlag} label={`Unused core time ${wastagePct}%`} /> : undefined}
         />
       </div>
     </Card>

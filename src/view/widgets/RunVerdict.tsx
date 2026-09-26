@@ -101,7 +101,11 @@ function verdictSummary(eligible: Finding[], steps: NextStep[], facts: RunFacts)
   }
   const leadIsIdle = steps.length > 0 && isIdleCapacityStep(steps[0]);
   if (!leadIsIdle && facts.idlePct != null && facts.idlePct >= IDLE_NOTABLE_PCT) {
-    sentences.push(`${facts.idlePct}% of the executor capacity sat idle, so the cluster may be larger than this job needs.`);
+    sentences.push(
+      steps.some(isIdleCapacityStep)
+        ? `${facts.idlePct}% of the executor capacity sat idle, so the cluster may be larger than this job needs.`
+        : `${facts.idlePct}% of the run's core time went unused, so the cluster may be larger than this job needs.`,
+    );
   }
   return sentences;
 }

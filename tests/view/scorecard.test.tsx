@@ -68,7 +68,7 @@ test.each([
   expect(screen.queryAllByText('Unavailable')).toHaveLength(0);
 });
 
-test('renders an Idle capacity tile driven by computeEfficiencyModel when runAggregates is present, with a tier-appropriate caption', () => {
+test('renders an Unused core time tile driven by computeEfficiencyModel when runAggregates is present, with a tier-appropriate caption', () => {
   const appModel = makeAppModel({
     app: { startTime: 0, endTime: 60000, sparkVersion: '3.5.3', resources: { executor: { cores: 2 } } },
     executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 2, resourceProfileId: null }], removed: [] },
@@ -76,8 +76,8 @@ test('renders an Idle capacity tile driven by computeEfficiencyModel when runAgg
   });
 
   const { rerender } = render(<Scorecard appModel={appModel} catalog={[]} />);
-  expect(screen.getByTestId('kpi-wastage')).toHaveTextContent('Idle capacity100%');
-  expect(screen.getByText('Share of executor cores that ran no task, even while stages ran. Lower is better. Not a cost figure.')).toBeInTheDocument();
+  expect(screen.getByTestId('kpi-wastage')).toHaveTextContent('Unused core time100%');
+  expect(screen.getByText('Driver idle plus executor slack across the whole run, so it can run higher than the idle capacity above. Lower is better. Not a cost figure.')).toBeInTheDocument();
 
   store.getState().setWidgetDensity('advanced');
   rerender(<Scorecard appModel={appModel} catalog={[]} />);
