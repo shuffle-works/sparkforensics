@@ -151,3 +151,32 @@ export function isCleanRun(appModel: Pick<AppModel, 'jobs' | 'stages'>, allFindi
   if (allFindings.some(isRealFinding)) return false;
   return verdictGaps(allFindings, !hasFinishedStage(appModel.stages)).length === 0;
 }
+
+/** How a step's savings figure was derived, in one plain sentence for
+ * Advanced view: the estimate method, whether the stage ran alone (a
+ * near-point figure) or shared the cluster (a floor and an optimistic high),
+ * and the raw waste behind it. Null when the finding carries no estimate
+ * model (`estimateMethod: 'none'`) or no estimate at all. Formatting is
+ * passed in so this stays a pure, view-free helper. */
+export function estimateProvenance(
+  finding: Finding,
+  format: { duration: (ms: number) => string; rawWaste: (figure: NonNullable<NonNullable<Finding['impactEstimate']>['rawWaste']>) => string },
+): string | null {
+  const estimate = finding.impactEstimate;
+  if (!estimate || estimate.estimateMethod === 'none') return null;
+  const method = estimate.estimateMethod;
+  const raw = estimate.rawWaste && estimate.rawWaste.value > 0 ? format.rawWaste(estimate.rawWaste) : null;
+  // Only worth saying when the stage's floor clipped the figure.
+  const rawNote = raw && estimate.wallClock && raw !== format.duration(estimate.wallClock.high) ? ` Raw waste before that: ${raw}.` : '';
+  if (estimate.basis === 'serial' && estimate.wallClock) {
+    return `${format.duration(estimate.wallClock.high)}, ${method}. The stage ran effectively alone, so this is close to a point estimate.${rawNote}`;
+  }
+  if (estimate.basis === 'contended' && estimate.wallClock) {
+    const { low, high } = estimate.wallClock;
+    return `${format.duration(low)} to ${format.duration(high)}, ${method}. The stage shared the cluster with others: ${format.duration(low)} is the floor, ${format.duration(high)} assumes the fix fully lands.${rawNote}`;
+  }
+  if (estimate.basis === 'resourceOnly' && raw) {
+    return `No run-time claim, ${method}. ${raw} was wasted, but it may not shorten the run.`;
+  }
+  return null;
+}

@@ -562,7 +562,12 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    finished stage are listed under "Not checked on this log", each caveat by
    its own recommendation text, which names the setting to enable; any gap
    keeps the run from being called clean, and a log with no finished stage
-   and no finding gets its own title.
+   and no finding gets its own title. In Advanced view each step adds an
+   "Estimate:" line from `estimateProvenance` (`src/view/run-verdict.ts`:
+   method, basis as a point figure or a floor-to-high range, raw waste only
+   when the floor clipped it; nothing for `estimateMethod: 'none'`), the
+   finding's `confidence` when not `high`, and the list ends with the
+   ordering rule.
 2. `Scorecard`: a three-tile run-info row (Wall-clock, Efficiency, Unused
    core time; Basic view captions say what each measures and which direction
    is better, Advanced view shows the raw run/idle breakdown),

@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { buildNextSteps, locationKey, prioritizeIdleCapacity, verdictIdlePct } from '@/view/run-verdict';
+import { buildNextSteps, estimateProvenance, locationKey, prioritizeIdleCapacity, verdictIdlePct } from '@/view/run-verdict';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
 import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 
@@ -414,5 +414,49 @@ describe('RunVerdict on what the log could not check', () => {
     renderVerdict([]);
     expect(screen.getByRole('heading', { level: 2, name: 'No findings to fix right now.' })).toBeInTheDocument();
     expect(screen.queryByTestId('verdict-gaps')).not.toBeInTheDocument();
+  });
+});
+
+describe('estimateProvenance', () => {
+  const format = { duration: (ms: number) => `${ms / 1000}s`, rawWaste: (f: { value: number; unit: string }) => `${f.value} ${f.unit}` };
+  const withEstimate = (impactEstimate: Finding['impactEstimate']): Finding => ({ type: 'skew', stageId: 1, impactBand: 'critical', impactEstimate });
+
+  it('calls a serial figure close to a point estimate and notes raw waste only when it was clipped', () => {
+    expect(estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 2000, high: 2000 }, estimateMethod: 'measured', rawWaste: { value: 2, unit: 's' } as any }), {
+      ...format, rawWaste: () => '2s',
+    })).toBe('2s, measured. The stage ran effectively alone, so this is close to a point estimate.');
+    expect(estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 2000, high: 2000 }, estimateMethod: 'measured', rawWaste: { value: 9, unit: 'ms' } }), format))
+      .toContain('Raw waste before that: 9 ms.');
+  });
+
+  it('explains a contended range as a floor and an optimistic high', () => {
+    expect(estimateProvenance(withEstimate({ basis: 'contended', wallClock: { low: 1000, high: 3000 }, estimateMethod: 'modeled' }), format))
+      .toBe('1s to 3s, modeled. The stage shared the cluster with others: 1s is the floor, 3s assumes the fix fully lands.');
+  });
+
+  it('makes no run-time claim for a resource-only figure, and says nothing without a model', () => {
+    expect(estimateProvenance(withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 5, unit: 'coreMs' } }), format))
+      .toBe('No run-time claim, modeled. 5 coreMs was wasted, but it may not shorten the run.');
+    expect(estimateProvenance(withEstimate({ basis: 'informational', wallClock: null, estimateMethod: 'none' }), format)).toBeNull();
+    expect(estimateProvenance(withEstimate(undefined), format)).toBeNull();
+  });
+});
+
+describe('RunVerdict in Advanced view', () => {
+  afterEach(() => store.getState().setWidgetDensity('basic'));
+
+  it('shows how each estimate was made, the confidence marker and the ranking rule; Basic view does not', () => {
+    const skew = { ...timed('skew', 7, 2_400), confidence: 'medium' } as Finding;
+    const spill = timed('spill', 3, 1_000, 'warning');
+    renderVerdict([skew, spill]);
+    expect(screen.queryByTestId('next-step-provenance')).not.toBeInTheDocument();
+
+    cleanup();
+    store.getState().setWidgetDensity('advanced');
+    renderVerdict([skew, spill]);
+    const [first] = screen.getAllByTestId('next-step-provenance');
+    expect(first).toHaveTextContent('Estimate: 2.4s, modeled. The stage ran effectively alone');
+    expect(first).toHaveTextContent('Medium confidence: verify before acting.');
+    expect(screen.getByTestId('run-verdict')).toHaveTextContent('Order: by the high end of potential savings');
   });
 });

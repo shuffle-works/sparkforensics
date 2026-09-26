@@ -14,11 +14,13 @@ import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } f
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
+import { formatRawWaste } from '@/view/ImpactEstimate';
 import {
   buildNextSteps,
   IDLE_NOTABLE_PCT,
   isIdleCapacityStep,
   NEXT_STEP_LIMIT,
+  estimateProvenance,
   hasFinishedStage,
   isCleanRun,
   prioritizeIdleCapacity,
@@ -189,6 +191,10 @@ function NextStepItem({
   const help = TAG_HELP[typeTag(finding.type)];
   const impact = impactFigure(finding);
   const titleId = `next-step-${index}-title`;
+  const advanced = useWidgetDensity() === 'advanced';
+  const provenance = advanced ? estimateProvenance(finding, { duration: formatDuration, rawWaste: formatRawWaste }) : null;
+  // Same rule every widget uses: only a marker other than high is shown.
+  const confidence = advanced && finding.confidence && finding.confidence !== 'high' ? finding.confidence : null;
   return (
     <li className="flex gap-3" data-testid="next-step" aria-labelledby={titleId}>
       <span
@@ -224,6 +230,23 @@ function NextStepItem({
           <span className="font-medium text-foreground">What to try: </span>
           {recommendation}
         </p>
+        {provenance || confidence ? (
+          // Advanced view: how far to trust the step's number and the finding.
+          <p className="text-xs text-muted-foreground" data-testid="next-step-provenance">
+            {provenance ? (
+              <>
+                <span className="font-medium text-foreground">Estimate: </span>
+                {provenance}
+              </>
+            ) : null}
+            {confidence ? (
+              <span title={typeof finding.validationRequired === 'string' ? finding.validationRequired : undefined}>
+                {provenance ? ' ' : ''}
+                {`${confidence[0].toUpperCase()}${confidence.slice(1)} confidence: verify before acting.`}
+              </span>
+            ) : null}
+          </p>
+        ) : null}
         {step.related.length > 0 ? (
           <p className="text-xs text-muted-foreground">
             Also flagged here: {step.related.map((f) => REGISTRY[f.type]?.findingLabel ?? f.type).join(', ')}. These
@@ -383,6 +406,13 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
       {remaining > 0 ? (
         <p className="text-xs text-muted-foreground">
           {plural(remaining, 'more place')} to look at in the full list under Findings.
+        </p>
+      ) : null}
+      {density === 'advanced' && shown.length > 1 ? (
+        <p className="text-xs text-muted-foreground">
+          {failed
+            ? 'Order: failures first, then by the high end of potential savings; impact band breaks ties.'
+            : 'Order: by the high end of potential savings, quantified estimates before unquantified ones; impact band breaks ties. Idle capacity leads when it dominates the run.'}
         </p>
       ) : null}
       {gaps.length > 0 ? (
