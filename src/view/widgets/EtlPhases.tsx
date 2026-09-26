@@ -30,7 +30,7 @@ export function EtlPhases({ appModel }: EtlPhasesProps) {
     <WidgetCard
       title="ETL Phase Attribution"
       defaultCollapsed
-      summary={<WidgetLeadSummary value={`${dominant.label} ${formatDuration(phases[dominant.key])}`} context="largest phase, in summed stage time" />}
+      summary={<WidgetLeadSummary value={`${dominant.label} ${formatDuration(phases[dominant.key])}`} context="largest phase" />}
     >
       <div className="space-y-1">
         {PHASES.map(({ label, key }) => (

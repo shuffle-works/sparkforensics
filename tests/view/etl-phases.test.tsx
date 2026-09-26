@@ -69,7 +69,7 @@ describe('EtlPhases', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
     // Verify the summary shows the dominant phase and context (Transform has max duration)
-    expect(screen.getByText(/largest phase, in summed stage time/i)).toBeInTheDocument();
+    expect(screen.getByText(/^largest phase$/i)).toBeInTheDocument();
     expect(screen.getByText(/Transform 300ms/)).toBeInTheDocument();
   });
 });
