@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import { emptyAppModel } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { buildNextSteps, locationKey, prioritizeIdleCapacity } from '@/view/run-verdict';
+import { buildNextSteps, locationKey, prioritizeIdleCapacity, verdictIdlePct } from '@/view/run-verdict';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
 import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 
@@ -97,6 +97,14 @@ describe('prioritizeIdleCapacity', () => {
     expect(prioritizeIdleCapacity(both, 92, 3_100)[0].lead.finding.variant).toBe('idleCores');
   });
 
+  it('states the idle share the idle-capacity step itself reports, falling back to the Scorecard figure', () => {
+    expect(verdictIdlePct(steps(), 80)).toBe(80);
+    expect(verdictIdlePct(buildNextSteps([timed('skew', 0, 64), { ...idleCores, value: 55 }]), 80)).toBe(55);
+    const utilization: Finding = { type: 'utilization', stageId: null, impactBand: 'info', value: 30, recommendation: 'x' };
+    expect(verdictIdlePct(buildNextSteps([utilization]), 80)).toBe(70);
+    expect(verdictIdlePct(buildNextSteps([timed('skew', 0, 64)]), 80)).toBe(80);
+  });
+
   it('keeps the savings order below 40% idle, or when no idle-capacity step exists', () => {
     expect(prioritizeIdleCapacity(steps(), 30, 3_100)[0].lead.finding.type).toBe('skew');
     const noIdle = buildNextSteps([timed('skew', 0, 64), timed('spill', 1, 32)]);
@@ -152,6 +160,15 @@ describe('RunVerdict', () => {
     expect(writeText).toHaveBeenCalledWith('Reduce spill: Fix spill in Stage 4. Potential savings: 12.0s');
     expect(copyButton).toHaveTextContent('Copied');
     await waitFor(() => expect(copyButton).toHaveTextContent('Copy'), { timeout: 3000 });
+  });
+
+  it('titles an idle-capacity lead with the idle share its own step reports', () => {
+    renderVerdict([timed('skew', 7, 64), {
+      type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', value: 92,
+      recommendation: '92% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
+    }]);
+    expect(screen.getByRole('heading', { level: 2, name: 'Start with cluster size: 92% of executor capacity sat idle' }))
+      .toBeInTheDocument();
   });
 
   it('titles a heap-pressure lead by its own fix, not by cluster size', () => {

@@ -84,3 +84,20 @@ export function prioritizeIdleCapacity(steps: NextStep[], idlePct: number | null
 export function isIdleCapacityStep(step: NextStep): boolean {
   return isIdleCapacityFinding(step.lead.finding);
 }
+
+/** The idle share an idle-capacity finding itself reports: idleCores carries
+ * the idle rate, utilization the busy rate. Null for any other finding. */
+function reportedIdlePct(finding: Finding): number | null {
+  if (typeof finding.value !== 'number') return null;
+  if (finding.type === 'memoryUtilization' && finding.variant === 'idleCores') return finding.value;
+  if (finding.type === 'utilization') return 100 - finding.value;
+  return null;
+}
+
+/** The run's idle share as the verdict states it: the figure the top-ranked
+ * idle-capacity step reports, so the verdict never disagrees with that step,
+ * or `fallbackPct` (the Scorecard's Wastage) when no step reports one. */
+export function verdictIdlePct(steps: NextStep[], fallbackPct: number | null): number | null {
+  const idleStep = steps.find(isIdleCapacityStep);
+  return (idleStep ? reportedIdlePct(idleStep.lead.finding) : null) ?? fallbackPct;
+}

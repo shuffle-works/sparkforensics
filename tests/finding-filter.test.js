@@ -1,6 +1,7 @@
 import { test, expect } from 'vitest';
 import {
   emptySelection,
+  excludingDimensions,
   isEmptySelection,
   matchesFilter,
   filterFindings,
@@ -86,4 +87,12 @@ test('serializeFilterSelection round-trips and uses impact/type/stage with liter
 
 test('serializeFilterSelection of an empty selection is the empty string', () => {
   expect(serializeFilterSelection(emptySelection())).toBe('');
+});
+
+test('excludingDimensions names only the active dimensions that hide a finding', () => {
+  const sel = { impactBands: new Set(['critical']), types: new Set(['skew']), stages: new Set([2]) };
+  expect(excludingDimensions(f({ type: 'spill', stageId: 2 }), sel)).toEqual(['types']);
+  expect(excludingDimensions(f({ type: 'spill', impactBand: 'info', stageId: null }), sel)).toEqual(['impactBands', 'types', 'stages']);
+  expect(excludingDimensions(f({ stageId: 2 }), sel)).toEqual([]);
+  expect(excludingDimensions(f({ type: 'spill' }), emptySelection())).toEqual([]);
 });

@@ -2,12 +2,21 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 
 import { store, useStore, useWidgetDensity } from '@/store/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { WidgetProps } from '@/view/detector-registry';
+import { REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import { NoMatchBanner } from '@/view/EmptyStateBanners';
 import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from '@/view/EvidenceAvailabilityContext';
 import { FindingFilterBar } from '@/view/FindingFilterBar';
 import { FindingFilterProvider, useFindingFilter } from '@/view/FindingFilterContext';
-import { deriveOptions, filterFindings, isEmptySelection, type FilterOptions } from '@/view/finding-filter';
+import {
+  deriveOptions,
+  emptySelection,
+  excludingDimensions,
+  filterFindings,
+  isEmptySelection,
+  type FilterDimension,
+  type FilterOptions,
+  type FilterSelection,
+} from '@/view/finding-filter';
 import { CoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
 import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
 import { EtlPhases } from '@/view/widgets/EtlPhases';
@@ -80,6 +89,16 @@ function ReferenceSection({
   );
 }
 
+/** Names the filter values a route cleared, for the notice that says so. */
+function clearedFilterNotice(dimensions: FilterDimension[], selection: FilterSelection): string {
+  const parts = dimensions.map((dimension) => {
+    if (dimension === 'impactBands') return `${[...selection.impactBands].join(', ')} impact`;
+    if (dimension === 'types') return [...selection.types].map((type) => REGISTRY[type]?.findingLabel ?? type).join(', ');
+    return [...selection.stages].map((stageId) => `Stage ${stageId}`).join(', ');
+  });
+  return `Cleared the ${parts.join(' and ')} filter${parts.length === 1 ? '' : 's'} to show this finding.`;
+}
+
 /** The filtered board body: reads the active filter, derives the filtered
  * catalog/config streams once, and threads them to every widget so counts,
  * pills, the active/clean split, and the first-action route all stay
@@ -100,8 +119,23 @@ function FilteredBoard({
   activeTab: ActiveTab;
   onActiveTabChange: (tab: ActiveTab) => void;
 }) {
-  const { selection } = useFindingFilter();
+  const { selection, replaceSelection } = useFindingFilter();
   const density = useWidgetDensity();
+  // Tied to the selection the route produced, so any later filter change hides it.
+  const [filterNotice, setFilterNotice] = useState<{ text: string; selection: FilterSelection } | null>(null);
+
+  // A route target must be on the board to land: clear only the filter
+  // dimensions that hide it (the verdict routes from the unfiltered catalog).
+  const routeToVisible = useCallback((target: TriageTarget) => {
+    const dimensions = excludingDimensions(target.finding, selection);
+    if (dimensions.length > 0) {
+      const next = { ...selection };
+      for (const dimension of dimensions) Object.assign(next, { [dimension]: emptySelection()[dimension] });
+      replaceSelection(next);
+      setFilterNotice({ text: clearedFilterNotice(dimensions, selection), selection: next });
+    }
+    onRoute(target);
+  }, [selection, replaceSelection, onRoute]);
   const filteredCatalog = useMemo(() => filterFindings(catalog, selection), [catalog, selection]);
   const filteredConfig = useMemo(() => filterFindings(configFindings ?? [], selection), [configFindings, selection]);
 
@@ -116,7 +150,7 @@ function FilteredBoard({
     <main className="flex-1 space-y-6 p-4">
       {/* Verdict first, from the unfiltered catalog: it answers "how did this
           run go and where do I start", which a board filter must not change. */}
-      <RunVerdict appModel={appModel} catalog={catalog} configFindings={configFindings} onRoute={onRoute} />
+      <RunVerdict appModel={appModel} catalog={catalog} configFindings={configFindings} onRoute={routeToVisible} />
       <Scorecard appModel={appModel} catalog={filteredCatalog} />
       {/* Filtering is a power control: Advanced mode shows it, and so does an
           active selection (e.g. from a shared URL), so a filtered board never
@@ -124,6 +158,9 @@ function FilteredBoard({
       {(density === 'advanced' || !isEmptySelection(selection)) && (
         <FindingFilterBar options={options} resultCount={totalFilteredCount} />
       )}
+      {filterNotice?.selection === selection ? (
+        <p role="status" className="text-sm text-muted-foreground">{filterNotice.text}</p>
+      ) : null}
       {filteredToEmpty && <NoMatchBanner />}
       {/* Filtering to nothing at all is already covered by NoMatchBanner
           above, so skip the whole tab set here rather than render an empty

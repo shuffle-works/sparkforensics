@@ -528,10 +528,16 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    `rankTriageTargets` (potential savings, then impact band, then widget
    order); `prioritizeIdleCapacity` moves an idle-capacity step
    (`utilization`, or `memoryUtilization`'s `idleCores` variant only, never
-   its heap variants) first when the Scorecard's Wastage figure is at least
-   70%, or at least 40% while the best time-based fix is under 5% of
-   wall-clock. Always the unfiltered catalog: a board filter never changes
-   the verdict. The clean-run message ("No findings to fix right now.")
+   its heap variants) first when the idle share is at least 70%, or at
+   least 40% while the best time-based fix is under 5% of wall-clock. The
+   idle share (`verdictIdlePct`) is the figure that idle-capacity step itself
+   reports, falling back to the Scorecard's Wastage figure only when no step
+   carries one, so the title and the step never disagree. Always the
+   unfiltered catalog: a board filter never changes the verdict. A step's
+   **Show evidence** on a finding the active filter hides clears only the
+   filter dimensions that hide it (`excludingDimensions` in
+   `src/view/finding-filter.ts`, synced to the URL as usual) and shows a
+   one-line notice naming what it cleared. The clean-run message ("No findings to fix right now.")
    lives here and shows only when no finding at all was emitted; an
    `incompleteRun` finding gets its own non-clean title and a sentence
    saying the figures cover only the captured part of the run.

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { test, expect, beforeEach } from 'vitest';
-import { act, render, screen, within } from '@testing-library/react';
+import { test, expect, beforeEach, vi } from 'vitest';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
@@ -192,4 +192,40 @@ test('Basic mode still shows the filter bar when a filter is active, so it can b
   await waitForDashboard();
   expect(screen.getByRole('region', { name: 'Filter findings' })).toBeInTheDocument();
   expect(screen.getByText('1 finding matches the active filters')).toBeInTheDocument();
+});
+
+test('a verdict step hidden by the active filter clears only the dimension that hides it, and says so', async () => {
+  const user = userEvent.setup();
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: scrollIntoView });
+  window.history.replaceState({}, '', '/?impact=critical&type=skew');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      {
+        type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Fix spill.',
+        impactEstimate: { basis: 'serial', wallClock: { low: 9_000, high: 9_000 }, estimateMethod: 'modeled' },
+      },
+      { type: 'skew', stageId: 2, impactBand: 'critical', recommendation: 'Fix skew.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(hasFixTheseFirstRow('spill')).toBe(false);
+
+  const firstStep = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')[0];
+  expect(firstStep).toHaveTextContent('Stage 1');
+  await user.click(within(firstStep).getByRole('button', { name: /show evidence/i }));
+
+  expect(screen.getByText('Cleared the task skew filter to show this finding.')).toHaveAttribute('role', 'status');
+  expect(hasFixTheseFirstRow('spill')).toBe(true);
+  await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  const params = new URLSearchParams(window.location.search);
+  expect(params.get('type')).toBeNull();
+  expect(params.get('impact')).toBe('critical');
+
+  await clickImpact(user, 'critical');
+  expect(screen.queryByText('Cleared the task skew filter to show this finding.')).not.toBeInTheDocument();
+  // @ts-expect-error -- restore jsdom's default (no scrollIntoView)
+  delete Element.prototype.scrollIntoView;
 });

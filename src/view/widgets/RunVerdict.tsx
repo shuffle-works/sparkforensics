@@ -18,6 +18,7 @@ import {
   isIdleCapacityStep,
   NEXT_STEP_LIMIT,
   prioritizeIdleCapacity,
+  verdictIdlePct,
   type NextStep,
 } from '@/view/run-verdict';
 import { useStageDetail } from '@/view/StageDetailContext';
@@ -50,7 +51,7 @@ function visibleImpact(finding: Finding): string | null {
 interface RunFacts {
   /** Wall-clock of the whole run, or null with no complete timing interval. */
   runMs: number | null;
-  /** The Scorecard's Wastage figure: allocated executor capacity that ran no task. */
+  /** Allocated executor capacity that ran no task (`verdictIdlePct`). */
   idlePct: number | null;
   /** The log has no end-of-run record, so it covers only part of the run. */
   incomplete: boolean;
@@ -199,13 +200,14 @@ function NextStepItem({ step, index, onRoute }: { step: NextStep; index: number;
 export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: RunVerdictProps) {
   const allFindings = [...catalog, ...configFindings];
   const eligible = allFindings.filter(isEligible);
+  const rankedSteps = buildNextSteps(eligible);
   const facts: RunFacts = {
     runMs: hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null,
-    idlePct: getScorecardEstimates(appModel).wastage.value,
+    idlePct: verdictIdlePct(rankedSteps, getScorecardEstimates(appModel).wastage.value),
     incomplete: catalog.some((finding) => finding.type === 'incompleteRun'),
     clean: !allFindings.some(isRealFinding),
   };
-  const steps = prioritizeIdleCapacity(buildNextSteps(eligible), facts.idlePct, facts.runMs);
+  const steps = prioritizeIdleCapacity(rankedSteps, facts.idlePct, facts.runMs);
   const shown = steps.slice(0, NEXT_STEP_LIMIT);
   const remaining = steps.length - shown.length;
   const { clean } = facts;

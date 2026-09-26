@@ -38,6 +38,16 @@ export function filterFindings(findings: Finding[], sel: FilterSelection): Findi
   return findings.filter((finding) => matchesFilter(finding, sel));
 }
 
+export type FilterDimension = keyof FilterSelection;
+
+/** The active filter dimensions that on their own hide `finding`: clearing
+ * exactly these (and keeping the rest) makes it match again. */
+export function excludingDimensions(finding: Finding, sel: FilterSelection): FilterDimension[] {
+  return (['impactBands', 'types', 'stages'] as const).filter(
+    (dimension) => !matchesFilter(finding, { ...emptySelection(), [dimension]: sel[dimension] }),
+  );
+}
+
 export interface FilterOptions {
   impactBands: ImpactBand[];
   types: string[];
