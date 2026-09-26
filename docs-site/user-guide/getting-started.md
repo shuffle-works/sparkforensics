@@ -147,6 +147,8 @@ screen-reader user. Your choice is remembered across runs.
 
 Once a run is loaded, the topbar also carries a few more controls.
 **New analysis** goes back to the landing page to load another run.
+**Compare with another run** keeps this run as the baseline and asks only
+for the other one (see [Run comparison mode](./run-comparison.md)).
 **Plan graph** opens an interactive node-and-edge view of the run's SQL
 execution plan, filterable down to I/O operators (scan, exchange), a
 broader "basic" set, or every operator. **Export evidence** downloads the
