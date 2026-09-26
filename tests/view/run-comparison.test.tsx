@@ -29,8 +29,8 @@ test('renders findings as tag badges with base→cand counts and stage chips', (
     baselineLabel: 'base.log', candidateLabel: 'cand.log',
     confidence: 'ok', reason: null, matchedCoverage: 1, metrics: [],
     findings: {
-      introduced: [{ rule: 'spill', impactBand: 'warning', baseCount: 0, candCount: 2, delta: 2, stages: ['Exchange 10', 'Sort 11'] }],
-      resolved: [{ rule: 'gc', impactBand: 'unknown', baseCount: 1, candCount: 0, delta: -1, stages: [] }],
+      introduced: [{ rule: 'spill', type: 'spill', impactBand: 'warning', baseCount: 0, candCount: 2, delta: 2, stages: ['Exchange 10', 'Sort 11'] }],
+      resolved: [{ rule: 'gc', type: 'gc', impactBand: 'unknown', baseCount: 1, candCount: 0, delta: -1, stages: [] }],
     },
     stageSkew: [],
   };
@@ -47,7 +47,7 @@ test('renders a PLAN-tagged finding with the dedicated plan-aggregate color', ()
     baselineLabel: 'base.log', candidateLabel: 'cand.log',
     confidence: 'ok', reason: null, matchedCoverage: 1, metrics: [],
     findings: {
-      introduced: [{ rule: 'duplicatePlanSubtree', impactBand: 'warning', baseCount: 0, candCount: 1, delta: 1, stages: [] }],
+      introduced: [{ rule: 'duplicatePlanSubtree', type: 'duplicatePlanSubtree', impactBand: 'warning', baseCount: 0, candCount: 1, delta: 1, stages: [] }],
       resolved: [],
     },
     stageSkew: [],
@@ -67,8 +67,8 @@ test('two introduced findings sharing a rule at different severities render with
     confidence: 'ok', reason: null, matchedCoverage: 1, metrics: [],
     findings: {
       introduced: [
-        { rule: 'taskStageSkew', impactBand: 'warning', baseCount: 0, candCount: 1, delta: 1, stages: ['Stage A'] },
-        { rule: 'taskStageSkew', impactBand: 'critical', baseCount: 0, candCount: 1, delta: 1, stages: ['Stage B'] },
+        { rule: 'taskStageSkew', type: 'stageShape', impactBand: 'warning', baseCount: 0, candCount: 1, delta: 1, stages: ['Stage A'] },
+        { rule: 'taskStageSkew', type: 'stageShape', impactBand: 'critical', baseCount: 0, candCount: 1, delta: 1, stages: ['Stage B'] },
       ],
       resolved: [],
     },
@@ -78,6 +78,7 @@ test('two introduced findings sharing a rule at different severities render with
   render(<RunComparison model={model as any} onClose={vi.fn()} />);
   const duplicateKeyWarning = errorSpy.mock.calls.some((args) => String(args[0]).includes('same key'));
   expect(duplicateKeyWarning).toBe(false);
+  expect(screen.getAllByText('SHAPE')).toHaveLength(2);
   errorSpy.mockRestore();
 });
 

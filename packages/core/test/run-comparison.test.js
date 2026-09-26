@@ -394,7 +394,7 @@ describe('findingsDelta (category counts)', () => {
     const base = catSnap([], []);
     const cand = catSnap([], [{ type: 'coldStart' }]);
     const d = findingsDelta(base, cand);
-    expect(d.introduced).toEqual([{ rule: 'coldStart', impactBand: 'unknown', baseCount: 0, candCount: 1, delta: 1, stages: [] }]);
+    expect(d.introduced).toEqual([{ rule: 'coldStart', type: 'coldStart', impactBand: 'unknown', baseCount: 0, candCount: 1, delta: 1, stages: [] }]);
   });
 });
 
@@ -523,7 +523,7 @@ describe('findingsDelta: app-level findings sharing a rule (bug C1)', () => {
     ]);
     const d = findingsDelta(base, cand);
     expect(d.introduced).toEqual([]);
-    expect(d.resolved).toEqual([{ rule: 'memoryUtilization', impactBand: 'info', baseCount: 1, candCount: 0, delta: -1, stages: [] }]);
+    expect(d.resolved).toEqual([{ rule: 'memoryUtilization', type: 'memoryUtilization', impactBand: 'info', baseCount: 1, candCount: 0, delta: -1, stages: [] }]);
   });
 });
 

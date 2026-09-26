@@ -43,13 +43,13 @@ describe('summarizeComparison', () => {
   it('nets finding categories across impact bands, so a rule is never both more and less frequent', () => {
     const { sentences } = summarizeComparison([metric('wallClock', 'Wall-clock duration', 10, 10, 'unchanged')], {
       introduced: [
-        { rule: 'gc', baseCount: 0, candCount: 2 },
+        { type: 'gc', baseCount: 0, candCount: 2 },
         // skew moved from critical to warning: +1 warning, -1 critical, net 0.
-        { rule: 'skew', baseCount: 0, candCount: 1 },
+        { type: 'skew', baseCount: 0, candCount: 1 },
       ],
       resolved: [
-        { rule: 'skew', baseCount: 1, candCount: 0 },
-        { rule: 'spill', baseCount: 3, candCount: 1 },
+        { type: 'skew', baseCount: 1, candCount: 0 },
+        { type: 'spill', baseCount: 3, candCount: 1 },
       ],
     });
     expect(sentences).toContain('New or more frequent in run B: Garbage collection pressure.');
@@ -59,10 +59,27 @@ describe('summarizeComparison', () => {
 
   it('nets rules that share a category name, so Plan advisor never reads as both', () => {
     const { sentences } = summarizeComparison([metric('wallClock', 'Wall-clock duration', 10, 10, 'unchanged')], {
-      introduced: [{ rule: 'overBroadcast', baseCount: 0, candCount: 1 }],
-      resolved: [{ rule: 'smallFiles', baseCount: 2, candCount: 1 }],
+      introduced: [{ type: 'overBroadcast', baseCount: 0, candCount: 1 }],
+      resolved: [{ type: 'smallFiles', baseCount: 2, candCount: 1 }],
     });
     expect(sentences.join(' ')).not.toContain('Plan advisor');
+  });
+
+  it('names sub-rule findings by their category, netting sub-rules of one type', () => {
+    const { sentences } = summarizeComparison([metric('wallClock', 'Wall-clock duration', 10, 10, 'unchanged')], {
+      introduced: [
+        { type: 'partitionSizing', baseCount: 0, candCount: 1 },
+        { type: 'memoryUtilization', baseCount: 0, candCount: 1 },
+      ],
+      resolved: [{ type: 'memoryUtilization', baseCount: 1, candCount: 0 }],
+    });
+    expect(sentences).toEqual(['New or more frequent in run B: Partition sizing.']);
+  });
+
+  it('says nothing about cost metrics when none has values in both runs', () => {
+    const unavailable: VerdictMetric = { key: 'gcTime', label: 'GC time', baseline: null, candidate: null, delta: null, direction: 'unavailable' };
+    const { sentences } = summarizeComparison([metric('wallClock', 'Wall-clock duration', 10, 10, 'unchanged'), unavailable], noFindings);
+    expect(sentences).toEqual([]);
   });
 
   it('leaves cost metrics that moved under 2% out, and says so when all did', () => {

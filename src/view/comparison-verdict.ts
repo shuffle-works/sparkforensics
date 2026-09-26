@@ -14,7 +14,7 @@ export interface VerdictMetric {
 
 /** The slice of a finding-category delta the verdict reads. */
 export interface VerdictCategory {
-  rule: string;
+  type: string;
   baseCount: number;
   candCount: number;
 }
@@ -32,29 +32,33 @@ export interface ComparisonVerdictText {
  * moves a job a percent or two. */
 export const SAME_CHANGE_SHARE = 0.02;
 
-function movedPastNoise(metric: VerdictMetric): boolean {
-  if (metric.baseline == null || metric.candidate == null) return false;
+function measured(metric: VerdictMetric): metric is VerdictMetric & { baseline: number; candidate: number } {
+  return metric.baseline != null && metric.candidate != null;
+}
+
+function movedPastNoise(metric: VerdictMetric & { baseline: number; candidate: number }): boolean {
   if (metric.baseline === 0) return metric.candidate !== 0;
   return Math.abs(metric.candidate - metric.baseline) / Math.abs(metric.baseline) >= SAME_CHANGE_SHARE;
 }
 
-/** Plain name for a finding category ("Memory and disk spill"), falling back
- * to its tag when the tag has no help entry. */
-function categoryName(rule: string): string {
-  const tag = typeTag(rule);
+/** Plain name for a finding type ("Memory and disk spill"), falling back to
+ * its tag when the tag has no help entry. */
+function categoryName(type: string): string {
+  const tag = typeTag(type);
   return TAG_HELP[tag]?.expansion ?? tag;
 }
 
 /** Net count change per displayed category name. Categories are tallied per
  * (rule, impact band), and several rules share one name (every Plan Advisor
- * rule reads "Plan advisor"), so a rule whose findings moved from critical to
- * warning, or two rules under one name moving opposite ways, would otherwise
+ * type reads "Plan advisor", every stage-shape sub-rule "Stage shape"), so a
+ * rule whose findings moved from critical to warning, or two rules under one
+ * name moving opposite ways, would otherwise
  * read as both "introduced" and "resolved". Order follows first appearance,
  * introduced before resolved. */
 function netByCategory(findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[] }): Map<string, number> {
   const net = new Map<string, number>();
   for (const item of [...findings.introduced, ...findings.resolved]) {
-    const name = categoryName(item.rule);
+    const name = categoryName(item.type);
     net.set(name, (net.get(name) ?? 0) + item.candCount - item.baseCount);
   }
   return net;
@@ -90,13 +94,14 @@ export function summarizeComparison(
     }
   }
 
-  const cost = metrics.filter((metric) => metric.key !== 'wallClock' && !NEUTRAL_METRIC_KEYS.has(metric.key) && movedPastNoise(metric));
-  const worse = cost.filter((metric) => metric.direction === 'regression').map((metric) => metric.label);
-  const better = cost.filter((metric) => metric.direction === 'improvement').map((metric) => metric.label);
+  const cost = metrics.filter((metric) => metric.key !== 'wallClock' && !NEUTRAL_METRIC_KEYS.has(metric.key)).filter(measured);
+  const moved = cost.filter(movedPastNoise);
+  const worse = moved.filter((metric) => metric.direction === 'regression').map((metric) => metric.label);
+  const better = moved.filter((metric) => metric.direction === 'improvement').map((metric) => metric.label);
   const sentences: string[] = [];
   if (worse.length > 0) sentences.push(`Worse in run B: ${worse.join(', ')}.`);
   if (better.length > 0) sentences.push(`Better in run B: ${better.join(', ')}.`);
-  if (worse.length === 0 && better.length === 0) sentences.push('Other measured cost metrics look about the same.');
+  if (cost.length > 0 && worse.length === 0 && better.length === 0) sentences.push('Other measured cost metrics look about the same.');
 
   const net = netByCategory(findings);
   const introduced = namesWhere(net, (change) => change > 0);

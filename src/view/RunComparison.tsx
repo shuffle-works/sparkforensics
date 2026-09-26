@@ -19,7 +19,7 @@ interface MetricDelta {
   unavailableReason?: string;
 }
 interface CategoryDelta {
-  rule: string; impactBand: string;
+  rule: string; type: string; impactBand: string;
   baseCount: number; candCount: number; delta: number;
   stages: string[]; // stage names from the side with more (candidate for introduced, baseline for resolved)
 }
@@ -118,9 +118,9 @@ function FindingRows({ items }: { items: CategoryDelta[] }) {
         <li key={`${f.rule}§${f.impactBand}`} className="flex flex-col gap-1 border-b border-border pb-2 last:border-0 last:pb-0">
           <div className="flex items-center gap-2">
             <TagBadge
-              type={f.rule}
+              type={f.type}
               impactBand={toImpactBand(f.impactBand)}
-              className={typeTag(f.rule) === 'PLAN' ? PLAN_TAG_CLASS : undefined}
+              className={typeTag(f.type) === 'PLAN' ? PLAN_TAG_CLASS : undefined}
             />
             <span className="text-sm text-muted-foreground">{f.baseCount} → {f.candCount}</span>
           </div>
