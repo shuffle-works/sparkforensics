@@ -237,7 +237,7 @@ test('shows the LOCAL badge, impact band, and recommendation when a coreLocality
   expect(screen.getByText(/check spark\.locality\.wait settings/)).toBeInTheDocument();
 });
 
-test('renders the core-ms raw-waste figure when a coreLocality finding carries an impactEstimate', async () => {
+test('renders the core-time raw-waste figure when a coreLocality finding carries an impactEstimate', async () => {
   const catalog: Finding[] = [{
     type: 'coreLocality', stageId: null, impactBand: 'warning',
     metric: 'nonLocalRatio', value: 20, recommendation: 'x',
@@ -250,8 +250,7 @@ test('renders the core-ms raw-waste figure when a coreLocality finding carries a
     </DocsProvider>,
   );
 
-  // formatRawWaste pins the locale to en-US so the figure doesn't drift with the host locale.
-  expect(screen.getByText(`${(4200).toLocaleString('en-US')} core-ms`)).toBeInTheDocument();
+  expect(screen.getByText('4.2 core-s')).toBeInTheDocument();
 });
 
 test('renders no LOCAL badge when catalog has no coreLocality finding; the chart still renders', async () => {

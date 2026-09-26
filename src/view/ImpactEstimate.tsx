@@ -18,6 +18,15 @@ export function formatWallClockRange(low: number, high: number): string {
   return `${lowText}-${highText}`;
 }
 
+const MS_PER_HOUR = 3_600_000;
+const MB_SECONDS_PER_GB_HOUR = 1024 * 3600;
+/** Below this many hours a figure keeps its small unit, so "0.0 GB-h" never
+ * hides a real but small amount. */
+const MIN_HOURS_SHOWN = 0.1;
+
+const oneDecimal = (value: number): string =>
+  (Math.round(value * 10) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
 export function formatRawWaste(rawWaste: RawWasteFigure): string {
   const rounded = Math.round(rawWaste.value * 10) / 10;
   switch (rawWaste.unit) {
@@ -25,12 +34,18 @@ export function formatRawWaste(rawWaste: RawWasteFigure): string {
       return formatBytes(rawWaste.value);
     case 'ms':
       return fmtMs(rawWaste.value);
-    case 'mbSeconds':
-      return `${rounded.toLocaleString('en-US')} MB-s`;
+    case 'mbSeconds': {
+      // A whole run's idle memory reaches millions of MB-seconds; GB-hours
+      // keeps it a number a reader can compare.
+      const gbHours = rawWaste.value / MB_SECONDS_PER_GB_HOUR;
+      return gbHours >= MIN_HOURS_SHOWN ? `${oneDecimal(gbHours)} GB-h` : `${rounded.toLocaleString('en-US')} MB-s`;
+    }
     case 'coreHours':
       return `${rounded.toFixed(1)} core-h`;
-    case 'coreMs':
-      return `${rounded.toLocaleString('en-US')} core-ms`;
+    case 'coreMs': {
+      const coreHours = rawWaste.value / MS_PER_HOUR;
+      return coreHours >= MIN_HOURS_SHOWN ? `${oneDecimal(coreHours)} core-h` : `${oneDecimal(rawWaste.value / 1000)} core-s`;
+    }
     default:
       return String(rawWaste.value);
   }

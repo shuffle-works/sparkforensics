@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { buildNextSteps, estimateProvenance, locationKey, prioritizeIdleCapacity, verdictIdlePct } from '@/view/run-verdict';
+import { buildNextSteps, estimateProvenance, locationKey, prioritizeIdleCapacity, savingsMeaning, verdictIdlePct } from '@/view/run-verdict';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
 import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 
@@ -157,7 +157,7 @@ describe('RunVerdict', () => {
 
     const copyButton = screen.getByTestId('copy-finding-button');
     await user.click(copyButton);
-    expect(writeText).toHaveBeenCalledWith('Reduce spill: Fix spill in Stage 4. Potential savings: 12.0s');
+    expect(writeText).toHaveBeenCalledWith('Reduce spill: Fix spill in Stage 4. Potential savings: 12.0s of run time');
     expect(copyButton).toHaveTextContent('Copied');
     await waitFor(() => expect(copyButton).toHaveTextContent('Copy'), { timeout: 3000 });
   });
@@ -417,6 +417,37 @@ describe('RunVerdict on what the log could not check', () => {
   });
 });
 
+describe('savingsMeaning', () => {
+  const withEstimate = (impactEstimate: Finding['impactEstimate']): Finding => ({ type: 'skew', stageId: 1, impactBand: 'critical', impactEstimate });
+  const costOnly = (unit: 'mbSeconds' | 'coreHours' | 'coreMs' | 'bytes' | 'ms') =>
+    withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 10, unit } });
+
+  it('says a wall-clock figure is run time, and names the resource behind a cost-only one', () => {
+    expect(savingsMeaning(withEstimate({ basis: 'serial', wallClock: { low: 1, high: 1 }, estimateMethod: 'measured' }))).toBe('of run time');
+    expect(savingsMeaning(costOnly('mbSeconds'))).toBe('of unused executor memory');
+    expect(savingsMeaning(costOnly('coreHours'))).toBe('of idle core time');
+    expect(savingsMeaning(costOnly('coreMs'))).toBe('of idle core time');
+    expect(savingsMeaning(costOnly('bytes'))).toBe('of extra data written');
+    expect(savingsMeaning(withEstimate({ basis: 'informational', wallClock: null, estimateMethod: 'none' }))).toBeNull();
+    expect(savingsMeaning(withEstimate(undefined))).toBeNull();
+  });
+
+  it('renders a capacity figure in readable units and says what it counts, on screen and when copied', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderVerdict([{
+      type: 'memoryUtilization', stageId: null, impactBand: 'warning', recommendation: 'Right-size executor memory.',
+      impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 10_956_685.3, unit: 'mbSeconds' } },
+    }]);
+
+    const step = screen.getByTestId('next-step');
+    expect(step).toHaveTextContent('Potential savings 3.0 GB-h of unused executor memory');
+    await user.click(within(step).getByTestId('copy-finding-button'));
+    expect(writeText.mock.calls[0][0]).toMatch(/Potential savings: 3\.0 GB-h of unused executor memory$/);
+  });
+});
+
 describe('estimateProvenance', () => {
   const withEstimate = (impactEstimate: Finding['impactEstimate']): Finding => ({ type: 'skew', stageId: 1, impactBand: 'critical', impactEstimate });
 
@@ -448,8 +479,8 @@ describe('estimateProvenance', () => {
   });
 
   it('makes no run-time claim for a resource-only figure, and says nothing without a model', () => {
-    expect(estimateProvenance(withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 5, unit: 'coreMs' } })))
-      .toBe('No run-time claim, modeled. 5 core-ms was wasted, but it may not shorten the run.');
+    expect(estimateProvenance(withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 5000, unit: 'coreMs' } })))
+      .toBe('No run-time claim, modeled. 5.0 core-s was wasted, but it may not shorten the run.');
     expect(estimateProvenance(withEstimate({ basis: 'informational', wallClock: null, estimateMethod: 'none' }))).toBeNull();
     expect(estimateProvenance(withEstimate(undefined))).toBeNull();
   });
@@ -490,8 +521,8 @@ describe('RunVerdict Copy next steps', () => {
     expect(writeText).toHaveBeenCalledWith([
       'Spark run nightly-job: Start with Stage 7',
       '',
-      '1. Fix task skew in Stage 7: Fix skew in Stage 7. Potential savings: 2.4s',
-      '2. Reduce spill in Stage 3: Fix spill in Stage 3. Potential savings: 1.0s',
+      '1. Fix task skew in Stage 7: Fix skew in Stage 7. Potential savings: 2.4s of run time',
+      '2. Reduce spill in Stage 3: Fix spill in Stage 3. Potential savings: 1.0s of run time',
       '',
       'Not checked on this log:',
       '- Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true.',

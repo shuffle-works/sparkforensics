@@ -80,7 +80,11 @@ summary of what was found, and up to three numbered next steps. Each step
 explains in plain language what is happening, says what to try, and has a
 **Show evidence** button that jumps to the finding's detail widget. Findings
 on the same stage are folded into one step, because they usually share a
-cause and their savings overlap rather than add up. **Copy next steps**
+cause and their savings overlap rather than add up. Each savings figure says
+what it counts: a time such as "58.6s of run time" is how much sooner the run
+could finish, while a capacity figure such as "3.0 GB-h of unused executor
+memory" or "0.7 core-h of idle core time" is cluster capacity paid for but
+left unused, which cuts cost but may not shorten the run. **Copy next steps**
 copies the whole plan as a plain checklist (run, verdict, numbered steps with
 their stage and savings, and anything not checked) to paste into a ticket or
 a message. When most of the run's

@@ -153,6 +153,25 @@ export function isCleanRun(appModel: Pick<AppModel, 'jobs' | 'stages'>, allFindi
   return verdictGaps(allFindings, !hasFinishedStage(appModel.stages)).length === 0;
 }
 
+/** What a step's savings figure counts, as the words that follow it: run
+ * time for a wall-clock claim, or the resource a cost-only (`resourceOnly`)
+ * figure measures. A time figure and a capacity figure look alike ("58.6s",
+ * "0.7 core-h") but only the first shortens the run. Null when the step
+ * shows no figure. */
+export function savingsMeaning(finding: Finding): string | null {
+  const estimate = finding.impactEstimate;
+  if (!estimate) return null;
+  if (estimate.wallClock) return 'of run time';
+  switch (estimate.rawWaste?.unit) {
+    case 'mbSeconds': return 'of unused executor memory';
+    case 'coreHours':
+    case 'coreMs': return 'of idle core time';
+    case 'bytes': return 'of extra data written';
+    case 'ms': return 'of task time';
+    default: return null;
+  }
+}
+
 /** How a step's savings figure was derived, in one plain sentence for
  * Advanced view: the estimate method, whether the stage ran alone (a
  * near-point figure) or shared the cluster (a floor and an optimistic high),

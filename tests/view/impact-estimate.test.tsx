@@ -55,15 +55,26 @@ describe('formatRawWaste', () => {
     expect(formatRawWaste({ value: 1000, unit: 'mbSeconds' })).toBe(`${(1000).toLocaleString('en-US')} MB-s`);
   });
 
-  it('formats coreMs', () => {
-    expect(formatRawWaste({ value: 500, unit: 'coreMs' })).toBe('500 core-ms');
+  it('formats a small coreMs value as core-seconds', () => {
+    expect(formatRawWaste({ value: 4200, unit: 'coreMs' })).toBe('4.2 core-s');
   });
 
-  it('digit-groups a large mbSeconds value for readability, rounded to 1 decimal', () => {
-    // A large magnitude must gain digit-grouping; separator is locale-dependent, so don't assert a specific one.
-    const text = formatRawWaste({ value: 59004952.576, unit: 'mbSeconds' });
-    expect(text).toMatch(/^\d{1,3}(?:[.,]\d{3})+[.,]\d MB-s$/);
-    expect(text).not.toBe('59004952.6 MB-s');
+  it('formats a coreMs value of a tenth of a core-hour or more as core-hours', () => {
+    expect(formatRawWaste({ value: 360_000, unit: 'coreMs' })).toBe('0.1 core-h');
+    expect(formatRawWaste({ value: 9_000_000, unit: 'coreMs' })).toBe('2.5 core-h');
+    expect(formatRawWaste({ value: 359_999, unit: 'coreMs' })).toBe('360.0 core-s');
+  });
+
+  it('turns a run-sized mbSeconds value into GB-hours instead of millions of MB-s', () => {
+    // 10,956,685.3 MB-s / 1024 / 3600 = 2.97 GB-h.
+    expect(formatRawWaste({ value: 10_956_685.3, unit: 'mbSeconds' })).toBe('3.0 GB-h');
+    expect(formatRawWaste({ value: 59004952.576, unit: 'mbSeconds' })).toBe('16.0 GB-h');
+    expect(formatRawWaste({ value: 1024 * 3600 * 1500, unit: 'mbSeconds' })).toBe('1,500.0 GB-h');
+  });
+
+  it('keeps MB-s below a tenth of a GB-hour, so a small figure never reads as 0.0 GB-h', () => {
+    expect(formatRawWaste({ value: 368_639, unit: 'mbSeconds' })).toBe(`${(368_639).toLocaleString('en-US')} MB-s`);
+    expect(formatRawWaste({ value: 368_640, unit: 'mbSeconds' })).toBe('0.1 GB-h');
   });
 
   it('formats zero ms without the no-data placeholder', () => {
@@ -106,7 +117,7 @@ describe('ImpactEstimate component', () => {
     });
     render(<ImpactEstimate finding={testFinding} />);
     expect(screen.getByText('92ms-2.2s')).toBeInTheDocument();
-    expect(screen.queryByText(`${(1080).toLocaleString()} core-ms`)).not.toBeInTheDocument();
+    expect(screen.queryByText('1.1 core-s')).not.toBeInTheDocument();
   });
 
   it('renders a single "Xs" value for basis: serial (low === high), not the rawWaste figure alongside it', () => {

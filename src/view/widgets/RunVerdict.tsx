@@ -23,6 +23,7 @@ import {
   hasFinishedStage,
   isCleanRun,
   prioritizeIdleCapacity,
+  savingsMeaning,
   verdictGaps,
   verdictIdlePct,
   type NextStep,
@@ -149,9 +150,11 @@ function quotedReasonText(reason: string): { shown: string; copied: string } {
 /** One step as pasteable text: the action, what to try, and the savings. */
 function stepCopyText(finding: Finding, recommendation: string, stageId: number | null = null): string {
   const impact = impactFigure(finding);
+  const meaning = savingsMeaning(finding);
+  const savings = impact && meaning ? `${impact} ${meaning}` : impact;
   const where = stageId != null ? ` in Stage ${stageId}` : '';
   const headline = `${findingActionLabel(finding)}${where}: ${recommendation}`;
-  return [/[.!?]$/.test(headline) ? headline : `${headline}.`, impact ? `Potential savings: ${impact}` : null]
+  return [/[.!?]$/.test(headline) ? headline : `${headline}.`, savings ? `Potential savings: ${savings}` : null]
     .filter(Boolean)
     .join(' ');
 }
@@ -238,6 +241,7 @@ function NextStepItem({
   const recommendation = quoted?.shown ?? recommendationText(finding);
   const help = TAG_HELP[typeTag(finding.type)];
   const impact = impactFigure(finding);
+  const meaning = savingsMeaning(finding);
   const titleId = `next-step-${index}-title`;
   const advanced = useWidgetDensity() === 'advanced';
   const provenance = advanced ? estimateProvenance(finding) : null;
@@ -265,6 +269,7 @@ function NextStepItem({
             <span className="font-mono text-xs text-muted-foreground tabular-nums sm:ml-auto">
               <span className="font-sans">Potential savings </span>
               <span className="font-semibold text-foreground">{impact}</span>
+              {meaning ? <span className="font-sans"> {meaning}</span> : null}
             </span>
           ) : null}
         </div>
@@ -357,8 +362,10 @@ function NewcomerPrimer() {
             join or a group-by. It is often the most expensive part of a job.
           </p>
           <p>
-            <span className="font-medium text-foreground">Potential savings and colors.</span> Savings estimate the run
-            time a fix could recover; they are not a guarantee. Red (critical), amber (warning) and blue (info) show how
+            <span className="font-medium text-foreground">Potential savings and colors.</span> A time figure, such as
+            58.6s of run time, estimates how much sooner the run could finish; it is not a guarantee. A capacity
+            figure in core-hours (core-h) or gigabyte-hours of memory (GB-h) is cluster capacity paid for but left
+            unused: fixing it cuts cost, but may not shorten the run. Red (critical), amber (warning) and blue (info) show how
             serious each finding is. When a finding shows a time-savings figure, its color usually follows that figure.
           </p>
           <a
