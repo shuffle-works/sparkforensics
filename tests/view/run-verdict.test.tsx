@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { buildNextSteps, estimateProvenance, gapSettings, locationKey, prioritizeIdleCapacity, savingsMeaning, sparkSubmitFlags, verdictIdlePct } from '@/view/run-verdict';
+import { buildNextSteps, estimateProvenance, locationKey, savingsMeaning, verdictIdlePct } from '@/view/run-verdict';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
 import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 
@@ -67,34 +67,25 @@ describe('buildNextSteps', () => {
   });
 });
 
-describe('prioritizeIdleCapacity', () => {
+describe('idle capacity in the next steps', () => {
   const idleCores: Finding = {
     type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning',
     recommendation: '92% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
   };
   const steps = () => buildNextSteps([timed('skew', 0, 64), idleCores]);
 
-  it('leads with idle capacity when it is the dominant story (>= 70%)', () => {
-    expect(prioritizeIdleCapacity(steps(), 92, 3_100)[0].lead.finding).toBe(idleCores);
+  it('keeps the savings order however much capacity sat idle', () => {
+    expect(steps().map((step) => step.lead.finding.type)).toEqual(['skew', 'memoryUtilization']);
   });
 
-  it('leads with idle capacity at >= 40% only while the best time-based fix is under 5% of the run', () => {
-    expect(prioritizeIdleCapacity(steps(), 50, 3_100)[0].lead.finding).toBe(idleCores);
-    // 64ms of a 1s run is 6.4%: the time-based fix keeps the lead.
-    expect(prioritizeIdleCapacity(steps(), 50, 1_000)[0].lead.finding.type).toBe('skew');
-  });
-
-  it('never promotes a heap-pressure memoryUtilization finding as idle capacity, and keeps idleCores as its own step', () => {
+  it('keeps a heap-pressure memoryUtilization finding and idleCores as separate steps', () => {
     const heapNearCapacity: Finding = {
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity', stageId: null, impactBand: 'warning',
       recommendation: 'Raise spark.executor.memory to avoid OOM.',
     };
-    const withHeap = buildNextSteps([timed('skew', 0, 64), heapNearCapacity]);
-    expect(prioritizeIdleCapacity(withHeap, 92, 3_100)[0].lead.finding.type).toBe('skew');
-
     const both = buildNextSteps([timed('skew', 0, 64), heapNearCapacity, { ...idleCores, impactBand: 'info' }]);
     expect(both.map((step) => step.key)).toContain('app:memoryUtilization:idleCores');
-    expect(prioritizeIdleCapacity(both, 92, 3_100)[0].lead.finding.variant).toBe('idleCores');
+    expect(both[0].lead.finding.type).toBe('skew');
   });
 
   it('states the idle share the idle-capacity step itself reports, falling back to the Scorecard figure', () => {
@@ -103,12 +94,6 @@ describe('prioritizeIdleCapacity', () => {
     const utilization: Finding = { type: 'utilization', stageId: null, impactBand: 'info', value: 30, recommendation: 'x' };
     expect(verdictIdlePct(buildNextSteps([utilization]), 80)).toBe(70);
     expect(verdictIdlePct(buildNextSteps([timed('skew', 0, 64)]), 80)).toBe(80);
-  });
-
-  it('keeps the savings order below 40% idle, or when no idle-capacity step exists', () => {
-    expect(prioritizeIdleCapacity(steps(), 30, 3_100)[0].lead.finding.type).toBe('skew');
-    const noIdle = buildNextSteps([timed('skew', 0, 64), timed('spill', 1, 32)]);
-    expect(prioritizeIdleCapacity(noIdle, 95, 3_100)).toEqual(noIdle);
   });
 });
 
@@ -162,11 +147,17 @@ describe('RunVerdict', () => {
     await waitFor(() => expect(copyButton).toHaveTextContent('Copy'), { timeout: 3000 });
   });
 
-  it('titles an idle-capacity lead with the idle share its own step reports', () => {
-    renderVerdict([timed('skew', 7, 64), {
+  it('never moves idle capacity ahead of a smaller time-based fix, and still states the idle share', () => {
+    const idleCores: Finding = {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', value: 92,
       recommendation: '92% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
-    }]);
+    };
+    renderVerdict([timed('skew', 7, 64), idleCores]);
+    expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
+    expect(screen.getByTestId('run-verdict')).toHaveTextContent('92% of the executor capacity sat idle');
+
+    cleanup();
+    renderVerdict([idleCores]);
     expect(screen.getByRole('heading', { level: 2, name: 'Start with cluster size: 92% of executor capacity sat idle' }))
       .toBeInTheDocument();
   });
@@ -214,7 +205,6 @@ describe('RunVerdict', () => {
     const verdict = screen.getByTestId('run-verdict');
     expect(verdict).not.toHaveTextContent('Every check passed');
     expect(verdict).toHaveTextContent('cover only the part of the run it captured');
-    expect(verdict).toHaveTextContent('core usage, memory and executor churn checks had no run length to measure');
     // No clean-run check icon in the title.
     expect(screen.getByRole('heading', { level: 2 }).querySelector('svg')).toBeNull();
   });
@@ -390,31 +380,24 @@ describe('RunVerdict on what the log could not check', () => {
     recommendation: 'Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true: not enabled for this run.',
   } as Finding;
 
-  it('never calls a run clean when a check could not run, and names the setting to turn on', () => {
+  it('never calls a run clean when a check could not run, and leaves the gap list to Clean checks', () => {
     renderVerdict([memoryCaveat]);
     expect(screen.getByRole('heading', { level: 2, name: 'Nothing to fix, but some checks could not run on this log' })).toBeInTheDocument();
-    expect(screen.getByTestId('run-verdict')).not.toHaveTextContent('Every check passed');
-    expect(screen.getByTestId('verdict-gaps')).toHaveTextContent('Not checked on this log');
-    expect(screen.getByTestId('verdict-gaps')).toHaveTextContent('spark.eventLog.logStageExecutorMetrics=true');
-  });
-
-  it('lists the gaps under the next steps of a run with findings too', () => {
-    renderVerdict([timed('skew', 7, 2_400), memoryCaveat]);
-    expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
-    expect(screen.getByTestId('verdict-gaps')).toHaveTextContent('spark.eventLog.logStageExecutorMetrics=true');
+    const verdict = screen.getByTestId('run-verdict');
+    expect(verdict).not.toHaveTextContent('Every check passed');
+    expect(verdict).not.toHaveTextContent('Not checked on this log');
+    expect(verdict).not.toHaveTextContent('spark.eventLog.logStageExecutorMetrics');
   });
 
   it('says so when no stage in the log finished', () => {
     const model = { ...appModel(), stages: new Map([[7, { id: 7, submittedAt: 0 }]]) } as AppModel;
     renderVerdict([], vi.fn(), model);
     expect(screen.getByRole('heading', { level: 2, name: 'This log has no finished stages to check' })).toBeInTheDocument();
-    expect(screen.getByTestId('verdict-gaps')).toHaveTextContent('No stage in this log recorded an end');
   });
 
   it('keeps the clean message for a run with nothing missing', () => {
     renderVerdict([]);
     expect(screen.getByRole('heading', { level: 2, name: 'No findings to fix right now.' })).toBeInTheDocument();
-    expect(screen.queryByTestId('verdict-gaps')).not.toBeInTheDocument();
   });
 });
 
@@ -507,7 +490,7 @@ describe('RunVerdict in Advanced view', () => {
 });
 
 describe('RunVerdict Copy next steps', () => {
-  it('copies the whole plan as a checklist: run, verdict, numbered steps with their stage, and what was not checked', async () => {
+  it('copies the whole plan as a checklist: run, verdict and numbered steps with their stage, without the log gaps', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
@@ -524,46 +507,7 @@ describe('RunVerdict Copy next steps', () => {
       '',
       '1. Fix task skew in Stage 7: Fix skew in Stage 7. Potential savings: 2.4s of run time',
       '2. Reduce spill in Stage 3: Fix spill in Stage 3. Potential savings: 1.0s of run time',
-      '',
-      'Not checked on this log:',
-      '- Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true.',
-      '',
-      'For the next run: --conf spark.eventLog.logStageExecutorMetrics=true',
     ].join('\n'));
     expect(screen.getByTestId('copy-plan-button')).toHaveTextContent('Copied');
-  });
-});
-
-describe('settings for the next run', () => {
-  const executorMetrics = 'Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true: not enabled for this run.';
-  const blockUpdates = "1 persisted RDD has no cache-storage evidence in this log, so eviction can't be checked: Spark 2.3+ records cached sizes only as block updates, which need spark.eventLog.logBlockUpdates.enabled=true.";
-
-  it('collects each named setting once, with its value and without the sentence punctuation around it', () => {
-    expect(gapSettings([executorMetrics, blockUpdates, executorMetrics, 'No stage in this log recorded an end.']))
-      .toEqual(['spark.eventLog.logStageExecutorMetrics=true', 'spark.eventLog.logBlockUpdates.enabled=true']);
-    expect(gapSettings(['Turn on spark.eventLog.logBlockUpdates.enabled for this.'])).toEqual([]);
-    expect(sparkSubmitFlags(['spark.a=true', 'spark.b.c=1'])).toBe('--conf spark.a=true --conf spark.b.c=1');
-  });
-
-  it('offers the settings as one spark-submit line to copy, and nothing when no gap names one', async () => {
-    const user = userEvent.setup();
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-    const caveat = (recommendation: string, variant: string) =>
-      ({ type: 'memoryUtilization', variant, stageId: null, impactBand: 'info', dataUnavailable: true, recommendation }) as Finding;
-    renderVerdict([timed('skew', 7, 2_400), caveat(executorMetrics, 'memoryBand'), caveat(blockUpdates, 'cacheStorage')]);
-
-    const settings = screen.getByTestId('verdict-gap-settings');
-    const flags = '--conf spark.eventLog.logStageExecutorMetrics=true --conf spark.eventLog.logBlockUpdates.enabled=true';
-    expect(within(settings).getByText('--conf spark.eventLog.logStageExecutorMetrics=true')).toBeInTheDocument();
-    expect(within(settings).getByText('--conf spark.eventLog.logBlockUpdates.enabled=true')).toBeInTheDocument();
-    await user.click(within(settings).getByTestId('copy-settings-button'));
-    expect(writeText).toHaveBeenCalledWith(flags);
-    expect(within(settings).getByTestId('copy-settings-button')).toHaveTextContent('Copied');
-
-    cleanup();
-    renderVerdict([timed('skew', 7, 2_400)], vi.fn(), { ...appModel(), stages: new Map() } as AppModel);
-    expect(screen.getByTestId('verdict-gaps')).toHaveTextContent('No stage in this log recorded an end');
-    expect(screen.queryByTestId('verdict-gap-settings')).not.toBeInTheDocument();
   });
 });

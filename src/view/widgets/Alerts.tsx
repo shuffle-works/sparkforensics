@@ -9,7 +9,7 @@ import { getThresholdSummary } from '@sparkforensics/core/threshold-summary.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { alwaysMountedWidgets, isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { RUN_SPAN_CHECK_TYPES, hasFinishedStage, isEvidenceCaveat, isIncompleteRun } from '@/view/run-verdict';
+import { RUN_SPAN_CHECK_TYPES, hasFinishedStage, isEvidenceCaveat, isIncompleteRun, verdictGaps } from '@/view/run-verdict';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
 import { WidgetCardSkeleton } from '@/view/WidgetCard';
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
@@ -111,10 +111,10 @@ export function AlwaysVisibleAndCleanChecks({ appModel, catalog, configFindings 
   // dataUnavailable variant) doesn't keep a type out of the Clean-checks list.
   const combined = [...catalog, ...configFindings].filter(isRealFinding);
 
-  // A check the log could not run is not a pass: the same rule as the
-  // verdict's "Not checked on this log" list (an evidence caveat, a
-  // per-stage check on a log where no stage finished, or a run-span check on
-  // a log with no ApplicationEnd).
+  // A check the log could not run is not a pass: the same rule the verdict
+  // uses to withhold "clean" (an evidence caveat, a per-stage check on a log
+  // where no stage finished, or a run-span check on a log with no
+  // ApplicationEnd).
   const noFinishedStages = !hasFinishedStage(appModel.stages);
   const incomplete = isIncompleteRun(catalog);
   const caveatTypes = new Set([...catalog, ...configFindings].filter(isEvidenceCaveat).map((finding) => finding.type));
@@ -127,6 +127,8 @@ export function AlwaysVisibleAndCleanChecks({ appModel, catalog, configFindings 
     .map((type) => ({ type, findingLabel: REGISTRY[type].findingLabel }));
   const cleanWidgets = zeroFindingTypes.filter(({ type }) => !isNotRun(type));
   const notRunWidgets = zeroFindingTypes.filter(({ type }) => isNotRun(type));
+  // Why each check could not run, each line naming what to turn on next time.
+  const notRunReasons = notRunWidgets.length > 0 ? verdictGaps([...catalog, ...configFindings], noFinishedStages) : [];
 
   // Grouped by detector scope so a clean run's 20+ rows read as four short
   // labeled lists instead of one flat wall; `SCOPE_ORDER` fixes the order and
@@ -160,9 +162,15 @@ export function AlwaysVisibleAndCleanChecks({ appModel, catalog, configFindings 
               <div data-testid="clean-checks-not-run" className="pb-4">
                 <p className="pb-1 text-xs font-medium text-muted-foreground">Not checked on this log</p>
                 <p className="pb-2 text-xs text-muted-foreground">
-                  The log lacked the data these checks need, so they neither passed nor failed. The verdict's Not
-                  checked on this log list says why.
+                  The log lacked the data these checks need, so they neither passed nor failed.
                 </p>
+                {notRunReasons.length > 0 ? (
+                  <ul data-testid="clean-checks-not-run-reasons" className="list-disc space-y-0.5 pb-2 pl-5 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                    {notRunReasons.map((reason) => (
+                      <li key={reason}>{reason}</li>
+                    ))}
+                  </ul>
+                ) : null}
                 <Table>
                   <TableBody>
                     {notRunWidgets.map(({ type, findingLabel }) => (

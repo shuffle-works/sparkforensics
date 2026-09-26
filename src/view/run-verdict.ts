@@ -75,29 +75,9 @@ function isIdleCapacityFinding(finding: Finding): boolean {
   return finding.type === 'utilization' || (finding.type === 'memoryUtilization' && finding.variant === 'idleCores');
 }
 
-/** Idle-capacity share that the verdict treats as the run's main story on its
- * own: the Scorecard's Unused core time critical flag. */
-export const IDLE_DOMINANT_PCT = 70;
-/** Idle share that still leads when the best time-based fix is tiny. */
+/** Idle share at which the verdict notes, in its summary, that the cluster
+ * may be larger than the job needs. It never reorders the steps. */
 export const IDLE_NOTABLE_PCT = 40;
-/** "Tiny" first fix: under this share of the run's wall-clock. */
-const SMALL_FIRST_FIX_SHARE = 0.05;
-
-/** Moves the idle-capacity step to the front when idle capacity, not any one
- * time-based fix, is the run's main problem. Detectors band each finding on
- * its own scale, so a 64ms skew fix can outrank a run that left 92% of its
- * cores idle; the verdict orders by what matters for this run. Returns the
- * steps unchanged when no idle-capacity step exists. */
-export function prioritizeIdleCapacity(steps: NextStep[], idlePct: number | null, runMs: number | null): NextStep[] {
-  if (idlePct == null || steps.length < 2) return steps;
-  const idleIndex = steps.findIndex(isIdleCapacityStep);
-  if (idleIndex <= 0) return steps;
-  const leadSavings = steps[0].lead.finding.impactEstimate?.wallClock?.high ?? 0;
-  const smallFirstFix = runMs != null && runMs > 0 && leadSavings / runMs < SMALL_FIRST_FIX_SHARE;
-  const idleLeads = idlePct >= IDLE_DOMINANT_PCT || (idlePct >= IDLE_NOTABLE_PCT && smallFirstFix);
-  if (!idleLeads) return steps;
-  return [steps[idleIndex], ...steps.slice(0, idleIndex), ...steps.slice(idleIndex + 1)];
-}
 
 export function isIdleCapacityStep(step: NextStep): boolean {
   return isIdleCapacityFinding(step.lead.finding);
@@ -153,22 +133,6 @@ export function verdictGaps(allFindings: Finding[], noFinishedStages: boolean): 
     if (isEvidenceCaveat(finding) && finding.recommendation) gaps.add(finding.recommendation);
   }
   return [...gaps];
-}
-
-// A `spark.*` key written with a value, as the gap lines name them
-// ("...requires spark.eventLog.logStageExecutorMetrics=true: ..."). The value
-// may hold dots but never ends on one, so a sentence's full stop stays out.
-const NAMED_SETTING = /\bspark\.[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*=[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/g;
-
-/** Every setting the gap lines name with its value, once each, in order: what
- * to turn on so the next run's log can be fully checked. */
-export function gapSettings(gaps: string[]): string[] {
-  return [...new Set(gaps.flatMap((gap) => gap.match(NAMED_SETTING) ?? []))];
-}
-
-/** The settings as spark-submit flags, ready to paste into the next run. */
-export function sparkSubmitFlags(settings: string[]): string {
-  return settings.map((setting) => `--conf ${setting}`).join(' ');
 }
 
 /** The one rule for calling a run clean, shared by the verdict and the top

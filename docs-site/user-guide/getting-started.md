@@ -85,11 +85,11 @@ what it counts: a time such as "58.6s of run time" is how much sooner the run
 could finish, while a resource figure such as "3.0 GB-h of unused executor
 memory" or "0.7 core-h of core time" is cluster time a fix would free up,
 which cuts cost but may not shorten the run. **Copy next steps**
-copies the whole plan as a plain checklist (run, verdict, numbered steps with
-their stage and savings, and anything not checked) to paste into a ticket or
-a message. When most of the run's
-executor capacity sat idle, the verdict starts with cluster size instead of
-a small per-stage fix.
+copies the whole plan as a plain checklist (run, verdict, and numbered steps
+with their stage and savings) to paste into a ticket or a message. Steps
+follow the same savings ranking as the rest of the board. When much of the
+run's executor capacity sat idle, the summary says so, without moving
+cluster size ahead of a bigger fix.
 
 The verdict also says how the run ended. When every job succeeded it says
 so. When a job failed, the title says the run failed (or how many of its
@@ -97,13 +97,11 @@ jobs did), quotes the first line of the reason Spark recorded, and puts the
 failure first in the next steps, ahead of any speed-up, since a job has to
 finish before its speed matters.
 
-When the log lacked something a check needs, the verdict ends with **Not
-checked on this log**: each line says what could not be checked and, where
+A run is called clean only when the log had everything its checks need.
+When something was missing, the verdict title says some checks could not
+run, and the Findings tab's **Clean checks** list says which ones and, where
 Spark has one, the setting to turn on for the next run (for example
-`spark.eventLog.logStageExecutorMetrics=true` for per-executor memory). Those
-settings are gathered below the list as one line of `--conf` flags, with
-**Copy settings**, to paste into the next run's spark-submit command (or set
-in `spark-defaults.conf`). A run is called clean only when nothing is missing.
+`spark.eventLog.logStageExecutorMetrics=true` for per-executor memory).
 
 A run scorecard sits under the verdict: **Wall-clock** (total run time),
 **Efficiency** (the share of that time with a stage running; higher is
@@ -129,9 +127,10 @@ Below it, two tabs split the rest of the board:
    groups, memory and core-usage utilization always show, even on a clean
    run. Widgets that found nothing fold away into a "Clean checks"
    disclosure. A check the log lacked the data for is listed there under
-   **Not checked on this log**, not as a pass: for example every per-stage
-   check when no stage finished, or core usage, memory and executor churn
-   when the log has no end-of-run record. This is the tab you land on.
+   **Not checked on this log**, not as a pass, with the reason and the
+   setting to turn on: for example every per-stage check when no stage
+   finished, or core usage, memory and executor churn when the log has no
+   end-of-run record. This is the tab you land on.
 2. **Full app report**: the wall-clock and executor timelines, the stage
    table, and the reference-only cards.
 

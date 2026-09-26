@@ -544,10 +544,11 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    eligible findings by location (one stage, one multi-stage finding type,
    or one app-level finding type and variant), ordered by
    `rankTriageTargets` (potential savings, then impact band, then widget
-   order); `prioritizeIdleCapacity` moves an idle-capacity step
-   (`utilization`, or `memoryUtilization`'s `idleCores` variant only, never
-   its heap variants) first when the idle share is at least 70%, or at
-   least 40% while the best time-based fix is under 5% of wall-clock. The
+   order), the same ranking every other component uses: no finding type
+   jumps that order. An idle-capacity step (`utilization`, or
+   `memoryUtilization`'s `idleCores` variant only, never its heap variants)
+   titles the verdict only when it ranks first; otherwise an idle share of
+   at least `IDLE_NOTABLE_PCT` (40%) adds one summary sentence. The
    idle share (`verdictIdlePct`) is the figure that idle-capacity step itself
    reports, falling back to the Scorecard's Unused core time figure only when no step
    carries one, so the title and the step never disagree. Each step's
@@ -562,8 +563,8 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    one-line notice naming what it cleared; the Topbar count chip's jump to
    its impact band (`jumpToFindings` in `Dashboard.tsx`) uses the same path.
    The clean-run message ("No findings to fix right now.")
-   lives here and shows only when no finding at all was emitted and nothing
-   is listed under "Not checked on this log" (below); an
+   lives here and shows only when no finding at all was emitted and the log
+   lacked nothing a check needs (below); an
    `incompleteRun` finding gets its own non-clean title and a sentence
    saying the figures cover only the captured part of the run. Job results
    (`summarizeRunOutcome` in `src/view/run-outcome.ts`) set the run outcome:
@@ -571,18 +572,15 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    first line of Spark's recorded reason (a failed job's `stageFailed`
    value first, then any `stageFailed`, then the job exception), the run is
    never called clean, and `buildNextSteps` ranks `stageFailed` and
-   `jobFailureRate` steps first (a failed job's stage leading) while
-   `prioritizeIdleCapacity` is skipped. Evidence caveats (a finding with
-   `dataUnavailable`, or one `isRealFinding` drops), a log with no
-   finished stage, and an `incompleteRun` log (whose `RUN_SPAN_CHECK_TYPES`
-   had no run length to measure) are listed under "Not checked on this
-   log" (`verdictGaps`), each caveat by
-   its own recommendation text, which names the setting to enable
-   (`gapSettings` in `src/view/run-verdict.ts` gathers every named
-   `spark.*=value` into one `--conf` line with **Copy settings**, also
-   appended to **Copy next steps**); any gap
-   keeps the run from being called clean, and a log with no finished stage
-   and no finding gets its own title. In Advanced view each step adds an
+   `jobFailureRate` steps first (a failed job's stage leading). Evidence
+   caveats (a finding with `dataUnavailable`, or one `isRealFinding`
+   drops), a log with no finished stage, and an `incompleteRun` log (whose
+   `RUN_SPAN_CHECK_TYPES` had no run length to measure) are gaps
+   (`verdictGaps`): any gap keeps the run from being called clean, and a
+   log with no finished stage and no finding gets its own title. The
+   verdict card does not list the gaps; the Clean checks disclosure's
+   "Not checked on this log" group does, each caveat by its own
+   recommendation text, which names the setting to enable. In Advanced view each step adds an
    "Estimate:" line from `estimateProvenance` (`src/view/run-verdict.ts`:
    method, basis as a point figure or a floor-to-high range, ms raw waste
    only when the floor clipped it, a non-time raw waste as the resource

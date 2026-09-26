@@ -20,13 +20,9 @@ import {
   isIdleCapacityStep,
   NEXT_STEP_LIMIT,
   estimateProvenance,
-  gapSettings,
   hasFinishedStage,
   isCleanRun,
-  prioritizeIdleCapacity,
   savingsMeaning,
-  sparkSubmitFlags,
-  verdictGaps,
   verdictIdlePct,
   type NextStep,
 } from '@/view/run-verdict';
@@ -93,7 +89,7 @@ function verdictTitle(eligible: Finding[], steps: NextStep[], facts: RunFacts): 
 
 /** The run-level summary under the title: how much was found and where, what
  * the first fix is worth, and the run's idle capacity when that is large
- * enough to matter but did not lead (the title already says it when it did). */
+ * enough to matter but is not the first step (whose title already says it). */
 function verdictSummary(eligible: Finding[], steps: NextStep[], facts: RunFacts): string[] {
   const sentences: string[] = [];
   const { failedJobs, totalJobs } = facts.outcome;
@@ -162,13 +158,12 @@ function stepCopyText(finding: Finding, recommendation: string, stageId: number 
 }
 
 /** The whole verdict as a pasteable checklist for a ticket or a message:
- * run, verdict, numbered steps (with their stage), what could not be checked,
- * and how many more places the full list holds. */
+ * run, verdict, numbered steps (with their stage), and how many more places
+ * the full list holds. */
 function planCopyText(input: {
   runName: string | null;
   title: string;
   steps: { step: NextStep; recommendation: string }[];
-  gaps: string[];
   remaining: number;
 }): string {
   const lines = [input.runName ? `Spark run ${input.runName}: ${input.title}` : input.title, ''];
@@ -176,9 +171,6 @@ function planCopyText(input: {
     lines.push(`${index + 1}. ${stepCopyText(step.lead.finding, recommendation, step.stageId)}`);
   });
   if (input.remaining > 0) lines.push('', `${plural(input.remaining, 'more place')} to look at in the full findings list.`);
-  if (input.gaps.length > 0) lines.push('', 'Not checked on this log:', ...input.gaps.map((gap) => `- ${gap}`));
-  const settings = gapSettings(input.gaps);
-  if (settings.length > 0) lines.push('', `For the next run: ${sparkSubmitFlags(settings)}`);
   return lines.join('\n');
 }
 
@@ -224,32 +216,6 @@ function CopyStepButton({ finding, recommendation }: { finding: Finding; recomme
       {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
       {copied ? 'Copied' : 'Copy'}
     </Button>
-  );
-}
-
-/** The settings the gap lines name, as one spark-submit line to paste into
- * the next run, so the reader does not assemble the flags by hand. */
-function GapSettings({ settings }: { settings: string[] }) {
-  if (settings.length === 0) return null;
-  const flags = sparkSubmitFlags(settings);
-  return (
-    <div data-testid="verdict-gap-settings" className="space-y-1.5 pt-1">
-      <p className="text-muted-foreground">
-        {settings.length === 1
-          ? 'Turn this on for the next run: pass it to spark-submit as below, or set it in spark-defaults.conf.'
-          : 'Turn these on for the next run: pass them to spark-submit as below, or set them in spark-defaults.conf.'}
-      </p>
-      <div className="flex flex-col items-start gap-2 sm:flex-row">
-        {/* One flag per line, so a narrow screen breaks inside a long key
-            rather than between "--conf" and its setting. */}
-        <code className="w-full min-w-0 flex-1 rounded-md bg-muted px-2 py-1.5 font-mono text-xs text-foreground [overflow-wrap:anywhere]">
-          {settings.map((setting) => (
-            <span key={setting} className="block">--conf {setting}</span>
-          ))}
-        </code>
-        <CopyTextButton label="Copy settings" testId="copy-settings-button" text={flags} />
-      </div>
-    </div>
   );
 }
 
@@ -428,18 +394,15 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
   const eligible = allFindings.filter(isEligible);
   const outcome = summarizeRunOutcome(appModel.jobs, allFindings);
   const failed = outcome.failedJobs > 0;
-  const rankedSteps = buildNextSteps(eligible, failed ? { failedJobStageIds: outcome.failedJobStageIds } : {});
+  const steps = buildNextSteps(eligible, failed ? { failedJobStageIds: outcome.failedJobStageIds } : {});
   const facts: RunFacts = {
     runMs: hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null,
-    idlePct: verdictIdlePct(rankedSteps, getScorecardEstimates(appModel).wastage.value),
+    idlePct: verdictIdlePct(steps, getScorecardEstimates(appModel).wastage.value),
     incomplete: catalog.some((finding) => finding.type === 'incompleteRun'),
     clean: isCleanRun(appModel, allFindings),
     outcome,
     noFinishedStages: !hasFinishedStage(appModel.stages),
   };
-  const gaps = verdictGaps(allFindings, facts.noFinishedStages);
-  // A failed run keeps its failure steps first; idle capacity never jumps them.
-  const steps = failed ? rankedSteps : prioritizeIdleCapacity(rankedSteps, facts.idlePct, facts.runMs);
   const shown = steps.slice(0, NEXT_STEP_LIMIT);
   const remaining = steps.length - shown.length;
   const { clean } = facts;
@@ -509,7 +472,6 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
                   ? quotedReasonText(outcome.reason).copied
                   : recommendationText(step.lead.finding),
               })),
-              gaps,
               remaining,
             })}
           />
@@ -519,21 +481,8 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
         <p className="text-xs text-muted-foreground">
           {failed
             ? 'Order: failures first, then by the high end of potential savings; impact band breaks ties.'
-            : 'Order: by the high end of potential savings, quantified estimates before unquantified ones; impact band breaks ties. Idle capacity leads when it dominates the run.'}
+            : 'Order: by the high end of potential savings, quantified estimates before unquantified ones; impact band breaks ties.'}
         </p>
-      ) : null}
-      {gaps.length > 0 ? (
-        // Shown in both views: what the report could not check is part of the
-        // verdict, and each line names what to turn on for the next run.
-        <div data-testid="verdict-gaps" className="space-y-1 border-t border-border pt-3 text-sm">
-          <h3 className="font-medium">Not checked on this log</h3>
-          <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground [overflow-wrap:anywhere]">
-            {gaps.map((gap) => (
-              <li key={gap}>{gap}</li>
-            ))}
-          </ul>
-          <GapSettings settings={gapSettings(gaps)} />
-        </div>
       ) : null}
     </section>
   );

@@ -100,6 +100,8 @@ describe('Clean checks on a log that could not be fully checked', () => {
     await renderCleanChecks([caveat], finished);
     expect(rowStatus('memoryUtilization')).toBe('notRun');
     expect(rowStatus('skew')).toBe('passed');
+    // Why it could not run, and the setting to turn on, now live here rather than on the verdict.
+    expect(screen.getByTestId('clean-checks-not-run-reasons')).toHaveTextContent('spark.eventLog.logStageExecutorMetrics=true');
   });
 
   it('lists the checks that need the run end as not checked on a log with no ApplicationEnd', async () => {
