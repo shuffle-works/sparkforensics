@@ -3,8 +3,10 @@
 ## Render order (fixed, spec §5) {#widget-rendering-order-fixed-spec-§5}
 
 `src/view/Dashboard.tsx`'s `FilteredBoard` renders inside a `<main>` that
-opens with `FindingFilterBar` and (only when an active filter empties both
-finding streams) `NoMatchBanner`, then a single `Scorecard` strip, then (when
+opens with `RunVerdict` (built from the unfiltered catalog), then a single
+`Scorecard` strip, then `FindingFilterBar` (Advanced view, or any active
+filter) and (only when an active filter empties both finding streams)
+`NoMatchBanner`, then (when
 the active filter doesn't empty the board) a two-tab `Tabs`
 (`src/components/ui/tabs.tsx`, a base-ui primitive): **Findings** and
 **Full app report** (2026-09-03 tabbed-impact-band-board redesign, replacing the
@@ -427,22 +429,19 @@ have a mapped, routeable registry entry and a non-empty trimmed
 recommendation (`targetForFinding`, `src/view/triage-target.ts`). The
 target's widget still renders every affected stage in its local order.
 
-`src/view/triage-target.ts` also still exports `selectTriageTarget`, the
-whole-catalog "single highest-potential-savings finding" picker that used
-to back a start-here callout and each per-tag headline tile in the retired
-`ProblemHeadlines.tsx` (potential savings first via
-`impactEstimate.wallClock.high`, then `orderedWidgets()` widget order, then
-catalog order; impact band plays no part). Ranking by potential savings
-replaced the earlier severity-first routing once the occupancy-weighted
-impact estimator gave every finding a real, comparable
-`impactEstimate.wallClock` figure: severity-first could point the single
-"start here" callout at a `skew`/`straggler` finding ranked `critical` on a
-ratio basis while its occupancy-clipped recoverable time was near zero,
-passing over a lower-severity finding with an order-of-magnitude larger
-real recoverable-time estimate right next to it. Nothing in the app calls
-`selectTriageTarget` any more: `FixTheseFirst` already ranks every eligible
-finding by impact magnitude, so a separate single-winner pick has no call
-site left. `tests/view/triage-target.test.ts` still covers it directly.
+`src/view/triage-target.ts` also exports `rankTriageTargets`, which orders
+every routeable finding by potential savings (`impactEstimate.wallClock.high`),
+a quantified estimate ahead of an unquantified one, then impact band, then
+`orderedWidgets()` widget order, then catalog order; `selectTriageTarget`
+is its first entry. Ranking by potential savings replaced the earlier
+severity-first routing once the occupancy-weighted impact estimator gave
+every finding a real, comparable `impactEstimate.wallClock` figure:
+severity-first could point a "start here" pick at a `skew`/`straggler`
+finding ranked `critical` on a ratio basis while its occupancy-clipped
+recoverable time was near zero, passing over a lower-severity finding with
+an order-of-magnitude larger real recoverable-time estimate right next to
+it. Impact band only breaks ties. `RunVerdict`'s next steps are built from
+this ranking (see "Full render sequence" above).
 
 The route is re-derived from the current catalog before each asynchronous
 step. Its identity is object-reference equality against the current
@@ -521,15 +520,26 @@ renders inside the Full app report tab, not as a standalone board section.
 
 Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
 
-1. `FindingFilterBar` (plus `NoMatchBanner` when the active filter empties
-   both finding streams).
+1. `RunVerdict` (`src/view/widgets/RunVerdict.tsx`): the run's verdict
+   title, a summary sentence, and up to three numbered next steps built by
+   `buildNextSteps` (`src/view/run-verdict.ts`). Steps group routeable
+   eligible findings by location (one stage, or one app-level/multi-stage
+   finding type), ordered by `rankTriageTargets` (potential savings, then
+   impact band, then widget order); `prioritizeIdleCapacity` moves an
+   idle-capacity step (memoryUtilization/utilization) first when the
+   Scorecard's Wastage figure is at least 70%, or at least 40% while the best
+   time-based fix is under 5% of wall-clock. Always the unfiltered catalog:
+   a board filter never changes the verdict. The clean-run message ("No
+   findings to fix right now.") lives here.
 2. `Scorecard`: a three-tile run-info row (Wall-clock, Efficiency, Wastage),
    rendered once regardless of which tab is active.
-3. A two-tab `Tabs` (skipped entirely when the active filter empties both
+3. `FindingFilterBar`, only in Advanced view or while a filter is active
+   (plus `NoMatchBanner` when the active filter empties both finding
+   streams).
+4. A two-tab `Tabs` (skipped entirely when the active filter empties both
    finding streams; `NoMatchBanner` above already covers that case), tab
    labels **Findings** and **Full app report**:
-   - **Findings** (`ImpactBoard`): a `HighestImpactBar` callout for the
-     single highest-impact eligible finding, if any; then one `<section>`
+   - **Findings** (`ImpactBoard`): one `<section>`
      per impact band in `Critical` → `Warning` → `Info` order, each rendering
      nothing when it has neither a recommendation row nor an active widget:
      a recommendation-rollup `Table` (one row per eligible-finding type,
@@ -542,8 +552,7 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
      by Locality, mounted unconditionally regardless of finding state, and a
      collapsed "Clean
      checks" disclosure of `CleanCheckRow` lines built per detector type
-     (every remaining `REGISTRY` key with zero findings); or inline "No
-     findings to fix right now." text when nothing is eligible at all.
+     (every remaining `REGISTRY` key with zero findings).
    - **Full app report** (`ReferenceSection`): WallClock → Timeline →
      Executor Count Over Time → StageTable → Evidence availability → fixed
      report-lens tail (ETL Phase Attribution → What-If Executor Scaling →

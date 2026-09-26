@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 
-import { store, useStore } from '@/store/store';
+import { store, useStore, useWidgetDensity } from '@/store/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { WidgetProps } from '@/view/detector-registry';
 import { NoMatchBanner } from '@/view/EmptyStateBanners';
 import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from '@/view/EvidenceAvailabilityContext';
 import { FindingFilterBar } from '@/view/FindingFilterBar';
 import { FindingFilterProvider, useFindingFilter } from '@/view/FindingFilterContext';
-import { deriveOptions, filterFindings, type FilterOptions } from '@/view/finding-filter';
+import { deriveOptions, filterFindings, isEmptySelection, type FilterOptions } from '@/view/finding-filter';
 import { CoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
 import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
 import { EtlPhases } from '@/view/widgets/EtlPhases';
 import { ExecutorCountChart } from '@/view/widgets/ExecutorCountChart';
 import { ScalingSim } from '@/view/widgets/ScalingSim';
+import { RunVerdict } from '@/view/widgets/RunVerdict';
 import { Scorecard } from '@/view/widgets/Scorecard';
 import { ImpactBoard } from '@/view/widgets/ImpactBoard';
 import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
@@ -100,6 +101,7 @@ function FilteredBoard({
   onActiveTabChange: (tab: ActiveTab) => void;
 }) {
   const { selection } = useFindingFilter();
+  const density = useWidgetDensity();
   const filteredCatalog = useMemo(() => filterFindings(catalog, selection), [catalog, selection]);
   const filteredConfig = useMemo(() => filterFindings(configFindings ?? [], selection), [configFindings, selection]);
 
@@ -112,9 +114,17 @@ function FilteredBoard({
 
   return (
     <main className="flex-1 space-y-6 p-4">
-      <FindingFilterBar options={options} resultCount={totalFilteredCount} />
-      {filteredToEmpty && <NoMatchBanner />}
+      {/* Verdict first, from the unfiltered catalog: it answers "how did this
+          run go and where do I start", which a board filter must not change. */}
+      <RunVerdict appModel={appModel} catalog={catalog} configFindings={configFindings} onRoute={onRoute} />
       <Scorecard appModel={appModel} catalog={filteredCatalog} />
+      {/* Filtering is a power control: Advanced mode shows it, and so does an
+          active selection (e.g. from a shared URL), so a filtered board never
+          hides the control that explains and clears it. */}
+      {(density === 'advanced' || !isEmptySelection(selection)) && (
+        <FindingFilterBar options={options} resultCount={totalFilteredCount} />
+      )}
+      {filteredToEmpty && <NoMatchBanner />}
       {/* Filtering to nothing at all is already covered by NoMatchBanner
           above; ImpactBoard's own "no findings to fix" empty state is for
           a genuinely clean run, not a filter that happens to exclude every

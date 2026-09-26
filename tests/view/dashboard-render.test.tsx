@@ -281,11 +281,12 @@ test('the dashboard heading outline nests correctly: one h1, h2 sections (includ
   expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent))
     .toEqual(['SparkForensics']);
 
-  // The Findings heading and each active impact band sit at level 2 (bands are
-  // board-level sections, not nested under Findings). Full app report's level-2
-  // heading joins the outline only once selected.
+  // The run verdict, the Findings heading and each active impact band sit at
+  // level 2 (bands are board-level sections, not nested under Findings). Full
+  // app report's level-2 heading joins the outline only once selected. Neither
+  // finding carries a recommendation, so the verdict has no step to lead with.
   expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent))
-    .toEqual(['Findings', 'Warning', 'Info']);
+    .toEqual(['2 findings to review', 'Findings', 'Warning', 'Info']);
 
   // Widget titles nest one level below their impact band.
   expect(await screen.findByRole('heading', { name: 'Spill', level: 3 })).toBeInTheDocument();

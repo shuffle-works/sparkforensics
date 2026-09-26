@@ -130,6 +130,14 @@ The dashboard is a single-column application shell with a compact, bordered top 
 
 Card interiors use a 16px default rhythm and a 12px compact rhythm. Tables may overflow horizontally rather than sacrificing column legibility. The top bar keeps a flexible current-file area, a small global health chip, and icon actions; long names truncate instead of changing the chrome's height.
 
+### Reading order and disclosure
+
+The run board reads top to bottom as verdict, then numbers, then evidence. `RunVerdict` answers "how did this run go and where do I start" in one sentence, then lists at most three numbered next steps, each in the same order: what is happening in plain language, what to try, and a route to the evidence. The Scorecard follows, then the Findings and Full app report tabs holding every finding and widget.
+
+- **One place, one step.** Findings on the same stage fold into one step, because they usually share a cause and their savings overlap. Never show one root cause as several equal problems.
+- **Plain language leads, Spark terms follow.** A step's first line is the plain explanation; metric names, ratios and configuration keys come after it.
+- **Basic by default, Advanced on request.** Basic view keeps what a newcomer needs to act. Advanced view adds power controls and meta detail: the finding filter bar, confidence markers, threshold captions, extra columns and doc icons (`AdvancedOnly`). A control that explains current state, such as an active filter, stays visible in Basic view.
+
 ## Elevation & Depth
 
 The system is **flat and layered**. Background tone, hairline borders, and a small left impact-band rule create hierarchy. Shadows are subtle, used only to separate widgets from the canvas or to acknowledge hover, so no card competes for attention.

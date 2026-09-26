@@ -69,7 +69,16 @@ time the finding could save you rather than how unusual the metric looks, so
 a small-looking anomaly with a big payoff can outrank a dramatic one that
 would barely move your run time.
 
-A run scorecard (wall-clock, efficiency, wastage) always shows at the top.
+The board opens with a verdict: one line saying where to start, a short
+summary of what was found, and up to three numbered next steps. Each step
+explains in plain language what is happening, says what to try, and has a
+**Show evidence** button that jumps to the finding's detail widget. Findings
+on the same stage are folded into one step, because they usually share a
+cause and their savings overlap rather than add up. When most of the run's
+executor capacity sat idle, the verdict starts with cluster size instead of
+a small per-stage fix.
+
+A run scorecard (wall-clock, efficiency, wastage) sits under the verdict.
 Below it, two tabs split the rest of the board:
 
 1. **Findings**: every flagged finding and its detail widget, grouped by
@@ -93,8 +102,10 @@ the reference without losing your place.
 The topbar has an **Advanced view** toggle. It's off by default, which keeps
 each widget to the finding itself and what to do about it. Turn it on to also
 show confidence levels, supporting evidence, and documentation links for each
-finding, plus a few extra table columns. Your choice is remembered across
-runs.
+finding, plus a few extra table columns and the finding filter bar (impact,
+type, stage). A filter that is already active, for example from a shared
+link, keeps the filter bar visible either way. Your choice is remembered
+across runs.
 
 ### The rest of the topbar
 

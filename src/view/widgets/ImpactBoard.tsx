@@ -1,8 +1,6 @@
 import { Suspense, useMemo, useState } from 'react';
-import { CircleCheck } from 'lucide-react';
 
 import { Table, TableBody } from '@/components/ui/table';
-import { EmptyState } from '@/view/EmptyState';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { TriageTarget } from '@/view/triage-target';
@@ -14,7 +12,6 @@ import {
 } from '@/view/widgets/Alerts';
 import {
   FindingRow,
-  HighestImpactBar,
   groupImpactBand,
   TypeGroupRow,
   useFixTheseFirstData,
@@ -108,11 +105,13 @@ function ImpactGroup({
 
 /** The Findings tab body: the recommendation table and the active widget grid,
  * merged and grouped by impact band (Critical → Warning → Info), followed by
- * the always-visible reference pair and the Clean checks disclosure. */
+ * the always-visible reference pair and the Clean checks disclosure. The
+ * run-level verdict (where to start, and the clean-run message) sits above
+ * the tabs in `RunVerdict`. */
 export function ImpactBoard({ appModel, catalog, configFindings = [], stages, getTaskData, activeFileId, onRoute }: ImpactBoardProps) {
   // Recompute the rollup/active-widget ranking only when the underlying findings
   // (or stages) change, not on every `setExpandedGroupKey` re-render.
-  const { eligible, groups, triageTarget } = useMemo(
+  const { groups } = useMemo(
     () => useFixTheseFirstData(catalog, configFindings, stages),
     [catalog, configFindings, stages],
   );
@@ -137,8 +136,6 @@ export function ImpactBoard({ appModel, catalog, configFindings = [], stages, ge
 
   return (
     <div id={SUGGESTED_IMPROVEMENTS_ANCHOR_ID} className="space-y-6 scroll-mt-20">
-      {triageTarget ? <HighestImpactBar target={triageTarget} onRoute={onRoute} /> : null}
-      {eligible.length === 0 ? <EmptyState tone="clean" icon={CircleCheck} title="No findings to fix right now." /> : null}
       {IMPACT_BAND_ORDER_LIST.map((impactBand) => (
         <ImpactGroup
           key={impactBand}

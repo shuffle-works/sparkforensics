@@ -64,9 +64,10 @@ describe('ImpactBoard', () => {
     expect(screen.queryByRole('heading', { name: 'Critical' })).not.toBeInTheDocument();
   });
 
-  it('a clean catalog shows the FixTheseFirst empty state and no impact-band headings, but keeps the always-visible grid', async () => {
+  it('a clean catalog shows no impact-band headings, but keeps the always-visible grid', async () => {
+    // The clean-run message belongs to RunVerdict above the tabs, not the board.
     renderBoard([]);
-    expect(screen.getByText('No findings to fix right now.')).toBeInTheDocument();
+    expect(screen.queryByText('No findings to fix right now.')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Warning' })).not.toBeInTheDocument();
     expect(await screen.findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
   });

@@ -48,6 +48,9 @@ beforeEach(() => {
   store.setState({
     appModel: emptyAppModel(), catalog: [], configFindings: [], status: 'idle', errorMessage: null,
     parse: { pct: 0, lines: 0, etaMs: null },
+    // The filter bar is an Advanced-mode control; the Basic-mode visibility
+    // rules have their own tests at the end of this file.
+    widgetDensity: 'advanced',
   });
 });
 
@@ -164,4 +167,29 @@ test('switching to a different file clears the previous file\'s filter (no repar
   expect(screen.queryByText(/no findings match the active filters/i)).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /^remove filter/i })).not.toBeInTheDocument();
   expect(window.location.search).toBe('');
+});
+
+test('Basic mode hides the filter bar while no filter is active', async () => {
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any, widgetDensity: 'basic',
+    catalog: [{ type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'x' }],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(screen.queryByRole('region', { name: 'Filter findings' })).not.toBeInTheDocument();
+});
+
+test('Basic mode still shows the filter bar when a filter is active, so it can be read and cleared', async () => {
+  window.history.replaceState({}, '', '/?stage=1');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any, widgetDensity: 'basic',
+    catalog: [
+      { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'x' },
+      { type: 'skew', stageId: 2, impactBand: 'warning', recommendation: 'y' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(screen.getByRole('region', { name: 'Filter findings' })).toBeInTheDocument();
+  expect(screen.getByText('1 finding matches the active filters')).toBeInTheDocument();
 });
