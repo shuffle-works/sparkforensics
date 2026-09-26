@@ -573,8 +573,10 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    never called clean, and `buildNextSteps` ranks `stageFailed` and
    `jobFailureRate` steps first (a failed job's stage leading) while
    `prioritizeIdleCapacity` is skipped. Evidence caveats (a finding with
-   `dataUnavailable`, or one `isRealFinding` drops) and a log with no
-   finished stage are listed under "Not checked on this log", each caveat by
+   `dataUnavailable`, or one `isRealFinding` drops), a log with no
+   finished stage, and an `incompleteRun` log (whose `RUN_SPAN_CHECK_TYPES`
+   had no run length to measure) are listed under "Not checked on this
+   log" (`verdictGaps`), each caveat by
    its own recommendation text, which names the setting to enable
    (`gapSettings` in `src/view/run-verdict.ts` gathers every named
    `spark.*=value` into one `--conf` line with **Copy settings**, also

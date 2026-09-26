@@ -17,9 +17,10 @@ function capitalize(text: string): string {
   return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1);
 }
 
-/** One row of the "Clean checks" table: a green tag (the active grid's
- * ALL-CAPS `typeTag` vocabulary, colored `clean` instead of an impact band) so
- * the collapsed disclosure reads the same shorthand as the active findings. */
+/** One row of the "Clean checks" table: a tag in the active grid's ALL-CAPS
+ * `typeTag` vocabulary (colored `clean` for a pass, muted for `notRun`,
+ * instead of an impact band) so the collapsed disclosure reads the same
+ * shorthand as the active findings. */
 export function CleanCheckRow({ type, label, thresholdSummary, status = 'passed' }: CleanCheckRowProps) {
   const notRun = status === 'notRun';
   const Icon = notRun ? CircleDashedIcon : CircleCheckIcon;
