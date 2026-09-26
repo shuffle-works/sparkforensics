@@ -236,7 +236,7 @@ function NewcomerPrimer() {
           <p>
             <span className="font-medium text-foreground">Potential savings and colors.</span> Savings estimate the run
             time a fix could recover; they are not a guarantee. Red (critical), amber (warning) and blue (info) show how
-            serious each finding is. When a finding shows a time-savings figure, its color follows that figure.
+            serious each finding is. When a finding shows a time-savings figure, its color usually follows that figure.
           </p>
           <a
             href={UNDERSTANDING_FINDINGS_URL}
