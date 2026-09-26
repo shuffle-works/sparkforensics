@@ -174,3 +174,25 @@ test('getTaskData from a second, independently-mounted useIngest() instance stil
   const data = await dashboard.current.getTaskData(999);
   expect(data.fieldNames).toEqual(['duration']);
 });
+
+test('cancelParse abandons a mid-parse run without caching a snapshot for it', () => {
+  const client = fakeClient();
+  client.startParse = (_f: File, h: any) => {
+    h.onApp({ name: 'demo', id: 'app-1' });
+    h.onStage({ stageId: 1, name: 's1' });
+  };
+  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], status: 'idle', sessionCache: new Map() });
+  const { result } = renderHook(() => useIngest({ makeClient: () => client }));
+
+  act(() => result.current.startLoad(new File(['x'], 'log'), { id: 'recent-1' }));
+  expect(store.getState().status).toBe('parsing');
+  expect(store.getState().appModel.app?.name).toBe('demo');
+
+  act(() => result.current.cancelParse());
+
+  expect(client.terminate).toHaveBeenCalled();
+  expect(store.getState().sessionCache.has('recent-1')).toBe(false);
+  expect(store.getState().activeFileId).toBeNull();
+  expect(store.getState().appModel.app).toBeNull();
+  expect(store.getState().status).toBe('idle');
+});

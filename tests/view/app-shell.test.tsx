@@ -13,7 +13,7 @@ const startLoadFromUrl = vi.fn((_request: unknown, _onShsError: unknown) => {
   store.getState().setStatus('parsing');
   store.getState().setShsParsing(true);
 });
-const resetToDropZone = vi.fn();
+const cancelParse = vi.fn();
 const startLoad = vi.fn(() => {
   store.getState().setShsParsing(false);
   store.getState().setStatus('parsing');
@@ -24,7 +24,7 @@ vi.mock('@/store/useIngest', () => ({
     startLoad,
     startLoadFolder: vi.fn(),
     startLoadFromUrl,
-    resetToDropZone,
+    cancelParse,
     getTaskData: vi.fn(),
     pickRecent: vi.fn(),
   }),
@@ -96,7 +96,7 @@ test('the parsing screen says the log stays local, estimates time left, and can 
   expect(screen.getByText(/About 20\.0s left\. Parsing runs in your browser, so the log stays on this machine\./)).toBeInTheDocument();
 
   await user.click(screen.getByRole('button', { name: 'Cancel' }));
-  expect(resetToDropZone).toHaveBeenCalledTimes(1);
+  expect(cancelParse).toHaveBeenCalledTimes(1);
 });
 
 test('a two-run comparison load shows which run is parsing and offers no cancel', () => {

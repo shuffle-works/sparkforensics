@@ -160,6 +160,17 @@ export function useIngest(opts: Opts = {}) {
     store.getState().setStatus('idle');
   }, [cacheCurrentSnapshot]);
 
+  // Abandons an in-flight parse. Unlike resetToDropZone it never snapshots:
+  // the half-built model has no findings and must not be restored later.
+  const cancelParse = useCallback(() => {
+    clientRef.current?.terminate();
+    clientRef.current = null;
+    pendingRef.current = null;
+    store.getState().resetModel();
+    store.getState().setActiveFile(null);
+    store.getState().setStatus('idle');
+  }, []);
+
   // Switches to a recent-files entry: restores instantly from sessionCache when
   // a snapshot exists, otherwise re-parses from its handle.
   const pickRecent = useCallback(async (id: string, handle?: unknown): Promise<PickResult> => {
@@ -308,5 +319,5 @@ export function useIngest(opts: Opts = {}) {
     store.getState().setComparisonActive(false);
   }, []);
 
-  return { startLoad, startLoadFolder, startLoadFromUrl, resetToDropZone, getTaskData, pickRecent, prepareComparison, startCompareLoad, drillIntoRun };
+  return { startLoad, startLoadFolder, startLoadFromUrl, resetToDropZone, cancelParse, getTaskData, pickRecent, prepareComparison, startCompareLoad, drillIntoRun };
 }

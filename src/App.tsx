@@ -117,7 +117,7 @@ function AppRoutes() {
   const errorMessage = useStore((s) => s.errorMessage);
   const errorNonce = useStore((s) => s.errorNonce);
   const shsParsing = useStore((s) => s.shsParsing);
-  const { resetToDropZone } = useIngest();
+  const { cancelParse } = useIngest();
   const planGraphActive = useStore((s) => s.planGraph.active);
   const comparisonActive = useStore((s) => s.comparison.active);
   const compareLoad = useStore((s) => s.compareLoad);
@@ -144,7 +144,7 @@ function AppRoutes() {
   }
 
   if (status === 'parsing' && !shsParsing) {
-    return <ParseProgress label="Parsing" onCancel={resetToDropZone} />;
+    return <ParseProgress label="Parsing" onCancel={cancelParse} />;
   }
 
   return (
