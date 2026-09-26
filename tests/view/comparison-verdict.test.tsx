@@ -111,6 +111,15 @@ describe('summarizeComparison with failed jobs', () => {
     })).toMatchObject({ title: 'Run A had 1 of 4 jobs fail; run B completed', tone: 'better' });
   });
 
+  it('keeps a neutral tone when both runs had as many failed jobs, even if run B was faster', () => {
+    const verdict = summarizeComparison([metric('wallClock', 'Wall-clock duration', 20_000, 14_000, 'improvement')], noFindings, {
+      baseline: { failedJobs: 2, totalJobs: 5 },
+      candidate: { failedJobs: 2, totalJobs: 5 },
+    });
+    expect(verdict).toMatchObject({ title: 'Run B had 2 of 5 jobs fail (run A: 2 of 5)', tone: 'same' });
+    expect(verdict.sentences[0]).toBe('Run B finished 6.0s faster than run A (30%).');
+  });
+
   it('keeps the run-time headline when both runs completed', () => {
     const verdict = summarizeComparison(sameTime, noFindings, {
       baseline: { failedJobs: 0, totalJobs: 5 },

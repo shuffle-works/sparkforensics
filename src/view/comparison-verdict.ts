@@ -80,11 +80,13 @@ function jobsFailed(outcome: VerdictJobOutcome): string {
 }
 
 /** The headline when either run had failed jobs, as the run verdict leads
- * with a failure: a faster run B that dropped work is not an improvement.
- * Null when both runs completed. */
-function failureHeadline(base: VerdictJobOutcome, cand: VerdictJobOutcome): { title: string; tone: ComparisonTone | null } | null {
+ * with a failure: a faster run B that dropped work is not an improvement,
+ * and with equal failure counts the tone stays neutral since a failing run
+ * that ends sooner may just have failed earlier. Null when both runs
+ * completed. */
+function failureHeadline(base: VerdictJobOutcome, cand: VerdictJobOutcome): { title: string; tone: ComparisonTone } | null {
   if (base.failedJobs === 0 && cand.failedJobs === 0) return null;
-  const tone = cand.failedJobs > base.failedJobs ? 'worse' : cand.failedJobs < base.failedJobs ? 'better' : null;
+  const tone = cand.failedJobs > base.failedJobs ? 'worse' : cand.failedJobs < base.failedJobs ? 'better' : 'same';
   if (cand.failedJobs === 0) return { title: `Run A had ${jobsFailed(base)}; run B completed`, tone };
   const baseText = base.failedJobs === 0 ? 'none' : `${base.failedJobs} of ${base.totalJobs}`;
   return { title: `Run B had ${jobsFailed(cand)} (run A: ${baseText})`, tone };
@@ -127,7 +129,7 @@ export function summarizeComparison(
   if (failure) {
     sentences.push(`${title}.`);
     title = failure.title;
-    tone = failure.tone ?? tone;
+    tone = failure.tone;
   }
   if (worse.length > 0) sentences.push(`Worse in run B: ${worse.join(', ')}.`);
   if (better.length > 0) sentences.push(`Better in run B: ${better.join(', ')}.`);
