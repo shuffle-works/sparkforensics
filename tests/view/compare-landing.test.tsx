@@ -72,6 +72,10 @@ test('single-run landing prioritizes one Spark event log and presents next inves
   const hero = screen.getByRole('heading', { name: /analyze a spark event log/i }).closest('section') as HTMLElement;
   expect(within(hero).getByTestId('drop-zone')).toBeInTheDocument();
   expect(within(hero).getByRole('button', { name: 'Try a sample run' })).toBeInTheDocument();
+  // The docs links sit in the hero too, above the intake.
+  const docsLink = within(hero).getByRole('link', { name: /read the docs/i });
+  expect(within(hero).getByRole('link', { name: /spark optimization reference/i })).toBeInTheDocument();
+  expect(docsLink.compareDocumentPosition(within(hero).getByTestId('drop-zone')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 test('keeps landing actions comfortable to tap and compare slots stacked below the large breakpoint', async () => {

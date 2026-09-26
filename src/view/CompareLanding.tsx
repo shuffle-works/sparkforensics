@@ -200,6 +200,9 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
             <span><Bot aria-hidden="true" /> Bring your AI into the investigation</span>
             <span><GitCompareArrows aria-hidden="true" /> Compare one run against another</span>
           </div>
+          {/* The docs links stay above the intake so they read on the first
+              screen too. */}
+          <ResourceLinks />
           {/* The intake sits in the hero, not in a section of its own below
               it: a first-time visitor's only job here is loading a log, so
               Choose file and Try a sample run must be in the first viewport. */}
@@ -208,8 +211,6 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
             <DropZone />
           </div>
         </section>
-
-        <ResourceLinks />
 
         <NextStepsRail onCompare={() => setCompareMode(true)} />
       </div>
