@@ -132,3 +132,31 @@ test('an open Select popup keeps its typeahead keys', async () => {
   expect(screen.getByRole('tab', { name: 'Findings' })).toHaveAttribute('aria-selected', 'true');
   expect(listbox).toBeInTheDocument();
 });
+
+test('j, f and 2 do nothing while a listbox is open or a combobox has focus', async () => {
+  const user = userEvent.setup();
+  await load('advanced');
+  const findingsTab = screen.getByRole('tab', { name: 'Findings' });
+
+  const expectNoShortcut = async (focused: HTMLElement) => {
+    await user.keyboard('jf2');
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(document.activeElement).toBe(focused);
+    expect(findingsTab).toHaveAttribute('aria-selected', 'true');
+  };
+
+  const listbox = document.createElement('div');
+  listbox.setAttribute('role', 'listbox');
+  listbox.tabIndex = 0;
+  document.body.appendChild(listbox);
+  await act(async () => listbox.focus());
+  await expectNoShortcut(listbox);
+  listbox.remove();
+
+  const combobox = document.createElement('button');
+  combobox.setAttribute('role', 'combobox');
+  document.body.appendChild(combobox);
+  await act(async () => combobox.focus());
+  await expectNoShortcut(combobox);
+  combobox.remove();
+});

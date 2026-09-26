@@ -10,13 +10,14 @@ const FINDING_CONTROL_SELECTOR = [
 ].join(', ');
 
 /** True while the key belongs to something else: typing in a field, a
- * modifier chord, or an open dialog/menu/listbox that owns its own keyboard
- * model. */
+ * modifier chord, a focused listbox/combobox, or an open dialog/menu/listbox
+ * that owns its own keyboard model. */
 function shouldIgnore(event: KeyboardEvent): boolean {
   if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return true;
   const target = event.target as HTMLElement | null;
   const tag = target?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return true;
+  if (target?.closest?.('[role="listbox"], [role="combobox"]')) return true;
   return document.querySelector('[role="dialog"], [role="menu"], [role="alertdialog"], [role="listbox"]') != null;
 }
 
@@ -53,8 +54,8 @@ export interface TriageShortcutHandlers {
 
 /** Single-key triage shortcuts for the run dashboard in Advanced view,
  * documented in `KeyboardShortcutsDialog`: j/k step through findings (verdict
- * steps, then every recommendation row) and Enter opens the focused one's
- * evidence, f jumps to the finding filters, 1/2 switch the report tabs. */
+ * steps, then every recommendation row) and Enter shows the focused one's
+ * evidence or expands a grouped finding, f jumps to the finding filters, 1/2 switch the report tabs. */
 export function useTriageShortcuts({ enabled, showFindings, showFullReport }: TriageShortcutHandlers): void {
   useEffect(() => {
     if (!enabled) return undefined;
