@@ -85,8 +85,8 @@ a small per-stage fix.
 A run scorecard sits under the verdict: **Wall-clock** (total run time),
 **Efficiency** (the share of that time with a stage running; higher is
 better) and **Unused core time** (driver idle plus executor slack across the
-whole run, so it can run higher than the verdict's idle capacity; lower is
-better). A collapsed **New to Spark tuning?** primer in the verdict
+whole run, so it can run higher than the idle capacity a verdict step
+reports; lower is better). A collapsed **New to Spark tuning?** primer in the verdict
 explains stages, tasks, executors, shuffle and how to read savings. Stage
 labels such as **Stage 7** open that stage's details.
 Below it, two tabs split the rest of the board:

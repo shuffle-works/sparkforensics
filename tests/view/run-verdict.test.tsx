@@ -171,6 +171,30 @@ describe('RunVerdict', () => {
       .toBeInTheDocument();
   });
 
+  it('states a non-leading idle-capacity step as idle executor capacity', () => {
+    renderVerdict([timed('skew', 7, 2_400), {
+      type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'info', value: 50,
+      recommendation: '50% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
+    }]);
+    expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
+    const verdict = screen.getByTestId('run-verdict');
+    expect(verdict).toHaveTextContent('50% of the executor capacity sat idle, so the cluster may be larger than this job needs.');
+    expect(verdict).not.toHaveTextContent('went unused');
+  });
+
+  it('states the Scorecard figure as unused core time when no idle-capacity step exists', () => {
+    const model = {
+      ...appModel(),
+      app: { startTime: 0, endTime: 20_000, resources: { executor: { cores: 2 } } },
+      executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 2, resourceProfileId: null }], removed: [] },
+      runAggregates: { busyCoreMs: 10, perStage: { 7: { totalTaskDurationSum: 10, taskCount: 1 } } },
+    } as unknown as AppModel;
+    renderVerdict([timed('skew', 7, 2_400)], vi.fn(), model);
+    const verdict = screen.getByTestId('run-verdict');
+    expect(verdict).toHaveTextContent(/\d+% of the run's core time went unused, so the cluster may be larger than this job needs\./);
+    expect(verdict).not.toHaveTextContent('sat idle');
+  });
+
   it('titles a heap-pressure lead by its own fix, not by cluster size', () => {
     renderVerdict([{
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity', stageId: null, impactBand: 'warning',

@@ -195,7 +195,7 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
                   ? 'Unused core time needs usable executor-capacity data.'
                   : density === 'advanced'
                     ? 'Driver-idle + executor-slack core-hours as a share of available capacity. Directional, not a cost figure.'
-                    : 'Driver idle plus executor slack across the whole run, so it can run higher than the idle capacity above. Lower is better. Not a cost figure.'
+                    : 'Driver idle plus executor slack across the whole run, so it can run higher than the idle capacity a verdict step reports. Lower is better. Not a cost figure.'
           }
           bar={wastagePct != null ? <ProportionBar pct={wastagePct} flag={wastageFlag} label={`Unused core time ${wastagePct}%`} /> : undefined}
         />
