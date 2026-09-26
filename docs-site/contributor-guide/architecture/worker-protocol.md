@@ -371,7 +371,10 @@ absolute budgets and this check apply to the candidate run; the MCP
 `packages/core/src/mcp-server-factory.ts`'s `createMcpServer()` registers 6 tools:
 `diagnose_run` (thresholded findings + remediation text), `get_run_summary`
 (app/stage/job/sql counts and duration, no findings), `compare_runs`
-(categorized findings delta + metric deltas between two runs),
+(the comparison verdict from `comparisonVerdict` in `packages/core/src/comparison-verdict.ts`,
+the dashboard comparison page's own headline, plus categorized findings delta + metric deltas
+between two runs; `CompareRunsResult.jobOutcomes` carries each run's failed jobs and incomplete
+flag for it),
 `evaluate_budgets` (pass/fail budget thresholds against one run, optionally
 with a second run for regression/fail-on-introduced budgets: the MCP side
 of the CLI's `evaluateBudgets()` gating), `get_finding_evidence` (raw

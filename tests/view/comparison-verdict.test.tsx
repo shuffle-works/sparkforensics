@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { summarizeComparison, type VerdictMetric } from '@/view/comparison-verdict';
+import { summarizeComparison, type VerdictMetric } from '@sparkforensics/core/comparison-verdict.ts';
 import { RunComparison } from '@/view/RunComparison';
 
 function metric(key: string, label: string, baseline: number, candidate: number, direction: VerdictMetric['direction']): VerdictMetric {

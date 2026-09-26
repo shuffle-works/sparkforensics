@@ -1,6 +1,6 @@
-import { formatDuration, typeTag } from '@sparkforensics/core/format-utils.ts';
-import { NEUTRAL_METRIC_KEYS } from '@sparkforensics/core/run-comparison.ts';
-import { TAG_HELP } from '@/view/finding-tag-help';
+import { formatDuration, typeTag } from './format-utils.ts';
+import { TAG_HELP } from './finding-tag-help.ts';
+import { NEUTRAL_METRIC_KEYS, type CompareRunsResult } from './run-comparison.ts';
 
 /** The slice of a comparison metric row the verdict reads. */
 export interface VerdictMetric {
@@ -168,4 +168,10 @@ export function summarizeComparison(
   if (introduced.length > 0) sentences.push(`New or more frequent in run B: ${introduced.join(', ')}.`);
   if (resolved.length > 0) sentences.push(`Less frequent in run B: ${resolved.join(', ')}.`);
   return { title, tone, sentences };
+}
+
+/** The comparison verdict for a core comparison result: the one the dashboard's comparison page
+ * leads with, and the one the CLI's --baseline report and MCP compare_runs carry. */
+export function comparisonVerdict(result: Pick<CompareRunsResult, 'metrics' | 'findings' | 'jobOutcomes'>): ComparisonVerdictText {
+  return summarizeComparison(result.metrics, result.findings, result.jobOutcomes);
 }

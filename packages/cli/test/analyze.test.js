@@ -479,6 +479,8 @@ describe('sparkforensics-analyze CLI', () => {
         expect(parsed.candidate).toBeDefined();
         expect(Array.isArray(parsed.candidate.findings)).toBe(true);
         expect(parsed.comparison).toMatchObject({ confidence: expect.any(String) });
+        expect(parsed.comparison.verdict).toMatchObject({ title: expect.any(String), tone: expect.any(String) });
+        expect(Array.isArray(parsed.comparison.verdict.sentences)).toBe(true);
         expect(Array.isArray(parsed.comparison.metrics)).toBe(true);
         expect(parsed.comparison.findings).toHaveProperty('introduced');
         expect(parsed.comparison.findings).toHaveProperty('resolved');
@@ -495,7 +497,7 @@ describe('sparkforensics-analyze CLI', () => {
         const { stdout, status } = runCli([candidatePath, '--baseline', baselinePath, '--format', 'md']);
         expect(status).toBe(0);
         expect(stdout).toMatch(/^# Spark run evidence report/);
-        expect(stdout).toMatch(/## Comparison to baseline/);
+        expect(stdout).toMatch(/## Comparison to baseline\n\nRun A: baseline · Run B: candidate\n\n\S/);
       });
     });
 

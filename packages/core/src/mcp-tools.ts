@@ -11,6 +11,7 @@ import { redactComparison } from './redact.ts';
 import { computeWallClock } from './wall-clock.ts';
 import { analyze } from './analyzer.ts';
 import { buildComparison, renderComparisonMarkdown, type CompareRunsResult } from './run-comparison.ts';
+import { comparisonVerdict, type ComparisonVerdictText } from './comparison-verdict.ts';
 import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { docAnchorForType, tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
@@ -40,11 +41,13 @@ export interface RunSummary {
   failureReasonStageId: number | null;
 }
 // compareRuns returns a smaller MCP-facing projection of CompareRunsResult
-// (runIdA/runIdB/findingsDelta/metricDeltas/confidence/reason/matchedCoverage), not the full raw
-// shape (no baselineLabel/stageSkew/baseStages/candStages).
+// (runIdA/runIdB/verdict/findingsDelta/metricDeltas/confidence/reason/matchedCoverage), not the full
+// raw shape (no baselineLabel/stageSkew/baseStages/candStages/jobOutcomes).
 export interface McpCompareRunsResult {
   runIdA: string;
   runIdB: string;
+  // The dashboard comparison page's headline (run A = runIdA, run B = runIdB).
+  verdict: ComparisonVerdictText;
   findingsDelta: CompareRunsResult['findings'];
   metricDeltas: CompareRunsResult['metrics'];
   confidence: CompareRunsResult['confidence'];
@@ -341,16 +344,18 @@ export async function compareRuns(
   // Stage names throughout `built` carry raw Spark stage text, which can embed a host/IP token as
   // free text, the same residual redactReport() already scrubs from the evidence report.
   const result = opts?.redact ? redactComparison(built) : built;
+  const verdict = comparisonVerdict(result);
 
   return {
     runIdA,
     runIdB,
+    verdict,
     findingsDelta: result.findings,
     metricDeltas: result.metrics,
     confidence: result.confidence,
     reason: result.reason,
     matchedCoverage: result.matchedCoverage,
-    ...(opts?.markdown ? { markdown: renderComparisonMarkdown(result) } : {}),
+    ...(opts?.markdown ? { markdown: renderComparisonMarkdown(result, verdict) } : {}),
   };
 }
 

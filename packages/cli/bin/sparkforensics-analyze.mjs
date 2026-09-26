@@ -27,6 +27,7 @@ const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
 const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
 const { evaluateBudgets } = await loadCore('cli/budgets');
 const { buildComparison, renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
+const { comparisonVerdict } = await loadCore('comparison-verdict');
 const { redactComparison, redactExportData } = await loadCore('redact');
 const { buildExportRunData } = await loadCore('export-data');
 
@@ -324,12 +325,13 @@ export async function main(argv, { fetchImpl } = {}) {
   const { markdown, json } = buildEvidenceReport(appModel, { redact: values.redact, findingsFilter, markdown: values.format === 'md' });
   let output;
   if (values.format === 'md') {
-    output = comparison ? `${markdown}${renderComparisonMarkdown(comparison)}\n` : `${markdown}\n`;
+    output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonVerdict(comparison))}\n` : `${markdown}\n`;
   } else {
     const payload = comparison
       ? {
         candidate: json,
         comparison: {
+          verdict: comparisonVerdict(comparison),
           confidence: comparison.confidence,
           reason: comparison.reason,
           matchedCoverage: comparison.matchedCoverage,

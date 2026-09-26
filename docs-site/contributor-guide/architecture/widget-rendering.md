@@ -43,7 +43,7 @@ Tags carry their own docs links; there is no separate legend widget.
 documentation anchor is the caller's `docAnchor` prop when that is a known
 anchor (call sites holding the finding pass `finding.docAnchor`; a widget
 header or grouped row passes `sharedDocAnchor(findings)`), else the type's
-single known anchor (`docAnchorForType`, `src/view/finding-tag-help.ts`). The
+single known anchor (`docAnchorForType`, re-exported by `src/view/finding-tag-help.ts` beside `TAG_HELP`, which lives in `packages/core/src/finding-tag-help.ts`). The
 prop matters for `configAudit`, whose four entries carry different anchors,
 so the type lookup finds none. With an anchor, the pill itself links into
 the docs panel, and (density `advanced` only) a second icon link opens that

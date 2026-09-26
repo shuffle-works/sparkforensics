@@ -230,7 +230,13 @@ Example response:
 
 ## `compare_runs`
 
-Compare two runs: categorized findings delta and metric deltas.
+Compare two runs: the comparison page's verdict, categorized findings delta
+and metric deltas. `verdict` is the headline the dashboard's comparison page
+opens with (run A is `runIdA`/`sourceA`, run B is `runIdB`/`sourceB`): a
+`title` such as "Run B finished 9.9s faster than run A (37%)", or a failed-job
+headline when either run had jobs fail, a `tone` (`better`, `worse`, `same` or
+`unknown`), and `sentences` naming which cost metrics and finding categories
+moved each way.
 
 Parameters:
 
@@ -264,6 +270,7 @@ Example response:
 {
   "runIdA": "aaaa1111-...",
   "runIdB": "bbbb2222-...",
+  "verdict": { "title": "Run B finished 1.0s faster than run A (50%)", "tone": "better", "sentences": [] },
   "findingsDelta": { "introduced": [], "resolved": [] },
   "metricDeltas": [
     {
