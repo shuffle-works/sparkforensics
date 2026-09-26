@@ -840,6 +840,12 @@ describe('estimateImpact: cost-only group B', () => {
     expect(findings[0].impactEstimate.rawWaste.unit).toBe('ms');
   });
 
+  it('cacheUtilization storageUnobserved: missing evidence, informational', () => {
+    const findings = [{ type: 'cacheUtilization', variant: 'storageUnobserved', dataUnavailable: true, value: 2, impactBand: 'info' }];
+    estimateImpact(findings, new Map());
+    expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
+  });
+
   for (const type of ['stageFailed', 'failures', 'incompleteRun']) {
     it(`${type}: informational, no rawWaste`, () => {
       const findings = [{ type, impactBand: 'critical' }];

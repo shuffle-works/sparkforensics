@@ -12,7 +12,7 @@ export {
   buildChunkDecoder, createState, normalizeSparkProperties, parseSparkMemoryMB, extractResources,
   accumulateTask, resolvePlanTree, startApplication, updateEnvironment, startJob, endJob, submitStage,
   mergeStageRddInfo, recordStageExecutorMetrics, startSqlExecution, endSqlExecution,
-  applyDriverAccumUpdates, addExecutor, removeExecutor, processEvent, dispatchLine,
+  applyDriverAccumUpdates, addExecutor, removeExecutor, recordBlockUpdate, processEvent, dispatchLine,
   collectStageExecutorMetrics,
 } from './event-handlers.ts';
 

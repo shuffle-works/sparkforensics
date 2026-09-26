@@ -332,7 +332,7 @@ formula per `variant`/`rule` on the same finding type; the basis column says whi
 | `configAudit` | config | informational-only | a config-drift check standing alone; no waste formula |
 | `jobFailureRate` | app | cost-only | `rawWaste` in `coreHours`: `failedJobCount × avgJobDurationMs / 3.6e6` |
 | `cachingOpportunity` | app | cost-only | `rawWaste` in `ms`: `totalReadBytes / RE_READ_THROUGHPUT_BPS` |
-| `cacheUtilization` | app | cost-only | `rawWaste` in `ms`: uncached-or-spilled bytes `/ RE_READ_THROUGHPUT_BPS`, where the never-cached partitions' bytes are extrapolated from the cached partitions' own average size (`memorySize + diskSize`, over `numCachedPartitions`), plus `diskSize` again for the already-cached-but-on-disk partitions' own re-read cost |
+| `cacheUtilization` | app | cost-only | `rawWaste` in `ms`: uncached-or-spilled bytes `/ RE_READ_THROUGHPUT_BPS`, where the never-cached partitions' bytes are extrapolated from the cached partitions' own average size (`memorySize + diskSize`, over `numCachedPartitions`), plus `diskSize` again for the already-cached-but-on-disk partitions' own re-read cost. The `storageUnobserved` caveat (`dataUnavailable`) has no sizes: informational-only |
 | `stageFailed` | stage | informational-only | no waste formula |
 | `failures` | stage | informational-only | no waste formula |
 | `incompleteRun` | app | informational-only | no waste formula |

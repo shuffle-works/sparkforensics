@@ -456,8 +456,8 @@ describe('ExecutorRemovedEventSchema', () => {
 });
 
 describe('SparkEventSchema', () => {
-  it('has exactly 16 entries matching processEvent\'s switch', () => {
-    expect(SparkEventSchema.options.length).toBe(16);
+  it('has exactly 17 entries matching processEvent\'s switch', () => {
+    expect(SparkEventSchema.options.length).toBe(17);
   });
 
   it('variant set matches exactly the Event types the current switch handles', () => {
@@ -479,6 +479,7 @@ describe('SparkEventSchema', () => {
       'org.apache.spark.sql.execution.ui.SparkListenerDriverAccumUpdates',
       'SparkListenerExecutorAdded',
       'SparkListenerExecutorRemoved',
+      'SparkListenerBlockUpdated',
     ].sort();
     expect(schemaVariants).toEqual(switchHandledVariants);
   });

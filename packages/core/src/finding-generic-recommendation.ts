@@ -76,6 +76,7 @@ export function coreFindingGenericRecommendation(finding: Finding): string | und
       switch (finding.variant) {
         case 'partialCache': return 'Increase executor memory or reduce the cached dataset size so more of it stays cached.';
         case 'diskSpillover': return 'Executor memory may be too small for this cached dataset: increase executor memory or reduce its size.';
+        case 'storageUnobserved': break;
       }
       break;
     case 'coreLocality':

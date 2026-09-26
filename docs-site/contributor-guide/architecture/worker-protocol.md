@@ -392,11 +392,11 @@ bundler-style resolver can. `tsconfig.json` sets
 `"allowImportingTsExtensions": true` to make this legal.
 
 Event schema validation lives in `packages/core/src/event-schemas.ts`: one zod schema per
-`SparkListener*` event variant the parser understands (15 total: `LogStart`,
+`SparkListener*` event variant the parser understands (17 total: `LogStart`,
 `ApplicationStart`, `EnvironmentUpdate`, `ApplicationEnd`, `JobStart`,
 `JobEnd`, `StageSubmitted`, `StageCompleted`, `StageExecutorMetrics`,
-`TaskEnd`, the three SQL-execution-UI listener events, `ExecutorAdded`,
-`ExecutorRemoved`), combined into `SparkEventSchema =
+`TaskEnd`, the four SQL-execution-UI listener events, `ExecutorAdded`,
+`ExecutorRemoved`, `BlockUpdated`), combined into `SparkEventSchema =
 z.discriminatedUnion('Event', [...])`. `processEvent`'s switch
 (`event-handlers.ts`) consumes the resulting `SparkEvent` union type directly,
 so a schema change and a handler's expectations can't silently drift apart.

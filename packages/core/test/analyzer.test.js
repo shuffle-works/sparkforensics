@@ -1980,9 +1980,75 @@ describe('analyze, cacheUtilization detector', () => {
     expect(cacheFindings(makeApp({ rddInfo }))).toEqual([]);
   });
 
-  it('never flags an RDD with numCachedPartitions === 0', () => {
+  it('never flags an RDD with numCachedPartitions === 0 with a partial-cache or spillover finding', () => {
     const rddInfo = new Map([[1, makeRdd(1, { numCachedPartitions: 0 })]]);
-    expect(cacheFindings(makeApp({ rddInfo }))).toEqual([]);
+    expect(cacheFindings(makeApp({ rddInfo })).filter((f) => !f.dataUnavailable)).toEqual([]);
+  });
+
+  describe('persisted RDDs without storage evidence', () => {
+    // Spark 2.3+ with logBlockUpdates off: RDD Info's cache figures are always 0.
+    const unobservedRdd = (id) => makeRdd(id, { numCachedPartitions: 0, memorySize: 0, diskSize: 0 });
+
+    it('reports a storageUnobserved caveat naming spark.eventLog.logBlockUpdates.enabled instead of a clean result', () => {
+      const rddInfo = new Map([[1, unobservedRdd(1)], [2, unobservedRdd(2)]]);
+      const findings = cacheFindings(makeApp({ rddInfo, rddBlockUpdates: 0 }));
+      expect(findings).toHaveLength(1);
+      expect(findings[0]).toMatchObject({
+        variant: 'storageUnobserved', dataUnavailable: true, impactBand: 'info', metric: 'persistedRdds', value: 2,
+      });
+      expect(findings[0].recommendation).toContain('spark.eventLog.logBlockUpdates.enabled=true');
+    });
+
+    it('stays silent when the log has block updates: a persisted RDD with no blocks was never cached', () => {
+      const rddInfo = new Map([[1, unobservedRdd(1)]]);
+      expect(cacheFindings(makeApp({ rddInfo, rddBlockUpdates: 5 }))).toEqual([]);
+    });
+
+    it('stays silent before Spark 2.3, which has no block-update logging to enable', () => {
+      const rddInfo = new Map([[1, unobservedRdd(1)]]);
+      expect(cacheFindings(makeApp({ rddInfo, sparkVersion: '1.2.0' }))).toEqual([]);
+      expect(cacheFindings(makeApp({ rddInfo, sparkVersion: '2.2.1' }))).toEqual([]);
+    });
+
+    it('stays silent when the log records no Spark version (pre-1.3, no SparkListenerLogStart)', () => {
+      const rddInfo = new Map([[1, unobservedRdd(1)]]);
+      for (const sparkVersion of [null, undefined]) {
+        expect(cacheFindings(makeApp({ rddInfo, sparkVersion }))).toEqual([]);
+      }
+    });
+
+    it('still reports the caveat from Spark 2.3 on', () => {
+      const rddInfo = new Map([[1, unobservedRdd(1)]]);
+      for (const sparkVersion of ['2.3.0', '3.5.1']) {
+        expect(cacheFindings(makeApp({ rddInfo, sparkVersion })).map((f) => f.variant)).toEqual(['storageUnobserved']);
+      }
+    });
+
+    it('stays silent when block-update logging was on but no RDD block was ever cached', () => {
+      const rddInfo = new Map([[1, unobservedRdd(1)]]);
+      const config = { 'spark.eventLog.logBlockUpdates.enabled': 'true' };
+      expect(cacheFindings(makeApp({ rddInfo, rddBlockUpdates: 0, config }))).toEqual([]);
+    });
+
+    it('stays silent when another RDD carries real RDD Info figures (a Spark 1.x log)', () => {
+      const rddInfo = new Map([[1, unobservedRdd(1)], [2, makeRdd(2)]]);
+      expect(cacheFindings(makeApp({ rddInfo }))).toEqual([]);
+    });
+
+    it('ignores RDDs that were never persisted', () => {
+      const rddInfo = new Map([[1, makeRdd(1, { numCachedPartitions: 0, storageLevel: { useMemory: false, useDisk: false } })]]);
+      expect(cacheFindings(makeApp({ rddInfo }))).toEqual([]);
+    });
+  });
+
+  it('words the validation note after the storage source', () => {
+    const rddInfo = new Map([
+      [1, makeRdd(1, { numCachedPartitions: 4 })],
+      [2, makeRdd(2, { numCachedPartitions: 4, storageSource: 'blockUpdates' })],
+    ]);
+    const byRdd = new Map(cacheFindings(makeApp({ rddInfo })).map((f) => [f.rddId, f.validationRequired]));
+    expect(byRdd.get(1)).toContain('stage-submission events');
+    expect(byRdd.get(2)).toContain('block-update events');
   });
 
   it('emits both partialCache and diskSpillover findings for the same RDD when both tiers are crossed', () => {

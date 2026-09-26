@@ -84,6 +84,8 @@ test('returns a plain per-type label for every remaining single-branch detector 
   expect(coreFindingActionLabel(finding({ type: 'coldStart' }))).toBe('Pre-warm cluster');
   expect(coreFindingActionLabel(finding({ type: 'utilization' }))).toBe('Reduce cluster size');
   expect(coreFindingActionLabel(finding({ type: 'cacheUtilization' }))).toBe('Increase cache memory');
+  expect(coreFindingActionLabel(finding({ type: 'cacheUtilization', variant: 'storageUnobserved', dataUnavailable: true })))
+    .toBe('Enable block-update logging');
   expect(coreFindingActionLabel(finding({ type: 'coreLocality' }))).toBe('Fix data locality');
   expect(coreFindingActionLabel(finding({ type: 'autoscalingChurn' }))).toBe('Reduce autoscaling churn');
   expect(coreFindingActionLabel(finding({ type: 'jobFailureRate' }))).toBe('Investigate failed jobs');
