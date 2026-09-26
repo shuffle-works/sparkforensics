@@ -144,6 +144,7 @@ function FilteredBoard({
   // A jump from an unfiltered surface (verdict, stage dialog, top bar chip)
   // must land on the board: clear only the filter dimensions that hide it.
   const revealFinding = useCallback((finding: Finding, subject: string) => {
+    if (isAlwaysMountedType(finding.type)) return;
     const dimensions = excludingDimensions(finding, selection);
     if (dimensions.length === 0) return;
     const next = { ...selection };
@@ -159,7 +160,8 @@ function FilteredBoard({
   // the fewest cleared dimensions), show Findings, then land on the band once
   // the tab panel is visible.
   const jumpToFindings = useCallback((impactBand: Finding['impactBand']) => {
-    const counted = [...catalog, ...(configFindings ?? [])].filter((f) => isEligible(f) && f.impactBand === impactBand);
+    const counted = [...catalog, ...(configFindings ?? [])]
+      .filter((f) => isEligible(f) && !isAlwaysMountedType(f.type) && f.impactBand === impactBand);
     const closest = counted.reduce<Finding | null>((best, finding) => (
       !best || excludingDimensions(finding, selection).length < excludingDimensions(best, selection).length ? finding : best
     ), null);

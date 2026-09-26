@@ -255,6 +255,32 @@ test('a verdict step hidden by the active filter clears only the dimension that 
   delete Element.prototype.scrollIntoView;
 });
 
+test('a verdict step for a Full app report widget leaves the board filter alone', async () => {
+  const user = userEvent.setup();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() });
+  window.history.replaceState({}, '', '/?type=spill');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
+      { type: 'coreLocality', stageId: null, impactBand: 'critical', value: 40, recommendation: 'Check locality.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+
+  const localityStep = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')
+    .find((step) => step.textContent?.includes('Check locality.'))!;
+  await user.click(within(localityStep).getByRole('button', { name: /show evidence/i }));
+
+  expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
+  expect(new URLSearchParams(window.location.search).get('type')).toBe('spill');
+  await user.click(screen.getByRole('tab', { name: 'Findings' }));
+  expect(screen.queryByText(/Cleared the .* filter/)).not.toBeInTheDocument();
+  // @ts-expect-error -- restore jsdom's default (no scrollIntoView)
+  delete Element.prototype.scrollIntoView;
+});
+
 test('the top bar count chip clears the filter that hides the band it counts, and lands on it', async () => {
   const user = userEvent.setup();
   window.history.replaceState({}, '', '/?type=spill&stage=1');
