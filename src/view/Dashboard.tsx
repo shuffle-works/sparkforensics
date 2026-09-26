@@ -34,6 +34,7 @@ import { WastedCoreHours } from '@/view/widgets/WastedCoreHours';
 import { Topbar } from '@/view/Topbar';
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
 import { useIngest } from '@/store/useIngest';
+import { useTriageShortcuts } from '@/view/useTriageShortcuts';
 import { useRecentFiles } from '@/view/useRecentFiles';
 import {
   TriageNavigationProvider,
@@ -223,6 +224,10 @@ function DashboardContent() {
   const { recentEntries, onPickRecent, onRemoveRecent } = useRecentFiles(activeFileId);
   const [dragOver, setDragOver] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('findings');
+  const density = useWidgetDensity();
+  const showFindings = useCallback(() => setActiveTab('findings'), []);
+  const showFullReport = useCallback(() => setActiveTab('full-report'), []);
+  useTriageShortcuts({ enabled: density === 'advanced', showFindings, showFullReport });
   const { referenceOpen } = useEvidenceAvailabilityDisclosure();
   const [routeRequest, setRouteRequest] = useState<RouteRequest | null>(null);
   const [routeFocusedWidgetId, setRouteFocusedWidgetId] = useState<string | null>(null);

@@ -116,7 +116,12 @@ finding, plus a few extra table columns and the finding filter bar (impact,
 type, stage). A filter that is already active, for example from a shared
 link, keeps the filter bar visible either way. The scorecard switches from
 plain captions to the raw run and idle-time breakdown, and the newcomer
-primer is hidden. Your choice is remembered across runs.
+primer is hidden. Advanced view also turns on single-key triage shortcuts:
+`j` and `k` step through the verdict's steps and then every finding row,
+`Enter` opens the focused finding's evidence, `f` jumps to the filters, and
+`1` and `2` switch between **Findings** and **Full app report**. They stay
+off in the default view, so they never surprise a first-time visitor or a
+screen-reader user. Your choice is remembered across runs.
 
 ### The rest of the topbar
 

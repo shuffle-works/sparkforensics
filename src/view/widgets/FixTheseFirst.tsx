@@ -155,6 +155,7 @@ export function FindingRow({
       <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
         <button
           type="button"
+          data-shortcut-target
           className="cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={() => target && onRoute(target)}
         >
@@ -226,6 +227,7 @@ function FindingInstanceRow({
             the column can shrink to a normal width without overflow. */}
         <button
           type="button"
+          data-shortcut-target
           className="block w-full cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={() => target && onRoute(target)}
         >
@@ -316,6 +318,7 @@ export function TypeGroupRow({
             type="button"
             aria-expanded={expanded}
             aria-controls={contentId}
+            data-shortcut-target
             className="cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             onClick={onToggle}
           >

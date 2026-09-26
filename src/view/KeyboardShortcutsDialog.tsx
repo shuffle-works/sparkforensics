@@ -36,12 +36,12 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   );
 }
 
-/** Documents only keyboard interactions that already work today, sourced
- * from a full code audit rather than aspirational shortcuts: Escape's
+/** Documents only keyboard interactions that already work: Escape's
  * route/dialog-closing, Base UI's built-in dialog and menu keyboard model,
- * the Type/Stage filter search boxes, the sortable StageTable headers, and
- * the Stage-ID buttons that open a stage's detail dialog. Nothing here is a
- * new keybinding except this dialog's own "?" trigger, wired in Topbar.tsx. */
+ * the Type/Stage filter search boxes, the sortable StageTable headers, the
+ * Stage-ID buttons that open a stage's detail dialog, this dialog's own "?"
+ * trigger (Topbar.tsx), and the Advanced-view triage keys
+ * (`useTriageShortcuts`, wired in Dashboard.tsx). */
 export function KeyboardShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -59,6 +59,12 @@ export function KeyboardShortcutsDialog({ open, onOpenChange }: { open: boolean;
           <Group title="Menus and lists">
             <Row keys={['↑', '↓']}>Move between menu items or picker rows</Row>
             <Row keys={['A–Z', '0–9']}>Filter the Type and Stage dropdowns, and the plan execution picker, as you type</Row>
+          </Group>
+          <Group title="Triage (Advanced view only)">
+            <Row keys={['j', 'k']}>Next or previous finding, starting with the verdict's steps</Row>
+            <Row keys={['Enter']}>Show the focused finding's evidence</Row>
+            <Row keys={['f']}>Jump to the finding filters</Row>
+            <Row keys={['1', '2']}>Switch to Findings or Full app report</Row>
           </Group>
           <Group title="Help">
             <Row keys={['?']}>Open this list</Row>

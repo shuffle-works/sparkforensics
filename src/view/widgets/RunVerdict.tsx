@@ -183,7 +183,7 @@ function NextStepItem({ step, index, onRoute }: { step: NextStep; index: number;
           </p>
         ) : null}
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Button size="sm" variant={index === 0 ? 'default' : 'outline'} onClick={() => onRoute(step.lead)}>
+          <Button size="sm" variant={index === 0 ? 'default' : 'outline'} data-shortcut-target onClick={() => onRoute(step.lead)}>
             Show evidence
             <ArrowRight aria-hidden="true" />
           </Button>

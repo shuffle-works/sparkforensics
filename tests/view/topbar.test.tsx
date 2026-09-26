@@ -389,6 +389,9 @@ test('clicking the keyboard-shortcuts button opens the shortcuts dialog', async 
   await userEvent.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }));
   expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
   expect(screen.getByText('Open this list')).toBeInTheDocument();
+  // The Advanced-view triage keys are documented, and say where they apply.
+  expect(screen.getByRole('heading', { name: 'Triage (Advanced view only)' })).toBeInTheDocument();
+  expect(screen.getByText("Next or previous finding, starting with the verdict's steps")).toBeInTheDocument();
 });
 
 test('pressing "?" opens the shortcuts dialog', async () => {
