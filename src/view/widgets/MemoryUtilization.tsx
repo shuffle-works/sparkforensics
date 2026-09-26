@@ -3,7 +3,7 @@ import { memo, useMemo, useState } from 'react';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { useAnchoredRow } from '@/view/finding-anchor';
-import { ImpactEstimate } from '../ImpactEstimate.tsx';
+import { formatRawWaste, ImpactEstimate } from '../ImpactEstimate.tsx';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { RowPagination } from '@/view/RowPagination';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
@@ -39,7 +39,8 @@ function memoryDetail(f: MemoryUtilizationFinding): string {
       ? `${pct} of allocated heap used: near capacity`
       : `${pct} of allocated heap used: over-provisioned`;
   }
-  return `~${value.toLocaleString('en-US')} MB-seconds wasted`;
+  // Same units as the step's savings figure, so the two never disagree in form.
+  return `~${formatRawWaste({ value, unit: 'mbSeconds' })} wasted`;
 }
 
 // Every non-dataUnavailable variant's recommendation restates the same figure

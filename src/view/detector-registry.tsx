@@ -104,8 +104,9 @@ export interface WidgetProps {
   activeFileId?: string | null;
   // Region is read again for exactly the three single-purpose reference
   // widgets (Memory Utilization, Executor Utilization, Core Usage by
-  // Locality): Alerts.tsx always mounts those from `appModel` regardless of
-  // finding state (see `isAlwaysMountedType`/`alwaysMountedWidgets`). Every
+  // Locality): the Full app report (Dashboard.tsx's ReferenceSection) always
+  // mounts the last from `appModel` regardless of finding state (see
+  // `isAlwaysMountedType`/`alwaysMountedWidgets`). Every
   // other REGISTRY widget
   // renders unconditionally as either a full card (has a finding) or a
   // `CleanCheckRow` stub (doesn't), so this suppression floor still matters
@@ -233,8 +234,8 @@ export function registryTypes(): string[] {
 }
 
 // The one single-purpose reference widget that always mounts from
-// `appModel`, independent of finding state (Core Usage by Locality; see
-// docs-site's widget-rendering.md "Suggested Improvements"). `region:
+// `appModel`, independent of finding state, in the Full app report tab (Core
+// Usage by Locality; see docs-site's widget-rendering.md). `region:
 // 'reference'` marks the candidate set; `cacheUtilization`,
 // `memoryUtilization`, and `utilization` are `reference` too (same
 // single-purpose shape) but are excluded by product decision: a clean run

@@ -7,10 +7,14 @@ import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { IMPACT_BG_CLASS, IMPACT_TEXT_CLASS, ImpactDot } from '@/view/ImpactBadge';
 import { useWidgetDensity } from '@/store/store';
+import { hasFinishedStage } from '@/view/run-verdict';
 import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates';
 
-// Run-info stats row: wall-clock, efficiency, wastage (not problem counts,
-// which live in FixTheseFirst).
+// Run-info stats row: wall-clock, efficiency, unused core time (not problem
+// counts, which live in RunVerdict and the Findings tab). Basic view
+// captions say what each number measures and which direction is better, so
+// Efficiency (a share of time) and Unused core time (a share of core-hours) never
+// read as contradicting each other; Advanced view keeps the raw breakdowns.
 export type ScorecardProps = Pick<WidgetProps, 'appModel' | 'catalog'>;
 
 type FlagImpactBand = 'critical' | 'warning' | null;
@@ -65,7 +69,7 @@ function KpiTile({ eyebrow, value, meta, flag = null, bar, dataTestid }: KpiTile
   );
 }
 
-/** Efficiency/Wastage's compact instrument: the metric's own percentage as a
+/** Efficiency/Unused core time's compact instrument: the metric's own percentage as a
  * fill width, colored by the tile's flag (or the healthy `clean` token when
  * unflagged) so severity reads pre-attentively instead of requiring the user
  * to read the number and the color separately. */
@@ -113,7 +117,7 @@ function TimingUnavailableNotice() {
       <ImpactDot impactBand="warning" className="mt-1.5" />
       <p className="text-sm text-warning">
         <span className="font-semibold tracking-wide uppercase">Timing unavailable</span>
-        {'. This run has no complete application timing interval, so wall-clock, efficiency, and wastage can’t be measured.'}
+        {'. This run has no complete application timing interval, so wall-clock, efficiency, and unused core time can’t be measured.'}
       </p>
     </div>
   );
@@ -129,7 +133,10 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
   const estimates = getScorecardEstimates(appModel);
 
   const total = wc.total;
-  const efficiency = estimates.efficiency.value;
+  // No stage recorded an end: "0%" would grade a run nothing measured (the
+  // verdict says the stage checks had nothing to measure).
+  const measured = hasFinishedStage(stages);
+  const efficiency = measured ? estimates.efficiency.value : null;
   const effFlag: FlagImpactBand = efficiency == null ? null : efficiency < 75 ? 'critical' : efficiency < 90 ? 'warning' : null;
 
   const coldStart = catalog.find((f) => f.type === 'coldStart');
@@ -151,44 +158,52 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
           dataTestid="kpi-wall-clock"
           value={total > 0 ? formatDuration(total) : '—'}
           meta={
-            <>
-              {formatRanLabel(wc.stagesActive)}
-              {coldStart ? ` · ${coldStart.value}s cold start` : ''}
-            </>
+            density === 'advanced' || wc.stagesActive <= 0 ? (
+              <>
+                {formatRanLabel(wc.stagesActive)}
+                {coldStart ? ` · ${coldStart.value}s cold start` : ''}
+              </>
+            ) : (
+              `Total run time. Stages were running for ${formatDuration(wc.stagesActive)} of it.`
+            )
           }
           bar={<ActiveIdleBar active={wc.stagesActive} total={total} />}
         />
         <KpiTile
           eyebrow="Efficiency"
           dataTestid="kpi-efficiency"
-          value={efficiency == null ? 'Unavailable' : (<>{efficiency}<small>%</small></>)}
+          value={!measured ? 'Not measured' : efficiency == null ? 'Unavailable' : (<>{efficiency}<small>%</small></>)}
           flag={effFlag}
           meta={
-            efficiency == null
+            !measured
+              ? 'No stage in this log recorded an end, so there is no stage time to measure.'
+              : efficiency == null
               ? 'This run has no complete application timing interval.'
-              : total > wc.stagesActive
-                ? `${formatRanLabel(wc.stagesActive)} · ${formatDuration(total - wc.stagesActive)} idle/gap time`
-                : 'executors active the whole run'
+              : density !== 'advanced'
+                ? 'Share of the run with a stage running. Higher is better.'
+                : total > wc.stagesActive
+                  ? `${formatRanLabel(wc.stagesActive)} · ${formatDuration(total - wc.stagesActive)} idle/gap time`
+                  : 'executors active the whole run'
           }
           bar={efficiency != null ? <ProportionBar pct={efficiency} flag={effFlag} label={`Efficiency ${efficiency}%`} /> : undefined}
         />
         <KpiTile
-          eyebrow="Wastage"
+          eyebrow="Unused core time"
           dataTestid="kpi-wastage"
           value={wastagePct == null ? 'Unavailable' : (<>{wastagePct}<small>%</small></>)}
           flag={wastageFlag}
           meta={
             estimates.wastage.unavailableReason === 'application-timing'
-              ? 'Wastage needs complete application timing.'
+              ? 'Unused core time needs complete application timing.'
               : estimates.wastage.unavailableReason === 'core-usage-summary'
-                ? 'Wastage needs the core-usage summary.'
+                ? 'Unused core time needs the core-usage summary.'
                 : estimates.wastage.unavailableReason === 'executor-capacity'
-                  ? 'Wastage needs usable executor-capacity data.'
+                  ? 'Unused core time needs usable executor-capacity data.'
                   : density === 'advanced'
                     ? 'Driver-idle + executor-slack core-hours as a share of available capacity. Directional, not a cost figure.'
-                    : 'Executor capacity that sat idle. Not a cost figure.'
+                    : 'Driver idle plus executor slack across the whole run, so it can run higher than the idle capacity a verdict step reports. Lower is better. Not a cost figure.'
           }
-          bar={wastagePct != null ? <ProportionBar pct={wastagePct} flag={wastageFlag} label={`Wastage ${wastagePct}%`} /> : undefined}
+          bar={wastagePct != null ? <ProportionBar pct={wastagePct} flag={wastageFlag} label={`Unused core time ${wastagePct}%`} /> : undefined}
         />
       </div>
     </Card>

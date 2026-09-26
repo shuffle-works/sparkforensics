@@ -1,15 +1,13 @@
 // @vitest-environment jsdom
 import { useState } from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Table, TableBody } from '../../src/components/ui/table';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
-import { findingActionLabel } from '../../src/view/finding-action-label';
-import { groupImpactBand, HighestImpactBar, TypeGroupRow, useFixTheseFirstData } from '../../src/view/widgets/FixTheseFirst';
+import { groupImpactBand, impactFigure, TypeGroupRow, useFixTheseFirstData } from '../../src/view/widgets/FixTheseFirst';
 import { buildRecommendationRollup, type RollupGroup } from '@sparkforensics/core/recommendation-rollup.ts';
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
-import type { TriageTarget } from '../../src/view/triage-target';
 
 // Non-overlapping windows so a group's union-capped recoverableMsHigh equals
 // the naive sum, without re-testing computeStageUnionMs's overlap math.
@@ -145,97 +143,6 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
     };
     const { eligible } = useFixTheseFirstData([idleCores], [], STAGES);
     expect(eligible).toEqual([idleCores]);
-  });
-});
-
-describe('HighestImpactBar', () => {
-  it("renders the top finding's action label, recommendation, and impact figure, and routes on click", async () => {
-    const user = userEvent.setup();
-    const onRoute = vi.fn();
-    const target: TriageTarget = {
-      finding: findingWithMagnitude('spill', 4, 12_000, 'critical'),
-      widgetId: 'spill',
-      region: 'action',
-      findingLabel: 'spill',
-      stageId: 4,
-      recommendation: 'Fix spill in Stage 4.',
-    };
-
-    render(
-      <StageDetailProvider>
-        <HighestImpactBar target={target} onRoute={onRoute} />
-      </StageDetailProvider>,
-    );
-
-    expect(screen.getByText('Highest impact')).toBeInTheDocument();
-    const button = screen.getByRole('button', { name: /reduce spill.*fix spill in stage 4/i });
-    expect(button).toBeInTheDocument();
-    // 12_000ms formats to "12.0s".
-    expect(screen.getByText('12.0s')).toBeInTheDocument();
-    expect(screen.getByText('Potential savings')).toBeInTheDocument();
-
-    await user.click(button);
-    expect(onRoute).toHaveBeenCalledTimes(1);
-    expect(onRoute).toHaveBeenCalledWith(target);
-  });
-
-  it('does not route when the stage pill is clicked, only the card itself', async () => {
-    const user = userEvent.setup();
-    const onRoute = vi.fn();
-    const target: TriageTarget = {
-      finding: findingWithMagnitude('spill', 4, 12_000, 'critical'),
-      widgetId: 'spill',
-      region: 'action',
-      findingLabel: 'spill',
-      stageId: 4,
-      recommendation: 'Fix spill in Stage 4.',
-    };
-
-    render(
-      <StageDetailProvider>
-        <HighestImpactBar target={target} onRoute={onRoute} />
-      </StageDetailProvider>,
-    );
-
-    await user.click(screen.getByRole('button', { name: /open details for stage 4/i }));
-    expect(onRoute).not.toHaveBeenCalled();
-  });
-
-  it('copies the finding summary to the clipboard and shows a "Copied" confirmation that reverts', async () => {
-    const user = userEvent.setup();
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-    const onRoute = vi.fn();
-    const target: TriageTarget = {
-      finding: findingWithMagnitude('spill', 4, 12_000, 'critical'),
-      widgetId: 'spill',
-      region: 'action',
-      findingLabel: 'spill',
-      stageId: 4,
-      recommendation: 'Fix spill in Stage 4.',
-    };
-
-    render(
-      <StageDetailProvider>
-        <HighestImpactBar target={target} onRoute={onRoute} />
-      </StageDetailProvider>,
-    );
-
-    const copyButton = screen.getByTestId('copy-finding-button');
-    expect(copyButton).toHaveTextContent('Copy finding');
-
-    await user.click(copyButton);
-
-    expect(writeText).toHaveBeenCalledWith(
-      `${findingActionLabel(target.finding)} — Fix spill in Stage 4. Potential savings: 12.0s`,
-    );
-    expect(onRoute).not.toHaveBeenCalled(); // copy is its own control, not the routing button
-    expect(copyButton).toHaveTextContent('Copied');
-
-    await waitFor(() => expect(copyButton).toHaveTextContent('Copy finding'), { timeout: 3000 });
-
-    // @ts-expect-error -- restore jsdom's default (no Clipboard API) for other tests in this file
-    delete navigator.clipboard;
   });
 });
 
@@ -409,5 +316,20 @@ describe('TypeGroupRow expand/collapse', () => {
     expect(screen.queryAllByTestId('fix-these-first-row')).toHaveLength(0);
     expect(container.querySelector('.lucide-chevron-down')).toBeInTheDocument();
     expect(container.querySelector('.lucide-chevron-up')).not.toBeInTheDocument();
+  });
+});
+
+describe('impactFigure', () => {
+  const withRawWaste = (value: number): Finding => ({
+    type: 'jobFailureRate', stageId: null, impactBand: 'critical', recommendation: 'Inspect the failed jobs.',
+    impactEstimate: { basis: 'resourceOnly', rawWaste: { value, unit: 'coreHours' }, estimateMethod: 'modeled' },
+  } as Finding);
+
+  it('prints a raw resource figure that has a real value', () => {
+    expect(impactFigure(withRawWaste(1.25))).toBe('1.3 core-h');
+  });
+
+  it('drops a raw figure that rounds to zero instead of printing "0.0 core-h"', () => {
+    expect(impactFigure(withRawWaste(0.04))).toBeNull();
   });
 });

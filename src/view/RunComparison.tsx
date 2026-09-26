@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { TagBadge } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
+import { summarizeComparison, type ComparisonTone, type VerdictJobOutcome } from '@/view/comparison-verdict';
 import { PinnedStageDeltas, type StageSummary } from '@/view/PinnedStageDeltas';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 import { cn } from '@/lib/utils';
@@ -17,7 +19,7 @@ interface MetricDelta {
   unavailableReason?: string;
 }
 interface CategoryDelta {
-  rule: string; impactBand: string;
+  rule: string; type: string; impactBand: string;
   baseCount: number; candCount: number; delta: number;
   stages: string[]; // stage names from the side with more (candidate for introduced, baseline for resolved)
 }
@@ -30,6 +32,8 @@ interface ComparisonModel {
   stageSkew: Array<{ identity: string; baseId: number; candId: number; baseline: number | null; candidate: number | null; delta: number | null }>;
   baseStages?: StageSummary[];
   candStages?: StageSummary[];
+  /** Failed-job counts per run, when the caller has each run's job results. */
+  jobOutcomes?: { baseline: VerdictJobOutcome; candidate: VerdictJobOutcome };
 }
 
 // Per-unit formatting: raw ms/bytes rendered through a bare NumberFormat read as
@@ -116,9 +120,9 @@ function FindingRows({ items }: { items: CategoryDelta[] }) {
         <li key={`${f.rule}§${f.impactBand}`} className="flex flex-col gap-1 border-b border-border pb-2 last:border-0 last:pb-0">
           <div className="flex items-center gap-2">
             <TagBadge
-              type={f.rule}
+              type={f.type}
               impactBand={toImpactBand(f.impactBand)}
-              className={typeTag(f.rule) === 'PLAN' ? PLAN_TAG_CLASS : undefined}
+              className={typeTag(f.type) === 'PLAN' ? PLAN_TAG_CLASS : undefined}
             />
             <span className="text-sm text-muted-foreground">{f.baseCount} → {f.candCount}</span>
           </div>
@@ -149,6 +153,41 @@ function LowConfidenceBanner({ reason }: { reason: string }) {
   );
 }
 
+const VERDICT_TONE_CLASS: Record<ComparisonTone, string> = {
+  better: 'border-clean/40',
+  worse: 'border-critical/40',
+  same: 'border-border',
+  unknown: 'border-border',
+};
+
+/** The comparison's answer first: whether run B got faster or slower, which
+ * cost metrics moved each way, which finding categories came or went, and
+ * where to go next. The tables below stay the evidence for each claim. */
+function ComparisonVerdict({ model, onDrillIn }: { model: ComparisonModel; onDrillIn?: (which: 'baseline' | 'candidate') => void }) {
+  const verdict = summarizeComparison(model.metrics, model.findings, model.jobOutcomes);
+  return (
+    <section
+      aria-labelledby="comparison-verdict-title"
+      data-testid="comparison-verdict"
+      className={cn('space-y-3 rounded-xl border bg-card p-4 sm:p-5', VERDICT_TONE_CLASS[verdict.tone])}
+    >
+      <h2 id="comparison-verdict-title" className="font-heading text-lg font-semibold">{verdict.title}</h2>
+      <p className="max-w-prose text-sm text-muted-foreground">
+        Run A is the baseline and run B the candidate. {verdict.sentences.join(' ')}
+      </p>
+      {onDrillIn ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" onClick={() => onDrillIn('candidate')}>
+            See where to start in run B
+            <ArrowRight aria-hidden="true" />
+          </Button>
+          <span className="text-xs text-muted-foreground">Opens run B's own verdict and next steps.</span>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function RunComparison({
   model, onClose, onDrillIn,
 }: {
@@ -165,14 +204,16 @@ export function RunComparison({
   }, [onClose]);
 
   const header = (
-    <header className="mb-4 flex items-center justify-between gap-3">
-      <div>
+    // Stacks below `sm`: three buttons beside the title pushed the page to
+    // ~530px wide on a 390px phone.
+    <header className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
         <h1 className="font-heading text-lg font-semibold">Run comparison</h1>
         <p className="text-sm text-muted-foreground">
           Baseline <strong>{model.baselineLabel}</strong> vs candidate <strong>{model.candidateLabel}</strong>
         </p>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
         {onDrillIn ? (
           <>
             <Button variant="outline" size="sm" onClick={() => onDrillIn('baseline')}>View run A dashboard</Button>
@@ -202,11 +243,10 @@ export function RunComparison({
           and `header` above already covers the banner). */}
       <main className="contents">
         {/* WidgetCard always renders its title as an <h3> (one level below a
-            board's <h2> section header, see WidgetCard.tsx); this page has no
-            visible section header of its own, so a sr-only <h2> keeps the
-            h1 -> h2 -> h3 order intact for screen readers. */}
-        <h2 className="sr-only">Comparison results</h2>
+            board's <h2> section header, see WidgetCard.tsx); the verdict's
+            own <h2> keeps the h1 -> h2 -> h3 order intact. */}
         {model.confidence === 'low' && model.reason ? <LowConfidenceBanner reason={model.reason} /> : null}
+        <ComparisonVerdict model={model} onDrillIn={onDrillIn} />
 
         <WidgetCard title="Metrics">
           <p className="mb-3 text-xs text-muted-foreground">
@@ -218,7 +258,7 @@ export function RunComparison({
                 <TableHead className="text-left">Metric</TableHead>
                 <TableHead>Baseline ({model.baselineLabel})</TableHead>
                 <TableHead>Candidate ({model.candidateLabel})</TableHead>
-                <TableHead>Δ</TableHead>
+                <TableHead>Change</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>{model.metrics.map((m) => <MetricRow key={m.key} m={m} />)}</TableBody>

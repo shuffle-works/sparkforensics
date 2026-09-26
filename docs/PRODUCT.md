@@ -8,7 +8,7 @@ web
 
 ## Users
 
-The primary users are Spark developers diagnosing and improving application performance. Performance engineers are an occasional secondary audience, especially when an investigation spans stages, executors, SQL plans, configuration, and whole-run behavior.
+The primary users are Spark developers diagnosing and improving application performance. The default view is designed for the least experienced of them: someone new to Spark tuning, who should be able to tell what they are looking at, what matters most, and what to do next without prior knowledge. Experts and performance engineers, especially when an investigation spans stages, executors, SQL plans, configuration, and whole-run behavior, get the deeper detail through Advanced view rather than in the default view.
 
 ## Product Purpose
 

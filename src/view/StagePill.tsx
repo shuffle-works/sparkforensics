@@ -13,7 +13,10 @@ export interface StagePillProps {
 }
 
 /** Opens the stage-detail dialog for a single stage via
- * `useStageDetail().openStage`. */
+ * `useStageDetail().openStage`. Reads "Stage 7", not the terser "S 7": a
+ * newcomer can't decode the abbreviation, and the visible text must stay
+ * inside the accessible name ("Open details for Stage 7") for voice-control
+ * users. */
 export function StagePill({ stageId, className }: StagePillProps) {
   const { openStage } = useStageDetail();
   return (
@@ -24,7 +27,7 @@ export function StagePill({ stageId, className }: StagePillProps) {
       aria-label={`Open details for Stage ${stageId}`}
       onClick={() => openStage(stageId)}
     >
-      S<b>{stageId}</b>
+      Stage <b>{stageId}</b>
     </button>
   );
 }
@@ -84,17 +87,11 @@ export function useRevealMore<T>(
 
 export interface StagePillGroupProps {
   pills: StagePillItem[];
-  visibleLimit?: number;
-  /** Applied to every rendered pill, including the "+N" overflow button: lets
-   * a caller de-emphasize the group (e.g. HighestImpactBar's identity-first
-   * layout, where the pills are secondary to the identity caption). */
-  pillOverrideClassName?: string;
 }
 
-/** Row of stage pills: the first `visibleLimit` (default `VISIBLE_LIMIT`)
- * shown, the rest behind a "+N" button that reveals `OVERFLOW_REVEAL_CHUNK`
+/** Row of stage pills: the first `VISIBLE_LIMIT` shown, the rest behind a "+N" button that reveals `OVERFLOW_REVEAL_CHUNK`
  * more per click. */
-export function StagePillGroup({ pills, visibleLimit = VISIBLE_LIMIT, pillOverrideClassName }: StagePillGroupProps) {
+export function StagePillGroup({ pills }: StagePillGroupProps) {
   // A single stage can be flagged by several detectors at once (e.g. slowHost
   // emits one finding per slow host), so callers may pass the same id more than
   // once. Collapse to one pill per stage: the same stage rendered twice is
@@ -103,7 +100,7 @@ export function StagePillGroup({ pills, visibleLimit = VISIBLE_LIMIT, pillOverri
   const uniquePills = pills.filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
   const dataset = JSON.stringify(uniquePills.map(({ id }) => id));
   const { visible: shown, remaining, revealMore } = useRevealMore(uniquePills, {
-    limit: visibleLimit,
+    limit: VISIBLE_LIMIT,
     dataset,
   });
   const hidden = uniquePills.slice(shown.length);
@@ -111,12 +108,12 @@ export function StagePillGroup({ pills, visibleLimit = VISIBLE_LIMIT, pillOverri
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {shown.map((pill) => (
-        <StagePill key={pill.id} stageId={pill.id} className={pillOverrideClassName} />
+        <StagePill key={pill.id} stageId={pill.id} />
       ))}
       {remaining > 0 && (
         <button
           type="button"
-          className={cn(pillClassName, 'bg-muted', pillOverrideClassName)}
+          className={cn(pillClassName, 'bg-muted')}
           title={`Also flagged: Stage ${hidden.map((p) => p.id).join(', Stage ')}`}
           aria-label={`Show ${remaining} more stage${remaining === 1 ? '' : 's'}`}
           onClick={revealMore}

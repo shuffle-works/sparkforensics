@@ -150,8 +150,8 @@ rather than `reference` (see "Beyond the fixed six" above).
 [Widget rendering order](./widget-rendering.md#widget-rendering-order-fixed-spec-§5)):
 whether a widget always mounts. `isAlwaysMountedType()` flags exactly one
 of the four `reference`-region types: Core Usage by Locality. That one
-mounts unconditionally from `appModel` in its own small grid inside the
-Findings tab, regardless of finding state. Memory Utilization, Executor
+mounts unconditionally from `appModel` at the head of the Full app report
+tab's reference grid, regardless of finding state. Memory Utilization, Executor
 Utilization, and Cache Storage are `reference` too, but all three are
 excluded by product decision, not a component-sharing constraint
 (`ALWAYS_MOUNTED_EXCEPTIONS` in `src/view/detector-registry.tsx` carries
@@ -161,11 +161,11 @@ collapses to an ordinary `CleanCheckRow` like any other action-region type
 on a clean run. Every other `REGISTRY` widget still renders unconditionally
 as either an active card or a clean-check line, and `region` still sets
 `orderedWidgets()`'s sort order within the active grid (`action` components
-first, `reference` ones after). The Full app report tab is structural-only
-and reads no `REGISTRY` entry. So Core Usage by Locality, the one widget
-still tagged `region: 'reference'` and exempt from `ALWAYS_MOUNTED_EXCEPTIONS`,
-renders in the Findings tab's always-visible grid rather than inside a
-separate Reference region (Memory Utilization, Executor Utilization, and
+first, `reference` ones after). The Full app report tab reads no other
+`REGISTRY` entry. So Core Usage by Locality, the one widget still tagged
+`region: 'reference'` and exempt from `ALWAYS_MOUNTED_EXCEPTIONS`, renders
+in the Full app report beside the other run-wide reference views, and a
+route to a `coreLocality` finding switches to that tab (Memory Utilization, Executor Utilization, and
 Cache Storage all render through the ordinary active/clean paths instead):
 
 - **Memory Utilization** (tag `MEM`): app-level card combining three

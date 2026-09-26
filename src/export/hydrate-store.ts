@@ -1,17 +1,17 @@
 import { store } from '@/store/store';
-import type { ExportRunData } from '@sparkforensics/core/export-data.ts';
+import { reviveExportCollections, type ExportRunData } from '@sparkforensics/core/export-data.ts';
 import { applySnapshot } from '@sparkforensics/core/session-snapshot.ts';
 import type { SessionSnapshot } from '@sparkforensics/core/session-snapshot.ts';
 import { gunzipSync, strFromU8 } from '@sparkforensics/core/vendor/fflate.js';
 
 /** Reverses the CLI's write-time encoding of data.js (base64-decode, gunzip,
- * UTF-8-decode, JSON.parse). strFromU8's second arg must stay falsy: the
+ * UTF-8-decode, JSON.parse with nested Maps and Sets revived). strFromU8's second arg must stay falsy: the
  * payload can contain non-ASCII free text (e.g. Spanish app/stage names) that
  * only decodes correctly as UTF-8, fflate's default. */
 export function decodeRunPayload(base64: string): ExportRunData {
   const compressed = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
   const json = strFromU8(gunzipSync(compressed));
-  return JSON.parse(json) as ExportRunData;
+  return JSON.parse(json, reviveExportCollections) as ExportRunData;
 }
 
 /** Rebuilds the store's Map-based AppModel from the CLI-serialized data.js

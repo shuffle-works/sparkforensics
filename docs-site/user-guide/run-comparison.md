@@ -14,12 +14,31 @@ A (baseline)** and **Run B (candidate)**.
 The runs parse one after the other through the same background worker. When
 both finish, the comparison view opens.
 
+Already looking at a run, for example the one before a change? Click
+**Compare with another run** in the top bar (or the **More options** menu on
+a phone). The compare view opens with that run as Run A, so you only load
+Run B, and the open run is not parsed again. **Back to the run** returns to
+its dashboard.
+
 ## Reading the comparison
+
+The page opens with a verdict: whether run B finished faster or slower than
+run A, and by how much (a change under 2% reads as "about as long"). When
+either run had failed jobs, the verdict leads with that instead, for example
+"Run B had 2 of 5 jobs fail (run A: none)" or "Run B's only job failed", and
+the run-time line follows. When either log has no end-of-run record (the run
+was killed or the log cut off), the verdict says how much run time each log
+covers, in a neutral tone, instead of calling the shorter run faster. It then
+lists which cost metrics got worse or better in run B (again ignoring changes
+under 2%), and which finding categories became more or less frequent. Volume and count metrics (input,
+output, tasks, executors) are left out, since more or less of them is not
+better or worse on its own. **See where to start in run B** opens run B's
+dashboard, whose own verdict names the first thing to fix.
 
 The **Metrics** table covers the whole run: wall-clock duration, shuffle
 spill, task skew, failed-task rate, disk spill, GC time, input/output bytes,
 executor run-time, and task/executor counts, baseline against candidate with
-the delta. **Findings by category** lists which finding types appeared or
+the change. **Findings by category** lists which finding types appeared or
 disappeared between the two runs, with the affected stages for each.
 
 Stage-level detail depends on matching a stage in the baseline to its

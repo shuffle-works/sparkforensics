@@ -1,22 +1,31 @@
 import { useState } from 'react';
-import { CheckIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, TargetIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { buildRecommendationRollup, isEligible as coreIsEligible, rankFindings, type RollupGroup } from '@sparkforensics/core/recommendation-rollup.ts';
 import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
-import { copyText } from '@/lib/clipboard';
 import { formatStageIdsLabel, pathBasename } from '@sparkforensics/core/format-utils.ts';
 import { REGISTRY } from '@/view/detector-registry';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePill, StagePillGroup } from '@/view/StagePill';
-import { formatRawWaste, formatWallClockRange } from '@/view/ImpactEstimate';
+import { formatRawWaste, formatWallClockRange, readsAsZero } from '@/view/ImpactEstimate';
 import { RowPagination } from '@/view/RowPagination';
 import { selectTriageTarget, selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 
 const PAGE_SIZE = 10;
+
+// Below `sm` a three-column row leaves the recommendation too little width and
+// pushes the right-hand stage/savings column off screen. The row turns into a
+// wrapping flex line instead: tag and text share the first line, and the
+// trailing column drops onto its own full-width line under them. CSS only, so
+// every figure still renders exactly once.
+const STACKED_ROW = 'max-sm:flex max-sm:flex-wrap max-sm:items-start';
+const STACKED_TAG_CELL = 'max-sm:w-auto max-sm:shrink-0';
+const STACKED_TEXT_CELL = 'max-sm:min-w-0 max-sm:flex-1 max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]';
+const STACKED_TRAILING_CELL = 'max-sm:w-full max-sm:basis-full max-sm:pt-0 max-sm:text-left';
 
 // Wraps the core `isEligible` with the one check that module can't do itself:
 // `REGISTRY` lives in a `.tsx` file, not importable from core.
@@ -34,13 +43,17 @@ export function groupImpactBand(group: RollupGroup): Finding['impactBand'] {
 
 /** The row's one-line impact figure: the wall-clock range for a time-based
  * finding, the raw resource figure for a `resourceOnly` one, or nothing for a
- * purely informational estimate. Reuses `ImpactEstimate.tsx`'s formatters so
- * the units/rounding match every other surface. */
-function impactFigure(finding: Finding): string | null {
+ * purely informational estimate or a raw figure that rounds to zero ("0.0
+ * core-h" reads as a measured nothing). Reuses `ImpactEstimate.tsx`'s
+ * formatters so the units/rounding match every other surface. */
+export function impactFigure(finding: Finding): string | null {
   const estimate = finding.impactEstimate;
   if (!estimate) return null;
   if (estimate.wallClock) return formatWallClockRange(estimate.wallClock.low, estimate.wallClock.high);
-  if (estimate.rawWaste) return formatRawWaste(estimate.rawWaste);
+  if (estimate.rawWaste) {
+    const text = formatRawWaste(estimate.rawWaste);
+    return readsAsZero(text) ? null : text;
+  }
   return null;
 }
 
@@ -85,52 +98,21 @@ function duplicateSubtreeIdentity(finding: Finding): string | null {
 /** A finding's location as a clickable pill (`StagePill`), or a `StagePillGroup`
  * when `stageIds` names more than one. For duplicatePlanSubtree, its
  * root-operator/groupIndex identity renders as trailing text next to the
- * pills; with `stackIdentity`, it instead leads on its own row above a
- * de-emphasized pill row (`stagePillClassName`), since the identity is the
- * more useful signal there and the pills are supporting detail. A
- * config-scope `property` (or no location) stays `locationTag`'s plain text. */
-function LocationBadge({
-  finding,
-  textClassName,
-  visibleLimit,
-  stackIdentity,
-  stagePillClassName,
-}: {
-  finding: Finding;
-  textClassName?: string;
-  visibleLimit?: number;
-  stackIdentity?: boolean;
-  stagePillClassName?: string;
-}) {
+ * pills. A config-scope `property` (or no location) stays `locationTag`'s
+ * plain text. */
+function LocationBadge({ finding, textClassName }: { finding: Finding; textClassName?: string }) {
   const { stageId, stageIds } = finding;
   if (stageId != null) return <StagePill stageId={stageId} />;
   if (stageIds && stageIds.length > 0) {
     const identity = duplicateSubtreeIdentity(finding);
-    const identityEl = identity ? (
-      <span className={cn('truncate', textClassName)} title={identity}>
-        {identity}
-      </span>
-    ) : null;
-    const pillsEl = (
-      <StagePillGroup
-        pills={stageIds.map((id) => ({ id }))}
-        visibleLimit={visibleLimit}
-        pillOverrideClassName={stackIdentity ? stagePillClassName : undefined}
-      />
-    );
     return (
-      <span className={cn('inline-flex min-w-0 items-center gap-1.5', stackIdentity ? 'flex-col' : 'flex-wrap')}>
-        {stackIdentity ? (
-          <>
-            {identityEl}
-            {pillsEl}
-          </>
-        ) : (
-          <>
-            {pillsEl}
-            {identityEl}
-          </>
-        )}
+      <span className="inline-flex min-w-0 flex-wrap items-center gap-1.5">
+        <StagePillGroup pills={stageIds.map((id) => ({ id }))} />
+        {identity ? (
+          <span className={cn('truncate', textClassName)} title={identity}>
+            {identity}
+          </span>
+        ) : null}
       </span>
     );
   }
@@ -146,7 +128,7 @@ function LocationBadge({
  * here with no `recommendation` text (every real detector sets one; this is
  * a defensive floor, not an expected path, since `Finding.recommendation` is
  * optional on the type). */
-function recommendationText(finding: Finding): string {
+export function recommendationText(finding: Finding): string {
   const text = typeof finding.recommendation === 'string' ? finding.recommendation.trim() : '';
   if (text) return text;
   return REGISTRY[finding.type]?.findingLabel ?? finding.type;
@@ -170,13 +152,14 @@ export function FindingRow({
   const text = recommendationText(finding);
   const label = findingActionLabel(finding);
   return (
-    <TableRow data-testid="fix-these-first-row" data-finding-type={finding.type}>
-      <TableCell className="w-px">
+    <TableRow data-testid="fix-these-first-row" data-finding-type={finding.type} className={STACKED_ROW}>
+      <TableCell className={cn('w-px', STACKED_TAG_CELL)}>
         <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
       </TableCell>
-      <TableCell className="whitespace-normal">
+      <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
         <button
           type="button"
+          data-shortcut-target
           className="cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={() => target && onRoute(target)}
         >
@@ -188,8 +171,11 @@ export function FindingRow({
           right-side truncation would hide the important impact figure first.
           Impact keeps `shrink-0` so it stays fully visible; the plain-text
           location fallback is the one that gives way. */}
-      <TableCell className="w-px text-right font-mono text-xs text-muted-foreground" title={[location, impact].filter(Boolean).join(' · ')}>
-        <span className="flex items-center justify-end gap-1.5">
+      <TableCell
+        className={cn('w-px text-right font-mono text-xs text-muted-foreground', STACKED_TRAILING_CELL)}
+        title={[location, impact].filter(Boolean).join(' · ')}
+      >
+        <span className="flex items-center justify-end gap-1.5 max-sm:justify-start">
           <LocationBadge finding={finding} />
           {impact ? <span className="shrink-0">{impact}</span> : null}
         </span>
@@ -245,6 +231,7 @@ function FindingInstanceRow({
             the column can shrink to a normal width without overflow. */}
         <button
           type="button"
+          data-shortcut-target
           className="block w-full cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={() => target && onRoute(target)}
         >
@@ -326,15 +313,16 @@ export function TypeGroupRow({
 
   return (
     <>
-      <TableRow data-testid="fix-these-first-group-row" data-finding-type={group.type}>
-        <TableCell className="w-px">
+      <TableRow data-testid="fix-these-first-group-row" data-finding-type={group.type} className={STACKED_ROW}>
+        <TableCell className={cn('w-px', STACKED_TAG_CELL)}>
           <TagBadge type={group.type} impactBand={best.impactBand} docAnchor={sharedDocAnchor(group.findings)} />
         </TableCell>
-        <TableCell className="whitespace-normal">
+        <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
           <button
             type="button"
             aria-expanded={expanded}
             aria-controls={contentId}
+            data-shortcut-target
             className="cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             onClick={onToggle}
           >
@@ -342,7 +330,7 @@ export function TypeGroupRow({
             {title ? <span className="block text-xs text-muted-foreground">{title}</span> : null}
           </button>
         </TableCell>
-        <TableCell className="w-px text-right font-mono text-xs text-muted-foreground">
+        <TableCell className={cn('w-px text-right font-mono text-xs text-muted-foreground', STACKED_TRAILING_CELL)}>
           <span className="inline-flex items-center justify-end gap-1.5" title={trailingStatTitle(group)}>
             {trailingStat(group)}
             {expanded ? (
@@ -375,113 +363,6 @@ export function TypeGroupRow({
         </TableRow>
       )}
     </>
-  );
-}
-
-/** The single most-impactful eligible finding, called out above the table
- * (`selectTriageTarget` ranks by potential savings, not impact band). Rendered
- * as a tinted primary banner rather than a table row so it reads as a callout,
- * not a stray oddly-styled row. It still appears in its own group/row below:
- * this bar is a shortcut, not a filter. The impact figure gets its own labeled
- * stat column since here the number is the point; location stays alongside as
- * its caption. */
-export function HighestImpactBar({ target, onRoute }: { target: TriageTarget; onRoute: (target: TriageTarget) => void }) {
-  const location = locationTag(target.finding);
-  const impact = impactFigure(target.finding);
-  const hasLocation = target.finding.stageId != null || location != null;
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    // recommendationText already ends in its own terminator for most finding
-    // types; append one only when it's missing so two summaries never collide
-    // into a stray "..".
-    const headline = `${findingActionLabel(target.finding)} — ${recommendationText(target.finding)}`;
-    const summary = [
-      /[.!?]$/.test(headline) ? headline : `${headline}.`,
-      impact ? `Potential savings: ${impact}` : null,
-    ]
-      .filter(Boolean)
-      .join(' ');
-    try {
-      await copyText(summary);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard access can fail (permissions, embed context); no user-facing
-      // error state needed for this affordance.
-    }
-  };
-  return (
-    <div className="mb-3 flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 transition-colors hover:bg-primary/10">
-      {/* The card's one interactive control. A `StagePill` (inside
-          `LocationBadge` below) is itself a real `<button>`, so it can't nest
-          inside another clickable element without violating WCAG 4.1.2, this
-          `<button>` wraps only the non-interactive title/recommendation/impact
-          content; the location badge renders as a plain sibling below with its
-          own independent click behavior, not a descendant needing
-          stopPropagation. */}
-      <button
-        type="button"
-        aria-label={`${findingActionLabel(target.finding)}, ${recommendationText(target.finding)}`}
-        onClick={() => onRoute(target)}
-        className="flex cursor-pointer flex-col gap-2 rounded-lg px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
-      >
-        <div className="min-w-0 flex-1">
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide text-primary uppercase">
-            <TargetIcon aria-hidden="true" className="size-3.5" />
-            Highest impact
-          </span>
-          <p className="mt-2 min-w-0">
-            <span className="text-sm font-semibold">{findingActionLabel(target.finding)}</span>
-            <span className="text-sm text-muted-foreground">, {recommendationText(target.finding)}</span>
-          </p>
-        </div>
-        {/* Its own column, not a second row: on `sm:+` this sits beside the
-            title from the top instead of trailing below the whole left side. */}
-        {impact ? (
-          <div className="min-w-0 sm:shrink-0 sm:text-right">
-            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Potential savings</p>
-            <p className="whitespace-nowrap font-mono text-lg font-semibold leading-tight tabular-nums text-primary">{impact}</p>
-          </div>
-        ) : null}
-      </button>
-      {/* Some findings carry a stageIds list hundreds of ids long: capped
-          width + a 2-line clamp keeps that from stretching the callout, same
-          width as the "Potential savings" label so they read as one stat
-          column. A StagePill never needs the cap. The identity (what's
-          actually duplicated) leads and reads bold; the stage pills below it
-          are supporting evidence, so they're shrunk rather than competing for
-          attention. Coloring on both stays the same as everywhere else (muted
-          caption, default pill) — only size/weight/order carry the emphasis. */}
-      <div className={cn('flex items-center gap-3 px-4 pb-3', hasLocation ? 'justify-between' : 'justify-end')}>
-        {hasLocation ? (
-          <LocationBadge
-            finding={target.finding}
-            textClassName="line-clamp-2 max-w-[140px] break-words text-xs font-semibold text-muted-foreground"
-            visibleLimit={2}
-            stackIdentity
-            stagePillClassName="h-5 px-1.5 text-[10px] font-normal"
-          />
-        ) : null}
-        <button
-          type="button"
-          data-testid="copy-finding-button"
-          onClick={() => void handleCopy()}
-          className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          {copied ? (
-            <>
-              <CheckIcon aria-hidden="true" className="size-3.5" />
-              Copied
-            </>
-          ) : (
-            <>
-              <CopyIcon aria-hidden="true" className="size-3.5" />
-              Copy finding
-            </>
-          )}
-        </button>
-      </div>
-    </div>
   );
 }
 

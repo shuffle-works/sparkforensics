@@ -12,8 +12,10 @@ import { store } from '@/store/store';
 // in an effect. useIngest is fully mocked so the DropZone-visible calls stay
 // inert while startCompareLoad stays a spied fn CompareLanding can call.
 const startCompareLoad = vi.fn();
+const drillIntoRun = vi.fn();
 vi.mock('@/store/useIngest', () => ({
   useIngest: () => ({
+    drillIntoRun,
     startLoad: vi.fn(),
     startLoadFolder: vi.fn(),
     startLoadFromUrl: vi.fn(),
@@ -37,6 +39,7 @@ vi.mock('@sparkforensics/core/recent-files.ts', () => ({
 beforeEach(() => {
   startCompareLoad.mockClear();
   store.getState().setTheme('dark');
+  store.setState({ compareSeed: null });
 });
 
 function renderLanding(props: { errorMessage?: string | null; errorNonce?: number } = {}) {
@@ -61,10 +64,18 @@ test('single-run landing prioritizes one Spark event log and presents next inves
 
   expect(screen.getByRole('heading', { name: /analyze a spark event log/i })).toBeVisible();
   expect(screen.getByText(/nothing leaves your machine/i)).toBeVisible();
-  expect(screen.getByRole('heading', { name: /analyze a single run first/i })).toBeVisible();
-  expect(screen.getByRole('heading', { name: /go further with the evidence/i })).toBeVisible();
+  expect(screen.getByRole('heading', { name: /go further with the same evidence/i })).toBeVisible();
   expect(screen.getByRole('button', { name: /compare two runs/i })).toBeVisible();
   expect(screen.getByTestId('drop-zone')).toBeVisible();
+  // The intake lives in the hero itself, so its actions are part of the first
+  // thing a visitor reads rather than a section further down the page.
+  const hero = screen.getByRole('heading', { name: /analyze a spark event log/i }).closest('section') as HTMLElement;
+  expect(within(hero).getByTestId('drop-zone')).toBeInTheDocument();
+  expect(within(hero).getByRole('button', { name: 'Try a sample run' })).toBeInTheDocument();
+  // The docs links sit in the hero too, above the intake.
+  const docsLink = within(hero).getByRole('link', { name: /read the docs/i });
+  expect(within(hero).getByRole('link', { name: /spark optimization reference/i })).toBeInTheDocument();
+  expect(docsLink.compareDocumentPosition(within(hero).getByTestId('drop-zone')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 
 test('keeps landing actions comfortable to tap and compare slots stacked below the large breakpoint', async () => {
@@ -136,4 +147,50 @@ test('re-focuses the alert when errorNonce advances even though the message text
     <ThemeProvider><DocsProvider><CompareLanding errorMessage="Permission to read this file was denied." errorNonce={2} /></DocsProvider></ThemeProvider>,
   );
   expect(screen.getByRole('alert')).toHaveFocus();
+});
+
+test('opened from a dashboard, compare mode starts with that run as Run A and Back returns to it', async () => {
+  const user = userEvent.setup();
+  store.setState({ compareSeed: { id: 'a::1::2', label: 'first-run.log' } });
+  render(
+    <ThemeProvider>
+      <DocsProvider>
+        <CompareLanding />
+      </DocsProvider>
+    </ThemeProvider>,
+  );
+
+  expect(screen.getByRole('heading', { name: 'Compare two runs' })).toBeInTheDocument();
+  expect(within(screen.getByTestId('compare-slot-a')).getByText('first-run.log')).toBeInTheDocument();
+  expect(screen.getByText(/Run A is the run you had open/)).toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Back to the run' }));
+  expect(drillIntoRun).toHaveBeenCalledWith('a::1::2');
+  // Leaving the seeded view clears it: a later visit to the landing starts plain.
+  expect(store.getState().compareSeed).toBeNull();
+});
+
+test('a failed Run B load remounts the seeded view with Run A still filled and Back to the run', () => {
+  store.setState({ compareSeed: { id: 'a::1::2', label: 'first-run.log' } });
+  const tree = <ThemeProvider><DocsProvider><CompareLanding /></DocsProvider></ThemeProvider>;
+  // The landing unmounts while the compare load shows progress, then mounts
+  // again with the error when Run B fails.
+  render(tree).unmount();
+  render(
+    <ThemeProvider><DocsProvider><CompareLanding errorMessage="Run B: could not parse." errorNonce={1} /></DocsProvider></ThemeProvider>,
+  );
+
+  expect(within(screen.getByTestId('compare-slot-a')).getByText('first-run.log')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Back to the run' })).toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent('Run B: could not parse.');
+});
+
+test('changing Run A in the seeded view clears the seed', async () => {
+  const user = userEvent.setup();
+  store.setState({ compareSeed: { id: 'a::1::2', label: 'first-run.log' } });
+  render(<ThemeProvider><DocsProvider><CompareLanding /></DocsProvider></ThemeProvider>);
+
+  await user.click(within(screen.getByTestId('compare-slot-a')).getByRole('button', { name: /change/i }));
+  expect(store.getState().compareSeed).toBeNull();
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
 });

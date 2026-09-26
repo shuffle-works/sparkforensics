@@ -18,6 +18,8 @@ interface LocalityAreaSeriesOptions {
 interface LocalityAreaSeriesResult {
   labels: number[];
   series: Record<string, number[]>;
+  /** Latest completion among the stages the series counts: where its last bucket's data ends. */
+  endTime: number;
 }
 
 export function computeLocalityAreaSeries(
@@ -25,7 +27,7 @@ export function computeLocalityAreaSeries(
   { bucketWidthMs = 60_000, tiers = LOCALITY_TIERS }: LocalityAreaSeriesOptions = {},
 ): LocalityAreaSeriesResult {
   const valid = stages.filter(s => (s.completedAt ?? 0) > (s.submittedAt ?? 0) && (s.executorRunTime ?? 0) > 0);
-  if (valid.length === 0) return { labels: [], series: {} };
+  if (valid.length === 0) return { labels: [], series: {}, endTime: 0 };
   const startTime = valid.reduce((m, s) => Math.min(m, s.submittedAt ?? m), Infinity);
   const endTime = valid.reduce((m, s) => Math.max(m, s.completedAt ?? m), -Infinity);
   const nBuckets = Math.max(1, Math.ceil((endTime - startTime) / bucketWidthMs));
@@ -65,5 +67,5 @@ export function computeLocalityAreaSeries(
 
   const labels: number[] = [];
   for (let b = 0; b < nBuckets; b++) labels.push(startTime + b * bucketWidthMs);
-  return { labels, series };
+  return { labels, series, endTime };
 }

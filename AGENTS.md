@@ -238,9 +238,10 @@ Before adding a new widget test file, or a new per-widget/per-detector test:
   file-input fallback with `await page.evaluate(() => delete window.showOpenFilePicker)`,
   then `setInputFiles` on the slot's `[data-testid=file-input]`), then click
   **Compare**. Both runs parse sequentially through the one worker, then the
-  comparison page opens. There is no Topbar **Compare** button anymore; drill
-  into a single run with **View run A/B dashboard** and return via **← Back to
-  comparison**.
+  comparison page opens. From a run's dashboard, the Topbar's **Compare with
+  another run** opens the same two-slot view with that run already in Run A
+  (a `cached` `RunSource`, not re-parsed). Drill into a single run with
+  **View run A/B dashboard** and return via **← Back to comparison**.
 - Embedding screenshots on a PR: the `gh` token can't use the browser-only
   attachment uploader. Instead commit the PNGs to a throwaway asset branch and
   embed them by commit SHA with

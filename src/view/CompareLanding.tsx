@@ -7,6 +7,7 @@ import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
 import { cn } from '@/lib/utils';
 import { McpSetupGuide } from '@/view/McpSetupGuide';
 import { ProductBarPortal } from '@/view/ProductBarPortal';
+import { store } from '@/store/store';
 import { useIngest, type RunSource } from '@/store/useIngest';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -111,8 +112,7 @@ function NextStepsRail({ onCompare }: { onCompare: () => void }) {
   return (
     <section className="landing-next-steps" aria-labelledby="next-steps-title">
       <div>
-        <p className="landing-next-steps-label">After your first run</p>
-        <h2 id="next-steps-title">Go further with the evidence you already have.</h2>
+        <h2 id="next-steps-title">After your first run, go further with the same evidence.</h2>
       </div>
       <div className="landing-next-step-list">
         <article>
@@ -158,11 +158,16 @@ function NextStepsRail({ onCompare }: { onCompare: () => void }) {
  * switches to two deferred-capture slots. Compare enables once both slots hold
  * a RunSource, then drives the sequential two-run load. */
 export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: string | null; errorNonce?: number } = {}) {
-  const { startCompareLoad } = useIngest();
+  const { startCompareLoad, drillIntoRun } = useIngest();
   const { theme, toggle } = useTheme();
-  const [compareMode, setCompareMode] = useState(false);
-  const [a, setA] = useState<RunSource | null>(null);
+  // A dashboard's "Compare with another run" leaves its run here as Run A.
+  // It stays in the store until the comparison opens or the reader leaves
+  // it, so a failed Run B load remounts this view still seeded.
+  const [seed] = useState(() => store.getState().compareSeed);
+  const [compareMode, setCompareMode] = useState(seed != null);
+  const [a, setA] = useState<RunSource | null>(seed ? { kind: 'cached', ...seed } : null);
   const [b, setB] = useState<RunSource | null>(null);
+  const seededRunKept = seed != null && a?.kind === 'cached' && a.id === seed.id;
 
   if (!compareMode) {
     return (
@@ -184,10 +189,10 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
             </button>
           </ProductBarPortal>
           <div className="landing-hero-copy">
-            <p className="landing-kicker">Private by default</p>
             <h2 id="landing-title">Analyze a Spark event log.</h2>
             <p>
-              Read stages, timelines, shuffle reads, and executor behavior from the log Spark already produced.
+              Load the log from one Spark run. You get a verdict on how it went, the stages worth fixing first, and the
+              evidence behind each suggestion.
             </p>
           </div>
           <div className="landing-proof" aria-label="SparkForensics guarantees">
@@ -195,17 +200,16 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
             <span><Bot aria-hidden="true" /> Bring your AI into the investigation</span>
             <span><GitCompareArrows aria-hidden="true" /> Compare one run against another</span>
           </div>
+          {/* The docs links stay above the intake so they read on the first
+              screen too. */}
           <ResourceLinks />
-        </section>
-
-        <section className="landing-intake" aria-labelledby="start-investigation-title">
-          <div className="landing-section-heading">
-            <div>
-              <h2 id="start-investigation-title">Analyze a single run first.</h2>
-            </div>
+          {/* The intake sits in the hero, not in a section of its own below
+              it: a first-time visitor's only job here is loading a log, so
+              Choose file and Try a sample run must be in the first viewport. */}
+          <div className="landing-intake">
+            {errorMessage ? <FileLoadAlert message={errorMessage} nonce={errorNonce} /> : null}
+            <DropZone />
           </div>
-          {errorMessage ? <FileLoadAlert message={errorMessage} nonce={errorNonce} /> : null}
-          <DropZone />
         </section>
 
         <NextStepsRail onCompare={() => setCompareMode(true)} />
@@ -217,16 +221,36 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
       <div className="flex items-center justify-between">
         <h2 className="font-heading text-lg font-semibold">Compare two runs</h2>
-        <Button type="button" variant="ghost" size="sm" className="tap-target-comfortable" onClick={() => { setCompareMode(false); setA(null); setB(null); }}>
-          Cancel
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="tap-target-comfortable"
+          onClick={() => {
+            // Opened from a run's dashboard: Cancel goes back to it.
+            if (seededRunKept) {
+              store.getState().setCompareSeed(null);
+              drillIntoRun(seed.id);
+              return;
+            }
+            setCompareMode(false);
+            setA(null);
+            setB(null);
+          }}
+        >
+          {seededRunKept ? 'Back to the run' : 'Cancel'}
         </Button>
       </div>
-      <p className="landing-compare-intro">Use Run A as the baseline and Run B as the candidate. Compare structurally matched stages to review material changes in a shared stage-level context.</p>
+      <p className="landing-compare-intro">
+        {seededRunKept
+          ? 'Run A is the run you had open. Pick the run to compare it with, for example the same job after a change, as Run B.'
+          : 'Use Run A as the baseline and Run B as the candidate. Compare structurally matched stages to review material changes in a shared stage-level context.'}
+      </p>
       {errorMessage ? <FileLoadAlert message={errorMessage} nonce={errorNonce} /> : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
           <p className="mb-2 text-sm font-medium text-muted-foreground">Run A (baseline)</p>
-          <Slot testId="compare-slot-a" ariaLabel="Run A" source={a} onPick={setA} onChange={() => setA(null)} />
+          <Slot testId="compare-slot-a" ariaLabel="Run A" source={a} onPick={setA} onChange={() => { store.getState().setCompareSeed(null); setA(null); }} />
         </div>
         <div>
           <p className="mb-2 text-sm font-medium text-muted-foreground">Run B (candidate)</p>

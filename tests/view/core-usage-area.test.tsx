@@ -117,7 +117,7 @@ test('downsamples a large bucketed series before handing it to the chart', () =>
     PROCESS_LOCAL: new Array(bigLength).fill(1),
     idle: new Array(bigLength).fill(0),
   };
-  (computeLocalityAreaSeries as Mock).mockReturnValueOnce({ labels, series });
+  (computeLocalityAreaSeries as Mock).mockReturnValueOnce({ labels, series, endTime: bigLength * 1000 });
 
   render(
     <DocsProvider>
@@ -237,7 +237,7 @@ test('shows the LOCAL badge, impact band, and recommendation when a coreLocality
   expect(screen.getByText(/check spark\.locality\.wait settings/)).toBeInTheDocument();
 });
 
-test('renders the core-ms raw-waste figure when a coreLocality finding carries an impactEstimate', async () => {
+test('renders the core-time raw-waste figure when a coreLocality finding carries an impactEstimate', async () => {
   const catalog: Finding[] = [{
     type: 'coreLocality', stageId: null, impactBand: 'warning',
     metric: 'nonLocalRatio', value: 20, recommendation: 'x',
@@ -250,8 +250,7 @@ test('renders the core-ms raw-waste figure when a coreLocality finding carries a
     </DocsProvider>,
   );
 
-  // formatRawWaste pins the locale to en-US so the figure doesn't drift with the host locale.
-  expect(screen.getByText(`${(4200).toLocaleString('en-US')} core-ms`)).toBeInTheDocument();
+  expect(screen.getByText('4.2 core-s')).toBeInTheDocument();
 });
 
 test('renders no LOCAL badge when catalog has no coreLocality finding; the chart still renders', async () => {
@@ -479,9 +478,33 @@ test('defaults collapsed with a peak-cores summary', () => {
   );
 
   // When collapsed, the summary shows the peak cores figure
-  expect(screen.getByText(/\d+ cores/)).toBeInTheDocument();
-  expect(screen.getByText(/peak concurrent, by locality/)).toBeInTheDocument();
+  expect(screen.getByText(/\d+(\.\d)? cores/)).toBeInTheDocument();
+  expect(screen.getByText(/busy at the peak$/)).toBeInTheDocument();
 
   // Chart is hidden when collapsed
   expect(screen.queryByRole('img', { name: /concurrent core usage/i })).not.toBeInTheDocument();
+});
+
+test('a run shorter than one chart bucket reports its real busy cores, not a figure diluted to "0 cores"', () => {
+  // 3s of task time packed into a 10s stage (0.3 busy cores) in a 17s run: the
+  // 60s bucket holds only the stage's 10s, so the peak is 0.3 cores.
+  const appModel = { ...buildAppModel({ 1: { completedAt: 10_000, executorRunTime: 3_000 } }), app: { startTime: 0, endTime: 17_000 } };
+  render(
+    <DocsProvider>
+      <CoreUsageArea appModel={appModel as AppModel} catalog={[]} defaultCollapsed={true} />
+    </DocsProvider>,
+  );
+  expect(screen.getByText('0.3 cores')).toBeInTheDocument();
+});
+
+test('an incomplete run with no application end time still reports the stage\'s real busy cores', () => {
+  // No ApplicationEnd, so app.endTime is null: 80s of task time over a 10s
+  // stage is 8 busy cores, and the peak must not scale past that.
+  const appModel = { ...buildAppModel({ 1: { submittedAt: 5_000, completedAt: 15_000, executorRunTime: 80_000 } }), app: { startTime: 0, endTime: null } };
+  render(
+    <DocsProvider>
+      <CoreUsageArea appModel={appModel as unknown as AppModel} catalog={[]} defaultCollapsed={true} />
+    </DocsProvider>,
+  );
+  expect(screen.getByText('8 cores')).toBeInTheDocument();
 });

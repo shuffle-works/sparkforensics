@@ -1,4 +1,4 @@
-import { Suspense, type ComponentType } from 'react';
+import type { ComponentType } from 'react';
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
@@ -7,11 +7,10 @@ import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import { getThresholdSummary } from '@sparkforensics/core/threshold-summary.ts';
 import type { WidgetProps } from '@/view/detector-registry';
-import { alwaysMountedWidgets, isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
+import { isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { RUN_SPAN_CHECK_TYPES, hasFinishedStage, isEvidenceCaveat, isIncompleteRun, verdictGaps } from '@/view/run-verdict';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
-import { WidgetCardSkeleton } from '@/view/WidgetCard';
-import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
 
 export const SUGGESTED_IMPROVEMENTS_ANCHOR_ID = 'suggested-improvements';
 
@@ -64,14 +63,14 @@ const SCOPE_LABEL: Record<CleanCheckScope, string> = {
 };
 
 /**
- * "Suggested Improvements" has three tiers. An active grid: every `REGISTRY`
+ * "Suggested Improvements" has two tiers. An active grid: every `REGISTRY`
  * widget component except the always-mounted one, ranked by worst
  * impact band, shown when at least one of its types has a finding in
- * `catalog` ∪ `configFindings`. A small always-visible grid: the one
- * reference widget (Core Usage by Locality), mounted unconditionally so it
- * never collapses to a clean-check line on a clean run. A collapsed "Clean
- * checks" disclosure: every remaining `REGISTRY` type (not component) with
- * zero findings gets its own `CleanCheckRow`. `configFindings` is a separate
+ * `catalog` ∪ `configFindings`. A collapsed "Clean checks" disclosure: every
+ * remaining `REGISTRY` type (not component) with zero findings gets its own
+ * `CleanCheckRow`. The always-mounted reference widget (Core Usage by
+ * Locality) lives in the Full app report tab instead, so it never collapses
+ * to a clean-check line either. `configFindings` is a separate
  * stream from `catalog`, so the impact-band ranking must look at both.
  */
 export interface ActiveWidget {
@@ -102,18 +101,31 @@ export function computeActiveWidgets(catalog: Finding[], configFindings: Finding
     .sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand] || a.index - b.index);
 }
 
-/** The always-visible reference widget (Core Usage by Locality) plus the
- * collapsed "Clean checks" disclosure: the part of Suggested Improvements
- * that isn't the impact-band-ranked active grid. */
-export function AlwaysVisibleAndCleanChecks({ appModel, catalog, configFindings = [], getTaskData, activeFileId }: WidgetProps) {
+/** The collapsed "Clean checks" disclosure: the part of Suggested
+ * Improvements that isn't the impact-band-ranked active grid. */
+export function CleanChecks({ appModel, catalog, configFindings = [] }: Pick<WidgetProps, 'appModel' | 'catalog' | 'configFindings'>) {
   // isRealFinding: a mere evidence-unavailable caveat (e.g. memoryUtilization's
   // dataUnavailable variant) doesn't keep a type out of the Clean-checks list.
   const combined = [...catalog, ...configFindings].filter(isRealFinding);
 
-  const cleanWidgets = Object.keys(REGISTRY)
+  // A check the log could not run is not a pass: the same rule the verdict
+  // uses to withhold "clean" (an evidence caveat, a per-stage check on a log
+  // where no stage finished, or a run-span check on a log with no
+  // ApplicationEnd).
+  const noFinishedStages = !hasFinishedStage(appModel.stages);
+  const incomplete = isIncompleteRun(catalog);
+  const caveatTypes = new Set([...catalog, ...configFindings].filter(isEvidenceCaveat).map((finding) => finding.type));
+  const isNotRun = (type: string) =>
+    caveatTypes.has(type) || (noFinishedStages && SCOPE[type] === 'per-stage') || (incomplete && RUN_SPAN_CHECK_TYPES.has(type));
+
+  const zeroFindingTypes = Object.keys(REGISTRY)
     .filter((type) => !isAlwaysMountedType(type))
     .filter((type) => !combined.some((finding) => finding.type === type))
     .map((type) => ({ type, findingLabel: REGISTRY[type].findingLabel }));
+  const cleanWidgets = zeroFindingTypes.filter(({ type }) => !isNotRun(type));
+  const notRunWidgets = zeroFindingTypes.filter(({ type }) => isNotRun(type));
+  // Why each check could not run, each line naming what to turn on next time.
+  const notRunReasons = notRunWidgets.length > 0 ? verdictGaps([...catalog, ...configFindings], noFinishedStages) : [];
 
   // Grouped by detector scope so a clean run's 20+ rows read as four short
   // labeled lists instead of one flat wall; `SCOPE_ORDER` fixes the order and
@@ -126,46 +138,55 @@ export function AlwaysVisibleAndCleanChecks({ appModel, catalog, configFindings 
     cleanWidgetsByScope.get(scope)!.push(widget);
   }
 
-  const referenceWidgets = alwaysMountedWidgets();
-
   return (
-    <>
-      <WidgetGrid>
-        {referenceWidgets.map(({ component: Widget, widgetId }) => (
-          <WidgetGridItem key={widgetId} cardId={`reference-${widgetId}`} widgetId={widgetId}>
-            <Suspense fallback={<WidgetCardSkeleton />}>
-              <Widget appModel={appModel} catalog={catalog} configFindings={configFindings} getTaskData={getTaskData} activeFileId={activeFileId} defaultCollapsed />
-            </Suspense>
-          </WidgetGridItem>
-        ))}
-      </WidgetGrid>
-      <Accordion>
-        <AccordionItem value="clean-checks">
-          <AccordionTrigger>Clean checks</AccordionTrigger>
-          <AccordionContent>
-            <p className="pb-2 text-xs text-muted-foreground">
-              Every check below passed. No fix needed.
-              <AdvancedOnly> Each line's caption states the threshold it was measured against.</AdvancedOnly>
-            </p>
-            {SCOPE_ORDER.map((scope) => {
-              const widgets = cleanWidgetsByScope.get(scope);
-              if (!widgets || widgets.length === 0) return null;
-              return (
-                <div key={scope} className="pt-3 first:pt-0">
-                  <p className="pb-1 text-xs font-medium text-muted-foreground">{SCOPE_LABEL[scope]}</p>
-                  <Table>
-                    <TableBody>
-                      {widgets.map(({ type, findingLabel }) => (
-                        <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={getThresholdSummary(type)} />
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              );
-            })}
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
-    </>
+    <Accordion>
+      <AccordionItem value="clean-checks">
+        <AccordionTrigger>Clean checks</AccordionTrigger>
+        <AccordionContent>
+          {notRunWidgets.length > 0 ? (
+            <div data-testid="clean-checks-not-run" className="pb-4">
+              <p className="pb-1 text-xs font-medium text-muted-foreground">Not checked on this log</p>
+              <p className="pb-2 text-xs text-muted-foreground">
+                The log lacked the data these checks need, so they neither passed nor failed.
+              </p>
+              {notRunReasons.length > 0 ? (
+                <ul data-testid="clean-checks-not-run-reasons" className="list-disc space-y-0.5 pb-2 pl-5 text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                  {notRunReasons.map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              ) : null}
+              <Table>
+                <TableBody>
+                  {notRunWidgets.map(({ type, findingLabel }) => (
+                    <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={getThresholdSummary(type)} status="notRun" />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : null}
+          <p className="pb-2 text-xs text-muted-foreground">
+            {cleanWidgets.length === 0 ? 'No check could run on this log.' : 'Every check below passed. No fix needed.'}
+            <AdvancedOnly> Each line's caption states the threshold it was measured against.</AdvancedOnly>
+          </p>
+          {SCOPE_ORDER.map((scope) => {
+            const widgets = cleanWidgetsByScope.get(scope);
+            if (!widgets || widgets.length === 0) return null;
+            return (
+              <div key={scope} className="pt-3 first:pt-0">
+                <p className="pb-1 text-xs font-medium text-muted-foreground">{SCOPE_LABEL[scope]}</p>
+                <Table>
+                  <TableBody>
+                    {widgets.map(({ type, findingLabel }) => (
+                      <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={getThresholdSummary(type)} />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            );
+          })}
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
   );
 }

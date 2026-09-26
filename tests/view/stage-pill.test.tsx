@@ -20,6 +20,13 @@ describe('StagePill', () => {
 
     expect(openStage).toHaveBeenCalledWith(7);
   });
+
+  it('spells out "Stage 7" and keeps that visible text inside its accessible name', () => {
+    render(<StagePill stageId={7} />);
+    const pill = screen.getByRole('button', { name: /open details for stage 7/i });
+    expect(pill).toHaveTextContent('Stage 7');
+    expect(pill.getAttribute('aria-label')).toContain(pill.textContent ?? '');
+  });
 });
 
 describe('StagePillGroup', () => {

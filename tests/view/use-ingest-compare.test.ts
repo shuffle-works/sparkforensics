@@ -36,7 +36,7 @@ const fileSource = (id: string, name: string): RunSource => ({ kind: 'file', id,
 
 beforeEach(() => {
   store.getState().resetModel();
-  store.setState({ sessionCache: new Map(), activeFileId: null, appModel: emptyAppModel() });
+  store.setState({ sessionCache: new Map(), activeFileId: null, appModel: emptyAppModel(), compareSeed: null });
 });
 
 test('startCompareLoad parses A then B, snapshots both, opens the comparison', async () => {
@@ -145,4 +145,85 @@ test('drillIntoRun restores one cached run without evicting the other', () => {
   expect(store.getState().status).toBe('ready');
   expect(store.getState().comparison.active).toBe(false);
   expect(store.getState().sessionCache.has('b::3::4')).toBe(true); // not evicted
+});
+
+test('compareWithAnotherRun keeps the open run as a cached Run A and seeds the landing compare view', async () => {
+  const cache = new Map<string, SessionSnapshot>();
+  store.setState({
+    sessionCache: cache,
+    activeFileId: 'a::1::2',
+    status: 'ready',
+    appModel: { ...emptyAppModel(), app: { id: 'A', name: 'A' } as any },
+  });
+  const { result } = renderHook(() => useIngest({ makeClient: () => makeFakeClient([]) as any }));
+  act(() => result.current.compareWithAnotherRun());
+
+  expect(cache.has('a::1::2')).toBe(true);
+  expect(store.getState().compareSeed).toEqual({ id: 'a::1::2', label: expect.any(String) });
+  expect(store.getState().status).toBe('idle');
+});
+
+test('compareWithAnotherRun stays on the dashboard when the open run has no app to snapshot', () => {
+  const cache = new Map<string, SessionSnapshot>();
+  store.setState({ sessionCache: cache, activeFileId: 'a::1::2', status: 'ready', compareSeed: null });
+  const { result } = renderHook(() => useIngest({ makeClient: () => makeFakeClient([]) as any }));
+  act(() => result.current.compareWithAnotherRun());
+
+  expect(cache.has('a::1::2')).toBe(false);
+  expect(store.getState().compareSeed).toBeNull();
+  expect(store.getState().status).toBe('ready');
+  expect(store.getState().activeFileId).toBe('a::1::2');
+});
+
+test('startCompareLoad reuses a cached Run A: only Run B is parsed, and A is never re-snapshotted', async () => {
+  const startParse = vi.fn();
+  const client = makeFakeClient(['B']);
+  const cache = new RecordingMap<string, SessionSnapshot>();
+  cache.set('a::1::2', { appModel: emptyAppModel() } as unknown as SessionSnapshot);
+  cache.sets = [];
+  store.setState({ sessionCache: cache });
+  const { result } = renderHook(() =>
+    useIngest({ makeClient: () => ({ ...client, startParse: (f: File, h: any) => { startParse(); client.startParse(f, h); } }) as any }),
+  );
+  await act(async () => {
+    result.current.startCompareLoad({ kind: 'cached', id: 'a::1::2', label: 'a.log' }, fileSource('b::3::4', 'b.log'));
+    await Promise.resolve();
+  });
+
+  expect(startParse).toHaveBeenCalledTimes(1);
+  expect(cache.sets.filter(([k]) => k === 'a::1::2')).toHaveLength(0);
+  expect(store.getState().comparison).toEqual({ active: true, baselineId: 'a::1::2', candidateId: 'b::3::4' });
+});
+
+test('startCompareLoad keeps the compare seed when Run B fails, and clears it once the comparison opens', async () => {
+  const seed = { id: 'a::1::2', label: 'a.log' };
+  const cache = new Map<string, SessionSnapshot>([['a::1::2', { appModel: emptyAppModel() } as unknown as SessionSnapshot]]);
+  const failing = { ...makeFakeClient([]), startParse: (_f: File, h: any) => h.onError?.(new Error('bad log')) };
+  store.setState({ sessionCache: cache, compareSeed: seed });
+  const failed = renderHook(() => useIngest({ makeClient: () => failing as any }));
+  await act(async () => {
+    failed.result.current.startCompareLoad({ kind: 'cached', ...seed }, fileSource('b::3::4', 'b.log'));
+    await Promise.resolve();
+  });
+  expect(store.getState().compareLoad).toBeNull();
+  expect(store.getState().comparison.active).toBe(false);
+  expect(store.getState().compareSeed).toEqual(seed);
+
+  const ok = renderHook(() => useIngest({ makeClient: () => makeFakeClient(['B']) as any }));
+  await act(async () => {
+    ok.result.current.startCompareLoad({ kind: 'cached', ...seed }, fileSource('b::3::4', 'b.log'));
+    await Promise.resolve();
+  });
+  expect(store.getState().comparison.active).toBe(true);
+  expect(store.getState().compareSeed).toBeNull();
+});
+
+test('startCompareLoad reports a cached Run A that is no longer loaded instead of comparing', async () => {
+  const { result } = renderHook(() => useIngest({ makeClient: () => makeFakeClient(['B']) as any }));
+  await act(async () => {
+    result.current.startCompareLoad({ kind: 'cached', id: 'gone::1::2', label: 'a.log' }, fileSource('b::3::4', 'b.log'));
+    await Promise.resolve();
+  });
+  expect(store.getState().errorMessage).toMatch(/^Run A: this run is no longer loaded/);
+  expect(store.getState().comparison.active).toBe(false);
 });

@@ -3,8 +3,11 @@
 ## Render order (fixed, spec §5) {#widget-rendering-order-fixed-spec-§5}
 
 `src/view/Dashboard.tsx`'s `FilteredBoard` renders inside a `<main>` that
-opens with `FindingFilterBar` and (only when an active filter empties both
-finding streams) `NoMatchBanner`, then a single `Scorecard` strip, then (when
+opens with `SampleRunNotice` (only while the bundled sample run is open),
+then `RunVerdict` (built from the unfiltered catalog), then a single
+`Scorecard` strip, then `FindingFilterBar` (Advanced view, or any active
+filter) and (only when an active filter empties both finding streams)
+`NoMatchBanner`, then (when
 the active filter doesn't empty the board) a two-tab `Tabs`
 (`src/components/ui/tabs.tsx`, a base-ui primitive): **Findings** and
 **Full app report** (2026-09-03 tabbed-impact-band-board redesign, replacing the
@@ -12,8 +15,8 @@ prior three stacked sections: All recommendations, Suggested Improvements,
 Full app report, with a merged, impact-grouped Findings tab and an
 always-reachable Full app report tab). Base-ui `Tabs` fully unmount the
 inactive `TabsContent` panel rather than hiding it: a widget mounted only in
-Findings (every routeable `REGISTRY` widget; see "First investigation
-routing" below) is not in the DOM at all while Full app report is active, and
+Findings (every routeable `REGISTRY` widget but Core Usage by Locality;
+see "First investigation routing" below) is not in the DOM at all while Full app report is active, and
 remounts fresh, with its own state reset, when the user switches back.
 
 `region` on `RegistryEntry` (`src/view/detector-registry.tsx`) is read again,
@@ -132,37 +135,45 @@ filtered to this impact band) in their own `WidgetGrid`: every one of
 `orderedWidgets()`'s deduped `REGISTRY` components *except* the one
 always-mounted one below, with at least one finding in `catalog` ∪
 `configFindings`. Within a band, active widgets keep `orderedWidgets()`'s
-own `action`-region-first, ascending-`DETECTORS`-order tiebreak.
+own `action`-region-first, ascending-`DETECTORS`-order tiebreak. In Basic
+view a band with both rows and cards folds its `WidgetGrid` behind one
+"Show the evidence (N cards)" disclosure, unmounted while closed; it opens
+itself (and stays open) when the active route target
+(`useActiveRouteTarget`) is one of its cards, and the card, mounting with
+the route still pending, opens and scrolls itself through
+`registerWidget`. A band with cards but no rows, and every band in
+Advanced view, shows its grid directly.
 `cacheUtilization`, `memoryUtilization`, and `utilization` are
 `reference`-region types but aren't always-mounted exceptions, so a Cache
 Storage, Memory Utilization, or Executor Utilization card with an active
 finding surfaces in its own impact band like any other active widget.
 
-Below the impact bands, `Alerts.tsx`'s exported
-`AlwaysVisibleAndCleanChecks` (shared verbatim with the retired standalone
-`Alerts` component) renders the same two tiers it always did, now living
-outside the impact-band grouping entirely rather than as this section's
-second and third tier: a small always-visible grid holding just Core Usage
-by Locality (`coreLocality`, resolving to `CoreUsageArea`), mounted
-unconditionally from `appModel` regardless of finding state
-(`alwaysMountedWidgets()`/`isAlwaysMountedType()`), carrying its own
-impact-band indicator when a finding is active instead of collapsing to a
-clean-check line on a clean run; and a collapsed "Clean checks" disclosure
+Below the impact bands, `Alerts.tsx`'s exported `CleanChecks` renders a
+collapsed "Clean checks" disclosure
 of `CleanCheckRow` lines (`src/view/widgets/CleanCheckRow.tsx`: label, the
 threshold it was measured against via `getThresholdSummary`, and "No fix
 needed.") built per detector *type* (every `REGISTRY` key except that one
-always-mounted key): a clean run lands `cacheUtilization`,
+always-mounted key). Types the log could not check (an `isEvidenceCaveat`
+finding of that type, every per-stage type when no stage finished, or the
+run-span types `RUN_SPAN_CHECK_TYPES` on an `incompleteRun` log, the same
+rule that keeps the verdict from calling the run clean) render first under
+**Not checked on this log** as `CleanCheckRow status="notRun"`, drawn
+neutral rather than clean green, after the `verdictGaps` lines saying why
+and naming the setting to turn on. A clean run lands `cacheUtilization`,
 `memoryUtilization`, and `utilization` here too, same as any ordinary
 action-region type. Caching Opportunities, Config Audit, and the four split
 Plan Advisor widgets (Redundant Plan Subtree, Excessive Small Files, Missed
 Broadcast Join, Oversized Broadcast Join) render through the ordinary
 active/clean paths above (see
 [Board widgets beyond the fixed six](./board-widgets.md#board-widgets-beyond-the-fixed-six)).
-One consequence of this always-visible grid sitting below every impact
-band: a `critical`-band `coreLocality` finding still renders in that lower
-grid, below the `info`-band widgets above it, a deliberate tradeoff the
-spec accepted in exchange for never losing the widget on a clean run, not a
-ranking bug.
+Core Usage by Locality (`coreLocality`, resolving to `CoreUsageArea`) is
+not in the Findings tab at all: it mounts unconditionally from `appModel`
+at the head of the Full app report's reference grid
+(`alwaysMountedWidgets()`/`isAlwaysMountedType()`), carrying its own
+impact-band indicator when a finding is active instead of collapsing to a
+clean-check line on a clean run. A `coreLocality` finding still lists in
+its impact band's recommendation rows, and its **Show evidence** switches
+to the Full app report tab.
 
 ### Per-widget list sort mode
 
@@ -349,23 +360,22 @@ until the user clicks the Full app report tab. Its exact order is WallClock
 → Timeline → Executor Count Over Time (`ExecutorCountChart.tsx`, the
 executor add/remove count chart extracted out of the former combined
 `ExecutorTimeline.tsx`; not driven by any finding, so it isn't a
-`REGISTRY` entry) → StageTable → a `WidgetGrid` holding Evidence
+`REGISTRY` entry) → StageTable → a `WidgetGrid` holding Core
+Usage by Locality (the one always-mounted `REGISTRY` card) → Evidence
 availability → ETL Phase Attribution → What-If Executor Scaling →
 Compute Efficiency → Wasted Core-Hours → Core-Usage Distribution.
 Scorecard used to lead this
 section; it now renders once, above the tabs themselves, in
 `FilteredBoard` (`src/view/Dashboard.tsx`), so it stays visible regardless
 of which tab is active rather than living inside either one (a three-tile
-run-info row: Wall-clock, Efficiency, Wastage; see
+run-info row: Wall-clock, Efficiency, Unused core time; see
 [Board widgets beyond the fixed six](./board-widgets.md#board-widgets-beyond-the-fixed-six)).
 WallClock, Timeline, StageTable and every tile in the grid beside them
 (Evidence availability included) all render immediately and fully
-expanded. No detector-driven `REGISTRY` card renders in this
-section any more: Memory Utilization, Executor Utilization, Core Usage by
-Locality, and Cache Storage all moved to the Findings tab above (Cache
-Storage, Memory Utilization, and Executor Utilization only surface there
-when they have an active finding; Core Usage by Locality alone is
-always-mounted).
+expanded. Core Usage by Locality is the only detector-driven `REGISTRY`
+card in this section, always mounted; Memory Utilization, Executor
+Utilization, and Cache Storage live in the Findings tab above and surface
+there only when they have an active finding.
 
 The Evidence availability card is the persistent, non-impact-band ledger
 [defined in the worker protocol](./worker-protocol.md#evidence-availability-contract-v1),
@@ -427,22 +437,19 @@ have a mapped, routeable registry entry and a non-empty trimmed
 recommendation (`targetForFinding`, `src/view/triage-target.ts`). The
 target's widget still renders every affected stage in its local order.
 
-`src/view/triage-target.ts` also still exports `selectTriageTarget`, the
-whole-catalog "single highest-potential-savings finding" picker that used
-to back a start-here callout and each per-tag headline tile in the retired
-`ProblemHeadlines.tsx` (potential savings first via
-`impactEstimate.wallClock.high`, then `orderedWidgets()` widget order, then
-catalog order; impact band plays no part). Ranking by potential savings
-replaced the earlier severity-first routing once the occupancy-weighted
-impact estimator gave every finding a real, comparable
-`impactEstimate.wallClock` figure: severity-first could point the single
-"start here" callout at a `skew`/`straggler` finding ranked `critical` on a
-ratio basis while its occupancy-clipped recoverable time was near zero,
-passing over a lower-severity finding with an order-of-magnitude larger
-real recoverable-time estimate right next to it. Nothing in the app calls
-`selectTriageTarget` any more: `FixTheseFirst` already ranks every eligible
-finding by impact magnitude, so a separate single-winner pick has no call
-site left. `tests/view/triage-target.test.ts` still covers it directly.
+`src/view/triage-target.ts` also exports `rankTriageTargets`, which orders
+every routeable finding by potential savings (`impactEstimate.wallClock.high`),
+a quantified estimate ahead of an unquantified one, then impact band, then
+`orderedWidgets()` widget order, then catalog order; `selectTriageTarget`
+is its first entry. Ranking by potential savings replaced the earlier
+severity-first routing once the occupancy-weighted impact estimator gave
+every finding a real, comparable `impactEstimate.wallClock` figure:
+severity-first could point a "start here" pick at a `skew`/`straggler`
+finding ranked `critical` on a ratio basis while its occupancy-clipped
+recoverable time was near zero, passing over a lower-severity finding with
+an order-of-magnitude larger real recoverable-time estimate right next to
+it. Impact band only breaks ties. `RunVerdict`'s next steps are built from
+this ranking (see "Full render sequence" above).
 
 The route is re-derived from the current catalog before each asynchronous
 step. Its identity is object-reference equality against the current
@@ -454,12 +461,12 @@ contract; cross-session consumers (exports, future URL-restored state) use
 the core `Finding.id` instead (see [Finding identity](./worker-protocol.md#finding-identity)).
 
 `Dashboard` owns disclosure and navigation. Every routeable `REGISTRY`
-widget now lives in the Findings tab (no `REGISTRY` widget renders inside
-Full app report any more; see "Render order" above), so
-`requestRoute` (`DashboardContent`, `src/view/Dashboard.tsx`) starts with an
-unconditional `setActiveTab('findings')`, whether the request came from a
-control already on that tab or from Full app report's own Stage Summary
-route link. That tab switch can unmount and remount the whole Findings
+widget lives in the Findings tab except the always-mounted Core Usage by
+Locality, which lives in Full app report (see "Render order" above), so
+`requestRoute` (`DashboardContent`, `src/view/Dashboard.tsx`) starts by
+switching to the tab holding the target's widget
+(`isAlwaysMountedType(target.finding.type)` picks Full app report), whether
+the request came from a control already on that tab or from the other. That tab switch can unmount and remount the whole Findings
 subtree in the same commit as the route landing (base-ui `Tabs` fully
 unmounts the inactive panel; see "Render order" above), which two
 routing paths have to account for: `reportWidgetOpen` no longer clears a
@@ -521,15 +528,71 @@ renders inside the Full app report tab, not as a standalone board section.
 
 Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
 
-1. `FindingFilterBar` (plus `NoMatchBanner` when the active filter empties
-   both finding streams).
-2. `Scorecard`: a three-tile run-info row (Wall-clock, Efficiency, Wastage),
+1. `SampleRunNotice` (`src/view/SampleRunNotice.tsx`), only while the
+   bundled sample run is open (the landing's **Try a sample run** loads it
+   under `SAMPLE_RUN_ID`, `src/view/sample-run.ts`) and never in the export
+   bundle: says the board shows the sample, with **Load my event log** and a
+   docs-panel link to the log-retrieval guide.
+2. `RunVerdict` (`src/view/widgets/RunVerdict.tsx`): the run's verdict
+   title, a summary sentence, and up to three numbered next steps built by
+   `buildNextSteps` (`src/view/run-verdict.ts`). Steps group routeable
+   eligible findings by location (one stage, one multi-stage finding type,
+   or one app-level finding type and variant), ordered by
+   `rankTriageTargets` (potential savings, then impact band, then widget
+   order), the same ranking every other component uses: no finding type
+   jumps that order. An idle-capacity step (`utilization`, or
+   `memoryUtilization`'s `idleCores` variant only, never its heap variants)
+   titles the verdict only when it ranks first; otherwise an idle share of
+   at least `IDLE_NOTABLE_PCT` (40%) adds one summary sentence. The
+   idle share (`verdictIdlePct`) is the figure that idle-capacity step itself
+   reports, falling back to the Scorecard's Unused core time figure only when no step
+   carries one, so the title and the step never disagree. Each step's
+   savings figure is followed by what it counts (`savingsMeaning` in
+   `src/view/run-verdict.ts`: run time for a wall-clock figure, otherwise the
+   resource its `rawWaste` unit measures), and **Copy next steps** copies the
+   whole verdict as a plain-text checklist (`planCopyText` in `RunVerdict.tsx`). Always the
+   unfiltered catalog: a board filter never changes the verdict. A step's
+   **Show evidence** on a finding the active filter hides clears only the
+   filter dimensions that hide it (`excludingDimensions` in
+   `src/view/finding-filter.ts`, synced to the URL as usual) and shows a
+   one-line notice naming what it cleared; the Topbar count chip's jump to
+   its impact band (`jumpToFindings` in `Dashboard.tsx`) uses the same path.
+   The clean-run message ("No findings to fix right now.")
+   lives here and shows only when no finding at all was emitted and the log
+   lacked nothing a check needs (below); an
+   `incompleteRun` finding gets its own non-clean title and a sentence
+   saying the figures cover only the captured part of the run. Job results
+   (`summarizeRunOutcome` in `src/view/run-outcome.ts`) set the run outcome:
+   with a failed job the title says the run failed, the verdict quotes the
+   first line of Spark's recorded reason (a failed job's `stageFailed`
+   value first, then any `stageFailed`, then the job exception), the run is
+   never called clean, and `buildNextSteps` ranks `stageFailed` and
+   `jobFailureRate` steps first (a failed job's stage leading). Evidence
+   caveats (a finding with `dataUnavailable`, or one `isRealFinding`
+   drops), a log with no finished stage, and an `incompleteRun` log (whose
+   `RUN_SPAN_CHECK_TYPES` had no run length to measure) are gaps
+   (`verdictGaps`): any gap keeps the run from being called clean, and a
+   log with no finished stage and no finding gets its own title. The
+   verdict card does not list the gaps; the Clean checks disclosure's
+   "Not checked on this log" group does, each caveat by its own
+   recommendation text, which names the setting to enable. In Advanced view each step adds an
+   "Estimate:" line from `estimateProvenance` (`src/view/run-verdict.ts`:
+   method, basis as a point figure or a floor-to-high range, ms raw waste
+   only when the floor clipped it, a non-time raw waste as the resource
+   measured; nothing for `estimateMethod: 'none'` or a zero figure), the
+   finding's `confidence` when not `high`, and the list ends with the
+   ordering rule.
+3. `Scorecard`: a three-tile run-info row (Wall-clock, Efficiency, Unused
+   core time; Basic view captions say what each measures and which direction
+   is better, Advanced view shows the raw run/idle breakdown),
    rendered once regardless of which tab is active.
-3. A two-tab `Tabs` (skipped entirely when the active filter empties both
+4. `FindingFilterBar`, only in Advanced view or while a filter is active
+   (plus `NoMatchBanner` when the active filter empties both finding
+   streams).
+5. A two-tab `Tabs` (skipped entirely when the active filter empties both
    finding streams; `NoMatchBanner` above already covers that case), tab
    labels **Findings** and **Full app report**:
-   - **Findings** (`ImpactBoard`): a `HighestImpactBar` callout for the
-     single highest-impact eligible finding, if any; then one `<section>`
+   - **Findings** (`ImpactBoard`): one `<section>`
      per impact band in `Critical` → `Warning` → `Info` order, each rendering
      nothing when it has neither a recommendation row nor an active widget:
      a recommendation-rollup `Table` (one row per eligible-finding type,
@@ -542,8 +605,7 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
      by Locality, mounted unconditionally regardless of finding state, and a
      collapsed "Clean
      checks" disclosure of `CleanCheckRow` lines built per detector type
-     (every remaining `REGISTRY` key with zero findings); or inline "No
-     findings to fix right now." text when nothing is eligible at all.
+     (every remaining `REGISTRY` key with zero findings).
    - **Full app report** (`ReferenceSection`): WallClock → Timeline →
      Executor Count Over Time → StageTable → Evidence availability → fixed
      report-lens tail (ETL Phase Attribution → What-If Executor Scaling →

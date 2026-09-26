@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { test, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { store, emptyAppModel } from '@/store/store';
@@ -19,6 +19,7 @@ if (!window.ResizeObserver) {
 beforeEach(() => store.setState({
   ...store.getState(),
   catalog: [],
+  configFindings: [],
   appModel: emptyAppModel(),
   skippedLines: 0,
   planGraph: { active: false, stageId: null, initialScope: 'segment' },
@@ -159,9 +160,54 @@ test('wires the file switcher to the recent-files list', async () => {
   expect(await screen.findByText('Distinct Recent App')).toBeInTheDocument();
 });
 
+// A run with one finished stage: the checks had something to measure.
+const checkedAppModel = () => ({ ...emptyAppModel(), stages: new Map([[1, { id: 1, submittedAt: 0, completedAt: 1_000 }]]) }) as any;
+
 test('shows an all-clear verdict when catalog is empty', () => {
+  store.setState({ appModel: checkedAppModel(), configFindings: [] });
   renderTopbar();
   expect(screen.getByText(/no findings/i)).toBeInTheDocument();
+});
+
+test('says "Not fully checked" instead of all-clear when the log had nothing to check or lacked evidence', () => {
+  store.setState({ configFindings: [] });
+  renderTopbar();
+  expect(screen.getByText('Not fully checked')).toBeInTheDocument();
+
+  cleanup();
+  store.setState({
+    appModel: checkedAppModel(),
+    catalog: [{ type: 'memoryUtilization', variant: 'memoryBand', stageId: null, impactBand: 'info', dataUnavailable: true, recommendation: 'Enable executor metrics.' }],
+  });
+  renderTopbar();
+  // The caveat is not counted as a finding ("1 info"), and the run is not called clean.
+  expect(screen.queryByText(/1 info/)).not.toBeInTheDocument();
+  expect(screen.getByText('Not fully checked')).toBeInTheDocument();
+});
+
+test('says the run failed when a job failed even with no finding to rank', () => {
+  store.setState({
+    configFindings: [],
+    appModel: { ...checkedAppModel(), jobs: new Map([[1, { id: 1, stageIds: [], result: 'JobFailed', succeeded: false, exception: null }]]) },
+  });
+  renderTopbar();
+  expect(screen.getByText('Run failed')).toBeInTheDocument();
+});
+
+test('the count chip jumps to that band of the Findings list', async () => {
+  const user = userEvent.setup();
+  const onJumpToFindings = vi.fn();
+  store.setState({
+    appModel: checkedAppModel(),
+    configFindings: [],
+    catalog: [
+      { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Rebalance.' },
+      { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Add memory.' },
+    ],
+  });
+  renderTopbar({ onJumpToFindings });
+  await user.click(screen.getByRole('button', { name: '2 critical: show them in Findings' }));
+  expect(onJumpToFindings).toHaveBeenCalledWith('critical');
 });
 
 test('size="sm" secondary buttons carry the comfortable tap-target class', () => {
@@ -389,6 +435,9 @@ test('clicking the keyboard-shortcuts button opens the shortcuts dialog', async 
   await userEvent.click(screen.getByRole('button', { name: 'Keyboard shortcuts' }));
   expect(screen.getByRole('dialog', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
   expect(screen.getByText('Open this list')).toBeInTheDocument();
+  // The Advanced-view triage keys are documented, and say where they apply.
+  expect(screen.getByRole('heading', { name: 'Triage (Advanced view only)' })).toBeInTheDocument();
+  expect(screen.getByText("Next or previous finding, starting with the verdict's steps")).toBeInTheDocument();
 });
 
 test('pressing "?" opens the shortcuts dialog', async () => {
@@ -447,4 +496,28 @@ test('the narrow overflow menu also offers a Docs link to the docs site', async 
   const docsMenuLink = await screen.findByRole('menuitem', { name: 'Docs' });
   expect(docsMenuLink).toHaveAttribute('href', 'docs/');
   expect(docsMenuLink).toHaveAttribute('target', '_blank');
+});
+
+test('offers Compare with another run for an open run, and calls onCompare', async () => {
+  const user = userEvent.setup();
+  const onCompare = vi.fn();
+  // Not paused behind "Back to comparison", which hides this action.
+  store.setState({
+    comparison: { active: false, baselineId: null, candidateId: null },
+    appModel: { ...emptyAppModel(), app: { name: 'My Spark App' } },
+  });
+  renderTopbar({ activeFileId: 'a::1::2', onCompare });
+  await user.click(screen.getByRole('button', { name: 'Compare with another run' }));
+  expect(onCompare).toHaveBeenCalledOnce();
+});
+
+test('has no Compare with another run without an open run', () => {
+  renderTopbar({ onCompare: vi.fn() });
+  expect(screen.queryByRole('button', { name: 'Compare with another run' })).not.toBeInTheDocument();
+});
+
+test('has no Compare with another run for an open run without an application start event', () => {
+  store.setState({ comparison: { active: false, baselineId: null, candidateId: null } });
+  renderTopbar({ activeFileId: 'a::1::2', onCompare: vi.fn() });
+  expect(screen.queryByRole('button', { name: 'Compare with another run' })).not.toBeInTheDocument();
 });

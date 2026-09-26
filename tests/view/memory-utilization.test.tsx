@@ -305,3 +305,17 @@ test('card defaults collapsed with worst-row summary when there are findings', (
   // Should show the summary with worst-row label and count
   expect(screen.getByText(/2 items flagged/)).toBeInTheDocument();
 });
+
+test('states a run-sized waste-model figure in GB-hours, matching the savings figure', () => {
+  const catalog: Finding[] = [
+    {
+      type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
+      impactBand: 'info', metric: 'wastedMBSeconds', value: 10_956_685.3,
+      recommendation: 'Allocated executor memory sat largely idle over the run.',
+      impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 10_956_685.3, unit: 'mbSeconds' } },
+    },
+  ];
+  render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
+  expect(screen.getByText(/~3\.0 GB-h wasted/)).toBeInTheDocument();
+  expect(screen.queryByText(/MB-seconds/)).not.toBeInTheDocument();
+});

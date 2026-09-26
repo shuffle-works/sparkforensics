@@ -23,6 +23,7 @@ export interface FindingFilterContextValue {
   toggleType: (value: string) => void;
   toggleStage: (value: number) => void;
   clearAll: () => void;
+  replaceSelection: (next: FilterSelection) => void;
 }
 
 const Ctx = createContext<FindingFilterContextValue | null>(null);
@@ -115,7 +116,7 @@ export function FindingFilterProvider({
   const clearAll = useCallback(() => setSelection(emptySelection()), []);
 
   const value = useMemo<FindingFilterContextValue>(
-    () => ({ selection, toggleImpactBand, toggleType, toggleStage, clearAll }),
+    () => ({ selection, toggleImpactBand, toggleType, toggleStage, clearAll, replaceSelection: setSelection }),
     [selection, toggleImpactBand, toggleType, toggleStage, clearAll],
   );
 

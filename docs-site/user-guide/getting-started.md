@@ -24,10 +24,16 @@ SparkForensics itself, see [Development setup](../contributor-guide/development-
 
 Drop a log file onto the landing page, or click **Choose file** to pick one.
 Parsing runs in a background worker, off the browser's main thread, so a
-multi-hundred-megabyte event stream doesn't freeze the tab.
+multi-hundred-megabyte event stream doesn't freeze the tab. While it runs,
+the progress screen shows how far along it is and roughly how long is left;
+**Cancel** returns to the landing page.
 
 No log of your own yet? Click **Try a sample run** on the landing page to
-load a bundled example run and see a populated dashboard right away.
+load a bundled example run and see a populated dashboard right away. A line
+above its verdict says it is the sample, with **Load my event log** and a
+link to where to find one, so you can switch to your own run from there. **Where
+do I find my event log?**, under the buttons, is a short guide to turning
+event logging on and downloading a log from a History Server.
 
 The app takes a newline-delimited JSON event log (one JSON event per line,
 the format Spark writes to `spark.eventLog.dir`), either plain or
@@ -69,37 +75,103 @@ time the finding could save you rather than how unusual the metric looks, so
 a small-looking anomaly with a big payoff can outrank a dramatic one that
 would barely move your run time.
 
-A run scorecard (wall-clock, efficiency, wastage) always shows at the top.
+The board opens with a verdict: one line saying where to start, a short
+summary of what was found, and up to three numbered next steps. Each step
+explains in plain language what is happening, says what to try, and has a
+**Show evidence** button that jumps to the finding's detail widget. Findings
+on the same stage are folded into one step, because they usually share a
+cause and their savings overlap rather than add up. Each savings figure says
+what it counts: a time such as "58.6s of run time" is how much sooner the run
+could finish, while a resource figure such as "3.0 GB-h of unused executor
+memory" or "0.7 core-h of core time" is cluster time a fix would free up,
+which cuts cost but may not shorten the run. **Copy next steps**
+copies the whole plan as a plain checklist (run, verdict, and numbered steps
+with their stage and savings) to paste into a ticket or a message. Steps
+follow the same savings ranking as the rest of the board. When much of the
+run's executor capacity sat idle, the summary says so, without moving
+cluster size ahead of a bigger fix.
+
+The verdict also says how the run ended. When every job succeeded it says
+so. When a job failed, the title says the run failed (or how many of its
+jobs did), quotes the first line of the reason Spark recorded, and puts the
+failure first in the next steps, ahead of any speed-up, since a job has to
+finish before its speed matters.
+
+A run is called clean only when the log had everything its checks need.
+When something was missing, the verdict title says some checks could not
+run, and the Findings tab's **Clean checks** list says which ones and, where
+Spark has one, the setting to turn on for the next run (for example
+`spark.eventLog.logStageExecutorMetrics=true` for per-executor memory).
+
+A run scorecard sits under the verdict: **Wall-clock** (total run time),
+**Efficiency** (the share of that time with a stage running; higher is
+better; **Not measured** when no stage in the log recorded an end) and **Unused core time** (driver idle plus executor slack across the
+whole run, so it can run higher than the idle capacity a verdict step
+reports; lower is better). A collapsed **New to Spark tuning?** primer in the verdict
+explains stages, tasks, executors, shuffle and how to read savings. Stage
+labels such as **Stage 7** open that stage's details: how long it ran and
+what share of the run that was, then each of its findings with what is
+happening, what to try and a **Show evidence** button, followed by its task,
+locality, I/O and plan sections.
 Below it, two tabs split the rest of the board:
 
 1. **Findings**: every flagged finding and its detail widget, grouped by
    impact band (Critical, Warning, Info). Within a band, a recommendation row
    for a bottleneck type collapses into a summary row when it fires more than
    once; clicking the summary row expands its full list, and clicking any
-   single row or widget jumps straight to that finding. Below the impact-band
-   groups, memory and core-usage utilization always show, even on a clean
-   run. Widgets that found nothing fold away into a "Clean checks"
-   disclosure. This is the tab you land on.
+   single row or widget jumps straight to that finding. Each band leads with
+   its recommendation rows; its detail widgets (the charts and per-stage
+   numbers behind them) sit under **Show the evidence**, and **Show
+   evidence** on any finding opens them for you. Advanced view shows the
+   widgets without that step. Widgets that found nothing fold away into a "Clean checks"
+   disclosure. A check the log lacked the data for is listed there under
+   **Not checked on this log**, not as a pass, with the reason and the
+   setting to turn on: for example every per-stage check when no stage
+   finished, or core usage, memory and executor churn when the log has no
+   end-of-run record. This is the tab you land on.
 2. **Full app report**: the wall-clock and executor timelines, the stage
-   table, and the reference-only cards.
+   table, and the reference-only cards, led by core usage by locality, which
+   shows even on a clean run.
 
 Click a finding's documentation link (or the topbar's **Docs** button) to
 open the reference material in a slide-in panel beside the dashboard: the
 dashboard stays visible and interactive, so you can check a metric against
-the reference without losing your place.
+the reference without losing your place. Esc closes the panel, even while
+you are reading or scrolling inside it.
 
 ### Advanced view
 
 The topbar has an **Advanced view** toggle. It's off by default, which keeps
 each widget to the finding itself and what to do about it. Turn it on to also
 show confidence levels, supporting evidence, and documentation links for each
-finding, plus a few extra table columns. Your choice is remembered across
-runs.
+finding, plus a few extra table columns and the finding filter bar (impact,
+type, stage). A filter that is already active, for example from a shared
+link, keeps the filter bar visible either way. In the verdict, each step
+also says how its savings figure was estimated (measured or modeled, and
+whether the stage ran alone or shared the cluster, which makes the figure a
+range from a floor to an optimistic high), shows any confidence marker, and
+a line states how the steps are ordered. The scorecard switches from
+plain captions to the raw run and idle-time breakdown, and the newcomer
+primer is hidden. Advanced view also turns on single-key triage shortcuts:
+`j` and `k` step through the verdict's steps and then every finding row,
+`Enter` shows the focused finding's evidence, or expands a grouped finding,
+`f` jumps to the filters, and
+`1` and `2` switch between **Findings** and **Full app report**. They stay
+off in the default view, so they never surprise a first-time visitor or a
+screen-reader user. Your choice is remembered across runs.
 
 ### The rest of the topbar
 
-Once a run is loaded, the topbar also carries a few more controls.
+Once a run is loaded, the topbar also carries a few more controls. The
+count chip ("4 critical") counts the same findings the verdict ranks; click
+it to jump to that band of the Findings list (a board filter hiding the band
+is cleared, with a notice saying so). It reads **No findings** only
+when the verdict calls the run clean, **Not fully checked** when the log
+lacked evidence for some checks, and **Run failed** when a job failed. For
+keyboard users, the first Tab stop is **Skip to the verdict**.
 **New analysis** goes back to the landing page to load another run.
+**Compare with another run** keeps this run as the baseline and asks only
+for the other one (see [Run comparison mode](./run-comparison.md)).
 **Plan graph** opens an interactive node-and-edge view of the run's SQL
 execution plan, filterable down to I/O operators (scan, exchange), a
 broader "basic" set, or every operator. **Export evidence** downloads the

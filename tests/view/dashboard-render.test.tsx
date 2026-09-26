@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { test, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
@@ -93,10 +93,19 @@ beforeEach(() => {
     status: 'idle',
     errorMessage: null,
     parse: { pct: 0, lines: 0, etaMs: null },
+    widgetDensity: 'basic',
   });
 });
 
+/** Card-placement tests need every band's evidence cards mounted: Advanced
+ * view shows them, Basic view folds them per band (triage-navigation.test.tsx
+ * covers the fold). */
+function showAllEvidence() {
+  store.setState({ widgetDensity: 'advanced' });
+}
+
 test('the Findings tab shows every REGISTRY widget with findings, while Full app report starts unselected', async () => {
+  showAllEvidence();
   const user = userEvent.setup();
   const catalog: Finding[] = [
     { type: 'spill', stageId: 1, impactBand: 'warning', value: 123 },
@@ -124,12 +133,16 @@ test('the Findings tab shows every REGISTRY widget with findings, while Full app
   await user.click(reportTab);
   const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
   expect(within(reportPanel).getByRole('heading', { name: 'Stage Summary' })).toBeInTheDocument();
-  // REGISTRY widgets only mount in ImpactBoard (Findings tab), never in Full app report.
+  // REGISTRY widgets mount in ImpactBoard (Findings tab), except the
+  // always-mounted Core Usage by Locality, which lives in Full app report.
+  expect(await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
+  expect(within(findingsPanel).queryByRole('heading', { name: 'Core Usage by Locality' })).not.toBeInTheDocument();
   expect(within(reportPanel).queryByRole('heading', { name: 'Memory Utilization' })).not.toBeInTheDocument();
   expect(within(reportPanel).queryByRole('heading', { name: 'Spill' })).not.toBeInTheDocument();
 });
 
 test('Findings impact-band-ranks affected widgets into Critical/Warning/Info bands and moves clean widgets behind Clean checks', async () => {
+  showAllEvidence();
   const user = userEvent.setup();
   const catalog: Finding[] = [
     { type: 'infoAlert', stageId: 1, impactBand: 'info' },
@@ -142,18 +155,16 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
   await waitForDashboard();
 
   const findingsPanel = screen.getByRole('tabpanel', { name: 'Findings' });
-  // Core Usage by Locality is the one remaining always-mounted reference
-  // widget and is code-split; wait for it before asserting the heading list.
   // Memory/Executor Utilization and Cache Storage are not always-mounted, so
-  // they're absent from this catalog-less run.
-  await within(findingsPanel).findByRole('heading', { name: 'Core Usage by Locality' });
+  // they're absent from this catalog-less run; Core Usage by Locality lives
+  // in Full app report.
+  await within(findingsPanel).findByRole('heading', { name: 'Info alert' });
   expect(within(findingsPanel).getAllByRole('heading').map((node) => node.textContent))
     .toEqual([
       'Findings',
       'Critical', 'Critical alert',
       'Warning', 'Warning alert',
       'Info', 'Info alert',
-      'Core Usage by Locality',
       'Clean checks',
     ]);
   // Clean widgets render a CleanCheckRow, not their real component, so there is no "Clean alert" heading.
@@ -175,6 +186,7 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
 });
 
 test('a clean type still gets its own clean-check line when a sibling sharing its chart component is active', async () => {
+  showAllEvidence();
   // skew/tinyTask/stageShape used to share the TaskSkew component (now each
   // has its own: Skew/StageShape/TinyTask); kept as a regression guard that
   // an active skew finding must not swallow the other two's clean-check lines.
@@ -195,16 +207,17 @@ test('a clean type still gets its own clean-check line when a sibling sharing it
   expect(screen.getByText('Stage shape')).toBeInTheDocument();
 });
 
-test('empty catalog shows the "no findings to fix" empty state alongside the always-visible grid and the Full app report tab', async () => {
+test('empty catalog shows the "no findings to fix" empty state alongside the Full app report tab and its always-mounted chart', async () => {
   store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [] });
 
   render(<App />);
   await waitForDashboard();
 
   expect(screen.getByText(/no findings to fix/i)).toBeInTheDocument();
-  // The empty state is additive: the always-visible grid and Full app report remain available.
-  expect(await screen.findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
-  expect(screen.getByRole('tab', { name: 'Full app report' })).toBeInTheDocument();
+  // The empty state is additive: Full app report and its always-mounted chart remain available.
+  await userEvent.setup().click(screen.getByRole('tab', { name: 'Full app report' }));
+  const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
+  expect(await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' })).toBeInTheDocument();
 });
 
 test('shows real Config Audit findings as a row in All recommendations without adding them to the catalog', async () => {
@@ -226,6 +239,7 @@ test('shows real Config Audit findings as a row in All recommendations without a
 });
 
 test('Config Audit ranks by its real impact band inside Suggested Improvements, not Clean checks', async () => {
+  showAllEvidence();
   const user = userEvent.setup();
   const appModel = readyAppModel() as any;
   appModel.app = {
@@ -242,7 +256,8 @@ test('Config Audit ranks by its real impact band inside Suggested Improvements, 
   await waitForDashboard();
 
   const findingsPanel = screen.getByRole('tabpanel', { name: 'Findings' });
-  expect(within(findingsPanel).getByRole('heading', { name: 'Config Sanity' })).toBeInTheDocument();
+  // Config Sanity is code-split (React.lazy); its chunk resolves asynchronously.
+  expect(await within(findingsPanel).findByRole('heading', { name: 'Config Sanity' })).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: /clean checks/i }));
   expect(within(findingsPanel).queryByText('Config Sanity', { selector: '[data-testid^="clean-alert"] h3' })).not.toBeInTheDocument();
 });
@@ -263,6 +278,7 @@ test('reads configFindings from the store rather than recomputing it from appMod
 });
 
 test('the dashboard heading outline nests correctly: one h1, h2 sections (including impact bands), h3 widget titles', async () => {
+  showAllEvidence();
   const user = userEvent.setup();
   const catalog: Finding[] = [
     { type: 'spill', stageId: 1, impactBand: 'warning', value: 123 },
@@ -281,11 +297,12 @@ test('the dashboard heading outline nests correctly: one h1, h2 sections (includ
   expect(screen.getAllByRole('heading', { level: 1 }).map((h) => h.textContent))
     .toEqual(['SparkForensics']);
 
-  // The Findings heading and each active impact band sit at level 2 (bands are
-  // board-level sections, not nested under Findings). Full app report's level-2
-  // heading joins the outline only once selected.
+  // The run verdict, the Findings heading and each active impact band sit at
+  // level 2 (bands are board-level sections, not nested under Findings). Full
+  // app report's level-2 heading joins the outline only once selected. Neither
+  // finding carries a recommendation, so the verdict has no step to lead with.
   expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent))
-    .toEqual(['Findings', 'Warning', 'Info']);
+    .toEqual(['2 findings to review', 'Findings', 'Warning', 'Info']);
 
   // Widget titles nest one level below their impact band.
   expect(await screen.findByRole('heading', { name: 'Spill', level: 3 })).toBeInTheDocument();
@@ -365,4 +382,29 @@ test('Reference-section grid items render with collapsedTile', async () => {
     const card = heading.closest('[data-slot="card"]');
     expect(card).toHaveClass('min-h-[6.5rem]');
   }
+});
+
+test('the first Tab stop skips past the top bar to the verdict', async () => {
+  const user = userEvent.setup();
+  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [], configFindings: [] });
+  render(<App />);
+  await waitForDashboard();
+
+  await user.tab();
+  expect(document.activeElement).toHaveTextContent('Skip to the verdict');
+  await user.keyboard('{Enter}');
+  expect(document.activeElement).toBe(screen.getByTestId('run-verdict'));
+});
+
+test('the top bar count chip opens Findings on the band it counts', async () => {
+  const user = userEvent.setup();
+  const skew: Finding = { type: 'skew', stageId: 1, impactBand: 'warning', recommendation: 'Rebalance Stage 1.' };
+  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [skew], configFindings: [] });
+  render(<App />);
+  await waitForDashboard();
+
+  await user.click(screen.getByRole('tab', { name: 'Full app report' }));
+  await user.click(screen.getByRole('button', { name: '1 warning: show them in Findings' }));
+  expect(screen.getByRole('tab', { name: 'Findings' })).toHaveAttribute('aria-selected', 'true');
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Warning' })));
 });

@@ -43,6 +43,11 @@ interface State {
   exportMode: boolean;
   comparison: { active: boolean; baselineId: string | null; candidateId: string | null };
   compareLoad: { current: 1 | 2 } | null;
+  /** A run already parsed this session that the landing's compare view
+   * should open with as Run A ("Compare with another run" on a dashboard).
+   * Cleared when that comparison opens or the reader leaves the seeded view. */
+  compareSeed: { id: string; label: string } | null;
+  setCompareSeed: (seed: { id: string; label: string } | null) => void;
   openComparison: (baselineId: string, candidateId: string) => void;
   setComparisonActive: (active: boolean) => void;
   setCompareLoad: (v: { current: 1 | 2 } | null) => void;
@@ -121,8 +126,10 @@ export const store = createStore<State>((set) => ({
   skippedLines: 0,
   comparison: { active: false, baselineId: null, candidateId: null },
   compareLoad: null,
+  compareSeed: null,
   planGraph: { active: false, stageId: null, initialScope: 'segment' },
   modelResetCount: 0,
+  setCompareSeed: (compareSeed) => set({ compareSeed }),
   openComparison: (baselineId, candidateId) =>
     set((s) => {
       // Snapshot the active run so a comparison including it resolves by a pure

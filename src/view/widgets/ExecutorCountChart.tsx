@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { Area, AreaChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
 
-import { CHART_COLORS, ChartFrame } from '@/view/charts/ChartTheme';
+import { CHART_COLORS, CHART_TOOLTIP_BOX_STYLE, ChartFrame } from '@/view/charts/ChartTheme';
 import { downsample } from '@/view/charts/downsample';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
@@ -53,6 +53,17 @@ function computeExecutorSeries(appModel: AppModel): ExecutorSeries {
  * finding types (now split into `SlowHost`, `StageSlowness`, `Straggler`,
  * `SpeculationWaste`, `ColdStart`); rendered directly in `ReferenceSection`,
  * not through `REGISTRY`. */
+/** The chart's hover text on the theme's popover surface: "At 7s: Active
+ * executors 2". */
+export function ExecutorCountTooltip({ active, payload, label }: { active?: boolean; payload?: ReadonlyArray<{ value?: unknown }>; label?: unknown }) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div style={CHART_TOOLTIP_BOX_STYLE} data-testid="executor-count-tooltip">
+      At {String(label)}: Active executors {String(payload[0].value)}
+    </div>
+  );
+}
+
 export const ExecutorCountChart = memo(function ExecutorCountChart({ appModel, activeFileId }: ExecutorCountChartProps) {
   const { chartData, sampled, hasSeries, peak } = useMemo(() => {
     const { times, counts } = computeExecutorSeries(appModel);
@@ -96,12 +107,13 @@ export const ExecutorCountChart = memo(function ExecutorCountChart({ appModel, a
           <CartesianGrid vertical={false} stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
           <XAxis dataKey="label" tick={{ fontSize: 10 }} minTickGap={24} />
           <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={32} />
-          <Tooltip
-            formatter={(value) => [`${value} executor${value === 1 ? '' : 's'} active`, '']}
-            labelFormatter={() => ''}
-          />
+          {/* One line, "At 7s: Active executors 2": Recharts' default
+              content would split it into a label and a "name : value" row. */}
+          <Tooltip content={ExecutorCountTooltip} />
+          {/* stepAfter: the count changes only when an executor is added or
+              removed, so a smoothed curve would draw fractional executors. */}
           <Area
-            type="monotone"
+            type="stepAfter"
             dataKey="count"
             name="Active executors"
             stroke={CHART_COLORS.clean}

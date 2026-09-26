@@ -27,6 +27,14 @@ describe('computeLocalityAreaSeries', () => {
     expect(r.series.idle[1]).toBeCloseTo(3);
   });
 
+  it('reports the latest completion among counted stages as endTime', () => {
+    const r = computeLocalityAreaSeries([
+      { submittedAt: 0, completedAt: 4000, executorRunTime: 4000, localityStats: [] },
+      { submittedAt: 1000, completedAt: 9000, executorRunTime: 0, localityStats: [] },
+    ], { bucketWidthMs: 1000 });
+    expect(r.endTime).toBe(4000);
+  });
+
   it('returns empty labels for no stages', () => {
     expect(computeLocalityAreaSeries([], { bucketWidthMs: 1000 }).labels).toEqual([]);
   });

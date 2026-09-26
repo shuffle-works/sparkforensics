@@ -1,3 +1,4 @@
+import { IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { REGISTRY, orderedWidgets } from './detector-registry';
 import type { WidgetRegion } from './detector-registry';
@@ -45,6 +46,11 @@ function potentialSavingsMs(finding: Finding): number | null {
 }
 
 export function selectTriageTarget(catalog: Finding[]): TriageTarget | null {
+  return rankTriageTargets(catalog)[0] ?? null;
+}
+
+/** Every routeable finding as a triage target, best first. */
+export function rankTriageTargets(catalog: Finding[]): TriageTarget[] {
   const widgetOrder = new Map(orderedWidgets().map((widget, index) => [widget.widgetId, index]));
   const candidates = catalog
     .map((finding, catalogIndex) => ({ target: targetForFinding(finding), catalogIndex }))
@@ -54,7 +60,8 @@ export function selectTriageTarget(catalog: Finding[]): TriageTarget | null {
   // derived from savings where one exists, so this ranking and that band
   // agree by construction rather than needing to be reconciled. A quantified
   // estimate always outranks an unquantified one; ties (including "neither
-  // has one") fall back to widget display order, then catalog order.
+  // has one") fall back to impact band, then widget display order, then
+  // catalog order, so an unquantified warning still leads an info.
   candidates.sort((left, right) => {
     const leftSavings = potentialSavingsMs(left.target.finding);
     const rightSavings = potentialSavingsMs(right.target.finding);
@@ -65,12 +72,13 @@ export function selectTriageTarget(catalog: Finding[]): TriageTarget | null {
       return leftSavings !== null ? -1 : 1;
     }
     return (
-      (widgetOrder.get(left.target.widgetId) ?? Number.MAX_SAFE_INTEGER) - (widgetOrder.get(right.target.widgetId) ?? Number.MAX_SAFE_INTEGER)
+      (IMPACT_BAND_ORDER[left.target.finding.impactBand] ?? 9) - (IMPACT_BAND_ORDER[right.target.finding.impactBand] ?? 9)
+      || (widgetOrder.get(left.target.widgetId) ?? Number.MAX_SAFE_INTEGER) - (widgetOrder.get(right.target.widgetId) ?? Number.MAX_SAFE_INTEGER)
       || left.catalogIndex - right.catalogIndex
     );
   });
 
-  return candidates[0]?.target ?? null;
+  return candidates.map((candidate) => candidate.target);
 }
 
 export function formatTriageCopy(target: TriageTarget): {

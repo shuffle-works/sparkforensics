@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { test, expect, beforeEach } from 'vitest';
-import { act, render, screen, within } from '@testing-library/react';
+import { test, expect, beforeEach, vi } from 'vitest';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import App from '@/App';
@@ -48,6 +48,9 @@ beforeEach(() => {
   store.setState({
     appModel: emptyAppModel(), catalog: [], configFindings: [], status: 'idle', errorMessage: null,
     parse: { pct: 0, lines: 0, etaMs: null },
+    // The filter bar is an Advanced-mode control; the Basic-mode visibility
+    // rules have their own tests at the end of this file.
+    widgetDensity: 'advanced',
   });
 });
 
@@ -164,4 +167,202 @@ test('switching to a different file clears the previous file\'s filter (no repar
   expect(screen.queryByText(/no findings match the active filters/i)).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /^remove filter/i })).not.toBeInTheDocument();
   expect(window.location.search).toBe('');
+});
+
+test('Basic mode hides the filter bar while no filter is active', async () => {
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any, widgetDensity: 'basic',
+    catalog: [{ type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'x' }],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(screen.queryByRole('region', { name: 'Filter findings' })).not.toBeInTheDocument();
+});
+
+test('Basic mode still shows the filter bar when a filter is active, so it can be read and cleared', async () => {
+  window.history.replaceState({}, '', '/?stage=1');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any, widgetDensity: 'basic',
+    catalog: [
+      { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'x' },
+      { type: 'skew', stageId: 2, impactBand: 'warning', recommendation: 'y' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(screen.getByRole('region', { name: 'Filter findings' })).toBeInTheDocument();
+  expect(screen.getByText('1 finding matches the active filters')).toBeInTheDocument();
+});
+
+test('Show evidence in the stage dialog clears the filter that hides the target, and says so', async () => {
+  const user = userEvent.setup();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() });
+  window.history.replaceState({}, '', '/?type=spill');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Fix spill.' },
+      { type: 'skew', stageId: 1, impactBand: 'warning', recommendation: 'Fix skew.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(hasFixTheseFirstRow('skew')).toBe(false);
+
+  await user.click(screen.getByRole('button', { name: 'Stage 1 details' }));
+  const dialog = await screen.findByRole('dialog');
+  const skewStep = within(dialog).getAllByTestId('stage-finding').find((step) => step.textContent?.includes('Fix skew.'))!;
+  await user.click(within(skewStep).getByRole('button', { name: /show evidence/i }));
+
+  expect(screen.getByText('Cleared the spill filter to show this finding.')).toHaveAttribute('role', 'status');
+  expect(hasFixTheseFirstRow('skew')).toBe(true);
+  expect(new URLSearchParams(window.location.search).get('type')).toBeNull();
+});
+
+test('a verdict step hidden by the active filter clears only the dimension that hides it, and says so', async () => {
+  const user = userEvent.setup();
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: scrollIntoView });
+  window.history.replaceState({}, '', '/?impact=critical&type=skew');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      {
+        type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Fix spill.',
+        impactEstimate: { basis: 'serial', wallClock: { low: 9_000, high: 9_000 }, estimateMethod: 'modeled' },
+      },
+      { type: 'skew', stageId: 2, impactBand: 'critical', recommendation: 'Fix skew.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(hasFixTheseFirstRow('spill')).toBe(false);
+
+  const firstStep = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')[0];
+  expect(firstStep).toHaveTextContent('Stage 1');
+  await user.click(within(firstStep).getByRole('button', { name: /show evidence/i }));
+
+  expect(screen.getByText('Cleared the task skew filter to show this finding.')).toHaveAttribute('role', 'status');
+  expect(hasFixTheseFirstRow('spill')).toBe(true);
+  await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+  const params = new URLSearchParams(window.location.search);
+  expect(params.get('type')).toBeNull();
+  expect(params.get('impact')).toBe('critical');
+
+  await clickImpact(user, 'critical');
+  expect(screen.queryByText('Cleared the task skew filter to show this finding.')).not.toBeInTheDocument();
+  // @ts-expect-error -- restore jsdom's default (no scrollIntoView)
+  delete Element.prototype.scrollIntoView;
+});
+
+test('a verdict step for a Full app report widget leaves the board filter alone', async () => {
+  const user = userEvent.setup();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() });
+  window.history.replaceState({}, '', '/?type=spill');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
+      { type: 'coreLocality', stageId: null, impactBand: 'critical', value: 40, recommendation: 'Check locality.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+
+  const localityStep = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')
+    .find((step) => step.textContent?.includes('Check locality.'))!;
+  await user.click(within(localityStep).getByRole('button', { name: /show evidence/i }));
+
+  expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
+  expect(new URLSearchParams(window.location.search).get('type')).toBe('spill');
+  await user.click(screen.getByRole('tab', { name: 'Findings' }));
+  expect(screen.queryByText(/Cleared the .* filter/)).not.toBeInTheDocument();
+  // @ts-expect-error -- restore jsdom's default (no scrollIntoView)
+  delete Element.prototype.scrollIntoView;
+});
+
+test('the top bar count chip clears the filter that hides the band it counts, and lands on it', async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, '', '/?type=spill&stage=1');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
+      { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' },
+      { type: 'skew', stageId: 2, impactBand: 'critical', recommendation: 'Fix skew.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(screen.queryByRole('heading', { level: 2, name: 'Critical' })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: '2 critical: show them in Findings' }));
+
+  expect(screen.getByText('Cleared the spill filter to show the critical findings.')).toHaveAttribute('role', 'status');
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Critical' })));
+  const params = new URLSearchParams(window.location.search);
+  expect(params.get('type')).toBeNull();
+  expect(params.get('stage')).toBe('1');
+});
+
+test('the top bar count chip reveals a band whose only finding is core locality', async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, '', '/?type=spill');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
+      { type: 'coreLocality', stageId: null, impactBand: 'critical', value: 40, recommendation: 'Check locality.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+
+  await user.click(screen.getByRole('button', { name: '1 critical: show them in Findings' }));
+
+  expect(screen.getByText('Cleared the spill filter to show the critical findings.')).toHaveAttribute('role', 'status');
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Critical' })));
+  expect(new URLSearchParams(window.location.search).get('type')).toBeNull();
+});
+
+test('the top bar count chip still lands when the filter empties the board', async () => {
+  const user = userEvent.setup();
+  window.history.replaceState({}, '', '/?impact=info');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [{ type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' }],
+  });
+  render(<App />);
+  const chip = await screen.findByRole('button', { name: '1 critical: show them in Findings' });
+  expect(screen.queryByRole('tab', { name: 'Findings' })).not.toBeInTheDocument();
+
+  await user.click(chip);
+
+  expect(screen.getByText('Cleared the info impact filter to show the critical findings.')).toBeInTheDocument();
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Critical' })));
+});
+
+test('in Basic view, a route that clears the last active filter hides the bar and its notice together', async () => {
+  const user = userEvent.setup();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() });
+  window.history.replaceState({}, '', '/?impact=info');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any, widgetDensity: 'basic',
+    catalog: [
+      { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' },
+      { type: 'spill', stageId: 2, impactBand: 'info', recommendation: 'Fix spill.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(screen.getByRole('region', { name: 'Filter findings' })).toBeInTheDocument();
+
+  const firstStep = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')[0];
+  await user.click(within(firstStep).getByRole('button', { name: /show evidence/i }));
+
+  expect(new URLSearchParams(window.location.search).get('impact')).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Filter findings' })).not.toBeInTheDocument();
+  expect(screen.queryByText(/Cleared the info impact filter/)).not.toBeInTheDocument();
+  // @ts-expect-error -- restore jsdom's default (no scrollIntoView)
+  delete Element.prototype.scrollIntoView;
 });

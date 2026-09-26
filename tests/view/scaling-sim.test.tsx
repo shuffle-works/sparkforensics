@@ -205,7 +205,8 @@ describe('ScalingSim', () => {
     );
 
     // The card should have a summary visible (shown when collapsed)
-    const summary = screen.getByText(/best case at/i);
+    // A multiple of this run's executors, not a bare percentage ("500% executors").
+    const summary = screen.getByText(/best case, with (\d+(\.\d)?× the executors|the current executors|\d+% of the executors)/i);
     expect(summary).toBeInTheDocument();
 
     // The summary should show a duration for the best makespan

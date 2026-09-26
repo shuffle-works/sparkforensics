@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Ellipsis, FileText, Home, Keyboard, Moon, Sun, Workflow } from 'lucide-react';
+import { Ellipsis, FileText, GitCompareArrows, Home, Keyboard, Moon, Sun, Workflow } from 'lucide-react';
 
+import { badgeVariants } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -9,7 +10,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Chip } from '@/view/ImpactBadge';
+import { Chip, severityBadgeVariants } from '@/view/ImpactBadge';
+import { summarizeRunOutcome } from '@/view/run-outcome';
+import { isCleanRun } from '@/view/run-verdict';
+import { isEligible } from '@/view/widgets/FixTheseFirst';
 import { EvidenceExport, EvidenceExportMenuItems, useEvidenceExport } from '@/view/EvidenceExport';
 import { FileSwitcher } from '@/view/FileSwitcher';
 import { GraphViewPickerDialog, type GraphViewPickerEntry } from '@/view/GraphViewPickerDialog';
@@ -91,6 +95,12 @@ export interface TopbarProps {
   activeFileId: string | null;
   onPickRecent: (id: string) => void;
   onRemoveRecent: (id: string) => void;
+  /** Opens the two-run comparison with the open run as Run A. Omitted where
+   * there is nothing to compare from (the export bundle). */
+  onCompare?: () => void;
+  /** Shows the Findings list at the given impact band (the top bar's count
+   * chip). Omitted where there is no list to jump to. */
+  onJumpToFindings?: (impactBand: ImpactBand) => void;
   /** When provided, replaces the impact chip and the whole dashboard
    * action cluster (comparison button, evidence export, plan-graph button)
    * with this content, used by non-dashboard routes (e.g. the plan graph
@@ -110,6 +120,8 @@ export function Topbar({
   activeFileId,
   onPickRecent,
   onRemoveRecent,
+  onCompare,
+  onJumpToFindings,
   sectionControls,
   leadingContent,
 }: TopbarProps) {
@@ -120,6 +132,10 @@ export function Topbar({
   const { theme, toggle } = useTheme();
   const moreOptionsTriggerRef = useRef<HTMLButtonElement>(null);
   const comparison = useStore((s) => s.comparison);
+  // Not while a comparison is paused behind "Back to comparison": that
+  // control already leads back to one. Needs app, the condition for the open
+  // run to be snapshotted as Run A.
+  const showCompare = onCompare != null && !sectionControls && !exportMode && activeFileId != null && app != null && !comparison.baselineId;
   const evidence = useEvidenceExport();
   const appModel = useStore((s) => s.appModel);
   const graphEntries = useMemo(() => eligibleGraphExecutions(appModel, catalog), [appModel, catalog]);
@@ -161,8 +177,15 @@ export function Topbar({
     .filter(Boolean)
     .join(' · ');
 
-  const worst = worstImpactBand(catalog);
-  const count = worst ? catalog.filter((f) => f.impactBand === worst).length : 0;
+  // Count what the verdict ranks: eligible findings, config included and
+  // evidence caveats left out, so the chip and the verdict never disagree.
+  const configFindings = useStore((s) => s.configFindings);
+  const allFindings = useMemo(() => [...catalog, ...configFindings], [catalog, configFindings]);
+  const eligible = useMemo(() => allFindings.filter(isEligible), [allFindings]);
+  const worst = worstImpactBand(eligible);
+  const count = worst ? eligible.filter((f) => f.impactBand === worst).length : 0;
+  const clean = isCleanRun(appModel, allFindings);
+  const failedJobs = summarizeRunOutcome(appModel.jobs, allFindings).failedJobs;
 
   return (
     <header className="sticky top-0 z-30 flex min-w-0 flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
@@ -212,8 +235,27 @@ export function Topbar({
           {sectionControls}
         </div>
       ) : worst ? (
-        <Chip label={verdictLabel(worst, count)} impactBand={worst} className="shrink-0" />
-      ) : (
+        onJumpToFindings ? (
+          // A way in, not just a count: jumps to that band of the Findings list.
+          <button
+            type="button"
+            aria-label={`${verdictLabel(worst, count)}: show them in Findings`}
+            title="Show them in Findings"
+            onClick={() => onJumpToFindings(worst)}
+            className={cn(
+              badgeVariants(),
+              severityBadgeVariants({ impactBand: worst }),
+              'tap-target-comfortable cursor-pointer font-mono hover:underline focus-visible:outline-none',
+            )}
+          >
+            {verdictLabel(worst, count)}
+          </button>
+        ) : (
+          <Chip label={verdictLabel(worst, count)} impactBand={worst} className="shrink-0" />
+        )
+      ) : failedJobs > 0 ? (
+        <Chip label="Run failed" impactBand="critical" className="shrink-0" />
+      ) : clean ? (
         <span
           className={cn(
             'inline-flex shrink-0 items-center gap-1.5 rounded-full bg-clean/10 px-2 py-0.5 text-xs font-medium text-clean',
@@ -221,6 +263,11 @@ export function Topbar({
         >
           <span aria-hidden="true" className="inline-block size-2 shrink-0 rounded-full bg-clean" />
           No findings
+        </span>
+      ) : (
+        // Nothing to fix, but the verdict lists checks this log could not run.
+        <span className="inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground">
+          Not fully checked
         </span>
       )}
 
@@ -236,6 +283,21 @@ export function Topbar({
           </Button>
         ) : null}
         <div className="hidden items-center gap-1 sm:flex">
+          {showCompare ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="tap-target-comfortable"
+              aria-label="Compare with another run"
+              title="Compare with another run"
+              onClick={onCompare}
+            >
+              <GitCompareArrows aria-hidden="true" />
+              {/* Short below xl so the run name keeps its room in the bar. */}
+              <span aria-hidden="true" className="xl:hidden">Compare</span>
+              <span aria-hidden="true" className="hidden xl:inline">Compare with another run</span>
+            </Button>
+          ) : null}
           {!sectionControls ? <EvidenceExport /> : null}
           {!sectionControls && graphEntries.length > 0 ? (
             <Button variant="ghost" size="sm" className="tap-target-comfortable" onClick={handleOpenGraphView}>
@@ -296,6 +358,12 @@ export function Topbar({
             <Ellipsis aria-hidden="true" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {showCompare ? (
+              <DropdownMenuItem onClick={onCompare}>
+                <GitCompareArrows aria-hidden="true" />
+                Compare with another run
+              </DropdownMenuItem>
+            ) : null}
             {!sectionControls ? (
               <>
                 <EvidenceExportMenuItems {...evidence} />

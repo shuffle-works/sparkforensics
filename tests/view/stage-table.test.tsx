@@ -487,3 +487,28 @@ describe('StageTable', () => {
     store.getState().setWidgetDensity('basic');
   });
 });
+
+describe('StageTable Findings column', () => {
+  it('counts the finding types on a stage, matching its chips, even when they share one widget', () => {
+    const appModel = buildAppModel([[1, makeStage(1)], [2, makeStage(2)]]);
+    // skew, straggler and tinyTask all render in one Task Skew widget: the old
+    // "Flagged" column counted widgets and showed "—" for this stage.
+    const catalog: Finding[] = [
+      { type: 'skew', stageId: 1, impactBand: 'critical' },
+      { type: 'straggler', stageId: 1, impactBand: 'critical' },
+      { type: 'tinyTask', stageId: 1, impactBand: 'warning' },
+    ];
+
+    render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);
+
+    const headers = screen.getAllByRole('columnheader').map((cell) => cell.textContent?.trim());
+    const column = headers.findIndex((text) => text?.startsWith('Findings'));
+    expect(column).toBeGreaterThan(-1);
+    const cellFor = (stageId: number) => {
+      const row = screen.getAllByRole('row').slice(1).find((r) => within(r).getAllByRole('cell')[0].textContent === String(stageId));
+      return within(row as HTMLElement).getAllByRole('cell')[column].textContent;
+    };
+    expect(cellFor(1)).toBe('3');
+    expect(cellFor(2)).toBe('—');
+  });
+});

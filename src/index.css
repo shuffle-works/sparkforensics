@@ -207,8 +207,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 :root[data-theme="light"] .theme-toggle .theme-icon.sun { display: none; }
 :root[data-theme="light"] .theme-toggle .theme-icon.moon { display: block; }
 
-.landing-hero-copy h2,
-.landing-section-heading h2 {
+.landing-hero-copy h2 {
   margin: .45rem 0 0;
   color: var(--text);
   font-size: clamp(2.15rem, 4.3vw, 4.25rem);
@@ -227,24 +226,6 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
   line-height: 1.65;
   text-wrap: pretty;
 }
-
-.landing-kicker {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: .9375rem;
-  line-height: 1.5;
-}
-
-.landing-hero-copy .landing-kicker {
-  max-width: 60ch;
-  color: var(--signal);
-  font-family: var(--font-mono);
-  font-size: .75rem;
-  font-weight: 700;
-  letter-spacing: .01em;
-}
-
-.landing-section-heading .landing-kicker { margin-bottom: .5rem; }
 
 .landing-proof {
   max-width: 54rem;
@@ -324,26 +305,8 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
   gap: 1.75rem;
 }
 
-.landing-section-heading {
-  display: grid;
-  align-items: end;
-  gap: 1rem 2rem;
-  grid-template-columns: minmax(0, 1fr) minmax(16rem, .75fr);
-}
-
-.landing-section-heading h2 { font-size: clamp(1.75rem, 3vw, 2.75rem); }
-
-.landing-section-heading > p {
-  max-width: 40ch;
-  margin: 0;
-  color: var(--text-muted);
-  font-size: .9375rem;
-  line-height: 1.6;
-  text-wrap: pretty;
-}
-
 .landing-drop-zone {
-  min-height: 23rem;
+  min-height: 0;
 }
 
 .landing-drop-zone:not(.border-primary) {
@@ -401,14 +364,6 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
   gap: 1.5rem;
   padding-top: clamp(1.5rem, 3vw, 2.5rem);
   border-top: 1px solid var(--border);
-}
-
-.landing-next-steps-label {
-  margin: 0 0 .45rem;
-  color: var(--signal);
-  font-family: var(--font-mono);
-  font-size: .75rem;
-  font-weight: 700;
 }
 
 .landing-next-steps h2 {
@@ -484,8 +439,15 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 @media (max-width: 640px) {
   .landing-shell { gap: 3.25rem; }
   .landing-hero-copy h2 { font-size: clamp(2rem, 10vw, 2.8rem); }
-  .landing-section-heading { grid-template-columns: 1fr; }
-  .landing-drop-zone { min-height: 0; }
+  /* The docs links sit above the intake, so on a phone they shrink to their
+     titles (and the proof points tighten) to keep Choose file and Try a
+     sample run on the first screen. */
+  .landing-hero { gap: 1.25rem; }
+  .landing-hero-copy > p:last-child { margin-top: 1rem; font-size: 1rem; line-height: 1.55; }
+  .landing-proof { gap: .375rem 1rem; }
+  .landing-resources { gap: .5rem; }
+  .landing-resource-card { padding: .625rem .875rem; }
+  .landing-resource-card span span { display: none; }
   .landing-utilities { align-items: flex-start; flex-direction: column; }
   .landing-utilities > [data-slot="collapsible"] { width: 100%; }
   .landing-utilities [data-slot="collapsible-trigger"] { justify-content: flex-start; }

@@ -48,7 +48,7 @@ const dotVariants = cva('inline-block size-2 shrink-0 rounded-full', {
   defaultVariants: { impactBand: 'info' },
 });
 
-const severityBadgeVariants = cva('gap-1.5 border-transparent', {
+export const severityBadgeVariants = cva('gap-1.5 border-transparent', {
   variants: {
     impactBand: {
       critical: 'bg-critical/10 text-critical',

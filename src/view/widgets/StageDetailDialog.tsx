@@ -1,25 +1,36 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { ArrowRight } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { Button } from '@/components/ui/button';
 import { CollapsibleSection } from '@/view/CollapsibleSection';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useLiveTaskData } from '@/view/useLiveTaskData';
 import { CHART_COLORS, ChartFrame } from '@/view/charts/ChartTheme';
 import { DurationHistogram } from '@/view/charts/DurationHistogram';
 import { Section } from '@/view/Section';
+import { findingActionLabel } from '@/view/finding-action-label';
+import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
+import { buildNextSteps, locationKey } from '@/view/run-verdict';
+import { summarizeRunOutcome } from '@/view/run-outcome';
+import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
+import { hasCompleteApplicationInterval } from '@/view/widgets/scorecard-estimates';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { ImpactEstimate, formatImpactEstimateCompact } from '../ImpactEstimate.tsx';
 import { PlanView, resolvePlanTree } from '@/view/widgets/PlanView';
-import { formatBytes, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, formatDuration, IMPACT_BAND_ORDER, typeTag } from '@sparkforensics/core/format-utils.ts';
+import { computeWallClock } from '@sparkforensics/core/wall-clock.ts';
 import type { AppModel, Finding, ImpactBand, Stage, TaskData } from '@sparkforensics/core/types.ts';
 
 export interface StageDetailDialogProps {
   appModel: AppModel;
   catalog: Finding[];
   getTaskData: (stageId: number) => Promise<TaskData>;
+  /** Routes to a finding's evidence widget on the board. Omitted where there
+   * is no board to route to; the dialog then shows no Show evidence buttons. */
+  onRoute?: (target: TriageTarget) => void;
 }
 
 interface LocalityStat {
@@ -84,10 +95,13 @@ interface RecEntry {
 }
 
 /** Groups a stage's findings by `type`, one chip per type with its distinct
- * recommendations underneath, worst-impact-band-first. Tracks the
+ * recommendations underneath, in the run verdict's order. Tracks the
  * worst-impact-band finding itself (not just its band) so the compact chip and
  * expanded `<ImpactEstimate>` reuse the finding that drove the displayed band. */
-function groupFindingsByType(findings: Finding[]): [string, { impactBand: ImpactBand; finding: Finding; recs: Map<string, RecEntry> }][] {
+function groupFindingsByType(
+  findings: Finding[],
+  failedJobStageIds: ReadonlySet<number> | null,
+): [string, { impactBand: ImpactBand; finding: Finding; recs: Map<string, RecEntry> }][] {
   const groups = new Map<string, { impactBand: ImpactBand; finding: Finding; recs: Map<string, RecEntry> }>();
   for (const f of findings) {
     if (!groups.has(f.type)) groups.set(f.type, { impactBand: f.impactBand, finding: f, recs: new Map() });
@@ -102,7 +116,15 @@ function groupFindingsByType(findings: Finding[]): [string, { impactBand: Impact
       });
     }
   }
-  return [...groups.entries()].sort(([, a], [, b]) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]);
+  // The run verdict's own step order (buildNextSteps: potential savings, and
+  // failures first on a failed run), so "start with the first" agrees with
+  // it. Types the verdict can't route follow, worst band first.
+  const [step] = buildNextSteps(findings, failedJobStageIds ? { failedJobStageIds } : {});
+  const verdictOrder = step ? [step.lead.finding.type, ...step.related.map((f) => f.type)] : [];
+  const rank = (type: string) => (verdictOrder.includes(type) ? verdictOrder.indexOf(type) : verdictOrder.length);
+  return [...groups.entries()].sort(
+    ([aType, a], [bType, b]) => rank(aType) - rank(bType) || IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand],
+  );
 }
 
 /** One finding-type's recommendation line, plus its extended text and impact
@@ -120,42 +142,107 @@ function RecommendationRow({
 }) {
   return (
     <div className="space-y-1 text-sm">
-      <p className="max-w-full leading-normal break-words">{rec}</p>
+      <p className="max-w-full leading-normal break-words">
+        <span className="font-medium">What to try: </span>
+        {rec}
+      </p>
       {extended ? <p className="text-xs text-muted-foreground">{extended}</p> : null}
       {showImpactEstimate ? <ImpactEstimate finding={finding} /> : null}
     </div>
   );
 }
 
-/** "Why was this stage flagged": every finding for the open stage, grouped by
- * type. Renders nothing when the stage carries no findings. */
-function StageVerdict({ findings }: { findings: Finding[] }) {
-  if (findings.length === 0) return null;
-  const groups = groupFindingsByType(findings);
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+/** One plain sentence placing the stage in the run: how long it ran, what
+ * share of the run that was, how many tasks it split into, and how many
+ * findings it carries. */
+function stageSummary(stage: Stage, runMs: number | null, findingTypes: number): string {
+  const duration = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
+  const parts: string[] = [];
+  if (duration > 0) {
+    const share = runMs != null && runMs > 0 ? Math.round((duration / runMs) * 100) : null;
+    parts.push(`Ran for ${formatDuration(duration)}${share != null ? `, ${share}% of this ${formatDuration(runMs!)} run` : ''}`);
+  }
+  if ((stage.taskCount ?? 0) > 0) parts.push(`split into ${plural(stage.taskCount!, 'task')}`);
+  const lead = parts.length > 0 ? `${parts.join(', ')}.` : '';
+  const found =
+    findingTypes === 0
+      ? 'Nothing was flagged on this stage.'
+      : findingTypes === 1
+        ? '1 finding here.'
+        : `${findingTypes} findings here. They often share one cause, so start with the first.`;
+  return [lead, found].filter(Boolean).join(' ');
+}
+
+/** "Why was this stage flagged": the stage's place in the run, then every
+ * finding for it grouped by type, each read like a verdict step: what to do,
+ * what is happening in plain language, what to try, what it could save, and
+ * a route to its evidence on the board. */
+function StageVerdict({
+  stage,
+  findings,
+  catalog,
+  runMs,
+  failedJobStageIds,
+  onShowEvidence,
+}: {
+  stage: Stage;
+  findings: Finding[];
+  catalog: Finding[];
+  runMs: number | null;
+  failedJobStageIds: ReadonlySet<number> | null;
+  onShowEvidence?: (target: TriageTarget) => void;
+}) {
+  const groups = groupFindingsByType(findings, failedJobStageIds);
 
   return (
-    <section className="space-y-3 rounded-md border p-3">
-      {groups.map(([type, { impactBand, finding, recs }]) => {
-        // Gate on the compact formatter, not the mere presence of `impactEstimate`:
-        // an informational estimate has the field but `<ImpactEstimate>` renders
-        // nothing for it, which would leave an empty gap below the recommendation.
-        const hasEstimate = formatImpactEstimateCompact(finding.impactEstimate) !== null;
-        return (
-          <div key={type} className="space-y-1">
-            <TagBadge type={type} impactBand={impactBand} />
-            {[...recs.entries()].map(([rec, { extended }], i) => (
-              <RecommendationRow
-                key={i}
-                rec={rec}
-                extended={extended}
-                finding={finding}
-                // Per-type figure: show only once, on the first recommendation.
-                showImpactEstimate={i === 0 && hasEstimate}
-              />
-            ))}
-          </div>
-        );
-      })}
+    <section aria-label="Why this stage was flagged" className="space-y-3">
+      <p className="text-sm text-muted-foreground">{stageSummary(stage, runMs, groups.length)}</p>
+      {groups.length > 0 ? (
+        <ol className="space-y-4 rounded-md border p-3">
+          {groups.map(([type, { impactBand, finding, recs }]) => {
+            // Gate on the compact formatter, not the mere presence of `impactEstimate`:
+            // an informational estimate has the field but `<ImpactEstimate>` renders
+            // nothing for it, which would leave an empty gap below the recommendation.
+            const hasEstimate = formatImpactEstimateCompact(finding.impactEstimate) !== null;
+            const help = TAG_HELP[typeTag(type)];
+            const target = onShowEvidence ? selectTriageTargetForFinding(finding, catalog) : null;
+            return (
+              <li key={type} className="space-y-1.5" data-testid="stage-finding">
+                <div className="flex flex-wrap items-center gap-2">
+                  <TagBadge type={type} impactBand={impactBand} />
+                  <h3 className="text-sm font-semibold">{findingActionLabel(finding)}</h3>
+                </div>
+                {help ? (
+                  <p className="text-sm">
+                    <span className="font-medium">What's happening: </span>
+                    {help.description}
+                  </p>
+                ) : null}
+                {[...recs.entries()].map(([rec, { extended }], i) => (
+                  <RecommendationRow
+                    key={i}
+                    rec={rec}
+                    extended={extended}
+                    finding={finding}
+                    // Per-type figure: show only once, on the first recommendation.
+                    showImpactEstimate={i === 0 && hasEstimate}
+                  />
+                ))}
+                {target && onShowEvidence ? (
+                  <Button size="sm" variant="outline" onClick={() => onShowEvidence(target)}>
+                    Show evidence
+                    <ArrowRight aria-hidden="true" />
+                  </Button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
     </section>
   );
 }
@@ -177,15 +264,18 @@ interface StageDetailBodyProps {
   appModel: AppModel;
   catalog: Finding[];
   getTaskData: (stageId: number) => Promise<TaskData>;
+  onShowEvidence?: (target: TriageTarget) => void;
 }
 
-function StageDetailBody({ stage, appModel, catalog, getTaskData }: StageDetailBodyProps) {
+function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence }: StageDetailBodyProps) {
   const { exportMode, getTaskData: liveGetTaskData } = useLiveTaskData(getTaskData);
   const [taskData, setTaskData] = useState<TaskData | null>(null);
   const [taskDataError, setTaskDataError] = useState(false);
   const [taskDataRetryCount, setTaskDataRetryCount] = useState(0);
   const hasTaskHist = (stage.taskCount ?? 0) > 0;
-  const findings = catalog.filter((f) => f.stageId === stage.id);
+  // Same stage rule the verdict groups its steps by, so a sql-scope finding
+  // that touches only this stage (stageIds: [id]) is listed here too.
+  const findings = catalog.filter((f) => locationKey(f).key === `stage:${stage.id}`);
 
   // One fetch per dialog open (or manual retry, bumping `taskDataRetryCount`):
   // the caller mounts a fresh `StageDetailBody` keyed by stage id per stage.
@@ -216,10 +306,18 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData }: StageDetailB
   const ioRatio =
     (stage.inputBytes ?? 0) > 0 ? ((stage.outputBytes ?? 0) / (stage.inputBytes ?? 0)).toFixed(2) : null;
   const localityStats = stage.localityStats ?? [];
+  const outcome = summarizeRunOutcome(appModel.jobs, catalog);
 
   return (
     <div className="space-y-6">
-      <StageVerdict findings={findings} />
+      <StageVerdict
+        stage={stage}
+        findings={findings}
+        catalog={catalog}
+        runMs={hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null}
+        failedJobStageIds={outcome.failedJobs > 0 ? outcome.failedJobStageIds : null}
+        onShowEvidence={onShowEvidence}
+      />
 
       <Section
         title="Overview"
@@ -343,10 +441,20 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData }: StageDetailB
  * `CollapsibleSection` collapsed by default unless noted (not the flat
  * `PlanExplorer` accordion used elsewhere; unlike `PlanExplorer`'s embeds,
  * this one stays visible at Basic). */
-export function StageDetailDialog({ appModel, catalog, getTaskData }: StageDetailDialogProps) {
+export function StageDetailDialog({ appModel, catalog, getTaskData, onRoute }: StageDetailDialogProps) {
   const { stageId, close } = useStageDetail();
   const stage = stageId != null ? appModel.stages.get(stageId) : undefined;
   const open = stage != null;
+  // Set while the dialog closes to route: the route focuses the evidence, so
+  // the dialog must not hand focus back to the control that opened it.
+  const routingRef = useRef(false);
+  const showEvidence = onRoute
+    ? (target: TriageTarget) => {
+        routingRef.current = true;
+        close();
+        onRoute(target);
+      }
+    : undefined;
 
   return (
     <Dialog
@@ -355,15 +463,35 @@ export function StageDetailDialog({ appModel, catalog, getTaskData }: StageDetai
         if (!next) close();
       }}
     >
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl">
+      <DialogContent
+        className="max-h-[85vh] overflow-y-auto sm:max-w-4xl"
+        finalFocus={() => {
+          const routing = routingRef.current;
+          routingRef.current = false;
+          return !routing;
+        }}
+      >
         {stage ? (
           <>
             <DialogHeader>
-              <DialogTitle>
-                Stage {stage.id} <span className="text-muted-foreground">&mdash; {stage.name ?? ''}</span>
-              </DialogTitle>
+              <DialogTitle>Stage {stage.id}</DialogTitle>
+              {/* Spark names a stage after the code line that created it, which
+                  reads as noise until you know that; say what it is. */}
+              {stage.name ? (
+                <DialogDescription className="font-mono text-xs [overflow-wrap:anywhere]">
+                  <span className="font-sans">Code location: </span>
+                  {stage.name}
+                </DialogDescription>
+              ) : null}
             </DialogHeader>
-            <StageDetailBody key={stage.id} stage={stage} appModel={appModel} catalog={catalog} getTaskData={getTaskData} />
+            <StageDetailBody
+              key={stage.id}
+              stage={stage}
+              appModel={appModel}
+              catalog={catalog}
+              getTaskData={getTaskData}
+              onShowEvidence={showEvidence}
+            />
           </>
         ) : null}
       </DialogContent>

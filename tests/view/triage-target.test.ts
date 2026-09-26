@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import {
   formatTriageCopy,
+  rankTriageTargets,
   selectTriageTarget,
   selectTriageTargetForFinding,
 } from '../../src/view/triage-target';
@@ -38,17 +39,18 @@ test('prefers larger potential savings over impact band', () => {
   expect(selectTriageTarget(catalog)).toMatchObject({ finding: catalog[0], widgetId: 'spill' });
 });
 
-test('falls back to registry widget order, then catalog order, when no finding has a quantified savings estimate', () => {
+test('falls back to impact band, then registry widget order, then catalog order, when no finding has a quantified savings estimate', () => {
   const catalog: Finding[] = [
     { type: 'spill', stageId: 7, impactBand: 'warning', recommendation: 'Reduce memory pressure.' },
     { type: 'skew', stageId: 12, impactBand: 'critical', recommendation: 'Rebalance partitions.' },
-    { type: 'stageShape', stageId: 3, impactBand: 'critical', recommendation: 'Increase parallelism.' },
+    { type: 'spill', stageId: 9, impactBand: 'critical', recommendation: 'Reduce spill.' },
   ];
 
-  // None of the three carry an impactEstimate, so impact band plays no part:
-  // 'spill' (DETECTORS order 10) is ranked ahead of 'task-skew' (order 30),
-  // regardless of the other two findings' higher impact band.
-  expect(selectTriageTarget(catalog)).toMatchObject({ finding: catalog[0], widgetId: 'spill' });
+  // None of the three carry an impactEstimate, so impact band leads: both
+  // critical findings outrank the warning listed first, and between them
+  // 'spill' (DETECTORS order 10) is ranked ahead of 'task-skew' (order 30).
+  expect(rankTriageTargets(catalog).map((target) => target.finding)).toEqual([catalog[2], catalog[1], catalog[0]]);
+  expect(selectTriageTarget(catalog)).toMatchObject({ finding: catalog[2], widgetId: 'spill' });
 });
 
 test('uses alert widget order before reference widgets when impact bands tie', () => {

@@ -1,29 +1,43 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 
-import { store, useStore } from '@/store/store';
+import { store, useStore, useWidgetDensity } from '@/store/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { WidgetProps } from '@/view/detector-registry';
+import { alwaysMountedWidgets, isAlwaysMountedType, REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import { NoMatchBanner } from '@/view/EmptyStateBanners';
 import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from '@/view/EvidenceAvailabilityContext';
 import { FindingFilterBar } from '@/view/FindingFilterBar';
 import { FindingFilterProvider, useFindingFilter } from '@/view/FindingFilterContext';
-import { deriveOptions, filterFindings, type FilterOptions } from '@/view/finding-filter';
+import {
+  deriveOptions,
+  emptySelection,
+  excludingDimensions,
+  filterFindings,
+  isEmptySelection,
+  type FilterDimension,
+  type FilterOptions,
+  type FilterSelection,
+} from '@/view/finding-filter';
 import { CoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
 import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
 import { EtlPhases } from '@/view/widgets/EtlPhases';
 import { ExecutorCountChart } from '@/view/widgets/ExecutorCountChart';
 import { ScalingSim } from '@/view/widgets/ScalingSim';
+import { RunVerdict } from '@/view/widgets/RunVerdict';
+import { SampleRunNotice } from '@/view/SampleRunNotice';
 import { Scorecard } from '@/view/widgets/Scorecard';
 import { ImpactBoard } from '@/view/widgets/ImpactBoard';
 import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
+import { isEligible } from '@/view/widgets/FixTheseFirst';
 import { StageTable } from '@/view/widgets/StageTable';
 import { Timeline } from '@/view/widgets/Timeline';
 import { EvidenceAvailability } from '@/view/widgets/EvidenceAvailability';
 import { WallClock } from '@/view/widgets/WallClock';
 import { WastedCoreHours } from '@/view/widgets/WastedCoreHours';
 import { Topbar } from '@/view/Topbar';
+import { WidgetCardSkeleton } from '@/view/WidgetCard';
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
 import { useIngest } from '@/store/useIngest';
+import { useTriageShortcuts } from '@/view/useTriageShortcuts';
 import { useRecentFiles } from '@/view/useRecentFiles';
 import {
   TriageNavigationProvider,
@@ -47,13 +61,16 @@ interface RouteRequest {
  * Timeline, Executor Count, Stage Summary, Evidence Availability) plus the
  * fixed-order tail of non-detector report lenses ("Widget rendering order" in
  * docs-site/contributor-guide/architecture/widget-rendering.md).
- * `REGISTRY` widgets render unconditionally inside the Findings tab's
- * `ImpactBoard`, not here; selecting the tab is itself the disclosure. The
+ * `REGISTRY` widgets render inside the Findings tab's `ImpactBoard`, not
+ * here, except the always-mounted Core Usage by Locality chart
+ * (`alwaysMountedWidgets`), a run-wide reference view that sits beside the
+ * executor timeline. Selecting the tab is itself the disclosure. The
  * Scorecard lives in its own strip above the tabs, shared by both.
  */
 function ReferenceSection({
   appModel,
   catalog,
+  configFindings,
   getTaskData,
   activeFileId,
   onRoute,
@@ -66,6 +83,14 @@ function ReferenceSection({
       <ExecutorCountChart appModel={appModel} activeFileId={activeFileId} />
       <StageTable appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={onRoute} />
       <WidgetGrid>
+        {alwaysMountedWidgets().map(({ component: Widget, widgetId }) => (
+          // widgetId registers the card as a route target for Show evidence.
+          <WidgetGridItem key={widgetId} cardId={`reference-${widgetId}`} widgetId={widgetId} collapsedTile>
+            <Suspense fallback={<WidgetCardSkeleton />}>
+              <Widget appModel={appModel} catalog={catalog} configFindings={configFindings} getTaskData={getTaskData} activeFileId={activeFileId} defaultCollapsed />
+            </Suspense>
+          </WidgetGridItem>
+        ))}
         <WidgetGridItem cardId="reference-evidence-availability" collapsedTile>
           <EvidenceAvailability ledger={appModel.evidenceAvailability} />
         </WidgetGridItem>
@@ -77,6 +102,16 @@ function ReferenceSection({
       </WidgetGrid>
     </div>
   );
+}
+
+/** Names the filter values a route cleared, for the notice that says so. */
+function clearedFilterNotice(dimensions: FilterDimension[], selection: FilterSelection, subject: string): string {
+  const parts = dimensions.map((dimension) => {
+    if (dimension === 'impactBands') return `${[...selection.impactBands].join(', ')} impact`;
+    if (dimension === 'types') return [...selection.types].map((type) => REGISTRY[type]?.findingLabel ?? type).join(', ');
+    return [...selection.stages].map((stageId) => `Stage ${stageId}`).join(', ');
+  });
+  return `Cleared the ${parts.join(' and ')} filter${parts.length === 1 ? '' : 's'} to show ${subject}.`;
 }
 
 /** The filtered board body: reads the active filter, derives the filtered
@@ -93,13 +128,51 @@ function FilteredBoard({
   onRoute,
   activeTab,
   onActiveTabChange,
+  renderTopbar,
 }: WidgetProps & {
   options: FilterOptions;
   onRoute: (target: TriageTarget) => void;
   activeTab: ActiveTab;
   onActiveTabChange: (tab: ActiveTab) => void;
+  renderTopbar: (onJumpToFindings: (impactBand: Finding['impactBand']) => void) => ReactNode;
 }) {
-  const { selection } = useFindingFilter();
+  const { selection, replaceSelection } = useFindingFilter();
+  const density = useWidgetDensity();
+  // Tied to the selection the route produced, so any later filter change hides it.
+  const [filterNotice, setFilterNotice] = useState<{ text: string; selection: FilterSelection } | null>(null);
+
+  // A jump from an unfiltered surface (verdict, stage dialog, top bar chip)
+  // must land on the board: clear only the filter dimensions that hide it.
+  const revealFinding = useCallback((finding: Finding, subject: string) => {
+    const dimensions = excludingDimensions(finding, selection);
+    if (dimensions.length === 0) return;
+    const next = { ...selection };
+    for (const dimension of dimensions) Object.assign(next, { [dimension]: emptySelection()[dimension] });
+    replaceSelection(next);
+    setFilterNotice({ text: clearedFilterNotice(dimensions, selection, subject), selection: next });
+  }, [selection, replaceSelection]);
+  const routeToVisible = useCallback((target: TriageTarget) => {
+    if (!isAlwaysMountedType(target.finding.type)) revealFinding(target.finding, 'this finding');
+    onRoute(target);
+  }, [revealFinding, onRoute]);
+  // The top bar's count chip: reveal the band it counts (the finding needing
+  // the fewest cleared dimensions), show Findings, then land on the band once
+  // the tab panel is visible.
+  const jumpToFindings = useCallback((impactBand: Finding['impactBand']) => {
+    const counted = [...catalog, ...(configFindings ?? [])].filter((f) => isEligible(f) && f.impactBand === impactBand);
+    const closest = counted.reduce<Finding | null>((best, finding) => (
+      !best || excludingDimensions(finding, selection).length < excludingDimensions(best, selection).length ? finding : best
+    ), null);
+    if (closest) revealFinding(closest, `the ${impactBand} findings`);
+    onActiveTabChange('findings');
+    requestAnimationFrame(() => {
+      const heading = document.getElementById(`impact-band-${impactBand}-heading`);
+      if (!heading) return;
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      heading.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
+      heading.focus({ preventScroll: true });
+    });
+  }, [catalog, configFindings, selection, revealFinding, onActiveTabChange]);
   const filteredCatalog = useMemo(() => filterFindings(catalog, selection), [catalog, selection]);
   const filteredConfig = useMemo(() => filterFindings(configFindings ?? [], selection), [configFindings, selection]);
 
@@ -109,17 +182,30 @@ function FilteredBoard({
   // matches, and must NOT show "No findings match".
   const totalFilteredCount = filteredCatalog.length + filteredConfig.length;
   const filteredToEmpty = (catalog.length + (configFindings ?? []).length) > 0 && totalFilteredCount === 0;
+  const showFilterBar = density === 'advanced' || !isEmptySelection(selection);
 
   return (
+    <>
+    {renderTopbar(jumpToFindings)}
     <main className="flex-1 space-y-6 p-4">
-      <FindingFilterBar options={options} resultCount={totalFilteredCount} />
-      {filteredToEmpty && <NoMatchBanner />}
+      <SampleRunNotice />
+      {/* Verdict first, from the unfiltered catalog: it answers "how did this
+          run go and where do I start", which a board filter must not change. */}
+      <RunVerdict appModel={appModel} catalog={catalog} configFindings={configFindings} onRoute={routeToVisible} />
       <Scorecard appModel={appModel} catalog={filteredCatalog} />
+      {/* Filtering is a power control: Advanced mode shows it, and so does an
+          active selection (e.g. from a shared URL), so a filtered board never
+          hides the control that explains and clears it. */}
+      {showFilterBar && <FindingFilterBar options={options} resultCount={totalFilteredCount} />}
+      {/* The notice explains what the bar lost, so it goes when the bar does
+          (Basic view once a route cleared the last active filter). */}
+      {showFilterBar && filterNotice?.selection === selection ? (
+        <p role="status" className="text-sm text-muted-foreground">{filterNotice.text}</p>
+      ) : null}
+      {filteredToEmpty && <NoMatchBanner />}
       {/* Filtering to nothing at all is already covered by NoMatchBanner
-          above; ImpactBoard's own "no findings to fix" empty state is for
-          a genuinely clean run, not a filter that happens to exclude every
-          finding, so skip the whole tab set here to avoid showing both
-          banners at once. */}
+          above, so skip the whole tab set here rather than render an empty
+          board under it. */}
       {!filteredToEmpty && (
         <Tabs value={activeTab} onValueChange={(value) => onActiveTabChange(value as ActiveTab)}>
           <TabsList variant="chrome" aria-label="Report view">
@@ -161,7 +247,11 @@ function FilteredBoard({
           </TabsContent>
         </Tabs>
       )}
+      {/* Full, unfiltered catalog: a stage pill must still open evidence even
+          when the finding is filtered out of the board lists. */}
+      <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={routeToVisible} />
     </main>
+    </>
   );
 }
 
@@ -170,7 +260,7 @@ function FilteredBoard({
  * owns a lightweight drag-to-load overlay so dropping a new file anywhere
  * over the dashboard starts a fresh parse. */
 function DashboardContent() {
-  const { resetToDropZone, startLoad, getTaskData } = useIngest();
+  const { resetToDropZone, startLoad, getTaskData, compareWithAnotherRun } = useIngest();
   const appModel = useStore((s) => s.appModel);
   const catalog = useStore((s) => s.catalog);
   const activeFileId = useStore((s) => s.activeFileId);
@@ -178,6 +268,10 @@ function DashboardContent() {
   const { recentEntries, onPickRecent, onRemoveRecent } = useRecentFiles(activeFileId);
   const [dragOver, setDragOver] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('findings');
+  const density = useWidgetDensity();
+  const showFindings = useCallback(() => setActiveTab('findings'), []);
+  const showFullReport = useCallback(() => setActiveTab('full-report'), []);
+  useTriageShortcuts({ enabled: density === 'advanced', showFindings, showFullReport });
   const { referenceOpen } = useEvidenceAvailabilityDisclosure();
   const [routeRequest, setRouteRequest] = useState<RouteRequest | null>(null);
   const [routeFocusedWidgetId, setRouteFocusedWidgetId] = useState<string | null>(null);
@@ -227,9 +321,9 @@ function DashboardContent() {
   // stale (never scroll/focus).
   const resolveRoute = useCallback((route: RouteRequest): TriageTarget | null => {
     if (routeRef.current?.token !== route.token) return null;
-    const { catalog: currentCatalog, activeFileId: currentFileId } = store.getState();
+    const { catalog: currentCatalog, configFindings: currentConfig, activeFileId: currentFileId } = store.getState();
     if (routeFileRef.current !== currentFileId) return null;
-    const resolved = selectTriageTargetForFinding(route.target.finding, currentCatalog);
+    const resolved = selectTriageTargetForFinding(route.target.finding, [...currentCatalog, ...currentConfig]);
     if (!resolved || resolved.widgetId !== route.target.widgetId || resolved.region !== route.target.region) {
       return null;
     }
@@ -237,15 +331,15 @@ function DashboardContent() {
   }, []);
 
   const requestRoute = useCallback((target: TriageTarget) => {
-    // Every routeable REGISTRY widget lives in the Findings tab (see
-    // ReferenceSection's doc comment above): a route request always needs
-    // that tab active, whether it was initiated from Findings itself or
-    // from a Full app report control like Stage Summary's own route link.
-    setActiveTab('findings');
+    // Routeable REGISTRY widgets live in the Findings tab, except the
+    // always-mounted one in Full app report (see ReferenceSection's doc
+    // comment above): show the tab that holds the target's widget, whichever
+    // tab the request came from.
+    setActiveTab(isAlwaysMountedType(target.finding.type) ? 'full-report' : 'findings');
     const token = tokenRef.current + 1;
     tokenRef.current = token;
-    const { catalog: currentCatalog, activeFileId: currentFileId } = store.getState();
-    const resolved = selectTriageTargetForFinding(target.finding, currentCatalog);
+    const { catalog: currentCatalog, configFindings: currentConfig, activeFileId: currentFileId } = store.getState();
+    const resolved = selectTriageTargetForFinding(target.finding, [...currentCatalog, ...currentConfig]);
     if (!resolved || resolved.widgetId !== target.widgetId || resolved.region !== target.region) {
       routeRef.current = null;
       routeFileRef.current = null;
@@ -401,13 +495,18 @@ function DashboardContent() {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <Topbar
-        onLoadNew={resetToDropZone}
-        recentEntries={recentEntries}
-        activeFileId={activeFileId}
-        onPickRecent={onPickRecent}
-        onRemoveRecent={onRemoveRecent}
-      />
+      {/* First in tab order: past the top bar's controls to the verdict. */}
+      <button
+        type="button"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow focus:ring-2 focus:ring-ring"
+        onClick={() => {
+          const verdict = document.getElementById('run-verdict');
+          verdict?.scrollIntoView?.({ block: 'start' });
+          verdict?.focus({ preventScroll: true });
+        }}
+      >
+        Skip to the verdict
+      </button>
 
       <FindingFilterProvider options={options} fileId={activeFileId}>
         <TriageNavigationProvider
@@ -429,13 +528,20 @@ function DashboardContent() {
             onRoute={requestRoute}
             activeTab={activeTab}
             onActiveTabChange={setActiveTab}
+            renderTopbar={(onJumpToFindings) => (
+              <Topbar
+                onJumpToFindings={onJumpToFindings}
+                onLoadNew={resetToDropZone}
+                onCompare={compareWithAnotherRun}
+                recentEntries={recentEntries}
+                activeFileId={activeFileId}
+                onPickRecent={onPickRecent}
+                onRemoveRecent={onRemoveRecent}
+              />
+            )}
           />
         </TriageNavigationProvider>
       </FindingFilterProvider>
-
-      {/* Full, unfiltered catalog: a stage pill must still open evidence even
-          when the finding is filtered out of the board lists. */}
-      <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} />
 
       {dragOver && (
         <div

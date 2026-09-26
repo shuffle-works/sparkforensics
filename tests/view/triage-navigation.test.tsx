@@ -259,7 +259,7 @@ function SpillWithAnchoredRows({ catalog }: WidgetProps) {
   );
 }
 
-function renderReady(catalog: Finding[], stageIds: number[] = []) {
+function renderReady(catalog: Finding[], stageIds: number[] = [], widgetDensity: 'basic' | 'advanced' = 'advanced') {
   store.setState({
     status: 'ready',
     appModel: readyAppModel(stageIds),
@@ -268,6 +268,10 @@ function renderReady(catalog: Finding[], stageIds: number[] = []) {
     taskDataCache: new Map(),
     errorMessage: null,
     parse: { pct: 0, lines: 0, etaMs: null },
+    // These tests drive card-level routing (focus, flash, pagination), which
+    // needs every evidence card mounted up front: Advanced view shows them,
+    // while Basic view folds them per band (covered at the end of this file).
+    widgetDensity,
   });
   return render(<App />);
 }
@@ -287,6 +291,10 @@ function renderReadyWithRdd(catalog: Finding[], rddInfo: Map<number, unknown>, s
     taskDataCache: new Map(),
     errorMessage: null,
     parse: { pct: 0, lines: 0, etaMs: null },
+    // These tests drive card-level routing (focus, flash, pagination), which
+    // needs every evidence card mounted up front: Advanced view shows them,
+    // while Basic view folds them per band (covered at the end of this file).
+    widgetDensity: 'advanced',
   });
   return render(<App />);
 }
@@ -348,6 +356,7 @@ afterEach(() => {
     value: originalScrollIntoView,
   });
   window.matchMedia = originalMatchMedia;
+  store.setState({ widgetDensity: 'basic' });
 });
 
 test('routes a Reference-region target from Stage Summary: expanding its exact card, scrolling, and focusing its disclosure', async () => {
@@ -440,6 +449,22 @@ test('an alert target opens only its exact card and leaves Full app report and C
   await waitFor(() => expect(document.activeElement).toBe(row));
   expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'false');
   expect(screen.getByRole('button', { name: /clean checks/i })).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('a core-locality target switches to Full app report, where its always-mounted card lives, and focuses it', async () => {
+  const user = userEvent.setup();
+  const locality: Finding = { type: 'coreLocality', stageId: null, impactBand: 'warning', value: 40, recommendation: 'Check locality.' };
+  renderReady([locality], [1]);
+
+  await waitForDashboard();
+  await user.click(fixTheseFirstRow('coreLocality'));
+
+  expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
+  const reportPanel = screen.getByRole('tabpanel', { name: 'Full app report' });
+  const heading = await within(reportPanel).findByRole('heading', { name: 'Core Usage by Locality' });
+  const card = heading.closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
+  await waitFor(() => expect(card.contains(document.activeElement)).toBe(true));
+  expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
 });
 
 test('initial render never scrolls or moves focus', async () => {
@@ -1404,16 +1429,37 @@ test('DuplicatePlanSubtree.tsx jumps its own pagination to the page containing a
 // --- CacheUtilization.tsx routing/anchor coverage. Its findings' `stageId` is
 // always `null`, so routing goes through FixTheseFirst/SeverityBoard's
 // recommendation row (`fixTheseFirstRow`) rather than StageTable.
-//
-// NOTE: ConfigAudit.tsx's own findings list is NOT covered here. Its findings
-// live only in the store's `configFindings` slot (never `catalog`), but
-// Dashboard's route coordinator resolves a target via
-// `selectTriageTargetForFinding(finding, catalog)` and never merges in
-// `configFindings`. So a route to any configAudit finding fails
-// `catalog.includes(finding)` and is silently cancelled: clicking its
-// recommendation row is a dead click in the real app. This is a real bug in the
-// shared route coordinator (ConfigAudit's own routeIndex wiring is correct), so
-// no ConfigAudit routing test is added here.
+
+// ConfigAudit.tsx's findings live only in the store's `configFindings` slot,
+// never `catalog`, so this covers the route coordinator resolving against both.
+test('a real ConfigAudit.tsx row is anchor-routable from its recommendation row', async () => {
+  const finding: Finding = {
+    type: 'configAudit', property: 'spark.serializer', value: 'java', stageId: null,
+    impactBand: 'warning', recommendation: 'Use KryoSerializer.',
+  };
+  try {
+    store.setState({ configFindings: [finding] });
+    renderReady([]);
+    await waitForDashboard();
+
+    act(() => {
+      fixTheseFirstRow('configAudit').click();
+    });
+
+    const row = await waitFor(() => {
+      const found = screen
+        .getAllByText('Use KryoSerializer.', { exact: false })
+        .map((element) => element.closest('[data-flashed]') as HTMLElement | null)
+        .find(Boolean);
+      expect(found).toBeTruthy();
+      return found!;
+    });
+    await waitFor(() => expect(document.activeElement).toBe(row));
+    expect(row).toHaveAttribute('data-flashed', 'true');
+  } finally {
+    store.setState({ configFindings: [] });
+  }
+});
 
 test('a real CacheUtilization.tsx row is anchor-routable: focus and the flash land on the row, not the disclosure title, and the flash clears after 2000ms', async () => {
   const rddInfo = new Map([[1, rddRow(1)]]);
@@ -1481,4 +1527,45 @@ test('CacheUtilization.tsx jumps its own findings-list pagination to the page co
     .getByRole('heading', { name: 'Cache Storage' })
     .closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
   expect(within(card).getByText('Page 2 of 2')).toBeInTheDocument();
+});
+
+test('Basic view folds each band\'s evidence cards behind one disclosure', async () => {
+  const user = userEvent.setup();
+  renderReady([spillFinding(1)], [1], 'basic');
+  await waitForDashboard();
+
+  expect(screen.queryByRole('heading', { name: 'Spill' })).not.toBeInTheDocument();
+  const toggle = screen.getByRole('button', { name: 'Show the evidence (1 card)' });
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await user.click(toggle);
+  expect(await screen.findByRole('heading', { name: 'Spill' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Hide the evidence' })).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('in Basic view a row route opens its band\'s folded evidence and lands on the anchored row', async () => {
+  const user = userEvent.setup();
+  renderReady([spillFinding(1)], [1], 'basic');
+  await waitForDashboard();
+
+  await user.click(fixTheseFirstRow('spill'));
+
+  const trigger = await screen.findByRole('heading', { name: 'Spill' });
+  const spillCard = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
+  const row = within(spillCard).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]');
+  await waitFor(() => expect(document.activeElement).toBe(row));
+  // The evidence stays open once the route has completed.
+  expect(screen.getByRole('button', { name: 'Hide the evidence' })).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('in Basic view a route from Full app report opens the folded evidence it targets', async () => {
+  const user = userEvent.setup();
+  renderReady([memoryFinding(1)], [1], 'basic');
+  await waitForDashboard();
+
+  await user.click(screen.getByRole('tab', { name: 'Full app report' }));
+  await user.click(screen.getByRole('button', { name: 'Investigate memory utilization in Stage 1' }));
+
+  expect(await screen.findByRole('heading', { name: 'Memory Utilization' })).toBeInTheDocument();
+  expect(screen.getByRole('tab', { name: 'Findings' })).toHaveAttribute('aria-selected', 'true');
+  await waitFor(() => expect(Element.prototype.scrollIntoView).toHaveBeenCalled());
 });

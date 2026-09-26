@@ -12,7 +12,7 @@ export interface MetricDeltaRow {
   unavailableReason?: string;
 }
 export interface FindingsDeltaRow {
-  rule: string; impactBand: string; baseCount: number; candCount: number; delta: number; stages: string[];
+  rule: string; type: string; impactBand: string; baseCount: number; candCount: number; delta: number; stages: string[];
 }
 export interface CompareRunsResult {
   baselineLabel: string; candidateLabel: string;
@@ -282,14 +282,14 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
 export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapshot): {
   introduced: FindingsDeltaRow[]; resolved: FindingsDeltaRow[];
 } {
-  interface TallyEntry { rule: string; impactBand: string; count: number; stages: Set<string>; }
+  interface TallyEntry { rule: string; type: string; impactBand: string; count: number; stages: Set<string>; }
   const tally = (snap: SessionSnapshot): Map<string, TallyEntry> => {
     const m = new Map<string, TallyEntry>(); // `${rule}§${impactBand}` -> { rule, impactBand, count, stages:Set }
     for (const f of snap.catalog) {
       const rule = typeof f.rule === 'string' ? f.rule : f.type;
       const impactBand = f.impactBand ?? 'unknown';
       const key = `${rule}§${impactBand}`;
-      const e = m.get(key) ?? { rule, impactBand, count: 0, stages: new Set<string>() };
+      const e = m.get(key) ?? { rule, type: f.type, impactBand, count: 0, stages: new Set<string>() };
       e.count++;
       // Resolve stageId → name on this snapshot only: a single-side lookup, so
       // it needs no cross-run identity. App-level findings (stageId null) add none.
@@ -308,7 +308,7 @@ export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapsh
     if (candCount === baseCount) continue;
     const meta = ce ?? be!;
     const more = candCount > baseCount ? ce! : be!; // the side with more supplies the labels
-    const row: FindingsDeltaRow = { rule: meta.rule, impactBand: meta.impactBand, baseCount, candCount,
+    const row: FindingsDeltaRow = { rule: meta.rule, type: meta.type, impactBand: meta.impactBand, baseCount, candCount,
       delta: candCount - baseCount, stages: [...more.stages].sort() };
     (candCount > baseCount ? introduced : resolved).push(row);
   }

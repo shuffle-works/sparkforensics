@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
+import type { TriageTarget } from '@/view/triage-target';
 import { StageDetailProvider, useStageDetail } from '@/view/StageDetailContext';
 import { DocsProvider } from '@/view/DocsContext';
 import { emptyAppModel, store } from '@/store/store';
@@ -60,12 +61,13 @@ function renderHarness(
   appModel: AppModel,
   getTaskData = vi.fn(async () => TASK_DATA),
   catalog: Finding[] = [],
+  onRoute?: (target: TriageTarget) => void,
 ) {
   render(
     <DocsProvider>
       <StageDetailProvider>
         <OpenButton />
-        <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} />
+        <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={onRoute} />
       </StageDetailProvider>
     </DocsProvider>,
   );
@@ -403,5 +405,93 @@ describe('StageDetailDialog', () => {
     const dialog = await screen.findByRole('dialog');
 
     expect(within(dialog).queryByRole('heading', { name: 'Query Plan' })).not.toBeInTheDocument();
+  });
+});
+
+describe('StageDetailDialog reads like a verdict step', () => {
+  const skew: Finding = {
+    type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Rebalance partitioning.',
+    impactEstimate: { basis: 'serial', wallClock: { low: 1_000, high: 2_000 }, estimateMethod: 'modeled' },
+  } as Finding;
+  const straggler: Finding = { type: 'straggler', stageId: 1, impactBand: 'critical', recommendation: 'Check slow hosts.' } as Finding;
+  const withRun = (): AppModel => ({ ...makeAppModel(), app: { startTime: 0, endTime: 8_000 } } as AppModel);
+
+  it('places the stage in the run and says its findings often share a cause', async () => {
+    const user = userEvent.setup();
+    renderHarness(withRun(), vi.fn(async () => TASK_DATA), [straggler, skew]);
+    await user.click(screen.getByRole('button', { name: 'open stage 1' }));
+    const dialog = await screen.findByRole('dialog');
+
+    expect(within(dialog).getByRole('heading', { level: 2, name: 'Stage 1' })).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('Ran for 4.0s, 50% of this 8.0s run, split into 10 tasks. 2 findings here. They often share one cause, so start with the first.');
+    const steps = within(dialog).getAllByTestId('stage-finding');
+    // Same band, so the one with potential savings leads.
+    expect(steps[0]).toHaveTextContent("Fix task skewWhat's happening: A small number of tasks take much longer than their peers.What to try: Rebalance partitioning.");
+  });
+
+  it('orders finding types the way the run verdict ranks them: a quantified warning leads an unquantified critical', async () => {
+    const user = userEvent.setup();
+    const quantifiedWarning = { ...skew, impactBand: 'warning' } as Finding;
+    renderHarness(withRun(), vi.fn(async () => TASK_DATA), [straggler, quantifiedWarning]);
+    await user.click(screen.getByRole('button', { name: 'open stage 1' }));
+    const steps = within(await screen.findByRole('dialog')).getAllByTestId('stage-finding');
+
+    expect(steps[0]).toHaveTextContent('Rebalance partitioning.');
+    expect(steps[1]).toHaveTextContent('Check slow hosts.');
+  });
+
+  it('puts a stage failure first on a run whose job failed at that stage, as the verdict does', async () => {
+    const user = userEvent.setup();
+    const stageFailed = { type: 'stageFailed', stageId: 1, impactBand: 'warning', recommendation: 'Inspect the failure.', value: 'boom' } as Finding;
+    const failedRun = {
+      ...withRun(),
+      jobs: new Map([[0, { id: 0, stageIds: [1], result: 'JobFailed', succeeded: false }]]),
+    } as unknown as AppModel;
+    renderHarness(failedRun, vi.fn(async () => TASK_DATA), [skew, stageFailed]);
+    await user.click(screen.getByRole('button', { name: 'open stage 1' }));
+    const steps = within(await screen.findByRole('dialog')).getAllByTestId('stage-finding');
+
+    expect(steps[0]).toHaveTextContent('Inspect the failure.');
+    expect(steps[1]).toHaveTextContent('Rebalance partitioning.');
+  });
+
+  it('lists a sql-scope finding that touches only this stage, as the verdict step groups it', async () => {
+    const user = userEvent.setup();
+    const smallFiles = { type: 'smallFiles', stageId: null, stageIds: [1], impactBand: 'info', recommendation: 'Coalesce output files.' } as unknown as Finding;
+    const elsewhere = { type: 'smallFiles', stageId: null, stageIds: [1, 2], impactBand: 'info', recommendation: 'Not this stage.' } as unknown as Finding;
+    renderHarness(withRun(), vi.fn(async () => TASK_DATA), [skew, smallFiles, elsewhere]);
+    await user.click(screen.getByRole('button', { name: 'open stage 1' }));
+    const dialog = await screen.findByRole('dialog');
+
+    expect(dialog).toHaveTextContent('2 findings here.');
+    expect(dialog).toHaveTextContent('Coalesce output files.');
+    expect(dialog).not.toHaveTextContent('Not this stage.');
+  });
+
+  it('says when nothing was flagged on the stage', async () => {
+    const user = userEvent.setup();
+    renderHarness(withRun());
+    await user.click(screen.getByRole('button', { name: 'open stage 1' }));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Nothing was flagged on this stage.');
+  });
+
+  it('Show evidence closes the dialog and routes to the finding', async () => {
+    const user = userEvent.setup();
+    const onRoute = vi.fn();
+    renderHarness(withRun(), vi.fn(async () => TASK_DATA), [skew], onRoute);
+    await user.click(screen.getByRole('button', { name: 'open stage 1' }));
+    const dialog = await screen.findByRole('dialog');
+
+    await user.click(within(dialog).getByRole('button', { name: /show evidence/i }));
+    expect(onRoute).toHaveBeenCalledWith(expect.objectContaining({ finding: skew }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  it('offers no Show evidence where there is no board to route to', async () => {
+    const user = userEvent.setup();
+    renderHarness(withRun(), vi.fn(async () => TASK_DATA), [skew]);
+    await user.click(screen.getByRole('button', { name: 'open stage 1' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByRole('button', { name: /show evidence/i })).not.toBeInTheDocument();
   });
 });

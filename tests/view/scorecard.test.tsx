@@ -24,15 +24,38 @@ test('renders the wall-clock and efficiency KPI labels', () => {
   expect(screen.getByText('Efficiency')).toBeInTheDocument();
 });
 
-test('explains what a measured Efficiency percentage includes', () => {
+test('Basic view says what each tile measures and which direction is better', () => {
   render(<Scorecard appModel={makeAppModel()} catalog={[]} />);
-  expect(screen.getByTestId('kpi-efficiency')).toHaveTextContent(/Ran 1\.0s · 59\.0s idle\/gap time/);
+  expect(screen.getByTestId('kpi-wall-clock')).toHaveTextContent('Total run time. Stages were running for 1.0s of it.');
+  expect(screen.getByTestId('kpi-efficiency')).toHaveTextContent('Share of the run with a stage running. Higher is better.');
+});
+
+test('Advanced view keeps the raw run/idle breakdown behind a measured Efficiency percentage', () => {
+  store.getState().setWidgetDensity('advanced');
+  try {
+    render(<Scorecard appModel={makeAppModel()} catalog={[]} />);
+    expect(screen.getByTestId('kpi-wall-clock')).toHaveTextContent('Ran 1.0s');
+    expect(screen.getByTestId('kpi-efficiency')).toHaveTextContent(/Ran 1\.0s · 59\.0s idle\/gap time/);
+  } finally {
+    store.getState().setWidgetDensity('basic');
+  }
 });
 
 test('spells out zero stage activity instead of the "no measurable value" dash, so a run with no stages does not look like broken data', () => {
   render(<Scorecard appModel={makeAppModel({ stages: new Map() })} catalog={[]} />);
   expect(screen.getByTestId('kpi-wall-clock')).toHaveTextContent('No stage activity recorded');
-  expect(screen.getByTestId('kpi-efficiency')).toHaveTextContent(/No stage activity recorded · 1m 0s idle\/gap time/);
+  store.getState().setWidgetDensity('advanced');
+  try {
+    render(<Scorecard appModel={makeAppModel({ stages: new Map() })} catalog={[]} />);
+    // With no finished stage there is nothing to grade: no "0%", in either view.
+    for (const tile of screen.getAllByTestId('kpi-efficiency')) {
+      expect(tile).toHaveTextContent('Not measured');
+      expect(tile).toHaveTextContent('No stage in this log recorded an end');
+      expect(tile).not.toHaveTextContent('%');
+    }
+  } finally {
+    store.getState().setWidgetDensity('basic');
+  }
 });
 
 test.each([
@@ -50,7 +73,7 @@ test.each([
   expect(screen.queryAllByText('Unavailable')).toHaveLength(0);
 });
 
-test('renders a Wastage tile driven by computeEfficiencyModel when runAggregates is present, with a tier-appropriate caption', () => {
+test('renders an Unused core time tile driven by computeEfficiencyModel when runAggregates is present, with a tier-appropriate caption', () => {
   const appModel = makeAppModel({
     app: { startTime: 0, endTime: 60000, sparkVersion: '3.5.3', resources: { executor: { cores: 2 } } },
     executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 2, resourceProfileId: null }], removed: [] },
@@ -58,8 +81,8 @@ test('renders a Wastage tile driven by computeEfficiencyModel when runAggregates
   });
 
   const { rerender } = render(<Scorecard appModel={appModel} catalog={[]} />);
-  expect(screen.getByTestId('kpi-wastage')).toHaveTextContent('100%');
-  expect(screen.getByText('Executor capacity that sat idle. Not a cost figure.')).toBeInTheDocument();
+  expect(screen.getByTestId('kpi-wastage')).toHaveTextContent('Unused core time100%');
+  expect(screen.getByText('Driver idle plus executor slack across the whole run, so it can run higher than the idle capacity a verdict step reports. Lower is better. Not a cost figure.')).toBeInTheDocument();
 
   store.getState().setWidgetDensity('advanced');
   rerender(<Scorecard appModel={appModel} catalog={[]} />);

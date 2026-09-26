@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { RecentList, type RecentFileEntry } from '@/view/RecentList';
 import { type NormalizedShsRequest, type RunSource, useIngest } from '@/store/useIngest';
 import { store, useStore } from '@/store/store';
+import { SAMPLE_RUN_ID } from '@/view/sample-run';
 import * as recentFiles from '@sparkforensics/core/recent-files.ts';
 import { reassembleRollingEntries } from '@sparkforensics/core/rolling-log-reassembly.ts';
 import { cn } from '@/lib/utils';
@@ -40,6 +41,8 @@ function initialShsField(field: ShsField): string {
 const SAMPLE_RUN_URL = 'sample-runs/sample-run.ndjson.gz';
 // Getting-started section that documents starting local-server mode.
 const LOCAL_SERVER_SETUP_URL = 'docs/user-guide/getting-started.html#local-server-mode';
+// Every other way to get a log (cloud consoles, bastions, copying from storage).
+export const ALTERNATIVE_LOG_RETRIEVAL_URL = 'docs/user-guide/alternative-log-retrieval.html';
 
 const SHS_RECOVERY_MESSAGES = {
   'local-server-unavailable': 'The local server is unavailable. Start local-server mode, then try again.',
@@ -92,6 +95,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
   const [appId, setAppId] = useState(() => initialShsField('appId'));
   const [attemptId, setAttemptId] = useState(() => initialShsField('attemptId'));
   const [otherSourcesOpen, setOtherSourcesOpen] = useState(false);
+  const [findLogOpen, setFindLogOpen] = useState(false);
   const [shsOpen, setShsOpen] = useState(false);
   const [shsReachable, setShsReachable] = useState(false);
   const [touched, setTouched] = useState<Record<ShsField, boolean>>({ baseUrl: false, appId: false, attemptId: false });
@@ -157,7 +161,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
       const blob = await res.blob();
       const file = new File([blob], 'sample-run.ndjson.gz', { type: 'application/gzip' });
       if (onPick) onPick({ kind: 'file', id: recentFiles.entryId(file.name, file.size, file.lastModified), label: file.name, file });
-      else startLoad(file);
+      else startLoad(file, { id: SAMPLE_RUN_ID });
     } catch {
       store.getState().setError('Could not load the sample run. Check your connection and try again, or choose a file below.');
     } finally {
@@ -501,6 +505,65 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
           </Button>
         ) : null}
       </div>
+
+      {/* A first-time visitor often has no idea where Spark keeps this
+          file, or that it has to be switched on: answer that right under
+          the buttons that need it, instead of only in the docs. */}
+      {!compact ? (
+        <section className="w-full max-w-2xl text-left">
+          <button
+            type="button"
+            className="tap-target-comfortable mx-auto flex cursor-pointer items-center gap-1 rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-expanded={findLogOpen}
+            aria-controls="find-event-log-panel"
+            onClick={() => setFindLogOpen((open) => !open)}
+          >
+            Where do I find my event log?
+            {findLogOpen ? (
+              <ChevronUpIcon aria-hidden="true" className="size-4 shrink-0" />
+            ) : (
+              <ChevronDownIcon aria-hidden="true" className="size-4 shrink-0" />
+            )}
+          </button>
+          {findLogOpen ? (
+            <div id="find-event-log-panel" className="mt-3 rounded-md border border-border bg-background p-4 text-sm">
+              <ol className="list-decimal space-y-2 pl-5 text-muted-foreground">
+                <li>
+                  <span className="font-medium text-foreground">Turn event logging on.</span> Spark writes one log per
+                  application when <code>spark.eventLog.enabled</code> is <code>true</code>, into the directory set by{' '}
+                  <code>spark.eventLog.dir</code> (for example <code>/tmp/spark-events</code>, or an HDFS or object-store
+                  path). Copy the file for your application from there.
+                </li>
+                <li>
+                  <span className="font-medium text-foreground">Or download it from a Spark History Server.</span> Open{' '}
+                  <code>{'<history-server>/api/v1/applications/<app-id>/logs'}</code> and drop the .zip it returns here
+                  as-is.
+                </li>
+                <li>
+                  <span className="font-medium text-foreground">Just exploring?</span>{' '}
+                  <button
+                    type="button"
+                    className="cursor-pointer rounded-sm text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={() => void loadSampleRun()}
+                    disabled={sampleLoading}
+                  >
+                    Load the sample run
+                  </button>{' '}
+                  to see what the report looks like first.
+                </li>
+              </ol>
+              <a
+                href={ALTERNATIVE_LOG_RETRIEVAL_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-block text-primary underline-offset-4 hover:underline"
+              >
+                More ways to get a log
+              </a>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <input
         ref={fileInputRef}
