@@ -20,6 +20,9 @@ export interface RunOutcome {
   /** Spark's own recorded reason for the failure, first line only, or null
    * when the log records none. */
   reason: string | null;
+  /** The stage whose failure reason is quoted, or null when the reason came
+   * from a job's exception or there is none. */
+  reasonStageId: number | null;
 }
 
 function firstLine(text: string): string | null {
@@ -43,8 +46,9 @@ export function summarizeRunOutcome(jobs: Map<number, Job>, findings: Finding[])
   const stageReasons = findings
     .filter((finding) => finding.type === 'stageFailed' && typeof finding.value === 'string')
     .sort((a, b) => Number(failedStageIds.has(b.stageId as number)) - Number(failedStageIds.has(a.stageId as number)));
+  const stageSource = stageReasons[0];
   const rawReason =
-    (stageReasons[0]?.value as string | undefined)
+    (stageSource?.value as string | undefined)
     ?? failed.map((job) => exceptionText(job.exception)).find((text) => text != null)
     ?? null;
   return {
@@ -52,5 +56,19 @@ export function summarizeRunOutcome(jobs: Map<number, Job>, findings: Finding[])
     totalJobs: ended.length,
     failedJobStageIds: failedStageIds,
     reason: failed.length > 0 && rawReason != null ? firstLine(rawReason) : null,
+    reasonStageId: stageSource?.stageId ?? null,
   };
+}
+
+/** Whether the quoted reason is this finding's own: the stage failure whose
+ * first line it is, or the job-failure finding when exactly one job failed
+ * and the reason belongs to that job. Any other failure has a cause the
+ * verdict does not show. */
+export function quotesReasonOf(finding: Finding, outcome: RunOutcome): boolean {
+  if (outcome.reason == null) return false;
+  if (finding.type === 'stageFailed') return typeof finding.value === 'string' && firstLine(finding.value) === outcome.reason;
+  if (finding.type === 'jobFailureRate') {
+    return outcome.failedJobs === 1 && (outcome.reasonStageId == null || outcome.failedJobStageIds.has(outcome.reasonStageId));
+  }
+  return false;
 }

@@ -311,7 +311,50 @@ describe('RunVerdict on a failed run', () => {
     expect(step).toHaveTextContent(`What to try: ${pointer}`);
     expect(step).not.toHaveTextContent('Inspect the driver log for the failure reason.');
     await user.click(within(step).getByTestId('copy-finding-button'));
-    expect(writeText).toHaveBeenCalledWith(`Inspect stage failure: ${pointer}`);
+    expect(writeText).toHaveBeenCalledWith(
+      "Inspect stage failure: Spark's recorded reason: Fetch failed: executor lost. Open the driver log only if you need the full stack trace.",
+    );
+  });
+
+  it('points only the step whose reason is quoted at it; another failed stage keeps its own advice', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const advice = 'Inspect the driver log for the failure reason.';
+    renderVerdict(
+      [
+        { ...stageFailed(3, 'FetchFailed: shuffle lost'), recommendation: advice },
+        { ...stageFailed(9, 'Task not serializable'), recommendation: advice },
+      ],
+      vi.fn(),
+      withJobs([failedJob(1, [3]), failedJob(2, [9])]),
+    );
+
+    expect(screen.getByTestId('run-failure-reason')).toHaveTextContent('FetchFailed: shuffle lost');
+    const steps = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step');
+    const stage3 = steps.find((step) => step.textContent?.includes('in Stage 3'))!;
+    const stage9 = steps.find((step) => step.textContent?.includes('in Stage 9'))!;
+    expect(stage3).toHaveTextContent("What to try: Spark's recorded reason is quoted above.");
+    expect(stage9).toHaveTextContent(`What to try: ${advice}`);
+    expect(stage9).not.toHaveTextContent('quoted above');
+    await user.click(within(stage9).getByTestId('copy-finding-button'));
+    expect(writeText).toHaveBeenCalledWith(`Inspect stage failure: ${advice}`);
+  });
+
+  it('points the job-failure step at the quoted reason only when exactly one job failed', () => {
+    const jobFailures: Finding = {
+      type: 'jobFailureRate', stageId: null, impactBand: 'critical', recommendation: 'Inspect the driver log for the failure reason.',
+    };
+    const { unmount } = render(
+      <StageDetailProvider>
+        <RunVerdict appModel={withJobs([failedJob(1, [], 'Job aborted: out of memory')])} catalog={[jobFailures]} onRoute={vi.fn()} />
+      </StageDetailProvider>,
+    );
+    expect(screen.getByTestId('next-step')).toHaveTextContent("What to try: Spark's recorded reason is quoted above.");
+    unmount();
+
+    renderVerdict([jobFailures], vi.fn(), withJobs([failedJob(1, [], 'Job aborted: out of memory'), failedJob(2, [], 'Other cause')]));
+    expect(screen.getByTestId('next-step')).toHaveTextContent('What to try: Inspect the driver log for the failure reason.');
   });
 
   it('keeps the detector\'s advice on a failure step when no reason is recorded', () => {

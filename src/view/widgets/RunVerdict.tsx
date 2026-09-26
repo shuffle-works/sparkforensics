@@ -11,7 +11,7 @@ import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import { useWidgetDensity } from '@/store/store';
 import { REGISTRY } from '@/view/detector-registry';
 import { useOptionalDocs } from '@/view/DocsContext';
-import { FAILURE_TYPES, summarizeRunOutcome, type RunOutcome } from '@/view/run-outcome';
+import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from '@/view/run-outcome';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
@@ -126,13 +126,18 @@ function verdictSummary(eligible: Finding[], steps: NextStep[], facts: RunFacts)
   return sentences;
 }
 
-/** What a failure step tells the reader once the verdict quotes Spark's own
- * reason: the detector's "inspect the driver log for the reason" would send a
- * newcomer looking for something already on screen. */
-const QUOTED_REASON_STEP_TEXT = "Spark's recorded reason is quoted above. Open the driver log only if you need the full stack trace.";
+const STACK_TRACE_HINT = 'Open the driver log only if you need the full stack trace.';
 
-function stepRecommendation(finding: Finding, reasonQuoted: boolean): string {
-  return reasonQuoted && FAILURE_TYPES.has(finding.type) ? QUOTED_REASON_STEP_TEXT : recommendationText(finding);
+/** What the failure step whose reason the verdict quotes tells the reader:
+ * the detector's "inspect the driver log for the reason" would send a
+ * newcomer looking for something already on screen. The copied text carries
+ * the reason itself, since "quoted above" means nothing once pasted. */
+function quotedReasonText(reason: string): { shown: string; copied: string } {
+  const sentence = /[.!?]$/.test(reason) ? reason : `${reason}.`;
+  return {
+    shown: `Spark's recorded reason is quoted above. ${STACK_TRACE_HINT}`,
+    copied: `Spark's recorded reason: ${sentence} ${STACK_TRACE_HINT}`,
+  };
 }
 
 function CopyStepButton({ finding, recommendation }: { finding: Finding; recommendation: string }) {
@@ -163,17 +168,19 @@ function CopyStepButton({ finding, recommendation }: { finding: Finding; recomme
 function NextStepItem({
   step,
   index,
-  reasonQuoted,
+  quotedReason,
   onRoute,
 }: {
   step: NextStep;
   index: number;
-  reasonQuoted: boolean;
+  /** Spark's recorded reason when it is this step's own, else null. */
+  quotedReason: string | null;
   onRoute: (target: TriageTarget) => void;
 }) {
   const { openStage } = useStageDetail();
   const { finding } = step.lead;
-  const recommendation = stepRecommendation(finding, reasonQuoted);
+  const quoted = quotedReason == null ? null : quotedReasonText(quotedReason);
+  const recommendation = quoted?.shown ?? recommendationText(finding);
   const help = TAG_HELP[typeTag(finding.type)];
   const impact = impactFigure(finding);
   const titleId = `next-step-${index}-title`;
@@ -228,7 +235,7 @@ function NextStepItem({
               Stage {step.stageId} details
             </Button>
           ) : null}
-          <CopyStepButton finding={finding} recommendation={recommendation} />
+          <CopyStepButton finding={finding} recommendation={quoted?.copied ?? recommendation} />
         </div>
       </div>
     </li>
@@ -353,7 +360,13 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
       {shown.length > 0 ? (
         <ol aria-label="Next steps" className="space-y-4">
           {shown.map((step, index) => (
-            <NextStepItem key={step.key} step={step} index={index} reasonQuoted={outcome.reason != null} onRoute={onRoute} />
+            <NextStepItem
+              key={step.key}
+              step={step}
+              index={index}
+              quotedReason={quotesReasonOf(step.lead.finding, outcome) ? outcome.reason : null}
+              onRoute={onRoute}
+            />
           ))}
         </ol>
       ) : null}
