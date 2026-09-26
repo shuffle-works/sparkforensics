@@ -18,7 +18,10 @@ function shouldIgnore(event: KeyboardEvent): boolean {
   const tag = target?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) return true;
   if (target?.closest?.('[role="listbox"], [role="combobox"]')) return true;
-  return document.querySelector('[role="dialog"], [role="menu"], [role="alertdialog"], [role="listbox"]') != null;
+  // A closed Base UI popup can stay mounted under a hidden ancestor, so only
+  // a popup that is actually shown owns the keyboard.
+  return [...document.querySelectorAll<HTMLElement>('[role="dialog"], [role="menu"], [role="alertdialog"], [role="listbox"]')]
+    .some((popup) => !popup.closest('[hidden]') && popup.getClientRects().length > 0);
 }
 
 function visibleControls(): HTMLElement[] {

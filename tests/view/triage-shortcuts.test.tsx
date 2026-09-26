@@ -160,3 +160,30 @@ test('j, f and 2 do nothing while a listbox is open or a combobox has focus', as
   await expectNoShortcut(combobox);
   combobox.remove();
 });
+
+test('shortcuts work again once a Select popup has closed and stays mounted hidden', async () => {
+  const user = userEvent.setup();
+  await load('advanced');
+  render(
+    <Select defaultValue="a">
+      <SelectTrigger aria-label="Jump to stage">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="a">Stage 1</SelectItem>
+        <SelectItem value="b">Stage 2</SelectItem>
+      </SelectContent>
+    </Select>,
+  );
+
+  await user.click(screen.getByRole('combobox', { name: 'Jump to stage' }));
+  await screen.findByRole('listbox');
+  await user.keyboard('{Escape}');
+  // Base UI keeps the closed popup in the DOM under a hidden ancestor.
+  await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
+  expect(document.querySelector('[role="listbox"]')).not.toBeNull();
+  await act(async () => (document.activeElement as HTMLElement | null)?.blur());
+
+  await user.keyboard('2');
+  expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
+});
