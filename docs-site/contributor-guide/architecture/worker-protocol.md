@@ -221,7 +221,7 @@ version + threshold set. A finding's `impactEstimate` (when its `basis` isn't
 and/or the raw-waste figure, plus `estimateMethod`), via
 `renderImpactEstimate`/`formatWallClockRange`/`formatRawWaste` in
 `packages/core/src/evidence-report.ts`. `EvidenceExport` names downloads
-`evidence-<appId>[-redacted].<md|json>`, taking the app id from the (already
+`evidence-<appId>[-redacted].<md|json|html>`, taking the app id from the (already
 pseudonymized when redacting) report so a redacted file never leaks the real id
 and is never name-identical to a raw export.
 
