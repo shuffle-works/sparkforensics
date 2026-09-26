@@ -56,6 +56,23 @@ describe('summarizeComparison', () => {
     expect(sentences).toContain('Less frequent in run B: Memory and disk spill.');
     expect(sentences.join(' ')).not.toContain('Task skew');
   });
+
+  it('nets rules that share a category name, so Plan advisor never reads as both', () => {
+    const { sentences } = summarizeComparison([metric('wallClock', 'Wall-clock duration', 10, 10, 'unchanged')], {
+      introduced: [{ rule: 'overBroadcast', baseCount: 0, candCount: 1 }],
+      resolved: [{ rule: 'smallFiles', baseCount: 2, candCount: 1 }],
+    });
+    expect(sentences.join(' ')).not.toContain('Plan advisor');
+  });
+
+  it('leaves cost metrics that moved under 2% out, and says so when all did', () => {
+    const { sentences } = summarizeComparison([
+      metric('wallClock', 'Wall-clock duration', 100_000, 100_500, 'regression'),
+      metric('gcTime', 'GC time', 1_000, 1_010, 'regression'),
+      metric('executorRunTime', 'Executor run-time', 50_000, 49_800, 'improvement'),
+    ], noFindings);
+    expect(sentences).toEqual(['Other measured cost metrics look about the same.']);
+  });
 });
 
 describe('RunComparison verdict', () => {

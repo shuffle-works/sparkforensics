@@ -27,9 +27,16 @@ export interface ComparisonVerdictText {
   sentences: string[];
 }
 
-/** A wall-clock change under this share of run A reads as "about the same":
- * run-to-run noise on a shared cluster easily moves a job a percent or two. */
-export const SAME_RUN_TIME_SHARE = 0.02;
+/** A change under this share of run A's value reads as "about the same", for
+ * run time and cost metrics alike: run-to-run noise on a shared cluster easily
+ * moves a job a percent or two. */
+export const SAME_CHANGE_SHARE = 0.02;
+
+function movedPastNoise(metric: VerdictMetric): boolean {
+  if (metric.baseline == null || metric.candidate == null) return false;
+  if (metric.baseline === 0) return metric.candidate !== 0;
+  return Math.abs(metric.candidate - metric.baseline) / Math.abs(metric.baseline) >= SAME_CHANGE_SHARE;
+}
 
 /** Plain name for a finding category ("Memory and disk spill"), falling back
  * to its tag when the tag has no help entry. */
@@ -38,26 +45,28 @@ function categoryName(rule: string): string {
   return TAG_HELP[tag]?.expansion ?? tag;
 }
 
-/** Net count change per finding rule. Categories are tallied per (rule,
- * impact band), so a rule whose findings moved from critical to warning shows
- * up as both "introduced" and "resolved"; summing across bands keeps the
- * verdict from saying a rule got both more and less frequent. Order follows
- * first appearance, introduced before resolved. */
-function netByRule(findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[] }): Map<string, number> {
+/** Net count change per displayed category name. Categories are tallied per
+ * (rule, impact band), and several rules share one name (every Plan Advisor
+ * rule reads "Plan advisor"), so a rule whose findings moved from critical to
+ * warning, or two rules under one name moving opposite ways, would otherwise
+ * read as both "introduced" and "resolved". Order follows first appearance,
+ * introduced before resolved. */
+function netByCategory(findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[] }): Map<string, number> {
   const net = new Map<string, number>();
   for (const item of [...findings.introduced, ...findings.resolved]) {
-    net.set(item.rule, (net.get(item.rule) ?? 0) + item.candCount - item.baseCount);
+    const name = categoryName(item.rule);
+    net.set(name, (net.get(name) ?? 0) + item.candCount - item.baseCount);
   }
   return net;
 }
 
 function namesWhere(net: Map<string, number>, keep: (change: number) => boolean): string[] {
-  return [...new Set([...net].filter(([, change]) => keep(change)).map(([rule]) => categoryName(rule)))];
+  return [...net].filter(([, change]) => keep(change)).map(([name]) => name);
 }
 
 /** One plain answer to "did run B get better or worse than run A", from the
  * comparison's own whole-run metrics and finding-category tallies: run time
- * first, then which cost metrics moved each way, then which finding
+ * first, then which cost metrics moved each way past run-to-run noise, then which finding
  * categories appeared or went away. Volume and count metrics (input, output,
  * tasks, executors) are left out because more or less of them is not
  * inherently better or worse. */
@@ -71,7 +80,7 @@ export function summarizeComparison(
   if (wall && wall.baseline != null && wall.baseline > 0 && wall.candidate != null) {
     const change = wall.candidate - wall.baseline;
     const share = change / wall.baseline;
-    if (Math.abs(share) < SAME_RUN_TIME_SHARE) {
+    if (Math.abs(share) < SAME_CHANGE_SHARE) {
       title = 'Run B took about as long as run A';
       tone = 'same';
     } else {
@@ -81,15 +90,15 @@ export function summarizeComparison(
     }
   }
 
-  const cost = metrics.filter((metric) => metric.key !== 'wallClock' && !NEUTRAL_METRIC_KEYS.has(metric.key));
+  const cost = metrics.filter((metric) => metric.key !== 'wallClock' && !NEUTRAL_METRIC_KEYS.has(metric.key) && movedPastNoise(metric));
   const worse = cost.filter((metric) => metric.direction === 'regression').map((metric) => metric.label);
   const better = cost.filter((metric) => metric.direction === 'improvement').map((metric) => metric.label);
   const sentences: string[] = [];
   if (worse.length > 0) sentences.push(`Worse in run B: ${worse.join(', ')}.`);
   if (better.length > 0) sentences.push(`Better in run B: ${better.join(', ')}.`);
-  if (worse.length === 0 && better.length === 0) sentences.push('No other measured cost metric changed.');
+  if (worse.length === 0 && better.length === 0) sentences.push('Other measured cost metrics look about the same.');
 
-  const net = netByRule(findings);
+  const net = netByCategory(findings);
   const introduced = namesWhere(net, (change) => change > 0);
   const resolved = namesWhere(net, (change) => change < 0);
   if (introduced.length > 0) sentences.push(`New or more frequent in run B: ${introduced.join(', ')}.`);
