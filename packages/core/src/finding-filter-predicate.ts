@@ -1,6 +1,6 @@
 // Core-owned finding-filter predicate, shared by the CLI/MCP evidence report and the dashboard's
 // filter bar (its view counterpart wraps this instead of reimplementing). Each dimension is
-// unconstrained when empty; a stageId criterion only matches a row whose own stageId is present.
+// unconstrained when empty; a stageId criterion matches a row on a single stage (singleStageId).
 type Membership<T> = ReadonlySet<T> | readonly T[];
 
 function isNonEmpty<T>(m: Membership<T> | undefined): m is Membership<T> {
@@ -18,17 +18,27 @@ export interface FindingFilterCriteria {
   stageId?: number | Membership<number>;
 }
 
+/** The one stage a finding is about: its own `stageId`, or the only entry of a sql-scope
+ * finding's `stageIds`. Null for an app-level, config or multi-stage finding. The same rule the
+ * run verdict groups steps by and the stage dialog lists a stage's findings by. */
+export function singleStageId(row: { stageId?: number | null; stageIds?: readonly number[] | null }): number | null {
+  if (typeof row.stageId === 'number') return row.stageId;
+  if (row.stageIds && row.stageIds.length === 1) return row.stageIds[0];
+  return null;
+}
+
 export function matchesFindingFilterCriteria(
-  row: { impactBand: string; type: string; stageId?: number | null },
+  row: { impactBand: string; type: string; stageId?: number | null; stageIds?: readonly number[] | null },
   criteria: FindingFilterCriteria,
 ): boolean {
   if (isNonEmpty(criteria.impactBand) && !has(criteria.impactBand, row.impactBand)) return false;
   if (isNonEmpty(criteria.type) && !has(criteria.type, row.type)) return false;
   const { stageId } = criteria;
+  const rowStageId = singleStageId(row);
   if (typeof stageId === 'number') {
-    if (row.stageId !== stageId) return false;
+    if (rowStageId !== stageId) return false;
   } else if (isNonEmpty(stageId)) {
-    if (row.stageId == null || !has(stageId, row.stageId)) return false;
+    if (rowStageId == null || !has(stageId, rowStageId)) return false;
   }
   return true;
 }

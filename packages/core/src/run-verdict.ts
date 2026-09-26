@@ -4,6 +4,7 @@
 import { DETECTORS } from './detectors.ts';
 import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
 import { coreFindingActionLabel } from './finding-action-label.ts';
+import { singleStageId } from './finding-filter-predicate.ts';
 import { FINDING_NAMES } from './finding-names.ts';
 import { formatDuration, IMPACT_BAND_ORDER } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
@@ -110,10 +111,8 @@ export interface NextStep {
  * for app-level ones), since two different app-level problems are not the
  * same place. */
 export function locationKey(finding: Finding): { key: string; stageId: number | null } {
-  if (typeof finding.stageId === 'number') return { key: `stage:${finding.stageId}`, stageId: finding.stageId };
-  if (finding.stageIds && finding.stageIds.length === 1) {
-    return { key: `stage:${finding.stageIds[0]}`, stageId: finding.stageIds[0] };
-  }
+  const stageId = singleStageId(finding);
+  if (stageId != null) return { key: `stage:${stageId}`, stageId };
   if (finding.stageIds && finding.stageIds.length > 1) {
     return { key: `stages:${finding.type}:${[...finding.stageIds].sort((a, b) => a - b).join(',')}`, stageId: null };
   }
