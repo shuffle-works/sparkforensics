@@ -146,14 +146,63 @@ function quotedReasonText(reason: string): { shown: string; copied: string } {
   };
 }
 
+/** One step as pasteable text: the action, what to try, and the savings. */
+function stepCopyText(finding: Finding, recommendation: string, stageId: number | null = null): string {
+  const impact = impactFigure(finding);
+  const where = stageId != null ? ` in Stage ${stageId}` : '';
+  const headline = `${findingActionLabel(finding)}${where}: ${recommendation}`;
+  return [/[.!?]$/.test(headline) ? headline : `${headline}.`, impact ? `Potential savings: ${impact}` : null]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/** The whole verdict as a pasteable checklist for a ticket or a message:
+ * run, verdict, numbered steps (with their stage), what could not be checked,
+ * and how many more places the full list holds. */
+function planCopyText(input: {
+  runName: string | null;
+  title: string;
+  steps: { step: NextStep; recommendation: string }[];
+  gaps: string[];
+  remaining: number;
+}): string {
+  const lines = [input.runName ? `Spark run ${input.runName}: ${input.title}` : input.title, ''];
+  input.steps.forEach(({ step, recommendation }, index) => {
+    lines.push(`${index + 1}. ${stepCopyText(step.lead.finding, recommendation, step.stageId)}`);
+  });
+  if (input.remaining > 0) lines.push('', `${plural(input.remaining, 'more place')} to look at in the full findings list.`);
+  if (input.gaps.length > 0) lines.push('', 'Not checked on this log:', ...input.gaps.map((gap) => `- ${gap}`));
+  return lines.join('\n');
+}
+
+function CopyPlanButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      data-testid="copy-plan-button"
+      onClick={() => {
+        copyText(text)
+          .then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          })
+          // Clipboard access can fail (permissions, embed context); the steps
+          // stay selectable, so no error state is needed.
+          .catch(() => {});
+      }}
+    >
+      {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
+      {copied ? 'Copied' : 'Copy next steps'}
+    </Button>
+  );
+}
+
 function CopyStepButton({ finding, recommendation }: { finding: Finding; recommendation: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
-    const impact = impactFigure(finding);
-    const headline = `${findingActionLabel(finding)}: ${recommendation}`;
-    const summary = [/[.!?]$/.test(headline) ? headline : `${headline}.`, impact ? `Potential savings: ${impact}` : null]
-      .filter(Boolean)
-      .join(' ');
+    const summary = stepCopyText(finding, recommendation);
     try {
       await copyText(summary);
       setCopied(true);
@@ -402,10 +451,30 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
           ))}
         </ol>
       ) : null}
-      {remaining > 0 ? (
-        <p className="text-xs text-muted-foreground">
-          {plural(remaining, 'more place')} to look at in the full list under Findings.
-        </p>
+      {shown.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {remaining > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {plural(remaining, 'more place')} to look at in the full list under Findings.
+            </p>
+          ) : (
+            <span />
+          )}
+          <CopyPlanButton
+            text={planCopyText({
+              runName: appModel.app?.name ?? null,
+              title: verdictTitle(eligible, steps, facts),
+              steps: shown.map((step) => ({
+                step,
+                recommendation: quotesReasonOf(step.lead.finding, outcome) && outcome.reason
+                  ? quotedReasonText(outcome.reason).copied
+                  : recommendationText(step.lead.finding),
+              })),
+              gaps,
+              remaining,
+            })}
+          />
+        </div>
       ) : null}
       {density === 'advanced' && shown.length > 1 ? (
         <p className="text-xs text-muted-foreground">

@@ -80,7 +80,10 @@ summary of what was found, and up to three numbered next steps. Each step
 explains in plain language what is happening, says what to try, and has a
 **Show evidence** button that jumps to the finding's detail widget. Findings
 on the same stage are folded into one step, because they usually share a
-cause and their savings overlap rather than add up. When most of the run's
+cause and their savings overlap rather than add up. **Copy next steps**
+copies the whole plan as a plain checklist (run, verdict, numbered steps with
+their stage and savings, and anything not checked) to paste into a ticket or
+a message. When most of the run's
 executor capacity sat idle, the verdict starts with cluster size instead of
 a small per-stage fix.
 

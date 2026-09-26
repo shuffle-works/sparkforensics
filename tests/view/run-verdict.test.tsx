@@ -473,3 +473,29 @@ describe('RunVerdict in Advanced view', () => {
     expect(screen.getByTestId('run-verdict')).toHaveTextContent('Order: by the high end of potential savings');
   });
 });
+
+describe('RunVerdict Copy next steps', () => {
+  it('copies the whole plan as a checklist: run, verdict, numbered steps with their stage, and what was not checked', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const caveat = {
+      type: 'memoryUtilization', variant: 'memoryBand', stageId: null, impactBand: 'info', dataUnavailable: true,
+      recommendation: 'Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true.',
+    } as Finding;
+    const model = { ...appModel(), app: { ...appModel().app, name: 'nightly-job' } } as AppModel;
+    renderVerdict([timed('skew', 7, 2_400), timed('spill', 3, 1_000, 'warning'), caveat], vi.fn(), model);
+
+    await user.click(screen.getByTestId('copy-plan-button'));
+    expect(writeText).toHaveBeenCalledWith([
+      'Spark run nightly-job: Start with Stage 7',
+      '',
+      '1. Fix task skew in Stage 7: Fix skew in Stage 7. Potential savings: 2.4s',
+      '2. Reduce spill in Stage 3: Fix spill in Stage 3. Potential savings: 1.0s',
+      '',
+      'Not checked on this log:',
+      '- Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true.',
+    ].join('\n'));
+    expect(screen.getByTestId('copy-plan-button')).toHaveTextContent('Copied');
+  });
+});
