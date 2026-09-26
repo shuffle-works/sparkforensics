@@ -295,3 +295,28 @@ test('the top bar count chip still lands when the filter empties the board', asy
   expect(screen.getByText('Cleared the info impact filter to show the critical findings.')).toBeInTheDocument();
   await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Critical' })));
 });
+
+test('in Basic view, a route that clears the last active filter hides the bar and its notice together', async () => {
+  const user = userEvent.setup();
+  Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: vi.fn() });
+  window.history.replaceState({}, '', '/?impact=info');
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any, widgetDensity: 'basic',
+    catalog: [
+      { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' },
+      { type: 'spill', stageId: 2, impactBand: 'info', recommendation: 'Fix spill.' },
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+  expect(screen.getByRole('region', { name: 'Filter findings' })).toBeInTheDocument();
+
+  const firstStep = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')[0];
+  await user.click(within(firstStep).getByRole('button', { name: /show evidence/i }));
+
+  expect(new URLSearchParams(window.location.search).get('impact')).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Filter findings' })).not.toBeInTheDocument();
+  expect(screen.queryByText(/Cleared the info impact filter/)).not.toBeInTheDocument();
+  // @ts-expect-error -- restore jsdom's default (no scrollIntoView)
+  delete Element.prototype.scrollIntoView;
+});

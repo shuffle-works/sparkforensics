@@ -182,6 +182,7 @@ function FilteredBoard({
   // matches, and must NOT show "No findings match".
   const totalFilteredCount = filteredCatalog.length + filteredConfig.length;
   const filteredToEmpty = (catalog.length + (configFindings ?? []).length) > 0 && totalFilteredCount === 0;
+  const showFilterBar = density === 'advanced' || !isEmptySelection(selection);
 
   return (
     <>
@@ -195,10 +196,10 @@ function FilteredBoard({
       {/* Filtering is a power control: Advanced mode shows it, and so does an
           active selection (e.g. from a shared URL), so a filtered board never
           hides the control that explains and clears it. */}
-      {(density === 'advanced' || !isEmptySelection(selection)) && (
-        <FindingFilterBar options={options} resultCount={totalFilteredCount} />
-      )}
-      {filterNotice?.selection === selection ? (
+      {showFilterBar && <FindingFilterBar options={options} resultCount={totalFilteredCount} />}
+      {/* The notice explains what the bar lost, so it goes when the bar does
+          (Basic view once a route cleared the last active filter). */}
+      {showFilterBar && filterNotice?.selection === selection ? (
         <p role="status" className="text-sm text-muted-foreground">{filterNotice.text}</p>
       ) : null}
       {filteredToEmpty && <NoMatchBanner />}
