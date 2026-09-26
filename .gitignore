@@ -26,6 +26,9 @@ dist/
 # Built by `npm run build:export`, vendored into packages/cli/export-template/
 # at packages/cli's prepack time (see scripts/vendor-export-template.mjs).
 dist-export/
+# Scratch outDir of the template build `npm run build` runs; removed once
+# dist/export-template.html is written (see vite.export.config.ts).
+dist-export-template/
 
 dev/component-capture/output/
 

@@ -50,7 +50,7 @@
     "split-detection-docs": "node scripts/split-detection-docs.mjs",
     "prepare": "git config core.hooksPath .githooks",
     "dev": "vite",
-    "build": "npm run docs:build && vite build",
+    "build": "npm run docs:build && vite build && vite build --config vite.export.config.ts --mode template",
     "build:export": "DOCS_MPA=1 npm run docs:build && vite build --config vite.export.config.ts",
     "preview": "vite preview",
     "docs:dev": "node scripts/fetch-tuning-docs.mjs --allow-stale && node scripts/build-tuning-reference.mjs && vitepress dev docs-site",
