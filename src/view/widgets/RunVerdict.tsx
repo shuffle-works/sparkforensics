@@ -14,6 +14,7 @@ import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { useWidgetDensity } from '@/store/store';
 import { REGISTRY } from '@/view/detector-registry';
 import { useOptionalDocs } from '@/view/DocsContext';
+import { docsHref } from '@/view/docs-href';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
@@ -229,7 +230,7 @@ function NewcomerPrimer() {
             serious each finding is. When a finding shows a time-savings figure, its color usually follows that figure.
           </p>
           <a
-            href={UNDERSTANDING_FINDINGS_URL}
+            href={docsHref(UNDERSTANDING_FINDINGS_URL)}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block text-primary underline-offset-4 hover:underline"

@@ -5,6 +5,8 @@ import { decodeRunPayload } from '@/export/hydrate-store';
 import { buildExportRunData, type ExportRunData } from '@sparkforensics/core/export-data.ts';
 import type { AppModel } from '@sparkforensics/core/types.ts';
 import { emptyAppModel } from '@/store/store';
+import { inlineRunPayload } from '@/export/single-file';
+import { encodeRunPayload } from '@sparkforensics/core/html-export.ts';
 
 function sampleData(overrides: Partial<ExportRunData> = {}): ExportRunData {
   return {
@@ -55,4 +57,26 @@ test('revives the Maps the CLI tags, so a widget can call .values() on app.rddIn
   const decoded = decodeRunPayload(encode(data));
   expect(decoded.app?.rddInfo).toBeInstanceOf(Map);
   expect([...(decoded.app!.rddInfo as Map<number, unknown>).values()]).toEqual([...rddInfo.values()]);
+});
+
+test('decodes the browser-side encoder (fflate gzip + chunked base64) of a multi-chunk payload', () => {
+  // Big enough that the gzip output spans several base64 conversion slices.
+  const stages = Array.from({ length: 4000 }, (_, i) => ({ id: i, name: `stage ${i} ${Math.random()}` }));
+  const data = sampleData({ stages: stages as unknown as ExportRunData['stages'] });
+  expect(decodeRunPayload(encodeRunPayload(data))).toEqual(data);
+});
+
+test('inlineRunPayload replaces the data.js tag with an inline script carrying the payload', () => {
+  const template = '<head></head><body><script src="./data.js"></script><script type="module">app()</script></body>';
+  const html = inlineRunPayload(template, encodeRunPayload(sampleData()));
+  expect(html).not.toContain('data.js');
+  expect(html).toMatch(/^<head><\/head><body><script>window\.__SPARKFORENSICS_PUBLISHED_DOCS__ = true;\n/);
+  expect(html.endsWith('";</script><script type="module">app()</script></body>')).toBe(true);
+});
+
+test('inlineRunPayload refuses a template without exactly one data.js tag', () => {
+  // A dev server answers the template request with the app's own index.html.
+  expect(() => inlineRunPayload('<html><body></body></html>', 'AAAA')).toThrow(/template/);
+  const tag = '<script src="./data.js"></script>';
+  expect(() => inlineRunPayload(`${tag}${tag}`, 'AAAA')).toThrow(/template/);
 });

@@ -7,6 +7,7 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider, useDocs } from '@/view/DocsContext';
 import { DocsSheet } from '@/view/DocsSheet';
 import { TagBadge } from '@/view/ImpactBadge';
+import { docsHref, setPublishedDocs } from '@/view/docs-href';
 import { docsUrl } from '@sparkforensics/core/docs-config.ts';
 import type { ImpactBand } from '@sparkforensics/core/types.ts';
 
@@ -276,5 +277,43 @@ describe('DocsSheet Escape inside the docs frame', () => {
     search.remove();
     act(() => { frameDoc.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); });
     expect(screen.getByTestId('is-open')).toHaveTextContent('false');
+  });
+});
+
+// A single-file HTML download has no docs/ folder beside it, so the export
+// app flips docs-href to the published sites (see src/view/docs-href.ts).
+describe('published docs (single-file HTML export)', () => {
+  const TUNING = 'https://shuffle-works.github.io/spark-tuning-reference/';
+  const GUIDE = 'https://shuffle-works.github.io/sparkforensics/docs/';
+
+  it('maps the tuning reference and the guide to their published sites', () => {
+    setPublishedDocs(true);
+    try {
+      expect(docsHref(docsUrl('#bottleneck-skew'))).toBe(`${TUNING}bottleneck-skew.html#bottleneck-skew`);
+      expect(docsHref('docs/user-guide/understanding-findings.html#skew')).toBe(`${GUIDE}user-guide/understanding-findings.html#skew`);
+      expect(docsHref('docs/')).toBe(GUIDE);
+    } finally {
+      setPublishedDocs(false);
+    }
+    expect(docsHref('docs/')).toBe('docs/');
+  });
+
+  it('points the panel iframe and the tag links at the published docs', async () => {
+    const user = userEvent.setup();
+    setPublishedDocs(true);
+    store.getState().setWidgetDensity('advanced');
+    try {
+      renderLegendAndSheet([{ type: 'skew', impactBand: 'warning' }]);
+      const guideLink = screen.getByRole('link', { name: /sparkforensics guide: task skew/i });
+      expect(guideLink).toHaveAttribute('href', `${GUIDE}user-guide/understanding-findings.html#skew`);
+
+      await user.click(guideLink);
+      expect(document.querySelector('iframe')?.getAttribute('src')).toBe(
+        `${GUIDE}user-guide/understanding-findings.html?t=dark#skew`,
+      );
+    } finally {
+      setPublishedDocs(false);
+      store.getState().setWidgetDensity('basic');
+    }
   });
 });

@@ -21,6 +21,7 @@ import { KeyboardShortcutsDialog } from '@/view/KeyboardShortcutsDialog';
 import { WidgetDensityControl, WidgetDensityMenuItem } from '@/view/WidgetDensityControl';
 import { store, useStore } from '@/store/store';
 import { useTheme } from '@/theme/ThemeProvider';
+import { docsHref } from '@/view/docs-href';
 import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import { stageIdsForSqlExec } from '@sparkforensics/core/detectors.ts';
 import { cn } from '@/lib/utils';
@@ -313,7 +314,7 @@ export function Topbar({
             aria-label="Docs"
             title="Read the docs"
             nativeButton={false}
-            render={<a href={DOCS_SITE_ROOT} target="_blank" rel="noopener noreferrer" />}
+            render={<a href={docsHref(DOCS_SITE_ROOT)} target="_blank" rel="noopener noreferrer" />}
           >
             <FileText aria-hidden="true" />
           </Button>
@@ -379,7 +380,7 @@ export function Topbar({
             {!sectionControls ? <WidgetDensityMenuItem /> : null}
             <DropdownMenuItem
               nativeButton={false}
-              render={<a href={DOCS_SITE_ROOT} target="_blank" rel="noopener noreferrer" />}
+              render={<a href={docsHref(DOCS_SITE_ROOT)} target="_blank" rel="noopener noreferrer" />}
             >
               Docs
             </DropdownMenuItem>
