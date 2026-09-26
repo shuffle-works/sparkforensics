@@ -11,8 +11,9 @@ The dialog is titled "Stage N", with Spark's stage name (the code line that
 created the stage) as a labelled "Code location" description. Its body opens
 with one sentence placing the stage in the run (duration, share of the run's
 wall-clock, task count, how many finding types it carries), then lists each
-finding type the way `RunVerdict` lists a step: tag and action label, the
-`TAG_HELP` plain explanation, "What to try", the impact estimate, and a
+finding type at the stage (`locationKey`'s rule, the one the verdict groups
+steps by: a `stageId` match, or a `stageIds` list naming only this stage)
+the way `RunVerdict` lists a step: tag and action label, the `TAG_HELP` plain explanation, "What to try", the impact estimate, and a
 **Show evidence** button. Types follow the verdict's own order
 (`buildNextSteps`: potential savings first, failure findings first on a run
 whose jobs failed), with types the verdict can't route after them, worst band
