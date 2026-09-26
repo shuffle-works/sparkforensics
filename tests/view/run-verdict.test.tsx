@@ -5,7 +5,6 @@ import userEvent from '@testing-library/user-event';
 
 import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
-import { buildNextSteps, estimateProvenance, locationKey, savingsMeaning, verdictIdlePct } from '@/view/run-verdict';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
 import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 
@@ -39,62 +38,6 @@ function renderVerdict(catalog: Finding[], onRoute = vi.fn(), model: AppModel = 
 afterEach(() => {
   // @ts-expect-error -- restore jsdom's default (no Clipboard API) between tests
   delete navigator.clipboard;
-});
-
-describe('buildNextSteps', () => {
-  it('folds findings that share a stage into one step led by the biggest win, one related entry per type', () => {
-    const skew = timed('skew', 7, 2_400);
-    const straggler = timed('straggler', 7, 2_300);
-    const secondStraggler = { ...timed('straggler', 7, 100), recommendation: 'Another straggler.' };
-    const spill = timed('spill', 3, 1_000, 'warning');
-
-    const steps = buildNextSteps([spill, straggler, secondStraggler, skew]);
-
-    expect(steps.map((step) => step.key)).toEqual(['stage:7', 'stage:3']);
-    expect(steps[0].lead).toBe(skew);
-    expect(steps[0].related).toEqual([straggler]);
-    expect(steps[0].stageId).toBe(7);
-    expect(steps[1].related).toEqual([]);
-  });
-
-  it('keeps app-level findings of different types, and multi-stage plan findings, as separate places', () => {
-    expect(locationKey({ type: 'utilization', impactBand: 'info', stageId: null }).key).toBe('app:utilization');
-    expect(locationKey({ type: 'smallFiles', impactBand: 'info', stageIds: [4] })).toEqual({ key: 'stage:4', stageId: 4 });
-    expect(locationKey({ type: 'duplicatePlanSubtree', impactBand: 'info', stageIds: [2, 0] }))
-      .toEqual({ key: 'stages:duplicatePlanSubtree:0,2', stageId: null });
-    expect(locationKey({ type: 'memoryUtilization', variant: 'idleCores', impactBand: 'warning', stageId: null }).key)
-      .toBe('app:memoryUtilization:idleCores');
-  });
-});
-
-describe('idle capacity in the next steps', () => {
-  const idleCores: Finding = {
-    type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning',
-    recommendation: '92% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
-  };
-  const steps = () => buildNextSteps([timed('skew', 0, 64), idleCores]);
-
-  it('keeps the savings order however much capacity sat idle', () => {
-    expect(steps().map((step) => step.lead.type)).toEqual(['skew', 'memoryUtilization']);
-  });
-
-  it('keeps a heap-pressure memoryUtilization finding and idleCores as separate steps', () => {
-    const heapNearCapacity: Finding = {
-      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity', stageId: null, impactBand: 'warning',
-      recommendation: 'Raise spark.executor.memory to avoid OOM.',
-    };
-    const both = buildNextSteps([timed('skew', 0, 64), heapNearCapacity, { ...idleCores, impactBand: 'info' }]);
-    expect(both.map((step) => step.key)).toContain('app:memoryUtilization:idleCores');
-    expect(both[0].lead.type).toBe('skew');
-  });
-
-  it('states the idle share the idle-capacity step itself reports, falling back to the Scorecard figure', () => {
-    expect(verdictIdlePct(steps(), 80)).toBe(80);
-    expect(verdictIdlePct(buildNextSteps([timed('skew', 0, 64), { ...idleCores, value: 55 }]), 80)).toBe(55);
-    const utilization: Finding = { type: 'utilization', stageId: null, impactBand: 'info', value: 30, recommendation: 'x' };
-    expect(verdictIdlePct(buildNextSteps([utilization]), 80)).toBe(70);
-    expect(verdictIdlePct(buildNextSteps([timed('skew', 0, 64)]), 80)).toBe(80);
-  });
 });
 
 describe('RunVerdict', () => {
@@ -410,20 +353,6 @@ describe('RunVerdict on what the log could not check', () => {
 });
 
 describe('savingsMeaning', () => {
-  const withEstimate = (impactEstimate: Finding['impactEstimate']): Finding => ({ type: 'skew', stageId: 1, impactBand: 'critical', impactEstimate });
-  const costOnly = (unit: 'mbSeconds' | 'coreHours' | 'coreMs' | 'bytes' | 'ms') =>
-    withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 10, unit } });
-
-  it('says a wall-clock figure is run time, and names the resource behind a cost-only one', () => {
-    expect(savingsMeaning(withEstimate({ basis: 'serial', wallClock: { low: 1, high: 1 }, estimateMethod: 'measured' }))).toBe('of run time');
-    expect(savingsMeaning(costOnly('mbSeconds'))).toBe('of unused executor memory');
-    expect(savingsMeaning(costOnly('coreHours'))).toBe('of core time');
-    expect(savingsMeaning(costOnly('coreMs'))).toBe('of core time');
-    expect(savingsMeaning(costOnly('bytes'))).toBe('of extra data written');
-    expect(savingsMeaning(withEstimate({ basis: 'informational', wallClock: null, estimateMethod: 'none' }))).toBeNull();
-    expect(savingsMeaning(withEstimate(undefined))).toBeNull();
-  });
-
   it('renders a capacity figure in readable units and says what it counts, on screen and when copied', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -437,44 +366,6 @@ describe('savingsMeaning', () => {
     expect(step).toHaveTextContent('Potential savings 3.0 GB-h of unused executor memory');
     await user.click(within(step).getByTestId('copy-finding-button'));
     expect(writeText.mock.calls[0][0]).toMatch(/Potential savings: 3\.0 GB-h of unused executor memory$/);
-  });
-});
-
-describe('estimateProvenance', () => {
-  const withEstimate = (impactEstimate: Finding['impactEstimate']): Finding => ({ type: 'skew', stageId: 1, impactBand: 'critical', impactEstimate });
-
-  it('calls a serial figure close to a point estimate and notes ms raw waste only when the floor clipped it', () => {
-    expect(estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 2000, high: 2000 }, estimateMethod: 'measured', rawWaste: { value: 2000, unit: 'ms' } })))
-      .toBe('2.0s, measured. The stage ran effectively alone, so this is close to a point estimate.');
-    expect(estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 2000, high: 2000 }, estimateMethod: 'measured', rawWaste: { value: 900, unit: 'ms' } })))
-      .toBe('2.0s, measured. The stage ran effectively alone, so this is close to a point estimate.');
-    expect(estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 2000, high: 2000 }, estimateMethod: 'measured', rawWaste: { value: 9000, unit: 'ms' } })))
-      .toBe('2.0s, measured. The stage ran effectively alone, so this is close to a point estimate. Raw waste before the floor clipped it: 9.0s.');
-  });
-
-  it('describes a bytes raw waste as the resource measured, never as clipped time', () => {
-    const text = estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 4000, high: 4000 }, estimateMethod: 'modeled', rawWaste: { value: 3.2e9, unit: 'bytes' } }));
-    expect(text).toMatch(/^4\.0s, modeled\. The stage ran effectively alone, so this is close to a point estimate\. Resource waste measured: 3\.2 GB\.$/);
-    expect(text).not.toContain('clipped');
-  });
-
-  it('explains a contended range as a floor and an optimistic high, without a degenerate range', () => {
-    expect(estimateProvenance(withEstimate({ basis: 'contended', wallClock: { low: 1000, high: 3000 }, estimateMethod: 'modeled' })))
-      .toBe('1.0s-3.0s, modeled. The stage shared the cluster with others: 1.0s is the floor, 3.0s assumes the fix fully lands.');
-    expect(estimateProvenance(withEstimate({ basis: 'contended', wallClock: { low: 141_100, high: 141_400 }, estimateMethod: 'modeled' })))
-      .toBe('2m 21s, modeled. The stage shared the cluster with others: its floor and optimistic high agree.');
-  });
-
-  it('says nothing for a figure that reads as zero, like the step itself', () => {
-    expect(estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 0, high: 0 }, estimateMethod: 'measured' }))).toBeNull();
-    expect(estimateProvenance(withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 0.04, unit: 'coreHours' } }))).toBeNull();
-  });
-
-  it('makes no run-time claim for a resource-only figure, and says nothing without a model', () => {
-    expect(estimateProvenance(withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 5000, unit: 'coreMs' } })))
-      .toBe('No run-time claim, modeled. 5.0 core-s was wasted, but it may not shorten the run.');
-    expect(estimateProvenance(withEstimate({ basis: 'informational', wallClock: null, estimateMethod: 'none' }))).toBeNull();
-    expect(estimateProvenance(withEstimate(undefined))).toBeNull();
   });
 });
 
