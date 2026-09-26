@@ -45,7 +45,7 @@ interface State {
   compareLoad: { current: 1 | 2 } | null;
   /** A run already parsed this session that the landing's compare view
    * should open with as Run A ("Compare with another run" on a dashboard).
-   * Consumed, and cleared, by CompareLanding. */
+   * Cleared when that comparison opens or the reader leaves the seeded view. */
   compareSeed: { id: string; label: string } | null;
   setCompareSeed: (seed: { id: string; label: string } | null) => void;
   openComparison: (baselineId: string, candidateId: string) => void;

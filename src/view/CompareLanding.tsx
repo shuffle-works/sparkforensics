@@ -161,12 +161,9 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
   const { startCompareLoad, drillIntoRun } = useIngest();
   const { theme, toggle } = useTheme();
   // A dashboard's "Compare with another run" leaves its run here as Run A.
-  // Read once on mount and cleared, so a later visit to the landing starts
-  // plain.
+  // It stays in the store until the comparison opens or the reader leaves
+  // it, so a failed Run B load remounts this view still seeded.
   const [seed] = useState(() => store.getState().compareSeed);
-  useEffect(() => {
-    if (seed) store.getState().setCompareSeed(null);
-  }, [seed]);
   const [compareMode, setCompareMode] = useState(seed != null);
   const [a, setA] = useState<RunSource | null>(seed ? { kind: 'cached', ...seed } : null);
   const [b, setB] = useState<RunSource | null>(null);
@@ -231,6 +228,7 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
           onClick={() => {
             // Opened from a run's dashboard: Cancel goes back to it.
             if (seededRunKept) {
+              store.getState().setCompareSeed(null);
               drillIntoRun(seed.id);
               return;
             }
@@ -251,7 +249,7 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
           <p className="mb-2 text-sm font-medium text-muted-foreground">Run A (baseline)</p>
-          <Slot testId="compare-slot-a" ariaLabel="Run A" source={a} onPick={setA} onChange={() => setA(null)} />
+          <Slot testId="compare-slot-a" ariaLabel="Run A" source={a} onPick={setA} onChange={() => { store.getState().setCompareSeed(null); setA(null); }} />
         </div>
         <div>
           <p className="mb-2 text-sm font-medium text-muted-foreground">Run B (candidate)</p>

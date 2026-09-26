@@ -317,6 +317,7 @@ export function useIngest(opts: Opts = {}) {
         // both runs are already cached via snapshotParsedRun, and re-snapshotting
         // b.id off the store's empty top-level catalog would clobber b's snapshot.
         store.getState().setActiveFile(null);
+        store.getState().setCompareSeed(null);
         store.getState().openComparison(a.id, b.id);
       });
     });

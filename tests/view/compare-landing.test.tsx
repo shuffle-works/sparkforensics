@@ -39,6 +39,7 @@ vi.mock('@sparkforensics/core/recent-files.ts', () => ({
 beforeEach(() => {
   startCompareLoad.mockClear();
   store.getState().setTheme('dark');
+  store.setState({ compareSeed: null });
 });
 
 function renderLanding(props: { errorMessage?: string | null; errorNonce?: number } = {}) {
@@ -158,9 +159,34 @@ test('opened from a dashboard, compare mode starts with that run as Run A and Ba
   expect(screen.getByRole('heading', { name: 'Compare two runs' })).toBeInTheDocument();
   expect(within(screen.getByTestId('compare-slot-a')).getByText('first-run.log')).toBeInTheDocument();
   expect(screen.getByText(/Run A is the run you had open/)).toBeInTheDocument();
-  // The seed is consumed: a later visit to the landing starts plain.
-  expect(store.getState().compareSeed).toBeNull();
 
   await user.click(screen.getByRole('button', { name: 'Back to the run' }));
   expect(drillIntoRun).toHaveBeenCalledWith('a::1::2');
+  // Leaving the seeded view clears it: a later visit to the landing starts plain.
+  expect(store.getState().compareSeed).toBeNull();
+});
+
+test('a failed Run B load remounts the seeded view with Run A still filled and Back to the run', () => {
+  store.setState({ compareSeed: { id: 'a::1::2', label: 'first-run.log' } });
+  const tree = <ThemeProvider><DocsProvider><CompareLanding /></DocsProvider></ThemeProvider>;
+  // The landing unmounts while the compare load shows progress, then mounts
+  // again with the error when Run B fails.
+  render(tree).unmount();
+  render(
+    <ThemeProvider><DocsProvider><CompareLanding errorMessage="Run B: could not parse." errorNonce={1} /></DocsProvider></ThemeProvider>,
+  );
+
+  expect(within(screen.getByTestId('compare-slot-a')).getByText('first-run.log')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Back to the run' })).toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent('Run B: could not parse.');
+});
+
+test('changing Run A in the seeded view clears the seed', async () => {
+  const user = userEvent.setup();
+  store.setState({ compareSeed: { id: 'a::1::2', label: 'first-run.log' } });
+  render(<ThemeProvider><DocsProvider><CompareLanding /></DocsProvider></ThemeProvider>);
+
+  await user.click(within(screen.getByTestId('compare-slot-a')).getByRole('button', { name: /change/i }));
+  expect(store.getState().compareSeed).toBeNull();
+  expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
 });

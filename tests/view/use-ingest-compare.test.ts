@@ -36,7 +36,7 @@ const fileSource = (id: string, name: string): RunSource => ({ kind: 'file', id,
 
 beforeEach(() => {
   store.getState().resetModel();
-  store.setState({ sessionCache: new Map(), activeFileId: null, appModel: emptyAppModel() });
+  store.setState({ sessionCache: new Map(), activeFileId: null, appModel: emptyAppModel(), compareSeed: null });
 });
 
 test('startCompareLoad parses A then B, snapshots both, opens the comparison', async () => {
@@ -193,6 +193,29 @@ test('startCompareLoad reuses a cached Run A: only Run B is parsed, and A is nev
   expect(startParse).toHaveBeenCalledTimes(1);
   expect(cache.sets.filter(([k]) => k === 'a::1::2')).toHaveLength(0);
   expect(store.getState().comparison).toEqual({ active: true, baselineId: 'a::1::2', candidateId: 'b::3::4' });
+});
+
+test('startCompareLoad keeps the compare seed when Run B fails, and clears it once the comparison opens', async () => {
+  const seed = { id: 'a::1::2', label: 'a.log' };
+  const cache = new Map<string, SessionSnapshot>([['a::1::2', { appModel: emptyAppModel() } as unknown as SessionSnapshot]]);
+  const failing = { ...makeFakeClient([]), startParse: (_f: File, h: any) => h.onError?.(new Error('bad log')) };
+  store.setState({ sessionCache: cache, compareSeed: seed });
+  const failed = renderHook(() => useIngest({ makeClient: () => failing as any }));
+  await act(async () => {
+    failed.result.current.startCompareLoad({ kind: 'cached', ...seed }, fileSource('b::3::4', 'b.log'));
+    await Promise.resolve();
+  });
+  expect(store.getState().compareLoad).toBeNull();
+  expect(store.getState().comparison.active).toBe(false);
+  expect(store.getState().compareSeed).toEqual(seed);
+
+  const ok = renderHook(() => useIngest({ makeClient: () => makeFakeClient(['B']) as any }));
+  await act(async () => {
+    ok.result.current.startCompareLoad({ kind: 'cached', ...seed }, fileSource('b::3::4', 'b.log'));
+    await Promise.resolve();
+  });
+  expect(store.getState().comparison.active).toBe(true);
+  expect(store.getState().compareSeed).toBeNull();
 });
 
 test('startCompareLoad reports a cached Run A that is no longer loaded instead of comparing', async () => {
