@@ -7,6 +7,7 @@ import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { IMPACT_BG_CLASS, IMPACT_TEXT_CLASS, ImpactDot } from '@/view/ImpactBadge';
 import { useWidgetDensity } from '@/store/store';
+import { hasFinishedStage } from '@/view/run-verdict';
 import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates';
 
 // Run-info stats row: wall-clock, efficiency, unused core time (not problem
@@ -132,7 +133,10 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
   const estimates = getScorecardEstimates(appModel);
 
   const total = wc.total;
-  const efficiency = estimates.efficiency.value;
+  // No stage recorded an end: "0%" would grade a run nothing measured (the
+  // verdict says the stage checks had nothing to measure).
+  const measured = hasFinishedStage(stages);
+  const efficiency = measured ? estimates.efficiency.value : null;
   const effFlag: FlagImpactBand = efficiency == null ? null : efficiency < 75 ? 'critical' : efficiency < 90 ? 'warning' : null;
 
   const coldStart = catalog.find((f) => f.type === 'coldStart');
@@ -168,10 +172,12 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
         <KpiTile
           eyebrow="Efficiency"
           dataTestid="kpi-efficiency"
-          value={efficiency == null ? 'Unavailable' : (<>{efficiency}<small>%</small></>)}
+          value={!measured ? 'Not measured' : efficiency == null ? 'Unavailable' : (<>{efficiency}<small>%</small></>)}
           flag={effFlag}
           meta={
-            efficiency == null
+            !measured
+              ? 'No stage in this log recorded an end, so there is no stage time to measure.'
+              : efficiency == null
               ? 'This run has no complete application timing interval.'
               : density !== 'advanced'
                 ? 'Share of the run with a stage running. Higher is better.'

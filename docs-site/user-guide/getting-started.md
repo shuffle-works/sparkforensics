@@ -124,7 +124,8 @@ Below it, two tabs split the rest of the board:
 Click a finding's documentation link (or the topbar's **Docs** button) to
 open the reference material in a slide-in panel beside the dashboard: the
 dashboard stays visible and interactive, so you can check a metric against
-the reference without losing your place.
+the reference without losing your place. Esc closes the panel, even while
+you are reading or scrolling inside it.
 
 ### Advanced view
 

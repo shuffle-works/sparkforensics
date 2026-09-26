@@ -47,7 +47,12 @@ test('spells out zero stage activity instead of the "no measurable value" dash, 
   store.getState().setWidgetDensity('advanced');
   try {
     render(<Scorecard appModel={makeAppModel({ stages: new Map() })} catalog={[]} />);
-    expect(screen.getAllByTestId('kpi-efficiency')[1]).toHaveTextContent(/No stage activity recorded · 1m 0s idle\/gap time/);
+    // With no finished stage there is nothing to grade: no "0%", in either view.
+    for (const tile of screen.getAllByTestId('kpi-efficiency')) {
+      expect(tile).toHaveTextContent('Not measured');
+      expect(tile).toHaveTextContent('No stage in this log recorded an end');
+      expect(tile).not.toHaveTextContent('%');
+    }
   } finally {
     store.getState().setWidgetDensity('basic');
   }
