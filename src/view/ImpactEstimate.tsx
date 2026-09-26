@@ -45,7 +45,7 @@ export function formatRawWaste(rawWaste: RawWasteFigure): string {
 // entire decimal part (all zeros) before the terminator: otherwise a real
 // value like "0.5 core-h" leaves the "." unconsumed, and the terminator
 // char class excludes ".", so it correctly fails to match.
-function readsAsZero(formatted: string): boolean {
+export function readsAsZero(formatted: string): boolean {
   return /^0(\.0+)?(?:[^0-9.]|$)/.test(formatted);
 }
 

@@ -11,7 +11,7 @@ import { REGISTRY } from '@/view/detector-registry';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePill, StagePillGroup } from '@/view/StagePill';
-import { formatRawWaste, formatWallClockRange } from '@/view/ImpactEstimate';
+import { formatRawWaste, formatWallClockRange, readsAsZero } from '@/view/ImpactEstimate';
 import { RowPagination } from '@/view/RowPagination';
 import { selectTriageTarget, selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 
@@ -24,7 +24,7 @@ const PAGE_SIZE = 10;
 // every figure still renders exactly once.
 const STACKED_ROW = 'max-sm:flex max-sm:flex-wrap max-sm:items-start';
 const STACKED_TAG_CELL = 'max-sm:w-auto max-sm:shrink-0';
-const STACKED_TEXT_CELL = 'max-sm:min-w-0 max-sm:flex-1';
+const STACKED_TEXT_CELL = 'max-sm:min-w-0 max-sm:flex-1 max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]';
 const STACKED_TRAILING_CELL = 'max-sm:w-full max-sm:basis-full max-sm:pt-0 max-sm:text-left';
 
 // Wraps the core `isEligible` with the one check that module can't do itself:
@@ -43,13 +43,17 @@ export function groupImpactBand(group: RollupGroup): Finding['impactBand'] {
 
 /** The row's one-line impact figure: the wall-clock range for a time-based
  * finding, the raw resource figure for a `resourceOnly` one, or nothing for a
- * purely informational estimate. Reuses `ImpactEstimate.tsx`'s formatters so
- * the units/rounding match every other surface. */
+ * purely informational estimate or a raw figure that rounds to zero ("0.0
+ * core-h" reads as a measured nothing). Reuses `ImpactEstimate.tsx`'s
+ * formatters so the units/rounding match every other surface. */
 export function impactFigure(finding: Finding): string | null {
   const estimate = finding.impactEstimate;
   if (!estimate) return null;
   if (estimate.wallClock) return formatWallClockRange(estimate.wallClock.low, estimate.wallClock.high);
-  if (estimate.rawWaste) return formatRawWaste(estimate.rawWaste);
+  if (estimate.rawWaste) {
+    const text = formatRawWaste(estimate.rawWaste);
+    return readsAsZero(text) ? null : text;
+  }
   return null;
 }
 

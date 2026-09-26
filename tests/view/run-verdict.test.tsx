@@ -263,3 +263,53 @@ describe('RunVerdict', () => {
     }
   });
 });
+
+describe('RunVerdict on a failed run', () => {
+  type JobRow = { id: number; stageIds: number[]; result: string | null; succeeded: boolean | null; exception: unknown };
+  function withJobs(jobs: JobRow[]): AppModel {
+    const model = appModel();
+    return {
+      ...model,
+      jobs: new Map(jobs.map((job) => [job.id, { submissionTime: 0, sqlExecutionId: null, completionTime: 1, ...job }])),
+    } as AppModel;
+  }
+  const failedJob = (id: number, stageIds: number[], exception: unknown = null): JobRow => ({
+    id, stageIds, result: 'JobFailed', succeeded: false, exception,
+  });
+  const okJob = (id: number): JobRow => ({ id, stageIds: [], result: 'JobSucceeded', succeeded: true, exception: null });
+  const stageFailed = (stageId: number, reason: string): Finding => ({
+    type: 'stageFailed', stageId, impactBand: 'critical', metric: 'stageFailureReason', value: reason,
+    recommendation: 'This stage attempt failed outright.',
+  });
+
+  it('says the run failed, quotes Spark\'s reason for the failed job\'s stage, and puts the failure ahead of bigger savings', () => {
+    renderVerdict(
+      [timed('skew', 7, 9_000), stageFailed(4, 'Unrelated retry'), stageFailed(13, 'Fetch failed: executor lost\n\tat Frame.run')],
+      vi.fn(),
+      withJobs([failedJob(1, [13])]),
+    );
+
+    expect(screen.getByRole('heading', { level: 2, name: 'This run failed: its job did not finish' })).toBeInTheDocument();
+    expect(screen.getByTestId('run-failure-reason')).toHaveTextContent("Spark's recorded reason: Fetch failed: executor lost");
+    expect(screen.getByTestId('run-failure-reason')).not.toHaveTextContent('Frame.run');
+    const verdict = screen.getByTestId('run-verdict');
+    expect(verdict).toHaveTextContent('Fix the failure before tuning: the other findings cover only the work that ran.');
+    expect(verdict).not.toHaveTextContent('The first fix could save');
+    const steps = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step');
+    expect(steps[0]).toHaveTextContent('Inspect stage failure in Stage 13');
+  });
+
+  it('counts a partial failure, falls back to the job exception, and never calls the run clean', () => {
+    renderVerdict([], vi.fn(), withJobs([okJob(1), failedJob(2, [], 'Job aborted: out of memory'), okJob(3)]));
+
+    expect(screen.getByRole('heading', { level: 2, name: '1 of 3 jobs failed in this run' })).toBeInTheDocument();
+    expect(screen.getByTestId('run-failure-reason')).toHaveTextContent('Job aborted: out of memory');
+    expect(screen.getByTestId('run-verdict')).not.toHaveTextContent('Every check passed');
+  });
+
+  it('says every job succeeded on a run that finished', () => {
+    renderVerdict([timed('skew', 7, 2_400)], vi.fn(), withJobs([okJob(1), okJob(2)]));
+    expect(screen.getByTestId('run-verdict')).toHaveTextContent('All 2 jobs succeeded.');
+    expect(screen.queryByTestId('run-failure-reason')).not.toBeInTheDocument();
+  });
+});

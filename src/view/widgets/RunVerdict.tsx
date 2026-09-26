@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleCheck, CopyIcon } from 'lucide-react';
+import { ArrowRight, CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleCheck, CircleX, CopyIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { copyText } from '@/lib/clipboard';
@@ -11,6 +11,7 @@ import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import { useWidgetDensity } from '@/store/store';
 import { REGISTRY } from '@/view/detector-registry';
 import { useOptionalDocs } from '@/view/DocsContext';
+import { FAILURE_TYPES, summarizeRunOutcome, type RunOutcome } from '@/view/run-outcome';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
@@ -41,14 +42,6 @@ function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
-/** A savings figure worth printing: a raw-waste figure that rounds to zero
- * ("0.0 core-h") reads as a broken number, so it is dropped. */
-function visibleImpact(finding: Finding): string | null {
-  const rawWaste = finding.impactEstimate?.rawWaste;
-  if (!finding.impactEstimate?.wallClock && rawWaste && Math.round(rawWaste.value * 10) === 0) return null;
-  return impactFigure(finding);
-}
-
 /** The run facts the verdict's wording depends on, read once. */
 interface RunFacts {
   /** Wall-clock of the whole run, or null with no complete timing interval. */
@@ -57,11 +50,25 @@ interface RunFacts {
   idlePct: number | null;
   /** The log has no end-of-run record, so it covers only part of the run. */
   incomplete: boolean;
-  /** No finding at all, ranked or not: the only state the verdict calls clean. */
+  /** No finding at all, ranked or not, and no failed job: the only state the
+   * verdict calls clean. */
   clean: boolean;
+  outcome: RunOutcome;
+}
+
+function isFailedRun(facts: RunFacts): boolean {
+  return facts.outcome.failedJobs > 0;
+}
+
+/** The failed-run title: the one thing a newcomer must know before any
+ * tuning advice is that the job did not finish. */
+function failedTitle({ failedJobs, totalJobs }: RunOutcome): string {
+  if (failedJobs < totalJobs) return `${failedJobs} of ${totalJobs} jobs failed in this run`;
+  return totalJobs === 1 ? 'This run failed: its job did not finish' : `This run failed: all ${totalJobs} jobs did not finish`;
 }
 
 function verdictTitle(eligible: Finding[], steps: NextStep[], facts: RunFacts): string {
+  if (isFailedRun(facts)) return failedTitle(facts.outcome);
   if (eligible.length === 0 && facts.incomplete) return 'This log looks incomplete, so results cover only part of the run';
   if (eligible.length === 0 && !facts.clean) return 'Nothing to fix, but some checks could not run on this log';
   if (eligible.length === 0) return 'No findings to fix right now.';
@@ -79,7 +86,16 @@ function verdictTitle(eligible: Finding[], steps: NextStep[], facts: RunFacts): 
  * enough to matter but did not lead (the title already says it when it did). */
 function verdictSummary(eligible: Finding[], steps: NextStep[], facts: RunFacts): string[] {
   const sentences: string[] = [];
+  const { failedJobs, totalJobs } = facts.outcome;
+  if (failedJobs > 0) {
+    if (eligible.some((finding) => !FAILURE_TYPES.has(finding.type))) {
+      sentences.push('Fix the failure before tuning: the other findings cover only the work that ran.');
+    }
+  } else if (totalJobs > 0 && !facts.incomplete) {
+    sentences.push(totalJobs === 1 ? 'Its one job succeeded.' : `All ${totalJobs} jobs succeeded.`);
+  }
   if (eligible.length === 0) {
+    if (failedJobs > 0) return sentences;
     if (facts.clean) sentences.push('Every check passed for this run.');
     else if (!facts.incomplete) sentences.push('See Findings for what they could not cover.');
   } else if (steps.length === 0) {
@@ -113,7 +129,7 @@ function verdictSummary(eligible: Finding[], steps: NextStep[], facts: RunFacts)
 function CopyStepButton({ finding }: { finding: Finding }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
-    const impact = visibleImpact(finding);
+    const impact = impactFigure(finding);
     const headline = `${findingActionLabel(finding)}: ${recommendationText(finding)}`;
     const summary = [/[.!?]$/.test(headline) ? headline : `${headline}.`, impact ? `Potential savings: ${impact}` : null]
       .filter(Boolean)
@@ -139,7 +155,7 @@ function NextStepItem({ step, index, onRoute }: { step: NextStep; index: number;
   const { openStage } = useStageDetail();
   const { finding } = step.lead;
   const help = TAG_HELP[typeTag(finding.type)];
-  const impact = visibleImpact(finding);
+  const impact = impactFigure(finding);
   const titleId = `next-step-${index}-title`;
   return (
     <li className="flex gap-3" data-testid="next-step" aria-labelledby={titleId}>
@@ -152,7 +168,7 @@ function NextStepItem({ step, index, onRoute }: { step: NextStep; index: number;
       >
         {index + 1}
       </span>
-      <div className="min-w-0 flex-1 space-y-1.5">
+      <div className="min-w-0 flex-1 space-y-1.5 [overflow-wrap:anywhere]">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
           <h3 id={titleId} className="text-sm font-semibold">
@@ -213,7 +229,7 @@ function NewcomerPrimer() {
     <div className="text-sm">
       <button
         type="button"
-        className="tap-target-comfortable inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="tap-target-comfortable inline-flex cursor-pointer items-center gap-1 rounded-sm text-left font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-expanded={open}
         aria-controls="newcomer-primer"
         onClick={() => setOpen((value) => !value)}
@@ -270,14 +286,18 @@ function NewcomerPrimer() {
 export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: RunVerdictProps) {
   const allFindings = [...catalog, ...configFindings];
   const eligible = allFindings.filter(isEligible);
-  const rankedSteps = buildNextSteps(eligible);
+  const outcome = summarizeRunOutcome(appModel.jobs, allFindings);
+  const failed = outcome.failedJobs > 0;
+  const rankedSteps = buildNextSteps(eligible, failed ? { failedJobStageIds: outcome.failedJobStageIds } : {});
   const facts: RunFacts = {
     runMs: hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null,
     idlePct: verdictIdlePct(rankedSteps, getScorecardEstimates(appModel).wastage.value),
     incomplete: catalog.some((finding) => finding.type === 'incompleteRun'),
-    clean: !allFindings.some(isRealFinding),
+    clean: !failed && !allFindings.some(isRealFinding),
+    outcome,
   };
-  const steps = prioritizeIdleCapacity(rankedSteps, facts.idlePct, facts.runMs);
+  // A failed run keeps its failure steps first; idle capacity never jumps them.
+  const steps = failed ? rankedSteps : prioritizeIdleCapacity(rankedSteps, facts.idlePct, facts.runMs);
   const shown = steps.slice(0, NEXT_STEP_LIMIT);
   const remaining = steps.length - shown.length;
   const { clean } = facts;
@@ -287,14 +307,27 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
     <section
       aria-labelledby="run-verdict-title"
       data-testid="run-verdict"
-      className={cn('space-y-4 rounded-xl border bg-card p-4 sm:p-5', clean ? 'border-clean/40' : 'border-border')}
+      className={cn(
+        'space-y-4 rounded-xl border bg-card p-4 sm:p-5',
+        clean ? 'border-clean/40' : failed ? 'border-critical/40' : 'border-border',
+      )}
     >
       <div className="space-y-1">
-        <h2 id="run-verdict-title" className={cn('flex items-center gap-2 font-heading text-lg font-semibold', clean && 'text-clean')}>
+        <h2
+          id="run-verdict-title"
+          className={cn('flex items-center gap-2 font-heading text-lg font-semibold', clean && 'text-clean', failed && 'text-critical')}
+        >
           {clean ? <CircleCheck aria-hidden="true" className="size-5 shrink-0" /> : null}
+          {failed ? <CircleX aria-hidden="true" className="size-5 shrink-0" /> : null}
           {verdictTitle(eligible, steps, facts)}
         </h2>
         <p className="max-w-prose text-sm text-muted-foreground">{verdictSummary(eligible, steps, facts).join(' ')}</p>
+        {outcome.reason ? (
+          <p data-testid="run-failure-reason" className="max-w-prose pt-1 text-sm">
+            <span className="font-medium">Spark's recorded reason: </span>
+            <code className="font-mono text-xs [overflow-wrap:anywhere]">{outcome.reason}</code>
+          </p>
+        ) : null}
       </div>
       {density === 'advanced' ? null : <NewcomerPrimer />}
       {shown.length > 0 ? (

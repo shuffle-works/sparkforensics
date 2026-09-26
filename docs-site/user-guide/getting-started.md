@@ -82,6 +82,12 @@ cause and their savings overlap rather than add up. When most of the run's
 executor capacity sat idle, the verdict starts with cluster size instead of
 a small per-stage fix.
 
+The verdict also says how the run ended. When every job succeeded it says
+so. When a job failed, the title says the run failed (or how many of its
+jobs did), quotes the first line of the reason Spark recorded, and puts the
+failure first in the next steps, ahead of any speed-up, since a job has to
+finish before its speed matters.
+
 A run scorecard sits under the verdict: **Wall-clock** (total run time),
 **Efficiency** (the share of that time with a stage running; higher is
 better) and **Unused core time** (driver idle plus executor slack across the

@@ -5,7 +5,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Table, TableBody } from '../../src/components/ui/table';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
-import { groupImpactBand, TypeGroupRow, useFixTheseFirstData } from '../../src/view/widgets/FixTheseFirst';
+import { groupImpactBand, impactFigure, TypeGroupRow, useFixTheseFirstData } from '../../src/view/widgets/FixTheseFirst';
 import { buildRecommendationRollup, type RollupGroup } from '@sparkforensics/core/recommendation-rollup.ts';
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 
@@ -316,5 +316,20 @@ describe('TypeGroupRow expand/collapse', () => {
     expect(screen.queryAllByTestId('fix-these-first-row')).toHaveLength(0);
     expect(container.querySelector('.lucide-chevron-down')).toBeInTheDocument();
     expect(container.querySelector('.lucide-chevron-up')).not.toBeInTheDocument();
+  });
+});
+
+describe('impactFigure', () => {
+  const withRawWaste = (value: number): Finding => ({
+    type: 'jobFailureRate', stageId: null, impactBand: 'critical', recommendation: 'Inspect the failed jobs.',
+    impactEstimate: { basis: 'resourceOnly', rawWaste: { value, unit: 'coreHours' }, estimateMethod: 'modeled' },
+  } as Finding);
+
+  it('prints a raw resource figure that has a real value', () => {
+    expect(impactFigure(withRawWaste(1.25))).toBe('1.3 core-h');
+  });
+
+  it('drops a raw figure that rounds to zero instead of printing "0.0 core-h"', () => {
+    expect(impactFigure(withRawWaste(0.04))).toBeNull();
   });
 });

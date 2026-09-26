@@ -540,9 +540,16 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    one-line notice naming what it cleared. The clean-run message ("No findings to fix right now.")
    lives here and shows only when no finding at all was emitted; an
    `incompleteRun` finding gets its own non-clean title and a sentence
-   saying the figures cover only the captured part of the run.
-2. `Scorecard`: a three-tile run-info row (Wall-clock, Efficiency, Idle
-   capacity; Basic view captions say what each measures and which direction
+   saying the figures cover only the captured part of the run. Job results
+   (`summarizeRunOutcome` in `src/view/run-outcome.ts`) set the run outcome:
+   with a failed job the title says the run failed, the verdict quotes the
+   first line of Spark's recorded reason (a failed job's `stageFailed`
+   value first, then any `stageFailed`, then the job exception), the run is
+   never called clean, and `buildNextSteps` ranks `stageFailed` and
+   `jobFailureRate` steps first (a failed job's stage leading) while
+   `prioritizeIdleCapacity` is skipped.
+2. `Scorecard`: a three-tile run-info row (Wall-clock, Efficiency, Unused
+   core time; Basic view captions say what each measures and which direction
    is better, Advanced view shows the raw run/idle breakdown),
    rendered once regardless of which tab is active.
 3. `FindingFilterBar`, only in Advanced view or while a filter is active

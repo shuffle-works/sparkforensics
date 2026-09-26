@@ -1,4 +1,5 @@
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { FAILURE_TYPES } from '@/view/run-outcome';
 import { rankTriageTargets, type TriageTarget } from '@/view/triage-target';
 
 /** How many next steps the verdict lists before pointing at the full list. */
@@ -32,12 +33,27 @@ export function locationKey(finding: Finding): { key: string; stageId: number | 
   return { key: finding.variant ? `app:${finding.type}:${finding.variant}` : `app:${finding.type}`, stageId: null };
 }
 
+/** 0 for a failure at a stage of a failed job (what stopped the job), 1 for
+ * any other failure finding, 2 for everything else. */
+function failureRank(finding: Finding, failedJobStageIds: ReadonlySet<number>): number {
+  if (!FAILURE_TYPES.has(finding.type)) return 2;
+  return typeof finding.stageId === 'number' && failedJobStageIds.has(finding.stageId) ? 0 : 1;
+}
+
 /** Groups every routeable finding by location, ordered by the location's
  * best-ranked finding (the same potential-savings ranking the triage route
- * uses), so step 1 is always the run's single biggest win. */
-export function buildNextSteps(findings: Finding[]): NextStep[] {
+ * uses), so step 1 is always the run's single biggest win. With
+ * `failedJobStageIds` (a run whose jobs failed), failure findings rank ahead
+ * of every savings figure and lead their location, those at a failed job's
+ * stage first: a speed-up is moot until the job finishes. */
+export function buildNextSteps(findings: Finding[], { failedJobStageIds }: { failedJobStageIds?: ReadonlySet<number> } = {}): NextStep[] {
+  const ranked = rankTriageTargets(findings);
+  // Array.prototype.sort is stable, so savings order holds within each rank.
+  const ordered = failedJobStageIds
+    ? [...ranked].sort((a, b) => failureRank(a.finding, failedJobStageIds) - failureRank(b.finding, failedJobStageIds))
+    : ranked;
   const steps = new Map<string, NextStep>();
-  for (const target of rankTriageTargets(findings)) {
+  for (const target of ordered) {
     const { key, stageId } = locationKey(target.finding);
     const existing = steps.get(key);
     if (!existing) {
