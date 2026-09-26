@@ -1,5 +1,17 @@
 # sparkforensics-analyze
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [8ad8560]
+- Updated dependencies [d7ea65a]
+- Updated dependencies [d7ea65a]
+- Updated dependencies [6b3c2ba]
+- Updated dependencies [3fbd34b]
+- Updated dependencies [6a8f927]
+  - sparkforensics-cli@0.4.0
+
 ## 0.3.0
 
 ### Patch Changes

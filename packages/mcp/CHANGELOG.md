@@ -1,5 +1,49 @@
 # sparkforensics-mcp
 
+## 0.4.0
+
+### Minor Changes
+
+- 8ad8560: Cache storage (`CSTOR`): the cached-partition counts and memory/disk sizes now come from
+  `SparkListenerBlockUpdated` events, which Spark writes when
+  `spark.eventLog.logBlockUpdates.enabled=true`. Before, the check read only the RDD Info in
+  stage-submission events, whose cache figures Spark has written as 0 since 2.3, so it could not fire
+  on any current Spark version. Each RDD reports its peak cache residency, so an `unpersist()` before
+  the log ends no longer hides partitions that never fit. Thresholds are unchanged. RDD Info stays as
+  the fallback. When a Spark 2.3+ run persists RDDs but its log has neither source and block-update logging was
+  off, the check reports that cache
+  storage was not logged, naming `spark.eventLog.logBlockUpdates.enabled`, instead of listing Cache
+  Storage as a passed check. Block-update lines for broadcast and shuffle blocks are dropped before
+  JSON parsing.
+- 3fbd34b: **Breaking (MCP):** `evaluate_budgets` with two runs now applies the absolute budgets
+  (`maxRuntimeMs`, `maxSpillGb`, `maxSkewRatio`, `maxFailedTaskRatePct`, `minEfficiencyPct`) to the
+  candidate run (`sourceB`/`runIdB`), matching `sparkforensics-analyze --baseline`. Before, they were
+  evaluated on `source`/`runId`, the regression baseline. The tool also always reports a
+  `run-complete` result with status `inconclusive` when the evaluated run (the candidate, with two
+  runs) has no ApplicationEnd event, the same check the CLI uses to exit 3, so a truncated log no
+  longer reads as a pass. Clients that passed the run to gate as `source` alongside a `sourceB` must
+  swap the two.
+  
+  The CLI now takes its `run-complete` check from the same shared budget evaluation. Its output and
+  exit codes are unchanged.
+
+### Patch Changes
+
+- d7ea65a: Run comparison finding rows now carry the finding's `type` next to its `rule`, so a sub-rule such as
+  `maxPartitionTooBig` can be grouped under its category (`partitionSizing`). The web comparison page's
+  **Findings by category** list uses it, so sub-rule rows show their category tag instead of the raw
+  rule name.
+- 6b3c2ba: The Speculation waste (`SPEC`) finding now counts losing speculative attempts whose TaskEnd arrives
+  after their stage's StageCompleted. Spark kills the losing copy only once the stage finishes
+  ("Stage cancelled: Stage finished"), so on a real cluster this is the usual order, and the parser
+  used to drop those attempts, leaving the finding silent for runs with speculation enabled. Only the
+  stage's speculation waste totals change; every other stat still excludes late attempts.
+- 6a8f927: `sparkforensics-analyze` and the MCP `path` source now read a local event log in 512 KiB slices
+  instead of loading the whole file first. Logs larger than 2 GiB no longer fail with "File size
+  (...) is greater than 2 GiB", and peak memory no longer grows with the file's size: a 1.5 GiB
+  uncompressed log now peaks at about 330 MB instead of 1.8 GB. Every format streams, including
+  gzip, zstd, lz4, snappy, History Server `.zip` downloads and rolling-log directories.
+
 ## 0.3.0
 
 ### Minor Changes
