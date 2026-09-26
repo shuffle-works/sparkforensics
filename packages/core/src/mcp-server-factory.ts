@@ -81,7 +81,7 @@ export function createMcpServer(): McpServer {
   ));
 
   server.registerTool('get_run_summary', {
-    description: 'App/stage/job/sql counts and duration for a run, no findings.',
+    description: 'App/stage/job/sql counts, duration, and how the run ended (failed/total jobs and Spark\'s first-line failure reason) for a run, no findings.',
     inputSchema: { ...runRefSchema, redact: z.boolean().optional() },
   }, ({ source, runId, redact }) => toolResult(
     resolveOrCreateRun({ source, runId }).then(({ runId: id }) => getRunSummary(id, { redact })),

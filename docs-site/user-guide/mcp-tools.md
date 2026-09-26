@@ -117,7 +117,11 @@ drove the finding.
 
 ## `get_run_summary`
 
-App/stage/job/sql counts and duration for a run: no findings.
+App/stage/job/sql counts, duration, and how the run ended: no findings.
+`failedJobs`/`totalJobs` count only jobs with an end record, and
+`failureReason` is the first line of Spark's own recorded reason when a job
+failed, the same line the dashboard verdict quotes (`failureReasonStageId` is
+the stage it came from, or `null` when it came from a job's exception).
 
 Parameters: same as `diagnose_run` (`source`, `runId`, `redact`, all optional).
 
@@ -138,7 +142,11 @@ Example response:
   "sqlExecutionCount": 0,
   "executorCount": { "added": 0, "removed": 0 },
   "durationMs": 100,
-  "runComplete": true
+  "runComplete": true,
+  "failedJobs": 0,
+  "totalJobs": 0,
+  "failureReason": null,
+  "failureReasonStageId": null
 }
 ```
 

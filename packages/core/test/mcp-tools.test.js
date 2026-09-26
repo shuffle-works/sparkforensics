@@ -535,6 +535,30 @@ describe('getRunSummary', () => {
     }
   });
 
+  it('reports how the run ended: failed/total jobs and the first line of the failure reason', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, [
+      { Event: 'SparkListenerApplicationStart', 'App ID': 'app-3', 'App Name': 't', Timestamp: 0 },
+      { Event: 'SparkListenerJobStart', 'Job ID': 0, 'Submission Time': 1, 'Stage IDs': [] },
+      { Event: 'SparkListenerJobEnd', 'Job ID': 0, 'Completion Time': 2, 'Job Result': { Result: 'JobSucceeded' } },
+      { Event: 'SparkListenerJobStart', 'Job ID': 1, 'Submission Time': 3, 'Stage IDs': [] },
+      { Event: 'SparkListenerJobEnd', 'Job ID': 1, 'Completion Time': 4, 'Job Result': { Result: 'JobFailed', Exception: { Message: 'Job aborted: boom\n\tat Foo.bar' } } },
+      { Event: 'SparkListenerApplicationEnd', Timestamp: 10 },
+    ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+    try {
+      const { runId } = await resolveOrCreateRun({ source: { path } });
+      const summary = getRunSummary(runId);
+      expect(summary).toMatchObject({ failedJobs: 1, totalJobs: 2, failureReason: 'Job aborted: boom', failureReasonStageId: null });
+      expect(diagnoseRun(runId, { include: ['summary'] }).summary.outcome).toEqual({
+        failedJobs: 1, totalJobs: 2, failureReason: 'Job aborted: boom', failureReasonStageId: null,
+      });
+      expect(diagnoseRun(runId, { markdown: true }).markdown).toContain("- Outcome: 1 of 2 jobs failed. Spark's recorded reason: Job aborted: boom");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('reports runComplete true for a complete run', async () => {
     const { dir, path } = tmpEventLog();
     try {

@@ -11,6 +11,7 @@ import { coreFindingActionLabel } from './finding-action-label.ts';
 import { matchesFindingFilterCriteria } from './finding-filter-predicate.ts';
 import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
+import { summarizeRunOutcome } from './run-outcome.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
 import type {
   AppModel, Finding, EvidenceAvailability, ImpactEstimate, RawWasteFigure, RawWasteUnit, ImpactBand,
@@ -72,6 +73,17 @@ export interface NotRunCheckEntry extends CleanCheckEntry {
 
 type ImpactBandCounts = { critical: number; warning: number; info: number };
 
+// How the run ended, as far as its jobs say (run-outcome.ts, the same summary the dashboard's
+// verdict leads with). Counts only jobs with an end record; `failureReason` is the first line of
+// Spark's own recorded reason, only when a job failed, and `failureReasonStageId` the stage it came
+// from (null when it came from a job's exception).
+export interface RunOutcomeSummary {
+  failedJobs: number;
+  totalJobs: number;
+  failureReason: string | null;
+  failureReasonStageId: number | null;
+}
+
 export interface EvidenceReportJson {
   schemaVersion: number;
   summary: {
@@ -86,6 +98,7 @@ export interface EvidenceReportJson {
     actionableImpactBandCounts: ImpactBandCounts;
     // The dashboard's clean-run rule: no finding at all, no failed job, and every check could run.
     clean: boolean;
+    outcome: RunOutcomeSummary;
   };
   evidenceAvailability: EvidenceAvailability | null;
   detectors: unknown;
@@ -265,6 +278,7 @@ function buildJson(appModel: AppModel): EvidenceReportJson {
   const recommendations = buildRecommendations(allFindings, stages ?? new Map());
   const { cleanChecks, notRunChecks } = buildCheckLists(allFindings, stages ?? new Map());
   const actionable = allFindings.filter(isEligible);
+  const runOutcome = summarizeRunOutcome(jobs ?? new Map(), allFindings);
 
   const result: EvidenceReportJson = {
     schemaVersion: EVIDENCE_SCHEMA_VERSION,
@@ -284,6 +298,12 @@ function buildJson(appModel: AppModel): EvidenceReportJson {
       actionableFindingCount: actionable.length,
       actionableImpactBandCounts: countByImpactBand(actionable),
       clean: isCleanRun({ jobs: jobs ?? new Map(), stages: stages ?? new Map() }, allFindings),
+      outcome: {
+        failedJobs: runOutcome.failedJobs,
+        totalJobs: runOutcome.totalJobs,
+        failureReason: runOutcome.reason,
+        failureReasonStageId: runOutcome.reasonStageId,
+      },
     },
     evidenceAvailability: evidenceAvailability ?? null,
     // Detector metadata so the threshold set that produced each finding travels with the evidence.
@@ -348,7 +368,25 @@ function renderImpactEstimate(estimate: ImpactEstimate): string | null {
   return `${parts} (estimateMethod: ${estimate.estimateMethod})`;
 }
 
-function renderMarkdown(json: EvidenceReportJson): string {
+// The run's job results in one line, worded like the dashboard verdict: failures first, with
+// Spark's recorded reason; null when the log records no ended job.
+function renderOutcome(outcome: RunOutcomeSummary, incomplete: boolean): string | null {
+  const { failedJobs, totalJobs, failureReason, failureReasonStageId } = outcome;
+  if (totalJobs === 0) return null;
+  if (failedJobs > 0) {
+    const failed = failedJobs < totalJobs
+      ? `${failedJobs} of ${totalJobs} jobs failed.`
+      : totalJobs === 1 ? 'The run\'s one job failed.' : `All ${totalJobs} jobs failed.`;
+    if (!failureReason) return failed;
+    const where = failureReasonStageId != null ? ` (stage ${failureReasonStageId})` : '';
+    return `${failed} Spark's recorded reason${where}: ${failureReason}`;
+  }
+  const succeeded = totalJobs === 1 ? 'Its one job succeeded.' : `All ${totalJobs} jobs succeeded.`;
+  return incomplete ? `${succeeded} The log has no end-of-run record, so jobs still running when it stops are not counted.` : succeeded;
+}
+
+// `incomplete` comes from the unfiltered findings, since a findingsFilter can drop the incompleteRun row.
+function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
   const { summary, findings, evidenceAvailability, detectors, recommendations, cleanChecks, notRunChecks } = json;
   const lines: string[] = [];
   lines.push('# Spark run evidence report');
@@ -359,6 +397,8 @@ function renderMarkdown(json: EvidenceReportJson): string {
   lines.push(`- Findings: ${summary.findingCount} (critical ${summary.impactBandCounts.critical}, warning ${summary.impactBandCounts.warning}, info ${summary.impactBandCounts.info})`);
   const actionableCounts = summary.actionableImpactBandCounts;
   lines.push(`- Findings to act on: ${summary.actionableFindingCount} (critical ${actionableCounts.critical}, warning ${actionableCounts.warning}, info ${actionableCounts.info})`);
+  const outcomeLine = renderOutcome(summary.outcome, incomplete);
+  if (outcomeLine) lines.push(`- Outcome: ${outcomeLine}`);
   if (summary.clean) lines.push('- Clean run: no findings, no failed jobs, and every check could run.');
   lines.push('');
   if (recommendations.length > 0) {
@@ -471,9 +511,10 @@ export function buildEvidenceReport(
 ): { markdown: string; json: EvidenceReportJson } {
   let json = buildJson(appModel);
   if (redact) json = redactReport(json);
+  const incomplete = json.findings.some((row) => row.type === 'incompleteRun');
   // Filter after redact, not before: redaction only replaces string values on surviving rows,
   // never adds/removes rows, so the two orderings produce identical final content.
   if (findingsFilter) json = { ...json, findings: json.findings.filter((row) => matchesFindingsFilter(row, findingsFilter)) };
-  const markdown = computeMarkdown ? renderMarkdown(json) : '';
+  const markdown = computeMarkdown ? renderMarkdown(json, incomplete) : '';
   return { markdown, json };
 }

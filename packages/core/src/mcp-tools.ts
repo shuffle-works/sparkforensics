@@ -7,7 +7,7 @@ import { deriveEvidenceAvailability } from './evidence-availability.ts';
 import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
 import { mcpError } from './mcp-error.ts';
 import { buildEvidenceReport, toFindingsFilter, type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson } from './evidence-report.ts';
-import { redactAppIdentity, redactComparison } from './redact.ts';
+import { redactComparison } from './redact.ts';
 import { computeWallClock } from './wall-clock.ts';
 import { analyze } from './analyzer.ts';
 import { buildComparison, renderComparisonMarkdown, type CompareRunsResult } from './run-comparison.ts';
@@ -33,6 +33,11 @@ export interface RunSummary {
   // checking only durationMs:null couldn't tell an incomplete capture from a zero-length run; this
   // is the explicit signal (mirrors the incompleteRun finding).
   runComplete: boolean;
+  // How the run ended, the evidence report's summary.outcome (see RunOutcomeSummary).
+  failedJobs: number;
+  totalJobs: number;
+  failureReason: string | null;
+  failureReasonStageId: number | null;
 }
 // compareRuns returns a smaller MCP-facing projection of CompareRunsResult
 // (runIdA/runIdB/findingsDelta/metricDeltas/confidence/reason/matchedCoverage), not the full raw
@@ -284,11 +289,15 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean }): RunSu
   const appModel = getCachedAppModel(runId);
   const { app, stages, jobs, sql, executors } = appModel;
   const durationMs = hasCompleteInterval(app) ? computeWallClock(app, stages).total : null;
-  // No buildEvidenceReport call here to redact, so reuse redact.ts's app-id + host-token
-  // pseudonymization directly. Passing name/sparkVersion (not just id) matters: app.name is free
-  // text and can itself carry a host/IP token.
+  // The failure reason needs the stageFailed findings, so this reads the (cached) evidence report.
+  // With redact, the app identity comes from that same redacted report, so a host token in the app
+  // name and in Spark's failure reason get the same pseudonym.
+  const { summary } = buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false }).json;
+  const { outcome } = summary;
   const rawApp = { id: app?.id ?? null, name: app?.name ?? null, sparkVersion: app?.sparkVersion ?? null };
-  const redactedApp = opts?.redact ? redactAppIdentity(rawApp) : rawApp;
+  const redactedApp = opts?.redact
+    ? { id: summary.app.id ?? null, name: summary.app.name ?? null, sparkVersion: summary.app.sparkVersion ?? null }
+    : rawApp;
   return {
     runId,
     app: redactedApp,
@@ -298,6 +307,7 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean }): RunSu
     executorCount: { added: executors.added.length, removed: executors.removed.length },
     durationMs,
     runComplete: app?.endTime != null,
+    ...outcome,
   };
 }
 

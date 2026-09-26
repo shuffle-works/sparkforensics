@@ -453,6 +453,19 @@ describe('buildEvidenceReport', () => {
       expect(markdown).toContain(`- Findings to act on: ${s.actionableFindingCount} (`);
     });
 
+    it('reports the run outcome in the summary and as a Markdown header line', () => {
+      const fx = fixture();
+      fx.jobs = new Map([
+        [0, { id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [1] }],
+        [1, { id: 1, result: 'JobSucceeded', succeeded: true, stageIds: [2] }],
+      ]);
+      const { json, markdown } = buildEvidenceReport(fx);
+      expect(json.summary.outcome).toEqual({ failedJobs: 0, totalJobs: 2, failureReason: null, failureReasonStageId: null });
+      expect(markdown).toContain('- Outcome: All 2 jobs succeeded.');
+      // No ended job, no outcome line.
+      expect(buildEvidenceReport(fixture()).markdown).not.toContain('- Outcome:');
+    });
+
     it('markdown lists clean checks after the Detectors section', () => {
       const { markdown, json } = buildEvidenceReport(fixture());
       expect(markdown).toContain(`## Clean checks (${json.cleanChecks.length})`);

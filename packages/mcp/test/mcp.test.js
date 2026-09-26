@@ -71,6 +71,8 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     expect(notRun.get('utilization')).toMatch(/no end-of-run record/);
     expect(cleanChecks.map((c) => c.type)).not.toContain('skew');
     expect(summary.clean).toBe(false);
+    const runSummary = await client.callTool({ name: 'get_run_summary', arguments: { source: { path } } });
+    expect(runSummary.structuredContent).toMatchObject({ runComplete: false, failedJobs: 0, totalJobs: 0, failureReason: null, failureReasonStageId: null });
   }, 30000);
 
   it('get_finding_documentation returns detection reference doc content for a finding type', async () => {
