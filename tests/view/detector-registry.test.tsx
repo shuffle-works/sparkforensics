@@ -102,4 +102,9 @@ test('core FINDING_DISPLAY_ORDER and REFERENCE_DISPLAY_TYPES match the registry'
   expect(new Set(FINDING_DISPLAY_ORDER)).toEqual(new Set(Object.keys(REGISTRY)));
   const reference = Object.entries(REGISTRY).filter(([, entry]) => entry.region === 'reference').map(([type]) => type);
   expect(new Set(reference)).toEqual(REFERENCE_DISPLAY_TYPES);
+  // Core's ranking has no routeable concept: it ranks every type in FINDING_DISPLAY_ORDER, while
+  // triageTargetFor drops a non-routeable one. A non-routeable type would vanish from the
+  // dashboard verdict but stay in the CLI/MCP verdict, so core must learn about it first.
+  const notRouteable = Object.entries(REGISTRY).filter(([, entry]) => !entry.routeable).map(([type]) => type);
+  expect(notRouteable).toEqual([]);
 });
