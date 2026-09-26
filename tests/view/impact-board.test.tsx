@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { ImpactBoard } from '../../src/view/widgets/ImpactBoard';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
-import { emptyAppModel } from '../../src/store/store';
+import { emptyAppModel, store } from '../../src/store/store';
 import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
 import type { TriageTarget } from '../../src/view/triage-target';
 
@@ -47,6 +48,11 @@ function renderBoard(catalog: Finding[]) {
 }
 
 describe('ImpactBoard', () => {
+  // Card placement is the same in both views; Advanced view mounts every
+  // band's cards, where Basic view folds them (see the Basic view describe).
+  beforeEach(() => store.setState({ widgetDensity: 'advanced' }));
+  afterEach(() => store.setState({ widgetDensity: 'basic' }));
+
   it('renders a Warning heading with the warning row and a matching active widget card, and an Info heading separately', async () => {
     renderBoard([skewFinding(1, 'warning'), gcFinding(2, 'info')]);
 
@@ -89,6 +95,23 @@ describe('ImpactBoard', () => {
 
     // Only one Shuffle I/O card renders, in Critical (its worst-band finding), not one per band.
     expect(screen.getAllByRole('heading', { name: 'Shuffle I/O' })).toHaveLength(1);
+  });
+});
+
+describe('ImpactBoard in Basic view', () => {
+  it('leads each band with its rows and folds that band\'s evidence cards until asked', async () => {
+    const user = userEvent.setup();
+    renderBoard([skewFinding(1, 'warning'), gcFinding(2, 'info')]);
+
+    const warningSection = screen.getByRole('heading', { name: 'Warning' }).closest('section') as HTMLElement;
+    expect(within(warningSection).getByText('Rebalance Stage 1.')).toBeInTheDocument();
+    expect(within(warningSection).queryByRole('heading', { name: 'Task Skew' })).not.toBeInTheDocument();
+
+    await user.click(within(warningSection).getByRole('button', { name: 'Show the evidence (1 card)' }));
+    expect(await within(warningSection).findByRole('heading', { name: 'Task Skew' })).toBeInTheDocument();
+    // Opening one band leaves the others folded.
+    const infoSection = screen.getByRole('heading', { name: 'Info' }).closest('section') as HTMLElement;
+    expect(within(infoSection).getByRole('button', { name: 'Show the evidence (1 card)' })).toHaveAttribute('aria-expanded', 'false');
   });
 });
 

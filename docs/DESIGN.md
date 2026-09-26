@@ -136,6 +136,7 @@ The run board reads top to bottom as verdict, then numbers, then evidence. `RunV
 
 - **One place, one step.** Findings on the same stage fold into one step, because they usually share a cause and their savings overlap. Never show one root cause as several equal problems.
 - **Plain language leads, Spark terms follow.** A step's first line is the plain explanation; metric names, ratios and configuration keys come after it.
+- **Action first, evidence on demand.** On the Findings tab each band leads with its rows, which say what to do; in Basic view the band's detail widgets wait behind one "Show the evidence" disclosure, and any route to a finding opens it. Evidence is never hidden from a Basic reader, only deferred until asked.
 - **Basic by default, Advanced on request.** Basic view keeps what a newcomer needs to act. Advanced view adds power controls and meta detail: the finding filter bar, confidence markers, threshold captions, extra columns and doc icons (`AdvancedOnly`). A control that explains current state, such as an active filter, stays visible in Basic view.
 
 ## Elevation & Depth

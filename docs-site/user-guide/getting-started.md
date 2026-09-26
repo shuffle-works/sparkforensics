@@ -101,7 +101,11 @@ Below it, two tabs split the rest of the board:
    impact band (Critical, Warning, Info). Within a band, a recommendation row
    for a bottleneck type collapses into a summary row when it fires more than
    once; clicking the summary row expands its full list, and clicking any
-   single row or widget jumps straight to that finding. Below the impact-band
+   single row or widget jumps straight to that finding. Each band leads with
+   its recommendation rows; its detail widgets (the charts and per-stage
+   numbers behind them) sit under **Show the evidence**, and **Show
+   evidence** on any finding opens them for you. Advanced view shows the
+   widgets without that step. Below the impact-band
    groups, memory and core-usage utilization always show, even on a clean
    run. Widgets that found nothing fold away into a "Clean checks"
    disclosure. This is the tab you land on.

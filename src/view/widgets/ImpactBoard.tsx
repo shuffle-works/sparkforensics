@@ -1,8 +1,12 @@
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useLayoutEffect, useMemo, useState } from 'react';
+import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
 import { Table, TableBody } from '@/components/ui/table';
+import { useWidgetDensity } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import type { WidgetProps } from '@/view/detector-registry';
+import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import type { TriageTarget } from '@/view/triage-target';
 import {
   AlwaysVisibleAndCleanChecks,
@@ -37,8 +41,14 @@ function groupKey(group: RollupGroup): string {
 }
 
 /** One impact band: its recommendation rows as a compact table, followed by
- * its active widget cards as a grid. Renders nothing (no heading) when the
- * band has neither row nor card. */
+ * its active widget cards as a grid. In Basic view a band that has rows folds
+ * its cards behind one "Show the evidence" disclosure: each row already says
+ * what to do, so the cards (charts and per-stage numbers) are the second
+ * read, not a second list. The disclosure opens itself when a route targets
+ * one of its cards, and the card, mounting with that route pending, opens and
+ * scrolls itself (`registerWidget` in `Dashboard.tsx`). Advanced view always
+ * shows the cards. Renders nothing (no heading) when the band has neither row
+ * nor card. */
 function ImpactGroup({
   impactBand,
   groups,
@@ -61,8 +71,21 @@ function ImpactGroup({
   onToggleGroup: (key: string) => void;
   onRoute: (target: TriageTarget) => void;
 } & WidgetProps) {
+  const density = useWidgetDensity();
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const routeTarget = useActiveRouteTarget();
+  const routedHere = routeTarget != null && widgets.some((widget) => widget.widgetId === routeTarget.widgetId);
+  // Sticky: once a route has opened the evidence, it stays open after the
+  // route completes and clears.
+  useLayoutEffect(() => {
+    if (routedHere) setEvidenceOpen(true);
+  }, [routedHere]);
+
   if (groups.length === 0 && widgets.length === 0) return null;
   const headingId = `impact-band-${impactBand}-heading`;
+  const evidenceId = `impact-band-${impactBand}-evidence`;
+  const foldEvidence = density === 'basic' && groups.length > 0 && widgets.length > 0;
+  const showEvidence = !foldEvidence || evidenceOpen || routedHere;
   return (
     <section aria-labelledby={headingId} className="space-y-3">
       <h2 id={headingId} className="font-heading text-base font-semibold">{IMPACT_BAND_LABEL[impactBand]}</h2>
@@ -88,16 +111,30 @@ function ImpactGroup({
           </TableBody>
         </Table>
       )}
-      {widgets.length > 0 && (
-        <WidgetGrid>
-          {widgets.map(({ component: Widget, widgetId, index }) => (
-            <WidgetGridItem key={widgetId} cardId={`alert-${index}`} widgetId={widgetId}>
-              <Suspense fallback={<WidgetCardSkeleton />}>
-                <Widget appModel={appModel} catalog={catalog} configFindings={configFindings} getTaskData={getTaskData} activeFileId={activeFileId} defaultCollapsed />
-              </Suspense>
-            </WidgetGridItem>
-          ))}
-        </WidgetGrid>
+      {foldEvidence ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-expanded={showEvidence}
+          aria-controls={evidenceId}
+          onClick={() => setEvidenceOpen(!showEvidence)}
+        >
+          {showEvidence ? 'Hide the evidence' : `Show the evidence (${widgets.length} ${widgets.length === 1 ? 'card' : 'cards'})`}
+          {showEvidence ? <ChevronUpIcon aria-hidden="true" /> : <ChevronDownIcon aria-hidden="true" />}
+        </Button>
+      ) : null}
+      {widgets.length > 0 && showEvidence && (
+        <div id={evidenceId}>
+          <WidgetGrid>
+            {widgets.map(({ component: Widget, widgetId, index }) => (
+              <WidgetGridItem key={widgetId} cardId={`alert-${index}`} widgetId={widgetId}>
+                <Suspense fallback={<WidgetCardSkeleton />}>
+                  <Widget appModel={appModel} catalog={catalog} configFindings={configFindings} getTaskData={getTaskData} activeFileId={activeFileId} defaultCollapsed />
+                </Suspense>
+              </WidgetGridItem>
+            ))}
+          </WidgetGrid>
+        </div>
       )}
     </section>
   );

@@ -134,7 +134,14 @@ filtered to this impact band) in their own `WidgetGrid`: every one of
 `orderedWidgets()`'s deduped `REGISTRY` components *except* the one
 always-mounted one below, with at least one finding in `catalog` ∪
 `configFindings`. Within a band, active widgets keep `orderedWidgets()`'s
-own `action`-region-first, ascending-`DETECTORS`-order tiebreak.
+own `action`-region-first, ascending-`DETECTORS`-order tiebreak. In Basic
+view a band with both rows and cards folds its `WidgetGrid` behind one
+"Show the evidence (N cards)" disclosure, unmounted while closed; it opens
+itself (and stays open) when the active route target
+(`useActiveRouteTarget`) is one of its cards, and the card, mounting with
+the route still pending, opens and scrolls itself through
+`registerWidget`. A band with cards but no rows, and every band in
+Advanced view, shows its grid directly.
 `cacheUtilization`, `memoryUtilization`, and `utilization` are
 `reference`-region types but aren't always-mounted exceptions, so a Cache
 Storage, Memory Utilization, or Executor Utilization card with an active

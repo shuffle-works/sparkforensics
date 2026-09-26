@@ -93,10 +93,19 @@ beforeEach(() => {
     status: 'idle',
     errorMessage: null,
     parse: { pct: 0, lines: 0, etaMs: null },
+    widgetDensity: 'basic',
   });
 });
 
+/** Card-placement tests need every band's evidence cards mounted: Advanced
+ * view shows them, Basic view folds them per band (triage-navigation.test.tsx
+ * covers the fold). */
+function showAllEvidence() {
+  store.setState({ widgetDensity: 'advanced' });
+}
+
 test('the Findings tab shows every REGISTRY widget with findings, while Full app report starts unselected', async () => {
+  showAllEvidence();
   const user = userEvent.setup();
   const catalog: Finding[] = [
     { type: 'spill', stageId: 1, impactBand: 'warning', value: 123 },
@@ -130,6 +139,7 @@ test('the Findings tab shows every REGISTRY widget with findings, while Full app
 });
 
 test('Findings impact-band-ranks affected widgets into Critical/Warning/Info bands and moves clean widgets behind Clean checks', async () => {
+  showAllEvidence();
   const user = userEvent.setup();
   const catalog: Finding[] = [
     { type: 'infoAlert', stageId: 1, impactBand: 'info' },
@@ -175,6 +185,7 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
 });
 
 test('a clean type still gets its own clean-check line when a sibling sharing its chart component is active', async () => {
+  showAllEvidence();
   // skew/tinyTask/stageShape used to share the TaskSkew component (now each
   // has its own: Skew/StageShape/TinyTask); kept as a regression guard that
   // an active skew finding must not swallow the other two's clean-check lines.
@@ -226,6 +237,7 @@ test('shows real Config Audit findings as a row in All recommendations without a
 });
 
 test('Config Audit ranks by its real impact band inside Suggested Improvements, not Clean checks', async () => {
+  showAllEvidence();
   const user = userEvent.setup();
   const appModel = readyAppModel() as any;
   appModel.app = {
@@ -242,7 +254,8 @@ test('Config Audit ranks by its real impact band inside Suggested Improvements, 
   await waitForDashboard();
 
   const findingsPanel = screen.getByRole('tabpanel', { name: 'Findings' });
-  expect(within(findingsPanel).getByRole('heading', { name: 'Config Sanity' })).toBeInTheDocument();
+  // Config Sanity is code-split (React.lazy); its chunk resolves asynchronously.
+  expect(await within(findingsPanel).findByRole('heading', { name: 'Config Sanity' })).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: /clean checks/i }));
   expect(within(findingsPanel).queryByText('Config Sanity', { selector: '[data-testid^="clean-alert"] h3' })).not.toBeInTheDocument();
 });
@@ -263,6 +276,7 @@ test('reads configFindings from the store rather than recomputing it from appMod
 });
 
 test('the dashboard heading outline nests correctly: one h1, h2 sections (including impact bands), h3 widget titles', async () => {
+  showAllEvidence();
   const user = userEvent.setup();
   const catalog: Finding[] = [
     { type: 'spill', stageId: 1, impactBand: 'warning', value: 123 },
