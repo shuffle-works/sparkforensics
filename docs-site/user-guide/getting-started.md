@@ -96,7 +96,7 @@ is called clean only when nothing is missing.
 
 A run scorecard sits under the verdict: **Wall-clock** (total run time),
 **Efficiency** (the share of that time with a stage running; higher is
-better) and **Unused core time** (driver idle plus executor slack across the
+better; **Not measured** when no stage in the log recorded an end) and **Unused core time** (driver idle plus executor slack across the
 whole run, so it can run higher than the idle capacity a verdict step
 reports; lower is better). A collapsed **New to Spark tuning?** primer in the verdict
 explains stages, tasks, executors, shuffle and how to read savings. Stage

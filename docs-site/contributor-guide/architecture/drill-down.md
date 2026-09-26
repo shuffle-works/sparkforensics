@@ -280,7 +280,11 @@ built from the tuning reference under `packages/core/src/docs-content/`
 (`docs-config.ts`'s `docsUrl()` resolves an anchor to that path plus a
 `#<anchor>` fragment). `useDocs().open(anchor)` sets React state (`isOpen`,
 `target`); Radix/Base UI's `Sheet` owns the slide-in animation, focus trap,
-and outside-click/Escape dismissal. There is a single `DocsTarget` shape
+and outside-click/Escape dismissal. Key events inside the iframe never reach
+the app's document, so `DocsSheet`'s `listenForEscapeInFrame` also listens in
+a same-origin frame's own document and closes on Escape unless the docs'
+search popup is open (a cross-origin `file://` frame keeps only the close
+button). There is a single `DocsTarget` shape
 (`{ kind: 'site', path }`): no vendor HTML and no `'vendor'` target kind, so
 `DocsSheet` always drives the iframe the same way, reassigning `src` on any
 path or theme change.
