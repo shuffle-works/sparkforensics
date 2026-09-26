@@ -305,6 +305,9 @@ describe('sparkforensics-analyze CLI', () => {
       const parsed = JSON.parse(stdout);
       expect(Array.isArray(parsed.recommendations)).toBe(true);
       expect(Array.isArray(parsed.cleanChecks)).toBe(true);
+      expect(Array.isArray(parsed.notRunChecks)).toBe(true);
+      expect(typeof parsed.summary.clean).toBe('boolean');
+      expect(typeof parsed.summary.actionableFindingCount).toBe('number');
       expect(parsed.recommendations.length).toBeGreaterThan(0);
       expect(parsed.cleanChecks.length).toBeGreaterThan(0);
       expect(parsed.findings.every((f) => typeof f.actionLabel === 'string')).toBe(true);

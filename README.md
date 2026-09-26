@@ -228,7 +228,7 @@ npx -p sparkforensics-cli sparkforensics-analyze path/to/eventlog --redact
 ```
 
 Narrow the output's `findings` array to certain impact bands, types, or a
-stage (`recommendations`/`cleanChecks` and the summary counts stay on the
+stage (`recommendations`/`cleanChecks`/`notRunChecks` and the summary counts stay on the
 full, unfiltered set):
 
 ```bash

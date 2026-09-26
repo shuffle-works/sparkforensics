@@ -14,7 +14,7 @@ import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
 import { buildNextSteps, locationKey } from '@/view/run-verdict';
-import { summarizeRunOutcome } from '@/view/run-outcome';
+import { summarizeRunOutcome } from '@sparkforensics/core/run-outcome.ts';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 import { hasCompleteApplicationInterval } from '@/view/widgets/scorecard-estimates';
 import { useStageDetail } from '@/view/StageDetailContext';

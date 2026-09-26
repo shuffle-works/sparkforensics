@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { makeStage } from './fixtures/stage-app-fixtures.js';
+import { PER_STAGE_CHECK_TYPES } from '../src/check-coverage.ts';
 
 function fixture() {
   return {
@@ -39,7 +40,7 @@ describe('buildEvidenceReport', () => {
     const { markdown, json } = buildEvidenceReport(fixture());
     expect(typeof markdown).toBe('string');
     expect(typeof json.schemaVersion).toBe('number');
-    expect(json.schemaVersion).toBe(3);
+    expect(json.schemaVersion).toBe(4);
   });
 
   it('carries a run summary + findings with the required per-row fields', () => {
@@ -137,7 +138,7 @@ describe('buildEvidenceReport', () => {
     expect(JSON.stringify(raw)).toBe(JSON.stringify(buildEvidenceReport(fixture()).json));
     expect(Object.keys(raw)).toEqual([
       'schemaVersion', 'summary', 'evidenceAvailability', 'detectors', 'findings',
-      'recommendations', 'cleanChecks',
+      'recommendations', 'cleanChecks', 'notRunChecks',
     ]);
     // Core construction order (optional confidence/validation/docAnchor trail it).
     expect(Object.keys(raw.findings[0]).slice(0, 11)).toEqual([
@@ -306,9 +307,9 @@ describe('buildEvidenceReport', () => {
   }
 
   describe('recommendations', () => {
-    it('is an additive top-level array, no schema bump', () => {
+    it('is an additive top-level array', () => {
       const { json } = buildEvidenceReport(fixture());
-      expect(json.schemaVersion).toBe(3);
+      expect(json.schemaVersion).toBe(4);
       expect(Array.isArray(json.recommendations)).toBe(true);
       expect(json.recommendations.length).toBeGreaterThan(0);
     });
@@ -410,6 +411,46 @@ describe('buildEvidenceReport', () => {
       const types = json.cleanChecks.map((c) => c.type);
       expect(types).toContain('utilization');
       expect(types).toContain('coreLocality');
+    });
+
+    it('moves every per-stage check to notRunChecks when no stage finished', () => {
+      const fx = fixture();
+      fx.stages = new Map([[1, makeStage({ id: 1, completedAt: undefined })]]);
+      const { json, markdown } = buildEvidenceReport(fx);
+      const notRun = json.notRunChecks.map((c) => c.type);
+      // A per-stage type either fired on the unfinished stage or could not run; none passed.
+      for (const type of ['skew', 'spill', 'stageFailed', 'straggler']) expect(notRun).toContain(type);
+      const clean = json.cleanChecks.map((c) => c.type);
+      for (const type of PER_STAGE_CHECK_TYPES) expect(clean).not.toContain(type);
+      expect(json.notRunChecks.find((c) => c.type === 'skew').reason).toMatch(/No stage in this log recorded an end/);
+      expect(json.summary.clean).toBe(false);
+      expect(markdown).toContain(`## Not checked on this log (${json.notRunChecks.length})`);
+      expect(markdown).toContain('- [SKEW] skew: No stage in this log recorded an end');
+      expect(markdown.indexOf('## Not checked on this log')).toBeLessThan(markdown.indexOf('## Clean checks'));
+    });
+
+    it('moves the run-span checks to notRunChecks on a log with no end-of-run record', () => {
+      const fx = fixture();
+      fx.app = { ...fx.app, endTime: null };
+      const { json } = buildEvidenceReport(fx);
+      const notRun = new Map(json.notRunChecks.map((c) => [c.type, c.reason]));
+      for (const type of ['utilization', 'autoscalingChurn']) {
+        expect(notRun.get(type)).toMatch(/no end-of-run record/);
+      }
+      expect(json.cleanChecks.map((c) => c.type)).not.toContain('utilization');
+    });
+
+    it('counts only actionable findings in the actionable summary fields', () => {
+      const fx = fixture();
+      fx.app = { ...fx.app, endTime: null };
+      const { json, markdown } = buildEvidenceReport(fx);
+      const s = json.summary;
+      expect(json.findings.some((f) => f.type === 'incompleteRun')).toBe(true);
+      expect(s.actionableFindingCount).toBe(json.findings.filter((f) => f.type !== 'incompleteRun' && f.evidence.dataUnavailable !== true).length);
+      expect(s.actionableFindingCount).toBeLessThan(s.findingCount);
+      const sum = s.actionableImpactBandCounts.critical + s.actionableImpactBandCounts.warning + s.actionableImpactBandCounts.info;
+      expect(sum).toBe(s.actionableFindingCount);
+      expect(markdown).toContain(`- Findings to act on: ${s.actionableFindingCount} (`);
     });
 
     it('markdown lists clean checks after the Detectors section', () => {

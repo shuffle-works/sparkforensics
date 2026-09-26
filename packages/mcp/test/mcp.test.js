@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -48,6 +49,28 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     const result = await client.callTool({ name: 'diagnose_run', arguments: { runId: 'nonexistent' } });
     expect(result.isError).toBe(true);
     expect(result.structuredContent.code).toBe('run-not-found');
+  }, 30000);
+
+  it('diagnose_run reports checks an incomplete log could not run as notRunChecks, not clean', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    cleanupDirs.push(dir);
+    const path = join(dir, 'eventlog');
+    // No stage and no ApplicationEnd: the per-stage and run-span checks have nothing to measure.
+    writeFileSync(path, [
+      { Event: 'SparkListenerLogStart', 'Spark Version': '3.4.0' },
+      { Event: 'SparkListenerApplicationStart', 'App Name': 'test', 'App ID': 'application_0000000000000_0001', Timestamp: 0, User: 'u' },
+    ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+    const transport = new StdioClientTransport({ command: binPath, args: [] });
+    client = new Client({ name: 'test-client', version: '1.0.0' });
+    await client.connect(transport);
+    const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, include: ['summary'] } });
+    expect(result.isError).toBeFalsy();
+    const { notRunChecks, cleanChecks, summary } = result.structuredContent;
+    const notRun = new Map(notRunChecks.map((c) => [c.type, c.reason]));
+    expect(notRun.get('skew')).toMatch(/No stage in this log recorded an end/);
+    expect(notRun.get('utilization')).toMatch(/no end-of-run record/);
+    expect(cleanChecks.map((c) => c.type)).not.toContain('skew');
+    expect(summary.clean).toBe(false);
   }, 30000);
 
   it('get_finding_documentation returns detection reference doc content for a finding type', async () => {

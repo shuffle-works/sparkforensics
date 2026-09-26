@@ -233,8 +233,10 @@ describe('diagnoseRun / getFindingEvidence', () => {
     const { dir, path } = tmpEventLog();
     try {
       const { runId } = await resolveOrCreateRun({ source: { path } });
-      const { recommendations, cleanChecks } = diagnoseRun(runId);
+      const { recommendations, cleanChecks, notRunChecks } = diagnoseRun(runId);
       expect(Array.isArray(recommendations)).toBe(true);
+      expect(Array.isArray(notRunChecks)).toBe(true);
+      for (const c of notRunChecks) expect(typeof c.reason).toBe('string');
       expect(Array.isArray(cleanChecks)).toBe(true);
       expect(cleanChecks.length).toBeGreaterThan(0);
       for (const c of cleanChecks) {
@@ -336,7 +338,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       const result = diagnoseRun(runId, include === undefined ? undefined : { include });
       expect(Object.keys(result).sort()).toEqual(
-        ['cleanChecks', 'findings', 'recommendations', 'runComplete', 'runId'].sort(),
+        ['cleanChecks', 'findings', 'notRunChecks', 'recommendations', 'runComplete', 'runId'].sort(),
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });

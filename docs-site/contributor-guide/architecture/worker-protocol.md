@@ -173,14 +173,18 @@ detectors over an `appModel` and serializes the result for sharing outside the
 tool. Raw task records are never included; identifier redaction (app id + host
 names → `app-1`/`host-1` pseudonyms via `packages/core/src/redact.ts`) is opt-in with
 `{ redact: true }`. The JSON is pinned by `EVIDENCE_SCHEMA_VERSION` (currently
-`3`, surfaced as `json.schemaVersion`) and has this fixed top-level key order:
+`4`, surfaced as `json.schemaVersion`) and has this fixed top-level key order:
 
 ```text
-schemaVersion, summary, evidenceAvailability, detectors, findings, recommendations, cleanChecks
+schemaVersion, summary, evidenceAvailability, detectors, findings, recommendations, cleanChecks, notRunChecks
 ```
 
 - `summary` is the run header: `{ app: { id, name, sparkVersion }, stageCount,
-  jobCount, sqlExecutionCount, findingCount, impactBandCounts }`.
+  jobCount, sqlExecutionCount, findingCount, impactBandCounts,
+  actionableFindingCount, actionableImpactBandCounts, clean }`. `findingCount`
+  counts every row in `findings`; the `actionable*` counts leave out evidence
+  caveats and the `incompleteRun` row, the same set the dashboard's top bar and
+  verdict count. `clean` is `isCleanRun` from `packages/core/src/check-coverage.ts`.
 - `evidenceAvailability` is the ledger above (or `null` when absent).
 - `detectors` is `detectorCatalog()` output: one `{ type, version, scope,
   thresholds, docAnchor }` per detector, in `DETECTORS` order, so the exact
@@ -191,7 +195,9 @@ schemaVersion, summary, evidenceAvailability, detectors, findings, recommendatio
   `validationRequired`/`docAnchor` appear only when the detector emitted them.
 - `recommendations` is the impact-ranked `buildRecommendationRollup` output
   (`packages/core/src/recommendation-rollup.ts`), and `cleanChecks` lists every detector type
-  that fired zero findings this run: see the 2026-09-03 update below.
+  that fired zero findings this run and could run: see the 2026-09-03 update below.
+- `notRunChecks` lists the zero-finding types the log lacked the data to run, each with a
+  `reason`: see the schema-4 update below.
 
 Determinism holds because detector order, finding sort, and object key order
 are all fixed, so a given `appModel` serializes identically across calls.
@@ -274,6 +280,16 @@ detector type that fired zero findings this run, each with `getThresholdSummary`
 it deliberately includes the one "always-mounted" reference type (`coreLocality`) even when it
 has no findings, since a flat evidence report has no separate always-visible surface for it to
 already appear on the way that widget does on the board.
+
+Schema `4` update: a check the log could not run is no longer listed as clean.
+`packages/core/src/check-coverage.ts` holds the one rule, shared with the dashboard's verdict,
+top bar and Clean checks: a type whose only finding is an evidence caveat, every `scope: 'stage'`
+type on a log where no stage recorded an end, and the run-span types (`utilization`,
+`memoryUtilization`, `autoscalingChurn`) on a log with no ApplicationEnd. Those types move from
+`cleanChecks` to `notRunChecks`, each `{ type, tag, thresholdSummary, reason }`, where `reason` is
+the caveat's own recommendation (it names the setting to turn on) or the log-wide sentence. The
+Markdown gains a `## Not checked on this log` section above `## Clean checks`, and a
+`Findings to act on` header line.
 
 ### Finding identity
 

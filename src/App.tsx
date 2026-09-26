@@ -11,8 +11,8 @@ import { CompareLanding } from '@/view/CompareLanding';
 import { DocsProvider } from '@/view/DocsContext';
 import { DocsSheet } from '@/view/DocsSheet';
 import { RunComparison } from '@/view/RunComparison';
-import { summarizeRunOutcome } from '@/view/run-outcome';
-import { isIncompleteRun } from '@/view/run-verdict';
+import { isIncompleteRun } from '@sparkforensics/core/check-coverage.ts';
+import { summarizeRunOutcome } from '@sparkforensics/core/run-outcome.ts';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { usePlanGraphRouteProps } from '@/view/usePlanGraphRouteProps';
 

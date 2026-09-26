@@ -6,7 +6,7 @@ import { collectRun } from './cli/collect-run.ts';
 import { deriveEvidenceAvailability } from './evidence-availability.ts';
 import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
 import { mcpError } from './mcp-error.ts';
-import { buildEvidenceReport, toFindingsFilter, type FindingRow, type RecommendationRow, type CleanCheckEntry, type EvidenceReportJson } from './evidence-report.ts';
+import { buildEvidenceReport, toFindingsFilter, type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson } from './evidence-report.ts';
 import { redactAppIdentity, redactComparison } from './redact.ts';
 import { computeWallClock } from './wall-clock.ts';
 import { analyze } from './analyzer.ts';
@@ -174,7 +174,7 @@ export function diagnoseRun(runId: string, opts?: {
   impactBand?: string[]; type?: string[]; stageId?: number;
 }): {
   runId: string; findings: FindingRow[]; runComplete: boolean;
-  recommendations: RecommendationRow[]; cleanChecks: CleanCheckEntry[];
+  recommendations: RecommendationRow[]; cleanChecks: CleanCheckEntry[]; notRunChecks: NotRunCheckEntry[];
 } & Partial<Pick<EvidenceReportJson, 'summary' | 'evidenceAvailability' | 'detectors'>> & { markdown?: string } {
   const appModel = getCachedAppModel(runId);
   const findingsFilter = toFindingsFilter(opts?.impactBand, opts?.type, opts?.stageId);
@@ -182,6 +182,7 @@ export function diagnoseRun(runId: string, opts?: {
   const include = opts?.include ?? [];
   return {
     runId, findings: json.findings, recommendations: json.recommendations, cleanChecks: json.cleanChecks,
+    notRunChecks: json.notRunChecks,
     runComplete: appModel.app?.endTime != null,
     ...(include.includes('summary') ? { summary: json.summary } : {}),
     ...(include.includes('evidenceAvailability') ? { evidenceAvailability: json.evidenceAvailability } : {}),

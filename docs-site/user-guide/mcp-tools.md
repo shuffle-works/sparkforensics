@@ -50,9 +50,11 @@ a `runId` for one already loaded in this session):
 - `include`: array of `"summary" | "evidenceAvailability" | "detectors"`
   (default omitted, i.e. none). Each requested value adds one extra top-level
   field to the response, on top of the default `findings`/`recommendations`/
-  `cleanChecks`/`runComplete`:
-  - `summary`: app id/name/Spark version, stage/job/SQL-execution counts, and
-    a finding count broken down by impact band
+  `cleanChecks`/`notRunChecks`/`runComplete`:
+  - `summary`: app id/name/Spark version, stage/job/SQL-execution counts, a
+    finding count broken down by impact band, the same counts without evidence
+    caveats and the incomplete-run row (`actionableFindingCount`,
+    `actionableImpactBandCounts`, what the dashboard counts), and `clean`
   - `evidenceAvailability`: which event types the log actually contained, so
     you can tell "this check came back clean" apart from "this check
     couldn't run because the log is missing data"
@@ -70,7 +72,7 @@ a `runId` for one already loaded in this session):
   stays JSON-shaped, regardless of `format`.
 
 `impactBand`/`type`/`stageId` only filter the `findings` array:
-`recommendations`, `cleanChecks`, and the finding counts in `summary` (when
+`recommendations`, `cleanChecks`, `notRunChecks`, and the finding counts in `summary` (when
 requested via `include`) always stay computed from the full, unfiltered set,
 so a narrow filter never hides that other checks passed or other fixes exist.
 

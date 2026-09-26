@@ -62,8 +62,9 @@ Options:
                                     (app-1, host-1, ...), so a report can be shared outside the
                                     environment that produced it.
   --impact <band[,band]>            Filter the output's findings array to these impact bands
-                                    (critical, warning, info). recommendations/cleanChecks and
-                                    the summary counts stay on the full, unfiltered set.
+                                    (critical, warning, info). recommendations, cleanChecks,
+                                    notRunChecks and the summary counts stay on the full,
+                                    unfiltered set.
   --type <type[,type]>              Filter the output's findings array to these finding types.
   --stage <id>                      Filter the output's findings array to this stage id.
 

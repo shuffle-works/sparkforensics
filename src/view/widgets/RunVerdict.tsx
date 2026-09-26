@@ -5,12 +5,13 @@ import { Button } from '@/components/ui/button';
 import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
 import { formatDuration, typeTag } from '@sparkforensics/core/format-utils.ts';
+import { hasFinishedStage, isCleanRun } from '@sparkforensics/core/check-coverage.ts';
+import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from '@sparkforensics/core/run-outcome.ts';
 import { computeWallClock } from '@sparkforensics/core/wall-clock.ts';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { useWidgetDensity } from '@/store/store';
 import { REGISTRY } from '@/view/detector-registry';
 import { useOptionalDocs } from '@/view/DocsContext';
-import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from '@/view/run-outcome';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
@@ -20,8 +21,6 @@ import {
   isIdleCapacityStep,
   NEXT_STEP_LIMIT,
   estimateProvenance,
-  hasFinishedStage,
-  isCleanRun,
   savingsMeaning,
   verdictIdlePct,
   type NextStep,
