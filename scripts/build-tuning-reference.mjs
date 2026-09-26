@@ -37,6 +37,38 @@ export function rewriteCrossLinks(md, pageAnchor, isKnown, resolvePage) {
   });
 }
 
+// Reference pages are their own product inside this docs site, so they name
+// it in the tab title and carry their own meta description instead of the
+// site-wide SparkForensics defaults from config.ts. The hand-authored landing
+// page (docs-site/tuning-reference/index.md) uses REFERENCE_DESCRIPTION too.
+export const TITLE_TEMPLATE = ':title | Spark Tuning Reference';
+export const REFERENCE_DESCRIPTION =
+  'Spark Tuning Reference: move from a job symptom to the Spark mechanics and settings that can change its outcome.';
+
+// JSON.stringify yields a valid YAML double-quoted scalar for any string.
+export function pageFrontmatter(entry) {
+  if (!entry.brief?.trim()) {
+    throw new Error(`Tuning reference entry "${entry.anchor}" has no brief in content/manifest.yaml; every page needs one for its meta description.`);
+  }
+  return [
+    '---',
+    `title: ${JSON.stringify(entry.title)}`,
+    `titleTemplate: ${JSON.stringify(TITLE_TEMPLATE)}`,
+    `description: ${JSON.stringify(entry.brief)}`,
+    '---',
+    '',
+    '',
+  ].join('\n');
+}
+
+// Turns one entry's generated markdown into the full VitePress page source.
+export function renderPage(entry, md, isKnown, resolvePage) {
+  let body = injectHeadingAnchor(md, entry.anchor);
+  body = rewriteCrossLinks(body, entry.anchor, isKnown, resolvePage);
+  body = rewriteDiagramPaths(body);
+  return pageFrontmatter(entry) + body;
+}
+
 function sourceFileFor(entry) {
   return join(DOCS_CONTENT, entry.store, `${entry.slug}.md`);
 }
@@ -76,12 +108,8 @@ function renderCorpus(navIndexPath, outDir, isKnown, resolvePage) {
   const nav = JSON.parse(readFileSync(navIndexPath, 'utf8'));
   cleanGenerated(outDir);
   for (const entry of nav) {
-    let md = readFileSync(sourceFileFor(entry), 'utf8');
-    md = injectHeadingAnchor(md, entry.anchor);
-    md = rewriteCrossLinks(md, entry.anchor, isKnown, resolvePage);
-    md = rewriteDiagramPaths(md);
-    const front = `---\ntitle: ${JSON.stringify(entry.title)}\n---\n\n`;
-    writeFileSync(join(outDir, `${entry.anchor}.md`), front + md);
+    const md = readFileSync(sourceFileFor(entry), 'utf8');
+    writeFileSync(join(outDir, `${entry.anchor}.md`), renderPage(entry, md, isKnown, resolvePage));
   }
 }
 
