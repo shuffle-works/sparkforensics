@@ -564,8 +564,9 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    keeps the run from being called clean, and a log with no finished stage
    and no finding gets its own title. In Advanced view each step adds an
    "Estimate:" line from `estimateProvenance` (`src/view/run-verdict.ts`:
-   method, basis as a point figure or a floor-to-high range, raw waste only
-   when the floor clipped it; nothing for `estimateMethod: 'none'`), the
+   method, basis as a point figure or a floor-to-high range, ms raw waste
+   only when the floor clipped it, a non-time raw waste as the resource
+   measured; nothing for `estimateMethod: 'none'` or a zero figure), the
    finding's `confidence` when not `high`, and the list ends with the
    ordering rule.
 2. `Scorecard`: a three-tile run-info row (Wall-clock, Efficiency, Unused

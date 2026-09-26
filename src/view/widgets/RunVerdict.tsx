@@ -14,7 +14,6 @@ import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } f
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
-import { formatRawWaste } from '@/view/ImpactEstimate';
 import {
   buildNextSteps,
   IDLE_NOTABLE_PCT,
@@ -192,7 +191,7 @@ function NextStepItem({
   const impact = impactFigure(finding);
   const titleId = `next-step-${index}-title`;
   const advanced = useWidgetDensity() === 'advanced';
-  const provenance = advanced ? estimateProvenance(finding, { duration: formatDuration, rawWaste: formatRawWaste }) : null;
+  const provenance = advanced ? estimateProvenance(finding) : null;
   // Same rule every widget uses: only a marker other than high is shown.
   const confidence = advanced && finding.confidence && finding.confidence !== 'high' ? finding.confidence : null;
   return (

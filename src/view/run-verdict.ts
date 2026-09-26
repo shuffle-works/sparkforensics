@@ -1,5 +1,6 @@
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { formatRawWaste, formatWallClockRange, readsAsZero } from '@/view/ImpactEstimate';
 import { FAILURE_TYPES, summarizeRunOutcome } from '@/view/run-outcome';
 import { rankTriageTargets, type TriageTarget } from '@/view/triage-target';
 
@@ -156,27 +157,33 @@ export function isCleanRun(appModel: Pick<AppModel, 'jobs' | 'stages'>, allFindi
  * Advanced view: the estimate method, whether the stage ran alone (a
  * near-point figure) or shared the cluster (a floor and an optimistic high),
  * and the raw waste behind it. Null when the finding carries no estimate
- * model (`estimateMethod: 'none'`) or no estimate at all. Formatting is
- * passed in so this stays a pure, view-free helper. */
-export function estimateProvenance(
-  finding: Finding,
-  format: { duration: (ms: number) => string; rawWaste: (figure: NonNullable<NonNullable<Finding['impactEstimate']>['rawWaste']>) => string },
-): string | null {
+ * model (`estimateMethod: 'none'`), no estimate at all, or a figure that
+ * reads as zero (the step shows no savings then either). Uses the same
+ * formatting and zero rules as the step's own savings figure. */
+export function estimateProvenance(finding: Finding): string | null {
   const estimate = finding.impactEstimate;
   if (!estimate || estimate.estimateMethod === 'none') return null;
   const method = estimate.estimateMethod;
-  const raw = estimate.rawWaste && estimate.rawWaste.value > 0 ? format.rawWaste(estimate.rawWaste) : null;
-  // Only worth saying when the stage's floor clipped the figure.
-  const rawNote = raw && estimate.wallClock && raw !== format.duration(estimate.wallClock.high) ? ` Raw waste before that: ${raw}.` : '';
-  if (estimate.basis === 'serial' && estimate.wallClock) {
-    return `${format.duration(estimate.wallClock.high)}, ${method}. The stage ran effectively alone, so this is close to a point estimate.${rawNote}`;
+  const rawWaste = estimate.rawWaste && estimate.rawWaste.value > 0 ? estimate.rawWaste : null;
+  const raw = rawWaste && !readsAsZero(formatRawWaste(rawWaste)) ? formatRawWaste(rawWaste) : null;
+  const wallClock = estimate.wallClock;
+  if (estimate.basis === 'resourceOnly') {
+    return raw ? `No run-time claim, ${method}. ${raw} was wasted, but it may not shorten the run.` : null;
   }
-  if (estimate.basis === 'contended' && estimate.wallClock) {
-    const { low, high } = estimate.wallClock;
-    return `${format.duration(low)} to ${format.duration(high)}, ${method}. The stage shared the cluster with others: ${format.duration(low)} is the floor, ${format.duration(high)} assumes the fix fully lands.${rawNote}`;
+  if (!wallClock || wallClock.high <= 0) return null;
+  const highText = formatWallClockRange(wallClock.high, wallClock.high);
+  if (readsAsZero(highText)) return null;
+  let rawNote = '';
+  if (raw && rawWaste!.unit !== 'ms') rawNote = ` Resource waste measured: ${raw}.`;
+  else if (raw && rawWaste!.value > wallClock.high && raw !== highText) rawNote = ` Raw waste before the floor clipped it: ${raw}.`;
+  if (estimate.basis === 'serial') {
+    return `${highText}, ${method}. The stage ran effectively alone, so this is close to a point estimate.${rawNote}`;
   }
-  if (estimate.basis === 'resourceOnly' && raw) {
-    return `No run-time claim, ${method}. ${raw} was wasted, but it may not shorten the run.`;
+  if (estimate.basis === 'contended') {
+    const lowText = formatWallClockRange(wallClock.low, wallClock.low);
+    const range = formatWallClockRange(wallClock.low, wallClock.high);
+    const spread = lowText === highText ? 'its floor and optimistic high agree' : `${lowText} is the floor, ${highText} assumes the fix fully lands`;
+    return `${range}, ${method}. The stage shared the cluster with others: ${spread}.${rawNote}`;
   }
   return null;
 }
