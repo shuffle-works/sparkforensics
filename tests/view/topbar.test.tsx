@@ -456,7 +456,10 @@ test('offers Compare with another run for an open run, and calls onCompare', asy
   const user = userEvent.setup();
   const onCompare = vi.fn();
   // Not paused behind "Back to comparison", which hides this action.
-  store.setState({ comparison: { active: false, baselineId: null, candidateId: null } });
+  store.setState({
+    comparison: { active: false, baselineId: null, candidateId: null },
+    appModel: { ...emptyAppModel(), app: { name: 'My Spark App' } },
+  });
   renderTopbar({ activeFileId: 'a::1::2', onCompare });
   await user.click(screen.getByRole('button', { name: 'Compare with another run' }));
   expect(onCompare).toHaveBeenCalledOnce();
@@ -464,5 +467,11 @@ test('offers Compare with another run for an open run, and calls onCompare', asy
 
 test('has no Compare with another run without an open run', () => {
   renderTopbar({ onCompare: vi.fn() });
+  expect(screen.queryByRole('button', { name: 'Compare with another run' })).not.toBeInTheDocument();
+});
+
+test('has no Compare with another run for an open run without an application start event', () => {
+  store.setState({ comparison: { active: false, baselineId: null, candidateId: null } });
+  renderTopbar({ activeFileId: 'a::1::2', onCompare: vi.fn() });
   expect(screen.queryByRole('button', { name: 'Compare with another run' })).not.toBeInTheDocument();
 });

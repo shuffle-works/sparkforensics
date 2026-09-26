@@ -163,6 +163,18 @@ test('compareWithAnotherRun keeps the open run as a cached Run A and seeds the l
   expect(store.getState().status).toBe('idle');
 });
 
+test('compareWithAnotherRun stays on the dashboard when the open run has no app to snapshot', () => {
+  const cache = new Map<string, SessionSnapshot>();
+  store.setState({ sessionCache: cache, activeFileId: 'a::1::2', status: 'ready', compareSeed: null });
+  const { result } = renderHook(() => useIngest({ makeClient: () => makeFakeClient([]) as any }));
+  act(() => result.current.compareWithAnotherRun());
+
+  expect(cache.has('a::1::2')).toBe(false);
+  expect(store.getState().compareSeed).toBeNull();
+  expect(store.getState().status).toBe('ready');
+  expect(store.getState().activeFileId).toBe('a::1::2');
+});
+
 test('startCompareLoad reuses a cached Run A: only Run B is parsed, and A is never re-snapshotted', async () => {
   const startParse = vi.fn();
   const client = makeFakeClient(['B']);

@@ -125,8 +125,9 @@ export function Topbar({
   const moreOptionsTriggerRef = useRef<HTMLButtonElement>(null);
   const comparison = useStore((s) => s.comparison);
   // Not while a comparison is paused behind "Back to comparison": that
-  // control already leads back to one.
-  const showCompare = onCompare != null && !sectionControls && !exportMode && activeFileId != null && !comparison.baselineId;
+  // control already leads back to one. Needs app, the condition for the open
+  // run to be snapshotted as Run A.
+  const showCompare = onCompare != null && !sectionControls && !exportMode && activeFileId != null && app != null && !comparison.baselineId;
   const evidence = useEvidenceExport();
   const appModel = useStore((s) => s.appModel);
   const graphEntries = useMemo(() => eligibleGraphExecutions(appModel, catalog), [appModel, catalog]);

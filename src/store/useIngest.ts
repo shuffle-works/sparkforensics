@@ -323,11 +323,12 @@ export function useIngest(opts: Opts = {}) {
   }, [make, resolveSourceInput, snapshotParsedRun]);
 
   // "Compare with another run" from a dashboard: keep the open run as Run A
-  // (resetToDropZone snapshots it) and open the landing's compare view with
+  // (resetToDropZone snapshots it, which needs app) and open the landing's compare view with
   // that slot already filled, so the reader only picks the other run.
   const compareWithAnotherRun = useCallback(() => {
-    const id = store.getState().activeFileId;
-    if (id == null) return;
+    const s = store.getState();
+    const id = s.activeFileId;
+    if (id == null || !s.appModel.app) return;
     resetToDropZone();
     store.getState().setCompareSeed({ id, label: runLabel(id) });
   }, [resetToDropZone]);
