@@ -82,7 +82,12 @@ cause and their savings overlap rather than add up. When most of the run's
 executor capacity sat idle, the verdict starts with cluster size instead of
 a small per-stage fix.
 
-A run scorecard (wall-clock, efficiency, wastage) sits under the verdict.
+A run scorecard sits under the verdict: **Wall-clock** (total run time),
+**Efficiency** (the share of that time with a stage running; higher is
+better) and **Idle capacity** (the share of executor cores that ran no task;
+lower is better). A collapsed **New to Spark tuning?** primer in the verdict
+explains stages, tasks, executors, shuffle and how to read savings. Stage
+labels such as **Stage 7** open that stage's details.
 Below it, two tabs split the rest of the board:
 
 1. **Findings**: every flagged finding and its detail widget, grouped by
@@ -108,8 +113,9 @@ each widget to the finding itself and what to do about it. Turn it on to also
 show confidence levels, supporting evidence, and documentation links for each
 finding, plus a few extra table columns and the finding filter bar (impact,
 type, stage). A filter that is already active, for example from a shared
-link, keeps the filter bar visible either way. Your choice is remembered
-across runs.
+link, keeps the filter bar visible either way. The scorecard switches from
+plain captions to the raw run and idle-time breakdown, and the newcomer
+primer is hidden. Your choice is remembered across runs.
 
 ### The rest of the topbar
 

@@ -57,8 +57,8 @@ function isIdleCapacityFinding(finding: Finding): boolean {
   return finding.type === 'utilization' || (finding.type === 'memoryUtilization' && finding.variant === 'idleCores');
 }
 
-/** Idle-capacity share (the Scorecard's Wastage tile) that the verdict treats
- * as the run's main story on its own: the Wastage tile's critical flag. */
+/** Idle-capacity share (the Scorecard's Idle capacity tile) that the verdict treats
+ * as the run's main story on its own: the Idle capacity tile's critical flag. */
 export const IDLE_DOMINANT_PCT = 70;
 /** Idle share that still leads when the best time-based fix is tiny. */
 export const IDLE_NOTABLE_PCT = 40;
@@ -96,7 +96,7 @@ function reportedIdlePct(finding: Finding): number | null {
 
 /** The run's idle share as the verdict states it: the figure the top-ranked
  * idle-capacity step reports, so the verdict never disagrees with that step,
- * or `fallbackPct` (the Scorecard's Wastage) when no step reports one. */
+ * or `fallbackPct` (the Scorecard's Idle capacity) when no step reports one. */
 export function verdictIdlePct(steps: NextStep[], fallbackPct: number | null): number | null {
   const idleStep = steps.find(isIdleCapacityStep);
   return (idleStep ? reportedIdlePct(idleStep.lead.finding) : null) ?? fallbackPct;

@@ -9,8 +9,11 @@ import { IMPACT_BG_CLASS, IMPACT_TEXT_CLASS, ImpactDot } from '@/view/ImpactBadg
 import { useWidgetDensity } from '@/store/store';
 import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates';
 
-// Run-info stats row: wall-clock, efficiency, wastage (not problem counts,
-// which live in FixTheseFirst).
+// Run-info stats row: wall-clock, efficiency, idle capacity (not problem
+// counts, which live in RunVerdict and the Findings tab). Basic view
+// captions say what each number measures and which direction is better, so
+// Efficiency (a share of time) and Idle capacity (a share of cores) never
+// read as contradicting each other; Advanced view keeps the raw breakdowns.
 export type ScorecardProps = Pick<WidgetProps, 'appModel' | 'catalog'>;
 
 type FlagImpactBand = 'critical' | 'warning' | null;
@@ -113,7 +116,7 @@ function TimingUnavailableNotice() {
       <ImpactDot impactBand="warning" className="mt-1.5" />
       <p className="text-sm text-warning">
         <span className="font-semibold tracking-wide uppercase">Timing unavailable</span>
-        {'. This run has no complete application timing interval, so wall-clock, efficiency, and wastage can’t be measured.'}
+        {'. This run has no complete application timing interval, so wall-clock, efficiency, and idle capacity can’t be measured.'}
       </p>
     </div>
   );
@@ -151,10 +154,14 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
           dataTestid="kpi-wall-clock"
           value={total > 0 ? formatDuration(total) : '—'}
           meta={
-            <>
-              {formatRanLabel(wc.stagesActive)}
-              {coldStart ? ` · ${coldStart.value}s cold start` : ''}
-            </>
+            density === 'advanced' || wc.stagesActive <= 0 ? (
+              <>
+                {formatRanLabel(wc.stagesActive)}
+                {coldStart ? ` · ${coldStart.value}s cold start` : ''}
+              </>
+            ) : (
+              `Total run time. Stages were running for ${formatDuration(wc.stagesActive)} of it.`
+            )
           }
           bar={<ActiveIdleBar active={wc.stagesActive} total={total} />}
         />
@@ -166,29 +173,31 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
           meta={
             efficiency == null
               ? 'This run has no complete application timing interval.'
-              : total > wc.stagesActive
-                ? `${formatRanLabel(wc.stagesActive)} · ${formatDuration(total - wc.stagesActive)} idle/gap time`
-                : 'executors active the whole run'
+              : density !== 'advanced'
+                ? 'Share of the run with a stage running. Higher is better.'
+                : total > wc.stagesActive
+                  ? `${formatRanLabel(wc.stagesActive)} · ${formatDuration(total - wc.stagesActive)} idle/gap time`
+                  : 'executors active the whole run'
           }
           bar={efficiency != null ? <ProportionBar pct={efficiency} flag={effFlag} label={`Efficiency ${efficiency}%`} /> : undefined}
         />
         <KpiTile
-          eyebrow="Wastage"
+          eyebrow="Idle capacity"
           dataTestid="kpi-wastage"
           value={wastagePct == null ? 'Unavailable' : (<>{wastagePct}<small>%</small></>)}
           flag={wastageFlag}
           meta={
             estimates.wastage.unavailableReason === 'application-timing'
-              ? 'Wastage needs complete application timing.'
+              ? 'Idle capacity needs complete application timing.'
               : estimates.wastage.unavailableReason === 'core-usage-summary'
-                ? 'Wastage needs the core-usage summary.'
+                ? 'Idle capacity needs the core-usage summary.'
                 : estimates.wastage.unavailableReason === 'executor-capacity'
-                  ? 'Wastage needs usable executor-capacity data.'
+                  ? 'Idle capacity needs usable executor-capacity data.'
                   : density === 'advanced'
                     ? 'Driver-idle + executor-slack core-hours as a share of available capacity. Directional, not a cost figure.'
-                    : 'Executor capacity that sat idle. Not a cost figure.'
+                    : 'Share of executor cores that ran no task, even while stages ran. Lower is better. Not a cost figure.'
           }
-          bar={wastagePct != null ? <ProportionBar pct={wastagePct} flag={wastageFlag} label={`Wastage ${wastagePct}%`} /> : undefined}
+          bar={wastagePct != null ? <ProportionBar pct={wastagePct} flag={wastageFlag} label={`Idle capacity ${wastagePct}%`} /> : undefined}
         />
       </div>
     </Card>

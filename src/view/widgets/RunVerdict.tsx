@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, CheckIcon, CircleCheck, CopyIcon } from 'lucide-react';
+import { ArrowRight, CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleCheck, CopyIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { copyText } from '@/lib/clipboard';
@@ -8,7 +8,9 @@ import { formatDuration, typeTag } from '@sparkforensics/core/format-utils.ts';
 import { computeWallClock } from '@sparkforensics/core/wall-clock.ts';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
+import { useWidgetDensity } from '@/store/store';
 import { REGISTRY } from '@/view/detector-registry';
+import { useOptionalDocs } from '@/view/DocsContext';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
@@ -193,6 +195,70 @@ function NextStepItem({ step, index, onRoute }: { step: NextStep; index: number;
   );
 }
 
+/** How the rest of the report is organized, relative so it works under any
+ * published subpath (same rule as `findingGuideUrl`). */
+const UNDERSTANDING_FINDINGS_URL = 'docs/user-guide/understanding-findings.html';
+
+/** A collapsed primer on the handful of Spark terms every step leans on
+ * (stage, task, executor, shuffle) and on how to read savings and colors.
+ * Basic view only: an expert turning Advanced view on does not need it. */
+function NewcomerPrimer() {
+  const [open, setOpen] = useState(false);
+  const docs = useOptionalDocs();
+  return (
+    <div className="text-sm">
+      <button
+        type="button"
+        className="tap-target-comfortable inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-expanded={open}
+        aria-controls="newcomer-primer"
+        onClick={() => setOpen((value) => !value)}
+      >
+        New to Spark tuning? How to read this report
+        {open ? <ChevronUpIcon aria-hidden="true" className="size-4" /> : <ChevronDownIcon aria-hidden="true" className="size-4" />}
+      </button>
+      {open ? (
+        <div id="newcomer-primer" className="mt-2 max-w-prose space-y-2 rounded-md border border-border bg-muted/40 p-3 text-muted-foreground">
+          <p>
+            <span className="font-medium text-foreground">Stages and tasks.</span> Spark splits each job into stages. A
+            stage runs the same code as many tasks, one per slice (partition) of the data, and it finishes only when its
+            slowest task does. Stage numbers match the Spark UI.
+          </p>
+          <p>
+            <span className="font-medium text-foreground">Executors and cores.</span> Tasks run on executors, the
+            worker processes of your cluster, one task per core at a time. Idle capacity is how much of those cores ran
+            nothing.
+          </p>
+          <p>
+            <span className="font-medium text-foreground">Shuffle.</span> Moving data between stages, for example for a
+            join or a group-by. It is often the most expensive part of a job.
+          </p>
+          <p>
+            <span className="font-medium text-foreground">Potential savings and colors.</span> Savings estimate the run
+            time a fix could recover; they are not a guarantee. Red (critical), amber (warning) and blue (info) rank how
+            much run time is at stake.
+          </p>
+          <a
+            href={UNDERSTANDING_FINDINGS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block text-primary underline-offset-4 hover:underline"
+            onClick={(event) => {
+              // Same passthrough as every other in-app docs link: a modified or
+              // non-primary click keeps the browser's own new-tab behavior.
+              if (!docs || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              docs.openSite(UNDERSTANDING_FINDINGS_URL);
+            }}
+          >
+            What every finding means
+          </a>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** The run's verdict, first thing on the board: one sentence saying where to
  * start, a short summary, and the top places to look as ordered next steps,
  * each with a plain-language explanation, the concrete fix, and a route to its
@@ -211,6 +277,7 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
   const shown = steps.slice(0, NEXT_STEP_LIMIT);
   const remaining = steps.length - shown.length;
   const { clean } = facts;
+  const density = useWidgetDensity();
 
   return (
     <section
@@ -225,6 +292,7 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
         </h2>
         <p className="max-w-prose text-sm text-muted-foreground">{verdictSummary(eligible, steps, facts).join(' ')}</p>
       </div>
+      {density === 'advanced' ? null : <NewcomerPrimer />}
       {shown.length > 0 ? (
         <ol aria-label="Next steps" className="space-y-4">
           {shown.map((step, index) => (

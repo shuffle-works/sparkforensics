@@ -17,6 +17,16 @@ import { selectTriageTarget, selectTriageTargetForFinding, type TriageTarget } f
 
 const PAGE_SIZE = 10;
 
+// Below `sm` a three-column row leaves the recommendation too little width and
+// pushes the right-hand stage/savings column off screen. The row turns into a
+// wrapping flex line instead: tag and text share the first line, and the
+// trailing column drops onto its own full-width line under them. CSS only, so
+// every figure still renders exactly once.
+const STACKED_ROW = 'max-sm:flex max-sm:flex-wrap max-sm:items-start';
+const STACKED_TAG_CELL = 'max-sm:w-auto max-sm:shrink-0';
+const STACKED_TEXT_CELL = 'max-sm:min-w-0 max-sm:flex-1';
+const STACKED_TRAILING_CELL = 'max-sm:w-full max-sm:basis-full max-sm:pt-0 max-sm:text-left';
+
 // Wraps the core `isEligible` with the one check that module can't do itself:
 // `REGISTRY` lives in a `.tsx` file, not importable from core.
 export function isEligible(finding: Finding): boolean {
@@ -138,11 +148,11 @@ export function FindingRow({
   const text = recommendationText(finding);
   const label = findingActionLabel(finding);
   return (
-    <TableRow data-testid="fix-these-first-row" data-finding-type={finding.type}>
-      <TableCell className="w-px">
+    <TableRow data-testid="fix-these-first-row" data-finding-type={finding.type} className={STACKED_ROW}>
+      <TableCell className={cn('w-px', STACKED_TAG_CELL)}>
         <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
       </TableCell>
-      <TableCell className="whitespace-normal">
+      <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
         <button
           type="button"
           className="cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -156,8 +166,11 @@ export function FindingRow({
           right-side truncation would hide the important impact figure first.
           Impact keeps `shrink-0` so it stays fully visible; the plain-text
           location fallback is the one that gives way. */}
-      <TableCell className="w-px text-right font-mono text-xs text-muted-foreground" title={[location, impact].filter(Boolean).join(' · ')}>
-        <span className="flex items-center justify-end gap-1.5">
+      <TableCell
+        className={cn('w-px text-right font-mono text-xs text-muted-foreground', STACKED_TRAILING_CELL)}
+        title={[location, impact].filter(Boolean).join(' · ')}
+      >
+        <span className="flex items-center justify-end gap-1.5 max-sm:justify-start">
           <LocationBadge finding={finding} />
           {impact ? <span className="shrink-0">{impact}</span> : null}
         </span>
@@ -294,11 +307,11 @@ export function TypeGroupRow({
 
   return (
     <>
-      <TableRow data-testid="fix-these-first-group-row" data-finding-type={group.type}>
-        <TableCell className="w-px">
+      <TableRow data-testid="fix-these-first-group-row" data-finding-type={group.type} className={STACKED_ROW}>
+        <TableCell className={cn('w-px', STACKED_TAG_CELL)}>
           <TagBadge type={group.type} impactBand={best.impactBand} docAnchor={sharedDocAnchor(group.findings)} />
         </TableCell>
-        <TableCell className="whitespace-normal">
+        <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
           <button
             type="button"
             aria-expanded={expanded}
@@ -310,7 +323,7 @@ export function TypeGroupRow({
             {title ? <span className="block text-xs text-muted-foreground">{title}</span> : null}
           </button>
         </TableCell>
-        <TableCell className="w-px text-right font-mono text-xs text-muted-foreground">
+        <TableCell className={cn('w-px text-right font-mono text-xs text-muted-foreground', STACKED_TRAILING_CELL)}>
           <span className="inline-flex items-center justify-end gap-1.5" title={trailingStatTitle(group)}>
             {trailingStat(group)}
             {expanded ? (

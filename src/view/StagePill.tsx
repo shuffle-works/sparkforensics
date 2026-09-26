@@ -13,7 +13,10 @@ export interface StagePillProps {
 }
 
 /** Opens the stage-detail dialog for a single stage via
- * `useStageDetail().openStage`. */
+ * `useStageDetail().openStage`. Reads "Stage 7", not the terser "S 7": a
+ * newcomer can't decode the abbreviation, and the visible text must stay
+ * inside the accessible name ("Open details for Stage 7") for voice-control
+ * users. */
 export function StagePill({ stageId, className }: StagePillProps) {
   const { openStage } = useStageDetail();
   return (
@@ -24,7 +27,7 @@ export function StagePill({ stageId, className }: StagePillProps) {
       aria-label={`Open details for Stage ${stageId}`}
       onClick={() => openStage(stageId)}
     >
-      S<b>{stageId}</b>
+      Stage <b>{stageId}</b>
     </button>
   );
 }

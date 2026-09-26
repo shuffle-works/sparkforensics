@@ -3,7 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { emptyAppModel } from '@/store/store';
+import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { buildNextSteps, locationKey, prioritizeIdleCapacity, verdictIdlePct } from '@/view/run-verdict';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
@@ -190,7 +190,8 @@ describe('RunVerdict', () => {
     const verdict = screen.getByTestId('run-verdict');
     expect(verdict).not.toHaveTextContent('Every check passed');
     expect(verdict).toHaveTextContent('cover only the part of the run it captured');
-    expect(verdict.querySelector('svg')).toBeNull();
+    // No clean-run check icon in the title.
+    expect(screen.getByRole('heading', { level: 2 }).querySelector('svg')).toBeNull();
   });
 
   it('flags an incomplete run alongside its next steps', () => {
@@ -215,5 +216,26 @@ describe('RunVerdict', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'No findings to fix right now.' })).toBeInTheDocument();
     expect(screen.getByTestId('run-verdict')).toHaveTextContent('Every check passed for this run.');
     expect(screen.queryByRole('list', { name: 'Next steps' })).not.toBeInTheDocument();
+  });
+
+  it('offers a collapsed newcomer primer in Basic view only', async () => {
+    const user = userEvent.setup();
+    renderVerdict([timed('skew', 7, 2_400)]);
+    const toggle = screen.getByRole('button', { name: /new to spark tuning\? how to read this report/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await user.click(toggle);
+    expect(screen.getByText(/Spark splits each job into stages/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'What every finding means' }))
+      .toHaveAttribute('href', 'docs/user-guide/understanding-findings.html');
+  });
+
+  it('drops the newcomer primer in Advanced view', () => {
+    store.getState().setWidgetDensity('advanced');
+    try {
+      renderVerdict([timed('skew', 7, 2_400)]);
+      expect(screen.queryByRole('button', { name: /new to spark tuning/i })).not.toBeInTheDocument();
+    } finally {
+      store.getState().setWidgetDensity('basic');
+    }
   });
 });
