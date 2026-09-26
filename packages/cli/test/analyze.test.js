@@ -308,6 +308,8 @@ describe('sparkforensics-analyze CLI', () => {
       expect(Array.isArray(parsed.notRunChecks)).toBe(true);
       expect(typeof parsed.summary.clean).toBe('boolean');
       expect(typeof parsed.summary.actionableFindingCount).toBe('number');
+      expect(typeof parsed.verdict.title).toBe('string');
+      expect(parsed.verdict.steps.length).toBeGreaterThan(0);
       expect(Object.keys(parsed.summary.outcome).sort()).toEqual(['failedJobs', 'failureReason', 'failureReasonStageId', 'totalJobs']);
       expect(parsed.recommendations.length).toBeGreaterThan(0);
       expect(parsed.cleanChecks.length).toBeGreaterThan(0);

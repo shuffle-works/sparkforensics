@@ -51,7 +51,7 @@ describe('buildNextSteps', () => {
     const steps = buildNextSteps([spill, straggler, secondStraggler, skew]);
 
     expect(steps.map((step) => step.key)).toEqual(['stage:7', 'stage:3']);
-    expect(steps[0].lead.finding).toBe(skew);
+    expect(steps[0].lead).toBe(skew);
     expect(steps[0].related).toEqual([straggler]);
     expect(steps[0].stageId).toBe(7);
     expect(steps[1].related).toEqual([]);
@@ -75,7 +75,7 @@ describe('idle capacity in the next steps', () => {
   const steps = () => buildNextSteps([timed('skew', 0, 64), idleCores]);
 
   it('keeps the savings order however much capacity sat idle', () => {
-    expect(steps().map((step) => step.lead.finding.type)).toEqual(['skew', 'memoryUtilization']);
+    expect(steps().map((step) => step.lead.type)).toEqual(['skew', 'memoryUtilization']);
   });
 
   it('keeps a heap-pressure memoryUtilization finding and idleCores as separate steps', () => {
@@ -85,7 +85,7 @@ describe('idle capacity in the next steps', () => {
     };
     const both = buildNextSteps([timed('skew', 0, 64), heapNearCapacity, { ...idleCores, impactBand: 'info' }]);
     expect(both.map((step) => step.key)).toContain('app:memoryUtilization:idleCores');
-    expect(both[0].lead.finding.type).toBe('skew');
+    expect(both[0].lead.type).toBe('skew');
   });
 
   it('states the idle share the idle-capacity step itself reports, falling back to the Scorecard figure', () => {

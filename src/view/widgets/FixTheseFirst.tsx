@@ -11,7 +11,8 @@ import { REGISTRY } from '@/view/detector-registry';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePill, StagePillGroup } from '@/view/StagePill';
-import { formatRawWaste, formatWallClockRange, readsAsZero } from '@/view/ImpactEstimate';
+import { formatWallClockRange, impactFigure } from '@sparkforensics/core/impact-format.ts';
+import { recommendationText } from '@sparkforensics/core/run-verdict.ts';
 import { RowPagination } from '@/view/RowPagination';
 import { selectTriageTarget, selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 
@@ -39,22 +40,6 @@ export function isEligible(finding: Finding): boolean {
  * a group lands in the same band its own badge color would suggest. */
 export function groupImpactBand(group: RollupGroup): Finding['impactBand'] {
   return rankFindings(group.findings)[0].impactBand;
-}
-
-/** The row's one-line impact figure: the wall-clock range for a time-based
- * finding, the raw resource figure for a `resourceOnly` one, or nothing for a
- * purely informational estimate or a raw figure that rounds to zero ("0.0
- * core-h" reads as a measured nothing). Reuses `ImpactEstimate.tsx`'s
- * formatters so the units/rounding match every other surface. */
-export function impactFigure(finding: Finding): string | null {
-  const estimate = finding.impactEstimate;
-  if (!estimate) return null;
-  if (estimate.wallClock) return formatWallClockRange(estimate.wallClock.low, estimate.wallClock.high);
-  if (estimate.rawWaste) {
-    const text = formatRawWaste(estimate.rawWaste);
-    return readsAsZero(text) ? null : text;
-  }
-  return null;
 }
 
 /** A short per-row location tag, abbreviated ("St." not "Stage") to fit the
@@ -124,15 +109,9 @@ function LocationBadge({ finding, textClassName }: { finding: Finding; textClass
   ) : null;
 }
 
-/** Falls back to the registry's finding label when a finding somehow reaches
- * here with no `recommendation` text (every real detector sets one; this is
- * a defensive floor, not an expected path, since `Finding.recommendation` is
- * optional on the type). */
-export function recommendationText(finding: Finding): string {
-  const text = typeof finding.recommendation === 'string' ? finding.recommendation.trim() : '';
-  if (text) return text;
-  return REGISTRY[finding.type]?.findingLabel ?? finding.type;
-}
+// Both live in core now (shared with the CLI/MCP verdict); re-exported for the view modules and
+// tests that import them from here.
+export { impactFigure, recommendationText };
 
 /** A single-finding row: the finding's tag badge, a short action label (bold)
  * over the full recommendation sentence (muted) as the navigate control, and a

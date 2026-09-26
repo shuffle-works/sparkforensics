@@ -1,6 +1,6 @@
-import { IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
+import { rankBySavings } from '@sparkforensics/core/run-verdict.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { REGISTRY, orderedWidgets } from './detector-registry';
+import { REGISTRY } from './detector-registry';
 import type { WidgetRegion } from './detector-registry';
 
 export interface TriageTarget {
@@ -12,7 +12,9 @@ export interface TriageTarget {
   recommendation: string;
 }
 
-function targetForFinding(finding: Finding): TriageTarget | null {
+/** The route to a finding's widget, or null when its type has no routeable widget or the
+ * finding has no recommendation. */
+export function triageTargetFor(finding: Finding): TriageTarget | null {
   const entry = REGISTRY[finding.type];
   const recommendation = typeof finding.recommendation === 'string' ? finding.recommendation.trim() : '';
 
@@ -32,53 +34,19 @@ function targetForFinding(finding: Finding): TriageTarget | null {
 // reference presence (not a value key) is the identity that detects staleness.
 export function selectTriageTargetForFinding(finding: Finding, catalog: Finding[]): TriageTarget | null {
   if (!catalog.includes(finding)) return null;
-  return targetForFinding(finding);
-}
-
-// The high end of the finding's own occupancy-clipped wall-clock estimate
-// (src/impact-estimator.ts), the same figure ImpactEstimate.tsx's "Potential
-// savings" line leads with. `null` when there's no quantified time claim
-// (resourceOnly/informational basis): such a finding can't be compared
-// against one that does have a real estimate, so it can never win the
-// "biggest win" callout on its own numbers.
-function potentialSavingsMs(finding: Finding): number | null {
-  return finding.impactEstimate?.wallClock?.high ?? null;
+  return triageTargetFor(finding);
 }
 
 export function selectTriageTarget(catalog: Finding[]): TriageTarget | null {
   return rankTriageTargets(catalog)[0] ?? null;
 }
 
-/** Every routeable finding as a triage target, best first. */
+/** Every routeable finding as a triage target, best first: core's potential-savings ranking
+ * (`rankBySavings`, shared with the CLI/MCP verdict). */
 export function rankTriageTargets(catalog: Finding[]): TriageTarget[] {
-  const widgetOrder = new Map(orderedWidgets().map((widget, index) => [widget.widgetId, index]));
-  const candidates = catalog
-    .map((finding, catalogIndex) => ({ target: targetForFinding(finding), catalogIndex }))
-    .filter((candidate): candidate is { target: TriageTarget; catalogIndex: number } => candidate.target !== null);
-
-  // Ranked by potential savings: every finding's impact band is now itself
-  // derived from savings where one exists, so this ranking and that band
-  // agree by construction rather than needing to be reconciled. A quantified
-  // estimate always outranks an unquantified one; ties (including "neither
-  // has one") fall back to impact band, then widget display order, then
-  // catalog order, so an unquantified warning still leads an info.
-  candidates.sort((left, right) => {
-    const leftSavings = potentialSavingsMs(left.target.finding);
-    const rightSavings = potentialSavingsMs(right.target.finding);
-    if (leftSavings !== null && rightSavings !== null && leftSavings !== rightSavings) {
-      return rightSavings - leftSavings;
-    }
-    if ((leftSavings !== null) !== (rightSavings !== null)) {
-      return leftSavings !== null ? -1 : 1;
-    }
-    return (
-      (IMPACT_BAND_ORDER[left.target.finding.impactBand] ?? 9) - (IMPACT_BAND_ORDER[right.target.finding.impactBand] ?? 9)
-      || (widgetOrder.get(left.target.widgetId) ?? Number.MAX_SAFE_INTEGER) - (widgetOrder.get(right.target.widgetId) ?? Number.MAX_SAFE_INTEGER)
-      || left.catalogIndex - right.catalogIndex
-    );
-  });
-
-  return candidates.map((candidate) => candidate.target);
+  return rankBySavings(catalog)
+    .map(triageTargetFor)
+    .filter((target): target is TriageTarget => target !== null);
 }
 
 export function formatTriageCopy(target: TriageTarget): {

@@ -68,7 +68,7 @@ export function createMcpServer(): McpServer {
   }, (params) => toolResult(listRuns(params)));
 
   server.registerTool('diagnose_run', {
-    description: 'Diagnose a Spark run: thresholded findings with remediation text, an impact-ranked fix recommendation rollup, clean-check status, and the checks the log lacked the data to run.',
+    description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by potential savings), thresholded findings with remediation text, an impact-ranked fix recommendation rollup, clean-check status, and the checks the log lacked the data to run.',
     inputSchema: {
       ...runRefSchema, redact: z.boolean().optional(),
       include: z.array(z.enum(['summary', 'evidenceAvailability', 'detectors'])).optional(),

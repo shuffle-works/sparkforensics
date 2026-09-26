@@ -71,6 +71,7 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     expect(notRun.get('utilization')).toMatch(/no end-of-run record/);
     expect(cleanChecks.map((c) => c.type)).not.toContain('skew');
     expect(summary.clean).toBe(false);
+    expect(result.structuredContent.verdict.title).toBe('This log looks incomplete, so results cover only part of the run');
     const runSummary = await client.callTool({ name: 'get_run_summary', arguments: { source: { path } } });
     expect(runSummary.structuredContent).toMatchObject({ runComplete: false, failedJobs: 0, totalJobs: 0, failureReason: null, failureReasonStageId: null });
   }, 30000);

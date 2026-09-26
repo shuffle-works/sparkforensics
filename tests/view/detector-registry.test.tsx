@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { test, expect } from 'vitest';
 import { DETECTORS } from '@sparkforensics/core/detectors.ts';
+import { FINDING_DISPLAY_ORDER, REFERENCE_DISPLAY_TYPES } from '@sparkforensics/core/run-verdict.ts';
 import { REGISTRY, orderedWidgets, isAlwaysMountedType, alwaysMountedWidgets } from '../../src/view/detector-registry';
 
 test('every DETECTORS type has a mapped component, except the dead broadcastSizing key', () => {
@@ -92,4 +93,13 @@ test('no always-mounted type shares its component with an action-region (non-alw
   for (const flags of componentAlwaysMountedFlags.values()) {
     expect(flags.size).toBe(1);
   }
+});
+
+// Core's verdict ranking (packages/core/src/run-verdict.ts) breaks its last ties by widget display
+// order without access to REGISTRY, so its copy of that order must match the board's.
+test('core FINDING_DISPLAY_ORDER and REFERENCE_DISPLAY_TYPES match the registry', () => {
+  expect(FINDING_DISPLAY_ORDER).toEqual(orderedWidgets().map((w) => w.type));
+  expect(new Set(FINDING_DISPLAY_ORDER)).toEqual(new Set(Object.keys(REGISTRY)));
+  const reference = Object.entries(REGISTRY).filter(([, entry]) => entry.region === 'reference').map(([type]) => type);
+  expect(new Set(reference)).toEqual(REFERENCE_DISPLAY_TYPES);
 });

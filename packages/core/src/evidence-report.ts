@@ -11,7 +11,8 @@ import { coreFindingActionLabel } from './finding-action-label.ts';
 import { matchesFindingFilterCriteria } from './finding-filter-predicate.ts';
 import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
-import { summarizeRunOutcome } from './run-outcome.ts';
+import { buildRunVerdict, findingActionLabel, stepCopyRecommendation, stepCopyText, type RunVerdictModel } from './run-verdict.ts';
+import { impactFigure, savingsMeaning } from './impact-format.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
 import type {
   AppModel, Finding, EvidenceAvailability, ImpactEstimate, RawWasteFigure, RawWasteUnit, ImpactBand,
@@ -77,6 +78,33 @@ type ImpactBandCounts = { critical: number; warning: number; info: number };
 // verdict leads with). Counts only jobs with an end record; `failureReason` is the first line of
 // Spark's own recorded reason, only when a job failed, and `failureReasonStageId` the stage it came
 // from (null when it came from a job's exception).
+// One verdict step: a place to look (a stage, or an app-level problem), led by its best-ranked
+// finding, with the other finding types flagged there. `text` is the step's line in the
+// dashboard's "Copy next steps" checklist.
+export interface VerdictStepRow {
+  key: string;
+  stageId: number | null;
+  type: string;
+  tag: string;
+  leadFindingId: string | null;
+  actionLabel: string;
+  recommendation: string;
+  impact: string | null;
+  impactMeaning: string | null;
+  relatedTypes: string[];
+  text: string;
+}
+
+// The dashboard's run verdict (run-verdict.ts): title, summary sentences, the first steps in the
+// same order, how many more places the full list holds, and the "Copy next steps" text.
+export interface VerdictJson {
+  title: string;
+  summary: string[];
+  steps: VerdictStepRow[];
+  remainingPlaces: number;
+  copyText: string | null;
+}
+
 export interface RunOutcomeSummary {
   failedJobs: number;
   totalJobs: number;
@@ -100,6 +128,7 @@ export interface EvidenceReportJson {
     clean: boolean;
     outcome: RunOutcomeSummary;
   };
+  verdict: VerdictJson;
   evidenceAvailability: EvidenceAvailability | null;
   detectors: unknown;
   findings: FindingRow[];
@@ -257,6 +286,31 @@ function countByImpactBand(findings: Array<{ impactBand: string }>): ImpactBandC
   return counts;
 }
 
+function verdictJson(model: RunVerdictModel): VerdictJson {
+  return {
+    title: model.title,
+    summary: model.summary,
+    steps: model.shown.map((step): VerdictStepRow => {
+      const recommendation = stepCopyRecommendation(step, model.outcome);
+      return {
+        key: step.key,
+        stageId: step.stageId,
+        type: step.lead.type,
+        tag: typeTag(step.lead.type),
+        leadFindingId: step.lead.id ?? null,
+        actionLabel: findingActionLabel(step.lead),
+        recommendation,
+        impact: impactFigure(step.lead),
+        impactMeaning: savingsMeaning(step.lead),
+        relatedTypes: step.related.map((f) => f.type),
+        text: stepCopyText(step.lead, recommendation, step.stageId),
+      };
+    }),
+    remainingPlaces: model.remaining,
+    copyText: model.copyText,
+  };
+}
+
 // Keyed by appModel object identity: mcp-tools.ts caches one fixed appModel per runId (never
 // mutated), so re-running analyze()/auditConfig() reproduces the same catalog. getFindingEvidence
 // calls buildEvidenceReport once per drill-down; without this, N lookups meant N detector re-runs.
@@ -278,7 +332,10 @@ function buildJson(appModel: AppModel): EvidenceReportJson {
   const recommendations = buildRecommendations(allFindings, stages ?? new Map());
   const { cleanChecks, notRunChecks } = buildCheckLists(allFindings, stages ?? new Map());
   const actionable = allFindings.filter(isEligible);
-  const runOutcome = summarizeRunOutcome(jobs ?? new Map(), allFindings);
+  const runVerdict = buildRunVerdict({
+    ...appModel, stages: stages ?? new Map(), jobs: jobs ?? new Map(), executors: executors ?? { added: [], removed: [] },
+  }, allFindings);
+  const runOutcome = runVerdict.outcome;
 
   const result: EvidenceReportJson = {
     schemaVersion: EVIDENCE_SCHEMA_VERSION,
@@ -305,6 +362,7 @@ function buildJson(appModel: AppModel): EvidenceReportJson {
         failureReasonStageId: runOutcome.reasonStageId,
       },
     },
+    verdict: verdictJson(runVerdict),
     evidenceAvailability: evidenceAvailability ?? null,
     // Detector metadata so the threshold set that produced each finding travels with the evidence.
     // Order follows DETECTORS (stable) => byte-stable serialization.
@@ -385,9 +443,32 @@ function renderOutcome(outcome: RunOutcomeSummary, incomplete: boolean): string 
   return incomplete ? `${succeeded} The log has no end-of-run record, so jobs still running when it stops are not counted.` : succeeded;
 }
 
+// The dashboard verdict card as text: title, summary, then the numbered steps worded as its
+// "Copy next steps" checklist, each followed by the other finding types flagged at that place.
+function renderVerdict(verdict: VerdictJson): string[] {
+  const lines = ['## Verdict', '', verdict.title];
+  if (verdict.summary.length > 0) lines.push('', verdict.summary.join(' '));
+  if (verdict.steps.length > 0) {
+    lines.push('');
+    verdict.steps.forEach((step, i) => {
+      lines.push(`${i + 1}. [${step.tag}] ${step.text}`);
+      if (step.relatedTypes.length > 0) {
+        const related = step.relatedTypes.map((type) => FINDING_NAMES[type] ?? type).join(', ');
+        lines.push(`   - Also flagged here: ${related}. These often share this cause, so the same fix may clear them too.`);
+      }
+    });
+    if (verdict.remainingPlaces > 0) {
+      const places = `${verdict.remainingPlaces} more place${verdict.remainingPlaces === 1 ? '' : 's'}`;
+      lines.push('', `${places} to look at in the Findings section below.`);
+    }
+  }
+  lines.push('');
+  return lines;
+}
+
 // `incomplete` comes from the unfiltered findings, since a findingsFilter can drop the incompleteRun row.
 function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
-  const { summary, findings, evidenceAvailability, detectors, recommendations, cleanChecks, notRunChecks } = json;
+  const { summary, verdict, findings, evidenceAvailability, detectors, recommendations, cleanChecks, notRunChecks } = json;
   const lines: string[] = [];
   lines.push('# Spark run evidence report');
   lines.push('');
@@ -401,6 +482,7 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
   if (outcomeLine) lines.push(`- Outcome: ${outcomeLine}`);
   if (summary.clean) lines.push('- Clean run: no findings, no failed jobs, and every check could run.');
   lines.push('');
+  lines.push(...renderVerdict(verdict));
   if (recommendations.length > 0) {
     lines.push(`## Fix these first (${recommendations.length})`);
     lines.push('');

@@ -137,7 +137,7 @@ describe('buildEvidenceReport', () => {
     const raw = buildEvidenceReport(fixture()).json;
     expect(JSON.stringify(raw)).toBe(JSON.stringify(buildEvidenceReport(fixture()).json));
     expect(Object.keys(raw)).toEqual([
-      'schemaVersion', 'summary', 'evidenceAvailability', 'detectors', 'findings',
+      'schemaVersion', 'summary', 'verdict', 'evidenceAvailability', 'detectors', 'findings',
       'recommendations', 'cleanChecks', 'notRunChecks',
     ]);
     // Core construction order (optional confidence/validation/docAnchor trail it).
@@ -464,6 +464,21 @@ describe('buildEvidenceReport', () => {
       expect(markdown).toContain('- Outcome: All 2 jobs succeeded.');
       // No ended job, no outcome line.
       expect(buildEvidenceReport(fixture()).markdown).not.toContain('- Outcome:');
+    });
+
+    it('carries the run verdict and opens the Markdown with it', () => {
+      const { json, markdown } = buildEvidenceReport(fixture());
+      const { verdict } = json;
+      expect(verdict.title).toMatch(/^Start with Stage \d$/);
+      expect(verdict.steps.length).toBeGreaterThan(0);
+      const [step] = verdict.steps;
+      expect(Object.keys(step)).toEqual([
+        'key', 'stageId', 'type', 'tag', 'leadFindingId', 'actionLabel', 'recommendation', 'impact', 'impactMeaning', 'relatedTypes', 'text',
+      ]);
+      expect(verdict.copyText).toContain(`1. ${step.text}`);
+      expect(markdown).toContain(`## Verdict\n\n${verdict.title}`);
+      expect(markdown).toContain(`1. [${step.tag}] ${step.text}`);
+      expect(markdown.indexOf('## Verdict')).toBeLessThan(markdown.indexOf('## Findings'));
     });
 
     it('markdown lists clean checks after the Detectors section', () => {

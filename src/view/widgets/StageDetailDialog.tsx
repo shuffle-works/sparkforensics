@@ -16,7 +16,7 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { buildNextSteps, locationKey } from '@/view/run-verdict';
 import { summarizeRunOutcome } from '@sparkforensics/core/run-outcome.ts';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
-import { hasCompleteApplicationInterval } from '@/view/widgets/scorecard-estimates';
+import { hasCompleteApplicationInterval } from '@sparkforensics/core/scorecard-estimates.ts';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { ImpactEstimate, formatImpactEstimateCompact } from '../ImpactEstimate.tsx';
 import { PlanView, resolvePlanTree } from '@/view/widgets/PlanView';
@@ -120,7 +120,7 @@ function groupFindingsByType(
   // failures first on a failed run), so "start with the first" agrees with
   // it. Types the verdict can't route follow, worst band first.
   const [step] = buildNextSteps(findings, failedJobStageIds ? { failedJobStageIds } : {});
-  const verdictOrder = step ? [step.lead.finding.type, ...step.related.map((f) => f.type)] : [];
+  const verdictOrder = step ? [step.lead.type, ...step.related.map((f) => f.type)] : [];
   const rank = (type: string) => (verdictOrder.includes(type) ? verdictOrder.indexOf(type) : verdictOrder.length);
   return [...groups.entries()].sort(
     ([aType, a], [bType, b]) => rank(aType) - rank(bType) || IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand],

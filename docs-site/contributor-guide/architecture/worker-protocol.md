@@ -176,7 +176,7 @@ names → `app-1`/`host-1` pseudonyms via `packages/core/src/redact.ts`) is opt-
 `4`, surfaced as `json.schemaVersion`) and has this fixed top-level key order:
 
 ```text
-schemaVersion, summary, evidenceAvailability, detectors, findings, recommendations, cleanChecks, notRunChecks
+schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, recommendations, cleanChecks, notRunChecks
 ```
 
 - `summary` is the run header: `{ app: { id, name, sparkVersion }, stageCount,
@@ -188,6 +188,13 @@ schemaVersion, summary, evidenceAvailability, detectors, findings, recommendatio
   `outcome` is `{ failedJobs, totalJobs, failureReason, failureReasonStageId }` from
   `summarizeRunOutcome` (`packages/core/src/run-outcome.ts`), the job results the dashboard
   verdict leads with; the Markdown prints it as an `- Outcome:` header line.
+- `verdict` is the dashboard's run verdict from `buildRunVerdict`
+  (`packages/core/src/run-verdict.ts`): `{ title, summary, steps, remainingPlaces, copyText }`.
+  `steps` holds the first three places to look in the verdict card's order, each
+  `{ key, stageId, type, tag, leadFindingId, actionLabel, recommendation, impact, impactMeaning,
+  relatedTypes, text }`, where `text` is that step's line of the "Copy next steps" checklist and
+  `copyText` is the whole checklist. The Markdown opens with it as `## Verdict`. The
+  `recommendations` rollup stays alongside: it ranks fix types, the verdict ranks places.
 - `evidenceAvailability` is the ledger above (or `null` when absent).
 - `detectors` is `detectorCatalog()` output: one `{ type, version, scope,
   thresholds, docAnchor }` per detector, in `DETECTORS` order, so the exact

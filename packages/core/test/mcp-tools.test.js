@@ -338,7 +338,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       const result = diagnoseRun(runId, include === undefined ? undefined : { include });
       expect(Object.keys(result).sort()).toEqual(
-        ['cleanChecks', 'findings', 'notRunChecks', 'recommendations', 'runComplete', 'runId'].sort(),
+        ['cleanChecks', 'findings', 'notRunChecks', 'recommendations', 'runComplete', 'runId', 'verdict'].sort(),
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -4,10 +4,12 @@ import { ArrowRight, CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleCheck, Cir
 import { Button } from '@/components/ui/button';
 import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
-import { formatDuration, typeTag } from '@sparkforensics/core/format-utils.ts';
-import { hasFinishedStage, isCleanRun } from '@sparkforensics/core/check-coverage.ts';
-import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from '@sparkforensics/core/run-outcome.ts';
-import { computeWallClock } from '@sparkforensics/core/wall-clock.ts';
+import { typeTag } from '@sparkforensics/core/format-utils.ts';
+import { impactFigure } from '@sparkforensics/core/impact-format.ts';
+import { quotesReasonOf } from '@sparkforensics/core/run-outcome.ts';
+import {
+  buildRunVerdict, quotedReasonText, recommendationText, stepCopyText, type NextStep,
+} from '@sparkforensics/core/run-verdict.ts';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { useWidgetDensity } from '@/store/store';
 import { REGISTRY } from '@/view/detector-registry';
@@ -15,20 +17,9 @@ import { useOptionalDocs } from '@/view/DocsContext';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
-import {
-  buildNextSteps,
-  IDLE_NOTABLE_PCT,
-  isIdleCapacityStep,
-  NEXT_STEP_LIMIT,
-  estimateProvenance,
-  savingsMeaning,
-  verdictIdlePct,
-  type NextStep,
-} from '@/view/run-verdict';
+import { estimateProvenance, savingsMeaning } from '@/view/run-verdict';
 import { useStageDetail } from '@/view/StageDetailContext';
-import type { TriageTarget } from '@/view/triage-target';
-import { impactFigure, isEligible, recommendationText } from '@/view/widgets/FixTheseFirst';
-import { getScorecardEstimates, hasCompleteApplicationInterval } from '@/view/widgets/scorecard-estimates';
+import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
 
 export interface RunVerdictProps {
   appModel: AppModel;
@@ -41,144 +32,6 @@ export interface RunVerdictProps {
 
 function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? '' : 's'}`;
-}
-
-/** The run facts the verdict's wording depends on, read once. */
-interface RunFacts {
-  /** Wall-clock of the whole run, or null with no complete timing interval. */
-  runMs: number | null;
-  /** Allocated executor capacity that ran no task (`verdictIdlePct`). */
-  idlePct: number | null;
-  /** The log has no end-of-run record, so it covers only part of the run. */
-  incomplete: boolean;
-  /** No finding at all, ranked or not, no failed job, and nothing the log
-   * lacked to run a check: the only state the verdict calls clean. */
-  clean: boolean;
-  outcome: RunOutcome;
-  /** The log has stages but none recorded an end, so no stage check had
-   * anything to measure. */
-  noFinishedStages: boolean;
-}
-
-function isFailedRun(facts: RunFacts): boolean {
-  return facts.outcome.failedJobs > 0;
-}
-
-/** The failed-run title: the one thing a newcomer must know before any
- * tuning advice is that the job did not finish. */
-function failedTitle({ failedJobs, totalJobs }: RunOutcome): string {
-  if (failedJobs < totalJobs) return `${failedJobs} of ${totalJobs} jobs failed in this run`;
-  return totalJobs === 1 ? 'This run failed: its job did not finish' : `This run failed: all ${totalJobs} jobs did not finish`;
-}
-
-/** An action label as it reads after "Start here:": only its first letter
- * drops to lower case, so a name inside it ("Switch to Kryo") keeps its
- * capital, and a leading acronym ("GC", "OOM") is left alone. */
-function lowerFirst(label: string): string {
-  if (/^[A-Z]{2}/.test(label)) return label;
-  return label.charAt(0).toLowerCase() + label.slice(1);
-}
-
-function verdictTitle(eligible: Finding[], steps: NextStep[], facts: RunFacts): string {
-  if (isFailedRun(facts)) return failedTitle(facts.outcome);
-  if (eligible.length === 0 && facts.incomplete) return 'This log looks incomplete, so results cover only part of the run';
-  if (eligible.length === 0 && facts.noFinishedStages) return 'This log has no finished stages to check';
-  if (eligible.length === 0 && !facts.clean) return 'Nothing to fix, but some checks could not run on this log';
-  if (eligible.length === 0) return 'No findings to fix right now.';
-  // Every real detector writes a recommendation, so an eligible finding with
-  // no route is a defensive case: still never call such a run clean.
-  if (steps.length === 0) return `${plural(eligible.length, 'finding')} to review`;
-  const lead = steps[0];
-  if (isIdleCapacityStep(lead) && facts.idlePct != null) return `Start with cluster size: ${facts.idlePct}% of executor capacity sat idle`;
-  if (lead.stageId != null) return `Start with Stage ${lead.stageId}`;
-  return `Start here: ${lowerFirst(findingActionLabel(lead.lead.finding))}`;
-}
-
-/** The run-level summary under the title: how much was found and where, what
- * the first fix is worth, and the run's idle capacity when that is large
- * enough to matter but is not the first step (whose title already says it). */
-function verdictSummary(eligible: Finding[], steps: NextStep[], facts: RunFacts): string[] {
-  const sentences: string[] = [];
-  const { failedJobs, totalJobs } = facts.outcome;
-  if (failedJobs > 0) {
-    if (eligible.some((finding) => !FAILURE_TYPES.has(finding.type))) {
-      sentences.push('Fix the failure before tuning: the other findings cover only the work that ran.');
-    }
-  } else if (totalJobs > 0 && !facts.incomplete) {
-    sentences.push(totalJobs === 1 ? 'Its one job succeeded.' : `All ${totalJobs} jobs succeeded.`);
-  }
-  if (eligible.length === 0) {
-    if (failedJobs > 0) return sentences;
-    if (facts.clean) sentences.push('Every check passed for this run.');
-  } else if (steps.length === 0) {
-    sentences.push('They are listed by impact under Findings.');
-  } else {
-    sentences.push(`${plural(eligible.length, 'finding')} in ${plural(steps.length, 'place')}.`);
-    const wallClock = steps[0].lead.finding.impactEstimate?.wallClock;
-    if (isIdleCapacityStep(steps[0])) {
-      sentences.push('A smaller cluster or dynamic allocation would free the idle cores for other jobs.');
-    } else if (wallClock && facts.runMs != null) {
-      sentences.push(`The first fix could save up to ${formatDuration(wallClock.high)} of this ${formatDuration(facts.runMs)} run.`);
-    }
-    if (steps.some((step) => step.related.length > 0)) {
-      sentences.push('Findings in the same stage usually share one cause, so they are grouped together and their savings overlap rather than add up.');
-    }
-  }
-  if (facts.incomplete) {
-    sentences.push('The log has no end-of-run record, so these figures cover only the part of the run it captured.');
-  }
-  const leadIsIdle = steps.length > 0 && isIdleCapacityStep(steps[0]);
-  if (!leadIsIdle && facts.idlePct != null && facts.idlePct >= IDLE_NOTABLE_PCT) {
-    sentences.push(
-      steps.some(isIdleCapacityStep)
-        ? `${facts.idlePct}% of the executor capacity sat idle, so the cluster may be larger than this job needs.`
-        : `${facts.idlePct}% of the run's core time went unused, so the cluster may be larger than this job needs.`,
-    );
-  }
-  return sentences;
-}
-
-const STACK_TRACE_HINT = 'Open the driver log only if you need the full stack trace.';
-
-/** What the failure step whose reason the verdict quotes tells the reader:
- * the detector's "inspect the driver log for the reason" would send a
- * newcomer looking for something already on screen. The copied text carries
- * the reason itself, since "quoted above" means nothing once pasted. */
-function quotedReasonText(reason: string): { shown: string; copied: string } {
-  const sentence = /[.!?]$/.test(reason) ? reason : `${reason}.`;
-  return {
-    shown: `Spark's recorded reason is quoted above. ${STACK_TRACE_HINT}`,
-    copied: `Spark's recorded reason: ${sentence} ${STACK_TRACE_HINT}`,
-  };
-}
-
-/** One step as pasteable text: the action, what to try, and the savings. */
-function stepCopyText(finding: Finding, recommendation: string, stageId: number | null = null): string {
-  const impact = impactFigure(finding);
-  const meaning = savingsMeaning(finding);
-  const savings = impact && meaning ? `${impact} ${meaning}` : impact;
-  const where = stageId != null ? ` in Stage ${stageId}` : '';
-  const headline = `${findingActionLabel(finding)}${where}: ${recommendation}`;
-  return [/[.!?]$/.test(headline) ? headline : `${headline}.`, savings ? `Potential savings: ${savings}` : null]
-    .filter(Boolean)
-    .join(' ');
-}
-
-/** The whole verdict as a pasteable checklist for a ticket or a message:
- * run, verdict, numbered steps (with their stage), and how many more places
- * the full list holds. */
-function planCopyText(input: {
-  runName: string | null;
-  title: string;
-  steps: { step: NextStep; recommendation: string }[];
-  remaining: number;
-}): string {
-  const lines = [input.runName ? `Spark run ${input.runName}: ${input.title}` : input.title, ''];
-  input.steps.forEach(({ step, recommendation }, index) => {
-    lines.push(`${index + 1}. ${stepCopyText(step.lead.finding, recommendation, step.stageId)}`);
-  });
-  if (input.remaining > 0) lines.push('', `${plural(input.remaining, 'more place')} to look at in the full findings list.`);
-  return lines.join('\n');
 }
 
 function CopyTextButton({ text, label, testId }: { text: string; label: string; testId: string }) {
@@ -239,7 +92,7 @@ function NextStepItem({
   onRoute: (target: TriageTarget) => void;
 }) {
   const { openStage } = useStageDetail();
-  const { finding } = step.lead;
+  const finding = step.lead;
   const quoted = quotedReason == null ? null : quotedReasonText(quotedReason);
   const recommendation = quoted?.shown ?? recommendationText(finding);
   const help = TAG_HELP[typeTag(finding.type)];
@@ -310,7 +163,11 @@ function NextStepItem({
           </p>
         ) : null}
         <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Button size="sm" variant={index === 0 ? 'default' : 'outline'} data-shortcut-target onClick={() => onRoute(step.lead)}>
+          <Button size="sm" variant={index === 0 ? 'default' : 'outline'} data-shortcut-target onClick={() => {
+            // Every step lead passed the same routeable check, so the target is never null.
+            const target = triageTargetFor(step.lead);
+            if (target) onRoute(target);
+          }}>
             Show evidence
             <ArrowRight aria-hidden="true" />
           </Button>
@@ -398,20 +255,8 @@ function NewcomerPrimer() {
  * evidence. The full, band-grouped finding list stays in the Findings tab. */
 export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: RunVerdictProps) {
   const allFindings = [...catalog, ...configFindings];
-  const eligible = allFindings.filter(isEligible);
-  const outcome = summarizeRunOutcome(appModel.jobs, allFindings);
+  const { outcome, facts, title, summary, shown, remaining, copyText } = buildRunVerdict(appModel, allFindings);
   const failed = outcome.failedJobs > 0;
-  const steps = buildNextSteps(eligible, failed ? { failedJobStageIds: outcome.failedJobStageIds } : {});
-  const facts: RunFacts = {
-    runMs: hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null,
-    idlePct: verdictIdlePct(steps, getScorecardEstimates(appModel).wastage.value),
-    incomplete: catalog.some((finding) => finding.type === 'incompleteRun'),
-    clean: isCleanRun(appModel, allFindings),
-    outcome,
-    noFinishedStages: !hasFinishedStage(appModel.stages),
-  };
-  const shown = steps.slice(0, NEXT_STEP_LIMIT);
-  const remaining = steps.length - shown.length;
   const { clean } = facts;
   const density = useWidgetDensity();
 
@@ -434,9 +279,9 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
         >
           {clean ? <CircleCheck aria-hidden="true" className="size-5 shrink-0" /> : null}
           {failed ? <CircleX aria-hidden="true" className="size-5 shrink-0" /> : null}
-          {verdictTitle(eligible, steps, facts)}
+          {title}
         </h2>
-        <p className="max-w-prose text-sm text-muted-foreground">{verdictSummary(eligible, steps, facts).join(' ')}</p>
+        <p className="max-w-prose text-sm text-muted-foreground">{summary.join(' ')}</p>
         {outcome.reason ? (
           <p data-testid="run-failure-reason" className="max-w-prose pt-1 text-sm">
             <span className="font-medium">Spark's recorded reason: </span>
@@ -452,7 +297,7 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
               key={step.key}
               step={step}
               index={index}
-              quotedReason={quotesReasonOf(step.lead.finding, outcome) ? outcome.reason : null}
+              quotedReason={quotesReasonOf(step.lead, outcome) ? outcome.reason : null}
               onRoute={onRoute}
             />
           ))}
@@ -470,17 +315,7 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
           <CopyTextButton
             label="Copy next steps"
             testId="copy-plan-button"
-            text={planCopyText({
-              runName: appModel.app?.name ?? null,
-              title: verdictTitle(eligible, steps, facts),
-              steps: shown.map((step) => ({
-                step,
-                recommendation: quotesReasonOf(step.lead.finding, outcome) && outcome.reason
-                  ? quotedReasonText(outcome.reason).copied
-                  : recommendationText(step.lead.finding),
-              })),
-              remaining,
-            })}
+            text={copyText ?? ''}
           />
         </div>
       ) : null}

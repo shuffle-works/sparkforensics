@@ -1,122 +1,12 @@
-import { FAILURE_TYPES } from '@sparkforensics/core/run-outcome.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { formatRawWaste, formatWallClockRange, readsAsZero } from '@/view/ImpactEstimate';
-import { rankTriageTargets, type TriageTarget } from '@/view/triage-target';
+import { formatRawWaste, formatWallClockRange, readsAsZero } from '@sparkforensics/core/impact-format.ts';
 
-/** How many next steps the verdict lists before pointing at the full list. */
-export const NEXT_STEP_LIMIT = 3;
-
-/** One place worth a look: the highest-ranked finding at a location, plus the
- * other finding types flagged at that same location. Findings that share a
- * stage usually share one root cause, so they read as one step, not several. */
-export interface NextStep {
-  key: string;
-  lead: TriageTarget;
-  /** Other findings at the same location, one per finding type, lead excluded. */
-  related: Finding[];
-  /** The location's single stage, when it has exactly one. */
-  stageId: number | null;
-}
-
-/** A finding's location identity for grouping. Per-stage findings (and
- * sql-scope findings that touch exactly one stage) group by that stage; a
- * multi-stage or app-level finding stands alone by its own type (and variant,
- * for app-level ones), since two different app-level problems are not the
- * same place. */
-export function locationKey(finding: Finding): { key: string; stageId: number | null } {
-  if (typeof finding.stageId === 'number') return { key: `stage:${finding.stageId}`, stageId: finding.stageId };
-  if (finding.stageIds && finding.stageIds.length === 1) {
-    return { key: `stage:${finding.stageIds[0]}`, stageId: finding.stageIds[0] };
-  }
-  if (finding.stageIds && finding.stageIds.length > 1) {
-    return { key: `stages:${finding.type}:${[...finding.stageIds].sort((a, b) => a - b).join(',')}`, stageId: null };
-  }
-  return { key: finding.variant ? `app:${finding.type}:${finding.variant}` : `app:${finding.type}`, stageId: null };
-}
-
-/** 0 for a failure at a stage of a failed job (what stopped the job), 1 for
- * any other failure finding, 2 for everything else. */
-function failureRank(finding: Finding, failedJobStageIds: ReadonlySet<number>): number {
-  if (!FAILURE_TYPES.has(finding.type)) return 2;
-  return typeof finding.stageId === 'number' && failedJobStageIds.has(finding.stageId) ? 0 : 1;
-}
-
-/** Groups every routeable finding by location, ordered by the location's
- * best-ranked finding (the same potential-savings ranking the triage route
- * uses), so step 1 is always the run's single biggest win. With
- * `failedJobStageIds` (a run whose jobs failed), failure findings rank ahead
- * of every savings figure and lead their location, those at a failed job's
- * stage first: a speed-up is moot until the job finishes. */
-export function buildNextSteps(findings: Finding[], { failedJobStageIds }: { failedJobStageIds?: ReadonlySet<number> } = {}): NextStep[] {
-  const ranked = rankTriageTargets(findings);
-  // Array.prototype.sort is stable, so savings order holds within each rank.
-  const ordered = failedJobStageIds
-    ? [...ranked].sort((a, b) => failureRank(a.finding, failedJobStageIds) - failureRank(b.finding, failedJobStageIds))
-    : ranked;
-  const steps = new Map<string, NextStep>();
-  for (const target of ordered) {
-    const { key, stageId } = locationKey(target.finding);
-    const existing = steps.get(key);
-    if (!existing) {
-      steps.set(key, { key, lead: target, related: [], stageId });
-      continue;
-    }
-    const seenTypes = new Set([existing.lead.finding.type, ...existing.related.map((f) => f.type)]);
-    if (!seenTypes.has(target.finding.type)) existing.related.push(target.finding);
-  }
-  return [...steps.values()];
-}
-
-/** True for findings about executor capacity sitting idle. memoryUtilization
- * also reports heap pressure and over-provisioning, which are not idle
- * capacity, so only its idleCores variant counts. */
-function isIdleCapacityFinding(finding: Finding): boolean {
-  return finding.type === 'utilization' || (finding.type === 'memoryUtilization' && finding.variant === 'idleCores');
-}
-
-/** Idle share at which the verdict notes, in its summary, that the cluster
- * may be larger than the job needs. It never reorders the steps. */
-export const IDLE_NOTABLE_PCT = 40;
-
-export function isIdleCapacityStep(step: NextStep): boolean {
-  return isIdleCapacityFinding(step.lead.finding);
-}
-
-/** The idle share an idle-capacity finding itself reports: idleCores carries
- * the idle rate, utilization the busy rate. Null for any other finding. */
-function reportedIdlePct(finding: Finding): number | null {
-  if (typeof finding.value !== 'number') return null;
-  if (finding.type === 'memoryUtilization' && finding.variant === 'idleCores') return finding.value;
-  if (finding.type === 'utilization') return 100 - finding.value;
-  return null;
-}
-
-/** The run's idle share as the verdict states it: the figure the top-ranked
- * idle-capacity step reports, so the verdict never disagrees with that step,
- * or `fallbackPct` (the Scorecard's Unused core time) when no step reports one. */
-export function verdictIdlePct(steps: NextStep[], fallbackPct: number | null): number | null {
-  const idleStep = steps.find(isIdleCapacityStep);
-  return (idleStep ? reportedIdlePct(idleStep.lead.finding) : null) ?? fallbackPct;
-}
-
-/** What a step's savings figure counts, as the words that follow it: run
- * time for a wall-clock claim, or the resource a cost-only (`resourceOnly`)
- * figure measures. A time figure and a capacity figure look alike ("58.6s",
- * "0.7 core-h") but only the first shortens the run. Null when the step
- * shows no figure. */
-export function savingsMeaning(finding: Finding): string | null {
-  const estimate = finding.impactEstimate;
-  if (!estimate) return null;
-  if (estimate.wallClock) return 'of run time';
-  switch (estimate.rawWaste?.unit) {
-    case 'mbSeconds': return 'of unused executor memory';
-    case 'coreHours':
-    case 'coreMs': return 'of core time';
-    case 'bytes': return 'of extra data written';
-    case 'ms': return 'of task time';
-    default: return null;
-  }
-}
+// The verdict's ranking, grouping and wording live in core (shared with the CLI/MCP report);
+// re-exported here for the view modules and tests that already import them from this path.
+export { savingsMeaning } from '@sparkforensics/core/impact-format.ts';
+export {
+  buildNextSteps, IDLE_NOTABLE_PCT, isIdleCapacityStep, locationKey, NEXT_STEP_LIMIT, verdictIdlePct, type NextStep,
+} from '@sparkforensics/core/run-verdict.ts';
 
 /** How a step's savings figure was derived, in one plain sentence for
  * Advanced view: the estimate method, whether the stage ran alone (a

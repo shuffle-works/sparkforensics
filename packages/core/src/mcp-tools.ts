@@ -178,7 +178,7 @@ export function diagnoseRun(runId: string, opts?: {
   redact?: boolean; include?: Array<'summary' | 'evidenceAvailability' | 'detectors'>; markdown?: boolean;
   impactBand?: string[]; type?: string[]; stageId?: number;
 }): {
-  runId: string; findings: FindingRow[]; runComplete: boolean;
+  runId: string; verdict: EvidenceReportJson['verdict']; findings: FindingRow[]; runComplete: boolean;
   recommendations: RecommendationRow[]; cleanChecks: CleanCheckEntry[]; notRunChecks: NotRunCheckEntry[];
 } & Partial<Pick<EvidenceReportJson, 'summary' | 'evidenceAvailability' | 'detectors'>> & { markdown?: string } {
   const appModel = getCachedAppModel(runId);
@@ -186,7 +186,7 @@ export function diagnoseRun(runId: string, opts?: {
   const { json, markdown } = buildEvidenceReport(appModel, { redact: opts?.redact, markdown: opts?.markdown, findingsFilter });
   const include = opts?.include ?? [];
   return {
-    runId, findings: json.findings, recommendations: json.recommendations, cleanChecks: json.cleanChecks,
+    runId, verdict: json.verdict, findings: json.findings, recommendations: json.recommendations, cleanChecks: json.cleanChecks,
     notRunChecks: json.notRunChecks,
     runComplete: appModel.app?.endTime != null,
     ...(include.includes('summary') ? { summary: json.summary } : {}),

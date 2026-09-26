@@ -38,7 +38,13 @@ Or point an MCP client (Claude Desktop, Claude Code) at it with this config:
 
 ## `diagnose_run`
 
-Diagnose a Spark run: thresholded findings with remediation text.
+Diagnose a Spark run: thresholded findings with remediation text, led by the
+same verdict the dashboard opens with. `verdict` gives a title ("Start with
+Stage 3", "1 of 3 jobs failed in this run"), summary sentences, the first three
+places to look in the dashboard's order (each with its action, what to try, the
+potential savings and what that figure counts, and the other finding types
+flagged at the same place), how many more places the full list holds, and
+`copyText`, the dashboard's "Copy next steps" checklist.
 
 Parameters (all optional: provide either a `source` to load a fresh run, or
 a `runId` for one already loaded in this session):
@@ -49,7 +55,7 @@ a `runId` for one already loaded in this session):
   host/IP tokens in the response
 - `include`: array of `"summary" | "evidenceAvailability" | "detectors"`
   (default omitted, i.e. none). Each requested value adds one extra top-level
-  field to the response, on top of the default `findings`/`recommendations`/
+  field to the response, on top of the default `verdict`/`findings`/`recommendations`/
   `cleanChecks`/`notRunChecks`/`runComplete`:
   - `summary`: app id/name/Spark version, stage/job/SQL-execution counts, a
     finding count broken down by impact band, the same counts without evidence
