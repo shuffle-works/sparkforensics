@@ -7,6 +7,18 @@ Radix/shadcn `Dialog`, for that stage. The callers are StagePill, Timeline,
 StageTable, and (indirectly, via an embedded `StageHeader`/`StagePill`)
 Skew's per-stage rows.
 
+The dialog is titled "Stage N", with Spark's stage name (the code line that
+created the stage) as a labelled "Code location" description. Its body opens
+with one sentence placing the stage in the run (duration, share of the run's
+wall-clock, task count, how many finding types it carries), then lists each
+finding type the way `RunVerdict` lists a step: tag and action label, the
+`TAG_HELP` plain explanation, "What to try", the impact estimate, and a
+**Show evidence** button. Types sort worst band first, then by potential
+wall-clock savings, the verdict's own order. Show evidence closes the dialog
+and calls the optional `onRoute` prop (`requestRoute` from `Dashboard.tsx`);
+`finalFocus` skips returning focus to the opener in that case, so the route's
+own focus on the evidence stands. Without `onRoute` the button is not shown.
+
 The legacy `drillDownToStage` force-expand-and-`scrollIntoView` event has no
 replacement. No code ever dispatched it, so it was dormant even before the
 migration.

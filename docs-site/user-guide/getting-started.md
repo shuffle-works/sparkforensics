@@ -94,7 +94,10 @@ better) and **Unused core time** (driver idle plus executor slack across the
 whole run, so it can run higher than the idle capacity a verdict step
 reports; lower is better). A collapsed **New to Spark tuning?** primer in the verdict
 explains stages, tasks, executors, shuffle and how to read savings. Stage
-labels such as **Stage 7** open that stage's details.
+labels such as **Stage 7** open that stage's details: how long it ran and
+what share of the run that was, then each of its findings with what is
+happening, what to try and a **Show evidence** button, followed by its task,
+locality, I/O and plan sections.
 Below it, two tabs split the rest of the board:
 
 1. **Findings**: every flagged finding and its detail widget, grouped by
