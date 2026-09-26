@@ -1,7 +1,7 @@
 import { Bar, BarChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { buildHistogram } from '@sparkforensics/core/format-utils.ts';
-import { CHART_COLORS, ChartFrame } from './ChartTheme';
+import { CHART_COLORS, CHART_TOOLTIP_PROPS, ChartFrame } from './ChartTheme';
 
 const MIN_HISTOGRAM_TASKS = 5;
 const HISTOGRAM_BINS = 30;
@@ -80,6 +80,7 @@ export function DurationHistogram({ metrics, fieldNames, markers = {} }: Duratio
         <XAxis dataKey="bin" tick={{ fontSize: 10 }} />
         <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={32} />
         <Tooltip
+          {...CHART_TOOLTIP_PROPS}
           formatter={(value) => [`${Number(value)} task${Number(value) === 1 ? '' : 's'}`, 'Count']}
           labelFormatter={(label, payload) => (payload?.[0]?.payload as HistogramRow | undefined)?.range ?? label}
         />

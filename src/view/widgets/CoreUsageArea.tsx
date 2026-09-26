@@ -4,7 +4,7 @@ import { Area, AreaChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from 'r
 
 import { computeCoreLocalityRatio } from '@sparkforensics/core/core-locality-ratio.ts';
 import { computeLocalityAreaSeries, LOCALITY_TIERS } from '@sparkforensics/core/core-usage-locality.ts';
-import { CHART_COLORS, ChartFrame } from '@/view/charts/ChartTheme';
+import { CHART_COLORS, CHART_TOOLTIP_PROPS, ChartFrame } from '@/view/charts/ChartTheme';
 import { downsample } from '@/view/charts/downsample';
 import type { WidgetProps } from '@/view/detector-registry';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
@@ -199,7 +199,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ appModel, catalog, ac
                 width={36}
                 label={{ value: 'avg concurrent cores', angle: -90, position: 'insideLeft', fontSize: 10 }}
               />
-              <Tooltip />
+              <Tooltip {...CHART_TOOLTIP_PROPS} />
               <Legend wrapperStyle={{ fontSize: 10 }} />
               {order.map((tier) => (
                 <Area

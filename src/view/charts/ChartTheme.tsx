@@ -26,6 +26,24 @@ export const CHART_COLORS = {
   muted: 'var(--color-muted-foreground)',
 } as const;
 
+// Recharts' default tooltip is a white box whose label inherits the page text
+// color, so in the dark theme a near-white label sat on white. Every tooltip
+// spreads these props to draw on the theme's popover surface instead.
+const TOOLTIP_TEXT = 'var(--color-popover-foreground)';
+export const CHART_TOOLTIP_BOX_STYLE = {
+  background: 'var(--color-popover)',
+  border: '1px solid var(--color-border)',
+  borderRadius: 6,
+  color: TOOLTIP_TEXT,
+  fontSize: 12,
+  padding: '6px 10px',
+} as const;
+export const CHART_TOOLTIP_PROPS = {
+  contentStyle: CHART_TOOLTIP_BOX_STYLE,
+  labelStyle: { color: TOOLTIP_TEXT, fontWeight: 600 },
+  itemStyle: { color: TOOLTIP_TEXT },
+} as const;
+
 export interface ChartTableSpec {
   caption: string;
   columns: string[];

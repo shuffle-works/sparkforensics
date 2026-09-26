@@ -13,7 +13,8 @@ vi.mock('@/view/charts/downsample', async (importOriginal) => {
   return { downsample: vi.fn(actual.downsample) };
 });
 
-const { ExecutorCountChart } = await import('@/view/widgets/ExecutorCountChart');
+const { ExecutorCountChart, ExecutorCountTooltip } = await import('@/view/widgets/ExecutorCountChart');
+const { CHART_TOOLTIP_PROPS } = await import('@/view/charts/ChartTheme');
 const { downsample } = await import('@/view/charts/downsample');
 
 function buildAppModel(): AppModel {
@@ -152,4 +153,16 @@ test('reflects a new file after appModel is mutated in place and activeFileId ch
   rerender(<ExecutorCountChart appModel={appModel} activeFileId="file-b" />);
 
   expect(peakOfLastSeries()).toBe(3);
+});
+
+test('the hover text reads as one line on the theme popover surface, not Recharts\' white default', () => {
+  render(<ExecutorCountTooltip active label="7s" payload={[{ value: 2 }]} />);
+  const tooltip = screen.getByTestId('executor-count-tooltip');
+  expect(tooltip).toHaveTextContent(/^At 7s: Active executors 2$/);
+  // Text and background both come from the popover tokens, which each theme
+  // defines as a readable pair.
+  expect(tooltip.style.background).toBe('var(--color-popover)');
+  expect(tooltip.style.color).toBe('var(--color-popover-foreground)');
+  expect(CHART_TOOLTIP_PROPS.labelStyle.color).toBe('var(--color-popover-foreground)');
+  expect(CHART_TOOLTIP_PROPS.itemStyle.color).toBe('var(--color-popover-foreground)');
 });
