@@ -50,10 +50,31 @@ interface RunFacts {
   idlePct: number | null;
   /** The log has no end-of-run record, so it covers only part of the run. */
   incomplete: boolean;
-  /** No finding at all, ranked or not, and no failed job: the only state the
-   * verdict calls clean. */
+  /** No finding at all, ranked or not, no failed job, and nothing the log
+   * lacked to run a check: the only state the verdict calls clean. */
   clean: boolean;
   outcome: RunOutcome;
+  /** The log has stages but none recorded an end, so no stage check had
+   * anything to measure. */
+  noFinishedStages: boolean;
+}
+
+/** A finding that reports a check could not run for lack of evidence (cache
+ * storage without block updates, memory without executor metrics), rather
+ * than a problem found. Its recommendation names the setting to turn on. */
+function isEvidenceCaveat(finding: Finding): boolean {
+  return finding.dataUnavailable === true || !isRealFinding(finding);
+}
+
+/** What this log could not check, in plain sentences, each saying what to
+ * turn on for the next run where the detector names it. */
+function verdictGaps(allFindings: Finding[], facts: RunFacts): string[] {
+  const gaps = new Set<string>();
+  if (facts.noFinishedStages) gaps.add('No stage in this log recorded an end, so the stage checks had nothing to measure.');
+  for (const finding of allFindings) {
+    if (isEvidenceCaveat(finding) && finding.recommendation) gaps.add(finding.recommendation);
+  }
+  return [...gaps];
 }
 
 function isFailedRun(facts: RunFacts): boolean {
@@ -70,6 +91,7 @@ function failedTitle({ failedJobs, totalJobs }: RunOutcome): string {
 function verdictTitle(eligible: Finding[], steps: NextStep[], facts: RunFacts): string {
   if (isFailedRun(facts)) return failedTitle(facts.outcome);
   if (eligible.length === 0 && facts.incomplete) return 'This log looks incomplete, so results cover only part of the run';
+  if (eligible.length === 0 && facts.noFinishedStages) return 'This log has no finished stages to check';
   if (eligible.length === 0 && !facts.clean) return 'Nothing to fix, but some checks could not run on this log';
   if (eligible.length === 0) return 'No findings to fix right now.';
   // Every real detector writes a recommendation, so an eligible finding with
@@ -97,7 +119,6 @@ function verdictSummary(eligible: Finding[], steps: NextStep[], facts: RunFacts)
   if (eligible.length === 0) {
     if (failedJobs > 0) return sentences;
     if (facts.clean) sentences.push('Every check passed for this run.');
-    else if (!facts.incomplete) sentences.push('See Findings for what they could not cover.');
   } else if (steps.length === 0) {
     sentences.push('They are listed by impact under Findings.');
   } else {
@@ -320,9 +341,12 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
     runMs: hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null,
     idlePct: verdictIdlePct(rankedSteps, getScorecardEstimates(appModel).wastage.value),
     incomplete: catalog.some((finding) => finding.type === 'incompleteRun'),
-    clean: !failed && !allFindings.some(isRealFinding),
+    clean: false,
     outcome,
+    noFinishedStages: ![...appModel.stages.values()].some((stage) => stage.submittedAt != null && stage.completedAt != null),
   };
+  const gaps = verdictGaps(allFindings, facts);
+  facts.clean = !failed && !allFindings.some(isRealFinding) && gaps.length === 0;
   // A failed run keeps its failure steps first; idle capacity never jumps them.
   const steps = failed ? rankedSteps : prioritizeIdleCapacity(rankedSteps, facts.idlePct, facts.runMs);
   const shown = steps.slice(0, NEXT_STEP_LIMIT);
@@ -374,6 +398,18 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
         <p className="text-xs text-muted-foreground">
           {plural(remaining, 'more place')} to look at in the full list under Findings.
         </p>
+      ) : null}
+      {gaps.length > 0 ? (
+        // Shown in both views: what the report could not check is part of the
+        // verdict, and each line names what to turn on for the next run.
+        <div data-testid="verdict-gaps" className="space-y-1 border-t border-border pt-3 text-sm">
+          <h3 className="font-medium">Not checked on this log</h3>
+          <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground [overflow-wrap:anywhere]">
+            {gaps.map((gap) => (
+              <li key={gap}>{gap}</li>
+            ))}
+          </ul>
+        </div>
       ) : null}
     </section>
   );

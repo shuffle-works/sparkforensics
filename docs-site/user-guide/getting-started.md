@@ -88,6 +88,12 @@ jobs did), quotes the first line of the reason Spark recorded, and puts the
 failure first in the next steps, ahead of any speed-up, since a job has to
 finish before its speed matters.
 
+When the log lacked something a check needs, the verdict ends with **Not
+checked on this log**: each line says what could not be checked and, where
+Spark has one, the setting to turn on for the next run (for example
+`spark.eventLog.logStageExecutorMetrics=true` for per-executor memory). A run
+is called clean only when nothing is missing.
+
 A run scorecard sits under the verdict: **Wall-clock** (total run time),
 **Efficiency** (the share of that time with a stage running; higher is
 better) and **Unused core time** (driver idle plus executor slack across the

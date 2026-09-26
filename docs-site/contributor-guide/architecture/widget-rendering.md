@@ -554,7 +554,12 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    value first, then any `stageFailed`, then the job exception), the run is
    never called clean, and `buildNextSteps` ranks `stageFailed` and
    `jobFailureRate` steps first (a failed job's stage leading) while
-   `prioritizeIdleCapacity` is skipped.
+   `prioritizeIdleCapacity` is skipped. Evidence caveats (a finding with
+   `dataUnavailable`, or one `isRealFinding` drops) and a log with no
+   finished stage are listed under "Not checked on this log", each caveat by
+   its own recommendation text, which names the setting to enable; any gap
+   keeps the run from being called clean, and a log with no finished stage
+   and no finding gets its own title.
 2. `Scorecard`: a three-tile run-info row (Wall-clock, Efficiency, Unused
    core time; Basic view captions say what each measures and which direction
    is better, Advanced view shows the raw run/idle breakdown),

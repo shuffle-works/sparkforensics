@@ -382,3 +382,37 @@ describe('RunVerdict on a failed run', () => {
     expect(screen.queryByTestId('run-failure-reason')).not.toBeInTheDocument();
   });
 });
+
+describe('RunVerdict on what the log could not check', () => {
+  const memoryCaveat: Finding = {
+    type: 'memoryUtilization', variant: 'memoryBand', stageId: null, impactBand: 'info', dataUnavailable: true,
+    recommendation: 'Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true: not enabled for this run.',
+  } as Finding;
+
+  it('never calls a run clean when a check could not run, and names the setting to turn on', () => {
+    renderVerdict([memoryCaveat]);
+    expect(screen.getByRole('heading', { level: 2, name: 'Nothing to fix, but some checks could not run on this log' })).toBeInTheDocument();
+    expect(screen.getByTestId('run-verdict')).not.toHaveTextContent('Every check passed');
+    expect(screen.getByTestId('verdict-gaps')).toHaveTextContent('Not checked on this log');
+    expect(screen.getByTestId('verdict-gaps')).toHaveTextContent('spark.eventLog.logStageExecutorMetrics=true');
+  });
+
+  it('lists the gaps under the next steps of a run with findings too', () => {
+    renderVerdict([timed('skew', 7, 2_400), memoryCaveat]);
+    expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
+    expect(screen.getByTestId('verdict-gaps')).toHaveTextContent('spark.eventLog.logStageExecutorMetrics=true');
+  });
+
+  it('says so when no stage in the log finished', () => {
+    const model = { ...appModel(), stages: new Map([[7, { id: 7, submittedAt: 0 }]]) } as AppModel;
+    renderVerdict([], vi.fn(), model);
+    expect(screen.getByRole('heading', { level: 2, name: 'This log has no finished stages to check' })).toBeInTheDocument();
+    expect(screen.getByTestId('verdict-gaps')).toHaveTextContent('No stage in this log recorded an end');
+  });
+
+  it('keeps the clean message for a run with nothing missing', () => {
+    renderVerdict([]);
+    expect(screen.getByRole('heading', { level: 2, name: 'No findings to fix right now.' })).toBeInTheDocument();
+    expect(screen.queryByTestId('verdict-gaps')).not.toBeInTheDocument();
+  });
+});
