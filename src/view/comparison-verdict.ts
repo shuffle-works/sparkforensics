@@ -24,6 +24,9 @@ export interface VerdictCategory {
 export interface VerdictJobOutcome {
   failedJobs: number;
   totalJobs: number;
+  /** The log has no end-of-run record, so its run time covers only the part
+   * of the run it captured. */
+  incomplete?: boolean;
 }
 
 export type ComparisonTone = 'better' | 'worse' | 'same' | 'unknown';
@@ -75,8 +78,18 @@ function namesWhere(net: Map<string, number>, keep: (change: number) => boolean)
   return [...net].filter(([, change]) => keep(change)).map(([name]) => name);
 }
 
-function jobsFailed(outcome: VerdictJobOutcome): string {
-  return `${outcome.failedJobs} of ${outcome.totalJobs} jobs fail`;
+/** "Run B had 2 of 5 jobs fail", or, when every job failed, "Run B's only
+ * job failed" / "All 3 of run B's jobs failed" rather than "1 of 1 jobs". */
+function jobsFailed(run: 'A' | 'B', { failedJobs, totalJobs }: VerdictJobOutcome): string {
+  if (failedJobs < totalJobs) return `Run ${run} had ${failedJobs} of ${totalJobs} jobs fail`;
+  return totalJobs === 1 ? `Run ${run}'s only job failed` : `All ${totalJobs} of run ${run}'s jobs failed`;
+}
+
+/** Run A's failures in the parenthesis after run B's. */
+function baselineFailures({ failedJobs, totalJobs }: VerdictJobOutcome): string {
+  if (failedJobs === 0) return 'none';
+  if (failedJobs < totalJobs) return `${failedJobs} of ${totalJobs}`;
+  return totalJobs === 1 ? 'its only job failed' : `all ${totalJobs} failed`;
 }
 
 /** The headline when either run had failed jobs, as the run verdict leads
@@ -87,16 +100,17 @@ function jobsFailed(outcome: VerdictJobOutcome): string {
 function failureHeadline(base: VerdictJobOutcome, cand: VerdictJobOutcome): { title: string; tone: ComparisonTone } | null {
   if (base.failedJobs === 0 && cand.failedJobs === 0) return null;
   const tone = cand.failedJobs > base.failedJobs ? 'worse' : cand.failedJobs < base.failedJobs ? 'better' : 'same';
-  if (cand.failedJobs === 0) return { title: `Run A had ${jobsFailed(base)}; run B completed`, tone };
-  const baseText = base.failedJobs === 0 ? 'none' : `${base.failedJobs} of ${base.totalJobs}`;
-  return { title: `Run B had ${jobsFailed(cand)} (run A: ${baseText})`, tone };
+  if (cand.failedJobs === 0) return { title: `${jobsFailed('A', base)}; run B completed`, tone };
+  return { title: `${jobsFailed('B', cand)} (run A: ${baselineFailures(base)})`, tone };
 }
 
 /** One plain answer to "did run B get better or worse than run A", from the
  * comparison's own whole-run metrics and finding-category tallies: run time
  * first, then which cost metrics moved each way past run-to-run noise, then which finding
  * categories appeared or went away. When either run had failed jobs, that
- * leads instead and run time becomes the first sentence. Volume and count metrics (input, output,
+ * leads instead and run time becomes the first sentence. When either log is
+ * incomplete, run time is stated as what each log covers, never as faster or
+ * slower, and the tone stays neutral. Volume and count metrics (input, output,
  * tasks, executors) are left out because more or less of them is not
  * inherently better or worse. */
 export function summarizeComparison(
@@ -107,7 +121,15 @@ export function summarizeComparison(
   const wall = metrics.find((metric) => metric.key === 'wallClock');
   let title = 'Run time could not be compared between run A and run B';
   let tone: ComparisonTone = 'unknown';
-  if (wall && wall.baseline != null && wall.baseline > 0 && wall.candidate != null) {
+  // A log with no end-of-run record stops where the run was cut off, so its
+  // shorter time is not a speed-up: say how much each log covers, neutrally.
+  const incompleteRuns = jobs ? (['A', 'B'] as const).filter((run) => (run === 'A' ? jobs.baseline : jobs.candidate).incomplete) : [];
+  if (wall && wall.baseline != null && wall.baseline > 0 && wall.candidate != null && incompleteRuns.length > 0) {
+    const change = wall.candidate - wall.baseline;
+    title = Math.abs(change / wall.baseline) < SAME_CHANGE_SHARE
+      ? "Run B's log covers about as much run time as run A's"
+      : `Run B's log covers ${formatDuration(Math.abs(change))} ${change < 0 ? 'less' : 'more'} run time than run A's`;
+  } else if (wall && wall.baseline != null && wall.baseline > 0 && wall.candidate != null) {
     const change = wall.candidate - wall.baseline;
     const share = change / wall.baseline;
     if (Math.abs(share) < SAME_CHANGE_SHARE) {
@@ -130,6 +152,11 @@ export function summarizeComparison(
     sentences.push(`${title}.`);
     title = failure.title;
     tone = failure.tone;
+  }
+  if (incompleteRuns.length === 2) {
+    sentences.push('Neither log has an end-of-run record, so their times cover only what each log captured, not how long the runs took.');
+  } else if (incompleteRuns.length === 1) {
+    sentences.push(`Run ${incompleteRuns[0]}'s log has no end-of-run record, so its time covers only what the log captured, not how long the run took.`);
   }
   if (worse.length > 0) sentences.push(`Worse in run B: ${worse.join(', ')}.`);
   if (better.length > 0) sentences.push(`Better in run B: ${better.join(', ')}.`);

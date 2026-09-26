@@ -120,6 +120,32 @@ describe('summarizeComparison with failed jobs', () => {
     expect(verdict.sentences[0]).toBe('Run B finished 6.0s faster than run A (30%).');
   });
 
+  it('says a run whose every job failed plainly, not as "1 of 1 jobs"', () => {
+    expect(summarizeComparison(sameTime, noFindings, {
+      baseline: { failedJobs: 1, totalJobs: 3 },
+      candidate: { failedJobs: 1, totalJobs: 1 },
+    }).title).toBe("Run B's only job failed (run A: 1 of 3)");
+    expect(summarizeComparison(sameTime, noFindings, {
+      baseline: { failedJobs: 2, totalJobs: 2 },
+      candidate: { failedJobs: 3, totalJobs: 3 },
+    }).title).toBe("All 3 of run B's jobs failed (run A: all 2 failed)");
+    expect(summarizeComparison(sameTime, noFindings, {
+      baseline: { failedJobs: 1, totalJobs: 1 },
+      candidate: { failedJobs: 0, totalJobs: 1 },
+    }).title).toBe("Run A's only job failed; run B completed");
+  });
+
+  it('never calls an incomplete run faster: states what each log covers, in a neutral tone', () => {
+    const shorter = [metric('wallClock', 'Wall-clock duration', 17_500, 8_400, 'improvement')];
+    const verdict = summarizeComparison(shorter, noFindings, {
+      baseline: { failedJobs: 0, totalJobs: 3 },
+      candidate: { failedJobs: 0, totalJobs: 2, incomplete: true },
+    });
+    expect(verdict).toMatchObject({ title: "Run B's log covers 9.1s less run time than run A's", tone: 'unknown' });
+    expect(verdict.sentences).toContain("Run B's log has no end-of-run record, so its time covers only what the log captured, not how long the run took.");
+    expect(verdict.title).not.toMatch(/faster/);
+  });
+
   it('keeps the run-time headline when both runs completed', () => {
     const verdict = summarizeComparison(sameTime, noFindings, {
       baseline: { failedJobs: 0, totalJobs: 5 },
