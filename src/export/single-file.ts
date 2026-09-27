@@ -1,4 +1,4 @@
-import { runPayloadScript } from '@sparkforensics/core/html-export.ts';
+import { runPayloadScript } from '@sparkforensics/core/run-payload.ts';
 
 export { EXPORT_TEMPLATE_FILE } from './template-asset';
 

@@ -192,15 +192,3 @@ test('a missing template surfaces an error instead of downloading a broken file'
   expect(lastBlob).toBeNull();
 });
 
-test('the export app itself does not offer the HTML download', async () => {
-  seedRun();
-  store.setState({ exportMode: true });
-  try {
-    render(<EvidenceExport />);
-    await userEvent.click(screen.getByRole('button', { name: /export evidence/i }));
-    expect(await screen.findByRole('menuitem', { name: /download json/i })).toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: /download html/i })).toBeNull();
-  } finally {
-    store.setState({ exportMode: false });
-  }
-});

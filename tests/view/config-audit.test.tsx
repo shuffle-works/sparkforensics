@@ -6,6 +6,7 @@ import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { ConfigAudit } from '@/view/widgets/ConfigAudit';
+import { auditConfig } from '@sparkforensics/core/analyzer.ts';
 import type { AppModel } from '@sparkforensics/core/types.ts';
 
 function buildAppModel(app: AppModel['app'], ledger?: AppModel['evidenceAvailability']): AppModel {
@@ -19,6 +20,7 @@ function renderWidget(app: AppModel['app'], ledger?: AppModel['evidenceAvailabil
         <ConfigAudit
           appModel={buildAppModel(app, ledger)}
           catalog={[]}
+          configFindings={auditConfig(app)}
           getTaskData={async () => ({ metrics: [], fieldNames: [] })}
         />
       </EvidenceAvailabilityProvider>

@@ -5,6 +5,7 @@
 // (html-export.ts) call `interpretRun`; the exported bundle only renders what it carries, so an
 // exported file shows the conclusions of the core that wrote it, not of the core that opens it.
 import { checkCoverage, hasFinishedStage, verdictGaps } from './check-coverage.ts';
+import { computeEfficiencyModel } from './efficiency-model.ts';
 import { IMPACT_BAND_ORDER, worstImpactBand } from './format-utils.ts';
 import {
   estimateProvenance, impactEstimateCompact, impactEstimateFigure, impactFigure, savingsMeaning,
@@ -16,7 +17,9 @@ import {
   recommendationText, stepCopyText,
 } from './run-verdict.ts';
 import { getScorecardEstimates } from './scorecard-estimates.ts';
+import { checkConcurrentJobGroups } from './job-groups.ts';
 import { computeWallClock } from './wall-clock.ts';
+import { computeWastedCoreHours, type WastedCoreHoursResult } from './wasted-core-hours.ts';
 import type { AppModel, Finding } from './types.ts';
 
 /** A finding's savings figures, formatted with their units, so a widget shows the figure
@@ -86,6 +89,13 @@ export interface RunShapeData extends RunShape {
   unusedCoreTimeUnavailableReason: 'application-timing' | 'core-usage-summary' | 'executor-capacity' | null;
 }
 
+export type WallClockData = ReturnType<typeof computeWallClock>;
+
+export interface EfficiencyData extends ReturnType<typeof computeEfficiencyModel> {
+  /** No two job groups overlapped, so the driver/executor split is exact. */
+  wallClockReliable: boolean;
+}
+
 /** A stage's findings as the stage dialog lists them, in the verdict's step order. */
 export interface StageFindingsData {
   findingIndexes: number[];
@@ -102,6 +112,12 @@ export interface RunInterpretation {
   verdict: RunVerdictData;
   coverage: CoverageData;
   runShape: RunShapeData;
+  /** How the run's wall-clock time splits across startup, active stages, gaps and idle. */
+  wallClock: WallClockData;
+  /** Allocated vs. used core-hours. */
+  wastedCoreHours: WastedCoreHoursResult;
+  /** The driver- vs. executor-bound waste model, or null without run aggregates. */
+  efficiency: EfficiencyData | null;
   /** Stages of the run's failed jobs; empty when every job succeeded. */
   failedJobStageIds: number[];
   /** Every rankable finding's index, best potential savings first. */
@@ -143,6 +159,17 @@ function interpretRunShape(appModel: AppModel): RunShapeData {
     unusedCoreTimeFlag: unusedCoreTimeFlag(shape.unusedCoreTimePct),
     unusedCoreTimeUnavailableReason: estimates.wastage.unavailableReason,
   };
+}
+
+function interpretEfficiency(appModel: AppModel): EfficiencyData | null {
+  if (!appModel.runAggregates) return null;
+  const model = computeEfficiencyModel({
+    app: appModel.app,
+    stages: appModel.stages,
+    executorsAdded: appModel.executors.added,
+    runAggregates: appModel.runAggregates,
+  });
+  return { ...model, wallClockReliable: checkConcurrentJobGroups(appModel.jobs).wallClockReliable };
 }
 
 function interpretCoverage(appModel: AppModel, allFindings: Finding[], clean: boolean, failedJobs: number): CoverageData {
@@ -214,6 +241,9 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
     },
     coverage: interpretCoverage(appModel, allFindings, verdict.facts.clean, outcome.failedJobs),
     runShape: interpretRunShape(appModel),
+    wallClock: computeWallClock(appModel.app, appModel.stages),
+    wastedCoreHours: computeWastedCoreHours(appModel.app, appModel.executors.added, appModel.runAggregates),
+    efficiency: interpretEfficiency(appModel),
     failedJobStageIds: failed ? [...outcome.failedJobStageIds].sort((a, b) => a - b) : [],
     savingsRank: rankBySavings(allFindings).map((finding) => indexOf.get(finding)!),
     stages: interpretStages(catalog, indexOf, failed ? outcome.failedJobStageIds : null),

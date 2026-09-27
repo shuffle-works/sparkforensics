@@ -7,6 +7,13 @@ import {
   selectTriageTarget,
   selectTriageTargetForFinding,
 } from '../../src/view/triage-target';
+import type { InterpretationState } from '@/store/store';
+import { installInterpretation } from './_shared/interpretation';
+
+// The ranking comes from the interpretation's savingsRank, so each catalog is interpreted the
+// way the live app does before its targets are selected.
+const select = (catalog: Finding[]) => selectTriageTarget(installInterpretation(catalog), catalog);
+const rank = (catalog: Finding[]) => rankTriageTargets(installInterpretation(catalog), catalog);
 
 function finding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -36,7 +43,7 @@ test('prefers larger potential savings over impact band', () => {
     withSavingsMs({ type: 'stageShape', stageId: 3, impactBand: 'critical', recommendation: 'Increase parallelism.' }, 50_000),
   ];
 
-  expect(selectTriageTarget(catalog)).toMatchObject({ finding: catalog[0], widgetId: 'spill' });
+  expect(select(catalog)).toMatchObject({ finding: catalog[0], widgetId: 'spill' });
 });
 
 test('falls back to impact band, then registry widget order, then catalog order, when no finding has a quantified savings estimate', () => {
@@ -49,8 +56,8 @@ test('falls back to impact band, then registry widget order, then catalog order,
   // None of the three carry an impactEstimate, so impact band leads: both
   // critical findings outrank the warning listed first, and between them
   // 'spill' (DETECTORS order 10) is ranked ahead of 'task-skew' (order 30).
-  expect(rankTriageTargets(catalog).map((target) => target.finding)).toEqual([catalog[2], catalog[1], catalog[0]]);
-  expect(selectTriageTarget(catalog)).toMatchObject({ finding: catalog[2], widgetId: 'spill' });
+  expect(rank(catalog).map((target) => target.finding)).toEqual([catalog[2], catalog[1], catalog[0]]);
+  expect(select(catalog)).toMatchObject({ finding: catalog[2], widgetId: 'spill' });
 });
 
 test('uses alert widget order before reference widgets when impact bands tie', () => {
@@ -59,7 +66,7 @@ test('uses alert widget order before reference widgets when impact bands tie', (
     finding({ type: 'spill', stageId: 9, impactBand: 'critical', recommendation: 'Reduce spill.' }),
   ];
 
-  expect(selectTriageTarget(catalog)).toMatchObject({ finding: catalog[1], widgetId: 'spill', region: 'action' });
+  expect(select(catalog)).toMatchObject({ finding: catalog[1], widgetId: 'spill', region: 'action' });
 });
 
 test('skips findings without an actionable mapped route', () => {
@@ -71,7 +78,7 @@ test('skips findings without an actionable mapped route', () => {
     finding({ type: 'spill', impactBand: 'warning', recommendation: '  Reduce spill.  ' }),
   ];
 
-  expect(selectTriageTarget(catalog)).toMatchObject({
+  expect(select(catalog)).toMatchObject({
     finding: catalog[4],
     recommendation: 'Reduce spill.',
     widgetId: 'spill',
@@ -82,8 +89,8 @@ test('routes the emitted broadcast subtypes rather than the detector-only type',
   const under = finding({ type: 'underBroadcast', stageId: null, impactBand: 'info', recommendation: 'Use a broadcast join.' });
   const over = finding({ type: 'overBroadcast', stageId: null, impactBand: 'warning', recommendation: 'Avoid a large broadcast.' });
 
-  expect(selectTriageTarget([under])).toMatchObject({ widgetId: 'under-broadcast', findingLabel: 'missed broadcast join' });
-  expect(selectTriageTarget([over])).toMatchObject({ widgetId: 'over-broadcast', findingLabel: 'oversized broadcast join' });
+  expect(select([under])).toMatchObject({ widgetId: 'under-broadcast', findingLabel: 'missed broadcast join' });
+  expect(select([over])).toMatchObject({ widgetId: 'over-broadcast', findingLabel: 'oversized broadcast join' });
 });
 
 test('does not infer a stage from SQL stageIds and formats numeric stages only', () => {
@@ -96,8 +103,8 @@ test('does not infer a stage from SQL stageIds and formats numeric stages only',
   });
   const stageFinding = finding({ type: 'spill', stageId: 5, recommendation: 'Reduce spill.' });
 
-  const sqlTarget = selectTriageTarget([sqlFinding]);
-  const stageTarget = selectTriageTarget([stageFinding]);
+  const sqlTarget = select([sqlFinding]);
+  const stageTarget = select([stageFinding]);
 
   expect(sqlTarget).toMatchObject({ stageId: null });
   expect(formatTriageCopy(sqlTarget!).actionLabel).toBe('Start with small files');
@@ -105,8 +112,8 @@ test('does not infer a stage from SQL stageIds and formats numeric stages only',
 });
 
 test('returns no target when the catalog has no routeable recommendation', () => {
-  expect(selectTriageTarget([])).toBeNull();
-  expect(selectTriageTarget([finding({ recommendation: ' ' })])).toBeNull();
+  expect(select([])).toBeNull();
+  expect(select([finding({ recommendation: ' ' })])).toBeNull();
 });
 
 test('resolves reference-present findings and rejects value-equal non-present ones', () => {
@@ -121,7 +128,7 @@ test('resolves reference-present findings and rejects value-equal non-present on
 });
 
 test('formats an app-level low-confidence target without raw fallback fields', () => {
-  const target = selectTriageTarget([finding({
+  const target = select([finding({
     type: 'memoryUtilization',
     stageId: null,
     impactBand: 'warning',
@@ -138,7 +145,7 @@ test('formats an app-level low-confidence target without raw fallback fields', (
 });
 
 test('omits high-confidence and non-string validation copy without exposing raw finding fields', () => {
-  const target = selectTriageTarget([finding({
+  const target = select([finding({
     type: 'stageShape',
     stageId: 8,
     confidence: 'high',
@@ -152,4 +159,31 @@ test('omits high-confidence and non-string validation copy without exposing raw 
     expect(value ?? '').not.toContain('undefined');
     expect(value ?? '').not.toContain('stageShape');
   }
+});
+
+test('orders targets by the interpretation\'s savingsRank, not by re-ranking the findings', () => {
+  const catalog = [
+    withSavingsMs({ type: 'spill', stageId: 7, recommendation: 'Reduce memory pressure.' }, 500_000),
+    withSavingsMs({ type: 'skew', stageId: 12, recommendation: 'Rebalance partitions.' }, 1),
+  ];
+  const interpreted = installInterpretation(catalog);
+  // An interpretation from a core that ranked these the other way round: its order wins.
+  const reversed: InterpretationState = {
+    ...interpreted,
+    data: { ...interpreted.data, savingsRank: [...interpreted.data.savingsRank].reverse() },
+  };
+
+  expect(rankTriageTargets(reversed, catalog).map((target) => target.finding)).toEqual([catalog[1], catalog[0]]);
+  expect(selectTriageTarget(reversed, catalog)).toMatchObject({ finding: catalog[1] });
+});
+
+test('keeps only the given findings and has no target without an interpretation', () => {
+  const catalog = [
+    finding({ type: 'spill', stageId: 7, impactBand: 'critical', recommendation: 'Reduce spill.' }),
+    finding({ type: 'skew', stageId: 12, impactBand: 'warning', recommendation: 'Rebalance partitions.' }),
+  ];
+  const interpreted = installInterpretation(catalog);
+
+  expect(rankTriageTargets(interpreted, [catalog[1]]).map((target) => target.finding)).toEqual([catalog[1]]);
+  expect(selectTriageTarget(null, catalog)).toBeNull();
 });

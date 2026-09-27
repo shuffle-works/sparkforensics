@@ -87,10 +87,9 @@ export interface WidgetProps {
   appModel: AppModel;
   catalog: Finding[];
   getTaskData: (id: number) => Promise<TaskData>;
-  // Memoized `auditConfig(appModel.app)` result, threaded from Dashboard so the
-  // config-scope detector loop runs once per render instead of once here plus
-  // once in ConfigAudit. Optional: only ConfigAudit reads it, and direct
-  // callers (tests) omit it and fall back to computing it themselves.
+  // The store's `configFindings` (the `auditConfig(appModel.app)` result),
+  // threaded from Dashboard. Optional: only ConfigAudit reads it, and treats an
+  // omitted prop as no config findings.
   configFindings?: Finding[];
   // The store's `activeFileId` (src/store/store.ts): the one thing that
   // reliably changes identity when the active file switches. `applySnapshot`

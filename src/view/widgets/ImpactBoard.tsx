@@ -152,11 +152,11 @@ function ImpactGroup({
 export function ImpactBoard({ appModel, catalog, configFindings = [], stages, getTaskData, activeFileId, onRoute }: ImpactBoardProps) {
   // Recompute the rollup/active-widget ranking only when the underlying findings
   // (or stages) change, not on every `setExpandedGroupKey` re-render.
-  const { groups } = useMemo(
-    () => useFixTheseFirstData(catalog, configFindings, stages),
-    [catalog, configFindings, stages],
-  );
   const interpretation = useInterpretation();
+  const { groups } = useMemo(
+    () => useFixTheseFirstData(catalog, configFindings, stages, interpretation),
+    [catalog, configFindings, stages, interpretation],
+  );
   const allFindings = [...catalog, ...configFindings];
   const activeWidgets = useMemo(() => computeActiveWidgets(catalog, configFindings), [catalog, configFindings]);
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);

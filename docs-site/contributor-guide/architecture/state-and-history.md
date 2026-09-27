@@ -35,8 +35,11 @@ reads it, to evict the plan-graph model memo cache (see
 Everything that could change the conclusion about a run is computed once, by
 core, and stored as data: `interpretRun` (`packages/core/src/run-interpretation.ts`)
 returns the verdict (title, summary, worded next steps, copy text), which
-checks could not run and why, every finding's formatted savings, the run-shape
-figures with the Scorecard's flags, and each stage's finding order. It refers
+checks could not run and why, every finding's formatted savings and their
+potential-savings rank (`savingsRank`, which orders the triage targets), the
+run-shape figures with the Scorecard's flags, the wall-clock breakdown, the
+wasted core-hours and compute-efficiency figures, and each stage's finding
+order. It refers
 to findings by index into `[...catalog, ...configFindings]`, so a renderer
 resolves them to the objects it already holds and reference-identity routing
 keeps working.
@@ -47,7 +50,9 @@ The live app fills it from `src/store/live-interpretation.ts`, a
 reinterprets whenever `appModel`, `catalog` or `configFindings` changes.
 Widgets read it through `src/view/interpretation.ts` and never format a
 savings figure or word a verdict themselves; what is left for them is
-selection and presentation (filtering, sorting, expanding). A widget test that
+selection and presentation (filtering, sorting, expanding). The one analysis a
+widget still runs is the Scaling Simulator's `simulateScaling`: a what-if the
+viewer drives, which makes no claim about this run. A widget test that
 renders one widget with findings as props installs an interpretation first
 with `tests/view/_shared/interpretation.ts`.
 
@@ -60,7 +65,12 @@ build id (`coreSourceHash` of the core sources: `coreBuildId` in
 `src/build-info.ts`) and producer. The export bundle never installs the live
 interpreter: `hydrateExportStore` installs the payload's interpretation as is,
 and `src/export/main-export.tsx` refuses, before rendering, any payload whose
-`schemaVersion` it was not built for (`unsupportedPayloadReason`). An old file
+`schemaVersion` it was not built for, or that lacks its `configFindings`
+(`unsupportedPayloadReason`). The bundle computes none of this run's
+conclusions, and it offers no Export evidence menu, since every format there
+reruns core analysis at download time (`EvidenceExport.tsx` loads those
+producer modules with a dynamic `import()`). It reads the payload global from
+the dependency-free `packages/core/src/run-payload.ts`. An old file
 therefore shows the conclusions of the core that wrote it, and cannot be
 reinterpreted by a newer bundle.
 

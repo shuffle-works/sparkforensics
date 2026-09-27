@@ -1,17 +1,13 @@
 import { memo } from 'react';
 import { Bar, BarChart, DefaultLegendContent, Legend, Tooltip, XAxis, YAxis } from 'recharts';
 
-import { computeWallClock } from '@sparkforensics/core/wall-clock.ts';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import type { WallClockData } from '@sparkforensics/core/run-interpretation.ts';
 import { CHART_COLORS, ChartFrame } from '@/view/charts/ChartTheme';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
-
-export interface WallClockProps {
-  appModel: AppModel;
-}
+import { useInterpretation } from '@/view/interpretation';
 
 interface Segment {
   key: string;
@@ -34,7 +30,7 @@ function legendColorFor(color: string, fillOpacity: number): string {
 }
 
 // Segment colors: startup=info, active=clean, gaps=warning, idle=faint/muted.
-function buildSegments(result: ReturnType<typeof computeWallClock>): Segment[] {
+function buildSegments(result: WallClockData): Segment[] {
   return [
     { key: 'startup', label: 'Startup', value: result.startup, color: CHART_COLORS.info, fillOpacity: 1 },
     { key: 'stagesActive', label: 'Stages active', value: result.stagesActive, color: CHART_COLORS.clean, fillOpacity: 1 },
@@ -49,12 +45,11 @@ function buildSegments(result: ReturnType<typeof computeWallClock>): Segment[] {
  * startup, active stage execution, scheduler gaps, and idle time. Renders
  * nothing when there's no measurable wall-clock time (no completed stages and no
  * app start/end timestamps). */
-// memo: appModel is reference-stable across board-filter toggles, so this
-// always-mounted widget skips re-rendering when only the finding filter changes.
-export const WallClock = memo(function WallClock({ appModel }: WallClockProps) {
-  const { app, stages } = appModel;
-  const result = computeWallClock(app, stages);
-  if (result.total <= 0) return null;
+// memo: takes no props, so this always-mounted widget re-renders only when the
+// store's interpretation changes, not when the finding filter does.
+export const WallClock = memo(function WallClock() {
+  const result = useInterpretation()?.data.wallClock;
+  if (!result || result.total <= 0) return null;
 
   const segments = buildSegments(result);
   const pct = (n: number) => (result.total > 0 ? (n / result.total) * 100 : 0);

@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { ExportRunData } from '@sparkforensics/core/export-data.ts';
-import { RUN_PAYLOAD_GLOBAL } from '@sparkforensics/core/html-export.ts';
+import { RUN_PAYLOAD_GLOBAL } from '@sparkforensics/core/run-payload.ts';
 import { decodeRunPayload, hydrateExportStore, unsupportedPayloadReason } from './hydrate-store';
 import { ExportApp } from './ExportApp';
 import { UnsupportedPayload } from './UnsupportedPayload';

@@ -29,7 +29,8 @@ const { evaluateBudgets } = await loadCore('cli/budgets');
 const { buildComparison, renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
 const { comparisonVerdict } = await loadCore('comparison-verdict');
 const { redactComparison } = await loadCore('redact');
-const { buildHtmlExportData, encodeRunPayload, runPayloadScript } = await loadCore('html-export');
+const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
+const { runPayloadScript } = await loadCore('run-payload');
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id> [--attempt-id <id>] [options]

@@ -128,7 +128,8 @@ contributor should read; `docs/` stays flat internal engineering records
   that can change a conclusion goes into `interpretRun`
   (`run-interpretation.ts`) and reaches widgets as data via the store's
   `interpretation`, never computed in a widget: the HTML export ships that
-  result instead of recomputing it at open time (see
+  result, and its bundle computes none of the run's conclusions at open time
+  (only viewer-driven what-ifs such as `simulateScaling` stay in widgets; see
   `docs-site/contributor-guide/architecture/state-and-history.md#run-interpretation`).
 - `packages/core/src/docs-content/{chapters,tuning,diagrams}` is generated
   (gitignored) from the upstream commit pinned in `upstream.json`, by

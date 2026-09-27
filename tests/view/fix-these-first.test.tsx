@@ -9,6 +9,7 @@ import { impactFigure } from '@sparkforensics/core/impact-format.ts';
 import { groupImpactBand, TypeGroupRow, useFixTheseFirstData } from '../../src/view/widgets/FixTheseFirst';
 import { buildRecommendationRollup, type RollupGroup } from '@sparkforensics/core/recommendation-rollup.ts';
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 // Non-overlapping windows so a group's union-capped recoverableMsHigh equals
 // the naive sum, without re-testing computeStageUnionMs's overlap math.
@@ -27,7 +28,7 @@ function findingWithMagnitude(type: string, stageId: number, lowMs: number, impa
 describe('groupImpactBand / useFixTheseFirstData', () => {
   it('groupImpactBand returns the single finding impact band for a one-finding group', () => {
     const catalog = [findingWithMagnitude('spill', 1, 9000, 'critical')];
-    const { groups } = useFixTheseFirstData(catalog, [], STAGES);
+    const { groups } = useFixTheseFirstData(catalog, [], STAGES, null);
     expect(groupImpactBand(groups[0])).toBe('critical');
   });
 
@@ -36,7 +37,7 @@ describe('groupImpactBand / useFixTheseFirstData', () => {
     // the smaller critical one for the badge.
     const highImpact = findingWithMagnitude('skew', 1, 5000, 'info');
     const lowerImpact = findingWithMagnitude('skew', 2, 1000, 'critical');
-    const { groups } = useFixTheseFirstData([highImpact, lowerImpact], [], STAGES);
+    const { groups } = useFixTheseFirstData([highImpact, lowerImpact], [], STAGES, null);
     expect(groups).toHaveLength(1);
     expect(groupImpactBand(groups[0])).toBe('info');
   });
@@ -53,14 +54,14 @@ describe('groupImpactBand / useFixTheseFirstData', () => {
       recommendation: 'Fix skew in Stage 2.',
       impactEstimate: { basis: 'contended', wallClock: { low: 5000, high: 6000 }, estimateMethod: 'measured' },
     };
-    const { groups } = useFixTheseFirstData([findingB, findingA], [], STAGES);
+    const { groups } = useFixTheseFirstData([findingB, findingA], [], STAGES, null);
     expect(groups).toHaveLength(1);
     expect(groupImpactBand(groups[0])).toBe('critical');
   });
 
   it('useFixTheseFirstData returns the eligible/groups/triageTarget ImpactBoard renders from', () => {
     const catalog = [findingWithMagnitude('spill', 1, 9000, 'critical')];
-    const { eligible, groups, triageTarget } = useFixTheseFirstData(catalog, [], STAGES);
+    const { eligible, groups, triageTarget } = useFixTheseFirstData(catalog, [], STAGES, installInterpretation(catalog));
     expect(eligible).toHaveLength(1);
     expect(groups).toHaveLength(1);
     expect(triageTarget?.finding).toBe(catalog[0]);
@@ -111,7 +112,7 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
       recommendation: 'Re-run with a complete event log.',
     };
     const spill = findingWithMagnitude('spill', 1, 5000, 'critical');
-    const { eligible } = useFixTheseFirstData([incompleteRun, spill], [], STAGES);
+    const { eligible } = useFixTheseFirstData([incompleteRun, spill], [], STAGES, null);
     expect(eligible).toEqual([spill]);
   });
 
@@ -122,7 +123,7 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
       recommendation: 'Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true: not enabled for this run.',
     };
     const spill = findingWithMagnitude('spill', 1, 5000, 'critical');
-    const { eligible } = useFixTheseFirstData([dataUnavailable, spill], [], STAGES);
+    const { eligible } = useFixTheseFirstData([dataUnavailable, spill], [], STAGES, null);
     expect(eligible).toEqual([spill]);
   });
 
@@ -132,7 +133,7 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
       impactBand: 'warning', metric: 'heapUsedRatio', value: 97,
       recommendation: 'Executor 1 peaked at 97% of allocated heap: memory may be too small; raise spark.executor.memory to avoid OOM/spill.',
     };
-    const { eligible } = useFixTheseFirstData([heapNearCapacity], [], STAGES);
+    const { eligible } = useFixTheseFirstData([heapNearCapacity], [], STAGES, null);
     expect(eligible).toEqual([heapNearCapacity]);
   });
 
@@ -142,7 +143,7 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
       impactBand: 'warning', metric: 'idleCoreRate', value: 80,
       recommendation: '80% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
     };
-    const { eligible } = useFixTheseFirstData([idleCores], [], STAGES);
+    const { eligible } = useFixTheseFirstData([idleCores], [], STAGES, null);
     expect(eligible).toEqual([idleCores]);
   });
 });

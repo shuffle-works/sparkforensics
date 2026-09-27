@@ -79,7 +79,7 @@ function ReferenceSection({
   return (
     <div className="space-y-6">
       <h2 className="sr-only">Full app report</h2>
-      <WallClock appModel={appModel} />
+      <WallClock />
       <Timeline appModel={appModel} catalog={catalog} />
       <ExecutorCountChart appModel={appModel} activeFileId={activeFileId} />
       <StageTable appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={onRoute} />
@@ -97,8 +97,8 @@ function ReferenceSection({
         </WidgetGridItem>
         <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases appModel={appModel} /></WidgetGridItem>
         <WidgetGridItem cardId="reference-scaling-sim" collapsedTile><ScalingSim appModel={appModel} /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel appModel={appModel} /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-wasted-core-hours" collapsedTile><WastedCoreHours appModel={appModel} /></WidgetGridItem>
+        <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel /></WidgetGridItem>
+        <WidgetGridItem cardId="reference-wasted-core-hours" collapsedTile><WastedCoreHours /></WidgetGridItem>
         <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>
       </WidgetGrid>
     </div>

@@ -91,3 +91,9 @@ test('accepts only the payload version this bundle was built for', () => {
   expect(unsupportedPayloadReason({ app: null })).toContain('an unknown version');
   expect(unsupportedPayloadReason(null)).toContain('an unknown version');
 });
+
+test('refuses a payload of the right version that lacks its config audit', () => {
+  const { configFindings: _omitted, ...withoutConfig } = sampleData();
+  expect(unsupportedPayloadReason(withoutConfig)).toContain('missing the config audit');
+  expect(unsupportedPayloadReason({ ...sampleData(), configFindings: null })).toContain('missing the config audit');
+});

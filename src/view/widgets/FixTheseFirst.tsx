@@ -14,6 +14,7 @@ import { StagePill, StagePillGroup } from '@/view/StagePill';
 import { formatWallClockRange } from '@sparkforensics/core/impact-format.ts';
 import { recommendationText } from '@sparkforensics/core/run-verdict.ts';
 import { useFindingSavings } from '@/view/interpretation';
+import type { InterpretationState } from '@/store/store';
 import { RowPagination } from '@/view/RowPagination';
 import { selectTriageTarget, selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 
@@ -354,10 +355,11 @@ export function useFixTheseFirstData(
   catalog: Finding[],
   configFindings: Finding[],
   stages: AppModel['stages'],
+  interpretation: InterpretationState | null,
 ): { eligible: Finding[]; groups: RollupGroup[]; triageTarget: TriageTarget | null } {
   const allFindings = [...catalog, ...configFindings];
   const eligible = allFindings.filter(isEligible);
   const groups = buildRecommendationRollup(eligible, stages);
-  const triageTarget = selectTriageTarget(eligible);
+  const triageTarget = selectTriageTarget(interpretation, eligible);
   return { eligible, groups, triageTarget };
 }

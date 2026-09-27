@@ -3,7 +3,8 @@ import {
   buildExportRunData, CORE_VERSION, EXPORT_DATA_SCHEMA_VERSION, reviveExportCollections,
 } from '../src/export-data.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
-import { buildHtmlExportData, encodeRunPayload, runPayloadScript } from '../src/html-export.js';
+import { buildHtmlExportData, encodeRunPayload } from '../src/html-export.js';
+import { runPayloadScript } from '../src/run-payload.js';
 import { auditConfig } from '../src/analyzer.js';
 import { interpretRun } from '../src/run-interpretation.js';
 import { readFileSync } from 'node:fs';

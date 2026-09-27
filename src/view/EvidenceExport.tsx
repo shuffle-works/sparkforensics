@@ -12,8 +12,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useStore } from '@/store/store';
-import { buildEvidenceReport } from '@sparkforensics/core/evidence-report.ts';
-import { buildHtmlExportData, encodeRunPayload } from '@sparkforensics/core/html-export.ts';
 import { EXPORT_TEMPLATE_FILE, inlineRunPayload } from '@/export/single-file';
 import { CORE_BUILD_ID, WEB_PRODUCER } from '@/build-info';
 
@@ -54,19 +52,20 @@ async function fetchExportTemplate(): Promise<string> {
 }
 
 /** Shared export state + download action, reused by the standalone control and
- * the Topbar overflow menu so both entry points behave identically. */
+ * the Topbar overflow menu so both entry points behave identically. Every
+ * format runs core analysis at download time, so the producer modules load on
+ * demand and the Topbar offers none of this in an exported dashboard. */
 export function useEvidenceExport() {
   const appModel = useStore((s) => s.appModel);
   const catalog = useStore((s) => s.catalog);
   const skippedLines = useStore((s) => s.skippedLines);
-  // The export app itself has no template beside it to re-export from.
-  const htmlAvailable = !useStore((s) => s.exportMode);
   const [redact, setRedact] = useState(false);
 
   // Same data, redaction and encoding as the CLI's --export-html
   // (buildHtmlExportData), inlined into one file instead of a data.js beside it.
   const downloadHtml = async () => {
     try {
+      const { buildHtmlExportData, encodeRunPayload } = await import('@sparkforensics/core/html-export.ts');
       const data = buildHtmlExportData(appModel, catalog, skippedLines, {
         redact, buildId: CORE_BUILD_ID, producer: WEB_PRODUCER,
       });
@@ -78,11 +77,8 @@ export function useEvidenceExport() {
     }
   };
 
-  const download = (format: ExportFormat) => {
-    if (format === 'html') {
-      void downloadHtml();
-      return;
-    }
+  const downloadReport = async (format: Exclude<ExportFormat, 'html'>) => {
+    const { buildEvidenceReport } = await import('@sparkforensics/core/evidence-report.ts');
     const { markdown, json } = buildEvidenceReport(appModel, { redact });
     const appId = (json as { summary?: { app?: { id?: string | null } } }).summary?.app?.id ?? null;
     const filename = reportFilename(appId, format, redact);
@@ -93,7 +89,11 @@ export function useEvidenceExport() {
     }
   };
 
-  return { redact, setRedact, download, htmlAvailable };
+  const download = (format: ExportFormat) => {
+    void (format === 'html' ? downloadHtml() : downloadReport(format));
+  };
+
+  return { redact, setRedact, download };
 }
 
 /** The redact toggle + the download items. Rendered inside both the standalone
@@ -103,7 +103,6 @@ export function EvidenceExportMenuItems({
   redact,
   setRedact,
   download,
-  htmlAvailable,
 }: ReturnType<typeof useEvidenceExport>) {
   return (
     <>
@@ -117,9 +116,7 @@ export function EvidenceExportMenuItems({
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={() => download('markdown')}>Download Markdown</DropdownMenuItem>
       <DropdownMenuItem onClick={() => download('json')}>Download JSON</DropdownMenuItem>
-      {htmlAvailable ? (
-        <DropdownMenuItem onClick={() => download('html')}>Download HTML dashboard</DropdownMenuItem>
-      ) : null}
+      <DropdownMenuItem onClick={() => download('html')}>Download HTML dashboard</DropdownMenuItem>
     </>
   );
 }

@@ -7,7 +7,7 @@ import { computeTotalCores } from './core-count.ts';
 export const MS_PER_CORE_HOUR: number = 3.6e6;
 const TOP_N = 5;
 
-interface WastedCoreHoursResult {
+export interface WastedCoreHoursResult {
   totalCoreHours: number | null;
   usefulCoreHours: number | null;
   wastedCoreHours: number | null;

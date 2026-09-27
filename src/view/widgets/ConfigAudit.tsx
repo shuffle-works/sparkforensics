@@ -1,6 +1,5 @@
 import { memo, useMemo, useState } from 'react';
 
-import { auditConfig } from '@sparkforensics/core/analyzer.ts';
 import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { DocsLink } from '@/view/DocsContext';
@@ -67,16 +66,15 @@ function ConfigAuditRow({ finding }: { finding: Finding }) {
  */
 export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings, defaultCollapsed = true }: ConfigAuditProps) {
   const [page, setPage] = useState(0);
-  // Dashboard passes the memoized `auditConfig` result via `configFindings`;
-  // fall back to computing it for direct callers (tests) that omit the prop.
-  // Depends only on `configFindings`/`appModel`; memoized to skip recompute (and
-  // re-running the fallback) on unrelated re-renders.
-  const findings: Finding[] = useMemo(() => (configFindings ?? auditConfig(appModel.app))
+  // The store's config findings (useIngest in the live app, the payload in an
+  // export), threaded from Dashboard; memoized to skip the re-sort on unrelated
+  // re-renders.
+  const findings: Finding[] = useMemo(() => (configFindings ?? [])
     // Guard: auditConfig only emits configAudit today; the filter documents that
     // contract so a future type doesn't silently slip through.
     .filter((f): f is Finding => f.type === 'configAudit')
     .slice()
-    .sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]), [configFindings, appModel]);
+    .sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]), [configFindings]);
 
   const activeRouteTarget = useActiveRouteTarget();
   const routeIndex = activeRouteTarget ? findings.findIndex((f) => f === activeRouteTarget.finding) : null;

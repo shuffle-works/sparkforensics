@@ -298,7 +298,7 @@ export function Topbar({
               <span aria-hidden="true" className="hidden xl:inline">Compare with another run</span>
             </Button>
           ) : null}
-          {!sectionControls ? <EvidenceExport /> : null}
+          {!sectionControls && !exportMode ? <EvidenceExport /> : null}
           {!sectionControls && graphEntries.length > 0 ? (
             <Button variant="ghost" size="sm" className="tap-target-comfortable" onClick={handleOpenGraphView}>
               <Workflow aria-hidden="true" className="text-plan-aggregate" />
@@ -367,7 +367,7 @@ export function Topbar({
                 Compare with another run
               </DropdownMenuItem>
             ) : null}
-            {!sectionControls ? (
+            {!sectionControls && !exportMode ? (
               <>
                 <EvidenceExportMenuItems {...evidence} />
                 <DropdownMenuSeparator />

@@ -1,7 +1,8 @@
-import { rankBySavings } from '@sparkforensics/core/run-verdict.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import type { InterpretationState } from '@/store/store';
 import { REGISTRY } from './detector-registry';
 import type { WidgetRegion } from './detector-registry';
+import { rankedBySavings } from './interpretation';
 
 export interface TriageTarget {
   finding: Finding;
@@ -37,14 +38,14 @@ export function selectTriageTargetForFinding(finding: Finding, catalog: Finding[
   return triageTargetFor(finding);
 }
 
-export function selectTriageTarget(catalog: Finding[]): TriageTarget | null {
-  return rankTriageTargets(catalog)[0] ?? null;
+export function selectTriageTarget(interpretation: InterpretationState | null, catalog: Finding[]): TriageTarget | null {
+  return rankTriageTargets(interpretation, catalog)[0] ?? null;
 }
 
-/** Every routeable finding as a triage target, best first: core's potential-savings ranking
- * (`rankBySavings`, shared with the CLI/MCP verdict). */
-export function rankTriageTargets(catalog: Finding[]): TriageTarget[] {
-  return rankBySavings(catalog)
+/** Every routeable finding in `catalog` as a triage target, best first: the interpretation's
+ * potential-savings rank (`savingsRank`, core's `rankBySavings`, shared with the CLI/MCP verdict). */
+export function rankTriageTargets(interpretation: InterpretationState | null, catalog: Finding[]): TriageTarget[] {
+  return rankedBySavings(interpretation, catalog)
     .map(triageTargetFor)
     .filter((target): target is TriageTarget => target !== null);
 }

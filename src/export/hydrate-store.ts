@@ -20,10 +20,16 @@ export function decodeRunPayload(base64: string): unknown {
  * renders exactly the payload version it was built for: an older payload lacks
  * the precomputed conclusions (this bundle has no analysis to fill them in),
  * and a newer one may carry fields it would silently drop, so either is refused
- * whole rather than rendered partially. */
+ * whole rather than rendered partially. A payload without its config audit is
+ * refused the same way: the bundle cannot run the audit itself. */
 export function unsupportedPayloadReason(payload: unknown): string | null {
-  const version = payload && typeof payload === 'object' ? (payload as { schemaVersion?: unknown }).schemaVersion : undefined;
-  if (version === EXPORT_DATA_SCHEMA_VERSION) return null;
+  const fields = payload && typeof payload === 'object' ? payload as { schemaVersion?: unknown; configFindings?: unknown } : {};
+  const version = fields.schemaVersion;
+  if (version === EXPORT_DATA_SCHEMA_VERSION) {
+    if (Array.isArray(fields.configFindings)) return null;
+    return 'This file is missing the config audit results this viewer needs. '
+      + 'Export the run again with the SparkForensics release you are using now.';
+  }
   const found = typeof version === 'number' ? `version ${version}` : 'an unknown version';
   return `This file holds export data format ${found}, but this viewer only reads version ${EXPORT_DATA_SCHEMA_VERSION}. `
     + 'Export the run again with the SparkForensics release you are using now.';

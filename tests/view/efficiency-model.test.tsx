@@ -5,6 +5,13 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { emptyAppModel, store } from '@/store/store';
 import { EfficiencyModel } from '@/view/widgets/EfficiencyModel';
 import type { AppModel } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
+
+// The widget renders the store's interpretation of the run, as the dashboard installs it.
+function renderEfficiencyModel(appModel: AppModel) {
+  installInterpretation([], appModel);
+  return render(<EfficiencyModel />);
+}
 
 // Runtime stage shape carries id/parentIds/submittedAt/completedAt, not the
 // Stage type's declared stageId; one cast bridges the gap.
@@ -29,13 +36,13 @@ function buildAppModel(overrides: Partial<AppModel> = {}): AppModel {
 
 describe('EfficiencyModel', () => {
   it('renders nothing without run aggregates', () => {
-    const { container } = render(<EfficiencyModel appModel={buildAppModel({ runAggregates: null })} />);
+    const { container } = renderEfficiencyModel(buildAppModel({ runAggregates: null }));
     expect(container).toBeEmptyDOMElement();
   });
 
   it('defaults collapsed with wastage-percent summary; all metrics always visible, confidence badge only at Advanced tier, once expanded', () => {
     store.getState().setWidgetDensity('basic');
-    render(<EfficiencyModel appModel={buildAppModel()} />);
+    renderEfficiencyModel(buildAppModel());
 
     expect(screen.getByRole('heading', { name: /compute efficiency/i })).toBeInTheDocument();
     expect(screen.queryByText(/low confidence/i)).not.toBeInTheDocument();
@@ -51,7 +58,7 @@ describe('EfficiencyModel', () => {
     cleanup();
 
     store.getState().setWidgetDensity('advanced');
-    render(<EfficiencyModel appModel={buildAppModel()} />);
+    renderEfficiencyModel(buildAppModel());
     // Still collapsed: confidence badge stays out of the summary view
     expect(screen.queryByText(/low confidence/i)).not.toBeInTheDocument();
 
@@ -68,17 +75,17 @@ describe('EfficiencyModel', () => {
   it('recommends driver right-sizing when driver-bound waste dominates', () => {
     // Short active stage => large driver idle => driver waste dominates.
     const appModel = buildAppModel({ stages: buildStages(100000) });
-    render(<EfficiencyModel appModel={appModel} />);
+    renderEfficiencyModel(appModel);
     expect(screen.getByText(/spark\.driver/)).toBeInTheDocument();
   });
 
   it('never renders the unverified ~21% marketing figure', () => {
-    render(<EfficiencyModel appModel={buildAppModel()} />);
+    renderEfficiencyModel(buildAppModel());
     expect(screen.queryByText(/21%/)).not.toBeInTheDocument();
   });
 
   it('right-sizing paragraph shows when driver or executor waste dominates', () => {
-    render(<EfficiencyModel appModel={buildAppModel()} />);
+    renderEfficiencyModel(buildAppModel());
     expect(screen.getByText(/driver-bound waste dominates/i)).toBeInTheDocument();
   });
 });
