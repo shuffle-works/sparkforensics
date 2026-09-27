@@ -80,12 +80,28 @@ export function buildExportRunData(
 const MAP_TAG = '__sparkforensicsMap';
 const SET_TAG = '__sparkforensicsSet';
 
-function encodeCollections(value: unknown): unknown {
+export function encodeCollections(value: unknown): unknown {
   if (value instanceof Map) return { [MAP_TAG]: [...value].map(([k, v]) => [encodeCollections(k), encodeCollections(v)]) };
   if (value instanceof Set) return { [SET_TAG]: [...value].map(encodeCollections) };
   if (Array.isArray(value)) return value.map(encodeCollections);
   if (value && typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, encodeCollections(v)]));
+  }
+  return value;
+}
+
+/** The in-memory counterpart of `reviveExportCollections`: rebuilds every
+ * tagged Map and Set in a tree `encodeCollections` produced, without a JSON
+ * round trip. */
+export function decodeCollections(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(decodeCollections);
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    if (Array.isArray(record[MAP_TAG])) {
+      return new Map((record[MAP_TAG] as [unknown, unknown][]).map(([k, v]) => [decodeCollections(k), decodeCollections(v)]));
+    }
+    if (Array.isArray(record[SET_TAG])) return new Set((record[SET_TAG] as unknown[]).map(decodeCollections));
+    return Object.fromEntries(Object.entries(record).map(([k, v]) => [k, decodeCollections(v)]));
   }
   return value;
 }

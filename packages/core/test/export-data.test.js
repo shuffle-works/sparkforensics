@@ -5,7 +5,8 @@ import {
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 import { buildHtmlExportData, encodeRunPayload } from '../src/html-export.js';
 import { runPayloadScript } from '../src/run-payload.js';
-import { auditConfig } from '../src/analyzer.js';
+import { analyze, auditConfig } from '../src/analyzer.js';
+import { TRUNCATED_HOST, TRUNCATED_HOST_FRAGMENT, truncatedFailureRun } from './fixtures/truncated-failure-run.js';
 import { interpretRun } from '../src/run-interpretation.js';
 import { readFileSync } from 'node:fs';
 import { gunzipSync } from 'node:zlib';
@@ -111,6 +112,21 @@ describe('html-export (shared by the CLI --export-html and the dashboard downloa
     expect(JSON.stringify(data)).not.toContain('ip-10-1-2-3');
     expect(data.interpretation.verdict.failureReason).toBe(data.catalog[0].value);
     expect(data.interpretation.verdict.steps[0].copyText).toContain(data.catalog[0].value);
+  });
+
+  it('redacts before interpreting, so a failure reason cut mid-host keeps no fragment of it', () => {
+    const appModel = truncatedFailureRun();
+    const catalog = analyze(appModel.app, appModel.stages, [], [], appModel.jobs, appModel.sql, null);
+    const data = buildHtmlExportData(appModel, catalog, 0, { redact: true, buildId: 'b', producer: 'p' });
+    const { verdict } = data.interpretation;
+
+    expect(verdict.failureReason).toMatch(/\.\.\.$/);
+    expect(verdict.failureReason).toContain(' executor on host-');
+    expect(JSON.stringify(data)).not.toContain(TRUNCATED_HOST_FRAGMENT);
+    // Unredacted, the same run does quote the fragment: the cut is really exercised.
+    const raw = buildHtmlExportData(appModel, catalog, 0, { redact: false, buildId: 'b', producer: 'p' });
+    expect(raw.interpretation.verdict.failureReason).toContain(TRUNCATED_HOST_FRAGMENT);
+    expect(raw.interpretation.verdict.failureReason).not.toContain(TRUNCATED_HOST);
   });
 
   it('stamps a CORE_VERSION kept equal to packages/core/package.json', () => {

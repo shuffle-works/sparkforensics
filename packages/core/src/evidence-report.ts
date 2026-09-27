@@ -7,7 +7,7 @@ import {
   typeTag, formatBytes, formatCores, formatDuration, formatRawWaste, formatWallClockRange, IMPACT_BAND_ORDER, readsAsZero,
 } from './format-utils.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
-import { redactReport } from './redact.ts';
+import { redactReport, redactRunModel } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
 import { coreFindingActionLabel } from './finding-action-label.ts';
 import { matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
@@ -340,17 +340,39 @@ function verdictJson(model: RunVerdictModel): VerdictJson {
 // calls buildEvidenceReport once per drill-down; without this, N lookups meant N detector re-runs.
 // A WeakMap needs no invalidation: once mcp-tools.ts evicts the appModel, this entry is collectible.
 const jsonCache = new WeakMap<AppModel, EvidenceReportJson>();
+// The redacted report, keyed by the unredacted appModel it was built from.
+const redactedJsonCache = new WeakMap<AppModel, EvidenceReportJson>();
 
-function buildJson(appModel: AppModel): EvidenceReportJson {
-  const cached = jsonCache.get(appModel);
-  if (cached) return cached;
-  const { app, stages, executors, sql, jobs, runAggregates, evidenceAvailability } = appModel;
+function runFindings(appModel: AppModel): { catalog: Finding[]; config: Finding[] } {
+  const { app, stages, executors, sql, jobs, runAggregates } = appModel;
   const catalog = analyze(
     app, stages, executors?.added ?? [], executors?.removed ?? [],
     jobs ?? new Map(), sql ?? new Map(),
     runAggregates ?? null,
   );
-  const config = auditConfig(app);
+  return { catalog, config: auditConfig(app) };
+}
+
+// Redacts the model and findings before the report derives any text from them, the same order
+// the HTML export uses: the verdict truncates Spark's failure reason, and redacting that
+// truncated copy afterwards would miss an identifier the cut left as a fragment.
+function buildRedactedJson(appModel: AppModel): EvidenceReportJson {
+  const cached = redactedJsonCache.get(appModel);
+  if (cached) return cached;
+  const { catalog, config } = runFindings(appModel);
+  const run = redactRunModel(appModel, catalog, config);
+  // redactReport stays as a last pass: idempotent over pseudonyms, and it covers the report's own
+  // structured fields (summary.app.id) the same way it always has.
+  const result = redactReport(buildJson(run.appModel, { catalog: run.catalog, config: run.configFindings }));
+  redactedJsonCache.set(appModel, result);
+  return result;
+}
+
+function buildJson(appModel: AppModel, findings?: { catalog: Finding[]; config: Finding[] }): EvidenceReportJson {
+  const cached = jsonCache.get(appModel);
+  if (cached) return cached;
+  const { app, stages, executors, sql, jobs, evidenceAvailability } = appModel;
+  const { catalog, config } = findings ?? runFindings(appModel);
   const allFindings = [...catalog, ...config];
   const rows = sortFindings(allFindings.map(findingRow));
   const recommendations = buildRecommendations(allFindings, stages ?? new Map());
@@ -623,8 +645,7 @@ export function buildEvidenceReport(
     redact?: boolean; markdown?: boolean; findingsFilter?: FindingsFilter;
   } = {},
 ): { markdown: string; json: EvidenceReportJson } {
-  let json = buildJson(appModel);
-  if (redact) json = redactReport(json);
+  let json = redact ? buildRedactedJson(appModel) : buildJson(appModel);
   const incomplete = json.findings.some((row) => row.type === 'incompleteRun');
   // Filter after redact, not before: redaction only replaces string values on surviving rows,
   // never adds/removes rows, so the two orderings produce identical final content.

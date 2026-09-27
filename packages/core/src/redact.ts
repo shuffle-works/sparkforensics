@@ -7,7 +7,8 @@
 // Deterministic (sorted assignment), idempotent (pseudonyms map to themselves),
 // and non-mutating (returns a fresh, deep-copied tree).
 
-import type { ExportRunData } from './export-data.ts';
+import { decodeCollections, encodeCollections, type ExportRunData } from './export-data.ts';
+import type { AppModel, Finding } from './types.ts';
 import { redactTaskFailureGroup, type TaskFailureDetail } from './task-failure.ts';
 
 // Host / IP identifier patterns. Used to enumerate host names that surface only
@@ -214,7 +215,9 @@ export function redactComparison<T>(comparison: T): T {
 // this also walks executors.added/removed for their literal `host` field
 // (ExecutorAddedEvent.host), since raw executor records: not just findings
 //: reach data.js.
-export function redactExportData(input: ExportRunData): ExportRunData {
+type RunTree = Pick<ExportRunData, 'app' | 'executors' | 'catalog' | 'configFindings'>;
+
+function redactRunTree<T extends RunTree>(input: T): T {
   const data = redactFailureGroups(input);
   const appIds = new Set<string>();
   const hosts = new Set<string>();
@@ -227,4 +230,47 @@ export function redactExportData(input: ExportRunData): ExportRunData {
   collectConfigHostValues(data.app?.config, hosts);
   scanTokens(data, [{ patterns: HOST_PATTERNS, out: hosts }, { patterns: APP_ID_PATTERNS, out: appIds }]);
   return applyReplacements(data, { appIds, hosts });
+}
+
+export function redactExportData(input: ExportRunData): ExportRunData {
+  return redactRunTree(input);
+}
+
+/** A run's model and findings with every identifier pseudonymized, the same
+ * replacements `redactExportData` makes. Redact this before anything derives
+ * text from the run: the verdict truncates Spark's failure reason, and an
+ * identifier cut by that truncation is a fragment no later pass can match. */
+export function redactRunModel(
+  appModel: AppModel,
+  catalog: Finding[],
+  configFindings: Finding[],
+): { appModel: AppModel; catalog: Finding[]; configFindings: Finding[] } {
+  // Maps and Sets would lose their entries in the deep copy, so they cross as
+  // tagged plain objects, the way the export payload carries them.
+  const tree = encodeCollections({
+    app: appModel.app,
+    stages: [...appModel.stages.values()],
+    jobs: [...appModel.jobs.values()],
+    sql: [...appModel.sql.values()],
+    executors: appModel.executors,
+    runAggregates: appModel.runAggregates,
+    evidenceAvailability: appModel.evidenceAvailability,
+    catalog,
+    configFindings,
+  }) as RunTree & { stages: unknown[]; jobs: unknown[]; sql: unknown[]; runAggregates: unknown; evidenceAvailability: unknown };
+  const redacted = decodeCollections(redactRunTree(tree)) as typeof tree;
+  const byId = <V extends { id: number }>(items: unknown[]) => new Map((items as V[]).map((item) => [item.id, item]));
+  return {
+    appModel: {
+      app: redacted.app,
+      stages: byId(redacted.stages),
+      jobs: byId(redacted.jobs),
+      sql: byId(redacted.sql),
+      executors: redacted.executors,
+      runAggregates: redacted.runAggregates as AppModel['runAggregates'],
+      evidenceAvailability: redacted.evidenceAvailability as AppModel['evidenceAvailability'],
+    } as AppModel,
+    catalog: redacted.catalog,
+    configFindings: redacted.configFindings,
+  };
 }

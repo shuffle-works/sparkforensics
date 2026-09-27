@@ -1,6 +1,6 @@
 import { auditConfig } from './analyzer.ts';
 import { buildExportRunData, CORE_VERSION, type ExportProvenance, type ExportRunData } from './export-data.ts';
-import { redactExportData } from './redact.ts';
+import { redactRunModel } from './redact.ts';
 import { interpretRun } from './run-interpretation.ts';
 import { gzipSync, strToU8 } from './vendor/fflate.js';
 import type { AppModel, Finding } from './types.ts';
@@ -15,20 +15,21 @@ import type { AppModel, Finding } from './types.ts';
 /** The run data an HTML export carries: the serialized model, the config
  * audit, and the whole interpretation layer (verdict, coverage, formatted
  * savings, run shape) computed here, so the bundle that opens the file renders
- * this core's conclusions instead of deriving its own. Redaction runs last and
- * walks the interpretation too, so a quoted reason or copied step gets the same
- * pseudonyms as the findings it came from. */
+ * this core's conclusions instead of deriving its own. With `redact`, the model
+ * and findings are pseudonymized first and the redacted run is interpreted, so
+ * text the interpretation truncates (Spark's failure reason) can never keep
+ * part of an identifier the redactor would no longer recognize. */
 export function buildHtmlExportData(
   appModel: AppModel,
   catalog: Finding[],
   skippedLines: number,
   { redact, buildId, producer }: { redact: boolean; buildId: string; producer: string },
 ): ExportRunData {
-  const configFindings = auditConfig(appModel.app);
-  const interpretation = interpretRun(appModel, catalog, configFindings);
+  const raw = { appModel, catalog, configFindings: auditConfig(appModel.app) };
+  const run = redact ? redactRunModel(raw.appModel, raw.catalog, raw.configFindings) : raw;
+  const interpretation = interpretRun(run.appModel, run.catalog, run.configFindings);
   const provenance: ExportProvenance = { coreVersion: CORE_VERSION, buildId, producer };
-  const data = buildExportRunData(appModel, catalog, configFindings, skippedLines, interpretation, provenance);
-  return redact ? redactExportData(data) : data;
+  return buildExportRunData(run.appModel, run.catalog, run.configFindings, skippedLines, interpretation, provenance);
 }
 
 // String.fromCharCode spreads its arguments onto the stack; a multi-MB payload

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { makeStage } from './fixtures/stage-app-fixtures.js';
+import { TRUNCATED_HOST_FRAGMENT, truncatedFailureRun } from './fixtures/truncated-failure-run.js';
 import { PER_STAGE_CHECK_TYPES } from '../src/check-coverage.ts';
 
 function fixture() {
@@ -213,6 +214,15 @@ describe('buildEvidenceReport', () => {
 
   // Redaction must reach a slowHost's host where the builder nests it
   // (evidence.host + the recommendation free text), not a never-emitted f.host.
+  it('with { redact:true } keeps no fragment of a host the failure-reason quote cuts', () => {
+    const { markdown, json } = buildEvidenceReport(truncatedFailureRun(), { redact: true });
+    expect(json.summary.outcome.failureReason).toContain(' executor on host-');
+    expect(JSON.stringify(json)).not.toContain(TRUNCATED_HOST_FRAGMENT);
+    expect(markdown).not.toContain(TRUNCATED_HOST_FRAGMENT);
+    // Unredacted, the quote does cut the host, so the case above is really exercised.
+    expect(buildEvidenceReport(truncatedFailureRun()).json.summary.outcome.failureReason).toContain(TRUNCATED_HOST_FRAGMENT);
+  });
+
   it('with { redact:true } removes host names nested in evidence + free text', () => {
     const badHost = 'ip-10-1-2-3.ec2.internal';
     // 3 fast hosts + 1 slow host (ratio 3) => a slowHost finding. Durations must
