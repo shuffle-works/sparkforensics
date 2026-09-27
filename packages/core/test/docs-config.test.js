@@ -3,7 +3,8 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { KNOWN_DOC_ANCHORS, isKnownDocAnchor, docAnchorForType, tuningDocSlugForAnchor, docsUrl, pageForAnchor, sharedDocAnchor } from '../src/docs-config.js';
+import { KNOWN_DOC_ANCHORS, isKnownDocAnchor, tuningDocSlugForAnchor, docsUrl, pageForAnchor, sharedDocAnchor } from '../src/docs-config.js';
+import { docAnchorForType } from '../src/detector-docs.js';
 import { DETECTORS } from '../src/detectors.js';
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)));

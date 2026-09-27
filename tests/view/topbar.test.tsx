@@ -476,6 +476,16 @@ test('sectionControls hides the "New analysis" button', () => {
   expect(screen.queryByRole('button', { name: 'New analysis' })).not.toBeInTheDocument();
 });
 
+test('exportMode offers no evidence export, in the bar or the overflow menu', async () => {
+  store.setState({ exportMode: true });
+  renderTopbar();
+  expect(screen.queryByRole('button', { name: /export evidence/i })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'More options' }));
+  await screen.findByRole('menuitem', { name: 'Keyboard shortcuts' });
+  expect(screen.queryByRole('menuitem', { name: /^download/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('menuitemcheckbox', { name: /redact identifiers/i })).not.toBeInTheDocument();
+});
+
 test('exportMode hides the "New analysis" button', () => {
   store.setState({ exportMode: true });
   renderTopbar();

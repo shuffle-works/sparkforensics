@@ -6,6 +6,7 @@ import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { JobFailures } from '@/view/widgets/JobFailures';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 function finding(overrides: Partial<Finding> = {}): Finding {
   return {
@@ -23,6 +24,7 @@ function buildAppModel(jobs: [number, Record<string, unknown>][] = []): AppModel
 }
 
 function renderWidget(appModel: AppModel, catalog: Finding[]) {
+  installInterpretation(catalog, appModel);
   return render(
     <DocsProvider>
       <JobFailures appModel={appModel} catalog={catalog} getTaskData={() => Promise.reject()} />

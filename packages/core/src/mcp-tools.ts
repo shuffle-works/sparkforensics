@@ -14,7 +14,8 @@ import { buildComparison, renderComparisonMarkdown, type CompareRunsResult } fro
 import { comparisonVerdict, type ComparisonVerdictText } from './comparison-verdict.ts';
 import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
-import { docAnchorForType, tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
+import { docAnchorForType } from './detector-docs.ts';
+import { tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
 import { typeTag } from './format-utils.ts';
 import type { AppModel, Finding, SparkAppInfo } from './types.ts';
 import type { RunShape } from './run-shape.ts';

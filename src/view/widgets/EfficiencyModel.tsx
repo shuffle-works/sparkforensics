@@ -2,30 +2,17 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { ImpactDot } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import { computeEfficiencyModel } from '@sparkforensics/core/efficiency-model.ts';
-import { checkConcurrentJobGroups } from '@sparkforensics/core/job-groups.ts';
+import { useInterpretation } from '@/view/interpretation';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel } from '@sparkforensics/core/types.ts';
 import { DesignSpikeConfidenceBadge, formatCoreHours } from './design-spike-widget-shared';
-
-export interface EfficiencyModelProps {
-  appModel: AppModel;
-}
 
 // Efficiency/wastage report + driver-vs-executor right-sizing copy.
 // DESIGN SPIKE: framed as an estimate. The right-sizing block is a pure copy
 // branch on dominantWaste. The unverified ~21% figure is never rendered.
-export function EfficiencyModel({ appModel }: EfficiencyModelProps) {
-  if (!appModel.runAggregates) return null;
-  const m = computeEfficiencyModel({
-    app: appModel.app,
-    stages: appModel.stages,
-    executorsAdded: appModel.executors.added,
-    runAggregates: appModel.runAggregates,
-  });
-  if (m.availableComputeHours <= 0) return null;
-
-  const reliability = checkConcurrentJobGroups(appModel.jobs);
+export function EfficiencyModel() {
+  const interpretation = useInterpretation()?.data;
+  const m = interpretation?.efficiency;
+  if (!interpretation || !m || m.availableComputeHours <= 0) return null;
 
   let rightSizing = null;
   if (m.dominantWaste === 'driver') {
@@ -57,7 +44,7 @@ export function EfficiencyModel({ appModel }: EfficiencyModelProps) {
       }
     >
       <div className="space-y-2 text-sm">
-        {!reliability.wallClockReliable && (
+        {!interpretation.wallClockReliable && (
           <AdvancedOnly>
             <p className="text-muted-foreground">
               This run used concurrent job groups: the driver/executor split below is approximate, not

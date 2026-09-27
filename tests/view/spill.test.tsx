@@ -13,6 +13,7 @@ import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order-toggle';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 function buildAppModel(stageOverrides: Record<number, Record<string, unknown>> = {}): AppModel {
   const stages = new Map<number, unknown>([
@@ -186,6 +187,7 @@ test('renders the impact estimate under a flagged spill finding', () => {
       impactEstimate: { basis: 'serial', wallClock: { low: 800, high: 800 }, estimateMethod: 'measured', rawWaste: { value: 800, unit: 'ms' } },
     },
   ];
+  installInterpretation(catalog);
   render(
     <DocsProvider>
       <Spill appModel={buildAppModel()} catalog={catalog} getTaskData={vi.fn()} />

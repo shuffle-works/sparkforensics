@@ -2,20 +2,16 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { ImpactDot } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import { computeWastedCoreHours, MS_PER_CORE_HOUR } from '@sparkforensics/core/wasted-core-hours.ts';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import { useInterpretation } from '@/view/interpretation';
+import { MS_PER_CORE_HOUR } from '@sparkforensics/core/format-utils.ts';
 import { DesignSpikeConfidenceBadge, formatCoreHours } from './design-spike-widget-shared';
-
-export interface WastedCoreHoursProps {
-  appModel: AppModel;
-}
 
 // Capacity core-hours held vs. core-hours that actually ran tasks.
 // The top-N list ranks stages by task core-time, NOT by waste: per-stage waste
 // isn't attributable here because concurrent stages share allocated capacity.
-export function WastedCoreHours({ appModel }: WastedCoreHoursProps) {
-  const m = computeWastedCoreHours(appModel.app, appModel.executors.added, appModel.runAggregates);
-  if (m.totalCoreHours == null) return null;
+export function WastedCoreHours() {
+  const m = useInterpretation()?.data.wastedCoreHours;
+  if (m?.totalCoreHours == null) return null;
 
   const wastedPct = m.totalCoreHours > 0 ? Math.round((m.wastedCoreHours! / m.totalCoreHours) * 100) : 0;
 

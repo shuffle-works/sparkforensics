@@ -3,12 +3,12 @@ import type { ComponentType } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { Table, TableBody } from '@/components/ui/table';
-import { checkCoverage, hasFinishedStage, verdictGaps } from '@sparkforensics/core/check-coverage.ts';
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
-import { getThresholdSummary } from '@sparkforensics/core/threshold-summary.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
+import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
+import type { CoverageData } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
 
@@ -84,12 +84,16 @@ export interface ActiveWidget {
 /** Every `REGISTRY` component except the always-mounted one(s), ranked by
  * worst impact band then widget order, for any component with at least one
  * finding in `catalog` ∪ `configFindings`. */
-export function computeActiveWidgets(catalog: Finding[], configFindings: Finding[]): ActiveWidget[] {
+export function computeActiveWidgets(
+  catalog: Finding[],
+  configFindings: Finding[],
+  detectors: Record<string, DetectorInfo>,
+): ActiveWidget[] {
   // isRealFinding: a mere evidence-unavailable caveat (e.g. memoryUtilization's
   // dataUnavailable variant) isn't grounds for an active widget card of its own.
   const combined = [...catalog, ...configFindings].filter(isRealFinding);
 
-  const componentWidgets = orderedWidgets()
+  const componentWidgets = orderedWidgets(detectors)
     .filter(({ type }) => !isAlwaysMountedType(type))
     .map(({ component, widgetId, type }, index) => {
       const findings = combined.filter((finding) => finding.type === type);
@@ -103,7 +107,12 @@ export function computeActiveWidgets(catalog: Finding[], configFindings: Finding
 
 /** The collapsed "Clean checks" disclosure: the part of Suggested
  * Improvements that isn't the impact-band-ranked active grid. */
-export function CleanChecks({ appModel, catalog, configFindings = [] }: Pick<WidgetProps, 'appModel' | 'catalog' | 'configFindings'>) {
+export function CleanChecks({
+  catalog,
+  configFindings = [],
+  coverage,
+  detectors,
+}: Pick<WidgetProps, 'catalog' | 'configFindings'> & { coverage: CoverageData; detectors: Record<string, DetectorInfo> }) {
   // isRealFinding: a mere evidence-unavailable caveat (e.g. memoryUtilization's
   // dataUnavailable variant) doesn't keep a type out of the Clean-checks list.
   const combined = [...catalog, ...configFindings].filter(isRealFinding);
@@ -111,9 +120,9 @@ export function CleanChecks({ appModel, catalog, configFindings = [] }: Pick<Wid
   // A check the log could not run is not a pass: the same rule the verdict
   // and the CLI/MCP report use to withhold "clean" (an evidence caveat, a
   // per-stage check on a log where no stage finished, or a run-span check on
-  // a log with no ApplicationEnd).
-  const noFinishedStages = !hasFinishedStage(appModel.stages);
-  const { isNotRun } = checkCoverage(appModel.stages, [...catalog, ...configFindings]);
+  // a log with no ApplicationEnd). The run's interpretation decided it, for
+  // the whole run rather than the current filter.
+  const isNotRun = (type: string) => type in coverage.notRunReasons;
 
   const zeroFindingTypes = Object.keys(REGISTRY)
     .filter((type) => !isAlwaysMountedType(type))
@@ -122,7 +131,7 @@ export function CleanChecks({ appModel, catalog, configFindings = [] }: Pick<Wid
   const cleanWidgets = zeroFindingTypes.filter(({ type }) => !isNotRun(type));
   const notRunWidgets = zeroFindingTypes.filter(({ type }) => isNotRun(type));
   // Why each check could not run, each line naming what to turn on next time.
-  const notRunReasons = notRunWidgets.length > 0 ? verdictGaps([...catalog, ...configFindings], noFinishedStages) : [];
+  const notRunReasons = notRunWidgets.length > 0 ? coverage.gaps : [];
 
   // Grouped by detector scope so a clean run's 20+ rows read as four short
   // labeled lists instead of one flat wall; `SCOPE_ORDER` fixes the order and
@@ -156,7 +165,7 @@ export function CleanChecks({ appModel, catalog, configFindings = [] }: Pick<Wid
               <Table>
                 <TableBody>
                   {notRunWidgets.map(({ type, findingLabel }) => (
-                    <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={getThresholdSummary(type)} status="notRun" />
+                    <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={detectors[type]?.thresholdSummary ?? ''} status="notRun" />
                   ))}
                 </TableBody>
               </Table>
@@ -175,7 +184,7 @@ export function CleanChecks({ appModel, catalog, configFindings = [] }: Pick<Wid
                 <Table>
                   <TableBody>
                     {widgets.map(({ type, findingLabel }) => (
-                      <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={getThresholdSummary(type)} />
+                      <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={detectors[type]?.thresholdSummary ?? ''} />
                     ))}
                   </TableBody>
                 </Table>

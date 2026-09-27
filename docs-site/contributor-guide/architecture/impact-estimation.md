@@ -165,7 +165,7 @@ Per-finding estimate, using `wasteMs_clipped(S)`:
 
 A finding spanning multiple stages (`stageIds`, plural) sums each stage's own estimate and
 caps the joint total at the union of just that finding's own stage windows (via
-`mergeIntervals`, `src/wall-clock.ts`): `high = min(Σ high_i, unionMs(stageIds))`,
+`mergeIntervals`, `packages/core/src/intervals.ts`): `high = min(Σ high_i, unionMs(stageIds))`,
 `low = min(Σ low_i, unionMs(stageIds))`. This is what prevents overclaiming when two or more
 of a finding's stages overlap in wall-clock time: a plain sum-and-cap, no CPM re-simulation.
 The union cap can force `low === high` numerically even when the constituent stages were
@@ -208,7 +208,7 @@ bound are skipped rather than defaulted to `0` (the same filter
 flags) can't contribute a negative interval and a negative recoverable-time
 figure.
 
-It reuses the same `mergeIntervals` primitive (`src/wall-clock.ts`) that
+It reuses the same `mergeIntervals` primitive (`packages/core/src/intervals.ts`) that
 backs `src/occupancy.ts`'s per-finding `estimateMultiStage`/its internal
 `unionMs` sum, but is not an extension of that function: `estimateMultiStage`
 caps one finding's own multi-stage claim during the impact-estimation pass,

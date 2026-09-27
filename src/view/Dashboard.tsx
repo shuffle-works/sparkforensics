@@ -7,6 +7,7 @@ import { NoMatchBanner } from '@/view/EmptyStateBanners';
 import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from '@/view/EvidenceAvailabilityContext';
 import { FindingFilterBar } from '@/view/FindingFilterBar';
 import { FindingFilterProvider, useFindingFilter } from '@/view/FindingFilterContext';
+import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import {
   deriveOptions,
   emptySelection,
@@ -27,7 +28,6 @@ import { SampleRunNotice } from '@/view/SampleRunNotice';
 import { Scorecard } from '@/view/widgets/Scorecard';
 import { ImpactBoard } from '@/view/widgets/ImpactBoard';
 import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
-import { isEligible } from '@/view/widgets/FixTheseFirst';
 import { StageTable } from '@/view/widgets/StageTable';
 import { Timeline } from '@/view/widgets/Timeline';
 import { EvidenceAvailability } from '@/view/widgets/EvidenceAvailability';
@@ -78,7 +78,7 @@ function ReferenceSection({
   return (
     <div className="space-y-6">
       <h2 className="sr-only">Full app report</h2>
-      <WallClock appModel={appModel} />
+      <WallClock />
       <Timeline appModel={appModel} catalog={catalog} />
       <ExecutorCountChart appModel={appModel} activeFileId={activeFileId} />
       <StageTable appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={onRoute} />
@@ -94,10 +94,10 @@ function ReferenceSection({
         <WidgetGridItem cardId="reference-evidence-availability" collapsedTile>
           <EvidenceAvailability ledger={appModel.evidenceAvailability} />
         </WidgetGridItem>
-        <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases appModel={appModel} /></WidgetGridItem>
+        <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases /></WidgetGridItem>
         <WidgetGridItem cardId="reference-scaling-sim" collapsedTile><ScalingSim appModel={appModel} /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel appModel={appModel} /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-wasted-core-hours" collapsedTile><WastedCoreHours appModel={appModel} /></WidgetGridItem>
+        <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel /></WidgetGridItem>
+        <WidgetGridItem cardId="reference-wasted-core-hours" collapsedTile><WastedCoreHours /></WidgetGridItem>
         <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>
       </WidgetGrid>
     </div>
@@ -138,6 +138,7 @@ function FilteredBoard({
 }) {
   const { selection, replaceSelection } = useFindingFilter();
   const density = useWidgetDensity();
+  const interpretation = useInterpretation();
   // Tied to the selection the route produced, so any later filter change hides it.
   const [filterNotice, setFilterNotice] = useState<{ text: string; selection: FilterSelection } | null>(null);
 
@@ -159,7 +160,7 @@ function FilteredBoard({
   // the fewest cleared dimensions), show Findings, then land on the band once
   // the tab panel is visible.
   const jumpToFindings = useCallback((impactBand: Finding['impactBand']) => {
-    const counted = [...catalog, ...(configFindings ?? [])].filter((f) => isEligible(f) && f.impactBand === impactBand);
+    const counted = eligibleFindings(interpretation).filter((f) => f.impactBand === impactBand);
     const closest = counted.reduce<Finding | null>((best, finding) => (
       !best || excludingDimensions(finding, selection).length < excludingDimensions(best, selection).length ? finding : best
     ), null);
@@ -172,7 +173,7 @@ function FilteredBoard({
       heading.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
       heading.focus({ preventScroll: true });
     });
-  }, [catalog, configFindings, selection, revealFinding, onActiveTabChange]);
+  }, [interpretation, selection, revealFinding, onActiveTabChange]);
   const filteredCatalog = useMemo(() => filterFindings(catalog, selection), [catalog, selection]);
   const filteredConfig = useMemo(() => filterFindings(configFindings ?? [], selection), [configFindings, selection]);
 
@@ -191,8 +192,8 @@ function FilteredBoard({
       <SampleRunNotice />
       {/* Verdict first, from the unfiltered catalog: it answers "how did this
           run go and where do I start", which a board filter must not change. */}
-      <RunVerdict appModel={appModel} catalog={catalog} configFindings={configFindings} onRoute={routeToVisible} />
-      <Scorecard appModel={appModel} catalog={filteredCatalog} />
+      {interpretation ? <RunVerdict interpretation={interpretation} onRoute={routeToVisible} /> : null}
+      {interpretation ? <Scorecard interpretation={interpretation.data} catalog={filteredCatalog} /> : null}
       {/* Filtering is a power control: Advanced mode shows it, and so does an
           active selection (e.g. from a shared URL), so a filtered board never
           hides the control that explains and clears it. */}

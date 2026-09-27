@@ -10,6 +10,7 @@ import { EvidenceExport } from '@/view/EvidenceExport';
 import { decodeRunPayload } from '@/export/hydrate-store';
 import { EXPORT_TEMPLATE_FILE } from '@/export/single-file';
 import * as reportBuilder from '@sparkforensics/core/evidence-report.ts';
+import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData } from '@sparkforensics/core/export-data.ts';
 import { buildHtmlExportData } from '@sparkforensics/core/html-export.ts';
 
 function seedRun() {
@@ -98,6 +99,22 @@ test('the redact toggle flips the builder option and marks the filename', async 
   expect(lastDownloadName).not.toContain('application_123');
 });
 
+test('a report that fails to build surfaces an error instead of downloading nothing silently', async () => {
+  seedRun();
+  vi.spyOn(reportBuilder, 'buildEvidenceReport').mockImplementation(() => {
+    throw new Error('report broke');
+  });
+  const errorSpy = vi.spyOn(toast, 'error').mockImplementation(() => 'toast-id');
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  render(<EvidenceExport />);
+
+  await userEvent.click(screen.getByRole('button', { name: /export evidence/i }));
+  await userEvent.click(await screen.findByRole('menuitem', { name: /download json/i }));
+
+  expect(errorSpy).toHaveBeenCalledWith('Evidence export failed', { description: 'report broke' });
+  expect(lastBlob).toBeNull();
+});
+
 // A stand-in for dist/export-template.html: the real one is only built by
 // `npm run build`, and only the data.js tag matters to the splice.
 const FAKE_TEMPLATE = '<!doctype html><html><body><div id="root"></div><script src="./data.js"></script><script type="module">/* app */</script></body></html>';
@@ -113,7 +130,7 @@ function stubTemplateFetch(body = FAKE_TEMPLATE, status = 200) {
 function payloadOf(html: string) {
   const match = html.match(/window\.__SPARKFORENSICS_RUN_GZ__ = "([^"]+)";/);
   if (!match) throw new Error('downloaded HTML carries no inline payload');
-  return decodeRunPayload(match[1]);
+  return decodeRunPayload(match[1]) as ExportRunData;
 }
 
 async function downloadHtml({ redact = false } = {}) {
@@ -144,12 +161,27 @@ test('the payload spliced into the downloaded HTML decodes back to the same run 
   seedRun();
   stubTemplateFetch();
   const s = store.getState();
-  const expected = buildHtmlExportData(s.appModel, s.catalog, s.skippedLines, { redact: false });
+  // Under vitest there is no Vite `define`, so src/build-info.ts falls back to 'dev'.
+  const expected = buildHtmlExportData(s.appModel, s.catalog, s.skippedLines, {
+    redact: false, buildId: 'dev', producer: 'sparkforensics-web dev',
+  });
 
   const decoded = payloadOf(await downloadHtml());
 
   expect(decoded).toEqual(expected);
   expect(decoded.app?.id).toBe('application_123');
+});
+
+test('the downloaded HTML carries its conclusions and provenance, not only the model', async () => {
+  seedRun();
+  stubTemplateFetch();
+
+  const decoded = payloadOf(await downloadHtml());
+
+  expect(decoded.schemaVersion).toBe(EXPORT_DATA_SCHEMA_VERSION);
+  expect(decoded.provenance).toEqual({ coreVersion: expect.any(String), buildId: 'dev', producer: 'sparkforensics-web dev' });
+  expect(decoded.interpretation.verdict.title).toEqual(expect.any(String));
+  expect(decoded.interpretation.runShape.wallClockMs).toBe(5000);
 });
 
 test('the redact toggle reaches the HTML export: pseudonymized payload and filename', async () => {
@@ -176,15 +208,3 @@ test('a missing template surfaces an error instead of downloading a broken file'
   expect(lastBlob).toBeNull();
 });
 
-test('the export app itself does not offer the HTML download', async () => {
-  seedRun();
-  store.setState({ exportMode: true });
-  try {
-    render(<EvidenceExport />);
-    await userEvent.click(screen.getByRole('button', { name: /export evidence/i }));
-    expect(await screen.findByRole('menuitem', { name: /download json/i })).toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: /download html/i })).toBeNull();
-  } finally {
-    store.setState({ exportMode: false });
-  }
-});

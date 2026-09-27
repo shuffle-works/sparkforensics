@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import type { Finding } from '@sparkforensics/core/types.ts';
 
 import { ExecutorUtilization } from '@/view/widgets/ExecutorUtilization';
+import { installInterpretation } from './_shared/interpretation';
 
 test('renders nothing when there are no utilization findings (collapses to a Clean-checks row instead)', () => {
   const { container } = render(<ExecutorUtilization catalog={[]} />);
@@ -38,6 +39,7 @@ test('renders the core-hours raw-waste figure for a utilization finding', () => 
       impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 6, unit: 'coreHours' } },
     },
   ];
+  installInterpretation(catalog);
   render(<ExecutorUtilization catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByText('6.0 core-h')).toBeInTheDocument();
 });

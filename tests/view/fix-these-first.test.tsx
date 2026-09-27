@@ -5,13 +5,30 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Table, TableBody } from '../../src/components/ui/table';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
-import { groupImpactBand, impactFigure, TypeGroupRow, useFixTheseFirstData } from '../../src/view/widgets/FixTheseFirst';
-import { buildRecommendationRollup, type RollupGroup } from '@sparkforensics/core/recommendation-rollup.ts';
-import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import { impactFigure } from '@sparkforensics/core/impact-format.ts';
+import { TypeGroupRow, useFixTheseFirstData } from '../../src/view/widgets/FixTheseFirst';
+import { rankedRollup } from '@sparkforensics/core/recommendation-rollup.ts';
+import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import { emptyAppModel } from '@/store/store';
+import type { BoardGroup } from '@/view/interpretation';
+import { installInterpretation } from './_shared/interpretation';
 
 // Non-overlapping windows so a group's union-capped recoverableMsHigh equals
 // the naive sum, without re-testing computeStageUnionMs's overlap math.
 const STAGES = new Map(Array.from({ length: 20 }, (_, i) => [i + 1, { id: i + 1, submittedAt: i * 10_000, completedAt: i * 10_000 + 5_000 }]));
+
+const APP_MODEL = { ...emptyAppModel(), stages: STAGES } as unknown as AppModel;
+
+// The board as ImpactBoard reads it: the run's interpretation over these findings, unfiltered.
+function boardData(catalog: Finding[], configFindings: Finding[] = []) {
+  return useFixTheseFirstData(catalog, configFindings, APP_MODEL.stages, installInterpretation(catalog, APP_MODEL, configFindings));
+}
+
+// One board group for TypeGroupRow, built the way the interpretation builds it.
+function groupOf(findings: Finding[]): BoardGroup {
+  const [{ members, ...group }] = rankedRollup(findings, STAGES);
+  return { ...group, key: `${group.kind}-${group.type}`, findings: members };
+}
 
 function findingWithMagnitude(type: string, stageId: number, lowMs: number, impactBand: ImpactBand = 'warning'): Finding {
   return {
@@ -23,21 +40,21 @@ function findingWithMagnitude(type: string, stageId: number, lowMs: number, impa
   };
 }
 
-describe('groupImpactBand / useFixTheseFirstData', () => {
-  it('groupImpactBand returns the single finding impact band for a one-finding group', () => {
+describe('useFixTheseFirstData', () => {
+  it('bands a one-finding group by that finding', () => {
     const catalog = [findingWithMagnitude('spill', 1, 9000, 'critical')];
-    const { groups } = useFixTheseFirstData(catalog, [], STAGES);
-    expect(groupImpactBand(groups[0])).toBe('critical');
+    const { groups } = boardData(catalog);
+    expect(groups[0].band).toBe('critical');
   });
 
-  it('groupImpactBand returns the highest-impact member\'s impact band for a multi-finding group, not the worst', () => {
+  it('bands a multi-finding group by its highest-impact member, not its worst band', () => {
     // Both merge into one group; the larger-magnitude info finding outranks
     // the smaller critical one for the badge.
     const highImpact = findingWithMagnitude('skew', 1, 5000, 'info');
     const lowerImpact = findingWithMagnitude('skew', 2, 1000, 'critical');
-    const { groups } = useFixTheseFirstData([highImpact, lowerImpact], [], STAGES);
+    const { groups } = boardData([highImpact, lowerImpact]);
     expect(groups).toHaveLength(1);
-    expect(groupImpactBand(groups[0])).toBe('info');
+    expect(groups[0].band).toBe('info');
   });
 
   it('ranks group members by wallClock.high, not .low', () => {
@@ -52,17 +69,38 @@ describe('groupImpactBand / useFixTheseFirstData', () => {
       recommendation: 'Fix skew in Stage 2.',
       impactEstimate: { basis: 'contended', wallClock: { low: 5000, high: 6000 }, estimateMethod: 'measured' },
     };
-    const { groups } = useFixTheseFirstData([findingB, findingA], [], STAGES);
+    const { groups } = boardData([findingB, findingA]);
     expect(groups).toHaveLength(1);
-    expect(groupImpactBand(groups[0])).toBe('critical');
+    expect(groups[0].band).toBe('critical');
   });
 
   it('useFixTheseFirstData returns the eligible/groups/triageTarget ImpactBoard renders from', () => {
     const catalog = [findingWithMagnitude('spill', 1, 9000, 'critical')];
-    const { eligible, groups, triageTarget } = useFixTheseFirstData(catalog, [], STAGES);
+    const { eligible, groups, triageTarget } = boardData(catalog);
     expect(eligible).toHaveLength(1);
     expect(groups).toHaveLength(1);
     expect(triageTarget?.finding).toBe(catalog[0]);
+  });
+
+  it('renders the unfiltered board exactly as the interpretation carries it', () => {
+    const catalog = [findingWithMagnitude('spill', 1, 3000), findingWithMagnitude('spill', 2, 2000)];
+    const state = installInterpretation(catalog, APP_MODEL);
+    // A figure no core computes: the board must show the carried one, not derive its own.
+    state.data.rollup.groups[0].stat = 'carried figure';
+    const { groups } = useFixTheseFirstData(catalog, [], APP_MODEL.stages, state);
+    expect(groups[0].stat).toBe('carried figure');
+    expect(groups[0].findings).toEqual([catalog[0], catalog[1]]);
+  });
+
+  it('recomputes the groups over the findings a filter keeps', () => {
+    const catalog = [findingWithMagnitude('spill', 1, 3000), findingWithMagnitude('spill', 2, 2000)];
+    const state = installInterpretation(catalog, APP_MODEL);
+    expect(useFixTheseFirstData(catalog, [], APP_MODEL.stages, state).groups[0].stat).toBe('×2 · 5.0s recoverable');
+    const filtered = useFixTheseFirstData([catalog[1]], [], APP_MODEL.stages, state);
+    expect(filtered.eligible).toEqual([catalog[1]]);
+    expect(filtered.groups).toHaveLength(1);
+    expect(filtered.groups[0].findings).toEqual([catalog[1]]);
+    expect(filtered.groups[0].stat).toBe('×1 · 2.0s recoverable');
   });
 });
 
@@ -83,8 +121,8 @@ describe('duplicatePlanSubtree identity across a cross-execution rollup', () => 
       recommendation: 'Consider caching/persisting the shared computation.',
       impactEstimate: { basis: 'serial', wallClock: { low: 35920, high: 35920 }, estimateMethod: 'measured' },
     };
-    const [group] = buildRecommendationRollup([findingA, findingB], STAGES);
-    expect(group.findingCount).toBe(2);
+    const group = groupOf([findingA, findingB]);
+    expect(group.findings).toHaveLength(2);
 
     render(
       <StageDetailProvider>
@@ -110,7 +148,7 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
       recommendation: 'Re-run with a complete event log.',
     };
     const spill = findingWithMagnitude('spill', 1, 5000, 'critical');
-    const { eligible } = useFixTheseFirstData([incompleteRun, spill], [], STAGES);
+    const { eligible } = boardData([incompleteRun, spill]);
     expect(eligible).toEqual([spill]);
   });
 
@@ -121,7 +159,7 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
       recommendation: 'Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true: not enabled for this run.',
     };
     const spill = findingWithMagnitude('spill', 1, 5000, 'critical');
-    const { eligible } = useFixTheseFirstData([dataUnavailable, spill], [], STAGES);
+    const { eligible } = boardData([dataUnavailable, spill]);
     expect(eligible).toEqual([spill]);
   });
 
@@ -131,7 +169,7 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
       impactBand: 'warning', metric: 'heapUsedRatio', value: 97,
       recommendation: 'Executor 1 peaked at 97% of allocated heap: memory may be too small; raise spark.executor.memory to avoid OOM/spill.',
     };
-    const { eligible } = useFixTheseFirstData([heapNearCapacity], [], STAGES);
+    const { eligible } = boardData([heapNearCapacity]);
     expect(eligible).toEqual([heapNearCapacity]);
   });
 
@@ -141,7 +179,7 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
       impactBand: 'warning', metric: 'idleCoreRate', value: 80,
       recommendation: '80% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
     };
-    const { eligible } = useFixTheseFirstData([idleCores], [], STAGES);
+    const { eligible } = boardData([idleCores]);
     expect(eligible).toEqual([idleCores]);
   });
 });
@@ -152,7 +190,7 @@ describe('TypeGroupRow generic description', () => {
       findingWithMagnitude('gc', 1, 5000, 'warning'),
       findingWithMagnitude('gc', 2, 9000, 'critical'),
     ];
-    const [group] = buildRecommendationRollup(findings, STAGES);
+    const group = groupOf(findings);
 
     render(
       <StageDetailProvider>
@@ -185,7 +223,7 @@ describe('TypeGroupRow generic description', () => {
         impactEstimate: { basis: 'serial', wallClock: { low: 2000, high: 2000 }, estimateMethod: 'modeled' },
       },
     ];
-    const [group] = buildRecommendationRollup(findings, STAGES);
+    const group = groupOf(findings);
 
     render(
       <StageDetailProvider>
@@ -208,7 +246,7 @@ describe('TypeGroupRow docs link', () => {
   }
 
   function renderGroup(findings: Finding[]) {
-    const [group] = buildRecommendationRollup(findings, STAGES);
+    const group = groupOf(findings);
     render(
       <StageDetailProvider>
         <Table>
@@ -241,8 +279,8 @@ describe('TypeGroupRow pagination', () => {
   it('paginates an expanded group of more than PAGE_SIZE (10) findings, 10-per-page, with Previous/Next controls', async () => {
     const user = userEvent.setup();
     const findings = Array.from({ length: 11 }, (_, i) => findingWithMagnitude('spill', i + 1, 1000 + i * 100, 'warning'));
-    const [group] = buildRecommendationRollup(findings, STAGES);
-    expect(group.findingCount).toBe(11);
+    const group = groupOf(findings);
+    expect(group.findings).toHaveLength(11);
 
     render(
       <StageDetailProvider>
@@ -268,7 +306,7 @@ describe('TypeGroupRow expand/collapse', () => {
   // TypeGroupRow itself is controlled (expanded/onToggle come from the parent),
   // so this harness owns the toggled state to exercise a real click round trip
   // rather than only asserting onToggle was called.
-  function ControlledGroupRow({ group, allFindings }: { group: RollupGroup; allFindings: Finding[] }) {
+  function ControlledGroupRow({ group, allFindings }: { group: BoardGroup; allFindings: Finding[] }) {
     const [expanded, setExpanded] = useState(false);
     return (
       <Table>
@@ -285,8 +323,8 @@ describe('TypeGroupRow expand/collapse', () => {
       findingWithMagnitude('spill', 1, 5000, 'warning'),
       findingWithMagnitude('spill', 2, 3000, 'warning'),
     ];
-    const [group] = buildRecommendationRollup(findings, STAGES);
-    expect(group.findingCount).toBe(2);
+    const group = groupOf(findings);
+    expect(group.findings).toHaveLength(2);
 
     const { container } = render(
       <StageDetailProvider>

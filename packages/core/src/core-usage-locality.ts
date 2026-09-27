@@ -121,8 +121,3 @@ export function buildLocalityChart(
   return { hasActivity: true, order, points, peakCores };
 }
 
-/** Whole cores from 10 up; one decimal below, so a small run's peak never
- * rounds down to "0 cores". */
-export function formatCores(cores: number): string {
-  return cores >= 10 ? String(Math.round(cores)) : cores.toFixed(1).replace(/\.0$/, '');
-}

@@ -18,25 +18,26 @@ describe('estimatedStageDurationAtCores', () => {
 
 describe('simulateScaling', () => {
   const app = { startTime: 0, endTime: 1000, resources: { executor: { cores: 2 } } };
-  const stages = new Map([[1, { submittedAt: 0, completedAt: 1000 }]]);
+  // The one stage ran 0-1000ms, so stages were active for the whole run.
+  const observedActiveMs = 1000;
   const runAggregates = { perStage: { 1: { totalTaskDurationSum: 2000, taskCount: 4 } }, busyCoreMs: 2000, peakConcurrentCores: 2 };
   const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 2 }];
 
   it('produces one prediction per test percentage', () => {
-    const r = simulateScaling({ app, stages, runAggregates, executorsAdded });
+    const r = simulateScaling({ app, observedActiveMs, runAggregates, executorsAdded });
     expect(r.predictions.length).toBe(r.testPercentages.length);
     expect(r.testPercentages).toEqual([10, 20, 50, 80, 100, 110, 120, 150, 200, 300, 400, 500]);
   });
 
   it('estimates a shorter makespan at more cores', () => {
-    const r = simulateScaling({ app, stages, runAggregates, executorsAdded });
+    const r = simulateScaling({ app, observedActiveMs, runAggregates, executorsAdded });
     const at100 = r.predictions.find(p => p.pct === 100).estMakespanMs;
     const at200 = r.predictions.find(p => p.pct === 200).estMakespanMs;
     expect(at200).toBeLessThan(at100);
   });
 
   it('computes a model-error percentage against observed wall-clock', () => {
-    const r = simulateScaling({ app, stages, runAggregates, executorsAdded });
+    const r = simulateScaling({ app, observedActiveMs, runAggregates, executorsAdded });
     expect(typeof r.modelErrorPct).toBe('number');
   });
 });

@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import {
-  writeFileSync, existsSync, realpathSync,
+  readFileSync, writeFileSync, existsSync, realpathSync,
   mkdtempSync, mkdirSync, rmSync, renameSync, readdirSync, cpSync,
 } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { gzipSync } from 'node:zlib';
 
 const binDir = dirname(fileURLToPath(import.meta.url));
 const pkgDir = dirname(binDir);
@@ -18,7 +17,7 @@ const pkgDir = dirname(binDir);
 // exported loadVendored().
 const srcHelper = join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
 const helperPath = existsSync(srcHelper) ? srcHelper : join(pkgDir, 'vendor-core', 'load-vendored.js');
-const { loadVendored } = await import(pathToFileURL(helperPath).href);
+const { coreBuildId, loadVendored } = await import(pathToFileURL(helperPath).href);
 const loadCore = (moduleName) => loadVendored(pkgDir, moduleName);
 
 const { collectRun } = await loadCore('cli/collect-run');
@@ -30,7 +29,8 @@ const { evaluateBudgets } = await loadCore('cli/budgets');
 const { buildComparison, renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
 const { comparisonVerdict } = await loadCore('comparison-verdict');
 const { redactComparison } = await loadCore('redact');
-const { buildHtmlExportData, runPayloadScript } = await loadCore('html-export');
+const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
+const { runPayloadScript } = await loadCore('run-payload');
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id> [--attempt-id <id>] [options]
@@ -122,8 +122,17 @@ async function collectWithEvidence(path) {
   return { appModel, skippedLines };
 }
 
+// The export's provenance stamp: this CLI's own name and version, and the build id of the core it
+// loaded (vendor-core/'s stamp or core/src's hash, see coreBuildId).
+function exportProducer() {
+  const { name, version } = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
+  return `${name} ${version}`;
+}
+
 async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redact }) {
-  const exportData = buildHtmlExportData(appModel, catalog, skippedLines, { redact });
+  const exportData = buildHtmlExportData(appModel, catalog, skippedLines, {
+    redact, buildId: coreBuildId(pkgDir), producer: exportProducer(),
+  });
 
   // Published install: packages/cli/export-template/ (populated by
   // scripts/vendor-export-template.mjs at prepack time). Monorepo dev mode:
@@ -140,11 +149,10 @@ async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redac
   const tempDir = mkdtempSync(join(parentDir, '.sparkforensics-export-'));
   try {
     cpSync(templateDir, tempDir, { recursive: true });
-    // gzip + base64 to shrink the artifact; decodeRunPayload (hydrate-store.ts)
-    // reverses it. runPayloadScript explains why base64 needs no escaping.
-    const json = JSON.stringify(exportData);
-    const base64 = gzipSync(json).toString('base64');
-    writeFileSync(join(tempDir, 'data.js'), `${runPayloadScript(base64)}\n`);
+    // The dashboard download's encoding too (gzip + base64); decodeRunPayload
+    // (hydrate-store.ts) reverses it. runPayloadScript explains why base64
+    // needs no escaping.
+    writeFileSync(join(tempDir, 'data.js'), `${runPayloadScript(encodeRunPayload(exportData))}\n`);
     // Clear destDir (confirmed empty-or-absent by the caller) right before the
     // rename to avoid platform rename-onto-dir quirks. Kept inside the try so a
     // rename failure surfaces the same actionable error as a write failure.

@@ -2,9 +2,11 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { EXPORT_TEMPLATE_FILE } from './src/export/template-asset';
+import { exportAnalysisGuard } from './scripts/export-analysis-guard.mjs';
+import type { Plugin } from 'vite';
 
 // Vite names an HTML build output after the source file's own path relative
 // to the config root, not after any rollupOptions.input key: building from
@@ -54,9 +56,12 @@ function renameExportEntry(templateOnly: boolean) {
   return {
     name: 'rename-export-entry',
     apply: 'build' as const,
-    closeBundle() {
+    closeBundle(error?: Error) {
       const outDir = path.resolve(__dirname, templateOnly ? TEMPLATE_OUT_DIR : 'dist-export');
       const exportHtmlPath = path.join(outDir, 'index.export.html');
+      // A failed build (the export analysis guard, for one) writes no HTML: leave its own error as
+      // the one the terminal shows instead of a file-not-found from here.
+      if (error || !existsSync(exportHtmlPath)) return;
       const html = stripCrossorigin(readFileSync(exportHtmlPath, 'utf8'));
       if (templateOnly) {
         mkdirSync(path.resolve(__dirname, 'dist'), { recursive: true });
@@ -70,12 +75,43 @@ function renameExportEntry(templateOnly: boolean) {
   };
 }
 
+// Live-only modules and the stand-ins the export build resolves them to
+// (src/export/live-only-stubs/): the exported dashboard hides every control
+// that reaches them, and keeping the real ones out of the graph keeps their
+// analysis (analyzer, evidence report, html export) and the ingest path out of
+// the file. Matched on the resolved path, so every import style is caught.
+const LIVE_ONLY_STUBS: Record<string, string> = {
+  'src/store/useIngest.ts': 'src/export/live-only-stubs/useIngest.ts',
+  'src/view/useRecentFiles.ts': 'src/export/live-only-stubs/useRecentFiles.ts',
+  'src/view/EvidenceExport.tsx': 'src/export/live-only-stubs/EvidenceExport.tsx',
+  'src/view/core-usage-histogram-data.ts': 'src/export/live-only-stubs/core-usage-histogram-data.ts',
+};
+
+function swapLiveOnlyModules(): Plugin {
+  return {
+    name: 'swap-live-only-modules',
+    enforce: 'pre',
+    async resolveId(source, importer, options) {
+      if (!importer) return null;
+      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true });
+      if (!resolved) return null;
+      const repoPath = path.relative(__dirname, resolved.id.split('?')[0]).split(path.sep).join('/');
+      const stub = LIVE_ONLY_STUBS[repoPath];
+      return stub ? path.resolve(__dirname, stub) : resolved;
+    },
+  };
+}
+
+// `--mode guard` (tests/export-analysis-guard.test.ts) only bundles in memory
+// to run exportAnalysisGuard over the real graph: nothing is written or renamed.
 export default defineConfig(({ mode }) => {
   const templateOnly = mode === 'template';
+  const guardOnly = mode === 'guard';
   return {
     base: './',
     publicDir: templateOnly ? false : 'public',
     plugins: [
+      swapLiveOnlyModules(),
       react(),
       tailwindcss(),
       // Inlines every emitted JS/CSS asset directly into index.html so the
@@ -87,7 +123,9 @@ export default defineConfig(({ mode }) => {
       // array position; it's placed before renameExportEntry() to match the
       // pipeline order: bundle, inline, then rename+cleanup the final HTML.
       viteSingleFile(),
-      renameExportEntry(templateOnly),
+      // Fails the build when the graph reaches analysis or the live ingest path.
+      exportAnalysisGuard(__dirname),
+      ...(guardOnly ? [] : [renameExportEntry(templateOnly)]),
     ],
     resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
     build: {

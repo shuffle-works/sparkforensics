@@ -11,6 +11,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { SpeculationWaste } from '@/view/widgets/SpeculationWaste';
+import { installInterpretation } from './_shared/interpretation';
 
 function appModelWithStage(stageId: number): AppModel {
   return { ...emptyAppModel(), stages: new Map([[stageId, { id: stageId, name: `stage-${stageId}` }]]) as unknown as AppModel['stages'] };
@@ -60,6 +61,7 @@ test('renders the impact estimate for a flagged finding', () => {
   const catalog: Finding[] = [
     { type: 'speculationWaste', stageId: 7, impactBand: 'warning', value: 800, recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 800, high: 800 }, estimateMethod: 'measured', rawWaste: { value: 800, unit: 'ms' } } },
   ];
+  installInterpretation(catalog);
   render(<SpeculationWaste appModel={appModelWithStage(7)} catalog={catalog} defaultCollapsed={false} />);
   expect(document.querySelector('.impact-estimate')).toHaveTextContent('800ms');
 });

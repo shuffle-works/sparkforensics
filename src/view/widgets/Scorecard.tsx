@@ -2,22 +2,21 @@ import type { ReactNode } from 'react';
 
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { computeWallClock } from '@sparkforensics/core/wall-clock.ts';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
+import type { RunInterpretation, ScorecardFlag } from '@sparkforensics/core/run-interpretation.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { IMPACT_BG_CLASS, IMPACT_TEXT_CLASS, ImpactDot } from '@/view/ImpactBadge';
 import { useWidgetDensity } from '@/store/store';
-import { hasFinishedStage } from '@sparkforensics/core/check-coverage.ts';
-import { getScorecardEstimates, hasCompleteApplicationInterval } from '@sparkforensics/core/scorecard-estimates.ts';
 
 // Run-info stats row: wall-clock, efficiency, unused core time (not problem
 // counts, which live in RunVerdict and the Findings tab). Basic view
 // captions say what each number measures and which direction is better, so
 // Efficiency (a share of time) and Unused core time (a share of core-hours) never
 // read as contradicting each other; Advanced view keeps the raw breakdowns.
-export type ScorecardProps = Pick<WidgetProps, 'appModel' | 'catalog'>;
+// Every figure and flag comes from the run's interpretation (run-interpretation.ts).
+export type ScorecardProps = Pick<WidgetProps, 'catalog'> & { interpretation: RunInterpretation };
 
-type FlagImpactBand = 'critical' | 'warning' | null;
+type FlagImpactBand = ScorecardFlag;
 
 // Text/bar colors come from ImpactBadge.tsx's shared impact-band vocabulary
 // (IMPACT_TEXT_CLASS/IMPACT_BG_CLASS), indexed by the tile's flag; a tile's
@@ -123,26 +122,23 @@ function TimingUnavailableNotice() {
   );
 }
 
-export function Scorecard({ appModel, catalog }: ScorecardProps) {
+export function Scorecard({ interpretation, catalog }: ScorecardProps) {
   const density = useWidgetDensity();
-  const { app, stages } = appModel;
-  const hasTiming = hasCompleteApplicationInterval(app);
-  if (!hasTiming) return <TimingUnavailableNotice />;
+  const { runShape, coverage, wallClock } = interpretation;
+  if (runShape.wallClockMs == null) return <TimingUnavailableNotice />;
 
-  const wc = computeWallClock(app, stages);
-  const estimates = getScorecardEstimates(appModel);
-
-  const total = wc.total;
+  const total = runShape.wallClockMs;
+  const stagesActive = wallClock.stagesActive;
   // No stage recorded an end: "0%" would grade a run nothing measured (the
   // verdict says the stage checks had nothing to measure).
-  const measured = hasFinishedStage(stages);
-  const efficiency = measured ? estimates.efficiency.value : null;
-  const effFlag: FlagImpactBand = efficiency == null ? null : efficiency < 75 ? 'critical' : efficiency < 90 ? 'warning' : null;
+  const measured = !coverage.noFinishedStages;
+  const efficiency = runShape.efficiencyPct;
+  const effFlag = runShape.efficiencyFlag;
 
   const coldStart = catalog.find((f) => f.type === 'coldStart');
 
-  const wastagePct = estimates.wastage.value;
-  const wastageFlag: FlagImpactBand = wastagePct == null ? null : wastagePct >= 70 ? 'critical' : wastagePct >= 40 ? 'warning' : null;
+  const wastagePct = runShape.unusedCoreTimePct;
+  const wastageFlag = runShape.unusedCoreTimeFlag;
 
   // Stays a raw Card, not WidgetCard: WidgetCard always renders an <h3>, and
   // Scorecard mounts above the tab strip with no enclosing <h2> section, so
@@ -158,16 +154,16 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
           dataTestid="kpi-wall-clock"
           value={total > 0 ? formatDuration(total) : '—'}
           meta={
-            density === 'advanced' || wc.stagesActive <= 0 ? (
+            density === 'advanced' || stagesActive <= 0 ? (
               <>
-                {formatRanLabel(wc.stagesActive)}
+                {formatRanLabel(stagesActive)}
                 {coldStart ? ` · ${coldStart.value}s cold start` : ''}
               </>
             ) : (
-              `Total run time. Stages were running for ${formatDuration(wc.stagesActive)} of it.`
+              `Total run time. Stages were running for ${formatDuration(stagesActive)} of it.`
             )
           }
-          bar={<ActiveIdleBar active={wc.stagesActive} total={total} />}
+          bar={<ActiveIdleBar active={stagesActive} total={total} />}
         />
         <KpiTile
           eyebrow="Efficiency"
@@ -181,8 +177,8 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
               ? 'This run has no complete application timing interval.'
               : density !== 'advanced'
                 ? 'Share of the run with a stage running. Higher is better.'
-                : total > wc.stagesActive
-                  ? `${formatRanLabel(wc.stagesActive)} · ${formatDuration(total - wc.stagesActive)} idle/gap time`
+                : total > stagesActive
+                  ? `${formatRanLabel(stagesActive)} · ${formatDuration(total - stagesActive)} idle/gap time`
                   : 'executors active the whole run'
           }
           bar={efficiency != null ? <ProportionBar pct={efficiency} flag={effFlag} label={`Efficiency ${efficiency}%`} /> : undefined}
@@ -193,11 +189,11 @@ export function Scorecard({ appModel, catalog }: ScorecardProps) {
           value={wastagePct == null ? 'Unavailable' : (<>{wastagePct}<small>%</small></>)}
           flag={wastageFlag}
           meta={
-            estimates.wastage.unavailableReason === 'application-timing'
+            runShape.unusedCoreTimeUnavailableReason === 'application-timing'
               ? 'Unused core time needs complete application timing.'
-              : estimates.wastage.unavailableReason === 'core-usage-summary'
+              : runShape.unusedCoreTimeUnavailableReason === 'core-usage-summary'
                 ? 'Unused core time needs the core-usage summary.'
-                : estimates.wastage.unavailableReason === 'executor-capacity'
+                : runShape.unusedCoreTimeUnavailableReason === 'executor-capacity'
                   ? 'Unused core time needs usable executor-capacity data.'
                   : density === 'advanced'
                     ? 'Driver-idle + executor-slack core-hours as a share of available capacity. Directional, not a cost figure.'

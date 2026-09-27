@@ -11,18 +11,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Chip, severityBadgeVariants } from '@/view/ImpactBadge';
-import { isCleanRun } from '@sparkforensics/core/check-coverage.ts';
-import { summarizeRunOutcome } from '@sparkforensics/core/run-outcome.ts';
-import { isEligible } from '@/view/widgets/FixTheseFirst';
 import { EvidenceExport, EvidenceExportMenuItems, useEvidenceExport } from '@/view/EvidenceExport';
 import { FileSwitcher } from '@/view/FileSwitcher';
 import { GraphViewPickerDialog, type GraphViewPickerEntry } from '@/view/GraphViewPickerDialog';
 import { KeyboardShortcutsDialog } from '@/view/KeyboardShortcutsDialog';
 import { WidgetDensityControl, WidgetDensityMenuItem } from '@/view/WidgetDensityControl';
 import { store, useStore } from '@/store/store';
+import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
-import { stageIdsForSqlExec } from '@sparkforensics/core/detectors.ts';
+import { stageIdsForSqlExec } from '@sparkforensics/core/sql-stages.ts';
 import { cn } from '@/lib/utils';
 import type { RecentFileEntry } from '@/view/RecentList';
 import type { AppModel, Finding, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
@@ -179,13 +177,13 @@ export function Topbar({
 
   // Count what the verdict ranks: eligible findings, config included and
   // evidence caveats left out, so the chip and the verdict never disagree.
-  const configFindings = useStore((s) => s.configFindings);
-  const allFindings = useMemo(() => [...catalog, ...configFindings], [catalog, configFindings]);
-  const eligible = useMemo(() => allFindings.filter(isEligible), [allFindings]);
+  const interpretation = useInterpretation();
+  const eligible = useMemo(() => eligibleFindings(interpretation), [interpretation]);
   const worst = worstImpactBand(eligible);
   const count = worst ? eligible.filter((f) => f.impactBand === worst).length : 0;
-  const clean = isCleanRun(appModel, allFindings);
-  const failedJobs = summarizeRunOutcome(appModel.jobs, allFindings).failedJobs;
+  const verdict = interpretation?.data.verdict;
+  const clean = verdict?.clean ?? false;
+  const failed = verdict?.failed ?? false;
 
   return (
     <header className="sticky top-0 z-30 flex min-w-0 flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
@@ -253,7 +251,7 @@ export function Topbar({
         ) : (
           <Chip label={verdictLabel(worst, count)} impactBand={worst} className="shrink-0" />
         )
-      ) : failedJobs > 0 ? (
+      ) : failed ? (
         <Chip label="Run failed" impactBand="critical" className="shrink-0" />
       ) : clean ? (
         <span
@@ -298,7 +296,7 @@ export function Topbar({
               <span aria-hidden="true" className="hidden xl:inline">Compare with another run</span>
             </Button>
           ) : null}
-          {!sectionControls ? <EvidenceExport /> : null}
+          {!sectionControls && !exportMode ? <EvidenceExport /> : null}
           {!sectionControls && graphEntries.length > 0 ? (
             <Button variant="ghost" size="sm" className="tap-target-comfortable" onClick={handleOpenGraphView}>
               <Workflow aria-hidden="true" className="text-plan-aggregate" />
@@ -367,7 +365,7 @@ export function Topbar({
                 Compare with another run
               </DropdownMenuItem>
             ) : null}
-            {!sectionControls ? (
+            {!sectionControls && !exportMode ? (
               <>
                 <EvidenceExportMenuItems {...evidence} />
                 <DropdownMenuSeparator />

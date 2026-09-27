@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 import { orderedWidgets } from '../../src/view/detector-registry';
+import { detectorInfoByType } from '@sparkforensics/core/detector-docs.ts';
 
 // jsdom's URL shim mis-resolves `new URL('.', import.meta.url)`; derive the dir from this file's path.
 const widgetsDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../src/view/widgets');
@@ -41,7 +42,7 @@ function findBadgesPropRanges(source: string): Array<[number, number]> {
 
 describe('single tag per widget (source scan)', () => {
   test('every REGISTRY widget renders exactly one TagBadge', () => {
-    const widgets = orderedWidgets();
+    const widgets = orderedWidgets(detectorInfoByType());
     // Guard the premise: an empty/broken registry would make every assertion below vacuously pass.
     expect(widgets.length).toBeGreaterThan(0);
 

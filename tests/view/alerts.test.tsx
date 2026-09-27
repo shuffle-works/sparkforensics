@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { CleanChecks, computeActiveWidgets } from '../../src/view/widgets/Alerts';
 import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
+import { detectorInfoByType } from '@sparkforensics/core/detector-docs.ts';
+import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 
 function skewFinding(stageId: number, impactBand: ImpactBand): Finding {
@@ -15,10 +17,12 @@ function gcFinding(stageId: number, impactBand: ImpactBand): Finding {
   return { type: 'gc', stageId, impactBand, direction: 'high', value: 15, recommendation: `Investigate GC in Stage ${stageId}.` } as Finding;
 }
 
+const DETECTORS = detectorInfoByType();
+
 describe('computeActiveWidgets', () => {
   it('ranks by worst impact band then widget order, and never includes the always-mounted type', () => {
     const catalog = [skewFinding(1, 'warning'), gcFinding(2, 'critical')];
-    const widgets = computeActiveWidgets(catalog, []);
+    const widgets = computeActiveWidgets(catalog, [], DETECTORS);
     expect(widgets.map((w) => w.impactBand)).toEqual(['critical', 'warning']);
     expect(widgets.every((w) => w.component !== undefined)).toBe(true);
     expect(widgets.some((w) => w.widgetId === 'core-usage-area')).toBe(false);
@@ -27,7 +31,7 @@ describe('computeActiveWidgets', () => {
   it('includes memory-utilization/executor-utilization once they have an active finding (no longer always-mounted)', () => {
     const memoryFinding = { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', value: 75, recommendation: 'r' } as Finding;
     const utilizationFinding = { type: 'utilization', stageId: null, impactBand: 'info', value: 42, recommendation: 'r' } as Finding;
-    const widgets = computeActiveWidgets([memoryFinding, utilizationFinding], []);
+    const widgets = computeActiveWidgets([memoryFinding, utilizationFinding], [], DETECTORS);
     expect(widgets.map((w) => w.widgetId)).toEqual(expect.arrayContaining(['memory-utilization', 'executor-utilization']));
   });
 
@@ -36,7 +40,7 @@ describe('computeActiveWidgets', () => {
       type: 'memoryUtilization', variant: 'memoryBand', stageId: null, impactBand: 'info',
       dataUnavailable: true, recommendation: 'Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true: not enabled for this run.',
     } as Finding;
-    const widgets = computeActiveWidgets([dataUnavailableFinding], []);
+    const widgets = computeActiveWidgets([dataUnavailableFinding], [], DETECTORS);
     expect(widgets.some((w) => w.widgetId === 'memory-utilization')).toBe(false);
   });
 
@@ -45,12 +49,12 @@ describe('computeActiveWidgets', () => {
       type: 'cacheUtilization', variant: 'storageUnobserved', stageId: null, impactBand: 'info', value: 2,
       dataUnavailable: true, recommendation: 'r',
     } as Finding;
-    const widgets = computeActiveWidgets([caveat], []);
+    const widgets = computeActiveWidgets([caveat], [], DETECTORS);
     expect(widgets.some((w) => w.widgetId === 'cache-utilization')).toBe(true);
   });
 
   it('returns an empty list for a clean catalog', () => {
-    expect(computeActiveWidgets([], [])).toEqual([]);
+    expect(computeActiveWidgets([], [], DETECTORS)).toEqual([]);
   });
 });
 
@@ -61,7 +65,7 @@ describe('Clean checks on a log that could not be fully checked', () => {
     const appModel = { ...emptyAppModel(), stages } as ReturnType<typeof emptyAppModel>;
     render(
       <DocsProvider>
-        <CleanChecks appModel={appModel} catalog={catalog} />
+        <CleanChecks catalog={catalog} coverage={interpretRun(appModel, catalog, []).coverage} detectors={DETECTORS} />
       </DocsProvider>,
     );
     await userEvent.setup().click(screen.getByRole('button', { name: 'Clean checks' }));

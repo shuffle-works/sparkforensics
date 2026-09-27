@@ -1,13 +1,8 @@
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
-import { attributeEtlPhases } from '@sparkforensics/core/etl-phases.ts';
+import { useInterpretation } from '@/view/interpretation';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import type { AppModel } from '@sparkforensics/core/types.ts';
-
-export interface EtlPhasesProps {
-  appModel: AppModel;
-}
 
 const PHASES: { label: string; key: 'extract' | 'transform' | 'load' }[] = [
   { label: 'Extract', key: 'extract' },
@@ -19,8 +14,9 @@ const PHASES: { label: string; key: 'extract' | 'transform' | 'load' }[] = [
  * border, no badges. Phases can overlap (a stage that both shuffles and writes
  * counts in both Transform and Load), so buckets need not sum to wall-clock.
  * Renders nothing when the run has no attributable time in any phase. */
-export function EtlPhases({ appModel }: EtlPhasesProps) {
-  const phases = attributeEtlPhases(appModel.stages);
+export function EtlPhases() {
+  const phases = useInterpretation()?.data.etlPhases;
+  if (!phases) return null;
   const total = phases.extract + phases.transform + phases.load;
   if (total === 0) return null;
 

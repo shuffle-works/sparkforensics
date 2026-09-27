@@ -5,6 +5,7 @@ import { walkPlanTree } from './plan-tree-walk.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
 import { estimateSingleStage, tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type OccupancyStage, type StageOccupancyInfo } from './occupancy.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
+import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort } from './types.ts';
@@ -192,18 +193,6 @@ function computeSpillMagnitude(
 function pickDominantReason(reasons: DetectorFailureReason[] | undefined): string | null {
   if (!Array.isArray(reasons) || reasons.length === 0) return null;
   return [...reasons].sort((a, b) => b.count - a.count)[0].reason;
-}
-
-// Shared by every scope:'sql' detector. sql.get(id).stageIds is always empty (parser-worker
-// never populates it), so stage linkage is derived from each stage's own sqlExecutionId.
-// Minimal param shape (not DetectorStage): external callers pass Map<StageId, Stage>.
-export function stageIdsForSqlExec(
-  executionId: number,
-  stages: Map<number, { id: number; sqlExecutionId?: number | null }>,
-): number[] {
-  const out: number[] = [];
-  for (const s of stages.values()) if (s.sqlExecutionId === executionId) out.push(s.id);
-  return out;
 }
 
 // Shared by the three Plan Advisor detectors: union the given nodes' own stageIds, or fall back

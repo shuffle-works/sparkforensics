@@ -4,6 +4,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useIngest } from '../../src/store/useIngest';
 import { store, emptyAppModel } from '../../src/store/store';
 import { captureSnapshot, applySnapshot } from '@sparkforensics/core/session-snapshot.ts';
+import * as recentFiles from '@sparkforensics/core/recent-files.ts';
 
 function fakeClient(doneArg?: any) {
   let handlers: any;
@@ -149,6 +150,55 @@ test('runDone derives configFindings from the app config, once, alongside catalo
   expect(store.getState().configFindings).toContainEqual(
     expect.objectContaining({ type: 'configAudit', property: 'spark.shuffle.service.enabled' }),
   );
+});
+
+// Counts the live interpreter's passes (tests/view/setup.ts installs it) while `run` executes,
+// as distinct interpretation objects: a listener can see one pass twice when the interpreter's
+// own set nests inside the update that triggered it.
+async function interpretationChanges(run: () => void | Promise<void>): Promise<number> {
+  const seen = new Set<unknown>();
+  const unsubscribe = store.subscribe((next, previous) => {
+    if (next.interpretation !== previous.interpretation) seen.add(next.interpretation);
+  });
+  try {
+    await run();
+  } finally {
+    unsubscribe();
+  }
+  return seen.size;
+}
+
+test('runDone interprets the finished run once, not once per store update', async () => {
+  store.setState({ ...store.getState(), appModel: emptyAppModel(), catalog: [], configFindings: [] });
+  const client = fakeClient();
+  let handlers: any;
+  client.startParse = (_f: File, h: any) => {
+    handlers = h;
+    h.onApp({ name: 'demo', id: 'app-1' });
+    h.onStage({ stageId: 1, name: 's1' });
+  };
+  const { result } = renderHook(() => useIngest({ makeClient: () => client }));
+  act(() => result.current.startLoad(new File(['x'], 'log')));
+
+  const changes = await interpretationChanges(() => act(() => handlers.onDone({ skippedLines: 0 })));
+
+  expect(changes).toBe(1);
+  expect(store.getState().interpretation?.findings).toEqual([...store.getState().catalog, ...store.getState().configFindings]);
+});
+
+test('switching to a cached run interprets it once', async () => {
+  const snapshot = captureSnapshot({ ...emptyAppModel(), app: { name: 'cached', id: 'app-2' } }, [], new Map());
+  store.setState({
+    ...store.getState(), appModel: emptyAppModel(), catalog: [], configFindings: [], activeFileId: 'a::1::2',
+    sessionCache: new Map([['b::3::4', snapshot]]),
+  });
+  vi.spyOn(recentFiles, 'touch').mockResolvedValue(undefined);
+  const { result } = renderHook(() => useIngest({ makeClient: fakeClient }));
+
+  const changes = await interpretationChanges(() => act(async () => { await result.current.pickRecent('b::3::4'); }));
+
+  expect(changes).toBe(1);
+  expect(store.getState().activeFileId).toBe('b::3::4');
 });
 
 test('getTaskData memoizes through taskDataCache', async () => {

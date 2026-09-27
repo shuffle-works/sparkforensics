@@ -1,7 +1,7 @@
 // Explicit .ts extensions: plain Node's ESM resolver (the runtime CLI/MCP path
 // runs under) requires the exact specifier, unlike a bundler.
-import { mergeIntervals } from './wall-clock.ts';
-import { worstImpactBand, IMPACT_BAND_ORDER } from './format-utils.ts';
+import { mergeIntervals } from './intervals.ts';
+import { formatWallClockRange, worstImpactBand, IMPACT_BAND_ORDER } from './format-utils.ts';
 import type { Finding, RawWasteUnit, ImpactBand } from './types.ts';
 
 interface StageInterval {
@@ -124,6 +124,31 @@ export function buildRecommendationRollup(
   });
 }
 
+/** A group's trailing figure on the Findings board, and its tooltip. `time`
+ * and `resource` both lead with the "×N" finding count (the "worth
+ * expanding" signal); `count` skips it since the impact-band tally already
+ * implies N. The row stays terse ("×2 · 476ms recoverable") to fit a dense
+ * right-aligned column; the title spells the shorthand out. */
+export function rollupGroupStat(group: RollupGroup): { stat: string; statTitle: string } {
+  if (group.kind === 'time') {
+    const recoverable = formatWallClockRange(group.recoverableMsHigh, group.recoverableMsHigh);
+    return {
+      stat: `×${group.findingCount} · ${recoverable} recoverable`,
+      statTitle: `${group.findingCount} findings of this type; up to ${recoverable} of run time could be recovered by fixing them`,
+    };
+  }
+  if (group.kind === 'resource') {
+    return {
+      stat: `×${group.findingCount} · resource-cost projection`,
+      statTitle: `${group.findingCount} findings of this type; a resource-cost estimate (not run time) is projected for fixing them`,
+    };
+  }
+  return {
+    stat: Object.entries(group.byImpactBand).map(([impactBand, count]) => `${count} ${impactBand}`).join(', '),
+    statTitle: `${group.findingCount} findings of this type, by impact`,
+  };
+}
+
 /** True when a finding is real evidence of an issue, as opposed to a mere
  * evidence-unavailable caveat. Shared by `isEligible` below and by anything
  * else that decides whether a REGISTRY type has "something to show" (an
@@ -193,5 +218,36 @@ export function rankFindings(findings: Finding[]): Finding[] {
       return b.impactEstimate!.wallClock!.high - a.impactEstimate!.wallClock!.high;
     }
     return (IMPACT_BAND_ORDER[a.impactBand] ?? 9) - (IMPACT_BAND_ORDER[b.impactBand] ?? 9);
+  });
+}
+
+/** A board group ready to render: members ranked representative first, the representative's
+ * band (the heading the group sits under) and the group's trailing figure. */
+export interface RankedRollupGroup {
+  kind: RollupGroup['kind'];
+  type: string;
+  unit: RawWasteUnit | null;
+  band: ImpactBand;
+  members: Finding[];
+  stat: string;
+  statTitle: string;
+}
+
+/** The Findings board's groups over `eligible`, in fix-first order. The run's interpretation
+ * carries this for every eligible finding; the board recomputes it only over a filtered subset. */
+export function rankedRollup(
+  eligible: Finding[],
+  stages: Map<number, { submittedAt?: number; completedAt?: number }>,
+): RankedRollupGroup[] {
+  return buildRecommendationRollup(eligible, stages).map((group) => {
+    const members = rankFindings(group.findings);
+    return {
+      kind: group.kind,
+      type: group.type,
+      unit: group.kind === 'resource' ? group.unit : null,
+      band: members[0].impactBand,
+      members,
+      ...rollupGroupStat(group),
+    };
   });
 }

@@ -12,6 +12,7 @@ import { ShuffleIO } from '@/view/widgets/ShuffleIO';
 import { emptyAppModel, store } from '@/store/store';
 import { expectImpactThenStageOrderByArray } from './_shared/sort-order-toggle';
 import type { AppModel, Finding, PlanNode } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 function buildAppModel(stages: Record<number, Record<string, unknown>>): AppModel {
   const map = new Map<number, unknown>(
@@ -57,6 +58,7 @@ test('renders the impact estimate under a flagged shuffle finding', () => {
       impactEstimate: { basis: 'serial', wallClock: { low: 800, high: 800 }, estimateMethod: 'measured', rawWaste: { value: 800, unit: 'ms' } },
     },
   ];
+  installInterpretation(catalog, appModel);
   render(<ShuffleIO appModel={appModel} catalog={catalog} defaultCollapsed={false} getTaskData={async () => null as never} />);
   expect(screen.getByText('800ms')).toBeInTheDocument();
 });

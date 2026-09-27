@@ -1,5 +1,3 @@
-import { detectorCatalog } from './detectors.ts';
-
 // Single source of the docs-panel URL surface. DOCS_BASE_DIR is the built docs-site path that
 // serves the tuning reference, relative to the app's origin.
 export const DOCS_BASE_DIR: string = 'docs/tuning-reference';
@@ -88,40 +86,6 @@ export const KNOWN_DOC_ANCHORS: Set<string> = new Set([
 // tuning-reference markdown.
 export function isKnownDocAnchor(anchor: unknown): boolean {
   return KNOWN_DOC_ANCHORS.has(String(anchor));
-}
-
-// Finding types that never appear as their own DETECTORS entry's type: the parent entry declares
-// a different type because one plan-walk covers two rules (see broadcastSizing). Map to the parent.
-const TYPE_ALIASES: Record<string, string> = {
-  underBroadcast: 'broadcastSizing',
-  overBroadcast: 'broadcastSizing',
-};
-
-// DETECTORS is static, so this grouping is built once (lazily) instead of re-scanning per
-// docAnchorForType call (called once per TagBadge per render).
-let anchorsByTypeCache: Map<string, Set<string | undefined>> | undefined;
-
-function anchorsByType(): Map<string, Set<string | undefined>> {
-  if (!anchorsByTypeCache) {
-    anchorsByTypeCache = new Map();
-    for (const entry of detectorCatalog()) {
-      const anchors = anchorsByTypeCache.get(entry.type) ?? new Set();
-      anchors.add(entry.docAnchor);
-      anchorsByTypeCache.set(entry.type, anchors);
-    }
-  }
-  return anchorsByTypeCache;
-}
-
-/** Resolves a finding `type` to its documented anchor from detectorCatalog(). Returns undefined
- * when entries sharing the type disagree on docAnchor (only configAudit today), or when the
- * resolved anchor isn't in the allowlist (isKnownDocAnchor, the same gate DocsLink uses). */
-export function docAnchorForType(type: string): string | undefined {
-  const resolvedType = TYPE_ALIASES[type] ?? type;
-  const anchors = anchorsByType().get(resolvedType) ?? new Set();
-  if (anchors.size !== 1) return undefined;
-  const [anchor] = anchors;
-  return anchor && isKnownDocAnchor(anchor) ? anchor : undefined;
 }
 
 /** The docAnchor every finding in `findings` carries, or undefined when they disagree or any lacks

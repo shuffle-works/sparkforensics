@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  estimateProvenance, formatRawWaste, formatWallClockRange, impactEstimateFigure, rawWasteMeaning, savingsMeaning,
+  estimateProvenance, impactEstimateCompact, impactEstimateFigure, rawWasteMeaning, savingsMeaning,
 } from '../src/impact-format.ts';
+import { formatRawWaste, formatWallClockRange } from '../src/format-utils.ts';
 
 describe('formatWallClockRange', () => {
   it('formats a zero endpoint without the no-data placeholder', () => {
@@ -147,5 +148,42 @@ describe('estimateProvenance', () => {
       .toBe('No run-time claim, modeled. 5.0 core-s was wasted, but it may not shorten the run.');
     expect(estimateProvenance(withEstimate({ basis: 'informational', wallClock: null, estimateMethod: 'none' }))).toBeNull();
     expect(estimateProvenance(withEstimate(undefined))).toBeNull();
+  });
+});
+
+describe('impactEstimateCompact', () => {
+  it('returns just the high-end wall-clock value for a serial/contended estimate', () => {
+    expect(impactEstimateCompact({ basis: 'contended', wallClock: { low: 1000, high: 5000 }, estimateMethod: 'measured' })).toBe('5.0s');
+  });
+
+  it('returns the raw-waste figure for a resourceOnly estimate', () => {
+    expect(impactEstimateCompact({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 6, unit: 'coreHours' } })).toBe('6.0 core-h');
+  });
+
+  it('returns null for an informational estimate', () => {
+    expect(impactEstimateCompact({ basis: 'informational', wallClock: null, estimateMethod: 'none' })).toBeNull();
+  });
+
+  it('returns null when there is no estimate at all', () => {
+    expect(impactEstimateCompact(undefined)).toBeNull();
+  });
+
+  it('returns null for a rawWaste value that rounds to a zero-looking string, not the misleading "0.0 core-h"', () => {
+    expect(
+      impactEstimateCompact({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 0.04, unit: 'coreHours' } }),
+    ).toBeNull();
+  });
+
+  it('returns null for a wallClock.high value that rounds to a zero-looking string', () => {
+    // 0.4ms is nonzero but Math.round(0.4) -> 0 -> formatDuration renders "0ms".
+    expect(impactEstimateCompact({ basis: 'serial', wallClock: { low: 0, high: 0.4 }, estimateMethod: 'measured' })).toBeNull();
+  });
+
+  it('returns the formatted figure for a genuinely nonzero rawWaste value that rounds to one decimal digit ("0.3 MB-s")', () => {
+    // Regression: readsAsZero used to match any "0.<nondigit>" prefix, silently
+    // dropping real values like this one.
+    expect(
+      impactEstimateCompact({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 0.3, unit: 'mbSeconds' } }),
+    ).toBe('0.3 MB-s');
   });
 });

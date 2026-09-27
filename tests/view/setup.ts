@@ -1,6 +1,12 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach } from 'vitest';
 import { cleanup, configure } from '@testing-library/react';
+import { installLiveInterpretation } from '@/store/live-interpretation';
+
+// Mirrors the live entry (src/main.tsx): whatever findings a test puts in the
+// store get interpreted, as they would in the app. Skipped in exportMode, where
+// the interpretation comes from the payload.
+installLiveInterpretation();
 
 // A test file's first render() of <App/> pays for a cold dynamic import +
 // Vite transform of whichever lazy route it hits (Dashboard's is the

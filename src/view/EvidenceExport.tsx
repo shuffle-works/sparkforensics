@@ -15,6 +15,7 @@ import { useStore } from '@/store/store';
 import { buildEvidenceReport } from '@sparkforensics/core/evidence-report.ts';
 import { buildHtmlExportData, encodeRunPayload } from '@sparkforensics/core/html-export.ts';
 import { EXPORT_TEMPLATE_FILE, inlineRunPayload } from '@/export/single-file';
+import { CORE_BUILD_ID, WEB_PRODUCER } from '@/build-info';
 
 type ExportFormat = 'markdown' | 'json' | 'html';
 
@@ -53,20 +54,23 @@ async function fetchExportTemplate(): Promise<string> {
 }
 
 /** Shared export state + download action, reused by the standalone control and
- * the Topbar overflow menu so both entry points behave identically. */
+ * the Topbar overflow menu so both entry points behave identically. Every
+ * format runs core analysis at download time, so the export build swaps this
+ * module for a stub (vite.export.config.ts) and the Topbar offers none of it
+ * in an exported dashboard. */
 export function useEvidenceExport() {
   const appModel = useStore((s) => s.appModel);
   const catalog = useStore((s) => s.catalog);
   const skippedLines = useStore((s) => s.skippedLines);
-  // The export app itself has no template beside it to re-export from.
-  const htmlAvailable = !useStore((s) => s.exportMode);
   const [redact, setRedact] = useState(false);
 
   // Same data, redaction and encoding as the CLI's --export-html
   // (buildHtmlExportData), inlined into one file instead of a data.js beside it.
   const downloadHtml = async () => {
     try {
-      const data = buildHtmlExportData(appModel, catalog, skippedLines, { redact });
+      const data = buildHtmlExportData(appModel, catalog, skippedLines, {
+        redact, buildId: CORE_BUILD_ID, producer: WEB_PRODUCER,
+      });
       const html = inlineRunPayload(await fetchExportTemplate(), encodeRunPayload(data));
       triggerDownload(html, reportFilename(data.app?.id ?? null, 'html', redact), 'text/html');
     } catch (error) {
@@ -75,22 +79,28 @@ export function useEvidenceExport() {
     }
   };
 
-  const download = (format: ExportFormat) => {
-    if (format === 'html') {
-      void downloadHtml();
-      return;
-    }
-    const { markdown, json } = buildEvidenceReport(appModel, { redact });
-    const appId = (json as { summary?: { app?: { id?: string | null } } }).summary?.app?.id ?? null;
-    const filename = reportFilename(appId, format, redact);
-    if (format === 'json') {
-      triggerDownload(`${JSON.stringify(json, null, 2)}\n`, filename, 'application/json');
-    } else {
-      triggerDownload(`${markdown}\n`, filename, 'text/markdown');
+  const downloadReport = (format: Exclude<ExportFormat, 'html'>) => {
+    try {
+      const { markdown, json } = buildEvidenceReport(appModel, { redact });
+      const appId = (json as { summary?: { app?: { id?: string | null } } }).summary?.app?.id ?? null;
+      const filename = reportFilename(appId, format, redact);
+      if (format === 'json') {
+        triggerDownload(`${JSON.stringify(json, null, 2)}\n`, filename, 'application/json');
+      } else {
+        triggerDownload(`${markdown}\n`, filename, 'text/markdown');
+      }
+    } catch (error) {
+      console.error('Evidence export failed', error);
+      toast.error('Evidence export failed', { description: error instanceof Error ? error.message : String(error) });
     }
   };
 
-  return { redact, setRedact, download, htmlAvailable };
+  const download = (format: ExportFormat) => {
+    if (format === 'html') void downloadHtml();
+    else downloadReport(format);
+  };
+
+  return { redact, setRedact, download };
 }
 
 /** The redact toggle + the download items. Rendered inside both the standalone
@@ -100,7 +110,6 @@ export function EvidenceExportMenuItems({
   redact,
   setRedact,
   download,
-  htmlAvailable,
 }: ReturnType<typeof useEvidenceExport>) {
   return (
     <>
@@ -114,9 +123,7 @@ export function EvidenceExportMenuItems({
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={() => download('markdown')}>Download Markdown</DropdownMenuItem>
       <DropdownMenuItem onClick={() => download('json')}>Download JSON</DropdownMenuItem>
-      {htmlAvailable ? (
-        <DropdownMenuItem onClick={() => download('html')}>Download HTML dashboard</DropdownMenuItem>
-      ) : null}
+      <DropdownMenuItem onClick={() => download('html')}>Download HTML dashboard</DropdownMenuItem>
     </>
   );
 }

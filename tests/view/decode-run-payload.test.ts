@@ -3,6 +3,7 @@ import { test, expect } from 'vitest';
 import { gzipSync } from 'node:zlib';
 import { decodeRunPayload } from '@/export/hydrate-store';
 import { buildExportRunData, type ExportRunData } from '@sparkforensics/core/export-data.ts';
+import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
 import type { AppModel } from '@sparkforensics/core/types.ts';
 import { emptyAppModel } from '@/store/store';
 import { inlineRunPayload } from '@/export/single-file';
@@ -10,7 +11,7 @@ import { encodeRunPayload } from '@sparkforensics/core/html-export.ts';
 
 function sampleData(overrides: Partial<ExportRunData> = {}): ExportRunData {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     app: { id: 'app-1', name: 'Consulta de facturación', sparkVersion: '3.5.0' },
     stages: [{ id: 1, name: 's1' }],
     jobs: [],
@@ -31,9 +32,11 @@ function encode(data: ExportRunData): string {
   return gzipSync(JSON.stringify(data)).toString('base64');
 }
 
+const decode = (base64: string) => decodeRunPayload(base64) as ExportRunData;
+
 test('round-trips a gzip+base64 payload produced by Node\'s zlib.gzipSync', () => {
   const data = sampleData();
-  const decoded = decodeRunPayload(encode(data));
+  const decoded = decode(encode(data));
   expect(decoded).toEqual(data);
 });
 
@@ -43,18 +46,17 @@ test('decodes non-ASCII text as UTF-8, not latin1', () => {
   const data = sampleData({
     stages: [{ id: 1, name: 'Cálculo de ratón: órdenes de España' } as ExportRunData['stages'][number]],
   });
-  const decoded = decodeRunPayload(encode(data));
+  const decoded = decode(encode(data));
   expect(decoded.stages[0].name).toBe('Cálculo de ratón: órdenes de España');
   expect(decoded.app?.name).toBe('Consulta de facturación');
 });
 
 test('revives the Maps the CLI tags, so a widget can call .values() on app.rddInfo', () => {
   const rddInfo = new Map([[3, { id: 3, name: 'cached', stageIds: [1] }]]);
-  const data = buildExportRunData(
-    { ...emptyAppModel(), app: { id: 'app-1', rddInfo } as unknown as AppModel['app'] },
-    [], [], 0,
-  );
-  const decoded = decodeRunPayload(encode(data));
+  const appModel = { ...emptyAppModel(), app: { id: 'app-1', rddInfo } as unknown as AppModel['app'] };
+  const provenance = { coreVersion: '0.1.0', buildId: 'dev', producer: 'test' };
+  const data = buildExportRunData(appModel, [], [], 0, interpretRun(appModel, [], []), provenance);
+  const decoded = decode(encode(data));
   expect(decoded.app?.rddInfo).toBeInstanceOf(Map);
   expect([...(decoded.app!.rddInfo as Map<number, unknown>).values()]).toEqual([...rddInfo.values()]);
 });

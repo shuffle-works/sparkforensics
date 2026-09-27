@@ -11,6 +11,7 @@ import * as recentFiles from '@sparkforensics/core/recent-files.ts';
 import { reassembleRollingEntries } from '@sparkforensics/core/rolling-log-reassembly.ts';
 import { cn } from '@/lib/utils';
 import { isShsRequestValid, validateShsRequest } from '@sparkforensics/core/shs-request.js';
+import { ALTERNATIVE_LOG_RETRIEVAL_URL } from '@sparkforensics/core/docs-site-config.ts';
 
 type ShsField = 'baseUrl' | 'appId' | 'attemptId';
 
@@ -41,8 +42,6 @@ function initialShsField(field: ShsField): string {
 const SAMPLE_RUN_URL = 'sample-runs/sample-run.ndjson.gz';
 // Getting-started section that documents starting local-server mode.
 const LOCAL_SERVER_SETUP_URL = 'docs/user-guide/getting-started.html#local-server-mode';
-// Every other way to get a log (cloud consoles, bastions, copying from storage).
-export const ALTERNATIVE_LOG_RETRIEVAL_URL = 'docs/user-guide/alternative-log-retrieval.html';
 
 const SHS_RECOVERY_MESSAGES = {
   'local-server-unavailable': 'The local server is unavailable. Start local-server mode, then try again.',

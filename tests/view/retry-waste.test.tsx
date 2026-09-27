@@ -7,6 +7,7 @@ import { RetryWaste } from '../../src/view/widgets/RetryWaste';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
 import { emptyAppModel, store } from '../../src/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 function makeAppModel(stageNames: Record<number, string>): AppModel {
   const stages = new Map(Object.entries(stageNames).map(([id, name]) => [Number(id), { id: Number(id), name }]));
@@ -134,6 +135,7 @@ describe('RetryWaste', () => {
       type: 'retryWaste', stageId: 4, impactBand: 'warning', metric: 'retryWasteMs', value: 1200,
       impactEstimate: { basis: 'serial', wallClock: { low: 1200, high: 1200 }, estimateMethod: 'measured', rawWaste: { value: 1200, unit: 'ms' } },
     }];
+    installInterpretation(catalog);
     render_(catalog);
     // Open the card to see row content where impact estimate is displayed
     await user.click(screen.getByRole('button', { name: /^retry waste$/i }));

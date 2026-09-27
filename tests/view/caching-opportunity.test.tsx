@@ -5,10 +5,12 @@ import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { CachingOpportunity } from '@/view/widgets/CachingOpportunity';
 import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 const getTaskData = async (): Promise<TaskData> => ({ metrics: [], fieldNames: [] });
 
 function renderCachingOpportunity(catalog: Finding[], defaultCollapsed = false) {
+  installInterpretation(catalog);
   return render(
     <StageDetailProvider>
       <CachingOpportunity appModel={emptyAppModel()} catalog={catalog} getTaskData={getTaskData} defaultCollapsed={defaultCollapsed} />

@@ -1,5 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { redactReport, redactComparison, redactExportData } from '../src/redact.js';
+import { redactReport, redactComparison, redactRunModel } from '../src/redact.js';
+
+const byId = (items) => new Map(items.map((item) => [item.id, item]));
+
+function redactRun(data) {
+  const appModel = {
+    app: data.app, stages: byId(data.stages), jobs: byId(data.jobs), sql: byId(data.sql),
+    executors: data.executors, runAggregates: data.runAggregates, evidenceAvailability: data.evidenceAvailability,
+  };
+  return redactRunModel(appModel, data.catalog, data.configFindings);
+}
 
 function sampleReport() {
   return {
@@ -168,15 +178,15 @@ describe('failure groups', () => {
     expect(report.findings[2].evidence.failureGroups[0].message).toContain('/warehouse'); // input untouched
   });
 
-  it('redactExportData scrubs both the catalog finding and the stage record', () => {
+  it('redactRunModel scrubs both the catalog finding and the stage record', () => {
     const data = {
       schemaVersion: 1, app: { id: 'application_1690000000000_0001', name: 'n', sparkVersion: '3.5.0', config: {} },
       stages: [{ id: 1, name: 's', failureGroups: [group()] }], jobs: [], sql: [],
       executors: { added: [], removed: [] }, runAggregates: null, evidenceAvailability: null,
       catalog: [{ type: 'failures', stageId: 1, impactBand: 'warning', failureGroups: [group()] }], configFindings: [], skippedLines: 0,
     };
-    const out = redactExportData(data);
-    expectScrubbed(out.stages[0].failureGroups[0]);
+    const out = redactRun(data);
+    expectScrubbed(out.appModel.stages.get(1).failureGroups[0]);
     expectScrubbed(out.catalog[0].failureGroups[0]);
     expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
   });
@@ -243,7 +253,7 @@ describe('redactComparison', () => {
   });
 });
 
-describe('redactExportData', () => {
+describe('redactRunModel', () => {
   function sampleExportData() {
     return {
       schemaVersion: 1,
@@ -271,41 +281,41 @@ describe('redactExportData', () => {
   }
 
   it('pseudonymizes the app id everywhere it appears', () => {
-    const out = redactExportData(sampleExportData());
-    expect(out.app.id).toMatch(/app-\d+/);
-    expect(out.catalog[0].recommendation).toContain(out.app.id);
+    const out = redactRun(sampleExportData());
+    expect(out.appModel.app.id).toMatch(/app-\d+/);
+    expect(out.catalog[0].recommendation).toContain(out.appModel.app.id);
     expect(JSON.stringify(out)).not.toContain('application_1690000000000_0001');
   });
 
   it("pseudonymizes an executor's literal host field, not just IP-shaped free text", () => {
-    const out = redactExportData(sampleExportData());
-    expect(out.executors.added[0].host).toMatch(/host-\d+/);
-    expect(out.executors.added[0].host).not.toBe('worker-3.internal');
+    const out = redactRun(sampleExportData());
+    expect(out.appModel.executors.added[0].host).toMatch(/host-\d+/);
+    expect(out.appModel.executors.added[0].host).not.toBe('worker-3.internal');
   });
 
   it('pseudonymizes an IP-shaped host token embedded in a stage name', () => {
-    const out = redactExportData(sampleExportData());
-    expect(out.stages[0].name).toMatch(/host-\d+/);
-    expect(out.stages[0].name).not.toContain('ip-10-1-2-3.ec2.internal');
+    const out = redactRun(sampleExportData());
+    expect(out.appModel.stages.get(1).name).toMatch(/host-\d+/);
+    expect(out.appModel.stages.get(1).name).not.toContain('ip-10-1-2-3.ec2.internal');
   });
 
   it('reaches configFindings, not just catalog', () => {
-    const out = redactExportData(sampleExportData());
+    const out = redactRun(sampleExportData());
     expect(out.configFindings[0].value).toMatch(/host-\d+/);
   });
 
   it('does not mutate the input', () => {
     const input = sampleExportData();
-    redactExportData(input);
+    redactRun(input);
     expect(input.app.id).toBe('application_1690000000000_0001');
   });
 
   it('pseudonymizes plain-FQDN hosts living under host/hostname-suffixed app.config keys', () => {
-    const out = redactExportData(sampleExportData());
-    expect(out.app.config['spark.driver.host']).toMatch(/^host-\d+$/);
-    expect(out.app.config['spark.yarn.am.hostname']).toMatch(/^host-\d+$/);
+    const out = redactRun(sampleExportData());
+    expect(out.appModel.app.config['spark.driver.host']).toMatch(/^host-\d+$/);
+    expect(out.appModel.app.config['spark.yarn.am.hostname']).toMatch(/^host-\d+$/);
     // A config value that isn't under a host/hostname-suffixed key is left alone.
-    expect(out.app.config['spark.executor.instances']).toBe('4');
+    expect(out.appModel.app.config['spark.executor.instances']).toBe('4');
     const serialized = JSON.stringify(out);
     expect(serialized).not.toContain('driver-7.internal.corp');
     expect(serialized).not.toContain('am-node-2.internal.corp');

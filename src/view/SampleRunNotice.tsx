@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useStore } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import { useOptionalDocs } from '@/view/DocsContext';
-import { ALTERNATIVE_LOG_RETRIEVAL_URL } from '@/view/DropZone';
+import { ALTERNATIVE_LOG_RETRIEVAL_URL } from '@sparkforensics/core/docs-site-config.ts';
 import { SAMPLE_RUN_ID } from '@/view/sample-run';
 
 /** One line above the verdict while the bundled sample run is open: a

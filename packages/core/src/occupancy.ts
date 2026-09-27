@@ -1,7 +1,7 @@
 // Occupancy-weighted wall-clock attribution for per-finding impact: every
 // stage's wall-clock claim is apportioned purely from its own observed window
 // and how much it overlapped with other stages. No graph, no parentIds traversal.
-import { mergeIntervals } from './wall-clock.ts';
+import { mergeIntervals } from './intervals.ts';
 
 export interface OccupancyStage {
   id: number;

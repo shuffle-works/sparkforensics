@@ -7,6 +7,7 @@ import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
 import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 function timed(type: string, stageId: number, highMs: number, impactBand: ImpactBand = 'critical'): Finding {
   return {
@@ -26,10 +27,11 @@ function appModel(): AppModel {
   } as AppModel;
 }
 
+// The verdict renders the run's interpretation, computed as the live app computes it.
 function renderVerdict(catalog: Finding[], onRoute = vi.fn(), model: AppModel = appModel()) {
   render(
     <StageDetailProvider>
-      <RunVerdict appModel={model} catalog={catalog} onRoute={onRoute} />
+      <RunVerdict interpretation={installInterpretation(catalog, model)} onRoute={onRoute} />
     </StageDetailProvider>,
   );
   return onRoute;
@@ -289,7 +291,10 @@ describe('RunVerdict on a failed run', () => {
     };
     const { unmount } = render(
       <StageDetailProvider>
-        <RunVerdict appModel={withJobs([failedJob(1, [], 'Job aborted: out of memory')])} catalog={[jobFailures]} onRoute={vi.fn()} />
+        <RunVerdict
+          interpretation={installInterpretation([jobFailures], withJobs([failedJob(1, [], 'Job aborted: out of memory')]))}
+          onRoute={vi.fn()}
+        />
       </StageDetailProvider>,
     );
     expect(screen.getByTestId('next-step')).toHaveTextContent("What to try: Spark's recorded reason is quoted above.");

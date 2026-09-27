@@ -38,7 +38,7 @@ import { formatBytes, formatDuration, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE, wors
 import { Chip, TagBadge } from '@/view/ImpactBadge';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useWidgetDensity } from '@/store/store';
-import { formatImpactEstimateCompact } from '../ImpactEstimate.tsx';
+import { savingsOf, useInterpretation } from '@/view/interpretation';
 import { WidgetCard } from '@/view/WidgetCard';
 import type { AppModel, Finding, Stage, TaskData } from '@sparkforensics/core/types.ts';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
@@ -194,6 +194,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
   // rendered tag (each resolution is several linear scans over `catalog`, and
   // tags re-render on table churn like sorting/dragging). Tag findings hold
   // catalog references, so the cell can look targets up by identity.
+  const interpretation = useInterpretation();
   const triageTargets = useMemo(() => {
     if (!onRoute) return null;
     const map = new Map<Finding, TriageTarget>();
@@ -246,7 +247,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
               {row.original.tags.map((t, i) => {
                 const target = triageTargets ? (triageTargets.get(t) ?? null) : null;
                 const route = target && onRoute ? { target, onRoute } : null;
-                const compact = formatImpactEstimateCompact(t.impactEstimate);
+                const compact = savingsOf(interpretation, t)?.compact ?? null;
                 return (
                   <span key={i} className="inline-flex items-center gap-1">
                     {route ? (
@@ -365,7 +366,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
         },
       },
     ],
-    [catalog, onRoute, triageTargets, openStage, density],
+    [catalog, onRoute, triageTargets, openStage, density, interpretation],
   );
 
   const table = useTable({

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeOccupancyMs, computeGate, computeCeiling, clipToCeiling, computeOccupancy, estimateSingleStage, estimateMultiStage, tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs } from '../src/occupancy.js';
-import { mergeIntervals } from '../src/wall-clock.js';
+import { mergeIntervals } from '../src/intervals.js';
 
 function stage(id, opts) {
   return { id, submittedAt: 0, completedAt: 0, ...opts };

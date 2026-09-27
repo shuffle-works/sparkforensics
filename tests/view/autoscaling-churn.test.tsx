@@ -9,6 +9,7 @@ import { AutoscalingChurn, bucketChurn } from '../../src/view/widgets/Autoscalin
 import { emptyAppModel } from '../../src/store/store';
 import { DocsProvider } from '../../src/view/DocsContext';
 import type { AppModel } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 // The percentage sits in a `<strong>`, so it spans multiple elements; match by
 // the full textContent of the containing element rather than RTL's getByText.
@@ -105,6 +106,7 @@ describe('AutoscalingChurn', () => {
       recommendation: '70% of executors ran for under 2 minutes before being removed.',
     };
 
+    installInterpretation([finding], appModel);
     render(
       <DocsProvider>
         <AutoscalingChurn appModel={appModel} catalog={[finding]} />
@@ -141,6 +143,7 @@ describe('AutoscalingChurn', () => {
       recommendation: '70% of executors ran for under 2 minutes before being removed, this looks like wasteful re-provisioning rather than normal scale-down. Consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.',
     };
 
+    installInterpretation([finding], appModel);
     render(
       <DocsProvider>
         <AutoscalingChurn appModel={appModel} catalog={[finding]} />
@@ -167,6 +170,7 @@ describe('AutoscalingChurn', () => {
       impactEstimate: { basis: 'resourceOnly' as const, wallClock: null, estimateMethod: 'measured' as const, rawWaste: { value: 3, unit: 'coreHours' as const } },
     };
 
+    installInterpretation([finding], appModel);
     render(
       <DocsProvider>
         <AutoscalingChurn appModel={appModel} catalog={[finding]} />
@@ -191,6 +195,7 @@ describe('AutoscalingChurn', () => {
       recommendation: 'Consider raising spark.dynamicAllocation.executorIdleTimeout.',
     };
 
+    installInterpretation([finding], appModel);
     render(
       <DocsProvider>
         <AutoscalingChurn appModel={appModel} catalog={[finding]} />

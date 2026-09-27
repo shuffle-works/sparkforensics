@@ -14,3 +14,6 @@ import { typeTag } from './format-utils.ts';
 export function findingGuideUrl(type: string): string {
   return `docs/user-guide/understanding-findings.html#${typeTag(type).toLowerCase()}`;
 }
+
+// Every other way to get a log (cloud consoles, bastions, copying from storage).
+export const ALTERNATIVE_LOG_RETRIEVAL_URL = 'docs/user-guide/alternative-log-retrieval.html';

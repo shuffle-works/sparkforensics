@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { coreSourceHash, resolveVendored, SOURCE_HASH_FILE } from '../src/load-vendored.js';
+import { coreBuildId, coreSourceHash, resolveVendored, SOURCE_HASH_FILE } from '../src/load-vendored.js';
 
 // A monorepo-shaped tree: <root>/core/src next to <root>/<pkg>/vendor-core.
 function tree(stamp, { monorepo = true } = {}) {
@@ -52,5 +52,31 @@ describe('resolveVendored in a monorepo checkout', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     expect(resolveVendored(pkgDir, 'analyzer')).toBe(join(pkgDir, 'vendor-core', 'analyzer.js'));
     expect(stderr).not.toHaveBeenCalled();
+  });
+});
+
+describe('coreBuildId: the build id an HTML export stamps', () => {
+  const dirs = [];
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('is the stamp of a vendor-core in use, and the hash of core/src otherwise', () => {
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const current = tree(null);
+    const stale = tree('0000');
+    const published = tree('feedbeef', { monorepo: false });
+    dirs.push(current.root, stale.root, published.root);
+
+    expect(coreBuildId(current.pkgDir)).toBe(coreSourceHash(current.srcDir));
+    expect(coreBuildId(stale.pkgDir)).toBe(coreSourceHash(stale.srcDir));
+    expect(coreBuildId(published.pkgDir)).toBe('feedbeef');
+  });
+
+  it('is "dev" with neither a vendor-core nor a core/src beside the package', () => {
+    const root = mkdtempSync(join(tmpdir(), 'sparkforensics-vendored-'));
+    dirs.push(root);
+    expect(coreBuildId(join(root, 'pkg'))).toBe('dev');
   });
 });

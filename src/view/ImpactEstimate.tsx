@@ -1,36 +1,10 @@
 import { useId } from 'react';
-import type { Finding, ImpactEstimate as ImpactEstimateType } from '@sparkforensics/core/types.ts';
-import {
-  fmtMs, formatRawWaste, formatWallClockRange, impactEstimateFigure, readsAsZero,
-} from '@sparkforensics/core/impact-format.ts';
-
-export { formatRawWaste, formatWallClockRange, readsAsZero };
-
-/** Compact single-value form for dense lists (StageTable's finding chips,
- * StageDetailDialog's StageVerdict): the high-end wall-clock figure, or the
- * raw-waste figure when there's no wall-clock claim, or `null` for a purely
- * informational estimate, or a zero-value one (`wallClock.high`/`rawWaste.value`
- * of exactly 0 reads as a real number in the same spot a genuine estimate
- * would, misleadingly implying the detector measured a real recoverable
- * amount rather than none). The full `<ImpactEstimate>` component below is
- * for the widget board, where there's room for a full range. */
-export function formatImpactEstimateCompact(estimate: ImpactEstimateType | undefined): string | null {
-  if (!estimate) return null;
-  if (estimate.wallClock) {
-    if (estimate.wallClock.high <= 0) return null;
-    const text = fmtMs(estimate.wallClock.high);
-    return readsAsZero(text) ? null : text;
-  }
-  if (estimate.rawWaste) {
-    if (estimate.rawWaste.value <= 0) return null;
-    const text = formatRawWaste(estimate.rawWaste);
-    return readsAsZero(text) ? null : text;
-  }
-  return null;
-}
+import type { Finding } from '@sparkforensics/core/types.ts';
+import { useFindingSavings } from '@/view/interpretation';
 
 export function ImpactEstimate({ finding }: { finding: Finding }) {
   const estimateMethodId = useId();
+  const savings = useFindingSavings(finding);
   const estimate = finding.impactEstimate;
   if (!estimate) return null;
 
@@ -41,8 +15,9 @@ export function ImpactEstimate({ finding }: { finding: Finding }) {
   // finding. A zero-value estimate (high === 0, or a zero rawWaste) is
   // suppressed the same as the 'informational' basis below: "Potential
   // savings: 0s" reads as a real, measured figure in the exact spot a real
-  // one would go, not as "there's nothing to recover here."
-  const valueText = impactEstimateFigure(estimate)?.text;
+  // one would go, not as "there's nothing to recover here." The run's
+  // interpretation already applied those rules (`FindingSavings.board`).
+  const valueText = savings?.board;
   if (!valueText) return null; // basis: 'informational', or a zero-value estimate
 
   const title = `Estimate method: ${estimate.estimateMethod}`;

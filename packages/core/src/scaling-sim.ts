@@ -6,7 +6,6 @@
 // Builds on computeCoreTimeSeries' clamp conceptually, but operates on the
 // worker-posted per-stage aggregates (runAggregates.perStage) so raw task data
 // never reaches the main thread.
-import { computeWallClock } from './wall-clock.ts';
 import { computeTotalCores } from './core-count.ts';
 import type { ExecutorEvent, RunAggregates, SparkAppInfo } from './types.ts';
 
@@ -30,9 +29,11 @@ function estimatedTotalAtCores(perStage: Record<string, { totalTaskDurationSum: 
   return sum;
 }
 
-export function simulateScaling({ app, stages, runAggregates, executorsAdded }: {
+/** `observedActiveMs` is the run's stages-active wall-clock (the interpretation's
+ * `wallClock.stagesActive`), the one observed makespan predictions are scaled against. */
+export function simulateScaling({ app, observedActiveMs, runAggregates, executorsAdded }: {
   app: SparkAppInfo | null;
-  stages: Map<number, unknown>;
+  observedActiveMs: number;
   runAggregates: RunAggregates | null;
   executorsAdded: ExecutorEvent[];
 }): {
@@ -48,8 +49,6 @@ export function simulateScaling({ app, stages, runAggregates, executorsAdded }: 
   // `executorsAdded` cast: computeTotalCores only reads `totalCores`, present on
   // ExecutorAddedEvent (the only kind passed here) but not on the union type.
   const baselineCores = computeTotalCores(app ?? {}, executorsAdded as Array<{ totalCores?: number }>);
-  const wc = computeWallClock(app, stages as Map<number, { submittedAt?: number; completedAt?: number }>);
-  const observedActiveMs = wc.stagesActive;
 
   // Model Error: predicted-at-baseline vs. observed stages-active wall-clock.
   const predictedAtBaseline = baselineCores > 0 ? estimatedTotalAtCores(perStage, baselineCores) : 0;

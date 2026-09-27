@@ -2,8 +2,9 @@ import { memo, useMemo, useState } from 'react';
 import { Inbox } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from 'recharts';
 
-import { computeCoreLocalityRatio } from '@sparkforensics/core/core-locality-ratio.ts';
-import { buildLocalityChart, formatCores, type LocalityChartPoint } from '@sparkforensics/core/core-usage-locality.ts';
+import type { LocalityChartPoint } from '@sparkforensics/core/core-usage-locality.ts';
+import { formatCores } from '@sparkforensics/core/format-utils.ts';
+import { useInterpretation } from '@/view/interpretation';
 import { CHART_COLORS, CHART_TOOLTIP_PROPS, ChartFrame } from '@/view/charts/ChartTheme';
 import { downsample } from '@/view/charts/downsample';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -43,11 +44,10 @@ const TIER_COLOR: Record<string, string> = {
   idle: CHART_COLORS.muted,
 };
 
-// `applySnapshot` mutates `appModel`'s fields in place on a cached-file switch
-// rather than replacing the object, so `activeFileId` is a memo key below.
+// The chart and the non-local ratio come from the store's interpretation.
 // `catalog` is required: the `coreLocality` finding and the `memoryUtilization`
 // idleCores cross-link both read it.
-export type CoreUsageAreaProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'activeFileId' | 'defaultCollapsed'>;
+export type CoreUsageAreaProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
 const TITLE = 'Core Usage by Locality';
 
@@ -56,28 +56,23 @@ type LocalityChartModel =
   | { hasActivity: true; order: string[]; points: AreaPoint[]; sampled: AreaPoint[]; peakCores: number };
 type AreaPoint = LocalityChartPoint;
 
-// memo: skip recomputing computeLocalityAreaSeries when only the finding filter
-// changes. Always mounted by `Alerts.tsx`, so the `hasActivity`/finding branches
-// below are the only gating this widget does on its own.
-export const CoreUsageArea = memo(function CoreUsageArea({ appModel, catalog, activeFileId, defaultCollapsed = true }: CoreUsageAreaProps) {
+// memo: skip re-downsampling when only the finding filter changes. Always
+// mounted by `Alerts.tsx`, so the `hasActivity`/finding branches below are the
+// only gating this widget does on its own.
+export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultCollapsed = true }: CoreUsageAreaProps) {
   const [nonLocalPage, setNonLocalPage] = useState(0);
-  // Whole derived-series pipeline (including the `hasActivity` guard) in one
-  // `useMemo`; hooks run unconditionally, so the early return can't precede it.
+  const coreLocality = useInterpretation()?.data.coreLocality;
+  // Hooks run unconditionally, so the early return can't precede this.
   const chartModel: LocalityChartModel = useMemo(() => {
-    const chart = buildLocalityChart([...appModel.stages.values()], appModel.app);
+    const chart = coreLocality?.chart ?? { hasActivity: false as const };
     return chart.hasActivity ? { ...chart, sampled: downsample(chart.points) } : chart;
-  }, [appModel, activeFileId]);
+  }, [coreLocality]);
 
-  // Non-local-ratio aggregate + per-stage breakdown. Not gated on
+  // Non-local-ratio aggregate + per-stage breakdown (every stage, so the
+  // pagination below sees the whole list). Not gated on
   // `chartModel.hasActivity`: an app with locality data but no plottable
   // core-time window should still surface a real finding from `catalog`.
-  const localityRatio = useMemo(
-    // `topN: Infinity`: the default `TOP_N` bounds the aggregate's own
-    // top-offenders slice, not the display; capping there would make this list
-    // permanently shorter than `VISIBLE_LIMIT` and defeat pagination below.
-    () => computeCoreLocalityRatio([...appModel.stages.values()], { topN: Infinity }),
-    [appModel, activeFileId],
-  );
+  const topStages = coreLocality?.ratio.topStages ?? [];
   const coreLocalityFinding = catalog.find((f) => f.type === 'coreLocality');
   const idleCoresFlagged = catalog.some((f) => f.type === 'memoryUtilization' && f.variant === 'idleCores');
 
@@ -85,7 +80,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ appModel, catalog, ac
   // non-local tasks, so filter to rows that actually have non-local tasks rather
   // than gating on the aggregate. Computed before the `hasActivity` early return,
   // per rules of hooks.
-  const nonLocalStages = localityRatio.topStages.filter((s) => s.nonLocalTasks > 0);
+  const nonLocalStages = topStages.filter((s) => s.nonLocalTasks > 0);
   const { totalPages: nonLocalTotalPages, effectivePage: nonLocalEffectivePage, visible: visibleNonLocalStages } =
     usePagedRows(nonLocalStages, nonLocalPage, setNonLocalPage);
 

@@ -15,7 +15,7 @@ import {
   formatPlanMetricValue,
 } from './plan-node-detail.ts';
 import { computeSegments, mapSegmentsToStagesForDisplay } from './plan-duration-attribution.ts';
-import { stageIdsForSqlExec } from './detectors.ts';
+import { stageIdsForSqlExec } from './sql-stages.ts';
 import type {
   AppModel, Finding, PlanGraphDurationMode, PlanGraphEdge, PlanGraphModel, PlanGraphNodeData, PlanNode,
 } from './types.ts';

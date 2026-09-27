@@ -10,6 +10,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 import { TinyTask } from '@/view/widgets/TinyTask';
 import { store } from '@/store/store';
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 function makeAppModel(stageIds: number[]): AppModel {
   const stages = new Map<number, unknown>(
@@ -136,6 +137,7 @@ describe('TinyTask', () => {
       ...tinyTaskFinding(1, 42),
       impactEstimate: { basis: 'serial', wallClock: { low: 300, high: 300 }, estimateMethod: 'measured', rawWaste: { value: 300, unit: 'ms' } },
     };
+    installInterpretation([finding], appModel);
     render(<TinyTask appModel={appModel} catalog={[finding]} getTaskData={vi.fn(async () => TASK_DATA)} />);
     expect(screen.getByText('300ms')).toBeInTheDocument();
   });

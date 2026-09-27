@@ -5,6 +5,7 @@ import { emptyAppModel } from '@/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
 
 import { ColdStart } from '@/view/widgets/ColdStart';
+import { installInterpretation } from './_shared/interpretation';
 
 test('renders nothing when the catalog has no coldStart findings', () => {
   const { container } = render(<ColdStart appModel={emptyAppModel()} catalog={[]} />);
@@ -45,6 +46,7 @@ test('renders the impact estimate for a flagged finding', () => {
   const catalog: Finding[] = [
     { type: 'coldStart', stageId: null, impactBand: 'warning', value: 45, recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 45000, high: 45000 }, estimateMethod: 'measured' } },
   ];
+  installInterpretation(catalog);
   render(<ColdStart appModel={emptyAppModel()} catalog={catalog} defaultCollapsed={false} />);
   expect(document.querySelector('.impact-estimate')).toHaveTextContent('45.0s');
 });
