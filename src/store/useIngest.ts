@@ -71,10 +71,8 @@ export function useIngest(opts: Opts = {}) {
   const runDone = useCallback(async (skippedLines = 0) => {
     const m = store.getState().appModel;
     const ledger = deriveEvidenceAvailability(m, { skippedLines }) as EvidenceAvailability;
-    store.getState().setEvidenceAvailability(ledger);
     const catalog = analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates);
-    store.getState().setCatalog(catalog);
-    store.getState().setConfigFindings(auditConfig(m.app));
+    store.getState().setFindings(catalog, auditConfig(m.app), ledger);
     store.getState().setSkippedLines(skippedLines);
     store.getState().setStatus('ready');
     const flagged = [...new Set(catalog.map((f) => f.stageId).filter((id): id is number => id != null))];
@@ -186,8 +184,7 @@ export function useIngest(opts: Opts = {}) {
       clientRef.current?.terminate();
       clientRef.current = null;
       const catalog = applySnapshot(s.appModel, s.taskDataCache, snap);
-      store.getState().setCatalog(catalog);
-      store.getState().setConfigFindings(auditConfig(s.appModel.app));
+      store.getState().setFindings(catalog, auditConfig(s.appModel.app));
       store.getState().setActiveFile(id);
       store.getState().setStatus('ready');
       await recentFiles.touch(id);
@@ -343,8 +340,7 @@ export function useIngest(opts: Opts = {}) {
     clientRef.current?.terminate();
     clientRef.current = null;
     const catalog = applySnapshot(s.appModel, s.taskDataCache, snap);
-    store.getState().setCatalog(catalog);
-    store.getState().setConfigFindings(auditConfig(s.appModel.app));
+    store.getState().setFindings(catalog, auditConfig(s.appModel.app));
     store.getState().setActiveFile(id);
     store.getState().setStatus('ready');
     store.getState().setComparisonActive(false);

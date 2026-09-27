@@ -80,6 +80,9 @@ interface State {
   setParse: (p: State['parse']) => void;
   setCatalog: (c: Finding[]) => void;
   setConfigFindings: (c: Finding[]) => void;
+  /** A load's findings in one update, so the live interpreter runs once per load; also sets the
+   * run's evidence ledger when one is passed. */
+  setFindings: (catalog: Finding[], configFindings: Finding[], evidenceAvailability?: EvidenceAvailability | null) => void;
   setInterpretation: (interpretation: InterpretationState | null) => void;
   setTaskData: (stageId: StageId, data: TaskData) => void;
   setActiveFile: (id: string | null) => void;
@@ -183,6 +186,11 @@ export const store = createStore<State>((set) => ({
   setParse: (parse) => set({ parse }),
   setCatalog: (catalog) => set({ catalog }),
   setConfigFindings: (configFindings) => set({ configFindings }),
+  setFindings: (catalog, configFindings, evidenceAvailability) => set((s) => ({
+    catalog,
+    configFindings,
+    ...(evidenceAvailability === undefined ? {} : { appModel: { ...s.appModel, evidenceAvailability } }),
+  })),
   setInterpretation: (interpretation) => set({ interpretation }),
   setTaskData: (stageId, data) =>
     set((s) => {

@@ -24,6 +24,8 @@ describe('export analysis guard', () => {
 
     expect(moduleIds).toContain('src/export/main-export.tsx');
     expect(moduleIds).toContain('src/view/Dashboard.tsx');
+    // Core ids must normalize to packages/core/src too, or the forbidden list would match nothing.
+    expect(moduleIds).toContain('packages/core/src/format-utils.ts');
     expect(moduleIds.filter((id) => FORBIDDEN_EXPORT_MODULES.includes(id))).toEqual([]);
   }, 180_000);
 

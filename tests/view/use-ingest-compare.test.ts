@@ -140,7 +140,14 @@ test('drillIntoRun restores one cached run without evicting the other', () => {
     comparison: { active: true, baselineId: 'a::1::2', candidateId: 'b::3::4' },
   });
   const { result } = renderHook(() => useIngest());
+  const interpretations = new Set<unknown>();
+  const unsubscribe = store.subscribe((next, previous) => {
+    if (next.interpretation !== previous.interpretation) interpretations.add(next.interpretation);
+  });
   act(() => result.current.drillIntoRun('a::1::2'));
+  unsubscribe();
+  // One store update carries the restored findings, so the live interpreter runs once.
+  expect(interpretations.size).toBe(1);
   expect(store.getState().activeFileId).toBe('a::1::2');
   expect(store.getState().status).toBe('ready');
   expect(store.getState().comparison.active).toBe(false);
