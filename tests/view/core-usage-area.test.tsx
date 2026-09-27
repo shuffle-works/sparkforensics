@@ -12,6 +12,7 @@ import { downsample } from '@/view/charts/downsample';
 import { CoreUsageArea } from '@/view/widgets/CoreUsageArea';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 // Both mocks call through to the real implementation; only the large-series
 // test below overrides buildLocalityChart's return value for one call. The widget
@@ -241,6 +242,7 @@ test('renders the core-time raw-waste figure when a coreLocality finding carries
     impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 4200, unit: 'coreMs' } },
   }];
 
+  installInterpretation(catalog);
   render(
     <DocsProvider>
       <CoreUsageArea appModel={buildAppModel()} catalog={catalog} />

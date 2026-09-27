@@ -11,8 +11,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Chip, severityBadgeVariants } from '@/view/ImpactBadge';
-import { isCleanRun } from '@sparkforensics/core/check-coverage.ts';
-import { summarizeRunOutcome } from '@sparkforensics/core/run-outcome.ts';
 import { isEligible } from '@/view/widgets/FixTheseFirst';
 import { EvidenceExport, EvidenceExportMenuItems, useEvidenceExport } from '@/view/EvidenceExport';
 import { FileSwitcher } from '@/view/FileSwitcher';
@@ -20,6 +18,7 @@ import { GraphViewPickerDialog, type GraphViewPickerEntry } from '@/view/GraphVi
 import { KeyboardShortcutsDialog } from '@/view/KeyboardShortcutsDialog';
 import { WidgetDensityControl, WidgetDensityMenuItem } from '@/view/WidgetDensityControl';
 import { store, useStore } from '@/store/store';
+import { useInterpretation } from '@/view/interpretation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import { stageIdsForSqlExec } from '@sparkforensics/core/detectors.ts';
@@ -184,8 +183,9 @@ export function Topbar({
   const eligible = useMemo(() => allFindings.filter(isEligible), [allFindings]);
   const worst = worstImpactBand(eligible);
   const count = worst ? eligible.filter((f) => f.impactBand === worst).length : 0;
-  const clean = isCleanRun(appModel, allFindings);
-  const failedJobs = summarizeRunOutcome(appModel.jobs, allFindings).failedJobs;
+  const coverage = useInterpretation()?.data.coverage;
+  const clean = coverage?.clean ?? false;
+  const failedJobs = coverage?.failedJobs ?? 0;
 
   return (
     <header className="sticky top-0 z-30 flex min-w-0 flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">

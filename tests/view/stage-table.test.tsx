@@ -11,6 +11,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 import { StageTable } from '@/view/widgets/StageTable';
 import { emptyAppModel, store } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 // Real per-stage fields as posted by the parser worker; the `Stage` type's
 // `stageId` field doesn't reflect runtime shape, so fixtures use `id` and the
@@ -228,6 +229,7 @@ describe('StageTable', () => {
       },
     ];
 
+    installInterpretation(catalog, appModel);
     render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);
 
     expect(screen.getByText('3.0s')).toBeInTheDocument();

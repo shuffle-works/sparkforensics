@@ -12,6 +12,7 @@ import { Skew } from '@/view/widgets/Skew';
 import { store } from '@/store/store';
 import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order-toggle';
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 function makeStage(id: number, overrides: Record<string, unknown> = {}) {
   return {
@@ -279,6 +280,7 @@ describe('Skew', () => {
     };
     const getTaskData = vi.fn(async () => TASK_DATA);
 
+    installInterpretation([finding], appModel);
     render(<Skew appModel={appModel} catalog={[finding]} getTaskData={getTaskData} />);
 
     expect(screen.getByText('800ms')).toBeInTheDocument();

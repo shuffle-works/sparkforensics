@@ -3,6 +3,7 @@ import { test, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Scorecard } from '../../src/view/widgets/Scorecard';
 import { store } from '@/store/store';
+import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 
 function makeAppModel(overrides: Partial<AppModel> = {}): AppModel {
@@ -18,14 +19,19 @@ function makeAppModel(overrides: Partial<AppModel> = {}): AppModel {
   };
 }
 
+// The tiles render the run's interpretation (figures and flags), computed as the live app does.
+function scorecardProps(appModel: AppModel, catalog: Finding[]) {
+  return { interpretation: interpretRun(appModel, catalog, []), catalog };
+}
+
 test('renders the wall-clock and efficiency KPI labels', () => {
-  render(<Scorecard appModel={makeAppModel()} catalog={[]} />);
+  render(<Scorecard {...scorecardProps(makeAppModel(), [])} />);
   expect(screen.getByText('Wall-clock')).toBeInTheDocument();
   expect(screen.getByText('Efficiency')).toBeInTheDocument();
 });
 
 test('Basic view says what each tile measures and which direction is better', () => {
-  render(<Scorecard appModel={makeAppModel()} catalog={[]} />);
+  render(<Scorecard {...scorecardProps(makeAppModel(), [])} />);
   expect(screen.getByTestId('kpi-wall-clock')).toHaveTextContent('Total run time. Stages were running for 1.0s of it.');
   expect(screen.getByTestId('kpi-efficiency')).toHaveTextContent('Share of the run with a stage running. Higher is better.');
 });
@@ -33,7 +39,7 @@ test('Basic view says what each tile measures and which direction is better', ()
 test('Advanced view keeps the raw run/idle breakdown behind a measured Efficiency percentage', () => {
   store.getState().setWidgetDensity('advanced');
   try {
-    render(<Scorecard appModel={makeAppModel()} catalog={[]} />);
+    render(<Scorecard {...scorecardProps(makeAppModel(), [])} />);
     expect(screen.getByTestId('kpi-wall-clock')).toHaveTextContent('Ran 1.0s');
     expect(screen.getByTestId('kpi-efficiency')).toHaveTextContent(/Ran 1\.0s · 59\.0s idle\/gap time/);
   } finally {
@@ -42,11 +48,11 @@ test('Advanced view keeps the raw run/idle breakdown behind a measured Efficienc
 });
 
 test('spells out zero stage activity instead of the "no measurable value" dash, so a run with no stages does not look like broken data', () => {
-  render(<Scorecard appModel={makeAppModel({ stages: new Map() })} catalog={[]} />);
+  render(<Scorecard {...scorecardProps(makeAppModel({ stages: new Map() }), [])} />);
   expect(screen.getByTestId('kpi-wall-clock')).toHaveTextContent('No stage activity recorded');
   store.getState().setWidgetDensity('advanced');
   try {
-    render(<Scorecard appModel={makeAppModel({ stages: new Map() })} catalog={[]} />);
+    render(<Scorecard {...scorecardProps(makeAppModel({ stages: new Map() }), [])} />);
     // With no finished stage there is nothing to grade: no "0%", in either view.
     for (const tile of screen.getAllByTestId('kpi-efficiency')) {
       expect(tile).toHaveTextContent('Not measured');
@@ -65,7 +71,7 @@ test.each([
   [{ startTime: Number.NaN, endTime: 10 }],
   [{ startTime: 0, endTime: Number.POSITIVE_INFINITY }],
 ])('collapses to a single unavailable notice for incomplete timing, instead of three separate Unavailable tiles', (app) => {
-  render(<Scorecard appModel={makeAppModel({ app })} catalog={[]} />);
+  render(<Scorecard {...scorecardProps(makeAppModel({ app }), [])} />);
   expect(screen.getByText(/no complete application timing interval/i)).toBeInTheDocument();
   expect(screen.queryByTestId('kpi-wall-clock')).not.toBeInTheDocument();
   expect(screen.queryByTestId('kpi-efficiency')).not.toBeInTheDocument();
@@ -80,12 +86,12 @@ test('renders an Unused core time tile driven by computeEfficiencyModel when run
     runAggregates: { busyCoreMs: 10, perStage: { 0: { totalTaskDurationSum: 10, taskCount: 1 } } },
   });
 
-  const { rerender } = render(<Scorecard appModel={appModel} catalog={[]} />);
+  const { rerender } = render(<Scorecard {...scorecardProps(appModel, [])} />);
   expect(screen.getByTestId('kpi-wastage')).toHaveTextContent('Unused core time100%');
   expect(screen.getByText('Driver idle plus executor slack across the whole run, so it can run higher than the idle capacity a verdict step reports. Lower is better. Not a cost figure.')).toBeInTheDocument();
 
   store.getState().setWidgetDensity('advanced');
-  rerender(<Scorecard appModel={appModel} catalog={[]} />);
+  rerender(<Scorecard {...scorecardProps(appModel, [])} />);
   expect(screen.getByText(/driver-idle \+ executor-slack core-hours as a share of available capacity\. directional, not a cost figure\./i)).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
 });
@@ -94,7 +100,7 @@ test.each([
   [null, { startTime: 0, endTime: 60_000, resources: { executor: { cores: 2 } } }, 'core-usage summary'],
   [{ busyCoreMs: 10 }, { startTime: 0, endTime: 60_000 }, 'executor-capacity data'],
 ])('keeps Wastage visible and unavailable without %s', (runAggregates, app, reason) => {
-  render(<Scorecard appModel={makeAppModel({ app, runAggregates } as Partial<AppModel>)} catalog={[]} />);
+  render(<Scorecard {...scorecardProps(makeAppModel({ app, runAggregates } as Partial<AppModel>), [])} />);
   const tile = screen.getByTestId('kpi-wastage');
   expect(tile).toHaveTextContent('Unavailable');
   expect(tile).toHaveTextContent(new RegExp(reason, 'i'));
@@ -105,7 +111,7 @@ test('a flagged tile carries an inset accent shadow, not a border-left, so the g
   // Default fixture: 1s of stage activity across a 60s run is a critical
   // (<75%) efficiency, so this exercises the real flagged-tile styling
   // without a bespoke fixture.
-  render(<Scorecard appModel={makeAppModel()} catalog={[]} />);
+  render(<Scorecard {...scorecardProps(makeAppModel(), [])} />);
   const efficiency = screen.getByTestId('kpi-efficiency');
   const wallClock = screen.getByTestId('kpi-wall-clock'); // never flagged
 
@@ -121,6 +127,6 @@ test('a flagged tile carries an inset accent shadow, not a border-left, so the g
 
 test('renders no domain/company strings', () => {
   const catalog: Finding[] = [{ type: 'skew', stageId: 1, impactBand: 'warning' }];
-  const { container } = render(<Scorecard appModel={makeAppModel()} catalog={catalog} />);
+  const { container } = render(<Scorecard {...scorecardProps(makeAppModel(), catalog)} />);
   expect(container.textContent).not.toMatch(/scanntech|retail|cpg|latin america/i);
 });

@@ -1,6 +1,7 @@
 import { auditConfig } from './analyzer.ts';
-import { buildExportRunData, type ExportRunData } from './export-data.ts';
+import { buildExportRunData, CORE_VERSION, type ExportProvenance, type ExportRunData } from './export-data.ts';
 import { redactExportData } from './redact.ts';
+import { interpretRun } from './run-interpretation.ts';
 import { gzipSync, strToU8 } from './vendor/fflate.js';
 import type { AppModel, Finding } from './types.ts';
 
@@ -10,16 +11,22 @@ import type { AppModel, Finding } from './types.ts';
 // the same statement into one downloaded file). The export app's
 // decodeRunPayload (src/export/hydrate-store.ts) reverses the encoding.
 
-/** The run data an HTML export carries: the precomputed config audit plus the
- * serialized model, pseudonymized when `redact` is on. */
+/** The run data an HTML export carries: the serialized model, the config
+ * audit, and the whole interpretation layer (verdict, coverage, formatted
+ * savings, run shape) computed here, so the bundle that opens the file renders
+ * this core's conclusions instead of deriving its own. Redaction runs last and
+ * walks the interpretation too, so a quoted reason or copied step gets the same
+ * pseudonyms as the findings it came from. */
 export function buildHtmlExportData(
   appModel: AppModel,
   catalog: Finding[],
   skippedLines: number,
-  { redact }: { redact: boolean },
+  { redact, buildId, producer }: { redact: boolean; buildId: string; producer: string },
 ): ExportRunData {
   const configFindings = auditConfig(appModel.app);
-  const data = buildExportRunData(appModel, catalog, configFindings, skippedLines);
+  const interpretation = interpretRun(appModel, catalog, configFindings);
+  const provenance: ExportProvenance = { coreVersion: CORE_VERSION, buildId, producer };
+  const data = buildExportRunData(appModel, catalog, configFindings, skippedLines, interpretation, provenance);
   return redact ? redactExportData(data) : data;
 }
 

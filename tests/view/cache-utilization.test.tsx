@@ -6,6 +6,7 @@ import { emptyAppModel, store } from '@/store/store';
 import { CacheUtilization } from '@/view/widgets/CacheUtilization';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, Finding, SparkAppInfo } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 interface RddFixtureOverrides {
   name?: string;
@@ -37,6 +38,7 @@ function buildAppModel(rddInfo?: Map<number, unknown>): AppModel {
 }
 
 function renderWidget(appModel: AppModel, catalog: Finding[] = []) {
+  installInterpretation(catalog, appModel);
   return render(
     <DocsProvider>
       <CacheUtilization appModel={appModel} catalog={catalog} />

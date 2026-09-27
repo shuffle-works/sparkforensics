@@ -5,7 +5,8 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Table, TableBody } from '../../src/components/ui/table';
 import { StageDetailProvider } from '../../src/view/StageDetailContext';
-import { groupImpactBand, impactFigure, TypeGroupRow, useFixTheseFirstData } from '../../src/view/widgets/FixTheseFirst';
+import { impactFigure } from '@sparkforensics/core/impact-format.ts';
+import { groupImpactBand, TypeGroupRow, useFixTheseFirstData } from '../../src/view/widgets/FixTheseFirst';
 import { buildRecommendationRollup, type RollupGroup } from '@sparkforensics/core/recommendation-rollup.ts';
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 

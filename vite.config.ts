@@ -1,9 +1,16 @@
 import { defineConfig, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { copyDocsSite } from './vite-plugins/copy-docs-site';
+import { coreSourceHash } from './packages/core/src/load-vendored.js';
+
+// Provenance the dashboard stamps into its HTML exports (src/build-info.ts): the web app's
+// version and the build id of the core compiled into this bundle, the same source hash the
+// CLI reports for the core it loads.
+const webVersion: string = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version;
+const coreBuildId = coreSourceHash(path.resolve(__dirname, 'packages/core/src'));
 
 const DOCS_SITE_MIME_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -78,6 +85,10 @@ function serveDocsSiteDev() {
 
 export default defineConfig({
   base: './',
+  define: {
+    __SPARKFORENSICS_WEB_VERSION__: JSON.stringify(webVersion),
+    __SPARKFORENSICS_CORE_BUILD_ID__: JSON.stringify(coreBuildId),
+  },
   plugins: [react(), tailwindcss(), copyDocsSite('dist'), serveDocsSiteDev()],
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
   build: {

@@ -11,6 +11,7 @@ vi.mock('@/view/StageDetailContext', () => ({
 }));
 
 import { SlowHost } from '@/view/widgets/SlowHost';
+import { installInterpretation } from './_shared/interpretation';
 
 function appModelWithStage(stageId: number): AppModel {
   return { ...emptyAppModel(), stages: new Map([[stageId, { id: stageId, name: `stage-${stageId}` }]]) as unknown as AppModel['stages'] };
@@ -91,6 +92,7 @@ test('renders the impact estimate for a flagged finding', () => {
   const catalog: Finding[] = [
     { type: 'slowHost', stageId: 4, impactBand: 'warning', metric: 'hostMeanRatio', value: 2, host: 'a', hostTaskShare: 0.3, recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 800, high: 800 }, estimateMethod: 'measured', rawWaste: { value: 800, unit: 'ms' } } } as Finding,
   ];
+  installInterpretation(catalog);
   render(<SlowHost appModel={appModelWithStage(4)} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByText('800ms')).toBeInTheDocument();
 });

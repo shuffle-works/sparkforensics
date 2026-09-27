@@ -180,7 +180,11 @@ shape the CLI and MCP tools produce, or as **Download HTML dashboard**: one
 `.html` file holding this dashboard for the run, which opens in any browser
 with no server, like the CLI's `--export-html` folder. Exported dashboards
 carry no docs links: finding tags and "learn more" references show as plain
-text, so look them up in these docs yourself. Turn on
+text, so look them up in these docs yourself. An exported dashboard shows the
+conclusions worked out when it was exported, and its footer names the tool,
+core version and build that produced it. A file written by an incompatible
+release opens to a message saying so; export the run again with your current
+release. Turn on
 **Redact identifiers** first if the export is headed outside the environment
 that produced it, since that pseudonymizes the app id and any host/IP tokens
 in all three formats. **Keyboard shortcuts**

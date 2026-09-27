@@ -120,6 +120,26 @@ export function impactEstimateFigure(estimate: ImpactEstimate | undefined): { te
   return null;
 }
 
+/** Compact single-value form for dense lists (the stage table's finding chips,
+ * the stage dialog): the high-end wall-clock figure, or the raw-waste figure
+ * when there's no wall-clock claim, or `null` for a purely informational or a
+ * zero-value estimate (a `0s` in the spot a real estimate goes would read as a
+ * measured nothing). */
+export function impactEstimateCompact(estimate: ImpactEstimate | undefined): string | null {
+  if (!estimate) return null;
+  if (estimate.wallClock) {
+    if (estimate.wallClock.high <= 0) return null;
+    const text = fmtMs(estimate.wallClock.high);
+    return readsAsZero(text) ? null : text;
+  }
+  if (estimate.rawWaste) {
+    if (estimate.rawWaste.value <= 0) return null;
+    const text = formatRawWaste(estimate.rawWaste);
+    return readsAsZero(text) ? null : text;
+  }
+  return null;
+}
+
 /** How a step's savings figure was derived, in one plain sentence for
  * Advanced view: the estimate method, whether the stage ran alone (a
  * near-point figure) or shared the cluster (a floor and an optimistic high),

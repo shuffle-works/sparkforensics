@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import {
-  writeFileSync, existsSync, realpathSync,
+  readFileSync, writeFileSync, existsSync, realpathSync,
   mkdtempSync, mkdirSync, rmSync, renameSync, readdirSync, cpSync,
 } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -18,7 +18,7 @@ const pkgDir = dirname(binDir);
 // exported loadVendored().
 const srcHelper = join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
 const helperPath = existsSync(srcHelper) ? srcHelper : join(pkgDir, 'vendor-core', 'load-vendored.js');
-const { loadVendored } = await import(pathToFileURL(helperPath).href);
+const { coreBuildId, loadVendored } = await import(pathToFileURL(helperPath).href);
 const loadCore = (moduleName) => loadVendored(pkgDir, moduleName);
 
 const { collectRun } = await loadCore('cli/collect-run');
@@ -122,8 +122,17 @@ async function collectWithEvidence(path) {
   return { appModel, skippedLines };
 }
 
+// The export's provenance stamp: this CLI's own name and version, and the build id of the core it
+// loaded (vendor-core/'s stamp or core/src's hash, see coreBuildId).
+function exportProducer() {
+  const { name, version } = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
+  return `${name} ${version}`;
+}
+
 async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redact }) {
-  const exportData = buildHtmlExportData(appModel, catalog, skippedLines, { redact });
+  const exportData = buildHtmlExportData(appModel, catalog, skippedLines, {
+    redact, buildId: coreBuildId(pkgDir), producer: exportProducer(),
+  });
 
   // Published install: packages/cli/export-template/ (populated by
   // scripts/vendor-export-template.mjs at prepack time). Monorepo dev mode:

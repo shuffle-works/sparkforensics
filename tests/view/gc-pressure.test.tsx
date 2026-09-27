@@ -12,6 +12,7 @@ import { GcPressure } from '../../src/view/widgets/GcPressure';
 import { emptyAppModel, store } from '../../src/store/store';
 import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order-toggle';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 // Fixture matches runtime stage shape (id, not the Stage type's stageId), cast to AppModel['stages'].
 function buildAppModel(stages: Record<number, Record<string, unknown>> = {}): AppModel {
@@ -167,6 +168,7 @@ describe('GcPressure', () => {
       type: 'gc', stageId: 0, impactBand: 'warning', recommendation: 'Reduce GC pressure', value: 4,
       impactEstimate: { basis: 'contended', wallClock: { low: 92, high: 2209.5 }, estimateMethod: 'measured', rawWaste: { value: 1080, unit: 'coreMs' } },
     };
+    installInterpretation([finding]);
     render(<GcPressure catalog={[finding]} appModel={buildAppModel()} />);
     expect(screen.getByText('92ms-2.2s')).toBeInTheDocument();
   });

@@ -6,6 +6,7 @@ import { Table, TableBody } from '@/components/ui/table';
 import { useWidgetDensity } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import type { WidgetProps } from '@/view/detector-registry';
+import { useInterpretation } from '@/view/interpretation';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import type { TriageTarget } from '@/view/triage-target';
 import {
@@ -155,6 +156,7 @@ export function ImpactBoard({ appModel, catalog, configFindings = [], stages, ge
     () => useFixTheseFirstData(catalog, configFindings, stages),
     [catalog, configFindings, stages],
   );
+  const interpretation = useInterpretation();
   const allFindings = [...catalog, ...configFindings];
   const activeWidgets = useMemo(() => computeActiveWidgets(catalog, configFindings), [catalog, configFindings]);
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
@@ -193,7 +195,7 @@ export function ImpactBoard({ appModel, catalog, configFindings = [], stages, ge
           activeFileId={activeFileId}
         />
       ))}
-      <CleanChecks appModel={appModel} catalog={catalog} configFindings={configFindings} />
+      {interpretation ? <CleanChecks catalog={catalog} configFindings={configFindings} coverage={interpretation.data.coverage} /> : null}
     </div>
   );
 }

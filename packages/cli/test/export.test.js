@@ -16,6 +16,8 @@ import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { collectRun } from '@sparkforensics/core/cli/collect-run.ts';
 import { auditConfig } from '@sparkforensics/core/analyzer.ts';
+import { CORE_VERSION, EXPORT_DATA_SCHEMA_VERSION } from '@sparkforensics/core/export-data.ts';
+import { coreSourceHash } from '@sparkforensics/core/load-vendored.js';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 import { packAndInstall } from '../../../tests/helpers/pack-and-install.js';
 // tests/helpers/ stays at the repo root: shared with analyze.test.js/mcp-tools.test.js.
@@ -290,6 +292,40 @@ describe('--export-html (published bin)', () => {
       const { appModel } = await collectRun(logPath);
       const directConfigFindings = auditConfig(appModel.app);
       expect(exportedConfigFindings).toEqual(directConfigFindings);
+    } finally {
+      rmSync(logDir, { recursive: true, force: true });
+      rmSync(parentDir, { recursive: true, force: true });
+    }
+  });
+
+  it('carries the conclusions the report it printed states, stamped with what produced them', () => {
+    const logDir = mkdtempSync(join(tmpdir(), 'sparkforensics-export-log-'));
+    const logPath = join(logDir, 'eventlog');
+    writeFileSync(logPath, minimalNdjson());
+    const parentDir = mkdtempSync(join(tmpdir(), 'sparkforensics-export-out-'));
+    const destDir = join(parentDir, 'export-out');
+    try {
+      const { status, stdout, stderr } = runCli([logPath, '--export-html', destDir]);
+      expect(status).toBe(0);
+      expect(stderr).toBe('');
+      const report = JSON.parse(stdout);
+      const payload = parseRunPayload(readFileSync(join(destDir, 'data.js'), 'utf8'));
+
+      expect(payload.schemaVersion).toBe(EXPORT_DATA_SCHEMA_VERSION);
+      // One core computed both, so the exported dashboard cannot contradict the report.
+      expect(payload.interpretation.verdict.title).toBe(report.verdict.title);
+      expect(payload.interpretation.verdict.summary).toEqual(report.verdict.summary);
+      expect(payload.interpretation.verdict.copyText).toBe(report.verdict.copyText);
+      expect(payload.interpretation.coverage.clean).toBe(report.summary.clean);
+      expect(payload.interpretation.runShape).toMatchObject(report.summary.runShape);
+
+      const { name, version } = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
+      expect(payload.provenance).toEqual({
+        coreVersion: CORE_VERSION,
+        // The installed tarball's vendor-core was stamped from this checkout's core sources.
+        buildId: coreSourceHash(join(packageDir, '..', 'core', 'src')),
+        producer: `${name} ${version}`,
+      });
     } finally {
       rmSync(logDir, { recursive: true, force: true });
       rmSync(parentDir, { recursive: true, force: true });

@@ -6,6 +6,7 @@ import { StageDetailProvider } from '@/view/StageDetailContext';
 import { PlanGraphRoute } from '@/view/PlanGraphRoute';
 import { usePlanGraphRouteProps } from '@/view/usePlanGraphRouteProps';
 import { Dashboard } from '@/view/Dashboard';
+import { ExportFooter } from './ExportFooter';
 
 /** Like App.tsx's PlanGraphRouteContainer but without the Suspense wrapper:
  * PlanGraphRoute is a plain top-level import here, not a `lazy()` chunk. */
@@ -22,14 +23,20 @@ function PlanGraphRouteContainer() {
  * not by relying on dead-code elimination to drop an unused branch. No
  * DocsSheet either: an exported dashboard carries no docs links (DocsLink and
  * TagBadge render plain text in exportMode), so nothing could open it.
- * DocsProvider stays because DocsLink still reads its context. */
+ * DocsProvider stays because DocsLink still reads its context. The footer
+ * names what produced the file. */
 export function ExportApp() {
   const planGraphActive = useStore((s) => s.planGraph.active);
   return (
     <ThemeProvider>
       <DocsProvider>
         <StageDetailProvider>
-          {planGraphActive ? <PlanGraphRouteContainer /> : <Dashboard />}
+          {planGraphActive ? <PlanGraphRouteContainer /> : (
+            <>
+              <Dashboard />
+              <ExportFooter />
+            </>
+          )}
           <Toaster />
         </StageDetailProvider>
       </DocsProvider>

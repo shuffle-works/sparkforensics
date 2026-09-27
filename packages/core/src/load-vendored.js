@@ -65,6 +65,19 @@ export function resolveVendored(pkgDir, moduleName, { srcExt = 'ts' } = {}) {
   return useVendored(pkgDir) && existsSync(vendored) ? vendored : join(pkgDir, '..', 'core', 'src', `${moduleName}.${srcExt}`);
 }
 
+/** The build id of the core this package runs: the stamped source hash of its vendor-core/ when
+ * that copy is in use, else the hash of core/src computed now. The same `coreSourceHash` the web
+ * build stamps into its bundle, so equal ids mean the same analysis code. 'dev' when neither
+ * exists. */
+export function coreBuildId(pkgDir) {
+  if (useVendored(pkgDir)) {
+    const stampPath = join(pkgDir, 'vendor-core', SOURCE_HASH_FILE);
+    if (existsSync(stampPath)) return readFileSync(stampPath, 'utf8').trim();
+  }
+  const srcDir = join(pkgDir, '..', 'core', 'src');
+  return existsSync(srcDir) ? coreSourceHash(srcDir) : 'dev';
+}
+
 export async function loadVendored(pkgDir, moduleName, opts) {
   return import(pathToFileURL(resolveVendored(pkgDir, moduleName, opts)).href);
 }

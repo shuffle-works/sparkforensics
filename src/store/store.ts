@@ -2,6 +2,8 @@ import { createStore } from 'zustand/vanilla';
 import { useStore as useZustand } from 'zustand';
 import { captureSnapshot } from '@sparkforensics/core/session-snapshot.ts';
 import type { SessionSnapshot } from '@sparkforensics/core/session-snapshot.ts';
+import type { ExportProvenance } from '@sparkforensics/core/export-data.ts';
+import type { RunInterpretation } from '@sparkforensics/core/run-interpretation.ts';
 import type { AppModel, EvidenceAvailability, Finding, TaskData, StageId } from '@sparkforensics/core/types.ts';
 
 export function emptyAppModel(): AppModel {
@@ -16,10 +18,23 @@ export function emptyAppModel(): AppModel {
   };
 }
 
+/** A run's interpretation and the findings its indexes point into (catalog then config, the
+ * same objects as the store's `catalog`/`configFindings` when it was computed). */
+export interface InterpretationState {
+  data: RunInterpretation;
+  findings: Finding[];
+}
+
 interface State {
   appModel: AppModel;
   catalog: Finding[];
   configFindings: Finding[];
+  /** Every conclusion the dashboard shows about the run. The live app computes it from the
+   * findings (src/store/live-interpretation.ts); the export bundle loads it from its payload.
+   * Views only render it, never derive it. */
+  interpretation: InterpretationState | null;
+  /** What produced the loaded export file, shown in its footer; null in the live app. */
+  exportProvenance: ExportProvenance | null;
   activeFileId: string | null;
   sessionCache: Map<string, SessionSnapshot>;
   taskDataCache: Map<StageId, TaskData>;
@@ -65,6 +80,7 @@ interface State {
   setParse: (p: State['parse']) => void;
   setCatalog: (c: Finding[]) => void;
   setConfigFindings: (c: Finding[]) => void;
+  setInterpretation: (interpretation: InterpretationState | null) => void;
   setTaskData: (stageId: StageId, data: TaskData) => void;
   setActiveFile: (id: string | null) => void;
   setError: (msg: string | null) => void;
@@ -112,6 +128,8 @@ export const store = createStore<State>((set) => ({
   appModel: emptyAppModel(),
   catalog: [],
   configFindings: [],
+  interpretation: null,
+  exportProvenance: null,
   activeFileId: null,
   sessionCache: new Map(),
   taskDataCache: new Map(),
@@ -149,6 +167,7 @@ export const store = createStore<State>((set) => ({
       appModel: emptyAppModel(),
       catalog: [],
       configFindings: [],
+      interpretation: null,
       taskDataCache: new Map(),
       status: 'idle',
       shsParsing: false,
@@ -164,6 +183,7 @@ export const store = createStore<State>((set) => ({
   setParse: (parse) => set({ parse }),
   setCatalog: (catalog) => set({ catalog }),
   setConfigFindings: (configFindings) => set({ configFindings }),
+  setInterpretation: (interpretation) => set({ interpretation }),
   setTaskData: (stageId, data) =>
     set((s) => {
       const next = new Map(s.taskDataCache);

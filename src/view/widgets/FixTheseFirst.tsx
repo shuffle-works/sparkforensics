@@ -11,8 +11,9 @@ import { REGISTRY } from '@/view/detector-registry';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePill, StagePillGroup } from '@/view/StagePill';
-import { formatWallClockRange, impactFigure } from '@sparkforensics/core/impact-format.ts';
+import { formatWallClockRange } from '@sparkforensics/core/impact-format.ts';
 import { recommendationText } from '@sparkforensics/core/run-verdict.ts';
+import { useFindingSavings } from '@/view/interpretation';
 import { RowPagination } from '@/view/RowPagination';
 import { selectTriageTarget, selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 
@@ -109,9 +110,9 @@ function LocationBadge({ finding, textClassName }: { finding: Finding; textClass
   ) : null;
 }
 
-// Both live in core now (shared with the CLI/MCP verdict); re-exported for the view modules and
-// tests that import them from here.
-export { impactFigure, recommendationText };
+// Lives in core (shared with the CLI/MCP verdict); re-exported for the view modules and tests
+// that import it from here.
+export { recommendationText };
 
 /** A single-finding row: the finding's tag badge, a short action label (bold)
  * over the full recommendation sentence (muted) as the navigate control, and a
@@ -127,7 +128,7 @@ export function FindingRow({
 }) {
   const target = selectTriageTargetForFinding(finding, allFindings);
   const location = locationTag(finding);
-  const impact = impactFigure(finding);
+  const impact = useFindingSavings(finding)?.figure ?? null;
   const text = recommendationText(finding);
   const label = findingActionLabel(finding);
   return (
@@ -186,7 +187,7 @@ function FindingInstanceRow({
 }) {
   const target = selectTriageTargetForFinding(finding, allFindings);
   const location = locationTag(finding);
-  const impact = impactFigure(finding);
+  const impact = useFindingSavings(finding)?.figure ?? null;
   const text = recommendationText(finding);
   const label = findingActionLabel(finding);
   // A `StagePill` is its own clickable control, so it can't nest inside the

@@ -30,6 +30,40 @@ counter has no setter of its own; only `PlanGraphRoute.tsx`'s `store.subscribe`
 reads it, to evict the plan-graph model memo cache (see
 [Plan graph view](./drill-down.md#plan-graph-view)).
 
+### Run interpretation
+
+Everything that could change the conclusion about a run is computed once, by
+core, and stored as data: `interpretRun` (`packages/core/src/run-interpretation.ts`)
+returns the verdict (title, summary, worded next steps, copy text), which
+checks could not run and why, every finding's formatted savings, the run-shape
+figures with the Scorecard's flags, and each stage's finding order. It refers
+to findings by index into `[...catalog, ...configFindings]`, so a renderer
+resolves them to the objects it already holds and reference-identity routing
+keeps working.
+
+The store's `interpretation` holds that result with the findings it indexes.
+The live app fills it from `src/store/live-interpretation.ts`, a
+`store.subscribe` installed by `src/main.tsx` (and `tests/view/setup.ts`) that
+reinterprets whenever `appModel`, `catalog` or `configFindings` changes.
+Widgets read it through `src/view/interpretation.ts` and never format a
+savings figure or word a verdict themselves; what is left for them is
+selection and presentation (filtering, sorting, expanding). A widget test that
+renders one widget with findings as props installs an interpretation first
+with `tests/view/_shared/interpretation.ts`.
+
+The HTML export carries the same result. `buildHtmlExportData`
+(`packages/core/src/html-export.ts`), shared by the CLI's `--export-html` and
+the dashboard's download, calls `interpretRun` and writes it into the payload
+(`EXPORT_DATA_SCHEMA_VERSION` 2) with a provenance stamp: core version, core
+build id (`coreSourceHash` of the core sources: `coreBuildId` in
+`load-vendored.js` for the CLI, a Vite `define` for the web build, see
+`src/build-info.ts`) and producer. The export bundle never installs the live
+interpreter: `hydrateExportStore` installs the payload's interpretation as is,
+and `src/export/main-export.tsx` refuses, before rendering, any payload whose
+`schemaVersion` it was not built for (`unsupportedPayloadReason`). An old file
+therefore shows the conclusions of the core that wrote it, and cannot be
+reinterpreted by a newer bundle.
+
 ### Finding filter state
 
 The board-wide finding filter (impact band, raw `finding.type`, stage) lives

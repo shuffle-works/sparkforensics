@@ -124,7 +124,12 @@ contributor should read; `docs/` stays flat internal engineering records
 - Shared analysis the dashboard and the CLI/MCP report both show (check
   coverage, run outcome, verdict, savings formatting, comparison verdict, run
   shape) lives in `packages/core/src/`; `src/view/` only renders it. Port a new
-  dashboard analysis the same way, or the CLI/MCP paths fall behind.
+  dashboard analysis the same way, or the CLI/MCP paths fall behind. Anything
+  that can change a conclusion goes into `interpretRun`
+  (`run-interpretation.ts`) and reaches widgets as data via the store's
+  `interpretation`, never computed in a widget: the HTML export ships that
+  result instead of recomputing it at open time (see
+  `docs-site/contributor-guide/architecture/state-and-history.md#run-interpretation`).
 - `packages/core/src/docs-content/{chapters,tuning,diagrams}` is generated
   (gitignored) from the upstream commit pinned in `upstream.json`, by
   `ensureTuningDocs()` in `scripts/fetch-tuning-docs.mjs`; every consumer

@@ -9,6 +9,7 @@ import { StageDetailProvider, useStageDetail } from '@/view/StageDetailContext';
 import { DocsProvider } from '@/view/DocsContext';
 import { emptyAppModel, store } from '@/store/store';
 import type { AppModel, Finding, PlanNode, TaskData } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 function makeStage(overrides: Record<string, unknown> = {}) {
   return {
@@ -63,6 +64,8 @@ function renderHarness(
   catalog: Finding[] = [],
   onRoute?: (target: TriageTarget) => void,
 ) {
+  // The dialog's finding order and figures come from the run's interpretation.
+  installInterpretation(catalog, appModel);
   render(
     <DocsProvider>
       <StageDetailProvider>

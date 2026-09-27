@@ -5,28 +5,22 @@ import { Button } from '@/components/ui/button';
 import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
 import { typeTag } from '@sparkforensics/core/format-utils.ts';
-import { impactFigure } from '@sparkforensics/core/impact-format.ts';
-import { quotesReasonOf } from '@sparkforensics/core/run-outcome.ts';
-import {
-  buildRunVerdict, quotedReasonText, recommendationText, stepCopyText, type NextStep,
-} from '@sparkforensics/core/run-verdict.ts';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
-import { useStore, useWidgetDensity } from '@/store/store';
+import type { InterpretedStep } from '@sparkforensics/core/run-interpretation.ts';
+import type { Finding } from '@sparkforensics/core/types.ts';
+import { useStore, useWidgetDensity, type InterpretationState } from '@/store/store';
 import { REGISTRY } from '@/view/detector-registry';
 import { useOptionalDocs } from '@/view/DocsContext';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
-import { estimateProvenance, savingsMeaning } from '@/view/run-verdict';
+import { findingAt, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
 
 export interface RunVerdictProps {
-  appModel: AppModel;
-  /** The full, unfiltered catalog: the verdict describes the run, not the
-   * current filter. */
-  catalog: Finding[];
-  configFindings?: Finding[];
+  /** The run's interpretation: the verdict describes the whole run, never the
+   * current filter, and is rendered as computed (see run-interpretation.ts). */
+  interpretation: InterpretationState;
   onRoute: (target: TriageTarget) => void;
 }
 
@@ -58,12 +52,11 @@ function CopyTextButton({ text, label, testId }: { text: string; label: string; 
   );
 }
 
-function CopyStepButton({ finding, recommendation }: { finding: Finding; recommendation: string }) {
+function CopyStepButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
-    const summary = stepCopyText(finding, recommendation);
     try {
-      await copyText(summary);
+      await copyText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
@@ -81,26 +74,26 @@ function CopyStepButton({ finding, recommendation }: { finding: Finding; recomme
 
 function NextStepItem({
   step,
+  finding,
+  interpretation,
   index,
-  quotedReason,
   onRoute,
 }: {
-  step: NextStep;
+  step: InterpretedStep;
+  /** The step's lead finding, resolved from `step.leadIndex`. */
+  finding: Finding;
+  interpretation: InterpretationState;
   index: number;
-  /** Spark's recorded reason when it is this step's own, else null. */
-  quotedReason: string | null;
   onRoute: (target: TriageTarget) => void;
 }) {
   const { openStage } = useStageDetail();
-  const finding = step.lead;
-  const quoted = quotedReason == null ? null : quotedReasonText(quotedReason);
-  const recommendation = quoted?.shown ?? recommendationText(finding);
   const help = TAG_HELP[typeTag(finding.type)];
-  const impact = impactFigure(finding);
-  const meaning = savingsMeaning(finding);
+  const savings = savingsOf(interpretation, finding);
+  const impact = savings?.figure ?? null;
+  const meaning = savings?.meaning ?? null;
   const titleId = `next-step-${index}-title`;
   const advanced = useWidgetDensity() === 'advanced';
-  const provenance = advanced ? estimateProvenance(finding) : null;
+  const provenance = advanced ? (savings?.provenance ?? null) : null;
   // Same rule every widget uses: only a marker other than high is shown.
   const confidence = advanced && finding.confidence && finding.confidence !== 'high' ? finding.confidence : null;
   return (
@@ -137,7 +130,7 @@ function NextStepItem({
         ) : null}
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">What to try: </span>
-          {recommendation}
+          {step.recommendation}
         </p>
         {provenance || confidence ? (
           // Advanced view: how far to trust the step's number and the finding.
@@ -156,16 +149,16 @@ function NextStepItem({
             ) : null}
           </p>
         ) : null}
-        {step.related.length > 0 ? (
+        {step.relatedTypes.length > 0 ? (
           <p className="text-xs text-muted-foreground">
-            Also flagged here: {step.related.map((f) => REGISTRY[f.type]?.findingLabel ?? f.type).join(', ')}. These
+            Also flagged here: {step.relatedTypes.map((type) => REGISTRY[type]?.findingLabel ?? type).join(', ')}. These
             often share this cause, so the same fix may clear them too.
           </p>
         ) : null}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <Button size="sm" variant={index === 0 ? 'default' : 'outline'} data-shortcut-target onClick={() => {
             // Every step lead passed the same routeable check, so the target is never null.
-            const target = triageTargetFor(step.lead);
+            const target = triageTargetFor(finding);
             if (target) onRoute(target);
           }}>
             Show evidence
@@ -176,7 +169,7 @@ function NextStepItem({
               Stage {step.stageId} details
             </Button>
           ) : null}
-          <CopyStepButton finding={finding} recommendation={quoted?.copied ?? recommendation} />
+          <CopyStepButton text={step.copyText} />
         </div>
       </div>
     </li>
@@ -257,11 +250,11 @@ function NewcomerPrimer() {
  * start, a short summary, and the top places to look as ordered next steps,
  * each with a plain-language explanation, the concrete fix, and a route to its
  * evidence. The full, band-grouped finding list stays in the Findings tab. */
-export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: RunVerdictProps) {
-  const allFindings = [...catalog, ...configFindings];
-  const { outcome, facts, title, summary, shown, remaining, copyText } = buildRunVerdict(appModel, allFindings);
-  const failed = outcome.failedJobs > 0;
-  const { clean } = facts;
+export function RunVerdict({ interpretation, onRoute }: RunVerdictProps) {
+  const { title, summary, failed, clean, failureReason, remaining, copyText } = interpretation.data.verdict;
+  const shown = interpretation.data.verdict.steps
+    .map((step) => ({ step, finding: findingAt(interpretation, step.leadIndex) }))
+    .filter((entry): entry is { step: InterpretedStep; finding: Finding } => entry.finding != null);
   const density = useWidgetDensity();
 
   return (
@@ -286,22 +279,23 @@ export function RunVerdict({ appModel, catalog, configFindings = [], onRoute }: 
           {title}
         </h2>
         <p className="max-w-prose text-sm text-muted-foreground">{summary.join(' ')}</p>
-        {outcome.reason ? (
+        {failureReason ? (
           <p data-testid="run-failure-reason" className="max-w-prose pt-1 text-sm">
             <span className="font-medium">Spark's recorded reason: </span>
-            <code className="font-mono text-xs [overflow-wrap:anywhere]">{outcome.reason}</code>
+            <code className="font-mono text-xs [overflow-wrap:anywhere]">{failureReason}</code>
           </p>
         ) : null}
       </div>
       {density === 'advanced' ? null : <NewcomerPrimer />}
       {shown.length > 0 ? (
         <ol aria-label="Next steps" className="space-y-4">
-          {shown.map((step, index) => (
+          {shown.map(({ step, finding }, index) => (
             <NextStepItem
               key={step.key}
               step={step}
+              finding={finding}
+              interpretation={interpretation}
               index={index}
-              quotedReason={quotesReasonOf(step.lead, outcome) ? outcome.reason : null}
               onRoute={onRoute}
             />
           ))}

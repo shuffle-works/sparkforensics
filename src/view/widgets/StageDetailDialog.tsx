@@ -13,15 +13,12 @@ import { Section } from '@/view/Section';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
-import { buildNextSteps, locationKey } from '@/view/run-verdict';
-import { summarizeRunOutcome } from '@sparkforensics/core/run-outcome.ts';
+import { findingAt, savingsOf, useInterpretation } from '@/view/interpretation';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
-import { hasCompleteApplicationInterval } from '@sparkforensics/core/scorecard-estimates.ts';
 import { useStageDetail } from '@/view/StageDetailContext';
-import { ImpactEstimate, formatImpactEstimateCompact } from '../ImpactEstimate.tsx';
+import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { PlanView, resolvePlanTree } from '@/view/widgets/PlanView';
 import { formatBytes, formatDuration, IMPACT_BAND_ORDER, typeTag } from '@sparkforensics/core/format-utils.ts';
-import { computeWallClock } from '@sparkforensics/core/wall-clock.ts';
 import type { AppModel, Finding, ImpactBand, Stage, TaskData } from '@sparkforensics/core/types.ts';
 
 export interface StageDetailDialogProps {
@@ -95,12 +92,14 @@ interface RecEntry {
 }
 
 /** Groups a stage's findings by `type`, one chip per type with its distinct
- * recommendations underneath, in the run verdict's order. Tracks the
- * worst-impact-band finding itself (not just its band) so the compact chip and
- * expanded `<ImpactEstimate>` reuse the finding that drove the displayed band. */
+ * recommendations underneath, in the order the run's interpretation gives
+ * (`typeOrder`: the stage's own verdict step, so "start with the first" agrees
+ * with the run verdict, then worst band). Tracks the worst-impact-band finding
+ * itself (not just its band) so the compact chip and expanded
+ * `<ImpactEstimate>` reuse the finding that drove the displayed band. */
 function groupFindingsByType(
   findings: Finding[],
-  failedJobStageIds: ReadonlySet<number> | null,
+  typeOrder: string[],
 ): [string, { impactBand: ImpactBand; finding: Finding; recs: Map<string, RecEntry> }][] {
   const groups = new Map<string, { impactBand: ImpactBand; finding: Finding; recs: Map<string, RecEntry> }>();
   for (const f of findings) {
@@ -116,15 +115,8 @@ function groupFindingsByType(
       });
     }
   }
-  // The run verdict's own step order (buildNextSteps: potential savings, and
-  // failures first on a failed run), so "start with the first" agrees with
-  // it. Types the verdict can't route follow, worst band first.
-  const [step] = buildNextSteps(findings, failedJobStageIds ? { failedJobStageIds } : {});
-  const verdictOrder = step ? [step.lead.type, ...step.related.map((f) => f.type)] : [];
-  const rank = (type: string) => (verdictOrder.includes(type) ? verdictOrder.indexOf(type) : verdictOrder.length);
-  return [...groups.entries()].sort(
-    ([aType, a], [bType, b]) => rank(aType) - rank(bType) || IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand],
-  );
+  const rank = (type: string) => (typeOrder.includes(type) ? typeOrder.indexOf(type) : typeOrder.length);
+  return [...groups.entries()].sort(([aType], [bType]) => rank(aType) - rank(bType));
 }
 
 /** One finding-type's recommendation line, plus its extended text and impact
@@ -184,19 +176,20 @@ function stageSummary(stage: Stage, runMs: number | null, findingTypes: number):
 function StageVerdict({
   stage,
   findings,
+  typeOrder,
   catalog,
   runMs,
-  failedJobStageIds,
   onShowEvidence,
 }: {
   stage: Stage;
   findings: Finding[];
+  typeOrder: string[];
   catalog: Finding[];
   runMs: number | null;
-  failedJobStageIds: ReadonlySet<number> | null;
   onShowEvidence?: (target: TriageTarget) => void;
 }) {
-  const groups = groupFindingsByType(findings, failedJobStageIds);
+  const interpretation = useInterpretation();
+  const groups = groupFindingsByType(findings, typeOrder);
 
   return (
     <section aria-label="Why this stage was flagged" className="space-y-3">
@@ -207,7 +200,7 @@ function StageVerdict({
             // Gate on the compact formatter, not the mere presence of `impactEstimate`:
             // an informational estimate has the field but `<ImpactEstimate>` renders
             // nothing for it, which would leave an empty gap below the recommendation.
-            const hasEstimate = formatImpactEstimateCompact(finding.impactEstimate) !== null;
+            const hasEstimate = savingsOf(interpretation, finding)?.compact != null;
             const help = TAG_HELP[typeTag(type)];
             const target = onShowEvidence ? selectTriageTargetForFinding(finding, catalog) : null;
             return (
@@ -275,7 +268,11 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence
   const hasTaskHist = (stage.taskCount ?? 0) > 0;
   // Same stage rule the verdict groups its steps by, so a sql-scope finding
   // that touches only this stage (stageIds: [id]) is listed here too.
-  const findings = catalog.filter((f) => locationKey(f).key === `stage:${stage.id}`);
+  const interpretation = useInterpretation();
+  const stageFindings = interpretation?.data.stages[String(stage.id)];
+  const findings = interpretation && stageFindings
+    ? stageFindings.findingIndexes.map((index) => findingAt(interpretation, index)).filter((f): f is Finding => f != null)
+    : [];
 
   // One fetch per dialog open (or manual retry, bumping `taskDataRetryCount`):
   // the caller mounts a fresh `StageDetailBody` keyed by stage id per stage.
@@ -306,16 +303,15 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence
   const ioRatio =
     (stage.inputBytes ?? 0) > 0 ? ((stage.outputBytes ?? 0) / (stage.inputBytes ?? 0)).toFixed(2) : null;
   const localityStats = stage.localityStats ?? [];
-  const outcome = summarizeRunOutcome(appModel.jobs, catalog);
 
   return (
     <div className="space-y-6">
       <StageVerdict
         stage={stage}
         findings={findings}
+        typeOrder={stageFindings?.typeOrder ?? []}
         catalog={catalog}
-        runMs={hasCompleteApplicationInterval(appModel.app) ? computeWallClock(appModel.app, appModel.stages).total : null}
-        failedJobStageIds={outcome.failedJobs > 0 ? outcome.failedJobStageIds : null}
+        runMs={interpretation?.data.runShape.wallClockMs ?? null}
         onShowEvidence={onShowEvidence}
       />
 

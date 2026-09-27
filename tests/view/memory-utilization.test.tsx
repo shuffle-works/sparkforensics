@@ -7,6 +7,7 @@ import { EvidenceAvailabilityProvider } from '../../src/view/EvidenceAvailabilit
 import { DocsProvider } from '../../src/view/DocsContext';
 import { store } from '../../src/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 test('renders nothing when there are no memoryUtilization findings (collapses to a Clean-checks row instead)', () => {
   const { container } = render(<MemoryUtilization catalog={[]} />);
@@ -225,6 +226,7 @@ test('renders the wasted MB-seconds raw-waste figure for a wasteModel finding', 
       impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 12345, unit: 'mbSeconds' } },
     },
   ];
+  installInterpretation(catalog);
   render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
   // formatRawWaste pins locale to en-US so the figure doesn't drift with the host locale.
   expect(screen.getByText(`${(12345).toLocaleString('en-US')} MB-s`)).toBeInTheDocument();

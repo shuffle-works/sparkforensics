@@ -7,6 +7,7 @@ import { NoMatchBanner } from '@/view/EmptyStateBanners';
 import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from '@/view/EvidenceAvailabilityContext';
 import { FindingFilterBar } from '@/view/FindingFilterBar';
 import { FindingFilterProvider, useFindingFilter } from '@/view/FindingFilterContext';
+import { useInterpretation } from '@/view/interpretation';
 import {
   deriveOptions,
   emptySelection,
@@ -138,6 +139,7 @@ function FilteredBoard({
 }) {
   const { selection, replaceSelection } = useFindingFilter();
   const density = useWidgetDensity();
+  const interpretation = useInterpretation();
   // Tied to the selection the route produced, so any later filter change hides it.
   const [filterNotice, setFilterNotice] = useState<{ text: string; selection: FilterSelection } | null>(null);
 
@@ -191,8 +193,8 @@ function FilteredBoard({
       <SampleRunNotice />
       {/* Verdict first, from the unfiltered catalog: it answers "how did this
           run go and where do I start", which a board filter must not change. */}
-      <RunVerdict appModel={appModel} catalog={catalog} configFindings={configFindings} onRoute={routeToVisible} />
-      <Scorecard appModel={appModel} catalog={filteredCatalog} />
+      {interpretation ? <RunVerdict interpretation={interpretation} onRoute={routeToVisible} /> : null}
+      {interpretation ? <Scorecard interpretation={interpretation.data} catalog={filteredCatalog} /> : null}
       {/* Filtering is a power control: Advanced mode shows it, and so does an
           active selection (e.g. from a shared URL), so a filtered board never
           hides the control that explains and clears it. */}
