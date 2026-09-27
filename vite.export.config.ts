@@ -35,8 +35,8 @@ function stripCrossorigin(html: string): string {
 
 // `--mode template` (run by `npm run build`) builds the same app as the
 // template for the dashboard's single-file HTML download: no docs copy (one
-// downloaded file can't carry the docs site, so that export links to the
-// published docs instead), no public/ copy, and the favicon inlined as a data
+// downloaded file can't carry the docs site, so that export links to the docs
+// of the deployment it was downloaded from), no public/ copy, and the favicon inlined as a data
 // URI so the downloaded file makes no relative request at all. Only the HTML
 // is kept, as dist/<EXPORT_TEMPLATE_FILE>; the rest of the scratch outDir
 // (worker chunks the export app never starts) is discarded.

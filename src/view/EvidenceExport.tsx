@@ -15,6 +15,7 @@ import { useStore } from '@/store/store';
 import { buildEvidenceReport } from '@sparkforensics/core/evidence-report.ts';
 import { buildHtmlExportData, encodeRunPayload } from '@sparkforensics/core/html-export.ts';
 import { EXPORT_TEMPLATE_FILE, inlineRunPayload } from '@/export/single-file';
+import { docsBasesFor } from '@/view/docs-href';
 
 type ExportFormat = 'markdown' | 'json' | 'html';
 
@@ -67,7 +68,8 @@ export function useEvidenceExport() {
   const downloadHtml = async () => {
     try {
       const data = buildHtmlExportData(appModel, catalog, skippedLines, { redact });
-      const html = inlineRunPayload(await fetchExportTemplate(), encodeRunPayload(data));
+      // The file's docs links open this deployment's docs, wherever it serves them.
+      const html = inlineRunPayload(await fetchExportTemplate(), encodeRunPayload(data), docsBasesFor(window.location.href));
       triggerDownload(html, reportFilename(data.app?.id ?? null, 'html', redact), 'text/html');
     } catch (error) {
       console.error('HTML export failed', error);

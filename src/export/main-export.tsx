@@ -2,7 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { decodeRunPayload, hydrateExportStore } from './hydrate-store';
 import { ExportApp } from './ExportApp';
-import { setPublishedDocs } from '@/view/docs-href';
+import { setDocsBases, type DocsBases } from '@/view/docs-href';
 import '../index.css';
 
 declare global {
@@ -10,11 +10,11 @@ declare global {
     __SPARKFORENSICS_RUN_GZ__: string;
     // Set only by the dashboard's single-file download, which has no docs/
     // folder beside it (see src/export/single-file.ts).
-    __SPARKFORENSICS_PUBLISHED_DOCS__?: boolean;
+    __SPARKFORENSICS_DOCS_BASES__?: DocsBases;
   }
 }
 
-setPublishedDocs(window.__SPARKFORENSICS_PUBLISHED_DOCS__ === true);
+setDocsBases(window.__SPARKFORENSICS_DOCS_BASES__ ?? null);
 hydrateExportStore(decodeRunPayload(window.__SPARKFORENSICS_RUN_GZ__));
 
 createRoot(document.getElementById('root')!).render(

@@ -7,6 +7,7 @@ import { store, emptyAppModel } from '@/store/store';
 import { EvidenceExport } from '@/view/EvidenceExport';
 import { decodeRunPayload } from '@/export/hydrate-store';
 import { EXPORT_TEMPLATE_FILE } from '@/export/single-file';
+import { docsBasesFor } from '@/view/docs-href';
 import * as reportBuilder from '@sparkforensics/core/evidence-report.ts';
 import { buildHtmlExportData } from '@sparkforensics/core/html-export.ts';
 
@@ -132,7 +133,9 @@ test('download HTML fetches the template on demand and inlines the run as one fi
   expect(lastDownloadName).toBe('evidence-application_123.html');
   expect(lastBlob?.type).toBe('text/html');
   expect(html).not.toContain('src="./data.js"');
-  expect(html).toContain('window.__SPARKFORENSICS_PUBLISHED_DOCS__ = true;');
+  // Docs links open the docs of the page it was downloaded from.
+  const bases = html.match(/__SPARKFORENSICS_DOCS_BASES__ = (\{.*?\});/)?.[1];
+  expect(JSON.parse(bases ?? 'null')).toEqual(docsBasesFor(window.location.href));
   expect(html).toContain('<script type="module">/* app */</script>');
 });
 

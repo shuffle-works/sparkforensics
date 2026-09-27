@@ -7,7 +7,7 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider, useDocs } from '@/view/DocsContext';
 import { DocsSheet } from '@/view/DocsSheet';
 import { TagBadge } from '@/view/ImpactBadge';
-import { docsHref, setPublishedDocs } from '@/view/docs-href';
+import { docsBasesFor, docsHref, setDocsBases } from '@/view/docs-href';
 import { docsUrl } from '@sparkforensics/core/docs-config.ts';
 import type { ImpactBand } from '@sparkforensics/core/types.ts';
 
@@ -280,39 +280,48 @@ describe('DocsSheet Escape inside the docs frame', () => {
   });
 });
 
-// A single-file HTML download has no docs/ folder beside it, so the export
-// app flips docs-href to the published sites (see src/view/docs-href.ts).
-describe('published docs (single-file HTML export)', () => {
-  const TUNING = 'https://shuffle-works.github.io/spark-tuning-reference/';
-  const GUIDE = 'https://shuffle-works.github.io/sparkforensics/docs/';
+// A single-file HTML download has no docs/ folder beside it, so it carries
+// the docs locations of the page it was downloaded from and the export app
+// resolves its links against those (see src/view/docs-href.ts).
+describe('carried docs bases (single-file HTML export)', () => {
+  const BASES = docsBasesFor('https://deploy.example/app/index.html?run=1#top');
+  const SITE = 'https://deploy.example/app/docs/';
 
-  it('maps the tuning reference and the guide to their published sites', () => {
-    setPublishedDocs(true);
+  it('derives both docs trees from the downloading page, not a fixed address', () => {
+    expect(BASES).toEqual({ site: SITE, tuningReference: `${SITE}tuning-reference/` });
+    // A deployment that serves the tuning reference elsewhere hands that on:
+    // what matters is how this build's own relative paths resolve there.
+    expect(docsBasesFor('http://localhost:4173/').site).toBe('http://localhost:4173/docs/');
+  });
+
+  it('maps the tuning reference and the guide onto the carried bases, and only when set', () => {
+    setDocsBases(BASES);
     try {
-      expect(docsHref(docsUrl('#bottleneck-skew'))).toBe(`${TUNING}bottleneck-skew.html#bottleneck-skew`);
-      expect(docsHref('docs/user-guide/understanding-findings.html#skew')).toBe(`${GUIDE}user-guide/understanding-findings.html#skew`);
-      expect(docsHref('docs/')).toBe(GUIDE);
+      expect(docsHref(docsUrl('#bottleneck-skew'))).toBe(`${SITE}tuning-reference/bottleneck-skew.html#bottleneck-skew`);
+      expect(docsHref('docs/user-guide/understanding-findings.html#skew')).toBe(`${SITE}user-guide/understanding-findings.html#skew`);
+      expect(docsHref('docs/')).toBe(SITE);
+      expect(docsHref('elsewhere.html')).toBe('elsewhere.html');
     } finally {
-      setPublishedDocs(false);
+      setDocsBases(null);
     }
     expect(docsHref('docs/')).toBe('docs/');
   });
 
-  it('points the panel iframe and the tag links at the published docs', async () => {
+  it('points the panel iframe and the tag links at the carried docs', async () => {
     const user = userEvent.setup();
-    setPublishedDocs(true);
+    setDocsBases(BASES);
     store.getState().setWidgetDensity('advanced');
     try {
       renderLegendAndSheet([{ type: 'skew', impactBand: 'warning' }]);
       const guideLink = screen.getByRole('link', { name: /sparkforensics guide: task skew/i });
-      expect(guideLink).toHaveAttribute('href', `${GUIDE}user-guide/understanding-findings.html#skew`);
+      expect(guideLink).toHaveAttribute('href', `${SITE}user-guide/understanding-findings.html#skew`);
 
       await user.click(guideLink);
       expect(document.querySelector('iframe')?.getAttribute('src')).toBe(
-        `${GUIDE}user-guide/understanding-findings.html?t=dark#skew`,
+        `${SITE}user-guide/understanding-findings.html?t=dark#skew`,
       );
     } finally {
-      setPublishedDocs(false);
+      setDocsBases(null);
       store.getState().setWidgetDensity('basic');
     }
   });
