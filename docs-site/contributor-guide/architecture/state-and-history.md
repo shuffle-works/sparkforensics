@@ -32,35 +32,37 @@ reads it, to evict the plan-graph model memo cache (see
 
 ### Run interpretation
 
-Everything that could change the conclusion about a run is computed once, by
-core, and stored as data: `interpretRun` (`packages/core/src/run-interpretation.ts`)
-returns the verdict (title, summary, worded next steps, copy text), which
-checks could not run and why, every finding's formatted savings and their
-potential-savings rank (`savingsRank`, which orders the triage targets), the
-run-shape figures with the Scorecard's flags, the wall-clock breakdown, the
-wasted core-hours and compute-efficiency figures, whether concurrent job
-groups make wall-clock splits approximate (`wallClockReliable`), the ETL phase
-totals, the Core Usage by Locality chart and non-local ratio, each stage's
-finding order, and per finding type the widget order, doc anchor and
-clean-check criterion (`detectors`, from `detectorInfoByType` in
-`detector-docs.ts`). It refers
-to findings by index into `[...catalog, ...configFindings]`, so a renderer
-resolves them to the objects it already holds and reference-identity routing
-keeps working.
+The rule: whatever states a conclusion about this run is computed once by the
+producer, whatever responds to what the viewer does is computed live.
+
+`interpretRun` (`packages/core/src/run-interpretation.ts`) is that one
+computation; its `RunInterpretation` interface lists what it returns (verdict
+and next steps, which checks could not run and why, formatted savings and their
+rank, the Scorecard figures and flags, per-stage finding order, the Findings
+board's rollup, and per finding type the widget order, doc anchor and
+clean-check criterion). It refers to findings by index into
+`[...catalog, ...configFindings]`, so a renderer resolves them to the objects it
+already holds and reference-identity routing keeps working.
 
 The store's `interpretation` holds that result with the findings it indexes.
 The live app fills it from `src/store/live-interpretation.ts`, a
 `store.subscribe` installed by `src/main.tsx` (and `tests/view/setup.ts`) that
 reinterprets whenever `appModel`, `catalog` or `configFindings` changes.
-Widgets read it through `src/view/interpretation.ts` and never format a
-savings figure or word a verdict themselves; what is left for them is
-selection and presentation (filtering, sorting, expanding), plus the
-recommendation rollup, which totals the savings of whichever findings the
-filter leaves. The Scaling Simulator's `simulateScaling` is the deliberate
-exception: a what-if projection that makes no claim about this run, run in the
-widget against the interpretation's observed stages-active time. A widget test that
-renders one widget with findings as props installs an interpretation first
-with `tests/view/_shared/interpretation.ts`.
+Widgets read it through `src/view/interpretation.ts`. What stays live responds
+to the viewer: filtering, sorting and expanding; the Findings board regrouped
+over the findings a filter keeps (`boardRollup`: unfiltered, it renders the
+carried groups as is; a time group's recoverable figure is capped by the union
+of its members' stage intervals, so a filtered subset cannot be re-totalled
+from the carried per-group numbers); and the Scaling Simulator's
+`simulateScaling`, a what-if the viewer drives. A widget test that renders one
+widget with findings as props installs an interpretation first with
+`tests/view/_shared/interpretation.ts`.
+
+Not every view judgment follows the rule yet. StageTable's RETRY, fetch-wait,
+spill and I/O-ratio chips, PlanView's cross-join, long-filter and exchange-count
+warnings, and the plan graph's duration-share heat colours use thresholds in
+the view code, with no finding behind them. They predate the interpretation and
+are open work, not a pattern to copy.
 
 The HTML export carries the same result. `buildHtmlExportData`
 (`packages/core/src/html-export.ts`), shared by the CLI's `--export-html` and
@@ -68,37 +70,32 @@ the dashboard's download, calls `interpretRun` and writes it into the payload
 (`EXPORT_DATA_SCHEMA_VERSION` 2) with a provenance stamp: core version, core
 build id (`coreSourceHash` of the core sources: `coreBuildId` in
 `load-vendored.js` for the CLI, a Vite `define` for the web build, see
-`src/build-info.ts`) and producer. The export bundle never installs the live
-interpreter: `hydrateExportStore` installs the payload's interpretation as is,
-and `src/export/main-export.tsx` refuses, before rendering, any payload whose
-`schemaVersion` it was not built for, or that lacks its `configFindings`
-(`unsupportedPayloadReason`). An old file therefore shows the conclusions of
-the core that wrote it, and cannot be reinterpreted by a newer bundle.
+`src/build-info.ts`) and producer, all shown in the export footer. With
+redaction on, it redacts the run model and findings first and interprets the
+redacted copy, so no text derived from a redacted value (a quoted failure
+reason cut mid-host, say) keeps a fragment of it; the md/json report does the
+same. The export bundle never installs the live interpreter:
+`hydrateExportStore` installs the payload's interpretation as is, and
+`src/export/main-export.tsx` refuses, before rendering, any payload whose
+`schemaVersion` it was not built for, or that lacks its `configFindings` or
+`interpretation` (`unsupportedPayloadReason`). An old file therefore shows the
+conclusions of the core that wrote it, and cannot be reinterpreted by a newer
+bundle.
 
 What the bundle may import is checked at build time.
 `vite.export.config.ts` resolves the live-only modules to stand-ins in
 `src/export/live-only-stubs/` (`useIngest`, `useRecentFiles`, `EvidenceExport`,
 `core-usage-histogram-data`), whose controls the exported dashboard hides or
 replaces with an "isn't included in exported reports" note. Then
-`exportAnalysisGuard` (`scripts/export-analysis-guard.mjs`) fails the build,
-naming the importer chain, if the graph from `src/export/main-export.tsx`
-reaches any module in `FORBIDDEN_EXPORT_MODULES`: the analyzer and detectors,
-the parser and ingest path, the interpretation and every figure it computes,
-the evidence report, the HTML export producer and redaction, recent files, and
-the real live-only modules. `tests/export-analysis-guard.test.js` runs the real
-export build (`--mode guard`) so `npm test` catches a regression. What the
-graph does reach in `packages/core/src/` is presentation helpers
-(`format-utils`, `finding-names`, `finding-action-label`, `finding-tag-help`,
-`finding-generic-recommendation`, `task-failure`, `docs-config`,
-`docs-site-config`), the payload plumbing (`run-payload`, `export-data`,
-`session-snapshot`, `vendor/fflate.js`), filtering and the rollup
-(`finding-filter-predicate`, `recommendation-rollup`, `intervals`), the plan
-views (`plan-graph-model`, `plan-node-detail`, `plan-summary`,
-`plan-tree-walk`, `plan-duration-attribution`, `plan-dot`, `sql-stages`),
-`evidence-availability` (the Scaling Simulator's check of the carried ledger),
-and `scaling-sim` with `core-count`, the what-if exception above. A new core
-import that reaches a forbidden module fails the build: move its conclusion
-into `interpretRun`, or keep the module out of the export graph.
+`exportAnalysisGuard` (`scripts/export-analysis-guard.mjs`) fails the build if
+the graph from `src/export/main-export.tsx` reaches a `packages/core/` module
+missing from `ALLOWED_EXPORT_CORE_MODULES`, or any of `LIVE_ONLY_MODULES`,
+naming each module and one importer chain back to the entry.
+`tests/export-analysis-guard.test.js` runs the real export build
+(`--mode guard`) so `npm test` catches a regression. A new core import off the
+allowlist fails the build: move its conclusion into `interpretRun`, or, if it
+only responds to what the viewer does, add it to the allowlist. The guard
+checks modules, not code: a threshold written straight into a widget passes it.
 
 ### Finding filter state
 

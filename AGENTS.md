@@ -124,16 +124,17 @@ contributor should read; `docs/` stays flat internal engineering records
 - Shared analysis the dashboard and the CLI/MCP report both show (check
   coverage, run outcome, verdict, savings formatting, comparison verdict, run
   shape) lives in `packages/core/src/`; `src/view/` only renders it. Port a new
-  dashboard analysis the same way, or the CLI/MCP paths fall behind. Anything
-  that can change a conclusion goes into `interpretRun`
-  (`run-interpretation.ts`) and reaches widgets as data via the store's
-  `interpretation`, never computed in a widget: the HTML export ships that
-  result. The export build fails if its module graph reaches analysis
-  (`exportAnalysisGuard` in `scripts/export-analysis-guard.mjs`, run by
+  dashboard analysis the same way, or the CLI/MCP paths fall behind.
+  Whatever states a conclusion about this run is computed once by the
+  producer (`interpretRun` in `run-interpretation.ts`, read by widgets from
+  the store's `interpretation`; the HTML export ships it); whatever responds
+  to what the viewer does is computed live. The export build fails when its
+  graph reaches a core module off `ALLOWED_EXPORT_CORE_MODULES`
+  (`scripts/export-analysis-guard.mjs`, run by
   `tests/export-analysis-guard.test.js`); live-only modules resolve to
-  `src/export/live-only-stubs/` there, and `simulateScaling` is the one
-  deliberate what-if left in a widget (see
-  `docs-site/contributor-guide/architecture/state-and-history.md#run-interpretation`).
+  `src/export/live-only-stubs/` there. See
+  `docs-site/contributor-guide/architecture/state-and-history.md#run-interpretation`,
+  including the view thresholds that do not follow the rule yet.
 - `packages/core/src/docs-content/{chapters,tuning,diagrams}` is generated
   (gitignored) from the upstream commit pinned in `upstream.json`, by
   `ensureTuningDocs()` in `scripts/fetch-tuning-docs.mjs`; every consumer
