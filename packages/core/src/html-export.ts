@@ -8,8 +8,12 @@ import type { AppModel, Finding } from './types.ts';
 // Shared by the two producers of the self-contained HTML dashboard: the CLI's
 // --export-html (writeHtmlExport, which writes a data.js next to the template)
 // and the dashboard's "Download HTML" item (EvidenceExport.tsx, which inlines
-// the same statement into one downloaded file). The export app's
-// decodeRunPayload (src/export/hydrate-store.ts) reverses the encoding.
+// the same statement into one downloaded file). Both encode through
+// encodeRunPayload here; the export app's decodeRunPayload
+// (src/export/hydrate-store.ts) reverses it.
+
+/** The window global the payload statement assigns and the export app reads. */
+export const RUN_PAYLOAD_GLOBAL = '__SPARKFORENSICS_RUN_GZ__';
 
 /** The run data an HTML export carries: the serialized model, the config
  * audit, and the whole interpretation layer (verdict, coverage, formatted
@@ -55,5 +59,5 @@ export function encodeRunPayload(data: ExportRunData): string {
  * That only holds while `base64` really is base64; keep any new encoding
  * inside that alphabet or escape it here. */
 export function runPayloadScript(base64: string): string {
-  return `window.__SPARKFORENSICS_RUN_GZ__ = "${base64}";`;
+  return `window.${RUN_PAYLOAD_GLOBAL} = "${base64}";`;
 }

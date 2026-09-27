@@ -6,7 +6,6 @@ import {
 } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { gzipSync } from 'node:zlib';
 
 const binDir = dirname(fileURLToPath(import.meta.url));
 const pkgDir = dirname(binDir);
@@ -30,7 +29,7 @@ const { evaluateBudgets } = await loadCore('cli/budgets');
 const { buildComparison, renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
 const { comparisonVerdict } = await loadCore('comparison-verdict');
 const { redactComparison } = await loadCore('redact');
-const { buildHtmlExportData, runPayloadScript } = await loadCore('html-export');
+const { buildHtmlExportData, encodeRunPayload, runPayloadScript } = await loadCore('html-export');
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id> [--attempt-id <id>] [options]
@@ -149,11 +148,10 @@ async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redac
   const tempDir = mkdtempSync(join(parentDir, '.sparkforensics-export-'));
   try {
     cpSync(templateDir, tempDir, { recursive: true });
-    // gzip + base64 to shrink the artifact; decodeRunPayload (hydrate-store.ts)
-    // reverses it. runPayloadScript explains why base64 needs no escaping.
-    const json = JSON.stringify(exportData);
-    const base64 = gzipSync(json).toString('base64');
-    writeFileSync(join(tempDir, 'data.js'), `${runPayloadScript(base64)}\n`);
+    // The dashboard download's encoding too (gzip + base64); decodeRunPayload
+    // (hydrate-store.ts) reverses it. runPayloadScript explains why base64
+    // needs no escaping.
+    writeFileSync(join(tempDir, 'data.js'), `${runPayloadScript(encodeRunPayload(exportData))}\n`);
     // Clear destDir (confirmed empty-or-absent by the caller) right before the
     // rename to avoid platform rename-onto-dir quirks. Kept inside the try so a
     // rename failure surfaces the same actionable error as a write failure.

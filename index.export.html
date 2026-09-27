@@ -20,7 +20,8 @@
     <div id="root"></div>
     <!-- Classic (non-module) script: runs synchronously during HTML parsing,
          before the deferred module script below, so
-         window.__SPARKFORENSICS_RUN__ exists by the time main-export.tsx
+         window.__SPARKFORENSICS_RUN_GZ__ (RUN_PAYLOAD_GLOBAL in
+         packages/core/src/html-export.ts) exists by the time main-export.tsx
          runs. --export-html drops the real data.js next to this file. -->
     <script src="./data.js"></script>
     <script type="module" src="/src/export/main-export.tsx"></script>
