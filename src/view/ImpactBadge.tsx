@@ -8,7 +8,8 @@ import { cn } from '@/lib/utils';
 import type { ImpactBand } from '@sparkforensics/core/types.ts';
 import { typeTag } from '@sparkforensics/core/format-utils.ts';
 import { useOptionalDocs } from '@/view/DocsContext';
-import { docAnchorForType, TAG_HELP } from '@/view/finding-tag-help';
+import { TAG_HELP } from '@/view/finding-tag-help';
+import { useInterpretation } from '@/view/interpretation';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { useStore, useWidgetDensity } from '@/store/store';
 
@@ -138,12 +139,13 @@ export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }:
   // An exported dashboard carries no docs: its tags keep their tooltip but
   // link nowhere.
   const exportMode = useStore((s) => s.exportMode);
+  const typeAnchor = useInterpretation()?.data.detectors[type]?.docAnchor ?? undefined;
   const tag = typeTag(type);
   const help = TAG_HELP[tag];
   const title = plainBadge ? undefined : (help ? `${help.expansion}: ${help.description}` : undefined);
   const anchor = plainBadge
     ? undefined
-    : (docAnchor && isKnownDocAnchor(docAnchor) ? docAnchor : docAnchorForType(type));
+    : (docAnchor && isKnownDocAnchor(docAnchor) ? docAnchor : typeAnchor);
   const guideLabel = help?.expansion ?? tag;
   const guidePath = findingGuideUrl(type);
   // Every type has a real, CI-enforced entry in the SparkForensics guide

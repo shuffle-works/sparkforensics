@@ -3,7 +3,7 @@ import { ImpactDot } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { useInterpretation } from '@/view/interpretation';
-import { MS_PER_CORE_HOUR } from '@sparkforensics/core/wasted-core-hours.ts';
+import { MS_PER_CORE_HOUR } from '@sparkforensics/core/format-utils.ts';
 import { DesignSpikeConfidenceBadge, formatCoreHours } from './design-spike-widget-shared';
 
 // Capacity core-hours held vs. core-hours that actually ran tasks.

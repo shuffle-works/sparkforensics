@@ -12,6 +12,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useStore } from '@/store/store';
+import { buildEvidenceReport } from '@sparkforensics/core/evidence-report.ts';
+import { buildHtmlExportData, encodeRunPayload } from '@sparkforensics/core/html-export.ts';
 import { EXPORT_TEMPLATE_FILE, inlineRunPayload } from '@/export/single-file';
 import { CORE_BUILD_ID, WEB_PRODUCER } from '@/build-info';
 
@@ -53,8 +55,9 @@ async function fetchExportTemplate(): Promise<string> {
 
 /** Shared export state + download action, reused by the standalone control and
  * the Topbar overflow menu so both entry points behave identically. Every
- * format runs core analysis at download time, so the producer modules load on
- * demand and the Topbar offers none of this in an exported dashboard. */
+ * format runs core analysis at download time, so the export build swaps this
+ * module for a stub (vite.export.config.ts) and the Topbar offers none of it
+ * in an exported dashboard. */
 export function useEvidenceExport() {
   const appModel = useStore((s) => s.appModel);
   const catalog = useStore((s) => s.catalog);
@@ -65,7 +68,6 @@ export function useEvidenceExport() {
   // (buildHtmlExportData), inlined into one file instead of a data.js beside it.
   const downloadHtml = async () => {
     try {
-      const { buildHtmlExportData, encodeRunPayload } = await import('@sparkforensics/core/html-export.ts');
       const data = buildHtmlExportData(appModel, catalog, skippedLines, {
         redact, buildId: CORE_BUILD_ID, producer: WEB_PRODUCER,
       });
@@ -77,20 +79,25 @@ export function useEvidenceExport() {
     }
   };
 
-  const downloadReport = async (format: Exclude<ExportFormat, 'html'>) => {
-    const { buildEvidenceReport } = await import('@sparkforensics/core/evidence-report.ts');
-    const { markdown, json } = buildEvidenceReport(appModel, { redact });
-    const appId = (json as { summary?: { app?: { id?: string | null } } }).summary?.app?.id ?? null;
-    const filename = reportFilename(appId, format, redact);
-    if (format === 'json') {
-      triggerDownload(`${JSON.stringify(json, null, 2)}\n`, filename, 'application/json');
-    } else {
-      triggerDownload(`${markdown}\n`, filename, 'text/markdown');
+  const downloadReport = (format: Exclude<ExportFormat, 'html'>) => {
+    try {
+      const { markdown, json } = buildEvidenceReport(appModel, { redact });
+      const appId = (json as { summary?: { app?: { id?: string | null } } }).summary?.app?.id ?? null;
+      const filename = reportFilename(appId, format, redact);
+      if (format === 'json') {
+        triggerDownload(`${JSON.stringify(json, null, 2)}\n`, filename, 'application/json');
+      } else {
+        triggerDownload(`${markdown}\n`, filename, 'text/markdown');
+      }
+    } catch (error) {
+      console.error('Evidence export failed', error);
+      toast.error('Evidence export failed', { description: error instanceof Error ? error.message : String(error) });
     }
   };
 
   const download = (format: ExportFormat) => {
-    void (format === 'html' ? downloadHtml() : downloadReport(format));
+    if (format === 'html') void downloadHtml();
+    else downloadReport(format);
   };
 
   return { redact, setRedact, download };

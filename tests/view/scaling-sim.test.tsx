@@ -8,6 +8,7 @@ import { ScalingSim, makespanYAxisDomain } from '@/view/widgets/ScalingSim';
 import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import type { AppModel, Job } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 // Fixture mirrors the real per-stage shape posted by the parser worker so
 // simulateScaling can actually run.
@@ -32,6 +33,7 @@ describe('ScalingSim', () => {
   it('renders the WidgetCard heading and a chart region when the model can run', async () => {
     const user = userEvent.setup();
     store.getState().setWidgetDensity('advanced');
+    installInterpretation([], runnableAppModel());
     render(
       <DocsProvider>
         <EvidenceAvailabilityProvider>
@@ -52,6 +54,7 @@ describe('ScalingSim', () => {
 
   it('renders a doc link pointing at the autoscale-bounds anchor', async () => {
     const user = userEvent.setup();
+    installInterpretation([], runnableAppModel());
     render(
       <DocsProvider>
         <ScalingSim appModel={runnableAppModel()} />
@@ -68,6 +71,7 @@ describe('ScalingSim', () => {
 
   it('renders the unavailable fallback (not the chart) when there are no run aggregates', () => {
     const model = { ...runnableAppModel(), runAggregates: null };
+    installInterpretation([], model);
     render(<EvidenceAvailabilityProvider><ScalingSim appModel={model} /></EvidenceAvailabilityProvider>);
 
     expect(screen.getByRole('heading', { name: /what-if executor scaling/i })).toBeInTheDocument();
@@ -83,6 +87,7 @@ describe('ScalingSim', () => {
       entries: [{ key: 'taskCoreTime', state: 'notEmitted', reasonCode: 'noUsableCoreTimeAggregate', summary: 'No usable aggregate was emitted.' }],
     };
 
+    installInterpretation([], model);
     render(<EvidenceAvailabilityProvider><ScalingSim appModel={model} /></EvidenceAvailabilityProvider>);
 
     expect(screen.getByRole('button', { name: /evidence: task and core time/i })).toBeInTheDocument();
@@ -93,6 +98,7 @@ describe('ScalingSim', () => {
     const model = runnableAppModel();
     model.app = { startTime: 0, endTime: 1000, resources: {} };
     model.executors = { added: [], removed: [] };
+    installInterpretation([], model);
     render(<EvidenceAvailabilityProvider><ScalingSim appModel={model} /></EvidenceAvailabilityProvider>);
 
     expect(screen.getByText(/baseline executor\/core capacity is unavailable/i)).toBeInTheDocument();
@@ -103,6 +109,7 @@ describe('ScalingSim', () => {
     const model = runnableAppModel();
     model.stages = new Map([[1, { stageId: 1, submittedAt: 0, completedAt: 0 }]]) as unknown as AppModel['stages'];
 
+    installInterpretation([], model);
     render(<ScalingSim appModel={model} />);
 
     expect(screen.getByText(/usable stage timing is unavailable/i)).toBeInTheDocument();
@@ -116,6 +123,7 @@ describe('ScalingSim', () => {
       [0, { jobId: 0, submissionTime: 0, completionTime: 1500, sqlExecutionId: 1 } as unknown as Job],
       [1, { jobId: 1, submissionTime: 1000, completionTime: 2000, sqlExecutionId: 2 } as unknown as Job],
     ]);
+    installInterpretation([], model);
     render(
       <DocsProvider>
         <ScalingSim appModel={model} />
@@ -140,6 +148,7 @@ describe('ScalingSim', () => {
 
   it('exposes a data table matching the predictions, hidden by default, with right-aligned numeric columns', async () => {
     const user = userEvent.setup();
+    installInterpretation([], runnableAppModel());
     render(
       <DocsProvider>
         <ScalingSim appModel={runnableAppModel()} />
@@ -164,6 +173,7 @@ describe('ScalingSim', () => {
 
   it('Model-Error caveat, concurrent-job-groups caveat, and evidence marker are Advanced-only', () => {
     store.getState().setWidgetDensity('basic');
+    installInterpretation([], runnableAppModel());
     render(
       <DocsProvider>
         <EvidenceAvailabilityProvider>
@@ -175,6 +185,7 @@ describe('ScalingSim', () => {
 
     cleanup();
     store.getState().setWidgetDensity('advanced');
+    installInterpretation([], runnableAppModel());
     render(
       <DocsProvider>
         <EvidenceAvailabilityProvider>
@@ -189,6 +200,7 @@ describe('ScalingSim', () => {
   it('the unavailable-data fallback card keeps its RowStatusCluster visible at Basic tier', () => {
     store.getState().setWidgetDensity('basic');
     const model = { ...runnableAppModel(), runAggregates: null };
+    installInterpretation([], model);
     render(
       <EvidenceAvailabilityProvider>
         <ScalingSim appModel={model} />
@@ -198,6 +210,7 @@ describe('ScalingSim', () => {
   });
 
   it('renders with defaultCollapsed and shows the best-makespan summary when collapsed', () => {
+    installInterpretation([], runnableAppModel());
     render(
       <DocsProvider>
         <ScalingSim appModel={runnableAppModel()} />
@@ -216,6 +229,7 @@ describe('ScalingSim', () => {
 
   it('the unavailable fallback has a summary', () => {
     const model = { ...runnableAppModel(), runAggregates: null };
+    installInterpretation([], model);
     render(<EvidenceAvailabilityProvider><ScalingSim appModel={model} /></EvidenceAvailabilityProvider>);
 
     expect(screen.getByText(/not available/i)).toBeInTheDocument();

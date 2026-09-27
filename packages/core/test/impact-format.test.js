@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import {
-  estimateProvenance, formatRawWaste, formatWallClockRange, impactEstimateCompact, impactEstimateFigure, rawWasteMeaning,
-  savingsMeaning,
+  estimateProvenance, impactEstimateCompact, impactEstimateFigure, rawWasteMeaning, savingsMeaning,
 } from '../src/impact-format.ts';
+import { formatRawWaste, formatWallClockRange } from '../src/format-utils.ts';
 
 describe('formatWallClockRange', () => {
   it('formats a zero endpoint without the no-data placeholder', () => {

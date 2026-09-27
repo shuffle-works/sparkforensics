@@ -5,7 +5,11 @@
 // (html-export.ts) call `interpretRun`; the exported bundle only renders what it carries, so an
 // exported file shows the conclusions of the core that wrote it, not of the core that opens it.
 import { checkCoverage, hasFinishedStage, verdictGaps } from './check-coverage.ts';
+import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
+import { buildLocalityChart, type LocalityChart } from './core-usage-locality.ts';
+import { detectorInfoByType, type DetectorInfo } from './detector-docs.ts';
 import { computeEfficiencyModel } from './efficiency-model.ts';
+import { attributeEtlPhases } from './etl-phases.ts';
 import { IMPACT_BAND_ORDER, worstImpactBand } from './format-utils.ts';
 import {
   estimateProvenance, impactEstimateCompact, impactEstimateFigure, impactFigure, savingsMeaning,
@@ -13,9 +17,9 @@ import {
 import { quotesReasonOf } from './run-outcome.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
 import {
-  buildNextSteps, buildRunVerdict, FINDING_DISPLAY_ORDER, locationKey, quotedReasonText, rankBySavings,
-  recommendationText, stepCopyText,
+  buildNextSteps, buildRunVerdict, FINDING_DISPLAY_ORDER, locationKey, quotedReasonText, rankBySavings, stepCopyText,
 } from './run-verdict.ts';
+import { recommendationText } from './finding-names.ts';
 import { getScorecardEstimates } from './scorecard-estimates.ts';
 import { checkConcurrentJobGroups } from './job-groups.ts';
 import { computeWallClock } from './wall-clock.ts';
@@ -91,9 +95,15 @@ export interface RunShapeData extends RunShape {
 
 export type WallClockData = ReturnType<typeof computeWallClock>;
 
-export interface EfficiencyData extends ReturnType<typeof computeEfficiencyModel> {
-  /** No two job groups overlapped, so the driver/executor split is exact. */
-  wallClockReliable: boolean;
+export type EfficiencyData = ReturnType<typeof computeEfficiencyModel>;
+
+export type EtlPhasesData = ReturnType<typeof attributeEtlPhases>;
+
+export interface CoreLocalityData {
+  /** The Core Usage by Locality chart. */
+  chart: LocalityChart;
+  /** Non-local task share, with every stage's breakdown (no top-N cut). */
+  ratio: ReturnType<typeof computeCoreLocalityRatio>;
 }
 
 /** A stage's findings as the stage dialog lists them, in the verdict's step order. */
@@ -118,6 +128,13 @@ export interface RunInterpretation {
   wastedCoreHours: WastedCoreHoursResult;
   /** The driver- vs. executor-bound waste model, or null without run aggregates. */
   efficiency: EfficiencyData | null;
+  /** No two job groups overlapped, so wall-clock-based splits and predictions are exact. */
+  wallClockReliable: boolean;
+  /** Stage time summed by ETL phase. */
+  etlPhases: EtlPhasesData;
+  coreLocality: CoreLocalityData;
+  /** Per finding type: widget order, doc anchor and clean-check criterion. */
+  detectors: Record<string, DetectorInfo>;
   /** Stages of the run's failed jobs; empty when every job succeeded. */
   failedJobStageIds: number[];
   /** Every rankable finding's index, best potential savings first. */
@@ -163,13 +180,12 @@ function interpretRunShape(appModel: AppModel): RunShapeData {
 
 function interpretEfficiency(appModel: AppModel): EfficiencyData | null {
   if (!appModel.runAggregates) return null;
-  const model = computeEfficiencyModel({
+  return computeEfficiencyModel({
     app: appModel.app,
     stages: appModel.stages,
     executorsAdded: appModel.executors.added,
     runAggregates: appModel.runAggregates,
   });
-  return { ...model, wallClockReliable: checkConcurrentJobGroups(appModel.jobs).wallClockReliable };
 }
 
 function interpretCoverage(appModel: AppModel, allFindings: Finding[], clean: boolean, failedJobs: number): CoverageData {
@@ -244,6 +260,13 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
     wallClock: computeWallClock(appModel.app, appModel.stages),
     wastedCoreHours: computeWastedCoreHours(appModel.app, appModel.executors.added, appModel.runAggregates),
     efficiency: interpretEfficiency(appModel),
+    wallClockReliable: checkConcurrentJobGroups(appModel.jobs).wallClockReliable,
+    etlPhases: attributeEtlPhases(appModel.stages),
+    coreLocality: {
+      chart: buildLocalityChart([...appModel.stages.values()], appModel.app),
+      ratio: computeCoreLocalityRatio([...appModel.stages.values()], { topN: Infinity }),
+    },
+    detectors: detectorInfoByType(),
     failedJobStageIds: failed ? [...outcome.failedJobStageIds].sort((a, b) => a - b) : [],
     savingsRank: rankBySavings(allFindings).map((finding) => indexOf.get(finding)!),
     stages: interpretStages(catalog, indexOf, failed ? outcome.failedJobStageIds : null),

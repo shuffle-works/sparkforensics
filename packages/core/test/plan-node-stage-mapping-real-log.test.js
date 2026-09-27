@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { collectRun } from '../src/cli/collect-run.js';
 import { analyze } from '../src/analyzer.js';
-import { stageIdsForSqlExec } from '../src/detectors.js';
+import { stageIdsForSqlExec } from '../src/sql-stages.js';
 
 // Private event logs, gitignored/local-only: each test skips unless its file
 // exists under examples/. The private-log table in

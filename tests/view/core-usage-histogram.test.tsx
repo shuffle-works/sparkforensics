@@ -3,7 +3,8 @@ import { test, expect, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
-import { CoreUsageHistogram, gatherTaskIntervals } from '@/view/widgets/CoreUsageHistogram';
+import { CoreUsageHistogram } from '@/view/widgets/CoreUsageHistogram';
+import { gatherTaskIntervals } from '@/view/core-usage-histogram-data';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, TaskData } from '@sparkforensics/core/types.ts';
 

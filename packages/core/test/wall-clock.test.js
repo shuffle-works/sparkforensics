@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { computeWallClock, mergeIntervals } from '../src/wall-clock.js';
+import { mergeIntervals } from '../src/intervals.js';
+import { computeWallClock } from '../src/wall-clock.js';
 
 describe('mergeIntervals', () => {
   it('merges overlapping intervals', () => {

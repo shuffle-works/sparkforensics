@@ -5,7 +5,7 @@ import { DETECTORS } from './detectors.ts';
 import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
 import { coreFindingActionLabel } from './finding-action-label.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
-import { FINDING_NAMES } from './finding-names.ts';
+import { FINDING_NAMES, recommendationText } from './finding-names.ts';
 import { formatDuration, IMPACT_BAND_ORDER } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
 import { isEligible } from './recommendation-rollup.ts';
@@ -50,13 +50,6 @@ const DISPLAY_INDEX = new Map(FINDING_DISPLAY_ORDER.map((type, index) => [type, 
  * finding type's name, then its raw type. */
 export function findingActionLabel(finding: Finding): string {
   return coreFindingActionLabel(finding) ?? FINDING_NAMES[finding.type] ?? finding.type;
-}
-
-/** The finding's own recommendation, or its type's name when it has none. */
-export function recommendationText(finding: Finding): string {
-  const text = typeof finding.recommendation === 'string' ? finding.recommendation.trim() : '';
-  if (text) return text;
-  return FINDING_NAMES[finding.type] ?? finding.type;
 }
 
 // The high end of the finding's own occupancy-clipped wall-clock estimate, the figure the

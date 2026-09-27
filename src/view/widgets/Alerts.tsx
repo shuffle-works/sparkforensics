@@ -5,9 +5,9 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { Table, TableBody } from '@/components/ui/table';
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
-import { getThresholdSummary } from '@sparkforensics/core/threshold-summary.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
+import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
 import type { CoverageData } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
@@ -84,12 +84,16 @@ export interface ActiveWidget {
 /** Every `REGISTRY` component except the always-mounted one(s), ranked by
  * worst impact band then widget order, for any component with at least one
  * finding in `catalog` ∪ `configFindings`. */
-export function computeActiveWidgets(catalog: Finding[], configFindings: Finding[]): ActiveWidget[] {
+export function computeActiveWidgets(
+  catalog: Finding[],
+  configFindings: Finding[],
+  detectors: Record<string, DetectorInfo>,
+): ActiveWidget[] {
   // isRealFinding: a mere evidence-unavailable caveat (e.g. memoryUtilization's
   // dataUnavailable variant) isn't grounds for an active widget card of its own.
   const combined = [...catalog, ...configFindings].filter(isRealFinding);
 
-  const componentWidgets = orderedWidgets()
+  const componentWidgets = orderedWidgets(detectors)
     .filter(({ type }) => !isAlwaysMountedType(type))
     .map(({ component, widgetId, type }, index) => {
       const findings = combined.filter((finding) => finding.type === type);
@@ -107,7 +111,8 @@ export function CleanChecks({
   catalog,
   configFindings = [],
   coverage,
-}: Pick<WidgetProps, 'catalog' | 'configFindings'> & { coverage: CoverageData }) {
+  detectors,
+}: Pick<WidgetProps, 'catalog' | 'configFindings'> & { coverage: CoverageData; detectors: Record<string, DetectorInfo> }) {
   // isRealFinding: a mere evidence-unavailable caveat (e.g. memoryUtilization's
   // dataUnavailable variant) doesn't keep a type out of the Clean-checks list.
   const combined = [...catalog, ...configFindings].filter(isRealFinding);
@@ -160,7 +165,7 @@ export function CleanChecks({
               <Table>
                 <TableBody>
                   {notRunWidgets.map(({ type, findingLabel }) => (
-                    <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={getThresholdSummary(type)} status="notRun" />
+                    <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={detectors[type]?.thresholdSummary ?? ''} status="notRun" />
                   ))}
                 </TableBody>
               </Table>
@@ -179,7 +184,7 @@ export function CleanChecks({
                 <Table>
                   <TableBody>
                     {widgets.map(({ type, findingLabel }) => (
-                      <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={getThresholdSummary(type)} />
+                      <CleanCheckRow key={type} type={type} label={findingLabel} thresholdSummary={detectors[type]?.thresholdSummary ?? ''} />
                     ))}
                   </TableBody>
                 </Table>

@@ -1,6 +1,6 @@
 // Explicit .ts extensions: plain Node's ESM resolver (the runtime CLI/MCP path
 // runs under) requires the exact specifier, unlike a bundler.
-import { mergeIntervals } from './wall-clock.ts';
+import { mergeIntervals } from './intervals.ts';
 import { worstImpactBand, IMPACT_BAND_ORDER } from './format-utils.ts';
 import type { Finding, RawWasteUnit, ImpactBand } from './types.ts';
 

@@ -6,13 +6,12 @@ import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-g
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
-import { formatStageIdsLabel, pathBasename } from '@sparkforensics/core/format-utils.ts';
+import { formatStageIdsLabel, formatWallClockRange, pathBasename } from '@sparkforensics/core/format-utils.ts';
 import { REGISTRY } from '@/view/detector-registry';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePill, StagePillGroup } from '@/view/StagePill';
-import { formatWallClockRange } from '@sparkforensics/core/impact-format.ts';
-import { recommendationText } from '@sparkforensics/core/run-verdict.ts';
+import { recommendationText } from '@sparkforensics/core/finding-names.ts';
 import { useFindingSavings } from '@/view/interpretation';
 import type { InterpretationState } from '@/store/store';
 import { RowPagination } from '@/view/RowPagination';

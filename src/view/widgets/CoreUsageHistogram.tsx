@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import { computeCoreTimeSeries } from '@sparkforensics/core/core-time-series.ts';
 import type { AppModel, TaskData } from '@sparkforensics/core/types.ts';
+import { loadCoreUsageHistogram } from '@/view/core-usage-histogram-data';
 import { useLiveTaskData } from '@/view/useLiveTaskData';
 import { CHART_COLORS, ChartFrame } from '../charts/ChartTheme';
 import { downsample } from '../charts/downsample';
@@ -12,38 +12,6 @@ import { WidgetCard } from '../WidgetCard';
 import { WidgetLeadSummary } from '../WidgetLeadSummary';
 
 const HEIGHT = 220;
-
-interface TaskInterval {
-  launch: number;
-  finish: number;
-}
-
-/** Flattens per-stage task data into the launch/finish interval list
- * `computeCoreTimeSeries` expects. */
-export async function gatherTaskIntervals(
-  appModel: AppModel,
-  getTaskData: (id: number) => Promise<TaskData>,
-): Promise<{ intervals: TaskInterval[]; incomplete: boolean }> {
-  const ids = [...appModel.stages.keys()];
-  const results = await Promise.all(ids.map((id) => getTaskData(id).catch(() => null)));
-  const intervals: TaskInterval[] = [];
-  let incomplete = false;
-  for (const data of results) {
-    if (!data) {
-      incomplete = true;
-      continue;
-    }
-    const { metrics, fieldNames } = data;
-    const stride = fieldNames.length;
-    const li = fieldNames.indexOf('launchTime');
-    const fi = fieldNames.indexOf('finishTime');
-    if (li === -1 || fi === -1) continue;
-    for (let i = 0; i < metrics.length; i += stride) {
-      intervals.push({ launch: metrics[i + li], finish: metrics[i + fi] });
-    }
-  }
-  return { intervals, incomplete };
-}
 
 interface HistogramRow {
   cores: string;
@@ -68,10 +36,9 @@ export function CoreUsageHistogram({ appModel, getTaskData }: CoreUsageHistogram
   useEffect(() => {
     if (!hasStages || !open || histogram !== null || !liveGetTaskData) return;
     let cancelled = false;
-    gatherTaskIntervals(appModel, liveGetTaskData).then(({ intervals, incomplete: inc }) => {
+    loadCoreUsageHistogram(appModel, liveGetTaskData).then(({ histogram: hist, incomplete: inc }) => {
       if (cancelled) return;
-      const { histogram: hist } = computeCoreTimeSeries(intervals, { bucketBy: 'coreCount' }) as { mode: 'coreCount'; histogram: number[] };
-      setHistogram(hist ?? []);
+      setHistogram(hist);
       setIncomplete(inc);
     });
     return () => {

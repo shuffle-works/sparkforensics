@@ -95,7 +95,7 @@ function ReferenceSection({
         <WidgetGridItem cardId="reference-evidence-availability" collapsedTile>
           <EvidenceAvailability ledger={appModel.evidenceAvailability} />
         </WidgetGridItem>
-        <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases appModel={appModel} /></WidgetGridItem>
+        <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases /></WidgetGridItem>
         <WidgetGridItem cardId="reference-scaling-sim" collapsedTile><ScalingSim appModel={appModel} /></WidgetGridItem>
         <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel /></WidgetGridItem>
         <WidgetGridItem cardId="reference-wasted-core-hours" collapsedTile><WastedCoreHours /></WidgetGridItem>

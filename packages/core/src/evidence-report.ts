@@ -3,7 +3,9 @@
 // Raw task records are never included (privacy baseline); redaction is opt-in via { redact: true }.
 import { analyze, auditConfig } from './analyzer.ts';
 import { detectorCatalog } from './detectors.ts';
-import { typeTag, formatBytes, formatDuration, IMPACT_BAND_ORDER } from './format-utils.ts';
+import {
+  typeTag, formatBytes, formatCores, formatDuration, formatRawWaste, formatWallClockRange, IMPACT_BAND_ORDER, readsAsZero,
+} from './format-utils.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { redactReport } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
@@ -13,11 +15,9 @@ import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, typ
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
 import { buildRunVerdict, findingActionLabel, stepCopyRecommendation, stepCopyText, type RunVerdictModel } from './run-verdict.ts';
 import {
-  estimateProvenance, formatRawWaste, formatWallClockRange, impactEstimateFigure, impactFigure, rawWasteMeaning, readsAsZero,
-  savingsMeaning,
+  estimateProvenance, impactEstimateFigure, impactFigure, rawWasteMeaning, savingsMeaning,
 } from './impact-format.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
-import { formatCores } from './core-usage-locality.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
 import type {
   AppModel, Finding, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,

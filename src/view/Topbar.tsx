@@ -21,7 +21,7 @@ import { store, useStore } from '@/store/store';
 import { useInterpretation } from '@/view/interpretation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
-import { stageIdsForSqlExec } from '@sparkforensics/core/detectors.ts';
+import { stageIdsForSqlExec } from '@sparkforensics/core/sql-stages.ts';
 import { cn } from '@/lib/utils';
 import type { RecentFileEntry } from '@/view/RecentList';
 import type { AppModel, Finding, ImpactBand, StageId } from '@sparkforensics/core/types.ts';

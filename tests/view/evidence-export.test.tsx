@@ -99,6 +99,22 @@ test('the redact toggle flips the builder option and marks the filename', async 
   expect(lastDownloadName).not.toContain('application_123');
 });
 
+test('a report that fails to build surfaces an error instead of downloading nothing silently', async () => {
+  seedRun();
+  vi.spyOn(reportBuilder, 'buildEvidenceReport').mockImplementation(() => {
+    throw new Error('report broke');
+  });
+  const errorSpy = vi.spyOn(toast, 'error').mockImplementation(() => 'toast-id');
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  render(<EvidenceExport />);
+
+  await userEvent.click(screen.getByRole('button', { name: /export evidence/i }));
+  await userEvent.click(await screen.findByRole('menuitem', { name: /download json/i }));
+
+  expect(errorSpy).toHaveBeenCalledWith('Evidence export failed', { description: 'report broke' });
+  expect(lastBlob).toBeNull();
+});
+
 // A stand-in for dist/export-template.html: the real one is only built by
 // `npm run build`, and only the data.js tag matters to the splice.
 const FAKE_TEMPLATE = '<!doctype html><html><body><div id="root"></div><script src="./data.js"></script><script type="module">/* app */</script></body></html>';

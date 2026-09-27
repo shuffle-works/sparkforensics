@@ -158,7 +158,11 @@ export function ImpactBoard({ appModel, catalog, configFindings = [], stages, ge
     [catalog, configFindings, stages, interpretation],
   );
   const allFindings = [...catalog, ...configFindings];
-  const activeWidgets = useMemo(() => computeActiveWidgets(catalog, configFindings), [catalog, configFindings]);
+  const detectors = interpretation?.data.detectors;
+  const activeWidgets = useMemo(
+    () => (detectors ? computeActiveWidgets(catalog, configFindings, detectors) : []),
+    [catalog, configFindings, detectors],
+  );
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
 
   const { groupsByImpactBand, widgetsByImpactBand } = useMemo(() => {
@@ -195,7 +199,7 @@ export function ImpactBoard({ appModel, catalog, configFindings = [], stages, ge
           activeFileId={activeFileId}
         />
       ))}
-      {interpretation ? <CleanChecks catalog={catalog} configFindings={configFindings} coverage={interpretation.data.coverage} /> : null}
+      {interpretation ? <CleanChecks catalog={catalog} configFindings={configFindings} coverage={interpretation.data.coverage} detectors={interpretation.data.detectors} /> : null}
     </div>
   );
 }

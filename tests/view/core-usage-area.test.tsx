@@ -52,9 +52,10 @@ function buildAppModel(overrides: Record<number, Record<string, unknown>> = {}):
 }
 
 test('renders the WidgetCard heading and a chart region when stages have core-time', async () => {
+  installInterpretation([], buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={[]} defaultCollapsed={false} />
+      <CoreUsageArea catalog={[]} defaultCollapsed={false} />
     </DocsProvider>,
   );
 
@@ -64,9 +65,10 @@ test('renders the WidgetCard heading and a chart region when stages have core-ti
 
 test('renders the "approximate: stage-level attribution" subtitle', async () => {
   store.getState().setWidgetDensity('advanced');
+  installInterpretation([], buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={[]} />
+      <CoreUsageArea catalog={[]} />
     </DocsProvider>,
   );
 
@@ -76,9 +78,10 @@ test('renders the "approximate: stage-level attribution" subtitle', async () => 
 
 test('renders a doc link pointing at the bottleneck-utilization anchor when no coreLocality finding is present', async () => {
   store.getState().setWidgetDensity('advanced');
+  installInterpretation([], buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={[]} defaultCollapsed={false} />
+      <CoreUsageArea catalog={[]} defaultCollapsed={false} />
     </DocsProvider>,
   );
 
@@ -91,9 +94,10 @@ test('drops the doc link in favor of the coreLocality tag badge, which links to 
   const catalog: Finding[] = [
     { type: 'coreLocality', stageId: null, impactBand: 'warning', value: 40, recommendation: 'Check locality.' },
   ];
+  installInterpretation(catalog, buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={catalog} />
+      <CoreUsageArea catalog={catalog} />
     </DocsProvider>,
   );
 
@@ -104,7 +108,8 @@ test('drops the doc link in favor of the coreLocality tag badge, which links to 
 
 test('renders a fallback message and no chart region when no stage has core-time', () => {
   const model = buildAppModel({ 1: { executorRunTime: 0 } });
-  render(<CoreUsageArea appModel={model} catalog={[]} />);
+  installInterpretation([], model);
+  render(<CoreUsageArea catalog={[]} />);
 
   expect(screen.getByRole('heading', { name: /core usage/i })).toBeInTheDocument();
   expect(screen.getByText(/no stage activity/i)).toBeInTheDocument();
@@ -115,11 +120,17 @@ test('renders a fallback message and no chart region when no stage has core-time
 test('downsamples a large bucketed series before handing it to the chart', () => {
   const bigLength = 5000;
   const points = Array.from({ length: bigLength }, (_, i) => ({ t: i, PROCESS_LOCAL: 1, idle: 0 }));
-  (buildLocalityChart as Mock).mockReturnValueOnce({ hasActivity: true, order: ['PROCESS_LOCAL', 'idle'], points, peakCores: 1 });
-
+  const installed = installInterpretation([], buildAppModel());
+  store.getState().setInterpretation({
+    ...installed,
+    data: {
+      ...installed.data,
+      coreLocality: { ...installed.data.coreLocality, chart: { hasActivity: true, order: ['PROCESS_LOCAL', 'idle'], points, peakCores: 1 } },
+    },
+  });
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={[]} />
+      <CoreUsageArea catalog={[]} />
     </DocsProvider>,
   );
 
@@ -135,9 +146,10 @@ test('downsamples a large bucketed series before handing it to the chart', () =>
 
 test('exposes a data table matching the chart series, hidden by default', async () => {
   const user = userEvent.setup();
+  installInterpretation([], buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={[]} defaultCollapsed={false} />
+      <CoreUsageArea catalog={[]} defaultCollapsed={false} />
     </DocsProvider>,
   );
 
@@ -152,44 +164,46 @@ test('is wrapped in React.memo', () => {
   expect((CoreUsageArea as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for('react.memo'));
 });
 
-// Regression: the locality series is memoized (keyed on appModel), so an
-// unrelated parent re-render with the same appModel must not recompute it.
-test('does not recompute the locality series when an unrelated re-render occurs with the same appModel', async () => {
+// Regression: the chart model is memoized on the interpretation, so an
+// unrelated parent re-render must not re-downsample it, and the widget never
+// builds the locality series itself (the interpretation carries it).
+test('does not rebuild or re-downsample the locality series on an unrelated re-render', async () => {
   const user = userEvent.setup();
-  const appModel = buildAppModel();
-  const callsBefore = (buildLocalityChart as Mock).mock.calls.length;
+  installInterpretation([], buildAppModel());
+  const chartCallsBefore = (buildLocalityChart as Mock).mock.calls.length;
+  const downsampleCallsBefore = (downsample as Mock).mock.calls.length;
 
   function Harness() {
     const [, setTick] = useState(0);
     return (
       <DocsProvider>
         <button onClick={() => setTick((t) => t + 1)}>tick</button>
-        <CoreUsageArea appModel={appModel} catalog={[]} />
+        <CoreUsageArea catalog={[]} />
       </DocsProvider>
     );
   }
 
   render(<Harness />);
-  expect((buildLocalityChart as Mock).mock.calls.length - callsBefore).toBe(1);
+  expect((downsample as Mock).mock.calls.length - downsampleCallsBefore).toBe(1);
 
   await user.click(screen.getByRole('button', { name: 'tick' }));
-  expect((buildLocalityChart as Mock).mock.calls.length - callsBefore).toBe(1);
+  expect((downsample as Mock).mock.calls.length - downsampleCallsBefore).toBe(1);
+  expect((buildLocalityChart as Mock).mock.calls.length).toBe(chartCallsBefore);
 });
 
-// Regression: applySnapshot mutates appModel's fields in place, so a
-// cached-file switch (same object reference, new activeFileId) must still
-// refresh this widget's chart.
-test('reflects a new file after appModel is mutated in place and activeFileId changes (cached-file switch)', async () => {
+// Regression: applySnapshot mutates appModel's fields in place on a cached-file
+// switch; the live interpreter reinterprets it, and the widget must follow the
+// new interpretation rather than a memo of the old one.
+test('reflects a new interpretation after a cached-file switch', async () => {
   const appModel = buildAppModel();
 
+  installInterpretation([], appModel);
   const { rerender } = render(
     <DocsProvider>
-      <CoreUsageArea appModel={appModel} catalog={[]} activeFileId="file-a" />
+      <CoreUsageArea catalog={[]} />
     </DocsProvider>,
   );
-  // The locality series recomputation is the observable: it's what the
-  // `activeFileId` memo key is there to trigger.
-  (buildLocalityChart as Mock).mockClear();
+  expect(screen.getByText('2 cores')).toBeInTheDocument();
 
   // Mimic applySnapshot: mutate the same appModel object's `stages` field in
   // place with a different per-stage core-time profile.
@@ -206,15 +220,14 @@ test('reflects a new file after appModel is mutated in place and activeFileId ch
     ],
   ]) as unknown as AppModel['stages'];
 
+  installInterpretation([], appModel);
   rerender(
     <DocsProvider>
-      <CoreUsageArea appModel={appModel} catalog={[]} activeFileId="file-b" />
+      <CoreUsageArea catalog={[]} />
     </DocsProvider>,
   );
 
-  expect(buildLocalityChart as Mock).toHaveBeenCalled();
-  const [stagesArg] = (buildLocalityChart as Mock).mock.lastCall as [{ stageId: number }[]];
-  expect(stagesArg.map((s) => s.stageId)).toEqual([2]);
+  expect(screen.getByText('10 cores')).toBeInTheDocument();
 });
 
 test('shows the LOCAL badge, impact band, and recommendation when a coreLocality finding exists in catalog', async () => {
@@ -224,9 +237,10 @@ test('shows the LOCAL badge, impact band, and recommendation when a coreLocality
     recommendation: 'Tasks are running without process- or node-local data placement more than expected, check spark.locality.wait settings and executor/data colocation.',
   }];
 
+  installInterpretation(catalog, buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={catalog} />
+      <CoreUsageArea catalog={catalog} />
     </DocsProvider>,
   );
 
@@ -242,10 +256,10 @@ test('renders the core-time raw-waste figure when a coreLocality finding carries
     impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 4200, unit: 'coreMs' } },
   }];
 
-  installInterpretation(catalog);
+  installInterpretation(catalog, buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={catalog} />
+      <CoreUsageArea catalog={catalog} />
     </DocsProvider>,
   );
 
@@ -253,9 +267,10 @@ test('renders the core-time raw-waste figure when a coreLocality finding carries
 });
 
 test('renders no LOCAL badge when catalog has no coreLocality finding; the chart still renders', async () => {
+  installInterpretation([], buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={[]} defaultCollapsed={false} />
+      <CoreUsageArea catalog={[]} defaultCollapsed={false} />
     </DocsProvider>,
   );
 
@@ -275,9 +290,10 @@ test('renders a per-stage non-local breakdown whenever any non-local tasks exist
   });
 
   store.getState().setWidgetDensity('advanced');
+  installInterpretation([], model);
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={model} catalog={[]} />
+      <CoreUsageArea catalog={[]} />
     </DocsProvider>,
   );
 
@@ -300,9 +316,10 @@ test('paginates the non-local-stage breakdown 6-at-a-time with Previous/Next con
   const model = buildAppModel(overrides);
 
   store.getState().setWidgetDensity('advanced');
+  installInterpretation([], model);
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={model} catalog={[]} defaultCollapsed={false} />
+      <CoreUsageArea catalog={[]} defaultCollapsed={false} />
     </DocsProvider>,
   );
 
@@ -321,9 +338,10 @@ test('shows the idle-core cross-link when a memoryUtilization idleCores finding 
   ];
 
   store.getState().setWidgetDensity('advanced');
+  installInterpretation(catalog, buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={catalog} />
+      <CoreUsageArea catalog={catalog} />
     </DocsProvider>,
   );
 
@@ -370,9 +388,10 @@ test('the rendered finding value and the widget\'s own locality computation agre
 
   const appModel = { ...emptyAppModel(), app, stages: stages as unknown as AppModel['stages'] };
   store.getState().setWidgetDensity('advanced');
+  installInterpretation(catalog, appModel);
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={appModel} catalog={catalog} />
+      <CoreUsageArea catalog={catalog} />
     </DocsProvider>,
   );
 
@@ -394,9 +413,10 @@ test('does not show the idle-core cross-link when no memoryUtilization idleCores
     { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 20, recommendation: 'x' },
   ];
 
+  installInterpretation(catalog, buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={catalog} />
+      <CoreUsageArea catalog={catalog} />
     </DocsProvider>,
   );
 
@@ -412,9 +432,10 @@ test('shows a confidence caveat when the coreLocality finding carries one', asyn
   }];
 
   store.getState().setWidgetDensity('advanced');
+  installInterpretation(catalog, buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={catalog} />
+      <CoreUsageArea catalog={catalog} />
     </DocsProvider>,
   );
 
@@ -434,9 +455,10 @@ test('the approximation caption, confidence marker, and idle-core cross-link are
   ];
 
   store.getState().setWidgetDensity('basic');
+  installInterpretation(catalog, buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={catalog} />
+      <CoreUsageArea catalog={catalog} />
     </DocsProvider>,
   );
 
@@ -454,9 +476,10 @@ test('the approximation caption, confidence marker, and idle-core cross-link are
   ];
 
   store.getState().setWidgetDensity('advanced');
+  installInterpretation(catalog, buildAppModel());
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={buildAppModel()} catalog={catalog} />
+      <CoreUsageArea catalog={catalog} />
     </DocsProvider>,
   );
 
@@ -470,9 +493,10 @@ test('the approximation caption, confidence marker, and idle-core cross-link are
 
 test('defaults collapsed with a peak-cores summary', () => {
   const appModel = buildAppModel();
+  installInterpretation([], appModel);
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={appModel} catalog={[]} defaultCollapsed={true} />
+      <CoreUsageArea catalog={[]} defaultCollapsed={true} />
     </DocsProvider>,
   );
 
@@ -488,9 +512,10 @@ test('a run shorter than one chart bucket reports its real busy cores, not a fig
   // 3s of task time packed into a 10s stage (0.3 busy cores) in a 17s run: the
   // 60s bucket holds only the stage's 10s, so the peak is 0.3 cores.
   const appModel = { ...buildAppModel({ 1: { completedAt: 10_000, executorRunTime: 3_000 } }), app: { startTime: 0, endTime: 17_000 } };
+  installInterpretation([], appModel as AppModel);
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={appModel as AppModel} catalog={[]} defaultCollapsed={true} />
+      <CoreUsageArea catalog={[]} defaultCollapsed={true} />
     </DocsProvider>,
   );
   expect(screen.getByText('0.3 cores')).toBeInTheDocument();
@@ -500,9 +525,10 @@ test('an incomplete run with no application end time still reports the stage\'s 
   // No ApplicationEnd, so app.endTime is null: 80s of task time over a 10s
   // stage is 8 busy cores, and the peak must not scale past that.
   const appModel = { ...buildAppModel({ 1: { submittedAt: 5_000, completedAt: 15_000, executorRunTime: 80_000 } }), app: { startTime: 0, endTime: null } };
+  installInterpretation([], appModel as unknown as AppModel);
   render(
     <DocsProvider>
-      <CoreUsageArea appModel={appModel as unknown as AppModel} catalog={[]} defaultCollapsed={true} />
+      <CoreUsageArea catalog={[]} defaultCollapsed={true} />
     </DocsProvider>,
   );
   expect(screen.getByText('8 cores')).toBeInTheDocument();

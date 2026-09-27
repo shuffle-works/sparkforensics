@@ -1,11 +1,11 @@
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import { checkConcurrentJobGroups } from '@sparkforensics/core/job-groups.ts';
 import { simulateScaling } from '@sparkforensics/core/scaling-sim.ts';
 import { hasUsableRunAggregates } from '@sparkforensics/core/evidence-availability.ts';
 import type { AppModel } from '@sparkforensics/core/types.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
+import { useInterpretation } from '@/view/interpretation';
 import { CHART_COLORS, ChartFrame } from '../charts/ChartTheme';
 import { downsample } from '../charts/downsample';
 import { DocsLink } from '../DocsContext';
@@ -89,15 +89,20 @@ function scalePhrase(pct: number): string {
 }
 
 export function ScalingSim({ appModel }: ScalingSimProps) {
+  const interpretation = useInterpretation()?.data;
   const taskCoreTime = taskCoreTimeEntry(appModel);
   const hasTaskCoreTime = hasUsableRunAggregates(appModel.runAggregates) && (taskCoreTime == null || taskCoreTime.state === 'present');
   if (!hasTaskCoreTime) {
     return <Unavailable reason={taskCoreTime?.summary ?? 'No usable task and core-time evidence in this log.'} evidence="taskCoreTime" />;
   }
 
+  if (!interpretation) return null;
+
+  // The what-if itself runs here, on the viewer's side; the observed makespan it
+  // scales against is the run's own, from the interpretation.
   const sim = simulateScaling({
     app: appModel.app,
-    stages: appModel.stages,
+    observedActiveMs: interpretation.wallClock.stagesActive,
     runAggregates: appModel.runAggregates,
     executorsAdded: appModel.executors.added,
   }) as ScalingSimResult;
@@ -105,7 +110,6 @@ export function ScalingSim({ appModel }: ScalingSimProps) {
   if (sim.baselineCores <= 0) return <Unavailable reason="Baseline executor/core capacity is unavailable in this log." />;
   if (!hasUsableStageTiming(appModel)) return <Unavailable reason="Usable stage timing is unavailable in this log." />;
 
-  const reliability = checkConcurrentJobGroups(appModel.jobs) as { wallClockReliable: boolean };
   const modelErrorHigh = sim.modelErrorPct != null && sim.modelErrorPct >= MODEL_ERROR_WARN_PCT;
   const chartData = downsample(sim.predictions);
 
@@ -138,7 +142,7 @@ export function ScalingSim({ appModel }: ScalingSimProps) {
           Move along this curve by changing <code>spark.dynamicAllocation</code>&rsquo;s executor
           bounds, see the <DocsLink anchor="#config-autoscale-bounds">autoscaling config guide</DocsLink>.
         </p>
-        {!reliability.wallClockReliable ? (
+        {!interpretation.wallClockReliable ? (
           <AdvancedOnly>
             <p className="text-muted-foreground text-xs">
               This run used concurrent job groups, so the wall-clock-based estimates below may be

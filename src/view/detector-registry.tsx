@@ -1,7 +1,7 @@
 import { lazy, type ComponentType } from 'react';
 
-import { DETECTORS } from '@sparkforensics/core/detectors.ts';
 import { FINDING_NAMES } from '@sparkforensics/core/finding-names.ts';
+import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
 
 // Each widget module is dynamically imported so Vite/Rollup splits it into
@@ -184,39 +184,22 @@ export const REGISTRY: Record<string, RegistryEntry> = {
 const REGION_ORDER: Record<WidgetRegion, number> = { action: 0, reference: 1 };
 
 /**
- * `broadcastSizing`'s own `DETECTORS`-level type never backs a `Finding`
- * (see the module doc comment above `REGISTRY`): the detector pushes findings
- * under these two types instead, so `orderedWidgets()` expands it to both.
- */
-const BROADCAST_SIZING_EMITTED_TYPES = ['overBroadcast', 'underBroadcast'];
-
-/**
  * One entry per emitted finding type that has a `REGISTRY` mapping, in
- * ascending `DETECTORS` order (the alert region sorted before the reference
- * region). Every `REGISTRY` entry now maps to its own unique component
- * (see the module doc comment above `REGISTRY`): dedup by type to skip
- * repeated detectors (e.g. `configAudit` appears multiple times in DETECTORS)
- * and keep the lowest-order occurrence. `broadcastSizing` itself never
- * matches a `REGISTRY` key (see the completeness test in
- * `tests/view/detector-registry.test.tsx`); it's expanded to
- * `BROADCAST_SIZING_EMITTED_TYPES` instead so those two widgets still surface.
+ * ascending detector order (the alert region sorted before the reference
+ * region). `detectors` is the run interpretation's per-type info
+ * (`detectorInfoByType`): it already folds repeated detectors (e.g.
+ * `configAudit`) to their lowest order, lists `broadcastSizing`'s emitted
+ * `overBroadcast`/`underBroadcast` under their own names, and its key order
+ * (declaration order) breaks ties; `broadcastSizing`
+ * itself never matches a `REGISTRY` key (see the completeness test in
+ * `tests/view/detector-registry.test.tsx`).
  */
-export function orderedWidgets(): Array<Pick<RegistryEntry, 'component' | 'region' | 'widgetId' | 'widgetTitle' | 'findingLabel'> & { type: string }> {
-  const infoByType = new Map<string, { entry: RegistryEntry; type: string; order: number }>();
-
-  for (const detector of DETECTORS as { type: string; order: number }[]) {
-    const emittedTypes = detector.type === 'broadcastSizing' ? BROADCAST_SIZING_EMITTED_TYPES : [detector.type];
-    for (const type of emittedTypes) {
-      const entry = REGISTRY[type];
-      if (!entry) continue;
-      const existing = infoByType.get(type);
-      if (!existing || detector.order < existing.order) {
-        infoByType.set(type, { entry, type, order: detector.order });
-      }
-    }
-  }
-
-  return [...infoByType.values()]
+export function orderedWidgets(
+  detectors: Record<string, DetectorInfo>,
+): Array<Pick<RegistryEntry, 'component' | 'region' | 'widgetId' | 'widgetTitle' | 'findingLabel'> & { type: string }> {
+  return Object.entries(detectors)
+    .filter(([type]) => REGISTRY[type] !== undefined)
+    .map(([type, { order }]) => ({ entry: REGISTRY[type], type, order }))
     .sort((a, b) => REGION_ORDER[a.entry.region] - REGION_ORDER[b.entry.region] || a.order - b.order)
     .map(({ entry, type }) => ({
       component: entry.component,

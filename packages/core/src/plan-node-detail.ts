@@ -5,7 +5,7 @@
 
 import { pathBasename, formatBytes, formatDuration } from './format-utils.ts';
 import { attributeStageDurationToPlan, attributeStageDurationToPlanInclusive } from './plan-duration-attribution.ts';
-import { stageIdsForSqlExec } from './detectors.ts';
+import { stageIdsForSqlExec } from './sql-stages.ts';
 import type { PlanNode, AppModel, SqlExecution, PlanGraphDurationMode } from './types.ts';
 
 const BOILERPLATE_PREFIXES = ['serializefromobject', 'deserializetoobject', 'mapelements',

@@ -3,6 +3,7 @@ import { test, expect } from 'vitest';
 import { DETECTORS } from '@sparkforensics/core/detectors.ts';
 import { FINDING_DISPLAY_ORDER, REFERENCE_DISPLAY_TYPES } from '@sparkforensics/core/run-verdict.ts';
 import { REGISTRY, orderedWidgets, isAlwaysMountedType, alwaysMountedWidgets } from '../../src/view/detector-registry';
+import { detectorInfoByType } from '@sparkforensics/core/detector-docs.ts';
 
 test('every DETECTORS type has a mapped component, except the dead broadcastSizing key', () => {
   // broadcastSizing is a DETECTORS-level type that never backs a real
@@ -38,12 +39,12 @@ test('every real emitted type has complete stable registry metadata', () => {
 });
 
 test('orderedWidgets never returns the same component twice', () => {
-  const comps = orderedWidgets().map((w) => w.component);
+  const comps = orderedWidgets(detectorInfoByType()).map((w) => w.component);
   expect(new Set(comps).size).toBe(comps.length);
 });
 
 test('ordered widgets retain metadata when active cards are reordered', () => {
-  const widgets = orderedWidgets();
+  const widgets = orderedWidgets(detectorInfoByType());
   expect(widgets.map((widget) => widget.widgetId)).toContain('spill');
   expect(new Set(widgets.map((widget) => widget.widgetId)).size).toBe(widgets.length);
 });
@@ -98,7 +99,7 @@ test('no always-mounted type shares its component with an action-region (non-alw
 // Core's verdict ranking (packages/core/src/run-verdict.ts) breaks its last ties by widget display
 // order without access to REGISTRY, so its copy of that order must match the board's.
 test('core FINDING_DISPLAY_ORDER and REFERENCE_DISPLAY_TYPES match the registry', () => {
-  expect(FINDING_DISPLAY_ORDER).toEqual(orderedWidgets().map((w) => w.type));
+  expect(FINDING_DISPLAY_ORDER).toEqual(orderedWidgets(detectorInfoByType()).map((w) => w.type));
   expect(new Set(FINDING_DISPLAY_ORDER)).toEqual(new Set(Object.keys(REGISTRY)));
   const reference = Object.entries(REGISTRY).filter(([, entry]) => entry.region === 'reference').map(([type]) => type);
   expect(new Set(reference)).toEqual(REFERENCE_DISPLAY_TYPES);

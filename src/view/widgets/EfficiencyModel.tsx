@@ -10,8 +10,9 @@ import { DesignSpikeConfidenceBadge, formatCoreHours } from './design-spike-widg
 // DESIGN SPIKE: framed as an estimate. The right-sizing block is a pure copy
 // branch on dominantWaste. The unverified ~21% figure is never rendered.
 export function EfficiencyModel() {
-  const m = useInterpretation()?.data.efficiency;
-  if (!m || m.availableComputeHours <= 0) return null;
+  const interpretation = useInterpretation()?.data;
+  const m = interpretation?.efficiency;
+  if (!interpretation || !m || m.availableComputeHours <= 0) return null;
 
   let rightSizing = null;
   if (m.dominantWaste === 'driver') {
@@ -43,7 +44,7 @@ export function EfficiencyModel() {
       }
     >
       <div className="space-y-2 text-sm">
-        {!m.wallClockReliable && (
+        {!interpretation.wallClockReliable && (
           <AdvancedOnly>
             <p className="text-muted-foreground">
               This run used concurrent job groups: the driver/executor split below is approximate, not
