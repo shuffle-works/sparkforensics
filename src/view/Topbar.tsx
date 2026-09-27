@@ -181,9 +181,9 @@ export function Topbar({
   const eligible = useMemo(() => eligibleFindings(interpretation), [interpretation]);
   const worst = worstImpactBand(eligible);
   const count = worst ? eligible.filter((f) => f.impactBand === worst).length : 0;
-  const coverage = interpretation?.data.coverage;
-  const clean = coverage?.clean ?? false;
-  const failedJobs = coverage?.failedJobs ?? 0;
+  const verdict = interpretation?.data.verdict;
+  const clean = verdict?.clean ?? false;
+  const failed = verdict?.failed ?? false;
 
   return (
     <header className="sticky top-0 z-30 flex min-w-0 flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
@@ -251,7 +251,7 @@ export function Topbar({
         ) : (
           <Chip label={verdictLabel(worst, count)} impactBand={worst} className="shrink-0" />
         )
-      ) : failedJobs > 0 ? (
+      ) : failed ? (
         <Chip label="Run failed" impactBand="critical" className="shrink-0" />
       ) : clean ? (
         <span

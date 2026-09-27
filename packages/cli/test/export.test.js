@@ -316,8 +316,9 @@ describe('--export-html (published bin)', () => {
       expect(payload.interpretation.verdict.title).toBe(report.verdict.title);
       expect(payload.interpretation.verdict.summary).toEqual(report.verdict.summary);
       expect(payload.interpretation.verdict.copyText).toBe(report.verdict.copyText);
-      expect(payload.interpretation.coverage.clean).toBe(report.summary.clean);
-      expect(payload.interpretation.runShape).toMatchObject(report.summary.runShape);
+      expect(payload.interpretation.verdict.clean).toBe(report.summary.clean);
+      const { wallClockMs, efficiencyPct, unusedCoreTimePct } = report.summary.runShape;
+      expect(payload.interpretation.runShape).toMatchObject({ wallClockMs, efficiencyPct, unusedCoreTimePct });
 
       const { name, version } = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
       expect(payload.provenance).toEqual({

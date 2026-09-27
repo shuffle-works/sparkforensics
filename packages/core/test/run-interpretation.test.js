@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { analyze, auditConfig } from '../src/analyzer.ts';
-import { checkCoverage, isCleanRun } from '../src/check-coverage.ts';
+import { checkCoverage } from '../src/check-coverage.ts';
 import { buildEvidenceReport } from '../src/evidence-report.ts';
 import { impactEstimateCompact, impactEstimateFigure, impactFigure } from '../src/impact-format.ts';
 import { interpretRun } from '../src/run-interpretation.ts';
@@ -66,7 +66,7 @@ describe('interpretRun', () => {
     expect(verdict.steps[0].copyText).toBe('Fix task skew: Fix skew in Stage 7. Potential savings: 2.4s of run time');
   });
 
-  it('carries the failure: its reason, the quoted-reason step text, and the failed jobs\' stages', () => {
+  it('carries the failure: its reason and the quoted-reason step text', () => {
     const stageFailed = { type: 'stageFailed', stageId: 3, impactBand: 'critical', value: 'Task failed: boom\n\tat x', recommendation: 'Inspect the driver log.' };
     const model = appModel({ jobs: new Map([[1, failedJob(1, [3])]]) });
     const interpretation = interpretRun(model, [timed('skew', 7, 2_400), stageFailed], []);
@@ -74,8 +74,6 @@ describe('interpretRun', () => {
     expect(interpretation.verdict).toMatchObject({ failed: true, clean: false, failureReason: 'Task failed: boom' });
     expect(interpretation.verdict.steps[0].recommendation).toContain("Spark's recorded reason is quoted above.");
     expect(interpretation.verdict.steps[0].copyText).toContain("Spark's recorded reason: Task failed: boom.");
-    expect(interpretation.failedJobStageIds).toEqual([3]);
-    expect(interpretation.coverage.failedJobs).toBe(1);
   });
 
   it('records which checks could not run, with the reasons checkCoverage gives', () => {
@@ -90,18 +88,18 @@ describe('interpretRun', () => {
     expect(coverage.notRunReasons.skew).toMatch(/No stage in this log recorded an end/);
     expect(coverage.noFinishedStages).toBe(true);
     expect(coverage.gaps).toHaveLength(2);
-    expect(coverage.clean).toBe(isCleanRun(model, [incomplete]));
   });
 
   it('carries the run shape and the Scorecard flags', () => {
     const model = appModel({ app: makeApp({ startTime: 0, endTime: 100_000 }) });
     const { runShape } = interpretRun(model, [], []);
 
-    expect(runShape).toMatchObject(computeRunShape(model));
-    expect(runShape).toMatchObject({ timed: true, stagesActiveMs: 15_000, efficiencyPct: 15, efficiencyFlag: 'critical' });
+    const { wallClockMs, efficiencyPct, unusedCoreTimePct } = computeRunShape(model);
+    expect(runShape).toMatchObject({ wallClockMs, efficiencyPct, unusedCoreTimePct });
+    expect(runShape).toMatchObject({ efficiencyPct: 15, efficiencyFlag: 'critical' });
     expect(runShape.unusedCoreTimeUnavailableReason).toBe('core-usage-summary');
     expect(interpretRun(appModel({ app: makeApp({ endTime: undefined }) }), [], []).runShape)
-      .toMatchObject({ timed: false, wallClockMs: null, stagesActiveMs: null });
+      .toMatchObject({ wallClockMs: null });
   });
 
   it('orders a stage\'s finding types by its own verdict step, then worst band', () => {
@@ -128,8 +126,9 @@ describe('interpretRun', () => {
     expect(interpretation.verdict.title).toBe(json.verdict.title);
     expect(interpretation.verdict.summary).toEqual(json.verdict.summary);
     expect(interpretation.verdict.copyText).toBe(json.verdict.copyText);
-    expect(interpretation.coverage.clean).toBe(json.summary.clean);
-    expect(interpretation.runShape).toMatchObject(json.summary.runShape);
+    expect(interpretation.verdict.clean).toBe(json.summary.clean);
+    const { wallClockMs, efficiencyPct, unusedCoreTimePct } = json.summary.runShape;
+    expect(interpretation.runShape).toMatchObject({ wallClockMs, efficiencyPct, unusedCoreTimePct });
     // The Findings board lists the report's "Fix these first" groups, members in the same order.
     const all = [...catalog, ...auditConfig(model.app)];
     expect(interpretation.rollup.groups.map((group) => ({ type: group.type, ids: group.memberIndexes.map((i) => all[i].id) })))

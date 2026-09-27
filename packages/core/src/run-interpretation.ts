@@ -72,9 +72,6 @@ export interface RunVerdictData {
 }
 
 export interface CoverageData {
-  /** No finding, no failed job, and nothing the log lacked to run a check. */
-  clean: boolean;
-  failedJobs: number;
   noFinishedStages: boolean;
   /** Why each check type could not run, keyed by finding type. A type absent here ran. */
   notRunReasons: Record<string, string>;
@@ -84,11 +81,9 @@ export interface CoverageData {
 
 export type ScorecardFlag = 'critical' | 'warning' | null;
 
-export interface RunShapeData extends RunShape {
-  /** The application recorded both a start and an end, so wall-clock figures exist. */
-  timed: boolean;
-  /** Wall-clock time with at least one stage running. */
-  stagesActiveMs: number | null;
+/** The Scorecard's three headline figures (the ones the report's runShape also states) and how
+ * each is graded. `wallClockMs` is null without a complete application timing interval. */
+export interface RunShapeData extends Pick<RunShape, 'wallClockMs' | 'efficiencyPct' | 'unusedCoreTimePct'> {
   efficiencyFlag: ScorecardFlag;
   unusedCoreTimeFlag: ScorecardFlag;
   unusedCoreTimeUnavailableReason: 'application-timing' | 'core-usage-summary' | 'executor-capacity' | null;
@@ -150,8 +145,6 @@ export interface RunInterpretation {
   coreLocality: CoreLocalityData;
   /** Per finding type: widget order, doc anchor and clean-check criterion. */
   detectors: Record<string, DetectorInfo>;
-  /** Stages of the run's failed jobs; empty when every job succeeded. */
-  failedJobStageIds: number[];
   /** Every rankable finding's index, best potential savings first. */
   savingsRank: number[];
   /** Keyed by stage id, for stages with at least one finding. */
@@ -181,15 +174,14 @@ function unusedCoreTimeFlag(pct: number | null): ScorecardFlag {
 }
 
 function interpretRunShape(appModel: AppModel): RunShapeData {
-  const shape = computeRunShape(appModel);
-  const timed = shape.wallClockMs != null;
+  const { wallClockMs, efficiencyPct, unusedCoreTimePct } = computeRunShape(appModel);
   const estimates = getScorecardEstimates(appModel);
   return {
-    ...shape,
-    timed,
-    stagesActiveMs: timed ? computeWallClock(appModel.app, appModel.stages).stagesActive : null,
-    efficiencyFlag: efficiencyFlag(shape.efficiencyPct),
-    unusedCoreTimeFlag: unusedCoreTimeFlag(shape.unusedCoreTimePct),
+    wallClockMs,
+    efficiencyPct,
+    unusedCoreTimePct,
+    efficiencyFlag: efficiencyFlag(efficiencyPct),
+    unusedCoreTimeFlag: unusedCoreTimeFlag(unusedCoreTimePct),
     unusedCoreTimeUnavailableReason: estimates.wastage.unavailableReason,
   };
 }
@@ -204,7 +196,7 @@ function interpretEfficiency(appModel: AppModel): EfficiencyData | null {
   });
 }
 
-function interpretCoverage(appModel: AppModel, allFindings: Finding[], clean: boolean, failedJobs: number): CoverageData {
+function interpretCoverage(appModel: AppModel, allFindings: Finding[]): CoverageData {
   const noFinishedStages = !hasFinishedStage(appModel.stages);
   const { notRunReason } = checkCoverage(appModel.stages, allFindings);
   const notRunReasons: Record<string, string> = {};
@@ -212,7 +204,7 @@ function interpretCoverage(appModel: AppModel, allFindings: Finding[], clean: bo
     const reason = notRunReason(type);
     if (reason != null) notRunReasons[type] = reason;
   }
-  return { clean, failedJobs, noFinishedStages, notRunReasons, gaps: verdictGaps(allFindings, noFinishedStages) };
+  return { noFinishedStages, notRunReasons, gaps: verdictGaps(allFindings, noFinishedStages) };
 }
 
 // The stage dialog's grouping: the verdict's location rule (a sql-scope finding touching only
@@ -275,7 +267,7 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
       remaining: verdict.remaining,
       copyText: verdict.copyText,
     },
-    coverage: interpretCoverage(appModel, allFindings, verdict.facts.clean, outcome.failedJobs),
+    coverage: interpretCoverage(appModel, allFindings),
     runShape: interpretRunShape(appModel),
     wallClock: computeWallClock(appModel.app, appModel.stages),
     wastedCoreHours: computeWastedCoreHours(appModel.app, appModel.executors.added, appModel.runAggregates),
@@ -287,7 +279,6 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
       ratio: computeCoreLocalityRatio([...appModel.stages.values()], { topN: Infinity }),
     },
     detectors: detectorInfoByType(),
-    failedJobStageIds: failed ? [...outcome.failedJobStageIds].sort((a, b) => a - b) : [],
     savingsRank: rankBySavings(allFindings).map((finding) => indexOf.get(finding)!),
     stages: interpretStages(catalog, indexOf, failed ? outcome.failedJobStageIds : null),
     rollup: {

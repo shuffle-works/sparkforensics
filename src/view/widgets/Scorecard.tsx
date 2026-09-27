@@ -124,11 +124,11 @@ function TimingUnavailableNotice() {
 
 export function Scorecard({ interpretation, catalog }: ScorecardProps) {
   const density = useWidgetDensity();
-  const { runShape, coverage } = interpretation;
-  if (!runShape.timed || runShape.wallClockMs == null) return <TimingUnavailableNotice />;
+  const { runShape, coverage, wallClock } = interpretation;
+  if (runShape.wallClockMs == null) return <TimingUnavailableNotice />;
 
   const total = runShape.wallClockMs;
-  const stagesActive = runShape.stagesActiveMs ?? 0;
+  const stagesActive = wallClock.stagesActive;
   // No stage recorded an end: "0%" would grade a run nothing measured (the
   // verdict says the stage checks had nothing to measure).
   const measured = !coverage.noFinishedStages;
