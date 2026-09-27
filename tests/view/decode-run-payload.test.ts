@@ -66,28 +66,17 @@ test('decodes the browser-side encoder (fflate gzip + chunked base64) of a multi
   expect(decodeRunPayload(encodeRunPayload(data))).toEqual(data);
 });
 
-const BASES = { site: 'https://deploy.example/docs/', tuningReference: 'https://deploy.example/docs/tuning-reference/' };
-
-test('inlineRunPayload replaces the data.js tag with an inline script carrying the payload and docs bases', () => {
+test('inlineRunPayload replaces the data.js tag with an inline script carrying the payload', () => {
   const template = '<head></head><body><script src="./data.js"></script><script type="module">app()</script></body>';
-  const html = inlineRunPayload(template, encodeRunPayload(sampleData()), BASES);
+  const html = inlineRunPayload(template, encodeRunPayload(sampleData()));
   expect(html).not.toContain('data.js');
-  expect(html).toMatch(/^<head><\/head><body><script>window\.__SPARKFORENSICS_DOCS_BASES__ = \{/);
+  expect(html).toMatch(/^<head><\/head><body><script>window\.__SPARKFORENSICS_RUN_GZ__ = "/);
   expect(html.endsWith('";</script><script type="module">app()</script></body>')).toBe(true);
-});
-
-test('a docs base holding "</script>" cannot close the inline script', () => {
-  const hostile = { ...BASES, site: 'https://deploy.example/</script><script>alert(1)</script>/' };
-  const html = inlineRunPayload('<script src="./data.js"></script>', 'AAAA', hostile);
-  // One closing tag: the inline script's own.
-  expect(html.split('</script>')).toHaveLength(2);
-  const json = html.match(/__SPARKFORENSICS_DOCS_BASES__ = (\{.*?\});/)![1];
-  expect(JSON.parse(json)).toEqual(hostile);
 });
 
 test('inlineRunPayload refuses a template without exactly one data.js tag', () => {
   // A dev server answers the template request with the app's own index.html.
-  expect(() => inlineRunPayload('<html><body></body></html>', 'AAAA', BASES)).toThrow(/template/);
+  expect(() => inlineRunPayload('<html><body></body></html>', 'AAAA')).toThrow(/template/);
   const tag = '<script src="./data.js"></script>';
-  expect(() => inlineRunPayload(`${tag}${tag}`, 'AAAA', BASES)).toThrow(/template/);
+  expect(() => inlineRunPayload(`${tag}${tag}`, 'AAAA')).toThrow(/template/);
 });

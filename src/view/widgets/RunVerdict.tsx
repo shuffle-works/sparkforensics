@@ -11,10 +11,9 @@ import {
   buildRunVerdict, quotedReasonText, recommendationText, stepCopyText, type NextStep,
 } from '@sparkforensics/core/run-verdict.ts';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
-import { useWidgetDensity } from '@/store/store';
+import { useStore, useWidgetDensity } from '@/store/store';
 import { REGISTRY } from '@/view/detector-registry';
 import { useOptionalDocs } from '@/view/DocsContext';
-import { docsHref } from '@/view/docs-href';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
@@ -194,7 +193,7 @@ const UNDERSTANDING_FINDINGS_URL = 'docs/user-guide/understanding-findings.html'
 function NewcomerPrimer() {
   const [open, setOpen] = useState(false);
   const docs = useOptionalDocs();
-  const guideHref = docsHref(UNDERSTANDING_FINDINGS_URL);
+  const exportMode = useStore((s) => s.exportMode);
   return (
     <div className="text-sm">
       <button
@@ -230,9 +229,10 @@ function NewcomerPrimer() {
             cuts cost, but may not shorten the run. Red (critical), amber (warning) and blue (info) show how
             serious each finding is. When a finding shows a time-savings figure, its color usually follows that figure.
           </p>
-          {guideHref ? (
+          {/* An exported dashboard carries no docs, so it drops the pointer to them. */}
+          {!exportMode ? (
             <a
-              href={guideHref}
+              href={UNDERSTANDING_FINDINGS_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-block text-primary underline-offset-4 hover:underline"
@@ -246,9 +246,7 @@ function NewcomerPrimer() {
             >
               What every finding means
             </a>
-          ) : (
-            <span className="inline-block">What every finding means</span>
-          )}
+          ) : null}
         </div>
       ) : null}
     </div>

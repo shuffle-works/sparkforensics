@@ -8,10 +8,9 @@ import { cn } from '@/lib/utils';
 import type { ImpactBand } from '@sparkforensics/core/types.ts';
 import { typeTag } from '@sparkforensics/core/format-utils.ts';
 import { useOptionalDocs } from '@/view/DocsContext';
-import { docsHref } from '@/view/docs-href';
 import { docAnchorForType, TAG_HELP } from '@/view/finding-tag-help';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
-import { useWidgetDensity } from '@/store/store';
+import { useStore, useWidgetDensity } from '@/store/store';
 
 /** Single source of truth for the impact-band → Tailwind color-token
  * association. Widgets that flag their own instrumentation (borders, text,
@@ -136,6 +135,9 @@ export interface TagBadgeProps {
 export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }: TagBadgeProps) {
   const docs = useOptionalDocs();
   const density = useWidgetDensity();
+  // An exported dashboard carries no docs: its tags keep their tooltip but
+  // link nowhere.
+  const exportMode = useStore((s) => s.exportMode);
   const tag = typeTag(type);
   const help = TAG_HELP[tag];
   const title = plainBadge ? undefined : (help ? `${help.expansion}: ${help.description}` : undefined);
@@ -144,17 +146,16 @@ export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }:
     : (docAnchor && isKnownDocAnchor(docAnchor) ? docAnchor : docAnchorForType(type));
   const guideLabel = help?.expansion ?? tag;
   const guidePath = findingGuideUrl(type);
-  const guideHref = docsHref(guidePath);
   // Every type has a real, CI-enforced entry in the SparkForensics guide
   // (docs-site-tag-coverage.test.js), even one like incompleteRun with no
   // matching vendor-doc anchor (no upstream Spark section covers it). So the
   // pill still gets a real link for those types: the guide, not the vendor
   // doc, instead of rendering as plain, inert text unlike every sibling tag.
-  const pillHref = anchor ? docsHref(docsUrl(anchor)) : (plainBadge ? undefined : guideHref);
+  const pillHref = exportMode ? undefined : anchor ? docsUrl(anchor) : (plainBadge ? undefined : guidePath);
   // The separate small guide-icon link (below) only adds value when the pill
   // itself points elsewhere (the vendor doc); when there's no vendor anchor
   // the pill already *is* the guide link, so skip the redundant second one.
-  const showGuideLink = !plainBadge && density === 'advanced' && Boolean(anchor) && Boolean(guideHref);
+  const showGuideLink = !plainBadge && !exportMode && density === 'advanced' && Boolean(anchor);
 
   const label = (
     <Badge
@@ -197,7 +198,7 @@ export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }:
       {showGuideLink ? (
         <AdvancedOnly>
           <a
-            href={guideHref}
+            href={guidePath}
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`SparkForensics guide: ${guideLabel}`}

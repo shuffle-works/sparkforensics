@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+// A non-default page address, so the tests can check that none of it reaches the file.
 // @vitest-environment-options {"url": "http://someone:hunter2@10.1.2.3:8080/app/"}
 import { test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -8,7 +9,6 @@ import { store, emptyAppModel } from '@/store/store';
 import { EvidenceExport } from '@/view/EvidenceExport';
 import { decodeRunPayload } from '@/export/hydrate-store';
 import { EXPORT_TEMPLATE_FILE } from '@/export/single-file';
-import { docsBasesFor } from '@/view/docs-href';
 import * as reportBuilder from '@sparkforensics/core/evidence-report.ts';
 import { buildHtmlExportData } from '@sparkforensics/core/html-export.ts';
 
@@ -134,12 +134,8 @@ test('download HTML fetches the template on demand and inlines the run as one fi
   expect(lastDownloadName).toBe('evidence-application_123.html');
   expect(lastBlob?.type).toBe('text/html');
   expect(html).not.toContain('src="./data.js"');
-  // Docs links open the docs of the page it was downloaded from.
-  const bases = html.match(/__SPARKFORENSICS_DOCS_BASES__ = (\{.*?\});/)?.[1];
-  expect(JSON.parse(bases ?? 'null')).toEqual(docsBasesFor(window.location.href));
-  expect(bases).toContain('http://10.1.2.3:8080/app/docs/');
-  // The page URL's credentials stay out of the file.
-  expect(html).not.toContain('someone');
+  // The file carries no docs links, so nothing of the page's address.
+  expect(html).not.toContain('10.1.2.3');
   expect(html).not.toContain('hunter2');
   expect(html).toContain('<script type="module">/* app */</script>');
 });
@@ -164,17 +160,6 @@ test('the redact toggle reaches the HTML export: pseudonymized payload and filen
   expect(lastDownloadName).toBe('evidence-app-1-redacted.html');
   expect(html).not.toContain('application_123');
   expect(payloadOf(html).app?.id).toBe('app-1');
-});
-
-test('a redacted HTML download names neither the deployment nor its credentials', async () => {
-  seedRun();
-  stubTemplateFetch();
-  const html = await downloadHtml({ redact: true });
-
-  expect(html).not.toContain('__SPARKFORENSICS_DOCS_BASES__');
-  expect(html).not.toContain('10.1.2.3');
-  expect(html).not.toContain('someone');
-  expect(html).not.toContain('hunter2');
 });
 
 test('a missing template surfaces an error instead of downloading a broken file', async () => {

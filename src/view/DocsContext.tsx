@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
+import { useStore } from '@/store/store';
 import { docsUrl, isKnownDocAnchor } from '@sparkforensics/core/docs-config.ts';
-import { docsHref } from '@/view/docs-href';
 
 const DEFAULT_ANCHOR = '#intro';
 
@@ -70,18 +70,19 @@ export interface DocsLinkProps {
 }
 
 /** Inline docs deep-link: clicking opens the DocsSheet at `anchor` instead of
- * navigating. */
+ * navigating. An exported dashboard carries no docs, so there it is the plain
+ * link text. */
 export function DocsLink({ anchor, children }: DocsLinkProps) {
   const { open } = useDocs();
+  const exportMode = useStore((s) => s.exportMode);
   // A "Learn more" affordance with no destination is worse than none: when the
   // target section does not exist in the tuning reference, render nothing
   // rather than a link that scrolls nowhere. See KNOWN_DOC_ANCHORS in docs-config.ts.
   if (!isKnownDocAnchor(anchor)) return null;
-  const href = docsHref(docsUrl(anchor));
-  if (!href) return <>{children}</>;
+  if (exportMode) return <>{children}</>;
   return (
     <a
-      href={href}
+      href={docsUrl(anchor)}
       className="text-primary underline-offset-4 hover:underline"
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;

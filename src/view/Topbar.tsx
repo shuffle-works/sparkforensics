@@ -21,7 +21,6 @@ import { KeyboardShortcutsDialog } from '@/view/KeyboardShortcutsDialog';
 import { WidgetDensityControl, WidgetDensityMenuItem } from '@/view/WidgetDensityControl';
 import { store, useStore } from '@/store/store';
 import { useTheme } from '@/theme/ThemeProvider';
-import { docsHref } from '@/view/docs-href';
 import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import { stageIdsForSqlExec } from '@sparkforensics/core/detectors.ts';
 import { cn } from '@/lib/utils';
@@ -138,7 +137,6 @@ export function Topbar({
   // run to be snapshotted as Run A.
   const showCompare = onCompare != null && !sectionControls && !exportMode && activeFileId != null && app != null && !comparison.baselineId;
   const evidence = useEvidenceExport();
-  const docsRootHref = docsHref(DOCS_SITE_ROOT);
   const appModel = useStore((s) => s.appModel);
   const graphEntries = useMemo(() => eligibleGraphExecutions(appModel, catalog), [appModel, catalog]);
   const [graphPickerOpen, setGraphPickerOpen] = useState(false);
@@ -308,7 +306,8 @@ export function Topbar({
             </Button>
           ) : null}
           {!sectionControls ? <WidgetDensityControl /> : null}
-          {docsRootHref ? (
+          {/* An exported dashboard carries no docs to link to. */}
+          {!exportMode ? (
             <Button
               variant="ghost"
               size="icon"
@@ -316,7 +315,7 @@ export function Topbar({
               aria-label="Docs"
               title="Read the docs"
               nativeButton={false}
-              render={<a href={docsRootHref} target="_blank" rel="noopener noreferrer" />}
+              render={<a href={DOCS_SITE_ROOT} target="_blank" rel="noopener noreferrer" />}
             >
               <FileText aria-hidden="true" />
             </Button>
@@ -381,10 +380,10 @@ export function Topbar({
               </DropdownMenuItem>
             ) : null}
             {!sectionControls ? <WidgetDensityMenuItem /> : null}
-            {docsRootHref ? (
+            {!exportMode ? (
               <DropdownMenuItem
                 nativeButton={false}
-                render={<a href={docsRootHref} target="_blank" rel="noopener noreferrer" />}
+                render={<a href={DOCS_SITE_ROOT} target="_blank" rel="noopener noreferrer" />}
               >
                 Docs
               </DropdownMenuItem>
