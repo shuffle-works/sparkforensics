@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { EXPORT_TEMPLATE_FILE } from './src/export/template-asset';
 import { exportAnalysisGuard } from './scripts/export-analysis-guard.mjs';
@@ -56,9 +56,12 @@ function renameExportEntry(templateOnly: boolean) {
   return {
     name: 'rename-export-entry',
     apply: 'build' as const,
-    closeBundle() {
+    closeBundle(error?: Error) {
       const outDir = path.resolve(__dirname, templateOnly ? TEMPLATE_OUT_DIR : 'dist-export');
       const exportHtmlPath = path.join(outDir, 'index.export.html');
+      // A failed build (the export analysis guard, for one) writes no HTML: leave its own error as
+      // the one the terminal shows instead of a file-not-found from here.
+      if (error || !existsSync(exportHtmlPath)) return;
       const html = stripCrossorigin(readFileSync(exportHtmlPath, 'utf8'));
       if (templateOnly) {
         mkdirSync(path.resolve(__dirname, 'dist'), { recursive: true });
