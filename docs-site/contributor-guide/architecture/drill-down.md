@@ -283,8 +283,8 @@ built from the tuning reference under `packages/core/src/docs-content/`
 and outside-click/Escape dismissal. Key events inside the iframe never reach
 the app's document, so `DocsSheet`'s `listenForEscapeInFrame` also listens in
 a same-origin frame's own document and closes on Escape unless the docs'
-search popup is open (a cross-origin `file://` frame keeps only the close
-button). There is a single `DocsTarget` shape
+search popup is open (a cross-origin frame keeps only the close button).
+Exported dashboards have no docs, so they never open this panel. There is a single `DocsTarget` shape
 (`{ kind: 'site', path }`): no vendor HTML and no `'vendor'` target kind, so
 `DocsSheet` always drives the iframe the same way, reassigning `src` on any
 path or theme change.
