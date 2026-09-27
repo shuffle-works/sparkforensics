@@ -138,6 +138,7 @@ export function Topbar({
   // run to be snapshotted as Run A.
   const showCompare = onCompare != null && !sectionControls && !exportMode && activeFileId != null && app != null && !comparison.baselineId;
   const evidence = useEvidenceExport();
+  const docsRootHref = docsHref(DOCS_SITE_ROOT);
   const appModel = useStore((s) => s.appModel);
   const graphEntries = useMemo(() => eligibleGraphExecutions(appModel, catalog), [appModel, catalog]);
   const [graphPickerOpen, setGraphPickerOpen] = useState(false);
@@ -307,17 +308,19 @@ export function Topbar({
             </Button>
           ) : null}
           {!sectionControls ? <WidgetDensityControl /> : null}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="tap-target-comfortable"
-            aria-label="Docs"
-            title="Read the docs"
-            nativeButton={false}
-            render={<a href={docsHref(DOCS_SITE_ROOT)} target="_blank" rel="noopener noreferrer" />}
-          >
-            <FileText aria-hidden="true" />
-          </Button>
+          {docsRootHref ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="tap-target-comfortable"
+              aria-label="Docs"
+              title="Read the docs"
+              nativeButton={false}
+              render={<a href={docsRootHref} target="_blank" rel="noopener noreferrer" />}
+            >
+              <FileText aria-hidden="true" />
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="icon"
@@ -378,12 +381,14 @@ export function Topbar({
               </DropdownMenuItem>
             ) : null}
             {!sectionControls ? <WidgetDensityMenuItem /> : null}
-            <DropdownMenuItem
-              nativeButton={false}
-              render={<a href={docsHref(DOCS_SITE_ROOT)} target="_blank" rel="noopener noreferrer" />}
-            >
-              Docs
-            </DropdownMenuItem>
+            {docsRootHref ? (
+              <DropdownMenuItem
+                nativeButton={false}
+                render={<a href={docsRootHref} target="_blank" rel="noopener noreferrer" />}
+              >
+                Docs
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onClick={() => setShortcutsOpen(true)}>Keyboard shortcuts</DropdownMenuItem>
             <DropdownMenuItem onClick={toggle}>Toggle theme</DropdownMenuItem>
           </DropdownMenuContent>

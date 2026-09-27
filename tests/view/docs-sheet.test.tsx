@@ -292,6 +292,7 @@ describe('carried docs bases (single-file HTML export)', () => {
     // A deployment that serves the tuning reference elsewhere hands that on:
     // what matters is how this build's own relative paths resolve there.
     expect(docsBasesFor('http://localhost:4173/').site).toBe('http://localhost:4173/docs/');
+    expect(docsBasesFor('http://someone:hunter2@10.1.2.3:8080/').site).toBe('http://10.1.2.3:8080/docs/');
   });
 
   it('maps the tuning reference and the guide onto the carried bases, and only when set', () => {
@@ -320,6 +321,21 @@ describe('carried docs bases (single-file HTML export)', () => {
       expect(document.querySelector('iframe')?.getAttribute('src')).toBe(
         `${SITE}user-guide/understanding-findings.html?t=dark#skew`,
       );
+    } finally {
+      setDocsBases(null);
+      store.getState().setWidgetDensity('basic');
+    }
+  });
+
+  it('renders docs references as plain text when the file carries no docs', () => {
+    setDocsBases('none');
+    store.getState().setWidgetDensity('advanced');
+    try {
+      expect(docsHref('docs/')).toBeUndefined();
+      renderLegendAndSheet([{ type: 'skew', impactBand: 'warning' }, { type: 'jobFailureRate', impactBand: 'warning' }]);
+      expect(screen.getByText('SKEW')).toBeInTheDocument();
+      expect(screen.getByText('JOBS')).toBeInTheDocument();
+      expect(screen.queryAllByRole('link')).toHaveLength(0);
     } finally {
       setDocsBases(null);
       store.getState().setWidgetDensity('basic');

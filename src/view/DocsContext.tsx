@@ -77,9 +77,11 @@ export function DocsLink({ anchor, children }: DocsLinkProps) {
   // target section does not exist in the tuning reference, render nothing
   // rather than a link that scrolls nowhere. See KNOWN_DOC_ANCHORS in docs-config.ts.
   if (!isKnownDocAnchor(anchor)) return null;
+  const href = docsHref(docsUrl(anchor));
+  if (!href) return <>{children}</>;
   return (
     <a
-      href={docsHref(docsUrl(anchor))}
+      href={href}
       className="text-primary underline-offset-4 hover:underline"
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;

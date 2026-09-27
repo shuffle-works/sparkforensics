@@ -68,8 +68,10 @@ export function useEvidenceExport() {
   const downloadHtml = async () => {
     try {
       const data = buildHtmlExportData(appModel, catalog, skippedLines, { redact });
-      // The file's docs links open this deployment's docs, wherever it serves them.
-      const html = inlineRunPayload(await fetchExportTemplate(), encodeRunPayload(data), docsBasesFor(window.location.href));
+      // The file's docs links open this deployment's docs, wherever it serves
+      // them; a redacted file must not name the deployment, so it has none.
+      const docsBases = redact ? null : docsBasesFor(window.location.href);
+      const html = inlineRunPayload(await fetchExportTemplate(), encodeRunPayload(data), docsBases);
       triggerDownload(html, reportFilename(data.app?.id ?? null, 'html', redact), 'text/html');
     } catch (error) {
       console.error('HTML export failed', error);

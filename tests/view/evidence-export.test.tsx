@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+// @vitest-environment-options {"url": "http://someone:hunter2@10.1.2.3:8080/app/"}
 import { test, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -136,6 +137,10 @@ test('download HTML fetches the template on demand and inlines the run as one fi
   // Docs links open the docs of the page it was downloaded from.
   const bases = html.match(/__SPARKFORENSICS_DOCS_BASES__ = (\{.*?\});/)?.[1];
   expect(JSON.parse(bases ?? 'null')).toEqual(docsBasesFor(window.location.href));
+  expect(bases).toContain('http://10.1.2.3:8080/app/docs/');
+  // The page URL's credentials stay out of the file.
+  expect(html).not.toContain('someone');
+  expect(html).not.toContain('hunter2');
   expect(html).toContain('<script type="module">/* app */</script>');
 });
 
@@ -159,6 +164,17 @@ test('the redact toggle reaches the HTML export: pseudonymized payload and filen
   expect(lastDownloadName).toBe('evidence-app-1-redacted.html');
   expect(html).not.toContain('application_123');
   expect(payloadOf(html).app?.id).toBe('app-1');
+});
+
+test('a redacted HTML download names neither the deployment nor its credentials', async () => {
+  seedRun();
+  stubTemplateFetch();
+  const html = await downloadHtml({ redact: true });
+
+  expect(html).not.toContain('__SPARKFORENSICS_DOCS_BASES__');
+  expect(html).not.toContain('10.1.2.3');
+  expect(html).not.toContain('someone');
+  expect(html).not.toContain('hunter2');
 });
 
 test('a missing template surfaces an error instead of downloading a broken file', async () => {

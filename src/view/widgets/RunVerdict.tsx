@@ -194,6 +194,7 @@ const UNDERSTANDING_FINDINGS_URL = 'docs/user-guide/understanding-findings.html'
 function NewcomerPrimer() {
   const [open, setOpen] = useState(false);
   const docs = useOptionalDocs();
+  const guideHref = docsHref(UNDERSTANDING_FINDINGS_URL);
   return (
     <div className="text-sm">
       <button
@@ -229,21 +230,25 @@ function NewcomerPrimer() {
             cuts cost, but may not shorten the run. Red (critical), amber (warning) and blue (info) show how
             serious each finding is. When a finding shows a time-savings figure, its color usually follows that figure.
           </p>
-          <a
-            href={docsHref(UNDERSTANDING_FINDINGS_URL)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-primary underline-offset-4 hover:underline"
-            onClick={(event) => {
-              // Same passthrough as every other in-app docs link: a modified or
-              // non-primary click keeps the browser's own new-tab behavior.
-              if (!docs || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-              event.preventDefault();
-              docs.openSite(UNDERSTANDING_FINDINGS_URL);
-            }}
-          >
-            What every finding means
-          </a>
+          {guideHref ? (
+            <a
+              href={guideHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-primary underline-offset-4 hover:underline"
+              onClick={(event) => {
+                // Same passthrough as every other in-app docs link: a modified or
+                // non-primary click keeps the browser's own new-tab behavior.
+                if (!docs || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                docs.openSite(UNDERSTANDING_FINDINGS_URL);
+              }}
+            >
+              What every finding means
+            </a>
+          ) : (
+            <span className="inline-block">What every finding means</span>
+          )}
         </div>
       ) : null}
     </div>

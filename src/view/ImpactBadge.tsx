@@ -144,16 +144,17 @@ export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }:
     : (docAnchor && isKnownDocAnchor(docAnchor) ? docAnchor : docAnchorForType(type));
   const guideLabel = help?.expansion ?? tag;
   const guidePath = findingGuideUrl(type);
+  const guideHref = docsHref(guidePath);
   // Every type has a real, CI-enforced entry in the SparkForensics guide
   // (docs-site-tag-coverage.test.js), even one like incompleteRun with no
   // matching vendor-doc anchor (no upstream Spark section covers it). So the
   // pill still gets a real link for those types: the guide, not the vendor
   // doc, instead of rendering as plain, inert text unlike every sibling tag.
-  const pillHref = anchor ? docsHref(docsUrl(anchor)) : (plainBadge ? undefined : docsHref(guidePath));
+  const pillHref = anchor ? docsHref(docsUrl(anchor)) : (plainBadge ? undefined : guideHref);
   // The separate small guide-icon link (below) only adds value when the pill
   // itself points elsewhere (the vendor doc); when there's no vendor anchor
   // the pill already *is* the guide link, so skip the redundant second one.
-  const showGuideLink = !plainBadge && density === 'advanced' && Boolean(anchor);
+  const showGuideLink = !plainBadge && density === 'advanced' && Boolean(anchor) && Boolean(guideHref);
 
   const label = (
     <Badge
@@ -196,7 +197,7 @@ export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }:
       {showGuideLink ? (
         <AdvancedOnly>
           <a
-            href={docsHref(guidePath)}
+            href={guideHref}
             target="_blank"
             rel="noopener noreferrer"
             aria-label={`SparkForensics guide: ${guideLabel}`}

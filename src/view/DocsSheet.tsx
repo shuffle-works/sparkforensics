@@ -131,9 +131,10 @@ export function DocsSheet() {
 
     const path = target.path;
     const loaded = currentTargetRef.current;
-    if (loaded && loaded.path === path && loaded.theme === theme) return;
+    const href = docsHref(path);
+    if (!href || (loaded && loaded.path === path && loaded.theme === theme)) return;
     currentTargetRef.current = { kind: 'site', path, theme };
-    setLoadedSrc(siteFrameSrc(docsHref(path), theme));
+    setLoadedSrc(siteFrameSrc(href, theme));
   }, [isOpen, target, theme]);
 
   // Same panel, same chrome, either way; only the title admits which doc
