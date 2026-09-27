@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { store, emptyAppModel } from '@/store/store';
 import { Topbar } from '@/view/Topbar';
+import { testFinding } from './_shared/finding';
 
 // DocsSheet resizes via react-resizable-panels, which constructs a
 // ResizeObserver on mount; jsdom has none (see docs-sheet.test.tsx).
@@ -404,8 +405,11 @@ test('the picker impactBand and total count aggregate all findings across linked
   store.setState({
     appModel,
     catalog: [
-      { type: 'gc', stageId: 7, impactBand: 'warning' },
-      { type: 'smallFiles', stageId: null, stageIds: [8], impactBand: 'critical' },
+      testFinding({ type: 'gc', stageId: 7, impactBand: 'warning' }),
+      testFinding({
+        type: 'smallFiles', stageId: null, stageIds: [8], impactBand: 'critical',
+        executionId: 1, planNodeIds: [], fileCount: 1, direction: 'read', nodeName: 'Scan',
+      }),
     ],
   });
 

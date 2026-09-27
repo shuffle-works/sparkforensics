@@ -6,6 +6,7 @@ import App from '@/App';
 import { store, emptyAppModel } from '@/store/store';
 import { captureSnapshot } from '@sparkforensics/core/session-snapshot.ts';
 import { clearPlanGraphModelCache } from '@/view/PlanGraphRoute';
+import { testFinding } from './_shared/finding';
 
 // PlanGraphCanvas (React Flow) needs a ResizeObserver on mount; jsdom has none.
 // Keep the stub file-scoped: a global one makes Recharts render 0×0 by dropping
@@ -220,7 +221,7 @@ test('renders the graph canvas with the plan node once opened', () => {
 // renders instead of Dashboard) must open the app-level DocsSheet both routes share.
 test('clicking a finding badge in the plan graph opens the reference panel', () => {
   const appModel = planTreePlanModel(7);
-  const finding = { type: 'skew', stageId: 7, impactBand: 'critical' as const, recommendation: 'Rebalance partitions' };
+  const finding = testFinding({ type: 'skew', stageId: 7, impactBand: 'critical' as const, recommendation: 'Rebalance partitions' });
   store.setState({ appModel, catalog: [finding] });
   store.getState().openPlanGraph(7);
 
@@ -235,10 +236,10 @@ test('clicking a finding badge in the plan graph opens the reference panel', () 
 
 test('a finding that only carries stageIds (not stageId) still reaches the plan graph', () => {
   const appModel = planTreePlanModel(7);
-  const finding = {
+  const finding = testFinding({
     type: 'smallFiles', stageId: null, stageIds: [7], impactBand: 'warning' as const,
     recommendation: 'Compact the upstream output',
-  };
+  });
   store.setState({ appModel, catalog: [finding] });
   store.getState().openPlanGraph(7);
 
@@ -460,7 +461,7 @@ test('an automatic segment-lookup-failure fallback that stays under the threshol
 
 test('an automatic under-threshold fallback keeps focal-stage findings reachable even when no segment maps to that stage', () => {
   const appModel = competingStageAppModel(10);
-  const finding = { type: 'skew', stageId: 7, impactBand: 'critical' as const, recommendation: 'Rebalance partitions' };
+  const finding = testFinding({ type: 'skew', stageId: 7, impactBand: 'critical' as const, recommendation: 'Rebalance partitions' });
   store.setState({ appModel, catalog: [finding] });
   store.getState().openPlanGraph(7);
 
@@ -510,8 +511,8 @@ test('selecting a stage from the full graph shows only that stage\'s findings', 
   store.setState({
     appModel,
     catalog: [
-      { type: 'skew', stageId: 7, impactBand: 'critical' as const, recommendation: 'Rebalance partitions' },
-      { type: 'shuffle', stageId: null, stageIds: [8], impactBand: 'warning' as const, recommendation: 'Reduce shuffle output' },
+      testFinding({ type: 'skew', stageId: 7, impactBand: 'critical' as const, recommendation: 'Rebalance partitions' }),
+      testFinding({ type: 'shuffle', stageId: 8, impactBand: 'warning' as const, recommendation: 'Reduce shuffle output' }),
     ],
   });
   store.getState().openPlanGraph(7, { initialScope: 'full' });

@@ -7,7 +7,7 @@ import type { DetectorType, Finding, FindingType } from './types.ts';
 // underBroadcast/overBroadcast). Kept as a dead key so the DETECTORS-type completeness check finds it.
 //
 // `satisfies` makes the compiler require exactly one entry per finding and detector type; the
-// declared type stays string-indexed because Finding.type is still a plain string.
+// declared type stays string-indexed for lookups by a type read from report JSON or a filter.
 export const FINDING_NAMES: Readonly<Record<string, string>> = {
   incompleteRun: 'incomplete run',
 

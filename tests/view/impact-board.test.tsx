@@ -8,6 +8,7 @@ import { emptyAppModel, store } from '../../src/store/store';
 import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
 import type { TriageTarget } from '../../src/view/triage-target';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
 function readyAppModel() {
   return {
@@ -23,7 +24,7 @@ function skewFinding(stageId: number, impactBand: Finding['impactBand']): Findin
   return { type: 'skew', stageId, impactBand, metric: 'p95Median', value: 5, recommendation: `Rebalance Stage ${stageId}.` } as Finding;
 }
 function gcFinding(stageId: number, impactBand: Finding['impactBand']): Finding {
-  return { type: 'gc', stageId, impactBand, direction: 'high', value: 15, recommendation: `Investigate GC in Stage ${stageId}.` } as Finding;
+  return testFinding({ type: 'gc', stageId, impactBand, value: 15, recommendation: `Investigate GC in Stage ${stageId}.` });
 }
 // shuffle and partitionSizing share the ShuffleIO widget, the pairing this guards against.
 function shuffleFinding(stageId: number, impactBand: Finding['impactBand']): Finding {

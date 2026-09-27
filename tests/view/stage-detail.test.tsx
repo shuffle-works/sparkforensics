@@ -10,6 +10,7 @@ import { DocsProvider } from '@/view/DocsContext';
 import { emptyAppModel, store } from '@/store/store';
 import type { AppModel, Finding, PlanNode, TaskData } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
 function makeStage(overrides: Record<string, unknown> = {}) {
   return {
@@ -338,10 +339,11 @@ describe('StageDetailDialog', () => {
     // stageFailed/failures resolve to basis: 'informational' (src/impact-estimator.ts):
     // no extended text either, so there is nothing beyond the recommendation to show.
     const catalog: Finding[] = [
-      {
+      testFinding({
         type: 'stageFailed', stageId: 1, impactBand: 'critical', recommendation: 'Inspect the driver log.',
         impactEstimate: { basis: 'informational', wallClock: null, estimateMethod: 'none' },
-      },
+        valueText: '', variant: 'stageFailure', numTasks: 1, memoryBytesSpilled: 0, failedTaskDetails: [],
+      }),
     ];
     renderHarness(makeAppModel(), vi.fn(async () => TASK_DATA), catalog);
 
@@ -445,7 +447,7 @@ describe('StageDetailDialog reads like a verdict step', () => {
 
   it('puts a stage failure first on a run whose job failed at that stage, as the verdict does', async () => {
     const user = userEvent.setup();
-    const stageFailed = { type: 'stageFailed', stageId: 1, impactBand: 'warning', recommendation: 'Inspect the failure.', value: 'boom' } as Finding;
+    const stageFailed = testFinding({ type: 'stageFailed', stageId: 1, impactBand: 'warning', recommendation: 'Inspect the failure.', valueText: 'boom', variant: 'stageFailure', numTasks: 1, memoryBytesSpilled: 0, failedTaskDetails: [] });
     const failedRun = {
       ...withRun(),
       jobs: new Map([[0, { id: 0, stageIds: [1], result: 'JobFailed', succeeded: false }]]),

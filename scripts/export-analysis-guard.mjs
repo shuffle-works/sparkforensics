@@ -14,7 +14,7 @@ export const ALLOWED_EXPORT_CORE_MODULES = [
   ...[
     'core-count', 'docs-config', 'docs-site-config', 'evidence-availability', 'export-data',
     'finding-action-label', 'finding-filter-predicate', 'finding-generic-recommendation', 'finding-names',
-    'finding-tag-help', 'format-utils', 'intervals', 'plan-dot', 'plan-duration-attribution',
+    'finding-tag-help', 'findings-of-type', 'format-utils', 'intervals', 'plan-dot', 'plan-duration-attribution',
     'plan-graph-model', 'plan-node-detail', 'plan-summary', 'plan-tree-walk', 'recommendation-rollup',
     'run-payload', 'scaling-sim', 'session-snapshot', 'sql-stages', 'task-failure',
   ].map((name) => `packages/core/src/${name}.ts`),

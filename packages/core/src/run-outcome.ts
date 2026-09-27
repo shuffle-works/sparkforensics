@@ -1,4 +1,4 @@
-import type { Finding, Job } from './types.ts';
+import type { Finding, FindingOf, Job } from './types.ts';
 
 /** Finding types that mean work did not finish: a stage attempt that failed
  * outright, and jobs that ended without succeeding. Failed tasks that a retry
@@ -44,11 +44,11 @@ export function summarizeRunOutcome(jobs: Map<number, Job>, findings: Finding[])
   const failed = ended.filter((job) => job.succeeded === false).sort((a, b) => a.id - b.id);
   const failedStageIds = new Set(failed.flatMap((job) => job.stageIds));
   const stageReasons = findings
-    .filter((finding) => finding.type === 'stageFailed' && typeof finding.value === 'string')
+    .filter((finding): finding is FindingOf<'stageFailed'> => finding.type === 'stageFailed')
     .sort((a, b) => Number(failedStageIds.has(b.stageId as number)) - Number(failedStageIds.has(a.stageId as number)));
   const stageSource = stageReasons[0];
   const rawReason =
-    (stageSource?.value as string | undefined)
+    stageSource?.valueText
     ?? failed.map((job) => exceptionText(job.exception)).find((text) => text != null)
     ?? null;
   return {
@@ -66,7 +66,7 @@ export function summarizeRunOutcome(jobs: Map<number, Job>, findings: Finding[])
  * verdict does not show. */
 export function quotesReasonOf(finding: Finding, outcome: RunOutcome): boolean {
   if (outcome.reason == null) return false;
-  if (finding.type === 'stageFailed') return typeof finding.value === 'string' && firstLine(finding.value) === outcome.reason;
+  if (finding.type === 'stageFailed') return firstLine(finding.valueText) === outcome.reason;
   if (finding.type === 'jobFailureRate') {
     return outcome.failedJobs === 1 && (outcome.reasonStageId == null || outcome.failedJobStageIds.has(outcome.reasonStageId));
   }

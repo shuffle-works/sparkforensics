@@ -9,6 +9,7 @@ import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort } from './types.ts';
+import type { SlowHostFinding, TaskAttemptSample } from './finding-types.ts';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -28,16 +29,7 @@ interface DetectorExecutorStat {
 }
 interface DetectorFailureReason { reason: string; count: number; }
 interface DetectorLocalityStat { locality: string; count: number; }
-interface DetectorFailedTaskSample {
-  taskId: number | null;
-  attemptNumber: number;
-  host: string;
-  executorId: string;
-  reason: string | null;
-  peakExecMem: number;
-  memSpilled: number;
-  shuffleWrite: number;
-}
+type DetectorFailedTaskSample = TaskAttemptSample;
 // Per-executor snapshot from a StageExecutorMetrics event: a loose bag of Spark's
 // ExecutorMetrics field names, only a few of which any detector reads.
 interface DetectorExecutorMetricsSnapshot {
@@ -691,7 +683,7 @@ export interface Detector<TTarget = unknown> {
   type: string;
   // Every finding `type` this entry pushes. Usually just its own `type`; broadcastSizing's one
   // plan walk emits underBroadcast/overBroadcast and never its own name. FindingType derives from it.
-  emits: readonly string[];
+  emits: readonly Finding['type'][];
   scope: 'stage' | 'sql' | 'app' | 'config';
   order: number;
   fixEffort: FixEffort;
@@ -1145,7 +1137,7 @@ export const DETECTORS = [
       const impactBandFor = (r: number): 'critical' | 'warning' | 'info' | null =>
         r >= tiers[3] ? 'critical' : (r >= tiers[1] ? 'warning' : (r >= tiers[0] ? 'info' : null));
       const floorMs = this.thresholds.floorMs, floorBytes = this.thresholds.floorBytes;
-      const dims: { dimension: string; floor: number; samples: { key: string; value: number }[] }[] = [
+      const dims: { dimension: NonNullable<SlowHostFinding['dimension']>; floor: number; samples: { key: string; value: number }[] }[] = [
         { dimension: 'taskTime', floor: floorMs, samples: execs.filter(e => e.taskCount > 0).map(e => ({ key: e.executorId, value: e.totalDuration / e.taskCount })) },
         { dimension: 'inputBytes', floor: floorBytes, samples: execs.map(e => ({ key: e.executorId, value: e.inputBytes ?? 0 })) },
         { dimension: 'shuffleBytes', floor: floorBytes, samples: execs.map(e => ({ key: e.executorId, value: (e.shuffleReadBytes ?? 0) + (e.shuffleWriteBytes ?? 0) })) },
@@ -1219,7 +1211,7 @@ export const DETECTORS = [
       return {
         type: 'stageFailed', stageId: stage.id, impactBand: 'critical',
         variant: 'stageFailure',
-        metric: 'stageFailureReason', value: stage.stageFailureReason,
+        metric: 'stageFailureReason', valueText: stage.stageFailureReason,
         numTasks: stage.taskCount,
         memoryBytesSpilled: stage.memoryBytesSpilled,
         failedTaskDetails: stage.failedTaskSamples ?? [],
@@ -1426,7 +1418,7 @@ export const DETECTORS = [
       if (!ctx.app || ctx.app.startTime == null || ctx.app.endTime != null) return null;
       return {
         type: 'incompleteRun', stageId: null, impactBand: 'warning',
-        metric: 'applicationEnd', value: 'missing',
+        metric: 'applicationEnd', valueText: 'missing',
         recommendation: this.recommendation,
       };
     },
@@ -2006,7 +1998,7 @@ export const DETECTORS = [
       if (res?.dynamicAllocationEnabled === true && res?.shuffleServiceEnabled === false) {
         return {
           type: 'configAudit', property: 'spark.shuffle.service.enabled',
-          impactBand: 'warning', metric: 'config', value: 'false',
+          impactBand: 'warning', metric: 'config', valueText: 'false',
           recommendation: 'Dynamic allocation is on but the external shuffle service is off: set spark.shuffle.service.enabled=true so shuffle data survives executor removal.',
         };
       }
@@ -2025,14 +2017,14 @@ export const DETECTORS = [
       if (minN != null && maxN != null && minN > maxN) {
         return {
           type: 'configAudit', property: 'spark.dynamicAllocation.minExecutors',
-          impactBand: 'critical', metric: 'config', value: `${minN} > ${maxN}`,
+          impactBand: 'critical', metric: 'config', valueText: `${minN} > ${maxN}`,
           recommendation: `Autoscaling bounds are inverted: spark.dynamicAllocation.minExecutors (${minN}) exceeds maxExecutors (${maxN}). Set min ≤ max.`,
         };
       }
       if (maxN == null) {
         return {
           type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors',
-          impactBand: 'info', metric: 'config', value: '(unset)',
+          impactBand: 'info', metric: 'config', valueText: '(unset)',
           recommendation: 'Dynamic allocation is on with no upper bound: set spark.dynamicAllocation.maxExecutors to cap cluster growth.',
         };
       }
@@ -2051,7 +2043,7 @@ export const DETECTORS = [
       if (isKryo) return null;
       return {
         type: 'configAudit', property: 'spark.serializer',
-        impactBand: 'info', metric: 'config', value: ser ?? '(default JavaSerializer)',
+        impactBand: 'info', metric: 'config', valueText: ser ?? '(default JavaSerializer)',
         recommendation: `Current serializer is ${ser ?? 'the default JavaSerializer'}: consider spark.serializer=org.apache.spark.serializer.KryoSerializer for faster, smaller buffers.`,
       };
     },
@@ -2072,7 +2064,7 @@ export const DETECTORS = [
       if (ovMB >= floor) return null;
       return {
         type: 'configAudit', property: 'spark.executor.memoryOverhead',
-        impactBand: 'info', metric: 'config', value: `${ovMB} MiB`,
+        impactBand: 'info', metric: 'config', valueText: `${ovMB} MiB`,
         recommendation: `Executor memoryOverhead (${ovMB} MiB) is below Spark's default floor of ${floor} MiB (max of 384 MiB or 10% of executor memory): raise it to avoid off-heap OOM-kills.`,
       };
     },
@@ -2259,3 +2251,9 @@ export type DetectorType = (typeof DETECTORS)[number]['type'];
 
 /** Every finding `type` a detector can emit, from the entries' `emits` lists. */
 export type FindingType = (typeof DETECTORS)[number]['emits'][number];
+
+// `emits` already only names Finding members (Detector.emits); this makes the reverse hold too, so a
+// Finding member no detector emits, or a detector whose type has no Finding member, fails to compile.
+type SameUnion<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type AssertTrue<T extends true> = T;
+export type FindingTypesMatchDetectors = AssertTrue<SameUnion<FindingType, Finding['type']>>;

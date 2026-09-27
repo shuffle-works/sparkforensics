@@ -173,7 +173,7 @@ detectors over an `appModel` and serializes the result for sharing outside the
 tool. Raw task records are never included; identifier redaction (app id + host
 names → `app-1`/`host-1` pseudonyms via `packages/core/src/redact.ts`) is opt-in with
 `{ redact: true }`. The JSON is pinned by `EVIDENCE_SCHEMA_VERSION` (currently
-`4`, surfaced as `json.schemaVersion`) and has this fixed top-level key order:
+`5`, surfaced as `json.schemaVersion`) and has this fixed top-level key order:
 
 ```text
 schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, recommendations, cleanChecks, notRunChecks
@@ -205,7 +205,8 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, reco
   threshold set that produced each finding travels with the evidence.
 - `findings` are deterministically sorted rows (impact band → type → stage → id),
   each with a stable `id`, `tag`, core columns, an always-present `actionLabel`,
-  and an `evidence` sub-object for non-core fields; `confidence`/
+  and an `evidence` sub-object holding that finding type's declared evidence
+  fields (see the schema-5 update below); `confidence`/
   `validationRequired`/`docAnchor` appear only when the detector emitted them.
 - `recommendations` is the impact-ranked `buildRecommendationRollup` output
   (`packages/core/src/recommendation-rollup.ts`), and `cleanChecks` lists every detector type
@@ -222,7 +223,7 @@ string value under a key literally named `host` (`evidence.host`,
 and any future nested `host` field, all covered without enumerating paths),
 and by scanning every string value for EC2-style hostnames / bare IPv4
 tokens. So identifiers that surface only in free text (recommendation copy, a
-`stageFailed` failure-reason value) are pseudonymized too. Pseudonym numbering
+`stageFailed` failure reason in `valueText`) are pseudonymized too. Pseudonym numbering
 uses a numeric-aware sort, so re-redacting an already-redacted report is a
 no-op even past `host-10`.
 
@@ -311,6 +312,21 @@ the caveat's own recommendation (it names the setting to turn on) or the log-wid
 Markdown gains a `## Not checked on this log` section above `## Clean checks`, and a
 `Findings to act on` header line.
 
+Schema `5` update: `Finding` is a union discriminated on `type`, one member per emitted
+finding type (`packages/core/src/finding-types.ts`), and a finding row's `evidence` is an
+explicit per-type projection. Each type's `<Type>Evidence` interface names its public fields,
+and `EVIDENCE_KEYS` in `evidence-report.ts` lists the same keys, checked both ways at compile
+time. Before, `evidence` was every finding field outside a fixed core-column list, so a field a
+detector added only for another core module became report contract. Rows lose these fields:
+`stageShape`'s `totalCores`; `utilization`'s `utilizationFraction`, `appDurationMs` and
+`totalCores`; `memoryUtilization`'s `idleRateFraction`, `allocatedMB`, `peakExecutors`,
+`appDurationMs` and `allocatedBytes`; `retryWaste`'s `extended` display copy. The impact
+estimator still reads them on the finding. `value` is now always numeric or `null`: the
+text-valued findings (`stageFailed`'s failure reason, `configAudit`'s current setting,
+`incompleteRun`'s `missing`) carry their text in a `valueText` column, present only on those
+rows, and the Markdown prints it where `value` would go. Renaming or removing an evidence field
+is a breaking change and needs another bump.
+
 ### Finding identity
 
 Every finding `analyzer.ts` emits carries a stable `id` (`push()`'s
@@ -325,6 +341,12 @@ pointing at the same logical finding across detector revisions;
 `detectorVersion` is separate provenance metadata for "which ruleset
 produced this," not part of identity. See
 `packages/core/test/analyzer-finding-identity.test.js` for the decoupling proof.
+
+The discriminators are declared per finding type (`ID_DISCRIMINATORS` in
+`analyzer.ts`, each key checked against that type's fields) and joined in the
+fixed `DISCRIMINATOR_SLOTS` order, and the value slot takes `value`, else
+`valueText`. The schema-5 change kept that hash input byte-identical, so every
+finding keeps the id it had under schema 4.
 
 `id` stability holds for equivalent reruns of the same schema/analyzer
 version on the same input. Changing the id-derivation rule itself (the hash

@@ -1,3 +1,4 @@
+import type { Finding } from './finding-types.ts';
 export type { DetectorType, FindingType } from './detectors.ts';
 
 export type StageId = number;
@@ -289,48 +290,9 @@ export interface ImpactEstimate {
   rawWaste?: RawWasteFigure;
 }
 
-export interface Finding {
-  id?: string;
-  detectorVersion?: number;
-  type: string;
-  // Optional (not just nullable): detectors.ts's four `configAudit` entries
-  // (scope 'config') and its `duplicatePlanSubtree`/`smallFiles`/
-  // `broadcastSizing` entries (scope 'sql') never set a `stageId`: they key
-  // findings by `property` or `executionId`/`stageIds` instead. `auditConfig`
-  // backfills `null` for config-scope findings before posting, but sql-scope
-  // findings reach here with the key genuinely absent.
-  stageId?: StageId | null;
-  impactBand: ImpactBand;
-  metric?: string;
-  // Almost always a number (a ratio, byte count, percentage, etc.), but
-  // detectors.ts's `stageFailed` entry and its four `configAudit` entries
-  // deliberately put human-readable text here (a failure reason, an audited
-  // config's current value) instead of a magnitude: there is no separate
-  // "text value" field on this shared Finding shape, so those detectors reuse
-  // `value` for it.
-  value?: number | string;
-  recommendation?: string;
-  docAnchor?: string;
-  confidence?: string;
-  validationRequired?: string;
-  impactEstimate?: ImpactEstimate;
-  property?: string;
-  // cachingOpportunity (src/detectors.js)
-  relation?: string;
-  format?: string;
-  executionIds?: number[];
-  totalReadBytes?: number;
-  relations?: { relation: string; format: string }[];
-  operator?: 'join' | 'union';
-  // duplicatePlanSubtree/smallFiles/underBroadcast/overBroadcast (src/detectors.js)
-  stageIds?: number[];
-  // Plan-node origin of this finding, when known: the four Plan Advisor
-  // detectors (duplicatePlanSubtree/smallFiles/overBroadcast/underBroadcast)
-  // set this. An array, not a single id: duplicatePlanSubtree flags a whole
-  // subtree, and the broadcast detectors can involve more than one node.
-  planNodeIds?: string[];
-  [key: string]: unknown;
-}
+// `Finding` is a union discriminated on `type`, one member per emitted finding type: see
+// finding-types.ts for each detector's shape and which of its fields are public evidence.
+export type { Finding, FindingOf, FindingEvidenceMap } from './finding-types.ts';
 
 export interface TaskData { metrics: Float64Array | number[]; fieldNames: string[]; }
 

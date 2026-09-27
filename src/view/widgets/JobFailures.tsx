@@ -4,19 +4,13 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
+import type { FindingOf } from '@sparkforensics/core/types.ts';
 
 /** Single-row body for an active `jobFailureRate` finding. App-scoped (no
  * StagePill), always one row (no pagination). */
-function JobFailuresRow({ finding }: { finding: Finding }) {
-  // These fields are typed `unknown` by `Finding`'s index signature but are
-  // always numbers on a `jobFailureRate` finding.
-  const failedJobs = finding.failedJobs as number;
-  const totalJobs = finding.totalJobs as number;
-  const failedTasks = finding.failedTasks as number;
-  const totalTasks = finding.totalTasks as number;
-  const taskFailureRate = finding.taskFailureRate as number;
-  const { value, recommendation } = finding;
+function JobFailuresRow({ finding }: { finding: FindingOf<'jobFailureRate'> }) {
+  const { failedJobs, totalJobs, failedTasks, totalTasks, taskFailureRate, value, recommendation } = finding;
 
   return (
     <div className="flex flex-col gap-1 transition-colors">
@@ -39,13 +33,11 @@ function JobFailuresRow({ finding }: { finding: Finding }) {
  * catalog; otherwise `computeActiveWidgets` (`Alerts.tsx`) never mounts this
  * component and the type shows as a Clean Checks row instead. */
 export function JobFailures({ catalog, defaultCollapsed = true }: WidgetProps) {
-  const finding = catalog.find((f) => f.type === 'jobFailureRate');
+  const [finding] = findingsOfType(catalog, 'jobFailureRate');
 
   if (!finding) return null;
 
-  const { impactBand, value } = finding;
-  const failedJobs = finding.failedJobs as number;
-  const totalJobs = finding.totalJobs as number;
+  const { impactBand, value, failedJobs, totalJobs } = finding;
 
   return (
     <WidgetCard

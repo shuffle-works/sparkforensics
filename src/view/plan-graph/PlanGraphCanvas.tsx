@@ -11,6 +11,7 @@ import { PlanGraphSegmentGroupNode } from './PlanGraphSegmentGroupNode';
 import { PlanGraphStageGroupNode } from './PlanGraphStageGroupNode';
 import { PlanGraphExchangeEdge } from './PlanGraphExchangeEdge';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
+import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { byImpactDesc } from '@/view/impact-sort';
 import type { Finding, PlanGraphDurationMode, PlanGraphEdge, PlanGraphFilterMode, PlanGraphModel, PlanGraphNodeData, StageId } from '@sparkforensics/core/types.ts';
@@ -118,7 +119,7 @@ function useResizeTick() {
 }
 
 function findingsForStage(findings: Finding[], stageId: StageId): Finding[] {
-  return findings.filter((finding) => finding.stageId === stageId || finding.stageIds?.includes(stageId));
+  return findings.filter((finding) => finding.stageId === stageId || findingStageIds(finding)?.includes(stageId));
 }
 
 export function PlanGraphCanvas({

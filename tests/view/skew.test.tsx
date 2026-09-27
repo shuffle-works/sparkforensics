@@ -13,6 +13,7 @@ import { store } from '@/store/store';
 import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order-toggle';
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
 function makeStage(id: number, overrides: Record<string, unknown> = {}) {
   return {
@@ -67,15 +68,17 @@ function stragglerFinding(
   speculativeTasks = 0,
   impactBand: Finding['impactBand'] = 'warning',
 ): Finding {
-  return {
+  return testFinding({
     type: 'straggler',
     stageId,
     impactBand,
     metric: speculativeTasks > 0 ? 'speculativeTasks' : 'stragglerShare',
     value,
+    unit: speculativeTasks > 0 ? 'count' : 'pct',
     speculativeTasks,
+    stragglerCount: speculativeTasks > 0 ? 0 : Math.round(value),
     recommendation: 'r',
-  };
+  });
 }
 
 const FIELD_NAMES = ['duration', 'gcTime'];

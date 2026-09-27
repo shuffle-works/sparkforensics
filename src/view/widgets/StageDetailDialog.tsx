@@ -111,7 +111,7 @@ function groupFindingsByType(
     }
     if (f.recommendation && !g.recs.has(f.recommendation)) {
       g.recs.set(f.recommendation, {
-        extended: (f.extended as string | undefined) ?? null,
+        extended: f.type === 'retryWaste' ? f.extended ?? null : null,
       });
     }
   }

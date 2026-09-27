@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { ReactFlowProvider } from '@xyflow/react';
 import { PlanGraphNode } from '../../src/view/plan-graph/PlanGraphNode';
 import type { PlanGraphNodeData } from '@sparkforensics/core/types.ts';
+import { testFinding } from './_shared/finding';
 
 function nodeData(overrides: Partial<PlanGraphNodeData & { durationSharePct: number | null }> = {}) {
   return {
@@ -85,7 +86,7 @@ describe('PlanGraphNode', () => {
 
   it('renders the tag (no count) for a single finding, colored by its band', () => {
     render(
-      <PlanGraphNode data={nodeData({ findings: [{ type: 'smallFiles', impactBand: 'warning' }] })} id="n1" {...BASE_NODE_PROPS} />,
+      <PlanGraphNode data={nodeData({ findings: [testFinding({ type: 'smallFiles', impactBand: 'warning' })] })} id="n1" {...BASE_NODE_PROPS} />,
       { wrapper: Wrapper },
     );
     const badge = screen.getByTestId('node-finding-badge');
@@ -97,7 +98,7 @@ describe('PlanGraphNode', () => {
   it('renders a count and colors the badge by the worst band when more than one finding hits the node', () => {
     render(
       <PlanGraphNode
-        data={nodeData({ findings: [{ type: 'smallFiles', impactBand: 'warning' }, { type: 'overBroadcast', impactBand: 'critical' }] })}
+        data={nodeData({ findings: [testFinding({ type: 'smallFiles', impactBand: 'warning' }), testFinding({ type: 'overBroadcast', impactBand: 'critical' })] })}
         id="n1" {...BASE_NODE_PROPS}
       />,
       { wrapper: Wrapper },
@@ -112,7 +113,7 @@ describe('PlanGraphNode', () => {
     const user = userEvent.setup();
     render(
       <PlanGraphNode
-        data={nodeData({ findings: [{ type: 'smallFiles', impactBand: 'warning' }, { type: 'overBroadcast', impactBand: 'critical' }] })}
+        data={nodeData({ findings: [testFinding({ type: 'smallFiles', impactBand: 'warning' }), testFinding({ type: 'overBroadcast', impactBand: 'critical' })] })}
         id="n1" {...BASE_NODE_PROPS}
       />,
       { wrapper: Wrapper },

@@ -6,7 +6,8 @@ import { StagePill } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
+import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
@@ -18,12 +19,12 @@ import { usePagedRows } from '@/view/usePagedRows';
 
 export type StageFailedProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
 
-function hasStage(f: Finding): f is Finding & { stageId: number } {
+function hasStage<F extends Finding>(f: F): f is F & { stageId: number } {
   // `stageId` is nullable on `Finding`; narrow once so `StagePill` needs no per-call-site cast.
   return f.stageId != null;
 }
 
-function StageFailedRow({ finding }: { finding: Finding & { stageId: number } }) {
+function StageFailedRow({ finding }: { finding: FindingOf<'stageFailed'> & { stageId: number } }) {
   const anchor = useAnchoredRow([finding]);
   return (
     <li
@@ -37,7 +38,7 @@ function StageFailedRow({ finding }: { finding: Finding & { stageId: number } })
         <ImpactDot impactBand={finding.impactBand} />
       </div>
       <p className="text-xs text-muted-foreground">
-        Stage attempt failed outright. Reason: <strong>{String(finding.value)}</strong>
+        Stage attempt failed outright. Reason: <strong>{finding.valueText}</strong>
       </p>
       <ImpactEstimate finding={finding} />
       {finding.recommendation ? <p className="text-xs text-muted-foreground">{finding.recommendation}</p> : null}
@@ -64,7 +65,7 @@ export function StageFailed({ appModel, catalog, defaultCollapsed = true }: Stag
     setPage(0);
   }, [appModel]);
 
-  const findings = catalog.filter(hasStage).filter((f) => f.type === 'stageFailed');
+  const findings = findingsOfType(catalog, 'stageFailed').filter(hasStage);
   const sorted = [...findings].sort(
     (a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand] || a.stageId - b.stageId,
   );

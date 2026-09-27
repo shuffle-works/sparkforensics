@@ -105,13 +105,13 @@ describe('html-export (shared by the CLI --export-html and the dashboard downloa
     });
     const stageFailed = {
       type: 'stageFailed', stageId: 1, impactBand: 'critical', recommendation: 'Inspect the driver log.',
-      value: 'Lost executor on ip-10-1-2-3.ec2.internal', id: 'f1',
+      valueText: 'Lost executor on ip-10-1-2-3.ec2.internal', id: 'f1',
     };
     const data = buildHtmlExportData(appModel, [stageFailed], 0, { redact: true, buildId: 'b', producer: 'p' });
 
     expect(JSON.stringify(data)).not.toContain('ip-10-1-2-3');
-    expect(data.interpretation.verdict.failureReason).toBe(data.catalog[0].value);
-    expect(data.interpretation.verdict.steps[0].copyText).toContain(data.catalog[0].value);
+    expect(data.interpretation.verdict.failureReason).toBe(data.catalog[0].valueText);
+    expect(data.interpretation.verdict.steps[0].copyText).toContain(data.catalog[0].valueText);
   });
 
   it('redacts before interpreting, so a failure reason cut mid-host keeps no fragment of it', () => {

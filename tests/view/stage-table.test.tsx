@@ -12,6 +12,7 @@ import { StageTable } from '@/view/widgets/StageTable';
 import { emptyAppModel, store } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
 // Real per-stage fields as posted by the parser worker; the `Stage` type's
 // `stageId` field doesn't reflect runtime shape, so fixtures use `id` and the
@@ -175,9 +176,9 @@ describe('StageTable', () => {
   it('deduplicates same-type tags per stage, keeping the worst impact band', async () => {
     const appModel = buildAppModel([[1, makeStage(1)]]);
     const catalog: Finding[] = [
-      { type: 'stageShape', stageId: 1, impactBand: 'info' },
-      { type: 'stageShape', stageId: 1, impactBand: 'critical' },
-      { type: 'stageShape', stageId: 1, impactBand: 'warning' },
+      testFinding({ type: 'stageShape', stageId: 1, impactBand: 'info', rule: 'lowParallelism' }),
+      testFinding({ type: 'stageShape', stageId: 1, impactBand: 'critical', rule: 'lowParallelism' }),
+      testFinding({ type: 'stageShape', stageId: 1, impactBand: 'warning', rule: 'lowParallelism' }),
     ];
 
     render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);
@@ -496,9 +497,9 @@ describe('StageTable Findings column', () => {
     // skew, straggler and tinyTask all render in one Task Skew widget: the old
     // "Flagged" column counted widgets and showed "—" for this stage.
     const catalog: Finding[] = [
-      { type: 'skew', stageId: 1, impactBand: 'critical' },
-      { type: 'straggler', stageId: 1, impactBand: 'critical' },
-      { type: 'tinyTask', stageId: 1, impactBand: 'warning' },
+      testFinding({ type: 'skew', stageId: 1, impactBand: 'critical' }),
+      testFinding({ type: 'straggler', stageId: 1, impactBand: 'critical', unit: 'count', speculativeTasks: 1, stragglerCount: 0 }),
+      testFinding({ type: 'tinyTask', stageId: 1, impactBand: 'warning' }),
     ];
 
     render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);

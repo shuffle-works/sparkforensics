@@ -298,7 +298,7 @@ export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapsh
   const tally = (snap: SessionSnapshot): Map<string, TallyEntry> => {
     const m = new Map<string, TallyEntry>(); // `${rule}§${impactBand}` -> { rule, impactBand, count, stages:Set }
     for (const f of snap.catalog) {
-      const rule = typeof f.rule === 'string' ? f.rule : f.type;
+      const rule = 'rule' in f && typeof f.rule === 'string' ? f.rule : f.type;
       const impactBand = f.impactBand ?? 'unknown';
       const key = `${rule}§${impactBand}`;
       const e = m.get(key) ?? { rule, type: f.type, impactBand, count: 0, stages: new Set<string>() };

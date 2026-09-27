@@ -7,7 +7,8 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
 import { formatBytes, numericValue, IMPACT_BAND_ORDER, VISIBLE_LIMIT, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
+import type { FindingOf, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
 import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { useWidgetDensity } from '@/store/store';
@@ -22,13 +23,13 @@ import { resolvePlanTree } from './PlanView';
 
 interface StageEntry {
   stageId: StageId;
-  partitions: Finding[];
+  partitions: FindingOf<'partitionSizing'>[];
   impactBand: ImpactBand;
 }
 
 /** `partitionSizing`'s three rules each report a different metric under one
  * finding type; render `value` as a short label per rule. */
-function partitionSizingLabel(f: Finding): string {
+function partitionSizingLabel(f: FindingOf<'partitionSizing'>): string {
   if (f.rule === 'lowShuffleParallelism') return `${numericValue(f)} tasks carrying the shuffle`;
   const bytes = numericValue(f);
   return f.rule === 'maxPartitionTooBig' ? `Largest partition ${formatBytes(bytes)} (too large)` : `Largest partition ${formatBytes(bytes)}`;
@@ -84,7 +85,7 @@ export const PartitionSizing = memo(function PartitionSizing({ appModel, catalog
   const activeRouteTarget = useActiveRouteTarget();
 
   const { partitionFindings, sorted, orderedEntries } = useMemo(() => {
-    const partitionFindings = catalog.filter((f) => f.type === 'partitionSizing');
+    const partitionFindings = findingsOfType(catalog, 'partitionSizing');
 
     const entries = new Map<StageId, StageEntry>();
     for (const f of partitionFindings) {
@@ -107,7 +108,7 @@ export const PartitionSizing = memo(function PartitionSizing({ appModel, catalog
   }, [catalog, sortMode]);
 
   const routeIndex = activeRouteTarget
-    ? orderedEntries.findIndex((entry) => entry.partitions.includes(activeRouteTarget.finding))
+    ? orderedEntries.findIndex((entry) => entry.partitions.some((f) => f === activeRouteTarget.finding))
     : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedEntries, page, setPage, routeIndex);
 

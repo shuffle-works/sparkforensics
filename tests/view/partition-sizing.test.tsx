@@ -22,7 +22,7 @@ function buildAppModel(stages: Record<number, Record<string, unknown>>): AppMode
 test('renders the WidgetCard heading', () => {
   const appModel = buildAppModel({ 3: { taskCount: 4 } });
   const catalog: Finding[] = [{
-    type: 'partitionSizing', stageId: 3, impactBand: 'critical',
+    type: 'partitionSizing', stageId: 3, impactBand: 'critical', rule: 'maxPartitionTooBig',
     recommendation: 'Repartition to break it up before this stage.',
   }];
   render(<PartitionSizing appModel={appModel} catalog={catalog} defaultCollapsed={false} />);

@@ -15,17 +15,17 @@ import { installInterpretation } from './_shared/interpretation';
 const select = (catalog: Finding[]) => selectTriageTarget(installInterpretation(catalog), catalog);
 const rank = (catalog: Finding[]) => rankTriageTargets(installInterpretation(catalog), catalog);
 
-function finding(overrides: Partial<Finding> = {}): Finding {
+function finding(overrides: Record<string, unknown> = {}): Finding {
   return {
     type: 'spill',
     stageId: 7,
     impactBand: 'warning',
     recommendation: 'Reduce memory pressure.',
     ...overrides,
-  };
+  } as unknown as Finding;
 }
 
-function withSavingsMs(overrides: Partial<Finding> & Pick<Finding, 'type'>, highMs: number): Finding {
+function withSavingsMs(overrides: Record<string, unknown> & { type: string }, highMs: number): Finding {
   return finding({
     ...overrides,
     impactEstimate: { basis: 'serial', wallClock: { low: highMs, high: highMs }, estimateMethod: 'measured' },
@@ -48,9 +48,9 @@ test('prefers larger potential savings over impact band', () => {
 
 test('falls back to impact band, then registry widget order, then catalog order, when no finding has a quantified savings estimate', () => {
   const catalog: Finding[] = [
-    { type: 'spill', stageId: 7, impactBand: 'warning', recommendation: 'Reduce memory pressure.' },
-    { type: 'skew', stageId: 12, impactBand: 'critical', recommendation: 'Rebalance partitions.' },
-    { type: 'spill', stageId: 9, impactBand: 'critical', recommendation: 'Reduce spill.' },
+    finding({ type: 'spill', stageId: 7, impactBand: 'warning', recommendation: 'Reduce memory pressure.' }),
+    finding({ type: 'skew', stageId: 12, impactBand: 'critical', recommendation: 'Rebalance partitions.' }),
+    finding({ type: 'spill', stageId: 9, impactBand: 'critical', recommendation: 'Reduce spill.' }),
   ];
 
   // None of the three carry an impactEstimate, so impact band leads: both

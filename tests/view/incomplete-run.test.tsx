@@ -4,15 +4,16 @@ import { render, screen } from '@testing-library/react';
 import { emptyAppModel } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { IncompleteRun } from '@/view/widgets/IncompleteRun';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
+import { testFinding } from './_shared/finding';
 
-function finding(overrides: Partial<Finding> = {}): Finding {
-  return {
+function finding(overrides: Partial<FindingOf<'incompleteRun'>> = {}): Finding {
+  return testFinding({
     type: 'incompleteRun', stageId: null, impactBand: 'warning',
-    metric: 'applicationEnd', value: 'missing',
+    metric: 'applicationEnd', valueText: 'missing',
     recommendation: 'Findings and metrics elsewhere on this board reflect only what was captured before the run was cut off.',
     ...overrides,
-  };
+  });
 }
 
 function renderWidget(catalog: Finding[]) {

@@ -53,7 +53,7 @@ test('formatFindingMagnitude renders ratio/pct/count/duration units', () => {
   expect(formatFindingMagnitude({ metric: 'retryWasteMs', value: 38000 })).toBe('38.0s');
 });
 test('formatFindingMagnitude returns null for non-numeric or unmapped metrics', () => {
-  expect(formatFindingMagnitude({ metric: 'stageFailureReason', value: 'ExecutorLostFailure' })).toBeNull();
+  expect(formatFindingMagnitude({ metric: 'stageFailureReason', valueText: 'ExecutorLostFailure' })).toBeNull();
   expect(formatFindingMagnitude({ metric: 'somethingUnmapped', value: 12 })).toBeNull();
   expect(formatFindingMagnitude({ value: 12 })).toBeNull();
 });
@@ -73,7 +73,7 @@ test('formatFindingChipDetail shows only the magnitude when there is no wall-clo
   expect(formatFindingChipDetail({ metric: 'gcPct', value: 45, impactEstimate: { wallClock: null } })).toBe('45%');
 });
 test('formatFindingChipDetail returns null when neither magnitude nor time exists', () => {
-  expect(formatFindingChipDetail({ metric: 'stageFailureReason', value: 'boom' })).toBeNull();
+  expect(formatFindingChipDetail({ metric: 'stageFailureReason', valueText: 'boom' })).toBeNull();
 });
 
 test('formatFindingMagnitude converts a stageDurationMinutes value to a formatted duration', () => {

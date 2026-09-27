@@ -57,7 +57,7 @@ describe('buildNextSteps', () => {
   });
 
   it('puts a failure at a failed job stage first on a failed run', () => {
-    const stageFailed = { type: 'stageFailed', stageId: 2, impactBand: 'critical', value: 'boom', recommendation: 'Inspect.' };
+    const stageFailed = { type: 'stageFailed', stageId: 2, impactBand: 'critical', valueText: 'boom', recommendation: 'Inspect.' };
     const steps = buildNextSteps([timed('skew', 1, 60), stageFailed], { failedJobStageIds: new Set([2]) });
     expect(steps.map((s) => s.lead.type)).toEqual(['stageFailed', 'skew']);
   });
@@ -123,7 +123,7 @@ describe('buildRunVerdict', () => {
       [0, { id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [1] }],
       [1, { id: 1, result: 'JobFailed', succeeded: false, stageIds: [2] }],
     ]);
-    const stageFailed = { type: 'stageFailed', stageId: 2, impactBand: 'critical', value: 'Task failed: boom\n\tat x', recommendation: 'Inspect the driver log.' };
+    const stageFailed = { type: 'stageFailed', stageId: 2, impactBand: 'critical', valueText: 'Task failed: boom\n\tat x', recommendation: 'Inspect the driver log.' };
     const verdict = buildRunVerdict(appModel({ jobs }), [timed('skew', 1, 60), stageFailed]);
     expect(verdict.title).toBe('1 of 2 jobs failed in this run');
     expect(verdict.summary[0]).toBe('Fix the failure before tuning: the other findings cover only the work that ran.');

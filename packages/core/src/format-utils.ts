@@ -137,10 +137,10 @@ export function nsToMs(ns: number): number {
   return ns / 1e6;
 }
 
-// Finding.value is number|string only because a couple of detectors (configAudit, stageFailed)
-// report a string; every other row formatter needs the numeric case and falls back to 0.
-export function numericValue(f: { value?: number | string }): number {
-  return typeof f.value === 'number' ? f.value : 0;
+// A finding's magnitude, or 0 when it has none (an evidence caveat, or a text-valued finding whose
+// value is in `valueText`).
+export function numericValue(f: { value?: number }): number {
+  return f.value ?? 0;
 }
 
 // Low-level "number -> display string" step shared by every widget's per-finding label resolver:
@@ -184,11 +184,11 @@ function formatChipBytes(bytes: number): string {
 }
 
 /** Compact magnitude for a finding's plan-graph chip (e.g. "4.2 GB", "3.2×", "45%"), taken from the
- * finding's own `value` rendered in its `metric`'s unit. Returns null when `value` is non-numeric
- * (stageFailed/configAudit reuse it for text) or the metric isn't in FINDING_METRIC_UNIT. */
-export function formatFindingMagnitude(finding: { metric?: string; value?: number | string }): string | null {
+ * finding's own `value` rendered in its `metric`'s unit. Returns null when there is no `value` (a
+ * text-valued finding carries `valueText` instead) or the metric isn't in FINDING_METRIC_UNIT. */
+export function formatFindingMagnitude(finding: { metric?: string; value?: number }): string | null {
   const unit = finding.metric ? FINDING_METRIC_UNIT[finding.metric] : undefined;
-  if (!unit || typeof finding.value !== 'number') return null;
+  if (!unit || finding.value == null) return null;
   switch (unit) {
     case 'bytes': return formatChipBytes(finding.value);
     case 'minutes': return formatDuration(finding.value * 60000);
@@ -204,7 +204,7 @@ export function formatFindingMagnitude(finding: { metric?: string; value?: numbe
  * recovery is claimed, "~<time>" (the optimistic `high` bound, matching formatImpactEstimateCompact),
  * joined by " · " (e.g. "4.2 GB · ~38.0s"). null when neither part is available. */
 export function formatFindingChipDetail(
-  finding: { metric?: string; value?: number | string; impactEstimate?: { wallClock?: { low: number; high: number } | null } },
+  finding: { metric?: string; value?: number; impactEstimate?: { wallClock?: { low: number; high: number } | null } },
 ): string | null {
   const magnitude = formatFindingMagnitude(finding);
   const wallClock = finding.impactEstimate?.wallClock;

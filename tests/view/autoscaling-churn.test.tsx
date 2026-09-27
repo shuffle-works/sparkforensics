@@ -10,6 +10,7 @@ import { emptyAppModel } from '../../src/store/store';
 import { DocsProvider } from '../../src/view/DocsContext';
 import type { AppModel } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
 // The percentage sits in a `<strong>`, so it spans multiple elements; match by
 // the full textContent of the containing element rather than RTL's getByText.
@@ -100,11 +101,12 @@ describe('AutoscalingChurn', () => {
         removed: [{ timestamp: 60_000 }] as unknown as AppModel['executors']['removed'],
       },
     });
-    const finding = {
+    const finding = testFinding({
       type: 'autoscalingChurn', stageId: null, impactBand: 'critical' as const,
       metric: 'shortLivedExecutorPct', value: 70, confidence: 'low',
       recommendation: '70% of executors ran for under 2 minutes before being removed.',
-    };
+      shortLivedExecutorCount: 7,
+    });
 
     installInterpretation([finding], appModel);
     render(
@@ -137,11 +139,12 @@ describe('AutoscalingChurn', () => {
         removed: [{ timestamp: 60_000 }] as unknown as AppModel['executors']['removed'],
       },
     });
-    const finding = {
+    const finding = testFinding({
       type: 'autoscalingChurn', stageId: null, impactBand: 'critical' as const,
       metric: 'shortLivedExecutorPct', value: 70, confidence: 'low',
       recommendation: '70% of executors ran for under 2 minutes before being removed, this looks like wasteful re-provisioning rather than normal scale-down. Consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.',
-    };
+      shortLivedExecutorCount: 7,
+    });
 
     installInterpretation([finding], appModel);
     render(
@@ -163,12 +166,13 @@ describe('AutoscalingChurn', () => {
         removed: [{ timestamp: 60_000 }] as unknown as AppModel['executors']['removed'],
       },
     });
-    const finding = {
+    const finding = testFinding({
       type: 'autoscalingChurn', stageId: null, impactBand: 'critical' as const,
       metric: 'shortLivedExecutorPct', value: 70,
       recommendation: '70% of executors ran for under 2 minutes before being removed.',
       impactEstimate: { basis: 'resourceOnly' as const, wallClock: null, estimateMethod: 'measured' as const, rawWaste: { value: 3, unit: 'coreHours' as const } },
-    };
+      shortLivedExecutorCount: 7,
+    });
 
     installInterpretation([finding], appModel);
     render(
@@ -189,11 +193,12 @@ describe('AutoscalingChurn', () => {
         removed: [{ timestamp: 60_000 }] as unknown as AppModel['executors']['removed'],
       },
     });
-    const finding = {
+    const finding = testFinding({
       type: 'autoscalingChurn', stageId: null, impactBand: 'critical' as const,
       metric: 'shortLivedExecutorPct', value: 70,
       recommendation: 'Consider raising spark.dynamicAllocation.executorIdleTimeout.',
-    };
+      shortLivedExecutorCount: 7,
+    });
 
     installInterpretation([finding], appModel);
     render(

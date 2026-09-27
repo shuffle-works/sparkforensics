@@ -3,13 +3,13 @@ import { expect, test } from 'vitest';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { byImpactDesc, byStageAsc, canToggleSort, stageIdOf, sumWallClockLow } from '../../src/view/impact-sort';
 
-function finding(overrides: Partial<Finding> = {}): Finding {
+function finding(overrides: Record<string, unknown> = {}): Finding {
   return {
     type: 'skew',
     impactBand: 'warning',
     recommendation: 'r',
     ...overrides,
-  };
+  } as unknown as Finding;
 }
 
 function withWallClockLow(low: number): Finding {

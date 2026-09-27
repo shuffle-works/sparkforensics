@@ -8,6 +8,7 @@ import { StageDetailProvider } from '../../src/view/StageDetailContext';
 import { emptyAppModel, store } from '../../src/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
 function makeAppModel(stageNames: Record<number, string>): AppModel {
   const stages = new Map(Object.entries(stageNames).map(([id, name]) => [Number(id), { id: Number(id), name }]));
@@ -30,11 +31,12 @@ describe('RetryWaste', () => {
 
   it('renders a retry-waste finding with the RETRY tag, formatted duration, and the always-visible recommendation at Basic tier, with no extended explanation yet', async () => {
     const user = userEvent.setup();
-    const catalog: Finding[] = [{
+    const catalog: Finding[] = [testFinding({
       type: 'retryWaste', stageId: 4, impactBand: 'warning', metric: 'retryWasteMs', value: 45000,
       recommendation: 'Investigate executor loss or fetch failures.',
       extended: '3 task attempts were superseded by a later retry, wasting 45s of executor time.',
-    }];
+      numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [],
+    })];
     render_(catalog);
     expect(screen.getByRole('heading', { name: 'Retry Waste' })).toBeInTheDocument();
     expect(screen.getByText('RETRY')).toBeInTheDocument();
@@ -50,8 +52,8 @@ describe('RetryWaste', () => {
 
   it('shows the RETRY tag once, in the header, and keeps a per-row impact dot for every flagged stage', () => {
     const catalog: Finding[] = [
-      { type: 'retryWaste', stageId: 1, impactBand: 'warning', metric: 'retryWasteMs', value: 40000 },
-      { type: 'retryWaste', stageId: 2, impactBand: 'critical', metric: 'retryWasteMs', value: 10000 },
+      testFinding({ type: 'retryWaste', stageId: 1, impactBand: 'warning', metric: 'retryWasteMs', value: 40000, numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [] }),
+      testFinding({ type: 'retryWaste', stageId: 2, impactBand: 'critical', metric: 'retryWasteMs', value: 10000, numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [] }),
     ];
     const { container } = render_(catalog, makeAppModel({ 1: 'a', 2: 'b' }));
     expect(screen.getByText('RETRY')).toBeInTheDocument();
@@ -61,11 +63,12 @@ describe('RetryWaste', () => {
 
   it('adds the non-redundant part of the extended explanation at Advanced tier, alongside the recommendation that was already visible at Basic', async () => {
     const user = userEvent.setup();
-    const catalog: Finding[] = [{
+    const catalog: Finding[] = [testFinding({
       type: 'retryWaste', stageId: 4, impactBand: 'warning', metric: 'retryWasteMs', value: 45000,
       recommendation: 'Investigate executor loss or fetch failures.',
       extended: '3 task attempts were superseded by a later retry, wasting 45s of executor time.',
-    }];
+      numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [],
+    })];
     store.getState().setWidgetDensity('advanced');
     render_(catalog);
     // Open the card to view row content where extended explanation is shown
@@ -80,8 +83,8 @@ describe('RetryWaste', () => {
   it('flags every affected stage, not just the worst, and defaults to impact order', async () => {
     const user = userEvent.setup();
     const catalog: Finding[] = [
-      { type: 'retryWaste', stageId: 1, impactBand: 'warning', metric: 'retryWasteMs', value: 40000, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } },
-      { type: 'retryWaste', stageId: 2, impactBand: 'warning', metric: 'retryWasteMs', value: 10000, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } },
+      testFinding({ type: 'retryWaste', stageId: 1, impactBand: 'warning', metric: 'retryWasteMs', value: 40000, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' }, numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [] }),
+      testFinding({ type: 'retryWaste', stageId: 2, impactBand: 'warning', metric: 'retryWasteMs', value: 10000, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' }, numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [] }),
     ];
     render_(catalog, makeAppModel({ 1: 'a', 2: 'b' }));
     // Open the card to see rows ordered by impact estimate
@@ -93,8 +96,9 @@ describe('RetryWaste', () => {
 
   it('paginates 6-at-a-time, sorted worst-duration-first when impact bands tie', async () => {
     const user = userEvent.setup();
-    const catalog: Finding[] = Array.from({ length: 7 }, (_, i) => ({
+    const catalog: Finding[] = Array.from({ length: 7 }, (_, i) => testFinding({
       type: 'retryWaste', stageId: i + 1, impactBand: 'warning', metric: 'retryWasteMs', value: 1000 * (i + 1),
+      numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [],
     }));
     const stageNames = Object.fromEntries(catalog.map((f) => [f.stageId as number, `stage-${f.stageId}`]));
     render_(catalog, makeAppModel(stageNames));
@@ -110,8 +114,9 @@ describe('RetryWaste', () => {
 
   it('paginates 6-at-a-time, resetting to page 1 on a fresh appModel', async () => {
     const user = userEvent.setup();
-    const catalog: Finding[] = Array.from({ length: 7 }, (_, i) => ({
+    const catalog: Finding[] = Array.from({ length: 7 }, (_, i) => testFinding({
       type: 'retryWaste', stageId: i + 1, impactBand: 'warning', metric: 'retryWasteMs', value: 1000 * (i + 1),
+      numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [],
     }));
     const stageNames = Object.fromEntries(catalog.map((f) => [f.stageId as number, `stage-${f.stageId}`]));
     const { rerender } = render_(catalog, makeAppModel(stageNames));
@@ -131,10 +136,11 @@ describe('RetryWaste', () => {
 
   it('renders the impact estimate for a flagged finding', async () => {
     const user = userEvent.setup();
-    const catalog: Finding[] = [{
+    const catalog: Finding[] = [testFinding({
       type: 'retryWaste', stageId: 4, impactBand: 'warning', metric: 'retryWasteMs', value: 1200,
       impactEstimate: { basis: 'serial', wallClock: { low: 1200, high: 1200 }, estimateMethod: 'measured', rawWaste: { value: 1200, unit: 'ms' } },
-    }];
+      numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [],
+    })];
     installInterpretation(catalog);
     render_(catalog);
     // Open the card to see row content where impact estimate is displayed

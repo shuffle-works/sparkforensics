@@ -9,7 +9,8 @@ vi.mock('@/view/StageDetailContext', () => ({
 
 import { StageShape } from '@/view/widgets/StageShape';
 import { store } from '@/store/store';
-import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingOf, TaskData } from '@sparkforensics/core/types.ts';
+import { testFinding } from './_shared/finding';
 
 function makeAppModel(stageIds: number[]): AppModel {
   const stages = new Map<number, unknown>(
@@ -28,11 +29,11 @@ function makeAppModel(stageIds: number[]): AppModel {
 
 function stageShapeFinding(
   stageId: number,
-  rule: string,
+  rule: FindingOf<'stageShape'>['rule'],
   value: number,
   impactBand: Finding['impactBand'] = 'info',
 ): Finding {
-  return { type: 'stageShape', stageId, impactBand, rule, metric: rule, value, recommendation: 'r' };
+  return testFinding({ type: 'stageShape', stageId, impactBand, rule, metric: rule, value, recommendation: 'r' });
 }
 
 function slowHostFinding(stageId: number, host: string, ratio: number, hostTaskShare: number): Finding {

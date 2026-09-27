@@ -22,7 +22,8 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
+import type { FindingOf } from '@sparkforensics/core/types.ts';
 
 /** Renders a composite's leaf relation names with the join/union connector word
  * emphasized between them. Real space characters are kept around the connector
@@ -49,7 +50,7 @@ function CompositeRelationNames({ relations, operator }: { relations: { relation
 
 /** One flagged relation's row, anchored so a triage route focuses the row
  * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
-function CachingRow({ finding }: { finding: Finding }) {
+function CachingRow({ finding }: { finding: FindingOf<'cachingOpportunity'> }) {
   const anchor = useAnchoredRow([finding]);
   const isComposite = finding.variant === 'composite';
 
@@ -80,7 +81,7 @@ function CachingRow({ finding }: { finding: Finding }) {
         </span>
       </TableCell>
       <TableCell>{finding.value} queries</TableCell>
-      <TableCell className="text-right">{formatBytes(finding.totalReadBytes ?? 0)}</TableCell>
+      <TableCell className="text-right">{formatBytes(finding.totalReadBytes)}</TableCell>
       <TableCell>
         <ImpactEstimate finding={finding} />
         <p className="mt-1">{finding.recommendation}</p>
@@ -99,12 +100,8 @@ function CachingRow({ finding }: { finding: Finding }) {
 export const CachingOpportunity = memo(function CachingOpportunity({ catalog, defaultCollapsed = true }: WidgetProps) {
   const [page, setPage] = useState(0);
   // Depends only on `catalog`; memoized to skip recompute on unrelated re-renders.
-  const findings = useMemo(() => catalog
-    .filter((f) => f.type === 'cachingOpportunity')
-    // `value` is always a numeric execution count, but `Finding.value` is typed
-    // `number | string`, so narrow defensively rather than assume.
-    .sort((a, b) => (b.totalReadBytes ?? 0) - (a.totalReadBytes ?? 0)
-      || (typeof b.value === 'number' ? b.value : 0) - (typeof a.value === 'number' ? a.value : 0)), [catalog]);
+  const findings = useMemo(() => findingsOfType(catalog, 'cachingOpportunity')
+    .sort((a, b) => b.totalReadBytes - a.totalReadBytes || (b.value ?? 0) - (a.value ?? 0)), [catalog]);
 
   const activeRouteTarget = useActiveRouteTarget();
   const routeIndex = activeRouteTarget ? findings.findIndex((f) => f === activeRouteTarget.finding) : null;

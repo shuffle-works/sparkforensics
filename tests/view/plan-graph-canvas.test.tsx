@@ -106,7 +106,7 @@ describe('focus nav', () => {
   });
 
   it('hides "Next problem" entirely in single-stage (segment scope) view, even when findings are passed', () => {
-    const findings = [{ type: 'skew', stageId: 1, impactBand: 'critical' as const }];
+    const findings = [{ type: 'skew' as const, stageId: 1, impactBand: 'critical' as const }];
     render(<PlanGraphCanvas model={model({ scope: 'segment' })} showMiniMap={false} stageId={1} findings={findings} />);
     expect(screen.queryByRole('button', { name: /next problem/i })).not.toBeInTheDocument();
   });
@@ -119,7 +119,7 @@ describe('focus nav', () => {
   it('shows "Next problem" in expanded scope when the focal stage has findings, and it jumps to the stage box', async () => {
     const user = userEvent.setup();
     setCenterMock.mockClear();
-    const findings = [{ type: 'skew', stageId: 1, impactBand: 'critical' as const }];
+    const findings = [{ type: 'skew' as const, stageId: 1, impactBand: 'critical' as const }];
     const segmentStageIds = new Map([[0, 1]]);
     render(
       <PlanGraphCanvas
@@ -150,8 +150,8 @@ describe('focus nav', () => {
     // Stage 8's finding recovers far more wall-clock time than stage 7's, so it
     // must be the first "Next problem" target regardless of node/list order.
     const findings = [
-      { type: 'skew', stageId: 7, impactBand: 'warning' as const, impactEstimate: { basis: 'serial' as const, wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' as const } },
-      { type: 'spill', stageId: 8, impactBand: 'warning' as const, impactEstimate: { basis: 'serial' as const, wallClock: { low: 90000, high: 90000 }, estimateMethod: 'measured' as const } },
+      { type: 'skew' as const, stageId: 7, impactBand: 'warning' as const, impactEstimate: { basis: 'serial' as const, wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' as const } },
+      { type: 'spill' as const, stageId: 8, impactBand: 'warning' as const, impactEstimate: { basis: 'serial' as const, wallClock: { low: 90000, high: 90000 }, estimateMethod: 'measured' as const } },
     ];
     render(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={7} findings={findings} segmentStageIds={segmentStageIds} />);
 
@@ -235,7 +235,7 @@ describe('compound stage-group containers', () => {
 
   it('in single-stage (segment) scope, shows the focal stage\'s findings on the one segment box', () => {
     const single = model({ scope: 'segment', segmentStageIds: new Map([[0, 7]]) });
-    const findings = [{ type: 'skew', stageId: 7, impactBand: 'critical' as const }];
+    const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
 
     render(<PlanGraphCanvas model={single} showMiniMap={false} stageId={7} findings={findings} segmentStageIds={new Map([[0, 7]])} />);
 
@@ -245,7 +245,7 @@ describe('compound stage-group containers', () => {
   it('opens the documentation sheet when a segment finding badge is clicked', async () => {
     const user = userEvent.setup();
     const single = model({ scope: 'segment', segmentStageIds: new Map([[0, 7]]) });
-    const findings = [{ type: 'skew', stageId: 7, impactBand: 'critical' as const }];
+    const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
 
     render(
       <ThemeProvider>
@@ -274,7 +274,7 @@ describe('compound stage-group containers', () => {
       scope: 'segment',
       segmentStageIds: new Map([[0, 7]]),
     });
-    const findings = [{ type: 'skew', stageId: 7, impactBand: 'critical' as const }];
+    const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
 
     render(
       <PlanGraphCanvas
@@ -304,7 +304,7 @@ describe('compound stage-group containers', () => {
       scope: 'full',
     });
     const segmentStageIds = new Map([[0, 7], [1, 8]]);
-    const findings = [{ type: 'skew', stageId: 7, impactBand: 'critical' as const }];
+    const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
 
     render(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={7} findings={findings} segmentStageIds={segmentStageIds} />);
 
@@ -325,7 +325,7 @@ describe('compound stage-group containers', () => {
       scope: 'full',
     });
     const segmentStageIds = new Map([[0, 7], [1, 8]]);
-    const findings = [{ type: 'skew', stageId: 7, impactBand: 'critical' as const }];
+    const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
 
     render(
       <PlanGraphCanvas
@@ -389,7 +389,7 @@ describe('compound stage-group containers', () => {
       scope: 'full',
       segmentStageIds: new Map([[0, 99]]),
     });
-    const findings = [{ type: 'skew', stageId: 7, impactBand: 'critical' as const }];
+    const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
 
     render(
       <PlanGraphCanvas

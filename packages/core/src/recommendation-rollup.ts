@@ -48,7 +48,7 @@ function groupByType(findings: Finding[]): Map<string, Finding[]> {
 }
 
 function stageIdsOf(finding: Finding): number[] {
-  if (finding.stageIds) return finding.stageIds;
+  if ('stageIds' in finding) return finding.stageIds;
   if (finding.stageId != null) return [finding.stageId];
   return [];
 }
@@ -178,7 +178,7 @@ export function isEligible(finding: Finding): boolean {
   // A missing-evidence caveat (memoryUtilization's is already excluded by isRealFinding;
   // cacheUtilization's storageUnobserved keeps its widget card, so a run with no block updates
   // never lists Cache Storage as a passed check) is never a fix to rank.
-  if (finding.dataUnavailable) return false;
+  if ('dataUnavailable' in finding && finding.dataUnavailable) return false;
   return isRealFinding(finding);
 }
 

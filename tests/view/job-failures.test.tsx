@@ -5,18 +5,19 @@ import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import { DocsProvider } from '@/view/DocsContext';
 import { JobFailures } from '@/view/widgets/JobFailures';
-import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingOf } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
-function finding(overrides: Partial<Finding> = {}): Finding {
-  return {
+function finding(overrides: Partial<FindingOf<'jobFailureRate'>> = {}): Finding {
+  return testFinding({
     type: 'jobFailureRate', stageId: null, impactBand: 'warning',
     metric: 'jobFailureRate', value: 30, failedJobs: 3, totalJobs: 10,
-    failedTasks: 12, totalTasks: 200, taskFailureRate: 6,
+    failedTasks: 12, totalTasks: 200, taskFailureRate: 6, avgJobDurationMs: 5000,
     recommendation: 'Inspect the driver log',
     docAnchor: '#bottleneck-job-failure-rate',
     ...overrides,
-  };
+  });
 }
 
 function buildAppModel(jobs: [number, Record<string, unknown>][] = []): AppModel {

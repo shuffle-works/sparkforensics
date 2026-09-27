@@ -5,14 +5,15 @@ import { hydrateExportStore, unsupportedPayloadReason } from '@/export/hydrate-s
 import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData } from '@sparkforensics/core/export-data.ts';
 import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { testFinding } from './_shared/finding';
 
 beforeEach(() => {
   store.getState().resetModel();
   store.setState({ appModel: emptyAppModel() });
 });
 
-const CATALOG: Finding[] = [{ type: 'skew', stageId: 1, impactBand: 'warning' }];
-const CONFIG_FINDINGS: Finding[] = [{ type: 'configAudit', property: 'spark.sql.shuffle.partitions', impactBand: 'info' }];
+const CATALOG: Finding[] = [testFinding({ type: 'skew', stageId: 1, impactBand: 'warning' })];
+const CONFIG_FINDINGS: Finding[] = [testFinding({ type: 'configAudit', property: 'spark.sql.shuffle.partitions', valueText: '200', impactBand: 'info' })];
 
 // What a producer computed, with a title no core would write, so a test can
 // tell the payload's conclusion from one derived again at open time.
@@ -53,7 +54,7 @@ test('sets catalog, configFindings, skippedLines, status, and exportMode', () =>
   hydrateExportStore(sampleData());
   const s = store.getState();
   expect(s.catalog).toEqual([{ type: 'skew', stageId: 1, impactBand: 'warning' }]);
-  expect(s.configFindings).toEqual([{ type: 'configAudit', property: 'spark.sql.shuffle.partitions', impactBand: 'info' }]);
+  expect(s.configFindings).toEqual([{ type: 'configAudit', property: 'spark.sql.shuffle.partitions', valueText: '200', impactBand: 'info' }]);
   expect(s.skippedLines).toBe(2);
   expect(s.status).toBe('ready');
   expect(s.exportMode).toBe(true);

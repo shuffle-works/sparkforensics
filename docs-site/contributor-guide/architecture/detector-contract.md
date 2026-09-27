@@ -19,6 +19,21 @@ use `satisfies Record<FindingType, ...>` (plus `DetectorType` where they list
 the typecheck. Code that iterates entries generically, such as `analyze()`,
 reads them through the `Detector` interface.
 
+Each finding type has its own shape in `packages/core/src/finding-types.ts`:
+`Finding` is a union discriminated on `type`, and a compile-time check in
+`detectors.ts` fails when its members and `FindingType` differ. Each member
+splits into a `<Type>Evidence` interface, the fields the evidence report
+publishes (listed again in `EVIDENCE_KEYS` in `evidence-report.ts`, checked
+both ways), and fields declared only on `<Type>Finding`, which other core
+modules read but the report never publishes. `value` is always a magnitude;
+a text-valued finding (`stageFailed`, `configAudit`, `incompleteRun`) sets
+`valueText` instead. So a new detector type needs an `emits` entry, a
+`finding-types.ts` member, an `EVIDENCE_KEYS` entry, an `ID_DISCRIMINATORS`
+entry in `analyzer.ts`, and a row in each per-type table. The compiler
+reports each one that is missing. The view narrows with
+`findingsOfType(catalog, type)` (`packages/core/src/findings-of-type.ts`)
+rather than re-declaring a finding's fields.
+
 Both consumers are thin loops over that array:
 
 - `packages/core/src/analyzer.ts`: `analyze()` runs every entry regardless of scope, skipping

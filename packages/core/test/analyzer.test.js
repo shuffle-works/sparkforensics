@@ -2523,10 +2523,11 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
     expect(b.recommendation).toContain(`${b.value} minutes`);
   });
 
-  it('stageFailed: value carries the raw reason, recommendation stays reason-free', () => {
+  it('stageFailed: valueText carries the raw reason, value stays unset, recommendation stays reason-free', () => {
     const stages = new Map([[1, makeStage({ stageFailureReason: 'Job aborted due to stage failure', failedTasks: 0 })]]);
     const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'stageFailed');
-    expect(b.value).toBe('Job aborted due to stage failure');
+    expect(b.valueText).toBe('Job aborted due to stage failure');
+    expect(b.value).toBeUndefined();
     expect(b.recommendation).not.toContain('Job aborted due to stage failure');
     expect(b.recommendation).toContain('Inspect the driver log');
   });

@@ -67,7 +67,7 @@ describe('interpretRun', () => {
   });
 
   it('carries the failure: its reason and the quoted-reason step text', () => {
-    const stageFailed = { type: 'stageFailed', stageId: 3, impactBand: 'critical', value: 'Task failed: boom\n\tat x', recommendation: 'Inspect the driver log.' };
+    const stageFailed = { type: 'stageFailed', stageId: 3, impactBand: 'critical', valueText: 'Task failed: boom\n\tat x', recommendation: 'Inspect the driver log.' };
     const model = appModel({ jobs: new Map([[1, failedJob(1, [3])]]) });
     const interpretation = interpretRun(model, [timed('skew', 7, 2_400), stageFailed], []);
 
