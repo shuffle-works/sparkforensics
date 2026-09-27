@@ -100,7 +100,7 @@ function redactFailureGroups<T>(node: T): T {
 // HOST_PATTERNS matches (no IP/EC2 shape) nor collectHostFields's by-key-name
 // walk catches (the literal key is the dotted Spark property name, never
 // `host` itself). app.config is a flat Record<string, string> unique to
-// redactExportData: no other redact* export ships a raw Spark config dict.
+// redactRunModel: no other redact* export ships a raw Spark config dict.
 // Known gap: a hostname value under a differently-named key isn't caught by
 // this suffix check. Confirmed against a real cluster config: spark.master,
 // spark.yarn.historyServer.address, and the plural YARN proxy/HA keys
@@ -232,12 +232,7 @@ function redactRunTree<T extends RunTree>(input: T): T {
   return applyReplacements(data, { appIds, hosts });
 }
 
-export function redactExportData(input: ExportRunData): ExportRunData {
-  return redactRunTree(input);
-}
-
-/** A run's model and findings with every identifier pseudonymized, the same
- * replacements `redactExportData` makes. Redact this before anything derives
+/** A run's model and findings with every identifier pseudonymized. Redact this before anything derives
  * text from the run: the verdict truncates Spark's failure reason, and an
  * identifier cut by that truncation is a fragment no later pass can match. */
 export function redactRunModel(
