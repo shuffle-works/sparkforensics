@@ -176,9 +176,14 @@ for the other one (see [Run comparison mode](./run-comparison.md)).
 execution plan, filterable down to I/O operators (scan, exchange), a
 broader "basic" set, or every operator. **Export evidence** downloads the
 current run's findings as a portable Markdown or JSON report, the same
-shape the CLI and MCP tools produce; turn on **Redact identifiers** first if
-the report is headed outside the environment that produced it, since that
-pseudonymizes the app id and any host/IP tokens. **Keyboard shortcuts**
+shape the CLI and MCP tools produce, or as **Download HTML dashboard**: one
+`.html` file holding this dashboard for the run, which opens in any browser
+with no server, like the CLI's `--export-html` folder. Exported dashboards
+carry no docs links: finding tags and "learn more" references show as plain
+text, so look them up in these docs yourself. Turn on
+**Redact identifiers** first if the export is headed outside the environment
+that produced it, since that pseudonymizes the app id and any host/IP tokens
+in all three formats. **Keyboard shortcuts**
 (press `?` from anywhere) lists every shortcut. Rounding it out: a **Docs**
 link and a theme toggle.
 
@@ -214,8 +219,9 @@ stdout; pass `--out <path>` to write it to that file instead.
 Pass `--export-html <dir>` to write a self-contained HTML dashboard for the
 run into `<dir>` (which must not already exist or must be empty). Open
 `<dir>/index.html` directly in a browser over `file://`, with no server, to
-get the same interactive dashboard offline. This makes it easy to archive or
-share a run. `--redact` applies to the exported report too.
+get the same interactive dashboard offline, without the docs links. This
+makes it easy to archive or share a run. `--redact` applies to the exported
+report too.
 
 The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,

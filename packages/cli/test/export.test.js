@@ -202,7 +202,9 @@ describe('--export-html (published bin)', () => {
       expect(stderr).toBe('');
       expect(existsSync(join(destDir, 'index.html'))).toBe(true);
       expect(existsSync(join(destDir, 'data.js'))).toBe(true);
-      expect(existsSync(join(destDir, 'docs'))).toBe(true);
+      // An exported dashboard renders its docs references as plain text, so it
+      // ships no docs/ folder.
+      expect(existsSync(join(destDir, 'docs'))).toBe(false);
       const dataJs = readFileSync(join(destDir, 'data.js'), 'utf8');
       expect(dataJs).toContain('window.__SPARKFORENSICS_RUN_GZ__');
       expect(parseRunPayload(dataJs).app.id).toBe('app-export-1');

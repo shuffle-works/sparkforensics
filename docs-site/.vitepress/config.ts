@@ -7,20 +7,6 @@ import { fileURLToPath } from 'node:url';
 // embedding this under a fixed prefix sets DOCS_BASE at build time.
 const DOCS_BASE = process.env.DOCS_BASE ?? '/docs/';
 
-// The HTML export (opened via `file://`) has no origin for VitePress's
-// client-side router to resolve an absolute base against, and that router
-// bakes `base` into a shared framework chunk used for every page's dynamic
-// imports (search, page transitions) regardless of that page's own folder
-// depth — no single relative value can be correct for every page. MPA mode
-// removes the client router entirely (each page becomes a real static page,
-// internal links are ordinary full-page loads), which sidesteps that. The
-// server-hosted build has no such problem, so it keeps SPA transitions and
-// working local search by leaving this off. `vite.export.config.ts`'s
-// `docs:build` step is the only caller that sets DOCS_MPA=1; the remaining
-// `/docs/`-prefixed paths VitePress still bakes into every page get rewritten
-// to the correct relative depth by copy-docs-site.ts, export-only.
-const DOCS_MPA = process.env.DOCS_MPA === '1';
-
 // Builds a VitePress sidebar section list from a corpus's nav-index.json,
 // grouping entries by their `section` field in file order.
 function navSidebar(navIndexUrl: string, base: string) {
@@ -43,7 +29,6 @@ export default defineConfig({
   title: 'SparkForensics',
   description: 'Docs for using and contributing to SparkForensics',
   base: DOCS_BASE,
-  mpa: DOCS_MPA,
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${DOCS_BASE}favicon.svg` }],
     ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],

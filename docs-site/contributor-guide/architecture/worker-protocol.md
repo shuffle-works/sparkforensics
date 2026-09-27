@@ -247,7 +247,7 @@ core time in core-s or core-h, and a time figure has no "Estimated" prefix. JSON
 rows carry the same figure as `impact`/`impactMeaning` when there is one, and each
 `recommendations` row an `impactMeaning` next to its `impact`, which is null for a
 resource figure that rounds to zero. `EvidenceExport` names downloads
-`evidence-<appId>[-redacted].<md|json>`, taking the app id from the (already
+`evidence-<appId>[-redacted].<md|json|html>`, taking the app id from the (already
 pseudonymized when redacting) report so a redacted file never leaks the real id
 and is never name-identical to a raw export.
 

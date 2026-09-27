@@ -306,17 +306,20 @@ export function Topbar({
             </Button>
           ) : null}
           {!sectionControls ? <WidgetDensityControl /> : null}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="tap-target-comfortable"
-            aria-label="Docs"
-            title="Read the docs"
-            nativeButton={false}
-            render={<a href={DOCS_SITE_ROOT} target="_blank" rel="noopener noreferrer" />}
-          >
-            <FileText aria-hidden="true" />
-          </Button>
+          {/* An exported dashboard carries no docs to link to. */}
+          {!exportMode ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="tap-target-comfortable"
+              aria-label="Docs"
+              title="Read the docs"
+              nativeButton={false}
+              render={<a href={DOCS_SITE_ROOT} target="_blank" rel="noopener noreferrer" />}
+            >
+              <FileText aria-hidden="true" />
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="icon"
@@ -377,12 +380,14 @@ export function Topbar({
               </DropdownMenuItem>
             ) : null}
             {!sectionControls ? <WidgetDensityMenuItem /> : null}
-            <DropdownMenuItem
-              nativeButton={false}
-              render={<a href={DOCS_SITE_ROOT} target="_blank" rel="noopener noreferrer" />}
-            >
-              Docs
-            </DropdownMenuItem>
+            {!exportMode ? (
+              <DropdownMenuItem
+                nativeButton={false}
+                render={<a href={DOCS_SITE_ROOT} target="_blank" rel="noopener noreferrer" />}
+              >
+                Docs
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem onClick={() => setShortcutsOpen(true)}>Keyboard shortcuts</DropdownMenuItem>
             <DropdownMenuItem onClick={toggle}>Toggle theme</DropdownMenuItem>
           </DropdownMenuContent>

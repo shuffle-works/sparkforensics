@@ -2,7 +2,6 @@ import { Toaster } from '@/components/ui/sonner';
 import { useStore } from '@/store/store';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider } from '@/view/DocsContext';
-import { DocsSheet } from '@/view/DocsSheet';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { PlanGraphRoute } from '@/view/PlanGraphRoute';
 import { usePlanGraphRouteProps } from '@/view/usePlanGraphRouteProps';
@@ -20,7 +19,10 @@ function PlanGraphRouteContainer() {
  * by hydrateExportStore), so there's no idle/parsing/error/comparison
  * routing, no DropZone, no CompareLanding, no RunComparison: those chunks
  * are excluded from this build graph by construction (never imported here),
- * not by relying on dead-code elimination to drop an unused branch. */
+ * not by relying on dead-code elimination to drop an unused branch. No
+ * DocsSheet either: an exported dashboard carries no docs links (DocsLink and
+ * TagBadge render plain text in exportMode), so nothing could open it.
+ * DocsProvider stays because DocsLink still reads its context. */
 export function ExportApp() {
   const planGraphActive = useStore((s) => s.planGraph.active);
   return (
@@ -28,7 +30,6 @@ export function ExportApp() {
       <DocsProvider>
         <StageDetailProvider>
           {planGraphActive ? <PlanGraphRouteContainer /> : <Dashboard />}
-          <DocsSheet />
           <Toaster />
         </StageDetailProvider>
       </DocsProvider>

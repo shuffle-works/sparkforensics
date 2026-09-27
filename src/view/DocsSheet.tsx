@@ -56,8 +56,8 @@ function siteFrameSrc(path: string, theme: 'dark' | 'light'): string {
 
 /** Esc inside the docs iframe never reaches this document, so the panel
  * could only be closed with Esc while focus was outside it. Listen in the
- * frame's own document (same-origin docs only; a cross-origin frame, such
- * as a `file://` export, throws on access and keeps the X button). Esc that
+ * frame's own document (same-origin docs only; a cross-origin frame throws
+ * on access and keeps the X button). Esc that
  * closes the docs' own search popup is left to it. */
 function listenForEscapeInFrame(frame: HTMLIFrameElement, close: () => void): void {
   let doc: Document | null = null;

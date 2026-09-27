@@ -14,12 +14,16 @@ npm run test:core     # packages/core's suite: detectors, analyzer, parser, MCP 
 npm run test:cli      # packages/cli's suite (packs and spawns the real tarball)
 npm run test:mcp      # packages/mcp's suite (packs and spawns the real tarball)
 npm run dev           # Vite dev server for the app itself
-npm run build         # production build, outputs dist/
+npm run build         # production build, outputs dist/ (plus dist/export-template.html, the HTML download's template)
 npm run preview       # serves dist/ locally
 npx tsc --noEmit      # typecheck (strict TypeScript across src/ and packages/core/src/)
 npm run lint          # eslint over the repo
 node packages/cli/bin/sparkforensics-analyze.mjs <file|rolling-log-dir>   # run the CLI analyzer against a log, outside the browser
 ```
+
+The dashboard's **Download HTML dashboard** fetches `export-template.html`
+from beside the app, so under `npm run dev` it fails with an error toast;
+use `npm run build && npm run preview` to try it.
 
 `npm install` also runs the `prepare` script, which points git at
 `.githooks/`. After that, a pre-commit hook lints staged JS files on every

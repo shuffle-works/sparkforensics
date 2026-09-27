@@ -11,7 +11,7 @@ import {
   buildRunVerdict, quotedReasonText, recommendationText, stepCopyText, type NextStep,
 } from '@sparkforensics/core/run-verdict.ts';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
-import { useWidgetDensity } from '@/store/store';
+import { useStore, useWidgetDensity } from '@/store/store';
 import { REGISTRY } from '@/view/detector-registry';
 import { useOptionalDocs } from '@/view/DocsContext';
 import { findingActionLabel } from '@/view/finding-action-label';
@@ -193,6 +193,7 @@ const UNDERSTANDING_FINDINGS_URL = 'docs/user-guide/understanding-findings.html'
 function NewcomerPrimer() {
   const [open, setOpen] = useState(false);
   const docs = useOptionalDocs();
+  const exportMode = useStore((s) => s.exportMode);
   return (
     <div className="text-sm">
       <button
@@ -228,21 +229,24 @@ function NewcomerPrimer() {
             cuts cost, but may not shorten the run. Red (critical), amber (warning) and blue (info) show how
             serious each finding is. When a finding shows a time-savings figure, its color usually follows that figure.
           </p>
-          <a
-            href={UNDERSTANDING_FINDINGS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-block text-primary underline-offset-4 hover:underline"
-            onClick={(event) => {
-              // Same passthrough as every other in-app docs link: a modified or
-              // non-primary click keeps the browser's own new-tab behavior.
-              if (!docs || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-              event.preventDefault();
-              docs.openSite(UNDERSTANDING_FINDINGS_URL);
-            }}
-          >
-            What every finding means
-          </a>
+          {/* An exported dashboard carries no docs, so it drops the pointer to them. */}
+          {!exportMode ? (
+            <a
+              href={UNDERSTANDING_FINDINGS_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block text-primary underline-offset-4 hover:underline"
+              onClick={(event) => {
+                // Same passthrough as every other in-app docs link: a modified or
+                // non-primary click keeps the browser's own new-tab behavior.
+                if (!docs || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                event.preventDefault();
+                docs.openSite(UNDERSTANDING_FINDINGS_URL);
+              }}
+            >
+              What every finding means
+            </a>
+          ) : null}
         </div>
       ) : null}
     </div>

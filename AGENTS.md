@@ -21,7 +21,7 @@ MCP package tests: `npm run test:mcp` (packages/mcp; pack-and-spawn against the 
 Server tests: `npm run test:server` (packages/server's own suite; separate deps, not part of `npm test`)
 Coverage: `npm run test:coverage` at root or inside any `packages/*` dir runs that package's vitest with `--coverage` (v8 provider, `lcov`+`text` reporters, output at `<pkg>/coverage/lcov.info`); CI's five jobs (`build`/`core`/`cli`/`mcp`/`server`) all route through this and upload to Coveralls via `coverallsapp/github-action`, merged by a final `finish` job.
 Dev server: `npm run dev` (Vite)
-Build: `npm run build` (runs `docs:build` then `vite build`; outputs `dist/` including `dist/docs/`; `npm run preview` serves it locally)
+Build: `npm run build` (runs `docs:build`, `vite build`, then the export-template build; outputs `dist/` including `dist/docs/` and `dist/export-template.html`; `npm run preview` serves it locally)
 Typecheck: `npx tsc --noEmit`
 Docs site dev: `npm run docs:dev` (VitePress over `docs-site/`)
 Docs site build: `npm run docs:build` (fails on dead internal links)
