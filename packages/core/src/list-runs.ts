@@ -82,9 +82,8 @@ export function applyFiltersAndCap(entries: RunListEntry[], filters: ListRunsFil
   return filters.redact ? { ...capped, runs: redactRunListEntries(capped.runs) } : capped;
 }
 
-// Local counterpart to redact.ts's redactAppIdentity, sized for a listing of many distinct apps
-// rather than the single app that tool works over: redactAppIdentity has no way to keep two
-// entries sharing an appId in sync, so this builds its own stable per-distinct-appId pseudonym map
+// Listing-wide app identity redaction: redact.ts's redactors each work over one run, with no way
+// to keep two listing entries sharing an appId in sync, so this builds its own stable per-distinct-appId pseudonym map
 // (numeric-aware sort, same scheme as redact.ts's buildMap) across the whole result set, two
 // attempts of the same app redact to the same identity, and applies it to every identity-bearing
 // field: appId, name (a listing's human-readable name is as identifying as the id itself), and the

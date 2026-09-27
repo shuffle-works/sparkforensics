@@ -35,7 +35,7 @@ const APP_ID_PATTERNS = [/\bapplication_\d{10,}_\d+\b/g];
 // Walk every string in the tree once, collecting matches for each `{ patterns,
 // out }` sink. One shared traversal for every token kind (instead of one
 // traversal per kind) keeps redactComparison's dual host+app-id scan the same
-// cost as the single-kind scan redactReport/redactAppIdentity already do.
+// cost as the single-kind scan redactReport already does.
 function scanTokens(node: unknown, sinks: Array<{ patterns: RegExp[]; out: Set<string> }>): void {
   if (typeof node === 'string') {
     for (const { patterns, out } of sinks) {
@@ -53,11 +53,6 @@ function scanTokens(node: unknown, sinks: Array<{ patterns: RegExp[]; out: Set<s
   if (node && typeof node === 'object') {
     for (const v of Object.values(node)) scanTokens(v, sinks);
   }
-}
-
-// Walk every string in the tree, collecting host/IP tokens into `hosts`.
-function scanHostTokens(node: unknown, hosts: Set<string>): void {
-  scanTokens(node, [{ patterns: HOST_PATTERNS, out: hosts }]);
 }
 
 // Recursively collects every string value found under a key literally named
@@ -196,24 +191,6 @@ export function redactReport<T extends RedactableReport>(input: T): T {
   const report = redactFailureGroups(input);
   const { appIds, hosts } = collectIds(report);
   return applyReplacements(report, { appIds, hosts });
-}
-
-// Narrow counterpart to redactReport(), for getRunSummary()'s standalone app
-// object (no findings tree to walk). There's exactly one app id here, so no
-// Set/Map/sort is needed for it; name/sparkVersion still go through the
-// shared host/IP scan-and-replace since either can carry a host token as
-// free text.
-export function redactAppIdentity(
-  app: { id: string | null; name: string | null; sparkVersion: string | null },
-): { id: string | null; name: string | null; sparkVersion: string | null } {
-  const hosts = new Set<string>();
-  scanHostTokens(app.name, hosts);
-  scanHostTokens(app.sparkVersion, hosts);
-  return {
-    id: typeof app.id === 'string' && app.id.length > 0 ? 'app-1' : app.id,
-    name: applyReplacements(app.name, { hosts }),
-    sparkVersion: applyReplacements(app.sparkVersion, { hosts }),
-  };
 }
 
 // Run-comparison counterpart: no single app-id *field* to pseudonymize

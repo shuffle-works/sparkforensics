@@ -4,6 +4,9 @@ import { cyrb53 } from './string-hash.ts';
 import { captureSnapshot } from './session-snapshot.ts';
 import type { Stage, PlanNode, SparkAppInfo, AppModel, Finding } from './types.ts';
 import type { SessionSnapshot } from './session-snapshot.ts';
+import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
+import { isIncompleteRun } from './check-coverage.ts';
+import { summarizeRunOutcome } from './run-outcome.ts';
 
 export interface MetricDeltaRow {
   key: string; label: string;
@@ -23,6 +26,15 @@ export interface CompareRunsResult {
   stageSkew: Array<{ identity: string; baseId: number; candId: number; baseline: number | null; candidate: number | null; delta: number | null }>;
   baseStages: Array<{ id: number; name: string; metrics: StageMetricsRow }>;
   candStages: Array<{ id: number; name: string; metrics: StageMetricsRow }>;
+  // Each run's job results as its own run verdict counts them, and whether its log lacks an
+  // end-of-run record: the comparison verdict leads with failed jobs and never calls a cut-off
+  // log's shorter time a speed-up.
+  jobOutcomes: { baseline: VerdictJobOutcome; candidate: VerdictJobOutcome };
+}
+
+function jobOutcome(snapshot: SessionSnapshot): VerdictJobOutcome {
+  const { failedJobs, totalJobs } = summarizeRunOutcome(snapshot.jobs, snapshot.catalog);
+  return { failedJobs, totalJobs, incomplete: isIncompleteRun(snapshot.catalog) };
 }
 
 // Replace run-varying tokens (digit runs, long hex ids) with a stable marker so
@@ -428,6 +440,7 @@ export function compareRuns(
     stageSkew: stageSkewDeltas(baseSnap, candSnap, match),
     baseStages: stageList(baseSnap),
     candStages: stageList(candSnap),
+    jobOutcomes: { baseline: jobOutcome(baseSnap), candidate: jobOutcome(candSnap) },
   };
 }
 
@@ -445,8 +458,14 @@ function renderFindingsSection(title: string, findings: FindingsDeltaRow[]): str
 // evidence-report.ts's renderMarkdown house style (## section heading, ###
 // subheadings, `- key: value` bullets). Shared by the CLI's --baseline
 // markdown output and the MCP server's compare_runs `format: 'md'`.
-export function renderComparisonMarkdown(comparison: CompareRunsResult): string {
+export function renderComparisonMarkdown(comparison: CompareRunsResult, verdict?: ComparisonVerdictText): string {
   const lines = ['', '## Comparison to baseline', ''];
+  if (verdict) {
+    // The dashboard comparison page's headline: run A is the baseline, run B the candidate.
+    lines.push(`Run A: ${comparison.baselineLabel} · Run B: ${comparison.candidateLabel}`, '', verdict.title);
+    if (verdict.sentences.length > 0) lines.push('', verdict.sentences.join(' '));
+    lines.push('');
+  }
   if (comparison.confidence === 'low') {
     lines.push(`- confidence: low, ${comparison.reason}`);
     lines.push('');

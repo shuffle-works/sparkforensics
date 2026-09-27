@@ -43,7 +43,7 @@ Tags carry their own docs links; there is no separate legend widget.
 documentation anchor is the caller's `docAnchor` prop when that is a known
 anchor (call sites holding the finding pass `finding.docAnchor`; a widget
 header or grouped row passes `sharedDocAnchor(findings)`), else the type's
-single known anchor (`docAnchorForType`, `src/view/finding-tag-help.ts`). The
+single known anchor (`docAnchorForType`, re-exported by `src/view/finding-tag-help.ts` beside `TAG_HELP`, which lives in `packages/core/src/finding-tag-help.ts`). The
 prop matters for `configAudit`, whose four entries carry different anchors,
 so the type lookup finds none. With an anchor, the pill itself links into
 the docs panel, and (density `advanced` only) a second icon link opens that
@@ -114,8 +114,8 @@ same as everywhere else on the board); a text block inside its own nested
 from `findingActionLabel` (`src/view/finding-action-label.ts`), over the
 finding's own full `recommendation` sentence in smaller muted text, both
 wrapping rather than truncating); and a right-aligned monospace stage
-reference + impact figure (e.g. `St.49 · 20.1s`, via `ImpactEstimate.tsx`'s
-shared `formatWallClockRange`/`formatRawWaste`). That inner button, not the
+reference + impact figure (e.g. `St.49 · 20.1s`, via the shared
+`formatWallClockRange`/`formatRawWaste` in `packages/core/src/impact-format.ts`). That inner button, not the
 row, is the click target: it routes via `selectTriageTargetForFinding`
 (`src/view/triage-target.ts`), the same per-finding resolver Stage Summary
 Table's own control uses (see "First investigation routing" below); a
@@ -434,14 +434,17 @@ independently resolve and request their own target.
 `widgetId`, widget title, and finding label; identity and copy come from
 there, not from runtime position or raw detector type. Eligible targets
 have a mapped, routeable registry entry and a non-empty trimmed
-recommendation (`targetForFinding`, `src/view/triage-target.ts`). The
+recommendation (`triageTargetFor`, `src/view/triage-target.ts`). The
 target's widget still renders every affected stage in its local order.
 
-`src/view/triage-target.ts` also exports `rankTriageTargets`, which orders
-every routeable finding by potential savings (`impactEstimate.wallClock.high`),
-a quantified estimate ahead of an unquantified one, then impact band, then
-`orderedWidgets()` widget order, then catalog order; `selectTriageTarget`
-is its first entry. Ranking by potential savings replaced the earlier
+`src/view/triage-target.ts` also exports `rankTriageTargets`, a thin wrapper
+over core's `rankBySavings` (`packages/core/src/run-verdict.ts`, shared with the
+CLI/MCP verdict), which orders every routeable finding by potential savings
+(`impactEstimate.wallClock.high`), a quantified estimate ahead of an
+unquantified one, then impact band, then widget display order
+(`FINDING_DISPLAY_ORDER`, core's copy of `orderedWidgets()`, which a
+`tests/view/detector-registry.test.tsx` case keeps equal), then catalog order;
+`selectTriageTarget` is its first entry. Ranking by potential savings replaced the earlier
 severity-first routing once the occupancy-weighted impact estimator gave
 every finding a real, comparable `impactEstimate.wallClock` figure:
 severity-first could point a "start here" pick at a `skew`/`straggler`
@@ -535,10 +538,11 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    docs-panel link to the log-retrieval guide.
 2. `RunVerdict` (`src/view/widgets/RunVerdict.tsx`): the run's verdict
    title, a summary sentence, and up to three numbered next steps built by
-   `buildNextSteps` (`src/view/run-verdict.ts`). Steps group routeable
+   `buildRunVerdict` (`packages/core/src/run-verdict.ts`, the same code the
+   CLI/MCP evidence report's `verdict` runs) via `buildNextSteps`. Steps group routeable
    eligible findings by location (one stage, one multi-stage finding type,
    or one app-level finding type and variant), ordered by
-   `rankTriageTargets` (potential savings, then impact band, then widget
+   `rankBySavings` (potential savings, then impact band, then widget
    order), the same ranking every other component uses: no finding type
    jumps that order. An idle-capacity step (`utilization`, or
    `memoryUtilization`'s `idleCores` variant only, never its heap variants)
@@ -548,9 +552,9 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    reports, falling back to the Scorecard's Unused core time figure only when no step
    carries one, so the title and the step never disagree. Each step's
    savings figure is followed by what it counts (`savingsMeaning` in
-   `src/view/run-verdict.ts`: run time for a wall-clock figure, otherwise the
+   `packages/core/src/impact-format.ts`: run time for a wall-clock figure, otherwise the
    resource its `rawWaste` unit measures), and **Copy next steps** copies the
-   whole verdict as a plain-text checklist (`planCopyText` in `RunVerdict.tsx`). Always the
+   whole verdict as a plain-text checklist (`planCopyText` in core `run-verdict.ts`). Always the
    unfiltered catalog: a board filter never changes the verdict. A step's
    **Show evidence** on a finding the active filter hides clears only the
    filter dimensions that hide it (`excludingDimensions` in
@@ -562,7 +566,7 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    lacked nothing a check needs (below); an
    `incompleteRun` finding gets its own non-clean title and a sentence
    saying the figures cover only the captured part of the run. Job results
-   (`summarizeRunOutcome` in `src/view/run-outcome.ts`) set the run outcome:
+   (`summarizeRunOutcome` in `packages/core/src/run-outcome.ts`) set the run outcome:
    with a failed job the title says the run failed, the verdict quotes the
    first line of Spark's recorded reason (a failed job's `stageFailed`
    value first, then any `stageFailed`, then the job exception), the run is
@@ -571,7 +575,7 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    caveats (a finding with `dataUnavailable`, or one `isRealFinding`
    drops), a log with no finished stage, and an `incompleteRun` log (whose
    `RUN_SPAN_CHECK_TYPES` had no run length to measure) are gaps
-   (`verdictGaps`): any gap keeps the run from being called clean, and a
+   (`verdictGaps`, `packages/core/src/check-coverage.ts`): any gap keeps the run from being called clean, and a
    log with no finished stage and no finding gets its own title. The
    verdict card does not list the gaps; the Clean checks disclosure's
    "Not checked on this log" group does, each caveat by its own

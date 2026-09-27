@@ -233,8 +233,10 @@ describe('diagnoseRun / getFindingEvidence', () => {
     const { dir, path } = tmpEventLog();
     try {
       const { runId } = await resolveOrCreateRun({ source: { path } });
-      const { recommendations, cleanChecks } = diagnoseRun(runId);
+      const { recommendations, cleanChecks, notRunChecks } = diagnoseRun(runId);
       expect(Array.isArray(recommendations)).toBe(true);
+      expect(Array.isArray(notRunChecks)).toBe(true);
+      for (const c of notRunChecks) expect(typeof c.reason).toBe('string');
       expect(Array.isArray(cleanChecks)).toBe(true);
       expect(cleanChecks.length).toBeGreaterThan(0);
       for (const c of cleanChecks) {
@@ -336,7 +338,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       const result = diagnoseRun(runId, include === undefined ? undefined : { include });
       expect(Object.keys(result).sort()).toEqual(
-        ['cleanChecks', 'findings', 'recommendations', 'runComplete', 'runId'].sort(),
+        ['cleanChecks', 'findings', 'notRunChecks', 'recommendations', 'runComplete', 'runId', 'verdict'].sort(),
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -516,6 +518,7 @@ describe('getRunSummary', () => {
       expect(summary.stageCount).toBe(0);
       expect(summary.durationMs).toBe(100);
       expect(summary.executorCount).toEqual({ added: 0, removed: 0 });
+      expect(summary.runShape).toMatchObject({ wallClockMs: 100, etlPhasesMs: null, peakBusyCores: null });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -528,6 +531,30 @@ describe('getRunSummary', () => {
     try {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       expect(getRunSummary(runId).durationMs).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports how the run ended: failed/total jobs and the first line of the failure reason', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, [
+      { Event: 'SparkListenerApplicationStart', 'App ID': 'app-3', 'App Name': 't', Timestamp: 0 },
+      { Event: 'SparkListenerJobStart', 'Job ID': 0, 'Submission Time': 1, 'Stage IDs': [] },
+      { Event: 'SparkListenerJobEnd', 'Job ID': 0, 'Completion Time': 2, 'Job Result': { Result: 'JobSucceeded' } },
+      { Event: 'SparkListenerJobStart', 'Job ID': 1, 'Submission Time': 3, 'Stage IDs': [] },
+      { Event: 'SparkListenerJobEnd', 'Job ID': 1, 'Completion Time': 4, 'Job Result': { Result: 'JobFailed', Exception: { Message: 'Job aborted: boom\n\tat Foo.bar' } } },
+      { Event: 'SparkListenerApplicationEnd', Timestamp: 10 },
+    ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+    try {
+      const { runId } = await resolveOrCreateRun({ source: { path } });
+      const summary = getRunSummary(runId);
+      expect(summary).toMatchObject({ failedJobs: 1, totalJobs: 2, failureReason: 'Job aborted: boom', failureReasonStageId: null });
+      expect(diagnoseRun(runId, { include: ['summary'] }).summary.outcome).toEqual({
+        failedJobs: 1, totalJobs: 2, failureReason: 'Job aborted: boom', failureReasonStageId: null,
+      });
+      expect(diagnoseRun(runId, { markdown: true }).markdown).toContain("- Outcome: 1 of 2 jobs failed. Spark's recorded reason: Job aborted: boom");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -640,6 +667,7 @@ describe('compareRuns', () => {
       expect(wallClock.baseline).toBe(2000);
       expect(wallClock.candidate).toBe(1000);
       expect(wallClock.direction).toBe('improvement');
+      expect(result.verdict).toEqual({ title: 'Run B finished 1.0s faster than run A (50%)', tone: 'better', sentences: [] });
     } finally {
       rmSync(a.dir, { recursive: true, force: true });
       rmSync(b.dir, { recursive: true, force: true });

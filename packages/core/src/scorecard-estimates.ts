@@ -1,6 +1,6 @@
-import { computeEfficiencyModel } from '@sparkforensics/core/efficiency-model.ts';
-import { computeWallClock } from '@sparkforensics/core/wall-clock.ts';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import { computeEfficiencyModel } from './efficiency-model.ts';
+import { computeWallClock } from './wall-clock.ts';
+import type { AppModel } from './types.ts';
 
 type EfficiencyEstimate = {
   value: number | null;

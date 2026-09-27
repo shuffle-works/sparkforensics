@@ -6,16 +6,18 @@ import { collectRun } from './cli/collect-run.ts';
 import { deriveEvidenceAvailability } from './evidence-availability.ts';
 import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
 import { mcpError } from './mcp-error.ts';
-import { buildEvidenceReport, toFindingsFilter, type FindingRow, type RecommendationRow, type CleanCheckEntry, type EvidenceReportJson } from './evidence-report.ts';
-import { redactAppIdentity, redactComparison } from './redact.ts';
+import { buildEvidenceReport, toFindingsFilter, type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson } from './evidence-report.ts';
+import { redactComparison } from './redact.ts';
 import { computeWallClock } from './wall-clock.ts';
 import { analyze } from './analyzer.ts';
 import { buildComparison, renderComparisonMarkdown, type CompareRunsResult } from './run-comparison.ts';
+import { comparisonVerdict, type ComparisonVerdictText } from './comparison-verdict.ts';
 import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { docAnchorForType, tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
 import { typeTag } from './format-utils.ts';
 import type { AppModel, Finding, SparkAppInfo } from './types.ts';
+import type { RunShape } from './run-shape.ts';
 
 export type RunSource = { path: string } | { shsBaseUrl: string; appId: string; attemptId?: string };
 // RunRef uses a nested `source` key, matching every real call site (resolveOrCreateRun's
@@ -33,13 +35,22 @@ export interface RunSummary {
   // checking only durationMs:null couldn't tell an incomplete capture from a zero-length run; this
   // is the explicit signal (mirrors the incompleteRun finding).
   runComplete: boolean;
+  // How the run ended, the evidence report's summary.outcome (see RunOutcomeSummary).
+  failedJobs: number;
+  totalJobs: number;
+  failureReason: string | null;
+  failureReasonStageId: number | null;
+  // Efficiency, unused core time, ETL phases and peak busy cores, as the dashboard shows them.
+  runShape: RunShape;
 }
 // compareRuns returns a smaller MCP-facing projection of CompareRunsResult
-// (runIdA/runIdB/findingsDelta/metricDeltas/confidence/reason/matchedCoverage), not the full raw
-// shape (no baselineLabel/stageSkew/baseStages/candStages).
+// (runIdA/runIdB/verdict/findingsDelta/metricDeltas/confidence/reason/matchedCoverage), not the full
+// raw shape (no baselineLabel/stageSkew/baseStages/candStages/jobOutcomes).
 export interface McpCompareRunsResult {
   runIdA: string;
   runIdB: string;
+  // The dashboard comparison page's headline (run A = runIdA, run B = runIdB).
+  verdict: ComparisonVerdictText;
   findingsDelta: CompareRunsResult['findings'];
   metricDeltas: CompareRunsResult['metrics'];
   confidence: CompareRunsResult['confidence'];
@@ -173,15 +184,16 @@ export function diagnoseRun(runId: string, opts?: {
   redact?: boolean; include?: Array<'summary' | 'evidenceAvailability' | 'detectors'>; markdown?: boolean;
   impactBand?: string[]; type?: string[]; stageId?: number;
 }): {
-  runId: string; findings: FindingRow[]; runComplete: boolean;
-  recommendations: RecommendationRow[]; cleanChecks: CleanCheckEntry[];
+  runId: string; verdict: EvidenceReportJson['verdict']; findings: FindingRow[]; runComplete: boolean;
+  recommendations: RecommendationRow[]; cleanChecks: CleanCheckEntry[]; notRunChecks: NotRunCheckEntry[];
 } & Partial<Pick<EvidenceReportJson, 'summary' | 'evidenceAvailability' | 'detectors'>> & { markdown?: string } {
   const appModel = getCachedAppModel(runId);
   const findingsFilter = toFindingsFilter(opts?.impactBand, opts?.type, opts?.stageId);
   const { json, markdown } = buildEvidenceReport(appModel, { redact: opts?.redact, markdown: opts?.markdown, findingsFilter });
   const include = opts?.include ?? [];
   return {
-    runId, findings: json.findings, recommendations: json.recommendations, cleanChecks: json.cleanChecks,
+    runId, verdict: json.verdict, findings: json.findings, recommendations: json.recommendations, cleanChecks: json.cleanChecks,
+    notRunChecks: json.notRunChecks,
     runComplete: appModel.app?.endTime != null,
     ...(include.includes('summary') ? { summary: json.summary } : {}),
     ...(include.includes('evidenceAvailability') ? { evidenceAvailability: json.evidenceAvailability } : {}),
@@ -283,11 +295,15 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean }): RunSu
   const appModel = getCachedAppModel(runId);
   const { app, stages, jobs, sql, executors } = appModel;
   const durationMs = hasCompleteInterval(app) ? computeWallClock(app, stages).total : null;
-  // No buildEvidenceReport call here to redact, so reuse redact.ts's app-id + host-token
-  // pseudonymization directly. Passing name/sparkVersion (not just id) matters: app.name is free
-  // text and can itself carry a host/IP token.
+  // The failure reason needs the stageFailed findings, so this reads the (cached) evidence report.
+  // With redact, the app identity comes from that same redacted report, so a host token in the app
+  // name and in Spark's failure reason get the same pseudonym.
+  const { summary } = buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false }).json;
+  const { outcome } = summary;
   const rawApp = { id: app?.id ?? null, name: app?.name ?? null, sparkVersion: app?.sparkVersion ?? null };
-  const redactedApp = opts?.redact ? redactAppIdentity(rawApp) : rawApp;
+  const redactedApp = opts?.redact
+    ? { id: summary.app.id ?? null, name: summary.app.name ?? null, sparkVersion: summary.app.sparkVersion ?? null }
+    : rawApp;
   return {
     runId,
     app: redactedApp,
@@ -297,6 +313,8 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean }): RunSu
     executorCount: { added: executors.added.length, removed: executors.removed.length },
     durationMs,
     runComplete: app?.endTime != null,
+    ...outcome,
+    runShape: summary.runShape,
   };
 }
 
@@ -330,16 +348,18 @@ export async function compareRuns(
   // Stage names throughout `built` carry raw Spark stage text, which can embed a host/IP token as
   // free text, the same residual redactReport() already scrubs from the evidence report.
   const result = opts?.redact ? redactComparison(built) : built;
+  const verdict = comparisonVerdict(result);
 
   return {
     runIdA,
     runIdB,
+    verdict,
     findingsDelta: result.findings,
     metricDeltas: result.metrics,
     confidence: result.confidence,
     reason: result.reason,
     matchedCoverage: result.matchedCoverage,
-    ...(opts?.markdown ? { markdown: renderComparisonMarkdown(result) } : {}),
+    ...(opts?.markdown ? { markdown: renderComparisonMarkdown(result, verdict) } : {}),
   };
 }
 

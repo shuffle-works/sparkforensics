@@ -38,7 +38,13 @@ Or point an MCP client (Claude Desktop, Claude Code) at it with this config:
 
 ## `diagnose_run`
 
-Diagnose a Spark run: thresholded findings with remediation text.
+Diagnose a Spark run: thresholded findings with remediation text, led by the
+same verdict the dashboard opens with. `verdict` gives a title ("Start with
+Stage 3", "1 of 3 jobs failed in this run"), summary sentences, the first three
+places to look in the dashboard's order (each with its action, what to try, the
+potential savings and what that figure counts, and the other finding types
+flagged at the same place), how many more places the full list holds, and
+`copyText`, the dashboard's "Copy next steps" checklist.
 
 Parameters (all optional: provide either a `source` to load a fresh run, or
 a `runId` for one already loaded in this session):
@@ -49,10 +55,12 @@ a `runId` for one already loaded in this session):
   host/IP tokens in the response
 - `include`: array of `"summary" | "evidenceAvailability" | "detectors"`
   (default omitted, i.e. none). Each requested value adds one extra top-level
-  field to the response, on top of the default `findings`/`recommendations`/
-  `cleanChecks`/`runComplete`:
-  - `summary`: app id/name/Spark version, stage/job/SQL-execution counts, and
-    a finding count broken down by impact band
+  field to the response, on top of the default `verdict`/`findings`/`recommendations`/
+  `cleanChecks`/`notRunChecks`/`runComplete`:
+  - `summary`: app id/name/Spark version, stage/job/SQL-execution counts, a
+    finding count broken down by impact band, the same counts without evidence
+    caveats and the incomplete-run row (`actionableFindingCount`,
+    `actionableImpactBandCounts`, what the dashboard counts), and `clean`
   - `evidenceAvailability`: which event types the log actually contained, so
     you can tell "this check came back clean" apart from "this check
     couldn't run because the log is missing data"
@@ -64,13 +72,15 @@ a `runId` for one already loaded in this session):
   narrows the `findings` array to only these bands
 - `type`: array of finding `type` values, narrows `findings` to only these
   types
-- `stageId`: number, narrows `findings` to only findings on this stage
+- `stageId`: number, narrows `findings` to only findings on this stage,
+  including a SQL plan finding whose only stage it is (the dashboard's stage
+  details rule)
 - `format`: `"json" | "md"` (default `"json"`), switches `content[0].text` to
   a rendered Markdown report instead of JSON. `structuredContent` always
   stays JSON-shaped, regardless of `format`.
 
 `impactBand`/`type`/`stageId` only filter the `findings` array:
-`recommendations`, `cleanChecks`, and the finding counts in `summary` (when
+`recommendations`, `cleanChecks`, `notRunChecks`, and the finding counts in `summary` (when
 requested via `include`) always stay computed from the full, unfiltered set,
 so a narrow filter never hides that other checks passed or other fixes exist.
 
@@ -115,7 +125,19 @@ drove the finding.
 
 ## `get_run_summary`
 
-App/stage/job/sql counts and duration for a run: no findings.
+App/stage/job/sql counts, duration, and how the run ended: no findings.
+`failedJobs`/`totalJobs` count only jobs with an end record, and
+`failureReason` is the first line of Spark's own recorded reason when a job
+failed, the same line the dashboard verdict quotes (`failureReasonStageId` is
+the stage it came from, or `null` when there is no reason or it came from a
+job's exception).
+`runShape` carries the dashboard's run-shape figures: `wallClockMs`,
+`efficiencyPct` (the share of the run with a stage running, the Scorecard's
+Efficiency), `unusedCoreTimePct` (driver idle plus executor slack as a share of
+available core time; `minEfficiencyPct` checks 100 minus this), `etlPhasesMs`
+(`extract`/`transform`/`load` summed stage time, so a phase can exceed the run)
+and `peakBusyCores` (busy cores at the peak of Core Usage by Locality). Each is
+`null` where the dashboard shows "Not measured" or "Unavailable".
 
 Parameters: same as `diagnose_run` (`source`, `runId`, `redact`, all optional).
 
@@ -136,7 +158,12 @@ Example response:
   "sqlExecutionCount": 0,
   "executorCount": { "added": 0, "removed": 0 },
   "durationMs": 100,
-  "runComplete": true
+  "runComplete": true,
+  "failedJobs": 0,
+  "totalJobs": 0,
+  "failureReason": null,
+  "failureReasonStageId": null,
+  "runShape": { "wallClockMs": 100, "efficiencyPct": 0, "unusedCoreTimePct": null, "etlPhasesMs": null, "peakBusyCores": null }
 }
 ```
 
@@ -154,7 +181,9 @@ Parameters (all optional):
 - `maxRuntimeMs`, `maxSpillGb`, `maxSkewRatio`, `maxFailedTaskRatePct`,
   `minEfficiencyPct`: absolute budgets, each evaluated only if provided. With
   two runs they apply to the candidate (`runIdB`/`sourceB`), the same as the
-  CLI's `--baseline` mode.
+  CLI's `--baseline` mode. `minEfficiencyPct` measures busy core time, the
+  share of executor core time that ran tasks (100 minus the dashboard's
+  Unused core time), not the dashboard's Efficiency tile.
 - `runIdB` / `sourceB`: a candidate run to compare against the first, so
   regression budgets can be evaluated. Same `runId`/`source` shape, resolved
   the same way. Omit both to skip regression budgets.
@@ -212,7 +241,13 @@ Example response:
 
 ## `compare_runs`
 
-Compare two runs: categorized findings delta and metric deltas.
+Compare two runs: the comparison page's verdict, categorized findings delta
+and metric deltas. `verdict` is the headline the dashboard's comparison page
+opens with (run A is `runIdA`/`sourceA`, run B is `runIdB`/`sourceB`): a
+`title` such as "Run B finished 9.9s faster than run A (37%)", or a failed-job
+headline when either run had jobs fail, a `tone` (`better`, `worse`, `same` or
+`unknown`), and `sentences` naming which cost metrics and finding categories
+moved each way.
 
 Parameters:
 
@@ -246,6 +281,7 @@ Example response:
 {
   "runIdA": "aaaa1111-...",
   "runIdB": "bbbb2222-...",
+  "verdict": { "title": "Run B finished 1.0s faster than run A (50%)", "tone": "better", "sentences": [] },
   "findingsDelta": { "introduced": [], "resolved": [] },
   "metricDeltas": [
     {

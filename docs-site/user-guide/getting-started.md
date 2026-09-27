@@ -199,6 +199,11 @@ npx -p sparkforensics-cli sparkforensics-analyze <file|dir> [--max-runtime ms] [
   [--out path]
 ```
 
+`--min-efficiency` checks busy core time, the share of executor core time that
+ran tasks (100 minus the dashboard's Unused core time). It is not the
+dashboard's Efficiency tile, which is the share of wall-clock with a stage
+running, so the two can differ widely on the same run.
+
 The command ships in the `sparkforensics-cli` package. To install it once:
 `npm i -g sparkforensics-cli`, then run `sparkforensics-analyze` directly.
 

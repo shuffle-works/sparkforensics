@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { normalizeStageName, matchStages, stageIdentity } from '../src/run-comparison.js';
 
 function snap(stages, app = { name: 'App A' }) {
-  return { app, stages: new Map(stages), sql: new Map(), catalog: [] };
+  return { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] };
 }
 
 describe('normalizeStageName', () => {
@@ -15,7 +15,7 @@ describe('normalizeStageName', () => {
 });
 
 function planSnap(execId, planTree, app = { name: 'App A' }) {
-  return { app, stages: new Map(), sql: new Map([[execId, { planTree }]]), catalog: [] };
+  return { app, stages: new Map(), sql: new Map([[execId, { planTree }]]), jobs: new Map(), catalog: [] };
 }
 
 function scan(relation) {
@@ -249,7 +249,7 @@ function stageFull(over) {
   return { name: 'Exchange 1', sqlExecutionId: null, submittedAt: 0, completedAt: 1000,
            taskDurationMax: 100, taskCount: 10, failedTasks: 0, memoryBytesSpilled: 0, ...over };
 }
-function fullSnap(stages, app) { return { app, stages: new Map(stages), sql: new Map(), catalog: [] }; }
+function fullSnap(stages, app) { return { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] }; }
 
 describe('metricDeltas', () => {
   it('emits exactly COMPARISON_METRIC_KEYS, in order', () => {
@@ -338,7 +338,7 @@ describe('metricDeltas', () => {
 import { findingsDelta } from '../src/run-comparison.js';
 
 function catSnap(stages, catalog, app = { name: 'A' }) {
-  return { app, stages: new Map(stages), sql: new Map(), catalog };
+  return { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog };
 }
 
 describe('findingsDelta (category counts)', () => {
@@ -401,8 +401,8 @@ describe('findingsDelta (category counts)', () => {
 // --- compareRuns assembler ---
 import { compareRuns } from '../src/run-comparison.js';
 
-const B = (stages, app) => ({ label: 'base.log', snapshot: { app, stages: new Map(stages), sql: new Map(), catalog: [] } });
-const C = (stages, app) => ({ label: 'cand.log', snapshot: { app, stages: new Map(stages), sql: new Map(), catalog: [] } });
+const B = (stages, app) => ({ label: 'base.log', snapshot: { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } });
+const C = (stages, app) => ({ label: 'cand.log', snapshot: { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } });
 
 describe('compareRuns', () => {
   it('sets low confidence (not unavailable) when app names differ, still computing metrics', () => {
@@ -443,7 +443,7 @@ describe('compareRuns', () => {
 });
 
 describe('compareRuns confidence', () => {
-  const run = (catalog, app, label) => ({ label, snapshot: { app, stages: new Map(), sql: new Map(), catalog } });
+  const run = (catalog, app, label) => ({ label, snapshot: { app, stages: new Map(), sql: new Map(), jobs: new Map(), catalog } });
 
   it("is 'low' (never 'unavailable') when application names differ", () => {
     const b = run([], { name: 'JobX', startTime: 0, endTime: 10 }, 'base');
@@ -467,8 +467,8 @@ describe('compareRuns confidence', () => {
       [1, { name: 'Exchange 1', sqlExecutionId: null }],
       [2, { name: 'Filter 1', sqlExecutionId: null }],
     ];
-    const b = { label: 'base', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), catalog: [] } };
-    const c = { label: 'cand', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), catalog: [] } };
+    const b = { label: 'base', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
+    const c = { label: 'cand', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
     const m = compareRuns(b, c);
     expect(m.matchedCoverage).toBe(1);
     expect(m.confidence).toBe('ok');
@@ -501,8 +501,8 @@ describe('compareRuns confidence', () => {
 
   it("still reports 'low' with a name-mismatch reason when names differ even if coverage happens to be high", () => {
     const stages = [[1, { name: 'Exchange 1', sqlExecutionId: null }]];
-    const b = { label: 'base', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), catalog: [] } };
-    const c = { label: 'cand', snapshot: { app: { name: 'JobY' }, stages: new Map(stages), sql: new Map(), catalog: [] } };
+    const b = { label: 'base', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
+    const c = { label: 'cand', snapshot: { app: { name: 'JobY' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
     const m = compareRuns(b, c);
     expect(m.matchedCoverage).toBe(1);
     expect(m.confidence).toBe('low');
@@ -568,6 +568,7 @@ describe('compareRuns per-stage summaries', () => {
 
 // --- shared Markdown renderer ---
 import { renderComparisonMarkdown } from '../src/run-comparison.js';
+import { comparisonVerdict } from '../src/comparison-verdict.ts';
 
 describe('renderComparisonMarkdown', () => {
   it('renders the confidence/coverage/metrics/findings sections', () => {
@@ -585,11 +586,32 @@ describe('renderComparisonMarkdown', () => {
   });
 
   it('lists one bullet per introduced/resolved finding', () => {
-    const run = (catalog, app, label) => ({ label, snapshot: { app, stages: new Map(), sql: new Map(), catalog } });
+    const run = (catalog, app, label) => ({ label, snapshot: { app, stages: new Map(), sql: new Map(), jobs: new Map(), catalog } });
     const b = run([{ type: 'spill', impactBand: 'warning' }], { name: 'JobX' }, 'base');
     const c = run([{ type: 'gc', impactBand: 'critical' }], { name: 'JobX' }, 'cand');
     const md = renderComparisonMarkdown(compareRuns(b, c));
     expect(md).toMatch(/### Introduced findings \(1\)\n\n- \[critical\] gc: 0 -> 1/);
     expect(md).toMatch(/### Resolved findings \(1\)\n\n- \[warning\] spill: 1 -> 0/);
+  });
+
+  it('opens with the comparison verdict, naming which run is A and which is B', () => {
+    const run = (jobs, label) => ({
+      label,
+      snapshot: { app: { name: 'JobX', startTime: 0, endTime: 1000 }, stages: new Map(), sql: new Map(), jobs, catalog: [] },
+    });
+    const failed = new Map([
+      [0, { id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [] }],
+      [1, { id: 1, result: 'JobFailed', succeeded: false, stageIds: [] }],
+    ]);
+    const ok = new Map([[0, { id: 0, result: 'JobSucceeded', succeeded: true, stageIds: [] }]]);
+    const result = compareRuns(run(failed, 'base'), run(ok, 'cand'));
+    expect(result.jobOutcomes).toEqual({
+      baseline: { failedJobs: 1, totalJobs: 2, incomplete: false },
+      candidate: { failedJobs: 0, totalJobs: 1, incomplete: false },
+    });
+    const verdict = comparisonVerdict(result);
+    expect(verdict).toMatchObject({ title: 'Run A had 1 of 2 jobs fail; run B completed', tone: 'better' });
+    const md = renderComparisonMarkdown(result, verdict);
+    expect(md).toMatch(/^\n## Comparison to baseline\n\nRun A: base · Run B: cand\n\nRun A had 1 of 2 jobs fail; run B completed\n\n/);
   });
 });

@@ -115,6 +115,16 @@ contributor should read; `docs/` stays flat internal engineering records
   must drop the element's `href` (restoring `role`/`tabindex`/keyboard
   handling by hand) to keep this interceptor from treating it as a navigable
   link at all.
+- `packages/{cli,mcp,server}/vendor-core/` (gitignored) is rebuilt only at
+  `prepack`. In the monorepo the bins load `packages/core/src/load-vendored.js`,
+  which uses a leftover `vendor-core/` only while its `core-source-hash.txt`
+  matches `core/src`; otherwise it warns on stderr and runs `core/src`. The
+  CLI's `export-template/` has no such check: rebuild it with
+  `node scripts/vendor-export-template.mjs` before trusting a local `--export-html`.
+- Shared analysis the dashboard and the CLI/MCP report both show (check
+  coverage, run outcome, verdict, savings formatting, comparison verdict, run
+  shape) lives in `packages/core/src/`; `src/view/` only renders it. Port a new
+  dashboard analysis the same way, or the CLI/MCP paths fall behind.
 - `packages/core/src/docs-content/{chapters,tuning,diagrams}` is generated
   (gitignored) from the upstream commit pinned in `upstream.json`, by
   `ensureTuningDocs()` in `scripts/fetch-tuning-docs.mjs`; every consumer

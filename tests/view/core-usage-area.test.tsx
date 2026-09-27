@@ -7,17 +7,18 @@ import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import { analyze } from '@sparkforensics/core/analyzer.ts';
 import { computeCoreLocalityRatio } from '@sparkforensics/core/core-locality-ratio.ts';
-import { computeLocalityAreaSeries } from '@sparkforensics/core/core-usage-locality.ts';
+import { buildLocalityChart } from '@sparkforensics/core/core-usage-locality.ts';
 import { downsample } from '@/view/charts/downsample';
 import { CoreUsageArea } from '@/view/widgets/CoreUsageArea';
 import { DocsProvider } from '@/view/DocsContext';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 
 // Both mocks call through to the real implementation; only the large-series
-// test below overrides computeLocalityAreaSeries's return value for one call.
+// test below overrides buildLocalityChart's return value for one call. The widget
+// reads its chart model (series, rescaling, peak) from core's buildLocalityChart.
 vi.mock('@sparkforensics/core/core-usage-locality.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sparkforensics/core/core-usage-locality.ts')>();
-  return { ...actual, computeLocalityAreaSeries: vi.fn(actual.computeLocalityAreaSeries) };
+  return { ...actual, buildLocalityChart: vi.fn(actual.buildLocalityChart) };
 });
 vi.mock('@/view/charts/downsample', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/view/charts/downsample')>();
@@ -112,12 +113,8 @@ test('renders a fallback message and no chart region when no stage has core-time
 
 test('downsamples a large bucketed series before handing it to the chart', () => {
   const bigLength = 5000;
-  const labels = Array.from({ length: bigLength }, (_, i) => i * 1000);
-  const series = {
-    PROCESS_LOCAL: new Array(bigLength).fill(1),
-    idle: new Array(bigLength).fill(0),
-  };
-  (computeLocalityAreaSeries as Mock).mockReturnValueOnce({ labels, series, endTime: bigLength * 1000 });
+  const points = Array.from({ length: bigLength }, (_, i) => ({ t: i, PROCESS_LOCAL: 1, idle: 0 }));
+  (buildLocalityChart as Mock).mockReturnValueOnce({ hasActivity: true, order: ['PROCESS_LOCAL', 'idle'], points, peakCores: 1 });
 
   render(
     <DocsProvider>
@@ -159,7 +156,7 @@ test('is wrapped in React.memo', () => {
 test('does not recompute the locality series when an unrelated re-render occurs with the same appModel', async () => {
   const user = userEvent.setup();
   const appModel = buildAppModel();
-  const callsBefore = (computeLocalityAreaSeries as Mock).mock.calls.length;
+  const callsBefore = (buildLocalityChart as Mock).mock.calls.length;
 
   function Harness() {
     const [, setTick] = useState(0);
@@ -172,10 +169,10 @@ test('does not recompute the locality series when an unrelated re-render occurs 
   }
 
   render(<Harness />);
-  expect((computeLocalityAreaSeries as Mock).mock.calls.length - callsBefore).toBe(1);
+  expect((buildLocalityChart as Mock).mock.calls.length - callsBefore).toBe(1);
 
   await user.click(screen.getByRole('button', { name: 'tick' }));
-  expect((computeLocalityAreaSeries as Mock).mock.calls.length - callsBefore).toBe(1);
+  expect((buildLocalityChart as Mock).mock.calls.length - callsBefore).toBe(1);
 });
 
 // Regression: applySnapshot mutates appModel's fields in place, so a
@@ -191,7 +188,7 @@ test('reflects a new file after appModel is mutated in place and activeFileId ch
   );
   // The locality series recomputation is the observable: it's what the
   // `activeFileId` memo key is there to trigger.
-  (computeLocalityAreaSeries as Mock).mockClear();
+  (buildLocalityChart as Mock).mockClear();
 
   // Mimic applySnapshot: mutate the same appModel object's `stages` field in
   // place with a different per-stage core-time profile.
@@ -214,8 +211,8 @@ test('reflects a new file after appModel is mutated in place and activeFileId ch
     </DocsProvider>,
   );
 
-  expect(computeLocalityAreaSeries as Mock).toHaveBeenCalled();
-  const [stagesArg] = (computeLocalityAreaSeries as Mock).mock.lastCall as [{ stageId: number }[]];
+  expect(buildLocalityChart as Mock).toHaveBeenCalled();
+  const [stagesArg] = (buildLocalityChart as Mock).mock.lastCall as [{ stageId: number }[]];
   expect(stagesArg.map((s) => s.stageId)).toEqual([2]);
 });
 

@@ -3,7 +3,7 @@ import { Inbox } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { computeCoreLocalityRatio } from '@sparkforensics/core/core-locality-ratio.ts';
-import { computeLocalityAreaSeries, LOCALITY_TIERS } from '@sparkforensics/core/core-usage-locality.ts';
+import { buildLocalityChart, formatCores, type LocalityChartPoint } from '@sparkforensics/core/core-usage-locality.ts';
 import { CHART_COLORS, CHART_TOOLTIP_PROPS, ChartFrame } from '@/view/charts/ChartTheme';
 import { downsample } from '@/view/charts/downsample';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -20,7 +20,6 @@ import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 
 // Stacked-area cluster shape by locality tier over time (approximate).
 const HEIGHT = 240;
-const TARGET_BUCKETS = 60;
 
 // Raw Spark locality enum names read as internal identifiers, so humanize them
 // for the legend/tooltip; `order`/series keys stay raw so series lookups work.
@@ -44,11 +43,6 @@ const TIER_COLOR: Record<string, string> = {
   idle: CHART_COLORS.muted,
 };
 
-interface AreaPoint {
-  t: number;
-  [tier: string]: number;
-}
-
 // `applySnapshot` mutates `appModel`'s fields in place on a cached-file switch
 // rather than replacing the object, so `activeFileId` is a memo key below.
 // `catalog` is required: the `coreLocality` finding and the `memoryUtilization`
@@ -60,58 +54,18 @@ const TITLE = 'Core Usage by Locality';
 type LocalityChartModel =
   | { hasActivity: false }
   | { hasActivity: true; order: string[]; points: AreaPoint[]; sampled: AreaPoint[]; peakCores: number };
+type AreaPoint = LocalityChartPoint;
 
 // memo: skip recomputing computeLocalityAreaSeries when only the finding filter
 // changes. Always mounted by `Alerts.tsx`, so the `hasActivity`/finding branches
 // below are the only gating this widget does on its own.
-/** Whole cores from 10 up; one decimal below, so a small run's peak never
- * rounds down to "0 cores". */
-function formatCores(cores: number): string {
-  return cores >= 10 ? String(Math.round(cores)) : cores.toFixed(1).replace(/\.0$/, '');
-}
-
 export const CoreUsageArea = memo(function CoreUsageArea({ appModel, catalog, activeFileId, defaultCollapsed = true }: CoreUsageAreaProps) {
   const [nonLocalPage, setNonLocalPage] = useState(0);
   // Whole derived-series pipeline (including the `hasActivity` guard) in one
   // `useMemo`; hooks run unconditionally, so the early return can't precede it.
   const chartModel: LocalityChartModel = useMemo(() => {
-    const stages = [...appModel.stages.values()];
-    const hasActivity = stages.some(
-      (s) => (s.executorRunTime ?? 0) > 0 && (s.completedAt ?? 0) > (s.submittedAt ?? 0),
-    );
-    if (!hasActivity) return { hasActivity: false };
-
-    const app = appModel.app;
-    const start = app?.startTime ?? 0;
-    const end = app?.endTime ?? start;
-    const bucketWidthMs = Math.max(60_000, Math.ceil(Math.max(1, end - start) / TARGET_BUCKETS));
-    const { labels, series, endTime: seriesEnd } = computeLocalityAreaSeries(stages, { bucketWidthMs }) as {
-      labels: number[];
-      series: Record<string, number[]>;
-      endTime: number;
-    };
-    const order = [...LOCALITY_TIERS.filter((t: string) => series[t]), ...(series.OTHER ? ['OTHER'] : []), 'idle'];
-
-    const points: AreaPoint[] = labels.map((t, i) => {
-      const point: AreaPoint = { t: Math.round((t - start) / 1000) };
-      // The series averages each bucket over its full width, so a last bucket
-      // that runs past the series' own end (or a run shorter than one bucket)
-      // reads diluted: a 10s stage in a 60s bucket showed well under its busy
-      // cores. Rescale to the part of the bucket the series actually covers.
-      const coveredMs = Math.min(bucketWidthMs, seriesEnd - t);
-      const scale = bucketWidthMs / coveredMs;
-      for (const tier of order) if (tier !== 'idle') point[tier] = (series[tier]?.[i] ?? 0) * scale;
-      return point;
-    });
-    const busyTiers = order.filter((t) => t !== 'idle');
-    const busyTotal = (p: AreaPoint) => busyTiers.reduce((sum, t) => sum + p[t], 0);
-    const peakCores = points.reduce((max, p) => Math.max(max, busyTotal(p)), 0);
-    // Same rule as the core series (peak busy minus each bucket's busy), redone
-    // on the rescaled values so the stack still tops out at the peak.
-    for (const p of points) p.idle = Math.max(0, peakCores - busyTotal(p));
-    const sampled = downsample(points);
-
-    return { hasActivity: true, order, points, sampled, peakCores };
+    const chart = buildLocalityChart([...appModel.stages.values()], appModel.app);
+    return chart.hasActivity ? { ...chart, sampled: downsample(chart.points) } : chart;
   }, [appModel, activeFileId]);
 
   // Non-local-ratio aggregate + per-stage breakdown. Not gated on

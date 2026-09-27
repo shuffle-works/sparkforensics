@@ -97,21 +97,24 @@ function checkFailedTaskRate(appModel: AppModel, catalog: Finding[], maxPct: num
   return { name: 'max-failed-task-rate', status: 'pass', detail: `No job-failure-rate finding: task failure rate is below the detector's reporting floor.` };
 }
 
+// Busy core time: the share of available executor core time that ran tasks, 100 minus the
+// dashboard's "Unused core time". Not the dashboard's Efficiency tile (the share of wall-clock with
+// a stage running), so the detail never calls it "Efficiency".
 function checkEfficiency(appModel: AppModel, minPct: number): BudgetResult {
   if (!taskDataTrusted(appModel)) {
-    return { name: 'min-efficiency', status: 'inconclusive', detail: 'No trustworthy task-level evidence to measure efficiency.' };
+    return { name: 'min-efficiency', status: 'inconclusive', detail: 'No trustworthy task-level evidence to measure busy core time.' };
   }
   const model = computeEfficiencyModel({
     app: appModel.app, stages: appModel.stages,
     executorsAdded: appModel.executors.added, runAggregates: appModel.runAggregates,
   });
   if (model.wastagePct == null) {
-    return { name: 'min-efficiency', status: 'inconclusive', detail: 'Efficiency could not be computed (no available compute hours).' };
+    return { name: 'min-efficiency', status: 'inconclusive', detail: 'Busy core time could not be computed (no available compute hours).' };
   }
-  const efficiencyPct = 100 - model.wastagePct;
-  return efficiencyPct < minPct
-    ? { name: 'min-efficiency', status: 'violation', detail: `Efficiency ${efficiencyPct}% below budget ${minPct}%.` }
-    : { name: 'min-efficiency', status: 'pass', detail: `Efficiency ${efficiencyPct}% meets budget ${minPct}%.` };
+  const busyCorePct = 100 - model.wastagePct;
+  return busyCorePct < minPct
+    ? { name: 'min-efficiency', status: 'violation', detail: `Busy core time ${busyCorePct}% below budget ${minPct}%.` }
+    : { name: 'min-efficiency', status: 'pass', detail: `Busy core time ${busyCorePct}% meets budget ${minPct}%.` };
 }
 
 function checkRegression(comparison: CompareRunsResult, maxRegressionPct: number, regressionMetric: string): BudgetResult {

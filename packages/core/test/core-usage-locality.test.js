@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeLocalityAreaSeries } from '../src/core-usage-locality.js';
+import { buildLocalityChart, computeLocalityAreaSeries, formatCores } from '../src/core-usage-locality.js';
 
 describe('computeLocalityAreaSeries', () => {
   it('distributes stage core-time across its window, split by locality', () => {
@@ -37,5 +37,20 @@ describe('computeLocalityAreaSeries', () => {
 
   it('returns empty labels for no stages', () => {
     expect(computeLocalityAreaSeries([], { bucketWidthMs: 1000 }).labels).toEqual([]);
+  });
+});
+
+describe('buildLocalityChart', () => {
+  it('rescales a partly covered bucket so a short stage reads its real busy cores at the peak', () => {
+    // One 10s stage keeping 4 cores busy (40s of executor run time) inside a 60s bucket.
+    const stages = [{ submittedAt: 0, completedAt: 10_000, executorRunTime: 40_000, localityStats: [{ locality: 'PROCESS_LOCAL', count: 1 }] }];
+    const chart = buildLocalityChart(stages, { startTime: 0, endTime: 10_000 });
+    expect(chart.hasActivity).toBe(true);
+    expect(chart.peakCores).toBeCloseTo(4);
+    expect(formatCores(chart.peakCores)).toBe('4');
+  });
+
+  it('reports no activity when no stage ran any task time', () => {
+    expect(buildLocalityChart([{ submittedAt: 0, completedAt: 10, executorRunTime: 0 }], null)).toEqual({ hasActivity: false });
   });
 });

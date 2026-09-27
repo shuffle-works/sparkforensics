@@ -1,4 +1,4 @@
-import type { Finding, Job } from '@sparkforensics/core/types.ts';
+import type { Finding, Job } from './types.ts';
 
 /** Finding types that mean work did not finish: a stage attempt that failed
  * outright, and jobs that ended without succeeding. Failed tasks that a retry

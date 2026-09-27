@@ -12,13 +12,14 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 const DEFAULT_PORT = 4173;
 const DEFAULT_HOST = '127.0.0.1';
 
-// vendor-core/ exists only in a published install (populated by vendor-core.mjs
-// at publish time); the monorepo falls back to the packages/core/src/ sibling.
+// vendor-core/ is populated by vendor-core.mjs at publish time. In the monorepo the
+// packages/core/src/ sibling's load-vendored.js is used, which prefers a leftover
+// vendor-core/ only while it still matches core/src and warns when it does not.
 // load-vendored.js is the one module located by hand; the rest load through its
 // exported loadVendored().
 async function loadVendoredCore(dir, moduleName, opts) {
-  const vendoredHelper = join(dir, 'vendor-core', 'load-vendored.js');
-  const helperPath = existsSync(vendoredHelper) ? vendoredHelper : join(dir, '..', 'core', 'src', 'load-vendored.js');
+  const srcHelper = join(dir, '..', 'core', 'src', 'load-vendored.js');
+  const helperPath = existsSync(srcHelper) ? srcHelper : join(dir, 'vendor-core', 'load-vendored.js');
   const { loadVendored } = await import(pathToFileURL(helperPath).href);
   return loadVendored(dir, moduleName, opts);
 }

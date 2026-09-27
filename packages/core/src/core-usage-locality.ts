@@ -69,3 +69,60 @@ export function computeLocalityAreaSeries(
   for (let b = 0; b < nBuckets; b++) labels.push(startTime + b * bucketWidthMs);
   return { labels, series, endTime };
 }
+
+/** How many time buckets the Core Usage by Locality chart aims for across a run. */
+export const LOCALITY_CHART_TARGET_BUCKETS = 60;
+
+export interface LocalityChartPoint {
+  /** Seconds from app start. */
+  t: number;
+  [tier: string]: number;
+}
+
+export type LocalityChart =
+  | { hasActivity: false }
+  | { hasActivity: true; order: string[]; points: LocalityChartPoint[]; peakCores: number };
+
+/** The Core Usage by Locality chart's points and its "busy at the peak" figure, shared by the
+ * dashboard widget and the CLI/MCP run summary. Buckets are at least a minute wide; a last bucket
+ * the stages only partly cover is rescaled to the covered part, and each bucket's idle cores are
+ * the peak minus its busy cores. */
+export function buildLocalityChart(
+  stages: LocalityStage[],
+  app: { startTime?: number | null; endTime?: number | null } | null,
+  targetBuckets: number = LOCALITY_CHART_TARGET_BUCKETS,
+): LocalityChart {
+  const hasActivity = stages.some((s) => (s.executorRunTime ?? 0) > 0 && (s.completedAt ?? 0) > (s.submittedAt ?? 0));
+  if (!hasActivity) return { hasActivity: false };
+
+  const start = app?.startTime ?? 0;
+  const end = app?.endTime ?? start;
+  const bucketWidthMs = Math.max(60_000, Math.ceil(Math.max(1, end - start) / targetBuckets));
+  const { labels, series, endTime: seriesEnd } = computeLocalityAreaSeries(stages, { bucketWidthMs });
+  const order = [...LOCALITY_TIERS.filter((t) => series[t]), ...(series.OTHER ? ['OTHER'] : []), 'idle'];
+
+  const points: LocalityChartPoint[] = labels.map((t, i) => {
+    const point: LocalityChartPoint = { t: Math.round((t - start) / 1000) };
+    // The series averages each bucket over its full width, so a last bucket
+    // that runs past the series' own end (or a run shorter than one bucket)
+    // reads diluted: a 10s stage in a 60s bucket showed well under its busy
+    // cores. Rescale to the part of the bucket the series actually covers.
+    const coveredMs = Math.min(bucketWidthMs, seriesEnd - t);
+    const scale = bucketWidthMs / coveredMs;
+    for (const tier of order) if (tier !== 'idle') point[tier] = (series[tier]?.[i] ?? 0) * scale;
+    return point;
+  });
+  const busyTiers = order.filter((t) => t !== 'idle');
+  const busyTotal = (p: LocalityChartPoint) => busyTiers.reduce((sum, t) => sum + p[t], 0);
+  const peakCores = points.reduce((max, p) => Math.max(max, busyTotal(p)), 0);
+  // Same rule as the core series (peak busy minus each bucket's busy), redone
+  // on the rescaled values so the stack still tops out at the peak.
+  for (const p of points) p.idle = Math.max(0, peakCores - busyTotal(p));
+  return { hasActivity: true, order, points, peakCores };
+}
+
+/** Whole cores from 10 up; one decimal below, so a small run's peak never
+ * rounds down to "0 cores". */
+export function formatCores(cores: number): string {
+  return cores >= 10 ? String(Math.round(cores)) : cores.toFixed(1).replace(/\.0$/, '');
+}

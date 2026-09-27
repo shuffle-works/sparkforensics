@@ -305,7 +305,15 @@ describe('sparkforensics-analyze CLI', () => {
       const parsed = JSON.parse(stdout);
       expect(Array.isArray(parsed.recommendations)).toBe(true);
       expect(Array.isArray(parsed.cleanChecks)).toBe(true);
+      expect(Array.isArray(parsed.notRunChecks)).toBe(true);
+      expect(typeof parsed.summary.clean).toBe('boolean');
+      expect(typeof parsed.summary.actionableFindingCount).toBe('number');
+      expect(typeof parsed.verdict.title).toBe('string');
+      expect(Object.keys(parsed.summary.runShape)).toEqual(['wallClockMs', 'efficiencyPct', 'unusedCoreTimePct', 'etlPhasesMs', 'peakBusyCores']);
+      expect(parsed.verdict.steps.length).toBeGreaterThan(0);
+      expect(Object.keys(parsed.summary.outcome).sort()).toEqual(['failedJobs', 'failureReason', 'failureReasonStageId', 'totalJobs']);
       expect(parsed.recommendations.length).toBeGreaterThan(0);
+      expect(parsed.recommendations.every((r) => 'impactMeaning' in r && !/^Estimated/.test(r.impact ?? ''))).toBe(true);
       expect(parsed.cleanChecks.length).toBeGreaterThan(0);
       expect(parsed.findings.every((f) => typeof f.actionLabel === 'string')).toBe(true);
     } finally {
@@ -472,6 +480,8 @@ describe('sparkforensics-analyze CLI', () => {
         expect(parsed.candidate).toBeDefined();
         expect(Array.isArray(parsed.candidate.findings)).toBe(true);
         expect(parsed.comparison).toMatchObject({ confidence: expect.any(String) });
+        expect(parsed.comparison.verdict).toMatchObject({ title: expect.any(String), tone: expect.any(String) });
+        expect(Array.isArray(parsed.comparison.verdict.sentences)).toBe(true);
         expect(Array.isArray(parsed.comparison.metrics)).toBe(true);
         expect(parsed.comparison.findings).toHaveProperty('introduced');
         expect(parsed.comparison.findings).toHaveProperty('resolved');
@@ -488,7 +498,7 @@ describe('sparkforensics-analyze CLI', () => {
         const { stdout, status } = runCli([candidatePath, '--baseline', baselinePath, '--format', 'md']);
         expect(status).toBe(0);
         expect(stdout).toMatch(/^# Spark run evidence report/);
-        expect(stdout).toMatch(/## Comparison to baseline/);
+        expect(stdout).toMatch(/## Comparison to baseline\n\nRun A: baseline · Run B: candidate\n\n\S/);
       });
     });
 
