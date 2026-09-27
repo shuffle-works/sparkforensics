@@ -1,18 +1,16 @@
 import { useState } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
-import { buildRecommendationRollup, isEligible as coreIsEligible, rankFindings, type RollupGroup } from '@sparkforensics/core/recommendation-rollup.ts';
 import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
-import { formatStageIdsLabel, formatWallClockRange, pathBasename } from '@sparkforensics/core/format-utils.ts';
-import { REGISTRY } from '@/view/detector-registry';
+import { formatStageIdsLabel, pathBasename } from '@sparkforensics/core/format-utils.ts';
 import { findingActionLabel } from '@/view/finding-action-label';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePill, StagePillGroup } from '@/view/StagePill';
 import { recommendationText } from '@sparkforensics/core/finding-names.ts';
-import { useFindingSavings } from '@/view/interpretation';
+import { boardRollup, useFindingSavings, type BoardGroup } from '@/view/interpretation';
 import type { InterpretationState } from '@/store/store';
 import { RowPagination } from '@/view/RowPagination';
 import { selectTriageTarget, selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
@@ -28,20 +26,6 @@ const STACKED_ROW = 'max-sm:flex max-sm:flex-wrap max-sm:items-start';
 const STACKED_TAG_CELL = 'max-sm:w-auto max-sm:shrink-0';
 const STACKED_TEXT_CELL = 'max-sm:min-w-0 max-sm:flex-1 max-sm:whitespace-normal max-sm:[overflow-wrap:anywhere]';
 const STACKED_TRAILING_CELL = 'max-sm:w-full max-sm:basis-full max-sm:pt-0 max-sm:text-left';
-
-// Wraps the core `isEligible` with the one check that module can't do itself:
-// `REGISTRY` lives in a `.tsx` file, not importable from core.
-export function isEligible(finding: Finding): boolean {
-  return coreIsEligible(finding) && REGISTRY[finding.type] != null;
-}
-
-/** A group's representative impact band: the same finding whose band
- * TypeGroupRow's badge already shows (the highest-impact-tier member, not
- * necessarily the group's worst band). Shared with ImpactBoard.tsx so
- * a group lands in the same band its own badge color would suggest. */
-export function groupImpactBand(group: RollupGroup): Finding['impactBand'] {
-  return rankFindings(group.findings)[0].impactBand;
-}
 
 /** A short per-row location tag, abbreviated ("St." not "Stage") to fit the
  * compact row's right-aligned monospace figure. Falls back through the location
@@ -224,35 +208,6 @@ function FindingInstanceRow({
   );
 }
 
-/** The group's trailing stat, using its `RollupGroup` kind: `time` and
- * `resource` both lead with the "×N" finding count (the "worth expanding"
- * signal); `count` skips it since the impact-band tally already implies N. */
-function trailingStat(group: RollupGroup): string {
-  if (group.kind === 'time') {
-    return `×${group.findingCount} · ${formatWallClockRange(group.recoverableMsHigh, group.recoverableMsHigh)} recoverable`;
-  }
-  if (group.kind === 'resource') {
-    return `×${group.findingCount} · resource-cost projection`;
-  }
-  return Object.entries(group.byImpactBand)
-    .map(([impactBand, count]) => `${count} ${impactBand}`)
-    .join(', ');
-}
-
-// Same cases as trailingStat(), spelled out for a hover/focus tooltip: the
-// row itself stays terse ("×2 · 476ms recoverable") to fit this dense
-// table's right-aligned column, but the shorthand ("×N", "recoverable")
-// isn't self-explanatory on first read.
-function trailingStatTitle(group: RollupGroup): string {
-  if (group.kind === 'time') {
-    return `${group.findingCount} findings of this type; up to ${formatWallClockRange(group.recoverableMsHigh, group.recoverableMsHigh)} of run time could be recovered by fixing them`;
-  }
-  if (group.kind === 'resource') {
-    return `${group.findingCount} findings of this type; a resource-cost estimate (not run time) is projected for fixing them`;
-  }
-  return `${group.findingCount} findings of this type, by impact`;
-}
-
 /** A type with more than one finding: a collapsed summary row (tag + the
  * highest-impact member's action label and recommendation + the group's trailing
  * stat) that expands to a paginated list of every finding in the group. The
@@ -265,14 +220,15 @@ export function TypeGroupRow({
   onToggle,
   onRoute,
 }: {
-  group: RollupGroup;
+  group: BoardGroup;
   allFindings: Finding[];
   expanded: boolean;
   onToggle: () => void;
   onRoute: (target: TriageTarget) => void;
 }) {
   const [page, setPage] = useState(0);
-  const sorted = rankFindings(group.findings);
+  // Members arrive ranked, representative first.
+  const sorted = group.findings;
   const best = sorted[0];
   // A type-level sentence, not the best member's own recommendationText: that's one specific
   // instance's numbers/stage next to a trailing stat summing every member, which misrepresents
@@ -289,7 +245,7 @@ export function TypeGroupRow({
   // `aria-controls` target: a stable id from the group's (kind, type, unit)
   // discriminator. A `<tr>` list has no single wrapping element, so it lands on
   // the expanded list's first row (see `FindingInstanceRow`'s `id` prop).
-  const contentId = `fix-these-first-group-content-${group.kind}-${group.type}${'unit' in group ? `-${group.unit}` : ''}`;
+  const contentId = `fix-these-first-group-content-${group.kind}-${group.type}${group.unit ? `-${group.unit}` : ''}`;
 
   return (
     <>
@@ -311,8 +267,8 @@ export function TypeGroupRow({
           </button>
         </TableCell>
         <TableCell className={cn('w-px text-right font-mono text-xs text-muted-foreground', STACKED_TRAILING_CELL)}>
-          <span className="inline-flex items-center justify-end gap-1.5" title={trailingStatTitle(group)}>
-            {trailingStat(group)}
+          <span className="inline-flex items-center justify-end gap-1.5" title={group.statTitle}>
+            {group.stat}
             {expanded ? (
               <ChevronUpIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
             ) : (
@@ -346,19 +302,16 @@ export function TypeGroupRow({
   );
 }
 
-/** The `eligible`/`groups`/`triageTarget` values `ImpactBoard.tsx` renders from.
- * Grouped strictly by finding.type (further split by impact kind and, for
- * `resource`, unit: never merged across detector types); cross-group order is
- * `buildRecommendationRollup`'s job. */
+/** The `eligible`/`groups`/`triageTarget` values `ImpactBoard.tsx` renders from: the run's
+ * interpretation, recomputed over the filtered findings only while a filter is active (see
+ * `boardRollup`). */
 export function useFixTheseFirstData(
   catalog: Finding[],
   configFindings: Finding[],
   stages: AppModel['stages'],
   interpretation: InterpretationState | null,
-): { eligible: Finding[]; groups: RollupGroup[]; triageTarget: TriageTarget | null } {
-  const allFindings = [...catalog, ...configFindings];
-  const eligible = allFindings.filter(isEligible);
-  const groups = buildRecommendationRollup(eligible, stages);
+): { eligible: Finding[]; groups: BoardGroup[]; triageTarget: TriageTarget | null } {
+  const { eligible, groups } = boardRollup(interpretation, [...catalog, ...configFindings], stages);
   const triageTarget = selectTriageTarget(interpretation, eligible);
   return { eligible, groups, triageTarget };
 }

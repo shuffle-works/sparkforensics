@@ -14,6 +14,7 @@ import { IMPACT_BAND_ORDER, worstImpactBand } from './format-utils.ts';
 import {
   estimateProvenance, impactEstimateCompact, impactEstimateFigure, impactFigure, savingsMeaning,
 } from './impact-format.ts';
+import { isEligible, rankedRollup, type RankedRollupGroup } from './recommendation-rollup.ts';
 import { quotesReasonOf } from './run-outcome.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
 import {
@@ -113,6 +114,20 @@ export interface StageFindingsData {
   typeOrder: string[];
 }
 
+/** One row group of the Findings board: a finding type (split by impact kind, and by unit for
+ * resource figures), its members representative first, the band it sits under, and its trailing
+ * figure. */
+export interface RollupGroupData extends Omit<RankedRollupGroup, 'members'> {
+  /** Members, representative first. */
+  memberIndexes: number[];
+}
+
+/** The unfiltered Findings board: which findings it lists and its groups in fix-first order. */
+export interface RollupData {
+  eligibleIndexes: number[];
+  groups: RollupGroupData[];
+}
+
 /** Findings are referred to by index into the run's findings in catalog-then-config order
  * (`[...catalog, ...configFindings]`), the order both producers pass them in: no copies, so a
  * renderer resolves them to the very objects it already holds. */
@@ -141,6 +156,7 @@ export interface RunInterpretation {
   savingsRank: number[];
   /** Keyed by stage id, for stages with at least one finding. */
   stages: Record<string, StageFindingsData>;
+  rollup: RollupData;
 }
 
 export function findingSavings(finding: Finding): FindingSavings {
@@ -225,6 +241,8 @@ function interpretStages(
   return stages;
 }
 
+const DISPLAY_TYPES: ReadonlySet<string> = new Set(FINDING_DISPLAY_ORDER);
+
 /** Every conclusion the dashboard shows about a run whose detectors already ran. */
 export function interpretRun(appModel: AppModel, catalog: Finding[], configFindings: Finding[]): RunInterpretation {
   const allFindings = [...catalog, ...configFindings];
@@ -232,6 +250,8 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
   const verdict = buildRunVerdict(appModel, allFindings);
   const { outcome } = verdict;
   const failed = outcome.failedJobs > 0;
+  // A board row needs a widget to route to, and every display type has one.
+  const eligible = allFindings.filter((finding) => isEligible(finding) && DISPLAY_TYPES.has(finding.type));
   const steps: InterpretedStep[] = verdict.shown.map((step) => {
     const quoted = quotesReasonOf(step.lead, outcome) && outcome.reason ? quotedReasonText(outcome.reason) : null;
     return {
@@ -270,5 +290,10 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
     failedJobStageIds: failed ? [...outcome.failedJobStageIds].sort((a, b) => a - b) : [],
     savingsRank: rankBySavings(allFindings).map((finding) => indexOf.get(finding)!),
     stages: interpretStages(catalog, indexOf, failed ? outcome.failedJobStageIds : null),
+    rollup: {
+      eligibleIndexes: eligible.map((finding) => indexOf.get(finding)!),
+      groups: rankedRollup(eligible, appModel.stages)
+        .map(({ members, ...group }) => ({ ...group, memberIndexes: members.map((finding) => indexOf.get(finding)!) })),
+    },
   };
 }

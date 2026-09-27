@@ -6,7 +6,7 @@ import { Table, TableBody } from '@/components/ui/table';
 import { useWidgetDensity } from '@/store/store';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import type { WidgetProps } from '@/view/detector-registry';
-import { useInterpretation } from '@/view/interpretation';
+import { useInterpretation, type BoardGroup } from '@/view/interpretation';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import type { TriageTarget } from '@/view/triage-target';
 import {
@@ -17,13 +17,11 @@ import {
 } from '@/view/widgets/Alerts';
 import {
   FindingRow,
-  groupImpactBand,
   TypeGroupRow,
   useFixTheseFirstData,
 } from '@/view/widgets/FixTheseFirst';
 import { WidgetCardSkeleton } from '@/view/WidgetCard';
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
-import type { RollupGroup } from '@sparkforensics/core/recommendation-rollup.ts';
 
 export interface ImpactBoardProps extends WidgetProps {
   stages: AppModel['stages'];
@@ -36,10 +34,6 @@ const IMPACT_BAND_LABEL: Record<Finding['impactBand'], string> = {
   info: 'Info',
 };
 const IMPACT_BAND_ORDER_LIST: Finding['impactBand'][] = ['critical', 'warning', 'info'];
-
-function groupKey(group: RollupGroup): string {
-  return `${group.kind}-${group.type}-${'unit' in group ? group.unit : ''}`;
-}
 
 /** One impact band: its recommendation rows as a compact table, followed by
  * its active widget cards as a grid. In Basic view a band that has rows folds
@@ -65,7 +59,7 @@ function ImpactGroup({
   activeFileId,
 }: {
   impactBand: Finding['impactBand'];
-  groups: RollupGroup[];
+  groups: BoardGroup[];
   widgets: ActiveWidget[];
   allFindings: Finding[];
   expandedGroupKey: string | null;
@@ -97,10 +91,10 @@ function ImpactGroup({
         <Table>
           <TableBody>
             {groups.map((group) => {
-              if (group.findingCount === 1) {
+              if (group.findings.length === 1) {
                 return <FindingRow key={group.findings[0].id} finding={group.findings[0]} allFindings={allFindings} onRoute={onRoute} />;
               }
-              const key = groupKey(group);
+              const { key } = group;
               return (
                 <TypeGroupRow
                   key={key}
@@ -166,9 +160,9 @@ export function ImpactBoard({ appModel, catalog, configFindings = [], stages, ge
   const [expandedGroupKey, setExpandedGroupKey] = useState<string | null>(null);
 
   const { groupsByImpactBand, widgetsByImpactBand } = useMemo(() => {
-    const groupsByImpactBand = new Map<Finding['impactBand'], RollupGroup[]>();
+    const groupsByImpactBand = new Map<Finding['impactBand'], BoardGroup[]>();
     for (const group of groups) {
-      const impactBand = groupImpactBand(group);
+      const impactBand = group.band;
       if (!groupsByImpactBand.has(impactBand)) groupsByImpactBand.set(impactBand, []);
       groupsByImpactBand.get(impactBand)!.push(group);
     }

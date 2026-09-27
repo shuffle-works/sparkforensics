@@ -7,7 +7,7 @@ import { NoMatchBanner } from '@/view/EmptyStateBanners';
 import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from '@/view/EvidenceAvailabilityContext';
 import { FindingFilterBar } from '@/view/FindingFilterBar';
 import { FindingFilterProvider, useFindingFilter } from '@/view/FindingFilterContext';
-import { useInterpretation } from '@/view/interpretation';
+import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import {
   deriveOptions,
   emptySelection,
@@ -28,7 +28,6 @@ import { SampleRunNotice } from '@/view/SampleRunNotice';
 import { Scorecard } from '@/view/widgets/Scorecard';
 import { ImpactBoard } from '@/view/widgets/ImpactBoard';
 import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
-import { isEligible } from '@/view/widgets/FixTheseFirst';
 import { StageTable } from '@/view/widgets/StageTable';
 import { Timeline } from '@/view/widgets/Timeline';
 import { EvidenceAvailability } from '@/view/widgets/EvidenceAvailability';
@@ -161,7 +160,7 @@ function FilteredBoard({
   // the fewest cleared dimensions), show Findings, then land on the band once
   // the tab panel is visible.
   const jumpToFindings = useCallback((impactBand: Finding['impactBand']) => {
-    const counted = [...catalog, ...(configFindings ?? [])].filter((f) => isEligible(f) && f.impactBand === impactBand);
+    const counted = eligibleFindings(interpretation).filter((f) => f.impactBand === impactBand);
     const closest = counted.reduce<Finding | null>((best, finding) => (
       !best || excludingDimensions(finding, selection).length < excludingDimensions(best, selection).length ? finding : best
     ), null);
@@ -174,7 +173,7 @@ function FilteredBoard({
       heading.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
       heading.focus({ preventScroll: true });
     });
-  }, [catalog, configFindings, selection, revealFinding, onActiveTabChange]);
+  }, [interpretation, selection, revealFinding, onActiveTabChange]);
   const filteredCatalog = useMemo(() => filterFindings(catalog, selection), [catalog, selection]);
   const filteredConfig = useMemo(() => filterFindings(configFindings ?? [], selection), [configFindings, selection]);
 

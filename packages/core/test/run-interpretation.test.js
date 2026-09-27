@@ -130,5 +130,24 @@ describe('interpretRun', () => {
     expect(interpretation.verdict.copyText).toBe(json.verdict.copyText);
     expect(interpretation.coverage.clean).toBe(json.summary.clean);
     expect(interpretation.runShape).toMatchObject(json.summary.runShape);
+    // The Findings board lists the report's "Fix these first" groups, members in the same order.
+    const all = [...catalog, ...auditConfig(model.app)];
+    expect(interpretation.rollup.groups.map((group) => ({ type: group.type, ids: group.memberIndexes.map((i) => all[i].id) })))
+      .toEqual(json.recommendations.map((row) => ({ type: row.type, ids: row.findingIds })));
+    expect(interpretation.rollup.groups.length).toBeGreaterThan(0);
+  });
+
+  it('carries the Findings board: eligible findings, groups in fix-first order, bands and figures', () => {
+    const incomplete = { type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'r' };
+    const bigInfo = timed('skew', 7, 5_000, 'info');
+    const smallCritical = timed('skew', 3, 1_000, 'critical');
+    const spill = timed('spill', 3, 800);
+    const catalog = [incomplete, bigInfo, smallCritical, spill];
+    const { rollup } = interpretRun(appModel(), catalog, []);
+
+    expect(rollup.eligibleIndexes).toEqual([1, 2, 3]);
+    expect(rollup.groups.map((group) => group.type)).toEqual(['skew', 'spill']);
+    // Members representative first; the group sits under its representative's band, not its worst.
+    expect(rollup.groups[0]).toMatchObject({ kind: 'time', band: 'info', memberIndexes: [1, 2], stat: '×2 · 6.0s recoverable' });
   });
 });

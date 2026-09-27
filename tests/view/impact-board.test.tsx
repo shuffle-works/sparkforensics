@@ -7,6 +7,7 @@ import { StageDetailProvider } from '../../src/view/StageDetailContext';
 import { emptyAppModel, store } from '../../src/store/store';
 import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
 import type { TriageTarget } from '../../src/view/triage-target';
+import { installInterpretation } from './_shared/interpretation';
 
 function readyAppModel() {
   return {
@@ -33,6 +34,8 @@ function partitionSizingFinding(stageId: number, impactBand: Finding['impactBand
 }
 
 function renderBoard(catalog: Finding[]) {
+  // The board's rows come from the run's interpretation.
+  installInterpretation(catalog, readyAppModel() as any);
   return render(
     <StageDetailProvider>
       <ImpactBoard

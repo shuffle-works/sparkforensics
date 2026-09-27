@@ -11,14 +11,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Chip, severityBadgeVariants } from '@/view/ImpactBadge';
-import { isEligible } from '@/view/widgets/FixTheseFirst';
 import { EvidenceExport, EvidenceExportMenuItems, useEvidenceExport } from '@/view/EvidenceExport';
 import { FileSwitcher } from '@/view/FileSwitcher';
 import { GraphViewPickerDialog, type GraphViewPickerEntry } from '@/view/GraphViewPickerDialog';
 import { KeyboardShortcutsDialog } from '@/view/KeyboardShortcutsDialog';
 import { WidgetDensityControl, WidgetDensityMenuItem } from '@/view/WidgetDensityControl';
 import { store, useStore } from '@/store/store';
-import { useInterpretation } from '@/view/interpretation';
+import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import { useTheme } from '@/theme/ThemeProvider';
 import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import { stageIdsForSqlExec } from '@sparkforensics/core/sql-stages.ts';
@@ -178,12 +177,11 @@ export function Topbar({
 
   // Count what the verdict ranks: eligible findings, config included and
   // evidence caveats left out, so the chip and the verdict never disagree.
-  const configFindings = useStore((s) => s.configFindings);
-  const allFindings = useMemo(() => [...catalog, ...configFindings], [catalog, configFindings]);
-  const eligible = useMemo(() => allFindings.filter(isEligible), [allFindings]);
+  const interpretation = useInterpretation();
+  const eligible = useMemo(() => eligibleFindings(interpretation), [interpretation]);
   const worst = worstImpactBand(eligible);
   const count = worst ? eligible.filter((f) => f.impactBand === worst).length : 0;
-  const coverage = useInterpretation()?.data.coverage;
+  const coverage = interpretation?.data.coverage;
   const clean = coverage?.clean ?? false;
   const failedJobs = coverage?.failedJobs ?? 0;
 
