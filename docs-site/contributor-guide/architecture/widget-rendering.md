@@ -43,7 +43,8 @@ Tags carry their own docs links; there is no separate legend widget.
 documentation anchor is the caller's `docAnchor` prop when that is a known
 anchor (call sites holding the finding pass `finding.docAnchor`; a widget
 header or grouped row passes `sharedDocAnchor(findings)`), else the type's
-single known anchor (`docAnchorForType`, re-exported by `src/view/finding-tag-help.ts` beside `TAG_HELP`, which lives in `packages/core/src/finding-tag-help.ts`). The
+single known anchor (the run interpretation's `detectors[type].docAnchor`, from
+`docAnchorForType` in `packages/core/src/detector-docs.ts`). The
 prop matters for `configAudit`, whose four entries carry different anchors,
 so the type lookup finds none. With an anchor, the pill itself links into
 the docs panel, and (density `advanced` only) a second icon link opens that
@@ -115,7 +116,7 @@ from `findingActionLabel` (`src/view/finding-action-label.ts`), over the
 finding's own full `recommendation` sentence in smaller muted text, both
 wrapping rather than truncating); and a right-aligned monospace stage
 reference + impact figure (e.g. `St.49 · 20.1s`, via the shared
-`formatWallClockRange`/`formatRawWaste` in `packages/core/src/impact-format.ts`). That inner button, not the
+`formatWallClockRange`/`formatRawWaste` in `packages/core/src/format-utils.ts`). That inner button, not the
 row, is the click target: it routes via `selectTriageTargetForFinding`
 (`src/view/triage-target.ts`), the same per-finding resolver Stage Summary
 Table's own control uses (see "First investigation routing" below); a
@@ -151,14 +152,16 @@ finding surfaces in its own impact band like any other active widget.
 Below the impact bands, `Alerts.tsx`'s exported `CleanChecks` renders a
 collapsed "Clean checks" disclosure
 of `CleanCheckRow` lines (`src/view/widgets/CleanCheckRow.tsx`: label, the
-threshold it was measured against via `getThresholdSummary`, and "No fix
+threshold it was measured against, the interpretation's
+`detectors[type].thresholdSummary` from `getThresholdSummary`, and "No fix
 needed.") built per detector *type* (every `REGISTRY` key except that one
 always-mounted key). Types the log could not check (an `isEvidenceCaveat`
 finding of that type, every per-stage type when no stage finished, or the
 run-span types `RUN_SPAN_CHECK_TYPES` on an `incompleteRun` log, the same
 rule that keeps the verdict from calling the run clean) render first under
 **Not checked on this log** as `CleanCheckRow status="notRun"`, drawn
-neutral rather than clean green, after the `verdictGaps` lines saying why
+neutral rather than clean green, after the interpretation's `coverage.gaps`
+(`verdictGaps`) lines saying why
 and naming the setting to turn on. A clean run lands `cacheUtilization`,
 `memoryUtilization`, and `utilization` here too, same as any ordinary
 action-region type. Caching Opportunities, Config Audit, and the four split
@@ -437,8 +440,9 @@ have a mapped, routeable registry entry and a non-empty trimmed
 recommendation (`triageTargetFor`, `src/view/triage-target.ts`). The
 target's widget still renders every affected stage in its local order.
 
-`src/view/triage-target.ts` also exports `rankTriageTargets`, a thin wrapper
-over core's `rankBySavings` (`packages/core/src/run-verdict.ts`, shared with the
+`src/view/triage-target.ts` also exports `rankTriageTargets`, which orders
+`catalog` by the run interpretation's `savingsRank`. That rank comes from
+core's `rankBySavings` (`packages/core/src/run-verdict.ts`, shared with the
 CLI/MCP verdict), which orders every routeable finding by potential savings
 (`impactEstimate.wallClock.high`), a quantified estimate ahead of an
 unquantified one, then impact band, then widget display order
