@@ -1,4 +1,7 @@
-const THRESHOLD_SUMMARIES: Record<string, string> = {
+import type { DetectorType, FindingType } from './types.ts';
+
+// One entry per finding and detector type (enforced by `satisfies`); read by free-form type string.
+const THRESHOLD_SUMMARIES: Readonly<Record<string, string>> = {
   spill: 'single-task disk spill above 1 GiB',
   shuffle: 'shuffle read above the configured minimum byte threshold',
   skew: 'task duration skew above the configured ratio',
@@ -28,7 +31,7 @@ const THRESHOLD_SUMMARIES: Record<string, string> = {
   overBroadcast: 'a broadcast join above the configured size ceiling',
   underBroadcast: 'a join below the configured size floor that skipped broadcast',
   broadcastSizing: 'a broadcast join outside the configured size range in either direction',
-};
+} satisfies Record<FindingType | DetectorType, string>;
 
 export function getThresholdSummary(type: string): string {
   return THRESHOLD_SUMMARIES[type] ?? 'criteria not met';

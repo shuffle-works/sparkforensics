@@ -9,6 +9,10 @@ import type {
   Finding, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates,
 } from './types.ts';
 
+// The runner reads each entry through the Detector contract, not its own precise `as const` shape:
+// the scope switch below dispatches every detect() with that scope's target.
+const detectors: readonly Detector[] = DETECTORS;
+
 // FNV-1a 32-bit stable string hash: deterministic finding id across runs, no timestamps/randomness.
 function fnv1a(str: string): string {
   let h = 0x811c9dc5;
@@ -115,7 +119,7 @@ export function analyze(
     app, stages, executorsAdded, executorsRemoved, jobs, sql, runAggregates, occupancy,
   };
   const out: Finding[] = [];
-  for (const d of DETECTORS) {
+  for (const d of detectors) {
     if (d.inScorecard === false) continue;
     switch (d.scope) {
       case 'stage':
@@ -149,7 +153,7 @@ const auditConfigCache = new WeakMap<SparkAppInfo, Finding[]>();
 
 function computeAuditConfig(app: SparkAppInfo | null): Finding[] {
   const out: Finding[] = [];
-  for (const d of DETECTORS) if (d.scope === 'config') push(out, d, d.detect({ app }));
+  for (const d of detectors) if (d.scope === 'config') push(out, d, d.detect({ app }));
   // configAudit's impact case is unconditionally costOnly('none'): needs no stages/totalCores,
   // an empty stages map gives parity with analyze().
   estimateImpact(out, new Map());

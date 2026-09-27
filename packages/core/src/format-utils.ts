@@ -1,4 +1,4 @@
-import type { RawWasteFigure } from './types.ts';
+import type { DetectorType, FindingType, RawWasteFigure } from './types.ts';
 
 const TARGET_PARTITION_BYTES = 128 * 1024 * 1024;
 const MAX_RECOMMENDED = 8000;
@@ -7,11 +7,11 @@ const MEANINGFUL_RATIO = 1.5;
 export const VISIBLE_LIMIT: number = 6;
 export const IMPACT_BAND_ORDER: Record<'critical' | 'warning' | 'info', number> = { critical: 0, warning: 1, info: 2 };
 
-const BOTTLENECK_WIDGET: Record<string, string> = {
+const BOTTLENECK_WIDGET: Readonly<Record<string, string>> = {
   skew: 'task-skew', slowHost: 'task-skew', straggler: 'task-skew',
   shuffle: 'shuffle-io', spill: 'spill', gc: 'gc-pressure', failures: 'failures',
   coldStart: 'executor-timeline', utilization: 'executor-timeline', speculationWaste: 'executor-timeline',
-};
+} satisfies Partial<Record<FindingType, string>>;
 
 // Cross-widget stage recurrence: how many distinct board widgets (skew+straggler on one stage
 // still count as one, task-skew) flag a stage. Computed once from the full catalog each widget
@@ -35,7 +35,8 @@ export function stageWidgetFrequency(catalog: Array<{stageId?: number | null; ty
 // Canonical detector type -> ALL-CAPS board tag vocabulary. Single source of truth for every
 // widget that renders a catalog entry's tag outside its own card (e.g. Bottleneck Alerts).
 // Exported so doc-sync checks can enumerate every tag without hand-duplicating this list.
-export const TYPE_TAG_MAP: Record<string, string> = {
+// `satisfies` requires one tag per finding and detector type; read by free-form type string.
+export const TYPE_TAG_MAP: Readonly<Record<string, string>> = {
   skew: 'SKEW', shuffle: 'SHFL', spill: 'SPILL', gc: 'GC',
   coldStart: 'COLD', utilization: 'UTIL', memoryUtilization: 'MEM',
   cacheUtilization: 'CSTOR', coreLocality: 'LOCAL', autoscalingChurn: 'CHRN',
@@ -47,7 +48,7 @@ export const TYPE_TAG_MAP: Record<string, string> = {
   duplicatePlanSubtree: 'PLAN', smallFiles: 'PLAN', underBroadcast: 'PLAN', overBroadcast: 'PLAN',
   broadcastSizing: 'PLAN',
   incompleteRun: 'INCMP',
-};
+} satisfies Record<FindingType | DetectorType, string>;
 
 export function typeTag(type: string): string {
   return TYPE_TAG_MAP[type] ?? type.toUpperCase();

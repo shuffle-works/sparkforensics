@@ -1,3 +1,5 @@
+export type { DetectorType, FindingType } from './detectors.ts';
+
 export type StageId = number;
 export type ImpactBand = 'critical' | 'warning' | 'info';
 

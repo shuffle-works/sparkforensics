@@ -3,7 +3,22 @@
 `packages/core/src/detectors.ts` is the single source of Spark-optimization logic: one
 declarative `DETECTORS` entry per pattern, each carrying `type`, `scope`
 (`stage` / `app` / `config` / `sql`), `order`, `fixEffort`, a `thresholds`
-object, impactBand/copy, a `docAnchor`, and a co-located `detect()` method.
+object, impactBand/copy, a `docAnchor`, an `emits` list, and a co-located
+`detect()` method.
+
+`DETECTORS` is declared `as const satisfies readonly Detector[]`, so each
+entry keeps its literal `type` and `emits`. Two unions derive from it:
+`DetectorType` (every entry's own `type`) and `FindingType` (every type an
+entry's `emits` lists, the finding types that actually appear on findings).
+`emits` is `[type]` for every entry except `broadcastSizing`, whose one plan
+walk emits `underBroadcast` and `overBroadcast` and never its own name. The
+per-type tables (`FINDING_NAMES`, `TYPE_TAG_MAP`, `THRESHOLD_SUMMARIES`,
+`TYPE_ALIASES`, the view's `REGISTRY` and the Alerts clean-check scope map)
+use `satisfies Record<FindingType, ...>` (plus `DetectorType` where they list
+`broadcastSizing`), so a new detector type that misses a table entry fails
+the typecheck. Code that iterates entries generically, such as `analyze()`,
+reads them through the `Detector` interface.
+
 Both consumers are thin loops over that array:
 
 - `packages/core/src/analyzer.ts`: `analyze()` runs every entry regardless of scope, skipping

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { analyze, auditConfig } from '../src/analyzer.js';
 import { DETECTORS, detectorCatalog } from '../src/detectors.js';
+import { detectorInfoByType } from '../src/detector-docs.js';
 import { formatBytes } from '../src/format-utils.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
@@ -1480,6 +1481,18 @@ describe('detector contract', () => {
         expect(d.docAnchor.startsWith('#')).toBe(true);
       }
     }
+  });
+
+  it('every entry emits its own type, except broadcastSizing, which emits its two rules', () => {
+    for (const d of DETECTORS) {
+      const expected = d.type === 'broadcastSizing' ? ['underBroadcast', 'overBroadcast'] : [d.type];
+      expect(d.emits, d.type).toEqual(expected);
+    }
+  });
+
+  it('detectorInfoByType covers exactly the detector types and the types they emit', () => {
+    const expected = new Set(DETECTORS.flatMap((d) => [d.type, ...d.emits]));
+    expect(new Set(Object.keys(detectorInfoByType()))).toEqual(expected);
   });
 
   it('every finding analyze() returns carries a docAnchor string', () => {

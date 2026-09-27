@@ -2,7 +2,7 @@ import { lazy, type ComponentType } from 'react';
 
 import { FINDING_NAMES } from '@sparkforensics/core/finding-names.ts';
 import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
-import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingType, TaskData } from '@sparkforensics/core/types.ts';
 
 // Each widget module is dynamically imported so Vite/Rollup splits it into
 // its own chunk instead of bundling every widget into the main entry: these
@@ -140,8 +140,9 @@ export interface RegistryEntry {
  * never backs a real `Finding` (the detector only ever pushes
  * `underBroadcast` / `overBroadcast`, both registered below in their own
  * right), so it's a dead type at the `DETECTORS` level with nothing to map.
+ * `satisfies` requires exactly one entry per emitted `FindingType`.
  */
-export const REGISTRY: Record<string, RegistryEntry> = {
+export const REGISTRY: Readonly<Record<string, RegistryEntry>> = {
   incompleteRun: { component: IncompleteRun, region: 'action', widgetId: 'incomplete-run', widgetTitle: 'Incomplete Run', findingLabel: FINDING_NAMES.incompleteRun, routeable: true },
 
   skew: { component: Skew, region: 'action', widgetId: 'skew', widgetTitle: 'Task Skew', findingLabel: FINDING_NAMES.skew, routeable: true },
@@ -179,7 +180,7 @@ export const REGISTRY: Record<string, RegistryEntry> = {
   smallFiles: { component: SmallFiles, region: 'action', widgetId: 'small-files', widgetTitle: 'Excessive Small Files', findingLabel: FINDING_NAMES.smallFiles, routeable: true },
   underBroadcast: { component: UnderBroadcast, region: 'action', widgetId: 'under-broadcast', widgetTitle: 'Missed Broadcast Join', findingLabel: FINDING_NAMES.underBroadcast, routeable: true },
   overBroadcast: { component: OverBroadcast, region: 'action', widgetId: 'over-broadcast', widgetTitle: 'Oversized Broadcast Join', findingLabel: FINDING_NAMES.overBroadcast, routeable: true },
-};
+} satisfies Record<FindingType, RegistryEntry>;
 
 const REGION_ORDER: Record<WidgetRegion, number> = { action: 0, reference: 1 };
 
