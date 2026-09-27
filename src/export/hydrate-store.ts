@@ -16,23 +16,34 @@ export function decodeRunPayload(base64: string): unknown {
   return JSON.parse(json, reviveExportCollections);
 }
 
+const REEXPORT_HINT = 'Export the run again with the SparkForensics release you are using now.';
+
+const isObject = (value: unknown): value is object => value != null && typeof value === 'object' && !Array.isArray(value);
+
+/** The precomputed results a payload of this version must carry, since this
+ * bundle has no analysis to fill them in, each with how to check it and what
+ * to call it in the refusal. */
+const REQUIRED_RESULTS: { key: keyof ExportRunData; present: (value: unknown) => boolean; label: string }[] = [
+  { key: 'configFindings', present: Array.isArray, label: 'config audit results' },
+  { key: 'interpretation', present: isObject, label: 'run interpretation' },
+];
+
 /** Why this bundle cannot render `payload`, or null when it can. The bundle
  * renders exactly the payload version it was built for: an older payload lacks
  * the precomputed conclusions (this bundle has no analysis to fill them in),
  * and a newer one may carry fields it would silently drop, so either is refused
- * whole rather than rendered partially. A payload without its config audit is
- * refused the same way: the bundle cannot run the audit itself. */
+ * whole rather than rendered partially. A payload of the right version missing
+ * one of its precomputed results is refused the same way. */
 export function unsupportedPayloadReason(payload: unknown): string | null {
-  const fields = payload && typeof payload === 'object' ? payload as { schemaVersion?: unknown; configFindings?: unknown } : {};
+  const fields: Record<string, unknown> = isObject(payload) ? payload as Record<string, unknown> : {};
   const version = fields.schemaVersion;
-  if (version === EXPORT_DATA_SCHEMA_VERSION) {
-    if (Array.isArray(fields.configFindings)) return null;
-    return 'This file is missing the config audit results this viewer needs. '
-      + 'Export the run again with the SparkForensics release you are using now.';
+  if (version !== EXPORT_DATA_SCHEMA_VERSION) {
+    const found = typeof version === 'number' ? `version ${version}` : 'an unknown version';
+    return `This file holds export data format ${found}, but this viewer only reads version ${EXPORT_DATA_SCHEMA_VERSION}. ${REEXPORT_HINT}`;
   }
-  const found = typeof version === 'number' ? `version ${version}` : 'an unknown version';
-  return `This file holds export data format ${found}, but this viewer only reads version ${EXPORT_DATA_SCHEMA_VERSION}. `
-    + 'Export the run again with the SparkForensics release you are using now.';
+  const missing = REQUIRED_RESULTS.filter(({ key, present }) => !present(fields[key])).map(({ label }) => label);
+  if (missing.length === 0) return null;
+  return `This file is missing the ${missing.join(' and ')} this viewer needs. ${REEXPORT_HINT}`;
 }
 
 /** Rebuilds the store's Map-based AppModel from the CLI-serialized data.js

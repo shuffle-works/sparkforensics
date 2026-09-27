@@ -92,8 +92,13 @@ test('accepts only the payload version this bundle was built for', () => {
   expect(unsupportedPayloadReason(null)).toContain('an unknown version');
 });
 
-test('refuses a payload of the right version that lacks its config audit', () => {
-  const { configFindings: _omitted, ...withoutConfig } = sampleData();
-  expect(unsupportedPayloadReason(withoutConfig)).toContain('missing the config audit');
-  expect(unsupportedPayloadReason({ ...sampleData(), configFindings: null })).toContain('missing the config audit');
+test('refuses a payload of the right version that lacks a precomputed result', () => {
+  const { configFindings: _config, ...withoutConfig } = sampleData();
+  expect(unsupportedPayloadReason(withoutConfig)).toContain('missing the config audit results');
+  expect(unsupportedPayloadReason({ ...sampleData(), configFindings: null })).toContain('missing the config audit results');
+  const { interpretation: _interpretation, ...withoutInterpretation } = sampleData();
+  expect(unsupportedPayloadReason(withoutInterpretation)).toContain('missing the run interpretation');
+  expect(unsupportedPayloadReason({ ...sampleData(), interpretation: [] })).toContain('missing the run interpretation');
+  expect(unsupportedPayloadReason({ ...sampleData(), configFindings: undefined, interpretation: null }))
+    .toContain('missing the config audit results and run interpretation');
 });
