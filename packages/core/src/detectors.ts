@@ -23,6 +23,12 @@ const MB = 1024 * 1024;
 const GB = 1024 * MB;
 const TB = 1024 * GB;
 
+// Labels a byte threshold in this file's binary units, so a 1 GiB default reads '1 GB'.
+function binaryThresholdLabel(bytes: number): string {
+  const [unit, size] = ([['GB', GB], ['MB', MB], ['KB', 1024]] as const).find(([, u]) => bytes >= u) ?? ['bytes', 1];
+  return `${Math.round(bytes / size * 10) / 10} ${unit}`;
+}
+
 // Local runtime shapes.
 //
 // types.ts's Stage/SqlExecution/SparkAppInfo describe the posted AppModel surface for the view
@@ -2594,7 +2600,7 @@ export const DETECTORS = [
               // resolvePlanTree always sets id; safe downstream of it.
               planNodeIds: [node.id!].filter(Boolean),
               impactBand: 'warning', metric: 'broadcastBytes', value: m.value,
-              recommendation: `This broadcast (${formatBytes(m.value)}) exceeds the ${Math.round(overBroadcastBytes / GB * 10) / 10} GB threshold: check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.`,
+              recommendation: `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.`,
             });
           }
         }

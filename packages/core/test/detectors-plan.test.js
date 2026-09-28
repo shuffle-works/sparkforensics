@@ -615,6 +615,20 @@ describe('broadcast sizing', () => {
     expect(finding.recommendation).toContain('exceeds the 2 GB threshold');
     expect(finding.recommendation).not.toContain('1 GB threshold');
   });
+
+  it('overBroadcast: states a sub-GB tuned overBroadcastBytes in MB', () => {
+    const bx = sizeNode('BroadcastExchange', [], 200 * 1024 * 1024);
+    expect(run(bx, { broadcastSizing: { overBroadcastBytes: 32 * 1024 * 1024 } })[0].recommendation)
+      .toContain('exceeds the 32 MB threshold');
+    expect(run(bx, { broadcastSizing: { overBroadcastBytes: 100 * 1024 * 1024 } })[0].recommendation)
+      .toContain('exceeds the 100 MB threshold');
+  });
+
+  it('overBroadcast: states a fractional multi-GB tuned overBroadcastBytes to one decimal', () => {
+    const bx = sizeNode('BroadcastExchange', [], 5 * 1024 * 1024 * 1024);
+    const [finding] = run(bx, { broadcastSizing: { overBroadcastBytes: 2.5 * 1024 * 1024 * 1024 } });
+    expect(finding.recommendation).toContain('exceeds the 2.5 GB threshold');
+  });
 });
 
 describe('broadcastSizing: narrowed stageIds', () => {
