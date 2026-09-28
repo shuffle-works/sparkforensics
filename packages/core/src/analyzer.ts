@@ -2,7 +2,7 @@ import { DETECTORS, type Detector, type DetectorCtx, type DetectorConfigTarget, 
 import { findingTunedThresholds, overridesFor, tunedEstimateNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
-import { estimateImpact } from './impact-estimator.ts';
+import { estimateImpact, type EstimateCtx } from './impact-estimator.ts';
 import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
 import { deriveImpactBand } from './impact-band.ts';
 import { IMPACT_BAND_ORDER } from './format-utils.ts';
@@ -172,14 +172,17 @@ export function analyze(
     executorsAdded as Array<{ executorId: string; timestamp: number; totalCores?: number }>,
     executorsRemoved as Array<{ executorId: string; timestamp: number }>,
   );
-  // Computed once so detectors gate impact band on the same occupancy-clipped waste
-  // estimateImpact displays as savings, not a raw pre-clip delta the two passes would disagree on.
-  const occupancy = computeOccupancy(stages as unknown as Map<number, OccupancyStage>, totalCores);
+  // One occupancy sweep per analysis, shared by the detectors' runtime floors and every entry's
+  // estimate(), so a floor gates on the same occupancy-clipped figure displayed as savings.
+  const impact: EstimateCtx = {
+    stages, totalCores,
+    occupancy: computeOccupancy(stages as unknown as Map<number, OccupancyStage>, totalCores),
+  };
   // The one cast from the posted-model types to the detector-side shapes: types.ts's Stage and
   // SqlExecution carry a catch-all index signature, while every field DetectorStage/DetectorSqlExec
   // declare is one finalizeStage and event-handlers.ts always set (see detectors.ts's header).
   const ctx: DetectorCtx = {
-    app, jobs, executorsAdded, executorsRemoved, runAggregates, occupancy,
+    app, jobs, executorsAdded, executorsRemoved, runAggregates, impact,
     stages: stages as unknown as DetectorCtx['stages'],
     sql: sql as unknown as DetectorCtx['sql'],
   };
@@ -210,7 +213,7 @@ export function analyze(
     }
   }
   const findings = applySuppression(out);
-  estimateImpact(findings, stages, totalCores);
+  estimateImpact(findings, impact);
   deriveImpactBand(findings, app);
   flagSkewStragglerOverlap(findings);
   // Ascending IMPACT_BAND_ORDER (critical 0 -> info 2) puts the worst band first;
@@ -228,9 +231,9 @@ const auditConfigCache = new WeakMap<SparkAppInfo, Finding[]>();
 function computeAuditConfig(app: SparkAppInfo | null): Finding[] {
   const out: Finding[] = [];
   for (const d of detectors) if (d.scope === 'config') push(out, d, d.withThresholds()({ app }));
-  // configAudit's impact case is unconditionally costOnly('none'): needs no stages/totalCores,
-  // an empty stages map gives parity with analyze().
-  estimateImpact(out, new Map());
+  // configAudit's estimate is unconditionally costOnly('none'): needs no stages/totalCores, so an
+  // empty context gives parity with analyze().
+  estimateImpact(out, { stages: new Map(), occupancy: new Map(), totalCores: 0 });
   deriveImpactBand(out, app);
   return out.map((f) => ({ ...f, stageId: f.stageId ?? null }));
 }

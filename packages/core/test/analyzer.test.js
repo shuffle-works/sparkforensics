@@ -272,6 +272,17 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
     expect(slowness.validationRequired).toContain('Produced with tuned thresholds: slowHost.minHosts 4 (default 3).');
     expect(analyze(makeApp(), new Map([[1, slowHostStage(8)]]), [], []).find(b => b.type === 'stageSlowness').tunedThresholds).toBeUndefined();
   });
+  it('estimates a stageSlowness finding the suppression link surfaces, keeping its tuned label', () => {
+    // 100 cores for 50 tasks: more partitions could halve the 70-minute stage's task-active time.
+    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 100 }];
+    const stage = { ...slowHostStage(40), inputBytes: 1e9 };
+    const slowness = analyze(makeApp(), new Map([[1, stage]]), executorsAdded, [], new Map(), new Map(), null,
+      { thresholds: { slowHost: { minHosts: 4 } } }).find(b => b.type === 'stageSlowness');
+    expect(slowness.tunedThresholds).toEqual({ 'slowHost.minHosts': { value: 4, default: 3 } });
+    expect(slowness.validationRequired).toContain('estimate is unvalidated');
+    expect(slowness.impactEstimate).toMatchObject({ estimateMethod: 'modeled', rawWaste: { value: 35 * min, unit: 'ms' } });
+    expect(slowness.impactEstimate.wallClock.high).toBeCloseTo(35 * min, 6);
+  });
   it('drops the stageSlowness finding when a loosened slowHost starts flagging the stage', () => {
     // The hot host runs 8 of 50 tasks, below the default 20% share, so only stageSlowness fires.
     const stage = slowHostStage(8);
@@ -2674,6 +2685,16 @@ describe('analyze: threshold overrides', () => {
     expect(skew.validationRequired).toContain('0.5% runtime-floor threshold');
     expect(skew.validationRequired).toContain('Produced with tuned thresholds: ratioWarn 2 (default 3).');
     expect(skew.validationRequired).toContain('estimate is unvalidated');
+  });
+
+  it('estimates a tuned finding exactly as its untuned twin, with the label and caveat attached', () => {
+    const tuned = run({ skew: { ratioWarn: 2 } }).find((f) => f.type === 'skew');
+    const untuned = run(undefined).find((f) => f.type === 'skew');
+    expect(tuned.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
+    expect(tuned.validationRequired).toContain('estimate is unvalidated');
+    expect(tuned.impactEstimate.wallClock).not.toBeNull();
+    expect(tuned.impactEstimate).toEqual(untuned.impactEstimate);
+    expect(tuned.impactBand).toBe(untuned.impactBand);
   });
 
   it('labels only the tuned detector\'s findings, and not an override equal to the default', () => {
