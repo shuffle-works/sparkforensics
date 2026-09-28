@@ -1,19 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { FINDING_NAMES, titleCase } from '../src/finding-names.js';
-import { DETECTORS } from '../src/detectors.js';
+import { FINDING_NAMES, findingName, titleCase } from '../src/finding-names.js';
+import { FINDING_PRESENTATION } from '../src/finding-presentation.js';
 
 describe('FINDING_NAMES', () => {
-  it('has an entry for every DETECTORS type', () => {
-    const missing = [...new Set(DETECTORS.map((d) => d.type))].filter((t) => !FINDING_NAMES[t]);
-    expect(missing).toEqual([]);
+  it('is read off FINDING_PRESENTATION', () => {
+    expect(FINDING_NAMES.configAudit).toBe(FINDING_PRESENTATION.configAudit.name);
+    expect(FINDING_NAMES.underBroadcast).toBe('missed broadcast join');
+    expect(FINDING_NAMES).not.toHaveProperty('broadcastSizing');
   });
+});
 
-  // broadcastSizing never appears as a real Finding.type (the detector only
-  // ever pushes underBroadcast/overBroadcast); the check above can't catch a
-  // missing entry for those two, so assert them directly.
-  it('has an entry for the real emitted broadcast-sizing finding types', () => {
-    expect(FINDING_NAMES.underBroadcast).toBeTruthy();
-    expect(FINDING_NAMES.overBroadcast).toBeTruthy();
+describe('findingName', () => {
+  it('falls back to the raw type for a type with no presentation row', () => {
+    expect(findingName('skew')).toBe('task skew');
+    expect(findingName('notARealDetector')).toBe('notARealDetector');
   });
 });
 

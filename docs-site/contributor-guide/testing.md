@@ -44,11 +44,10 @@ Two contract tests guard invariants that a future edit could silently break.
 The "detector contract" suite in `packages/core/test/analyzer.test.js` asserts
 `stageSlowness` stays array-index-after `slowHost` in `DETECTORS` (see
 [Detector contract](./architecture/detector-contract.md#detector-contract)).
-`tests/view/detector-registry.test.tsx` asserts `REGISTRY` completeness
-against every `DETECTORS` type, including the
-`underBroadcast`/`overBroadcast` correction: `broadcastSizing` itself is
-never an emitted `finding.type`, as the doc comment above `REGISTRY` in
-`src/view/detector-registry.tsx` explains.
+`REGISTRY` and `FINDING_PRESENTATION` completeness is a compile-time check,
+not a test: both are typed against the emitted `FindingType` union, so
+`npx tsc --noEmit` fails on a missing or extra key (see
+[Detector contract](./architecture/detector-contract.md#detector-contract)).
 
 ## Test fixtures
 

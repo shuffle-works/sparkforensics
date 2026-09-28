@@ -130,7 +130,7 @@ export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings,
 
     const body = <p className="text-muted-foreground text-xs">{message}</p>;
     return (
-      <WidgetCard title="Config Sanity" compact summary={body}>
+      <WidgetCard title="Config Audit" compact summary={body}>
         {body}
       </WidgetCard>
     );
@@ -140,7 +140,7 @@ export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings,
 
   return (
     <WidgetCard
-      title="Config Sanity"
+      title="Config Audit"
       impactBand={impactBand}
       badges={<TagBadge type="configAudit" impactBand={impactBand ?? 'info'} docAnchor={sharedDocAnchor(findings)} />}
       statusBadge={

@@ -2,7 +2,7 @@ import { X, ArrowLeftRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TagBadge } from '@/view/ImpactBadge';
 import { formatBytes } from '@sparkforensics/core/format-utils.ts';
-import { findingActionLabel } from '@/view/finding-action-label';
+import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { CATEGORY_ICON } from '@/view/plan-graph/PlanGraphNode';
 import type { PlanGraphNodeData } from '@sparkforensics/core/types.ts';
 

@@ -6,19 +6,19 @@ import { detectorCatalog } from './detectors.ts';
 import {
   typeTag, formatBytes, formatCores, formatDuration, formatRawWaste, formatWallClockRange, IMPACT_BAND_ORDER, readsAsZero,
 } from './format-utils.ts';
-import { FINDING_NAMES, titleCase } from './finding-names.ts';
+import { findingName, titleCase } from './finding-names.ts';
 import { redactReport, redactRunModel } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
-import { coreFindingActionLabel } from './finding-action-label.ts';
+import { findingActionLabel } from './finding-action-label.ts';
 import { matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
 import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
-import { buildRunVerdict, findingActionLabel, stepCopyRecommendation, stepCopyText, type RunVerdictModel } from './run-verdict.ts';
+import { buildRunVerdict, stepCopyRecommendation, stepCopyText, type RunVerdictModel } from './run-verdict.ts';
 import {
   estimateProvenance, impactEstimateFigure, impactFigure, rawWasteMeaning, savingsMeaning,
 } from './impact-format.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
-import { getThresholdSummary } from './threshold-summary.ts';
+import { detectorInfoByType } from './detector-docs.ts';
 import type {
   AppModel, Finding, FindingEvidenceMap, FindingType, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,
 } from './types.ts';
@@ -222,7 +222,7 @@ function findingRow(f: Finding): FindingRow {
   const row = {
     id: f.id ?? null,
     type: f.type,
-    name: titleCase(FINDING_NAMES[f.type] ?? f.type),
+    name: titleCase(findingName(f.type)),
     tag: typeTag(f.type),
     impactBand: f.impactBand,
     stageId: f.stageId ?? null,
@@ -232,10 +232,7 @@ function findingRow(f: Finding): FindingRow {
     recommendation: f.recommendation ?? null,
     detectorVersion: f.detectorVersion ?? 1,
     evidence: projectEvidence(f),
-    // Deliberate simplification vs the view layer's REGISTRY fallback: no widget registry here, and
-    // falling back to the finding's own `type` is fine since coreFindingActionLabel already covers
-    // every emitted type; only obscure/future sub-variants hit this fallback.
-    actionLabel: coreFindingActionLabel(f) ?? f.type,
+    actionLabel: findingActionLabel(f),
   } as FindingRow;
   // Threshold/confidence provenance, only when the detector emitted it.
   if (f.confidence != null) row.confidence = f.confidence;
@@ -284,7 +281,7 @@ function buildRecommendations(
     const base = {
       type: group.type,
       tag: typeTag(group.type),
-      actionLabel: coreFindingActionLabel(representative) ?? representative.type,
+      actionLabel: findingActionLabel(representative),
       findingCount: group.findingCount,
       findingIds,
     };
@@ -324,7 +321,7 @@ function buildRecommendations(
   });
 }
 
-// Detector types with no real finding, split into those that passed and those the log could not
+// Finding types with no real finding, split into those that passed and those the log could not
 // run (the rule the dashboard's Clean checks uses, from check-coverage.ts). Differs from
 // Alerts.tsx in one way: the dashboard excludes coreLocality (the one always-mounted reference
 // widget, shown elsewhere); a flat report has no such separate surface, so this includes it too.
@@ -335,16 +332,14 @@ function buildCheckLists(
   // dataUnavailable variant) had nothing to check, so it lands in notRunChecks.
   const firedTypes = new Set<string>(findings.filter(isRealFinding).map((f) => f.type));
   const coverage = checkCoverage(stages, findings);
-  const seen = new Set<string>();
   const cleanChecks: CleanCheckEntry[] = [];
   const notRunChecks: NotRunCheckEntry[] = [];
-  // detectorCatalog() can list the same type more than once (configAudit has 4 entries); dedupe by
-  // type, keeping first, so a type with sibling entries contributes exactly one line.
-  for (const d of detectorCatalog() as Array<{ type: string }>) {
-    if (firedTypes.has(d.type) || seen.has(d.type)) continue;
-    seen.add(d.type);
-    const entry = { type: d.type, tag: typeTag(d.type), thresholdSummary: getThresholdSummary(d.type) };
-    const reason = coverage.notRunReason(d.type);
+  // One line per emitted finding type (configAudit's four entries give one line;
+  // broadcastSizing gives overBroadcast and underBroadcast), the same set the dashboard lists.
+  for (const [type, { thresholdSummary }] of Object.entries(detectorInfoByType())) {
+    if (firedTypes.has(type)) continue;
+    const entry = { type, tag: typeTag(type), thresholdSummary };
+    const reason = coverage.notRunReason(type);
     if (reason) notRunChecks.push({ ...entry, reason });
     else cleanChecks.push(entry);
   }
@@ -548,7 +543,7 @@ function renderVerdict(verdict: VerdictJson): string[] {
     verdict.steps.forEach((step, i) => {
       lines.push(`${i + 1}. [${step.tag}] ${step.text}`);
       if (step.relatedTypes.length > 0) {
-        const related = step.relatedTypes.map((type) => FINDING_NAMES[type] ?? type).join(', ');
+        const related = step.relatedTypes.map(findingName).join(', ');
         lines.push(`   - Also flagged here: ${related}. These often share this cause, so the same fix may clear them too.`);
       }
     });

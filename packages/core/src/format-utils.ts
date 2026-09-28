@@ -1,4 +1,5 @@
-import type { DetectorType, FindingType, RawWasteFigure } from './types.ts';
+import { FINDING_PRESENTATION } from './finding-presentation.ts';
+import type { FindingType, RawWasteFigure } from './types.ts';
 
 const TARGET_PARTITION_BYTES = 128 * 1024 * 1024;
 const MAX_RECOMMENDED = 8000;
@@ -32,23 +33,12 @@ export function stageWidgetFrequency(catalog: Array<{stageId?: number | null; ty
   return freq;
 }
 
-// Canonical detector type -> ALL-CAPS board tag vocabulary. Single source of truth for every
-// widget that renders a catalog entry's tag outside its own card (e.g. Bottleneck Alerts).
-// Exported so doc-sync checks can enumerate every tag without hand-duplicating this list.
-// `satisfies` requires one tag per finding and detector type; read by free-form type string.
-export const TYPE_TAG_MAP: Readonly<Record<string, string>> = {
-  skew: 'SKEW', shuffle: 'SHFL', spill: 'SPILL', gc: 'GC',
-  coldStart: 'COLD', utilization: 'UTIL', memoryUtilization: 'MEM',
-  cacheUtilization: 'CSTOR', coreLocality: 'LOCAL', autoscalingChurn: 'CHRN',
-  slowHost: 'HOST', failures: 'FAIL', straggler: 'STRAG',
-  retryWaste: 'RETRY', tinyTask: 'TINY', stageFailed: 'SFAIL',
-  speculationWaste: 'SPEC',
-  partitionSizing: 'PART', stageSlowness: 'SLOW', stageShape: 'SHAPE',
-  cachingOpportunity: 'CACHE', jobFailureRate: 'JOBS', configAudit: 'CFG',
-  duplicatePlanSubtree: 'PLAN', smallFiles: 'PLAN', underBroadcast: 'PLAN', overBroadcast: 'PLAN',
-  broadcastSizing: 'PLAN',
-  incompleteRun: 'INCMP',
-} satisfies Record<FindingType | DetectorType, string>;
+// Finding type -> ALL-CAPS board tag, derived from FINDING_PRESENTATION. Every widget that renders
+// a catalog entry's tag outside its own card (e.g. Bottleneck Alerts) reads it through typeTag.
+// Exported so doc-sync checks can enumerate every tag. Read by free-form type string.
+export const TYPE_TAG_MAP: Readonly<Record<string, string>> = Object.fromEntries(
+  (Object.keys(FINDING_PRESENTATION) as FindingType[]).map((type) => [type, FINDING_PRESENTATION[type].tag]),
+);
 
 export function typeTag(type: string): string {
   return TYPE_TAG_MAP[type] ?? type.toUpperCase();

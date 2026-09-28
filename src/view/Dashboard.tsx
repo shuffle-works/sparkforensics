@@ -2,7 +2,8 @@ import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, use
 
 import { store, useStore, useWidgetDensity } from '@/store/store';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { alwaysMountedWidgets, isAlwaysMountedType, REGISTRY, type WidgetProps } from '@/view/detector-registry';
+import { alwaysMountedWidgets, isAlwaysMountedType, type WidgetProps } from '@/view/detector-registry';
+import { findingName } from '@sparkforensics/core/finding-names.ts';
 import { NoMatchBanner } from '@/view/EmptyStateBanners';
 import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from '@/view/EvidenceAvailabilityContext';
 import { FindingFilterBar } from '@/view/FindingFilterBar';
@@ -108,7 +109,7 @@ function ReferenceSection({
 function clearedFilterNotice(dimensions: FilterDimension[], selection: FilterSelection, subject: string): string {
   const parts = dimensions.map((dimension) => {
     if (dimension === 'impactBands') return `${[...selection.impactBands].join(', ')} impact`;
-    if (dimension === 'types') return [...selection.types].map((type) => REGISTRY[type]?.findingLabel ?? type).join(', ');
+    if (dimension === 'types') return [...selection.types].map((type) => findingName(type)).join(', ');
     return [...selection.stages].map((stageId) => `Stage ${stageId}`).join(', ');
   });
   return `Cleared the ${parts.join(' and ')} filter${parts.length === 1 ? '' : 's'} to show ${subject}.`;

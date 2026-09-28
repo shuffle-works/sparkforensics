@@ -5,9 +5,7 @@ import { DETECTORS } from '@sparkforensics/core/detectors.ts';
 import { typeTag } from '@sparkforensics/core/format-utils.ts';
 import { TAG_HELP } from '@/view/finding-tag-help';
 
-const CURRENT_FINDING_TYPES = [...new Set(DETECTORS.map((d) => d.type))].flatMap((t) =>
-  t === 'broadcastSizing' ? ['underBroadcast', 'overBroadcast'] : [t]
-);
+const CURRENT_FINDING_TYPES = [...new Set(DETECTORS.flatMap((d) => d.emits))];
 
 const EXPECTED_TAG_HELP: Record<string, { expansion: string; description: string }> = {
   INCMP: { expansion: 'Incomplete run', description: 'This event log never recorded an application-end event, so other findings and metrics reflect only what was captured.' },
@@ -35,7 +33,6 @@ const EXPECTED_TAG_HELP: Record<string, { expansion: string; description: string
   JOBS: { expansion: 'Job failure rate', description: 'A large share of completed jobs did not succeed.' },
   CFG: { expansion: 'Configuration audit', description: 'Configuration settings may cause reliability or efficiency problems.' },
   PLAN: { expansion: 'Plan advisor', description: 'The SQL execution plan has a pattern worth reviewing.' },
-  BROADCASTSIZING: { expansion: 'Broadcast sizing', description: 'A broadcast join threshold or hint may be misconfigured for this query.' },
 };
 
 test('has the specified expansion and description for every dashboard tag', () => {

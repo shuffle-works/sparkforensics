@@ -104,7 +104,9 @@ contributor should read; `docs/` stays flat internal engineering records
   `packages/core/src/vendor/fzstd.js` remain plain JS), consumed by the view
   unchanged. Finding type → widget component mapping lives in
   `src/view/detector-registry.tsx`'s `REGISTRY`, not a `render:` field on the
-  detector entry.
+  detector entry. A type's name, tag, action label, generic recommendation
+  and threshold summary are one row in `packages/core/src/finding-presentation.ts`,
+  kept off `detectors.ts` so the HTML export can render them.
 - VitePress installs its own `window`-level, capture-phase click listener
   (`node_modules/vitepress/dist/client/app/router.js`) that intercepts clicks
   on any `<a href="#...">` pointing at the current page and scrolls to the

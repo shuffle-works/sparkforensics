@@ -291,7 +291,9 @@ label like "Reduce shuffle size"), sourced from a new core module,
 `packages/core/src/finding-action-label.ts`'s `coreFindingActionLabel`, extracted from the (type,
 discriminant) switch statement that used to live only in the view layer
 (`src/view/finding-action-label.ts`, which now wraps the core function and layers its own
-`REGISTRY` fallback on top). `EvidenceReportJson.recommendations` is the same impact-ranked
+`REGISTRY` fallback on top; since merged, so the dashboard, the run verdict and the report
+rows all call one `findingActionLabel`, which falls back to the type's name).
+`EvidenceReportJson.recommendations` is the same impact-ranked
 `buildRecommendationRollup` grouping (`packages/core/src/recommendation-rollup.ts`) that
 `FixTheseFirst.tsx` renders, so CLI/MCP/download consumers get the same "what's the
 highest-impact fix" ranking the dashboard shows, without changing the existing `findings`
@@ -325,7 +327,11 @@ estimator still reads them on the finding. `value` is now always numeric or `nul
 text-valued findings (`stageFailed`'s failure reason, `configAudit`'s current setting,
 `incompleteRun`'s `missing`) carry their text in a `valueText` column, present only on those
 rows, and the Markdown prints it where `value` would go. Renaming or removing an evidence field
-is a breaking change and needs another bump.
+is a breaking change and needs another bump. `cleanChecks`/`notRunChecks` list emitted finding
+types, the set the dashboard's Clean checks shows: `overBroadcast` and `underBroadcast` in place
+of the `broadcastSizing` detector entry. A finding row's `actionLabel` for a (type, discriminant)
+combination with no label of its own is the type's name, the same fallback the verdict step
+uses, where it used to be the raw `type`.
 
 ### Finding identity
 

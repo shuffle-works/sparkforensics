@@ -170,13 +170,13 @@ test('Config Audit finding switches to the Full app report tab before focusing i
   renderDashboard();
 
   // A clean widget renders only a plain CleanCheckRow, so a real finding is
-  // needed to reach the evidence link. Config Sanity is code-split (React.lazy).
-  await screen.findByRole('heading', { name: /^config sanity$/i });
+  // needed to reach the evidence link. Config Audit is code-split (React.lazy).
+  await screen.findByRole('heading', { name: /^config audit$/i });
   // The widget card starts collapsed; the evidence control (RowStatusCluster)
   // lives in the card body, so open it before clicking it. Clicking the
   // evidence link then switches to the Full app report tab (where the
   // ledger lives) and focuses the entry in one step.
-  await user.click(screen.getByRole('button', { name: 'Config Sanity' }));
+  await user.click(screen.getByRole('button', { name: 'Config Audit' }));
   await user.click(screen.getAllByRole('button', { name: /^evidence: spark configuration$/i })[0]);
 
   expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
@@ -222,11 +222,11 @@ test('Config Audit finding opens Spark-configuration evidence', async () => {
   renderDashboard();
 
   // A clean widget renders only a plain CleanCheckRow, so a real finding is
-  // needed to reach the evidence link. Config Sanity is code-split (React.lazy).
-  await screen.findByRole('heading', { name: /^config sanity$/i });
+  // needed to reach the evidence link. Config Audit is code-split (React.lazy).
+  await screen.findByRole('heading', { name: /^config audit$/i });
   // The widget card starts collapsed; the evidence control (RowStatusCluster)
   // lives in the card body, so open it first.
-  await user.click(screen.getByRole('button', { name: 'Config Sanity' }));
+  await user.click(screen.getByRole('button', { name: 'Config Audit' }));
   await user.click(screen.getAllByRole('button', { name: /^evidence: spark configuration$/i })[0]);
 
   expect(document.activeElement).toBe(document.getElementById('evidence-availability-sparkConfiguration'));

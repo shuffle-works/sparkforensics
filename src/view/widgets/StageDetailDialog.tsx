@@ -10,7 +10,7 @@ import { useLiveTaskData } from '@/view/useLiveTaskData';
 import { CHART_COLORS, ChartFrame } from '@/view/charts/ChartTheme';
 import { DurationHistogram } from '@/view/charts/DurationHistogram';
 import { Section } from '@/view/Section';
-import { findingActionLabel } from '@/view/finding-action-label';
+import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf, useInterpretation } from '@/view/interpretation';

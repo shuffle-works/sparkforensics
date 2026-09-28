@@ -2180,7 +2180,8 @@ export const DETECTORS = [
     // carry 'underBroadcast'/'overBroadcast' since one shared plan-walk covers both
     // opposite-direction rules (JoinToBroadcastAlert / BroadcastTooLargeAlert).
     type: 'broadcastSizing', scope: 'sql', order: 132, fixEffort: 'config', version: 2,
-    emits: ['underBroadcast', 'overBroadcast'],
+    // Listed over-first: the two share order 132, and this list order is their display tie-break.
+    emits: ['overBroadcast', 'underBroadcast'],
     docAnchor: '#bottleneck-broadcast-sizing',
     thresholds: {
       broadcastTiers: [10 * MB, 100 * MB, GB, 5 * GB],
@@ -2251,6 +2252,13 @@ export type DetectorType = (typeof DETECTORS)[number]['type'];
 
 /** Every finding `type` a detector can emit, from the entries' `emits` lists. */
 export type FindingType = (typeof DETECTORS)[number]['emits'][number];
+
+type DetectorEntry = (typeof DETECTORS)[number];
+type EntryEmitting<T extends FindingType, D extends DetectorEntry = DetectorEntry> =
+  D extends { emits: readonly (infer E)[] } ? (T extends E ? D : never) : never;
+
+/** The `thresholds` of the entry (or entries, for configAudit) that emit finding type `T`. */
+export type ThresholdsOf<T extends FindingType> = EntryEmitting<T>['thresholds'];
 
 // `emits` already only names Finding members (Detector.emits); this makes the reverse hold too, so a
 // Finding member no detector emits, or a detector whose type has no Finding member, fails to compile.

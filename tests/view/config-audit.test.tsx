@@ -38,10 +38,10 @@ test('renders the WidgetCard heading and every triggered config warning, not jus
     resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
   });
 
-  expect(screen.getByRole('heading', { name: /config sanity/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /config audit/i })).toBeInTheDocument();
 
   // Expand the card to see the findings
-  const collapseButton = screen.getByRole('button', { name: /config sanity/i });
+  const collapseButton = screen.getByRole('button', { name: /config audit/i });
   await user.click(collapseButton);
 
   expect(screen.getByText('spark.shuffle.service.enabled')).toBeInTheDocument();
@@ -62,7 +62,7 @@ test('shows a muted clean state when config was captured but nothing is misconfi
 
   renderWidget(model.app);
 
-  expect(screen.getByRole('heading', { name: /config sanity/i })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: /config audit/i })).toBeInTheDocument();
   expect(screen.getByText(/no misconfigurations detected/i)).toBeInTheDocument();
   expect(screen.queryByText('CFG')).not.toBeInTheDocument();
 });
@@ -156,7 +156,7 @@ test('renders a doc link naming the property it explains, for every triggered pr
   });
 
   // Expand the card to see the findings
-  const collapseButton = screen.getByRole('button', { name: /config sanity/i });
+  const collapseButton = screen.getByRole('button', { name: /config audit/i });
   await user.click(collapseButton);
 
   const links = screen.getAllByRole('link', { name: /^why .* matters$/i });
@@ -179,7 +179,7 @@ test('the recommendation is always visible per row, with no toggle to hide it', 
   });
 
   // Expand the card to see the findings
-  const collapseButton = screen.getByRole('button', { name: /config sanity/i });
+  const collapseButton = screen.getByRole('button', { name: /config audit/i });
   await user.click(collapseButton);
 
   const recommendation = /external shuffle service is off/i;
@@ -236,7 +236,7 @@ test('the evidence marker stays out of the summary view until the card is expand
 
   expect(screen.queryByRole('button', { name: /evidence:/i })).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole('button', { name: /config sanity/i }));
+  await user.click(screen.getByRole('button', { name: /config audit/i }));
   expect(screen.getByRole('button', { name: /evidence: spark configuration/i })).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
 });
