@@ -290,6 +290,20 @@ occupancy-clipped wall-clock estimate to exactly zero on every firing (see `src/
 `taskStageSkew` comment), which is why it was moved off the wall-clock path entirely rather
 than reconciled against the same ceiling clip as its two siblings above.
 
+## Tuned thresholds
+
+The estimates are calibrated against the default detector thresholds: the spot-checks above,
+the corpus snapshot and the tail-replay scores (`dev/eval-tail-replay.mjs`) all measure
+findings the defaults produce. The formulas read the stage's own figures, not the thresholds,
+but a threshold decides which findings exist, so an override that loosens one produces
+findings, near its new gate, that no estimate here was checked against. When the CLI or the
+MCP server runs with `--thresholds` (see
+[Tuning thresholds](./detector-contract.md#tuning-thresholds)), every finding from a tuned
+detector carries `tunedThresholds` and a `validationRequired` sentence saying its estimate is
+unvalidated, and the report header lists the tuned detectors. The estimate itself is computed
+the same way; nothing rescales or drops it. The impact bands (`impact-band.ts`) keep their
+fixed floors on a tuned run.
+
 ## Per-finding-type coverage
 
 One row per distinct `type` string `src/detectors.ts` actually emits (cross-checked

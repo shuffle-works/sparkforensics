@@ -257,6 +257,11 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
     const catalog = analyze(makeApp(), new Map([[1, stage]]), [], []);
     expect(catalog.some(b => b.type === 'slowHost')).toBe(true);
     expect(catalog.some(b => b.type === 'stageSlowness')).toBe(false);
+    // Suppression follows what slowHost actually emitted: tuned so it can't fire (3 hosts < 4),
+    // the same stage gets its stageSlowness finding back.
+    const tuned = analyze(makeApp(), new Map([[1, stage]]), [], [], new Map(), new Map(), null, { thresholds: { slowHost: { minHosts: 4 } } });
+    expect(tuned.some(b => b.type === 'slowHost')).toBe(false);
+    expect(tuned.some(b => b.type === 'stageSlowness')).toBe(true);
   });
 
   it('scores stageSlowness off real wall-clock duration, not per-executor average (Decision 7)', () => {
@@ -1502,11 +1507,17 @@ describe('detector contract', () => {
     for (const f of findings) expect(typeof f.docAnchor).toBe('string');
   });
 
-  it('slowHost is declared before stageSlowness in DETECTORS (suppression precondition)', () => {
-    const iHost = DETECTORS.findIndex(d => d.type === 'slowHost');
-    const iSlow = DETECTORS.findIndex(d => d.type === 'stageSlowness');
-    expect(iHost).toBeGreaterThanOrEqual(0);
-    expect(iSlow).toBeGreaterThan(iHost);
+  it('every suppressedBy names a stage-scope entry, from a stage-scope entry', () => {
+    const suppressed = DETECTORS.filter((d) => d.suppressedBy);
+    expect(suppressed.map((d) => [d.type, d.suppressedBy])).toEqual([['stageSlowness', 'slowHost']]);
+    for (const d of suppressed) {
+      expect(d.scope).toBe('stage');
+      expect(DETECTORS.find((e) => e.type === d.suppressedBy)?.scope).toBe('stage');
+    }
+  });
+
+  it('every entry\'s default thresholds are frozen', () => {
+    for (const d of DETECTORS) expect(Object.isFrozen(d.thresholds), d.type).toBe(true);
   });
 
   it('detectorCatalog() returns one metadata row per detector entry', () => {
@@ -2623,5 +2634,45 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
     const app = { config: { 'spark.executor.memory': '4g' }, resources: { executor: {}, driver: {}, dynamicAllocationEnabled: null, shuffleServiceEnabled: null, serializer: null } };
     const f = auditConfig(app).find(x => x.property === 'spark.serializer');
     expect(f.recommendation).toContain('the default JavaSerializer');
+  });
+});
+
+describe('analyze: threshold overrides', () => {
+  // 3.5x P95/median: over skew's default 3x ratioWarn.
+  const skewStages = () => new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350 })]]);
+  const run = (thresholds) => analyze(makeApp(), skewStages(), [], [], new Map(), new Map(), null, { thresholds });
+
+  it('runs every detector on its own thresholds when no override is passed, labeling nothing', () => {
+    const findings = run(undefined);
+    expect(findings.some((f) => f.type === 'skew')).toBe(true);
+    for (const f of findings) expect(f.tunedThresholds, f.type).toBeUndefined();
+  });
+
+  it('a raised threshold stops the finding; a lowered one keeps it, labeled with value and default', () => {
+    expect(run({ skew: { ratioWarn: 4 } }).some((f) => f.type === 'skew')).toBe(false);
+    const [skew] = run({ skew: { ratioWarn: 2 } }).filter((f) => f.type === 'skew');
+    expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
+    expect(skew.validationRequired).toContain('0.5% runtime-floor threshold');
+    expect(skew.validationRequired).toContain('Produced with tuned thresholds: ratioWarn 2 (default 3).');
+    expect(skew.validationRequired).toContain('estimate is unvalidated');
+  });
+
+  it('labels only the tuned detector\'s findings, and not an override equal to the default', () => {
+    const findings = run({ skew: { ratioWarn: 3 }, tinyTask: { minTasks: 1 } });
+    expect(findings.find((f) => f.type === 'skew').tunedThresholds).toBeUndefined();
+    for (const f of findings.filter((f) => f.type !== 'tinyTask')) expect(f.tunedThresholds, f.type).toBeUndefined();
+  });
+
+  it('leaves the shared defaults untouched', () => {
+    const before = JSON.stringify(DETECTORS.map((d) => d.thresholds));
+    run({ skew: { ratioWarn: 2 } });
+    expect(JSON.stringify(DETECTORS.map((d) => d.thresholds))).toBe(before);
+    expect(run(undefined).find((f) => f.type === 'skew').tunedThresholds).toBeUndefined();
+  });
+
+  it('refuses an override the entry does not declare, or one shaped unlike its default', () => {
+    expect(() => run({ skew: { ratioWarm: 2 } })).toThrow('Detector skew has no threshold "ratioWarm".');
+    expect(() => run({ slowHost: { ratioTiers: [1, 2] } })).toThrow('Threshold slowHost.ratioTiers must have the same shape as its default.');
+    expect(() => run({ skew: { ratioWarn: [2] } })).toThrow('must have the same shape');
   });
 });

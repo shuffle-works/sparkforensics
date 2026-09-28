@@ -23,6 +23,11 @@ describe('getThresholdSummary', () => {
     expect(getThresholdSummary('broadcastSizing')).toBe('criteria not met');
   });
 
+  it('reads a tuned run\'s thresholds when given its overrides', () => {
+    expect(getThresholdSummary('spill', { spill: { singleTaskDiskGiB: 8 } })).toBe('single-task disk spill above 8 GiB');
+    expect(getThresholdSummary('spill', { skew: { ratioWarn: 8 } })).toBe(getThresholdSummary('spill'));
+  });
+
   it('falls back to a generic string for an unmapped type', () => {
     expect(getThresholdSummary('__unknown_type__')).toBe('criteria not met');
   });

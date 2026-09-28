@@ -115,4 +115,26 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     expect(Number(listed[1])).toBe(tools.length);
     expect(helpNames.sort()).toEqual(tools.map((t) => t.name).sort());
   }, 30000);
+  it('--thresholds tunes every tool, and an invalid file stops the server from starting', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    cleanupDirs.push(dir);
+    const invalid = join(dir, 'invalid.json');
+    writeFileSync(invalid, JSON.stringify({ skew: { ratioWarn: -1 } }));
+    const refused = await execFileAsync(binPath, ['--thresholds', invalid]).catch((e) => e);
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain('"skew.ratioWarn" must be a non-negative number');
+
+    const valid = join(dir, 'thresholds.json');
+    writeFileSync(valid, JSON.stringify({ skew: { ratioWarn: 5 } }));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, [
+      { Event: 'SparkListenerApplicationStart', 'App Name': 'test', 'App ID': 'application_0000000000000_0001', Timestamp: 0, User: 'u' },
+      { Event: 'SparkListenerApplicationEnd', Timestamp: 100 },
+    ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+    const transport = new StdioClientTransport({ command: binPath, args: ['--thresholds', valid] });
+    client = new Client({ name: 'test-client', version: '1.0.0' });
+    await client.connect(transport);
+    const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } });
+    expect(result.structuredContent.tunedThresholds).toEqual({ skew: { ratioWarn: { value: 5, default: 3 } } });
+  }, 30000);
 });

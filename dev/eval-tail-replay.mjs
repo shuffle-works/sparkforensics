@@ -24,7 +24,7 @@ import { nodeFileFromPath, emptyAppModel, dispatch, isRollingLogDirectory } from
 import { createModelCallbacks } from '../packages/core/src/model-assembler.ts';
 import { FIELDS } from '../packages/core/src/stage-quantiles.ts';
 import { analyze } from '../packages/core/src/analyzer.ts';
-import { DETECTORS } from '../packages/core/src/detectors.ts';
+import { parseThresholdOverrides } from '../packages/core/src/threshold-overrides.ts';
 
 const FLOOR_PCT = 0.005;
 const STRAGGLER_MULTIPLE = 4;
@@ -103,11 +103,11 @@ function describeStage(path, stage, recoverableMs, appMs, findings) {
     + `peak ${stage.peakConcurrentTasks} slots; findings ${tail}`;
 }
 
-function score(runs, verbose) {
+function score(runs, verbose, thresholds) {
   const tally = { skew: [0, 0, 0], straggler: [0, 0, 0], either: [0, 0, 0] };
   const ratios = [];
   for (const { path, appModel: m, appMs, truth } of runs) {
-    const findings = analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates);
+    const findings = analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates, { thresholds });
     const fired = { skew: new Map(), straggler: new Map() };
     for (const f of findings) {
       if ((f.type === 'skew' || f.type === 'straggler') && f.impactBand !== 'info') fired[f.type].set(f.stageId, f);
@@ -152,6 +152,7 @@ function score(runs, verbose) {
 
 const argv = process.argv.slice(2);
 const paths = [];
+const sets = {};
 let verbose = false;
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === '--verbose') {
@@ -159,9 +160,7 @@ for (let i = 0; i < argv.length; i++) {
   } else if (argv[i] === '--set') {
     const [key, value] = argv[++i].split('=');
     const [type, name] = key.split('.');
-    const detector = DETECTORS.find((d) => d.type === type);
-    if (!detector?.thresholds || !(name in detector.thresholds)) throw new Error(`unknown threshold ${key}`);
-    detector.thresholds[name] = Number(value);
+    sets[type] = { ...sets[type], [name]: Number(value) };
   } else {
     paths.push(resolve(argv[i]));
   }
@@ -170,10 +169,12 @@ if (paths.length === 0) {
   console.error('Usage: node dev/eval-tail-replay.mjs [--set detector.threshold=value ...] [--verbose] <file|dir>...');
   process.exit(2);
 }
+// The same validation and analyze() option the CLI's --thresholds uses; DETECTORS stays untouched.
+const thresholds = parseThresholdOverrides(sets);
 const runs = [];
 for (const p of expand(paths)) {
   const run = await loadRun(p);
   if (run) runs.push(run);
 }
 console.log(`${runs.length} runs, ${runs.reduce((s, r) => s + r.truth.size, 0)} stages with 2+ tasks`);
-score(runs, verbose);
+score(runs, verbose, thresholds);

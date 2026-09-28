@@ -60,8 +60,14 @@ contributor should read; `docs/` stays flat internal engineering records
   worktree, implement, then let the file go once the PR merges; don't
   recreate it in-tree afterward and don't paste it into the PR.
 - Bottleneck thresholds live in each `packages/core/src/detectors.ts` entry's
-  `thresholds` object: spec-fixed values; `packages/core/src/analyzer.ts` is
-  just a runner over the `DETECTORS` contract. The full detector roster
+  `thresholds` object (entries built by `define{Stage,Sql,App,Config}Detector`):
+  the specification defaults, which the dashboard always runs and the impact
+  estimates are calibrated against. Only the CLI/MCP `--thresholds <file>`
+  overrides them, per run, and every finding it touches is labeled
+  (`tunedThresholds`); see `detector-contract.md#tuning-thresholds`. Never
+  mutate an entry's thresholds: they're frozen; pass `analyze()`'s
+  `thresholds` option. `packages/core/src/analyzer.ts` is just a runner over
+  the `DETECTORS` contract. The full detector roster
   (per-stage: skew, shuffle, spill, GC, failures, slowHost/straggler,
   stageSlowness, partitionSizing, stageShape, stageFailed, retryWaste,
   speculationWaste, tinyTask; app-level: incompleteRun, coldStart,
@@ -76,12 +82,12 @@ contributor should read; `docs/` stays flat internal engineering records
   read them before adding a detector, changing a threshold, or changing
   rendering order. Some thresholds are
   design-spike/unvalidated and self-flag with a `confidence` marker.
-- `analyze()` takes 7 args: `(app, stages, executorsAdded, executorsRemoved,
-  jobs, sql, runAggregates)`; `runAggregates` is a whole-run core-time-series
-  summary the worker posts before `done`. Cross-detector suppression rides
-  `DETECTORS` declaration order (a `suppressWhen` hook in `push()`):
-  `stageSlowness` must stay immediately after `slowHost`; a contract test
-  asserts the index.
+- `analyze()` takes 7 positional args plus options: `(app, stages,
+  executorsAdded, executorsRemoved, jobs, sql, runAggregates, { thresholds? })`;
+  `runAggregates` is a whole-run core-time-series summary the worker posts
+  before `done`. Cross-detector suppression is an entry's explicit
+  `suppressedBy` (`stageSlowness` names `slowHost`), applied after every
+  detector runs, so `DETECTORS` order never matters for it.
 - UI copy must stay domain-agnostic: no company/industry/dataset references
   in rendered output.
 - Problem flagging: colored impact dot + ALL-CAPS tag, no emoji, flag every

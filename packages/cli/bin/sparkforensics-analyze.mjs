@@ -31,6 +31,8 @@ const { comparisonVerdict } = await loadCore('comparison-verdict');
 const { redactComparison } = await loadCore('redact');
 const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
 const { runPayloadScript } = await loadCore('run-payload');
+const { loadThresholdOverrides } = await loadCore('cli/threshold-config');
+const { tunedDetectors } = await loadCore('threshold-overrides');
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id> [--attempt-id <id>] [options]
@@ -72,8 +74,14 @@ Options:
   --type <type[,type]>              Filter the output's findings array to these finding types.
   --stage <id>                      Filter the output's findings array to this stage id,
                                     including a SQL plan finding whose only stage it is.
+  --thresholds <file>               Run the detectors with the threshold overrides in this JSON
+                                    file ({"<detector>": {"<threshold>": value}}; names, units and
+                                    defaults are in the report's detectors catalog). Findings a
+                                    tuned detector produces are marked and their impact estimates
+                                    flagged as uncalibrated. Applies to --baseline too; the
+                                    --export-html dashboard keeps the default thresholds.
 
-Exit codes: 0 pass, 1 budget violated, 2 bad arguments, the local input could not be parsed, or the --shs-base-url fetch failed, 3 a budget was inconclusive.
+Exit codes: 0 pass, 1 budget violated, 2 bad arguments, an unreadable or invalid --thresholds file, the local input could not be parsed, or the --shs-base-url fetch failed, 3 a budget was inconclusive.
 `;
 
 function parseCliArgs(argv) {
@@ -100,6 +108,7 @@ function parseCliArgs(argv) {
       impact: { type: 'string' },
       type: { type: 'string' },
       stage: { type: 'string' },
+      thresholds: { type: 'string' },
       help: { type: 'boolean' },
     },
   });
@@ -268,6 +277,16 @@ export async function main(argv, { fetchImpl } = {}) {
   }
   const findingsFilter = toFindingsFilter(impactBand, type, stageId);
 
+  // Read before any log is parsed: a bad file refuses the run rather than falling back to defaults.
+  let thresholds;
+  if (values.thresholds !== undefined) {
+    try {
+      thresholds = loadThresholdOverrides(values.thresholds);
+    } catch (e) {
+      return bail(`--thresholds: ${e.message}\n`, 2);
+    }
+  }
+
   let appModel;
   let baselineAppModel;
   // Assigned by every branch below before it's read.
@@ -301,15 +320,20 @@ export async function main(argv, { fetchImpl } = {}) {
     return;
   }
 
-  const analyzeModel = (model) => analyze(
+  const analyzeModel = (model, options) => analyze(
     model.app, model.stages, model.executors.added, model.executors.removed,
-    model.jobs, model.sql, model.runAggregates,
+    model.jobs, model.sql, model.runAggregates, options,
   );
-  const catalog = analyzeModel(appModel);
+  const catalog = analyzeModel(appModel, { thresholds });
 
   if (exportHtmlDir !== undefined) {
+    // The dashboard never tunes, so the export is the default-threshold analysis of the run.
+    const tuned = tunedDetectors(thresholds) !== null;
+    if (tuned) {
+      process.stderr.write('--export-html: the exported dashboard uses the default detector thresholds; --thresholds applies to the report only.\n');
+    }
     try {
-      await writeHtmlExport(exportHtmlDir, appModel, catalog, skippedLines, { redact: values.redact });
+      await writeHtmlExport(exportHtmlDir, appModel, tuned ? analyzeModel(appModel) : catalog, skippedLines, { redact: values.redact });
     } catch (e) {
       process.stderr.write(`--export-html failed: ${e.message}\n`);
       process.exitCode = 2;
@@ -319,7 +343,7 @@ export async function main(argv, { fetchImpl } = {}) {
 
   let comparison;
   if (usingBaseline) {
-    const baselineCatalog = analyzeModel(baselineAppModel);
+    const baselineCatalog = analyzeModel(baselineAppModel, { thresholds });
     comparison = buildComparison(
       { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
       { label: 'candidate', appModel, catalog },
@@ -329,7 +353,9 @@ export async function main(argv, { fetchImpl } = {}) {
     if (values.redact) comparison = redactComparison(comparison);
   }
 
-  const { markdown, json } = buildEvidenceReport(appModel, { redact: values.redact, findingsFilter, markdown: values.format === 'md' });
+  const { markdown, json } = buildEvidenceReport(appModel, {
+    redact: values.redact, findingsFilter, markdown: values.format === 'md', thresholds,
+  });
   let output;
   if (values.format === 'md') {
     output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonVerdict(comparison))}\n` : `${markdown}\n`;
