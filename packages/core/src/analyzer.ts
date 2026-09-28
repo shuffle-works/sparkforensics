@@ -1,4 +1,5 @@
-import { DETECTORS, type Detector } from './detectors.ts';
+import { DETECTORS, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
+import { findingTunedThresholds, overridesFor, tunedEstimateNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
 import { estimateImpact } from './impact-estimator.ts';
@@ -6,12 +7,20 @@ import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
 import { deriveImpactBand } from './impact-band.ts';
 import { IMPACT_BAND_ORDER } from './format-utils.ts';
 import type {
-  Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates,
+  Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
 } from './types.ts';
 
 // The runner reads each entry through the Detector contract, not its own precise `as const` shape:
-// the scope switch below dispatches every detect() with that scope's target.
+// the scope switch below calls each entry's bound detect with that scope's target.
 const detectors: readonly Detector[] = DETECTORS;
+
+export interface AnalyzeOptions {
+  /** Per-detector overrides merged over each entry's own thresholds (validate user input with
+   * parseThresholdOverrides first). Findings from an entry an override moves off its defaults, or
+   * whose `suppressedBy` entry it moves, carry `tunedThresholds` and an uncalibrated-estimate
+   * caveat. Omitted: the specification. */
+  thresholds?: ThresholdOverrides;
+}
 
 // FNV-1a 32-bit stable string hash: deterministic finding id across runs, no timestamps/randomness.
 function fnv1a(str: string): string {
@@ -102,19 +111,43 @@ function flagSkewStragglerOverlap(findings: Finding[]): void {
   }
 }
 
-function push(out: Finding[], entry: Detector, result: Finding | Finding[] | null): void {
+function push(out: Finding[], entry: Detector, result: Finding | Finding[] | null, tuned: TunedThresholds | null = null): void {
   if (!result) return;
   const detectorVersion = entry.version ?? 1;
   for (const f of (Array.isArray(result) ? result : [result])) {
     if (!f) continue;
-    if (entry.suppressWhen && entry.suppressWhen(f, out)) continue;
     const stamped = { ...f, docAnchor: f.docAnchor ?? entry.docAnchor, detectorVersion };
+    if (tuned) {
+      stamped.tunedThresholds = tuned;
+      const note = tunedEstimateNote(tuned);
+      stamped.validationRequired = stamped.validationRequired ? `${stamped.validationRequired} ${note}` : note;
+    }
     const id = findingId(stamped);
     // Dedup guard: same id => same finding, keep first. Correctness depends on
     // findingId's discriminators being unique per distinct finding, not on this line.
     if (out.some((existing) => existing.id === id)) continue;
     out.push({ ...stamped, id });
   }
+}
+
+// An entry's `suppressedBy` names another entry: drop its findings on every stage that entry
+// flagged. Runs once every detector has, so neither declaration order matters, and reads the
+// unsuppressed findings, so the result doesn't depend on which suppression is applied first.
+function applySuppression(out: Finding[]): Finding[] {
+  const dropped = new Map<string, Set<number>>();
+  for (const entry of detectors) {
+    if (!entry.suppressedBy) continue;
+    const suppressorTypes = new Set<string>(
+      detectors.filter((d) => d.type === entry.suppressedBy).flatMap((d) => d.emits),
+    );
+    for (const type of entry.emits) {
+      const stagesToDrop = dropped.get(type) ?? new Set<number>();
+      for (const f of out) if (suppressorTypes.has(f.type) && f.stageId != null) stagesToDrop.add(f.stageId);
+      dropped.set(type, stagesToDrop);
+    }
+  }
+  if (dropped.size === 0) return out;
+  return out.filter((f) => f.stageId == null || !dropped.get(f.type)?.has(f.stageId));
 }
 
 // `app` widened to `SparkAppInfo | null` to match real callers (AppModel.app is
@@ -127,6 +160,7 @@ export function analyze(
   jobs: Map<number, Job>,
   sql: Map<number, SqlExecution> = new Map(),
   runAggregates: RunAggregates | null = null,
+  { thresholds }: AnalyzeOptions = {},
 ): Finding[] {
   // `app ?? {}`: detectors tolerate a null app (malformed logs), so this must too.
   // computePeakConcurrentCores (not computeTotalCores): the occupancy ceiling needs a
@@ -141,34 +175,48 @@ export function analyze(
   // Computed once so detectors gate impact band on the same occupancy-clipped waste
   // estimateImpact displays as savings, not a raw pre-clip delta the two passes would disagree on.
   const occupancy = computeOccupancy(stages as unknown as Map<number, OccupancyStage>, totalCores);
-  const ctx = {
-    app, stages, executorsAdded, executorsRemoved, jobs, sql, runAggregates, occupancy,
+  // The one cast from the posted-model types to the detector-side shapes: types.ts's Stage and
+  // SqlExecution carry a catch-all index signature, while every field DetectorStage/DetectorSqlExec
+  // declare is one finalizeStage and event-handlers.ts always set (see detectors.ts's header).
+  const ctx: DetectorCtx = {
+    app, jobs, executorsAdded, executorsRemoved, runAggregates, occupancy,
+    stages: stages as unknown as DetectorCtx['stages'],
+    sql: sql as unknown as DetectorCtx['sql'],
   };
   const out: Finding[] = [];
   for (const d of detectors) {
     if (d.inScorecard === false) continue;
+    const overrides = overridesFor(d, thresholds);
+    const tuned = findingTunedThresholds(d, thresholds);
     switch (d.scope) {
-      case 'stage':
-        for (const s of stages.values()) push(out, d, d.detect(s, ctx));
+      case 'stage': {
+        const detect = d.withThresholds(overrides);
+        for (const s of ctx.stages.values()) push(out, d, detect(s, ctx), tuned);
         break;
-      case 'sql':
-        for (const e of sql.values()) push(out, d, d.detect(e, ctx));
+      }
+      case 'sql': {
+        const detect = d.withThresholds(overrides);
+        for (const e of ctx.sql.values()) push(out, d, detect(e, ctx), tuned);
         break;
+      }
       case 'app':
+        push(out, d, d.withThresholds(overrides)(ctx), tuned);
+        break;
       case 'config':
-        push(out, d, d.detect(ctx));
+        push(out, d, d.withThresholds(overrides)(ctx satisfies DetectorConfigTarget), tuned);
         break;
       default:
-        assertNever(d.scope);
+        assertNever(d);
     }
   }
-  estimateImpact(out, stages, totalCores);
-  deriveImpactBand(out, app);
-  flagSkewStragglerOverlap(out);
+  const findings = applySuppression(out);
+  estimateImpact(findings, stages, totalCores);
+  deriveImpactBand(findings, app);
+  flagSkewStragglerOverlap(findings);
   // Ascending IMPACT_BAND_ORDER (critical 0 -> info 2) puts the worst band first;
   // stable sort keeps DETECTORS declaration order within a band.
-  out.sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]);
-  return out;
+  findings.sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]);
+  return findings;
 }
 
 // Memoizes auditConfig by `app` identity (like evidence-report.ts's jsonCache) so config detectors
@@ -179,7 +227,7 @@ const auditConfigCache = new WeakMap<SparkAppInfo, Finding[]>();
 
 function computeAuditConfig(app: SparkAppInfo | null): Finding[] {
   const out: Finding[] = [];
-  for (const d of detectors) if (d.scope === 'config') push(out, d, d.detect({ app }));
+  for (const d of detectors) if (d.scope === 'config') push(out, d, d.withThresholds()({ app }));
   // configAudit's impact case is unconditionally costOnly('none'): needs no stages/totalCores,
   // an empty stages map gives parity with analyze().
   estimateImpact(out, new Map());

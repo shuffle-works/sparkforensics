@@ -5,6 +5,7 @@ import {
   resolveOrCreateRun, diagnoseRun, getRunSummary, compareRuns, getFindingEvidence, getFindingDocumentation, getReferenceDoc, evaluateBudgetsForRun,
 } from './mcp-tools.ts';
 import { listRuns } from './list-runs.ts';
+import type { ThresholdOverrides } from './detectors.ts';
 
 const sourceSchema = z.union([
   z.object({ path: z.string() }),
@@ -59,7 +60,9 @@ function toolResult<T extends object>(promise: Promise<T>): Promise<CallToolResu
   return promise.then((value) => toCallToolResult(JSON.stringify(value), value as Record<string, unknown>), toolErrorResult);
 }
 
-export function createMcpServer(): McpServer {
+/** `thresholds`: the bin's --thresholds overrides, applied to every analyzing tool for the life
+ * of the server. Omitted, every tool runs the specification defaults. */
+export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverrides } = {}): McpServer {
   const server = new McpServer({ name: 'sparkforensics', version: '1.0.0' });
 
   server.registerTool('list_runs', {
@@ -68,7 +71,7 @@ export function createMcpServer(): McpServer {
   }, (params) => toolResult(listRuns(params)));
 
   server.registerTool('diagnose_run', {
-    description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by potential savings), thresholded findings with remediation text, an impact-ranked fix recommendation rollup, clean-check status, and the checks the log lacked the data to run.',
+    description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by potential savings), thresholded findings with remediation text, an impact-ranked fix recommendation rollup, clean-check status, and the checks the log lacked the data to run. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated.',
     inputSchema: {
       ...runRefSchema, redact: z.boolean().optional(),
       include: z.array(z.enum(['summary', 'evidenceAvailability', 'detectors'])).optional(),
@@ -77,14 +80,14 @@ export function createMcpServer(): McpServer {
     },
   }, ({ source, runId, redact, include, format, impactBand, type, stageId }) => toolResultWithMarkdown(
     resolveOrCreateRun({ source, runId }).then(({ runId: id }) =>
-      diagnoseRun(id, { redact, include, markdown: format === 'md', impactBand, type, stageId })),
+      diagnoseRun(id, { redact, include, markdown: format === 'md', impactBand, type, stageId, thresholds })),
   ));
 
   server.registerTool('get_run_summary', {
     description: 'App/stage/job/sql counts, duration, and how the run ended (failed/total jobs and Spark\'s first-line failure reason) for a run, no findings.',
     inputSchema: { ...runRefSchema, redact: z.boolean().optional() },
   }, ({ source, runId, redact }) => toolResult(
-    resolveOrCreateRun({ source, runId }).then(({ runId: id }) => getRunSummary(id, { redact })),
+    resolveOrCreateRun({ source, runId }).then(({ runId: id }) => getRunSummary(id, { redact, thresholds })),
   ));
 
   server.registerTool('compare_runs', {
@@ -96,7 +99,7 @@ export function createMcpServer(): McpServer {
       ...formatSchema,
     },
   }, ({ runIdA, sourceA, runIdB, sourceB, redact, format }) => toolResultWithMarkdown(
-    compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md' }),
+    compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds }),
   ));
 
   server.registerTool('evaluate_budgets', {
@@ -118,13 +121,14 @@ export function createMcpServer(): McpServer {
     { source, runId },
     { maxRuntimeMs, maxSpillGb, maxSkewRatio, maxFailedTaskRatePct, minEfficiencyPct, maxRegressionPct, regressionMetric, failOnIntroduced },
     (runIdB || sourceB) ? { runId: runIdB, source: sourceB } : undefined,
+    { thresholds },
   )));
 
   server.registerTool('get_finding_evidence', {
     description: 'Raw evidence bundle backing one finding, for drill-down after diagnose_run.',
     inputSchema: { runId: z.string(), findingId: z.string(), redact: z.boolean().optional() },
   }, ({ runId, findingId, redact }) => toolResult(
-    Promise.resolve().then(() => getFindingEvidence(runId, findingId, { redact })),
+    Promise.resolve().then(() => getFindingEvidence(runId, findingId, { redact, thresholds })),
   ));
 
   server.registerTool('get_finding_documentation', {

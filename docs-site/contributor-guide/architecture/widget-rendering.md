@@ -420,7 +420,7 @@ one always-mounted exception filtered out before that grid.
 through `isAlwaysMountedType()` to exclude that one always-mounted component;
 the clean-check list bypasses `orderedWidgets()` entirely, iterating
 `Object.keys(REGISTRY)` per type instead (see "Findings tab" above). `DETECTORS`'
-own array order and iteration, plus its cross-detector `suppressWhen` logic
+own array order and iteration, plus its cross-detector `suppressedBy` logic
 (e.g. `stageSlowness` deferring to `slowHost`, see
 [Detector contract](./detector-contract.md#detector-contract)), live entirely in
 `packages/core/src/detectors.ts`/`packages/core/src/analyzer.ts`, untouched by this redesign. Which React

@@ -292,7 +292,7 @@ export interface ImpactEstimate {
 
 // `Finding` is a union discriminated on `type`, one member per emitted finding type: see
 // finding-types.ts for each detector's shape and which of its fields are public evidence.
-export type { Finding, FindingOf, FindingEvidenceMap } from './finding-types.ts';
+export type { Finding, FindingOf, FindingEvidenceMap, TunedThreshold, TunedThresholds } from './finding-types.ts';
 
 export interface TaskData { metrics: Float64Array | number[]; fieldNames: string[]; }
 

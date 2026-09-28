@@ -3,6 +3,7 @@ import { buildEvidenceReport } from '../src/evidence-report.js';
 import { makeStage } from './fixtures/stage-app-fixtures.js';
 import { TRUNCATED_HOST_FRAGMENT, truncatedFailureRun } from './fixtures/truncated-failure-run.js';
 import { PER_STAGE_CHECK_TYPES } from '../src/check-coverage.ts';
+import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
 
 function fixture() {
   return {
@@ -634,5 +635,55 @@ describe('buildEvidenceReport', () => {
       const { json } = buildEvidenceReport(fixtureWithVariety(), { findingsFilter: { type: ['not-a-real-type'] } });
       expect(json.findings).toEqual([]);
     });
+  });
+});
+
+describe('buildEvidenceReport: tuned thresholds', () => {
+  const thresholds = parseThresholdOverrides({ skew: { ratioWarn: 2 }, shuffle: { minBytes: 4 * 1024 * 1024 * 1024 } });
+
+  it('adds no tuning key anywhere on a default run', () => {
+    const fx = fixture();
+    const { json, markdown } = buildEvidenceReport(fx);
+    expect(JSON.stringify(json)).not.toContain('tunedThresholds');
+    expect(markdown).not.toContain('uned thresholds');
+  });
+
+  it('labels the tuned finding, the tuned clean check, the catalog row and the summary', () => {
+    const { json } = buildEvidenceReport(fixture(), { thresholds });
+    const skew = json.findings.find((f) => f.type === 'skew');
+    expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
+    expect(skew.validationRequired).toContain('estimate is unvalidated');
+    // 2 GiB shuffled, under the tuned 4 GiB floor: shuffle becomes a clean check measured against it.
+    expect(json.findings.some((f) => f.type === 'shuffle')).toBe(false);
+    expect(json.cleanChecks.find((c) => c.type === 'shuffle').tunedThresholds)
+      .toEqual({ minBytes: { value: 4 * 1024 * 1024 * 1024, default: 50 * 1024 * 1024 } });
+    expect(json.cleanChecks.find((c) => c.type === 'spill').tunedThresholds).toBeUndefined();
+    expect(json.detectors.find((d) => d.type === 'skew').thresholds.ratioWarn).toBe(2);
+    expect(Object.keys(json.summary.tunedThresholds)).toEqual(['skew', 'shuffle']);
+    for (const f of json.findings.filter((f) => f.type !== 'skew')) expect(f.tunedThresholds, f.type).toBeUndefined();
+  });
+
+  it('labels a clean check with its suppressor\'s tuned thresholds', () => {
+    const { json } = buildEvidenceReport(fixture(), { thresholds: parseThresholdOverrides({ slowHost: { minHosts: 4 } }) });
+    const checks = [...json.cleanChecks, ...json.notRunChecks];
+    expect(checks.find((c) => c.type === 'stageSlowness').tunedThresholds).toEqual({ 'slowHost.minHosts': { value: 4, default: 3 } });
+    expect(checks.find((c) => c.type === 'spill').tunedThresholds).toBeUndefined();
+  });
+
+  it('keeps default and tuned reports of one appModel apart, redacted or not', () => {
+    const fx = fixture();
+    expect(buildEvidenceReport(fx).json.findings.some((f) => f.type === 'shuffle')).toBe(true);
+    expect(buildEvidenceReport(fx, { thresholds }).json.findings.some((f) => f.type === 'shuffle')).toBe(false);
+    expect(buildEvidenceReport(fx, { redact: true }).json.summary.tunedThresholds).toBeUndefined();
+    expect(buildEvidenceReport(fx, { redact: true, thresholds }).json.summary.tunedThresholds.skew).toBeTruthy();
+    expect(buildEvidenceReport(fx).json.summary.tunedThresholds).toBeUndefined();
+  });
+
+  it('marks tuning in the Markdown header, the finding block, the catalog and the clean check', () => {
+    const { markdown } = buildEvidenceReport(fixture(), { thresholds });
+    expect(markdown).toContain('- Tuned thresholds: skew ratioWarn 2 (default 3); shuffle minBytes 4294967296 (default 52428800). Findings from these detectors are marked, and their impact estimates are uncalibrated');
+    expect(markdown).toContain('- tuned thresholds: ratioWarn 2 (default 3)');
+    expect(markdown).toMatch(/- skew \(v1, stage\), thresholds: \{"ratioWarn":2,.*\} \(tuned: ratioWarn 2 \(default 3\)\)/);
+    expect(markdown).toContain('(tuned: minBytes 4294967296 (default 52428800))');
   });
 });

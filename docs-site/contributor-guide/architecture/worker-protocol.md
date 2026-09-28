@@ -202,7 +202,9 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, reco
 - `evidenceAvailability` is the ledger above (or `null` when absent).
 - `detectors` is `detectorCatalog()` output: one `{ type, version, scope,
   thresholds, docAnchor }` per detector, in `DETECTORS` order, so the exact
-  threshold set that produced each finding travels with the evidence.
+  threshold set that produced each finding travels with the evidence. On a
+  tuned run (see the tuned-thresholds update below) a tuned row's
+  `thresholds` are the ones the run used, plus `tunedThresholds`.
 - `findings` are deterministically sorted rows (impact band → type → stage → id),
   each with a stable `id`, `tag`, core columns, an always-present `actionLabel`,
   and an `evidence` sub-object holding that finding type's declared evidence
@@ -332,6 +334,19 @@ types, the set the dashboard's Clean checks shows: `overBroadcast` and `underBro
 of the `broadcastSizing` detector entry. A finding row's `actionLabel` for a (type, discriminant)
 combination with no label of its own is the type's name, the same fallback the verdict step
 uses, where it used to be the raw `type`.
+
+Tuned-thresholds update: `buildEvidenceReport(appModel, { thresholds })` runs the detectors
+with a user's validated overrides (the CLI's and MCP server's `--thresholds`; see
+[Tuning thresholds](./detector-contract.md#tuning-thresholds)). Only a tuned run adds keys:
+`tunedThresholds` (`{ <name>: { value, default } }`) on each finding row and each
+`cleanChecks`/`notRunChecks` entry from a detector an override moved off its defaults (or
+whose `suppressedBy` detector it moved), on that detector's `detectors` row, and as `summary.tunedThresholds` keyed by detector type. The
+Markdown adds a `- Tuned thresholds:` header line, a `- tuned thresholds:` line per affected
+finding, and marks tuned catalog rows and clean checks. A default run's report is
+byte-identical to before, and every addition is optional, so `EVIDENCE_SCHEMA_VERSION` stays
+`5`. The report caches key on the overrides object as well as the `appModel`, so one model's
+default and tuned reports never mix. Finding ids ignore thresholds: a finding a tuned run
+still emits keeps the id it has in a default run.
 
 ### Finding identity
 

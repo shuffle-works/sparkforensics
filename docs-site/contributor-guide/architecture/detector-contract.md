@@ -4,7 +4,29 @@
 declarative `DETECTORS` entry per pattern, each carrying `type`, `scope`
 (`stage` / `app` / `config` / `sql`), `order`, `fixEffort`, a `thresholds`
 object, impactBand/copy, a `docAnchor`, an `emits` list, and a co-located
-`detect()` method.
+`detect()` function.
+
+Each entry is built by the helper for its scope: `defineStageDetector`,
+`defineSqlDetector`, `defineAppDetector` or `defineConfigDetector`. The
+helper sets `scope`, infers the thresholds type from the entry's own
+`thresholds` literal, and types `detect` as a function property, so its
+parameters are checked strictly rather than bivariantly:
+
+| Scope | `detect` signature |
+| --- | --- |
+| `stage` | `detect(stage, ctx, thresholds)` |
+| `sql` | `detect(sqlExec, ctx, thresholds)` |
+| `app` | `detect(ctx, thresholds)` |
+| `config` | `detect(target, thresholds)`, where `target` is `{ app }` |
+
+`ctx` (`DetectorCtx`) is required, and its `app` is nullable as on
+`AppModel.app`, so a detector that reads the app without a guard, reads a
+threshold its entry doesn't declare, or expects another scope's target fails
+to compile. `detect` never reads `this`. The helper freezes the entry's
+`thresholds` and adds `withThresholds(overrides?)`, which returns `detect`
+with the thresholds bound: the entry's own, or the caller's overrides merged
+over them (see [Tuning thresholds](#tuning-thresholds)). Runners such as
+`analyze()` call only that.
 
 `DETECTORS` is declared `as const satisfies readonly Detector[]`, so each
 entry keeps its literal `type` and `emits`. Two unions derive from it:
@@ -15,7 +37,9 @@ walk emits `overBroadcast` and `underBroadcast` and never its own name. Every
 per-type lookup keys on the emitted `FindingType`, never on `DetectorType`:
 code that needs the emitted types of an entry reads its `emits` list.
 Code that iterates entries generically, such as `analyze()`, reads them
-through the `Detector` interface.
+through the `Detector` type, a union over scopes with the thresholds type
+erased and `detect` left off, so switching on `scope` narrows the bound
+function `withThresholds()` returns.
 
 How a finding type is presented is registered once, in
 `FINDING_PRESENTATION` (`packages/core/src/finding-presentation.ts`), typed
@@ -53,8 +77,8 @@ rather than re-declaring a finding's fields.
 Both consumers are thin loops over that array:
 
 - `packages/core/src/analyzer.ts`: `analyze()` runs every entry regardless of scope, skipping
-  only `inScorecard:false` ones; `auditConfig()` separately runs the
-  `scope:'config'` entries. The four `configAudit` entries stay out of the
+  only `inScorecard:false` ones, then applies `suppressedBy` (below);
+  `auditConfig()` separately runs the `scope:'config'` entries. The four `configAudit` entries stay out of the
   bottleneck catalog because each sets `inScorecard:false`, not because of
   `scope:'config'`: a future config-scope detector without that flag would run
   through `analyze()` too. Each finding is stamped with its entry's `docAnchor`.
@@ -82,12 +106,14 @@ Both consumers are thin loops over that array:
   branching, since it iterates the static `DETECTORS` import, not the runtime
   `catalog`.
 
-Thresholds live only in each entry's `thresholds`; see
-[Bottleneck thresholds](#bottleneck-thresholds-spec-§4).
+Default thresholds live only in each entry's `thresholds`; see
+[Bottleneck thresholds](#bottleneck-thresholds-spec-§4). Only the CLI and
+the MCP server can override them, per run: see
+[Tuning thresholds](#tuning-thresholds).
 
 ## Confidence disclosure
 
-A `Detector` entry (or the `Finding` it returns) may carry `confidence: 'low' | 'medium' |
+A `Finding` may carry `confidence: 'low' | 'medium' |
 'high'` plus a `validationRequired` string. `RowStatusCluster` (`src/view/RowStatusCluster.tsx`)
 is the one place that renders it, gated to Advanced density: a plain "&lt;confidence&gt;
 confidence" badge whose tooltip carries the full `validationRequired` text. A finding with no
@@ -132,24 +158,58 @@ executor's capacity against its replacement's; the peak-concurrent sweeps don't.
 
 ## Cross-detector suppression
 
-An entry may declare an optional `suppressWhen(finding, out)` method.
-`analyzer.ts`'s `push()`, the single choke point every finding passes through,
-calls it per-finding, after the null guard and before the push, and drops the
-finding silently when it returns `true`. `out` is the findings accumulated so
-far. Since `analyze()`'s loop is detector-outer / stage-inner, every finding
-from a detector declared earlier in `DETECTORS` is already in `out` by the time
-a later detector runs, for every stage. That makes the pattern purely
-declaration-order-driven: the suppressing detector must be declared earlier in
-the `DETECTORS` array than the suppressed one.
+An entry may name another entry's `type` in `suppressedBy`. Once every
+detector has run, `analyze()`'s `applySuppression()` drops each of that
+entry's findings on a stage where the named detector emitted a finding. It
+reads the unsuppressed findings, so neither the two entries' declaration
+order nor the order suppressions apply in changes the result, and `order`
+stays a display field only. A compile-time check in `detectors.ts`
+(`SuppressorsAreDetectors`) fails when `suppressedBy` names no entry.
 
-`stageSlowness` uses this to defer to `slowHost`. It is spliced immediately
-after the `slowHost` entry regardless of its `order` field (`order` only
-controls render sequencing, not evaluation order), and
-`tests/analyzer.test.js`'s "detector contract" suite asserts the array-index
-ordering so a future reorder can't silently break the suppression. The
-mechanism is deliberately minimal: a same-array, predicate-in-`push()` filter,
-not a general dependency graph. `auditConfig()`'s own `push()` call is
-unaffected, since `scope:'config'` entries declare no `suppressWhen`.
+`stageSlowness` sets `suppressedBy: 'slowHost'`: a stage `slowHost` already
+explains needs no generic "this stage is slow" finding. Suppression follows
+what `slowHost` actually emitted, so a run whose `slowHost` thresholds are
+tuned so it can't fire gets its `stageSlowness` findings back. The
+mechanism is deliberately minimal (same-stage, one named suppressor per
+entry), not a general dependency graph. `auditConfig()` doesn't apply it,
+since no `scope:'config'` entry sets `suppressedBy`.
+
+## Tuning thresholds
+
+`analyze()`'s eighth argument is `{ thresholds?: ThresholdOverrides }`:
+per-entry overrides keyed by entry `type`, each a partial of that entry's
+own `thresholds`. Omitted, every entry runs its defaults; the dashboard
+never passes it. The CLI's and the MCP server's `--thresholds <file>` read a
+JSON file of that shape (`packages/core/src/cli/threshold-config.ts`) and
+validate it with `parseThresholdOverrides()`
+(`packages/core/src/threshold-overrides.ts`), which refuses an unknown
+detector or threshold, a negative or non-numeric value, a tier table of a
+different length or out of ascending order, and any `configAudit` override:
+those checks compare against Spark's own defaults, so there is nothing to
+tune. A file that can't be read or parsed refuses the run the same way. The
+[user guide](../../user-guide/getting-started.md#tuning-detector-thresholds)
+documents the file.
+
+A finding from an entry whose overrides move a threshold off its default
+carries `tunedThresholds` (`{ <name>: { value, default } }`), and `push()`
+appends a caveat to its `validationRequired`: impact estimates are
+calibrated against the default thresholds (see
+[Impact estimation](./impact-estimation.md)), so a tuned finding's estimate
+is unvalidated. An override equal to the default labels nothing. Tuning a
+`suppressedBy` target changes which of the suppressed entry's findings
+survive, so those findings carry the suppressor's tuned thresholds too,
+named `<suppressor>.<name>` (e.g. `slowHost.minHosts` on `stageSlowness`).
+Only that one link is followed. The
+evidence report repeats the label on the finding row, the clean check, the
+`detectors` catalog row (whose `thresholds` are then the effective ones)
+and in `summary.tunedThresholds`; see
+[Portable evidence report](./worker-protocol.md#portable-evidence-report-v1).
+
+Three things a tuned run does not change: the impact-band floors in
+`impact-band.ts`, which reuse `straggler`'s default floor percentages for
+every finding; the CLI budget flags, which are gates computed from the run's
+own figures (`--max-skew` keeps `skew`'s default `minTasksForP95`); and the
+HTML export, which always renders the default-threshold analysis.
 
 ## Per-operator duration attribution
 

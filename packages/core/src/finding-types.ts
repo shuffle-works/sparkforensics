@@ -26,7 +26,18 @@ interface FindingCore<T extends string> {
   confidence?: string;
   validationRequired?: string;
   impactEstimate?: ImpactEstimate;
+  // Set only when the CLI or MCP server ran this finding's detector with a user override that
+  // differs from the specification default: each overridden threshold, keyed by name.
+  tunedThresholds?: TunedThresholds;
 }
+
+/** One overridden threshold: the value the detector ran with, and its specification default. */
+export interface TunedThreshold {
+  value: number | readonly number[];
+  default: number | readonly number[];
+}
+
+export type TunedThresholds = Readonly<Record<string, TunedThreshold>>;
 
 // A finding whose `value` is a magnitude (a ratio, byte count, percentage, duration...). Absent on
 // an evidence caveat, which has nothing to measure.

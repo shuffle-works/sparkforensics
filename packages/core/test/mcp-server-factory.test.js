@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMcpServer } from '../src/mcp-server-factory.js';
+import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
@@ -307,6 +308,32 @@ describe('createMcpServer', () => {
       expect('markdown' in mdResult.structuredContent).toBe(false);
       expect(mdResult.content[0].text).toMatch(/^\n## Comparison to baseline\n/);
       expect(mdResult.content[0].text).not.toBe(JSON.stringify(mdResult.structuredContent));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  it('applies the server\'s threshold overrides to every analyzing tool and labels them', async () => {
+    const { dir, path } = tmpEventLogWithFindings();
+    // minTasks 10 -> 2: the 10-task straggler stage still qualifies, now under a tuned detector.
+    const tuned = { straggler: { minTasks: { value: 2, default: 10 } } };
+    try {
+      const client = await connectedClient(createMcpServer({ thresholds: parseThresholdOverrides({ straggler: { minTasks: 2 } }) }));
+      const diagnosed = (await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } })).structuredContent;
+      expect(diagnosed.tunedThresholds).toEqual(tuned);
+      expect(diagnosed.findings.find((f) => f.type === 'straggler').tunedThresholds).toEqual(tuned.straggler);
+      expect(diagnosed.findings.find((f) => f.type === 'memoryUtilization').tunedThresholds).toBeUndefined();
+      const { runId } = diagnosed;
+      const [finding] = diagnosed.findings.filter((f) => f.type === 'straggler');
+      const evidence = (await client.callTool({ name: 'get_finding_evidence', arguments: { runId, findingId: finding.id } })).structuredContent;
+      expect(evidence.finding.tunedThresholds).toEqual(tuned.straggler);
+      const compared = (await client.callTool({ name: 'compare_runs', arguments: { sourceA: { path }, sourceB: { path } } })).structuredContent;
+      expect(compared.tunedThresholds).toEqual(tuned);
+      const budgets = (await client.callTool({ name: 'evaluate_budgets', arguments: { source: { path }, maxRuntimeMs: 1e9 } })).structuredContent;
+      expect(budgets.tunedThresholds).toEqual(tuned);
+
+      const plain = await connectedClient(createMcpServer());
+      const untuned = (await plain.callTool({ name: 'diagnose_run', arguments: { source: { path } } })).structuredContent;
+      expect(JSON.stringify(untuned)).not.toContain('tunedThresholds');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
