@@ -348,7 +348,8 @@ most rules below), `analyzer.ts` calls `deriveImpactBand()`
 duration (`>= 2%` critical, `>= 0.5%` warning, else info: `IMPACT_FLOOR_PCT_CRIT`/
 `IMPACT_FLOOR_PCT_WARN`, which `skew`'s `floorPctWarn` and `straggler`'s
 `floorPctWarn`/`floorPctCrit` default to, so a tail those gates admit grades
-at least warning; a tuned run moves the detector's gate, never the band). For those rules, the table below documents their firing
+at least warning; a tuned `skew` or `straggler` floor also grades that
+entry's own findings, see [Tuning thresholds](#tuning-thresholds)). For those rules, the table below documents their firing
 gate plus their fixed fallback constant, which surfaces only when this run's
 finding of that type didn't get a wallClock estimate (a stage excluded from
 the occupancy sweep). For rules whose finding type never gets
