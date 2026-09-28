@@ -85,11 +85,22 @@ export function tunedThresholdsOf(entry: Detector, overrides: ThresholdOverrides
   return Object.keys(tuned).length > 0 ? tuned : null;
 }
 
-/** tunedThresholdsOf() for the first entry emitting finding type `type`, the entry whose
+/** The tuned thresholds an entry's findings carry: its own, plus its `suppressedBy` entry's
+ * (named `<suppressor>.<threshold>`), since tuning the suppressor changes which of them survive. */
+export function findingTunedThresholds(entry: Detector, overrides: ThresholdOverrides | undefined): TunedThresholds | null {
+  const own = tunedThresholdsOf(entry, overrides);
+  const suppressor = entry.suppressedBy ? entries.find((d) => d.type === entry.suppressedBy) : undefined;
+  const bySuppressor = suppressor ? tunedThresholdsOf(suppressor, overrides) : null;
+  if (!suppressor || !bySuppressor) return own;
+  const prefixed = Object.fromEntries(Object.entries(bySuppressor).map(([name, t]) => [`${suppressor.type}.${name}`, t]));
+  return { ...own, ...prefixed };
+}
+
+/** findingTunedThresholds() for the first entry emitting finding type `type`, the entry whose
  * thresholds its clean-check summary reads. */
 export function tunedThresholdsForType(type: string, overrides: ThresholdOverrides | undefined): TunedThresholds | null {
   const entry = entries.find((d) => (d.emits as readonly string[]).includes(type));
-  return entry ? tunedThresholdsOf(entry, overrides) : null;
+  return entry ? findingTunedThresholds(entry, overrides) : null;
 }
 
 /** Every tuned detector's overridden thresholds, keyed by entry type, or null when none is tuned. */

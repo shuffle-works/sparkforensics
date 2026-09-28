@@ -1,5 +1,5 @@
 import { DETECTORS, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
-import { overridesFor, tunedEstimateNote, tunedThresholdsOf } from './threshold-overrides.ts';
+import { findingTunedThresholds, overridesFor, tunedEstimateNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
 import { estimateImpact } from './impact-estimator.ts';
@@ -16,8 +16,9 @@ const detectors: readonly Detector[] = DETECTORS;
 
 export interface AnalyzeOptions {
   /** Per-detector overrides merged over each entry's own thresholds (validate user input with
-   * parseThresholdOverrides first). Findings from an entry an override moves off its defaults
-   * carry `tunedThresholds` and an uncalibrated-estimate caveat. Omitted: the specification. */
+   * parseThresholdOverrides first). Findings from an entry an override moves off its defaults, or
+   * whose `suppressedBy` entry it moves, carry `tunedThresholds` and an uncalibrated-estimate
+   * caveat. Omitted: the specification. */
   thresholds?: ThresholdOverrides;
 }
 
@@ -186,7 +187,7 @@ export function analyze(
   for (const d of detectors) {
     if (d.inScorecard === false) continue;
     const overrides = overridesFor(d, thresholds);
-    const tuned = tunedThresholdsOf(d, thresholds);
+    const tuned = findingTunedThresholds(d, thresholds);
     switch (d.scope) {
       case 'stage': {
         const detect = d.withThresholds(overrides);

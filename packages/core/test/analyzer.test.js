@@ -251,17 +251,36 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
     expect(run(15, 4).impactEstimate.wallClock.high).toBeCloseTo(15 * min * (12 / 16), 6);
     expect(run(61, 100).impactBand).toBe('info');
   });
+  const slowHostStage = (hotTasks) => {
+    const rest = (50 - hotTasks) / 2;
+    const hostStats = [ { host: 'hot', taskCount: hotTasks, totalDuration: 8e6 }, { host: 'b', taskCount: rest, totalDuration: rest * 1000 }, { host: 'c', taskCount: rest, totalDuration: rest * 1000 } ];
+    return makeStage({ id: 1, taskCount: 50, hostStats, executorRunTime: 70 * min * 4, executorStats: Array.from({ length: 4 }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 })), submittedAt: 0, completedAt: 70 * min }); // wall-clock basis per Decision 7
+  };
+  const runTuned = (stage, thresholds) => analyze(makeApp(), new Map([[1, stage]]), [], [], new Map(), new Map(), null, { thresholds });
   it('is suppressed when a slowHost finding exists on the same stage', () => {
-    const hostStats = [ { host: 'hot', taskCount: 40, totalDuration: 8e6 }, { host: 'b', taskCount: 5, totalDuration: 5000 }, { host: 'c', taskCount: 5, totalDuration: 5000 } ];
-    const stage = makeStage({ id: 1, taskCount: 50, hostStats, executorRunTime: 70 * min * 4, executorStats: Array.from({ length: 4 }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 })), submittedAt: 0, completedAt: 70 * min }); // wall-clock basis per Decision 7
-    const catalog = analyze(makeApp(), new Map([[1, stage]]), [], []);
+    const catalog = analyze(makeApp(), new Map([[1, slowHostStage(40)]]), [], []);
     expect(catalog.some(b => b.type === 'slowHost')).toBe(true);
     expect(catalog.some(b => b.type === 'stageSlowness')).toBe(false);
-    // Suppression follows what slowHost actually emitted: tuned so it can't fire (3 hosts < 4),
-    // the same stage gets its stageSlowness finding back.
-    const tuned = analyze(makeApp(), new Map([[1, stage]]), [], [], new Map(), new Map(), null, { thresholds: { slowHost: { minHosts: 4 } } });
+  });
+  it('labels a stageSlowness finding that a tightened slowHost lets through with slowHost\'s tuned thresholds', () => {
+    // Tuned so slowHost can't fire (3 hosts < 4): the stage gets its stageSlowness finding back,
+    // and that finding exists only because of the override.
+    const tuned = runTuned(slowHostStage(40), { slowHost: { minHosts: 4 } });
     expect(tuned.some(b => b.type === 'slowHost')).toBe(false);
-    expect(tuned.some(b => b.type === 'stageSlowness')).toBe(true);
+    const slowness = tuned.find(b => b.type === 'stageSlowness');
+    expect(slowness.tunedThresholds).toEqual({ 'slowHost.minHosts': { value: 4, default: 3 } });
+    expect(slowness.validationRequired).toContain('Produced with tuned thresholds: slowHost.minHosts 4 (default 3).');
+    expect(analyze(makeApp(), new Map([[1, slowHostStage(8)]]), [], []).find(b => b.type === 'stageSlowness').tunedThresholds).toBeUndefined();
+  });
+  it('drops the stageSlowness finding when a loosened slowHost starts flagging the stage', () => {
+    // The hot host runs 8 of 50 tasks, below the default 20% share, so only stageSlowness fires.
+    const stage = slowHostStage(8);
+    const defaults = analyze(makeApp(), new Map([[1, stage]]), [], []);
+    expect(defaults.some(b => b.type === 'slowHost')).toBe(false);
+    expect(defaults.some(b => b.type === 'stageSlowness')).toBe(true);
+    const loosened = runTuned(stage, { slowHost: { minShare: 0.1 } });
+    expect(loosened.find(b => b.type === 'slowHost').tunedThresholds).toEqual({ minShare: { value: 0.1, default: 0.2 } });
+    expect(loosened.some(b => b.type === 'stageSlowness')).toBe(false);
   });
 
   it('scores stageSlowness off real wall-clock duration, not per-executor average (Decision 7)', () => {

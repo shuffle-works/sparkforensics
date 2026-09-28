@@ -663,6 +663,13 @@ describe('buildEvidenceReport: tuned thresholds', () => {
     for (const f of json.findings.filter((f) => f.type !== 'skew')) expect(f.tunedThresholds, f.type).toBeUndefined();
   });
 
+  it('labels a clean check with its suppressor\'s tuned thresholds', () => {
+    const { json } = buildEvidenceReport(fixture(), { thresholds: parseThresholdOverrides({ slowHost: { minHosts: 4 } }) });
+    const checks = [...json.cleanChecks, ...json.notRunChecks];
+    expect(checks.find((c) => c.type === 'stageSlowness').tunedThresholds).toEqual({ 'slowHost.minHosts': { value: 4, default: 3 } });
+    expect(checks.find((c) => c.type === 'spill').tunedThresholds).toBeUndefined();
+  });
+
   it('keeps default and tuned reports of one appModel apart, redacted or not', () => {
     const fx = fixture();
     expect(buildEvidenceReport(fx).json.findings.some((f) => f.type === 'shuffle')).toBe(true);
