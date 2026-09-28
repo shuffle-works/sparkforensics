@@ -433,6 +433,15 @@ thresholds sit well above their disk counterparts at every tier.
 | Cache utilization: disk spillover (this repo) | `diskSize / (memorySize + diskSize) > 0.15` (info), `MEMORY_AND_DISK*` only | `> 0.40` (warning) |
 | Cache utilization: storage unobserved | persisted RDDs, but no `SparkListenerBlockUpdated` for any `rdd_*` block and every RDD Info figure 0 (`spark.eventLog.logBlockUpdates.enabled` off on Spark 2.3+): a missing-evidence caveat, not a threshold | none (single tier, info) |
 
+The RDD Info cache figures on stage events (`Number of Cached Partitions`,
+`Memory Size`, `Disk Size`) are always 0 since Spark 2.3; Spark 1.x fills them
+only on `StageCompleted`. Real cache evidence is `SparkListenerBlockUpdated`,
+written only with `spark.eventLog.logBlockUpdates.enabled=true`
+(`recordBlockUpdate` in `event-handlers.ts`); the corpus
+`cache-memory-only`/`cache-memory-and-disk` logs carry it. Count a block's
+sizes only where its storage level says it lives: a drop to disk still reports
+the dropped bytes as `Memory Size`.
+
 Spill classification: ≥80% tasks with zero spill → `skew`; <20% zero →
 `volume`; else `unclassified`. The classification badge is always shown in
 both compact and expanded spill widget states. This is independent of the
