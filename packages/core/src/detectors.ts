@@ -2594,7 +2594,7 @@ export const DETECTORS = [
               // resolvePlanTree always sets id; safe downstream of it.
               planNodeIds: [node.id!].filter(Boolean),
               impactBand: 'warning', metric: 'broadcastBytes', value: m.value,
-              recommendation: `This broadcast (${formatBytes(m.value)}) exceeds the 1 GB threshold: check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.`,
+              recommendation: `This broadcast (${formatBytes(m.value)}) exceeds the ${Math.round(overBroadcastBytes / GB * 10) / 10} GB threshold: check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.`,
             });
           }
         }
