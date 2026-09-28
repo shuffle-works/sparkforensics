@@ -8,9 +8,9 @@ import { typeTag } from '@sparkforensics/core/format-utils.ts';
 import type { InterpretedStep } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useStore, useWidgetDensity, type InterpretationState } from '@/store/store';
-import { REGISTRY } from '@/view/detector-registry';
+import { findingName } from '@sparkforensics/core/finding-names.ts';
 import { useOptionalDocs } from '@/view/DocsContext';
-import { findingActionLabel } from '@/view/finding-action-label';
+import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf } from '@/view/interpretation';
@@ -151,7 +151,7 @@ function NextStepItem({
         ) : null}
         {step.relatedTypes.length > 0 ? (
           <p className="text-xs text-muted-foreground">
-            Also flagged here: {step.relatedTypes.map((type) => REGISTRY[type]?.findingLabel ?? type).join(', ')}. These
+            Also flagged here: {step.relatedTypes.map(findingName).join(', ')}. These
             often share this cause, so the same fix may clear them too.
           </p>
         ) : null}

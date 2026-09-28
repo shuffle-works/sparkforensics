@@ -7,7 +7,7 @@ import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
 import { formatStageIdsLabel, pathBasename } from '@sparkforensics/core/format-utils.ts';
-import { findingActionLabel } from '@/view/finding-action-label';
+import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePill, StagePillGroup } from '@/view/StagePill';
 import { recommendationText } from '@sparkforensics/core/finding-names.ts';

@@ -3,9 +3,9 @@
 // the CLI/MCP evidence report, so both paths name the same first step in the same words.
 import { DETECTORS } from './detectors.ts';
 import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
-import { coreFindingActionLabel } from './finding-action-label.ts';
+import { findingActionLabel } from './finding-action-label.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
-import { FINDING_NAMES, recommendationText } from './finding-names.ts';
+import { recommendationText } from './finding-names.ts';
 import { formatDuration, IMPACT_BAND_ORDER } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
 import { isEligible } from './recommendation-rollup.ts';
@@ -23,17 +23,13 @@ export const REFERENCE_DISPLAY_TYPES: ReadonlySet<string> = new Set([
   'memoryUtilization', 'utilization', 'coreLocality', 'cacheUtilization',
 ]);
 
-/** `broadcastSizing` never backs a finding; it emits these two types instead. */
-const BROADCAST_SIZING_EMITTED_TYPES = ['overBroadcast', 'underBroadcast'];
-
 /** Every emitted finding type in the board's widget display order: action region before
  * reference region, then ascending `DETECTORS` order (lowest order wins for a repeated type).
  * The last tiebreak of the verdict ranking, so the CLI orders ties exactly as the dashboard. */
 export const FINDING_DISPLAY_ORDER: readonly string[] = (() => {
   const orderByType = new Map<string, number>();
   for (const detector of DETECTORS) {
-    const emitted = detector.type === 'broadcastSizing' ? BROADCAST_SIZING_EMITTED_TYPES : [detector.type];
-    for (const type of emitted) {
+    for (const type of detector.emits) {
       const existing = orderByType.get(type);
       if (existing === undefined || detector.order < existing) orderByType.set(type, detector.order);
     }
@@ -45,12 +41,6 @@ export const FINDING_DISPLAY_ORDER: readonly string[] = (() => {
 })();
 
 const DISPLAY_INDEX = new Map(FINDING_DISPLAY_ORDER.map((type, index) => [type, index]));
-
-/** A short imperative label for a finding ("Reduce shuffle size"), falling back to the
- * finding type's name, then its raw type. */
-export function findingActionLabel(finding: Finding): string {
-  return coreFindingActionLabel(finding) ?? FINDING_NAMES[finding.type] ?? finding.type;
-}
 
 // The high end of the finding's own occupancy-clipped wall-clock estimate, the figure the
 // "Potential savings" line leads with. `null` with no quantified time claim

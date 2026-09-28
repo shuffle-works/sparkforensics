@@ -20,9 +20,7 @@ const headingAnchors = new Map(
   [...page.matchAll(/^### `([A-Z]+)`.*\{#([a-z0-9-]+)\}\s*$/gm)].map((m) => [m[1], m[2]]),
 );
 
-const CURRENT_FINDING_TYPES = [...new Set(DETECTORS.map((d) => d.type))].flatMap((t) =>
-  t === 'broadcastSizing' ? ['underBroadcast', 'overBroadcast'] : [t]
-);
+const CURRENT_FINDING_TYPES = [...new Set(DETECTORS.flatMap((d) => d.emits))];
 
 describe('understanding-findings.md tag coverage', () => {
   // Every tag TYPE_TAG_MAP can produce must have a `### \`TAG\`` heading in the

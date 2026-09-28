@@ -1,41 +1,12 @@
 // @vitest-environment jsdom
 import { test, expect } from 'vitest';
-import { DETECTORS } from '@sparkforensics/core/detectors.ts';
 import { FINDING_DISPLAY_ORDER, REFERENCE_DISPLAY_TYPES } from '@sparkforensics/core/run-verdict.ts';
 import { REGISTRY, orderedWidgets, isAlwaysMountedType, alwaysMountedWidgets } from '../../src/view/detector-registry';
 import { detectorInfoByType } from '@sparkforensics/core/detector-docs.ts';
 
-test('every DETECTORS type has a mapped component, except the dead broadcastSizing key', () => {
-  // broadcastSizing is a DETECTORS-level type that never backs a real
-  // Finding: the detector only ever pushes underBroadcast/overBroadcast (see
-  // the next test), so it's excluded here rather than given a REGISTRY entry.
-  const missing = DETECTORS.map((d: any) => d.type).filter((t: string) => t !== 'broadcastSizing' && !REGISTRY[t]);
-  expect(missing).toEqual([]);
-});
-
-// broadcastSizing never emits its own literal type; it pushes
-// underBroadcast/overBroadcast, which the DETECTORS-type check above can't catch.
-test('the real emitted broadcast-sizing finding types are mapped', () => {
-  expect(REGISTRY['underBroadcast']).toBeDefined();
-  expect(REGISTRY['overBroadcast']).toBeDefined();
-});
-
-test('registry owns stable widget identity and emitted finding copy', () => {
-  expect(REGISTRY.skew).toMatchObject({
-    widgetId: 'skew', widgetTitle: 'Task Skew', findingLabel: 'task skew', routeable: true,
-  });
-  expect(REGISTRY.underBroadcast).toMatchObject({
-    widgetId: 'under-broadcast', widgetTitle: 'Missed Broadcast Join', findingLabel: 'missed broadcast join', routeable: true,
-  });
-});
-
-test('every real emitted type has complete stable registry metadata', () => {
-  for (const [type, entry] of Object.entries(REGISTRY)) {
-    expect(entry.findingLabel, type).toBeTruthy();
-    expect(entry.widgetId, type).toBeTruthy();
-    expect(entry.widgetTitle, type).toBeTruthy();
-    expect(typeof entry.routeable, type).toBe('boolean');
-  }
+test('registry owns stable widget identity', () => {
+  expect(REGISTRY.skew).toMatchObject({ widgetId: 'skew', region: 'action', routeable: true });
+  expect(REGISTRY.underBroadcast).toMatchObject({ widgetId: 'under-broadcast', region: 'action', routeable: true });
 });
 
 test('orderedWidgets never returns the same component twice', () => {

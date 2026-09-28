@@ -107,8 +107,4 @@ export const TAG_HELP: Record<string, TagHelp> = {
     expansion: 'Plan advisor',
     description: 'The SQL execution plan has a pattern worth reviewing.',
   },
-  BROADCASTSIZING: {
-    expansion: 'Broadcast sizing',
-    description: 'A broadcast join threshold or hint may be misconfigured for this query.',
-  },
 };

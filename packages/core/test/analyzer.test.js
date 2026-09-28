@@ -1485,14 +1485,16 @@ describe('detector contract', () => {
 
   it('every entry emits its own type, except broadcastSizing, which emits its two rules', () => {
     for (const d of DETECTORS) {
-      const expected = d.type === 'broadcastSizing' ? ['underBroadcast', 'overBroadcast'] : [d.type];
+      const expected = d.type === 'broadcastSizing' ? ['overBroadcast', 'underBroadcast'] : [d.type];
       expect(d.emits, d.type).toEqual(expected);
     }
   });
 
-  it('detectorInfoByType covers exactly the detector types and the types they emit', () => {
-    const expected = new Set(DETECTORS.flatMap((d) => [d.type, ...d.emits]));
-    expect(new Set(Object.keys(detectorInfoByType()))).toEqual(expected);
+  it('detectorInfoByType covers exactly the emitted finding types, each with its entry scope', () => {
+    const expected = new Set(DETECTORS.flatMap((d) => d.emits));
+    const info = detectorInfoByType();
+    expect(new Set(Object.keys(info))).toEqual(expected);
+    for (const d of DETECTORS) for (const type of d.emits) expect(info[type].scope, type).toBe(d.scope);
   });
 
   it('every finding analyze() returns carries a docAnchor string', () => {

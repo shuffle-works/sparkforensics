@@ -11,13 +11,28 @@ entry keeps its literal `type` and `emits`. Two unions derive from it:
 `DetectorType` (every entry's own `type`) and `FindingType` (every type an
 entry's `emits` lists, the finding types that actually appear on findings).
 `emits` is `[type]` for every entry except `broadcastSizing`, whose one plan
-walk emits `underBroadcast` and `overBroadcast` and never its own name. The
-per-type tables (`FINDING_NAMES`, `TYPE_TAG_MAP`, `THRESHOLD_SUMMARIES`,
-`TYPE_ALIASES`, the view's `REGISTRY` and the Alerts clean-check scope map)
-use `satisfies Record<FindingType, ...>` (plus `DetectorType` where they list
-`broadcastSizing`), so a new detector type that misses a table entry fails
-the typecheck. Code that iterates entries generically, such as `analyze()`,
-reads them through the `Detector` interface.
+walk emits `overBroadcast` and `underBroadcast` and never its own name. Every
+per-type lookup keys on the emitted `FindingType`, never on `DetectorType`:
+code that needs the emitted types of an entry reads its `emits` list.
+Code that iterates entries generically, such as `analyze()`, reads them
+through the `Detector` interface.
+
+How a finding type is presented is registered once, in
+`FINDING_PRESENTATION` (`packages/core/src/finding-presentation.ts`), typed
+`{ [T in FindingType]: FindingPresentation<T> }` so the compiler requires
+exactly one row per emitted type. A row holds the type's `name`, board
+`tag`, `actionLabel(finding)`, `genericRecommendation(finding)` and
+`thresholdSummary(thresholds)`, each finding argument typed as that type's
+`Finding` member and `thresholds` as the emitting entry's own `thresholds`.
+`FINDING_NAMES`, `TYPE_TAG_MAP`, `getThresholdSummary`, `findingActionLabel`
+and `coreFindingGenericRecommendation` all read it. The table sits beside
+`DETECTORS` rather than on its entries because the HTML export renders
+names, tags and labels but may not reach `detectors.ts` (see
+[Run interpretation](./state-and-history.md#run-interpretation)); its
+import from `detectors.ts` is type-only. A detector's `scope` and `order`
+reach renderers through `detectorInfoByType()` (`detector-docs.ts`), keyed
+by emitted type, which the run interpretation ships; the Alerts clean-check
+grouping reads `detectors[type].scope`.
 
 Each finding type has its own shape in `packages/core/src/finding-types.ts`:
 `Finding` is a union discriminated on `type`, and a compile-time check in
@@ -29,7 +44,8 @@ modules read but the report never publishes. `value` is always a magnitude;
 a text-valued finding (`stageFailed`, `configAudit`, `incompleteRun`) sets
 `valueText` instead. So a new detector type needs an `emits` entry, a
 `finding-types.ts` member, an `EVIDENCE_KEYS` entry, an `ID_DISCRIMINATORS`
-entry in `analyzer.ts`, and a row in each per-type table. The compiler
+entry in `analyzer.ts`, a `FINDING_PRESENTATION` row and a view `REGISTRY`
+entry. The compiler
 reports each one that is missing. The view narrows with
 `findingsOfType(catalog, type)` (`packages/core/src/findings-of-type.ts`)
 rather than re-declaring a finding's fields.
@@ -43,7 +59,7 @@ Both consumers are thin loops over that array:
   `scope:'config'`: a future config-scope detector without that flag would run
   through `analyze()` too. Each finding is stamped with its entry's `docAnchor`.
 - `src/view/detector-registry.tsx`: a `REGISTRY: Record<findingType,
-  {component, region}>` replaces `dashboard-renderer.js`'s `render:`
+  {component, region, widgetId, routeable}>`, view-only concerns, replaces `dashboard-renderer.js`'s `render:`
   bindings, one entry per emitted finding type. `orderedWidgets()` walks
   `DETECTORS` ascending by `order`, then sorts `action`-region components
   before `reference`-region ones. Every `finding.type` maps to its own

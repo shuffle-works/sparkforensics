@@ -5,7 +5,7 @@ import { ImpactDot, IMPACT_BG_CLASS, IMPACT_TEXT_CLASS } from '@/view/ImpactBadg
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { heatBand } from '@/view/plan-graph/plan-graph-heat';
 import { typeTag } from '@sparkforensics/core/format-utils.ts';
-import { findingActionLabel } from '@/view/finding-action-label';
+import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import type { Finding, PlanGraphNodeData } from '@sparkforensics/core/types.ts';
 
 export const CATEGORY_ICON: Record<string, string> = {

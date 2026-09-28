@@ -112,7 +112,7 @@ directly or inside an expanded group, is a `TableRow`
 `plainBadge`: nothing wraps it, so its own docs links stay real `<a>`s,
 same as everywhere else on the board); a text block inside its own nested
 `<button>` (a short imperative action label, e.g. "Reduce shuffle size",
-from `findingActionLabel` (`src/view/finding-action-label.ts`), over the
+from `findingActionLabel` (`packages/core/src/finding-action-label.ts`), over the
 finding's own full `recommendation` sentence in smaller muted text, both
 wrapping rather than truncating); and a right-aligned monospace stage
 reference + impact figure (e.g. `St.49 · 20.1s`, via the shared
