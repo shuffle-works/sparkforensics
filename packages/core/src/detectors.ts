@@ -3,13 +3,21 @@ import { scanRelationId } from './plan-summary.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
-import { estimateSingleStage, tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type OccupancyStage, type StageOccupancyInfo } from './occupancy.ts';
+import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type TailStage } from './occupancy.ts';
+import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
+import {
+  BROADCAST_BANDWIDTH_BPS, EXECUTOR_STARTUP_OVERHEAD_MS, FILE_OPEN_OVERHEAD_MS, IDEAL_BYTES_PER_PARTITION_TASK,
+  NETWORK_FETCH_PENALTY_MS, RE_READ_THROUGHPUT_BPS, SHUFFLE_THROUGHPUT_BPS, SPILL_IO_THROUGHPUT_BPS, TAIL_CLAIM,
+  TASK_SCHEDULING_OVERHEAD_MS, costOnly, fetchWaitWallClockMs, measuredTaskOverhead, multiStageImpact, noWasteModel,
+  retryWallClockMs, singleStageImpact, stageIoParallelism, stageMappableWasteOrCostOnly, tasksMostlyIdle,
+  type EstimateCtx,
+} from './impact-model.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
-import type { Finding, PlanNode, FixEffort } from './types.ts';
-import type { SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
+import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure } from './types.ts';
+import type { FindingOf, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -138,9 +146,9 @@ export interface DetectorCtx {
   jobs: Map<number, DetectorJob>;
   sql: Map<number, DetectorSqlExec>;
   runAggregates?: { busyCoreMs?: number } | null;
-  // Precomputed once per analyze() from the same stages/totalCores impact-estimator.ts uses,
-  // so a detector's runtime floor checks the same occupancy-clipped figure that gets displayed.
-  occupancy: Map<number, StageOccupancyInfo>;
+  // The one EstimateCtx analyze() also hands every estimate(): a detector's runtime floor clips
+  // its claim against the same occupancy sweep the displayed savings come from.
+  impact: EstimateCtx;
 }
 
 // auditConfig(app) calls every config-scope detect({ app }) with whatever appModel.app is
@@ -573,19 +581,12 @@ export function computeSkewRatio(
 
 // Absolute-magnitude floor as a % of app runtime, not a fixed ms constant: a skew/straggler
 // ratio on a few ms is noise in an hours-long run but real in a seconds-long one; a fixed-ms
-// floor can't scale. Used by skew/straggler, gated via clippedWasteMs against the same
-// occupancy-clipped figure impact-estimator.ts displays as savings.
+// floor can't scale. Used by skew/straggler, gated on the same occupancy-clipped tail claim their
+// estimate() displays as savings (tailClaimImpact).
 // NOT SOURCED: floor percentages are our own noise floor, unvalidated.
-function computeAppDurationMs(ctx: DetectorCtx): number | null {
-  const app = ctx.app;
-  if (app?.startTime == null || app?.endTime == null) return null;
-  const durationMs = app.endTime - app.startTime;
-  return durationMs > 0 ? durationMs : null;
-}
-
 // Unknown app timing never suppresses a finding; it just skips the floor gate.
-function meetsRuntimeFloor(wasteMs: number, appDurationMs: number | null, floorPct: number): boolean {
-  return appDurationMs == null || wasteMs >= appDurationMs * floorPct;
+function meetsRuntimeFloor(wasteMs: number, runMs: number | null, floorPct: number): boolean {
+  return runMs == null || wasteMs >= runMs * floorPct;
 }
 
 // A stage that ran for less than floorPct of the run (a known duration): an estimate clipped to
@@ -593,22 +594,53 @@ function meetsRuntimeFloor(wasteMs: number, appDurationMs: number | null, floorP
 // submission time on older Spark) is not skipped: it gets no estimate and keeps its own band.
 function stageBelowRuntimeFloor(stage: DetectorStage, ctx: DetectorCtx, floorPct: number): boolean {
   const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
-  const appDurationMs = computeAppDurationMs(ctx);
-  return appDurationMs != null && stageDurationMs > 0 && stageDurationMs < appDurationMs * floorPct;
+  const runMs = appDurationMs(ctx.app);
+  return runMs != null && stageDurationMs > 0 && stageDurationMs < runMs * floorPct;
 }
 
-// Runs a raw waste delta through the same occupancy clip impact-estimator.ts applies before
-// display, so the runtime floor checks recoverable wall-clock, not a delta a physical floor
-// leaves unrecoverable. Falls back to the raw delta when occupancy data is unavailable.
-// skew/straggler claims shorten the stage's longest task, hence shortensLongestTask (see occupancy.ts).
-function clippedWasteMs(
-  wasteMs: number, stageId: number, ctx: DetectorCtx, removedCoreWorkMs: number, longestTaskAfterFixMs = 0,
-): number {
-  const est = estimateSingleStage(
-    wasteMs, stageId, ctx.stages as unknown as Map<number, OccupancyStage>, ctx.occupancy,
-    { shortensLongestTask: true, removedCoreWorkMs, longestTaskAfterFixMs },
-  );
-  return est ? est.wallClock.high : wasteMs;
+// What a skew or straggler fix claims off its stage: the wall-clock its slow tail costs, the task
+// time the fix removes, and the longest task it leaves. One figure, read twice: detect() gates its
+// runtime floor on the claim's clipped estimate and estimate() reports that same estimate as the
+// savings, so the firing floor and the displayed figure can't disagree.
+interface TailClaim {
+  wasteMs: number;
+  removedCoreWorkMs: number;
+  longestTaskAfterFixMs: number;
+}
+
+// singleDelta: the slowest task's own excess, the fallback when the stage has no task replay.
+function tailClaim(stage: TailStage, singleDelta: number, longestTaskAfterFixMs: number): TailClaim {
+  return {
+    wasteMs: tailRecoveryMs(stage, singleDelta),
+    removedCoreWorkMs: tailRemovedWorkMs(stage, singleDelta),
+    longestTaskAfterFixMs,
+  };
+}
+
+// skew's delta is the task computeSkewRatio's metric sampled (P95 or max) over the median. Fixing
+// the skew still waits on the longest task it leaves, as for straggler.
+function skewTailClaim(stage: TailStage & { taskDurationP95?: number }, usesP95Branch: boolean): TailClaim {
+  const p50 = stage.taskDurationP50 ?? 0;
+  const singleDelta = Math.max(0, usesP95Branch ? (stage.taskDurationP95 ?? 0) - p50 : (stage.taskDurationMax ?? 0) - p50);
+  return tailClaim(stage, singleDelta, stragglerFixLongestTaskMs(stage));
+}
+
+// straggler's delta is the slowest task over the longest one the fix leaves.
+function stragglerTailClaim(stage: TailStage): TailClaim {
+  const longestTaskAfterFixMs = stragglerFixLongestTaskMs(stage);
+  return tailClaim(stage, Math.max(0, (stage.taskDurationMax ?? 0) - longestTaskAfterFixMs), longestTaskAfterFixMs);
+}
+
+// A tail claim shortens the stage's longest task, hence TAIL_CLAIM (see occupancy.ts).
+function tailClaimImpact(claim: TailClaim, stageId: number, ctx: EstimateCtx): ImpactEstimate {
+  return singleStageImpact(claim.wasteMs, stageId, ctx, 'measured', { value: claim.wasteMs, unit: 'ms' },
+    { ...TAIL_CLAIM, removedCoreWorkMs: claim.removedCoreWorkMs, longestTaskAfterFixMs: claim.longestTaskAfterFixMs });
+}
+
+// The figure a runtime floor checks: the claim's recoverable wall-clock, not a delta a physical
+// floor leaves unrecoverable. Falls back to the raw claim when occupancy data is unavailable.
+function tailClaimFloorMs(claim: TailClaim, stageId: number, ctx: DetectorCtx): number {
+  return tailClaimImpact(claim, stageId, ctx.impact).wallClock?.high ?? claim.wasteMs;
 }
 
 // Shared by cacheUtilization's two variants, worded per storage source: neither is a runtime
@@ -724,6 +756,10 @@ interface DetectorSpec<
   // flagged in the same run, whichever of the two is declared first.
   suppressedBy?: TSuppressor;
   detect: DetectSignatures<Readonly<T>>[S];
+  // The impact estimate for one of this entry's findings, run after suppression; null leaves the
+  // finding without one. Lives here so a finding type's waste model sits next to the detection
+  // that produced it, reading the same helpers its runtime floor does.
+  estimate: (finding: FindingOf<TEmits[number]>, ctx: EstimateCtx) => ImpactEstimate | null;
 }
 
 type DefinedDetector<
@@ -738,9 +774,12 @@ type DefinedDetector<
 };
 
 /** How runners (analyze(), auditConfig(), the catalog helpers) see any DETECTORS entry: its
- * thresholds type erased and detect() left off, so they reach it only through withThresholds(). */
+ * thresholds type erased and detect() left off, so they reach it only through withThresholds().
+ * estimate() takes any Finding here: estimateImpact() only hands an entry the types it emits. */
 export type Detector = {
-  [S in DetectorScope]: Omit<DefinedDetector<S, string, readonly Finding['type'][], DetectorThresholds, string>, 'detect'>;
+  [S in DetectorScope]: Omit<DefinedDetector<S, string, readonly Finding['type'][], DetectorThresholds, string>, 'detect' | 'estimate'> & {
+    estimate(finding: Finding, ctx: EstimateCtx): ImpactEstimate | null;
+  };
 }[DetectorScope];
 
 // Same-shape overrides merged over the defaults. analyze()'s callers validate overrides at their
@@ -811,11 +850,6 @@ export function defineConfigDetector<
 // *Pct100 = 0–100 scale
 // *Ratio = multiplicative factor
 // *Share/*Rate/*Util = 0–1 fraction (normalized)
-
-// straggler's noise-floor thresholds (NOT SOURCED: unvalidated), exported so impact-band.ts
-// reuses the same figures instead of hand-copying.
-export const STRAGGLER_FLOOR_PCT_WARN = 0.005;
-export const STRAGGLER_FLOOR_PCT_CRIT = 0.02;
 
 // A ratio just past ratioWarn is the case most likely to be ordinary task-duration variance
 // rather than real skew; a ratio many multiples past it (a 50x P95/median vs. a 3.1x one) is
@@ -923,19 +957,15 @@ export const DETECTORS = [
     type: 'skew', order: 30, fixEffort: 'code', version: 1,
     emits: ['skew'],
     docAnchor: '#bottleneck-skew',
-    thresholds: { ratioWarn: 3, minTasksForP95: 20, floorPctWarn: 0.005 },
+    thresholds: { ratioWarn: 3, minTasksForP95: 20, floorPctWarn: IMPACT_FLOOR_PCT_WARN },
     detect(stage, ctx, thresholds): Finding | null {
       const result = computeSkewRatio(stage, thresholds.minTasksForP95);
       if (result === null) return null;
       const { ratio, metric } = result;
       if (ratio <= thresholds.ratioWarn) return null;
-      // Same absolute delta impact-estimator.ts's 'skew' case reports as savings; clipped the
-      // same way before the floor check so the gate agrees with what's displayed.
-      const singleDelta = Math.max(0, metric === 'P95/median' ? stage.taskDurationP95 - stage.taskDurationP50 : stage.taskDurationMax - stage.taskDurationP50);
-      const wasteMs = tailRecoveryMs(stage, singleDelta);
-      const appDurationMs = computeAppDurationMs(ctx);
-      const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx, tailRemovedWorkMs(stage, singleDelta), stragglerFixLongestTaskMs(stage));
-      if (!meetsRuntimeFloor(floorWasteMs, appDurationMs, thresholds.floorPctWarn)) return null;
+      // The claim estimate() reports as savings, clipped the same way, so the gate agrees with it.
+      const floorWasteMs = tailClaimFloorMs(skewTailClaim(stage, metric === 'P95/median'), stage.id, ctx);
+      if (!meetsRuntimeFloor(floorWasteMs, appDurationMs(ctx.app), thresholds.floorPctWarn)) return null;
       const value = Math.round(ratio * 10) / 10;
       return {
         type: 'skew', stageId: stage.id,
@@ -945,6 +975,13 @@ export const DETECTORS = [
         validationRequired: 'This finding is gated by a 0.5% runtime-floor threshold, our own noise floor for this metric.',
         recommendation: `Task duration ratio (${metric}) is ${value}×: for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key to reduce task skew.`,
       };
+    },
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      // computeSkewRatio's own metric labels: 'P95/median' or 'max/median'.
+      return tailClaimImpact(skewTailClaim(stage, finding.metric === 'P95/median'), finding.stageId, ctx);
     },
   }),
   defineStageDetector({
@@ -1003,6 +1040,34 @@ export const DETECTORS = [
       }
       return out;
     },
+    estimate(finding, ctx): ImpactEstimate | null {
+      const stage = ctx.stages.get(finding.stageId as number);
+      if (!stage) return null;
+      if (finding.rule === 'lowParallelism') {
+        const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
+        const idleCoreMs =
+          Math.max(0, ((finding.totalCores as number | undefined) ?? 0) - (stage.taskCount ?? 0)) * stageDurationMs;
+        // Real per-stage data (cores, task count, duration), no assumed constant.
+        return costOnly('measured', { value: idleCoreMs, unit: 'coreMs' });
+      }
+      if (finding.rule === 'dataExplosion') {
+        const excessBytes = Math.max(0, (stage.outputBytes ?? 0) - (stage.inputBytes ?? 0));
+        // Measured input/output byte counts, no assumed constant.
+        return costOnly('measured', { value: excessBytes, unit: 'bytes' });
+      }
+      if (finding.rule === 'taskStageSkew') {
+        const totalCores = (finding.totalCores as number | undefined) ?? 0;
+        const taskCount = stage.taskCount ?? 0;
+        // Cores idle during the straggler's tail, at achieved concurrency (not full cluster
+        // capacity, which is lowParallelism's territory): this rule's trigger forces the
+        // occupancy-clipped estimate to zero on every firing, so it's resourceOnly, not a wall-clock claim.
+        const idleCoreMs =
+          Math.max(0, Math.min(totalCores, taskCount) - 1) *
+          Math.max(0, (stage.taskDurationMax ?? 0) - (stage.taskDurationP50 ?? 0));
+        return costOnly('measured', { value: idleCoreMs, unit: 'coreMs' });
+      }
+      return null;
+    },
   }),
   defineStageDetector({
     type: 'shuffle', order: 20, fixEffort: 'config', version: 1,
@@ -1022,6 +1087,20 @@ export const DETECTORS = [
         metric: 'shuffleReadBytes', value: bytes,
         recommendation: `${formatBytes(bytes)} shuffled in this stage: consider increasing spark.sql.shuffle.partitions or adding a broadcast join.`,
       };
+    },
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const shuffleReadBytes = stage.shuffleReadBytes ?? 0;
+      const modeledMs = (shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
+      // The link model can't see whether the reads stalled the tasks: capped at the fetch wait the
+      // tasks measured, the claim never exceeds what the stage spent blocked on the network.
+      const measuredMs = fetchWaitWallClockMs(stage);
+      const wasteMs = measuredMs == null ? modeledMs : Math.min(modeledMs, measuredMs);
+      // rawWaste: the measured byte volume behind the modeled figure.
+      return singleStageImpact(wasteMs, finding.stageId, ctx,
+        measuredMs != null && measuredMs < modeledMs ? 'measured' : 'modeled', { value: shuffleReadBytes, unit: 'bytes' });
     },
   }),
   defineStageDetector({
@@ -1064,6 +1143,32 @@ export const DETECTORS = [
       }
       return out;
     },
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      let wasteMs = 0;
+      if (finding.rule === 'maxPartitionTooBig') {
+        wasteMs = ((stage.shuffleReadMax ?? 0) / SHUFFLE_THROUGHPUT_BPS) * 1000;
+      } else if (finding.rule === 'shufflePartitionSkew') {
+        const delta = Math.max(0, (stage.shuffleReadMax ?? 0) - (stage.shuffleReadP50 ?? 0));
+        wasteMs = (delta / SHUFFLE_THROUGHPUT_BPS) * 1000;
+      } else if (finding.rule === 'lowShuffleParallelism') {
+        const targetTaskCount = Math.ceil((stage.shuffleReadBytes ?? 0) / IDEAL_BYTES_PER_PARTITION_TASK);
+        const taskCount = stage.taskCount ?? 0;
+        if (targetTaskCount > taskCount && taskCount > 0) {
+          const stageDurationMs = Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
+          // Too few shuffle partitions means each task processes more than the ideal bytes,
+          // serializing work more partitions would run concurrently: the waste is that serialized
+          // work, not the scheduling cost of tasks you'd add (adding tasks incurs overhead, recovers
+          // nothing). Model the achievable duration at target parallelism by scaling down proportionally.
+          wasteMs = stageDurationMs * (1 - taskCount / targetTaskCount);
+        }
+      } else {
+        return null;
+      }
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: wasteMs, unit: 'ms' });
+    },
   }),
   defineStageDetector({
     type: 'spill', order: 10, fixEffort: 'code', version: 1,
@@ -1091,6 +1196,15 @@ export const DETECTORS = [
           ? `${formatBytes(stage.memoryBytesSpilled)} spilled, skew-driven: fix task skew first; adding memory will not help.`
           : `${formatBytes(stage.memoryBytesSpilled)} spilled: raise spark.sql.shuffle.partitions or increase executor memory.`,
       };
+    },
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const diskBytesSpilled = stage.diskBytesSpilled ?? 0;
+      const wasteMs = (diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
+      // Surfaces the number the formula uses: the displayed metric is memoryBytesSpilled, but disk spill costs the I/O time.
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: diskBytesSpilled, unit: 'bytes' });
     },
   }),
   defineStageDetector({
@@ -1136,6 +1250,28 @@ export const DETECTORS = [
         };
       }
       return null;
+    },
+    estimate(finding, ctx): ImpactEstimate | null {
+      // The low-GC branch is an over-provisioning signal whose fix (less executor memory) raises
+      // GC rather than recovering it: the stage's GC time is no saving there, so no waste model.
+      if (finding.direction === 'low') return costOnly('none');
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
+      const executorRunTime = stage.executorRunTime ?? 0;
+      const jvmGCTime = stage.jvmGCTime ?? 0;
+      // The raw cross-task core-time sum, before any conversion: the one figure here
+      // that is straight from the log rather than modeled.
+      const rawWaste = { value: jvmGCTime, unit: 'coreMs' } as const;
+      if (executorRunTime <= 0 || stageDurationMs <= 0) {
+        return costOnly('modeled', rawWaste);
+      }
+      const avgConcurrency = executorRunTime / stageDurationMs;
+      // jvmGCTime is a cross-task core-time sum (same shape as executorRunTime); dividing by the
+      // stage's average concurrency converts it to an approximate wall-clock figure. Modeled, not exact.
+      const wasteMs = jvmGCTime / avgConcurrency;
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', rawWaste);
     },
   }),
   defineStageDetector({
@@ -1239,6 +1375,26 @@ export const DETECTORS = [
       }
       return out;
     },
+    estimate(finding, ctx): ImpactEstimate | null {
+      // Three duration-based shapes, each carrying its absolute-ms figure under a different field
+      // (`value` is always a ratio/share, never ms): the per-host mean branch (discriminated by
+      // `metric`), the duration-share branch (`variant`), and the multiDim taskTime dimension. Every
+      // byte-based multiDim dimension has no absolute figure today, so it stays informational.
+      const absoluteMs =
+        finding.metric === 'hostMeanRatio' || finding.variant === 'durationShare'
+          ? (finding.hostMeanMs as number | undefined)
+          : finding.variant === 'multiDim' && finding.dimension === 'taskTime'
+            ? (finding.execMaxValue as number | undefined)
+            : null;
+      if (absoluteMs == null) {
+        return costOnly('none'); // byte-based multiDim dims: no absolute figure today, no model applied
+      }
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const wasteMs = Math.max(0, absoluteMs - (stage.taskDurationP50 ?? 0));
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'measured', { value: wasteMs, unit: 'ms' });
+    },
   }),
   defineStageDetector({
     type: 'stageSlowness', order: 65, fixEffort: 'code', version: 2,
@@ -1263,6 +1419,27 @@ export const DETECTORS = [
         recommendation: `This stage ran ${value} minutes with no more specific cause flagged: often a partition-count problem, raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.`,
       };
     },
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      // The recommended fix is more partitions, which only helps a stage that ran fewer tasks than
+      // the cluster has cores: the time its tasks were running could then spread over up to
+      // totalCores (lowShuffleParallelism's shape). Time the stage sat open with no task running
+      // is queueing no partition count recovers. Splitting partitions splits the longest task
+      // too, hence TAIL_CLAIM's post-fix floor. Unknown cluster size: no defensible figure.
+      if (ctx.totalCores <= 0) return costOnly('modeled');
+      // A stage that read no input and no shuffle, its tasks idle waiting on an external system,
+      // gains nothing from more partitions (a 1-task JDBC count stage open 27 minutes on 5s of CPU
+      // was claimed 99% recoverable): claim 0. Stages that read bytes keep their claim.
+      const readBytes = (stage.inputBytes ?? 0) + (stage.shuffleReadBytes ?? 0);
+      const activeMs = typeof stage.taskActiveMs === 'number'
+        ? stage.taskActiveMs
+        : Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
+      const taskCount = stage.taskCount ?? 0;
+      const wasteMs = readBytes <= 0 && tasksMostlyIdle(stage) ? 0 : activeMs * Math.max(0, 1 - taskCount / ctx.totalCores);
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: wasteMs, unit: 'ms' }, TAIL_CLAIM);
+    },
   }),
   defineStageDetector({
     type: 'stageFailed', order: 42, fixEffort: 'code', version: 1,
@@ -1281,6 +1458,7 @@ export const DETECTORS = [
         recommendation: `This stage attempt failed outright. Inspect the driver log for the failure reason and the job that triggered it.`,
       };
     },
+    estimate: noWasteModel,
   }),
   defineStageDetector({
     type: 'failures', order: 40, fixEffort: 'code', version: 2,
@@ -1315,13 +1493,14 @@ export const DETECTORS = [
         recommendation: `${value}% of tasks failed${dominantError ? ` (dominant error: ${dominantError})` : ''}: investigate driver logs for executor instability or data-driven errors.`,
       };
     },
+    estimate: noWasteModel,
   }),
   defineStageDetector({
     type: 'straggler', order: 70, fixEffort: 'code', version: 1,
     emits: ['straggler'],
     docAnchor: '#bottleneck-straggler',
-    // floorPctWarn/floorPctCrit are re-exported as STRAGGLER_FLOOR_PCT_WARN/CRIT and reused as
-    // impact-band.ts's global noise floor: keep the two in sync.
+    // floorPctWarn/floorPctCrit default to impact-band.ts's run-wide noise floor, so a tail this
+    // gate admits at its warn floor grades at least warning there too.
     // shareWarnAtFloor: in a large stage, the few stragglers that gate it for tens of seconds can be
     // only 2.5-5% of its tasks. Scored against a task-level replay of every stage on 14 real logs
     // (recoverable = replay with each task over 4x P50 capped at P50), admitting 2.5-5% shares
@@ -1331,28 +1510,24 @@ export const DETECTORS = [
     // than the stage's own duration, so every finding there graded info. On the 14 real logs that
     // was 671 of 753 straggler findings, none above info; the slow tail is still real on those
     // stages, the floor is why they're dropped.
-    thresholds: { minTasks: 10, shareWarn: 0.05, shareWarnAtFloor: 0.025, warnPct: 0.10, critPct: 0.20, floorPctWarn: STRAGGLER_FLOOR_PCT_WARN, floorPctCrit: STRAGGLER_FLOOR_PCT_CRIT },
+    thresholds: { minTasks: 10, shareWarn: 0.05, shareWarnAtFloor: 0.025, warnPct: 0.10, critPct: 0.20, floorPctWarn: IMPACT_FLOOR_PCT_WARN, floorPctCrit: IMPACT_FLOOR_PCT_CRIT },
     detect(stage, ctx, thresholds): Finding | null {
       if (stage.taskCount < thresholds.minTasks) return null;
-      const appDurationMs = computeAppDurationMs(ctx);
+      const runMs = appDurationMs(ctx.app);
       if (stageBelowRuntimeFloor(stage, ctx, thresholds.floorPctWarn)) return null;
       const stragglerShare = (stage.stragglerCount ?? 0) / stage.taskCount;
       const useSpeculative = (stage.speculativeTasks ?? 0) > 0;
       if (!useSpeculative && stragglerShare <= thresholds.shareWarnAtFloor) return null;
       const speculativeShare = useSpeculative ? stage.speculativeTasks / stage.taskCount : 0;
-      // Same absolute delta impact-estimator.ts's straggler/stageShape case reports as savings: a
-      // high straggler/speculative share on a stage whose tasks barely vary models near-zero
-      // savings, so it must not outrank 'info'. Clipped the same way before the floor check.
-      const longestTaskAfterFixMs = stragglerFixLongestTaskMs(stage);
-      const singleDelta = Math.max(0, stage.taskDurationMax - longestTaskAfterFixMs);
-      const wasteMs = tailRecoveryMs(stage, singleDelta);
-      const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx, tailRemovedWorkMs(stage, singleDelta), longestTaskAfterFixMs);
-      const meetsWarnFloor = meetsRuntimeFloor(floorWasteMs, appDurationMs, thresholds.floorPctWarn);
-      const meetsCritFloor = meetsRuntimeFloor(floorWasteMs, appDurationMs, thresholds.floorPctCrit);
+      // The claim estimate() reports as savings: a high straggler/speculative share on a stage
+      // whose tasks barely vary models near-zero savings, so it must not outrank 'info'.
+      const floorWasteMs = tailClaimFloorMs(stragglerTailClaim(stage), stage.id, ctx);
+      const meetsWarnFloor = meetsRuntimeFloor(floorWasteMs, runMs, thresholds.floorPctWarn);
+      const meetsCritFloor = meetsRuntimeFloor(floorWasteMs, runMs, thresholds.floorPctCrit);
       // The lower gate needs positive evidence the tail matters: meetsRuntimeFloor passes by
       // default when the app's duration is unknown (an incomplete run), which isn't that.
       const stragglerShareFires = stragglerShare > thresholds.shareWarn
-        || (stragglerShare > thresholds.shareWarnAtFloor && appDurationMs != null && meetsWarnFloor);
+        || (stragglerShare > thresholds.shareWarnAtFloor && runMs != null && meetsWarnFloor);
       if (!useSpeculative && !stragglerShareFires) return null;
       const speculativeTier = speculativeShare >= thresholds.critPct && meetsCritFloor ? 'critical'
                              : speculativeShare >= thresholds.warnPct && meetsWarnFloor ? 'warning' : 'info';
@@ -1383,6 +1558,12 @@ export const DETECTORS = [
         recommendation: `${detail}: rule out a GC pause or a slow shuffle fetch before assuming a hardware issue; if a skewed key is the real cause, that's a candidate for AQE's skew-join handling.`,
       };
     },
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      return tailClaimImpact(stragglerTailClaim(stage), finding.stageId, ctx);
+    },
   }),
   defineStageDetector({
     type: 'speculationWaste', order: 71, fixEffort: 'config', version: 1,
@@ -1400,6 +1581,13 @@ export const DETECTORS = [
         confidence: speculationWasteConfidence(wastedMs, thresholds.minWasteMs),
         recommendation: `Speculative execution discarded ${Math.round(wastedMs / 1000)}s of executor time in this stage; if task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile.`,
       };
+    },
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const wasteMs = (stage.speculationWasteMs as number | undefined) ?? 0;
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'measured', { value: wasteMs, unit: 'ms' });
     },
   }),
   defineStageDetector({
@@ -1421,6 +1609,16 @@ export const DETECTORS = [
         recommendation: `Retried task attempts wasted ${Math.round(wastedMs / 1000)}s of executor time (${wasted} attempt${wasted === 1 ? '' : 's'}) even though the stage completed: investigate executor loss or fetch failures.`,
         extended: `${wasted} task attempts were superseded by a later retry, wasting ${Math.round(wastedMs / 1000)}s of executor time. Common causes: executor loss (OOM-kill, node death) or shuffle FetchFailed forcing a stage-map recompute. Check driver logs for the dominant reason (see the Failures widget) even if the final failure rate looks low; retries hide the true cost.`,
       };
+    },
+    estimate(finding, ctx): ImpactEstimate | null {
+      // The waste figure lives on the Stage, not the Finding: detect() only re-publishes it as metric/value.
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const wasteMs = (stage.retryWasteMs as number | undefined) ?? 0;
+      const wallClockMs = retryWallClockMs(stage);
+      return singleStageImpact(wallClockMs, finding.stageId, ctx,
+        wallClockMs === wasteMs ? 'measured' : 'modeled', { value: wasteMs, unit: 'ms' });
     },
   }),
   defineStageDetector({
@@ -1445,6 +1643,23 @@ export const DETECTORS = [
         recommendation: `Many small tasks (${stage.taskCount}, P50 ${Math.round(stage.taskDurationP50)}ms): scheduler overhead may dominate. Try ${fix}.`,
       };
     },
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const taskCount = stage.taskCount ?? 0;
+      const excessTaskCount = Math.max(0, taskCount - Math.round(taskCount / 10));
+      const measured = measuredTaskOverhead(stage);
+      if (measured) {
+        // Coalescing to a tenth of the tasks removes the excess tasks' per-task overhead: core
+        // time spent in parallel, so wall-clock at the stage's achieved concurrency (floored at
+        // 1: a mostly-idle stage can't save more wall-clock than the task time it removes).
+        const wasteMs = (excessTaskCount * measured.perTaskMs) / Math.max(1, measured.concurrency);
+        return singleStageImpact(wasteMs, finding.stageId, ctx, 'measured', { value: wasteMs, unit: 'ms' });
+      }
+      const wasteMs = excessTaskCount * TASK_SCHEDULING_OVERHEAD_MS;
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: wasteMs, unit: 'ms' });
+    },
   }),
   defineAppDetector({
     // No docAnchor: the upstream spark-tuning-reference docs have no section for this
@@ -1460,6 +1675,7 @@ export const DETECTORS = [
         recommendation: INCOMPLETE_RUN_RECOMMENDATION,
       };
     },
+    estimate: noWasteModel,
   }),
   defineAppDetector({
     type: 'coldStart', order: 90, fixEffort: 'code', version: 1,
@@ -1504,6 +1720,14 @@ export const DETECTORS = [
         metric: 'startupGapSeconds', value,
         recommendation: `The first stage waited ${value}s for an executor to become available: keep a warm pool of idle executors, or if using dynamic allocation, raise the minimum/initial executor count so it doesn't scale up from zero.`,
       };
+    },
+    estimate(finding): ImpactEstimate | null {
+      // detect() reports the gap as `metric: 'startupGapSeconds', value: <seconds>`.
+      if (typeof finding.value !== 'number') return null;
+      const wasteMs = finding.value * 1000;
+      // Time before any task starts can never overlap any stage; a genuine unclipped point estimate,
+      // not tied to any stage's gate (coldStart is app-scoped, stageId: null).
+      return { basis: 'serial', wallClock: { low: wasteMs, high: wasteMs }, estimateMethod: 'measured' };
     },
   }),
   defineAppDetector({
@@ -1551,6 +1775,16 @@ export const DETECTORS = [
         cpuUtilizationPct,
         recommendation: `Average executor utilization was only ${value}%: consider reducing cluster size or enabling dynamic allocation.`,
       };
+    },
+    estimate(finding): ImpactEstimate | null {
+      const fraction = finding.utilizationFraction as number | undefined;
+      const appDurationMs = finding.appDurationMs as number | undefined;
+      const totalCores = finding.totalCores as number | undefined;
+      if (fraction == null || appDurationMs == null || totalCores == null) {
+        return costOnly('measured');
+      }
+      const idleCoreHours = (1 - fraction) * appDurationMs * totalCores / 3.6e6;
+      return costOnly('measured', { value: idleCoreHours, unit: 'coreHours' });
     },
   }),
   defineAppDetector({
@@ -1662,6 +1896,37 @@ export const DETECTORS = [
 
       return out;
     },
+    estimate(finding): ImpactEstimate | null {
+      // The wasteModel variant reports metric: 'wastedMBSeconds', value: <MB-seconds>.
+      if (finding.variant === 'wasteModel' && typeof finding.value === 'number') {
+        return costOnly('measured', { value: finding.value, unit: 'mbSeconds' });
+      }
+      if (finding.variant === 'idleCores') {
+        // Idle core-time priced as memory held but unused: the same MB-seconds unit as wasteModel, so comparable.
+        const idleRateFraction = finding.idleRateFraction as number | undefined;
+        const allocatedMB = finding.allocatedMB as number | undefined;
+        const peakExecutors = finding.peakExecutors as number | undefined;
+        const appDurationMs = finding.appDurationMs as number | undefined;
+        if (idleRateFraction != null && allocatedMB != null && peakExecutors != null && appDurationMs != null) {
+          const wastedMBSeconds = idleRateFraction * allocatedMB * peakExecutors * (appDurationMs / 1000);
+          return costOnly('modeled', { value: wastedMBSeconds, unit: 'mbSeconds' });
+        }
+        return costOnly('modeled');
+      }
+      // Only the over-provisioned band is a waste; the near-capacity band is an OOM-risk signal with
+      // no magnitude, and the dataUnavailable shape has no inputs: both stay informational.
+      if (finding.variant === 'memoryBand' && finding.rule === 'heapOverProvisioned') {
+        const allocatedBytes = finding.allocatedBytes as number | undefined;
+        const heap = finding.heap as number | undefined;
+        const appDurationMs = finding.appDurationMs as number | undefined;
+        if (allocatedBytes != null && heap != null && appDurationMs != null) {
+          const unusedMB = (allocatedBytes - heap) / (1024 * 1024);
+          const wastedMBSeconds = unusedMB * (appDurationMs / 1000);
+          return costOnly('modeled', { value: wastedMBSeconds, unit: 'mbSeconds' });
+        }
+      }
+      return costOnly('modeled');
+    },
   }),
   defineAppDetector({
     // Per-RDD cache-utilization proxies (this repo's own design: Spark event logs carry no
@@ -1715,6 +1980,23 @@ export const DETECTORS = [
       if (persistedRddCount > 0 && !anyStorageEvidence) out.push(storageUnobservedFinding(persistedRddCount));
       return out;
     },
+    estimate(finding): ImpactEstimate | null {
+      // storageUnobserved reports missing evidence: no sizes, so nothing to model.
+      if (finding.dataUnavailable) return costOnly('none');
+      const memorySize = (finding.memorySize as number | undefined) ?? 0;
+      const diskSize = (finding.diskSize as number | undefined) ?? 0;
+      const numCachedPartitions = (finding.numCachedPartitions as number | undefined) ?? 0;
+      const numPartitions = (finding.numPartitions as number | undefined) ?? 0;
+      const numUncachedPartitions = Math.max(0, numPartitions - numCachedPartitions);
+      const cachedBytes = memorySize + diskSize;
+      // Extrapolate never-cached partitions' size from the CACHED partitions' average (uncached/
+      // cached, not uncached/total: numCachedPartitions produced cachedBytes). diskSize is added
+      // once more: those bytes are cached but on disk, so re-reading them still costs I/O like an uncached partition.
+      const uncachedBytes = numCachedPartitions > 0 ? (cachedBytes / numCachedPartitions) * numUncachedPartitions : 0;
+      const uncachedOrSpilledBytes = uncachedBytes + diskSize;
+      const wasteMs = (uncachedOrSpilledBytes / RE_READ_THROUGHPUT_BPS) * 1000;
+      return costOnly('modeled', { value: wasteMs, unit: 'ms' });
+    },
   }),
   defineAppDetector({
     // Non-local task ratio across stage.localityStats (RACK_LOCAL + ANY vs all tasks), the other
@@ -1742,6 +2024,11 @@ export const DETECTORS = [
         validationRequired: 'This finding is gated by 15%/35% non-local-ratio thresholds (and a 50-task minimum), our own noise floor for this metric.',
         recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement: check spark.locality.wait settings and executor/data colocation.`,
       };
+    },
+    estimate(finding): ImpactEstimate | null {
+      const nonLocal = (finding.nonLocalTaskCount as number | undefined) ?? 0;
+      const coreMs = nonLocal * NETWORK_FETCH_PENALTY_MS;
+      return costOnly('modeled', { value: coreMs, unit: 'coreMs' });
     },
   }),
   defineAppDetector({
@@ -1781,6 +2068,11 @@ export const DETECTORS = [
         confidence: autoscalingChurnConfidence(shortLivedPct, thresholds.warningPct, thresholds.criticalPct),
         recommendation: `${pct}% of executors ran for under 2 minutes before being removed. This looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.`,
       };
+    },
+    estimate(finding): ImpactEstimate | null {
+      const shortLived = (finding.shortLivedExecutorCount as number | undefined) ?? 0;
+      const executorHours = (shortLived * EXECUTOR_STARTUP_OVERHEAD_MS) / 3.6e6;
+      return costOnly('modeled', { value: executorHours, unit: 'coreHours' });
     },
   }),
   defineAppDetector({
@@ -1961,6 +2253,11 @@ export const DETECTORS = [
       }
       return out;
     },
+    estimate(finding): ImpactEstimate | null {
+      const totalReadBytes = (finding.totalReadBytes as number | undefined) ?? 0;
+      const wasteMs = (totalReadBytes / RE_READ_THROUGHPUT_BPS) * 1000;
+      return costOnly('modeled', { value: wasteMs, unit: 'ms' });
+    },
   }),
   defineAppDetector({
     type: 'jobFailureRate', order: 110, fixEffort: 'code', version: 1,
@@ -1995,6 +2292,12 @@ export const DETECTORS = [
         recommendation: `${failedJobs} of ${totalJobs} jobs never recovered: inspect the driver log for the failed job(s) and the stage failures that triggered them.`,
       };
     },
+    estimate(finding): ImpactEstimate | null {
+      const failedJobs = (finding.failedJobs as number | undefined) ?? 0;
+      const avgJobDurationMs = (finding.avgJobDurationMs as number | undefined) ?? 0;
+      const coreHoursIsh = (failedJobs * avgJobDurationMs) / 3.6e6;
+      return costOnly('modeled', { value: coreHoursIsh, unit: 'coreHours' });
+    },
   }),
   // ── Config-sanity entries (scope:'config', inScorecard:false) ────────────────
   defineConfigDetector({
@@ -2012,6 +2315,7 @@ export const DETECTORS = [
       }
       return null;
     },
+    estimate: noWasteModel,
   }),
   defineConfigDetector({
     type: 'configAudit', order: 121, fixEffort: 'config', version: 1, inScorecard: false,
@@ -2038,6 +2342,7 @@ export const DETECTORS = [
       }
       return null;
     },
+    estimate: noWasteModel,
   }),
   defineConfigDetector({
     type: 'configAudit', order: 122, fixEffort: 'config', version: 1, inScorecard: false,
@@ -2055,6 +2360,7 @@ export const DETECTORS = [
         recommendation: `Current serializer is ${ser ?? 'the default JavaSerializer'}: consider spark.serializer=org.apache.spark.serializer.KryoSerializer for faster, smaller buffers.`,
       };
     },
+    estimate: noWasteModel,
   }),
   defineConfigDetector({
     type: 'configAudit', order: 123, fixEffort: 'config', version: 1, inScorecard: false,
@@ -2073,6 +2379,7 @@ export const DETECTORS = [
         recommendation: `Executor memoryOverhead (${ovMB} MiB) is below Spark's default floor of ${floor} MiB (max of 384 MiB or 10% of executor memory): raise it to avoid off-heap OOM-kills.`,
       };
     },
+    estimate: noWasteModel,
   }),
   // ── Plan-metric entries (scope:'sql') ────────────────────────────────────
   defineSqlDetector({
@@ -2092,7 +2399,7 @@ export const DETECTORS = [
       const executionNodes: PlanNode[] = [];
       walkPlanTree(sqlExec.planTree, (node) => executionNodes.push(node));
       const operatorsByStage = operatorCountByStage(executionNodes);
-      const appDurationMs = computeAppDurationMs(ctx);
+      const runMs = appDurationMs(ctx.app);
       const findings = groups.map((g): Finding | null => {
         const nodes: PlanNode[] = [];
         for (const n of g.nodes) walkPlanTree(n, (node) => nodes.push(node));
@@ -2102,7 +2409,7 @@ export const DETECTORS = [
           const stage = ctx.stages.get(id);
           if (stage) stagesMs += Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
         }
-        if (appDurationMs != null && stagesMs > 0 && stagesMs < appDurationMs * thresholds.stageFloorPct) return null;
+        if (runMs != null && stagesMs > 0 && stagesMs < runMs * thresholds.stageFloorPct) return null;
         const occurrencesIdentical = occurrencesHaveIdenticalDetails(g.nodes);
         const stageShares = stageOperatorShares(nodes, operatorsByStage);
         // resolvePlanTree always sets id; safe downstream of it.
@@ -2127,6 +2434,41 @@ export const DETECTORS = [
         };
       }).filter((f): f is Finding => f !== null);
       return findings.length > 0 ? findings : null;
+    },
+    estimate(finding, ctx): ImpactEstimate | null {
+      const stageIds = finding.stageIds as number[] | undefined;
+      if (!stageIds || stageIds.length === 0) return null;
+      // detect() reports subtreeOccurrences >= 2. Only repeats past the first are redundant:
+      // computing the subtree once is real work, so waste is (occurrences-1)/occurrences of the stages' time.
+      const occurrences = typeof finding.value === 'number' ? finding.value : 0;
+      // Defensive only: minOccurrences guarantees occurrences >= 2 on real data; a malformed-value fallback.
+      if (occurrences < 2) return costOnly('none');
+      // Same-shaped repeats whose details differ compute different data: nothing is known to be
+      // recomputed, so there is no time to claim.
+      if (finding.occurrencesIdentical === false) return costOnly('none');
+      // Each stage contributes the share of its operators inside the repeated subtree: a stage it
+      // shares with other operators (the consuming join, the join's other side) isn't all its
+      // time, and claiming whole stages let sibling groups claim the same stage twice. Findings
+      // built without the field (hand-made fixtures) count every linked stage whole.
+      const shares = (finding.stageShares ?? null) as Record<number, number> | null;
+      const redundantFraction = (occurrences - 1) / occurrences;
+      const wasteMsByStage = new Map<number, number>();
+      for (const id of stageIds) {
+        const s = ctx.stages.get(id);
+        const share = shares ? (shares[id] ?? 0) : 1;
+        if (s && share > 0) {
+          // Time with tasks running, not submit-to-complete: a stage left waiting for cores
+          // (2491s open, 60s of tasks on a real log) isn't recomputing anything while it waits.
+          const activeMs = s.taskActiveMs ?? Math.max(0, (s.completedAt ?? 0) - (s.submittedAt ?? 0));
+          wasteMsByStage.set(id, activeMs * share * redundantFraction);
+        }
+      }
+      // No operator of the subtree ran in a known stage: no time to attribute.
+      if (wasteMsByStage.size === 0) return costOnly('none');
+      const totalWasteMs = [...wasteMsByStage.values()].reduce((sum, ms) => sum + ms, 0);
+      const rawWaste: RawWasteFigure = { value: totalWasteMs, unit: 'ms' };
+      return multiStageImpact([...wasteMsByStage.keys()], wasteMsByStage, ctx, 'measured', rawWaste)
+        ?? costOnly('measured', rawWaste);
     },
   }),
   defineSqlDetector({
@@ -2170,6 +2512,19 @@ export const DETECTORS = [
             : `${h.fileCount} small files were written at ${pathBasename(h.nodeName)}: repartition or coalesce before writing to raise the average file size.`,
         };
       });
+    },
+    estimate(finding, ctx): ImpactEstimate | null {
+      const fileMs = ((finding.fileCount as number | undefined) ?? 0) * FILE_OPEN_OVERHEAD_MS;
+      // A read's files are opened by the scan's tasks, in parallel: spread the per-file cost over
+      // the most tasks its stages ran at once (91344 files x 10ms is 913s, claimed against a 117s
+      // stage that ran 314 tasks at once). A write keeps the serial sum: the job commit moves each
+      // output file on the driver, one after another.
+      const stageIds = finding.stageIds as number[] | undefined;
+      let slots = 1;
+      if (finding.direction === 'read') {
+        for (const id of stageIds ?? []) slots = Math.max(slots, ctx.stages.get(id)?.peakConcurrentTasks ?? 1);
+      }
+      return stageMappableWasteOrCostOnly(fileMs / slots, stageIds, ctx);
     },
   }),
   defineSqlDetector({
@@ -2234,6 +2589,12 @@ export const DETECTORS = [
         }
       });
       return out.length ? out : null;
+    },
+    estimate(finding, ctx): ImpactEstimate | null {
+      // Both finding types carry bytes as `value`: overBroadcast's broadcastBytes, underBroadcast's
+      // smallerSideBytes (the smaller join side), each priced as one broadcast transfer.
+      const wasteMs = (((finding.value as number | undefined) ?? 0) / BROADCAST_BANDWIDTH_BPS) * 1000;
+      return stageMappableWasteOrCostOnly(wasteMs, finding.stageIds as number[] | undefined, ctx);
     },
   }),
 ] as const satisfies readonly Detector[];

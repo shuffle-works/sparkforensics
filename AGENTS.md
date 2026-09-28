@@ -66,7 +66,11 @@ contributor should read; `docs/` stays flat internal engineering records
   overrides them, per run, and every finding it touches is labeled
   (`tunedThresholds`); see `detector-contract.md#tuning-thresholds`. Never
   mutate an entry's thresholds: they're frozen; pass `analyze()`'s
-  `thresholds` option. `packages/core/src/analyzer.ts` is just a runner over
+  `thresholds` option. Each entry's required `estimate()` prices its own
+  findings from the waste models in `packages/core/src/impact-model.ts`;
+  a runtime floor that must agree with the displayed savings gates on that
+  same estimate via `ctx.impact` (see skew/straggler's `tailClaimImpact`).
+  `packages/core/src/analyzer.ts` is just a runner over
   the `DETECTORS` contract. The full detector roster
   (per-stage: skew, shuffle, spill, GC, failures, slowHost/straggler,
   stageSlowness, partitionSizing, stageShape, stageFailed, retryWaste,

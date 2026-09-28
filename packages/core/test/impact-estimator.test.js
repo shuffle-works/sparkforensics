@@ -1,11 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { estimateImpact } from '../src/impact-estimator.js';
+import { computeOccupancy } from '../src/occupancy.js';
+
+// estimateImpact reads analyze()'s one occupancy sweep: build it here the way analyze() does.
+function estimate(findings, stages, totalCores = 0) {
+  return estimateImpact(findings, { stages, totalCores, occupancy: computeOccupancy(stages, totalCores) });
+}
 
 describe('estimateImpact: skeleton', () => {
   it('returns the same findings array reference, unmodified for an unrecognized type', () => {
     const findings = [{ type: 'not-a-real-detector', impactBand: 'info' }];
     const stages = new Map();
-    const result = estimateImpact(findings, stages);
+    const result = estimate(findings, stages);
     expect(result).toBe(findings);
     expect(result[0].impactEstimate).toBeUndefined();
   });
@@ -19,7 +25,7 @@ describe('estimateImpact: measured group A', () => {
   it('retryWaste: a solo stage (gate 1) gets a serial point estimate at its own retryWasteMs', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], retryWasteMs: 1200 }]]);
     const findings = [{ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 1200, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({
       basis: 'serial', wallClock: { low: 1200, high: 1200 }, estimateMethod: 'measured',
       rawWaste: { value: 1200, unit: 'ms' },
@@ -35,7 +41,7 @@ describe('estimateImpact: measured group A', () => {
       [1, { id: 1, submittedAt: 0, completedAt: 3000, parentIds: [], retryWasteMs: 1200 }],
     ]);
     const findings = [{ type: 'retryWaste', stageId: 1, metric: 'retryWasteMs', value: 1200, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const est = findings[0].impactEstimate;
     expect(est.basis).toBe('contended');
     expect(est.wallClock).toEqual({ low: 600, high: 1200 });
@@ -51,7 +57,7 @@ describe('estimateImpact: measured group A', () => {
       retryWasteMs: 146_000, wastedAttempts: 4, retryTaskSamples: samples, peakConcurrentTasks: 40,
     }]]);
     const findings = [{ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 146_000, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({
       basis: 'serial', wallClock: { low: 36_500, high: 36_500 }, estimateMethod: 'modeled',
       rawWaste: { value: 146_000, unit: 'ms' },
@@ -65,7 +71,7 @@ describe('estimateImpact: measured group A', () => {
         retryWasteMs: 90_000, wastedAttempts, retryTaskSamples, peakConcurrentTasks: 40,
       }]]);
       const findings = [{ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 90_000, impactBand: 'warning' }];
-      estimateImpact(findings, stages);
+      estimate(findings, stages);
       return findings[0].impactEstimate;
     };
     // Attempts 0, 1, 2 of one task ran one after another: 3 x 30s.
@@ -79,7 +85,7 @@ describe('estimateImpact: measured group A', () => {
   it('speculationWaste: clips the stage\'s own speculationWasteMs the same way', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], speculationWasteMs: 800 }]]);
     const findings = [{ type: 'speculationWaste', stageId: 0, metric: 'speculationWasteMs', value: 800, impactBand: 'info' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({
       basis: 'serial', wallClock: { low: 800, high: 800 }, estimateMethod: 'measured',
       rawWaste: { value: 800, unit: 'ms' },
@@ -88,7 +94,7 @@ describe('estimateImpact: measured group A', () => {
 
   it('coldStart: reports a serial point estimate unconditionally (app-scoped, no stage lookup, can never overlap a stage)', () => {
     const findings = [{ type: 'coldStart', stageId: null, metric: 'startupGapSeconds', value: 12, impactBand: 'warning' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'serial', wallClock: { low: 12000, high: 12000 }, estimateMethod: 'measured',
     });
@@ -102,7 +108,7 @@ describe('estimateImpact: gc', () => {
       jvmGCTime: 100000, executorRunTime: 100000, // 4-way average concurrency (100000/25000)
     }]]);
     const findings = [{ type: 'gc', stageId: 0, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const est = findings[0].impactEstimate;
     expect(est.estimateMethod).toBe('modeled');
     expect(est.basis).toBe('serial');
@@ -115,14 +121,14 @@ describe('estimateImpact: gc', () => {
       id: 0, submittedAt: 0, completedAt: 25000, parentIds: [], jvmGCTime: 2000, executorRunTime: 100000,
     }]]);
     const findings = [{ type: 'gc', stageId: 0, direction: 'low', impactBand: 'info' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
   });
 
   it('reports resourceOnly (not a wall-clock claim) when executorRunTime is zero (guards divide-by-zero)', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 1000, parentIds: [], jvmGCTime: 0, executorRunTime: 0 }]]);
     const findings = [{ type: 'gc', stageId: 0, impactBand: 'info' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled',
       rawWaste: { value: 0, unit: 'coreMs' },
@@ -141,7 +147,7 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
       taskCount: 50, taskDurationP50: 1000, taskDurationP95: 4000, taskDurationMax: 9000,
     }]]);
     const findings = [{ type: 'skew', stageId: 0, metric: 'P95/median', impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const est = findings[0].impactEstimate;
     // Raw claim P95-P50 = 3000; post-fix floor 6000 leaves 4000ms of room, so the claim fits whole.
     expect(est.wallClock).toEqual({ low: 3000, high: 3000 });
@@ -155,7 +161,7 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
       taskCount: 5, taskDurationP50: 1000, taskDurationP95: 1500, taskDurationMax: 9000,
     }]]);
     const findings = [{ type: 'skew', stageId: 0, metric: 'max/median', impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const est = findings[0].impactEstimate;
     // Raw claim max-P50 = 8000; post-fix floor is P50 (1000), room 9000: the old
     // taskDurationMax floor (9000) would have left only 1000.
@@ -166,7 +172,7 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
   it('straggler: reconstructs max-P50, floored at P50 rather than at the straggler itself', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1000, taskDurationMax: 7000 }]]);
     const findings = [{ type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     // Raw claim max-P50 = 6000, room above the P50 floor is 9000: min(6000, 9000) = 6000.
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 6000, high: 6000 });
   });
@@ -179,7 +185,7 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
       stragglerCount: 1, stragglerExcessMs: 6000, peakConcurrentTasks: 4, longestNonStragglerMs: 3500,
     }]]);
     const findings = [{ type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 3500, high: 3500 });
   });
 
@@ -195,7 +201,7 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
       { type: 'skew', stageId: 0, metric: 'max/median', impactBand: 'warning' },
       { type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' },
     ];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 61_000, high: 61_000 });
     expect(findings[1].impactEstimate.wallClock).toEqual({ low: 61_000, high: 61_000 });
   });
@@ -207,7 +213,7 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
       id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 1000, taskDurationMax: 9000, executorRunTime: 44000,
     }]]);
     const findings = [{ type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' }];
-    estimateImpact(findings, stages, 4);
+    estimate(findings, stages, 4);
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 1000, high: 1000 });
     expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 8000, unit: 'ms' });
   });
@@ -224,7 +230,7 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
       { type: 'straggler', stageId: 0, metric: 'stragglerShare', impactBand: 'warning' },
       { type: 'skew', stageId: 0, metric: 'P95/median', impactBand: 'warning' },
     ];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     // 14_500_000 / 29 = 500_000, over max-P50 (74_000) and P95-P50 (24_000).
     expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 500_000, unit: 'ms' });
     expect(findings[1].impactEstimate.rawWaste).toEqual({ value: 500_000, unit: 'ms' });
@@ -233,7 +239,7 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
   it('stageShape with an unrecognized rule: leaves impactEstimate unset (null, not undefined, internally)', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 500, taskDurationMax: 8000 }]]);
     const findings = [{ type: 'stageShape', rule: 'someOtherRule', stageId: 0, impactBand: 'warning' }];
-    const result = estimateImpact(findings, stages);
+    const result = estimate(findings, stages);
     expect(result[0].impactEstimate).toBeUndefined();
   });
 });
@@ -242,7 +248,7 @@ describe('estimateImpact: slowHost duration-based variants (no taskDurationMax s
   it('hostMeanRatio branch: excess duration of the slow host over the stage median', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskDurationP50: 2000 }]]);
     const findings = [{ type: 'slowHost', stageId: 0, metric: 'hostMeanRatio', value: 3, hostMeanMs: 6000, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 4000, high: 4000 });
   });
 
@@ -252,7 +258,7 @@ describe('estimateImpact: slowHost duration-based variants (no taskDurationMax s
       type: 'slowHost', stageId: 0, variant: 'durationShare',
       metric: 'hostDurationShare', value: 0.82, hostMeanMs: 5000, impactBand: 'warning',
     }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 4000, high: 4000 });
   });
 
@@ -262,7 +268,7 @@ describe('estimateImpact: slowHost duration-based variants (no taskDurationMax s
       type: 'slowHost', stageId: 0, variant: 'multiDim', dimension: 'taskTime',
       metric: 'execMaxMedianRatio', value: 3.7, execMaxValue: 5500, impactBand: 'warning',
     }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 4000, high: 4000 });
   });
 
@@ -271,7 +277,7 @@ describe('estimateImpact: slowHost duration-based variants (no taskDurationMax s
       type: 'slowHost', stageId: 0, variant: 'multiDim', dimension: 'inputBytes',
       metric: 'execMaxMedianRatio', value: 3.2, execMaxValue: 900_000_000, impactBand: 'info',
     }];
-    estimateImpact(findings, new Map([[0, { id: 0, submittedAt: 0, completedAt: 1000, parentIds: [] }]]));
+    estimate(findings, new Map([[0, { id: 0, submittedAt: 0, completedAt: 1000, parentIds: [] }]]));
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
   });
 });
@@ -287,7 +293,7 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       type: 'duplicatePlanSubtree', stageIds: [1, 2],
       metric: 'subtreeOccurrences', value: 2, impactBand: 'warning',
     }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     // 1/2 of each stage's duration is redundant: 1500 + 2000 = 3500; both
     // stages are solo (no overlap anywhere in the run) so basis is serial.
     expect(findings[0].impactEstimate).toEqual({
@@ -309,7 +315,7 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       type: 'duplicatePlanSubtree', stageIds: [2, 3],
       metric: 'subtreeOccurrences', value: 10, impactBand: 'warning',
     }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const est = findings[0].impactEstimate;
     // Per-stage: B1 gate = 8000/9000 (occupies [3000,5000] jointly with B2,
     // then alone [5000,12000]); waste 8100 -> {low: 7200, high: 8100}.
@@ -332,7 +338,7 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       type: 'duplicatePlanSubtree', stageIds: [0, 1],
       metric: 'subtreeOccurrences', value: 4, impactBand: 'warning',
     }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     // 3/4 of 200_000ms total span is waste; both stages solo and non-overlapping.
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 150_000, high: 150_000 });
   });
@@ -346,11 +352,11 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       type: 'duplicatePlanSubtree', stageIds: [0, 1],
       metric: 'subtreeOccurrences', value: 2, impactBand: 'warning',
     }];
-    estimateImpact(twice, stages);
+    estimate(twice, stages);
     expect(twice[0].impactEstimate.wallClock).toEqual({ low: 100_000, high: 100_000 });
 
     const malformed = [{ type: 'duplicatePlanSubtree', stageIds: [0, 1], impactBand: 'warning' }];
-    estimateImpact(malformed, stages);
+    estimate(malformed, stages);
     expect(malformed[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
   });
 
@@ -365,7 +371,7 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       metric: 'subtreeOccurrences', value: 2, impactBand: 'warning',
     }];
 
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
 
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 5_000, high: 5_000 });
   });
@@ -383,7 +389,7 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
       type: 'duplicatePlanSubtree', stageIds: [0, 1, 2], stageShares: { 0: 0.5, 1: 1 }, occurrencesIdentical: true,
       metric: 'subtreeOccurrences', value: 2, impactBand: 'warning',
     }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     // 1/2 redundant x (10_000 x 0.5 + 6_000 x 1) = 2_500 + 3_000.
     expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 5_500, unit: 'ms' });
     expect(findings[0].impactEstimate.wallClock.high).toBe(5_500);
@@ -393,8 +399,8 @@ describe('estimateImpact: duplicatePlanSubtree', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10_000, parentIds: [] }]]);
     const differing = [{ type: 'duplicatePlanSubtree', stageIds: [0], stageShares: { 0: 1 }, occurrencesIdentical: false, value: 2, impactBand: 'info' }];
     const unattributed = [{ type: 'duplicatePlanSubtree', stageIds: [0], stageShares: {}, occurrencesIdentical: true, value: 2, impactBand: 'info' }];
-    estimateImpact(differing, stages);
-    estimateImpact(unattributed, stages);
+    estimate(differing, stages);
+    estimate(unattributed, stages);
     expect(differing[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
     expect(unattributed[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
   });
@@ -404,7 +410,7 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
   it('shuffle: bytes / assumed throughput (parser fallback tier)', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], shuffleReadBytes: 1_250_000_000 }]]);
     const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const est = findings[0].impactEstimate;
     expect(est.estimateMethod).toBe('modeled');
     expect(est.basis).toBe('serial');
@@ -421,7 +427,7 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
         shuffleReadBytes: 5_000_000_000, executorRunTime: 800_000, fetchWaitTime,
       }]]);
       const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }];
-      estimateImpact(findings, stages);
+      estimate(findings, stages);
       return findings[0].impactEstimate;
     };
     expect(at(80_000).wallClock.high).toBeCloseTo(10_000, 6);
@@ -439,7 +445,7 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
       diskBytesSpilled: 200_000_000, memoryBytesSpilled: 900_000_000,
     }]]);
     const findings = [{ type: 'spill', stageId: 0, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const est = findings[0].impactEstimate;
     expect(est.estimateMethod).toBe('modeled');
     expect(est.wallClock.high).toBeGreaterThan(0);
@@ -454,7 +460,7 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
       shuffleReadBytes: 5_000_000_000, diskBytesSpilled: 8_000_000_000,
     }]]);
     const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }, { type: 'spill', stageId: 0, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     // 5 GB over 4 x 125 MB/s = 10s (one shared link would claim 40s); 8 GB over 4 x 200 MB/s = 10s.
     expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(10000, 6);
     expect(findings[1].impactEstimate.wallClock.high).toBeCloseTo(10000, 6);
@@ -472,7 +478,7 @@ describe('estimateImpact: stageSlowness', () => {
       id: 0, submittedAt: 0, completedAt: 22 * min, parentIds: [], taskCount: 2, taskActiveMs: 20 * min, taskDurationMax: 20 * min, shuffleReadBytes: 1e9,
     }]]);
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
-    estimateImpact(findings, stages, 16);
+    estimate(findings, stages, 16);
     const est = findings[0].impactEstimate;
     expect(est.estimateMethod).toBe('modeled');
     expect(est.wallClock.high).toBeCloseTo(17.5 * min, 6);
@@ -483,7 +489,7 @@ describe('estimateImpact: stageSlowness', () => {
       id: 0, submittedAt: 0, completedAt: 40 * min, parentIds: [], taskCount: 500, taskActiveMs: 40 * min, shuffleReadBytes: 1e9,
     }]]);
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
-    estimateImpact(findings, stages, 16);
+    estimate(findings, stages, 16);
     expect(findings[0].impactEstimate.wallClock.high).toBe(0);
   });
 
@@ -493,7 +499,7 @@ describe('estimateImpact: stageSlowness', () => {
       id: 0, submittedAt: 0, completedAt: 30 * min, parentIds: [], taskCount: 1, taskActiveMs: 2000, taskDurationMax: 2000, inputBytes: 1e6,
     }]]);
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
-    estimateImpact(findings, stages, 16);
+    estimate(findings, stages, 16);
     expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(2000 * (15 / 16), 6);
   });
 
@@ -505,7 +511,7 @@ describe('estimateImpact: stageSlowness', () => {
   }]]);
   const claimFor = (stages) => {
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
-    estimateImpact(findings, stages, 16);
+    estimate(findings, stages, 16);
     return findings[0].impactEstimate.wallClock.high;
   };
 
@@ -537,7 +543,7 @@ describe('estimateImpact: stageSlowness', () => {
   it('without a cluster core count there is no headroom figure: informational', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 20 * min, parentIds: [], taskCount: 2 }]]);
     const findings = [{ type: 'stageSlowness', stageId: 0, impactBand: 'info' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 });
@@ -546,14 +552,14 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
   it('maxPartitionTooBig rule: shuffleReadMax / throughput', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], shuffleReadMax: 500_000_000 }]]);
     const findings = [{ type: 'partitionSizing', rule: 'maxPartitionTooBig', stageId: 0, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate.wallClock.high).toBeGreaterThan(0);
   });
 
   it('shufflePartitionSkew rule: (max - p50) / throughput', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], shuffleReadMax: 500_000_000, shuffleReadP50: 100_000_000 }]]);
     const findings = [{ type: 'partitionSizing', rule: 'shufflePartitionSkew', stageId: 0, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const expectedMs = ((500_000_000 - 100_000_000) / 125_000_000) * 1000;
     expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(expectedMs, 0);
   });
@@ -564,14 +570,14 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
       shuffleReadBytes: 2_000_000_000, taskCount: 4,
     }]]);
     const findings = [{ type: 'partitionSizing', rule: 'lowShuffleParallelism', stageId: 0, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate.wallClock.high).toBeGreaterThanOrEqual(0);
   });
 
   it('tinyTask: excess task count beyond a coalesce-to-1/10th target, at the assumed overhead when unmeasured', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], taskCount: 1000 }]]);
     const findings = [{ type: 'tinyTask', stageId: 0, impactBand: 'info' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const est = findings[0].impactEstimate;
     expect(est.estimateMethod).toBe('modeled');
     expect(est.wallClock.high).toBe(900 * 50); // (1000 - round(1000/10)) excess tasks * 50ms
@@ -586,7 +592,7 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
       executorStats: [{ executorId: '1', totalDuration: 40000 }, { executorId: '2', totalDuration: 40000 }],
     }]]);
     const findings = [{ type: 'tinyTask', stageId: 0, impactBand: 'info' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const est = findings[0].impactEstimate;
     expect(est.estimateMethod).toBe('measured');
     expect(est.wallClock.high).toBeCloseTo(2250, 6);
@@ -600,7 +606,7 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
       executorStats: [{ executorId: '1', totalDuration: 8000 }],
     }]]);
     const findings = [{ type: 'tinyTask', stageId: 0, impactBand: 'info' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(1800, 6);
   });
 });
@@ -612,7 +618,7 @@ describe('estimateImpact: Plan Advisor trio', () => {
       [1, { id: 1, submittedAt: 5000, completedAt: 9000, parentIds: [0] }],
     ]);
     const findings = [{ type: 'smallFiles', stageIds: [0, 1], metric: 'avgFileSizeBytes', value: 1024, fileCount: 500, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     // 500 * 10ms = 5000ms total, 2500 per stage, both solo and non-overlapping.
     expect(findings[0].impactEstimate).toEqual({
       basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'modeled',
@@ -625,8 +631,8 @@ describe('estimateImpact: Plan Advisor trio', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100_000, parentIds: [], peakConcurrentTasks: 50 }]]);
     const read = [{ type: 'smallFiles', direction: 'read', stageIds: [0], metric: 'avgFileSizeBytes', value: 1024, fileCount: 5000, impactBand: 'warning' }];
     const write = [{ type: 'smallFiles', direction: 'write', stageIds: [0], metric: 'avgFileSizeBytes', value: 1024, fileCount: 5000, impactBand: 'warning' }];
-    estimateImpact(read, stages);
-    estimateImpact(write, stages);
+    estimate(read, stages);
+    estimate(write, stages);
     // 5000 files x 10ms = 50_000ms of opens; over 50 slots, 1_000ms.
     expect(read[0].impactEstimate.rawWaste).toEqual({ value: 1_000, unit: 'ms' });
     expect(write[0].impactEstimate.rawWaste).toEqual({ value: 50_000, unit: 'ms' });
@@ -634,7 +640,7 @@ describe('estimateImpact: Plan Advisor trio', () => {
 
   it('smallFiles: resourceOnly when not stage-mappable, still reports the magnitude as rawWaste', () => {
     const findings = [{ type: 'smallFiles', stageIds: [], metric: 'avgFileSizeBytes', value: 1024, fileCount: 500, impactBand: 'warning' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled',
       rawWaste: { value: 500 * 10, unit: 'ms' },
@@ -643,27 +649,27 @@ describe('estimateImpact: Plan Advisor trio', () => {
 
   it('overBroadcast/underBroadcast: resourceOnly when not stage-mappable, magnitude kept as rawWaste', () => {
     const over = [{ type: 'overBroadcast', metric: 'broadcastBytes', value: 250_000_000, impactBand: 'warning' }];
-    estimateImpact(over, new Map());
+    estimate(over, new Map());
     expect(over[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled',
       rawWaste: { value: 2000, unit: 'ms' },
     });
 
     const under = [{ type: 'underBroadcast', stageIds: [], metric: 'smallerSideBytes', value: 125_000_000, impactBand: 'warning' }];
-    estimateImpact(under, new Map());
+    estimate(under, new Map());
     expect(under[0].impactEstimate.rawWaste).toEqual({ value: 1000, unit: 'ms' });
   });
 
   it('a zero-magnitude, non-stage-mappable finding is informational, no rawWaste', () => {
     const findings = [{ type: 'smallFiles', stageIds: [], metric: 'avgFileSizeBytes', value: 1024, fileCount: 0, impactBand: 'info' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 
   it('overBroadcast: stage-mappable: the ceiling now caps the claim at the stage\'s own duration, fixing the historical overclaim bug', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [] }]]);
     const findings = [{ type: 'overBroadcast', stageIds: [0], metric: 'broadcastBytes', value: 700_000_000, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     // Raw claim: 700_000_000 / 125_000_000 * 1000 = 5600ms, more than the
     // stage's own 5000ms duration. Capped at duration - ceiling(0) = 5000.
     expect(findings[0].impactEstimate).toEqual({
@@ -678,7 +684,7 @@ describe('estimateImpact: Plan Advisor trio', () => {
       type: 'underBroadcast', stageIds: [0],
       metric: 'smallerSideBytes', value: 700_000_000, largerSideBytes: 900_000_000, impactBand: 'warning',
     }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     // Raw claim: 700_000_000 / 125_000_000 * 1000 = 5600ms, capped at the stage's own 5000ms.
     expect(findings[0].impactEstimate).toEqual({
       basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'modeled',
@@ -692,7 +698,7 @@ describe('estimateImpact: Plan Advisor trio', () => {
       [1, { id: 1, submittedAt: 100_000, completedAt: 200_000, parentIds: [0] }],
     ]);
     const findings = [{ type: 'smallFiles', stageIds: [0, 1], metric: 'avgFileSizeBytes', value: 1024, fileCount: 4000, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     // 4000 * 10ms = 40_000ms total, both stages solo and non-overlapping.
     expect(findings[0].impactEstimate.wallClock).toEqual({ low: 40_000, high: 40_000 });
   });
@@ -701,7 +707,7 @@ describe('estimateImpact: Plan Advisor trio', () => {
 describe('estimateImpact: cost-only group A', () => {
   it('memoryUtilization wasteModel variant: resourceOnly, passes through the existing wastedMBSeconds as rawWaste', () => {
     const findings = [{ type: 'memoryUtilization', variant: 'wasteModel', metric: 'wastedMBSeconds', value: 12345, impactBand: 'warning' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
       rawWaste: { value: 12345, unit: 'mbSeconds' },
@@ -710,7 +716,7 @@ describe('estimateImpact: cost-only group A', () => {
 
   it('memoryUtilization: an unrecognized variant is informational, no rawWaste', () => {
     const findings = [{ type: 'memoryUtilization', variant: 'bandTooSmall', impactBand: 'info' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 
@@ -719,7 +725,7 @@ describe('estimateImpact: cost-only group A', () => {
       type: 'memoryUtilization', variant: 'idleCores', metric: 'idleCoreRate', value: 75, impactBand: 'warning',
       idleRateFraction: 0.75, allocatedMB: 4096, peakExecutors: 4, appDurationMs: 600_000,
     }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled',
       rawWaste: { value: 7_372_800, unit: 'mbSeconds' },
@@ -731,7 +737,7 @@ describe('estimateImpact: cost-only group A', () => {
       type: 'memoryUtilization', variant: 'idleCores', metric: 'idleCoreRate', value: 75, impactBand: 'warning',
       idleRateFraction: 0.75, allocatedMB: null, peakExecutors: 4, appDurationMs: 600_000,
     }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 
@@ -741,7 +747,7 @@ describe('estimateImpact: cost-only group A', () => {
       executorId: '3', metric: 'heapUsedRatio', value: 25, impactBand: 'info',
       allocatedBytes: 1000 * 1024 * 1024, heap: 250 * 1024 * 1024, appDurationMs: 120_000,
     }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled',
       rawWaste: { value: 90_000, unit: 'mbSeconds' },
@@ -753,7 +759,7 @@ describe('estimateImpact: cost-only group A', () => {
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity',
       executorId: '3', metric: 'heapUsedRatio', value: 98, impactBand: 'warning',
     }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 
@@ -762,7 +768,7 @@ describe('estimateImpact: cost-only group A', () => {
       type: 'memoryUtilization', variant: 'memoryBand', metric: 'memoryBand',
       dataUnavailable: true, impactBand: 'info',
     }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 
@@ -771,7 +777,7 @@ describe('estimateImpact: cost-only group A', () => {
       type: 'utilization', utilizationFraction: 0.4, impactBand: 'warning',
       appDurationMs: 3_600_000, totalCores: 10,
     }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
       rawWaste: { value: 6, unit: 'coreHours' },
@@ -780,13 +786,13 @@ describe('estimateImpact: cost-only group A', () => {
 
   it('utilization: missing appDurationMs/totalCores falls back to informational', () => {
     const findings = [{ type: 'utilization', utilizationFraction: 0.4, impactBand: 'warning' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'measured' });
   });
 
   it('coreLocality: resourceOnly, modeled network-fetch penalty as extra core-time, not wall-clock', () => {
     const findings = [{ type: 'coreLocality', nonLocalTaskCount: 40, impactBand: 'info' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     const est = findings[0].impactEstimate;
     expect(est.basis).toBe('resourceOnly');
     expect(est.wallClock).toBeNull();
@@ -797,7 +803,7 @@ describe('estimateImpact: cost-only group A', () => {
 
   it('autoscalingChurn: resourceOnly, modeled executor-hours waste, converted to core-hours', () => {
     const findings = [{ type: 'autoscalingChurn', shortLivedExecutorCount: 8, impactBand: 'warning' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate.basis).toBe('resourceOnly');
     expect(findings[0].impactEstimate.rawWaste.unit).toBe('coreHours');
     expect(findings[0].impactEstimate.rawWaste.value).toBeGreaterThan(0);
@@ -805,7 +811,7 @@ describe('estimateImpact: cost-only group A', () => {
 
   it('configAudit: informational, no rawWaste', () => {
     const findings = [{ type: 'configAudit', rule: 'shuffle-service', impactBand: 'info' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
   });
 });
@@ -813,20 +819,20 @@ describe('estimateImpact: cost-only group A', () => {
 describe('estimateImpact: cost-only group B', () => {
   it('jobFailureRate: resourceOnly, failedJobs * avgJobDurationMs', () => {
     const findings = [{ type: 'jobFailureRate', failedJobs: 3, avgJobDurationMs: 5000, impactBand: 'warning' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate.basis).toBe('resourceOnly');
     expect(findings[0].impactEstimate.rawWaste.value).toBeGreaterThan(0);
   });
 
   it('jobFailureRate: a null-derived avgJobDurationMs of 0 stays resourceOnly (rawWaste always attached) but with value 0', () => {
     const findings = [{ type: 'jobFailureRate', failedJobs: 3, avgJobDurationMs: 0, impactBand: 'warning' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate.rawWaste.value).toBe(0);
   });
 
   it('cachingOpportunity: unconditionally resourceOnly, no stage-mappable branch', () => {
     const findings = [{ type: 'cachingOpportunity', totalReadBytes: 1_000_000_000, impactBand: 'info' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled',
       rawWaste: { value: expect.any(Number), unit: 'ms' },
@@ -835,21 +841,21 @@ describe('estimateImpact: cost-only group B', () => {
 
   it('cacheUtilization: resourceOnly, uncached-or-spilled bytes / re-read throughput', () => {
     const findings = [{ type: 'cacheUtilization', memorySize: 100, diskSize: 900, numCachedPartitions: 8, numPartitions: 10, impactBand: 'warning' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate.basis).toBe('resourceOnly');
     expect(findings[0].impactEstimate.rawWaste.unit).toBe('ms');
   });
 
   it('cacheUtilization storageUnobserved: missing evidence, informational', () => {
     const findings = [{ type: 'cacheUtilization', variant: 'storageUnobserved', dataUnavailable: true, value: 2, impactBand: 'info' }];
-    estimateImpact(findings, new Map());
+    estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
   });
 
   for (const type of ['stageFailed', 'failures', 'incompleteRun']) {
     it(`${type}: informational, no rawWaste`, () => {
       const findings = [{ type, impactBand: 'critical' }];
-      estimateImpact(findings, new Map());
+      estimate(findings, new Map());
       expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
     });
   }
@@ -857,7 +863,7 @@ describe('estimateImpact: cost-only group B', () => {
   it('stageShape lowParallelism rule: resourceOnly, idle core-time, real data', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], taskCount: 2 }]]);
     const findings = [{ type: 'stageShape', rule: 'lowParallelism', stageId: 0, totalCores: 10, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const est = findings[0].impactEstimate;
     expect(est.basis).toBe('resourceOnly');
     expect(est.estimateMethod).toBe('measured');
@@ -868,7 +874,7 @@ describe('estimateImpact: cost-only group B', () => {
   it('stageShape dataExplosion rule: resourceOnly, excess output bytes, no ms figure', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 10000, parentIds: [], inputBytes: 1000, outputBytes: 9000 }]]);
     const findings = [{ type: 'stageShape', rule: 'dataExplosion', stageId: 0, impactBand: 'warning' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
       rawWaste: { value: 8000, unit: 'bytes' },
@@ -881,7 +887,7 @@ describe('estimateImpact: cost-only group B', () => {
       taskCount: 5, taskDurationP50: 500, taskDurationMax: 8000,
     }]]);
     const findings = [{ type: 'stageShape', rule: 'taskStageSkew', stageId: 0, totalCores: 10, impactBand: 'info' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     const est = findings[0].impactEstimate;
     // idleCoreMs = max(0, min(totalCores, taskCount) - 1) * (taskDurationMax - taskDurationP50)
     //            = (min(10, 5) - 1) * (8000 - 500) = 4 * 7500 = 30000.
@@ -897,42 +903,42 @@ describe('estimateImpact: cost-only group B', () => {
       taskCount: 5, taskDurationP50: 500, taskDurationMax: 8000,
     }]]);
     const findings = [{ type: 'stageShape', rule: 'taskStageSkew', stageId: 0, totalCores: 1, impactBand: 'info' }];
-    estimateImpact(findings, stages);
+    estimate(findings, stages);
     expect(findings[0].impactEstimate.rawWaste.value).toBe(0);
   });
 
   it('slowHost multiDim byte-based dimensions: informational', () => {
     const findings = [{ type: 'slowHost', variant: 'multiDim', dimension: 'inputBytes', stageId: 0, impactBand: 'info' }];
-    estimateImpact(findings, new Map([[0, { id: 0, submittedAt: 0, completedAt: 1000, parentIds: [] }]]));
+    estimate(findings, new Map([[0, { id: 0, submittedAt: 0, completedAt: 1000, parentIds: [] }]]));
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
   });
 });
 
 describe('estimateImpact: totalCores wiring', () => {
-  it('a non-zero 3rd argument reaches computeCeiling\'s totalCores>0 branch and tightens the clip', () => {
+  it('a non-zero context totalCores reaches computeCeiling\'s totalCores>0 branch and tightens the clip', () => {
     // Solo stage (gate 1, basis stays 'serial'): duration 10_000ms, no
     // taskDurationMax, large executorRunTime (40_000 core-ms). computeCeiling
     // (src/occupancy.ts): totalCores<=0 -> taskDurationMax (0 here); totalCores>0
     // -> max(taskDurationMax, executorRunTime/totalCores). A 20_000ms raw claim
     // exceeds either ceiling, so the clipped wallClock depends only on the ceiling:
-    // a different totalCores changes the result iff the 3rd arg reaches computeCeiling.
+    // a different totalCores changes the result iff the context's totalCores reaches computeCeiling.
     const stage = { id: 0, submittedAt: 0, completedAt: 10_000, parentIds: [], executorRunTime: 40_000, retryWasteMs: 20_000 };
     const stages = new Map([[0, stage]]);
     const finding = () => [{ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 20_000, impactBand: 'warning' }];
 
-    // 2-arg form (totalCores implicitly 0): ceiling 0, room = 10_000; the 20_000ms
+    // totalCores 0: ceiling 0, room = 10_000; the 20_000ms
     // claim clips to the stage's full 10_000ms duration.
     const unwired = finding();
-    estimateImpact(unwired, stages);
+    estimate(unwired, stages);
     expect(unwired[0].impactEstimate).toEqual({
       basis: 'serial', wallClock: { low: 10_000, high: 10_000 }, estimateMethod: 'measured',
       rawWaste: { value: 20_000, unit: 'ms' },
     });
 
-    // 3-arg form, totalCores 8: ceiling = max(0, 40_000/8) = 5_000, room = 5_000:
-    // a tighter cap, proving the arg reaches computeCeiling's totalCores>0 branch.
+    // totalCores 8: ceiling = max(0, 40_000/8) = 5_000, room = 5_000:
+    // a tighter cap, proving it reaches computeCeiling's totalCores>0 branch.
     const wired = finding();
-    estimateImpact(wired, stages, 8);
+    estimate(wired, stages, 8);
     expect(wired[0].impactEstimate).toEqual({
       basis: 'serial', wallClock: { low: 5_000, high: 5_000 }, estimateMethod: 'measured',
       rawWaste: { value: 20_000, unit: 'ms' },

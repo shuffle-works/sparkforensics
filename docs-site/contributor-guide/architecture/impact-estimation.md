@@ -2,7 +2,12 @@
 
 Every finding covered by this section carries an optional `impactEstimate: {basis,
 wallClock, estimateMethod, rawWaste?}` (`src/types.ts`), attached by
-`src/impact-estimator.ts` as a post-pass after `DETECTORS` finishes (`src/analyzer.ts`).
+its `DETECTORS` entry's `estimate()` (`packages/core/src/detectors.ts`), which
+`estimateImpact()` (`packages/core/src/impact-estimator.ts`) runs as a post-pass once detection
+and suppression finish (`packages/core/src/analyzer.ts`). The waste models those methods compose
+(assumed throughputs, per-stage measurements, the occupancy clip wrappers) live in
+`packages/core/src/impact-model.ts`, and `analyze()` builds the one `EstimateCtx`
+(`stages`, `occupancy`, `totalCores`) every `estimate()` and every detector's runtime floor reads.
 `estimateMethod` ('measured' | 'modeled' | 'none') is a distinct axis from the per-finding
 `confidence` field ([Confidence metadata](./board-widgets.md#confidence-metadata)):
 `confidence` says how much to trust the finding itself,
@@ -74,8 +79,8 @@ that sits above its own unbeatable floor. This is what fixes historical overclai
 claiming 1939.9s on a 991.3s/1688.3s stage capped to 610.3s/250.1s).
 
 `skew` and `straggler` are the exception (`estimateSingleStage`'s `shortensLongestTask`
-option, passed by both their `impact-estimator.ts` cases and `detectors.ts`'s
-`clippedWasteMs` runtime-floor gate, so firing and display agree; `stageSlowness`'s
+option, passed by `detectors.ts`'s `tailClaimImpact`, which both their `estimate()` and their
+`detect()` runtime-floor gate call on the same tail claim, so firing and display agree; `stageSlowness`'s
 more-partitions estimate passes it too, since splitting partitions splits the longest task). Their claim shortens the
 stage's longest task itself, so `taskDurationMax` can't be their floor: clipping against it
 capped a stage gated by one straggler at `duration(S) − taskDurationMax`, about zero, exactly
@@ -306,10 +311,9 @@ fixed floors on a tuned run.
 
 ## Per-finding-type coverage
 
-One row per distinct `type` string `src/detectors.ts` actually emits (cross-checked
-against `computeEstimateForFinding`'s `case` labels in `src/impact-estimator.ts`, not
-assumed from the prose here): every row below has a case, so the table itself is the
-coverage count, not a number restated here. `broadcastSizing` is a `DETECTORS` entry
+One row per distinct `type` string `packages/core/src/detectors.ts` actually emits: every
+entry must declare an `estimate()` (the compiler rejects one without it), so every row below
+has one, and the table itself is the coverage count, not a number restated here. `broadcastSizing` is a `DETECTORS` entry
 label only, and the plan-walk it drives emits `overBroadcast`/`underBroadcast` findings
 instead, so those two are the rows that appear, not `broadcastSizing` itself. Tag
 meanings: `measured` and `modeled` both produce a real, gate-clipped, non-`{0,0}`

@@ -3,8 +3,8 @@
 `packages/core/src/detectors.ts` is the single source of Spark-optimization logic: one
 declarative `DETECTORS` entry per pattern, each carrying `type`, `scope`
 (`stage` / `app` / `config` / `sql`), `order`, `fixEffort`, a `thresholds`
-object, impactBand/copy, a `docAnchor`, an `emits` list, and a co-located
-`detect()` function.
+object, impactBand/copy, a `docAnchor`, an `emits` list, and co-located
+`detect()` and `estimate()` functions.
 
 Each entry is built by the helper for its scope: `defineStageDetector`,
 `defineSqlDetector`, `defineAppDetector` or `defineConfigDetector`. The
@@ -28,6 +28,19 @@ with the thresholds bound: the entry's own, or the caller's overrides merged
 over them (see [Tuning thresholds](#tuning-thresholds)). Runners such as
 `analyze()` call only that.
 
+`estimate(finding, ctx)` prices one of the entry's own findings: `finding` is
+typed as the `Finding` member of a type the entry `emits`, and `ctx`
+(`EstimateCtx`: `stages`, `occupancy`, `totalCores`) is the one occupancy
+sweep `analyze()` builds per run. It returns an `ImpactEstimate` or null
+(see [Impact estimation](./impact-estimation.md)). Every entry must declare
+one; an entry with no waste model passes `noWasteModel`. `estimateImpact()`
+runs it after suppression, keyed by emitted type. The same `EstimateCtx`
+reaches `detect()` as `ctx.impact`, so a runtime floor can gate on the
+estimate the finding will display: `skew` and `straggler` build their tail
+claim once (`skewTailClaim`/`stragglerTailClaim`) and both their floor and
+their `estimate()` read it through `tailClaimImpact`. Shared model constants
+and helpers live in `packages/core/src/impact-model.ts`.
+
 `DETECTORS` is declared `as const satisfies readonly Detector[]`, so each
 entry keeps its literal `type` and `emits`. Two unions derive from it:
 `DetectorType` (every entry's own `type`) and `FindingType` (every type an
@@ -38,8 +51,8 @@ per-type lookup keys on the emitted `FindingType`, never on `DetectorType`:
 code that needs the emitted types of an entry reads its `emits` list.
 Code that iterates entries generically, such as `analyze()`, reads them
 through the `Detector` type, a union over scopes with the thresholds type
-erased and `detect` left off, so switching on `scope` narrows the bound
-function `withThresholds()` returns.
+erased, `detect` left off and `estimate` taking any `Finding`, so switching
+on `scope` narrows the bound function `withThresholds()` returns.
 
 How a finding type is presented is registered once, in
 `FINDING_PRESENTATION` (`packages/core/src/finding-presentation.ts`), typed
@@ -66,8 +79,8 @@ publishes (listed again in `EVIDENCE_KEYS` in `evidence-report.ts`, checked
 both ways), and fields declared only on `<Type>Finding`, which other core
 modules read but the report never publishes. `value` is always a magnitude;
 a text-valued finding (`stageFailed`, `configAudit`, `incompleteRun`) sets
-`valueText` instead. So a new detector type needs an `emits` entry, a
-`finding-types.ts` member, an `EVIDENCE_KEYS` entry, an `ID_DISCRIMINATORS`
+`valueText` instead. So a new detector type needs an `emits` entry, an
+`estimate()` on that entry that covers it, a `finding-types.ts` member, an `EVIDENCE_KEYS` entry, an `ID_DISCRIMINATORS`
 entry in `analyzer.ts`, a `FINDING_PRESENTATION` row and a view `REGISTRY`
 entry. The compiler
 reports each one that is missing. The view narrows with
@@ -326,9 +339,10 @@ whose `impactEstimate` carries a `wallClock` estimate (the common case for
 most rules below), `analyzer.ts` calls `deriveImpactBand()`
 (`packages/core/src/impact-band.ts`) immediately after `estimateImpact()`, which sets
 `.impactBand` purely from `wallClock.high` as a fraction of the app's total
-duration (`>= 2%` critical, `>= 0.5%` warning, else info: the same
-`floorPctWarn`/`floorPctCrit` values `skew`/`straggler` use for their own
-thresholds below). For those rules, the table below documents their firing
+duration (`>= 2%` critical, `>= 0.5%` warning, else info: `IMPACT_FLOOR_PCT_CRIT`/
+`IMPACT_FLOOR_PCT_WARN`, which `skew`'s `floorPctWarn` and `straggler`'s
+`floorPctWarn`/`floorPctCrit` default to, so a tail those gates admit grades
+at least warning; a tuned run moves the detector's gate, never the band). For those rules, the table below documents their firing
 gate plus their fixed fallback constant, which surfaces only when this run's
 finding of that type didn't get a wallClock estimate (a stage excluded from
 the occupancy sweep). For rules whose finding type never gets
