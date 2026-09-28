@@ -498,6 +498,17 @@ describe('getFindingDocumentation', () => {
     expect(doc.tuningDoc).toBeNull();
   });
 
+  it('resolves a detector-level type to the documentation of the types it emits', () => {
+    const doc = getFindingDocumentation('broadcastSizing');
+    expect(doc.type).toBe('broadcastSizing');
+    expect(doc.name).toBe('Oversized Broadcast Join / Missed Broadcast Join');
+    expect(doc.detectionDoc).toEqual(getFindingDocumentation('underBroadcast').detectionDoc);
+    expect(doc.detectionDoc.tag).toBe('PLAN');
+    expect(doc.tuningDoc).not.toBeNull();
+    expect(doc.tuningDoc.anchor).toBe('#bottleneck-broadcast-sizing');
+    expect(doc.tuningDoc).toEqual(getFindingDocumentation('overBroadcast').tuningDoc);
+  });
+
   it('throws invalid-type for an unknown finding type', () => {
     expect(() => getFindingDocumentation('zetaSignal')).toThrow();
     try {

@@ -15,6 +15,7 @@ import { comparisonVerdict, type ComparisonVerdictText } from './comparison-verd
 import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { docAnchorForType } from './detector-docs.ts';
+import { DETECTORS } from './detectors.ts';
 import { tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
 import { typeTag } from './format-utils.ts';
 import type { AppModel, Finding, SparkAppInfo } from './types.ts';
@@ -224,17 +225,26 @@ export interface FindingDocumentation {
   tuningDoc: { anchor: string; title: string; content: string } | null;
 }
 
-/** Detection + tuning reference documentation for one finding `type`, independent of any run
- * (documentation is a property of the type: a client fetches it once per type and caches it). */
-export function getFindingDocumentation(type: string): FindingDocumentation {
-  const label = FINDING_NAMES[type];
-  if (label === undefined) throw mcpError('invalid-type', `Unknown finding type: ${type}`);
+// A finding type documents itself; a detector-level type that never appears on a finding
+// (broadcastSizing) documents the types its entry emits.
+function documentedTypes(type: string): readonly string[] {
+  if (FINDING_NAMES[type] !== undefined) return [type];
+  return DETECTORS.find((entry) => entry.type === type)?.emits ?? [];
+}
 
-  const tag = typeTag(type);
+/** Detection + tuning reference documentation for one finding `type`, independent of any run
+ * (documentation is a property of the type: a client fetches it once per type and caches it).
+ * A detector-level `type` resolves to the documentation of the finding types its entry emits. */
+export function getFindingDocumentation(type: string): FindingDocumentation {
+  const types = documentedTypes(type);
+  const [docType] = types;
+  if (docType === undefined) throw mcpError('invalid-type', `Unknown finding type: ${type}`);
+
+  const tag = typeTag(docType);
   const detectionContent = readFileSync(join(DOCS_CONTENT_DIR, 'detection', `${tag.toLowerCase()}.md`), 'utf8');
   const detectionDoc = { tag, title: extractDocTitle(detectionContent), content: detectionContent };
 
-  const anchor = docAnchorForType(type);
+  const anchor = docAnchorForType(docType);
   const slug = anchor ? tuningDocSlugForAnchor(anchor) : null;
   const tuningPath = slug ? join(DOCS_CONTENT_DIR, 'tuning', `${slug}.md`) : null;
   let tuningDoc: FindingDocumentation['tuningDoc'] = null;
@@ -248,7 +258,8 @@ export function getFindingDocumentation(type: string): FindingDocumentation {
     if (entry) tuningDoc = { anchor, title: entry.title, content: readNavEntryContent(entry) };
   }
 
-  return { type, name: titleCase(label), detectionDoc, tuningDoc };
+  const name = types.map((t) => titleCase(FINDING_NAMES[t] ?? t)).join(' / ');
+  return { type, name, detectionDoc, tuningDoc };
 }
 
 const CHAPTERS_NAV_FILE = join(DOCS_CONTENT_DIR, 'chapters', 'nav-index.json');
