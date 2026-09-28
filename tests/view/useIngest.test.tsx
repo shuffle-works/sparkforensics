@@ -126,7 +126,9 @@ test('runDone derives availability before analysis and snapshots it', () => {
   expect(store.getState().appModel.evidenceAvailability?.entries.find((entry) => entry.key === 'taskCoreTime')).toMatchObject({
     state: 'notEmitted', reasonCode: 'noUsableCoreTimeAggregate',
   });
-  expect(store.getState().catalog.every((finding) => finding.type !== 'evidenceAvailability')).toBe(true);
+  // 'evidenceAvailability' is a legacy finding type no current detector emits; this
+  // guards against a regression that would resurrect it, so the type field is checked as a string.
+  expect(store.getState().catalog.every((finding) => (finding.type as string) !== 'evidenceAvailability')).toBe(true);
   const snapshot = captureSnapshot(store.getState().appModel, [], new Map());
   const restored = emptyAppModel();
   applySnapshot(restored, new Map(), snapshot);

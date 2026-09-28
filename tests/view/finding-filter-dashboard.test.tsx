@@ -263,7 +263,7 @@ test('a verdict step for a Full app report widget leaves the board filter alone'
     status: 'ready', appModel: readyAppModel() as any,
     catalog: [
       { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
-      { type: 'coreLocality', stageId: null, impactBand: 'critical', value: 40, recommendation: 'Check locality.' },
+      { type: 'coreLocality', stageId: null, impactBand: 'critical', value: 40, recommendation: 'Check locality.', nonLocalTaskCount: 0 },
     ],
   });
   render(<App />);
@@ -312,7 +312,7 @@ test('the top bar count chip reveals a band whose only finding is core locality'
     status: 'ready', appModel: readyAppModel() as any,
     catalog: [
       { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
-      { type: 'coreLocality', stageId: null, impactBand: 'critical', value: 40, recommendation: 'Check locality.' },
+      { type: 'coreLocality', stageId: null, impactBand: 'critical', value: 40, recommendation: 'Check locality.', nonLocalTaskCount: 0 },
     ],
   });
   render(<App />);

@@ -6,17 +6,18 @@ import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { RunVerdict } from '@/view/widgets/RunVerdict';
-import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingType, ImpactBand } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
-function timed(type: string, stageId: number, highMs: number, impactBand: ImpactBand = 'critical'): Finding {
+function timed<T extends FindingType>(type: T, stageId: number, highMs: number, impactBand: ImpactBand = 'critical'): Finding {
   return {
     type,
     impactBand,
     stageId,
     recommendation: `Fix ${type} in Stage ${stageId}.`,
     impactEstimate: { basis: 'serial', wallClock: { low: highMs, high: highMs }, estimateMethod: 'modeled' },
-  };
+  } as unknown as Finding;
 }
 
 function appModel(): AppModel {
@@ -149,7 +150,7 @@ describe('RunVerdict', () => {
   });
 
   it('never calls an incomplete run clean, and says what the figures cover', () => {
-    const incompleteRun: Finding = { type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'No ApplicationEnd.' };
+    const incompleteRun: Finding = testFinding({ type: 'incompleteRun', stageId: null, impactBand: 'warning', valueText: 'missing', recommendation: 'No ApplicationEnd.' });
     const model = { ...appModel(), app: { startTime: 0 } } as AppModel;
     renderVerdict([incompleteRun], vi.fn(), model);
 
@@ -163,7 +164,7 @@ describe('RunVerdict', () => {
   });
 
   it('flags an incomplete run alongside its next steps', () => {
-    const incompleteRun: Finding = { type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'No ApplicationEnd.' };
+    const incompleteRun: Finding = testFinding({ type: 'incompleteRun', stageId: null, impactBand: 'warning', valueText: 'missing', recommendation: 'No ApplicationEnd.' });
     renderVerdict([timed('skew', 7, 2_400), incompleteRun]);
     expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
     expect(screen.getByTestId('run-verdict')).toHaveTextContent('cover only the part of the run it captured');
@@ -221,8 +222,9 @@ describe('RunVerdict on a failed run', () => {
     id, stageIds, result: 'JobFailed', succeeded: false, exception,
   });
   const okJob = (id: number): JobRow => ({ id, stageIds: [], result: 'JobSucceeded', succeeded: true, exception: null });
-  const stageFailed = (stageId: number, reason: string): Finding => ({
-    type: 'stageFailed', stageId, impactBand: 'critical', metric: 'stageFailureReason', value: reason,
+  const stageFailed = (stageId: number, reason: string): Finding => testFinding({
+    type: 'stageFailed', stageId, impactBand: 'critical', metric: 'stageFailureReason', valueText: reason,
+    variant: 'stageFailure', numTasks: 1, memoryBytesSpilled: 0, failedTaskDetails: [],
     recommendation: 'This stage attempt failed outright.',
   });
 
@@ -286,9 +288,10 @@ describe('RunVerdict on a failed run', () => {
   });
 
   it('points the job-failure step at the quoted reason only when exactly one job failed', () => {
-    const jobFailures: Finding = {
+    const jobFailures: Finding = testFinding({
       type: 'jobFailureRate', stageId: null, impactBand: 'critical', recommendation: 'Inspect the driver log for the failure reason.',
-    };
+      failedJobs: 1, totalJobs: 2, failedTasks: 0, totalTasks: 0, avgJobDurationMs: 0, taskFailureRate: 0,
+    });
     const { unmount } = render(
       <StageDetailProvider>
         <RunVerdict
@@ -305,9 +308,10 @@ describe('RunVerdict on a failed run', () => {
   });
 
   it('keeps the detector\'s advice on a failure step when no reason is recorded', () => {
-    const failure: Finding = {
+    const failure: Finding = testFinding({
       type: 'stageFailed', stageId: 13, impactBand: 'critical', recommendation: 'Inspect the driver log for the failure reason.',
-    };
+      valueText: '', variant: 'stageFailure', numTasks: 1, memoryBytesSpilled: 0, failedTaskDetails: [],
+    });
     renderVerdict([failure], vi.fn(), withJobs([failedJob(1, [13])]));
 
     expect(screen.queryByTestId('run-failure-reason')).not.toBeInTheDocument();
@@ -362,10 +366,10 @@ describe('savingsMeaning', () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-    renderVerdict([{
-      type: 'memoryUtilization', stageId: null, impactBand: 'warning', recommendation: 'Right-size executor memory.',
+    renderVerdict([testFinding({
+      type: 'memoryUtilization', variant: 'wasteModel', stageId: null, impactBand: 'warning', recommendation: 'Right-size executor memory.',
       impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 10_956_685.3, unit: 'mbSeconds' } },
-    }]);
+    })]);
 
     const step = screen.getByTestId('next-step');
     expect(step).toHaveTextContent('Potential savings 3.0 GB-h of unused executor memory');

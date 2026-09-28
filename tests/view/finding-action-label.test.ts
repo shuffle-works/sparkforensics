@@ -1,10 +1,11 @@
 import { expect, test } from 'vitest';
 
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding, FindingOf, FindingType } from '@sparkforensics/core/types.ts';
 import { findingActionLabel } from '../../src/view/finding-action-label';
+import { unknownTypeFinding } from './_shared/finding';
 
-function finding(overrides: Partial<Finding> & Pick<Finding, 'type'>): Finding {
-  return { impactBand: 'warning', ...overrides };
+function finding<T extends FindingType>(overrides: { type: T } & Partial<FindingOf<T>>): Finding {
+  return { impactBand: 'warning', ...overrides } as FindingOf<T>;
 }
 
 test('returns a plain per-type label for a detector with no sub-variants', () => {
@@ -48,5 +49,5 @@ test('falls back to the REGISTRY per-type label for a type with no explicit bran
 });
 
 test('falls back to the raw type string when the type has no REGISTRY entry either', () => {
-  expect(findingActionLabel(finding({ type: 'notARealDetector' }))).toBe('notARealDetector');
+  expect(findingActionLabel(unknownTypeFinding({ type: 'notARealDetector', impactBand: 'warning' }))).toBe('notARealDetector');
 });

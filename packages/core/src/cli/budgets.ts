@@ -26,13 +26,10 @@ function taskDataTrusted(appModel: AppModel): boolean {
   return entry?.state === 'present';
 }
 
-// Finding.value is number|string (some detectors put text there); spill findings are
-// always numeric, so the typeof guard narrows without changing behavior for real input.
 function maxFindingValue(catalog: Finding[], type: string): number | null {
   const values = catalog
     .filter((f) => f.type === type)
-    .map((f) => f.value ?? 0)
-    .filter((v): v is number => typeof v === 'number');
+    .map((f) => f.value ?? 0);
   return values.length > 0 ? Math.max(...values) : null;
 }
 

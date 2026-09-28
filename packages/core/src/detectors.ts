@@ -9,6 +9,7 @@ import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort } from './types.ts';
+import type { SlowHostFinding, TaskAttemptSample } from './finding-types.ts';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -28,16 +29,7 @@ interface DetectorExecutorStat {
 }
 interface DetectorFailureReason { reason: string; count: number; }
 interface DetectorLocalityStat { locality: string; count: number; }
-interface DetectorFailedTaskSample {
-  taskId: number | null;
-  attemptNumber: number;
-  host: string;
-  executorId: string;
-  reason: string | null;
-  peakExecMem: number;
-  memSpilled: number;
-  shuffleWrite: number;
-}
+type DetectorFailedTaskSample = TaskAttemptSample;
 // Per-executor snapshot from a StageExecutorMetrics event: a loose bag of Spark's
 // ExecutorMetrics field names, only a few of which any detector reads.
 interface DetectorExecutorMetricsSnapshot {
@@ -543,17 +535,17 @@ function maxMedianRatio(
 }
 
 export interface DetectorCatalogEntry {
-  type: string;
+  type: DetectorType;
   version: number;
   scope: 'stage' | 'sql' | 'app' | 'config';
-  thresholds?: Record<string, number | number[]>;
+  thresholds?: Readonly<Record<string, number | readonly number[]>>;
   docAnchor?: string;
 }
 
 // Machine-readable detector metadata for the evidence report (no `detect` closure), so a
 // portable report records which detector + thresholds produced each finding.
 export function detectorCatalog(): DetectorCatalogEntry[] {
-  return DETECTORS.map((d) => ({
+  return DETECTORS.map((d: Detector & { type: DetectorType }) => ({
     type: d.type,
     version: d.version ?? 1,
     scope: d.scope,
@@ -689,13 +681,17 @@ function storageUnobservedFinding(persistedRddCount: number): Finding {
 // bivariantly, so a narrower annotation here doesn't conflict with the `unknown` declaration.
 export interface Detector<TTarget = unknown> {
   type: string;
+  // Every finding `type` this entry pushes. Usually just its own `type`; broadcastSizing's one
+  // plan walk emits underBroadcast/overBroadcast and never its own name. FindingType derives from it.
+  emits: readonly Finding['type'][];
   scope: 'stage' | 'sql' | 'app' | 'config';
   order: number;
   fixEffort: FixEffort;
   version: number;
   docAnchor?: string;
   // number[] too: slowHost's ratioTiers and broadcastSizing's tiers are genuine tier tables.
-  thresholds?: Record<string, number | number[]>;
+  // Readonly: DETECTORS is declared `as const`.
+  thresholds?: Readonly<Record<string, number | readonly number[]>>;
   recommendation?: string;
   confidence?: string;
   validationRequired?: string;
@@ -813,9 +809,10 @@ function cachingReuseConfidence(occurrences: number, minExecutions: number): 'lo
   return 'medium';
 }
 
-export const DETECTORS: Detector[] = [
+export const DETECTORS = [
   {
     type: 'skew', scope: 'stage', order: 30, fixEffort: 'code', version: 1,
+    emits: ['skew'],
     docAnchor: '#bottleneck-skew',
     thresholds: { ratioWarn: 3, minTasksForP95: 20, floorPctWarn: 0.005 },
     detect(
@@ -849,6 +846,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'stageShape', scope: 'stage', order: 35, fixEffort: 'code', version: 1,
+    emits: ['stageShape'],
     docAnchor: '#bottleneck-stage-shape',
     // lowParallelismFloorPct: the same 0.5% runtime floor the tiered detectors use. Parallelizing a
     // stage can't save more than the stage's own duration, so a shorter stage can't clear it; on
@@ -909,6 +907,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'shuffle', scope: 'stage', order: 20, fixEffort: 'config', version: 1,
+    emits: ['shuffle'],
     docAnchor: '#bottleneck-shuffle',
     // stageFloorPct: the 0.5% runtime floor. The shuffle claim is clipped to the stage, so on a
     // shorter stage it graded info: 182 of 284 shuffle findings on the 14 real logs. The shuffle
@@ -932,6 +931,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'partitionSizing', scope: 'stage', order: 22, fixEffort: 'config', version: 1,
+    emits: ['partitionSizing'],
     docAnchor: '#bottleneck-partition-sizing',
     thresholds: { skewRatio: 5, skewFloorBytes: 256 * MB, lowParTotalBytes: GB, lowParMaxTasks: 7, maxPartBytes: 5 * GB },
     detect(
@@ -980,6 +980,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'spill', scope: 'stage', order: 10, fixEffort: 'code', version: 1,
+    emits: ['spill'],
     docAnchor: '#bottleneck-spill',
     // stageFloorPct: the 0.5% runtime floor, as for shuffle (12 of 38 spill findings on the 14 real
     // logs, all info). The spill is still there on those stages; the floor is why they're dropped.
@@ -1007,6 +1008,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'gc', scope: 'stage', order: 50, fixEffort: 'config', version: 1,
+    emits: ['gc'],
     docAnchor: '#bottleneck-gc',
     validationRequired: 'This finding is gated by a 10-second minimum-runtime floor, our own noise floor for this metric.',
     thresholds: {
@@ -1059,6 +1061,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'slowHost', scope: 'stage', order: 60, fixEffort: 'config', version: 1,
+    emits: ['slowHost'],
     docAnchor: '#bottleneck-slow-host',
     thresholds: {
       minHosts: 3, minTasks: 15, ratioWarn: 2.0, minShare: 0.20, shareWarn: 0.75, taskShareWarn: 0.50, ratioTiers: [1.33, 1.78, 3.16, 10],
@@ -1134,7 +1137,7 @@ export const DETECTORS: Detector[] = [
       const impactBandFor = (r: number): 'critical' | 'warning' | 'info' | null =>
         r >= tiers[3] ? 'critical' : (r >= tiers[1] ? 'warning' : (r >= tiers[0] ? 'info' : null));
       const floorMs = this.thresholds.floorMs, floorBytes = this.thresholds.floorBytes;
-      const dims: { dimension: string; floor: number; samples: { key: string; value: number }[] }[] = [
+      const dims: { dimension: NonNullable<SlowHostFinding['dimension']>; floor: number; samples: { key: string; value: number }[] }[] = [
         { dimension: 'taskTime', floor: floorMs, samples: execs.filter(e => e.taskCount > 0).map(e => ({ key: e.executorId, value: e.totalDuration / e.taskCount })) },
         { dimension: 'inputBytes', floor: floorBytes, samples: execs.map(e => ({ key: e.executorId, value: e.inputBytes ?? 0 })) },
         { dimension: 'shuffleBytes', floor: floorBytes, samples: execs.map(e => ({ key: e.executorId, value: (e.shuffleReadBytes ?? 0) + (e.shuffleWriteBytes ?? 0) })) },
@@ -1170,11 +1173,12 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'stageSlowness', scope: 'stage', order: 65, fixEffort: 'code', version: 2,
+    emits: ['stageSlowness'],
     docAnchor: '#bottleneck-stage-slowness',
     thresholds: { infoMin: 15 },
     // Cross-detector suppression (see "Detector contract" in detector-contract.md). Requires this
     // entry to be declared AFTER slowHost in DETECTORS so slowHost findings are already in `out`.
-    suppressWhen(finding, out) {
+    suppressWhen(finding: Finding, out: Finding[]): boolean {
       return out.some(o => o.type === 'slowHost' && o.stageId === finding.stageId);
     },
     detect(
@@ -1199,6 +1203,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'stageFailed', scope: 'stage', order: 42, fixEffort: 'code', version: 1,
+    emits: ['stageFailed'],
     docAnchor: '#bottleneck-failures',
     thresholds: {},
     detect(stage: DetectorStage): Finding | null {
@@ -1206,7 +1211,7 @@ export const DETECTORS: Detector[] = [
       return {
         type: 'stageFailed', stageId: stage.id, impactBand: 'critical',
         variant: 'stageFailure',
-        metric: 'stageFailureReason', value: stage.stageFailureReason,
+        metric: 'stageFailureReason', valueText: stage.stageFailureReason,
         numTasks: stage.taskCount,
         memoryBytesSpilled: stage.memoryBytesSpilled,
         failedTaskDetails: stage.failedTaskSamples ?? [],
@@ -1216,6 +1221,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'failures', scope: 'stage', order: 40, fixEffort: 'code', version: 2,
+    emits: ['failures'],
     docAnchor: '#bottleneck-failures',
     thresholds: { minTasks: 10, warnRate: 0.05, critRate: 0.20 },
     detect(
@@ -1252,6 +1258,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'straggler', scope: 'stage', order: 70, fixEffort: 'code', version: 1,
+    emits: ['straggler'],
     docAnchor: '#bottleneck-straggler',
     // floorPctWarn/floorPctCrit are re-exported as STRAGGLER_FLOOR_PCT_WARN/CRIT and reused as
     // impact-band.ts's global noise floor: keep the two in sync.
@@ -1328,6 +1335,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'speculationWaste', scope: 'stage', order: 71, fixEffort: 'config', version: 1,
+    emits: ['speculationWaste'],
     docAnchor: '#bottleneck-speculation-waste',
     thresholds: { minWasted: 5, minWasteMs: 60000 },
     detect(
@@ -1350,6 +1358,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'retryWaste', scope: 'stage', order: 45, fixEffort: 'code', version: 1,
+    emits: ['retryWaste'],
     docAnchor: '#bottleneck-retry-waste',
     thresholds: { minWasted: 3, minWasteMs: 30000 },
     detect(
@@ -1373,6 +1382,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'tinyTask', scope: 'stage', order: 80, fixEffort: 'code', version: 1,
+    emits: ['tinyTask'],
     docAnchor: '#bottleneck-tiny-tasks',
     // stageFloorPct: the tiered detectors' 0.5% runtime floor. Coalescing can't save more than the
     // stage's own duration, so on a shorter stage every finding graded info: on the 14 real logs
@@ -1401,19 +1411,21 @@ export const DETECTORS: Detector[] = [
     // No docAnchor: the upstream spark-tuning-reference docs have no section for this
     // tool-specific "capture stopped early" signal.
     type: 'incompleteRun', scope: 'app', order: 5, fixEffort: 'code', version: 1,
+    emits: ['incompleteRun'],
     thresholds: {},
     recommendation: 'This event log never recorded an ApplicationEnd event: the capture stopped before the run finished (an in-flight job, a rotated-away log, or a cut-short capture). Findings and metrics elsewhere on this board reflect only what was captured up to that point, not the full run.',
     detect(this: { recommendation: string }, ctx: DetectorCtx): Finding | null {
       if (!ctx.app || ctx.app.startTime == null || ctx.app.endTime != null) return null;
       return {
         type: 'incompleteRun', stageId: null, impactBand: 'warning',
-        metric: 'applicationEnd', value: 'missing',
+        metric: 'applicationEnd', valueText: 'missing',
         recommendation: this.recommendation,
       };
     },
   },
   {
     type: 'coldStart', scope: 'app', order: 90, fixEffort: 'code', version: 1,
+    emits: ['coldStart'],
     docAnchor: '#bottleneck-cold-start',
     thresholds: { gapSeconds: 30 },
     detect(
@@ -1461,6 +1473,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'utilization', scope: 'app', order: 100, fixEffort: 'config', version: 1,
+    emits: ['utilization'],
     docAnchor: '#bottleneck-utilization',
     thresholds: { minUtil: 0.60 },
     detect(
@@ -1510,6 +1523,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'memoryUtilization', scope: 'app', order: 102, fixEffort: 'config', version: 1,
+    emits: ['memoryUtilization'],
     docAnchor: '#bottleneck-memory-utilization',
     thresholds: {
       idleCoreWarn: 0.50,          // WastedCoresAlertsReducer
@@ -1631,6 +1645,7 @@ export const DETECTORS: Detector[] = [
     // RDD Info (0 since Spark 2.3; Spark 1.x fills it only on StageCompleted); with neither, on
     // Spark 2.3+ with logBlockUpdates off, a storageUnobserved caveat replaces them.
     type: 'cacheUtilization', scope: 'app', order: 103, fixEffort: 'code', version: 2,
+    emits: ['cacheUtilization'],
     docAnchor: '#bottleneck-cache-utilization',
     thresholds: {
       cachedRatioWarn: 0.50, cachedRatioInfo: 0.90,
@@ -1687,6 +1702,7 @@ export const DETECTORS: Detector[] = [
     // half of the "Wasted Cores Ratio" (idle-core half is memoryUtilization's idleCores).
     // NO_PREF stays in the denominator only: shuffle-read stages legitimately report it.
     type: 'coreLocality', scope: 'app', order: 103, fixEffort: 'config', version: 1,
+    emits: ['coreLocality'],
     docAnchor: '#bottleneck-core-locality',
     thresholds: { minTasks: 50, warnRatio: 0.15, critRatio: 0.35 },
     detect(
@@ -1717,6 +1733,7 @@ export const DETECTORS: Detector[] = [
     // re-provisioning, not normal scale-down). Reuses utilization's add/remove matching, but
     // measures lifetime against a threshold instead of aggregate active-time.
     type: 'autoscalingChurn', scope: 'app', order: 103, fixEffort: 'config', version: 1,
+    emits: ['autoscalingChurn'],
     docAnchor: '#bottleneck-autoscaling-churn',
     thresholds: { shortLivedMs: 120_000, warningPct: 0.30, criticalPct: 0.60, minExecutors: 5 },
     detect(
@@ -1759,6 +1776,7 @@ export const DETECTORS: Detector[] = [
     // Cross-execution relation reuse: flags an input relation scanned by two or more SQL
     // executions in one run, firing on real relation names (parquet:..., jdbc:...).
     type: 'cachingOpportunity', scope: 'app', order: 105, fixEffort: 'code', version: 1,
+    emits: ['cachingOpportunity'],
     docAnchor: '#bottleneck-caching-opportunity',
     thresholds: { minExecutions: 2 },
     detect(this: { thresholds: { minExecutions: number } }, ctx: DetectorCtx): Finding[] | null {
@@ -1935,6 +1953,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'jobFailureRate', scope: 'app', order: 110, fixEffort: 'code', version: 1,
+    emits: ['jobFailureRate'],
     docAnchor: '#bottleneck-job-failure-rate',
     thresholds: { infoRate: 0.10, warnRate: 0.30, critRate: 0.50 },
     detect(
@@ -1972,13 +1991,14 @@ export const DETECTORS: Detector[] = [
   // ── Config-sanity entries (scope:'config', inScorecard:false) ────────────────
   {
     type: 'configAudit', scope: 'config', order: 120, fixEffort: 'config', version: 1, inScorecard: false,
+    emits: ['configAudit'],
     docAnchor: '#config-shuffle-service', thresholds: {}, property: 'spark.shuffle.service.enabled',
     detect(ctx: DetectorConfigTarget): Finding | null {
       const res = ctx.app?.resources ?? null;
       if (res?.dynamicAllocationEnabled === true && res?.shuffleServiceEnabled === false) {
         return {
           type: 'configAudit', property: 'spark.shuffle.service.enabled',
-          impactBand: 'warning', metric: 'config', value: 'false',
+          impactBand: 'warning', metric: 'config', valueText: 'false',
           recommendation: 'Dynamic allocation is on but the external shuffle service is off: set spark.shuffle.service.enabled=true so shuffle data survives executor removal.',
         };
       }
@@ -1987,6 +2007,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'configAudit', scope: 'config', order: 121, fixEffort: 'config', version: 1, inScorecard: false,
+    emits: ['configAudit'],
     docAnchor: '#config-autoscale-bounds', thresholds: {}, property: 'spark.dynamicAllocation.maxExecutors',
     detect(ctx: DetectorConfigTarget): Finding | null {
       const app = ctx.app; const config = app?.config ?? {}; const res = app?.resources ?? null;
@@ -1996,14 +2017,14 @@ export const DETECTORS: Detector[] = [
       if (minN != null && maxN != null && minN > maxN) {
         return {
           type: 'configAudit', property: 'spark.dynamicAllocation.minExecutors',
-          impactBand: 'critical', metric: 'config', value: `${minN} > ${maxN}`,
+          impactBand: 'critical', metric: 'config', valueText: `${minN} > ${maxN}`,
           recommendation: `Autoscaling bounds are inverted: spark.dynamicAllocation.minExecutors (${minN}) exceeds maxExecutors (${maxN}). Set min ≤ max.`,
         };
       }
       if (maxN == null) {
         return {
           type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors',
-          impactBand: 'info', metric: 'config', value: '(unset)',
+          impactBand: 'info', metric: 'config', valueText: '(unset)',
           recommendation: 'Dynamic allocation is on with no upper bound: set spark.dynamicAllocation.maxExecutors to cap cluster growth.',
         };
       }
@@ -2012,6 +2033,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'configAudit', scope: 'config', order: 122, fixEffort: 'config', version: 1, inScorecard: false,
+    emits: ['configAudit'],
     docAnchor: '#config-serializer', thresholds: {}, property: 'spark.serializer',
     detect(ctx: DetectorConfigTarget): Finding | null {
       const app = ctx.app; const config = app?.config ?? {}; const res = app?.resources ?? null;
@@ -2021,13 +2043,14 @@ export const DETECTORS: Detector[] = [
       if (isKryo) return null;
       return {
         type: 'configAudit', property: 'spark.serializer',
-        impactBand: 'info', metric: 'config', value: ser ?? '(default JavaSerializer)',
+        impactBand: 'info', metric: 'config', valueText: ser ?? '(default JavaSerializer)',
         recommendation: `Current serializer is ${ser ?? 'the default JavaSerializer'}: consider spark.serializer=org.apache.spark.serializer.KryoSerializer for faster, smaller buffers.`,
       };
     },
   },
   {
     type: 'configAudit', scope: 'config', order: 123, fixEffort: 'config', version: 1, inScorecard: false,
+    emits: ['configAudit'],
     docAnchor: '#config-memory-overhead', thresholds: { floorMB: 384, floorPct: 0.1 }, property: 'spark.executor.memoryOverhead',
     detect(
       this: { thresholds: { floorMB: number; floorPct: number } },
@@ -2041,7 +2064,7 @@ export const DETECTORS: Detector[] = [
       if (ovMB >= floor) return null;
       return {
         type: 'configAudit', property: 'spark.executor.memoryOverhead',
-        impactBand: 'info', metric: 'config', value: `${ovMB} MiB`,
+        impactBand: 'info', metric: 'config', valueText: `${ovMB} MiB`,
         recommendation: `Executor memoryOverhead (${ovMB} MiB) is below Spark's default floor of ${floor} MiB (max of 384 MiB or 10% of executor memory): raise it to avoid off-heap OOM-kills.`,
       };
     },
@@ -2049,6 +2072,7 @@ export const DETECTORS: Detector[] = [
   // ── Plan-metric entries (scope:'sql') ────────────────────────────────────
   {
     type: 'duplicatePlanSubtree', scope: 'sql', order: 130, fixEffort: 'code', version: 2,
+    emits: ['duplicatePlanSubtree'],
     docAnchor: '#bottleneck-duplicate-plan-subtree',
     // stageFloorPct: the 0.5% runtime floor. The claim counts at most each linked stage's own
     // task-active time, so a repeat whose stages together lasted less than this share of the run
@@ -2106,6 +2130,7 @@ export const DETECTORS: Detector[] = [
   },
   {
     type: 'smallFiles', scope: 'sql', order: 131, fixEffort: 'config', version: 2,
+    emits: ['smallFiles'],
     docAnchor: '#bottleneck-small-files',
     thresholds: { minFiles: 100, maxAvgFileSizeMB: 3 },
     detect(
@@ -2155,6 +2180,7 @@ export const DETECTORS: Detector[] = [
     // carry 'underBroadcast'/'overBroadcast' since one shared plan-walk covers both
     // opposite-direction rules (JoinToBroadcastAlert / BroadcastTooLargeAlert).
     type: 'broadcastSizing', scope: 'sql', order: 132, fixEffort: 'config', version: 2,
+    emits: ['underBroadcast', 'overBroadcast'],
     docAnchor: '#bottleneck-broadcast-sizing',
     thresholds: {
       broadcastTiers: [10 * MB, 100 * MB, GB, 5 * GB],
@@ -2218,4 +2244,16 @@ export const DETECTORS: Detector[] = [
       return out.length ? out : null;
     },
   },
-];
+] as const satisfies readonly Detector[];
+
+/** A `DETECTORS` entry's own `type`: every emitted finding type, plus broadcastSizing. */
+export type DetectorType = (typeof DETECTORS)[number]['type'];
+
+/** Every finding `type` a detector can emit, from the entries' `emits` lists. */
+export type FindingType = (typeof DETECTORS)[number]['emits'][number];
+
+// `emits` already only names Finding members (Detector.emits); this makes the reverse hold too, so a
+// Finding member no detector emits, or a detector whose type has no Finding member, fails to compile.
+type SameUnion<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type AssertTrue<T extends true> = T;
+export type FindingTypesMatchDetectors = AssertTrue<SameUnion<FindingType, Finding['type']>>;

@@ -7,6 +7,7 @@ import App from '@/App';
 import { auditConfig } from '@sparkforensics/core/analyzer.ts';
 import { store, emptyAppModel } from '@/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { testFinding, unknownTypeFinding } from './_shared/finding';
 
 function CriticalAlert() {
   return <h3>Critical alert</h3>;
@@ -145,9 +146,9 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
   showAllEvidence();
   const user = userEvent.setup();
   const catalog: Finding[] = [
-    { type: 'infoAlert', stageId: 1, impactBand: 'info' },
-    { type: 'warningAlert', stageId: 1, impactBand: 'warning' },
-    { type: 'criticalAlert', stageId: 1, impactBand: 'critical' },
+    unknownTypeFinding({ type: 'infoAlert', stageId: 1, impactBand: 'info' }),
+    unknownTypeFinding({ type: 'warningAlert', stageId: 1, impactBand: 'warning' }),
+    unknownTypeFinding({ type: 'criticalAlert', stageId: 1, impactBand: 'critical' }),
   ];
   store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
 
@@ -248,7 +249,7 @@ test('Config Audit ranks by its real impact band inside Suggested Improvements, 
     resources: { dynamicAllocationEnabled: false, shuffleServiceEnabled: false },
   };
   const configFindings: Finding[] = [
-    { type: 'configAudit', property: 'spark.shuffle.service.enabled', stageId: null, impactBand: 'critical', recommendation: 'Enable the shuffle service.' },
+    testFinding({ type: 'configAudit', property: 'spark.shuffle.service.enabled', valueText: 'false', stageId: null, impactBand: 'critical', recommendation: 'Enable the shuffle service.' }),
   ];
   store.setState({ status: 'ready', appModel, catalog: [], configFindings });
 
@@ -267,7 +268,7 @@ test('reads configFindings from the store rather than recomputing it from appMod
   // Seeding configFindings with a finding it could never produce proves Dashboard
   // reads the slice, not the function.
   const configFindings: Finding[] = [
-    { type: 'configAudit', property: 'spark.serializer', impactBand: 'info', recommendation: 'x', stageId: null },
+    testFinding({ type: 'configAudit', property: 'spark.serializer', valueText: 'org.apache.spark.serializer.JavaSerializer', impactBand: 'info', recommendation: 'x', stageId: null }),
   ];
   store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [], configFindings });
 

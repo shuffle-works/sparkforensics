@@ -1,7 +1,8 @@
 import { memo, useMemo, useState } from 'react';
 
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
+import type { FindingOf } from '@sparkforensics/core/types.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -23,7 +24,7 @@ export type DuplicatePlanSubtreeProps = Pick<WidgetProps, 'catalog' | 'defaultCo
 
 /** One flagged finding's row, anchored so a triage route focuses the row
  * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
-function DuplicatePlanSubtreeRow({ finding }: { finding: Finding }) {
+function DuplicatePlanSubtreeRow({ finding }: { finding: FindingOf<'duplicatePlanSubtree'> }) {
   const anchor = useAnchoredRow([finding]);
 
   return (
@@ -33,7 +34,7 @@ function DuplicatePlanSubtreeRow({ finding }: { finding: Finding }) {
       data-flashed={anchor.dataFlashed}
       className={`space-y-2 ${ROW_SEPARATOR_CLASS} transition-colors ${anchor.flashClassName}`}
     >
-      {finding.stageIds && finding.stageIds.length > 0 ? (
+      {finding.stageIds.length > 0 ? (
         <StagePillGroup pills={finding.stageIds.map((id) => ({ id }))} />
       ) : null}
       <p>
@@ -53,10 +54,10 @@ export const DuplicatePlanSubtree = memo(function DuplicatePlanSubtree({ catalog
   const [page, setPage] = useState(0);
 
   const { findings, pills, groupConfidence } = useMemo(() => {
-    const findings = (catalog.filter((f) => f.type === 'duplicatePlanSubtree') as Finding[]).sort(
+    const findings = findingsOfType(catalog, 'duplicatePlanSubtree').sort(
       (a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand],
     );
-    const pills = [...new Set(findings.flatMap((f) => f.stageIds ?? []))].map((id) => ({ id }));
+    const pills = [...new Set(findings.flatMap((f) => f.stageIds))].map((id) => ({ id }));
     // Only claim a single header-level confidence when every finding in the
     // group actually shares it; a mixed group would otherwise show one
     // finding's confidence as if it applied to all of them.

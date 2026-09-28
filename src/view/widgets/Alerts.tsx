@@ -9,7 +9,7 @@ import type { WidgetProps } from '@/view/detector-registry';
 import { isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
 import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
 import type { CoverageData } from '@sparkforensics/core/run-interpretation.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding, FindingType } from '@sparkforensics/core/types.ts';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
 
 export const SUGGESTED_IMPROVEMENTS_ANCHOR_ID = 'suggested-improvements';
@@ -19,7 +19,7 @@ export const SUGGESTED_IMPROVEMENTS_ANCHOR_ID = 'suggested-improvements';
  * matching entry. */
 type CleanCheckScope = 'per-stage' | 'app-level' | 'sql-scope' | 'config-scope';
 
-const SCOPE: Record<string, CleanCheckScope> = {
+const SCOPE: Readonly<Record<string, CleanCheckScope>> = {
   skew: 'per-stage',
   stageShape: 'per-stage',
   tinyTask: 'per-stage',
@@ -51,7 +51,7 @@ const SCOPE: Record<string, CleanCheckScope> = {
   overBroadcast: 'sql-scope',
 
   configAudit: 'config-scope',
-};
+} satisfies Record<FindingType, CleanCheckScope>;
 
 const SCOPE_ORDER: CleanCheckScope[] = ['per-stage', 'app-level', 'sql-scope', 'config-scope'];
 

@@ -1,6 +1,7 @@
 import { memo, useState } from 'react';
 
 import { formatMetricValue, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
@@ -9,7 +10,7 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import { useAnchoredRow } from '@/view/finding-anchor';
-import type { StragglerFinding } from '@/view/slow-host-straggler-finding';
+import type { StragglerFinding } from '@sparkforensics/core/finding-types.ts';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { canToggleSort } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
@@ -83,7 +84,7 @@ export const Straggler = memo(function Straggler({ appModel, catalog, defaultCol
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 
-  const issues = (catalog.filter((f) => f.type === 'straggler') as StragglerFinding[])
+  const issues = findingsOfType(catalog, 'straggler')
     .slice()
     .sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]);
 

@@ -12,6 +12,7 @@ import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider, useEvidenceAvailabilityNavigation } from '@/view/EvidenceAvailabilityContext';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { ThemeProvider } from '@/theme/ThemeProvider';
+import { testFinding } from './_shared/finding';
 
 const presentLedger: EvidenceAvailability = {
   schemaVersion: 1,
@@ -133,10 +134,10 @@ test('Redundant Plan Subtree finding opens SQL-plan evidence with keyboard activ
   store.getState().setWidgetDensity('advanced');
   store.setState({
     ...store.getState(),
-    catalog: [{
+    catalog: [testFinding({
       type: 'duplicatePlanSubtree', stageId: null, impactBand: 'warning', stageIds: [1],
       recommendation: 'Consider caching the shared computation.',
-    }],
+    })],
   });
   renderDashboard();
 
@@ -187,10 +188,10 @@ test('Redundant Plan Subtree finding opens SQL-plan evidence', async () => {
   store.getState().setWidgetDensity('advanced');
   store.setState({
     ...store.getState(),
-    catalog: [{
+    catalog: [testFinding({
       type: 'duplicatePlanSubtree', stageId: null, impactBand: 'warning', stageIds: [1],
       recommendation: 'Consider caching the shared computation.',
-    }],
+    })],
   });
   renderDashboard();
 

@@ -41,7 +41,7 @@ describe('buildEvidenceReport', () => {
     const { markdown, json } = buildEvidenceReport(fixture());
     expect(typeof markdown).toBe('string');
     expect(typeof json.schemaVersion).toBe('number');
-    expect(json.schemaVersion).toBe(4);
+    expect(json.schemaVersion).toBe(5);
   });
 
   it('carries a run summary + findings with the required per-row fields', () => {
@@ -94,6 +94,31 @@ describe('buildEvidenceReport', () => {
     // stageIds (plural, non-core) is real evidence and must still come through.
     expect(row.evidence).toHaveProperty('stageIds');
     expect(markdown).not.toContain('planNodeIds');
+  });
+
+  it('publishes only the type\'s declared evidence fields: stageShape\'s estimator-only totalCores stays out', () => {
+    const fx = fixture();
+    fx.app.resources = { executor: { cores: 4 } };
+    const executorStats = Array.from({ length: 4 }, (_, i) => ({
+      executorId: `e${i}`, taskCount: 1, totalDuration: 1000, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0,
+    }));
+    fx.stages.set(3, makeStage({ id: 3, taskCount: 2, executorStats, submittedAt: 0, completedAt: 4000 }));
+    const row = buildEvidenceReport(fx).json.findings.find((r) => r.type === 'stageShape' && r.evidence.rule === 'lowParallelism');
+    expect(row).toBeTruthy();
+    expect(row.evidence).toEqual({ rule: 'lowParallelism' });
+  });
+
+  it('carries a text-valued finding\'s value in valueText, keeping value numeric-or-null', () => {
+    const fx = fixture();
+    fx.stages.set(3, makeStage({ id: 3, stageFailureReason: 'FetchFailed: lost executor' }));
+    const { json, markdown } = buildEvidenceReport(fx);
+    const row = json.findings.find((r) => r.type === 'stageFailed');
+    expect(row.value).toBeNull();
+    expect(row.valueText).toBe('FetchFailed: lost executor');
+    expect(row.evidence).not.toHaveProperty('valueText');
+    expect(markdown).toContain('- stageFailureReason: FetchFailed: lost executor');
+    // A numeric finding carries no valueText key at all.
+    expect(json.findings.find((r) => r.type === 'skew')).not.toHaveProperty('valueText');
   });
 
   it('includes the EvidenceAvailability ledger from the appModel', () => {
@@ -315,7 +340,7 @@ describe('buildEvidenceReport', () => {
   describe('recommendations', () => {
     it('is an additive top-level array', () => {
       const { json } = buildEvidenceReport(fixture());
-      expect(json.schemaVersion).toBe(4);
+      expect(json.schemaVersion).toBe(5);
       expect(Array.isArray(json.recommendations)).toBe(true);
       expect(json.recommendations.length).toBeGreaterThan(0);
     });

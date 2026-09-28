@@ -1,7 +1,8 @@
 import { memo, useMemo, useState } from 'react';
 
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
+import type { FindingOf } from '@sparkforensics/core/types.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -23,7 +24,7 @@ export type OverBroadcastProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed
 
 /** One flagged finding's row, anchored so a triage route focuses the row
  * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
-function OverBroadcastRow({ finding }: { finding: Finding }) {
+function OverBroadcastRow({ finding }: { finding: FindingOf<'overBroadcast'> }) {
   const anchor = useAnchoredRow([finding]);
 
   return (
@@ -33,7 +34,7 @@ function OverBroadcastRow({ finding }: { finding: Finding }) {
       data-flashed={anchor.dataFlashed}
       className={`space-y-2 ${ROW_SEPARATOR_CLASS} transition-colors ${anchor.flashClassName}`}
     >
-      {finding.stageIds && finding.stageIds.length > 0 ? (
+      {finding.stageIds.length > 0 ? (
         <StagePillGroup pills={finding.stageIds.map((id) => ({ id }))} />
       ) : null}
       <p>
@@ -54,10 +55,10 @@ export const OverBroadcast = memo(function OverBroadcast({ catalog, defaultColla
   const [page, setPage] = useState(0);
 
   const { findings, pills } = useMemo(() => {
-    const findings = (catalog.filter((f) => f.type === 'overBroadcast') as Finding[]).sort(
+    const findings = findingsOfType(catalog, 'overBroadcast').sort(
       (a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand],
     );
-    const pills = [...new Set(findings.flatMap((f) => f.stageIds ?? []))].map((id) => ({ id }));
+    const pills = [...new Set(findings.flatMap((f) => f.stageIds))].map((id) => ({ id }));
     return { findings, pills };
   }, [catalog]);
 

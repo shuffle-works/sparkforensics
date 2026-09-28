@@ -97,13 +97,13 @@ describe('redactReport', () => {
   });
 
   it('redacts host/IP identifiers that appear only in free-text values', () => {
-    // Host in a stageFailed value string (never a `host` field) plus a bare IPv4 in a recommendation; both must be pseudonymized.
+    // Host in a stageFailed valueText string (never a `host` field) plus a bare IPv4 in a recommendation; both must be pseudonymized.
     const report = {
       schemaVersion: 1,
       summary: { app: { id: 'app_x' } },
       findings: [
         { id: 'a', type: 'stageFailed', stageId: 7,
-          value: 'ExecutorLostFailure on ip-10-4-5-6.ec2.internal: Container killed' },
+          valueText: 'ExecutorLostFailure on ip-10-4-5-6.ec2.internal: Container killed' },
         { id: 'b', type: 'slowHost', stageId: 8,
           recommendation: 'Driver at 10.20.30.40 saw slow fetches.' },
       ],

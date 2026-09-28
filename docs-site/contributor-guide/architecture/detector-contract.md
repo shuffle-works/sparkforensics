@@ -3,7 +3,37 @@
 `packages/core/src/detectors.ts` is the single source of Spark-optimization logic: one
 declarative `DETECTORS` entry per pattern, each carrying `type`, `scope`
 (`stage` / `app` / `config` / `sql`), `order`, `fixEffort`, a `thresholds`
-object, impactBand/copy, a `docAnchor`, and a co-located `detect()` method.
+object, impactBand/copy, a `docAnchor`, an `emits` list, and a co-located
+`detect()` method.
+
+`DETECTORS` is declared `as const satisfies readonly Detector[]`, so each
+entry keeps its literal `type` and `emits`. Two unions derive from it:
+`DetectorType` (every entry's own `type`) and `FindingType` (every type an
+entry's `emits` lists, the finding types that actually appear on findings).
+`emits` is `[type]` for every entry except `broadcastSizing`, whose one plan
+walk emits `underBroadcast` and `overBroadcast` and never its own name. The
+per-type tables (`FINDING_NAMES`, `TYPE_TAG_MAP`, `THRESHOLD_SUMMARIES`,
+`TYPE_ALIASES`, the view's `REGISTRY` and the Alerts clean-check scope map)
+use `satisfies Record<FindingType, ...>` (plus `DetectorType` where they list
+`broadcastSizing`), so a new detector type that misses a table entry fails
+the typecheck. Code that iterates entries generically, such as `analyze()`,
+reads them through the `Detector` interface.
+
+Each finding type has its own shape in `packages/core/src/finding-types.ts`:
+`Finding` is a union discriminated on `type`, and a compile-time check in
+`detectors.ts` fails when its members and `FindingType` differ. Each member
+splits into a `<Type>Evidence` interface, the fields the evidence report
+publishes (listed again in `EVIDENCE_KEYS` in `evidence-report.ts`, checked
+both ways), and fields declared only on `<Type>Finding`, which other core
+modules read but the report never publishes. `value` is always a magnitude;
+a text-valued finding (`stageFailed`, `configAudit`, `incompleteRun`) sets
+`valueText` instead. So a new detector type needs an `emits` entry, a
+`finding-types.ts` member, an `EVIDENCE_KEYS` entry, an `ID_DISCRIMINATORS`
+entry in `analyzer.ts`, and a row in each per-type table. The compiler
+reports each one that is missing. The view narrows with
+`findingsOfType(catalog, type)` (`packages/core/src/findings-of-type.ts`)
+rather than re-declaring a finding's fields.
+
 Both consumers are thin loops over that array:
 
 - `packages/core/src/analyzer.ts`: `analyze()` runs every entry regardless of scope, skipping

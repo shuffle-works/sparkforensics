@@ -25,13 +25,13 @@ test('resetModel clears model, catalog and caches', () => {
 
 test('setConfigFindings updates only the configFindings slice', () => {
   const before = store.getState().appModel;
-  store.getState().setConfigFindings([{ type: 'configAudit', property: 'spark.serializer', impactBand: 'info', stageId: null }]);
+  store.getState().setConfigFindings([{ type: 'configAudit', property: 'spark.serializer', valueText: 'org.apache.spark.serializer.JavaSerializer', impactBand: 'info', stageId: null }]);
   expect(store.getState().configFindings).toHaveLength(1);
   expect(store.getState().appModel).toBe(before); // identity unchanged
 });
 
 test('resetModel clears configFindings alongside catalog', () => {
-  store.getState().setConfigFindings([{ type: 'configAudit', property: 'spark.serializer', impactBand: 'info', stageId: null }]);
+  store.getState().setConfigFindings([{ type: 'configAudit', property: 'spark.serializer', valueText: 'org.apache.spark.serializer.JavaSerializer', impactBand: 'info', stageId: null }]);
   store.getState().resetModel();
   expect(store.getState().configFindings).toEqual([]);
 });

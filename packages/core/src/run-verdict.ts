@@ -106,10 +106,11 @@ export interface NextStep {
 export function locationKey(finding: Finding): { key: string; stageId: number | null } {
   const stageId = singleStageId(finding);
   if (stageId != null) return { key: `stage:${stageId}`, stageId };
-  if (finding.stageIds && finding.stageIds.length > 1) {
+  if ('stageIds' in finding && finding.stageIds.length > 1) {
     return { key: `stages:${finding.type}:${[...finding.stageIds].sort((a, b) => a - b).join(',')}`, stageId: null };
   }
-  return { key: finding.variant ? `app:${finding.type}:${finding.variant}` : `app:${finding.type}`, stageId: null };
+  const variant = 'variant' in finding ? finding.variant : undefined;
+  return { key: variant ? `app:${finding.type}:${variant}` : `app:${finding.type}`, stageId: null };
 }
 
 /** 0 for a failure at a stage of a failed job (what stopped the job), 1 for

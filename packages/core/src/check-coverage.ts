@@ -20,7 +20,7 @@ export function hasFinishedStage(stages: AppModel['stages']): boolean {
  * storage without block updates, memory without executor metrics), rather
  * than a problem found. Its recommendation names the setting to turn on. */
 export function isEvidenceCaveat(finding: Finding): boolean {
-  return finding.dataUnavailable === true || !isRealFinding(finding);
+  return ('dataUnavailable' in finding && finding.dataUnavailable === true) || !isRealFinding(finding);
 }
 
 /** App-level checks measured over the run's full span, which a log with no

@@ -1,4 +1,4 @@
-import type { RawWasteFigure } from './types.ts';
+import type { DetectorType, FindingType, RawWasteFigure } from './types.ts';
 
 const TARGET_PARTITION_BYTES = 128 * 1024 * 1024;
 const MAX_RECOMMENDED = 8000;
@@ -7,11 +7,11 @@ const MEANINGFUL_RATIO = 1.5;
 export const VISIBLE_LIMIT: number = 6;
 export const IMPACT_BAND_ORDER: Record<'critical' | 'warning' | 'info', number> = { critical: 0, warning: 1, info: 2 };
 
-const BOTTLENECK_WIDGET: Record<string, string> = {
+const BOTTLENECK_WIDGET: Readonly<Record<string, string>> = {
   skew: 'task-skew', slowHost: 'task-skew', straggler: 'task-skew',
   shuffle: 'shuffle-io', spill: 'spill', gc: 'gc-pressure', failures: 'failures',
   coldStart: 'executor-timeline', utilization: 'executor-timeline', speculationWaste: 'executor-timeline',
-};
+} satisfies Partial<Record<FindingType, string>>;
 
 // Cross-widget stage recurrence: how many distinct board widgets (skew+straggler on one stage
 // still count as one, task-skew) flag a stage. Computed once from the full catalog each widget
@@ -35,7 +35,8 @@ export function stageWidgetFrequency(catalog: Array<{stageId?: number | null; ty
 // Canonical detector type -> ALL-CAPS board tag vocabulary. Single source of truth for every
 // widget that renders a catalog entry's tag outside its own card (e.g. Bottleneck Alerts).
 // Exported so doc-sync checks can enumerate every tag without hand-duplicating this list.
-export const TYPE_TAG_MAP: Record<string, string> = {
+// `satisfies` requires one tag per finding and detector type; read by free-form type string.
+export const TYPE_TAG_MAP: Readonly<Record<string, string>> = {
   skew: 'SKEW', shuffle: 'SHFL', spill: 'SPILL', gc: 'GC',
   coldStart: 'COLD', utilization: 'UTIL', memoryUtilization: 'MEM',
   cacheUtilization: 'CSTOR', coreLocality: 'LOCAL', autoscalingChurn: 'CHRN',
@@ -47,7 +48,7 @@ export const TYPE_TAG_MAP: Record<string, string> = {
   duplicatePlanSubtree: 'PLAN', smallFiles: 'PLAN', underBroadcast: 'PLAN', overBroadcast: 'PLAN',
   broadcastSizing: 'PLAN',
   incompleteRun: 'INCMP',
-};
+} satisfies Record<FindingType | DetectorType, string>;
 
 export function typeTag(type: string): string {
   return TYPE_TAG_MAP[type] ?? type.toUpperCase();
@@ -136,10 +137,10 @@ export function nsToMs(ns: number): number {
   return ns / 1e6;
 }
 
-// Finding.value is number|string only because a couple of detectors (configAudit, stageFailed)
-// report a string; every other row formatter needs the numeric case and falls back to 0.
-export function numericValue(f: { value?: number | string }): number {
-  return typeof f.value === 'number' ? f.value : 0;
+// A finding's magnitude, or 0 when it has none (an evidence caveat, or a text-valued finding whose
+// value is in `valueText`).
+export function numericValue(f: { value?: number }): number {
+  return f.value ?? 0;
 }
 
 // Low-level "number -> display string" step shared by every widget's per-finding label resolver:
@@ -183,11 +184,11 @@ function formatChipBytes(bytes: number): string {
 }
 
 /** Compact magnitude for a finding's plan-graph chip (e.g. "4.2 GB", "3.2×", "45%"), taken from the
- * finding's own `value` rendered in its `metric`'s unit. Returns null when `value` is non-numeric
- * (stageFailed/configAudit reuse it for text) or the metric isn't in FINDING_METRIC_UNIT. */
-export function formatFindingMagnitude(finding: { metric?: string; value?: number | string }): string | null {
+ * finding's own `value` rendered in its `metric`'s unit. Returns null when there is no `value` (a
+ * text-valued finding carries `valueText` instead) or the metric isn't in FINDING_METRIC_UNIT. */
+export function formatFindingMagnitude(finding: { metric?: string; value?: number }): string | null {
   const unit = finding.metric ? FINDING_METRIC_UNIT[finding.metric] : undefined;
-  if (!unit || typeof finding.value !== 'number') return null;
+  if (!unit || finding.value == null) return null;
   switch (unit) {
     case 'bytes': return formatChipBytes(finding.value);
     case 'minutes': return formatDuration(finding.value * 60000);
@@ -203,7 +204,7 @@ export function formatFindingMagnitude(finding: { metric?: string; value?: numbe
  * recovery is claimed, "~<time>" (the optimistic `high` bound, matching formatImpactEstimateCompact),
  * joined by " · " (e.g. "4.2 GB · ~38.0s"). null when neither part is available. */
 export function formatFindingChipDetail(
-  finding: { metric?: string; value?: number | string; impactEstimate?: { wallClock?: { low: number; high: number } | null } },
+  finding: { metric?: string; value?: number; impactEstimate?: { wallClock?: { low: number; high: number } | null } },
 ): string | null {
   const magnitude = formatFindingMagnitude(finding);
   const wallClock = finding.impactEstimate?.wallClock;

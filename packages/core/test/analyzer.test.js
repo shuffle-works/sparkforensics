@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { analyze, auditConfig } from '../src/analyzer.js';
 import { DETECTORS, detectorCatalog } from '../src/detectors.js';
+import { detectorInfoByType } from '../src/detector-docs.js';
 import { formatBytes } from '../src/format-utils.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
@@ -1482,6 +1483,18 @@ describe('detector contract', () => {
     }
   });
 
+  it('every entry emits its own type, except broadcastSizing, which emits its two rules', () => {
+    for (const d of DETECTORS) {
+      const expected = d.type === 'broadcastSizing' ? ['underBroadcast', 'overBroadcast'] : [d.type];
+      expect(d.emits, d.type).toEqual(expected);
+    }
+  });
+
+  it('detectorInfoByType covers exactly the detector types and the types they emit', () => {
+    const expected = new Set(DETECTORS.flatMap((d) => [d.type, ...d.emits]));
+    expect(new Set(Object.keys(detectorInfoByType()))).toEqual(expected);
+  });
+
   it('every finding analyze() returns carries a docAnchor string', () => {
     const findings = analyze(sampleApp, sampleStages, sampleAdded, sampleRemoved, sampleJobs);
     for (const f of findings) expect(typeof f.docAnchor).toBe('string');
@@ -2510,10 +2523,11 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
     expect(b.recommendation).toContain(`${b.value} minutes`);
   });
 
-  it('stageFailed: value carries the raw reason, recommendation stays reason-free', () => {
+  it('stageFailed: valueText carries the raw reason, value stays unset, recommendation stays reason-free', () => {
     const stages = new Map([[1, makeStage({ stageFailureReason: 'Job aborted due to stage failure', failedTasks: 0 })]]);
     const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'stageFailed');
-    expect(b.value).toBe('Job aborted due to stage failure');
+    expect(b.valueText).toBe('Job aborted due to stage failure');
+    expect(b.value).toBeUndefined();
     expect(b.recommendation).not.toContain('Job aborted due to stage failure');
     expect(b.recommendation).toContain('Inspect the driver log');
   });

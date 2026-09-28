@@ -6,8 +6,12 @@ import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
 import { deriveImpactBand } from './impact-band.ts';
 import { IMPACT_BAND_ORDER } from './format-utils.ts';
 import type {
-  Finding, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates,
+  Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates,
 } from './types.ts';
+
+// The runner reads each entry through the Detector contract, not its own precise `as const` shape:
+// the scope switch below dispatches every detect() with that scope's target.
+const detectors: readonly Detector[] = DETECTORS;
 
 // FNV-1a 32-bit stable string hash: deterministic finding id across runs, no timestamps/randomness.
 function fnv1a(str: string): string {
@@ -19,28 +23,54 @@ function fnv1a(str: string): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
+// The id hash's discriminator slots, in the order it has always joined them: reordering or renaming
+// one changes every finding id, which needs an EVIDENCE_SCHEMA_VERSION bump.
+const DISCRIMINATOR_SLOTS = [
+  'host', 'executorId', 'rule', 'variant', 'dimension',
+  'direction', 'nodeName', 'rootName', 'subtreeSize', 'groupIndex', 'largerSideBytes',
+  'rddId', 'relation', 'format', 'operator', 'executionIds',
+] as const;
+type DiscriminatorSlot = (typeof DISCRIMINATOR_SLOTS)[number];
+
+// Per type, the fields that tell apart sibling findings sharing one location and metric; without
+// them those siblings hash to one id:
+//   slowHost (host), memoryUtilization (executorId), partitionSizing (rule);
+//   cacheUtilization (rddId+variant), cachingOpportunity (relation/format for leaf,
+//     operator+relation for composite, executionIds as last resort);
+//   smallFiles (direction/nodeName), duplicatePlanSubtree (groupIndex is the real
+//     uniqueness guarantee: rootName+subtreeSize can collide across groups),
+//     underBroadcast (value+largerSideBytes per node/side).
+// memoryUtilization leaves out `rule`: one heap band per executor, so executorId is already
+// unique and folding rule in risks id churn if band logic changes. partitionSizing keeps
+// `rule`: a stage can emit several rules at once sharing stageId+metric.
+const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & keyof FindingOf<T>)[] } = {
+  skew: [], stageShape: ['rule'], shuffle: [], partitionSizing: ['rule'], spill: [], gc: ['direction'],
+  slowHost: ['host', 'executorId', 'variant', 'dimension'], stageSlowness: [], stageFailed: ['variant'],
+  failures: [], straggler: [], speculationWaste: [], retryWaste: [], tinyTask: [],
+  incompleteRun: [], coldStart: [], utilization: [], memoryUtilization: ['executorId', 'variant'],
+  cacheUtilization: ['variant', 'rddId'], coreLocality: [], autoscalingChurn: [],
+  cachingOpportunity: ['variant', 'relation', 'format', 'operator', 'executionIds'],
+  jobFailureRate: [], configAudit: [],
+  duplicatePlanSubtree: ['rootName', 'subtreeSize', 'groupIndex'], smallFiles: ['direction', 'nodeName'],
+  underBroadcast: ['largerSideBytes'], overBroadcast: [],
+};
+
+// Location key: stage, else SQL execution, else audited config property.
+function locationKey(f: Finding): number | string {
+  if (f.stageId != null) return f.stageId;
+  if ('executionId' in f) return f.executionId;
+  if (f.type === 'configAudit') return f.property;
+  return '';
+}
+
 export function findingId(f: Finding): string {
-  // Location key: stage, else SQL execution, else audited config property.
-  const locKey = f.stageId ?? f.executionId ?? f.property ?? '';
-  // Discriminators for detectors that emit multiple findings on the same
-  // location+metric; without them these siblings hash to one id:
-  //   slowHost (host), memoryUtilization (executorId+dimension), partitionSizing (rule);
-  //   cacheUtilization (rddId+variant), cachingOpportunity (relation/format for leaf,
-  //     operator+relation for composite, executionIds as last resort);
-  //   smallFiles (direction/nodeName), duplicatePlanSubtree (groupIndex is the real
-  //     uniqueness guarantee: rootName+subtreeSize can collide across groups),
-  //     broadcastSizing (value+largerSideBytes per node/side).
-  // memoryUtilization excludes `rule`: one heap band per executor, so executorId is already
-  // unique and folding rule in risks id churn if band logic changes. partitionSizing keeps
-  // `rule`: a stage can emit several rules at once sharing stageId+metric.
-  const rule = f.type === 'memoryUtilization' ? undefined : f.rule;
-  const disc = [
-    f.host, f.executorId, rule, f.variant, f.dimension,
-    f.direction, f.nodeName, f.rootName, f.subtreeSize, f.groupIndex, f.largerSideBytes,
-    f.rddId, f.relation, f.format, f.operator,
-    f.executionIds ? f.executionIds.join(',') : '',
-  ].map((v) => v ?? '').join('|');
-  return fnv1a(`${f.type}|${locKey}|${f.metric ?? ''}|${f.value ?? ''}|${disc}`);
+  const fields = f as unknown as Partial<Record<DiscriminatorSlot, unknown>>;
+  const listed = new Set<DiscriminatorSlot>(ID_DISCRIMINATORS[f.type]);
+  const disc = DISCRIMINATOR_SLOTS.map((slot) => {
+    const v = listed.has(slot) ? fields[slot] : undefined;
+    return Array.isArray(v) ? v.join(',') : v ?? '';
+  }).join('|');
+  return fnv1a(`${f.type}|${locationKey(f)}|${f.metric ?? ''}|${f.value ?? f.valueText ?? ''}|${disc}`);
 }
 
 // skew's max/median branch (stage.taskCount below minTasksForP95) and straggler are both driven
@@ -115,7 +145,7 @@ export function analyze(
     app, stages, executorsAdded, executorsRemoved, jobs, sql, runAggregates, occupancy,
   };
   const out: Finding[] = [];
-  for (const d of DETECTORS) {
+  for (const d of detectors) {
     if (d.inScorecard === false) continue;
     switch (d.scope) {
       case 'stage':
@@ -149,7 +179,7 @@ const auditConfigCache = new WeakMap<SparkAppInfo, Finding[]>();
 
 function computeAuditConfig(app: SparkAppInfo | null): Finding[] {
   const out: Finding[] = [];
-  for (const d of DETECTORS) if (d.scope === 'config') push(out, d, d.detect({ app }));
+  for (const d of detectors) if (d.scope === 'config') push(out, d, d.detect({ app }));
   // configAudit's impact case is unconditionally costOnly('none'): needs no stages/totalCores,
   // an empty stages map gives parity with analyze().
   estimateImpact(out, new Map());

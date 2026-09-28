@@ -8,6 +8,7 @@ import { StageDetailProvider } from '../../src/view/StageDetailContext';
 import { emptyAppModel, store } from '../../src/store/store';
 import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order-toggle';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { testFinding } from './_shared/finding';
 
 function makeAppModel(stageNames: Record<number, string>): AppModel {
   const stages = new Map(Object.entries(stageNames).map(([id, name]) => [Number(id), { id: Number(id), name }]));
@@ -43,8 +44,8 @@ describe('TaskFailures', () => {
   it('flags every affected stage, not just the worst', async () => {
     const user = userEvent.setup();
     const catalog: Finding[] = [
-      { type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 12, failedTasks: 5, dominantReason: 'FetchFailed', recommendation: 'Investigate driver logs.' },
-      { type: 'failures', stageId: 2, impactBand: 'critical', metric: 'failureRate', value: 40, failedTasks: 20, dominantReason: null, recommendation: 'Investigate driver logs.' },
+      testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 12, failedTasks: 5, dominantReason: 'FetchFailed', dominantError: null, failureGroups: [], otherFailedTasks: 0, recommendation: 'Investigate driver logs.' }),
+      testFinding({ type: 'failures', stageId: 2, impactBand: 'critical', metric: 'failureRate', value: 40, failedTasks: 20, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, recommendation: 'Investigate driver logs.' }),
     ];
     render_(catalog);
     await user.click(screen.getByRole('button', { name: /^failed tasks$/i }));
@@ -56,8 +57,8 @@ describe('TaskFailures', () => {
 
   it('shows the FAIL tag once, in the header, and keeps a per-row impact dot for every flagged stage', () => {
     const catalog: Finding[] = [
-      { type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 12, failedTasks: 5, dominantReason: 'FetchFailed', recommendation: 'Investigate driver logs.' },
-      { type: 'failures', stageId: 2, impactBand: 'critical', metric: 'failureRate', value: 40, failedTasks: 20, dominantReason: null, recommendation: 'Investigate driver logs.' },
+      testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 12, failedTasks: 5, dominantReason: 'FetchFailed', dominantError: null, failureGroups: [], otherFailedTasks: 0, recommendation: 'Investigate driver logs.' }),
+      testFinding({ type: 'failures', stageId: 2, impactBand: 'critical', metric: 'failureRate', value: 40, failedTasks: 20, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, recommendation: 'Investigate driver logs.' }),
     ];
     const { container } = render_(catalog);
     expect(screen.getByText('FAIL')).toBeInTheDocument();
@@ -67,7 +68,7 @@ describe('TaskFailures', () => {
 
   it('shows a row\'s recommendation by default, with no per-row toggle', () => {
     const catalog: Finding[] = [
-      { type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 12, failedTasks: 5, dominantReason: 'FetchFailed', recommendation: 'Investigate driver logs for stage 1.' },
+      testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 12, failedTasks: 5, dominantReason: 'FetchFailed', dominantError: null, failureGroups: [], otherFailedTasks: 0, recommendation: 'Investigate driver logs for stage 1.' }),
     ];
     render_(catalog);
     expect(screen.getByText('Investigate driver logs for stage 1.')).toBeInTheDocument();
@@ -76,7 +77,7 @@ describe('TaskFailures', () => {
 
   it('names the dominant error and shows one stack excerpt per distinct failure', async () => {
     const user = userEvent.setup();
-    const catalog: Finding[] = [{
+    const catalog: Finding[] = [testFinding({
       type: 'failures', stageId: 1, impactBand: 'critical', metric: 'failureRate', value: 30, failedTasks: 9,
       dominantReason: 'ExceptionFailure', dominantError: 'java.lang.IllegalStateException', otherFailedTasks: 2,
       failureGroups: [
@@ -84,7 +85,7 @@ describe('TaskFailures', () => {
           stackExcerpt: 'java.lang.IllegalStateException: bad row\n\tat com.example.Job.run(Job.scala:10)' },
         { reason: 'ExecutorLostFailure', className: null, message: null, lossReason: 'Container killed by YARN for exceeding memory limits.', stackExcerpt: null, count: 2 },
       ],
-    }];
+    })];
     const { container } = render_(catalog);
     await user.click(screen.getByRole('button', { name: 'Failed Tasks' }));
     expect(screen.getByText('java.lang.IllegalStateException')).toBeInTheDocument();
@@ -103,10 +104,10 @@ describe('TaskFailures', () => {
     const user = userEvent.setup();
     const group = { reason: 'ExceptionFailure', className: 'java.lang.IllegalStateException', message: 'bad row', lossReason: null, stackExcerpt: null, count: 1 };
     const catalog: Finding[] = [
-      { type: 'failures', stageId: 1, impactBand: 'critical', metric: 'failureRate', value: 30, failedTasks: 2,
-        dominantReason: 'ExceptionFailure', otherFailedTasks: 1, failureGroups: [group] },
-      { type: 'failures', stageId: 2, impactBand: 'critical', metric: 'failureRate', value: 20, failedTasks: 1,
-        dominantReason: 'ExceptionFailure', failureGroups: [group] },
+      testFinding({ type: 'failures', stageId: 1, impactBand: 'critical', metric: 'failureRate', value: 30, failedTasks: 2,
+        dominantReason: 'ExceptionFailure', dominantError: null, otherFailedTasks: 1, failureGroups: [group] }),
+      testFinding({ type: 'failures', stageId: 2, impactBand: 'critical', metric: 'failureRate', value: 20, failedTasks: 1,
+        dominantReason: 'ExceptionFailure', dominantError: null, otherFailedTasks: 0, failureGroups: [group] }),
     ];
     render_(catalog);
     await user.click(screen.getByRole('button', { name: 'Failed Tasks' }));
@@ -119,8 +120,9 @@ describe('TaskFailures', () => {
 
   it('paginates the stage list 6-at-a-time, resetting to page 1 on a fresh appModel', async () => {
     const user = userEvent.setup();
-    const catalog: Finding[] = Array.from({ length: 8 }, (_, i) => ({
-      type: 'failures' as const, stageId: i + 1, impactBand: 'warning' as const, metric: 'failureRate', value: 10 + i, failedTasks: 2, dominantReason: null,
+    const catalog: Finding[] = Array.from({ length: 8 }, (_, i) => testFinding({
+      type: 'failures', stageId: i + 1, impactBand: 'warning', metric: 'failureRate', value: 10 + i, failedTasks: 2, dominantReason: null,
+      dominantError: null, failureGroups: [], otherFailedTasks: 0,
     }));
     const stageNames = Object.fromEntries(catalog.map((f) => [f.stageId as number, `stage-${f.stageId}`]));
     const { rerender } = render_(catalog, makeAppModel(stageNames));
@@ -144,8 +146,8 @@ describe('TaskFailures', () => {
     const user = userEvent.setup();
     store.getState().setWidgetDensity('advanced');
     const catalog: Finding[] = [
-      { type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 40, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } },
-      { type: 'failures', stageId: 2, impactBand: 'warning', metric: 'failureRate', value: 10, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } },
+      testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 40, failedTasks: 4, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } }),
+      testFinding({ type: 'failures', stageId: 2, impactBand: 'warning', metric: 'failureRate', value: 10, failedTasks: 1, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } }),
     ];
     render_(catalog);
 
@@ -160,8 +162,8 @@ describe('TaskFailures', () => {
   it('hides the sort toggle at basic density', async () => {
     const user = userEvent.setup();
     const catalog: Finding[] = [
-      { type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 40, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } },
-      { type: 'failures', stageId: 2, impactBand: 'warning', metric: 'failureRate', value: 10, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } },
+      testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 40, failedTasks: 4, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } }),
+      testFinding({ type: 'failures', stageId: 2, impactBand: 'warning', metric: 'failureRate', value: 10, failedTasks: 1, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } }),
     ];
     render_(catalog);
 

@@ -121,8 +121,8 @@ export function buildPlanGraphModel(
   const findingsByNodeId = new Map<string, Finding[]>();
   if (sqlExecutionId != null) {
     for (const finding of findings) {
-      if (finding.executionId !== sqlExecutionId) continue;
-      for (const nodeId of finding.planNodeIds ?? []) {
+      if (!('executionId' in finding) || finding.executionId !== sqlExecutionId) continue;
+      for (const nodeId of finding.planNodeIds) {
         const list = findingsByNodeId.get(nodeId);
         if (list) list.push(finding);
         else findingsByNodeId.set(nodeId, [finding]);

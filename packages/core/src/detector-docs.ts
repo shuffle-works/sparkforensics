@@ -3,13 +3,14 @@
 import { DETECTORS, detectorCatalog } from './detectors.ts';
 import { isKnownDocAnchor } from './docs-config.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
+import type { DetectorType, FindingType } from './types.ts';
 
 // Finding types that never appear as their own DETECTORS entry's type: the parent entry declares
 // a different type because one plan-walk covers two rules (see broadcastSizing). Map to the parent.
-const TYPE_ALIASES: Record<string, string> = {
+const TYPE_ALIASES: Readonly<Record<string, string>> = {
   overBroadcast: 'broadcastSizing',
   underBroadcast: 'broadcastSizing',
-};
+} satisfies Partial<Record<FindingType, DetectorType>>;
 
 // DETECTORS is static, so this grouping is built once (lazily) instead of re-scanning per
 // docAnchorForType call (called once per TagBadge per render).

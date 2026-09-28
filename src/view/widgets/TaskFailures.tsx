@@ -6,7 +6,8 @@ import { StagePill } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
+import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from '@sparkforensics/core/task-failure.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
@@ -19,7 +20,7 @@ import { usePagedRows } from '@/view/usePagedRows';
 
 export type TaskFailuresProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
 
-function hasStage(f: Finding): f is Finding & { stageId: number } {
+function hasStage<F extends Finding>(f: F): f is F & { stageId: number } {
   return f.stageId != null;
 }
 
@@ -47,9 +48,9 @@ function FailureGroupList({ groups, otherFailedTasks }: { groups: TaskFailureGro
   );
 }
 
-function TaskFailureRow({ finding }: { finding: Finding & { stageId: number } }) {
+function TaskFailureRow({ finding }: { finding: FindingOf<'failures'> & { stageId: number } }) {
   const anchor = useAnchoredRow([finding]);
-  const dominantError = (finding.dominantError as string | null | undefined) ?? (finding.dominantReason as string | null | undefined);
+  const dominantError = finding.dominantError ?? finding.dominantReason;
   return (
     <li
       ref={anchor.ref}
@@ -62,12 +63,12 @@ function TaskFailureRow({ finding }: { finding: Finding & { stageId: number } })
         <ImpactDot impactBand={finding.impactBand} />
       </div>
       <p className="text-xs text-muted-foreground">
-        Failure rate: <strong>{finding.value}%</strong> ({String(finding.failedTasks)} tasks) &middot; Dominant
+        Failure rate: <strong>{finding.value}%</strong> ({finding.failedTasks} tasks) &middot; Dominant
         error: <strong className="break-words">{dominantError ?? '—'}</strong>
       </p>
       <FailureGroupList
-        groups={(finding.failureGroups as TaskFailureGroup[] | undefined) ?? []}
-        otherFailedTasks={(finding.otherFailedTasks as number | undefined) ?? 0}
+        groups={finding.failureGroups}
+        otherFailedTasks={finding.otherFailedTasks}
       />
       <ImpactEstimate finding={finding} />
       {finding.recommendation ? <p className="text-xs text-muted-foreground">{finding.recommendation}</p> : null}
@@ -94,7 +95,7 @@ export function TaskFailures({ appModel, catalog, defaultCollapsed = true }: Tas
     setPage(0);
   }, [appModel]);
 
-  const findings = catalog.filter(hasStage).filter((f) => f.type === 'failures');
+  const findings = findingsOfType(catalog, 'failures').filter(hasStage);
   const sorted = [...findings].sort(
     (a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand] || a.stageId - b.stageId,
   );

@@ -1,20 +1,20 @@
 import { memo } from 'react';
 
 import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
 import { StageFindingGroupWidget } from './StageFindingGroup';
 
 // `stageShape`'s `rule` field names the shape smell it detected; turn it into a
 // short human label.
-const STAGE_SHAPE_RULE_LABEL: Record<string, string> = {
+const STAGE_SHAPE_RULE_LABEL: Record<FindingOf<'stageShape'>['rule'], string> = {
   lowParallelism: 'Low parallelism',
   dataExplosion: 'Data explosion',
   taskStageSkew: 'Task/stage skew',
 };
 
 function findingLabel(f: Finding): string {
-  const rule = typeof f.rule === 'string' ? f.rule : undefined;
-  const label = (rule && STAGE_SHAPE_RULE_LABEL[rule]) ?? f.metric ?? 'stage shape';
+  // StageFindingGroupWidget only passes this board's own `stageShape` findings.
+  const label = f.type === 'stageShape' ? STAGE_SHAPE_RULE_LABEL[f.rule] : 'stage shape';
   return `${label}: ${f.value}`;
 }
 

@@ -8,10 +8,11 @@ import { StageDetailProvider } from '../../src/view/StageDetailContext';
 import { impactFigure } from '@sparkforensics/core/impact-format.ts';
 import { TypeGroupRow, useFixTheseFirstData } from '../../src/view/widgets/FixTheseFirst';
 import { rankedRollup } from '@sparkforensics/core/recommendation-rollup.ts';
-import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingOf, FindingType, ImpactBand } from '@sparkforensics/core/types.ts';
 import { emptyAppModel } from '@/store/store';
 import type { BoardGroup } from '@/view/interpretation';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding, unknownTypeFinding } from './_shared/finding';
 
 // Non-overlapping windows so a group's union-capped recoverableMsHigh equals
 // the naive sum, without re-testing computeStageUnionMs's overlap math.
@@ -30,14 +31,14 @@ function groupOf(findings: Finding[]): BoardGroup {
   return { ...group, key: `${group.kind}-${group.type}`, findings: members };
 }
 
-function findingWithMagnitude(type: string, stageId: number, lowMs: number, impactBand: ImpactBand = 'warning'): Finding {
+function findingWithMagnitude<T extends FindingType>(type: T, stageId: number, lowMs: number, impactBand: ImpactBand = 'warning'): Finding {
   return {
     type,
     impactBand,
     stageId,
     recommendation: `Fix ${type} in Stage ${stageId}.`,
     impactEstimate: { basis: 'serial', wallClock: { low: lowMs, high: lowMs }, estimateMethod: 'modeled' },
-  };
+  } as FindingOf<T>;
 }
 
 describe('useFixTheseFirstData', () => {
@@ -109,18 +110,18 @@ describe('duplicatePlanSubtree identity across a cross-execution rollup', () => 
   // rootName+groupIndex pair (groupIndex resets per execution), and the rollup
   // groups by `type` alone, so both land in one group and must stay disambiguated.
   it('renders distinct identity labels for two same-rootName/groupIndex findings from different SQL executions', () => {
-    const findingA: Finding = {
+    const findingA: Finding = testFinding({
       id: 'f5d7a7a7', type: 'duplicatePlanSubtree', executionId: 64, impactBand: 'critical',
       rootName: 'Filter', groupIndex: 1, stageIds: [91, 96, 97],
       recommendation: 'Consider caching/persisting the shared computation.',
       impactEstimate: { basis: 'contended', wallClock: { low: 141262, high: 141296 }, estimateMethod: 'measured' },
-    };
-    const findingB: Finding = {
+    });
+    const findingB: Finding = testFinding({
       id: '5660db92', type: 'duplicatePlanSubtree', executionId: 65, impactBand: 'warning',
       rootName: 'Filter', groupIndex: 1, stageIds: [103],
       recommendation: 'Consider caching/persisting the shared computation.',
       impactEstimate: { basis: 'serial', wallClock: { low: 35920, high: 35920 }, estimateMethod: 'measured' },
-    };
+    });
     const group = groupOf([findingA, findingB]);
     expect(group.findings).toHaveLength(2);
 
@@ -143,10 +144,10 @@ describe('duplicatePlanSubtree identity across a cross-execution rollup', () => 
 
 describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailable)', () => {
   it('excludes incompleteRun findings even though the type is routeable in REGISTRY', () => {
-    const incompleteRun: Finding = {
-      type: 'incompleteRun', impactBand: 'warning',
+    const incompleteRun: Finding = testFinding({
+      type: 'incompleteRun', impactBand: 'warning', valueText: 'missing',
       recommendation: 'Re-run with a complete event log.',
-    };
+    });
     const spill = findingWithMagnitude('spill', 1, 5000, 'critical');
     const { eligible } = boardData([incompleteRun, spill]);
     expect(eligible).toEqual([spill]);
@@ -212,16 +213,16 @@ describe('TypeGroupRow generic description', () => {
 
   it('omits the muted description line entirely for a finding type with no generic sentence, rather than falling back to instance text', () => {
     const findings: Finding[] = [
-      {
+      unknownTypeFinding({
         type: 'notARealDetector', impactBand: 'warning', stageId: 1,
         recommendation: 'Fix notARealDetector in Stage 1.',
         impactEstimate: { basis: 'serial', wallClock: { low: 1000, high: 1000 }, estimateMethod: 'modeled' },
-      },
-      {
+      }),
+      unknownTypeFinding({
         type: 'notARealDetector', impactBand: 'critical', stageId: 2,
         recommendation: 'Fix notARealDetector in Stage 2.',
         impactEstimate: { basis: 'serial', wallClock: { low: 2000, high: 2000 }, estimateMethod: 'modeled' },
-      },
+      }),
     ];
     const group = groupOf(findings);
 
@@ -242,7 +243,7 @@ describe('TypeGroupRow generic description', () => {
 
 describe('TypeGroupRow docs link', () => {
   function configFinding(docAnchor: string, property: string): Finding {
-    return { type: 'configAudit', impactBand: 'warning', stageId: null, property, docAnchor, recommendation: `Fix ${property}.` };
+    return testFinding({ type: 'configAudit', impactBand: 'warning', stageId: null, property, valueText: 'x', docAnchor, recommendation: `Fix ${property}.` });
   }
 
   function renderGroup(findings: Finding[]) {

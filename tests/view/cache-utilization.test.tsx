@@ -5,8 +5,9 @@ import userEvent from '@testing-library/user-event';
 import { emptyAppModel, store } from '@/store/store';
 import { CacheUtilization } from '@/view/widgets/CacheUtilization';
 import { DocsProvider } from '@/view/DocsContext';
-import type { AppModel, Finding, SparkAppInfo } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingOf, SparkAppInfo } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
 interface RddFixtureOverrides {
   name?: string;
@@ -117,10 +118,10 @@ test('tags its root element with data-widget for instrumentation', () => {
   expect(container.querySelector('[data-widget="cache-utilization"]')).not.toBeNull();
 });
 
-function cacheUtilizationFinding(overrides: Partial<Finding> = {}): Finding {
+function cacheUtilizationFinding(overrides: Partial<FindingOf<'cacheUtilization'>> = {}): Finding {
   const rddId = overrides.rddId ?? 1;
   const variant = overrides.variant ?? 'partialCache';
-  return {
+  return testFinding({
     type: 'cacheUtilization', variant, stageId: null,
     rddId, rddName: 'rdd1',
     impactBand: 'warning', metric: 'cachedRatio', value: 40,
@@ -130,7 +131,7 @@ function cacheUtilizationFinding(overrides: Partial<Finding> = {}): Finding {
     memorySize: 2e8, diskSize: 3e8, numCachedPartitions: 4, numPartitions: 10,
     recommendation: 'RDD rdd1 is 60% evicted from cache (40% of partitions cached), increase executor memory or reduce the cached dataset size.',
     ...overrides,
-  } as Finding;
+  });
 }
 
 test('shows the CSTOR tag once, in the header, and keeps a per-row impact dot for the flagged RDD only', async () => {
