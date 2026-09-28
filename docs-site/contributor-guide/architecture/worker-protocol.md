@@ -339,8 +339,8 @@ Tuned-thresholds update: `buildEvidenceReport(appModel, { thresholds })` runs th
 with a user's validated overrides (the CLI's and MCP server's `--thresholds`; see
 [Tuning thresholds](./detector-contract.md#tuning-thresholds)). Only a tuned run adds keys:
 `tunedThresholds` (`{ <name>: { value, default } }`) on each finding row and each
-`cleanChecks`/`notRunChecks` entry from a detector an override moved off its defaults, on
-that detector's `detectors` row, and as `summary.tunedThresholds` keyed by detector type. The
+`cleanChecks`/`notRunChecks` entry from a detector an override moved off its defaults (or
+whose `suppressedBy` detector it moved), on that detector's `detectors` row, and as `summary.tunedThresholds` keyed by detector type. The
 Markdown adds a `- Tuned thresholds:` header line, a `- tuned thresholds:` line per affected
 finding, and marks tuned catalog rows and clean checks. A default run's report is
 byte-identical to before, and every addition is optional, so `EVIDENCE_SCHEMA_VERSION` stays

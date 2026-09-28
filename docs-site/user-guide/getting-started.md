@@ -270,7 +270,9 @@ A tuned run says so wherever it reports:
   overridden threshold's `value` and `default`), and its `validationRequired`
   text says its impact estimate is unvalidated. The estimates are calibrated
   against the default thresholds, so they were never checked for a finding
-  your override lets through.
+  your override lets through. Tuning `slowHost` also labels `stageSlowness`
+  findings (as `slowHost.<name>`), because a slow host hides a stage's
+  slowness finding, so the override decides which of those you see.
 - A clean check measured against a tuned threshold carries
   `tunedThresholds` too, and its `thresholdSummary` states the tuned value.
 - `summary.tunedThresholds` lists every tuned detector, and each tuned row
