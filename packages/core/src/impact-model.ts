@@ -9,7 +9,7 @@ import {
 } from './occupancy.ts';
 
 /** What every estimate() is handed: built once per analyze(), and the same object detect() gates
- * its runtime floors against (DetectorCtx.estimate), so a floor and the savings displayed for it
+ * its runtime floors against (DetectorCtx.impact), so a floor and the savings displayed for it
  * read one occupancy sweep. */
 export interface EstimateCtx {
   stages: Map<number, Stage>;
