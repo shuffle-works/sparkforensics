@@ -3,7 +3,7 @@
 // server accept overrides; the dashboard always runs the defaults. Reading the file is
 // cli/threshold-config.ts's job, so this module stays free of Node APIs.
 import {
-  DETECTORS, detectorCatalog, type Detector, type DetectorCatalogEntry, type DetectorThresholds, type ThresholdOverrides,
+  DETECTORS, ENTRY_BY_TYPE, detectorCatalog, type Detector, type DetectorCatalogEntry, type DetectorThresholds, type ThresholdOverrides,
 } from './detectors.ts';
 import type { TunedThreshold, TunedThresholds } from './types.ts';
 
@@ -21,8 +21,10 @@ function isNonNegativeNumber(value: unknown): value is number {
 // such as its memoryOverhead floor), and with at least one threshold.
 function tunableEntry(type: string): Detector {
   const entry = entries.find((d) => d.type === type);
-  const tunable = entries.filter((d) => d.scope !== 'config' && Object.keys(d.thresholds).length > 0).map((d) => d.type);
-  if (!entry) throw new Error(`unknown detector "${type}" (tunable detectors: ${tunable.join(', ')})`);
+  if (!entry) {
+    const tunable = entries.filter((d) => d.scope !== 'config' && Object.keys(d.thresholds).length > 0).map((d) => d.type);
+    throw new Error(`unknown detector "${type}" (tunable detectors: ${tunable.join(', ')})`);
+  }
   if (entry.scope === 'config') throw new Error(`"${type}" is not tunable: its checks compare against Spark's own defaults`);
   if (Object.keys(entry.thresholds).length === 0) throw new Error(`"${type}" has no thresholds to tune`);
   return entry;
@@ -53,11 +55,11 @@ export function parseThresholdOverrides(raw: unknown): ThresholdOverrides {
     if (!isPlainObject(perDetector)) throw new Error(`"${type}" must be an object of threshold values`);
     const values: Record<string, number | readonly number[]> = {};
     for (const [name, value] of Object.entries(perDetector)) {
-      const fallback = entry.thresholds[name];
-      if (fallback === undefined) {
+      // Own keys only: an inherited name such as `constructor` or `toString` is no threshold.
+      if (!Object.hasOwn(entry.thresholds, name)) {
         throw new Error(`unknown threshold "${type}.${name}" (${type} thresholds: ${Object.keys(entry.thresholds).join(', ')})`);
       }
-      values[name] = checkValue(type, name, fallback, value);
+      values[name] = checkValue(type, name, entry.thresholds[name], value);
     }
     result[type] = Object.freeze(values);
   }
@@ -79,8 +81,9 @@ function sameValue(a: number | readonly number[], b: number | readonly number[])
 export function tunedThresholdsOf(entry: Detector, overrides: ThresholdOverrides | undefined): TunedThresholds | null {
   const tuned: Record<string, TunedThreshold> = {};
   for (const [name, value] of Object.entries(overridesFor(entry, overrides) ?? {})) {
+    if (!Object.hasOwn(entry.thresholds, name)) continue;
     const fallback = entry.thresholds[name];
-    if (fallback !== undefined && !sameValue(value, fallback)) tuned[name] = { value, default: fallback };
+    if (!sameValue(value, fallback)) tuned[name] = { value, default: fallback };
   }
   return Object.keys(tuned).length > 0 ? tuned : null;
 }
@@ -99,7 +102,7 @@ export function findingTunedThresholds(entry: Detector, overrides: ThresholdOver
 /** findingTunedThresholds() for the first entry emitting finding type `type`, the entry whose
  * thresholds its clean-check summary reads. */
 export function tunedThresholdsForType(type: string, overrides: ThresholdOverrides | undefined): TunedThresholds | null {
-  const entry = entries.find((d) => (d.emits as readonly string[]).includes(type));
+  const entry = ENTRY_BY_TYPE.get(type);
   return entry ? findingTunedThresholds(entry, overrides) : null;
 }
 
@@ -140,7 +143,18 @@ export function describeTunedThresholds(tuned: TunedThresholds): string {
     .join(', ');
 }
 
-/** The caveat a tuned finding carries in `validationRequired`: its estimate was never calibrated. */
-export function tunedEstimateNote(tuned: TunedThresholds): string {
-  return `Produced with tuned thresholds: ${describeTunedThresholds(tuned)}. Impact estimates are calibrated against the default thresholds, so this finding's estimate is unvalidated.`;
+/** A tuned run's report line after its label: every tuned detector's thresholds, then why its
+ * findings' estimates are uncalibrated. `byType` is tunedDetectors()'s result. */
+export function tunedRunNote(byType: Record<string, TunedThresholds>): string {
+  const tuned = Object.entries(byType).map(([type, t]) => `${type} ${describeTunedThresholds(t)}`).join('; ');
+  return `${tuned}. Findings from these detectors are marked, and their impact estimates are uncalibrated: the estimates are calibrated against the default thresholds.`;
+}
+
+/** The caveat a tuned finding carries in `validationRequired`: which thresholds produced it and,
+ * when it has an estimate figure (`hasEstimate`), that the figure was never calibrated. */
+export function tunedThresholdsNote(tuned: TunedThresholds, hasEstimate: boolean): string {
+  const label = `Produced with tuned thresholds: ${describeTunedThresholds(tuned)}.`;
+  return hasEstimate
+    ? `${label} Impact estimates are calibrated against the default thresholds, so this finding's estimate is unvalidated.`
+    : label;
 }

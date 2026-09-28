@@ -67,7 +67,7 @@ are open work, not a pattern to copy.
 The HTML export carries the same result. `buildHtmlExportData`
 (`packages/core/src/html-export.ts`), shared by the CLI's `--export-html` and
 the dashboard's download, calls `interpretRun` and writes it into the payload
-(`EXPORT_DATA_SCHEMA_VERSION` 2) with a provenance stamp: core version, core
+(`EXPORT_DATA_SCHEMA_VERSION` 3) with a provenance stamp: core version, core
 build id (`coreSourceHash` of the core sources: `coreBuildId` in
 `load-vendored.js` for the CLI, a Vite `define` for the web build, see
 `src/build-info.ts`) and producer, all shown in the export footer. With

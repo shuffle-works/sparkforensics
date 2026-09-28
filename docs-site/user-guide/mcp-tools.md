@@ -45,7 +45,8 @@ change them per call. An unreadable or invalid file stops the server from
 starting, with the problem on stderr. On a tuned server, `diagnose_run`,
 `compare_runs` and `evaluate_budgets` add a top-level `tunedThresholds`, and
 each finding and clean check from a tuned detector carries its own
-`tunedThresholds`, as in the CLI report.
+`tunedThresholds`, as in the CLI report. The Markdown output of
+`diagnose_run` and `compare_runs` names the tuned thresholds too.
 
 ## `diagnose_run`
 

@@ -383,7 +383,7 @@ export async function compareRuns(
     reason: result.reason,
     matchedCoverage: result.matchedCoverage,
     ...tunedField(opts?.thresholds),
-    ...(opts?.markdown ? { markdown: renderComparisonMarkdown(result, verdict) } : {}),
+    ...(opts?.markdown ? { markdown: renderComparisonMarkdown(result, verdict, tunedDetectors(opts?.thresholds)) } : {}),
   };
 }
 
@@ -426,7 +426,7 @@ export async function evaluateBudgetsForRun(
     : undefined;
 
   const { results, violated, inconclusive } = evaluateBudgets({
-    appModel: candidate.appModel, catalog: candidate.catalog, budgets, comparison,
+    appModel: candidate.appModel, catalog: candidate.catalog, budgets, comparison, thresholds: opts?.thresholds,
   });
 
   return { runId: first.runId, results, violated, inconclusive, ...tunedField(opts?.thresholds) };

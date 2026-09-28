@@ -1,4 +1,4 @@
-import { DETECTORS, type Detector, type ThresholdOverrides } from './detectors.ts';
+import { ENTRY_BY_TYPE, type ThresholdOverrides } from './detectors.ts';
 import { presentationOf } from './finding-presentation.ts';
 import { effectiveThresholds } from './threshold-overrides.ts';
 
@@ -7,7 +7,7 @@ import { effectiveThresholds } from './threshold-overrides.ts';
  * when the run was tuned. */
 export function getThresholdSummary(type: string, overrides?: ThresholdOverrides): string {
   const presentation = presentationOf(type);
-  const entry: Detector | undefined = DETECTORS.find((d) => (d.emits as readonly string[]).includes(type));
+  const entry = ENTRY_BY_TYPE.get(type);
   if (!presentation || !entry) return 'criteria not met';
   return presentation.thresholdSummary(effectiveThresholds(entry, overrides) as never);
 }

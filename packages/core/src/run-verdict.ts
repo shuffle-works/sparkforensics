@@ -1,7 +1,7 @@
 // The run verdict: where to start, a short summary, and the top places to look, ranked by
 // potential savings (failures first on a failed run). Shared by the dashboard's verdict card and
 // the CLI/MCP evidence report, so both paths name the same first step in the same words.
-import { DETECTORS } from './detectors.ts';
+import { ENTRY_BY_TYPE } from './detectors.ts';
 import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
 import { findingActionLabel } from './finding-action-label.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
@@ -24,19 +24,12 @@ export const REFERENCE_DISPLAY_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /** Every emitted finding type in the board's widget display order: action region before
- * reference region, then ascending `DETECTORS` order (lowest order wins for a repeated type).
+ * reference region, then ascending order of the type's `ENTRY_BY_TYPE` entry.
  * The last tiebreak of the verdict ranking, so the CLI orders ties exactly as the dashboard. */
 export const FINDING_DISPLAY_ORDER: readonly string[] = (() => {
-  const orderByType = new Map<string, number>();
-  for (const detector of DETECTORS) {
-    for (const type of detector.emits) {
-      const existing = orderByType.get(type);
-      if (existing === undefined || detector.order < existing) orderByType.set(type, detector.order);
-    }
-  }
   const region = (type: string) => (REFERENCE_DISPLAY_TYPES.has(type) ? 1 : 0);
-  return [...orderByType.entries()]
-    .sort(([a, orderA], [b, orderB]) => region(a) - region(b) || orderA - orderB)
+  return [...ENTRY_BY_TYPE.entries()]
+    .sort(([a, entryA], [b, entryB]) => region(a) - region(b) || entryA.order - entryB.order)
     .map(([type]) => type);
 })();
 

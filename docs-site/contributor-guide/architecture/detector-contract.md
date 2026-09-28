@@ -204,11 +204,14 @@ tune. A file that can't be read or parsed refuses the run the same way. The
 documents the file.
 
 A finding from an entry whose overrides move a threshold off its default
-carries `tunedThresholds` (`{ <name>: { value, default } }`), and `push()`
-appends a caveat to its `validationRequired`: impact estimates are
-calibrated against the default thresholds (see
-[Impact estimation](./impact-estimation.md)), so a tuned finding's estimate
-is unvalidated. An override equal to the default labels nothing. Tuning a
+carries `tunedThresholds` (`{ <name>: { value, default } }`), and once its
+estimate is attached the analyzer appends a caveat to its
+`validationRequired` naming the tuned values. When the finding has an
+estimate figure (wall-clock or raw waste), the caveat adds that impact
+estimates are calibrated against the default thresholds (see
+[Impact estimation](./impact-estimation.md)), so its estimate is
+unvalidated; an informational finding gets the label alone. An override
+equal to the default labels nothing. Tuning a
 `suppressedBy` target changes which of the suppressed entry's findings
 survive, so those findings carry the suppressor's tuned thresholds too,
 named `<suppressor>.<name>` (e.g. `slowHost.minHosts` on `stageSlowness`).
@@ -218,11 +221,14 @@ evidence report repeats the label on the finding row, the clean check, the
 and in `summary.tunedThresholds`; see
 [Portable evidence report](./worker-protocol.md#portable-evidence-report-v1).
 
-Three things a tuned run does not change: the impact-band floors in
-`impact-band.ts`, which reuse `straggler`'s default floor percentages for
-every finding; the CLI budget flags, which are gates computed from the run's
-own figures (`--max-skew` keeps `skew`'s default `minTasksForP95`); and the
-HTML export, which always renders the default-threshold analysis.
+A tuned `floorPctWarn`/`floorPctCrit` on `skew` or `straggler` also grades
+that entry's own findings in `deriveImpactBand` (`impact-band.ts`); every
+other finding keeps the run-wide default floors. `--max-skew` recomputes the
+ratio with the run's effective `minTasksForP95`, so the budget measures the
+same ratio the skew finding reports. Caveat text that names a threshold
+(`gc`, `skew`, `straggler`, `memoryUtilization`, `coreLocality`) states the
+value the detector ran with. The HTML export still renders the
+default-threshold analysis.
 
 ## Per-operator duration attribution
 

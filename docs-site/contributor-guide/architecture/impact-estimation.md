@@ -304,10 +304,11 @@ but a threshold decides which findings exist, so an override that loosens one pr
 findings, near its new gate, that no estimate here was checked against. When the CLI or the
 MCP server runs with `--thresholds` (see
 [Tuning thresholds](./detector-contract.md#tuning-thresholds)), every finding from a tuned
-detector carries `tunedThresholds` and a `validationRequired` sentence saying its estimate is
-unvalidated, and the report header lists the tuned detectors. The estimate itself is computed
-the same way; nothing rescales or drops it. The impact bands (`impact-band.ts`) keep their
-fixed floors on a tuned run.
+detector carries `tunedThresholds`, a finding with an estimate figure gets a
+`validationRequired` sentence saying that estimate is unvalidated, and the report header lists
+the tuned detectors. The estimate itself is computed the same way; nothing rescales or drops it.
+The impact bands (`impact-band.ts`) keep their default floors on a tuned run, except that a
+tuned `skew` or `straggler` `floorPctWarn`/`floorPctCrit` grades that entry's own findings.
 
 ## Per-finding-type coverage
 

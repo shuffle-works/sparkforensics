@@ -787,8 +787,9 @@ export type Detector = {
 // detector a threshold of the wrong shape, which is what makes the cast below sound.
 function mergeThresholds<T extends DetectorThresholds>(type: string, defaults: Readonly<T>, overrides: DetectorThresholds): Readonly<T> {
   for (const [name, value] of Object.entries(overrides)) {
+    // Own keys only: an inherited name such as `constructor` or `toString` is no threshold.
+    if (!Object.hasOwn(defaults, name)) throw new Error(`Detector ${type} has no threshold "${name}".`);
     const fallback = defaults[name];
-    if (fallback === undefined) throw new Error(`Detector ${type} has no threshold "${name}".`);
     const sameShape = Array.isArray(fallback)
       ? Array.isArray(value) && value.length === fallback.length
       : typeof value === 'number';
@@ -948,7 +949,17 @@ function cachingReuseConfidence(occurrences: number, minExecutions: number): 'lo
   return 'medium';
 }
 
-const GC_VALIDATION = 'This finding is gated by a 10-second minimum-runtime floor, our own noise floor for this metric.';
+// A share threshold as caveat text states it: 0.005 -> "0.5%". Rounded to 4 decimals of a percent
+// so float noise (0.07 * 100) never prints.
+function shareLabel(share: number): string {
+  return `${Math.round(share * 1e6) / 1e4}%`;
+}
+
+// Caveats that name a threshold read it from the thresholds the detector ran with, so a tuned run
+// states the floor it actually used.
+function gcValidation(minRunTimeMs: number): string {
+  return `This finding is gated by a ${minRunTimeMs / 1000}-second minimum-runtime floor, our own noise floor for this metric.`;
+}
 
 const INCOMPLETE_RUN_RECOMMENDATION = 'This event log never recorded an ApplicationEnd event: the capture stopped before the run finished (an in-flight job, a rotated-away log, or a cut-short capture). Findings and metrics elsewhere on this board reflect only what was captured up to that point, not the full run.';
 
@@ -972,7 +983,7 @@ export const DETECTORS = [
         impactBand: 'warning',
         metric, value,
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
-        validationRequired: 'This finding is gated by a 0.5% runtime-floor threshold, our own noise floor for this metric.',
+        validationRequired: `This finding is gated by a ${shareLabel(thresholds.floorPctWarn)} runtime-floor threshold, our own noise floor for this metric.`,
         recommendation: `Task duration ratio (${metric}) is ${value}×: for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key to reduce task skew.`,
       };
     },
@@ -1232,7 +1243,7 @@ export const DETECTORS = [
           type: 'gc', stageId: stage.id,
           impactBand: 'warning',
           metric: 'gcPct', value,
-          confidence: gcConfidence(pct, thresholds, 'high'), validationRequired: GC_VALIDATION,
+          confidence: gcConfidence(pct, thresholds, 'high'), validationRequired: gcValidation(thresholds.minRunTimeMs),
           recommendation: `GC consumed ${value}% of executor run time: reduce object creation, use primitive types, avoid UDFs, increase executor memory.`,
         };
       }
@@ -1245,7 +1256,7 @@ export const DETECTORS = [
           type: 'gc', stageId: stage.id, direction: 'low',
           impactBand: 'info',
           metric: 'gcPct', value,
-          confidence: gcConfidence(pct, thresholds, 'low'), validationRequired: GC_VALIDATION,
+          confidence: gcConfidence(pct, thresholds, 'low'), validationRequired: gcValidation(thresholds.minRunTimeMs),
           recommendation: `GC consumed only ${value}% of executor run time: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.`,
         };
       }
@@ -1554,7 +1565,7 @@ export const DETECTORS = [
         confidence: useSpeculativeMetric
           ? stragglerConfidence(speculativeShare, thresholds.warnPct, thresholds.critPct)
           : stragglerConfidence(stragglerShare, thresholds.shareWarn, thresholds.critPct),
-        validationRequired: 'This finding is gated by 0.5%/2% runtime-floor thresholds, our own noise floor for this metric.',
+        validationRequired: `This finding is gated by ${shareLabel(thresholds.floorPctWarn)}/${shareLabel(thresholds.floorPctCrit)} runtime-floor thresholds, our own noise floor for this metric.`,
         recommendation: `${detail}: rule out a GC pause or a slow shuffle fetch before assuming a hardware issue; if a skewed key is the real cause, that's a candidate for AQE's skew-join handling.`,
       };
     },
@@ -1888,7 +1899,7 @@ export const DETECTORS = [
             type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
             impactBand: 'info', metric: 'wastedMBSeconds', value,
             confidence: memoryWasteConfidence(wastedMBSeconds, usedMBSeconds, thresholds.wasteBufferMultiplier),
-            validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and a 1.5x buffer: confirm against the Spark UI before acting.',
+            validationRequired: `Memory-waste estimate uses allocated-vs-used memory-time and a ${thresholds.wasteBufferMultiplier}x buffer: confirm against the Spark UI before acting.`,
             recommendation: `Allocated executor memory sat largely idle over the run (~${value.toLocaleString('en-US')} MB-seconds wasted): review spark.executor.memory and executor count.`,
           });
         }
@@ -2021,7 +2032,7 @@ export const DETECTORS = [
         // Raw count behind the ratio, for the impact estimator. Non-null whenever totalTasks is.
         nonLocalTaskCount: nonLocalTasks!,
         confidence: coreLocalityConfidence(ratio!, totalTasks, thresholds),
-        validationRequired: 'This finding is gated by 15%/35% non-local-ratio thresholds (and a 50-task minimum), our own noise floor for this metric.',
+        validationRequired: `This finding is gated by ${shareLabel(thresholds.warnRatio)}/${shareLabel(thresholds.critRatio)} non-local-ratio thresholds (and a ${thresholds.minTasks}-task minimum), our own noise floor for this metric.`,
         recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement: check spark.locality.wait settings and executor/data colocation.`,
       };
     },
@@ -2598,6 +2609,17 @@ export const DETECTORS = [
     },
   }),
 ] as const satisfies readonly Detector[];
+
+/** The entry that emits each finding type: the one whose estimate prices it and whose thresholds
+ * and order describe it. Several entries can emit one type (the four configAudit audits), and the
+ * first declared wins. */
+export const ENTRY_BY_TYPE: ReadonlyMap<string, Detector> = (() => {
+  const byType = new Map<string, Detector>();
+  for (const entry of DETECTORS as readonly Detector[]) {
+    for (const type of entry.emits) if (!byType.has(type)) byType.set(type, entry);
+  }
+  return byType;
+})();
 
 /** A `DETECTORS` entry's own `type`: every emitted finding type, plus broadcastSizing. */
 export type DetectorType = (typeof DETECTORS)[number]['type'];
