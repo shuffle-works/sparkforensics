@@ -11,20 +11,12 @@ import { usePagedRows } from '@/view/usePagedRows';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { formatMetricValue, formatRawWaste, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { MemoryUtilizationFinding } from '@sparkforensics/core/finding-types.ts';
 
 export type MemoryUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
-
-// The `memoryUtilization` detector emits three variants from one `type`, none
-// declared on the frozen `Finding` interface; bridged with a single cast.
-interface MemoryUtilizationFinding extends Finding {
-  variant?: 'idleCores' | 'memoryBand' | 'wasteModel';
-  executorId?: string | number;
-  dataUnavailable?: boolean;
-  rule?: 'heapNearCapacity' | 'heapOverProvisioned';
-}
 
 /** Each `memoryUtilization` variant reports a different metric under `value`:
  * idle core-time rate, per-executor heap ratio (with a `rule` sub-discriminator
@@ -128,7 +120,7 @@ export const MemoryUtilization = memo(function MemoryUtilization({ catalog, defa
   const [page, setPage] = useState(0);
 
   const { findings, groupConfidence } = useMemo(() => {
-    const findings = (catalog.filter((f) => f.type === 'memoryUtilization') as MemoryUtilizationFinding[]).sort(
+    const findings = findingsOfType(catalog, 'memoryUtilization').sort(
       (a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand],
     );
     // Only claim a single header-level confidence when every real finding

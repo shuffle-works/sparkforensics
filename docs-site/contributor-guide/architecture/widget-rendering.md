@@ -112,7 +112,7 @@ directly or inside an expanded group, is a `TableRow`
 `plainBadge`: nothing wraps it, so its own docs links stay real `<a>`s,
 same as everywhere else on the board); a text block inside its own nested
 `<button>` (a short imperative action label, e.g. "Reduce shuffle size",
-from `findingActionLabel` (`src/view/finding-action-label.ts`), over the
+from `findingActionLabel` (`packages/core/src/finding-action-label.ts`), over the
 finding's own full `recommendation` sentence in smaller muted text, both
 wrapping rather than truncating); and a right-aligned monospace stage
 reference + impact figure (e.g. `St.49 · 20.1s`, via the shared
@@ -420,7 +420,7 @@ one always-mounted exception filtered out before that grid.
 through `isAlwaysMountedType()` to exclude that one always-mounted component;
 the clean-check list bypasses `orderedWidgets()` entirely, iterating
 `Object.keys(REGISTRY)` per type instead (see "Findings tab" above). `DETECTORS`'
-own array order and iteration, plus its cross-detector `suppressWhen` logic
+own array order and iteration, plus its cross-detector `suppressedBy` logic
 (e.g. `stageSlowness` deferring to `slowHost`, see
 [Detector contract](./detector-contract.md#detector-contract)), live entirely in
 `packages/core/src/detectors.ts`/`packages/core/src/analyzer.ts`, untouched by this redesign. Which React
@@ -513,7 +513,9 @@ of its own, so its trigger renders as a direct sibling in the row body.
 
 Plan detection logic belongs in a `packages/core/src/detectors.ts` entry (`scope:'sql'`)
 consuming `planTree`. `packages/core/src/plan-summary.ts` is display-only summarization; do
-not add detection heuristics there.
+not add detection heuristics there. It is best-effort: `summarizePlanTree` reads each resolved
+`planTree` node's `detail` with lenient regexes and silently omits a fragment it can't parse,
+never surfacing an error.
 
 `StageHeader.tsx` (`StagePill` plus a `<span>` naming the stage) vs. bare
 `StagePill`/`StagePillGroup` is a deliberate row-density choice, not an

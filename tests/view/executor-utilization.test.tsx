@@ -5,6 +5,7 @@ import type { Finding } from '@sparkforensics/core/types.ts';
 
 import { ExecutorUtilization } from '@/view/widgets/ExecutorUtilization';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
 test('renders nothing when there are no utilization findings (collapses to a Clean-checks row instead)', () => {
   const { container } = render(<ExecutorUtilization catalog={[]} />);
@@ -13,7 +14,7 @@ test('renders nothing when there are no utilization findings (collapses to a Cle
 
 test('renders the WidgetCard heading, UTIL badge, and the average-utilization row', () => {
   const catalog: Finding[] = [
-    { type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42, recommendation: 'Average executor utilization < 60%: consider reducing cluster size or enabling dynamic allocation.' },
+    testFinding({ type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42, recommendation: 'Average executor utilization < 60%: consider reducing cluster size or enabling dynamic allocation.', utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42 }),
   ];
   render(<ExecutorUtilization catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByRole('heading', { name: 'Executor Utilization' })).toBeInTheDocument();
@@ -23,7 +24,7 @@ test('renders the WidgetCard heading, UTIL badge, and the average-utilization ro
 
 test("a utilization row's recommendation is visible unconditionally, with no per-row toggle", () => {
   const catalog: Finding[] = [
-    { type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42, recommendation: 'Average executor utilization < 60%: consider reducing cluster size or enabling dynamic allocation.' },
+    testFinding({ type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42, recommendation: 'Average executor utilization < 60%: consider reducing cluster size or enabling dynamic allocation.', utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42 }),
   ];
   render(<ExecutorUtilization catalog={catalog} defaultCollapsed={false} />);
   const recommendation = /Average executor utilization < 60%/i;
@@ -33,11 +34,12 @@ test("a utilization row's recommendation is visible unconditionally, with no per
 
 test('renders the core-hours raw-waste figure for a utilization finding', () => {
   const catalog: Finding[] = [
-    {
+    testFinding({
       type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42,
       recommendation: 'Average executor utilization < 60%.',
       impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 6, unit: 'coreHours' } },
-    },
+      utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42,
+    }),
   ];
   installInterpretation(catalog);
   render(<ExecutorUtilization catalog={catalog} defaultCollapsed={false} />);
@@ -46,8 +48,8 @@ test('renders the core-hours raw-waste figure for a utilization finding', () => 
 
 test('flags every affected row, not just the worst, sorted worst-first', () => {
   const catalog: Finding[] = [
-    { type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 55, recommendation: 'r-info' },
-    { type: 'utilization', stageId: null, impactBand: 'warning', metric: 'avgUtilization', value: 30, recommendation: 'r-warning' },
+    testFinding({ type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 55, recommendation: 'r-info', utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42 }),
+    testFinding({ type: 'utilization', stageId: null, impactBand: 'warning', metric: 'avgUtilization', value: 30, recommendation: 'r-warning', utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42 }),
   ];
   render(<ExecutorUtilization catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByText(/r-warning/)).toBeInTheDocument();
@@ -56,7 +58,7 @@ test('flags every affected row, not just the worst, sorted worst-first', () => {
 
 test('card defaults collapsed with a summary when there are findings', () => {
   const catalog: Finding[] = [
-    { type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42, recommendation: 'Average executor utilization < 60%.' },
+    testFinding({ type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42, recommendation: 'Average executor utilization < 60%.', utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42 }),
   ];
   render(<ExecutorUtilization catalog={catalog} />);
   expect(screen.getByText(/1 item flagged/)).toBeInTheDocument();
@@ -64,7 +66,7 @@ test('card defaults collapsed with a summary when there are findings', () => {
 
 test('stays domain-agnostic: no company/industry copy leaks', () => {
   const catalog: Finding[] = [
-    { type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42, recommendation: 'Average executor utilization < 60%.' },
+    testFinding({ type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42, recommendation: 'Average executor utilization < 60%.', utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42 }),
   ];
   render(<ExecutorUtilization catalog={catalog} defaultCollapsed={false} />);
   expect(screen.queryByText(/scanntech/i)).not.toBeInTheDocument();

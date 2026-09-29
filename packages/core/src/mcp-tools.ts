@@ -15,9 +15,11 @@ import { comparisonVerdict, type ComparisonVerdictText } from './comparison-verd
 import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { docAnchorForType } from './detector-docs.ts';
+import { DETECTORS, type ThresholdOverrides } from './detectors.ts';
+import { tunedDetectors } from './threshold-overrides.ts';
 import { tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
 import { typeTag } from './format-utils.ts';
-import type { AppModel, Finding, SparkAppInfo } from './types.ts';
+import type { AppModel, Finding, SparkAppInfo, TunedThresholds } from './types.ts';
 import type { RunShape } from './run-shape.ts';
 
 export type RunSource = { path: string } | { shsBaseUrl: string; appId: string; attemptId?: string };
@@ -181,21 +183,29 @@ export async function resolveOrCreateRun(
   return resolution;
 }
 
+// `thresholds` on every analyzing tool below: the server's --thresholds overrides, fixed for the
+// process by createMcpServer(). A client can't set them per call; the dashboard never has them.
 export function diagnoseRun(runId: string, opts?: {
   redact?: boolean; include?: Array<'summary' | 'evidenceAvailability' | 'detectors'>; markdown?: boolean;
-  impactBand?: string[]; type?: string[]; stageId?: number;
+  impactBand?: string[]; type?: string[]; stageId?: number; thresholds?: ThresholdOverrides;
 }): {
   runId: string; verdict: EvidenceReportJson['verdict']; findings: FindingRow[]; runComplete: boolean;
   recommendations: RecommendationRow[]; cleanChecks: CleanCheckEntry[]; notRunChecks: NotRunCheckEntry[];
+  tunedThresholds?: Record<string, TunedThresholds>;
 } & Partial<Pick<EvidenceReportJson, 'summary' | 'evidenceAvailability' | 'detectors'>> & { markdown?: string } {
   const appModel = getCachedAppModel(runId);
   const findingsFilter = toFindingsFilter(opts?.impactBand, opts?.type, opts?.stageId);
-  const { json, markdown } = buildEvidenceReport(appModel, { redact: opts?.redact, markdown: opts?.markdown, findingsFilter });
+  const { json, markdown } = buildEvidenceReport(appModel, {
+    redact: opts?.redact, markdown: opts?.markdown, findingsFilter, thresholds: opts?.thresholds,
+  });
   const include = opts?.include ?? [];
+  const tuned = json.summary.tunedThresholds;
   return {
     runId, verdict: json.verdict, findings: json.findings, recommendations: json.recommendations, cleanChecks: json.cleanChecks,
     notRunChecks: json.notRunChecks,
     runComplete: appModel.app?.endTime != null,
+    // Top level too, so a client that never asks for `summary` still sees the run was tuned.
+    ...(tuned ? { tunedThresholds: tuned } : {}),
     ...(include.includes('summary') ? { summary: json.summary } : {}),
     ...(include.includes('evidenceAvailability') ? { evidenceAvailability: json.evidenceAvailability } : {}),
     ...(include.includes('detectors') ? { detectors: json.detectors } : {}),
@@ -224,17 +234,26 @@ export interface FindingDocumentation {
   tuningDoc: { anchor: string; title: string; content: string } | null;
 }
 
-/** Detection + tuning reference documentation for one finding `type`, independent of any run
- * (documentation is a property of the type: a client fetches it once per type and caches it). */
-export function getFindingDocumentation(type: string): FindingDocumentation {
-  const label = FINDING_NAMES[type];
-  if (label === undefined) throw mcpError('invalid-type', `Unknown finding type: ${type}`);
+// A finding type documents itself; a detector-level type that never appears on a finding
+// (broadcastSizing) documents the types its entry emits.
+function documentedTypes(type: string): readonly string[] {
+  if (FINDING_NAMES[type] !== undefined) return [type];
+  return DETECTORS.find((entry) => entry.type === type)?.emits ?? [];
+}
 
-  const tag = typeTag(type);
+/** Detection + tuning reference documentation for one finding `type`, independent of any run
+ * (documentation is a property of the type: a client fetches it once per type and caches it).
+ * A detector-level `type` resolves to the documentation of the finding types its entry emits. */
+export function getFindingDocumentation(type: string): FindingDocumentation {
+  const types = documentedTypes(type);
+  const [docType] = types;
+  if (docType === undefined) throw mcpError('invalid-type', `Unknown finding type: ${type}`);
+
+  const tag = typeTag(docType);
   const detectionContent = readFileSync(join(DOCS_CONTENT_DIR, 'detection', `${tag.toLowerCase()}.md`), 'utf8');
   const detectionDoc = { tag, title: extractDocTitle(detectionContent), content: detectionContent };
 
-  const anchor = docAnchorForType(type);
+  const anchor = docAnchorForType(docType);
   const slug = anchor ? tuningDocSlugForAnchor(anchor) : null;
   const tuningPath = slug ? join(DOCS_CONTENT_DIR, 'tuning', `${slug}.md`) : null;
   let tuningDoc: FindingDocumentation['tuningDoc'] = null;
@@ -248,7 +267,8 @@ export function getFindingDocumentation(type: string): FindingDocumentation {
     if (entry) tuningDoc = { anchor, title: entry.title, content: readNavEntryContent(entry) };
   }
 
-  return { type, name: titleCase(label), detectionDoc, tuningDoc };
+  const name = types.map((t) => titleCase(FINDING_NAMES[t] ?? t)).join(' / ');
+  return { type, name, detectionDoc, tuningDoc };
 }
 
 const CHAPTERS_NAV_FILE = join(DOCS_CONTENT_DIR, 'chapters', 'nav-index.json');
@@ -279,10 +299,10 @@ export function getReferenceDoc(anchor: string): ReferenceDoc {
 }
 
 export function getFindingEvidence(
-  runId: string, findingId: string, opts?: { redact?: boolean },
+  runId: string, findingId: string, opts?: { redact?: boolean; thresholds?: ThresholdOverrides },
 ): { runId: string; finding: FindingRow } {
   const appModel = getCachedAppModel(runId);
-  const { json } = buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false });
+  const { json } = buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false, thresholds: opts?.thresholds });
   const finding = json.findings.find((f) => f.id === findingId);
   if (!finding) throw mcpError('finding-not-found', `No finding ${findingId} on run ${runId}.`);
   return { runId, finding };
@@ -292,14 +312,14 @@ function hasCompleteInterval(app: SparkAppInfo | null): boolean {
   return Number.isFinite(app?.startTime) && Number.isFinite(app?.endTime) && (app?.endTime ?? 0) > (app?.startTime ?? 0);
 }
 
-export function getRunSummary(runId: string, opts?: { redact?: boolean }): RunSummary {
+export function getRunSummary(runId: string, opts?: { redact?: boolean; thresholds?: ThresholdOverrides }): RunSummary {
   const appModel = getCachedAppModel(runId);
   const { app, stages, jobs, sql, executors } = appModel;
   const durationMs = hasCompleteInterval(app) ? computeWallClock(app, stages).total : null;
   // The failure reason needs the stageFailed findings, so this reads the (cached) evidence report.
   // With redact, the app identity comes from that same redacted report, so a host token in the app
   // name and in Spark's failure reason get the same pseudonym.
-  const { summary } = buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false }).json;
+  const { summary } = buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false, thresholds: opts?.thresholds }).json;
   const { outcome } = summary;
   const rawApp = { id: app?.id ?? null, name: app?.name ?? null, sparkVersion: app?.sparkVersion ?? null };
   const redactedApp = opts?.redact
@@ -321,22 +341,24 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean }): RunSu
 
 // Shared by compareRuns and evaluateBudgetsForRun: both need a resolved run's finding catalog
 // (same analyze() call shape) first.
-async function resolveAndAnalyze(ref: RunRef): Promise<{ runId: string; appModel: AppModel; catalog: Finding[] }> {
+async function resolveAndAnalyze(
+  ref: RunRef, thresholds: ThresholdOverrides | undefined,
+): Promise<{ runId: string; appModel: AppModel; catalog: Finding[] }> {
   const { runId, appModel } = await resolveOrCreateRun(ref);
   const catalog = analyze(
     appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-    appModel.jobs, appModel.sql, appModel.runAggregates,
+    appModel.jobs, appModel.sql, appModel.runAggregates, { thresholds },
   );
   return { runId, appModel, catalog };
 }
 
 export async function compareRuns(
-  a: RunRef, b: RunRef, opts?: { redact?: boolean; markdown?: boolean },
-): Promise<McpCompareRunsResult & { markdown?: string }> {
+  a: RunRef, b: RunRef, opts?: { redact?: boolean; markdown?: boolean; thresholds?: ThresholdOverrides },
+): Promise<McpCompareRunsResult & { markdown?: string; tunedThresholds?: Record<string, TunedThresholds> }> {
   const [
     { runId: runIdA, appModel: appModelA, catalog: catalogA },
     { runId: runIdB, appModel: appModelB, catalog: catalogB },
-  ] = await Promise.all([resolveAndAnalyze(a), resolveAndAnalyze(b)]);
+  ] = await Promise.all([resolveAndAnalyze(a, opts?.thresholds), resolveAndAnalyze(b, opts?.thresholds)]);
 
   // buildComparison's captureSnapshot uses an empty taskDataCache: that arg only feeds the
   // interactive stage-detail drill-down, which none of compare/matchStages/metricDeltas/findingsDelta
@@ -360,15 +382,26 @@ export async function compareRuns(
     confidence: result.confidence,
     reason: result.reason,
     matchedCoverage: result.matchedCoverage,
-    ...(opts?.markdown ? { markdown: renderComparisonMarkdown(result, verdict) } : {}),
+    ...tunedField(opts?.thresholds),
+    ...(opts?.markdown ? { markdown: renderComparisonMarkdown(result, verdict, tunedDetectors(opts?.thresholds)) } : {}),
   };
+}
+
+// Both runs of a comparison use the same overrides, so a tuned delta compares like with like.
+function tunedField(thresholds: ThresholdOverrides | undefined): { tunedThresholds?: Record<string, TunedThresholds> } {
+  const tuned = tunedDetectors(thresholds);
+  return tuned ? { tunedThresholds: tuned } : {};
 }
 
 export async function evaluateBudgetsForRun(
   primary: RunRef,
   budgets: BudgetsConfig,
   secondary?: RunRef,
-): Promise<{ runId: string; results: BudgetResult[]; violated: boolean; inconclusive: boolean }> {
+  opts?: { thresholds?: ThresholdOverrides },
+): Promise<{
+  runId: string; results: BudgetResult[]; violated: boolean; inconclusive: boolean;
+  tunedThresholds?: Record<string, TunedThresholds>;
+}> {
   // Mirrors the CLI's --regression-metric/--max-regression-pct pairing guard: unlike the CLI, this
   // tool never defaults regressionMetric, so seeing it set here means the caller asked for a
   // regression check and forgot the threshold, evaluateBudgets() would otherwise skip it silently.
@@ -376,8 +409,8 @@ export async function evaluateBudgetsForRun(
     throw mcpError('access-or-upstream-failure', 'regressionMetric requires maxRegressionPct.');
   }
   const [first, second] = await Promise.all([
-    resolveAndAnalyze(primary),
-    secondary ? resolveAndAnalyze(secondary) : Promise.resolve(undefined),
+    resolveAndAnalyze(primary, opts?.thresholds),
+    secondary ? resolveAndAnalyze(secondary, opts?.thresholds) : Promise.resolve(undefined),
   ]);
 
   // Same roles as the CLI's positional run + --baseline: with a second run, `primary` is the
@@ -393,8 +426,8 @@ export async function evaluateBudgetsForRun(
     : undefined;
 
   const { results, violated, inconclusive } = evaluateBudgets({
-    appModel: candidate.appModel, catalog: candidate.catalog, budgets, comparison,
+    appModel: candidate.appModel, catalog: candidate.catalog, budgets, comparison, thresholds: opts?.thresholds,
   });
 
-  return { runId: first.runId, results, violated, inconclusive };
+  return { runId: first.runId, results, violated, inconclusive, ...tunedField(opts?.thresholds) };
 }

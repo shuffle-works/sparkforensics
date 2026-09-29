@@ -2,28 +2,33 @@
 // then serializes a run summary + findings into a deterministic, byte-stable JSON + Markdown.
 // Raw task records are never included (privacy baseline); redaction is opt-in via { redact: true }.
 import { analyze, auditConfig } from './analyzer.ts';
-import { detectorCatalog } from './detectors.ts';
+import type { ThresholdOverrides } from './detectors.ts';
+import {
+  describeTunedThresholds, tunedDetectorCatalog, tunedDetectors, tunedRunNote, tunedThresholdsForType,
+} from './threshold-overrides.ts';
+import { getThresholdSummary } from './threshold-summary.ts';
 import {
   typeTag, formatBytes, formatCores, formatDuration, formatRawWaste, formatWallClockRange, IMPACT_BAND_ORDER, readsAsZero,
 } from './format-utils.ts';
-import { FINDING_NAMES, titleCase } from './finding-names.ts';
+import { findingName, titleCase } from './finding-names.ts';
 import { redactReport, redactRunModel } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
-import { coreFindingActionLabel } from './finding-action-label.ts';
+import { findingActionLabel } from './finding-action-label.ts';
 import { matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
 import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
-import { buildRunVerdict, findingActionLabel, stepCopyRecommendation, stepCopyText, type RunVerdictModel } from './run-verdict.ts';
+import { buildRunVerdict, stepCopyRecommendation, stepCopyText, type RunVerdictModel } from './run-verdict.ts';
 import {
   estimateProvenance, impactEstimateFigure, impactFigure, rawWasteMeaning, savingsMeaning,
 } from './impact-format.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
-import { getThresholdSummary } from './threshold-summary.ts';
+import { detectorInfoByType } from './detector-docs.ts';
 import type {
-  AppModel, Finding, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,
+  AppModel, Finding, FindingEvidenceMap, FindingType, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,
+  TunedThresholds,
 } from './types.ts';
 
-export const EVIDENCE_SCHEMA_VERSION: number = 4;
+export const EVIDENCE_SCHEMA_VERSION: number = 5;
 
 // findingRow always sets id/metric/value/recommendation via `?? null` (never omits the key), and
 // buildJson does the same for evidenceAvailability and summary.app.{id,name,sparkVersion}: these
@@ -31,12 +36,13 @@ export const EVIDENCE_SCHEMA_VERSION: number = 4;
 // "unknown version" sentinel). Kept as `?? null`, not `?? undefined`: JSON.stringify drops
 // undefined keys but keeps null, so undefined would silently strip these from the report.
 //
-// `value` is number|string|null: stageFailed and the configAudit entries put text in Finding.value
-// instead of a magnitude, carried through unchanged.
-export interface FindingRow {
-  id: string | null; type: string; name: string; tag: string; impactBand: 'critical'|'warning'|'info';
-  stageId: number | null; metric?: string | null; value?: number | string | null; recommendation?: string | null;
-  detectorVersion: number; evidence: Record<string, unknown>;
+// `value` is always a magnitude or null. The text-valued findings (stageFailed's failure reason,
+// configAudit's current setting, incompleteRun's 'missing') carry theirs in `valueText` instead,
+// present only on those rows.
+interface FindingRowColumns {
+  id: string | null; name: string; tag: string; impactBand: 'critical'|'warning'|'info';
+  stageId: number | null; metric?: string | null; value?: number | null; valueText?: string;
+  recommendation?: string | null; detectorVersion: number;
   // Always present (unlike confidence/validationRequired/docAnchor/impactEstimate): every finding
   // here comes from a real DETECTORS entry, so a label is always computable (falling back to the
   // finding's own `type` as a last resort; see findingRow()).
@@ -47,7 +53,16 @@ export interface FindingRow {
   // when there is a figure to show (none for an informational or zero estimate).
   impact?: string;
   impactMeaning?: string | null;
+  // Only on a finding whose detector ran with a user override off its default (CLI/MCP
+  // --thresholds): the overridden thresholds. Its impact estimate is uncalibrated.
+  tunedThresholds?: TunedThresholds;
 }
+
+// One row per finding, discriminated on `type`: `evidence` is that type's public evidence
+// (FindingEvidenceMap, projected through EVIDENCE_KEYS below), never the finding's other fields.
+export type FindingRow = {
+  [T in FindingType]: FindingRowColumns & { type: T; evidence: FindingEvidenceMap[T] };
+}[FindingType];
 
 // The `Fix these first` rollup row: one entry per buildRecommendationRollup
 // group, so the CLI/MCP/download paths get the same impact-ranked aggregation the dashboard shows.
@@ -76,6 +91,8 @@ export interface CleanCheckEntry {
   type: string;
   tag: string;
   thresholdSummary: string;
+  // Only when the run tuned this type's detector: `thresholdSummary` then reads the tuned values.
+  tunedThresholds?: TunedThresholds;
 }
 
 // A detector `type` with zero findings that the log lacked the data to run (the dashboard's "Not
@@ -141,6 +158,8 @@ export interface EvidenceReportJson {
     clean: boolean;
     outcome: RunOutcomeSummary;
     runShape: RunShape;
+    // Only on a tuned run: every detector an override moved off its defaults, keyed by entry type.
+    tunedThresholds?: Record<string, TunedThresholds>;
   };
   verdict: VerdictJson;
   evidenceAvailability: EvidenceAvailability | null;
@@ -151,45 +170,82 @@ export interface EvidenceReportJson {
   notRunChecks: NotRunCheckEntry[];
 }
 
-// Fields surfaced as first-class report columns. Everything else on a finding
-// becomes its `evidence` payload (sorted for stable key order).
-const CORE_KEYS = new Set([
-  'id', 'type', 'name', 'impactBand', 'stageId', 'metric', 'value',
-  'recommendation', 'detectorVersion', 'confidence', 'validationRequired', 'docAnchor', 'impactEstimate',
-  'actionLabel',
-]);
+// Each finding type's public evidence fields: exactly the keys of its FindingEvidenceMap entry
+// (finding-types.ts), checked both ways at compile time. A field a detector adds for another core
+// module (stageShape's totalCores, utilization's unrounded fraction) is left off both, so it never
+// reaches the report; adding, renaming or dropping a key here changes the report contract.
+const EVIDENCE_KEYS = {
+  skew: [],
+  stageShape: ['rule'],
+  shuffle: [],
+  partitionSizing: ['rule'],
+  spill: ['spillMagnitude'],
+  gc: ['direction'],
+  slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue'],
+  stageSlowness: [],
+  stageFailed: ['variant', 'numTasks', 'memoryBytesSpilled', 'failedTaskDetails'],
+  failures: ['failedTasks', 'dominantReason', 'dominantError', 'failureGroups', 'otherFailedTasks'],
+  straggler: ['unit', 'speculativeTasks', 'stragglerCount'],
+  speculationWaste: [],
+  retryWaste: ['numTasks', 'memoryBytesSpilled', 'retriedTaskDetails'],
+  tinyTask: [],
+  incompleteRun: [],
+  coldStart: [],
+  utilization: ['cpuUtilizationPct'],
+  memoryUtilization: ['variant', 'rule', 'executorId', 'heap', 'dataUnavailable'],
+  cacheUtilization: [
+    'variant', 'rddId', 'rddName', 'memorySize', 'diskSize', 'numCachedPartitions', 'numPartitions', 'dataUnavailable',
+  ],
+  coreLocality: ['nonLocalTaskCount'],
+  autoscalingChurn: ['shortLivedExecutorCount'],
+  cachingOpportunity: ['variant', 'relation', 'format', 'relations', 'operator', 'executionIds', 'totalReadBytes'],
+  jobFailureRate: ['failedJobs', 'totalJobs', 'failedTasks', 'totalTasks', 'avgJobDurationMs', 'taskFailureRate'],
+  configAudit: ['property'],
+  duplicatePlanSubtree: [
+    'executionId', 'stageIds', 'stageShares', 'occurrencesIdentical', 'rootName', 'subtreeSize', 'sampleRelation',
+    'groupIndex',
+  ],
+  smallFiles: ['executionId', 'stageIds', 'fileCount', 'direction', 'nodeName'],
+  underBroadcast: ['executionId', 'stageIds', 'largerSideBytes'],
+  overBroadcast: ['executionId', 'stageIds'],
+} as const satisfies { [T in FindingType]: readonly (keyof FindingEvidenceMap[T])[] };
 
-// Internal-only fields with no meaning to a human reading this report: never surfaced as a core
-// column, and also excluded from the generic evidence dump (unlike stageIds, which IS actionable
-// to a reader). `planNodeIds` is view-layer plan-graph node ids (Plan Advisor detectors, see
-// plan-graph-model.ts): on a real log it can carry a hundred-plus ids, which would otherwise print
-// as one unreadable `- planNodeIds: [...]` line and bloat the report for no reader benefit.
-const NON_EVIDENCE_KEYS = new Set(['planNodeIds']);
+// The other direction: an evidence field EVIDENCE_KEYS doesn't list fails here.
+type UnlistedEvidenceKey = {
+  [T in FindingType]: Exclude<keyof FindingEvidenceMap[T], (typeof EVIDENCE_KEYS)[T][number]>;
+}[FindingType];
+type AssertNever<T extends never> = T;
+export type EvidenceKeysComplete = AssertNever<UnlistedEvidenceKey>;
+
+// The finding's evidence, keys sorted for a stable order. An undefined field (spill's
+// spillMagnitude without a magnitude) is absent, as in the JSON.
+function projectEvidence(f: Finding): Record<string, unknown> {
+  const fields = f as unknown as Record<string, unknown>;
+  const evidence: Record<string, unknown> = {};
+  for (const k of [...EVIDENCE_KEYS[f.type]].sort()) {
+    if (fields[k] !== undefined) evidence[k] = fields[k];
+  }
+  return evidence;
+}
 
 function findingRow(f: Finding): FindingRow {
-  const evidence: Record<string, unknown> = {};
-  for (const k of Object.keys(f).sort()) {
-    // An undefined field (spill's spillMagnitude without a magnitude) is absent, as in the JSON.
-    const v = (f as Record<string, unknown>)[k];
-    if (!CORE_KEYS.has(k) && !NON_EVIDENCE_KEYS.has(k) && v !== undefined) evidence[k] = v;
-  }
-  const row: FindingRow = {
+  // Cast: projectEvidence's keys come from EVIDENCE_KEYS[f.type], so `evidence` is that type's
+  // FindingEvidenceMap entry, which TypeScript can't correlate with `type` on its own.
+  const row = {
     id: f.id ?? null,
     type: f.type,
-    name: titleCase(FINDING_NAMES[f.type] ?? f.type),
+    name: titleCase(findingName(f.type)),
     tag: typeTag(f.type),
     impactBand: f.impactBand,
     stageId: f.stageId ?? null,
     metric: f.metric ?? null,
     value: f.value ?? null,
+    ...(f.valueText != null ? { valueText: f.valueText } : {}),
     recommendation: f.recommendation ?? null,
     detectorVersion: f.detectorVersion ?? 1,
-    evidence,
-    // Deliberate simplification vs the view layer's REGISTRY fallback: no widget registry here, and
-    // falling back to the finding's own `type` is fine since coreFindingActionLabel already covers
-    // every emitted type; only obscure/future sub-variants hit this fallback.
-    actionLabel: coreFindingActionLabel(f) ?? f.type,
-  };
+    evidence: projectEvidence(f),
+    actionLabel: findingActionLabel(f),
+  } as FindingRow;
   // Threshold/confidence provenance, only when the detector emitted it.
   if (f.confidence != null) row.confidence = f.confidence;
   if (f.validationRequired != null) row.validationRequired = f.validationRequired;
@@ -200,6 +256,7 @@ function findingRow(f: Finding): FindingRow {
     row.impact = figure.text;
     row.impactMeaning = figure.meaning;
   }
+  if (f.tunedThresholds != null) row.tunedThresholds = f.tunedThresholds;
   return row;
 }
 
@@ -237,7 +294,7 @@ function buildRecommendations(
     const base = {
       type: group.type,
       tag: typeTag(group.type),
-      actionLabel: coreFindingActionLabel(representative) ?? representative.type,
+      actionLabel: findingActionLabel(representative),
       findingCount: group.findingCount,
       findingIds,
     };
@@ -277,27 +334,29 @@ function buildRecommendations(
   });
 }
 
-// Detector types with no real finding, split into those that passed and those the log could not
+// Finding types with no real finding, split into those that passed and those the log could not
 // run (the rule the dashboard's Clean checks uses, from check-coverage.ts). Differs from
 // Alerts.tsx in one way: the dashboard excludes coreLocality (the one always-mounted reference
 // widget, shown elsewhere); a flat report has no such separate surface, so this includes it too.
 function buildCheckLists(
-  findings: Finding[], stages: AppModel['stages'],
+  findings: Finding[], stages: AppModel['stages'], thresholds: ThresholdOverrides | undefined,
 ): { cleanChecks: CleanCheckEntry[]; notRunChecks: NotRunCheckEntry[] } {
   // isRealFinding: a type whose only finding is an evidence caveat (memoryUtilization's
   // dataUnavailable variant) had nothing to check, so it lands in notRunChecks.
-  const firedTypes = new Set(findings.filter(isRealFinding).map((f) => f.type));
+  const firedTypes = new Set<string>(findings.filter(isRealFinding).map((f) => f.type));
   const coverage = checkCoverage(stages, findings);
-  const seen = new Set<string>();
   const cleanChecks: CleanCheckEntry[] = [];
   const notRunChecks: NotRunCheckEntry[] = [];
-  // detectorCatalog() can list the same type more than once (configAudit has 4 entries); dedupe by
-  // type, keeping first, so a type with sibling entries contributes exactly one line.
-  for (const d of detectorCatalog() as Array<{ type: string }>) {
-    if (firedTypes.has(d.type) || seen.has(d.type)) continue;
-    seen.add(d.type);
-    const entry = { type: d.type, tag: typeTag(d.type), thresholdSummary: getThresholdSummary(d.type) };
-    const reason = coverage.notRunReason(d.type);
+  // One line per emitted finding type (configAudit's four entries give one line;
+  // broadcastSizing gives overBroadcast and underBroadcast), the same set the dashboard lists.
+  for (const [type, { thresholdSummary }] of Object.entries(detectorInfoByType())) {
+    if (firedTypes.has(type)) continue;
+    // A tuned check was measured against the tuned criterion, so it says which one.
+    const tuned = tunedThresholdsForType(type, thresholds);
+    const entry: CleanCheckEntry = tuned
+      ? { type, tag: typeTag(type), thresholdSummary: getThresholdSummary(type, thresholds), tunedThresholds: tuned }
+      : { type, tag: typeTag(type), thresholdSummary };
+    const reason = coverage.notRunReason(type);
     if (reason) notRunChecks.push({ ...entry, reason });
     else cleanChecks.push(entry);
   }
@@ -339,16 +398,30 @@ function verdictJson(model: RunVerdictModel): VerdictJson {
 // mutated), so re-running analyze()/auditConfig() reproduces the same catalog. getFindingEvidence
 // calls buildEvidenceReport once per drill-down; without this, N lookups meant N detector re-runs.
 // A WeakMap needs no invalidation: once mcp-tools.ts evicts the appModel, this entry is collectible.
-const jsonCache = new WeakMap<AppModel, EvidenceReportJson>();
+// Each cache is split first by the overrides object the report ran under (one fixed, frozen object
+// per CLI invocation or MCP server process; DEFAULT_THRESHOLDS for the specification's).
+type ReportCache = WeakMap<object, WeakMap<AppModel, EvidenceReportJson>>;
+const DEFAULT_THRESHOLDS = {};
+const jsonCache: ReportCache = new WeakMap();
 // The redacted report, keyed by the unredacted appModel it was built from.
-const redactedJsonCache = new WeakMap<AppModel, EvidenceReportJson>();
+const redactedJsonCache: ReportCache = new WeakMap();
 
-function runFindings(appModel: AppModel): { catalog: Finding[]; config: Finding[] } {
+function cacheFor(cache: ReportCache, thresholds: ThresholdOverrides | undefined): WeakMap<AppModel, EvidenceReportJson> {
+  const key = thresholds ?? DEFAULT_THRESHOLDS;
+  let byModel = cache.get(key);
+  if (!byModel) {
+    byModel = new WeakMap();
+    cache.set(key, byModel);
+  }
+  return byModel;
+}
+
+function runFindings(appModel: AppModel, thresholds: ThresholdOverrides | undefined): { catalog: Finding[]; config: Finding[] } {
   const { app, stages, executors, sql, jobs, runAggregates } = appModel;
   const catalog = analyze(
     app, stages, executors?.added ?? [], executors?.removed ?? [],
     jobs ?? new Map(), sql ?? new Map(),
-    runAggregates ?? null,
+    runAggregates ?? null, { thresholds },
   );
   return { catalog, config: auditConfig(app) };
 }
@@ -356,27 +429,32 @@ function runFindings(appModel: AppModel): { catalog: Finding[]; config: Finding[
 // Redacts the model and findings before the report derives any text from them, the same order
 // the HTML export uses: the verdict truncates Spark's failure reason, and redacting that
 // truncated copy afterwards would miss an identifier the cut left as a fragment.
-function buildRedactedJson(appModel: AppModel): EvidenceReportJson {
-  const cached = redactedJsonCache.get(appModel);
+function buildRedactedJson(appModel: AppModel, thresholds: ThresholdOverrides | undefined): EvidenceReportJson {
+  const cache = cacheFor(redactedJsonCache, thresholds);
+  const cached = cache.get(appModel);
   if (cached) return cached;
-  const { catalog, config } = runFindings(appModel);
+  const { catalog, config } = runFindings(appModel, thresholds);
   const run = redactRunModel(appModel, catalog, config);
   // redactReport stays as a last pass: idempotent over pseudonyms, and it covers the report's own
   // structured fields (summary.app.id) the same way it always has.
-  const result = redactReport(buildJson(run.appModel, { catalog: run.catalog, config: run.configFindings }));
-  redactedJsonCache.set(appModel, result);
+  const result = redactReport(buildJson(run.appModel, thresholds, { catalog: run.catalog, config: run.configFindings }));
+  cache.set(appModel, result);
   return result;
 }
 
-function buildJson(appModel: AppModel, findings?: { catalog: Finding[]; config: Finding[] }): EvidenceReportJson {
-  const cached = jsonCache.get(appModel);
+function buildJson(
+  appModel: AppModel, thresholds: ThresholdOverrides | undefined, findings?: { catalog: Finding[]; config: Finding[] },
+): EvidenceReportJson {
+  const cache = cacheFor(jsonCache, thresholds);
+  const cached = cache.get(appModel);
   if (cached) return cached;
   const { app, stages, executors, sql, jobs, evidenceAvailability } = appModel;
-  const { catalog, config } = findings ?? runFindings(appModel);
+  const { catalog, config } = findings ?? runFindings(appModel, thresholds);
   const allFindings = [...catalog, ...config];
   const rows = sortFindings(allFindings.map(findingRow));
   const recommendations = buildRecommendations(allFindings, stages ?? new Map());
-  const { cleanChecks, notRunChecks } = buildCheckLists(allFindings, stages ?? new Map());
+  const { cleanChecks, notRunChecks } = buildCheckLists(allFindings, stages ?? new Map(), thresholds);
+  const tuned = tunedDetectors(thresholds);
   const actionable = allFindings.filter(isEligible);
   const fullModel: AppModel = {
     ...appModel, stages: stages ?? new Map(), jobs: jobs ?? new Map(), executors: executors ?? { added: [], removed: [] },
@@ -409,18 +487,19 @@ function buildJson(appModel: AppModel, findings?: { catalog: Finding[]; config: 
         failureReasonStageId: runOutcome.reason != null ? runOutcome.reasonStageId : null,
       },
       runShape: computeRunShape(fullModel),
+      ...(tuned ? { tunedThresholds: tuned } : {}),
     },
     verdict: verdictJson(runVerdict),
     evidenceAvailability: evidenceAvailability ?? null,
     // Detector metadata so the threshold set that produced each finding travels with the evidence.
     // Order follows DETECTORS (stable) => byte-stable serialization.
-    detectors: detectorCatalog(),
+    detectors: tunedDetectorCatalog(thresholds),
     findings: rows,
     recommendations,
     cleanChecks,
     notRunChecks,
   };
-  jsonCache.set(appModel, result);
+  cache.set(appModel, result);
   return result;
 }
 
@@ -501,7 +580,7 @@ function renderVerdict(verdict: VerdictJson): string[] {
     verdict.steps.forEach((step, i) => {
       lines.push(`${i + 1}. [${step.tag}] ${step.text}`);
       if (step.relatedTypes.length > 0) {
-        const related = step.relatedTypes.map((type) => FINDING_NAMES[type] ?? type).join(', ');
+        const related = step.relatedTypes.map(findingName).join(', ');
         lines.push(`   - Also flagged here: ${related}. These often share this cause, so the same fix may clear them too.`);
       }
     });
@@ -522,6 +601,7 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
   lines.push('');
   lines.push(`- Application: ${summary.app.name ?? '(unknown)'} (${summary.app.id ?? 'n/a'})`);
   lines.push(`- Spark version: ${summary.app.sparkVersion ?? 'n/a'}`);
+  if (summary.tunedThresholds) lines.push(`- Tuned thresholds: ${tunedRunNote(summary.tunedThresholds)}`);
   lines.push(`- Stages: ${summary.stageCount} · Jobs: ${summary.jobCount} · SQL executions: ${summary.sqlExecutionCount}`);
   lines.push(`- Findings: ${summary.findingCount} (critical ${summary.impactBandCounts.critical}, warning ${summary.impactBandCounts.warning}, info ${summary.impactBandCounts.info})`);
   const actionableCounts = summary.actionableImpactBandCounts;
@@ -550,10 +630,11 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
     const where = r.stageId != null ? ` (stage ${r.stageId})` : '';
     lines.push(`### ${r.name} · ${r.impactBand}${where}`);
     lines.push(`- action: ${r.actionLabel}`);
-    if (r.metric != null) lines.push(`- ${r.metric}: ${r.value}`);
+    if (r.metric != null) lines.push(`- ${r.metric}: ${r.valueText ?? r.value}`);
     if (r.recommendation) lines.push(`- ${r.recommendation}`);
     if (r.confidence) lines.push(`- confidence: ${r.confidence}`);
     if (r.validationRequired) lines.push(`- validation: ${r.validationRequired}`);
+    if (r.tunedThresholds) lines.push(`- tuned thresholds: ${describeTunedThresholds(r.tunedThresholds)}`);
     const impactText = r.impactEstimate ? renderImpactEstimate(r.impactEstimate) : null;
     if (impactText) lines.push(`- impact: ${impactText}`);
     const provenance = r.impactEstimate ? estimateProvenance(r) : null;
@@ -584,7 +665,8 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
     lines.push('## Detectors');
     lines.push('');
     for (const d of detectors) {
-      lines.push(`- ${d.type} (v${d.version}, ${d.scope}), thresholds: ${JSON.stringify(d.thresholds)}`);
+      const tuned = d.tunedThresholds ? ` (tuned: ${describeTunedThresholds(d.tunedThresholds)})` : '';
+      lines.push(`- ${d.type} (v${d.version}, ${d.scope}), thresholds: ${JSON.stringify(d.thresholds)}${tuned}`);
     }
     lines.push('');
   }
@@ -602,7 +684,8 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
     lines.push(`## Clean checks (${cleanChecks.length})`);
     lines.push('');
     for (const c of cleanChecks) {
-      lines.push(`- [${c.tag}] ${c.type}: ${c.thresholdSummary}`);
+      const tuned = c.tunedThresholds ? ` (tuned: ${describeTunedThresholds(c.tunedThresholds)})` : '';
+      lines.push(`- [${c.tag}] ${c.type}: ${c.thresholdSummary}${tuned}`);
     }
     lines.push('');
   }
@@ -620,7 +703,7 @@ export interface FindingsFilter {
 function matchesFindingsFilter(row: FindingRow, filter: FindingsFilter): boolean {
   // A sql-scope finding carries its stages in evidence.stageIds, not a stageId column: it matches
   // the one stage it touches, as the dashboard's Stage details lists it.
-  const stageIds = Array.isArray(row.evidence?.stageIds) ? (row.evidence.stageIds as number[]) : null;
+  const stageIds = 'stageIds' in row.evidence ? row.evidence.stageIds : null;
   return matchesFindingFilterCriteria({ ...row, stageId: singleStageId({ stageId: row.stageId, stageIds }) }, filter);
 }
 
@@ -637,15 +720,16 @@ export function toFindingsFilter(
  * @param opts redact=true pseudonymizes app ids / hosts; markdown=false skips the Markdown string;
  *   findingsFilter narrows json.findings (and the Markdown Findings section) only, summary,
  *   recommendations, cleanChecks and notRunChecks stay computed from the full set, so a narrow filter never
- *   hides that other checks passed or other fixes exist.
+ *   hides that other checks passed or other fixes exist. thresholds runs the detectors with a user's
+ *   validated overrides (CLI/MCP only) and labels whatever they changed.
  */
 export function buildEvidenceReport(
   appModel: AppModel,
-  { redact = false, markdown: computeMarkdown = true, findingsFilter }: {
-    redact?: boolean; markdown?: boolean; findingsFilter?: FindingsFilter;
+  { redact = false, markdown: computeMarkdown = true, findingsFilter, thresholds }: {
+    redact?: boolean; markdown?: boolean; findingsFilter?: FindingsFilter; thresholds?: ThresholdOverrides;
   } = {},
 ): { markdown: string; json: EvidenceReportJson } {
-  let json = redact ? buildRedactedJson(appModel) : buildJson(appModel);
+  let json = redact ? buildRedactedJson(appModel, thresholds) : buildJson(appModel, thresholds);
   const incomplete = json.findings.some((row) => row.type === 'incompleteRun');
   // Filter after redact, not before: redaction only replaces string values on surviving rows,
   // never adds/removes rows, so the two orderings produce identical final content.

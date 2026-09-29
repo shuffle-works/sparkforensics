@@ -298,6 +298,41 @@ describe('--export-html (published bin)', () => {
     }
   });
 
+  it('keeps the default thresholds in the export of a --thresholds run, and says so', () => {
+    // Ten tasks, one 20x slower than the rest: a P95/median skew finding at the default 3x.
+    const lines = [
+      '{"Event":"SparkListenerApplicationStart","App ID":"app-export-tuned","App Name":"t","Timestamp":0}',
+      '{"Event":"SparkListenerStageSubmitted","Stage Info":{"Stage ID":1,"Stage Name":"s1","Number of Tasks":10}}',
+      ...Array.from({ length: 10 }, (_, i) => JSON.stringify({
+        Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
+        'Task Info': { 'Task ID': i, 'Launch Time': 0, 'Finish Time': i === 9 ? 2000 : 100, Failed: false, Killed: false, Speculative: false },
+        'Task Metrics': { 'Executor Run Time': i === 9 ? 2000 : 100, 'JVM GC Time': 0, 'Memory Bytes Spilled': 0, 'Disk Bytes Spilled': 0 },
+      })),
+      '{"Event":"SparkListenerStageCompleted","Stage Info":{"Stage ID":1,"Stage Name":"s1","Number of Tasks":10,"Completion Time":2000}}',
+      '{"Event":"SparkListenerApplicationEnd","Timestamp":2000}',
+    ];
+    const logDir = mkdtempSync(join(tmpdir(), 'sparkforensics-export-log-'));
+    const logPath = join(logDir, 'eventlog');
+    writeFileSync(logPath, `${lines.join('\n')}\n`);
+    const thresholdsPath = join(logDir, 'thresholds.json');
+    writeFileSync(thresholdsPath, JSON.stringify({ skew: { ratioWarn: 100 } }));
+    const parentDir = mkdtempSync(join(tmpdir(), 'sparkforensics-export-out-'));
+    const destDir = join(parentDir, 'export-out');
+    try {
+      const { status, stdout, stderr } = runCli([logPath, '--thresholds', thresholdsPath, '--export-html', destDir]);
+      expect(status).toBe(0);
+      expect(stderr).toContain('the exported dashboard uses the default detector thresholds');
+      expect(JSON.parse(stdout).findings.some((f) => f.type === 'skew')).toBe(false);
+      const payload = parseRunPayload(readFileSync(join(destDir, 'data.js'), 'utf8'));
+      const skew = payload.catalog.filter((f) => f.type === 'skew');
+      expect(skew).toHaveLength(1);
+      expect(JSON.stringify(payload)).not.toContain('tunedThresholds');
+    } finally {
+      rmSync(logDir, { recursive: true, force: true });
+      rmSync(parentDir, { recursive: true, force: true });
+    }
+  });
+
   it('carries the conclusions the report it printed states, stamped with what produced them', () => {
     const logDir = mkdtempSync(join(tmpdir(), 'sparkforensics-export-log-'));
     const logPath = join(logDir, 'eventlog');

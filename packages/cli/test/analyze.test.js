@@ -292,6 +292,60 @@ describe('sparkforensics-analyze CLI', () => {
     }
   });
 
+  it('--thresholds runs the tuned detectors and labels what they changed, in JSON and Markdown', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, ndjsonWithSkew());
+    const loose = join(dir, 'loose.json');
+    writeFileSync(loose, JSON.stringify({ skew: { ratioWarn: 2 } }));
+    const strict = join(dir, 'strict.json');
+    writeFileSync(strict, JSON.stringify({ skew: { ratioWarn: 100 } }));
+    try {
+      const tuned = JSON.parse(runCli([path, '--thresholds', loose]).stdout);
+      const skew = tuned.findings.find((f) => f.type === 'skew');
+      expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
+      expect(tuned.summary.tunedThresholds).toEqual({ skew: { ratioWarn: { value: 2, default: 3 } } });
+
+      const silenced = JSON.parse(runCli([path, '--thresholds', strict]).stdout);
+      expect(silenced.findings.some((f) => f.type === 'skew')).toBe(false);
+      expect(silenced.cleanChecks.find((c) => c.type === 'skew').tunedThresholds).toEqual({ ratioWarn: { value: 100, default: 3 } });
+
+      const { stdout } = runCli([path, '--thresholds', loose, '--format', 'md']);
+      expect(stdout).toContain('- Tuned thresholds: skew ratioWarn 2 (default 3).');
+      expect(stdout).toContain('- tuned thresholds: ratioWarn 2 (default 3)');
+
+      const untuned = JSON.parse(runCli([path]).stdout);
+      expect(JSON.stringify(untuned)).not.toContain('tunedThresholds');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('exits 2 without analyzing when the --thresholds file is missing, malformed or invalid', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, ndjsonWithSkew());
+    const malformed = join(dir, 'malformed.json');
+    writeFileSync(malformed, '{"skew": {');
+    const invalid = join(dir, 'invalid.json');
+    writeFileSync(invalid, JSON.stringify({ skew: { ratioWarm: 2 } }));
+    try {
+      for (const [file, message] of [
+        [join(dir, 'missing.json'), 'Cannot read thresholds file'],
+        [malformed, 'is not valid JSON'],
+        [invalid, 'unknown threshold "skew.ratioWarm"'],
+      ]) {
+        const { status, stdout, stderr } = runCli([path, '--thresholds', file]);
+        expect(status).toBe(2);
+        expect(stdout).toBe('');
+        expect(stderr).toContain(`--thresholds: `);
+        expect(stderr).toContain(message);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   // Regression: recommendations/cleanChecks are EvidenceReportJson keys this
   // CLI dumps verbatim; the parity test above only compares findings/
   // schemaVersion, so it wouldn't catch a build that dropped these to stdout.

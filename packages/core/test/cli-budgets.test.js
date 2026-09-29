@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateBudgets } from '../src/cli/budgets.js';
+import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
 
 function baseAppModel(overrides = {}) {
   return {
@@ -100,6 +101,18 @@ describe('evaluateBudgets', () => {
     });
     expect(violated).toBe(true);
     expect(results[0]).toMatchObject({ name: 'max-skew', status: 'violation' });
+  });
+
+  it('measures skew with the same tuned minTasksForP95 the skew finding uses', () => {
+    // 50 tasks: P95/median 1.5 under the default minTasksForP95 (20), max/median 10 once it is 100.
+    const stages = new Map([[1, { id: 1, taskCount: 50, taskDurationP50: 100, taskDurationP95: 150, taskDurationMax: 1000 }]]);
+    const appModel = baseAppModel({ stages });
+    const budgets = { maxSkewRatio: 5 };
+    expect(evaluateBudgets({ appModel, catalog: [], budgets }).violated).toBe(false);
+    const thresholds = parseThresholdOverrides({ skew: { minTasksForP95: 100 } });
+    const { results, violated } = evaluateBudgets({ appModel, catalog: [], budgets, thresholds });
+    expect(violated).toBe(true);
+    expect(results[0].detail).toContain('Peak stage skew ratio 10 exceeds budget 5.');
   });
 
   it('passes skew when the true ratio is within budget', () => {

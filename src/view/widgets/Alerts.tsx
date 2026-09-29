@@ -9,48 +9,22 @@ import type { WidgetProps } from '@/view/detector-registry';
 import { isAlwaysMountedType, orderedWidgets, REGISTRY } from '@/view/detector-registry';
 import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
 import type { CoverageData } from '@sparkforensics/core/run-interpretation.ts';
+import { findingName } from '@sparkforensics/core/finding-names.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { CleanCheckRow } from '@/view/widgets/CleanCheckRow';
 
 export const SUGGESTED_IMPROVEMENTS_ANCHOR_ID = 'suggested-improvements';
 
-/** Detector-scope taxonomy for grouping the "Clean checks" disclosure. Every
- * `REGISTRY` type must appear here exactly once; a new detector type needs a
- * matching entry. */
+/** Detector-scope taxonomy for grouping the "Clean checks" disclosure, read
+ * off each type's `DetectorInfo.scope` (the emitting `DETECTORS` entry's own
+ * `scope`). */
 type CleanCheckScope = 'per-stage' | 'app-level' | 'sql-scope' | 'config-scope';
 
-const SCOPE: Record<string, CleanCheckScope> = {
-  skew: 'per-stage',
-  stageShape: 'per-stage',
-  tinyTask: 'per-stage',
-  shuffle: 'per-stage',
-  partitionSizing: 'per-stage',
-  spill: 'per-stage',
-  gc: 'per-stage',
-  stageFailed: 'per-stage',
-  failures: 'per-stage',
-  retryWaste: 'per-stage',
-  slowHost: 'per-stage',
-  stageSlowness: 'per-stage',
-  straggler: 'per-stage',
-  speculationWaste: 'per-stage',
-
-  incompleteRun: 'app-level',
-  coldStart: 'app-level',
-  memoryUtilization: 'app-level',
-  utilization: 'app-level',
-  coreLocality: 'app-level',
-  cachingOpportunity: 'app-level',
-  cacheUtilization: 'app-level',
-  jobFailureRate: 'app-level',
-  autoscalingChurn: 'app-level',
-
-  duplicatePlanSubtree: 'sql-scope',
-  smallFiles: 'sql-scope',
-  underBroadcast: 'sql-scope',
-  overBroadcast: 'sql-scope',
-
-  configAudit: 'config-scope',
+const CLEAN_CHECK_SCOPE: Record<DetectorInfo['scope'], CleanCheckScope> = {
+  stage: 'per-stage',
+  app: 'app-level',
+  sql: 'sql-scope',
+  config: 'config-scope',
 };
 
 const SCOPE_ORDER: CleanCheckScope[] = ['per-stage', 'app-level', 'sql-scope', 'config-scope'];
@@ -127,7 +101,7 @@ export function CleanChecks({
   const zeroFindingTypes = Object.keys(REGISTRY)
     .filter((type) => !isAlwaysMountedType(type))
     .filter((type) => !combined.some((finding) => finding.type === type))
-    .map((type) => ({ type, findingLabel: REGISTRY[type].findingLabel }));
+    .map((type) => ({ type, findingLabel: findingName(type) }));
   const cleanWidgets = zeroFindingTypes.filter(({ type }) => !isNotRun(type));
   const notRunWidgets = zeroFindingTypes.filter(({ type }) => isNotRun(type));
   // Why each check could not run, each line naming what to turn on next time.
@@ -135,11 +109,12 @@ export function CleanChecks({
 
   // Grouped by detector scope so a clean run's 20+ rows read as four short
   // labeled lists instead of one flat wall; `SCOPE_ORDER` fixes the order and
-  // skips empty scopes. Falls back to 'app-level' for a type with no `SCOPE`
-  // entry (only test-double types) so an unmapped type still renders.
+  // skips empty scopes. Falls back to 'app-level' for a type with no
+  // `DetectorInfo` (only test-double types) so an unmapped type still renders.
   const cleanWidgetsByScope = new Map<CleanCheckScope, typeof cleanWidgets>();
   for (const widget of cleanWidgets) {
-    const scope = SCOPE[widget.type] ?? 'app-level';
+    const scopeOfType = detectors[widget.type]?.scope;
+    const scope = scopeOfType ? CLEAN_CHECK_SCOPE[scopeOfType] : 'app-level';
     if (!cleanWidgetsByScope.has(scope)) cleanWidgetsByScope.set(scope, []);
     cleanWidgetsByScope.get(scope)!.push(widget);
   }

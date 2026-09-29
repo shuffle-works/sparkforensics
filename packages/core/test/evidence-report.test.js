@@ -3,6 +3,7 @@ import { buildEvidenceReport } from '../src/evidence-report.js';
 import { makeStage } from './fixtures/stage-app-fixtures.js';
 import { TRUNCATED_HOST_FRAGMENT, truncatedFailureRun } from './fixtures/truncated-failure-run.js';
 import { PER_STAGE_CHECK_TYPES } from '../src/check-coverage.ts';
+import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
 
 function fixture() {
   return {
@@ -41,7 +42,7 @@ describe('buildEvidenceReport', () => {
     const { markdown, json } = buildEvidenceReport(fixture());
     expect(typeof markdown).toBe('string');
     expect(typeof json.schemaVersion).toBe('number');
-    expect(json.schemaVersion).toBe(4);
+    expect(json.schemaVersion).toBe(5);
   });
 
   it('carries a run summary + findings with the required per-row fields', () => {
@@ -94,6 +95,31 @@ describe('buildEvidenceReport', () => {
     // stageIds (plural, non-core) is real evidence and must still come through.
     expect(row.evidence).toHaveProperty('stageIds');
     expect(markdown).not.toContain('planNodeIds');
+  });
+
+  it('publishes only the type\'s declared evidence fields: stageShape\'s estimator-only totalCores stays out', () => {
+    const fx = fixture();
+    fx.app.resources = { executor: { cores: 4 } };
+    const executorStats = Array.from({ length: 4 }, (_, i) => ({
+      executorId: `e${i}`, taskCount: 1, totalDuration: 1000, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0,
+    }));
+    fx.stages.set(3, makeStage({ id: 3, taskCount: 2, executorStats, submittedAt: 0, completedAt: 4000 }));
+    const row = buildEvidenceReport(fx).json.findings.find((r) => r.type === 'stageShape' && r.evidence.rule === 'lowParallelism');
+    expect(row).toBeTruthy();
+    expect(row.evidence).toEqual({ rule: 'lowParallelism' });
+  });
+
+  it('carries a text-valued finding\'s value in valueText, keeping value numeric-or-null', () => {
+    const fx = fixture();
+    fx.stages.set(3, makeStage({ id: 3, stageFailureReason: 'FetchFailed: lost executor' }));
+    const { json, markdown } = buildEvidenceReport(fx);
+    const row = json.findings.find((r) => r.type === 'stageFailed');
+    expect(row.value).toBeNull();
+    expect(row.valueText).toBe('FetchFailed: lost executor');
+    expect(row.evidence).not.toHaveProperty('valueText');
+    expect(markdown).toContain('- stageFailureReason: FetchFailed: lost executor');
+    // A numeric finding carries no valueText key at all.
+    expect(json.findings.find((r) => r.type === 'skew')).not.toHaveProperty('valueText');
   });
 
   it('includes the EvidenceAvailability ledger from the appModel', () => {
@@ -315,7 +341,7 @@ describe('buildEvidenceReport', () => {
   describe('recommendations', () => {
     it('is an additive top-level array', () => {
       const { json } = buildEvidenceReport(fixture());
-      expect(json.schemaVersion).toBe(4);
+      expect(json.schemaVersion).toBe(5);
       expect(Array.isArray(json.recommendations)).toBe(true);
       expect(json.recommendations.length).toBeGreaterThan(0);
     });
@@ -609,5 +635,55 @@ describe('buildEvidenceReport', () => {
       const { json } = buildEvidenceReport(fixtureWithVariety(), { findingsFilter: { type: ['not-a-real-type'] } });
       expect(json.findings).toEqual([]);
     });
+  });
+});
+
+describe('buildEvidenceReport: tuned thresholds', () => {
+  const thresholds = parseThresholdOverrides({ skew: { ratioWarn: 2 }, shuffle: { minBytes: 4 * 1024 * 1024 * 1024 } });
+
+  it('adds no tuning key anywhere on a default run', () => {
+    const fx = fixture();
+    const { json, markdown } = buildEvidenceReport(fx);
+    expect(JSON.stringify(json)).not.toContain('tunedThresholds');
+    expect(markdown).not.toContain('uned thresholds');
+  });
+
+  it('labels the tuned finding, the tuned clean check, the catalog row and the summary', () => {
+    const { json } = buildEvidenceReport(fixture(), { thresholds });
+    const skew = json.findings.find((f) => f.type === 'skew');
+    expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
+    expect(skew.validationRequired).toContain('estimate is unvalidated');
+    // 2 GiB shuffled, under the tuned 4 GiB floor: shuffle becomes a clean check measured against it.
+    expect(json.findings.some((f) => f.type === 'shuffle')).toBe(false);
+    expect(json.cleanChecks.find((c) => c.type === 'shuffle').tunedThresholds)
+      .toEqual({ minBytes: { value: 4 * 1024 * 1024 * 1024, default: 50 * 1024 * 1024 } });
+    expect(json.cleanChecks.find((c) => c.type === 'spill').tunedThresholds).toBeUndefined();
+    expect(json.detectors.find((d) => d.type === 'skew').thresholds.ratioWarn).toBe(2);
+    expect(Object.keys(json.summary.tunedThresholds)).toEqual(['skew', 'shuffle']);
+    for (const f of json.findings.filter((f) => f.type !== 'skew')) expect(f.tunedThresholds, f.type).toBeUndefined();
+  });
+
+  it('labels a clean check with its suppressor\'s tuned thresholds', () => {
+    const { json } = buildEvidenceReport(fixture(), { thresholds: parseThresholdOverrides({ slowHost: { minHosts: 4 } }) });
+    const checks = [...json.cleanChecks, ...json.notRunChecks];
+    expect(checks.find((c) => c.type === 'stageSlowness').tunedThresholds).toEqual({ 'slowHost.minHosts': { value: 4, default: 3 } });
+    expect(checks.find((c) => c.type === 'spill').tunedThresholds).toBeUndefined();
+  });
+
+  it('keeps default and tuned reports of one appModel apart, redacted or not', () => {
+    const fx = fixture();
+    expect(buildEvidenceReport(fx).json.findings.some((f) => f.type === 'shuffle')).toBe(true);
+    expect(buildEvidenceReport(fx, { thresholds }).json.findings.some((f) => f.type === 'shuffle')).toBe(false);
+    expect(buildEvidenceReport(fx, { redact: true }).json.summary.tunedThresholds).toBeUndefined();
+    expect(buildEvidenceReport(fx, { redact: true, thresholds }).json.summary.tunedThresholds.skew).toBeTruthy();
+    expect(buildEvidenceReport(fx).json.summary.tunedThresholds).toBeUndefined();
+  });
+
+  it('marks tuning in the Markdown header, the finding block, the catalog and the clean check', () => {
+    const { markdown } = buildEvidenceReport(fixture(), { thresholds });
+    expect(markdown).toContain('- Tuned thresholds: skew ratioWarn 2 (default 3); shuffle minBytes 4294967296 (default 52428800). Findings from these detectors are marked, and their impact estimates are uncalibrated');
+    expect(markdown).toContain('- tuned thresholds: ratioWarn 2 (default 3)');
+    expect(markdown).toMatch(/- skew \(v1, stage\), thresholds: \{"ratioWarn":2,.*\} \(tuned: ratioWarn 2 \(default 3\)\)/);
+    expect(markdown).toContain('(tuned: minBytes 4294967296 (default 52428800))');
   });
 });

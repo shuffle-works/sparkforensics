@@ -121,7 +121,8 @@ export function buildPlanGraphModel(
   const findingsByNodeId = new Map<string, Finding[]>();
   if (sqlExecutionId != null) {
     for (const finding of findings) {
-      if (finding.executionId !== sqlExecutionId) continue;
+      if (!('executionId' in finding) || finding.executionId !== sqlExecutionId) continue;
+      // `?? []`: a hand-built or foreign finding may still lack the field the type promises.
       for (const nodeId of finding.planNodeIds ?? []) {
         const list = findingsByNodeId.get(nodeId);
         if (list) list.push(finding);

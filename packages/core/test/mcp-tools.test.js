@@ -7,6 +7,7 @@ import {
 } from '../src/mcp-tools.js';
 import * as collectRunModule from '../src/cli/collect-run.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
+import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
 // Helper lives at repo-root tests/helpers/: shared with tests/cli-sparkforensics-analyze.test.js.
 import { shsZipFetch } from '../../../tests/helpers/shs-fixtures.js';
 
@@ -498,6 +499,17 @@ describe('getFindingDocumentation', () => {
     expect(doc.tuningDoc).toBeNull();
   });
 
+  it('resolves a detector-level type to the documentation of the types it emits', () => {
+    const doc = getFindingDocumentation('broadcastSizing');
+    expect(doc.type).toBe('broadcastSizing');
+    expect(doc.name).toBe('Oversized Broadcast Join / Missed Broadcast Join');
+    expect(doc.detectionDoc).toEqual(getFindingDocumentation('underBroadcast').detectionDoc);
+    expect(doc.detectionDoc.tag).toBe('PLAN');
+    expect(doc.tuningDoc).not.toBeNull();
+    expect(doc.tuningDoc.anchor).toBe('#bottleneck-broadcast-sizing');
+    expect(doc.tuningDoc).toEqual(getFindingDocumentation('overBroadcast').tuningDoc);
+  });
+
   it('throws invalid-type for an unknown finding type', () => {
     expect(() => getFindingDocumentation('zetaSignal')).toThrow();
     try {
@@ -681,6 +693,22 @@ describe('compareRuns', () => {
       const { runId: runIdB } = await resolveOrCreateRun({ source: { path: b.path } });
       const result = await compareRuns({ source: { path: a.path } }, { runId: runIdB });
       expect(result.runIdB).toBe(runIdB);
+    } finally {
+      rmSync(a.dir, { recursive: true, force: true });
+      rmSync(b.dir, { recursive: true, force: true });
+    }
+  });
+
+  it('names the tuned thresholds in its markdown, as diagnose_run does', async () => {
+    const a = tmpEventLogWithDuration('app-a', 2000);
+    const b = tmpEventLogWithDuration('app-b', 1000);
+    try {
+      const thresholds = parseThresholdOverrides({ skew: { ratioWarn: 2 } });
+      const tuned = await compareRuns({ source: { path: a.path } }, { source: { path: b.path } }, { markdown: true, thresholds });
+      expect(tuned.tunedThresholds).toEqual({ skew: { ratioWarn: { value: 2, default: 3 } } });
+      expect(tuned.markdown).toContain('- Tuned thresholds (both runs): skew ratioWarn 2 (default 3).');
+      const plain = await compareRuns({ source: { path: a.path } }, { source: { path: b.path } }, { markdown: true });
+      expect(plain.markdown).not.toContain('Tuned thresholds');
     } finally {
       rmSync(a.dir, { recursive: true, force: true });
       rmSync(b.dir, { recursive: true, force: true });

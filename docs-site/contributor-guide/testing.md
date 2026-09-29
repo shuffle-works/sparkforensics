@@ -18,7 +18,12 @@ Before opening a PR:
 
 Sample Spark event logs for manual testing live outside this repo. Keep them
 in a sibling `../spark-log-examples/` directory: real `.zstd` event logs plus
-baseline/candidate pairs for run comparison.
+several `run-compare-*-baseline-*`/`run-compare-*-candidate-*` pairs for run
+comparison. They are private and this repo is public: never put their file
+names, app IDs, app names, tables or paths in tracked files, commits or PR
+text. Use the neutral `private-log-NN` labels under
+[Test fixtures](#test-fixtures), and synthetic IDs such as
+`application_0000000000000_0001`.
 
 ## Testing layout
 
@@ -44,11 +49,10 @@ Two contract tests guard invariants that a future edit could silently break.
 The "detector contract" suite in `packages/core/test/analyzer.test.js` asserts
 `stageSlowness` stays array-index-after `slowHost` in `DETECTORS` (see
 [Detector contract](./architecture/detector-contract.md#detector-contract)).
-`tests/view/detector-registry.test.tsx` asserts `REGISTRY` completeness
-against every `DETECTORS` type, including the
-`underBroadcast`/`overBroadcast` correction: `broadcastSizing` itself is
-never an emitted `finding.type`, as the doc comment above `REGISTRY` in
-`src/view/detector-registry.tsx` explains.
+`REGISTRY` and `FINDING_PRESENTATION` completeness is a compile-time check,
+not a test: both are typed against the emitted `FindingType` union, so
+`npx tsc --noEmit` fails on a missing or extra key (see
+[Detector contract](./architecture/detector-contract.md#detector-contract)).
 
 ## Test fixtures
 
@@ -115,9 +119,52 @@ Both default to `dev/log-corpus/logs` and its `external/` folder. Only
 public corpus logs belong in the snapshot: never pass private logs to
 `--update`.
 
+### Detector and estimate tools
+
+Record before and after numbers from these in the commit that changes a
+detector, threshold, estimate or the vendored fzstd.
+
+- `node dev/bench-analyze.mjs [--repeat N] --out snap.json <file|dir>...`
+  snapshots every finding (band, estimate) plus parse and analyze timings,
+  one child process per log. `--diff a.json b.json [--verbose]` shows the
+  findings added, removed or re-banded between two snapshots.
+- `node --max-old-space-size=12000 dev/eval-tail-replay.mjs [--set detector.threshold=value] [--verbose] <file|dir>...`
+  scores skew and straggler against a task-level replay (precision, recall,
+  estimate error). `--verbose` lists each miss, false positive and estimate
+  more than 2x off.
+- `node dev/fuzz-fzstd.mjs --upstream <pristine fzstd esm/index.mjs> <log.zstd>...`
+  checks the locally patched `packages/core/src/vendor/fzstd.js` against
+  upstream, on whole logs and on randomly corrupted prefixes. Run it after any
+  fzstd edit.
+
 CI also runs a `node18` job, because the published `cli`, `mcp` and
 `server` packages declare `engines.node >=18` while vitest needs Node 22+.
 It packs the three tarballs on `.nvmrc`'s Node, installs them on Node 18,
 runs the CLI over every corpus log plus a zstd copy of one, checks that the
 MCP server answers `initialize`, and starts `sparkforensics-server` to check
 it serves the app and answers `initialize` on `/mcp`.
+
+## Test-suite growth discipline
+
+Widget and detector test files collect copy-pasted boilerplate fast (a
+2026-09 pass trimmed 19 files by a net 272 lines with no behavior change).
+Before adding a widget test file, or a per-widget or per-detector test:
+
+- Cross-cutting widget behavior (impact/stage sort-toggle default and flip,
+  density-gated visibility, 6-at-a-time pagination) belongs in a shared
+  helper under `tests/view/_shared/`, called from each widget's test file.
+  Extract into it only when a test body is identical to an existing one apart
+  from the widget name, fixture or label. A widget with a real difference
+  (a `React.lazy`-loaded chunk, a custom row finder) keeps its own test.
+- `packages/core/test/fixtures/` holds the shared stage and app fixture
+  factories (`makeStage`/`makeApp`). Import them instead of pasting a local
+  copy into a new core test file.
+- Before adding a small test file, check whether a sibling file's `describe`
+  block already covers that surface. A detector-catalog shape check, for
+  example, belongs in `analyzer.test.js`'s `detector contract` block.
+- Calling an exported pure function directly, or calling the documented
+  event reducer (`processEvent` in `parser-worker.ts`, see the
+  [worker protocol](./architecture/worker-protocol.md)) with one event and
+  inspecting the state, is normal unit testing. Don't rewrite reducer-style
+  tests into NDJSON-through-`runParse` integration tests to avoid touching
+  internals: that costs readability for no real safety.

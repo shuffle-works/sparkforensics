@@ -15,14 +15,15 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { ReactNode } from 'react';
-import type { EvidenceAvailabilityEntry, Finding } from '@sparkforensics/core/types.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
+import type { EvidenceAvailabilityEntry, FindingOf } from '@sparkforensics/core/types.ts';
 
 export type ConfigAuditProps = WidgetProps;
 
 /** One flagged config property's row, anchored so a triage route focuses the
  * row itself. `tabIndex={-1}` keeps it programmatically focusable without Tab
  * order. */
-function ConfigAuditRow({ finding }: { finding: Finding }) {
+function ConfigAuditRow({ finding }: { finding: FindingOf<'configAudit'> }) {
   const anchor = useAnchoredRow([finding]);
 
   return (
@@ -37,7 +38,7 @@ function ConfigAuditRow({ finding }: { finding: Finding }) {
         <code className="text-xs">{finding.property}</code>
         <span className="text-xs text-muted-foreground">=</span>
         <code className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-xs text-accent">
-          {String(finding.value)}
+          {finding.valueText}
         </code>
       </div>
       <ImpactEstimate finding={finding} />
@@ -69,11 +70,9 @@ export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings,
   // The store's config findings (useIngest in the live app, the payload in an
   // export), threaded from Dashboard; memoized to skip the re-sort on unrelated
   // re-renders.
-  const findings: Finding[] = useMemo(() => (configFindings ?? [])
-    // Guard: auditConfig only emits configAudit today; the filter documents that
-    // contract so a future type doesn't silently slip through.
-    .filter((f): f is Finding => f.type === 'configAudit')
-    .slice()
+  // Guard: auditConfig only emits configAudit today; the filter documents that
+  // contract so a future type doesn't silently slip through.
+  const findings = useMemo(() => findingsOfType(configFindings ?? [], 'configAudit')
     .sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]), [configFindings]);
 
   const activeRouteTarget = useActiveRouteTarget();
@@ -131,7 +130,7 @@ export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings,
 
     const body = <p className="text-muted-foreground text-xs">{message}</p>;
     return (
-      <WidgetCard title="Config Sanity" compact summary={body}>
+      <WidgetCard title="Config Audit" compact summary={body}>
         {body}
       </WidgetCard>
     );
@@ -141,7 +140,7 @@ export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings,
 
   return (
     <WidgetCard
-      title="Config Sanity"
+      title="Config Audit"
       impactBand={impactBand}
       badges={<TagBadge type="configAudit" impactBand={impactBand ?? 'info'} docAnchor={sharedDocAnchor(findings)} />}
       statusBadge={

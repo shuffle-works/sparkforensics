@@ -7,7 +7,8 @@ import { StagePill } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
+import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
@@ -19,15 +20,15 @@ import { usePagedRows } from '@/view/usePagedRows';
 
 export type RetryWasteProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
 
-function hasStage(f: Finding): f is Finding & { stageId: number } {
+function hasStage<F extends Finding>(f: F): f is F & { stageId: number } {
   return f.stageId != null;
 }
 
 // `extended`'s first sentence restates the same duration the detail line
 // above already shows; strip that redundant clause so Advanced tier extends
 // the detail line instead of repeating it.
-function retryWasteAdvancedExtension(f: Finding): string {
-  const extended = String(f.extended ?? '');
+function retryWasteAdvancedExtension(f: FindingOf<'retryWaste'>): string {
+  const extended = f.extended ?? '';
   return extended.replace(/, wasting \d+s of executor time\./, '.');
 }
 
@@ -41,7 +42,7 @@ function retryWasteAction(f: Finding): string {
   return adviceStart === -1 ? recommendation : recommendation.slice(adviceStart + 2);
 }
 
-function RetryWasteRow({ finding }: { finding: Finding & { stageId: number } }) {
+function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stageId: number } }) {
   const anchor = useAnchoredRow([finding]);
   return (
     <li
@@ -83,7 +84,7 @@ export function RetryWaste({ appModel, catalog, defaultCollapsed = true }: Retry
     setPage(0);
   }, [appModel]);
 
-  const findings = catalog.filter(hasStage).filter((f) => f.type === 'retryWaste');
+  const findings = findingsOfType(catalog, 'retryWaste').filter(hasStage);
   const sorted = [...findings].sort(
     (a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]
       || (typeof b.value === 'number' ? b.value : 0) - (typeof a.value === 'number' ? a.value : 0),

@@ -92,7 +92,7 @@ test('renders a doc link pointing at the bottleneck-utilization anchor when no c
 
 test('drops the doc link in favor of the coreLocality tag badge, which links to the core-locality section of the same page', async () => {
   const catalog: Finding[] = [
-    { type: 'coreLocality', stageId: null, impactBand: 'warning', value: 40, recommendation: 'Check locality.' },
+    { type: 'coreLocality', stageId: null, impactBand: 'warning', value: 40, recommendation: 'Check locality.', nonLocalTaskCount: 0 },
   ];
   installInterpretation(catalog, buildAppModel());
   render(
@@ -233,7 +233,7 @@ test('reflects a new interpretation after a cached-file switch', async () => {
 test('shows the LOCAL badge, impact band, and recommendation when a coreLocality finding exists in catalog', async () => {
   const catalog: Finding[] = [{
     type: 'coreLocality', stageId: null, impactBand: 'critical',
-    metric: 'nonLocalRatio', value: 40,
+    metric: 'nonLocalRatio', value: 40, nonLocalTaskCount: 0,
     recommendation: 'Tasks are running without process- or node-local data placement more than expected, check spark.locality.wait settings and executor/data colocation.',
   }];
 
@@ -252,7 +252,7 @@ test('shows the LOCAL badge, impact band, and recommendation when a coreLocality
 test('renders the core-time raw-waste figure when a coreLocality finding carries an impactEstimate', async () => {
   const catalog: Finding[] = [{
     type: 'coreLocality', stageId: null, impactBand: 'warning',
-    metric: 'nonLocalRatio', value: 20, recommendation: 'x',
+    metric: 'nonLocalRatio', value: 20, recommendation: 'x', nonLocalTaskCount: 0,
     impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 4200, unit: 'coreMs' } },
   }];
 
@@ -333,7 +333,7 @@ test('paginates the non-local-stage breakdown 6-at-a-time with Previous/Next con
 
 test('shows the idle-core cross-link when a memoryUtilization idleCores finding coexists in catalog', async () => {
   const catalog: Finding[] = [
-    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 20, recommendation: 'x' },
+    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 20, recommendation: 'x', nonLocalTaskCount: 0 },
     { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', metric: 'idleCoreRate', value: 75, recommendation: 'y' },
   ];
 
@@ -410,7 +410,7 @@ test('the rendered finding value and the widget\'s own locality computation agre
 
 test('does not show the idle-core cross-link when no memoryUtilization idleCores finding is present', async () => {
   const catalog: Finding[] = [
-    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 20, recommendation: 'x' },
+    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 20, recommendation: 'x', nonLocalTaskCount: 0 },
   ];
 
   installInterpretation(catalog, buildAppModel());
@@ -426,7 +426,7 @@ test('does not show the idle-core cross-link when no memoryUtilization idleCores
 test('shows a confidence caveat when the coreLocality finding carries one', async () => {
   const catalog: Finding[] = [{
     type: 'coreLocality', stageId: null, impactBand: 'warning',
-    metric: 'nonLocalRatio', value: 20, recommendation: 'x',
+    metric: 'nonLocalRatio', value: 20, recommendation: 'x', nonLocalTaskCount: 0,
     confidence: 'low',
     validationRequired: 'This finding is gated by 15%/35% non-local-ratio thresholds (and a 50-task minimum), our own noise floor for this metric.',
   }];
@@ -450,7 +450,7 @@ test('shows a confidence caveat when the coreLocality finding carries one', asyn
 
 test('the approximation caption, confidence marker, and idle-core cross-link are hidden in basic mode', async () => {
   const catalog: Finding[] = [
-    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 40, recommendation: 'Check locality.', confidence: 'low', validationRequired: 'Threshold-gated finding.' },
+    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 40, recommendation: 'Check locality.', confidence: 'low', validationRequired: 'Threshold-gated finding.', nonLocalTaskCount: 0 },
     { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', metric: 'idleCoreRate', value: 75, recommendation: 'y' },
   ];
 
@@ -471,7 +471,7 @@ test('the approximation caption, confidence marker, and idle-core cross-link are
 
 test('the approximation caption, confidence marker, and idle-core cross-link are visible in advanced mode', async () => {
   const catalog: Finding[] = [
-    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 40, recommendation: 'Check locality.', confidence: 'low', validationRequired: 'Threshold-gated finding.' },
+    { type: 'coreLocality', stageId: null, impactBand: 'warning', metric: 'nonLocalRatio', value: 40, recommendation: 'Check locality.', confidence: 'low', validationRequired: 'Threshold-gated finding.', nonLocalTaskCount: 0 },
     { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', metric: 'idleCoreRate', value: 75, recommendation: 'y' },
   ];
 

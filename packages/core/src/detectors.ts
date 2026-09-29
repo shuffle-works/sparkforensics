@@ -3,16 +3,31 @@ import { scanRelationId } from './plan-summary.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
-import { estimateSingleStage, tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type OccupancyStage, type StageOccupancyInfo } from './occupancy.ts';
+import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type TailStage } from './occupancy.ts';
+import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
+import {
+  BROADCAST_BANDWIDTH_BPS, EXECUTOR_STARTUP_OVERHEAD_MS, FILE_OPEN_OVERHEAD_MS, IDEAL_BYTES_PER_PARTITION_TASK,
+  NETWORK_FETCH_PENALTY_MS, RE_READ_THROUGHPUT_BPS, SHUFFLE_THROUGHPUT_BPS, SPILL_IO_THROUGHPUT_BPS, TAIL_CLAIM,
+  TASK_SCHEDULING_OVERHEAD_MS, costOnly, fetchWaitWallClockMs, measuredTaskOverhead, multiStageImpact, noWasteModel,
+  retryWallClockMs, singleStageImpact, stageIoParallelism, stageMappableWasteOrCostOnly, tasksMostlyIdle,
+  type EstimateCtx,
+} from './impact-model.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
-import type { Finding, PlanNode, FixEffort } from './types.ts';
+import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure } from './types.ts';
+import type { FindingOf, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
 const TB = 1024 * GB;
+
+// Labels a byte threshold in this file's binary units, so a 1 GiB default reads '1 GB'.
+function binaryThresholdLabel(bytes: number): string {
+  const [unit, size] = ([['GB', GB], ['MB', MB], ['KB', 1024]] as const).find(([, u]) => bytes >= u) ?? ['bytes', 1];
+  return `${Math.round(bytes / size * 10) / 10} ${unit}`;
+}
 
 // Local runtime shapes.
 //
@@ -28,16 +43,7 @@ interface DetectorExecutorStat {
 }
 interface DetectorFailureReason { reason: string; count: number; }
 interface DetectorLocalityStat { locality: string; count: number; }
-interface DetectorFailedTaskSample {
-  taskId: number | null;
-  attemptNumber: number;
-  host: string;
-  executorId: string;
-  reason: string | null;
-  peakExecMem: number;
-  memSpilled: number;
-  shuffleWrite: number;
-}
+type DetectorFailedTaskSample = TaskAttemptSample;
 // Per-executor snapshot from a StageExecutorMetrics event: a loose bag of Spark's
 // ExecutorMetrics field names, only a few of which any detector reads.
 interface DetectorExecutorMetricsSnapshot {
@@ -133,25 +139,22 @@ interface DetectorJob {
   completionTime: number | null;
 }
 
-// The full context analyze() passes as every stage/sql detect()'s second arg, and as the sole
-// arg for 'app' scope. 'config' scope gets a narrower `{ app }` (auditConfig), typed per-entry.
+// The full context analyze() passes as every stage/sql detect()'s second arg, and as the first
+// arg for 'app' scope. 'config' scope gets a narrower `{ app }` (auditConfig) instead.
 //
-// `app` is typed as non-nullable here (unlike AppModel.app), but incompleteRun, coldStart,
-// utilization, and autoscalingChurn defensively guard against null at runtime to tolerate
-// malformed/incomplete logs. Despite the type annotation, app may be null in edge cases, and
-// these detectors handle it gracefully. auditConfig's config-scope target keeps `app` nullable
-// instead.
+// `app` is nullable as on AppModel.app: a malformed or cut-short log may have no app record, so
+// every app-reading detector guards it. `runAggregates.busyCoreMs` is optional for the same reason.
 export interface DetectorCtx {
-  app: DetectorApp;
+  app: DetectorApp | null;
   stages: Map<number, DetectorStage>;
   executorsAdded: DetectorExecutorAddedEvent[];
   executorsRemoved: DetectorExecutorRemovedEvent[];
   jobs: Map<number, DetectorJob>;
   sql: Map<number, DetectorSqlExec>;
-  runAggregates?: { busyCoreMs: number } | null;
-  // Precomputed once per analyze() from the same stages/totalCores impact-estimator.ts uses,
-  // so a detector's runtime floor checks the same occupancy-clipped figure that gets displayed.
-  occupancy: Map<number, StageOccupancyInfo>;
+  runAggregates?: { busyCoreMs?: number } | null;
+  // The one EstimateCtx analyze() also hands every estimate(): a detector's runtime floor clips
+  // its claim against the same occupancy sweep the displayed savings come from.
+  impact: EstimateCtx;
 }
 
 // auditConfig(app) calls every config-scope detect({ app }) with whatever appModel.app is
@@ -543,15 +546,19 @@ function maxMedianRatio(
 }
 
 export interface DetectorCatalogEntry {
-  type: string;
+  type: DetectorType;
   version: number;
-  scope: 'stage' | 'sql' | 'app' | 'config';
-  thresholds?: Record<string, number | number[]>;
+  scope: DetectorScope;
+  // The thresholds the run used: the entry's own, or with a user's overrides merged in.
+  thresholds?: DetectorThresholds;
   docAnchor?: string;
+  // Present only when an override moved a threshold off its default (threshold-overrides.ts).
+  tunedThresholds?: TunedThresholds;
 }
 
 // Machine-readable detector metadata for the evidence report (no `detect` closure), so a
-// portable report records which detector + thresholds produced each finding.
+// portable report records which detector + thresholds produced each finding. These are the
+// defaults; tunedDetectorCatalog() (threshold-overrides.ts) is the same rows under overrides.
 export function detectorCatalog(): DetectorCatalogEntry[] {
   return DETECTORS.map((d) => ({
     type: d.type,
@@ -580,43 +587,66 @@ export function computeSkewRatio(
 
 // Absolute-magnitude floor as a % of app runtime, not a fixed ms constant: a skew/straggler
 // ratio on a few ms is noise in an hours-long run but real in a seconds-long one; a fixed-ms
-// floor can't scale. Used by skew/straggler, gated via clippedWasteMs against the same
-// occupancy-clipped figure impact-estimator.ts displays as savings.
+// floor can't scale. Used by skew/straggler, gated on the same occupancy-clipped tail claim their
+// estimate() displays as savings (tailClaimImpact).
 // NOT SOURCED: floor percentages are our own noise floor, unvalidated.
-function computeAppDurationMs(ctx?: DetectorCtx): number | null {
-  const app = ctx?.app;
-  if (app?.startTime == null || app?.endTime == null) return null;
-  const durationMs = app.endTime - app.startTime;
-  return durationMs > 0 ? durationMs : null;
-}
-
 // Unknown app timing never suppresses a finding; it just skips the floor gate.
-function meetsRuntimeFloor(wasteMs: number, appDurationMs: number | null, floorPct: number): boolean {
-  return appDurationMs == null || wasteMs >= appDurationMs * floorPct;
+function meetsRuntimeFloor(wasteMs: number, runMs: number | null, floorPct: number): boolean {
+  return runMs == null || wasteMs >= runMs * floorPct;
 }
 
 // A stage that ran for less than floorPct of the run (a known duration): an estimate clipped to
 // the stage can't reach floorPct, so every finding there grades info. A zero-length stage (no
 // submission time on older Spark) is not skipped: it gets no estimate and keeps its own band.
-function stageBelowRuntimeFloor(stage: DetectorStage, ctx: DetectorCtx | undefined, floorPct: number): boolean {
+function stageBelowRuntimeFloor(stage: DetectorStage, ctx: DetectorCtx, floorPct: number): boolean {
   const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
-  const appDurationMs = computeAppDurationMs(ctx);
-  return appDurationMs != null && stageDurationMs > 0 && stageDurationMs < appDurationMs * floorPct;
+  const runMs = appDurationMs(ctx.app);
+  return runMs != null && stageDurationMs > 0 && stageDurationMs < runMs * floorPct;
 }
 
-// Runs a raw waste delta through the same occupancy clip impact-estimator.ts applies before
-// display, so the runtime floor checks recoverable wall-clock, not a delta a physical floor
-// leaves unrecoverable. Falls back to the raw delta when occupancy data is unavailable.
-// skew/straggler claims shorten the stage's longest task, hence shortensLongestTask (see occupancy.ts).
-function clippedWasteMs(
-  wasteMs: number, stageId: number, ctx: DetectorCtx | undefined, removedCoreWorkMs: number, longestTaskAfterFixMs = 0,
-): number {
-  if (!ctx) return wasteMs;
-  const est = estimateSingleStage(
-    wasteMs, stageId, ctx.stages as unknown as Map<number, OccupancyStage>, ctx.occupancy,
-    { shortensLongestTask: true, removedCoreWorkMs, longestTaskAfterFixMs },
-  );
-  return est ? est.wallClock.high : wasteMs;
+// What a skew or straggler fix claims off its stage: the wall-clock its slow tail costs, the task
+// time the fix removes, and the longest task it leaves. One figure, read twice: detect() gates its
+// runtime floor on the claim's clipped estimate and estimate() reports that same estimate as the
+// savings, so the firing floor and the displayed figure can't disagree.
+interface TailClaim {
+  wasteMs: number;
+  removedCoreWorkMs: number;
+  longestTaskAfterFixMs: number;
+}
+
+// singleDelta: the slowest task's own excess, the fallback when the stage has no task replay.
+function tailClaim(stage: TailStage, singleDelta: number, longestTaskAfterFixMs: number): TailClaim {
+  return {
+    wasteMs: tailRecoveryMs(stage, singleDelta),
+    removedCoreWorkMs: tailRemovedWorkMs(stage, singleDelta),
+    longestTaskAfterFixMs,
+  };
+}
+
+// skew's delta is the task computeSkewRatio's metric sampled (P95 or max) over the median. Fixing
+// the skew still waits on the longest task it leaves, as for straggler.
+function skewTailClaim(stage: TailStage & { taskDurationP95?: number }, usesP95Branch: boolean): TailClaim {
+  const p50 = stage.taskDurationP50 ?? 0;
+  const singleDelta = Math.max(0, usesP95Branch ? (stage.taskDurationP95 ?? 0) - p50 : (stage.taskDurationMax ?? 0) - p50);
+  return tailClaim(stage, singleDelta, stragglerFixLongestTaskMs(stage));
+}
+
+// straggler's delta is the slowest task over the longest one the fix leaves.
+function stragglerTailClaim(stage: TailStage): TailClaim {
+  const longestTaskAfterFixMs = stragglerFixLongestTaskMs(stage);
+  return tailClaim(stage, Math.max(0, (stage.taskDurationMax ?? 0) - longestTaskAfterFixMs), longestTaskAfterFixMs);
+}
+
+// A tail claim shortens the stage's longest task, hence TAIL_CLAIM (see occupancy.ts).
+function tailClaimImpact(claim: TailClaim, stageId: number, ctx: EstimateCtx): ImpactEstimate {
+  return singleStageImpact(claim.wasteMs, stageId, ctx, 'measured', { value: claim.wasteMs, unit: 'ms' },
+    { ...TAIL_CLAIM, removedCoreWorkMs: claim.removedCoreWorkMs, longestTaskAfterFixMs: claim.longestTaskAfterFixMs });
+}
+
+// The figure a runtime floor checks: the claim's recoverable wall-clock, not a delta a physical
+// floor leaves unrecoverable. Falls back to the raw claim when occupancy data is unavailable.
+function tailClaimFloorMs(claim: TailClaim, stageId: number, ctx: DetectorCtx): number {
+  return tailClaimImpact(claim, stageId, ctx.impact).wallClock?.high ?? claim.wasteMs;
 }
 
 // Shared by cacheUtilization's two variants, worded per storage source: neither is a runtime
@@ -682,27 +712,144 @@ function storageUnobservedFinding(persistedRddCount: number): Finding {
   };
 }
 
-// Entry shape for every DETECTORS item. TTarget stays `unknown` at the array level: detect's
-// real first-arg varies by scope (DetectorStage/DetectorSqlExec/DetectorCtx/{ app }), and
-// unifying them would need an unsound cast or a discriminated-union redesign. Each entry gets a
-// precise detect by annotating its own params: object-literal method params are checked
-// bivariantly, so a narrower annotation here doesn't conflict with the `unknown` declaration.
-export interface Detector<TTarget = unknown> {
-  type: string;
-  scope: 'stage' | 'sql' | 'app' | 'config';
+/** A detector entry's threshold set. number[] too: slowHost's ratioTiers and broadcastSizing's
+ * tiers are tier tables its detect() indexes by position. */
+export type DetectorThresholds = Readonly<Record<string, number | readonly number[]>>;
+
+export type DetectResult = Finding | Finding[] | null;
+
+// What each scope's detect() is handed. `thresholds` is the entry's own set, or the caller's
+// overrides merged over it (analyze()'s `thresholds` option). 'config' has no DetectorCtx:
+// auditConfig() runs those entries on the app alone.
+interface DetectSignatures<T> {
+  stage: (stage: DetectorStage, ctx: DetectorCtx, thresholds: T) => DetectResult;
+  sql: (sqlExec: DetectorSqlExec, ctx: DetectorCtx, thresholds: T) => DetectResult;
+  app: (ctx: DetectorCtx, thresholds: T) => DetectResult;
+  config: (target: DetectorConfigTarget, thresholds: T) => DetectResult;
+}
+
+export type DetectorScope = keyof DetectSignatures<never>;
+
+// The same calls with the thresholds already bound: what a runner holds after withThresholds().
+interface BoundDetectSignatures {
+  stage: (stage: DetectorStage, ctx: DetectorCtx) => DetectResult;
+  sql: (sqlExec: DetectorSqlExec, ctx: DetectorCtx) => DetectResult;
+  app: (ctx: DetectorCtx) => DetectResult;
+  config: (target: DetectorConfigTarget) => DetectResult;
+}
+
+// The fields a define*Detector() call spells out. `detect` is a property, not a method, so its
+// parameters are checked contravariantly: a detect() that reads a threshold the entry doesn't
+// declare, or expects a different target, fails to compile.
+interface DetectorSpec<
+  S extends DetectorScope, TType extends string, TEmits extends readonly Finding['type'][],
+  T extends DetectorThresholds, TSuppressor extends string,
+> {
+  type: TType;
+  // Every finding `type` this entry pushes. Usually just its own `type`; broadcastSizing's one
+  // plan walk emits underBroadcast/overBroadcast and never its own name. FindingType derives from it.
+  emits: TEmits;
+  // Display order only (widget sequence, verdict tie-breaks). Evaluation order never matters:
+  // cross-detector suppression is the explicit `suppressedBy` below.
   order: number;
   fixEffort: FixEffort;
   version: number;
   docAnchor?: string;
-  // number[] too: slowHost's ratioTiers and broadcastSizing's tiers are genuine tier tables.
-  thresholds?: Record<string, number | number[]>;
-  recommendation?: string;
-  confidence?: string;
-  validationRequired?: string;
+  thresholds: T;
   inScorecard?: boolean;
   property?: string;
-  suppressWhen?: (finding: Finding, out: Finding[]) => boolean;
-  detect(target: TTarget, ctx?: unknown): Finding | Finding[] | null;
+  // Another entry's `type`: analyze() drops this entry's finding on any stage that detector
+  // flagged in the same run, whichever of the two is declared first.
+  suppressedBy?: TSuppressor;
+  detect: DetectSignatures<Readonly<T>>[S];
+  // The impact estimate for one of this entry's findings, run after suppression; null leaves the
+  // finding without one. Lives here so a finding type's waste model sits next to the detection
+  // that produced it, reading the same helpers its runtime floor does.
+  estimate: (finding: FindingOf<TEmits[number]>, ctx: EstimateCtx) => ImpactEstimate | null;
+}
+
+type DefinedDetector<
+  S extends DetectorScope, TType extends string, TEmits extends readonly Finding['type'][],
+  T extends DetectorThresholds, TSuppressor extends string,
+> = Omit<DetectorSpec<S, TType, TEmits, T, TSuppressor>, 'thresholds'> & {
+  scope: S;
+  thresholds: Readonly<T>;
+  // detect() with this entry's thresholds bound, overridden per key by `overrides`. Throws on an
+  // override key the entry doesn't declare or whose shape differs from the default's.
+  withThresholds(overrides?: DetectorThresholds): BoundDetectSignatures[S];
+};
+
+/** How runners (analyze(), auditConfig(), the catalog helpers) see any DETECTORS entry: its
+ * thresholds type erased and detect() left off, so they reach it only through withThresholds().
+ * estimate() takes any Finding here: estimateImpact() only hands an entry the types it emits. */
+export type Detector = {
+  [S in DetectorScope]: Omit<DefinedDetector<S, string, readonly Finding['type'][], DetectorThresholds, string>, 'detect' | 'estimate'> & {
+    estimate(finding: Finding, ctx: EstimateCtx): ImpactEstimate | null;
+  };
+}[DetectorScope];
+
+// Same-shape overrides merged over the defaults. analyze()'s callers validate overrides at their
+// own boundary (threshold-overrides.ts); this re-checks so a programmatic caller can't hand a
+// detector a threshold of the wrong shape, which is what makes the cast below sound.
+function mergeThresholds<T extends DetectorThresholds>(type: string, defaults: Readonly<T>, overrides: DetectorThresholds): Readonly<T> {
+  for (const [name, value] of Object.entries(overrides)) {
+    // Own keys only: an inherited name such as `constructor` or `toString` is no threshold.
+    if (!Object.hasOwn(defaults, name)) throw new Error(`Detector ${type} has no threshold "${name}".`);
+    const fallback = defaults[name];
+    const sameShape = Array.isArray(fallback)
+      ? Array.isArray(value) && value.length === fallback.length
+      : typeof value === 'number';
+    if (!sameShape) throw new Error(`Threshold ${type}.${name} must have the same shape as its default.`);
+  }
+  return Object.freeze({ ...defaults, ...overrides }) as Readonly<T>;
+}
+
+function defineDetector<
+  S extends DetectorScope, TType extends string, TEmits extends readonly Finding['type'][],
+  T extends DetectorThresholds, TSuppressor extends string,
+>(
+  scope: S, spec: DetectorSpec<S, TType, TEmits, T, TSuppressor>,
+  bind: (thresholds: Readonly<T>) => BoundDetectSignatures[S],
+): DefinedDetector<S, TType, TEmits, T, TSuppressor> {
+  // Frozen: the defaults are the specification, never a knob to mutate in place.
+  const defaults = Object.freeze({ ...spec.thresholds }) as Readonly<T>;
+  const boundDefaults = bind(defaults);
+  return {
+    ...spec, scope, thresholds: defaults,
+    withThresholds: (overrides) => (overrides && Object.keys(overrides).length > 0
+      ? bind(mergeThresholds(spec.type, defaults, overrides))
+      : boundDefaults),
+  };
+}
+
+// One helper per scope: each infers the entry's thresholds type from its `thresholds` literal
+// and hands detect() exactly that type, with the scope's target and a required context.
+export function defineStageDetector<
+  const TType extends string, const TEmits extends readonly Finding['type'][],
+  T extends DetectorThresholds, const TSuppressor extends string = never,
+>(spec: DetectorSpec<'stage', TType, TEmits, T, TSuppressor>) {
+  return defineDetector('stage', spec, (t) => (stage, ctx) => spec.detect(stage, ctx, t));
+}
+
+export function defineSqlDetector<
+  const TType extends string, const TEmits extends readonly Finding['type'][],
+  T extends DetectorThresholds, const TSuppressor extends string = never,
+>(spec: DetectorSpec<'sql', TType, TEmits, T, TSuppressor>) {
+  return defineDetector('sql', spec, (t) => (sqlExec, ctx) => spec.detect(sqlExec, ctx, t));
+}
+
+export function defineAppDetector<
+  const TType extends string, const TEmits extends readonly Finding['type'][],
+  T extends DetectorThresholds, const TSuppressor extends string = never,
+>(spec: DetectorSpec<'app', TType, TEmits, T, TSuppressor>) {
+  return defineDetector('app', spec, (t) => (ctx) => spec.detect(ctx, t));
+}
+
+export function defineConfigDetector<
+  const TType extends string, const TEmits extends readonly Finding['type'][],
+  T extends DetectorThresholds, const TSuppressor extends string = never,
+>(spec: DetectorSpec<'config', TType, TEmits, T, TSuppressor>) {
+  return defineDetector('config', spec, (t) => (target) => spec.detect(target, t));
 }
 
 // Threshold field naming convention:
@@ -710,11 +857,6 @@ export interface Detector<TTarget = unknown> {
 // *Pct100 = 0–100 scale
 // *Ratio = multiplicative factor
 // *Share/*Rate/*Util = 0–1 fraction (normalized)
-
-// straggler's noise-floor thresholds (NOT SOURCED: unvalidated), exported so impact-band.ts
-// reuses the same figures instead of hand-copying.
-export const STRAGGLER_FLOOR_PCT_WARN = 0.005;
-export const STRAGGLER_FLOOR_PCT_CRIT = 0.02;
 
 // A ratio just past ratioWarn is the case most likely to be ordinary task-duration variance
 // rather than real skew; a ratio many multiples past it (a 50x P95/median vs. a 3.1x one) is
@@ -813,62 +955,71 @@ function cachingReuseConfidence(occurrences: number, minExecutions: number): 'lo
   return 'medium';
 }
 
-export const DETECTORS: Detector[] = [
-  {
-    type: 'skew', scope: 'stage', order: 30, fixEffort: 'code', version: 1,
+// A share threshold as caveat text states it: 0.005 -> "0.5%". Rounded to 4 decimals of a percent
+// so float noise (0.07 * 100) never prints.
+function shareLabel(share: number): string {
+  return `${Math.round(share * 1e6) / 1e4}%`;
+}
+
+// Caveats that name a threshold read it from the thresholds the detector ran with, so a tuned run
+// states the floor it actually used.
+function gcValidation(minRunTimeMs: number): string {
+  return `This finding is gated by a ${minRunTimeMs / 1000}-second minimum-runtime floor, our own noise floor for this metric.`;
+}
+
+const INCOMPLETE_RUN_RECOMMENDATION = 'This event log never recorded an ApplicationEnd event: the capture stopped before the run finished (an in-flight job, a rotated-away log, or a cut-short capture). Findings and metrics elsewhere on this board reflect only what was captured up to that point, not the full run.';
+
+export const DETECTORS = [
+  defineStageDetector({
+    type: 'skew', order: 30, fixEffort: 'code', version: 1,
+    emits: ['skew'],
     docAnchor: '#bottleneck-skew',
-    thresholds: { ratioWarn: 3, minTasksForP95: 20, floorPctWarn: 0.005 },
-    detect(
-      this: {
-        thresholds: { ratioWarn: number; minTasksForP95: number; floorPctWarn: number };
-      },
-      stage: DetectorStage,
-      ctx?: DetectorCtx,
-    ): Finding | null {
-      const result = computeSkewRatio(stage, this.thresholds.minTasksForP95);
+    thresholds: { ratioWarn: 3, minTasksForP95: 20, floorPctWarn: IMPACT_FLOOR_PCT_WARN },
+    detect(stage, ctx, thresholds): Finding | null {
+      const result = computeSkewRatio(stage, thresholds.minTasksForP95);
       if (result === null) return null;
       const { ratio, metric } = result;
-      if (ratio <= this.thresholds.ratioWarn) return null;
-      // Same absolute delta impact-estimator.ts's 'skew' case reports as savings; clipped the
-      // same way before the floor check so the gate agrees with what's displayed.
-      const singleDelta = Math.max(0, metric === 'P95/median' ? stage.taskDurationP95 - stage.taskDurationP50 : stage.taskDurationMax - stage.taskDurationP50);
-      const wasteMs = tailRecoveryMs(stage, singleDelta);
-      const appDurationMs = computeAppDurationMs(ctx);
-      const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx, tailRemovedWorkMs(stage, singleDelta), stragglerFixLongestTaskMs(stage));
-      if (!meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctWarn)) return null;
+      if (ratio <= thresholds.ratioWarn) return null;
+      // The claim estimate() reports as savings, clipped the same way, so the gate agrees with it.
+      const floorWasteMs = tailClaimFloorMs(skewTailClaim(stage, metric === 'P95/median'), stage.id, ctx);
+      if (!meetsRuntimeFloor(floorWasteMs, appDurationMs(ctx.app), thresholds.floorPctWarn)) return null;
       const value = Math.round(ratio * 10) / 10;
       return {
         type: 'skew', stageId: stage.id,
         impactBand: 'warning',
         metric, value,
-        confidence: skewConfidence(ratio, this.thresholds.ratioWarn),
-        validationRequired: 'This finding is gated by a 0.5% runtime-floor threshold, our own noise floor for this metric.',
+        confidence: skewConfidence(ratio, thresholds.ratioWarn),
+        validationRequired: `This finding is gated by a ${shareLabel(thresholds.floorPctWarn)} runtime-floor threshold, our own noise floor for this metric.`,
         recommendation: `Task duration ratio (${metric}) is ${value}×: for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key to reduce task skew.`,
       };
     },
-  },
-  {
-    type: 'stageShape', scope: 'stage', order: 35, fixEffort: 'code', version: 1,
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      // computeSkewRatio's own metric labels: 'P95/median' or 'max/median'.
+      return tailClaimImpact(skewTailClaim(stage, finding.metric === 'P95/median'), finding.stageId, ctx);
+    },
+  }),
+  defineStageDetector({
+    type: 'stageShape', order: 35, fixEffort: 'code', version: 1,
+    emits: ['stageShape'],
     docAnchor: '#bottleneck-stage-shape',
     // lowParallelismFloorPct: the same 0.5% runtime floor the tiered detectors use. Parallelizing a
     // stage can't save more than the stage's own duration, so a shorter stage can't clear it; on
     // the 14 real logs that was 2839 of 3005 lowParallelism findings (2168 on sub-second stages).
     // App-wide idle capacity stays covered by utilization.
     thresholds: { pRatioMax: 0.5, oiRatioMax: 10, skewWarn: 3, lowParallelismFloorPct: 0.005 },
-    detect(
-      this: { thresholds: { pRatioMax: number; oiRatioMax: number; skewWarn: number; lowParallelismFloorPct: number } },
-      stage: DetectorStage,
-      ctx?: DetectorCtx,
-    ): Finding[] {
+    detect(stage, ctx, thresholds): Finding[] {
       const out: Finding[] = [];
       const execCount = (stage.executorStats ?? []).length;
-      const cores = ctx?.app?.resources?.executor?.cores ?? 1;
+      const cores = ctx.app?.resources?.executor?.cores ?? 1;
       const totalCores = execCount * cores;
       const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
       // PRatio: under-parallelization.
-      if (totalCores > 0 && !stageBelowRuntimeFloor(stage, ctx, this.thresholds.lowParallelismFloorPct)) {
+      if (totalCores > 0 && !stageBelowRuntimeFloor(stage, ctx, thresholds.lowParallelismFloorPct)) {
         const pRatio = stage.taskCount / totalCores;
-        if (pRatio < this.thresholds.pRatioMax) {
+        if (pRatio < thresholds.pRatioMax) {
           out.push({
             type: 'stageShape', stageId: stage.id, impactBand: 'info',
             rule: 'lowParallelism', metric: 'pRatio', value: Math.round(pRatio * 100) / 100,
@@ -881,7 +1032,7 @@ export const DETECTORS: Detector[] = [
       // OIRatio: data explosion. Skip when inputBytes is 0 (Infinity guard).
       if (stage.inputBytes > 0) {
         const oiRatio = stage.outputBytes / stage.inputBytes;
-        if (oiRatio > this.thresholds.oiRatioMax) {
+        if (oiRatio > thresholds.oiRatioMax) {
           out.push({
             type: 'stageShape', stageId: stage.id, impactBand: 'info',
             rule: 'dataExplosion', metric: 'oiRatio', value: Math.round(oiRatio * 10) / 10,
@@ -894,7 +1045,7 @@ export const DETECTORS: Detector[] = [
       // every firing, so there's no wall-clock-backed tier left to gate on.
       if (stageDurationMs > 0) {
         const ratio = stage.taskDurationMax / stageDurationMs;
-        if (ratio > this.thresholds.skewWarn) {
+        if (ratio > thresholds.skewWarn) {
           out.push({
             type: 'stageShape', stageId: stage.id, impactBand: 'info',
             rule: 'taskStageSkew', metric: 'taskStageSkew', value: Math.round(ratio * 10) / 10,
@@ -906,22 +1057,47 @@ export const DETECTORS: Detector[] = [
       }
       return out;
     },
-  },
-  {
-    type: 'shuffle', scope: 'stage', order: 20, fixEffort: 'config', version: 1,
+    estimate(finding, ctx): ImpactEstimate | null {
+      const stage = ctx.stages.get(finding.stageId as number);
+      if (!stage) return null;
+      if (finding.rule === 'lowParallelism') {
+        const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
+        const idleCoreMs =
+          Math.max(0, ((finding.totalCores as number | undefined) ?? 0) - (stage.taskCount ?? 0)) * stageDurationMs;
+        // Real per-stage data (cores, task count, duration), no assumed constant.
+        return costOnly('measured', { value: idleCoreMs, unit: 'coreMs' });
+      }
+      if (finding.rule === 'dataExplosion') {
+        const excessBytes = Math.max(0, (stage.outputBytes ?? 0) - (stage.inputBytes ?? 0));
+        // Measured input/output byte counts, no assumed constant.
+        return costOnly('measured', { value: excessBytes, unit: 'bytes' });
+      }
+      if (finding.rule === 'taskStageSkew') {
+        const totalCores = (finding.totalCores as number | undefined) ?? 0;
+        const taskCount = stage.taskCount ?? 0;
+        // Cores idle during the straggler's tail, at achieved concurrency (not full cluster
+        // capacity, which is lowParallelism's territory): this rule's trigger forces the
+        // occupancy-clipped estimate to zero on every firing, so it's resourceOnly, not a wall-clock claim.
+        const idleCoreMs =
+          Math.max(0, Math.min(totalCores, taskCount) - 1) *
+          Math.max(0, (stage.taskDurationMax ?? 0) - (stage.taskDurationP50 ?? 0));
+        return costOnly('measured', { value: idleCoreMs, unit: 'coreMs' });
+      }
+      return null;
+    },
+  }),
+  defineStageDetector({
+    type: 'shuffle', order: 20, fixEffort: 'config', version: 1,
+    emits: ['shuffle'],
     docAnchor: '#bottleneck-shuffle',
     // stageFloorPct: the 0.5% runtime floor. The shuffle claim is clipped to the stage, so on a
     // shorter stage it graded info: 182 of 284 shuffle findings on the 14 real logs. The shuffle
     // is still there on those stages; the floor is why they're dropped.
     thresholds: { minBytes: 50 * MB, stageFloorPct: 0.005 },
-    detect(
-      this: { thresholds: { minBytes: number; stageFloorPct: number } },
-      stage: DetectorStage,
-      ctx?: DetectorCtx,
-    ): Finding | null {
+    detect(stage, ctx, thresholds): Finding | null {
       const bytes = stage.shuffleReadBytes;
-      if (bytes <= this.thresholds.minBytes) return null;
-      if (stageBelowRuntimeFloor(stage, ctx, this.thresholds.stageFloorPct)) return null;
+      if (bytes <= thresholds.minBytes) return null;
+      if (stageBelowRuntimeFloor(stage, ctx, thresholds.stageFloorPct)) return null;
       return {
         type: 'shuffle', stageId: stage.id,
         impactBand: 'info',
@@ -929,23 +1105,30 @@ export const DETECTORS: Detector[] = [
         recommendation: `${formatBytes(bytes)} shuffled in this stage: consider increasing spark.sql.shuffle.partitions or adding a broadcast join.`,
       };
     },
-  },
-  {
-    type: 'partitionSizing', scope: 'stage', order: 22, fixEffort: 'config', version: 1,
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const shuffleReadBytes = stage.shuffleReadBytes ?? 0;
+      const modeledMs = (shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
+      // The link model can't see whether the reads stalled the tasks: capped at the fetch wait the
+      // tasks measured, the claim never exceeds what the stage spent blocked on the network.
+      const measuredMs = fetchWaitWallClockMs(stage);
+      const wasteMs = measuredMs == null ? modeledMs : Math.min(modeledMs, measuredMs);
+      // rawWaste: the measured byte volume behind the modeled figure.
+      return singleStageImpact(wasteMs, finding.stageId, ctx,
+        measuredMs != null && measuredMs < modeledMs ? 'measured' : 'modeled', { value: shuffleReadBytes, unit: 'bytes' });
+    },
+  }),
+  defineStageDetector({
+    type: 'partitionSizing', order: 22, fixEffort: 'config', version: 1,
+    emits: ['partitionSizing'],
     docAnchor: '#bottleneck-partition-sizing',
     thresholds: { skewRatio: 5, skewFloorBytes: 256 * MB, lowParTotalBytes: GB, lowParMaxTasks: 7, maxPartBytes: 5 * GB },
-    detect(
-      this: {
-        thresholds: {
-          skewRatio: number; skewFloorBytes: number; lowParTotalBytes: number;
-          lowParMaxTasks: number; maxPartBytes: number;
-        };
-      },
-      stage: DetectorStage,
-    ): Finding[] {
+    detect(stage, _ctx, thresholds): Finding[] {
       const out: Finding[] = [];
       const { shuffleReadP50: p50, shuffleReadMax: max, shuffleReadBytes: total, taskCount } = stage;
-      if (max > this.thresholds.skewRatio * p50 && max > this.thresholds.skewFloorBytes) {
+      if (max > thresholds.skewRatio * p50 && max > thresholds.skewFloorBytes) {
         // p50 can be 0 (over half the shuffle partitions empty): a ratio against zero renders
         // "Infinity×", so fall back to median-free phrasing.
         const ratioText = p50 > 0
@@ -957,14 +1140,14 @@ export const DETECTORS: Detector[] = [
           recommendation: `The largest shuffle partition (${formatBytes(max)}) is ${ratioText}: for join skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.`,
         });
       }
-      if (total >= this.thresholds.lowParTotalBytes && taskCount <= this.thresholds.lowParMaxTasks) {
+      if (total >= thresholds.lowParTotalBytes && taskCount <= thresholds.lowParMaxTasks) {
         out.push({
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'lowShuffleParallelism', metric: 'taskCount', value: taskCount,
           recommendation: `${Math.round(total / GB * 10) / 10} GB of shuffle spread over only ${taskCount} tasks: raise spark.sql.shuffle.partitions so each partition is smaller.`,
         });
       }
-      if (max >= this.thresholds.maxPartBytes) {
+      if (max >= thresholds.maxPartBytes) {
         // Fixed 'critical': an OOM/crash-risk safety signal, not a time-waste one. Exempted in
         // impact-band.ts's deriveImpactBand from the wall-clock-based overwrite every other
         // finding here gets, so a long-running job can't demote an active crash risk to 'info'
@@ -977,19 +1160,46 @@ export const DETECTORS: Detector[] = [
       }
       return out;
     },
-  },
-  {
-    type: 'spill', scope: 'stage', order: 10, fixEffort: 'code', version: 1,
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      let wasteMs = 0;
+      if (finding.rule === 'maxPartitionTooBig') {
+        wasteMs = ((stage.shuffleReadMax ?? 0) / SHUFFLE_THROUGHPUT_BPS) * 1000;
+      } else if (finding.rule === 'shufflePartitionSkew') {
+        const delta = Math.max(0, (stage.shuffleReadMax ?? 0) - (stage.shuffleReadP50 ?? 0));
+        wasteMs = (delta / SHUFFLE_THROUGHPUT_BPS) * 1000;
+      } else if (finding.rule === 'lowShuffleParallelism') {
+        const targetTaskCount = Math.ceil((stage.shuffleReadBytes ?? 0) / IDEAL_BYTES_PER_PARTITION_TASK);
+        const taskCount = stage.taskCount ?? 0;
+        if (targetTaskCount > taskCount && taskCount > 0) {
+          const stageDurationMs = Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
+          // Too few shuffle partitions means each task processes more than the ideal bytes,
+          // serializing work more partitions would run concurrently: the waste is that serialized
+          // work, not the scheduling cost of tasks you'd add (adding tasks incurs overhead, recovers
+          // nothing). Model the achievable duration at target parallelism by scaling down proportionally.
+          wasteMs = stageDurationMs * (1 - taskCount / targetTaskCount);
+        }
+      } else {
+        return null;
+      }
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: wasteMs, unit: 'ms' });
+    },
+  }),
+  defineStageDetector({
+    type: 'spill', order: 10, fixEffort: 'code', version: 1,
+    emits: ['spill'],
     docAnchor: '#bottleneck-spill',
     // stageFloorPct: the 0.5% runtime floor, as for shuffle (12 of 38 spill findings on the 14 real
     // logs, all info). The spill is still there on those stages; the floor is why they're dropped.
     thresholds: { singleTaskDiskGiB: 1, singleTaskMemGiB: 4, highDiskGiB: 1, highTaskDiskMB: 512, highMemGiB: 4, medDiskMB: 256, medMemGiB: 1, skewRatio: 5, skewDiskFloorMB: 128, skewMemFloorMB: 256, skewMinTasks: 10, stageFloorPct: 0.005 },
-    detect(this: { thresholds: SpillThresholds }, stage: DetectorStage, ctx?: DetectorCtx): Finding | null {
+    detect(stage, ctx, thresholds): Finding | null {
       if (stage.memoryBytesSpilled === 0) return null;
-      if (stageBelowRuntimeFloor(stage, ctx, this.thresholds.stageFloorPct)) return null;
+      if (stageBelowRuntimeFloor(stage, ctx, thresholds.stageFloorPct)) return null;
       const cls = stage.spillClassification;
       const classified = cls === 'skew' || cls === 'volume';
-      const mag = computeSpillMagnitude(stage, this.thresholds);
+      const mag = computeSpillMagnitude(stage, thresholds);
       const impactBand = 'warning';
       return {
         type: 'spill', stageId: stage.id, impactBand,
@@ -1004,11 +1214,20 @@ export const DETECTORS: Detector[] = [
           : `${formatBytes(stage.memoryBytesSpilled)} spilled: raise spark.sql.shuffle.partitions or increase executor memory.`,
       };
     },
-  },
-  {
-    type: 'gc', scope: 'stage', order: 50, fixEffort: 'config', version: 1,
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const diskBytesSpilled = stage.diskBytesSpilled ?? 0;
+      const wasteMs = (diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
+      // Surfaces the number the formula uses: the displayed metric is memoryBytesSpilled, but disk spill costs the I/O time.
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: diskBytesSpilled, unit: 'bytes' });
+    },
+  }),
+  defineStageDetector({
+    type: 'gc', order: 50, fixEffort: 'config', version: 1,
+    emits: ['gc'],
     docAnchor: '#bottleneck-gc',
-    validationRequired: 'This finding is gated by a 10-second minimum-runtime floor, our own noise floor for this metric.',
     thresholds: {
       warnPct100: 10,
       // Descending tier: ExecutorGcHeuristic, ported as-is.
@@ -1021,44 +1240,60 @@ export const DETECTORS: Detector[] = [
       // findings); the low-GC pattern is still true on those stages, the floor is why they're dropped.
       lowInfoFloorPct: 0.005,
     },
-    detect(
-      this: {
-        thresholds: { warnPct100: number; lowInfoPct100: number; minRunTimeMs: number; lowInfoFloorPct: number };
-        validationRequired: string;
-      },
-      stage: DetectorStage,
-      ctx?: DetectorCtx,
-    ): Finding | null {
+    detect(stage, ctx, thresholds): Finding | null {
       const pct = stage.gcPct;
-      if ((stage.executorRunTime ?? 0) >= this.thresholds.minRunTimeMs
-          && pct > this.thresholds.warnPct100) {
+      if ((stage.executorRunTime ?? 0) >= thresholds.minRunTimeMs
+          && pct > thresholds.warnPct100) {
         const value = Math.round(pct * 10) / 10;
         return {
           type: 'gc', stageId: stage.id,
           impactBand: 'warning',
           metric: 'gcPct', value,
-          confidence: gcConfidence(pct, this.thresholds, 'high'), validationRequired: this.validationRequired,
+          confidence: gcConfidence(pct, thresholds, 'high'), validationRequired: gcValidation(thresholds.minRunTimeMs),
           recommendation: `GC consumed ${value}% of executor run time: reduce object creation, use primitive types, avoid UDFs, increase executor memory.`,
         };
       }
       // Low-GC (cost) branch: only for stages that ran long enough to be meaningful.
-      if ((stage.executorRunTime ?? 0) >= this.thresholds.minRunTimeMs
-          && pct < this.thresholds.lowInfoPct100
-          && !stageBelowRuntimeFloor(stage, ctx, this.thresholds.lowInfoFloorPct)) {
+      if ((stage.executorRunTime ?? 0) >= thresholds.minRunTimeMs
+          && pct < thresholds.lowInfoPct100
+          && !stageBelowRuntimeFloor(stage, ctx, thresholds.lowInfoFloorPct)) {
         const value = Math.round(pct * 10) / 10;
         return {
           type: 'gc', stageId: stage.id, direction: 'low',
           impactBand: 'info',
           metric: 'gcPct', value,
-          confidence: gcConfidence(pct, this.thresholds, 'low'), validationRequired: this.validationRequired,
+          confidence: gcConfidence(pct, thresholds, 'low'), validationRequired: gcValidation(thresholds.minRunTimeMs),
           recommendation: `GC consumed only ${value}% of executor run time: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.`,
         };
       }
       return null;
     },
-  },
-  {
-    type: 'slowHost', scope: 'stage', order: 60, fixEffort: 'config', version: 1,
+    estimate(finding, ctx): ImpactEstimate | null {
+      // The low-GC branch is an over-provisioning signal whose fix (less executor memory) raises
+      // GC rather than recovering it: the stage's GC time is no saving there, so no waste model.
+      if (finding.direction === 'low') return costOnly('none');
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
+      const executorRunTime = stage.executorRunTime ?? 0;
+      const jvmGCTime = stage.jvmGCTime ?? 0;
+      // The raw cross-task core-time sum, before any conversion: the one figure here
+      // that is straight from the log rather than modeled.
+      const rawWaste = { value: jvmGCTime, unit: 'coreMs' } as const;
+      if (executorRunTime <= 0 || stageDurationMs <= 0) {
+        return costOnly('modeled', rawWaste);
+      }
+      const avgConcurrency = executorRunTime / stageDurationMs;
+      // jvmGCTime is a cross-task core-time sum (same shape as executorRunTime); dividing by the
+      // stage's average concurrency converts it to an approximate wall-clock figure. Modeled, not exact.
+      const wasteMs = jvmGCTime / avgConcurrency;
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', rawWaste);
+    },
+  }),
+  defineStageDetector({
+    type: 'slowHost', order: 60, fixEffort: 'config', version: 1,
+    emits: ['slowHost'],
     docAnchor: '#bottleneck-slow-host',
     thresholds: {
       minHosts: 3, minTasks: 15, ratioWarn: 2.0, minShare: 0.20, shareWarn: 0.75, taskShareWarn: 0.50, ratioTiers: [1.33, 1.78, 3.16, 10],
@@ -1074,23 +1309,13 @@ export const DETECTORS: Detector[] = [
       // floor is why they're dropped.
       stageFloorPct: 0.005,
     },
-    detect(
-      this: {
-        thresholds: {
-          minHosts: number; minTasks: number; ratioWarn: number; minShare: number;
-          shareWarn: number; taskShareWarn: number; ratioTiers: number[]; floorMs: number; floorBytes: number;
-          stageFloorPct: number;
-        };
-      },
-      stage: DetectorStage,
-      ctx?: DetectorCtx,
-    ): Finding[] | null {
+    detect(stage, ctx, thresholds): Finding[] | null {
       const hosts = stage.hostStats ?? [];
       const execs0 = stage.executorStats ?? [];
-      if ((hosts.length < this.thresholds.minHosts && execs0.length < this.thresholds.minHosts) || stage.taskCount < this.thresholds.minTasks) return null;
-      if (stageBelowRuntimeFloor(stage, ctx, this.thresholds.stageFloorPct)) return null;
+      if ((hosts.length < thresholds.minHosts && execs0.length < thresholds.minHosts) || stage.taskCount < thresholds.minTasks) return null;
+      if (stageBelowRuntimeFloor(stage, ctx, thresholds.stageFloorPct)) return null;
       const out: Finding[] = [];
-      if (hosts.length >= this.thresholds.minHosts) {
+      if (hosts.length >= thresholds.minHosts) {
         const means = hosts.map(h => ({ host: h.host, taskCount: h.taskCount, mean: h.totalDuration / h.taskCount }));
         const sorted = [...means].map(h => h.mean).sort((a, b) => a - b);
         const overallMedian = sorted[Math.floor(sorted.length / 2)];
@@ -1098,7 +1323,7 @@ export const DETECTORS: Detector[] = [
           for (const h of means) {
             const ratio = h.mean / overallMedian;
             const share = h.taskCount / stage.taskCount;
-            if (ratio < this.thresholds.ratioWarn || share < this.thresholds.minShare || h.mean < this.thresholds.floorMs) continue;
+            if (ratio < thresholds.ratioWarn || share < thresholds.minShare || h.mean < thresholds.floorMs) continue;
             out.push({
               type: 'slowHost', stageId: stage.id,
               impactBand: 'warning',
@@ -1115,7 +1340,7 @@ export const DETECTORS: Detector[] = [
           for (const h of hosts) {
             const durationShare = h.totalDuration / totalDuration;
             const taskShare = h.taskCount / stage.taskCount;
-            if (durationShare >= this.thresholds.shareWarn && taskShare >= this.thresholds.taskShareWarn) {
+            if (durationShare >= thresholds.shareWarn && taskShare >= thresholds.taskShareWarn) {
               out.push({
                 type: 'slowHost', stageId: stage.id, impactBand: 'warning',
                 variant: 'durationShare',
@@ -1130,11 +1355,11 @@ export const DETECTORS: Detector[] = [
         }
       }
       const execs = stage.executorStats ?? [];
-      const tiers = this.thresholds.ratioTiers;
+      const tiers = thresholds.ratioTiers;
       const impactBandFor = (r: number): 'critical' | 'warning' | 'info' | null =>
         r >= tiers[3] ? 'critical' : (r >= tiers[1] ? 'warning' : (r >= tiers[0] ? 'info' : null));
-      const floorMs = this.thresholds.floorMs, floorBytes = this.thresholds.floorBytes;
-      const dims: { dimension: string; floor: number; samples: { key: string; value: number }[] }[] = [
+      const floorMs = thresholds.floorMs, floorBytes = thresholds.floorBytes;
+      const dims: { dimension: NonNullable<SlowHostFinding['dimension']>; floor: number; samples: { key: string; value: number }[] }[] = [
         { dimension: 'taskTime', floor: floorMs, samples: execs.filter(e => e.taskCount > 0).map(e => ({ key: e.executorId, value: e.totalDuration / e.taskCount })) },
         { dimension: 'inputBytes', floor: floorBytes, samples: execs.map(e => ({ key: e.executorId, value: e.inputBytes ?? 0 })) },
         { dimension: 'shuffleBytes', floor: floorBytes, samples: execs.map(e => ({ key: e.executorId, value: (e.shuffleReadBytes ?? 0) + (e.shuffleWriteBytes ?? 0) })) },
@@ -1167,26 +1392,41 @@ export const DETECTORS: Detector[] = [
       }
       return out;
     },
-  },
-  {
-    type: 'stageSlowness', scope: 'stage', order: 65, fixEffort: 'code', version: 2,
+    estimate(finding, ctx): ImpactEstimate | null {
+      // Three duration-based shapes, each carrying its absolute-ms figure under a different field
+      // (`value` is always a ratio/share, never ms): the per-host mean branch (discriminated by
+      // `metric`), the duration-share branch (`variant`), and the multiDim taskTime dimension. Every
+      // byte-based multiDim dimension has no absolute figure today, so it stays informational.
+      const absoluteMs =
+        finding.metric === 'hostMeanRatio' || finding.variant === 'durationShare'
+          ? (finding.hostMeanMs as number | undefined)
+          : finding.variant === 'multiDim' && finding.dimension === 'taskTime'
+            ? (finding.execMaxValue as number | undefined)
+            : null;
+      if (absoluteMs == null) {
+        return costOnly('none'); // byte-based multiDim dims: no absolute figure today, no model applied
+      }
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const wasteMs = Math.max(0, absoluteMs - (stage.taskDurationP50 ?? 0));
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'measured', { value: wasteMs, unit: 'ms' });
+    },
+  }),
+  defineStageDetector({
+    type: 'stageSlowness', order: 65, fixEffort: 'code', version: 2,
+    emits: ['stageSlowness'],
     docAnchor: '#bottleneck-stage-slowness',
     thresholds: { infoMin: 15 },
-    // Cross-detector suppression (see "Detector contract" in detector-contract.md). Requires this
-    // entry to be declared AFTER slowHost in DETECTORS so slowHost findings are already in `out`.
-    suppressWhen(finding, out) {
-      return out.some(o => o.type === 'slowHost' && o.stageId === finding.stageId);
-    },
-    detect(
-      this: { thresholds: { infoMin: number } },
-      stage: DetectorStage,
-    ): Finding | null {
+    // A stage slowHost already explains needs no generic "this stage is slow" finding on top.
+    suppressedBy: 'slowHost',
+    detect(stage, _ctx, thresholds): Finding | null {
       // Basis is real wall-clock stage duration, not per-executor average; the impact-estimator
       // formula reuses this exact stageDurationMs computation.
       const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
       if (!(stageDurationMs > 0)) return null;
       const durationMinutes = stageDurationMs / 60000;
-      const t = this.thresholds;
+      const t = thresholds;
       const impactBand = durationMinutes >= t.infoMin ? 'info' : null;
       if (!impactBand) return null;
       const value = Math.round(durationMinutes * 10) / 10;
@@ -1196,36 +1436,57 @@ export const DETECTORS: Detector[] = [
         recommendation: `This stage ran ${value} minutes with no more specific cause flagged: often a partition-count problem, raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.`,
       };
     },
-  },
-  {
-    type: 'stageFailed', scope: 'stage', order: 42, fixEffort: 'code', version: 1,
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      // The recommended fix is more partitions, which only helps a stage that ran fewer tasks than
+      // the cluster has cores: the time its tasks were running could then spread over up to
+      // totalCores (lowShuffleParallelism's shape). Time the stage sat open with no task running
+      // is queueing no partition count recovers. Splitting partitions splits the longest task
+      // too, hence TAIL_CLAIM's post-fix floor. Unknown cluster size: no defensible figure.
+      if (ctx.totalCores <= 0) return costOnly('modeled');
+      // A stage that read no input and no shuffle, its tasks idle waiting on an external system,
+      // gains nothing from more partitions (a 1-task JDBC count stage open 27 minutes on 5s of CPU
+      // was claimed 99% recoverable): claim 0. Stages that read bytes keep their claim.
+      const readBytes = (stage.inputBytes ?? 0) + (stage.shuffleReadBytes ?? 0);
+      const activeMs = typeof stage.taskActiveMs === 'number'
+        ? stage.taskActiveMs
+        : Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
+      const taskCount = stage.taskCount ?? 0;
+      const wasteMs = readBytes <= 0 && tasksMostlyIdle(stage) ? 0 : activeMs * Math.max(0, 1 - taskCount / ctx.totalCores);
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: wasteMs, unit: 'ms' }, TAIL_CLAIM);
+    },
+  }),
+  defineStageDetector({
+    type: 'stageFailed', order: 42, fixEffort: 'code', version: 1,
+    emits: ['stageFailed'],
     docAnchor: '#bottleneck-failures',
     thresholds: {},
-    detect(stage: DetectorStage): Finding | null {
+    detect(stage): Finding | null {
       if (stage.stageFailureReason == null) return null;
       return {
         type: 'stageFailed', stageId: stage.id, impactBand: 'critical',
         variant: 'stageFailure',
-        metric: 'stageFailureReason', value: stage.stageFailureReason,
+        metric: 'stageFailureReason', valueText: stage.stageFailureReason,
         numTasks: stage.taskCount,
         memoryBytesSpilled: stage.memoryBytesSpilled,
         failedTaskDetails: stage.failedTaskSamples ?? [],
         recommendation: `This stage attempt failed outright. Inspect the driver log for the failure reason and the job that triggered it.`,
       };
     },
-  },
-  {
-    type: 'failures', scope: 'stage', order: 40, fixEffort: 'code', version: 2,
+    estimate: noWasteModel,
+  }),
+  defineStageDetector({
+    type: 'failures', order: 40, fixEffort: 'code', version: 2,
+    emits: ['failures'],
     docAnchor: '#bottleneck-failures',
     thresholds: { minTasks: 10, warnRate: 0.05, critRate: 0.20 },
-    detect(
-      this: { thresholds: { minTasks: number; warnRate: number; critRate: number } },
-      stage: DetectorStage,
-    ): Finding | null {
-      if (stage.taskCount < this.thresholds.minTasks) return null;
+    detect(stage, _ctx, thresholds): Finding | null {
+      if (stage.taskCount < thresholds.minTasks) return null;
       if (!stage.failedTasks) return null;
       const failureRate = stage.failedTasks / stage.taskCount;
-      if (failureRate <= this.thresholds.warnRate) return null;
+      if (failureRate <= thresholds.warnRate) return null;
       const value = Math.round(failureRate * 1000) / 10;
       const dominantReason = pickDominantReason(stage.failureReasons);
       // Groups arrive most frequent first. Name the dominant error from the largest group under the
@@ -1237,7 +1498,7 @@ export const DETECTORS: Detector[] = [
       const groupedTasks = failureGroups.reduce((sum, g) => sum + g.count, 0);
       return {
         type: 'failures', stageId: stage.id,
-        impactBand: failureRate > this.thresholds.critRate ? 'critical' : 'warning',
+        impactBand: failureRate > thresholds.critRate ? 'critical' : 'warning',
         metric: 'failureRate', value,
         failedTasks: stage.failedTasks,
         dominantReason,
@@ -1249,12 +1510,14 @@ export const DETECTORS: Detector[] = [
         recommendation: `${value}% of tasks failed${dominantError ? ` (dominant error: ${dominantError})` : ''}: investigate driver logs for executor instability or data-driven errors.`,
       };
     },
-  },
-  {
-    type: 'straggler', scope: 'stage', order: 70, fixEffort: 'code', version: 1,
+    estimate: noWasteModel,
+  }),
+  defineStageDetector({
+    type: 'straggler', order: 70, fixEffort: 'code', version: 1,
+    emits: ['straggler'],
     docAnchor: '#bottleneck-straggler',
-    // floorPctWarn/floorPctCrit are re-exported as STRAGGLER_FLOOR_PCT_WARN/CRIT and reused as
-    // impact-band.ts's global noise floor: keep the two in sync.
+    // floorPctWarn/floorPctCrit default to impact-band.ts's run-wide noise floor, so a tail this
+    // gate admits at its warn floor grades at least warning there too.
     // shareWarnAtFloor: in a large stage, the few stragglers that gate it for tens of seconds can be
     // only 2.5-5% of its tasks. Scored against a task-level replay of every stage on 14 real logs
     // (recoverable = replay with each task over 4x P50 capped at P50), admitting 2.5-5% shares
@@ -1264,40 +1527,27 @@ export const DETECTORS: Detector[] = [
     // than the stage's own duration, so every finding there graded info. On the 14 real logs that
     // was 671 of 753 straggler findings, none above info; the slow tail is still real on those
     // stages, the floor is why they're dropped.
-    thresholds: { minTasks: 10, shareWarn: 0.05, shareWarnAtFloor: 0.025, warnPct: 0.10, critPct: 0.20, floorPctWarn: STRAGGLER_FLOOR_PCT_WARN, floorPctCrit: STRAGGLER_FLOOR_PCT_CRIT },
-    detect(
-      this: {
-        thresholds: {
-          minTasks: number; shareWarn: number; shareWarnAtFloor: number; warnPct: number; critPct: number;
-          floorPctWarn: number; floorPctCrit: number;
-        };
-      },
-      stage: DetectorStage,
-      ctx?: DetectorCtx,
-    ): Finding | null {
-      if (stage.taskCount < this.thresholds.minTasks) return null;
-      const appDurationMs = computeAppDurationMs(ctx);
-      if (stageBelowRuntimeFloor(stage, ctx, this.thresholds.floorPctWarn)) return null;
+    thresholds: { minTasks: 10, shareWarn: 0.05, shareWarnAtFloor: 0.025, warnPct: 0.10, critPct: 0.20, floorPctWarn: IMPACT_FLOOR_PCT_WARN, floorPctCrit: IMPACT_FLOOR_PCT_CRIT },
+    detect(stage, ctx, thresholds): Finding | null {
+      if (stage.taskCount < thresholds.minTasks) return null;
+      const runMs = appDurationMs(ctx.app);
+      if (stageBelowRuntimeFloor(stage, ctx, thresholds.floorPctWarn)) return null;
       const stragglerShare = (stage.stragglerCount ?? 0) / stage.taskCount;
       const useSpeculative = (stage.speculativeTasks ?? 0) > 0;
-      if (!useSpeculative && stragglerShare <= this.thresholds.shareWarnAtFloor) return null;
+      if (!useSpeculative && stragglerShare <= thresholds.shareWarnAtFloor) return null;
       const speculativeShare = useSpeculative ? stage.speculativeTasks / stage.taskCount : 0;
-      // Same absolute delta impact-estimator.ts's straggler/stageShape case reports as savings: a
-      // high straggler/speculative share on a stage whose tasks barely vary models near-zero
-      // savings, so it must not outrank 'info'. Clipped the same way before the floor check.
-      const longestTaskAfterFixMs = stragglerFixLongestTaskMs(stage);
-      const singleDelta = Math.max(0, stage.taskDurationMax - longestTaskAfterFixMs);
-      const wasteMs = tailRecoveryMs(stage, singleDelta);
-      const floorWasteMs = clippedWasteMs(wasteMs, stage.id, ctx, tailRemovedWorkMs(stage, singleDelta), longestTaskAfterFixMs);
-      const meetsWarnFloor = meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctWarn);
-      const meetsCritFloor = meetsRuntimeFloor(floorWasteMs, appDurationMs, this.thresholds.floorPctCrit);
+      // The claim estimate() reports as savings: a high straggler/speculative share on a stage
+      // whose tasks barely vary models near-zero savings, so it must not outrank 'info'.
+      const floorWasteMs = tailClaimFloorMs(stragglerTailClaim(stage), stage.id, ctx);
+      const meetsWarnFloor = meetsRuntimeFloor(floorWasteMs, runMs, thresholds.floorPctWarn);
+      const meetsCritFloor = meetsRuntimeFloor(floorWasteMs, runMs, thresholds.floorPctCrit);
       // The lower gate needs positive evidence the tail matters: meetsRuntimeFloor passes by
       // default when the app's duration is unknown (an incomplete run), which isn't that.
-      const stragglerShareFires = stragglerShare > this.thresholds.shareWarn
-        || (stragglerShare > this.thresholds.shareWarnAtFloor && appDurationMs != null && meetsWarnFloor);
+      const stragglerShareFires = stragglerShare > thresholds.shareWarn
+        || (stragglerShare > thresholds.shareWarnAtFloor && runMs != null && meetsWarnFloor);
       if (!useSpeculative && !stragglerShareFires) return null;
-      const speculativeTier = speculativeShare >= this.thresholds.critPct && meetsCritFloor ? 'critical'
-                             : speculativeShare >= this.thresholds.warnPct && meetsWarnFloor ? 'warning' : 'info';
+      const speculativeTier = speculativeShare >= thresholds.critPct && meetsCritFloor ? 'critical'
+                             : speculativeShare >= thresholds.warnPct && meetsWarnFloor ? 'warning' : 'info';
       // Straggler share has no dedicated critical tier per detector-contract.md; only warning.
       const stragglerTier = stragglerShareFires && meetsWarnFloor ? 'warning' : 'info';
       // Fixed fallback: overwritten by deriveImpactBand when this finding gets a real wallClock
@@ -1319,46 +1569,53 @@ export const DETECTORS: Detector[] = [
         speculativeTasks: stage.speculativeTasks ?? 0,
         stragglerCount: stage.stragglerCount ?? 0,
         confidence: useSpeculativeMetric
-          ? stragglerConfidence(speculativeShare, this.thresholds.warnPct, this.thresholds.critPct)
-          : stragglerConfidence(stragglerShare, this.thresholds.shareWarn, this.thresholds.critPct),
-        validationRequired: 'This finding is gated by 0.5%/2% runtime-floor thresholds, our own noise floor for this metric.',
+          ? stragglerConfidence(speculativeShare, thresholds.warnPct, thresholds.critPct)
+          : stragglerConfidence(stragglerShare, thresholds.shareWarn, thresholds.critPct),
+        validationRequired: `This finding is gated by ${shareLabel(thresholds.floorPctWarn)}/${shareLabel(thresholds.floorPctCrit)} runtime-floor thresholds, our own noise floor for this metric.`,
         recommendation: `${detail}: rule out a GC pause or a slow shuffle fetch before assuming a hardware issue; if a skewed key is the real cause, that's a candidate for AQE's skew-join handling.`,
       };
     },
-  },
-  {
-    type: 'speculationWaste', scope: 'stage', order: 71, fixEffort: 'config', version: 1,
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      return tailClaimImpact(stragglerTailClaim(stage), finding.stageId, ctx);
+    },
+  }),
+  defineStageDetector({
+    type: 'speculationWaste', order: 71, fixEffort: 'config', version: 1,
+    emits: ['speculationWaste'],
     docAnchor: '#bottleneck-speculation-waste',
     thresholds: { minWasted: 5, minWasteMs: 60000 },
-    detect(
-      this: {
-        thresholds: { minWasted: number; minWasteMs: number };
-      },
-      stage: DetectorStage,
-    ): Finding | null {
+    detect(stage, _ctx, thresholds): Finding | null {
       const wasted = stage.speculationWastedAttempts ?? 0;
       const wastedMs = stage.speculationWasteMs ?? 0;
-      if (wasted < this.thresholds.minWasted || wastedMs < this.thresholds.minWasteMs) return null;
+      if (wasted < thresholds.minWasted || wastedMs < thresholds.minWasteMs) return null;
       return {
         type: 'speculationWaste', stageId: stage.id,
         impactBand: 'warning',
         metric: 'speculationWasteMs', value: wastedMs,
-        confidence: speculationWasteConfidence(wastedMs, this.thresholds.minWasteMs),
+        confidence: speculationWasteConfidence(wastedMs, thresholds.minWasteMs),
         recommendation: `Speculative execution discarded ${Math.round(wastedMs / 1000)}s of executor time in this stage; if task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile.`,
       };
     },
-  },
-  {
-    type: 'retryWaste', scope: 'stage', order: 45, fixEffort: 'code', version: 1,
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const wasteMs = (stage.speculationWasteMs as number | undefined) ?? 0;
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'measured', { value: wasteMs, unit: 'ms' });
+    },
+  }),
+  defineStageDetector({
+    type: 'retryWaste', order: 45, fixEffort: 'code', version: 1,
+    emits: ['retryWaste'],
     docAnchor: '#bottleneck-retry-waste',
     thresholds: { minWasted: 3, minWasteMs: 30000 },
-    detect(
-      this: { thresholds: { minWasted: number; minWasteMs: number } },
-      stage: DetectorStage,
-    ): Finding | null {
+    detect(stage, _ctx, thresholds): Finding | null {
       const wasted = stage.wastedAttempts ?? 0;
       const wastedMs = stage.retryWasteMs ?? 0;
-      if (wasted < this.thresholds.minWasted || wastedMs < this.thresholds.minWasteMs) return null;
+      if (wasted < thresholds.minWasted || wastedMs < thresholds.minWasteMs) return null;
       return {
         type: 'retryWaste', stageId: stage.id,
         impactBand: 'warning',
@@ -1370,22 +1627,29 @@ export const DETECTORS: Detector[] = [
         extended: `${wasted} task attempts were superseded by a later retry, wasting ${Math.round(wastedMs / 1000)}s of executor time. Common causes: executor loss (OOM-kill, node death) or shuffle FetchFailed forcing a stage-map recompute. Check driver logs for the dominant reason (see the Failures widget) even if the final failure rate looks low; retries hide the true cost.`,
       };
     },
-  },
-  {
-    type: 'tinyTask', scope: 'stage', order: 80, fixEffort: 'code', version: 1,
+    estimate(finding, ctx): ImpactEstimate | null {
+      // The waste figure lives on the Stage, not the Finding: detect() only re-publishes it as metric/value.
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const wasteMs = (stage.retryWasteMs as number | undefined) ?? 0;
+      const wallClockMs = retryWallClockMs(stage);
+      return singleStageImpact(wallClockMs, finding.stageId, ctx,
+        wallClockMs === wasteMs ? 'measured' : 'modeled', { value: wasteMs, unit: 'ms' });
+    },
+  }),
+  defineStageDetector({
+    type: 'tinyTask', order: 80, fixEffort: 'code', version: 1,
+    emits: ['tinyTask'],
     docAnchor: '#bottleneck-tiny-tasks',
     // stageFloorPct: the tiered detectors' 0.5% runtime floor. Coalescing can't save more than the
     // stage's own duration, so on a shorter stage every finding graded info: on the 14 real logs
     // 132 of 151 tinyTask findings. The tasks are still tiny there; the floor is why they're dropped.
     thresholds: { minTasks: 100, maxP50: 500, maxP95: 1000, stageFloorPct: 0.005 },
-    detect(
-      this: { thresholds: { minTasks: number; maxP50: number; maxP95: number; stageFloorPct: number } },
-      stage: DetectorStage,
-      ctx?: DetectorCtx,
-    ): Finding | null {
-      if (stage.taskCount < this.thresholds.minTasks) return null;
-      if (stageBelowRuntimeFloor(stage, ctx, this.thresholds.stageFloorPct)) return null;
-      if (stage.taskDurationP50 > this.thresholds.maxP50 || stage.taskDurationP95 > this.thresholds.maxP95) return null;
+    detect(stage, ctx, thresholds): Finding | null {
+      if (stage.taskCount < thresholds.minTasks) return null;
+      if (stageBelowRuntimeFloor(stage, ctx, thresholds.stageFloorPct)) return null;
+      if (stage.taskDurationP50 > thresholds.maxP50 || stage.taskDurationP95 > thresholds.maxP95) return null;
       const coalesceTo = Math.max(1, Math.round(stage.taskCount / 10));
       const fix = stage.shuffleReadBytes > 0
         ? `lower spark.sql.shuffle.partitions or .coalesce(${coalesceTo})`
@@ -1396,30 +1660,46 @@ export const DETECTORS: Detector[] = [
         recommendation: `Many small tasks (${stage.taskCount}, P50 ${Math.round(stage.taskDurationP50)}ms): scheduler overhead may dominate. Try ${fix}.`,
       };
     },
-  },
-  {
+    estimate(finding, ctx): ImpactEstimate | null {
+      if (finding.stageId == null) return null;
+      const stage = ctx.stages.get(finding.stageId);
+      if (!stage) return null;
+      const taskCount = stage.taskCount ?? 0;
+      const excessTaskCount = Math.max(0, taskCount - Math.round(taskCount / 10));
+      const measured = measuredTaskOverhead(stage);
+      if (measured) {
+        // Coalescing to a tenth of the tasks removes the excess tasks' per-task overhead: core
+        // time spent in parallel, so wall-clock at the stage's achieved concurrency (floored at
+        // 1: a mostly-idle stage can't save more wall-clock than the task time it removes).
+        const wasteMs = (excessTaskCount * measured.perTaskMs) / Math.max(1, measured.concurrency);
+        return singleStageImpact(wasteMs, finding.stageId, ctx, 'measured', { value: wasteMs, unit: 'ms' });
+      }
+      const wasteMs = excessTaskCount * TASK_SCHEDULING_OVERHEAD_MS;
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: wasteMs, unit: 'ms' });
+    },
+  }),
+  defineAppDetector({
     // No docAnchor: the upstream spark-tuning-reference docs have no section for this
     // tool-specific "capture stopped early" signal.
-    type: 'incompleteRun', scope: 'app', order: 5, fixEffort: 'code', version: 1,
+    type: 'incompleteRun', order: 5, fixEffort: 'code', version: 1,
+    emits: ['incompleteRun'],
     thresholds: {},
-    recommendation: 'This event log never recorded an ApplicationEnd event: the capture stopped before the run finished (an in-flight job, a rotated-away log, or a cut-short capture). Findings and metrics elsewhere on this board reflect only what was captured up to that point, not the full run.',
-    detect(this: { recommendation: string }, ctx: DetectorCtx): Finding | null {
+    detect(ctx): Finding | null {
       if (!ctx.app || ctx.app.startTime == null || ctx.app.endTime != null) return null;
       return {
         type: 'incompleteRun', stageId: null, impactBand: 'warning',
-        metric: 'applicationEnd', value: 'missing',
-        recommendation: this.recommendation,
+        metric: 'applicationEnd', valueText: 'missing',
+        recommendation: INCOMPLETE_RUN_RECOMMENDATION,
       };
     },
-  },
-  {
-    type: 'coldStart', scope: 'app', order: 90, fixEffort: 'code', version: 1,
+    estimate: noWasteModel,
+  }),
+  defineAppDetector({
+    type: 'coldStart', order: 90, fixEffort: 'code', version: 1,
+    emits: ['coldStart'],
     docAnchor: '#bottleneck-cold-start',
     thresholds: { gapSeconds: 30 },
-    detect(
-      this: { thresholds: { gapSeconds: number } },
-      ctx: DetectorCtx,
-    ): Finding | null {
+    detect(ctx, thresholds): Finding | null {
       const { app, stages, executorsAdded, executorsRemoved } = ctx;
       // Nullish (not falsy) check: a literal startTime:0 must not be treated as "missing".
       if (!app || app.startTime == null || stages.size === 0) return null;
@@ -1450,7 +1730,7 @@ export const DETECTORS: Detector[] = [
       }
       if (!Number.isFinite(firstExecutorAdded)) return null;
       const gapSeconds = (firstExecutorAdded - firstStageSubmitted) / 1000;
-      if (gapSeconds <= this.thresholds.gapSeconds) return null;
+      if (gapSeconds <= thresholds.gapSeconds) return null;
       const value = Math.round(gapSeconds);
       return {
         type: 'coldStart', stageId: null, impactBand: 'warning',
@@ -1458,15 +1738,21 @@ export const DETECTORS: Detector[] = [
         recommendation: `The first stage waited ${value}s for an executor to become available: keep a warm pool of idle executors, or if using dynamic allocation, raise the minimum/initial executor count so it doesn't scale up from zero.`,
       };
     },
-  },
-  {
-    type: 'utilization', scope: 'app', order: 100, fixEffort: 'config', version: 1,
+    estimate(finding): ImpactEstimate | null {
+      // detect() reports the gap as `metric: 'startupGapSeconds', value: <seconds>`.
+      if (typeof finding.value !== 'number') return null;
+      const wasteMs = finding.value * 1000;
+      // Time before any task starts can never overlap any stage; a genuine unclipped point estimate,
+      // not tied to any stage's gate (coldStart is app-scoped, stageId: null).
+      return { basis: 'serial', wallClock: { low: wasteMs, high: wasteMs }, estimateMethod: 'measured' };
+    },
+  }),
+  defineAppDetector({
+    type: 'utilization', order: 100, fixEffort: 'config', version: 1,
+    emits: ['utilization'],
     docAnchor: '#bottleneck-utilization',
     thresholds: { minUtil: 0.60 },
-    detect(
-      this: { thresholds: { minUtil: number } },
-      ctx: DetectorCtx,
-    ): Finding | null {
+    detect(ctx, thresholds): Finding | null {
       const { app, executorsAdded, executorsRemoved, runAggregates } = ctx;
       // Nullish (not falsy) check: a literal startTime:0 must not be treated as "missing".
       if (!app || executorsAdded.length === 0 || app.startTime == null || app.endTime == null) return null;
@@ -1485,7 +1771,7 @@ export const DETECTORS: Detector[] = [
       // lifetime-based measure this replaces.
       const busyCoreMs = runAggregates?.busyCoreMs ?? 0;
       const utilization = busyCoreMs / capacityCoreMs;
-      if (utilization >= this.thresholds.minUtil) return null;
+      if (utilization >= thresholds.minUtil) return null;
 
       // CPU-time-based utilization (sparkMeasure): metric only, no threshold.
       let cpuUtilizationPct: number | null = null;
@@ -1507,9 +1793,20 @@ export const DETECTORS: Detector[] = [
         recommendation: `Average executor utilization was only ${value}%: consider reducing cluster size or enabling dynamic allocation.`,
       };
     },
-  },
-  {
-    type: 'memoryUtilization', scope: 'app', order: 102, fixEffort: 'config', version: 1,
+    estimate(finding): ImpactEstimate | null {
+      const fraction = finding.utilizationFraction as number | undefined;
+      const appDurationMs = finding.appDurationMs as number | undefined;
+      const totalCores = finding.totalCores as number | undefined;
+      if (fraction == null || appDurationMs == null || totalCores == null) {
+        return costOnly('measured');
+      }
+      const idleCoreHours = (1 - fraction) * appDurationMs * totalCores / 3.6e6;
+      return costOnly('measured', { value: idleCoreHours, unit: 'coreHours' });
+    },
+  }),
+  defineAppDetector({
+    type: 'memoryUtilization', order: 102, fixEffort: 'config', version: 1,
+    emits: ['memoryUtilization'],
     docAnchor: '#bottleneck-memory-utilization',
     thresholds: {
       idleCoreWarn: 0.50,          // WastedCoresAlertsReducer
@@ -1517,14 +1814,7 @@ export const DETECTORS: Detector[] = [
       bandTooHigh: 0.70,           // below this => over-provisioned (cost signal)
       wasteBufferMultiplier: 1.5,  // UNVERIFIED
     },
-    detect(
-      this: {
-        thresholds: {
-          idleCoreWarn: number; bandTooSmall: number; bandTooHigh: number; wasteBufferMultiplier: number;
-        };
-      },
-      ctx: DetectorCtx,
-    ): Finding[] {
+    detect(ctx, thresholds): Finding[] {
       const { app, executorsAdded, executorsRemoved, runAggregates, stages } = ctx;
       const out: Finding[] = [];
       // Nullish (not falsy) check: a literal startTime:0 must not be treated as "missing".
@@ -1542,10 +1832,11 @@ export const DETECTORS: Detector[] = [
       const allocatedMB = app.resources?.executor?.memoryMB ?? null;
 
       // ── 1a idle-cores rate ────────────────────────────────────────────────
-      if (runAggregates && totalCores > 0) {
+      const busyCoreMs = runAggregates?.busyCoreMs;
+      if (busyCoreMs != null && totalCores > 0) {
         const capacityCoreMs = totalCores * appDurationMs;
-        const idleRate = capacityCoreMs > 0 ? 1 - (runAggregates.busyCoreMs / capacityCoreMs) : 0;
-        if (idleRate > this.thresholds.idleCoreWarn) {
+        const idleRate = capacityCoreMs > 0 ? 1 - (busyCoreMs / capacityCoreMs) : 0;
+        if (idleRate > thresholds.idleCoreWarn) {
           const value = Math.round(idleRate * 100);
           out.push({
             type: 'memoryUtilization', variant: 'idleCores', stageId: null,
@@ -1580,14 +1871,14 @@ export const DETECTORS: Detector[] = [
           const ratio = heap / allocatedBytes;
           // The two bands are opposite signals: an explicit `rule` discriminator lets consumers
           // tell OOM-risk from over-provisioning without re-deriving the ratio.
-          if (ratio > this.thresholds.bandTooSmall) {
+          if (ratio > thresholds.bandTooSmall) {
             out.push({
               type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity',
               stageId: null, executorId: execId,
               impactBand: 'warning', metric: 'heapUsedRatio', value: Math.round(ratio * 100),
               recommendation: `Executor ${execId} peaked at ${Math.round(ratio * 100)}% of allocated heap: memory may be too small; raise spark.executor.memory to avoid OOM/spill.`,
             });
-          } else if (ratio < this.thresholds.bandTooHigh) {
+          } else if (ratio < thresholds.bandTooHigh) {
             out.push({
               type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned',
               stageId: null, executorId: execId,
@@ -1608,13 +1899,13 @@ export const DETECTORS: Detector[] = [
         for (const s of stages.values()) usedRunTimeMs += s.executorRunTime ?? 0;
         const usedMBSeconds = allocatedMB * (usedRunTimeMs / 1000);
         const wastedMBSeconds = allocatedMBSeconds - usedMBSeconds;
-        if (wastedMBSeconds > this.thresholds.wasteBufferMultiplier * usedMBSeconds) {
+        if (wastedMBSeconds > thresholds.wasteBufferMultiplier * usedMBSeconds) {
           const value = Math.round(wastedMBSeconds);
           out.push({
             type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
             impactBand: 'info', metric: 'wastedMBSeconds', value,
-            confidence: memoryWasteConfidence(wastedMBSeconds, usedMBSeconds, this.thresholds.wasteBufferMultiplier),
-            validationRequired: 'Memory-waste estimate uses allocated-vs-used memory-time and a 1.5x buffer: confirm against the Spark UI before acting.',
+            confidence: memoryWasteConfidence(wastedMBSeconds, usedMBSeconds, thresholds.wasteBufferMultiplier),
+            validationRequired: `Memory-waste estimate uses allocated-vs-used memory-time and a ${thresholds.wasteBufferMultiplier}x buffer: confirm against the Spark UI before acting.`,
             recommendation: `Allocated executor memory sat largely idle over the run (~${value.toLocaleString('en-US')} MB-seconds wasted): review spark.executor.memory and executor count.`,
           });
         }
@@ -1622,28 +1913,53 @@ export const DETECTORS: Detector[] = [
 
       return out;
     },
-  },
-  {
+    estimate(finding): ImpactEstimate | null {
+      // The wasteModel variant reports metric: 'wastedMBSeconds', value: <MB-seconds>.
+      if (finding.variant === 'wasteModel' && typeof finding.value === 'number') {
+        return costOnly('measured', { value: finding.value, unit: 'mbSeconds' });
+      }
+      if (finding.variant === 'idleCores') {
+        // Idle core-time priced as memory held but unused: the same MB-seconds unit as wasteModel, so comparable.
+        const idleRateFraction = finding.idleRateFraction as number | undefined;
+        const allocatedMB = finding.allocatedMB as number | undefined;
+        const peakExecutors = finding.peakExecutors as number | undefined;
+        const appDurationMs = finding.appDurationMs as number | undefined;
+        if (idleRateFraction != null && allocatedMB != null && peakExecutors != null && appDurationMs != null) {
+          const wastedMBSeconds = idleRateFraction * allocatedMB * peakExecutors * (appDurationMs / 1000);
+          return costOnly('modeled', { value: wastedMBSeconds, unit: 'mbSeconds' });
+        }
+        return costOnly('modeled');
+      }
+      // Only the over-provisioned band is a waste; the near-capacity band is an OOM-risk signal with
+      // no magnitude, and the dataUnavailable shape has no inputs: both stay informational.
+      if (finding.variant === 'memoryBand' && finding.rule === 'heapOverProvisioned') {
+        const allocatedBytes = finding.allocatedBytes as number | undefined;
+        const heap = finding.heap as number | undefined;
+        const appDurationMs = finding.appDurationMs as number | undefined;
+        if (allocatedBytes != null && heap != null && appDurationMs != null) {
+          const unusedMB = (allocatedBytes - heap) / (1024 * 1024);
+          const wastedMBSeconds = unusedMB * (appDurationMs / 1000);
+          return costOnly('modeled', { value: wastedMBSeconds, unit: 'mbSeconds' });
+        }
+      }
+      return costOnly('modeled');
+    },
+  }),
+  defineAppDetector({
     // Per-RDD cache-utilization proxies (this repo's own design: Spark event logs carry no
     // block-access events, so a literal cache hit rate isn't derivable). Two per-RDD tiered
     // checks over rddInfo: partial caching and disk spillover. An RDD can produce both. rddInfo's
     // sizes come from SparkListenerBlockUpdated when the log has it, else from StageSubmitted's
     // RDD Info (0 since Spark 2.3; Spark 1.x fills it only on StageCompleted); with neither, on
     // Spark 2.3+ with logBlockUpdates off, a storageUnobserved caveat replaces them.
-    type: 'cacheUtilization', scope: 'app', order: 103, fixEffort: 'code', version: 2,
+    type: 'cacheUtilization', order: 103, fixEffort: 'code', version: 2,
+    emits: ['cacheUtilization'],
     docAnchor: '#bottleneck-cache-utilization',
     thresholds: {
       cachedRatioWarn: 0.50, cachedRatioInfo: 0.90,
       diskRatioWarn: 0.40, diskRatioInfo: 0.15,
     },
-    detect(
-      this: {
-        thresholds: {
-          cachedRatioWarn: number; cachedRatioInfo: number; diskRatioWarn: number; diskRatioInfo: number;
-        };
-      },
-      ctx: DetectorCtx,
-    ): Finding[] | null {
+    detect(ctx, thresholds): Finding[] | null {
       const rddInfo = ctx.app?.rddInfo;
       if (!(rddInfo instanceof Map)) return null;
       const out: Finding[] = [];
@@ -1665,69 +1981,85 @@ export const DETECTORS: Detector[] = [
 
         if ((rdd.numPartitions ?? 0) > 0) {
           const cachedRatio = rdd.numCachedPartitions / rdd.numPartitions;
-          if (cachedRatio < this.thresholds.cachedRatioWarn) out.push(partialCacheFinding(rdd, cachedRatio, 'warning'));
-          else if (cachedRatio < this.thresholds.cachedRatioInfo) out.push(partialCacheFinding(rdd, cachedRatio, 'info'));
+          if (cachedRatio < thresholds.cachedRatioWarn) out.push(partialCacheFinding(rdd, cachedRatio, 'warning'));
+          else if (cachedRatio < thresholds.cachedRatioInfo) out.push(partialCacheFinding(rdd, cachedRatio, 'info'));
         }
 
         if (sl.useMemory && sl.useDisk) {
           const total = (rdd.memorySize ?? 0) + (rdd.diskSize ?? 0);
           if (total > 0) {
             const diskRatio = (rdd.diskSize ?? 0) / total;
-            if (diskRatio > this.thresholds.diskRatioWarn) out.push(diskSpilloverFinding(rdd, diskRatio, 'warning'));
-            else if (diskRatio > this.thresholds.diskRatioInfo) out.push(diskSpilloverFinding(rdd, diskRatio, 'info'));
+            if (diskRatio > thresholds.diskRatioWarn) out.push(diskSpilloverFinding(rdd, diskRatio, 'warning'));
+            else if (diskRatio > thresholds.diskRatioInfo) out.push(diskSpilloverFinding(rdd, diskRatio, 'info'));
           }
         }
       }
       if (persistedRddCount > 0 && !anyStorageEvidence) out.push(storageUnobservedFinding(persistedRddCount));
       return out;
     },
-  },
-  {
+    estimate(finding): ImpactEstimate | null {
+      // storageUnobserved reports missing evidence: no sizes, so nothing to model.
+      if (finding.dataUnavailable) return costOnly('none');
+      const memorySize = (finding.memorySize as number | undefined) ?? 0;
+      const diskSize = (finding.diskSize as number | undefined) ?? 0;
+      const numCachedPartitions = (finding.numCachedPartitions as number | undefined) ?? 0;
+      const numPartitions = (finding.numPartitions as number | undefined) ?? 0;
+      const numUncachedPartitions = Math.max(0, numPartitions - numCachedPartitions);
+      const cachedBytes = memorySize + diskSize;
+      // Extrapolate never-cached partitions' size from the CACHED partitions' average (uncached/
+      // cached, not uncached/total: numCachedPartitions produced cachedBytes). diskSize is added
+      // once more: those bytes are cached but on disk, so re-reading them still costs I/O like an uncached partition.
+      const uncachedBytes = numCachedPartitions > 0 ? (cachedBytes / numCachedPartitions) * numUncachedPartitions : 0;
+      const uncachedOrSpilledBytes = uncachedBytes + diskSize;
+      const wasteMs = (uncachedOrSpilledBytes / RE_READ_THROUGHPUT_BPS) * 1000;
+      return costOnly('modeled', { value: wasteMs, unit: 'ms' });
+    },
+  }),
+  defineAppDetector({
     // Non-local task ratio across stage.localityStats (RACK_LOCAL + ANY vs all tasks), the other
     // half of the "Wasted Cores Ratio" (idle-core half is memoryUtilization's idleCores).
     // NO_PREF stays in the denominator only: shuffle-read stages legitimately report it.
-    type: 'coreLocality', scope: 'app', order: 103, fixEffort: 'config', version: 1,
+    type: 'coreLocality', order: 103, fixEffort: 'config', version: 1,
+    emits: ['coreLocality'],
     docAnchor: '#bottleneck-core-locality',
     thresholds: { minTasks: 50, warnRatio: 0.15, critRatio: 0.35 },
-    detect(
-      this: { thresholds: { minTasks: number; warnRatio: number; critRatio: number } },
-      ctx: DetectorCtx,
-    ): Finding | null {
+    detect(ctx, thresholds): Finding | null {
       const { totalTasks, nonLocalTasks, ratio } = computeCoreLocalityRatio([...ctx.stages.values()]);
-      if (totalTasks == null || totalTasks < this.thresholds.minTasks) return null;
+      if (totalTasks == null || totalTasks < thresholds.minTasks) return null;
       // computeCoreLocalityRatio only returns ratio:null together with totalTasks:null (shared
       // EMPTY sentinel); the totalTasks guard above rules that out, so ratio is non-null here.
-      if (ratio! < this.thresholds.warnRatio) return null;
+      if (ratio! < thresholds.warnRatio) return null;
 
       const value = Math.round(ratio! * 100);
       return {
         type: 'coreLocality', stageId: null,
-        impactBand: ratio! >= this.thresholds.critRatio ? 'critical' : 'warning',
+        impactBand: ratio! >= thresholds.critRatio ? 'critical' : 'warning',
         metric: 'nonLocalRatio', value,
         // Raw count behind the ratio, for the impact estimator. Non-null whenever totalTasks is.
         nonLocalTaskCount: nonLocalTasks!,
-        confidence: coreLocalityConfidence(ratio!, totalTasks, this.thresholds),
-        validationRequired: 'This finding is gated by 15%/35% non-local-ratio thresholds (and a 50-task minimum), our own noise floor for this metric.',
+        confidence: coreLocalityConfidence(ratio!, totalTasks, thresholds),
+        validationRequired: `This finding is gated by ${shareLabel(thresholds.warnRatio)}/${shareLabel(thresholds.critRatio)} non-local-ratio thresholds (and a ${thresholds.minTasks}-task minimum), our own noise floor for this metric.`,
         recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement: check spark.locality.wait settings and executor/data colocation.`,
       };
     },
-  },
-  {
+    estimate(finding): ImpactEstimate | null {
+      const nonLocal = (finding.nonLocalTaskCount as number | undefined) ?? 0;
+      const coreMs = nonLocal * NETWORK_FETCH_PENALTY_MS;
+      return costOnly('modeled', { value: coreMs, unit: 'coreMs' });
+    },
+  }),
+  defineAppDetector({
     // Short-lived executors: stood up and torn down before doing useful work (wasteful
     // re-provisioning, not normal scale-down). Reuses utilization's add/remove matching, but
     // measures lifetime against a threshold instead of aggregate active-time.
-    type: 'autoscalingChurn', scope: 'app', order: 103, fixEffort: 'config', version: 1,
+    type: 'autoscalingChurn', order: 103, fixEffort: 'config', version: 1,
+    emits: ['autoscalingChurn'],
     docAnchor: '#bottleneck-autoscaling-churn',
     thresholds: { shortLivedMs: 120_000, warningPct: 0.30, criticalPct: 0.60, minExecutors: 5 },
-    detect(
-      this: {
-        thresholds: { shortLivedMs: number; warningPct: number; criticalPct: number; minExecutors: number };
-      },
-      ctx: DetectorCtx,
-    ): Finding | null {
+    detect(ctx, thresholds): Finding | null {
       const { app, executorsAdded, executorsRemoved } = ctx;
       if (!app || executorsAdded.length === 0 || app.endTime == null) return null;
-      if (executorsAdded.length < this.thresholds.minExecutors) return null;
+      if (executorsAdded.length < thresholds.minExecutors) return null;
 
       const removedAt = new Map<string, number>();
       for (const ev of executorsRemoved) removedAt.set(ev.executorId, ev.timestamp);
@@ -1736,12 +2068,12 @@ export const DETECTORS: Detector[] = [
       for (const ev of executorsAdded) {
         const endedAt = removedAt.has(ev.executorId) ? removedAt.get(ev.executorId)! : app.endTime;
         const lifetime = endedAt - ev.timestamp;
-        if (lifetime < this.thresholds.shortLivedMs) shortLivedCount++;
+        if (lifetime < thresholds.shortLivedMs) shortLivedCount++;
       }
 
       const shortLivedPct = shortLivedCount / executorsAdded.length;
-      const impactBand = shortLivedPct > this.thresholds.criticalPct ? 'critical'
-                        : shortLivedPct > this.thresholds.warningPct ? 'warning' : null;
+      const impactBand = shortLivedPct > thresholds.criticalPct ? 'critical'
+                        : shortLivedPct > thresholds.warningPct ? 'warning' : null;
       if (!impactBand) return null;
 
       const pct = Math.round(shortLivedPct * 100);
@@ -1750,18 +2082,24 @@ export const DETECTORS: Detector[] = [
         metric: 'shortLivedExecutorPct', value: pct,
         // Raw count behind the percentage, for the impact estimator's startup-overhead figure.
         shortLivedExecutorCount: shortLivedCount,
-        confidence: autoscalingChurnConfidence(shortLivedPct, this.thresholds.warningPct, this.thresholds.criticalPct),
+        confidence: autoscalingChurnConfidence(shortLivedPct, thresholds.warningPct, thresholds.criticalPct),
         recommendation: `${pct}% of executors ran for under 2 minutes before being removed. This looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.`,
       };
     },
-  },
-  {
+    estimate(finding): ImpactEstimate | null {
+      const shortLived = (finding.shortLivedExecutorCount as number | undefined) ?? 0;
+      const executorHours = (shortLived * EXECUTOR_STARTUP_OVERHEAD_MS) / 3.6e6;
+      return costOnly('modeled', { value: executorHours, unit: 'coreHours' });
+    },
+  }),
+  defineAppDetector({
     // Cross-execution relation reuse: flags an input relation scanned by two or more SQL
     // executions in one run, firing on real relation names (parquet:..., jdbc:...).
-    type: 'cachingOpportunity', scope: 'app', order: 105, fixEffort: 'code', version: 1,
+    type: 'cachingOpportunity', order: 105, fixEffort: 'code', version: 1,
+    emits: ['cachingOpportunity'],
     docAnchor: '#bottleneck-caching-opportunity',
     thresholds: { minExecutions: 2 },
-    detect(this: { thresholds: { minExecutions: number } }, ctx: DetectorCtx): Finding[] | null {
+    detect(ctx, thresholds): Finding[] | null {
       const sql = ctx.sql;
       if (!(sql instanceof Map) || sql.size === 0) return null;
 
@@ -1849,7 +2187,7 @@ export const DETECTORS: Detector[] = [
       // Qualifying = enough distinct executions on its own. Nested-dedupe: a qualifying composite
       // with a qualifying ANCESTOR is subsumed, fully (equal sets) or partially (residual).
       const isQualifying = (fp: string): boolean =>
-        byComposite.has(fp) && byComposite.get(fp)!.executionIds.size >= this.thresholds.minExecutions;
+        byComposite.has(fp) && byComposite.get(fp)!.executionIds.size >= thresholds.minExecutions;
       const compositeResolutions = new Map<string, CompositeResolution>();
       for (const [fingerprint, agg] of byComposite) {
         if (!isQualifying(fingerprint)) { compositeResolutions.set(fingerprint, { finalExecutionIds: agg.executionIds, suppressed: true }); continue; }
@@ -1858,7 +2196,7 @@ export const DETECTORS: Detector[] = [
         const coveredByAncestors = new Set(qualifyingAncestors.flatMap(outer => [...outer.executionIds]));
         const residual = new Set([...agg.executionIds].filter(id => !coveredByAncestors.has(id)));
         if (residual.size === 0) compositeResolutions.set(fingerprint, { finalExecutionIds: residual, suppressed: true });
-        else if (residual.size < this.thresholds.minExecutions) compositeResolutions.set(fingerprint, { finalExecutionIds: residual, suppressed: true });
+        else if (residual.size < thresholds.minExecutions) compositeResolutions.set(fingerprint, { finalExecutionIds: residual, suppressed: true });
         else compositeResolutions.set(fingerprint, { finalExecutionIds: residual, suppressed: false });
       }
 
@@ -1891,7 +2229,7 @@ export const DETECTORS: Detector[] = [
           metric: 'executionReuse', value,
           format: 'derived', relations, operator: agg.operator, relation: relationDisplay,
           executionIds: finalExecutionIds, totalReadBytes,
-          confidence: cachingReuseConfidence(value, this.thresholds.minExecutions),
+          confidence: cachingReuseConfidence(value, thresholds.minExecutions),
           validationRequired:
             'Composite reuse is inferred from a structural plan-shape match (operator + normalized ' +
             'join/filter condition + child shapes) across SQL executions; confirm these executions ' +
@@ -1910,7 +2248,7 @@ export const DETECTORS: Detector[] = [
         const residualExecutionIds = covered
           ? [...agg.executionIds].filter(id => !covered.has(id))
           : [...agg.executionIds];
-        if (residualExecutionIds.length < this.thresholds.minExecutions) continue;
+        if (residualExecutionIds.length < thresholds.minExecutions) continue;
         const value = residualExecutionIds.length;
         const totalReadBytes = residualExecutionIds.reduce((sum, id) => sum + (agg.executionBytes.get(id) ?? 0), 0);
         const recommendation = totalReadBytes >= 128 * MB
@@ -1922,7 +2260,7 @@ export const DETECTORS: Detector[] = [
           relation: agg.relation, format: agg.format,
           executionIds: residualExecutionIds.sort((a, b) => a - b),
           totalReadBytes,
-          confidence: cachingReuseConfidence(value, this.thresholds.minExecutions),
+          confidence: cachingReuseConfidence(value, thresholds.minExecutions),
           validationRequired:
             'Relation-reuse is inferred from the pre-AQE plan scan identity across SQL ' +
             'executions; confirm the reads are the same data and cacheable within one ' +
@@ -1932,15 +2270,18 @@ export const DETECTORS: Detector[] = [
       }
       return out;
     },
-  },
-  {
-    type: 'jobFailureRate', scope: 'app', order: 110, fixEffort: 'code', version: 1,
+    estimate(finding): ImpactEstimate | null {
+      const totalReadBytes = (finding.totalReadBytes as number | undefined) ?? 0;
+      const wasteMs = (totalReadBytes / RE_READ_THROUGHPUT_BPS) * 1000;
+      return costOnly('modeled', { value: wasteMs, unit: 'ms' });
+    },
+  }),
+  defineAppDetector({
+    type: 'jobFailureRate', order: 110, fixEffort: 'code', version: 1,
+    emits: ['jobFailureRate'],
     docAnchor: '#bottleneck-job-failure-rate',
     thresholds: { infoRate: 0.10, warnRate: 0.30, critRate: 0.50 },
-    detect(
-      this: { thresholds: { infoRate: number; warnRate: number; critRate: number } },
-      ctx: DetectorCtx,
-    ): Finding | null {
+    detect(ctx, thresholds): Finding | null {
       const { jobs, stages } = ctx;
       const all = jobs ? [...jobs.values()] : [];
       const completed = all.filter(j => j.result != null);
@@ -1948,7 +2289,7 @@ export const DETECTORS: Detector[] = [
       const failedJobList = completed.filter(j => j.succeeded === false);
       const failedJobs = failedJobList.length;
       const rate = failedJobs / completed.length;
-      if (rate < this.thresholds.infoRate) return null;
+      if (rate < thresholds.infoRate) return null;
       let totalTasks = 0, failedTasks = 0;
       for (const s of stages.values()) { totalTasks += s.taskCount ?? 0; failedTasks += s.failedTasks ?? 0; }
       const taskFailureRate = totalTasks > 0 ? failedTasks / totalTasks : 0;
@@ -1961,113 +2302,121 @@ export const DETECTORS: Detector[] = [
       const totalJobs = completed.length;
       return {
         type: 'jobFailureRate', stageId: null,
-        impactBand: rate >= this.thresholds.critRate ? 'critical' : rate >= this.thresholds.warnRate ? 'warning' : 'info',
+        impactBand: rate >= thresholds.critRate ? 'critical' : rate >= thresholds.warnRate ? 'warning' : 'info',
         metric: 'jobFailureRate', value: Math.round(rate * 1000) / 10,
         failedJobs, totalJobs, failedTasks, totalTasks, avgJobDurationMs,
         taskFailureRate: Math.round(taskFailureRate * 1000) / 10,
         recommendation: `${failedJobs} of ${totalJobs} jobs never recovered: inspect the driver log for the failed job(s) and the stage failures that triggered them.`,
       };
     },
-  },
+    estimate(finding): ImpactEstimate | null {
+      const failedJobs = (finding.failedJobs as number | undefined) ?? 0;
+      const avgJobDurationMs = (finding.avgJobDurationMs as number | undefined) ?? 0;
+      const coreHoursIsh = (failedJobs * avgJobDurationMs) / 3.6e6;
+      return costOnly('modeled', { value: coreHoursIsh, unit: 'coreHours' });
+    },
+  }),
   // ── Config-sanity entries (scope:'config', inScorecard:false) ────────────────
-  {
-    type: 'configAudit', scope: 'config', order: 120, fixEffort: 'config', version: 1, inScorecard: false,
+  defineConfigDetector({
+    type: 'configAudit', order: 120, fixEffort: 'config', version: 1, inScorecard: false,
+    emits: ['configAudit'],
     docAnchor: '#config-shuffle-service', thresholds: {}, property: 'spark.shuffle.service.enabled',
-    detect(ctx: DetectorConfigTarget): Finding | null {
-      const res = ctx.app?.resources ?? null;
+    detect(target): Finding | null {
+      const res = target.app?.resources ?? null;
       if (res?.dynamicAllocationEnabled === true && res?.shuffleServiceEnabled === false) {
         return {
           type: 'configAudit', property: 'spark.shuffle.service.enabled',
-          impactBand: 'warning', metric: 'config', value: 'false',
+          impactBand: 'warning', metric: 'config', valueText: 'false',
           recommendation: 'Dynamic allocation is on but the external shuffle service is off: set spark.shuffle.service.enabled=true so shuffle data survives executor removal.',
         };
       }
       return null;
     },
-  },
-  {
-    type: 'configAudit', scope: 'config', order: 121, fixEffort: 'config', version: 1, inScorecard: false,
+    estimate: noWasteModel,
+  }),
+  defineConfigDetector({
+    type: 'configAudit', order: 121, fixEffort: 'config', version: 1, inScorecard: false,
+    emits: ['configAudit'],
     docAnchor: '#config-autoscale-bounds', thresholds: {}, property: 'spark.dynamicAllocation.maxExecutors',
-    detect(ctx: DetectorConfigTarget): Finding | null {
-      const app = ctx.app; const config = app?.config ?? {}; const res = app?.resources ?? null;
+    detect(target): Finding | null {
+      const app = target.app; const config = app?.config ?? {}; const res = app?.resources ?? null;
       if (res?.dynamicAllocationEnabled !== true) return null;
       const minN = config['spark.dynamicAllocation.minExecutors'] != null ? parseInt(config['spark.dynamicAllocation.minExecutors'], 10) : null;
       const maxN = config['spark.dynamicAllocation.maxExecutors'] != null ? parseInt(config['spark.dynamicAllocation.maxExecutors'], 10) : null;
       if (minN != null && maxN != null && minN > maxN) {
         return {
           type: 'configAudit', property: 'spark.dynamicAllocation.minExecutors',
-          impactBand: 'critical', metric: 'config', value: `${minN} > ${maxN}`,
+          impactBand: 'critical', metric: 'config', valueText: `${minN} > ${maxN}`,
           recommendation: `Autoscaling bounds are inverted: spark.dynamicAllocation.minExecutors (${minN}) exceeds maxExecutors (${maxN}). Set min ≤ max.`,
         };
       }
       if (maxN == null) {
         return {
           type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors',
-          impactBand: 'info', metric: 'config', value: '(unset)',
+          impactBand: 'info', metric: 'config', valueText: '(unset)',
           recommendation: 'Dynamic allocation is on with no upper bound: set spark.dynamicAllocation.maxExecutors to cap cluster growth.',
         };
       }
       return null;
     },
-  },
-  {
-    type: 'configAudit', scope: 'config', order: 122, fixEffort: 'config', version: 1, inScorecard: false,
+    estimate: noWasteModel,
+  }),
+  defineConfigDetector({
+    type: 'configAudit', order: 122, fixEffort: 'config', version: 1, inScorecard: false,
+    emits: ['configAudit'],
     docAnchor: '#config-serializer', thresholds: {}, property: 'spark.serializer',
-    detect(ctx: DetectorConfigTarget): Finding | null {
-      const app = ctx.app; const config = app?.config ?? {}; const res = app?.resources ?? null;
+    detect(target): Finding | null {
+      const app = target.app; const config = app?.config ?? {}; const res = app?.resources ?? null;
       if (Object.keys(config).length === 0) return null;
       const ser = res?.serializer ?? config['spark.serializer'] ?? null;
       const isKryo = typeof ser === 'string' && /kryo/i.test(ser);
       if (isKryo) return null;
       return {
         type: 'configAudit', property: 'spark.serializer',
-        impactBand: 'info', metric: 'config', value: ser ?? '(default JavaSerializer)',
+        impactBand: 'info', metric: 'config', valueText: ser ?? '(default JavaSerializer)',
         recommendation: `Current serializer is ${ser ?? 'the default JavaSerializer'}: consider spark.serializer=org.apache.spark.serializer.KryoSerializer for faster, smaller buffers.`,
       };
     },
-  },
-  {
-    type: 'configAudit', scope: 'config', order: 123, fixEffort: 'config', version: 1, inScorecard: false,
+    estimate: noWasteModel,
+  }),
+  defineConfigDetector({
+    type: 'configAudit', order: 123, fixEffort: 'config', version: 1, inScorecard: false,
+    emits: ['configAudit'],
     docAnchor: '#config-memory-overhead', thresholds: { floorMB: 384, floorPct: 0.1 }, property: 'spark.executor.memoryOverhead',
-    detect(
-      this: { thresholds: { floorMB: number; floorPct: number } },
-      ctx: DetectorConfigTarget,
-    ): Finding | null {
-      const res = ctx.app?.resources ?? null;
+    detect(target, thresholds): Finding | null {
+      const res = target.app?.resources ?? null;
       const memMB = res?.executor?.memoryMB ?? null;
       const ovMB = res?.executor?.memoryOverheadMB ?? null;
       if (memMB == null || ovMB == null) return null;
-      const floor = Math.max(this.thresholds.floorMB, Math.round(memMB * this.thresholds.floorPct));
+      const floor = Math.max(thresholds.floorMB, Math.round(memMB * thresholds.floorPct));
       if (ovMB >= floor) return null;
       return {
         type: 'configAudit', property: 'spark.executor.memoryOverhead',
-        impactBand: 'info', metric: 'config', value: `${ovMB} MiB`,
+        impactBand: 'info', metric: 'config', valueText: `${ovMB} MiB`,
         recommendation: `Executor memoryOverhead (${ovMB} MiB) is below Spark's default floor of ${floor} MiB (max of 384 MiB or 10% of executor memory): raise it to avoid off-heap OOM-kills.`,
       };
     },
-  },
+    estimate: noWasteModel,
+  }),
   // ── Plan-metric entries (scope:'sql') ────────────────────────────────────
-  {
-    type: 'duplicatePlanSubtree', scope: 'sql', order: 130, fixEffort: 'code', version: 2,
+  defineSqlDetector({
+    type: 'duplicatePlanSubtree', order: 130, fixEffort: 'code', version: 2,
+    emits: ['duplicatePlanSubtree'],
     docAnchor: '#bottleneck-duplicate-plan-subtree',
     // stageFloorPct: the 0.5% runtime floor. The claim counts at most each linked stage's own
     // task-active time, so a repeat whose stages together lasted less than this share of the run
     // graded info: 340 of 545 findings on the 14 real logs. The repeat is still in the plan; the
     // floor is why they're dropped. A repeat with no linked stage time is kept.
     thresholds: { minSubtreeSize: 3, minOccurrences: 2, stageFloorPct: 0.005 },
-    detect(
-      this: { thresholds: { minSubtreeSize: number; minOccurrences: number; stageFloorPct: number } },
-      sqlExec: DetectorSqlExec,
-      ctx: DetectorCtx,
-    ): Finding[] | null {
+    detect(sqlExec, ctx, thresholds): Finding[] | null {
       if (!sqlExec.planTree) return null;
-      const groups = findDuplicateSubtrees(sqlExec.planTree, this.thresholds);
+      const groups = findDuplicateSubtrees(sqlExec.planTree, thresholds);
       if (groups.length === 0) return null;
       const fallbackStageIds = stageIdsForSqlExec(sqlExec.id, ctx.stages);
       const executionNodes: PlanNode[] = [];
       walkPlanTree(sqlExec.planTree, (node) => executionNodes.push(node));
       const operatorsByStage = operatorCountByStage(executionNodes);
-      const appDurationMs = computeAppDurationMs(ctx);
+      const runMs = appDurationMs(ctx.app);
       const findings = groups.map((g): Finding | null => {
         const nodes: PlanNode[] = [];
         for (const n of g.nodes) walkPlanTree(n, (node) => nodes.push(node));
@@ -2077,7 +2426,7 @@ export const DETECTORS: Detector[] = [
           const stage = ctx.stages.get(id);
           if (stage) stagesMs += Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
         }
-        if (appDurationMs != null && stagesMs > 0 && stagesMs < appDurationMs * this.thresholds.stageFloorPct) return null;
+        if (runMs != null && stagesMs > 0 && stagesMs < runMs * thresholds.stageFloorPct) return null;
         const occurrencesIdentical = occurrencesHaveIdenticalDetails(g.nodes);
         const stageShares = stageOperatorShares(nodes, operatorsByStage);
         // resolvePlanTree always sets id; safe downstream of it.
@@ -2094,7 +2443,7 @@ export const DETECTORS: Detector[] = [
           metric: 'subtreeOccurrences', value: g.occurrences,
           rootName: g.rootName, subtreeSize: g.subtreeSize, sampleRelation: g.sampleRelation,
           groupIndex: g.groupIndex,
-          confidence: occurrencesIdentical ? duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, this.thresholds) : 'low',
+          confidence: occurrencesIdentical ? duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, thresholds) : 'low',
           validationRequired: 'Duplicate-subtree matching compares operator names and metric names only, not literal values or expr IDs: confirm the repeated work is real in the Spark SQL plan tab before acting.',
           recommendation: (g.isExchangeRoot
             ? `A ${g.subtreeSize}-node subtree rooted at ${pathBasename(g.rootName)} repeats ${g.occurrences}x in this plan${touching}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`
@@ -2103,18 +2452,50 @@ export const DETECTORS: Detector[] = [
       }).filter((f): f is Finding => f !== null);
       return findings.length > 0 ? findings : null;
     },
-  },
-  {
-    type: 'smallFiles', scope: 'sql', order: 131, fixEffort: 'config', version: 2,
+    estimate(finding, ctx): ImpactEstimate | null {
+      const stageIds = finding.stageIds as number[] | undefined;
+      if (!stageIds || stageIds.length === 0) return null;
+      // detect() reports subtreeOccurrences >= 2. Only repeats past the first are redundant:
+      // computing the subtree once is real work, so waste is (occurrences-1)/occurrences of the stages' time.
+      const occurrences = typeof finding.value === 'number' ? finding.value : 0;
+      // Defensive only: minOccurrences guarantees occurrences >= 2 on real data; a malformed-value fallback.
+      if (occurrences < 2) return costOnly('none');
+      // Same-shaped repeats whose details differ compute different data: nothing is known to be
+      // recomputed, so there is no time to claim.
+      if (finding.occurrencesIdentical === false) return costOnly('none');
+      // Each stage contributes the share of its operators inside the repeated subtree: a stage it
+      // shares with other operators (the consuming join, the join's other side) isn't all its
+      // time, and claiming whole stages let sibling groups claim the same stage twice. Findings
+      // built without the field (hand-made fixtures) count every linked stage whole.
+      const shares = (finding.stageShares ?? null) as Record<number, number> | null;
+      const redundantFraction = (occurrences - 1) / occurrences;
+      const wasteMsByStage = new Map<number, number>();
+      for (const id of stageIds) {
+        const s = ctx.stages.get(id);
+        const share = shares ? (shares[id] ?? 0) : 1;
+        if (s && share > 0) {
+          // Time with tasks running, not submit-to-complete: a stage left waiting for cores
+          // (2491s open, 60s of tasks on a real log) isn't recomputing anything while it waits.
+          const activeMs = s.taskActiveMs ?? Math.max(0, (s.completedAt ?? 0) - (s.submittedAt ?? 0));
+          wasteMsByStage.set(id, activeMs * share * redundantFraction);
+        }
+      }
+      // No operator of the subtree ran in a known stage: no time to attribute.
+      if (wasteMsByStage.size === 0) return costOnly('none');
+      const totalWasteMs = [...wasteMsByStage.values()].reduce((sum, ms) => sum + ms, 0);
+      const rawWaste: RawWasteFigure = { value: totalWasteMs, unit: 'ms' };
+      return multiStageImpact([...wasteMsByStage.keys()], wasteMsByStage, ctx, 'measured', rawWaste)
+        ?? costOnly('measured', rawWaste);
+    },
+  }),
+  defineSqlDetector({
+    type: 'smallFiles', order: 131, fixEffort: 'config', version: 2,
+    emits: ['smallFiles'],
     docAnchor: '#bottleneck-small-files',
     thresholds: { minFiles: 100, maxAvgFileSizeMB: 3 },
-    detect(
-      this: { thresholds: { minFiles: number; maxAvgFileSizeMB: number } },
-      sqlExec: DetectorSqlExec,
-      ctx: DetectorCtx,
-    ): Finding[] | null {
+    detect(sqlExec, ctx, thresholds): Finding[] | null {
       if (!sqlExec.planTree) return null;
-      const { minFiles, maxAvgFileSizeMB } = this.thresholds;
+      const { minFiles, maxAvgFileSizeMB } = thresholds;
       interface SmallFilesHit { direction: 'read' | 'write'; fileCount: number; avgBytes: number; nodeName: string; node: PlanNode; }
       const hits: SmallFilesHit[] = [];
       walkPlanTree(sqlExec.planTree, (node) => {
@@ -2149,27 +2530,36 @@ export const DETECTORS: Detector[] = [
         };
       });
     },
-  },
-  {
+    estimate(finding, ctx): ImpactEstimate | null {
+      const fileMs = ((finding.fileCount as number | undefined) ?? 0) * FILE_OPEN_OVERHEAD_MS;
+      // A read's files are opened by the scan's tasks, in parallel: spread the per-file cost over
+      // the most tasks its stages ran at once (91344 files x 10ms is 913s, claimed against a 117s
+      // stage that ran 314 tasks at once). A write keeps the serial sum: the job commit moves each
+      // output file on the driver, one after another.
+      const stageIds = finding.stageIds as number[] | undefined;
+      let slots = 1;
+      if (finding.direction === 'read') {
+        for (const id of stageIds ?? []) slots = Math.max(slots, ctx.stages.get(id)?.peakConcurrentTasks ?? 1);
+      }
+      return stageMappableWasteOrCostOnly(fileMs / slots, stageIds, ctx);
+    },
+  }),
+  defineSqlDetector({
     // Entry-level type is an identifier only; it never appears on an emitted finding. Findings
     // carry 'underBroadcast'/'overBroadcast' since one shared plan-walk covers both
     // opposite-direction rules (JoinToBroadcastAlert / BroadcastTooLargeAlert).
-    type: 'broadcastSizing', scope: 'sql', order: 132, fixEffort: 'config', version: 2,
+    type: 'broadcastSizing', order: 132, fixEffort: 'config', version: 2,
+    // Listed over-first: the two share order 132, and this list order is their display tie-break.
+    emits: ['overBroadcast', 'underBroadcast'],
     docAnchor: '#bottleneck-broadcast-sizing',
     thresholds: {
       broadcastTiers: [10 * MB, 100 * MB, GB, 5 * GB],
       comparisonTiers: [10 * GB, 300 * GB, TB],
       overBroadcastBytes: GB,
     },
-    detect(
-      this: {
-        thresholds: { broadcastTiers: number[]; comparisonTiers: number[]; overBroadcastBytes: number };
-      },
-      sqlExec: DetectorSqlExec,
-      ctx: DetectorCtx,
-    ): Finding[] | null {
+    detect(sqlExec, ctx, thresholds): Finding[] | null {
       if (!sqlExec.planTree) return null;
-      const { broadcastTiers, comparisonTiers, overBroadcastBytes } = this.thresholds;
+      const { broadcastTiers, comparisonTiers, overBroadcastBytes } = thresholds;
       const fallbackStageIds = stageIdsForSqlExec(sqlExec.id, ctx.stages);
       const out: Finding[] = [];
       walkPlanTree(sqlExec.planTree, (node) => {
@@ -2210,12 +2600,60 @@ export const DETECTORS: Detector[] = [
               // resolvePlanTree always sets id; safe downstream of it.
               planNodeIds: [node.id!].filter(Boolean),
               impactBand: 'warning', metric: 'broadcastBytes', value: m.value,
-              recommendation: `This broadcast (${formatBytes(m.value)}) exceeds the 1 GB threshold: check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.`,
+              recommendation: `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.`,
             });
           }
         }
       });
       return out.length ? out : null;
     },
-  },
-];
+    estimate(finding, ctx): ImpactEstimate | null {
+      // Both finding types carry bytes as `value`: overBroadcast's broadcastBytes, underBroadcast's
+      // smallerSideBytes (the smaller join side), each priced as one broadcast transfer.
+      const wasteMs = (((finding.value as number | undefined) ?? 0) / BROADCAST_BANDWIDTH_BPS) * 1000;
+      return stageMappableWasteOrCostOnly(wasteMs, finding.stageIds as number[] | undefined, ctx);
+    },
+  }),
+] as const satisfies readonly Detector[];
+
+/** The entry that emits each finding type: the one whose estimate prices it and whose thresholds
+ * and order describe it. Several entries can emit one type (the four configAudit audits), and the
+ * first declared wins. */
+export const ENTRY_BY_TYPE: ReadonlyMap<string, Detector> = (() => {
+  const byType = new Map<string, Detector>();
+  for (const entry of DETECTORS as readonly Detector[]) {
+    for (const type of entry.emits) if (!byType.has(type)) byType.set(type, entry);
+  }
+  return byType;
+})();
+
+/** A `DETECTORS` entry's own `type`: every emitted finding type, plus broadcastSizing. */
+export type DetectorType = (typeof DETECTORS)[number]['type'];
+
+/** Every finding `type` a detector can emit, from the entries' `emits` lists. */
+export type FindingType = (typeof DETECTORS)[number]['emits'][number];
+
+type DetectorEntry = (typeof DETECTORS)[number];
+type EntryEmitting<T extends FindingType, D extends DetectorEntry = DetectorEntry> =
+  D extends { emits: readonly (infer E)[] } ? (T extends E ? D : never) : never;
+
+/** The `thresholds` of the entry (or entries, for configAudit) that emit finding type `T`. */
+export type ThresholdsOf<T extends FindingType> = EntryEmitting<T>['thresholds'];
+
+// `emits` already only names Finding members (Detector.emits); this makes the reverse hold too, so a
+// Finding member no detector emits, or a detector whose type has no Finding member, fails to compile.
+type SameUnion<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+type AssertTrue<T extends true> = T;
+export type FindingTypesMatchDetectors = AssertTrue<SameUnion<FindingType, Finding['type']>>;
+
+// A `suppressedBy` that names no entry would never suppress anything; this makes it a compile error.
+// An entry without one infers the bare `string` constraint, which contributes nothing here.
+type DeclaredSuppressor<D> = D extends { suppressedBy?: infer S } ? (string extends S ? never : S) : never;
+type SuppressorType = NonNullable<DeclaredSuppressor<DetectorEntry>>;
+export type SuppressorsAreDetectors = AssertTrue<[SuppressorType] extends [DetectorType] ? true : false>;
+
+/** Per-detector threshold overrides, keyed by entry `type`: each value a partial of that entry's
+ * own thresholds. Built by threshold-overrides.ts from a user's config file. */
+export type ThresholdOverrides = {
+  readonly [D in DetectorEntry as D['type']]?: Partial<D['thresholds']>;
+};

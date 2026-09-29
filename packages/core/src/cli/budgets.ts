@@ -1,5 +1,6 @@
 import { computeEfficiencyModel } from '../efficiency-model.ts';
-import { computeSkewRatio, DETECTORS } from '../detectors.ts';
+import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from '../detectors.ts';
+import { effectiveThresholds } from '../threshold-overrides.ts';
 import { IMPACT_BAND_ORDER } from '../format-utils.ts';
 import type { CompareRunsResult } from '../run-comparison.ts';
 import type { AppModel, Finding, ImpactBand } from '../types.ts';
@@ -18,21 +19,21 @@ export interface BudgetResult {
   detail: string;
 }
 
-const skewDetector = DETECTORS.find((d) => d.type === 'skew');
-const SKEW_MIN_TASKS_FOR_P95 = skewDetector!.thresholds!.minTasksForP95 as number;
+// The skew entry's minTasksForP95 under the run's overrides, so the budget measures the same
+// ratio (P95/median or max/median) the skew finding reports.
+function skewMinTasksForP95(thresholds: ThresholdOverrides | undefined): number {
+  return effectiveThresholds(ENTRY_BY_TYPE.get('skew')!, thresholds).minTasksForP95 as number;
+}
 
 function taskDataTrusted(appModel: AppModel): boolean {
   const entry = appModel.evidenceAvailability?.entries?.find((e) => e.key === 'taskCoreTime');
   return entry?.state === 'present';
 }
 
-// Finding.value is number|string (some detectors put text there); spill findings are
-// always numeric, so the typeof guard narrows without changing behavior for real input.
 function maxFindingValue(catalog: Finding[], type: string): number | null {
   const values = catalog
     .filter((f) => f.type === type)
-    .map((f) => f.value ?? 0)
-    .filter((v): v is number => typeof v === 'number');
+    .map((f) => f.value ?? 0);
   return values.length > 0 ? Math.max(...values) : null;
 }
 
@@ -58,7 +59,7 @@ function checkSpill(appModel: AppModel, catalog: Finding[], maxSpillGb: number):
     : { name: 'max-spill', status: 'pass', detail: `Peak stage spill ${maxBytes} bytes within budget ${budgetBytes} bytes.` };
 }
 
-function checkSkew(appModel: AppModel, maxSkewRatio: number): BudgetResult {
+function checkSkew(appModel: AppModel, maxSkewRatio: number, minTasksForP95: number): BudgetResult {
   if (!taskDataTrusted(appModel)) {
     return { name: 'max-skew', status: 'inconclusive', detail: 'No trustworthy task-level evidence to measure skew.' };
   }
@@ -69,7 +70,7 @@ function checkSkew(appModel: AppModel, maxSkewRatio: number): BudgetResult {
   // Recompute the true ratio per stage: the skew detector floors findings at
   // thresholds.ratioWarn (3), so a stricter budget can't be enforced from catalog alone.
   const ratios = stages
-    .map((stage) => computeSkewRatio(stage, SKEW_MIN_TASKS_FOR_P95))
+    .map((stage) => computeSkewRatio(stage, minTasksForP95))
     .filter((r) => r !== null)
     .map((r) => r.ratio);
   if (ratios.length === 0) {
@@ -161,13 +162,16 @@ function pushComparisonBudget(
   results.push(comparison ? check(comparison) : { name, status: 'inconclusive', detail: 'No baseline comparison available to evaluate this budget.' });
 }
 
-export function evaluateBudgets({ appModel, catalog, budgets, comparison }: {
+/** `thresholds`: the overrides the catalog was analyzed with, so a budget that recomputes a
+ * detector's figure (--max-skew) uses the same thresholds. */
+export function evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds }: {
   appModel: AppModel; catalog: Finding[]; budgets: BudgetsConfig; comparison?: CompareRunsResult;
+  thresholds?: ThresholdOverrides;
 }): { results: BudgetResult[]; violated: boolean; inconclusive: boolean } {
   const results: BudgetResult[] = [];
   if (Number.isFinite(budgets.maxRuntimeMs)) results.push(checkRuntime(appModel, budgets.maxRuntimeMs!));
   if (Number.isFinite(budgets.maxSpillGb)) results.push(checkSpill(appModel, catalog, budgets.maxSpillGb!));
-  if (Number.isFinite(budgets.maxSkewRatio)) results.push(checkSkew(appModel, budgets.maxSkewRatio!));
+  if (Number.isFinite(budgets.maxSkewRatio)) results.push(checkSkew(appModel, budgets.maxSkewRatio!, skewMinTasksForP95(thresholds)));
   if (Number.isFinite(budgets.maxFailedTaskRatePct)) results.push(checkFailedTaskRate(appModel, catalog, budgets.maxFailedTaskRatePct!));
   if (Number.isFinite(budgets.minEfficiencyPct)) results.push(checkEfficiency(appModel, budgets.minEfficiencyPct!));
   // Guarded here so any evaluateBudgets caller benefits: regressionMetric without

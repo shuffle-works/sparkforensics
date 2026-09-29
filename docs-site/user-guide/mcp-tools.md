@@ -36,6 +36,18 @@ Or point an MCP client (Claude Desktop, Claude Code) at it with this config:
 }
 ```
 
+To tune detector thresholds, start the server with `--thresholds <file>`
+(add `"--thresholds", "/absolute/path/thresholds.json"` to `args`). The file
+format is the CLI's: see
+[Tuning detector thresholds](./getting-started.md#tuning-detector-thresholds).
+The overrides apply to every tool for the life of the server; a client can't
+change them per call. An unreadable or invalid file stops the server from
+starting, with the problem on stderr. On a tuned server, `diagnose_run`,
+`compare_runs` and `evaluate_budgets` add a top-level `tunedThresholds`, and
+each finding and clean check from a tuned detector carries its own
+`tunedThresholds`, as in the CLI report. The Markdown output of
+`diagnose_run` and `compare_runs` names the tuned thresholds too.
+
 ## `diagnose_run`
 
 Diagnose a Spark run: thresholded findings with remediation text, led by the

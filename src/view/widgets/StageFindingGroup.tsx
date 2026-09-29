@@ -9,10 +9,11 @@ import { StageHeader } from '@/view/StageHeader';
 import { ExpandToggleButton } from '@/view/ExpandToggleButton';
 import { DurationHistogram } from '@/view/charts/DurationHistogram';
 import { IMPACT_BAND_ORDER, formatDuration, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { AppModel, Finding, ImpactBand, StageId, TaskData } from '@sparkforensics/core/types.ts';
 import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
-import type { SlowHostFinding, StragglerFinding } from '@/view/slow-host-straggler-finding';
+import type { SlowHostFinding, StragglerFinding } from '@sparkforensics/core/finding-types.ts';
 import { useExpandableRow } from '@/view/useExpandableRow';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { canToggleSort } from '@/view/impact-sort';
@@ -184,8 +185,8 @@ export const StageFindingGroupWidget = memo(function StageFindingGroupWidget({
         stageId,
         findings,
         impactBand: worstImpactBand(findings) ?? 'info',
-        slowHost: catalog.find((f) => f.type === 'slowHost' && f.stageId === stageId) as SlowHostFinding | undefined,
-        straggler: catalog.find((f) => f.type === 'straggler' && f.stageId === stageId) as StragglerFinding | undefined,
+        slowHost: findingsOfType(catalog, 'slowHost').find((f) => f.stageId === stageId),
+        straggler: findingsOfType(catalog, 'straggler').find((f) => f.stageId === stageId),
       }))
       .sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand] || a.stageId - b.stageId);
 

@@ -1,0 +1,333 @@
+// How each finding type is presented: the one place a finding type's name, board tag, action
+// label, clean-check threshold summary and generic recommendation are registered. FINDING_NAMES,
+// TYPE_TAG_MAP, getThresholdSummary, findingActionLabel and coreFindingGenericRecommendation all
+// read this table.
+//
+// It sits beside DETECTORS rather than on its entries because the HTML export renders names, tags
+// and labels but may not reach detectors.ts (scripts/export-analysis-guard.mjs). The import from
+// detectors.ts is type-only, so it is erased at build time. A detector's scope, order and emits
+// list stay on its DETECTORS entry; renderers get them through detectorInfoByType().
+import type { ThresholdsOf } from './detectors.ts';
+import type { FindingOf, FindingType } from './types.ts';
+
+export interface FindingPresentation<T extends FindingType> {
+  /** Lowercase human-readable label ("task skew"); the evidence report Title Cases it. */
+  name: string;
+  /** ALL-CAPS board tag. Several types may share one (every Plan Advisor type is `PLAN`). */
+  tag: string;
+  /** The criterion a clean check was measured against, from the emitting entry's own thresholds. */
+  thresholdSummary(thresholds: ThresholdsOf<T>): string;
+  /** A short imperative label for the finding's row, or undefined for a (type, discriminant)
+   * combination this type doesn't recognize; findingActionLabel then falls back to `name`. */
+  actionLabel(finding: FindingOf<T>): string | undefined;
+  /** The shape of the fix with no instance data (numbers, stage ids, host names, config values),
+   * for a multi-finding group's muted line. Undefined where the detector's real branch key isn't a
+   * Finding field or the combination is unrecognized; the caller then shows no line. */
+  genericRecommendation(finding: FindingOf<T>): string | undefined;
+}
+
+// The four configAudit DETECTORS entries share this row, one per audited property.
+const CONFIG_AUDIT_PRESENTATION: FindingPresentation<'configAudit'> = {
+  name: 'config audit',
+  tag: 'CFG',
+  thresholdSummary: () => 'a Spark conf value outside the recommended range',
+  actionLabel(f) {
+    switch (f.property) {
+      case 'spark.shuffle.service.enabled': return 'Enable shuffle service';
+      case 'spark.dynamicAllocation.minExecutors': return 'Fix autoscaling bounds';
+      case 'spark.dynamicAllocation.maxExecutors': return 'Set max executors';
+      case 'spark.serializer': return 'Switch to Kryo';
+      case 'spark.executor.memoryOverhead': return 'Raise memory overhead';
+    }
+    return undefined;
+  },
+  genericRecommendation(f) {
+    switch (f.property) {
+      case 'spark.shuffle.service.enabled': return 'Set spark.shuffle.service.enabled=true so shuffle data survives executor removal.';
+      case 'spark.dynamicAllocation.minExecutors': return 'Set the minimum executor bound at or below the maximum.';
+      case 'spark.dynamicAllocation.maxExecutors': return 'Set spark.dynamicAllocation.maxExecutors to cap cluster growth.';
+      case 'spark.serializer': return 'Consider spark.serializer=org.apache.spark.serializer.KryoSerializer for faster, smaller buffers.';
+      case 'spark.executor.memoryOverhead': return 'Raise executor memoryOverhead above Spark\'s default floor to avoid off-heap OOM-kills.';
+    }
+    return undefined;
+  },
+};
+
+/** One row per emitted finding type: the mapped type makes a missing or stray row a compile error. */
+export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresentation<T> } = {
+  incompleteRun: {
+    name: 'incomplete run',
+    tag: 'INCMP',
+    thresholdSummary: () => 'an event log missing its terminal ApplicationEnd/job-completion event',
+    actionLabel: () => undefined,
+    genericRecommendation: () => undefined,
+  },
+
+  skew: {
+    name: 'task skew',
+    tag: 'SKEW',
+    thresholdSummary: () => 'task duration skew above the configured ratio',
+    actionLabel: () => 'Fix task skew',
+    genericRecommendation: () => 'For join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key to reduce task skew.',
+  },
+  stageShape: {
+    name: 'stage shape',
+    tag: 'SHAPE',
+    thresholdSummary: () => 'low parallelism, data explosion, or task-count skew relative to core count',
+    actionLabel(f) {
+      switch (f.rule) {
+        case 'lowParallelism': return 'Increase parallelism';
+        case 'dataExplosion': return 'Check for exploding join';
+        case 'taskStageSkew': return 'Fix straggler task';
+      }
+      return undefined;
+    },
+    genericRecommendation(f) {
+      switch (f.rule) {
+        case 'lowParallelism': return 'Too few tasks run relative to the cores available, leaving cluster capacity idle: repartition to use more of it.';
+        case 'dataExplosion': return 'Output volume far exceeds input volume: check for an exploding join or a cross product.';
+        case 'taskStageSkew': return 'A single straggler task gates the whole stage\'s wall-clock duration.';
+      }
+      return undefined;
+    },
+  },
+  tinyTask: {
+    name: 'tiny tasks',
+    tag: 'TINY',
+    thresholdSummary: () => 'median task duration below the configured floor',
+    actionLabel: () => 'Coalesce small tasks',
+    // The shuffle-vs-no-shuffle fix isn't a Finding field, so one sentence covers both.
+    genericRecommendation: () => 'Scheduler overhead may dominate: lower spark.sql.shuffle.partitions, or coalesce down to fewer, larger tasks.',
+  },
+
+  shuffle: {
+    name: 'shuffle I/O',
+    tag: 'SHFL',
+    thresholdSummary: () => 'shuffle read above the configured minimum byte threshold',
+    actionLabel: () => 'Reduce shuffle size',
+    genericRecommendation: () => 'Consider increasing spark.sql.shuffle.partitions or adding a broadcast join to shrink the shuffle.',
+  },
+  partitionSizing: {
+    name: 'partition sizing',
+    tag: 'PART',
+    thresholdSummary: () => 'partition byte size outside the configured target range',
+    actionLabel(f) {
+      switch (f.rule) {
+        case 'shufflePartitionSkew': return 'Fix skewed partition';
+        case 'lowShuffleParallelism': return 'Add shuffle partitions';
+        case 'maxPartitionTooBig': return 'Repartition oversized data';
+      }
+      return undefined;
+    },
+    genericRecommendation(f) {
+      switch (f.rule) {
+        case 'shufflePartitionSkew': return 'For join skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.';
+        case 'lowShuffleParallelism': return 'Raise spark.sql.shuffle.partitions so each partition is smaller.';
+        case 'maxPartitionTooBig': return 'Repartition to break up the oversized partition before this stage.';
+      }
+      return undefined;
+    },
+  },
+
+  spill: {
+    name: 'spill',
+    tag: 'SPILL',
+    thresholdSummary: (t) => `single-task disk spill above ${t.singleTaskDiskGiB} GiB`,
+    actionLabel: () => 'Reduce spill',
+    // The skew/volume classification isn't a Finding field, so one sentence covers both.
+    genericRecommendation: () => 'If the spill is skew-driven, fix task skew first: adding memory will not help. Otherwise raise spark.sql.shuffle.partitions or increase executor memory.',
+  },
+
+  gc: {
+    name: 'GC pressure',
+    tag: 'GC',
+    thresholdSummary: () => 'JVM GC time share above the configured ratio',
+    actionLabel: (f) => (f.direction === 'low' ? 'Right-size executor memory' : 'Reduce GC pressure'),
+    genericRecommendation: (f) => (f.direction === 'low'
+      ? 'Memory may be over-provisioned here: consider reducing spark.executor.memory for cost savings.'
+      : 'Reduce object creation, use primitive types, avoid UDFs, or increase executor memory to cut GC time.'),
+  },
+
+  stageFailed: {
+    name: 'failed stage',
+    tag: 'SFAIL',
+    thresholdSummary: () => 'a stage that failed outright',
+    actionLabel: () => 'Inspect stage failure',
+    genericRecommendation: () => 'Inspect the driver log for the failure reason and the job that triggered it.',
+  },
+  failures: {
+    name: 'failed tasks',
+    tag: 'FAIL',
+    thresholdSummary: () => 'task failures above the configured rate',
+    actionLabel: () => 'Investigate task failures',
+    genericRecommendation: () => 'Investigate driver logs for executor instability or data-driven errors.',
+  },
+  retryWaste: {
+    name: 'retry waste',
+    tag: 'RETRY',
+    thresholdSummary: () => 'retried task attempts consuming executor time',
+    actionLabel: () => 'Investigate retry cause',
+    genericRecommendation: () => 'Investigate executor loss or fetch failures behind the retried attempts.',
+  },
+
+  slowHost: {
+    name: 'slow executor host',
+    tag: 'HOST',
+    thresholdSummary: (t) => `a host running ${t.ratioWarn}x+ slower than its peers by mean task duration (per-executor byte/time dimensions use a separate, narrower ratio ladder starting at ${t.ratioTiers[0]}x; only those can reach critical on ratio alone)`,
+    actionLabel(f) {
+      if (f.variant === 'durationShare') return 'Fix data locality';
+      if (f.variant === 'multiDim') return 'Investigate degraded executor';
+      return 'Check slow host';
+    },
+    genericRecommendation(f) {
+      if (f.variant === 'durationShare') return 'Check for data locality or partition assignment skewing work onto one node.';
+      if (f.variant === 'multiDim') return 'Investigate uneven partition assignment or a degraded executor.';
+      return 'Check what this host was running: it may just hold data locality for its tasks or carry one heavy stage, rather than a hardware fault. Enable spark.speculation to relaunch a lagging task automatically.';
+    },
+  },
+  stageSlowness: {
+    name: 'slow stage',
+    tag: 'SLOW',
+    thresholdSummary: () => 'a stage running far longer than its peers, not attributable to a single slow host',
+    actionLabel: () => 'Profile slow stage',
+    genericRecommendation: () => 'Often a partition-count problem: raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.',
+  },
+  straggler: {
+    name: 'straggling task',
+    tag: 'STRAG',
+    thresholdSummary: () => 'one or more tasks finishing far after the rest of their stage',
+    actionLabel: () => 'Fix stragglers',
+    genericRecommendation: () => 'Rule out a GC pause or a slow shuffle fetch before assuming a hardware issue. If a skewed key is the real cause, that is a candidate for AQE\'s skew-join handling.',
+  },
+  speculationWaste: {
+    name: 'speculation waste',
+    tag: 'SPEC',
+    thresholdSummary: () => 'speculative task attempts that completed after the original',
+    actionLabel: () => 'Tune speculation settings',
+    genericRecommendation: () => 'If task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile.',
+  },
+  coldStart: {
+    name: 'cold start',
+    tag: 'COLD',
+    thresholdSummary: () => 'executor startup time above the configured floor',
+    actionLabel: () => 'Pre-warm cluster',
+    genericRecommendation: () => 'Keep a warm pool of idle executors, or if using dynamic allocation, raise the minimum/initial executor count so it does not scale up from zero.',
+  },
+
+  memoryUtilization: {
+    name: 'memory utilization',
+    tag: 'MEM',
+    thresholdSummary: () => 'executor heap usage outside the configured band',
+    actionLabel(f) {
+      switch (f.variant) {
+        case 'idleCores': return 'Reduce idle cores';
+        case 'wasteModel': return 'Right-size executor memory';
+        case 'memoryBand':
+          if (f.dataUnavailable) return 'Enable memory metrics';
+          return f.rule === 'heapNearCapacity' ? 'Increase executor memory' : 'Reduce executor memory';
+      }
+      return undefined;
+    },
+    genericRecommendation(f) {
+      switch (f.variant) {
+        case 'idleCores': return 'Reduce cluster size or enable dynamic allocation.';
+        case 'wasteModel': return 'Review spark.executor.memory and executor count.';
+        case 'memoryBand':
+          if (f.dataUnavailable) return undefined;
+          return f.rule === 'heapNearCapacity'
+            ? 'Memory may be too small: raise spark.executor.memory to avoid OOM/spill.'
+            : 'Memory may be over-provisioned: consider reducing spark.executor.memory for cost savings.';
+      }
+      return undefined;
+    },
+  },
+  utilization: {
+    name: 'executor utilization',
+    tag: 'UTIL',
+    thresholdSummary: () => 'core occupancy below the configured floor across the run',
+    actionLabel: () => 'Reduce cluster size',
+    genericRecommendation: () => 'Consider reducing cluster size or enabling dynamic allocation.',
+  },
+  coreLocality: {
+    name: 'core locality',
+    tag: 'LOCAL',
+    thresholdSummary: () => 'task placement missing data-local core assignment',
+    actionLabel: () => 'Fix data locality',
+    genericRecommendation: () => 'Check spark.locality.wait settings and executor/data colocation.',
+  },
+  cachingOpportunity: {
+    name: 'caching opportunity',
+    tag: 'CACHE',
+    thresholdSummary: () => 'a dataset re-read from source multiple times with no cache/persist',
+    actionLabel: (f) => (f.variant === 'composite' ? 'Cache repeated result' : 'Cache shared table'),
+    genericRecommendation: (f) => (f.variant === 'composite'
+      ? 'Cache or persist the repeated join/union result so it is computed once instead of recomputed per query.'
+      : 'Cache the shared DataFrame, or broadcast it if it is a small join lookup.'),
+  },
+  cacheUtilization: {
+    name: 'cache utilization',
+    tag: 'CSTOR',
+    thresholdSummary: () => 'cached partitions evicted or spilled to disk',
+    actionLabel: (f) => (f.dataUnavailable ? 'Enable block-update logging' : 'Increase cache memory'),
+    genericRecommendation(f) {
+      switch (f.variant) {
+        case 'partialCache': return 'Increase executor memory or reduce the cached dataset size so more of it stays cached.';
+        case 'diskSpillover': return 'Executor memory may be too small for this cached dataset: increase executor memory or reduce its size.';
+      }
+      return undefined;
+    },
+  },
+  jobFailureRate: {
+    name: 'job failure rate',
+    tag: 'JOBS',
+    thresholdSummary: () => 'job failure rate above the configured threshold',
+    actionLabel: () => 'Investigate failed jobs',
+    genericRecommendation: () => 'Inspect the driver log for the failed job(s) and the stage failures that triggered them.',
+  },
+  autoscalingChurn: {
+    name: 'autoscaling churn',
+    tag: 'CHRN',
+    thresholdSummary: () => 'executor add/remove churn above the configured rate',
+    actionLabel: () => 'Reduce autoscaling churn',
+    genericRecommendation: () => 'This looks like wasteful re-provisioning rather than normal scale-down: consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.',
+  },
+
+  configAudit: CONFIG_AUDIT_PRESENTATION,
+
+  duplicatePlanSubtree: {
+    name: 'duplicate plan subtree',
+    tag: 'PLAN',
+    thresholdSummary: () => 'the same physical plan subtree executed more than once',
+    actionLabel: () => 'Dedupe repeated subtree',
+    // isExchangeRoot isn't a Finding field, so one sentence covers both cases.
+    genericRecommendation: () => 'Check whether the repeated subtree could be computed once and reused, or cache/persist the shared computation.',
+  },
+  smallFiles: {
+    name: 'small files',
+    tag: 'PLAN',
+    thresholdSummary: () => 'output files below the configured target size',
+    actionLabel: (f) => (f.direction === 'write' ? 'Coalesce output files' : 'Compact small files'),
+    genericRecommendation: (f) => (f.direction === 'write'
+      ? 'Repartition or coalesce before writing to raise the average file size.'
+      : 'Compact the upstream output so fewer, larger files are produced.'),
+  },
+  underBroadcast: {
+    name: 'missed broadcast join',
+    tag: 'PLAN',
+    thresholdSummary: () => 'a join below the configured size floor that skipped broadcast',
+    actionLabel: () => 'Use broadcast join',
+    genericRecommendation: () => 'This could have been a broadcast join: consider a broadcast() hint or raising spark.sql.autoBroadcastJoinThreshold.',
+  },
+  overBroadcast: {
+    name: 'oversized broadcast join',
+    tag: 'PLAN',
+    thresholdSummary: () => 'a broadcast join above the configured size ceiling',
+    actionLabel: () => 'Fix oversized broadcast',
+    genericRecommendation: () => 'Check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.',
+  },
+};
+
+/** The presentation row for a free-form type string (report JSON, a filter, a test double). */
+export function presentationOf(type: string): FindingPresentation<FindingType> | undefined {
+  return (FINDING_PRESENTATION as Readonly<Record<string, FindingPresentation<FindingType>>>)[type];
+}

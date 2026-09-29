@@ -1,4 +1,5 @@
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
 
 /** `'impact'` ranks by potential savings (`wallClock.low`, descending);
  * `'stage'` ranks by stage number ascending. */
@@ -60,7 +61,8 @@ export function byImpactDesc<T>(getFindings: (item: T) => readonly Finding[]) {
  * for an app-level finding with neither field set. */
 export function stageIdOf(finding: Finding): number | null {
   if (finding.stageId != null) return finding.stageId;
-  if (finding.stageIds && finding.stageIds.length > 0) return Math.min(...finding.stageIds);
+  const stageIds = findingStageIds(finding);
+  if (stageIds && stageIds.length > 0) return Math.min(...stageIds);
   return null;
 }
 

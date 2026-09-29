@@ -9,7 +9,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { pathBasename, formatBytes, formatMetricValue, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
+import type { CacheUtilizationFinding } from '@sparkforensics/core/finding-types.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { DocsLink } from '@/view/DocsContext';
 import { useAnchoredRow } from '@/view/finding-anchor';
@@ -48,19 +49,6 @@ interface RddInfoRow {
 // `SparkAppInfo` type; bridged with a single cast.
 interface AppWithRddInfo {
   rddInfo?: Map<number, RddInfoRow>;
-}
-
-// The `cacheUtilization` detector emits three variants from one `type`, none
-// declared on the frozen `Finding` interface; bridged with a single cast.
-interface CacheUtilizationFinding extends Finding {
-  variant?: 'partialCache' | 'diskSpillover' | 'storageUnobserved';
-  dataUnavailable?: boolean;
-  rddId?: number;
-  rddName?: string;
-  memorySize?: number;
-  diskSize?: number;
-  numCachedPartitions?: number;
-  numPartitions?: number;
 }
 
 const MAX_SHORT_NAME_LENGTH = 70;
@@ -141,7 +129,7 @@ export const CacheUtilization = memo(function CacheUtilization({ appModel, catal
     : [], [rddInfo]);
 
   // Depends only on `catalog`; separate memo from `rows` above.
-  const allFindings = useMemo(() => (catalog.filter((f) => f.type === 'cacheUtilization') as CacheUtilizationFinding[]).sort(
+  const allFindings = useMemo(() => findingsOfType(catalog, 'cacheUtilization').sort(
     (a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand],
   ), [catalog]);
 

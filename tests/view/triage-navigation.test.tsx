@@ -12,6 +12,7 @@ import { REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import { WidgetCard } from '@/view/WidgetCard';
 import { useFindingAnchor, useIsRouteFlash } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
+import { testFinding } from './_shared/finding';
 
 vi.mock('@sparkforensics/core/recent-files.ts', () => ({
   isSupported: () => false,
@@ -109,26 +110,32 @@ function gcFinding(
 }
 
 function taskFailuresFinding(stageId: number, impactBand: Finding['impactBand'] = 'warning', value = 25): Finding {
-  return {
+  return testFinding({
     type: 'failures',
     stageId,
     impactBand,
     value,
     failedTasks: 3,
     dominantReason: 'ExecutorLostFailure',
+    dominantError: null,
+    failureGroups: [],
+    otherFailedTasks: 0,
     recommendation: `Investigate task failures in Stage ${stageId}.`,
-  };
+  });
 }
 
 function retryWasteFinding(stageId: number, impactBand: Finding['impactBand'] = 'warning', value = 5_000): Finding {
-  return {
+  return testFinding({
     type: 'retryWaste',
     stageId,
     impactBand,
     value,
+    numTasks: 1,
+    memoryBytesSpilled: 0,
+    retriedTaskDetails: [],
     extended: `Superseded retry detail for Stage ${stageId}.`,
     recommendation: `Investigate retry waste in Stage ${stageId}.`,
-  };
+  });
 }
 
 function slowHostFinding(stageId: number, impactBand: Finding['impactBand'] = 'warning', value = 3): Finding {
@@ -159,15 +166,15 @@ function memoryFinding(stageId: number | null = null): Finding {
 // most likely to exceed VISIBLE_LIMIT; `stageId` defaults to `null` like
 // `memoryFinding()` above.
 function memoryBandFinding(executorId: number | string, impactBand: Finding['impactBand'], stageId: number | null = null): Finding {
-  return {
+  return testFinding({
     type: 'memoryUtilization',
     stageId,
     impactBand,
     variant: 'memoryBand',
-    executorId,
+    executorId: String(executorId),
     value: 0.9,
     recommendation: `Review heap sizing for executor ${executorId}.`,
-  };
+  });
 }
 
 // `stageId` defaults to `null` to match the real plan detectors, which never
@@ -179,7 +186,11 @@ function duplicatePlanSubtreeFinding(
   opts: { impactBand?: Finding['impactBand']; stageId?: number | null } = {},
 ): Finding {
   const { impactBand = 'warning', stageId = null } = opts;
-  return { type: 'duplicatePlanSubtree', impactBand, stageId, stageIds, recommendation };
+  return testFinding({
+    type: 'duplicatePlanSubtree', impactBand, stageId, stageIds, recommendation,
+    executionId: 1, planNodeIds: [], stageShares: {}, occurrencesIdentical: true,
+    rootName: 'Filter', subtreeSize: 1, sampleRelation: null, groupIndex: 0,
+  });
 }
 
 function cachingFinding(relation: string, totalReadBytes: number, value = 2): Finding {
@@ -453,7 +464,7 @@ test('an alert target opens only its exact card and leaves Full app report and C
 
 test('a core-locality target switches to Full app report, where its always-mounted card lives, and focuses it', async () => {
   const user = userEvent.setup();
-  const locality: Finding = { type: 'coreLocality', stageId: null, impactBand: 'warning', value: 40, recommendation: 'Check locality.' };
+  const locality: Finding = testFinding({ type: 'coreLocality', stageId: null, impactBand: 'warning', value: 40, nonLocalTaskCount: 0, recommendation: 'Check locality.' });
   renderReady([locality], [1]);
 
   await waitForDashboard();
@@ -1327,7 +1338,7 @@ test.each<{
     title: 'Spill.tsx jumps its own pagination to reveal a route target that is not on the currently-visible page',
     heading: 'Spill',
     routeLabel: 'Investigate spill in Stage 8',
-    makeFinding: (stageId) => ({ ...spillFinding(stageId, 'critical'), value: (9 - stageId) * 1024 ** 3 }),
+    makeFinding: (stageId) => ({ ...spillFinding(stageId, 'critical'), value: (9 - stageId) * 1024 ** 3 }) as Finding,
   },
   {
     title: 'Skew.tsx jumps its own pagination to reveal a route target that is not on the currently-visible page',
@@ -1342,7 +1353,7 @@ test.each<{
     routeLabel: 'Investigate slow executor host in Stage 8',
     makeFinding: (stageId) => slowHostFinding(stageId, 'critical'),
   },
-])('$title', async ({ heading, routeLabel, makeFinding }) => {
+])('$title', async ({ title: _title, heading, routeLabel, makeFinding }) => {
   const stageIds = Array.from({ length: 8 }, (_, i) => i + 1);
   const findings = stageIds.map((stageId) => makeFinding(stageId));
   renderReady(findings, stageIds);
@@ -1433,10 +1444,10 @@ test('DuplicatePlanSubtree.tsx jumps its own pagination to the page containing a
 // ConfigAudit.tsx's findings live only in the store's `configFindings` slot,
 // never `catalog`, so this covers the route coordinator resolving against both.
 test('a real ConfigAudit.tsx row is anchor-routable from its recommendation row', async () => {
-  const finding: Finding = {
-    type: 'configAudit', property: 'spark.serializer', value: 'java', stageId: null,
+  const finding: Finding = testFinding({
+    type: 'configAudit', property: 'spark.serializer', valueText: 'java', stageId: null,
     impactBand: 'warning', recommendation: 'Use KryoSerializer.',
-  };
+  });
   try {
     store.setState({ configFindings: [finding] });
     renderReady([]);

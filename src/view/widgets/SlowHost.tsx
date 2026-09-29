@@ -1,13 +1,14 @@
 import { memo, useState } from 'react';
 
 import { formatMetricValue, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
+import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import { useAnchoredRow } from '@/view/finding-anchor';
-import type { SlowHostFinding } from '@/view/slow-host-straggler-finding';
+import type { SlowHostFinding } from '@sparkforensics/core/finding-types.ts';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { canToggleSort } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
@@ -82,7 +83,7 @@ export const SlowHost = memo(function SlowHost({ appModel, catalog, defaultColla
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 
-  const issues = (catalog.filter((f) => f.type === 'slowHost') as SlowHostFinding[])
+  const issues = findingsOfType(catalog, 'slowHost')
     .slice()
     .sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]);
 

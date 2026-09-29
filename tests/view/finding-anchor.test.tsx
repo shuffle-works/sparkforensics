@@ -5,6 +5,7 @@ import { expect, test, vi } from 'vitest';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useFindingAnchor, useIsRouteFlash } from '@/view/finding-anchor';
 import { TriageNavigationProvider, type TriageNavigation } from '@/view/TriageNavigationContext';
+import { testFinding } from './_shared/finding';
 
 function noop() {
   return () => {};
@@ -16,11 +17,11 @@ const reportWidgetOpen = vi.fn();
 const clearRouteFocus = vi.fn();
 
 function skewFinding(stageId = 1): Finding {
-  return { type: 'skew', stageId, impactBand: 'warning', recommendation: 'Salt the key.' };
+  return testFinding({ type: 'skew', stageId, impactBand: 'warning', recommendation: 'Salt the key.' });
 }
 
 function stageShapeFinding(stageId = 1): Finding {
-  return { type: 'stageShape', stageId, impactBand: 'info', recommendation: 'Check partition count.' };
+  return testFinding({ type: 'stageShape', stageId, impactBand: 'info', recommendation: 'Check partition count.', rule: 'lowParallelism' });
 }
 
 function AnchorProbe({ findings }: { findings: Finding[] }) {

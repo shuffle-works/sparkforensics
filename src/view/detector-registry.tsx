@@ -1,8 +1,7 @@
 import { lazy, type ComponentType } from 'react';
 
-import { FINDING_NAMES } from '@sparkforensics/core/finding-names.ts';
 import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
-import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
+import type { AppModel, Finding, FindingType, TaskData } from '@sparkforensics/core/types.ts';
 
 // Each widget module is dynamically imported so Vite/Rollup splits it into
 // its own chunk instead of bundling every widget into the main entry: these
@@ -126,60 +125,56 @@ export interface RegistryEntry {
   component: ComponentType<WidgetProps>;
   region: WidgetRegion;
   widgetId: string;
-  widgetTitle: string;
-  findingLabel: string;
   routeable: boolean;
 }
 
 /**
  * `finding.type` -> component + region, one entry per emitted finding type.
- * Every type maps to its own component: no two `REGISTRY` entries ever
- * share a `component` value.
- *
- * `broadcastSizing` is the one `DETECTORS`-level type with no entry here: it
- * never backs a real `Finding` (the detector only ever pushes
- * `underBroadcast` / `overBroadcast`, both registered below in their own
- * right), so it's a dead type at the `DETECTORS` level with nothing to map.
+ * View-only concerns: a type's name, tag and labels live in core's
+ * `FINDING_PRESENTATION`, and its scope and order in `DETECTORS`. Every type
+ * maps to its own component: no two `REGISTRY` entries ever share a
+ * `component` value. `satisfies` requires exactly one entry per emitted
+ * `FindingType`.
  */
-export const REGISTRY: Record<string, RegistryEntry> = {
-  incompleteRun: { component: IncompleteRun, region: 'action', widgetId: 'incomplete-run', widgetTitle: 'Incomplete Run', findingLabel: FINDING_NAMES.incompleteRun, routeable: true },
+export const REGISTRY: Readonly<Record<string, RegistryEntry>> = {
+  incompleteRun: { component: IncompleteRun, region: 'action', widgetId: 'incomplete-run', routeable: true },
 
-  skew: { component: Skew, region: 'action', widgetId: 'skew', widgetTitle: 'Task Skew', findingLabel: FINDING_NAMES.skew, routeable: true },
-  stageShape: { component: StageShape, region: 'action', widgetId: 'stage-shape', widgetTitle: 'Stage Shape', findingLabel: FINDING_NAMES.stageShape, routeable: true },
-  tinyTask: { component: TinyTask, region: 'action', widgetId: 'tiny-task', widgetTitle: 'Tiny Tasks', findingLabel: FINDING_NAMES.tinyTask, routeable: true },
+  skew: { component: Skew, region: 'action', widgetId: 'skew', routeable: true },
+  stageShape: { component: StageShape, region: 'action', widgetId: 'stage-shape', routeable: true },
+  tinyTask: { component: TinyTask, region: 'action', widgetId: 'tiny-task', routeable: true },
 
-  shuffle: { component: ShuffleIO, region: 'action', widgetId: 'shuffle-io', widgetTitle: 'Shuffle I/O', findingLabel: FINDING_NAMES.shuffle, routeable: true },
-  partitionSizing: { component: PartitionSizing, region: 'action', widgetId: 'partition-sizing', widgetTitle: 'Partition Sizing', findingLabel: FINDING_NAMES.partitionSizing, routeable: true },
+  shuffle: { component: ShuffleIO, region: 'action', widgetId: 'shuffle-io', routeable: true },
+  partitionSizing: { component: PartitionSizing, region: 'action', widgetId: 'partition-sizing', routeable: true },
 
-  spill: { component: Spill, region: 'action', widgetId: 'spill', widgetTitle: 'Spill', findingLabel: FINDING_NAMES.spill, routeable: true },
+  spill: { component: Spill, region: 'action', widgetId: 'spill', routeable: true },
 
-  gc: { component: GcPressure, region: 'action', widgetId: 'gc-pressure', widgetTitle: 'GC Pressure', findingLabel: FINDING_NAMES.gc, routeable: true },
+  gc: { component: GcPressure, region: 'action', widgetId: 'gc-pressure', routeable: true },
 
-  stageFailed: { component: StageFailed, region: 'action', widgetId: 'stage-failed', widgetTitle: 'Failed Stages', findingLabel: FINDING_NAMES.stageFailed, routeable: true },
-  failures: { component: TaskFailures, region: 'action', widgetId: 'task-failures', widgetTitle: 'Failed Tasks', findingLabel: FINDING_NAMES.failures, routeable: true },
-  retryWaste: { component: RetryWaste, region: 'action', widgetId: 'retry-waste', widgetTitle: 'Retry Waste', findingLabel: FINDING_NAMES.retryWaste, routeable: true },
+  stageFailed: { component: StageFailed, region: 'action', widgetId: 'stage-failed', routeable: true },
+  failures: { component: TaskFailures, region: 'action', widgetId: 'task-failures', routeable: true },
+  retryWaste: { component: RetryWaste, region: 'action', widgetId: 'retry-waste', routeable: true },
 
-  slowHost: { component: SlowHost, region: 'action', widgetId: 'slow-host', widgetTitle: 'Slow Executor Host', findingLabel: FINDING_NAMES.slowHost, routeable: true },
-  stageSlowness: { component: StageSlowness, region: 'action', widgetId: 'stage-slowness', widgetTitle: 'Slow Stage', findingLabel: FINDING_NAMES.stageSlowness, routeable: true },
-  straggler: { component: Straggler, region: 'action', widgetId: 'straggler', widgetTitle: 'Stragglers', findingLabel: FINDING_NAMES.straggler, routeable: true },
-  speculationWaste: { component: SpeculationWaste, region: 'action', widgetId: 'speculation-waste', widgetTitle: 'Speculation Waste', findingLabel: FINDING_NAMES.speculationWaste, routeable: true },
-  coldStart: { component: ColdStart, region: 'action', widgetId: 'cold-start', widgetTitle: 'Cold Start', findingLabel: FINDING_NAMES.coldStart, routeable: true },
+  slowHost: { component: SlowHost, region: 'action', widgetId: 'slow-host', routeable: true },
+  stageSlowness: { component: StageSlowness, region: 'action', widgetId: 'stage-slowness', routeable: true },
+  straggler: { component: Straggler, region: 'action', widgetId: 'straggler', routeable: true },
+  speculationWaste: { component: SpeculationWaste, region: 'action', widgetId: 'speculation-waste', routeable: true },
+  coldStart: { component: ColdStart, region: 'action', widgetId: 'cold-start', routeable: true },
 
-  memoryUtilization: { component: MemoryUtilization, region: 'reference', widgetId: 'memory-utilization', widgetTitle: 'Memory Utilization', findingLabel: FINDING_NAMES.memoryUtilization, routeable: true },
-  utilization: { component: ExecutorUtilization, region: 'reference', widgetId: 'executor-utilization', widgetTitle: 'Executor Utilization', findingLabel: FINDING_NAMES.utilization, routeable: true },
-  coreLocality: { component: CoreUsageArea, region: 'reference', widgetId: 'core-usage-area', widgetTitle: 'Core Usage by Locality', findingLabel: FINDING_NAMES.coreLocality, routeable: true },
-  cachingOpportunity: { component: CachingOpportunity, region: 'action', widgetId: 'caching-opportunity', widgetTitle: 'Caching Opportunities', findingLabel: FINDING_NAMES.cachingOpportunity, routeable: true },
-  cacheUtilization: { component: CacheUtilization, region: 'reference', widgetId: 'cache-utilization', widgetTitle: 'Cache Storage', findingLabel: FINDING_NAMES.cacheUtilization, routeable: true },
-  jobFailureRate: { component: JobFailures, region: 'action', widgetId: 'job-failures', widgetTitle: 'Job Failures', findingLabel: FINDING_NAMES.jobFailureRate, routeable: true },
-  autoscalingChurn: { component: AutoscalingChurn, region: 'action', widgetId: 'autoscaling-churn', widgetTitle: 'Autoscaling Churn', findingLabel: FINDING_NAMES.autoscalingChurn, routeable: true },
+  memoryUtilization: { component: MemoryUtilization, region: 'reference', widgetId: 'memory-utilization', routeable: true },
+  utilization: { component: ExecutorUtilization, region: 'reference', widgetId: 'executor-utilization', routeable: true },
+  coreLocality: { component: CoreUsageArea, region: 'reference', widgetId: 'core-usage-area', routeable: true },
+  cachingOpportunity: { component: CachingOpportunity, region: 'action', widgetId: 'caching-opportunity', routeable: true },
+  cacheUtilization: { component: CacheUtilization, region: 'reference', widgetId: 'cache-utilization', routeable: true },
+  jobFailureRate: { component: JobFailures, region: 'action', widgetId: 'job-failures', routeable: true },
+  autoscalingChurn: { component: AutoscalingChurn, region: 'action', widgetId: 'autoscaling-churn', routeable: true },
 
-  configAudit: { component: ConfigAudit, region: 'action', widgetId: 'config-audit', widgetTitle: 'Config Sanity', findingLabel: FINDING_NAMES.configAudit, routeable: true },
+  configAudit: { component: ConfigAudit, region: 'action', widgetId: 'config-audit', routeable: true },
 
-  duplicatePlanSubtree: { component: DuplicatePlanSubtree, region: 'action', widgetId: 'duplicate-plan-subtree', widgetTitle: 'Redundant Plan Subtree', findingLabel: FINDING_NAMES.duplicatePlanSubtree, routeable: true },
-  smallFiles: { component: SmallFiles, region: 'action', widgetId: 'small-files', widgetTitle: 'Excessive Small Files', findingLabel: FINDING_NAMES.smallFiles, routeable: true },
-  underBroadcast: { component: UnderBroadcast, region: 'action', widgetId: 'under-broadcast', widgetTitle: 'Missed Broadcast Join', findingLabel: FINDING_NAMES.underBroadcast, routeable: true },
-  overBroadcast: { component: OverBroadcast, region: 'action', widgetId: 'over-broadcast', widgetTitle: 'Oversized Broadcast Join', findingLabel: FINDING_NAMES.overBroadcast, routeable: true },
-};
+  duplicatePlanSubtree: { component: DuplicatePlanSubtree, region: 'action', widgetId: 'duplicate-plan-subtree', routeable: true },
+  smallFiles: { component: SmallFiles, region: 'action', widgetId: 'small-files', routeable: true },
+  underBroadcast: { component: UnderBroadcast, region: 'action', widgetId: 'under-broadcast', routeable: true },
+  overBroadcast: { component: OverBroadcast, region: 'action', widgetId: 'over-broadcast', routeable: true },
+} satisfies Record<FindingType, RegistryEntry>;
 
 const REGION_ORDER: Record<WidgetRegion, number> = { action: 0, reference: 1 };
 
@@ -190,13 +185,11 @@ const REGION_ORDER: Record<WidgetRegion, number> = { action: 0, reference: 1 };
  * (`detectorInfoByType`): it already folds repeated detectors (e.g.
  * `configAudit`) to their lowest order, lists `broadcastSizing`'s emitted
  * `overBroadcast`/`underBroadcast` under their own names, and its key order
- * (declaration order) breaks ties; `broadcastSizing`
- * itself never matches a `REGISTRY` key (see the completeness test in
- * `tests/view/detector-registry.test.tsx`).
+ * (declaration order) breaks ties.
  */
 export function orderedWidgets(
   detectors: Record<string, DetectorInfo>,
-): Array<Pick<RegistryEntry, 'component' | 'region' | 'widgetId' | 'widgetTitle' | 'findingLabel'> & { type: string }> {
+): Array<Pick<RegistryEntry, 'component' | 'region' | 'widgetId'> & { type: string }> {
   return Object.entries(detectors)
     .filter(([type]) => REGISTRY[type] !== undefined)
     .map(([type, { order }]) => ({ entry: REGISTRY[type], type, order }))
@@ -205,8 +198,6 @@ export function orderedWidgets(
       component: entry.component,
       region: entry.region,
       widgetId: entry.widgetId,
-      widgetTitle: entry.widgetTitle,
-      findingLabel: entry.findingLabel,
       type,
     }));
 }

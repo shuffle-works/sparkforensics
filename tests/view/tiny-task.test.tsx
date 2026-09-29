@@ -11,6 +11,7 @@ import { TinyTask } from '@/view/widgets/TinyTask';
 import { store } from '@/store/store';
 import type { AppModel, Finding, TaskData } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
+import { testFinding } from './_shared/finding';
 
 function makeAppModel(stageIds: number[]): AppModel {
   const stages = new Map<number, unknown>(
@@ -32,7 +33,11 @@ function tinyTaskFinding(stageId: number, value: number): Finding {
 }
 
 function stragglerFinding(stageId: number, value: number): Finding {
-  return { type: 'straggler', stageId, impactBand: 'warning', metric: 'stragglerShare', value, recommendation: 'r' };
+  return testFinding({
+    type: 'straggler', stageId, impactBand: 'warning', metric: 'stragglerShare', value,
+    unit: 'pct', speculativeTasks: 0, stragglerCount: Math.round(value),
+    recommendation: 'r',
+  });
 }
 
 const TASK_DATA: TaskData = { metrics: [40, 0, 60, 0, 80, 0, 100, 0, 120, 0, 140, 0], fieldNames: ['duration', 'gcTime'] };

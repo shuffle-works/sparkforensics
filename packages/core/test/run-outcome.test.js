@@ -5,8 +5,8 @@ function job(id, succeeded, stageIds, exception) {
   return [id, { id, result: succeeded ? 'JobSucceeded' : 'JobFailed', succeeded, stageIds, exception }];
 }
 
-function stageFailed(stageId, value) {
-  return { type: 'stageFailed', stageId, impactBand: 'critical', value, recommendation: 'Inspect.' };
+function stageFailed(stageId, valueText) {
+  return { type: 'stageFailed', stageId, impactBand: 'critical', valueText, recommendation: 'Inspect.' };
 }
 
 describe('summarizeRunOutcome', () => {

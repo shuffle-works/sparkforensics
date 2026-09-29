@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
 import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { TableCell, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
 import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
 import { formatStageIdsLabel, pathBasename } from '@sparkforensics/core/format-utils.ts';
-import { findingActionLabel } from '@/view/finding-action-label';
+import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePill, StagePillGroup } from '@/view/StagePill';
 import { recommendationText } from '@sparkforensics/core/finding-names.ts';
@@ -33,10 +34,11 @@ const STACKED_TRAILING_CELL = 'max-sm:w-full max-sm:basis-full max-sm:pt-0 max-s
  * sets `stageIds`; a config-scope one sets `property`; app-level findings have
  * no location. */
 function locationTag(finding: Finding): string | null {
+  const stageIds = findingStageIds(finding);
   const stageLabel = finding.stageId != null
     ? `St.${finding.stageId}`
-    : finding.stageIds && finding.stageIds.length > 0
-      ? `St.${formatStageIdsLabel(finding.stageIds)}`
+    : stageIds && stageIds.length > 0
+      ? `St.${formatStageIdsLabel(stageIds)}`
       : null;
 
   // Two distinct duplicate-subtree groups can touch the same stage set with the
@@ -48,7 +50,7 @@ function locationTag(finding: Finding): string | null {
   }
 
   if (stageLabel) return stageLabel;
-  if (finding.property) return String(finding.property);
+  if (finding.type === 'configAudit') return finding.property;
   return null;
 }
 
@@ -71,7 +73,8 @@ function duplicateSubtreeIdentity(finding: Finding): string | null {
  * pills. A config-scope `property` (or no location) stays `locationTag`'s
  * plain text. */
 function LocationBadge({ finding, textClassName }: { finding: Finding; textClassName?: string }) {
-  const { stageId, stageIds } = finding;
+  const { stageId } = finding;
+  const stageIds = findingStageIds(finding);
   if (stageId != null) return <StagePill stageId={stageId} />;
   if (stageIds && stageIds.length > 0) {
     const identity = duplicateSubtreeIdentity(finding);

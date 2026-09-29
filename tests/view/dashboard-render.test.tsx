@@ -7,6 +7,7 @@ import App from '@/App';
 import { auditConfig } from '@sparkforensics/core/analyzer.ts';
 import { store, emptyAppModel } from '@/store/store';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { testFinding, unknownTypeFinding } from './_shared/finding';
 
 function CriticalAlert() {
   return <h3>Critical alert</h3>;
@@ -35,22 +36,22 @@ vi.mock('@/view/detector-registry', async (importOriginal) => {
     ...actual,
     REGISTRY: {
       ...actual.REGISTRY,
-      criticalAlert: { component: CriticalAlert, region: 'action' as const, widgetId: 'critical-alert', widgetTitle: 'Critical alert', findingLabel: 'critical alert', routeable: false },
-      warningAlert: { component: WarningAlert, region: 'action' as const, widgetId: 'warning-alert', widgetTitle: 'Warning alert', findingLabel: 'warning alert', routeable: false },
-      infoAlert: { component: InfoAlert, region: 'action' as const, widgetId: 'info-alert', widgetTitle: 'Info alert', findingLabel: 'info alert', routeable: false },
-      cleanAlert: { component: CleanAlert, region: 'action' as const, widgetId: 'clean-alert', widgetTitle: 'Clean alert', findingLabel: 'clean alert', routeable: false },
+      criticalAlert: { component: CriticalAlert, region: 'action' as const, widgetId: 'critical-alert', routeable: false },
+      warningAlert: { component: WarningAlert, region: 'action' as const, widgetId: 'warning-alert', routeable: false },
+      infoAlert: { component: InfoAlert, region: 'action' as const, widgetId: 'info-alert', routeable: false },
+      cleanAlert: { component: CleanAlert, region: 'action' as const, widgetId: 'clean-alert', routeable: false },
     },
     orderedWidgets: () => [
-      { component: actual.REGISTRY.spill.component, region: 'action' as const, widgetId: 'spill', widgetTitle: 'Spill', findingLabel: 'spill', type: 'spill' },
-      { component: actual.REGISTRY.skew.component, region: 'action' as const, widgetId: 'skew', widgetTitle: 'Task Skew', findingLabel: 'task skew', type: 'skew' },
-      { component: CriticalAlert, region: 'action' as const, widgetId: 'critical-alert', widgetTitle: 'Critical alert', findingLabel: 'critical alert', type: 'criticalAlert' },
-      { component: WarningAlert, region: 'action' as const, widgetId: 'warning-alert', widgetTitle: 'Warning alert', findingLabel: 'warning alert', type: 'warningAlert' },
-      { component: InfoAlert, region: 'action' as const, widgetId: 'info-alert', widgetTitle: 'Info alert', findingLabel: 'info alert', type: 'infoAlert' },
-      { component: CleanAlert, region: 'action' as const, widgetId: 'clean-alert', widgetTitle: 'Clean alert', findingLabel: 'clean alert', type: 'cleanAlert' },
-      { component: actual.REGISTRY.configAudit.component, region: 'action' as const, widgetId: 'config-audit', widgetTitle: 'Config Sanity', findingLabel: 'config audit', type: 'configAudit' },
+      { component: actual.REGISTRY.spill.component, region: 'action' as const, widgetId: 'spill', type: 'spill' },
+      { component: actual.REGISTRY.skew.component, region: 'action' as const, widgetId: 'skew', type: 'skew' },
+      { component: CriticalAlert, region: 'action' as const, widgetId: 'critical-alert', type: 'criticalAlert' },
+      { component: WarningAlert, region: 'action' as const, widgetId: 'warning-alert', type: 'warningAlert' },
+      { component: InfoAlert, region: 'action' as const, widgetId: 'info-alert', type: 'infoAlert' },
+      { component: CleanAlert, region: 'action' as const, widgetId: 'clean-alert', type: 'cleanAlert' },
+      { component: actual.REGISTRY.configAudit.component, region: 'action' as const, widgetId: 'config-audit', type: 'configAudit' },
       // memoryUtilization is always-mounted, so this entry is filtered out of
       // componentWidgets and reaches the DOM via Alerts.tsx's reference grid instead.
-      { component: actual.REGISTRY.memoryUtilization.component, region: 'reference' as const, widgetId: 'memory-utilization', widgetTitle: 'Memory Utilization', findingLabel: 'memory utilization', type: 'memoryUtilization' },
+      { component: actual.REGISTRY.memoryUtilization.component, region: 'reference' as const, widgetId: 'memory-utilization', type: 'memoryUtilization' },
     ],
   };
 });
@@ -145,9 +146,9 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
   showAllEvidence();
   const user = userEvent.setup();
   const catalog: Finding[] = [
-    { type: 'infoAlert', stageId: 1, impactBand: 'info' },
-    { type: 'warningAlert', stageId: 1, impactBand: 'warning' },
-    { type: 'criticalAlert', stageId: 1, impactBand: 'critical' },
+    unknownTypeFinding({ type: 'infoAlert', stageId: 1, impactBand: 'info' }),
+    unknownTypeFinding({ type: 'warningAlert', stageId: 1, impactBand: 'warning' }),
+    unknownTypeFinding({ type: 'criticalAlert', stageId: 1, impactBand: 'critical' }),
   ];
   store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
 
@@ -176,7 +177,8 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
 
   await user.click(screen.getByRole('button', { name: /clean checks/i }));
   expect(screen.queryByRole('heading', { name: 'Clean alert' })).not.toBeInTheDocument();
-  expect(screen.getByText('Clean alert')).toBeInTheDocument();
+  // A test-double type has no presentation row, so its row is labeled with the raw type.
+  expect(screen.getByText('CleanAlert')).toBeInTheDocument();
   // Cache Storage, Memory Utilization, and Executor Utilization all have no
   // finding here, so each shows as an ordinary Clean-checks row (the row
   // label itself still comes from the finding-type name).
@@ -248,7 +250,7 @@ test('Config Audit ranks by its real impact band inside Suggested Improvements, 
     resources: { dynamicAllocationEnabled: false, shuffleServiceEnabled: false },
   };
   const configFindings: Finding[] = [
-    { type: 'configAudit', property: 'spark.shuffle.service.enabled', stageId: null, impactBand: 'critical', recommendation: 'Enable the shuffle service.' },
+    testFinding({ type: 'configAudit', property: 'spark.shuffle.service.enabled', valueText: 'false', stageId: null, impactBand: 'critical', recommendation: 'Enable the shuffle service.' }),
   ];
   store.setState({ status: 'ready', appModel, catalog: [], configFindings });
 
@@ -256,10 +258,10 @@ test('Config Audit ranks by its real impact band inside Suggested Improvements, 
   await waitForDashboard();
 
   const findingsPanel = screen.getByRole('tabpanel', { name: 'Findings' });
-  // Config Sanity is code-split (React.lazy); its chunk resolves asynchronously.
-  expect(await within(findingsPanel).findByRole('heading', { name: 'Config Sanity' })).toBeInTheDocument();
+  // Config Audit is code-split (React.lazy); its chunk resolves asynchronously.
+  expect(await within(findingsPanel).findByRole('heading', { name: 'Config Audit' })).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: /clean checks/i }));
-  expect(within(findingsPanel).queryByText('Config Sanity', { selector: '[data-testid^="clean-alert"] h3' })).not.toBeInTheDocument();
+  expect(within(findingsPanel).queryByText('Config Audit', { selector: '[data-testid^="clean-alert"] h3' })).not.toBeInTheDocument();
 });
 
 test('reads configFindings from the store rather than recomputing it from appModel.app', async () => {
@@ -267,7 +269,7 @@ test('reads configFindings from the store rather than recomputing it from appMod
   // Seeding configFindings with a finding it could never produce proves Dashboard
   // reads the slice, not the function.
   const configFindings: Finding[] = [
-    { type: 'configAudit', property: 'spark.serializer', impactBand: 'info', recommendation: 'x', stageId: null },
+    testFinding({ type: 'configAudit', property: 'spark.serializer', valueText: 'org.apache.spark.serializer.JavaSerializer', impactBand: 'info', recommendation: 'x', stageId: null }),
   ];
   store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [], configFindings });
 

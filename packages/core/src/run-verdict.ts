@@ -1,11 +1,11 @@
 // The run verdict: where to start, a short summary, and the top places to look, ranked by
 // potential savings (failures first on a failed run). Shared by the dashboard's verdict card and
 // the CLI/MCP evidence report, so both paths name the same first step in the same words.
-import { DETECTORS } from './detectors.ts';
+import { ENTRY_BY_TYPE } from './detectors.ts';
 import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
-import { coreFindingActionLabel } from './finding-action-label.ts';
+import { findingActionLabel } from './finding-action-label.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
-import { FINDING_NAMES, recommendationText } from './finding-names.ts';
+import { recommendationText } from './finding-names.ts';
 import { formatDuration, IMPACT_BAND_ORDER } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
 import { isEligible } from './recommendation-rollup.ts';
@@ -23,34 +23,17 @@ export const REFERENCE_DISPLAY_TYPES: ReadonlySet<string> = new Set([
   'memoryUtilization', 'utilization', 'coreLocality', 'cacheUtilization',
 ]);
 
-/** `broadcastSizing` never backs a finding; it emits these two types instead. */
-const BROADCAST_SIZING_EMITTED_TYPES = ['overBroadcast', 'underBroadcast'];
-
 /** Every emitted finding type in the board's widget display order: action region before
- * reference region, then ascending `DETECTORS` order (lowest order wins for a repeated type).
+ * reference region, then ascending order of the type's `ENTRY_BY_TYPE` entry.
  * The last tiebreak of the verdict ranking, so the CLI orders ties exactly as the dashboard. */
 export const FINDING_DISPLAY_ORDER: readonly string[] = (() => {
-  const orderByType = new Map<string, number>();
-  for (const detector of DETECTORS) {
-    const emitted = detector.type === 'broadcastSizing' ? BROADCAST_SIZING_EMITTED_TYPES : [detector.type];
-    for (const type of emitted) {
-      const existing = orderByType.get(type);
-      if (existing === undefined || detector.order < existing) orderByType.set(type, detector.order);
-    }
-  }
   const region = (type: string) => (REFERENCE_DISPLAY_TYPES.has(type) ? 1 : 0);
-  return [...orderByType.entries()]
-    .sort(([a, orderA], [b, orderB]) => region(a) - region(b) || orderA - orderB)
+  return [...ENTRY_BY_TYPE.entries()]
+    .sort(([a, entryA], [b, entryB]) => region(a) - region(b) || entryA.order - entryB.order)
     .map(([type]) => type);
 })();
 
 const DISPLAY_INDEX = new Map(FINDING_DISPLAY_ORDER.map((type, index) => [type, index]));
-
-/** A short imperative label for a finding ("Reduce shuffle size"), falling back to the
- * finding type's name, then its raw type. */
-export function findingActionLabel(finding: Finding): string {
-  return coreFindingActionLabel(finding) ?? FINDING_NAMES[finding.type] ?? finding.type;
-}
 
 // The high end of the finding's own occupancy-clipped wall-clock estimate, the figure the
 // "Potential savings" line leads with. `null` with no quantified time claim
@@ -106,10 +89,11 @@ export interface NextStep {
 export function locationKey(finding: Finding): { key: string; stageId: number | null } {
   const stageId = singleStageId(finding);
   if (stageId != null) return { key: `stage:${stageId}`, stageId };
-  if (finding.stageIds && finding.stageIds.length > 1) {
+  if ('stageIds' in finding && finding.stageIds.length > 1) {
     return { key: `stages:${finding.type}:${[...finding.stageIds].sort((a, b) => a - b).join(',')}`, stageId: null };
   }
-  return { key: finding.variant ? `app:${finding.type}:${finding.variant}` : `app:${finding.type}`, stageId: null };
+  const variant = 'variant' in finding ? finding.variant : undefined;
+  return { key: variant ? `app:${finding.type}:${variant}` : `app:${finding.type}`, stageId: null };
 }
 
 /** 0 for a failure at a stage of a failed job (what stopped the job), 1 for

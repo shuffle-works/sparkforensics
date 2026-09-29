@@ -8,13 +8,14 @@ import { DocsProvider } from '@/view/DocsContext';
 import { detectorInfoByType } from '@sparkforensics/core/detector-docs.ts';
 import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import { testFinding } from './_shared/finding';
 
 function skewFinding(stageId: number, impactBand: ImpactBand): Finding {
-  return { type: 'skew', stageId, impactBand, metric: 'p95Median', value: 5, recommendation: `Rebalance Stage ${stageId}.` } as Finding;
+  return testFinding({ type: 'skew', stageId, impactBand, metric: 'p95Median', value: 5, recommendation: `Rebalance Stage ${stageId}.` });
 }
 
 function gcFinding(stageId: number, impactBand: ImpactBand): Finding {
-  return { type: 'gc', stageId, impactBand, direction: 'high', value: 15, recommendation: `Investigate GC in Stage ${stageId}.` } as Finding;
+  return testFinding({ type: 'gc', stageId, impactBand, value: 15, recommendation: `Investigate GC in Stage ${stageId}.` });
 }
 
 const DETECTORS = detectorInfoByType();
@@ -29,8 +30,11 @@ describe('computeActiveWidgets', () => {
   });
 
   it('includes memory-utilization/executor-utilization once they have an active finding (no longer always-mounted)', () => {
-    const memoryFinding = { type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', value: 75, recommendation: 'r' } as Finding;
-    const utilizationFinding = { type: 'utilization', stageId: null, impactBand: 'info', value: 42, recommendation: 'r' } as Finding;
+    const memoryFinding = testFinding({ type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', value: 75, recommendation: 'r' });
+    const utilizationFinding = testFinding({
+      type: 'utilization', stageId: null, impactBand: 'info', value: 42, recommendation: 'r',
+      utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42,
+    });
     const widgets = computeActiveWidgets([memoryFinding, utilizationFinding], [], DETECTORS);
     expect(widgets.map((w) => w.widgetId)).toEqual(expect.arrayContaining(['memory-utilization', 'executor-utilization']));
   });

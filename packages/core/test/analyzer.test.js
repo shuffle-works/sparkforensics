@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { analyze, auditConfig } from '../src/analyzer.js';
 import { DETECTORS, detectorCatalog } from '../src/detectors.js';
+import { detectorInfoByType } from '../src/detector-docs.js';
 import { formatBytes } from '../src/format-utils.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
@@ -250,12 +251,47 @@ describe('analyze: stage slowness fallback + suppression (§6)', () => {
     expect(run(15, 4).impactEstimate.wallClock.high).toBeCloseTo(15 * min * (12 / 16), 6);
     expect(run(61, 100).impactBand).toBe('info');
   });
+  const slowHostStage = (hotTasks) => {
+    const rest = (50 - hotTasks) / 2;
+    const hostStats = [ { host: 'hot', taskCount: hotTasks, totalDuration: 8e6 }, { host: 'b', taskCount: rest, totalDuration: rest * 1000 }, { host: 'c', taskCount: rest, totalDuration: rest * 1000 } ];
+    return makeStage({ id: 1, taskCount: 50, hostStats, executorRunTime: 70 * min * 4, executorStats: Array.from({ length: 4 }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 })), submittedAt: 0, completedAt: 70 * min }); // wall-clock basis per Decision 7
+  };
+  const runTuned = (stage, thresholds) => analyze(makeApp(), new Map([[1, stage]]), [], [], new Map(), new Map(), null, { thresholds });
   it('is suppressed when a slowHost finding exists on the same stage', () => {
-    const hostStats = [ { host: 'hot', taskCount: 40, totalDuration: 8e6 }, { host: 'b', taskCount: 5, totalDuration: 5000 }, { host: 'c', taskCount: 5, totalDuration: 5000 } ];
-    const stage = makeStage({ id: 1, taskCount: 50, hostStats, executorRunTime: 70 * min * 4, executorStats: Array.from({ length: 4 }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 })), submittedAt: 0, completedAt: 70 * min }); // wall-clock basis per Decision 7
-    const catalog = analyze(makeApp(), new Map([[1, stage]]), [], []);
+    const catalog = analyze(makeApp(), new Map([[1, slowHostStage(40)]]), [], []);
     expect(catalog.some(b => b.type === 'slowHost')).toBe(true);
     expect(catalog.some(b => b.type === 'stageSlowness')).toBe(false);
+  });
+  it('labels a stageSlowness finding that a tightened slowHost lets through with slowHost\'s tuned thresholds', () => {
+    // Tuned so slowHost can't fire (3 hosts < 4): the stage gets its stageSlowness finding back,
+    // and that finding exists only because of the override.
+    const tuned = runTuned(slowHostStage(40), { slowHost: { minHosts: 4 } });
+    expect(tuned.some(b => b.type === 'slowHost')).toBe(false);
+    const slowness = tuned.find(b => b.type === 'stageSlowness');
+    expect(slowness.tunedThresholds).toEqual({ 'slowHost.minHosts': { value: 4, default: 3 } });
+    expect(slowness.validationRequired).toContain('Produced with tuned thresholds: slowHost.minHosts 4 (default 3).');
+    expect(analyze(makeApp(), new Map([[1, slowHostStage(8)]]), [], []).find(b => b.type === 'stageSlowness').tunedThresholds).toBeUndefined();
+  });
+  it('estimates a stageSlowness finding the suppression link surfaces, keeping its tuned label', () => {
+    // 100 cores for 50 tasks: more partitions could halve the 70-minute stage's task-active time.
+    const executorsAdded = [{ executorId: '1', timestamp: 0, totalCores: 100 }];
+    const stage = { ...slowHostStage(40), inputBytes: 1e9 };
+    const slowness = analyze(makeApp(), new Map([[1, stage]]), executorsAdded, [], new Map(), new Map(), null,
+      { thresholds: { slowHost: { minHosts: 4 } } }).find(b => b.type === 'stageSlowness');
+    expect(slowness.tunedThresholds).toEqual({ 'slowHost.minHosts': { value: 4, default: 3 } });
+    expect(slowness.validationRequired).toContain('estimate is unvalidated');
+    expect(slowness.impactEstimate).toMatchObject({ estimateMethod: 'modeled', rawWaste: { value: 35 * min, unit: 'ms' } });
+    expect(slowness.impactEstimate.wallClock.high).toBeCloseTo(35 * min, 6);
+  });
+  it('drops the stageSlowness finding when a loosened slowHost starts flagging the stage', () => {
+    // The hot host runs 8 of 50 tasks, below the default 20% share, so only stageSlowness fires.
+    const stage = slowHostStage(8);
+    const defaults = analyze(makeApp(), new Map([[1, stage]]), [], []);
+    expect(defaults.some(b => b.type === 'slowHost')).toBe(false);
+    expect(defaults.some(b => b.type === 'stageSlowness')).toBe(true);
+    const loosened = runTuned(stage, { slowHost: { minShare: 0.1 } });
+    expect(loosened.find(b => b.type === 'slowHost').tunedThresholds).toEqual({ minShare: { value: 0.1, default: 0.2 } });
+    expect(loosened.some(b => b.type === 'stageSlowness')).toBe(false);
   });
 
   it('scores stageSlowness off real wall-clock duration, not per-executor average (Decision 7)', () => {
@@ -1482,16 +1518,36 @@ describe('detector contract', () => {
     }
   });
 
+  it('every entry emits its own type, except broadcastSizing, which emits its two rules', () => {
+    for (const d of DETECTORS) {
+      const expected = d.type === 'broadcastSizing' ? ['overBroadcast', 'underBroadcast'] : [d.type];
+      expect(d.emits, d.type).toEqual(expected);
+    }
+  });
+
+  it('detectorInfoByType covers exactly the emitted finding types, each with its entry scope', () => {
+    const expected = new Set(DETECTORS.flatMap((d) => d.emits));
+    const info = detectorInfoByType();
+    expect(new Set(Object.keys(info))).toEqual(expected);
+    for (const d of DETECTORS) for (const type of d.emits) expect(info[type].scope, type).toBe(d.scope);
+  });
+
   it('every finding analyze() returns carries a docAnchor string', () => {
     const findings = analyze(sampleApp, sampleStages, sampleAdded, sampleRemoved, sampleJobs);
     for (const f of findings) expect(typeof f.docAnchor).toBe('string');
   });
 
-  it('slowHost is declared before stageSlowness in DETECTORS (suppression precondition)', () => {
-    const iHost = DETECTORS.findIndex(d => d.type === 'slowHost');
-    const iSlow = DETECTORS.findIndex(d => d.type === 'stageSlowness');
-    expect(iHost).toBeGreaterThanOrEqual(0);
-    expect(iSlow).toBeGreaterThan(iHost);
+  it('every suppressedBy names a stage-scope entry, from a stage-scope entry', () => {
+    const suppressed = DETECTORS.filter((d) => d.suppressedBy);
+    expect(suppressed.map((d) => [d.type, d.suppressedBy])).toEqual([['stageSlowness', 'slowHost']]);
+    for (const d of suppressed) {
+      expect(d.scope).toBe('stage');
+      expect(DETECTORS.find((e) => e.type === d.suppressedBy)?.scope).toBe('stage');
+    }
+  });
+
+  it('every entry\'s default thresholds are frozen', () => {
+    for (const d of DETECTORS) expect(Object.isFrozen(d.thresholds), d.type).toBe(true);
   });
 
   it('detectorCatalog() returns one metadata row per detector entry', () => {
@@ -2510,10 +2566,11 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
     expect(b.recommendation).toContain(`${b.value} minutes`);
   });
 
-  it('stageFailed: value carries the raw reason, recommendation stays reason-free', () => {
+  it('stageFailed: valueText carries the raw reason, value stays unset, recommendation stays reason-free', () => {
     const stages = new Map([[1, makeStage({ stageFailureReason: 'Job aborted due to stage failure', failedTasks: 0 })]]);
     const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'stageFailed');
-    expect(b.value).toBe('Job aborted due to stage failure');
+    expect(b.valueText).toBe('Job aborted due to stage failure');
+    expect(b.value).toBeUndefined();
     expect(b.recommendation).not.toContain('Job aborted due to stage failure');
     expect(b.recommendation).toContain('Inspect the driver log');
   });
@@ -2607,5 +2664,91 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
     const app = { config: { 'spark.executor.memory': '4g' }, resources: { executor: {}, driver: {}, dynamicAllocationEnabled: null, shuffleServiceEnabled: null, serializer: null } };
     const f = auditConfig(app).find(x => x.property === 'spark.serializer');
     expect(f.recommendation).toContain('the default JavaSerializer');
+  });
+});
+
+describe('analyze: threshold overrides', () => {
+  // 3.5x P95/median: over skew's default 3x ratioWarn.
+  const skewStages = () => new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350 })]]);
+  const run = (thresholds) => analyze(makeApp(), skewStages(), [], [], new Map(), new Map(), null, { thresholds });
+
+  it('runs every detector on its own thresholds when no override is passed, labeling nothing', () => {
+    const findings = run(undefined);
+    expect(findings.some((f) => f.type === 'skew')).toBe(true);
+    for (const f of findings) expect(f.tunedThresholds, f.type).toBeUndefined();
+  });
+
+  it('a raised threshold stops the finding; a lowered one keeps it, labeled with value and default', () => {
+    expect(run({ skew: { ratioWarn: 4 } }).some((f) => f.type === 'skew')).toBe(false);
+    const [skew] = run({ skew: { ratioWarn: 2 } }).filter((f) => f.type === 'skew');
+    expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
+    expect(skew.validationRequired).toContain('0.5% runtime-floor threshold');
+    expect(skew.validationRequired).toContain('Produced with tuned thresholds: ratioWarn 2 (default 3).');
+    expect(skew.validationRequired).toContain('estimate is unvalidated');
+  });
+
+  it('estimates a tuned finding exactly as its untuned twin, with the label and caveat attached', () => {
+    const tuned = run({ skew: { ratioWarn: 2 } }).find((f) => f.type === 'skew');
+    const untuned = run(undefined).find((f) => f.type === 'skew');
+    expect(tuned.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
+    expect(tuned.validationRequired).toContain('estimate is unvalidated');
+    expect(tuned.impactEstimate.wallClock).not.toBeNull();
+    expect(tuned.impactEstimate).toEqual(untuned.impactEstimate);
+    expect(tuned.impactBand).toBe(untuned.impactBand);
+  });
+
+  it('labels only the tuned detector\'s findings, and not an override equal to the default', () => {
+    const findings = run({ skew: { ratioWarn: 3 }, tinyTask: { minTasks: 1 } });
+    expect(findings.find((f) => f.type === 'skew').tunedThresholds).toBeUndefined();
+    for (const f of findings.filter((f) => f.type !== 'tinyTask')) expect(f.tunedThresholds, f.type).toBeUndefined();
+  });
+
+  it('leaves the shared defaults untouched', () => {
+    const before = JSON.stringify(DETECTORS.map((d) => d.thresholds));
+    run({ skew: { ratioWarn: 2 } });
+    expect(JSON.stringify(DETECTORS.map((d) => d.thresholds))).toBe(before);
+    expect(run(undefined).find((f) => f.type === 'skew').tunedThresholds).toBeUndefined();
+  });
+
+  it('refuses an override the entry does not declare, or one shaped unlike its default', () => {
+    expect(() => run({ skew: { ratioWarm: 2 } })).toThrow('Detector skew has no threshold "ratioWarm".');
+    expect(() => run({ skew: { constructor: 2 } })).toThrow('Detector skew has no threshold "constructor".');
+    expect(() => run({ skew: { toString: 2 } })).toThrow('Detector skew has no threshold "toString".');
+    expect(() => run({ slowHost: { ratioTiers: [1, 2] } })).toThrow('Threshold slowHost.ratioTiers must have the same shape as its default.');
+    expect(() => run({ skew: { ratioWarn: [2] } })).toThrow('must have the same shape');
+  });
+
+  it('grades a tuned straggler finding against its tuned runtime floors', () => {
+    // 8% stragglers; a 200ms tail on the 5s fixture run is 4%, over the default 2% critical floor.
+    const stages = () => new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 8, taskDurationMax: 300 })]]);
+    const straggler = (thresholds) => analyze(makeApp(), stages(), [], [], new Map(), new Map(), null, { thresholds })
+      .find((f) => f.type === 'straggler');
+    expect(straggler(undefined).impactBand).toBe('critical');
+    expect(straggler({ straggler: { floorPctCrit: 0.5 } }).impactBand).toBe('warning');
+    // An 8% share fires past shareWarn whatever the floor; a 5% warn floor now grades its 4% tail info.
+    expect(straggler({ straggler: { floorPctWarn: 0.05, floorPctCrit: 0.1 } }).impactBand).toBe('info');
+  });
+
+  it('states the tuned floor in the finding\'s own caveat text', () => {
+    const gcStage = () => new Map([[1, makeStage({ executorRunTime: 120000, gcPct: 20 })]]);
+    const gc = (thresholds) => analyze(makeApp(), gcStage(), [], [], new Map(), new Map(), null, { thresholds })
+      .find((f) => f.type === 'gc');
+    expect(gc(undefined).validationRequired).toBe('This finding is gated by a 10-second minimum-runtime floor, our own noise floor for this metric.');
+    const tuned = gc({ gc: { minRunTimeMs: 60000 } }).validationRequired;
+    expect(tuned).toContain('a 60-second minimum-runtime floor');
+    expect(tuned).not.toContain('10-second');
+    expect(run({ skew: { ratioWarn: 2, floorPctWarn: 0.01 } }).find((f) => f.type === 'skew').validationRequired)
+      .toContain('gated by a 1% runtime-floor threshold');
+  });
+
+  it('adds the unvalidated-estimate caveat only to a tuned finding that carries an estimate figure', () => {
+    // 10% failed tasks: over a tuned 1% warnRate. failures has no waste model, so no figure to caveat.
+    const stages = new Map([[1, makeStage({ taskCount: 100, failedTasks: 10 })]]);
+    const failures = analyze(makeApp(), stages, [], [], new Map(), new Map(), null, { thresholds: { failures: { warnRate: 0.01 } } })
+      .find((f) => f.type === 'failures');
+    expect(failures.tunedThresholds).toEqual({ warnRate: { value: 0.01, default: 0.05 } });
+    expect(failures.impactEstimate.basis).toBe('informational');
+    expect(failures.validationRequired ?? '').toContain('Produced with tuned thresholds: warnRate 0.01 (default 0.05).');
+    expect(failures.validationRequired ?? '').not.toContain('estimate');
   });
 });

@@ -3,17 +3,100 @@
 `packages/core/src/detectors.ts` is the single source of Spark-optimization logic: one
 declarative `DETECTORS` entry per pattern, each carrying `type`, `scope`
 (`stage` / `app` / `config` / `sql`), `order`, `fixEffort`, a `thresholds`
-object, impactBand/copy, a `docAnchor`, and a co-located `detect()` method.
+object, impactBand/copy, a `docAnchor`, an `emits` list, and co-located
+`detect()` and `estimate()` functions.
+
+Each entry is built by the helper for its scope: `defineStageDetector`,
+`defineSqlDetector`, `defineAppDetector` or `defineConfigDetector`. The
+helper sets `scope`, infers the thresholds type from the entry's own
+`thresholds` literal, and types `detect` as a function property, so its
+parameters are checked strictly rather than bivariantly:
+
+| Scope | `detect` signature |
+| --- | --- |
+| `stage` | `detect(stage, ctx, thresholds)` |
+| `sql` | `detect(sqlExec, ctx, thresholds)` |
+| `app` | `detect(ctx, thresholds)` |
+| `config` | `detect(target, thresholds)`, where `target` is `{ app }` |
+
+`ctx` (`DetectorCtx`) is required, and its `app` is nullable as on
+`AppModel.app`, so a detector that reads the app without a guard, reads a
+threshold its entry doesn't declare, or expects another scope's target fails
+to compile. `detect` never reads `this`. The helper freezes the entry's
+`thresholds` and adds `withThresholds(overrides?)`, which returns `detect`
+with the thresholds bound: the entry's own, or the caller's overrides merged
+over them (see [Tuning thresholds](#tuning-thresholds)). Runners such as
+`analyze()` call only that.
+
+`estimate(finding, ctx)` prices one of the entry's own findings: `finding` is
+typed as the `Finding` member of a type the entry `emits`, and `ctx`
+(`EstimateCtx`: `stages`, `occupancy`, `totalCores`) is the one occupancy
+sweep `analyze()` builds per run. It returns an `ImpactEstimate` or null
+(see [Impact estimation](./impact-estimation.md)). Every entry must declare
+one; an entry with no waste model passes `noWasteModel`. `estimateImpact()`
+runs it after suppression, keyed by emitted type. The same `EstimateCtx`
+reaches `detect()` as `ctx.impact`, so a runtime floor can gate on the
+estimate the finding will display: `skew` and `straggler` build their tail
+claim once (`skewTailClaim`/`stragglerTailClaim`) and both their floor and
+their `estimate()` read it through `tailClaimImpact`. Shared model constants
+and helpers live in `packages/core/src/impact-model.ts`.
+
+`DETECTORS` is declared `as const satisfies readonly Detector[]`, so each
+entry keeps its literal `type` and `emits`. Two unions derive from it:
+`DetectorType` (every entry's own `type`) and `FindingType` (every type an
+entry's `emits` lists, the finding types that actually appear on findings).
+`emits` is `[type]` for every entry except `broadcastSizing`, whose one plan
+walk emits `overBroadcast` and `underBroadcast` and never its own name. Every
+per-type lookup keys on the emitted `FindingType`, never on `DetectorType`:
+code that needs the emitted types of an entry reads its `emits` list.
+Code that iterates entries generically, such as `analyze()`, reads them
+through the `Detector` type, a union over scopes with the thresholds type
+erased, `detect` left off and `estimate` taking any `Finding`, so switching
+on `scope` narrows the bound function `withThresholds()` returns.
+
+How a finding type is presented is registered once, in
+`FINDING_PRESENTATION` (`packages/core/src/finding-presentation.ts`), typed
+`{ [T in FindingType]: FindingPresentation<T> }` so the compiler requires
+exactly one row per emitted type. A row holds the type's `name`, board
+`tag`, `actionLabel(finding)`, `genericRecommendation(finding)` and
+`thresholdSummary(thresholds)`, each finding argument typed as that type's
+`Finding` member and `thresholds` as the emitting entry's own `thresholds`.
+`FINDING_NAMES`, `TYPE_TAG_MAP`, `getThresholdSummary`, `findingActionLabel`
+and `coreFindingGenericRecommendation` all read it. The table sits beside
+`DETECTORS` rather than on its entries because the HTML export renders
+names, tags and labels but may not reach `detectors.ts` (see
+[Run interpretation](./state-and-history.md#run-interpretation)); its
+import from `detectors.ts` is type-only. A detector's `scope` and `order`
+reach renderers through `detectorInfoByType()` (`detector-docs.ts`), keyed
+by emitted type, which the run interpretation ships; the Alerts clean-check
+grouping reads `detectors[type].scope`.
+
+Each finding type has its own shape in `packages/core/src/finding-types.ts`:
+`Finding` is a union discriminated on `type`, and a compile-time check in
+`detectors.ts` fails when its members and `FindingType` differ. Each member
+splits into a `<Type>Evidence` interface, the fields the evidence report
+publishes (listed again in `EVIDENCE_KEYS` in `evidence-report.ts`, checked
+both ways), and fields declared only on `<Type>Finding`, which other core
+modules read but the report never publishes. `value` is always a magnitude;
+a text-valued finding (`stageFailed`, `configAudit`, `incompleteRun`) sets
+`valueText` instead. So a new detector type needs an `emits` entry, an
+`estimate()` on that entry that covers it, a `finding-types.ts` member, an `EVIDENCE_KEYS` entry, an `ID_DISCRIMINATORS`
+entry in `analyzer.ts`, a `FINDING_PRESENTATION` row and a view `REGISTRY`
+entry. The compiler
+reports each one that is missing. The view narrows with
+`findingsOfType(catalog, type)` (`packages/core/src/findings-of-type.ts`)
+rather than re-declaring a finding's fields.
+
 Both consumers are thin loops over that array:
 
 - `packages/core/src/analyzer.ts`: `analyze()` runs every entry regardless of scope, skipping
-  only `inScorecard:false` ones; `auditConfig()` separately runs the
-  `scope:'config'` entries. The four `configAudit` entries stay out of the
+  only `inScorecard:false` ones, then applies `suppressedBy` (below);
+  `auditConfig()` separately runs the `scope:'config'` entries. The four `configAudit` entries stay out of the
   bottleneck catalog because each sets `inScorecard:false`, not because of
   `scope:'config'`: a future config-scope detector without that flag would run
   through `analyze()` too. Each finding is stamped with its entry's `docAnchor`.
 - `src/view/detector-registry.tsx`: a `REGISTRY: Record<findingType,
-  {component, region}>` replaces `dashboard-renderer.js`'s `render:`
+  {component, region, widgetId, routeable}>`, view-only concerns, replaces `dashboard-renderer.js`'s `render:`
   bindings, one entry per emitted finding type. `orderedWidgets()` walks
   `DETECTORS` ascending by `order`, then sorts `action`-region components
   before `reference`-region ones. Every `finding.type` maps to its own
@@ -36,12 +119,14 @@ Both consumers are thin loops over that array:
   branching, since it iterates the static `DETECTORS` import, not the runtime
   `catalog`.
 
-Thresholds live only in each entry's `thresholds`; see
-[Bottleneck thresholds](#bottleneck-thresholds-spec-§4).
+Default thresholds live only in each entry's `thresholds`; see
+[Bottleneck thresholds](#bottleneck-thresholds-spec-§4). Only the CLI and
+the MCP server can override them, per run: see
+[Tuning thresholds](#tuning-thresholds).
 
 ## Confidence disclosure
 
-A `Detector` entry (or the `Finding` it returns) may carry `confidence: 'low' | 'medium' |
+A `Finding` may carry `confidence: 'low' | 'medium' |
 'high'` plus a `validationRequired` string. `RowStatusCluster` (`src/view/RowStatusCluster.tsx`)
 is the one place that renders it, gated to Advanced density: a plain "&lt;confidence&gt;
 confidence" badge whose tooltip carries the full `validationRequired` text. A finding with no
@@ -86,24 +171,65 @@ executor's capacity against its replacement's; the peak-concurrent sweeps don't.
 
 ## Cross-detector suppression
 
-An entry may declare an optional `suppressWhen(finding, out)` method.
-`analyzer.ts`'s `push()`, the single choke point every finding passes through,
-calls it per-finding, after the null guard and before the push, and drops the
-finding silently when it returns `true`. `out` is the findings accumulated so
-far. Since `analyze()`'s loop is detector-outer / stage-inner, every finding
-from a detector declared earlier in `DETECTORS` is already in `out` by the time
-a later detector runs, for every stage. That makes the pattern purely
-declaration-order-driven: the suppressing detector must be declared earlier in
-the `DETECTORS` array than the suppressed one.
+An entry may name another entry's `type` in `suppressedBy`. Once every
+detector has run, `analyze()`'s `applySuppression()` drops each of that
+entry's findings on a stage where the named detector emitted a finding. It
+reads the unsuppressed findings, so neither the two entries' declaration
+order nor the order suppressions apply in changes the result, and `order`
+stays a display field only. A compile-time check in `detectors.ts`
+(`SuppressorsAreDetectors`) fails when `suppressedBy` names no entry.
 
-`stageSlowness` uses this to defer to `slowHost`. It is spliced immediately
-after the `slowHost` entry regardless of its `order` field (`order` only
-controls render sequencing, not evaluation order), and
-`tests/analyzer.test.js`'s "detector contract" suite asserts the array-index
-ordering so a future reorder can't silently break the suppression. The
-mechanism is deliberately minimal: a same-array, predicate-in-`push()` filter,
-not a general dependency graph. `auditConfig()`'s own `push()` call is
-unaffected, since `scope:'config'` entries declare no `suppressWhen`.
+`stageSlowness` sets `suppressedBy: 'slowHost'`: a stage `slowHost` already
+explains needs no generic "this stage is slow" finding. Suppression follows
+what `slowHost` actually emitted, so a run whose `slowHost` thresholds are
+tuned so it can't fire gets its `stageSlowness` findings back. The
+mechanism is deliberately minimal (same-stage, one named suppressor per
+entry), not a general dependency graph. `auditConfig()` doesn't apply it,
+since no `scope:'config'` entry sets `suppressedBy`.
+
+## Tuning thresholds
+
+`analyze()`'s eighth argument is `{ thresholds?: ThresholdOverrides }`:
+per-entry overrides keyed by entry `type`, each a partial of that entry's
+own `thresholds`. Omitted, every entry runs its defaults; the dashboard
+never passes it. The CLI's and the MCP server's `--thresholds <file>` read a
+JSON file of that shape (`packages/core/src/cli/threshold-config.ts`) and
+validate it with `parseThresholdOverrides()`
+(`packages/core/src/threshold-overrides.ts`), which refuses an unknown
+detector or threshold, a negative or non-numeric value, a tier table of a
+different length or out of ascending order, and any `configAudit` override:
+those checks compare against Spark's own defaults, so there is nothing to
+tune. A file that can't be read or parsed refuses the run the same way. The
+[user guide](../../user-guide/getting-started.md#tuning-detector-thresholds)
+documents the file.
+
+A finding from an entry whose overrides move a threshold off its default
+carries `tunedThresholds` (`{ <name>: { value, default } }`), and once its
+estimate is attached the analyzer appends a caveat to its
+`validationRequired` naming the tuned values. When the finding has an
+estimate figure (wall-clock or raw waste), the caveat adds that impact
+estimates are calibrated against the default thresholds (see
+[Impact estimation](./impact-estimation.md)), so its estimate is
+unvalidated; an informational finding gets the label alone. An override
+equal to the default labels nothing. Tuning a
+`suppressedBy` target changes which of the suppressed entry's findings
+survive, so those findings carry the suppressor's tuned thresholds too,
+named `<suppressor>.<name>` (e.g. `slowHost.minHosts` on `stageSlowness`).
+Only that one link is followed. The
+evidence report repeats the label on the finding row, the clean check, the
+`detectors` catalog row (whose `thresholds` are then the effective ones)
+and in `summary.tunedThresholds`; see
+[Portable evidence report](./worker-protocol.md#portable-evidence-report-v1).
+
+A tuned `floorPctWarn`/`floorPctCrit` on `skew` or `straggler` also grades
+that entry's own findings in `deriveImpactBand` (`impact-band.ts`); every
+other finding keeps the run-wide default floors. `--max-skew` recomputes the
+ratio with the run's effective `minTasksForP95`, so the budget measures the
+same ratio the skew finding reports. Caveat text that names a threshold
+(`gc`, `skew`, `straggler`, `memoryUtilization`, `coreLocality`) and the
+`broadcastSizing` over-broadcast recommendation state the value the detector
+ran with. The HTML export still renders the
+default-threshold analysis.
 
 ## Per-operator duration attribution
 
@@ -220,9 +346,11 @@ whose `impactEstimate` carries a `wallClock` estimate (the common case for
 most rules below), `analyzer.ts` calls `deriveImpactBand()`
 (`packages/core/src/impact-band.ts`) immediately after `estimateImpact()`, which sets
 `.impactBand` purely from `wallClock.high` as a fraction of the app's total
-duration (`>= 2%` critical, `>= 0.5%` warning, else info: the same
-`floorPctWarn`/`floorPctCrit` values `skew`/`straggler` use for their own
-thresholds below). For those rules, the table below documents their firing
+duration (`>= 2%` critical, `>= 0.5%` warning, else info: `IMPACT_FLOOR_PCT_CRIT`/
+`IMPACT_FLOOR_PCT_WARN`, which `skew`'s `floorPctWarn` and `straggler`'s
+`floorPctWarn`/`floorPctCrit` default to, so a tail those gates admit grades
+at least warning; a tuned `skew` or `straggler` floor also grades that
+entry's own findings, see [Tuning thresholds](#tuning-thresholds)). For those rules, the table below documents their firing
 gate plus their fixed fallback constant, which surfaces only when this run's
 finding of that type didn't get a wallClock estimate (a stage excluded from
 the occupancy sweep). For rules whose finding type never gets
@@ -305,6 +433,15 @@ thresholds sit well above their disk counterparts at every tier.
 | Cache utilization: partial caching (this repo) | `numCachedPartitions / numPartitions < 0.90` (info) | `< 0.50` (warning) |
 | Cache utilization: disk spillover (this repo) | `diskSize / (memorySize + diskSize) > 0.15` (info), `MEMORY_AND_DISK*` only | `> 0.40` (warning) |
 | Cache utilization: storage unobserved | persisted RDDs, but no `SparkListenerBlockUpdated` for any `rdd_*` block and every RDD Info figure 0 (`spark.eventLog.logBlockUpdates.enabled` off on Spark 2.3+): a missing-evidence caveat, not a threshold | none (single tier, info) |
+
+The RDD Info cache figures on stage events (`Number of Cached Partitions`,
+`Memory Size`, `Disk Size`) are always 0 since Spark 2.3; Spark 1.x fills them
+only on `StageCompleted`. Real cache evidence is `SparkListenerBlockUpdated`,
+written only with `spark.eventLog.logBlockUpdates.enabled=true`
+(`recordBlockUpdate` in `event-handlers.ts`); the corpus
+`cache-memory-only`/`cache-memory-and-disk` logs carry it. Count a block's
+sizes only where its storage level says it lives: a drop to disk still reports
+the dropped bytes as `Memory Size`.
 
 Spill classification: ≥80% tasks with zero spill → `skew`; <20% zero →
 `volume`; else `unclassified`. The classification badge is always shown in

@@ -44,7 +44,7 @@ function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetPro
 
 /** Board section for `stageSlowness` findings: a stage whose wall-clock
  * duration crossed the absolute-duration floor, suppressed when `slowHost`
- * already fired for the same stage (see `detectors.ts`'s `suppressWhen`).
+ * already fired for the same stage (see `detectors.ts`'s `suppressedBy`).
  * Split out of the former combined `ExecutorTimeline.tsx`; see
  * `SlowHost.tsx`, `Straggler.tsx`, `SpeculationWaste.tsx`, and
  * `ColdStart.tsx` for its four siblings. */

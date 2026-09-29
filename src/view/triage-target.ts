@@ -1,3 +1,4 @@
+import { findingName } from '@sparkforensics/core/finding-names.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import type { InterpretationState } from '@/store/store';
 import { REGISTRY } from './detector-registry';
@@ -25,7 +26,7 @@ export function triageTargetFor(finding: Finding): TriageTarget | null {
     finding,
     widgetId: entry.widgetId,
     region: entry.region,
-    findingLabel: entry.findingLabel,
+    findingLabel: findingName(finding.type),
     stageId: typeof finding.stageId === 'number' ? finding.stageId : null,
     recommendation,
   };
