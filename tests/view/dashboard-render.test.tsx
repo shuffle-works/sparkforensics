@@ -368,14 +368,13 @@ test('Reference-section grid items render with collapsedTile', async () => {
 
   await user.click(screen.getByRole('tab', { name: 'Full app report' }));
 
-  // All six Reference-section widgets should render with collapsedTile class.
+  // All five Reference-section widgets should render with collapsedTile class.
   // collapsedTile makes the card start collapsed with a fixed min height.
   const referenceWidgets = [
     'Evidence availability',
     'ETL Phase Attribution',
     'What-If Executor Scaling',
     'Compute Efficiency',
-    'Wasted Core-Hours',
     'Core-Usage Distribution',
   ];
 

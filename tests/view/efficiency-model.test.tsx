@@ -48,7 +48,7 @@ describe('EfficiencyModel', () => {
     expect(screen.queryByText(/low confidence/i)).not.toBeInTheDocument();
 
     // All four metrics visible unconditionally (not gated by AdvancedOnly)
-    expect(screen.getByText(/available:/i)).toBeInTheDocument();
+    expect(screen.getByText(/allocated:/i)).toBeInTheDocument();
     expect(screen.getByText(/driver-bound waste:/i)).toBeInTheDocument();
     expect(screen.getByText(/executor-bound waste:/i)).toBeInTheDocument();
     expect(screen.getByText(/floor \(same executors, zero skew\):/i)).toBeInTheDocument();
@@ -79,6 +79,26 @@ describe('EfficiencyModel', () => {
     expect(screen.getByText(/spark\.driver/)).toBeInTheDocument();
   });
 
+  it('shows used core-hours and the top stages by task core-time', () => {
+    // 2 cores × 1 h = 2 core-h allocated; 900,000 ms busy = 0.25 core-h used, all in stage 1.
+    renderEfficiencyModel(buildAppModel());
+    expect(screen.getByText(/used:/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/0\.25 core-h/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Stage 1')).toBeInTheDocument();
+  });
+
+  it('names the core count only in Advanced view', () => {
+    store.getState().setWidgetDensity('basic');
+    renderEfficiencyModel(buildAppModel());
+    expect(screen.queryByText(/cores over the run; used = core-time/i)).not.toBeInTheDocument();
+    cleanup();
+
+    store.getState().setWidgetDensity('advanced');
+    renderEfficiencyModel(buildAppModel());
+    expect(screen.getByText(/2 cores over the run; used = core-time/i)).toBeInTheDocument();
+    store.getState().setWidgetDensity('basic');
+  });
+
   it('never renders the unverified ~21% marketing figure', () => {
     renderEfficiencyModel(buildAppModel());
     expect(screen.queryByText(/21%/)).not.toBeInTheDocument();
@@ -86,6 +106,6 @@ describe('EfficiencyModel', () => {
 
   it('right-sizing paragraph shows when driver or executor waste dominates', () => {
     renderEfficiencyModel(buildAppModel());
-    expect(screen.getByText(/driver-bound waste dominates/i)).toBeInTheDocument();
+    expect(screen.getByText(/most of it is driver waste/i)).toBeInTheDocument();
   });
 });

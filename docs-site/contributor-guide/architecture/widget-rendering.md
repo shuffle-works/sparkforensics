@@ -295,7 +295,7 @@ widget, carry neither), each of the four split Plan Advisor widgets'
 widget-header marker (confidence only, one marker per widget now that each
 is its own finding-type, replacing the old `PlanFindings.tsx` per-group
 heading), `CoreUsageArea.tsx`, `EfficiencyModel.tsx`, `PlanView.tsx` (three
-call sites), `ScalingSim.tsx` (two call sites), and `WastedCoreHours.tsx`
+call sites) and `ScalingSim.tsx` (two call sites)
 (all confidence-only, standalone rather than per-finding-row: a card-header
 badge, a widget-level single marker, a plan-tree node/summary-row marker, or
 an "unavailable data" message: the same component, same visual language,
@@ -368,7 +368,7 @@ executor add/remove count chart extracted out of the former combined
 `REGISTRY` entry) → StageTable → a `WidgetGrid` holding Core
 Usage by Locality (the one always-mounted `REGISTRY` card) → Evidence
 availability → ETL Phase Attribution → What-If Executor Scaling →
-Compute Efficiency → Wasted Core-Hours → Core-Usage Distribution.
+Compute Efficiency → Core-Usage Distribution.
 Scorecard used to lead this
 section; it now renders once, above the tabs themselves, in
 `FilteredBoard` (`src/view/Dashboard.tsx`), so it stays visible regardless
@@ -403,7 +403,7 @@ the parent grid state. A Findings-tab `FixTheseFirst` rollup row is a table
 row, not a `WidgetGrid` card, and carries no collapse/expand state of its own
 (a `TypeGroupRow` summary row does own its own local expand/pagination
 state). Full app report's non-`REGISTRY` tiles (ETL Phase Attribution,
-What-If Executor Scaling, Compute Efficiency, Wasted Core-Hours, Core-Usage
+What-If Executor Scaling, Compute Efficiency, Core-Usage
 Distribution) sit in their own `WidgetGrid` alongside Evidence availability,
 but that grid has no `widgetId` wired to any card (see "First investigation
 routing" below), so nothing there is ever a route destination.
@@ -621,7 +621,7 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    - **Full app report** (`ReferenceSection`): WallClock → Timeline →
      Executor Count Over Time → StageTable → Evidence availability → fixed
      report-lens tail (ETL Phase Attribution → What-If Executor Scaling →
-     Compute Efficiency → Wasted Core-Hours → Core-Usage Distribution).
+     Compute Efficiency → Core-Usage Distribution).
      Structural-only, as above. Fully unmounted while Findings is active
      (see "Render order" above).
 

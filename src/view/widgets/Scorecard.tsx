@@ -160,7 +160,7 @@ export function Scorecard({ interpretation, catalog }: ScorecardProps) {
                 {coldStart ? ` · ${coldStart.value}s cold start` : ''}
               </>
             ) : (
-              `Total run time. Stages were running for ${formatDuration(stagesActive)} of it.`
+              'Total run time.'
             )
           }
           bar={<ActiveIdleBar active={stagesActive} total={total} />}
@@ -176,7 +176,7 @@ export function Scorecard({ interpretation, catalog }: ScorecardProps) {
               : efficiency == null
               ? 'This run has no complete application timing interval.'
               : density !== 'advanced'
-                ? 'Share of the run with a stage running. Higher is better.'
+                ? `Share of the run with a stage running (${formatDuration(stagesActive)}). Higher is better.`
                 : total > stagesActive
                   ? `${formatRanLabel(stagesActive)} · ${formatDuration(total - stagesActive)} idle/gap time`
                   : 'executors active the whole run'
