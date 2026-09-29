@@ -97,7 +97,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   tinyTask: {
     name: 'tiny tasks',
     tag: 'TINY',
-    thresholdSummary: (t) => `${t.minTasks}+ tasks with a median of ${t.maxP50}ms or less`,
+    thresholdSummary: (t) => `${t.minTasks}+ tasks with a median of ${t.maxP50}ms or less and a P95 of ${t.maxP95}ms or less`,
     actionLabel: () => 'Coalesce small tasks',
     // The shuffle-vs-no-shuffle fix isn't a Finding field, so one sentence covers both.
     genericRecommendation: () => 'Scheduler overhead may dominate: lower spark.sql.shuffle.partitions, or coalesce down to fewer, larger tasks.',
