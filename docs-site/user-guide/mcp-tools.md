@@ -8,7 +8,10 @@ Five of the eight tools (`list_runs`, `diagnose_run`, `get_run_summary`,
 parameter (default `false`) that pseudonymizes the app id and any host/IP
 tokens in the response (`app-1`, `host-1`, ...), so a result can be shared
 outside the environment that produced it. The app name is as identifying as
-the id, so every tool replaces it with the app id's pseudonym. On `compare_runs`, `runIdA`/
+the id, so every tool replaces it with the app id's pseudonym. It also
+pseudonymizes the value of any field named `host`, and drops the message and
+stack text of failed-task errors, which can carry file paths and data values
+that no pattern recognizes. On `compare_runs`, `runIdA`/
 `runIdB` are caller-supplied identifiers, not Spark application ids, so
 there's no single app-id field to redact; `redact` instead scans stage names
 and other free text for embedded app ids and host/IP tokens and
@@ -43,8 +46,9 @@ format is the CLI's: see
 [Tuning detector thresholds](./getting-started.md#tuning-detector-thresholds).
 The overrides apply to every tool for the life of the server; a client can't
 change them per call. An unreadable or invalid file stops the server from
-starting, with the problem on stderr. On a tuned server, `diagnose_run`,
-`compare_runs` and `evaluate_budgets` add a top-level `tunedThresholds`, and
+starting: it exits with status 2, with the problem on stderr.
+`sparkforensics-mcp --help` prints the usage and the tool list. On a tuned
+server, `diagnose_run`, `compare_runs` and `evaluate_budgets` add a top-level `tunedThresholds`, and
 each finding and clean check from a tuned detector carries its own
 `tunedThresholds`, as in the CLI report. The Markdown output of
 `diagnose_run` and `compare_runs` names the tuned thresholds too.
@@ -76,22 +80,28 @@ no `--thresholds` flag. To tune thresholds, run `sparkforensics-mcp` over
 stdio instead. Runs are cached in the server process as they are for
 `sparkforensics-mcp`, so a `runId` from one request works in later ones
 until it expires. A relative `source.path` resolves against the directory
-you started the server from.
+you started the server from. The examples below use short relative names;
+pass an absolute path when in doubt.
 
 ## `diagnose_run`
 
 Diagnose a Spark run: thresholded findings with remediation text, led by the
-same verdict the dashboard opens with. `verdict` gives a title ("Start with
-Stage 3", "1 of 3 jobs failed in this run"), summary sentences, the first three
-places to look in the dashboard's order (each with its action, what to try, the
-potential savings and what that figure counts, and the other finding types
-flagged at the same place), how many more places the full list holds, and
-`copyText`, the dashboard's "Copy next steps" checklist.
+same verdict the dashboard opens with. `verdict` gives a `title` ("Start with
+Stage 3", "1 of 3 jobs failed in this run"), `summary` sentences, `steps`, the
+first three places to look in the dashboard's order (each with its action, what
+to try, the potential savings and what that figure counts, and the other
+finding types flagged at the same place), `remainingPlaces`, how many more
+places the full list holds, and `copyText`, the dashboard's "Copy next steps"
+checklist.
 
-Parameters (all optional: provide either a `source` to load a fresh run, or
-a `runId` for one already loaded in this session):
+Parameters (all optional, but pass either a `source` to load a fresh run, or
+a `runId` for one already loaded in this session; passing neither is an
+error, and when both are given `runId` wins):
 
-- `source`: `{ path: string }` or `{ shsBaseUrl: string, appId: string, attemptId?: string }`
+- `source`: `{ path: string }` or `{ shsBaseUrl: string, appId: string, attemptId?: string }`.
+  A History Server `appId` must have one of Spark's id forms
+  (`application_<digits>_<digits>`, `local-<digits>`, `app-...`, `spark-...`,
+  `driver-<digits>`).
 - `runId`: `string`
 - `redact`: `boolean` (default `false`), pseudonymizes the app id and any
   host/IP tokens in the response, and replaces the app name with the app
@@ -103,7 +113,9 @@ a `runId` for one already loaded in this session):
   - `summary`: app id/name/Spark version, stage/job/SQL-execution counts, a
     finding count broken down by impact band, the same counts without evidence
     caveats and the incomplete-run row (`actionableFindingCount`,
-    `actionableImpactBandCounts`, what the dashboard counts), and `clean`
+    `actionableImpactBandCounts`, what the dashboard counts), `outcome` (how
+    the run ended), `runShape` (as in `get_run_summary`), `clean`, and
+    `tunedThresholds` on a tuned server
   - `evidenceAvailability`: which event types the log actually contained, so
     you can tell "this check came back clean" apart from "this check
     couldn't run because the log is missing data"
@@ -123,13 +135,14 @@ a `runId` for one already loaded in this session):
   stays JSON-shaped, regardless of `format`.
 
 `impactBand`/`type`/`stageId` only filter the `findings` array:
-`recommendations`, `cleanChecks`, `notRunChecks`, and the finding counts in `summary` (when
+`verdict`, `recommendations`, `cleanChecks`, `notRunChecks`, and the finding counts in `summary` (when
 requested via `include`) always stay computed from the full, unfiltered set,
 so a narrow filter never hides that other checks passed or other fixes exist.
 
 A `runId` expires. Loaded runs are cached in memory, capped at 8
-(LRU-evicted) and expired after 15 minutes (override with
-`SPARKFORENSICS_MCP_CACHE_CAP` and `SPARKFORENSICS_MCP_CACHE_TTL_MS`). A
+(LRU-evicted) and expired 15 minutes after their last use (override with
+`SPARKFORENSICS_MCP_CACHE_CAP` and `SPARKFORENSICS_MCP_CACHE_TTL_MS`). Loading
+the same unchanged `source` again while it is cached returns the same `runId`. A
 `runId` from an earlier `diagnose_run` call may not resolve when you pass it
 to `get_finding_evidence`, `compare_runs`, or `evaluate_budgets`; re-load the
 run with `source` if you get `run-not-found`.
@@ -140,7 +153,9 @@ Example call:
 { "name": "diagnose_run", "arguments": { "source": { "path": "app-20260101.zstd" } } }
 ```
 
-Example response (an event log with no `ApplicationEnd` event):
+Example response (an event log with no `ApplicationEnd` event; fields
+trimmed: `verdict`, `recommendations`, `cleanChecks`, `notRunChecks` and the
+other findings are left out):
 
 ```json
 {
@@ -148,23 +163,28 @@ Example response (an event log with no `ApplicationEnd` event):
   "runComplete": false,
   "findings": [
     {
-      "id": "incompleteRun-1",
+      "id": "1d473001",
       "type": "incompleteRun",
       "name": "Incomplete Run",
       "tag": "INCMP",
       "impactBand": "warning",
       "stageId": null,
+      "metric": "applicationEnd",
+      "value": null,
+      "valueText": "missing",
       "recommendation": "This event log never recorded an ApplicationEnd event: the capture stopped before the run finished...",
       "detectorVersion": 1,
-      "evidence": {}
+      "evidence": {},
+      "actionLabel": "incomplete run",
+      "impactEstimate": { "basis": "informational", "wallClock": null, "estimateMethod": "none" }
     }
   ]
 }
 ```
 
-The `evidence` shape is detector-specific. The example above is
-`incompleteRun`'s, which is empty; other detectors attach the metrics that
-drove the finding.
+The figure that drove a finding is in the row's `metric` and `value` (or `valueText`).
+`evidence` holds type-specific extra fields and is empty for several types,
+such as `incompleteRun` above and `skew`.
 
 ## `get_run_summary`
 
@@ -179,10 +199,11 @@ job's exception).
 Efficiency), `unusedCoreTimePct` (the share of executor core time that ran no task,
 against peak concurrent cores; `minEfficiencyPct` checks 100 minus this), `etlPhasesMs`
 (`extract`/`transform`/`load` summed stage time, so a phase can exceed the run)
-and `peakBusyCores` (busy cores at the peak of Core Usage by Locality). Each is
-`null` where the dashboard shows "Not measured" or "Unavailable".
+and `peakBusyCores` (busy cores at the peak of Core Usage by Locality,
+averaged over one chart bucket, so it can be fractional). Each is `null` where the
+dashboard shows "Not measured" or "Unavailable".
 
-Parameters: same as `diagnose_run` (`source`, `runId`, `redact`, all optional).
+Parameters: `source`, `runId` and `redact`, as in `diagnose_run`.
 
 Example call:
 
@@ -195,7 +216,7 @@ Example response:
 ```json
 {
   "runId": "3f9c2b7e-...",
-  "app": { "id": "app-1", "name": "t", "sparkVersion": null },
+  "app": { "id": "application_0000000000000_0001", "name": "t", "sparkVersion": null },
   "stageCount": 0,
   "jobCount": 0,
   "sqlExecutionCount": 0,
@@ -206,7 +227,7 @@ Example response:
   "totalJobs": 0,
   "failureReason": null,
   "failureReasonStageId": null,
-  "runShape": { "wallClockMs": 100, "efficiencyPct": 0, "unusedCoreTimePct": null, "etlPhasesMs": null, "peakBusyCores": null }
+  "runShape": { "wallClockMs": 100, "efficiencyPct": null, "unusedCoreTimePct": null, "etlPhasesMs": null, "peakBusyCores": null }
 }
 ```
 
@@ -226,7 +247,10 @@ Parameters (all optional):
   two runs they apply to the candidate (`runIdB`/`sourceB`), the same as the
   CLI's `--baseline` mode. `minEfficiencyPct` measures busy core time, the
   share of executor core time that ran tasks (100 minus the dashboard's
-  Unused core time), not the dashboard's Efficiency tile.
+  Unused core time), not the dashboard's Efficiency tile. `maxFailedTaskRatePct`
+  reads the task failure rate off the `jobFailureRate` finding, so when that
+  finding didn't fire (under 10% of jobs failed, by default) it passes whatever
+  the task failure rate.
 - `runIdB` / `sourceB`: a candidate run to compare against the first, so
   regression budgets can be evaluated. Same `runId`/`source` shape, resolved
   the same way. Omit both to skip regression budgets.
@@ -234,10 +258,13 @@ Parameters (all optional):
   `wallClock`; see [Regression metric keys](./getting-started.md#regression-metric-keys)
   for the full list) regressed by more than `maxRegressionPct`% between the
   first run (baseline) and the second run (candidate). Requires
-  `runIdB`/`sourceB`.
+  `runIdB`/`sourceB`. `regressionMetric` without `maxRegressionPct` fails the
+  call. A volume key (`inputBytes`, `outputBytes`, `taskCount`,
+  `executorsAdded`), which has no regression direction, or an unknown key
+  reports `inconclusive`.
 - `failOnIntroduced`: fail if the second run introduces any finding in the
   given impact band (`"all"` or one of the impact band names). Requires
-  `runIdB`/`sourceB`.
+  `runIdB`/`sourceB`. A band name it doesn't recognize reports `inconclusive`.
 
 A budget whose required evidence is missing (e.g. no `runIdB`/`sourceB` for a
 regression budget, or a run with no trustworthy task-level evidence) reports
@@ -245,6 +272,11 @@ regression budget, or a run with no trustworthy task-level evidence) reports
 evaluated run with no ApplicationEnd event adds a `run-complete` result with
 status `inconclusive`, the same check that makes the CLI exit `3`. With two
 runs, the check applies to the candidate.
+
+Each result's `name` is one of `max-runtime`, `max-spill`, `max-skew`,
+`max-failed-task-rate`, `min-efficiency`, `max-regression`,
+`fail-on-introduced` and `run-complete`. The returned `runId` is the first
+run's (the baseline, when two runs are given).
 
 Example call:
 
@@ -290,7 +322,9 @@ opens with (the baseline is `runIdA`/`sourceA`, the candidate `runIdB`/`sourceB`
 `title` such as "The candidate finished 9.9s faster than the baseline (37%)", or a failed-job
 headline when either run had jobs fail, a `tone` (`better`, `worse`, `same` or
 `unknown`), and `sentences` naming which cost metrics and finding categories
-moved each way.
+moved each way. When either log has no `ApplicationEnd` event, the title
+compares how much run time each log covers ("Run B's log covers 2.0s less run
+time than run A's") and the tone is `unknown`.
 
 Parameters:
 
@@ -303,7 +337,7 @@ Parameters:
   a rendered Markdown report instead of JSON. `structuredContent` always
   stays JSON-shaped, regardless of `format`.
 
-Each side takes either a `runId` or a `source`, and you can mix them: a
+Each side needs either a `runId` or a `source`, and you can mix them: a
 cached run ID for the baseline, a fresh file for the candidate.
 
 Example call:
@@ -318,7 +352,7 @@ Example call:
 }
 ```
 
-Example response:
+Example response (`metricDeltas` trimmed to its first row of 11):
 
 ```json
 {
@@ -342,10 +376,20 @@ Example response:
 }
 ```
 
+Each `findingsDelta.introduced`/`resolved` row is
+`{ rule, type, impactBand, baseCount, candCount, delta, stages }`, with
+`stages` naming the affected stages. A `metricDeltas` row's `direction` is
+`improvement`, `regression`, `unchanged`, `neutral` (a volume metric, where
+more isn't worse) or `unavailable`, and an unavailable row carries an
+`unavailableReason`. `confidence` is `low` when the two runs' names differ or
+under 50% of stages matched between them (`matchedCoverage`), and `reason`
+then says which.
+
 ## `get_finding_evidence`
 
-Raw evidence bundle backing one finding, for drill-down after
-`diagnose_run`.
+The finding row for one finding id, the same shape as a `diagnose_run`
+`findings` entry. Use it to re-read one finding by id without the rest of the
+report.
 
 Parameters (`runId` and `findingId` are both required: call `diagnose_run`
 first to get a `runId` and a finding's `id`):
@@ -358,7 +402,7 @@ first to get a `runId` and a finding's `id`):
 Example call:
 
 ```json
-{ "name": "get_finding_evidence", "arguments": { "runId": "b8b2c1a4-...", "findingId": "incompleteRun-1" } }
+{ "name": "get_finding_evidence", "arguments": { "runId": "b8b2c1a4-...", "findingId": "1d473001" } }
 ```
 
 Example response:
@@ -367,15 +411,20 @@ Example response:
 {
   "runId": "b8b2c1a4-...",
   "finding": {
-    "id": "incompleteRun-1",
+    "id": "1d473001",
     "type": "incompleteRun",
     "name": "Incomplete Run",
     "tag": "INCMP",
     "impactBand": "warning",
     "stageId": null,
+    "metric": "applicationEnd",
+    "value": null,
+    "valueText": "missing",
     "recommendation": "This event log never recorded an ApplicationEnd event: the capture stopped before the run finished...",
     "detectorVersion": 1,
-    "evidence": {}
+    "evidence": {},
+    "actionLabel": "incomplete run",
+    "impactEstimate": { "basis": "informational", "wallClock": null, "estimateMethod": "none" }
   }
 }
 ```
@@ -388,7 +437,9 @@ cache it.
 
 Parameters:
 
-- `type`: `string` (required): a finding `type` value, e.g. `"skew"`
+- `type`: `string` (required): a finding `type` value, e.g. `"skew"`, or a
+  detector-level type such as `"broadcastSizing"`, which returns the
+  documentation of the finding types it emits
 
 Example call:
 
@@ -409,14 +460,14 @@ Example response:
   },
   "tuningDoc": {
     "anchor": "#bottleneck-skew",
-    "title": "Task skew",
-    "content": "# Task skew\n\n..."
+    "title": "Task Skew",
+    "content": "# Task Skew\n\n..."
   }
 }
 ```
 
 `tuningDoc` is `null` when the finding type has no vendored tuning-doc page.
-This isn't exhaustive, but two examples: `configAudit` (its four audited
+Two types have none: `configAudit` (its four audited
 properties each have their own anchor rather than one shared page, so no
 single anchor resolves) and `incompleteRun` (no upstream tuning page covers
 this signal at all). A type whose section lives on a general chapter rather
@@ -446,10 +497,14 @@ Example response:
 ```json
 {
   "anchor": "bottleneck-skew",
-  "title": "Task skew",
-  "content": "# Task skew\n\n..."
+  "title": "Task Skew",
+  "content": "# Task Skew\n\n..."
 }
 ```
+
+The returned `anchor` is the owning page's, which can differ from the one you
+passed: `"#metric-task-duration"` returns the Metrics Glossary page with
+`"anchor": "metrics"`.
 
 An anchor that resolves to no known page returns the `invalid-anchor` error
 code (see Errors below).
@@ -459,20 +514,23 @@ code (see Errors below).
 List candidate Spark event-log runs from a local directory or a Spark
 History Server, before diagnosing one with the tools above. Local-mode
 scanning is non-recursive: only the files and rolling-log subdirectories
-directly inside `dir` are considered.
+directly inside `dir` are considered. Runs are listed newest first.
 
 Parameters:
 
 - `dir` (string, local mode) or `shsBaseUrl` (string, SHS mode): exactly
-  one of the two.
+  one of the two. Passing both fails input validation; passing neither
+  returns `access-or-upstream-failure`.
 - `namePattern` (string, optional): case-insensitive substring match against
   each run's name.
 - `minDate`/`maxDate` (string, optional): filter by start time. A value
-  that doesn't parse as a date fails with `invalid-date-filter`.
+  that doesn't parse as a date fails with `invalid-date-filter`. In History
+  Server mode the dates are also sent to the server, which may reject an
+  unparseable value first (`access-or-upstream-failure`).
 - `maxResults` (number, optional, default 100): caps the number of runs
   returned; when more candidates matched, `truncated` is `true`.
 - `redact` (boolean, optional, default `false`): pseudonymizes every run's
-  app id and name (see the note at the top of this page).
+  app id, name and `source` (see the note at the top of this page).
 
 Example call:
 
@@ -499,11 +557,15 @@ Example response:
 
 Each entry's `source` is the same shape `diagnose_run`/`get_run_summary`
 accept as `source`, so a result row can be passed straight into those tools
-without re-deriving anything.
+without re-deriving anything, unless `redact` is on: redaction replaces
+`source.path` (or `source.appId`) with the pseudonym, so a redacted row can't
+be loaded. A row can also carry `durationMs` (History Server mode only) and
+`source.attemptId`.
 
 ## Errors
 
-All eight tools report failure the same way:
+Errors a tool raises carry `structuredContent.code`, the same way in all
+eight tools:
 
 ```json
 {
@@ -512,6 +574,11 @@ All eight tools report failure the same way:
   "structuredContent": { "code": "<error-code>" }
 }
 ```
+
+Arguments that fail the input schema (a wrong type, a missing required
+field, both `dir` and `shsBaseUrl`, `maxResults` below 1) return
+`isError: true` with the text `MCP error -32602: Input validation error: ...`
+and no `structuredContent`.
 
 The codes:
 
@@ -533,10 +600,14 @@ The codes:
   `SPARKFORENSICS_SHS_TIMEOUT_MS` (default 30000) sets these timeouts. If the
   server is unreachable entirely (an SSH-only cluster), see
   [Alternative ways to get the logs](./alternative-log-retrieval.md).
-- `archive-too-large`: the History Server archive blew the byte cap.
-  Override it with `SPARKFORENSICS_MAX_ARCHIVE_BYTES`.
-- `directory-not-found`: `list_runs`'s `dir` doesn't exist or isn't readable.
+- `archive-too-large`: the History Server archive blew the byte cap (1 GiB
+  by default). Override it with `SPARKFORENSICS_MAX_ARCHIVE_BYTES`.
+- `directory-not-found`: `list_runs`'s `dir` doesn't exist, isn't a
+  directory, or isn't readable.
 - `invalid-shs-base-url`: `list_runs`'s `shsBaseUrl` isn't an absolute
   HTTP(S) URL without credentials, query, or fragment.
 - `access-or-upstream-failure`: the fallback code. Bad parameters, a failed
   History Server fetch, or any error that carries no more specific code.
+  Common causes: neither `source` nor `runId` given, neither `dir` nor
+  `shsBaseUrl` given, `regressionMetric` without `maxRegressionPct`, and a
+  `source` whose `shsBaseUrl` or `appId` isn't valid.

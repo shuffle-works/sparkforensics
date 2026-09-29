@@ -19,6 +19,10 @@ Worker to main:
   [Streaming](./overview.md#streaming) and emitted just before `done`.
 - `done`, `taskData`, `error`.
 
+`emitParseCompletion` posts the tail in a fixed order: any deferred AQE `sql`
+updates, `progress` (`pct: 1`), `runAggregates`, `stageSpeculationWaste`,
+`stageExecutorMetrics`, the terminal `app`, then `done`.
+
 A History Server failure is always the typed, display-safe payload
 `{ type: 'error', source: 'shs', code }`, where `code` is one of
 `local-server-unavailable`, `upstream-unreachable`, `application-not-found`,
@@ -29,11 +33,18 @@ Evidence availability has no dedicated worker message: the final `app` message
 carries a compact `evidenceInputs` counter summary, and `done.skippedLines`
 supplies its parse-integrity input.
 
-Main to worker: `parse`, `parseFiles(files)` (rolling `eventlog_v2_*`
-directories, one continuous stream across files),
-`parseFromUrl({ baseUrl, appId, attemptId })`, and `getTaskData(stageId)`. The
-SHS request object is normalized before it reaches the worker:
+Main to worker: `{ type: 'parse', file }`, `{ type: 'parseFiles', files }`
+(rolling `eventlog_v2_*` directories, one continuous stream across files),
+`{ type: 'parseFromUrl', request }` with `request = { baseUrl, appId, attemptId }`,
+and `{ type: 'getTaskData', stageId, reqId }`; `taskData` echoes `stageId` and
+`reqId` with `metrics` and `fieldNames`. The SHS request object is normalized
+before it reaches the worker:
 `{ baseUrl: string, appId: string, attemptId: string | null }`.
+
+Files are read in 512 KiB slices (smaller for small files, so every file gets
+at least 100 reads), and `progress { pct, linesProcessed }` posts every 300
+lines. `parseFromUrl` reports the download as 0-0.5, then `pct: null` every
+2000 lines while parsing.
 
 `taskData` uses structured-clone (`.slice()`) so the worker retains its own
 `Float64Array` for re-renders.
@@ -56,7 +67,9 @@ worker too.
 
 `packages/core/src/zstd-worker-client.ts` is the parse-worker end: it plugs into
 `streamFile` as the `zstdDecoder` option, like the Node CLI's native decoder.
-The messages, all buffers moved by transfer, never copied:
+The messages' buffers move by transfer rather than structured-clone copy (a
+read slice that is a view of a larger buffer is copied once first, and decoded
+output is copied once into a 1 MiB batch):
 
 - Parse to decompress: `start { id }` opens a stream, and replaces any open
   one. `data { id, seq, bytes, final }` carries one compressed read slice.
@@ -70,8 +83,10 @@ Flow control is a window of three input slices: `push()` resolves while fewer
 than three slices wait for their `consumed`. Each `chunk` is parsed in its
 message handler, so a slice is acknowledged only after its output was parsed,
 and at most three slices' output is ever queued. The final `push()` resolves
-once every slice is acknowledged. When `streamFile` gives up mid-stream (a
-failed file read, a parse exception), it calls `cancel()`.
+once every slice is acknowledged. When `streamFile` gives up mid-stream (for
+example a failed file read) it calls `cancel()`. A parse exception inside a
+`chunk` handler makes the client post `cancel` itself and fail the stream,
+which surfaces on the next `push()`.
 
 When the nested worker cannot start (`new Worker` throws or its script fails to
 load), the parse worker logs a warning
@@ -94,7 +109,10 @@ event line and up to tens of MB (`buildChunkDecoder` decodes those in 512 KiB
 slices). For local files, frames of 64 KB or more decompress off the main
 thread and arrive as 256 KB pieces, so a native `push()` is async and
 `streamFile` awaits it. fzstd's chunks are views of one reused buffer, valid
-only until its `ondata` callback returns: copy one before keeping it.
+only until its `ondata` callback returns: copy one before keeping it. On a Node
+without native zstd (before 22.15/23.8), and for a frame past 64 MiB, the Node
+path falls back to fzstd. The SHS archive loader decodes frames inline, and
+only `collectRun` uses the off-thread path.
 
 ### Evidence-availability worker input
 
@@ -110,7 +128,8 @@ The counters are a structured-clone-safe summary: they contain counts, not raw
 events, task records, host names, SQL text, paths, or Spark-property values. The final `app` message snapshots the counters after all input is
 processed, immediately before `done`; a consumer must not add a second worker
 message just for the ledger. `app` messages are also emitted mid-parse from
-`SparkListenerApplicationStart` and `SparkListenerEnvironmentUpdate`; those
+`SparkListenerApplicationStart`, `SparkListenerApplicationEnd`, and a
+`SparkListenerEnvironmentUpdate` that arrives after the start; those
 snapshots are partial and non-authoritative. Only the terminal `app` message
 emitted by `emitParseCompletion` (the one immediately before `done`) should be
 used for evidence-availability conclusions. On the main thread, `useIngest`
@@ -292,7 +311,9 @@ without further bumping `EVIDENCE_SCHEMA_VERSION` past `2`, consistent with `Fin
 existing optional-field-plus-catch-all convention. It appears after the pinned core
 columns (`id`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`,
 `detectorVersion`, plus optional but pinned `confidence`, `validationRequired`, `docAnchor`)
-without displacing any of them; byte-for-byte deserializability of existing reports is
+without displacing any of them (today's full row shape is `FindingRowColumns` in
+`evidence-report.ts`, which also carries `name`, `tag`, `valueText`, `actionLabel`,
+`impact`/`impactMeaning` and, on a tuned run, `tunedThresholds`); byte-for-byte deserializability of existing reports is
 preserved. `FindingRow.impactEstimate` carries the full contract documented in
 [Impact estimation](./impact-estimation.md#occupancy-weighted-attribution) (basis, wallClock,
 estimateMethod, rawWaste).
@@ -304,12 +325,10 @@ this update ports the underlying data into `buildEvidenceReport()` so the CLI
 it too, not just the web markdown/JSON download. Three additions, all purely additive, so this
 does not bump `EVIDENCE_SCHEMA_VERSION` past `2`, the same rationale as the `impactEstimate`
 addition immediately above: `FindingRow.actionLabel` is now always present (a short imperative
-label like "Reduce shuffle size"), sourced from a new core module,
-`packages/core/src/finding-action-label.ts`'s `coreFindingActionLabel`, extracted from the (type,
-discriminant) switch statement that used to live only in the view layer
-(`src/view/finding-action-label.ts`, which now wraps the core function and layers its own
-`REGISTRY` fallback on top; since merged, so the dashboard, the run verdict and the report
-rows all call one `findingActionLabel`, which falls back to the type's name).
+label like "Reduce shuffle size"), from `findingActionLabel`
+(`packages/core/src/finding-action-label.ts`), which reads the type's `actionLabel` in
+`finding-presentation.ts` and falls back to the type's name. The dashboard, the run verdict
+and the report rows all call it.
 `EvidenceReportJson.recommendations` is the same impact-ranked
 `buildRecommendationRollup` grouping (`packages/core/src/recommendation-rollup.ts`) that
 `FixTheseFirst.tsx` renders, so CLI/MCP/download consumers get the same "what's the
@@ -419,7 +438,9 @@ whose required evidence is missing (e.g. the run never emitted
 inconclusive (`stderr` warning) rather than silently passing, and gets its own
 exit code distinct from both pass and violation. Exit codes: `0` pass, `1`
 a configured budget was violated, `2` bad arguments (unknown or value-less
-flag, unknown `--regression-metric` key) or input that could not be parsed at all,
+flag, unknown `--regression-metric` key), an unreadable or invalid `--thresholds`
+file, a failed `--export-html` export, a failed SHS fetch, or input that could not
+be parsed at all,
 `3` no violations but at least one budget was inconclusive. A violation always
 wins over an inconclusive result in the same run (exit `1`, not `3`).
 `evaluateBudgets()` also always adds an inconclusive `run-complete` result
@@ -430,8 +451,9 @@ absolute budgets and this check apply to the candidate run; the MCP
 
 ### MCP server (V1)
 
-`packages/core/src/mcp-server-factory.ts`'s `createMcpServer()` registers 6 tools:
-`diagnose_run` (thresholded findings + remediation text), `get_run_summary`
+`packages/core/src/mcp-server-factory.ts`'s `createMcpServer()` registers 8 tools:
+`list_runs` (candidate runs in a local directory or on a Spark History Server, to
+pick one before diagnosing it), `diagnose_run` (thresholded findings + remediation text), `get_run_summary`
 (app/stage/job/sql counts and duration, no findings), `compare_runs`
 (the comparison verdict from `comparisonVerdict` in `packages/core/src/comparison-verdict.ts`,
 the dashboard comparison page's own headline, plus categorized findings delta + metric deltas
@@ -442,24 +464,28 @@ with a second run for regression/fail-on-introduced budgets: the MCP side
 of the CLI's `evaluateBudgets()` gating), `get_finding_evidence` (raw
 evidence bundle for one finding, for drill-down after `diagnose_run`), and
 `get_finding_documentation` (detection/tuning reference docs for one
-finding type, independent of any run). None re-implement detector logic;
-all repackage
+finding type, independent of any run), and `get_reference_doc` (a full
+tuning-reference chapter or bottleneck page by doc anchor, e.g. `#joins`). None
+re-implement detector logic: `list_runs` lists candidates
+(`packages/core/src/list-runs.ts`), and the rest repackage
 `analyze`/`buildEvidenceReport`/`compareRuns`/`captureSnapshot`/`evaluateBudgets`
 from `packages/core/src/mcp-tools.ts`, which resolves a `source` (event-log `path`, or an SHS
 `shsBaseUrl`/`appId`/`attemptId` triple) into a cached `AppModel`. The SHS
 source path calls `resolveFromShs` (`packages/core/src/shs-load.ts`, also used directly by
 the CLI's `--shs-base-url` mode above), which reuses two extractions shared
-with the browser ingestion flow: `fetchShsEventLog` (`packages/core/src/proxy.js`)
-fetches the zip, and `decodeShsArchive` (`packages/core/src/shs-fetch.ts`, re-exported from
-`parser-worker.ts`'s barrel) decodes it into a parsed `AppModel`, the same
-split `runParseFromUrl` itself calls into.
+with the browser ingestion flow: `fetchShsEventLog` (`packages/core/src/proxy.js`, the
+same upstream fetch the local server's `/shs-proxy` route uses) fetches the zip, and
+`decodeShsArchive` (`packages/core/src/shs-fetch.ts`, re-exported from
+`parser-worker.ts`'s barrel) streams it through the parser as worker messages, which
+`collectViaDispatch` assembles into an `AppModel`. `runParseFromUrl` calls the same
+`decodeShsArchive` after fetching through the proxy.
 
 Two transports connect to that one factory: `packages/mcp/bin/sparkforensics-mcp.mjs` (stdio, for
 local MCP clients) and `packages/server/index.js`'s `/mcp` route (streamable HTTP, for
 the local server). The run cache (`packages/core/src/mcp-tools.ts`) is a module-level LRU
 (cap 8 and 15-minute idle TTL by default, overridable via `SPARKFORENSICS_MCP_CACHE_CAP`
 and `SPARKFORENSICS_MCP_CACHE_TTL_MS`, lazily swept on access) keyed by resolved source
-(path mtime, or SHS baseUrl+appId+attemptId), so a client mints a `runId` once
+(path plus mtime, ctime and size, or SHS baseUrl+appId+attemptId), so a client mints a `runId` once
 via `resolveOrCreateRun` and reuses it across subsequent tool calls instead of
 re-parsing.
 
@@ -467,9 +493,14 @@ Every tool failure comes back as `{isError: true, content: [...],
 structuredContent: {code}}`, never an HTTP-status-shaped error; `code` is one
 of the 5 existing SHS codes (`SHS_ERROR_CODES`, `packages/core/src/shs-request.js`)
 plus `run-not-found`, `finding-not-found`, `invalid-event-log` (also
-covers a nonexistent `path` source), and `archive-too-large` (SHS archive over
+covers a nonexistent `path` source), `archive-too-large` (SHS archive over
 the `SPARKFORENSICS_MAX_ARCHIVE_BYTES` byte cap, default 1 GiB, because the MCP path buffers
-the whole archive in memory, unlike the streaming `/shs-proxy` route).
+the whole archive in memory, unlike the streaming `/shs-proxy` route),
+`invalid-type`, `invalid-anchor` (documentation tools), `directory-not-found`,
+`invalid-date-filter`, and `invalid-shs-base-url` (`list_runs`). An error without a
+code reports `access-or-upstream-failure`. A stalled SHS archive body fails as
+`upstream-unreachable` after `SPARKFORENSICS_SHS_TIMEOUT_MS` (default 30 s) without
+data.
 
 `scripts/vendor-core.mjs` (shared by `packages/cli`, `packages/mcp`, and
 `packages/server`'s `prepack` scripts) vendors `packages/core/src/` wholesale
@@ -488,10 +519,12 @@ fallback).
 ## TypeScript core and runtime event validation
 
 All of `src/` (browser SPA) and `packages/core/src/` (shared analysis logic)
-is strict TypeScript; the only plain-`.js` holdouts are the two vendored
+is strict TypeScript, except for a few plain-`.js` files: the two vendored
 third-party decompressors, `packages/core/src/vendor/fflate.js`
 and `packages/core/src/vendor/fzstd.js` (left untouched deliberately: vendored code, not
-project code). Every remaining import of a same-repo module uses a `.ts`
+project code), `load-vendored.js` (copied byte-for-byte into `vendor-core/`, so it must
+run without TS stripping), and the SHS helpers `shs-request.js` and `proxy.js`, which the
+local server imports as plain JS. Every remaining import of a same-repo `.ts` module uses a `.ts`
 specifier (e.g. `import { dispatchLine } from './event-handlers.ts'`), not
 `.js`: the CLI and MCP entrypoints (`packages/cli/bin/sparkforensics-analyze.mjs`,
 `packages/mcp/bin/sparkforensics-mcp.mjs`) run under plain Node's ESM resolver, which
@@ -525,10 +558,10 @@ data it does not control. Both now run that data through a schema, and both
 treat a validation failure the same way: a silent skip, not a distinct error.
 
 - `dispatchLine` (`event-handlers.ts`): after `JSON.parse` succeeds, a line
-  whose `Event` value is one of the 15 modeled types but fails that type's own
+  whose `Event` value is one of the 17 modeled types but fails that type's own
   schema now increments `skippedLines` (previously: no shape validation
   existed at all, and a malformed event silently corrupted downstream state
-  with no signal anywhere). An `Event` value outside the 15 modeled types is
+  with no signal anywhere). An `Event` value outside the 17 modeled types is
   still silently ignored without incrementing `skippedLines`, unchanged from
   before migration (see the note below on why the broader design was
   rejected). One exception: an AQE update that a later update for the same
@@ -550,7 +583,7 @@ correction below says why the *line* boundary stops there rather than flagging
 every unrecognized event type.
 
 > Correction made during migration, not part of the original design: an
-> earlier draft counted *any* `Event` value outside the 15 modeled types
+> earlier draft counted *any* `Event` value outside the 17 modeled types
 > toward `skippedLines`, not just ones that fail their own schema. Running
 > that design against real Spark event logs (which always contain plenty of
 > ordinary event types this tool has never modeled: `TaskStart`,

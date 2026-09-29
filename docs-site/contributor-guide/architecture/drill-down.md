@@ -3,9 +3,9 @@
 `StageDetailProvider` (`src/view/StageDetailContext.tsx`) replaces the legacy
 `openStageDetail` `window` `CustomEvent` with React context. Any component calls
 `useStageDetail().openStage(stageId)` to open `StageDetailDialog.tsx`, a
-Radix/shadcn `Dialog`, for that stage. The callers are StagePill, Timeline,
-StageTable, and (indirectly, via an embedded `StageHeader`/`StagePill`)
-Skew's per-stage rows.
+shadcn `Dialog` (base-ui), for that stage. The direct callers are StagePill,
+Timeline, StageTable and RunVerdict (a step's stage button). Every widget that
+embeds a `StagePill`, `StagePillGroup` or `StageHeader` reaches it indirectly.
 
 The dialog is titled "Stage N", with Spark's stage name (the code line that
 created the stage) as a labelled "Code location" description. Its body opens
@@ -16,8 +16,10 @@ steps by: a `stageId` match, or a `stageIds` list naming only this stage)
 the way `RunVerdict` lists a step: tag and action label, the measurement ("What's happening", split off by `recommendationParts`), "What to try", the impact estimate, and a
 **Show evidence** button. Types follow the verdict's own order
 (`buildNextSteps`: potential savings first, failure findings first on a run
-whose jobs failed), with types the verdict can't route after them, worst band
-first. Show evidence closes the dialog and calls the optional `onRoute` prop
+whose jobs failed), with types outside the stage's own verdict step after them,
+worst band first. The grouping and order are computed once by `interpretRun`
+(`interpretStages` in `packages/core/src/run-interpretation.ts`, shipped as
+`stages[id].{findingIndexes,typeOrder}`); the dialog only renders them. Show evidence closes the dialog and calls the optional `onRoute` prop
 (`routeToVisible` from `Dashboard.tsx`, which clears any board filter that
 hides the target, as the verdict's own route does);
 `finalFocus` skips returning focus to the opener in that case, so the route's
@@ -31,10 +33,11 @@ migration.
 
 `packages/core/src/plan-dot.ts` (entry `planTreeToDot(planTree, { title })`) serializes a
 resolved `planTree` to a
-Graphviz DOT string. It is dependency-free string building. A first pass walks
-the tree assigning stable node ids and `label` (name, plus `detail` on a second
-line when it differs). A second pass emits the parent→child edges once ids are
-known. The graph is laid out `rankdir=BT`, leaves at the bottom, matching
+Graphviz DOT string. It is dependency-free string building. One pre-order walk
+(`walkPlanTree`, deduping shared subtrees) assigns each node a stable id and
+`label` (name, plus `detail` on a second line when it differs) and records its
+parent→child edge, since the parent's id always exists first. Edges are
+written after all node lines. The graph is laid out `rankdir=BT`, leaves at the bottom, matching
 Spark's own plan orientation.
 
 It carries no metric annotation: pure structure. Adding metric annotation is a
@@ -47,7 +50,8 @@ non-empty result gates the "View plan graph" button.
 
 `buildPlanGraphModel(planTree, opts)` (`packages/core/src/plan-graph-model.ts`) flattens a
 resolved `planTree` into a `{ nodes, edges, segmentIndex, segmentCount, scope,
-segmentStageIds }` graph shape. `src/view/PlanGraphRoute.tsx` renders it with
+segmentStageIds }` graph shape. `src/view/PlanGraphRoute.tsx` owns the view
+state and `src/view/plan-graph/PlanGraphCanvas.tsx` renders the model with
 `@xyflow/react` (React Flow, pan/zoom/viewport/MiniMap) and `@dagrejs/dagre`
 (node layout, `src/view/plan-graph/dagre-layout.ts`, `rankdir: 'RL'`).
 
@@ -101,12 +105,14 @@ the toggle, still correctly labeled "Back to segment view" per `model?.scope`,
 renders `disabled` rather than silently no-opping on click. Only the
 explicit-expand path (`requestedScope === 'full'`) leaves it enabled.
 
-The four Plan Advisor detectors (`duplicatePlanSubtree`, `smallFiles`,
-`overBroadcast`, `underBroadcast`, in `packages/core/src/detectors.ts`) set
-`Finding.planNodeIds`, an unambiguous pointer to the specific plan-tree
-node(s) each finding is about (a whole subtree's root(s) for
-`duplicatePlanSubtree`, the flagged scan/write node for `smallFiles`, the
-join/broadcast node(s) for the broadcast pair). `buildPlanGraphModel`
+The four Plan Advisor finding types (`duplicatePlanSubtree`, `smallFiles`, and
+`broadcastSizing`'s `overBroadcast`/`underBroadcast`, in
+`packages/core/src/detectors.ts`) set `Finding.planNodeIds`, an unambiguous
+pointer to the specific plan-tree node(s) each finding is about (every node of
+each repeated subtree occurrence for `duplicatePlanSubtree`, the flagged
+scan/write node for `smallFiles`, the `data size`-carrying nodes under both
+join inputs for `underBroadcast`, and the BroadcastExchange node for
+`overBroadcast`). `buildPlanGraphModel`
 indexes `findings` by `planNodeIds` and attaches each node's matches to its
 `PlanGraphNodeData.findings`, scoped to the current SQL execution (see
 below), and `PlanGraphNode.tsx` renders a corner badge from that per-node
@@ -121,13 +127,13 @@ files"), so the node discloses which findings hit it without leaving the
 graph. Every other finding type still has no plan-node pointer and renders
 at the stage level only, via `Finding.stageId`/`Finding.stageIds`.
 
-Plan-node ids are only unique within one SQL execution's tree, since
-`resolvePlanTree` resets its `n0, n1, ...` id counter on every call (once
-per SQL execution), so `buildPlanGraphModel` filters `findings` to
+`resolvePlanTree` prefixes every plan-node id with its owning SQL execution
+(`e<executionId>:n0`, `e<executionId>:n1`, ...), so ids are unique across
+executions. `buildPlanGraphModel` still filters `findings` to
 `finding.executionId === sqlExecutionId` (the execution the stage being
-graphed belongs to) before indexing by node id. Without that filter, two
-unrelated executions' trees can both contain a node named e.g. `n1`, and a
-finding from one would badge onto the other's same-named node.
+graphed belongs to) before indexing by node id, as defense in depth: a
+hand-built or stale finding whose `planNodeIds` collide with this tree's ids
+still can't badge onto the wrong tree.
 
 Two other per-node UI features render independently of findings:
 
@@ -152,9 +158,8 @@ The segment-level group box (`PlanGraphSegmentGroupNode.tsx`) always renders,
 even in the default single-stage view where it's the only box on screen. It is
 headered with its stage id (via `segmentStageIds`) and a duration chip, or an
 em-dash placeholder when the segment has no attributed duration. It also
-carries one finding chip (`PlanGraphFindingChip`) per finding on this stage,
-but only when there's no outer stage box to carry them instead (i.e. only in
-the default single-stage view). Each chip is a `TagBadge` (the ALL-CAPS tag)
+carries one finding chip (`PlanGraphFindingChip`) per finding on its zipped
+stage, in both the default and the expanded view. Each chip is a `TagBadge` (the ALL-CAPS tag)
 followed by the finding's compact magnitude and recoverable-time detail from
 `formatFindingChipDetail` (e.g. "SPILL 4.2 GB · ~38s": the finding's own
 `value`/`metric` and its `impactEstimate.wallClock`), or the bare tag when the
@@ -168,11 +173,14 @@ segment box, which is in turn under the plan nodes; all three sit above the
 edge layer so a routed edge can't paint over a box's finding chips) merging
 every segment zipped to that stage, so a stage split
 across several Exchange-bounded segments still reads as one unit of work. In
-this expanded view the outer stage box, not the nested segment box, carries the
-stage's finding chips, since findings are stage-scoped rather than
-segment-scoped. Each stage box shows only findings matched to its own stage
-through `Finding.stageId` or `Finding.stageIds`; the default segment scope uses
-the same matching for its displayed stage.
+this expanded view the segment box still carries its stage's finding chips
+inline in its header row. The outer stage box paints its own copy only as a
+fallback, for a stage no segment box is zipped to (for example, the focal stage
+when it lost the segment/stage pairing), so every finding appears exactly once.
+Chips match a stage through `Finding.stageId` or `Finding.stageIds`; the
+default segment scope uses the same matching for its displayed stage. Clicking
+an outer stage box ("Focus stage N") switches the route to that stage's segment
+view (`handleSelectStage` in `PlanGraphRoute.tsx`), with no reopen.
 
 The outer layer's own corner tag is positioned opposite the segment box's
 top-left header, because a stage with just one segment (the common case) would
@@ -223,21 +231,24 @@ The remaining legibility aids sit on the canvas itself:
   worst finding band on it (`planGraphMiniMapNodeColor`, `plan-graph-minimap.ts`),
   so the overview shows where the problems are; a node with no finding keeps the
   neutral plan color and the large group boxes recede into a muted fill.
-- The rail's legend toggle reveals a **legend** panel (`PlanGraphLegend.tsx`)
-  keying the operator icons, the heat-bar colors, the shuffle-weighted edge
+- A **legend** panel (`PlanGraphLegend.tsx`, open by default, toggled from the
+  rail) keys the operator icons, the heat-bar colors, the shuffle-weighted edge
   thickness, and the segment-vs-stage box layers.
 - When the category filter hides every operator in view, a **status hint**
   (top-center) names the count hidden and points at Settings, instead of
   leaving only empty group boxes on screen.
 
-The view is reached via a "View plan graph" button in `PlanView.tsx`'s toolbar,
-gated by the same `if (dot)` check described in "Plan DOT serialization" above.
-It opens a `planGraph: { active, stageId }` Zustand slice
+The view is reached from a "View plan graph" button in `PlanView.tsx`'s toolbar
+(gated by the same `if (dot)` check described in "Plan DOT serialization"
+above), which opens the stage's segment, and from the topbar's graph-view
+control, which opens the full plan (`initialScope: 'full'`, still behind the
+300-node guardrail). Both set a `planGraph: { active, stageId, initialScope }`
+Zustand slice
 (`openPlanGraph`/`closePlanGraph`, `src/store/store.ts`) driving a top-level
 `AppRoutes` branch in `src/App.tsx`, modeled directly on the existing
 `comparison`/`RunComparisonRoute` full-takeover pattern.
 
-`buildPlanGraphModel`'s output is memoized per `(activeFileId, stageId, scope)`
+`buildPlanGraphModel`'s output is memoized per `(activeFileId, stageId, scope, durationMode)`
 in `PlanGraphRoute.tsx`, since `stageId` alone isn't unique across loaded runs
 and `applySnapshot` mutates `appModel` in place rather than replacing it (see
 [State model](./state-and-history.md#state-model)). The memo cache is a
@@ -253,41 +264,50 @@ there would invert that dependency direction.
 
 The Summary/Context/Details 3-tier framing (collapsed lead metric → expanded
 widget body → per-stage `StageDetailDialog`) does not apply uniformly across the
-28 registry widgets (`src/view/detector-registry.tsx`). 14 have a stage-anchored
+28 registry widgets (`src/view/detector-registry.tsx`). 18 have a stage-anchored
 Details tier reachable via `StagePill`/`StagePillGroup`: Skew, StageShape,
 TinyTask (all split from TaskSkew), ShuffleIO, PartitionSizing (split from
 ShuffleIO), Spill, GcPressure, StageFailed, TaskFailures, RetryWaste (split
-from Failures), SlowHost, StageSlowness, Straggler, and SpeculationWaste
-(split from ExecutorTimeline). The other 14 are app/sql-scope with no stage to
+from Failures), SlowHost, StageSlowness, Straggler, SpeculationWaste
+(split from ExecutorTimeline), and DuplicatePlanSubtree, SmallFiles,
+UnderBroadcast and OverBroadcast (all split from PlanFindings; sql-scope, so
+they list every stage in `stageIds` as a `StagePillGroup` rather than one
+`StagePill`). The other 10 are app- or config-scope with no stage to
 drill into, by design, so they stop at Summary/Context: MemoryUtilization,
 ExecutorUtilization (split from the same widget as MemoryUtilization;
 `utilization` is an app-wide average, no stage), JobFailures, ConfigAudit,
 CacheUtilization, CoreUsageArea, AutoscalingChurn, CachingOpportunity (`scope:
 'app'`, `stageId: null` on both its finding constructions, so it has no stage
-to anchor to despite reading like a per-stage widget), IncompleteRun,
-DuplicatePlanSubtree, SmallFiles, UnderBroadcast, OverBroadcast (all split
-from PlanFindings, sql-scope, spanning multiple stages via `stageIds` rather
-than one `stageId`), and ColdStart (split from ExecutorTimeline, but unlike
-its four siblings above, app-scoped with no `stageId`).
+to anchor to despite reading like a per-stage widget), IncompleteRun, and
+ColdStart (split from ExecutorTimeline, but unlike SlowHost, StageSlowness,
+Straggler and SpeculationWaste, app-scoped with no `stageId`).
 
 ## Reference panel
 
-The topbar's "Reference" button and `DocsLink` (`src/view/DocsContext.tsx`) open
-a shadcn `Sheet` (`src/view/DocsSheet.tsx`, mounted once inside
-`DocsProvider`/`Dashboard.tsx`) that iframes a docs-site (VitePress) page,
-built from the tuning reference under `packages/core/src/docs-content/`
-(generated at build and test time, not committed, from the
-`shuffle-works/spark-tuning-reference` commit pinned in its `upstream.json`;
+`DocsLink` (`src/view/DocsContext.tsx`), finding tag pills (`TagBadge`) and a
+few guide links call `useDocs().open(anchor)` or `openSite(path)` to open a
+docked, resizable docs panel (`src/view/DocsSheet.tsx`, mounted once in
+`src/App.tsx` inside `DocsProvider`). The topbar's Docs button is a plain link
+that opens the docs site in a new tab. The panel iframes a docs-site
+(VitePress) page, built from the tuning reference under
+`packages/core/src/docs-content/{chapters,tuning,diagrams}` (generated at build
+and test time by `scripts/fetch-tuning-docs.mjs`, gitignored, from the
+`shuffle-works/spark-tuning-reference` commit pinned in the committed
+`docs-content/upstream.json`;
 `npm run docs:bump` moves the pin) and published as static HTML at `docs/tuning-reference/<page>.html`
 (`docs-config.ts`'s `docsUrl()` resolves an anchor to that path plus a
-`#<anchor>` fragment). `useDocs().open(anchor)` sets React state (`isOpen`,
-`target`); Radix/Base UI's `Sheet` owns the slide-in animation, focus trap,
-and outside-click/Escape dismissal. Key events inside the iframe never reach
+`#<anchor>` fragment). `open`/`openSite` set React state (`isOpen`,
+`target`). The panel is a non-modal base-ui `Dialog` (`modal={false}`,
+`disablePointerDismissal`) laid out with `react-resizable-panels`. The
+dashboard stays interactive and reflows beside it through the `--docs-inset`
+CSS variable. Only the close button or Escape dismisses it, and base-ui owns
+focus-in, focus-restore and Escape. Key events inside the iframe never reach
 the app's document, so `DocsSheet`'s `listenForEscapeInFrame` also listens in
 a same-origin frame's own document and closes on Escape unless the docs'
 search popup is open (a cross-origin frame keeps only the close button).
 Exported dashboards have no docs, so they never open this panel. There is a single `DocsTarget` shape
-(`{ kind: 'site', path }`): no vendor HTML and no `'vendor'` target kind, so
+(`{ kind: 'site', source: 'reference' | 'guide', path }`, set by `open(anchor)`
+or `openSite(path)`; `source` only picks the panel title): no vendor HTML and no `'vendor'` target kind, so
 `DocsSheet` always drives the iframe the same way, reassigning `src` on any
 path or theme change.
 
@@ -300,9 +320,11 @@ them, and two, `bottleneck-autoscaling-churn` and
 chapters):
 `docs-config.ts`'s `pageForAnchor()` is the one place that resolves an anchor
 to its owning page. `npm run docs:build` (run automatically by `npm run
-build`) generates `packages/core/src/docs-content/` from the pin if needed,
-then renders it into
-`docs-site/.vitepress/dist`, and `vite.config.ts`'s `copyDocsSite` plugin
+build`) generates `packages/core/src/docs-content/` from the pin if needed
+(`scripts/fetch-tuning-docs.mjs`), reshapes it into
+`docs-site/tuning-reference/*.md` (`scripts/build-tuning-reference.mjs`), then
+VitePress renders it into `docs-site/.vitepress/dist`, and the `copyDocsSite`
+plugin (`vite-plugins/copy-docs-site.ts`, registered in `vite.config.ts`)
 copies that output to `dist/docs`; Vite's relative asset base keeps the app
 and docs usable when `dist/` is deployed under a URL subpath.
 `tests/doc-anchor-coverage.test.js` intersects `packages/core/src/docs-content/chapters/nav-index.json`

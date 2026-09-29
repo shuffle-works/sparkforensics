@@ -42,7 +42,9 @@ Server hands back, from the Spark UI's download link or from `GET
 /api/v1/applications/<appId>/logs`, as-is: drop the `.zip` and the app
 unwraps the log inside it, or reassembles the parts of a rolling log. The zip
 must hold one attempt: for an application that ran more than once, download
-`/api/v1/applications/<appId>/<attemptId>/logs` instead.
+`/api/v1/applications/<appId>/<attemptId>/logs` instead. Spark's `lzf` codec
+is not supported: set `spark.eventLog.compression.codec` to `zstd`, `lz4` or
+`snappy`.
 
 Click **Other sources** on the landing page for two more ways in:
 
@@ -60,8 +62,9 @@ Click **Other sources** on the landing page for two more ways in:
 Can't reach the History Server directly (it's only reachable through an SSH
 bastion)? See [Alternative ways to get the logs](./alternative-log-retrieval.md).
 
-Files you have already loaded stay listed under **Recent files** on the
-landing page.
+In Chromium-based browsers, single files you open stay listed under
+**Recent files** on the landing page. Rolling-log folders, History Server
+fetches and the sample run are not listed.
 
 ## Reading the dashboard
 
@@ -70,10 +73,11 @@ own card with a title. Every widget that flags a problem uses the same
 convention: a colored impact dot (critical / warning / info) and an ALL-CAPS
 tag for the bottleneck category (`SKEW`, `SPILL`, `GC`, and so on: see
 [Understanding findings](./understanding-findings.md)). Widgets list every
-affected stage, not just the worst one. The dot's color tracks how much run
-time the finding could save you rather than how unusual the metric looks, so
-a small-looking anomaly with a big payoff can outrank a dramatic one that
-would barely move your run time.
+affected stage, not just the worst one. For a finding with a run-time
+estimate, the dot's color tracks how much run time it could save rather than
+how unusual the metric looks, so a small-looking anomaly with a big payoff can
+outrank a dramatic one that would barely move your run time. A finding with
+only a resource estimate, or none, keeps the level its check assigned.
 
 The board opens with a verdict: one line saying where to start, a short
 summary of what was found, and up to three numbered next steps. Each step
@@ -98,20 +102,24 @@ failure first in the next steps, ahead of any speed-up, since a job has to
 finish before its speed matters.
 
 A run is called clean only when the log had everything its checks need.
-When something was missing, the verdict title says some checks could not
-run, and the Findings tab's **Clean checks** list says which ones and, where
-Spark has one, the setting to turn on for the next run (for example
-`spark.eventLog.logStageExecutorMetrics=true` for per-executor memory).
+When something was missing, the run is never called clean: the Findings
+tab's **Clean checks** list says which checks could not run and, where Spark
+has one, the setting to turn on for the next run (for example
+`spark.eventLog.logStageExecutorMetrics=true` for per-executor memory). If
+nothing else was found, the verdict title says so too.
 
 A run scorecard sits under the verdict: **Wall-clock** (total run time),
 **Efficiency** (the share of that time with a stage running; higher is
 better; **Not measured** when no stage in the log recorded an end) and **Unused core time** (the share of executor core time that ran no task,
-the same idle figure a verdict step reports; lower is better). A collapsed **New to Spark tuning?** primer in the verdict
+the same idle figure a verdict step reports; lower is better). When the log
+has no complete application timing, one **Timing unavailable** notice
+replaces the three tiles. A collapsed **New to Spark tuning?** primer in the verdict
 explains stages, tasks, executors, shuffle and how to read savings. Stage
 labels such as **Stage 7** open that stage's details: how long it ran and
 what share of the run that was, then each of its findings with what it
-measured, what to try and a **Show evidence** button, followed by its task,
-locality, I/O and plan sections.
+measured, what to try and a **Show evidence** button, followed by its
+overview, task, locality, I/O, spill, GC and plan sections (spill and GC only
+when the stage had them).
 Below it, two tabs split the rest of the board:
 
 1. **Findings**: every flagged finding and its detail widget, grouped by
@@ -132,18 +140,18 @@ Below it, two tabs split the rest of the board:
    table, and the reference-only cards, led by core usage by locality, which
    shows even on a clean run.
 
-Click a finding's documentation link (or the topbar's **Docs** button) to
-open the reference material in a slide-in panel beside the dashboard: the
-dashboard stays visible and interactive, so you can check a metric against
-the reference without losing your place. Esc closes the panel, even while
-you are reading or scrolling inside it.
+Click a finding's tag to open its reference material in a slide-in panel
+beside the dashboard: the dashboard stays visible and interactive, so you can
+check a metric against the reference without losing your place. Esc closes
+the panel, even while you are reading or scrolling inside it. The topbar's
+**Docs** button opens these docs in a new tab.
 
 ### Advanced view
 
 The topbar has an **Advanced view** toggle. It's off by default, which keeps
 each widget to the finding itself and what to do about it. Turn it on to also
-show confidence levels, supporting evidence, and documentation links for each
-finding, plus a few extra table columns and the finding filter bar (impact,
+show confidence levels, supporting evidence, and a page icon beside each
+finding's tag that opens its entry in these docs, plus a few extra table columns and the finding filter bar (impact,
 type, stage). A filter that is already active, for example from a shared
 link, keeps the filter bar visible either way. In the verdict, each step
 also says how its savings figure was estimated (measured or modeled, and
@@ -161,21 +169,25 @@ screen-reader user. Your choice is remembered across runs.
 
 ### The rest of the topbar
 
-Once a run is loaded, the topbar also carries a few more controls. The
-count chip ("4 critical") counts the same findings the verdict ranks; click
+Once a run is loaded, the topbar also carries a few more controls. The run
+name opens a menu of recent files, to switch to another run or load a new
+file. When the parser skipped malformed lines, a warning beside the name
+says how many. The count chip ("4 critical") counts the same findings the
+verdict ranks; click
 it to jump to that band of the Findings list (a board filter hiding the band
-is cleared, with a notice saying so). It reads **No findings** only
-when the verdict calls the run clean, **Not fully checked** when the log
-lacked evidence for some checks, and **Run failed** when a job failed. For
+is cleared, with a notice saying so). It reads **Run failed** when a job
+failed and there is no finding to count, **No findings** only when the
+verdict calls the run clean, and **Not fully checked** otherwise. For
 keyboard users, the first Tab stop is **Skip to the verdict**.
-**New analysis** goes back to the landing page to load another run.
+**New analysis** goes back to the landing page to load another run;
+dropping a file onto the dashboard loads it too.
 **Compare with another run** keeps this run as the baseline and asks only
 for the other one (see [Run comparison mode](./run-comparison.md)).
 **Plan graph** opens an interactive node-and-edge view of the run's SQL
 execution plan, filterable down to I/O operators (scan, exchange), a
 broader "basic" set, or every operator. **Export evidence** downloads the
 current run's findings as a portable Markdown or JSON report, the same
-shape the CLI and MCP tools produce, or as **Download HTML dashboard**: one
+report the CLI produces, or as **Download HTML dashboard**: one
 `.html` file holding this dashboard for the run, which opens in any browser
 with no server, like the CLI's `--export-html` folder. Exported dashboards
 carry no docs links: finding tags and "learn more" references show as plain
@@ -208,6 +220,13 @@ npx -p sparkforensics-cli sparkforensics-analyze <file|dir> [--max-runtime ms] [
   [--out path]
 ```
 
+Output is JSON by default; `--format md` writes the Markdown report instead.
+Budget violations and inconclusive budgets print to stderr as
+`[violation] ...` and `[inconclusive] ...` lines. The exit code is 0 when
+every budget passes, 1 when one is violated, 3 when none is violated but one
+is inconclusive, and 2 for bad arguments, an invalid `--thresholds` file, an
+unreadable log or a failed History Server fetch.
+
 `--min-efficiency` checks busy core time, the share of executor core time that
 ran tasks (100 minus the dashboard's Unused core time). It is not the
 dashboard's Efficiency tile, which is the share of wall-clock with a stage
@@ -215,6 +234,7 @@ running, so the two can differ widely on the same run.
 
 The command ships in the `sparkforensics-cli` package. To install it once:
 `npm i -g sparkforensics-cli`, then run `sparkforensics-analyze` directly.
+`npx sparkforensics-analyze <file>` is a shorter way to run the same command.
 
 Point it at a single event-log file, or at one run's `eventlog_v2_*`
 rolling-log directory; any other directory is rejected. Output goes to
@@ -231,11 +251,24 @@ The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,
 comparing a candidate run against a baseline with regression gating
 (`--baseline`/`--max-regression-pct`/`--regression-metric`/
-`--fail-on-introduced`), redacting the app id, the app name and any host/IP
+`--fail-on-introduced`; the baseline is a local file or rolling-log
+directory, no History Server), redacting the app id, the app name and any host/IP
 tokens before sharing output (`--redact`), and narrowing the findings to certain impact
 bands, types, or a stage (`--impact`/`--type`/`--stage`), and tuning
 detector thresholds from a file (`--thresholds`, below). Run it with
 `--help` for the full flag list.
+
+Same caveat as above: if the History Server is only reachable through an SSH
+bastion, `--shs-base-url` can't reach it either: see
+[Alternative ways to get the logs](./alternative-log-retrieval.md).
+
+Running in Airflow instead of a plain CI pipeline? See
+[sparkforensics-operator](https://github.com/shuffle-works/sparkforensics-operator),
+an Airflow operator that wraps the CLI and acts on the result after each
+Spark job, so you don't have to wire up the call yourself.
+
+Want an AI assistant to diagnose a run directly, without the dashboard or a
+CI gate? See [MCP tools reference](./mcp-tools.md).
 
 ### Tuning detector thresholds
 
@@ -274,7 +307,9 @@ A tuned run says so wherever it reports:
   findings (as `slowHost.<name>`), because a slow host hides a stage's
   slowness finding, so the override decides which of those you see.
 - A clean check measured against a tuned threshold carries
-  `tunedThresholds` too, and its `thresholdSummary` states the tuned value.
+  `tunedThresholds` too, with the tuned value and the default. Its
+  `thresholdSummary` shows the tuned number only where the summary names one
+  (for example `spill`, `slowHost`).
 - `summary.tunedThresholds` lists every tuned detector, and each tuned row
   of the `detectors` catalog shows the thresholds the run used.
 - The Markdown report adds a `Tuned thresholds` line to its header and a
@@ -306,15 +341,3 @@ Four more keys, `inputBytes`, `outputBytes`, `taskCount` and
 `executorsAdded`, measure workload volume rather than performance. They have
 no better or worse direction, so a regression budget on one of them reports
 `inconclusive` whenever the value changes, and passes when it doesn't.
-
-Same caveat as above: if the History Server is only reachable through an SSH
-bastion, `--shs-base-url` can't reach it either: see
-[Alternative ways to get the logs](./alternative-log-retrieval.md).
-
-Running in Airflow instead of a plain CI pipeline? See
-[sparkforensics-operator](https://github.com/shuffle-works/sparkforensics-operator),
-an Airflow operator that wraps the CLI and acts on the result after each
-Spark job, so you don't have to wire up the call yourself.
-
-Want an AI assistant to diagnose a run directly, without the dashboard or a
-CI gate? See [MCP tools reference](./mcp-tools.md).

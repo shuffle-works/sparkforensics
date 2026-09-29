@@ -5,5 +5,6 @@ instability or data-driven errors. The finding names the dominant error: the
 exception class, or the executor loss reason (for example "Container killed
 by YARN for exceeding memory limits"). It lists up to five distinct failures,
 each with its message and a short stack excerpt. With redaction on, messages
-and the message text inside excerpts are replaced, since they can carry file
-paths and data values; class names and stack frames stay.
+become `[redacted]` and message lines inside excerpts are dropped, since they
+can carry file paths and data values; class names, stack frames and the
+executor loss reason stay (hosts in it are pseudonymized).

@@ -7,8 +7,9 @@ Put two runs side by side to see whether a tuning change helped.
 From the landing page, click **Compare two runs**. Two slots appear:
 **Baseline** and **Candidate**.
 
-1. Load a file into each slot the same way you'd load a single run (drag
-   and drop, or **Choose file**).
+1. Load a run into each slot the same way you'd load a single run (drag
+   and drop, **Choose file**, **Choose rolling-log folder**, or a History
+   Server fetch).
 2. Click **Compare**.
 
 The runs parse one after the other through the same background worker. When
@@ -39,8 +40,9 @@ candidate's dashboard, whose own verdict names the first thing to fix.
 The **Metrics** table covers the whole run: wall-clock duration, memory
 spill, task skew, failed-task rate, disk spill, GC time, input/output bytes,
 executor run-time, and task/executor counts, baseline against candidate with
-the change. **Findings by category** lists which finding types appeared or
-disappeared between the two runs, with the affected stages for each.
+the change. **Findings by category** lists which finding types became more or less
+frequent in run B, per impact level, with the count in each run and the
+affected stages.
 
 Stage-level detail depends on matching a stage in the baseline to its
 counterpart in the candidate, and SparkForensics only does that
@@ -48,8 +50,8 @@ automatically when a stage's identity (its position in the SQL plan)
 resolves to exactly one match on both sides; AQE's runtime replanning makes
 a plain stage-ID match unreliable. The **Per-stage task skew** table covers
 only stages matched this way, and the page states what percentage of stages
-that was. If matching is uncertain (for example, the two runs came from
-different application names), a warning banner says so; the metric deltas
+that was. If matching is uncertain (the two runs have different application names,
+or fewer than half their stages matched), a warning banner says so; the metric deltas
 above it still hold; they don't depend on stage matching.
 
 For everything else, matching is manual: the **Pinned per-stage deltas**
@@ -64,8 +66,12 @@ candidate dashboard**. **← Back to comparison** takes you back.
 ## Comparing without the dashboard
 
 The same comparison runs headlessly, and opens with the same verdict: the
-positional run is the candidate, the `--baseline` run the baseline. The CLI's `--baseline` flag adds a
-comparison section to its output (`comparison.verdict` in JSON) and can gate a build on it
+positional run is the candidate, the `--baseline` run the baseline. The CLI's
+`--baseline <local file or rolling-log dir>` flag adds the comparison. In JSON
+the run's report moves under `candidate` and the comparison sits beside it
+under `comparison` (`comparison.verdict` is the headline); in Markdown the
+comparison section follows the report. `--baseline` can also gate a build on
+the comparison
 (`--max-regression-pct`, `--fail-on-introduced`; see [Getting
 started](./getting-started.md#ci-and-automation)). The MCP server's
 `compare_runs` and `evaluate_budgets` tools do the same for an AI assistant;

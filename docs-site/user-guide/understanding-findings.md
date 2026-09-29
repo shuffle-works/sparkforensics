@@ -3,12 +3,15 @@
 Every flagged problem carries a short ALL-CAPS tag. This page has one entry
 per tag: what it means, and what to do about it.
 
-Turn on [Advanced view](./getting-started.md#advanced-view) in the dashboard to
-see, per finding, the confidence level and a link to the same background
-reading collected here, opened in an in-app "Reference" panel next to the
-board. A few tags share that reading with another tag, because the
-underlying Spark-tuning material overlaps: `SFAIL` with `FAIL`, `PART` with
-`SHFL`, `SPEC` with `STRAG`, and `CACHE`/`LOCAL` with `UTIL`.
+Each tag links to the matching section of the Spark
+[tuning reference](../tuning-reference/index.md), opened in an in-app **Reference**
+panel next to the board. `INCMP` has no reference section, so its tag opens
+this page instead. Turn on [Advanced view](./getting-started.md#advanced-view)
+to also see a finding's confidence when it is below high, and a page icon
+beside the tag that opens this page's entry. Some tags point into another
+tag's reference page because the material overlaps: `SFAIL` shares `FAIL`'s
+section; `PART` is on the `SHFL` page, `SPEC` on `STRAG`, `SHAPE` on `SKEW`,
+`SLOW` on `HOST`, and `CACHE`/`LOCAL` on `UTIL`.
 
 ## Per-stage
 
@@ -17,7 +20,9 @@ underlying Spark-tuning material overlaps: `SFAIL` with `FAIL`, `PART` with
 A small number of tasks take much longer than their peers in the same
 stage. For join-driven skew, enable AQE skew-join handling
 (`spark.sql.adaptive.skewJoin.enabled`); otherwise salt the key or
-repartition on a better key.
+repartition on a better key. Flagged when P95 task time (the longest task,
+on a stage with fewer than 20 tasks) exceeds 3x the median and the
+recoverable tail is at least 0.5% of the run.
 
 ### `SHFL`: Shuffle I/O {#shfl}
 
@@ -31,14 +36,15 @@ Tasks are writing data out of memory, which slows execution. Two spill
 patterns get flagged differently: skew spill, where a few heavy tasks spill
 while most don't (rebalance partitioning), and volume spill, where most
 tasks spill because the data genuinely exceeds available memory (add
-partitions). Only flagged on stages that take at least 0.5% of the run.
+partitions or executor memory). Only flagged on stages that take at least 0.5% of the run.
 
 ### `GC`: Garbage collection pressure {#gc}
 
-Tasks spend an unusually large share of time reclaiming memory. Reduce
+Tasks spend more than 10% of executor run time reclaiming memory. Reduce
 object creation: use primitive types, avoid UDFs, or raise executor memory.
-A stage with very little GC gets an informational note that executor memory
+A stage with GC below 5% gets an informational note that executor memory
 may be over-provisioned, only on stages that take at least 0.5% of the run.
+Both need at least 10 s of executor run time on the stage.
 
 ### `FAIL`: Failed tasks {#fail}
 
@@ -47,8 +53,9 @@ instability or data-driven errors. The finding names the dominant error: the
 exception class, or the executor loss reason (for example "Container killed
 by YARN for exceeding memory limits"). It lists up to five distinct failures,
 each with its message and a short stack excerpt. With redaction on, messages
-and the message text inside excerpts are replaced, since they can carry file
-paths and data values; class names and stack frames stay.
+become `[redacted]` and message lines inside excerpts are dropped, since they
+can carry file paths and data values; class names, stack frames and the
+executor loss reason stay (hosts in it are pseudonymized).
 
 ### `SFAIL`: Failed stage {#sfail}
 
@@ -91,8 +98,8 @@ repartition to break it up before the stage runs.
 
 ### `SLOW`: Stage slowness {#slow}
 
-A stage ran long overall without a more specific cause getting flagged.
-Often a partition-count problem: raise parallelism via
+A stage ran for 15 minutes or more and no slow host was flagged on it. It
+can appear alongside other findings on the same stage. Often a partition-count problem: raise parallelism via
 `spark.sql.shuffle.partitions` or `spark.default.parallelism`, or check for a
 large per-task data volume driving heavy shuffle and spill.
 
@@ -106,7 +113,8 @@ flagged on stages that take at least 0.5% of the run.
 
 ### `HOST`: Slow host {#host}
 
-One executor is much slower than its peers. It may just hold data locality
+One executor is much slower than its peers, or carries most of the stage's
+task time or bytes. It may just hold data locality
 for its tasks or carry one heavy stage, rather than a hardware fault.
 Enable `spark.speculation` to relaunch a lagging task automatically. Only
 flagged on stages that take at least 0.5% of the run.
@@ -115,8 +123,10 @@ flagged on stages that take at least 0.5% of the run.
 
 ### `COLD`: Executor cold start {#cold}
 
-New executors take time to become available for work. Pre-warm the cluster,
-or use dynamic allocation.
+The first stage waited more than 30 s for an executor. Keep a warm pool of
+executors, or, with dynamic allocation, raise
+`spark.dynamicAllocation.minExecutors`/`initialExecutors` so the app doesn't
+scale up from zero.
 
 ### `UTIL`: Low utilization {#util}
 
@@ -125,19 +135,23 @@ Consider a smaller cluster, or enable dynamic allocation.
 
 ### `MEM`: Memory utilization {#mem}
 
-Executor memory or core capacity may be over- or under-provisioned. Some
+Executor memory or core capacity may be over- or under-provisioned: more
+than 50% of allocated core time ran no task, an executor's heap peaked above
+95% of its allocation, or it stayed below 70%. Some
 detail here needs `spark.eventLog.logStageExecutorMetrics=true` on the run
 being analyzed; without it, per-executor memory usage can't be broken down.
 Review `spark.executor.memory` and executor count if allocated memory sat
 largely idle over the run. That idle-memory variant self-flags a confidence
 that scales with how far the estimated waste sits past a 1.5x buffer: it
-estimates waste from allocated-versus-used memory-time. Check it against
+estimates waste from allocated memory-time versus task run time (not
+measured heap usage). Check it against
 the Spark UI before resizing anything.
 
 ### `CACHE`: Caching opportunity {#cache}
 
-A reusable dataset (re-read via the same SQL relation more than once) may be
-worth persisting between stages. Self-flags a confidence that scales with
+A reusable dataset (re-read via the same SQL relation more than once, or a
+join/union result recomputed by two or more executions, matched by plan
+shape) may be worth persisting between stages. Self-flags a confidence that scales with
 how many executions reuse the same relation: reuse is only inferred, from
 plan-scan identity across SQL executions, so confirm the reads really do
 hit the same data before you cache anything.
@@ -190,18 +204,20 @@ only what was captured up to that point, not the full run.
 ### `CFG`: Configuration audit {#cfg}
 
 Flags configuration settings that may cause reliability or efficiency
-problems, independent of any one stage's behavior. Four properties are
-audited today:
+problems, independent of any one stage's behavior. Four checks run
+today:
 
 - `spark.shuffle.service.enabled`: flagged when dynamic allocation is on
   but the external shuffle service is off, since shuffle data won't survive
   executor removal.
-- `spark.dynamicAllocation.maxExecutors`: flagged for inverted bounds or a
-  missing upper bound.
-- `spark.serializer`: flagged when still on the default Java serializer;
-  `org.apache.spark.serializer.KryoSerializer` is faster and produces
-  smaller buffers.
-- `spark.executor.memoryOverhead`: flagged when set below a safe floor.
+- `spark.dynamicAllocation.minExecutors`/`maxExecutors`: with dynamic
+  allocation on, flagged when min exceeds max (reported on `minExecutors`)
+  or when no max is set.
+- `spark.serializer`: flagged when not set to Kryo (the default is the Java
+  serializer); `org.apache.spark.serializer.KryoSerializer` is faster and
+  produces smaller buffers.
+- `spark.executor.memoryOverhead`: flagged when set below max(384 MiB, 10%
+  of executor memory).
 
 ## SQL scope
 
@@ -214,7 +230,8 @@ this tag:
   plan. When the repeats have the same shape but different filters, columns
   or tables, the finding stays informational and claims no time. Only flagged
   when the repeat's stages take at least 0.5% of the run.
-- Small files: reading an excessive number of small files.
+- Small files: one plan node reads or writes more than 100 files averaging
+  under 3 MB. Compact upstream output, or coalesce before writing.
 - Under-broadcast: the smaller side of a Sort Merge Join looks well under
   the broadcast threshold; consider a `broadcast()` hint or raising
   `spark.sql.autoBroadcastJoinThreshold`.
