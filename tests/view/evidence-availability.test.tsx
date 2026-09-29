@@ -205,6 +205,32 @@ test('Redundant Plan Subtree finding opens SQL-plan evidence', async () => {
   expect(document.activeElement).toBe(document.getElementById('evidence-availability-sqlPlan'));
 });
 
+test('a second evidence click after returning to Findings switches tabs again', async () => {
+  const user = userEvent.setup();
+  store.getState().setWidgetDensity('advanced');
+  store.setState({
+    ...store.getState(),
+    catalog: [testFinding({
+      type: 'duplicatePlanSubtree', stageId: null, impactBand: 'warning', stageIds: [1],
+      recommendation: 'Consider caching the shared computation.',
+    })],
+  });
+  renderDashboard();
+
+  await screen.findByRole('heading', { name: /^redundant plan subtree$/i });
+  await user.click(screen.getByRole('button', { name: 'Redundant Plan Subtree' }));
+  const evidence = screen.getByRole('button', { name: /^evidence: sql plan$/i });
+  await user.click(evidence);
+  expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
+
+  await user.click(screen.getByRole('tab', { name: 'Findings' }));
+  expect(screen.getByRole('tab', { name: 'Findings' })).toHaveAttribute('aria-selected', 'true');
+  await user.click(evidence);
+
+  expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
+  expect(document.activeElement).toBe(document.getElementById('evidence-availability-sqlPlan'));
+});
+
 test('Config Audit finding opens Spark-configuration evidence', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');

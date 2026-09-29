@@ -56,7 +56,7 @@ describe('RowStatusCluster', () => {
     const revealEvidence = vi.fn();
     render(
       <EvidenceAvailabilityContext.Provider
-        value={{ referenceOpen: false, setReferenceOpen: vi.fn(), evidenceCardOpen: false, setEvidenceCardOpen: vi.fn(), revealEvidence, registerRow: vi.fn() }}
+        value={{ revealRequest: 0, evidenceCardOpen: false, setEvidenceCardOpen: vi.fn(), revealEvidence, registerRow: vi.fn() }}
       >
         <RowStatusCluster evidenceKey="sqlPlan" />
       </EvidenceAvailabilityContext.Provider>,

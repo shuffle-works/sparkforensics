@@ -393,11 +393,15 @@ The Evidence availability card is the persistent, non-impact-band ledger
 not an alert or detector widget. An `Evidence: …`
 control appears only where a conclusion or unavailable report lens declares
 a relevant ledger dependency. `revealEvidence`
-(`src/view/EvidenceAvailabilityContext.tsx`) sets `referenceOpen` true,
-which `DashboardContent` (`src/view/Dashboard.tsx`) watches in a `useEffect`
-and translates into `setActiveTab('full-report')`: mouse and keyboard activation switches
-to the Full app report tab, opens the ledger card, then focuses the
-referenced stable entry id (`evidence-availability-<key>`). The control
+(`src/view/EvidenceAvailabilityContext.tsx`) bumps a `revealRequest`
+counter, which `DashboardContent` (`src/view/Dashboard.tsx`) watches in a
+`useLayoutEffect` and translates into `setActiveTab('full-report')`. Each
+click is a new request, so it switches tabs again after the reader returns
+to Findings. The layout effect makes the tab visible before the provider's
+queued focus runs, since a row inside the hidden, still-mounted panel can't
+take focus. Mouse and keyboard activation switches to the Full app report
+tab, opens the ledger card, then focuses the referenced stable entry id
+(`evidence-availability-<key>`). The control
 explains evidence availability; it does not promise an unavailable signal
 would have produced a finding.
 
