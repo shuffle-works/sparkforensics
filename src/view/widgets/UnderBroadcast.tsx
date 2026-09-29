@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from 'react';
 
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { FindingOf } from '@sparkforensics/core/types.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
@@ -38,7 +39,7 @@ function UnderBroadcastRow({ finding }: { finding: FindingOf<'underBroadcast'> }
         <StagePillGroup pills={finding.stageIds.map((id) => ({ id }))} />
       ) : null}
       <p>
-        {finding.recommendation} <ImpactEstimate finding={finding} />
+        {recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation} <ImpactEstimate finding={finding} />
       </p>
     </li>
   );
@@ -71,6 +72,7 @@ export const UnderBroadcast = memo(function UnderBroadcast({ catalog, defaultCol
   return (
     <WidgetCard
       title="Missed Broadcast Join"
+      fixFor={findings}
       impactBand={worstImpactBand(findings)}
       open={cardOpen}
       onOpenChange={setCardOpen}

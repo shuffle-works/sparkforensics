@@ -90,10 +90,9 @@ type ChurnModel =
   | { hasEvents: false; added: { timestamp: number }[]; removed: { timestamp: number }[] }
   | { hasEvents: true; added: { timestamp: number }[]; removed: { timestamp: number }[]; rows: ChurnRow[]; yAxisScale: ReturnType<typeof computeYAxisScale> };
 
-/** Single-row body for an active `autoscalingChurn` finding: stat line +
- * `ImpactEstimate`, and a recommendation (with tuning link), always visible
- * (there's only ever one active churn finding, so no per-row location is
- * needed). */
+/** Single-row body for an active `autoscalingChurn` finding: stat line,
+ * `ImpactEstimate` and the tuning link; the card states the fix (there's only
+ * ever one active churn finding, so no per-row location is needed). */
 function AutoscalingChurnRow({ finding }: { finding: Finding }) {
   return (
     <div className="flex flex-col gap-1 transition-colors">
@@ -104,8 +103,7 @@ function AutoscalingChurnRow({ finding }: { finding: Finding }) {
       <p className="flex flex-wrap items-start gap-2 text-sm">
         <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
         <span>
-          {finding.recommendation}{' '}
-          <DocsLink anchor="#config-autoscale-bounds">Tuning executorIdleTimeout and the min/max bounds</DocsLink>.
+          <DocsLink anchor="#config-autoscale-bounds">Tuning executorIdleTimeout and the min/max bounds</DocsLink>
         </span>
       </p>
     </div>
@@ -160,6 +158,7 @@ export const AutoscalingChurn = memo(function AutoscalingChurn({ appModel, activ
     <WidgetCard
       title="Autoscaling Churn"
       impactBand={finding?.impactBand}
+      fixFor={finding ? [finding] : []}
       badges={finding && <TagBadge type="autoscalingChurn" impactBand={finding.impactBand} />}
       defaultCollapsed={defaultCollapsed}
       summary={

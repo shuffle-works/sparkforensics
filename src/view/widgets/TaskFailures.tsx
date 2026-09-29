@@ -71,7 +71,6 @@ function TaskFailureRow({ finding }: { finding: FindingOf<'failures'> & { stageI
         otherFailedTasks={finding.otherFailedTasks}
       />
       <ImpactEstimate finding={finding} />
-      {finding.recommendation ? <p className="text-xs text-muted-foreground">{finding.recommendation}</p> : null}
     </li>
   );
 }
@@ -109,6 +108,7 @@ export function TaskFailures({ appModel, catalog, defaultCollapsed = true }: Tas
   return (
     <WidgetCard
       title="Failed Tasks"
+      fixFor={findings}
       impactBand={worstImpactBand(findings)}
       badges={
         <>

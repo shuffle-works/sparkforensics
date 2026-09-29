@@ -247,17 +247,15 @@ empty catalog filter (except Core Usage by Locality, the one always-mounted
   early-returning on an empty catalog filter).
 - Tier B (the row/expand pattern): a row's collapsed state shows its core
   metric(s), `ImpactEstimate`, any config-hint code snippet/list, and docs
-  links, all unconditionally. Widgets that pass `WidgetCard`'s `fixFor`
-  (`ColdStart.tsx`, `SlowHost.tsx`, `Straggler.tsx`, `GcPressure.tsx`,
-  `Spill.tsx`, `StageFailed.tsx`, `ExecutorUtilization.tsx`,
-  `CacheUtilization.tsx`, `CachingOpportunity.tsx`,
-  `DuplicatePlanSubtree.tsx`) state each distinct
-  `coreFindingGenericRecommendation` once above the body, so their rows show
-  only the measurement. Other Tier B widgets still print a per-row
-  recommendation (e.g. `SmallFiles.tsx`, `UnderBroadcast.tsx`,
-  `OverBroadcast.tsx`, `StageSlowness.tsx`, `SpeculationWaste.tsx`,
-  `PartitionSizing.tsx`, `TaskFailures.tsx`, `ConfigAudit.tsx`,
-  `AutoscalingChurn.tsx`, `MemoryUtilization.tsx`).
+  links, all unconditionally. The fix is stated once per card: `WidgetCard`'s
+  `fixFor` prints each distinct `coreFindingGenericRecommendation` above the
+  body, so rows don't repeat a recommendation that restates their number.
+  Where the detector's sentence is a row's only measurement (Excessive Small
+  Files, Missed Broadcast Join, Oversized Broadcast Join, Config Audit), the
+  row shows its measured half, split off by core's `recommendationParts`.
+  Three rows keep their own sentence because their type has no generic fix
+  for them: Incomplete Run, and a data-unavailable Memory Utilization or
+  Cache Storage row, which names the setting to enable.
   Confidence and evidence are unconditional too: `RowStatusCluster`
   (`src/view/RowStatusCluster.tsx`) is a single, fixed-position pill
   combining both. Every widget that
@@ -332,11 +330,10 @@ One named exception:
   controls coexist per row. `ExpandToggleButton` is single-purpose
   (always the task-detail toggle) since these three are its only adopters.
 
-No toggle at all, unconditional content (the fix per row or once via
-`fixFor`, see Tier B; these widgets carry no confidence/evidence
-display): `IncompleteRun.tsx`, `ShuffleIO.tsx`, `PartitionSizing.tsx`,
-`StageFailed.tsx`, `TaskFailures.tsx`, `RetryWaste.tsx`, `ColdStart.tsx`,
-`SlowHost.tsx`, `StageSlowness.tsx`, `SpeculationWaste.tsx`,
+No toggle at all, unconditional content, since these widgets carry no
+confidence/evidence display: `IncompleteRun.tsx`, `ShuffleIO.tsx`, `PartitionSizing.tsx`, `StageFailed.tsx`,
+`TaskFailures.tsx`, `RetryWaste.tsx`, `ColdStart.tsx`, `SlowHost.tsx`,
+`StageSlowness.tsx`, `SpeculationWaste.tsx`,
 `ExecutorCountChart.tsx`, `ExecutorUtilization.tsx`, `JobFailures.tsx`,
 `CacheUtilization.tsx` and `AutoscalingChurn.tsx`.
 

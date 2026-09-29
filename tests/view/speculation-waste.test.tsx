@@ -22,7 +22,7 @@ test('renders nothing when the catalog has no speculationWaste findings', () => 
   expect(container).toBeEmptyDOMElement();
 });
 
-test('renders the WidgetCard heading, SPEC tag, formatted duration, and recommendation', () => {
+test('renders the WidgetCard heading, SPEC tag, formatted duration, and the card\'s fix', () => {
   const catalog: Finding[] = [
     { type: 'speculationWaste', stageId: 7, impactBand: 'warning', value: 90000, recommendation: 'Tune spark.speculation settings for stage 7.' },
   ];
@@ -30,7 +30,8 @@ test('renders the WidgetCard heading, SPEC tag, formatted duration, and recommen
   expect(screen.getByRole('heading', { name: 'Speculation Waste' })).toBeInTheDocument();
   expect(screen.getAllByText('SPEC').length).toBeGreaterThan(0);
   expect(screen.getByText('1m 30s')).toBeInTheDocument();
-  expect(screen.getByText('Tune spark.speculation settings for stage 7.')).toBeInTheDocument();
+  expect(screen.getByText(/^If task durations are naturally variable/)).toBeInTheDocument();
+  expect(screen.queryByText('Tune spark.speculation settings for stage 7.')).not.toBeInTheDocument();
 });
 
 test('shows the SPEC tag once, in the header, and keeps a per-row impact dot for every flagged stage', () => {
