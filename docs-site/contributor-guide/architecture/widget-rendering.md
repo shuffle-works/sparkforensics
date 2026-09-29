@@ -240,8 +240,8 @@ empty catalog filter (except Core Usage by Locality, the one always-mounted
   metric(s), `ImpactEstimate`, any config-hint code snippet/list, and docs
   links, all unconditionally. The fix is stated once per card: `WidgetCard`'s
   `fixFor` prints each distinct `coreFindingGenericRecommendation` above the
-  body, so rows don't repeat a recommendation that restates their number. Confidence and evidence
-  are unconditional too, since the 2026-09 redesign: `RowStatusCluster`
+  body, so rows don't repeat a recommendation that restates their number.
+  Confidence and evidence are unconditional too, since the 2026-09 redesign: `RowStatusCluster`
   (`src/view/RowStatusCluster.tsx`) is a single, fixed-position pill
   combining both, replacing the old per-row `ExpandToggleButton` +
   `ConfidenceMarker` + `EvidenceLink` trio entirely. Every widget that
@@ -271,7 +271,7 @@ empty catalog filter (except Core Usage by Locality, the one always-mounted
   calls the same `revealEvidence` navigation the retired `EvidenceLink` used.
   `RowStatusCluster`'s fixed slot is the row's own stage-pill/title line
   (`justify-between`, cluster right-aligned), the same position in every
-  adopting widget, not floating with the recommendation text below.
+  adopting widget, not floating with the row's detail below.
   Lists longer than `VISIBLE_LIMIT` (6, `packages/core/src/format-utils.ts`) still get
   page-based navigation (Previous/Next, `usePagedRows`/`RowPagination`,
   `src/view/usePagedRows.ts`/`src/view/RowPagination.tsx`) instead of
@@ -304,7 +304,7 @@ disclosing their own unvalidated noise-floor thresholds (confidence only,
 per-row, no `evidenceKey` passed), `GcPressure.tsx`'s rows, `Straggler.tsx`'s
 rows, `CachingOpportunity.tsx`'s rows (the `cachingOpportunity` detector
 scales `confidence` per finding via `cachingReuseConfidence`, so the badge
-sits next to each row's recommendation rather than as a single caveat below
+sits next to each row rather than as a single caveat below
 the table), and the shared `StageFindingGroup.tsx` row (adopted by
 `Skew.tsx`/`StageShape.tsx`/`TinyTask.tsx`, though today only `skew`
 findings actually carry a `confidence` field).
