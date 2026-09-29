@@ -41,7 +41,7 @@ The **Metrics** table covers the whole run: wall-clock duration, memory
 spill, task skew, failed-task rate, disk spill, GC time, input/output bytes,
 executor run-time, and task/executor counts, baseline against candidate with
 the change. **Findings by category** lists which finding types became more or less
-frequent in run B, per impact level, with the count in each run and the
+frequent in the candidate, per impact level, with the count in each run and the
 affected stages.
 
 Stage-level detail depends on matching a stage in the baseline to its

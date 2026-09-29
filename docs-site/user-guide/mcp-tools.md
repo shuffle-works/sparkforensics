@@ -323,8 +323,8 @@ opens with (the baseline is `runIdA`/`sourceA`, the candidate `runIdB`/`sourceB`
 headline when either run had jobs fail, a `tone` (`better`, `worse`, `same` or
 `unknown`), and `sentences` naming which cost metrics and finding categories
 moved each way. When either log has no `ApplicationEnd` event, the title
-compares how much run time each log covers ("Run B's log covers 2.0s less run
-time than run A's") and the tone is `unknown`.
+compares how much run time each log covers ("The candidate's log covers 2.0s less run
+time than the baseline's") and the tone is `unknown`.
 
 Parameters:
 
