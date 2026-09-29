@@ -494,8 +494,11 @@ The codes:
   Server archive) couldn't be decoded.
 - `application-not-found`: the History Server returned a 404 for that
   `appId`/`attemptId`.
-- `upstream-unreachable`: the History Server response stalled mid-body.
-  Override the idle timeout with `SPARKFORENSICS_SHS_TIMEOUT_MS`. If the
+- `upstream-unreachable`: loading a run from the History Server failed
+  because the server couldn't be reached (connection refused, DNS failure),
+  didn't send headers in time, or stalled mid-body. `list_runs` reports it
+  when the server can't be reached or doesn't answer in time.
+  `SPARKFORENSICS_SHS_TIMEOUT_MS` (default 30000) sets these timeouts. If the
   server is unreachable entirely (an SSH-only cluster), see
   [Alternative ways to get the logs](./alternative-log-retrieval.md).
 - `archive-too-large`: the History Server archive blew the byte cap.

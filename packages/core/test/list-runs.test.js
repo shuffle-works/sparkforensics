@@ -308,6 +308,19 @@ describe('listRunsShs', () => {
       .rejects.toMatchObject({ code: 'access-or-upstream-failure' });
   });
 
+  // Same code diagnose_run reports when the History Server can't be reached.
+  it('throws upstream-unreachable when the connection is refused', async () => {
+    const fetchImpl = async () => { throw new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } }); };
+    await expect(listRunsShs({ shsBaseUrl: 'http://shs:18080' }, { fetchImpl }))
+      .rejects.toMatchObject({ code: 'upstream-unreachable' });
+  });
+
+  it('throws upstream-unreachable when the request times out', async () => {
+    const fetchImpl = async () => { throw new DOMException('The operation was aborted due to timeout', 'TimeoutError'); };
+    await expect(listRunsShs({ shsBaseUrl: 'http://shs:18080' }, { fetchImpl }))
+      .rejects.toMatchObject({ code: 'upstream-unreachable' });
+  });
+
   it('throws access-or-upstream-failure on a non-ok response', async () => {
     const fetchImpl = async () => new Response('nope', { status: 500 });
     await expect(listRunsShs({ shsBaseUrl: 'http://shs:18080' }, { fetchImpl }))

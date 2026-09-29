@@ -10,7 +10,9 @@ function sendSafeError(res, status, code) {
   res.end(body);
 }
 
-function isConnectionFailure(error) {
+// Also read by list-runs.ts, so a History Server listing that can't be reached reports the
+// same upstream-unreachable code as a run fetch.
+export function isConnectionFailure(error) {
   if (error?.name === 'AbortError' || error?.name === 'TimeoutError') return true;
   const code = error?.code ?? error?.cause?.code;
   if (['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND', 'ETIMEDOUT'].includes(code)) return true;

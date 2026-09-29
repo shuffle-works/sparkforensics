@@ -108,6 +108,25 @@ describe('resolveOrCreateRun (path source)', () => {
     await expect(resolveOrCreateRun({ source: { path: '/definitely/does/not/exist' } }))
       .rejects.toMatchObject({ code: 'invalid-event-log' });
   });
+
+  // A local file or folder that isn't a decodable event log reports the same code a History
+  // Server archive that fails to decode does, with the decode message kept.
+  it.each([
+    ['a file that is not an event log', (dir) => { const p = join(dir, 'notes.txt'); writeFileSync(p, 'not json\nat all\n'); return p; }],
+    ['a corrupt .gz', (dir) => { const p = join(dir, 'run.gz'); writeFileSync(p, Buffer.from([0x1f, 0x8b, 0x08, 0x00, 1, 2, 3, 4, 5, 6, 7])); return p; }],
+    ['a corrupt .zstd', (dir) => { const p = join(dir, 'run.zstd'); writeFileSync(p, Buffer.from([0x28, 0xb5, 0x2f, 0xfd, 1, 2, 3, 4, 5, 6, 7])); return p; }],
+    ['a directory that is not a rolling event log', (dir) => { writeFileSync(join(dir, 'a.txt'), 'x'); return dir; }],
+  ])('throws invalid-event-log for %s', async (_label, make) => {
+    const dir = mkdtempSync(join(tmpdir(), 'sf-mcp-bad-'));
+    try {
+      const path = make(dir);
+      const err = await resolveOrCreateRun({ source: { path } }).catch((e) => e);
+      expect(err).toMatchObject({ code: 'invalid-event-log' });
+      expect(err.message.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('resolveOrCreateRun (SHS source)', () => {
