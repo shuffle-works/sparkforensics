@@ -220,7 +220,7 @@ regression or a newly introduced critical finding:
 npx -p sparkforensics-cli sparkforensics-analyze path/to/candidate --baseline path/to/baseline --max-regression-pct 10 --fail-on-introduced critical
 ```
 
-Redact the app id and any host/IP tokens before sharing the output outside
+Redact the app id, the app name and any host/IP tokens before sharing the output outside
 the environment that produced it:
 
 ```bash

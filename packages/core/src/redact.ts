@@ -122,7 +122,7 @@ function collectConfigHostValues(config: Record<string, string> | undefined, hos
 interface RedactableReport {
   // `id` accepts `null`: summary.app.id is genuinely nullable (app can be
   // absent), and `collectIds` below narrows with `typeof appId === 'string'`.
-  summary?: { app?: { id?: string | null } };
+  summary?: { app?: { id?: string | null; name?: string | null } };
   // Deliberately untyped: collectHostFields walks by key name, so no per-field
   // typing is needed and any finding shape (including nested evidence arrays)
   // is accepted.
@@ -188,10 +188,19 @@ function applyReplacements<T>(node: T, ids: { appIds?: Set<string>; hosts: Set<s
   return deepReplace(node, merged) as T;
 }
 
+// The app name identifies a job as much as its id, so a redacted name becomes the id's
+// pseudonym, as list_runs does. Only the structured field is replaced, never substrings: a
+// short name ("t", "etl") would otherwise corrupt every string it happens to occur in.
+function withRedactedName<A extends { id?: string | null; name?: string | null }>(app: A): A {
+  return app.name == null ? app : { ...app, name: app.id ?? null };
+}
+
 export function redactReport<T extends RedactableReport>(input: T): T {
   const report = redactFailureGroups(input);
   const { appIds, hosts } = collectIds(report);
-  return applyReplacements(report, { appIds, hosts });
+  const out = applyReplacements(report, { appIds, hosts });
+  const app = out.summary?.app;
+  return app ? { ...out, summary: { ...out.summary, app: withRedactedName(app) } } : out;
 }
 
 // Run-comparison counterpart: no single app-id *field* to pseudonymize
@@ -229,7 +238,12 @@ function redactRunTree<T extends RunTree>(input: T): T {
   collectHostFields(data.configFindings, hosts);
   collectConfigHostValues(data.app?.config, hosts);
   scanTokens(data, [{ patterns: HOST_PATTERNS, out: hosts }, { patterns: APP_ID_PATTERNS, out: appIds }]);
-  return applyReplacements(data, { appIds, hosts });
+  const out = applyReplacements(data, { appIds, hosts });
+  if (!out.app) return out;
+  const app = withRedactedName(out.app);
+  // spark.app.name repeats the name in the config the HTML export ships.
+  if (app.config?.['spark.app.name'] == null) return { ...out, app };
+  return { ...out, app: { ...app, config: { ...app.config, 'spark.app.name': app.id ?? '' } } };
 }
 
 /** A run's model and findings with every identifier pseudonymized. Redact this before anything derives

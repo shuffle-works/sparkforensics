@@ -628,6 +628,24 @@ describe('getRunSummary', () => {
     }
   });
 
+  // diagnose_run and get_run_summary redact the app name the way list_runs does: it takes the
+  // app id's pseudonym, in the summary, the verdict's copy text and the Markdown report alike.
+  it('replaces app.name with the app id pseudonym under { redact: true } in both report tools', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, '{"Event":"SparkListenerApplicationStart","App ID":"app-name-redact-test","App Name":"orders-nightly-rollup","Timestamp":0}\n');
+    try {
+      const { runId } = await resolveOrCreateRun({ source: { path } });
+      expect(getRunSummary(runId).app.name).toBe('orders-nightly-rollup');
+      expect(getRunSummary(runId, { redact: true }).app.name).toBe('app-1');
+      const report = diagnoseRun(runId, { redact: true, include: ['summary'], markdown: true });
+      expect(report.summary.app.name).toBe('app-1');
+      expect(JSON.stringify(report)).not.toContain('orders-nightly-rollup');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('pseudonymizes a host-shaped app.name with { redact: true }, leaves sparkVersion untouched', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
     const path = join(dir, 'eventlog');
@@ -641,7 +659,7 @@ describe('getRunSummary', () => {
 
       const redacted = getRunSummary(runId, { redact: true });
       expect(redacted.app.name).not.toBe('ip-10-20-30-40');
-      expect(redacted.app.name).toMatch(/^host-\d+$/);
+      expect(redacted.app.name).toBe(redacted.app.id);
       expect(redacted.app.sparkVersion).toBe(plain.app.sparkVersion);
     } finally {
       rmSync(dir, { recursive: true, force: true });

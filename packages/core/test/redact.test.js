@@ -41,6 +41,12 @@ describe('redactReport', () => {
     expect(serialized).not.toContain('ip-10-9-8-7.ec2.internal');
   });
 
+  it("replaces summary.app.name with the app id's pseudonym", () => {
+    const out = redactReport(sampleReport());
+    expect(out.summary.app.name).toBe('app-1');
+    expect(JSON.stringify(out)).not.toContain('nightly-etl');
+  });
+
   it('is deterministic: same input yields the same mapping', () => {
     expect(JSON.stringify(redactReport(sampleReport()))).toBe(JSON.stringify(redactReport(sampleReport())));
   });
@@ -285,6 +291,27 @@ describe('redactRunModel', () => {
     expect(out.appModel.app.id).toMatch(/app-\d+/);
     expect(out.catalog[0].recommendation).toContain(out.appModel.app.id);
     expect(JSON.stringify(out)).not.toContain('application_1690000000000_0001');
+  });
+
+  // The app name identifies the job as much as its id does, so it takes the id's pseudonym, as
+  // list_runs does. The structured fields are replaced, never substrings: a short name like "t"
+  // would otherwise corrupt every string in the run.
+  it("replaces the app name, and spark.app.name, with the app id's pseudonym", () => {
+    const data = sampleExportData();
+    data.app.name = 'nightly-orders-rollup';
+    data.app.config['spark.app.name'] = 'nightly-orders-rollup';
+    const out = redactRun(data);
+    expect(out.appModel.app.name).toBe(out.appModel.app.id);
+    expect(out.appModel.app.config['spark.app.name']).toBe(out.appModel.app.id);
+    expect(JSON.stringify(out)).not.toContain('nightly-orders-rollup');
+  });
+
+  it('leaves text that merely contains the app name alone', () => {
+    const data = sampleExportData();
+    data.app.name = 'at';
+    const out = redactRun(data);
+    expect(out.appModel.app.name).toBe(out.appModel.app.id);
+    expect(out.appModel.stages.get(1).name).toMatch(/^collect at /);
   });
 
   it("pseudonymizes an executor's literal host field, not just IP-shaped free text", () => {

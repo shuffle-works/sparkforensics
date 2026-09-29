@@ -7,7 +7,8 @@ Five of the eight tools (`list_runs`, `diagnose_run`, `get_run_summary`,
 `compare_runs`, `get_finding_evidence`) accept an optional `redact: boolean`
 parameter (default `false`) that pseudonymizes the app id and any host/IP
 tokens in the response (`app-1`, `host-1`, ...), so a result can be shared
-outside the environment that produced it. On `compare_runs`, `runIdA`/
+outside the environment that produced it. The app name is as identifying as
+the id, so every tool replaces it with the app id's pseudonym. On `compare_runs`, `runIdA`/
 `runIdB` are caller-supplied identifiers, not Spark application ids, so
 there's no single app-id field to redact; `redact` instead scans stage names
 and other free text for embedded app ids and host/IP tokens and
@@ -64,7 +65,8 @@ a `runId` for one already loaded in this session):
 - `source`: `{ path: string }` or `{ shsBaseUrl: string, appId: string, attemptId?: string }`
 - `runId`: `string`
 - `redact`: `boolean` (default `false`), pseudonymizes the app id and any
-  host/IP tokens in the response
+  host/IP tokens in the response, and replaces the app name with the app
+  id's pseudonym
 - `include`: array of `"summary" | "evidenceAvailability" | "detectors"`
   (default omitted, i.e. none). Each requested value adds one extra top-level
   field to the response, on top of the default `verdict`/`findings`/`recommendations`/
