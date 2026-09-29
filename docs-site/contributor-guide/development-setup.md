@@ -118,6 +118,15 @@ in-page anchors, such as the footnote-marker popovers in
 `docs-site/.vitepress/theme/citation-chips.ts`, must drop the element's
 `href` and restore `role`, `tabindex` and keyboard handling by hand.
 
+That router scrolls with its own offset, while a deep link, and every click
+on the published tuning reference (which ships without hydration), is a
+native fragment jump that follows `scroll-padding-top`. Both read one
+measured value: `docs-site/.vitepress/anchor-offset.js`, inlined into every
+page's head, sizes it from the pinned chrome on screen, which includes the
+Shuffle Works product bar on the published site. Never write that bar's
+marker attribute literally in the docs source, prose included: the hub
+skips injecting its bar into any built page that contains it.
+
 ## Driving the app in a browser
 
 - Sample logs: download one from a Spark History Server with

@@ -74,7 +74,8 @@ test('single-run landing prioritizes one Spark event log and presents next inves
   expect(within(hero).getByRole('button', { name: 'Try a sample run' })).toBeInTheDocument();
   // The docs links sit in the hero too, above the intake.
   const docsLink = within(hero).getByRole('link', { name: /read the docs/i });
-  expect(within(hero).getByRole('link', { name: /spark optimization reference/i })).toBeInTheDocument();
+  // The reference card opens the intro page itself, with no fragment to jump past its top.
+  expect(within(hero).getByRole('link', { name: /spark optimization reference/i })).toHaveAttribute('href', 'docs/tuning-reference/intro.html');
   expect(docsLink.compareDocumentPosition(within(hero).getByTestId('drop-zone')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
 

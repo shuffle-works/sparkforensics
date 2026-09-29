@@ -250,3 +250,23 @@ sup.footnote-ref {
 .dark-only { display: none; }
 .dark .dark-only { display: block; }
 .dark .light-only { display: none; }
+
+/* Heading links land below the pinned top chrome instead of under it.
+   anchor-offset.js (inlined into every page's head by config.ts) measures
+   that chrome into --sf-anchor-offset, which also covers the published
+   site's Shuffle Works product bar; the fallback is VitePress's own nav.
+   The probe is what VitePress's router measures for the in-page links it
+   handles itself (config.ts `scrollOffset`). */
+html {
+  scroll-padding-top: var(--sf-anchor-offset, calc(var(--vp-nav-height) + 24px));
+}
+
+[data-sf-anchor-offset] {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: var(--sf-anchor-offset, 0px);
+  visibility: hidden;
+  pointer-events: none;
+}

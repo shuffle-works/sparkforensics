@@ -34,6 +34,24 @@ function writeSharedTheme(isDark: boolean): void {
   document.documentElement.dataset.theme = value;
 }
 
+// On a deep link, both the browser and VitePress's router (which computes
+// its target before mount and applies it a frame later) scroll to the
+// heading against the pre-hydration layout. Hydration plus the citation-chip
+// pass then reflow the content above it (measured: a tuning-reference
+// heading moved up 140px), leaving it under the nav. Redo the jump once the
+// page has settled, in a frame queued after the router's; scroll-padding-top
+// (custom.css) keeps it below the nav.
+function scrollToLocationHash(): void {
+  if (!location.hash) return;
+  let target: HTMLElement | null = null;
+  try {
+    target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+  } catch {
+    return; // malformed percent-encoding in the fragment
+  }
+  target?.scrollIntoView();
+}
+
 const theme: Theme = {
   extends: DefaultTheme,
   enhanceApp({ app, router }) {
@@ -59,7 +77,10 @@ const theme: Theme = {
     const originalMount = app.mount.bind(app);
     app.mount = ((...args: Parameters<typeof app.mount>) => {
       const result = originalMount(...args);
-      nextTick(() => setupCitationChips());
+      nextTick(() => {
+        setupCitationChips();
+        requestAnimationFrame(scrollToLocationHash);
+      });
       return result;
     }) as typeof app.mount;
 
