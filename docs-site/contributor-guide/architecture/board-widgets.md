@@ -258,8 +258,9 @@ ETL Phase Attribution (`packages/core/src/etl-phases.ts` + `EtlPhases.tsx`),
 What-If Executor Scaling (`packages/core/src/scaling-sim.ts` + `ScalingSim.tsx`,
 design spike: makespan predictions are unvalidated and carry a Model Error
 indicator), and Compute Efficiency (`packages/core/src/efficiency-model.ts` +
-`EfficiencyModel.tsx`, design spike: driver-vs-executor waste
-split, two theoretical floors, and the §6 right-sizing copy) are main-thread
+`EfficiencyModel.tsx`, design spike: allocated vs. used core-hours with
+`wasted-core-hours.ts`'s top stages by task core-time, the driver-vs-executor
+waste split, two theoretical floors, and the §6 right-sizing copy) are main-thread
 report modules, not `DETECTORS` entries: descriptive lenses with no
 impact-band threshold, rendered unconditionally into the Full app report tab
 rather than participating in the bottleneck catalog. `packages/core/src/job-groups.ts`

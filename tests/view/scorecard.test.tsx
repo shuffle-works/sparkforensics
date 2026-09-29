@@ -32,8 +32,9 @@ test('renders the wall-clock and efficiency KPI labels', () => {
 
 test('Basic view says what each tile measures and which direction is better', () => {
   render(<Scorecard {...scorecardProps(makeAppModel(), [])} />);
-  expect(screen.getByTestId('kpi-wall-clock')).toHaveTextContent('Total run time. Stages were running for 1.0s of it.');
-  expect(screen.getByTestId('kpi-efficiency')).toHaveTextContent('Share of the run with a stage running. Higher is better.');
+  expect(screen.getByTestId('kpi-wall-clock')).toHaveTextContent('Total run time.');
+  expect(screen.getByTestId('kpi-wall-clock')).not.toHaveTextContent('running');
+  expect(screen.getByTestId('kpi-efficiency')).toHaveTextContent('Share of the run with a stage running (1.0s). Higher is better.');
 });
 
 test('Advanced view keeps the raw run/idle breakdown behind a measured Efficiency percentage', () => {

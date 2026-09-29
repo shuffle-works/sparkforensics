@@ -33,7 +33,6 @@ import { StageTable } from '@/view/widgets/StageTable';
 import { Timeline } from '@/view/widgets/Timeline';
 import { EvidenceAvailability } from '@/view/widgets/EvidenceAvailability';
 import { WallClock } from '@/view/widgets/WallClock';
-import { WastedCoreHours } from '@/view/widgets/WastedCoreHours';
 import { Topbar } from '@/view/Topbar';
 import { WidgetCardSkeleton } from '@/view/WidgetCard';
 import { WidgetGrid, WidgetGridItem } from '@/view/WidgetGrid';
@@ -98,7 +97,6 @@ function ReferenceSection({
         <WidgetGridItem cardId="reference-etl-phases" collapsedTile><EtlPhases /></WidgetGridItem>
         <WidgetGridItem cardId="reference-scaling-sim" collapsedTile><ScalingSim appModel={appModel} /></WidgetGridItem>
         <WidgetGridItem cardId="reference-efficiency-model" collapsedTile><EfficiencyModel /></WidgetGridItem>
-        <WidgetGridItem cardId="reference-wasted-core-hours" collapsedTile><WastedCoreHours /></WidgetGridItem>
         <WidgetGridItem cardId="reference-core-usage-histogram" collapsedTile><CoreUsageHistogram appModel={appModel} getTaskData={getTaskData} /></WidgetGridItem>
       </WidgetGrid>
     </div>
