@@ -65,15 +65,19 @@
     probe.setAttribute('data-sf-anchor-offset', '');
     probe.setAttribute('aria-hidden', 'true');
     document.body.appendChild(probe);
-    sync();
 
     // The bar wraps as the viewport narrows, the hub's hoist script moves
     // controls into it, and hydration or the chrome toggle can show or hide
-    // any of these, so resync whenever one of them changes size.
-    if (window.ResizeObserver) {
-      const observer = new ResizeObserver(sync);
-      document.querySelectorAll(PINNED_CHROME).forEach((el) => observer.observe(el));
-    }
+    // any of these, so resync whenever one of them changes size. VitePress
+    // also mounts, drops and replaces the local nav as the reader moves
+    // between pages, so watch the DOM for chrome that comes and goes.
+    const resizes = window.ResizeObserver ? new ResizeObserver(sync) : null;
+    const watchChrome = () => {
+      if (resizes) document.querySelectorAll(PINNED_CHROME).forEach((el) => resizes.observe(el));
+      sync();
+    };
+    watchChrome();
+    new MutationObserver(watchChrome).observe(document.body, { childList: true, subtree: true });
     window.addEventListener('resize', sync);
     window.addEventListener('load', sync);
   };

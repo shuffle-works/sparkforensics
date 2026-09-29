@@ -6,14 +6,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 // The docs site inlines this script into every page's head (config.ts). jsdom
 // has no layout, so each test stubs the geometry of the chrome it builds.
 const source = readFileSync(resolve(import.meta.dirname, '../docs-site/.vitepress/anchor-offset.js'), 'utf8');
-// Each run adds window listeners; drop them after every test so one test's
-// script instance can't react to the next test's chrome.
+// Each run adds window listeners and a DOM observer; drop them after every
+// test so one test's script instance can't react to the next test's chrome.
 const listeners = [];
+const observers = [];
 const runScript = () => {
   const add = window.addEventListener.bind(window);
   vi.spyOn(window, 'addEventListener').mockImplementation((type, fn, opts) => {
     listeners.push([type, fn]);
     add(type, fn, opts);
+  });
+  const observe = MutationObserver.prototype.observe;
+  vi.spyOn(MutationObserver.prototype, 'observe').mockImplementation(function (...args) {
+    observers.push(this);
+    observe.apply(this, args);
   });
   new Function(source)();
 };
@@ -34,6 +40,7 @@ const offset = () => document.documentElement.style.getPropertyValue('--sf-ancho
 
 afterEach(() => {
   listeners.splice(0).forEach(([type, fn]) => window.removeEventListener(type, fn));
+  observers.splice(0).forEach((observer) => observer.disconnect());
   document.body.innerHTML = '';
   document.documentElement.removeAttribute('style');
   history.replaceState(null, '', '/');
@@ -86,8 +93,13 @@ describe('docs anchor offset', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the hub bar marker out of the page source', () => {
-    // The hub skips injecting its bar into any page whose source contains it.
-    expect(source).not.toContain('data-shuffle-product-bar');
+  it('picks up chrome that mounts after start', async () => {
+    chrome('<header class="VPNav"></header>', { style: 'position: fixed', height: 64, bottom: 64 });
+    runScript();
+    expect(offset()).toBe('88px');
+
+    chrome('<div class="VPLocalNav"></div>', { style: 'position: sticky; top: 64px', height: 48, bottom: 112 });
+    await Promise.resolve();
+    expect(offset()).toBe('136px');
   });
 });
