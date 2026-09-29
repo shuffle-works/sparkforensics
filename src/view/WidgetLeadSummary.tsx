@@ -5,17 +5,17 @@ export interface WidgetLeadSummaryProps {
   context: string;
 }
 
+/** A collapsed card's finding count, in the same words on every card: "1 finding", "3 findings". */
+export function findingCount(count: number): string {
+  return `${count} finding${count === 1 ? '' : 's'}`;
+}
+
 /** Collapsed-card summary: a lead metric and short context, shown via
  * `WidgetCard`'s `summary` prop so a collapsed board widget still
  * communicates what it found. The value is capped at 2 lines and reserves
  * that height (on the whole row, so a context that wraps under the value
  * stays next to it) even when short, so every collapsed card lines up in
  * the grid regardless of how long its metric text is. */
-/** A collapsed card's finding count, in the same words on every card: "1 finding", "3 findings". */
-export function findingCount(count: number): string {
-  return `${count} finding${count === 1 ? '' : 's'}`;
-}
-
 export function WidgetLeadSummary({ value, context }: WidgetLeadSummaryProps) {
   return (
     <div className="space-y-2">
