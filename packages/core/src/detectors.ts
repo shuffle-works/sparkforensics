@@ -14,7 +14,7 @@ import {
   type EstimateCtx,
 } from './impact-model.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
-import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail } from './finding-generic-recommendation.ts';
+import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
@@ -1133,7 +1133,7 @@ export const DETECTORS = [
         // "Infinity×", so fall back to median-free phrasing.
         const ratioText = p50 > 0
           ? `${Math.round(max / p50 * 10) / 10}× the median (${formatBytes(p50)})`
-          : `far larger than the median (${formatBytes(p50)}, effectively empty)`;
+          : 'far larger than the median, which is effectively empty';
         out.push({
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'shufflePartitionSkew', metric: 'shuffleReadMax', value: max,
@@ -1387,7 +1387,7 @@ export const DETECTORS = [
           // in this dimension's own unit (ms for taskTime, bytes for the rest).
           execMaxValue: r.value,
           executorId: r.key,
-          recommendation: `Executor ${r.key} deviates ${Math.round(r.ratio * 10) / 10}× from the median on ${d.dimension}: investigate uneven partition assignment or a degraded executor.`,
+          recommendation: `Executor ${r.key}'s ${SLOW_HOST_DIMENSION_LABEL[d.dimension]} is ${Math.round(r.ratio * 10) / 10}× the median: investigate uneven partition assignment or a degraded executor.`,
         });
       }
       return out;

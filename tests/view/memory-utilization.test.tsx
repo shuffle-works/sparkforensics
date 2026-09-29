@@ -305,7 +305,7 @@ test('card defaults collapsed with worst-row summary when there are findings', (
 
   render(<MemoryUtilization catalog={catalog} />);
   // Should show the summary with worst-row label and count
-  expect(screen.getByText(/2 items flagged/)).toBeInTheDocument();
+  expect(screen.getByText('2 findings')).toBeInTheDocument();
 });
 
 test('states a run-sized waste-model figure in GB-hours, matching the savings figure', () => {

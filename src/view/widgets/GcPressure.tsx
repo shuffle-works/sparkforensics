@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { TagBadge } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
@@ -167,7 +167,7 @@ export function GcPressure({ catalog, appModel, defaultCollapsed = true }: GcPre
       summary={
         <WidgetLeadSummary
           value={`${worst.value}%`}
-          context={`${findings.length} stage${findings.length === 1 ? '' : 's'} flagged`}
+          context={findingCount(findings.length)}
         />
       }
     >

@@ -84,6 +84,11 @@ test('formatDuration renders whole minutes and seconds past the 60s boundary', (
   expect(formatDuration(125000)).toBe('2m 5s');
 });
 
+test('formatDuration rolls an hour or more into hours and minutes', () => {
+  expect(formatDuration(59 * 60000 + 59000)).toBe('59m 59s');
+  expect(formatDuration(5 * 3600000 + 59 * 60000 + 18000)).toBe('5h 59m');
+});
+
 test('stageWidgetFrequency counts distinct board widgets flagging each stage, deduping same-widget types', () => {
   const freq = stageWidgetFrequency([
     { stageId: 1, type: 'skew' },

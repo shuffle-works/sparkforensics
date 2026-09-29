@@ -1,4 +1,4 @@
-import type { EvidenceAvailability as EvidenceAvailabilityLedger, EvidenceAvailabilityEntry, EvidenceState } from '@sparkforensics/core/types.ts';
+import type { EvidenceAvailability as EvidenceAvailabilityLedger, EvidenceAvailabilityEntry, EvidenceReasonCode, EvidenceState } from '@sparkforensics/core/types.ts';
 import { useAccessibleTooltip } from '@/view/AccessibleTooltip';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { evidenceLabel, useEvidenceAvailabilityDisclosure, useEvidenceRowRegistration } from '@/view/EvidenceAvailabilityContext';
@@ -26,10 +26,15 @@ const STATE_IMPACT: Record<EvidenceState, ImpactDotProps['impactBand']> = {
   unknown: 'muted',
 };
 
+// The only summaries that say more than the state label beside a row's name.
+const INFORMATIVE_SUMMARY = new Set<EvidenceReasonCode>(['noRddStorageSnapshot', 'noUsableCoreTimeAggregate', 'parseIncomplete']);
+
 function EvidenceRow({ entry }: { entry: EvidenceAvailabilityEntry }) {
   const observedCount = entry.evidence?.count;
   const registerRow = useEvidenceRowRegistration();
   const detail = `${entry.summary}${observedCount != null ? ` · ${observedCount} observed` : ''}`;
+  // The visible line drops a summary that only restates the state; the tooltip keeps it.
+  const shown = INFORMATIVE_SUMMARY.has(entry.reasonCode) ? detail : observedCount != null ? `${observedCount} observed` : null;
   // Accessible tooltip so the detail stays reachable to screen readers, not just
   // mouse-hover users.
   const { tooltipProps, srOnlyTooltip } = useAccessibleTooltip(detail);
@@ -54,9 +59,11 @@ function EvidenceRow({ entry }: { entry: EvidenceAvailabilityEntry }) {
         <span className="shrink-0 text-xs text-muted-foreground">{STATE_LABELS[entry.state]}</span>
         {srOnlyTooltip}
       </span>
-      <AdvancedOnly>
-        <span className="text-xs text-muted-foreground">{detail}</span>
-      </AdvancedOnly>
+      {shown ? (
+        <AdvancedOnly>
+          <span className="text-xs text-muted-foreground">{shown}</span>
+        </AdvancedOnly>
+      ) : null}
     </li>
   );
 }

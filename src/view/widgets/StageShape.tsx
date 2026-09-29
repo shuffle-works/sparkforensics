@@ -15,7 +15,7 @@ const STAGE_SHAPE_RULE_LABEL: Record<FindingOf<'stageShape'>['rule'], string> = 
 function findingLabel(f: Finding): string {
   // StageFindingGroupWidget only passes this board's own `stageShape` findings.
   const label = f.type === 'stageShape' ? STAGE_SHAPE_RULE_LABEL[f.rule] : 'stage shape';
-  return `${label}: ${f.value}`;
+  return f.type === 'stageShape' && f.rule === 'lowParallelism' ? `${label}: ${f.value} tasks per core` : `${label}: ${f.value}`;
 }
 
 export type StageShapeProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'getTaskData' | 'defaultCollapsed'>;

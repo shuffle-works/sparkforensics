@@ -4,7 +4,7 @@ import { formatDuration, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
@@ -81,7 +81,7 @@ export const SpeculationWaste = memo(function SpeculationWaste({ appModel, catal
       summary={
         <WidgetLeadSummary
           value={metricLabel(issues[0])}
-          context={`${issues.length} issue${issues.length === 1 ? '' : 's'} flagged`}
+          context={findingCount(issues.length)}
         />
       }
     >

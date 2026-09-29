@@ -2,7 +2,7 @@ import { memo, useMemo, useState } from 'react';
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePillGroup } from '@/view/StagePill';
 import { StageHeader } from '@/view/StageHeader';
@@ -18,6 +18,7 @@ import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
 import { usePagedRows } from '@/view/usePagedRows';
+import { PartitionHint } from './PartitionHint';
 import { PlanExplorer } from './PlanExplorer';
 import { resolvePlanTree } from './PlanView';
 
@@ -51,12 +52,7 @@ function ShuffleRow({ entry, appModel }: { entry: StageEntry; appModel: WidgetPr
       <ImpactEstimate finding={entry.shuffle} />
       {partitionHint || showPlanExplorer ? (
         <div className="space-y-2 pt-1">
-          {partitionHint ? (
-            <p className="text-xs text-muted-foreground">
-              Try <code>spark.sql.shuffle.partitions = {partitionHint.recommended}</code>: current{' '}
-              {partitionHint.current} tasks, target 128 MB per partition
-            </p>
-          ) : null}
+          {partitionHint ? <PartitionHint hint={partitionHint} /> : null}
           {showPlanExplorer ? <PlanExplorer stageId={entry.stageId} appModel={appModel} /> : null}
         </div>
       ) : null}
@@ -124,7 +120,7 @@ export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCol
       summary={
         <WidgetLeadSummary
           value={formatBytes(sorted[0].peak)}
-          context={`Peak shuffle read · ${sorted.length} stage${sorted.length === 1 ? '' : 's'} flagged`}
+          context={`Peak shuffle read · ${findingCount(sorted.length)}`}
         />
       }
       badges={

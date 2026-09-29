@@ -5,7 +5,7 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { StagePill } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
@@ -119,7 +119,7 @@ export function RetryWaste({ appModel, catalog, defaultCollapsed = true }: Retry
       summary={
         <WidgetLeadSummary
           value={formatDuration(numericValue(sorted[0]))}
-          context={`${findings.length} item${findings.length === 1 ? '' : 's'} flagged`}
+          context={findingCount(findings.length)}
         />
       }
     >

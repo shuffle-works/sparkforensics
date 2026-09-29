@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from 'react';
 
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
@@ -226,7 +226,7 @@ export const StageFindingGroupWidget = memo(function StageFindingGroupWidget({
       summary={
         <WidgetLeadSummary
           value={`${stageGroups.length} stage${stageGroups.length === 1 ? '' : 's'}`}
-          context={`${relevant.length} finding${relevant.length === 1 ? '' : 's'} flagged`}
+          context={findingCount(relevant.length)}
         />
       }
     >

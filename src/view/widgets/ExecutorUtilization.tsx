@@ -7,7 +7,7 @@ import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { usePagedRows } from '@/view/usePagedRows';
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { formatMetricValue, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
@@ -69,7 +69,7 @@ export const ExecutorUtilization = memo(function ExecutorUtilization({ catalog, 
       summary={
         <WidgetLeadSummary
           value={`${formatMetricValue('pct', numericValue(findings[0]))} average`}
-          context={`${findings.length} item${findings.length === 1 ? '' : 's'} flagged`}
+          context={findingCount(findings.length)}
         />
       }
     >

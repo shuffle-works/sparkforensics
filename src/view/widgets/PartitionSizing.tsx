@@ -2,7 +2,7 @@ import { memo, useMemo, useState } from 'react';
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
 import { formatBytes, numericValue, IMPACT_BAND_ORDER, VISIBLE_LIMIT, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
@@ -56,7 +56,6 @@ function PartitionSizingRow({ entry, appModel }: { entry: StageEntry; appModel: 
           </span>
         ))}
       </p>
-      <ImpactEstimate finding={entry.partitions[0]} />
       <div className="space-y-2 pt-1">
         <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
           {entry.partitions.map((f) => (
@@ -143,7 +142,7 @@ export const PartitionSizing = memo(function PartitionSizing({ appModel, catalog
       summary={
         <WidgetLeadSummary
           value={`Stage ${sorted[0].stageId}`}
-          context={`${sorted.length} stage${sorted.length === 1 ? '' : 's'} flagged`}
+          context={findingCount(partitionFindings.length)}
         />
       }
       badges={
