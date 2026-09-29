@@ -267,6 +267,9 @@ describe('metricDeltas', () => {
     expect(byKey.wallClock.direction).toBe('improvement');
     expect(byKey.shuffleSpill.baseline).toBe(1000);
     expect(byKey.shuffleSpill.candidate).toBe(400);
+    // The key stays shuffleSpill for existing --regression-metric callers; the figure is Spark's
+    // memoryBytesSpilled, so the label says memory spill, as Pinned per-stage deltas does.
+    expect(byKey.shuffleSpill.label).toBe('Memory spill');
     expect(byKey.failedTaskRate.baseline).toBeCloseTo(0.2);
     expect(byKey.failedTaskRate.candidate).toBeCloseTo(0.1);
   });
@@ -280,7 +283,7 @@ describe('metricDeltas', () => {
     expect(spill.unavailableReason).toMatch(/spill/i);
   });
 
-  it('sums shuffle spill over the whole run, not the matched subset', () => {
+  it('sums memory spill over the whole run, not the matched subset', () => {
     const matched = stageFull({ memoryBytesSpilled: 100 });
     const unmatched = stageFull({ name: 'Solo 1', memoryBytesSpilled: 900 });
     const base = fullSnap([[1, matched], [2, unmatched]], { name: 'A', startTime: 0, endTime: 10 });

@@ -242,7 +242,7 @@ describe('evaluateBudgets', () => {
     const comparison = baseComparison({
       metrics: [
         { key: 'wallClock', label: 'Wall-clock duration', baseline: 10_000, candidate: 10_000, delta: 0, direction: 'unchanged' },
-        { key: 'shuffleSpill', label: 'Shuffle spill', baseline: 100, candidate: 200, delta: 100, direction: 'regression' },
+        { key: 'shuffleSpill', label: 'Memory spill', baseline: 100, candidate: 200, delta: 100, direction: 'regression' },
       ],
     });
     const { violated, results } = evaluateBudgets({

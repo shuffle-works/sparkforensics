@@ -296,8 +296,8 @@ a note to stderr saying so. The browser dashboard has no tuning.
 
 - `wallClock`: wall-clock duration
 - `executorRunTime`: summed executor run time
-- `shuffleSpill`: shuffle spill
-- `diskSpill`: disk spill
+- `shuffleSpill`: memory spill (Spark's `memoryBytesSpilled`)
+- `diskSpill`: disk spill (Spark's `diskBytesSpilled`)
 - `gcTime`: JVM GC time
 - `taskSkew`: p95 task skew
 - `failedTaskRate`: failed-task rate
