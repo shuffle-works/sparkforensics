@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Inbox } from 'lucide-react';
 import {
   type ColumnDef,
@@ -387,13 +387,26 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
     setPagination({ pageIndex: 0, pageSize: PAGE_SIZE });
   }
 
+  // The scroll hint shows only while the table is wider than its container (always where that
+  // can't be measured).
+  const tableAreaRef = useRef<HTMLDivElement>(null);
+  const [tableOverflows, setTableOverflows] = useState(true);
+  useLayoutEffect(() => {
+    const container = tableAreaRef.current?.querySelector('[data-slot="table-container"]');
+    if (!container?.firstElementChild || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => setTableOverflows(container.scrollWidth > container.clientWidth));
+    observer.observe(container);
+    observer.observe(container.firstElementChild);
+    return () => observer.disconnect();
+  }, []);
+
   const sortArrow = (dir: false | 'asc' | 'desc') => (dir === 'asc' ? ' ▲' : dir === 'desc' ? ' ▼' : '');
   const ariaSort = (dir: false | 'asc' | 'desc') =>
     dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none';
 
   return (
     <WidgetCard title="Stage Summary">
-      <div className="space-y-3">
+      <div ref={tableAreaRef} className="space-y-3">
         <Input
           type="text"
           value={nameFilter}
@@ -406,7 +419,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
           className="max-w-xs"
         />
         <div className="flex items-center justify-between gap-2">
-          <p className="text-muted-foreground text-xs">Scroll sideways to see all columns &rarr;</p>
+          <p className={cn('text-muted-foreground text-xs', !tableOverflows && 'invisible')}>Scroll sideways to see all columns &rarr;</p>
           <Button type="button" variant="outline" size="sm" onClick={toggleView}>
             {showProblems ? `Top ${TOP_N} by duration` : 'Problems only'}
           </Button>

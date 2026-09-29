@@ -22,6 +22,7 @@ import { usePagedRows } from '@/view/usePagedRows';
 import { RowPagination } from '@/view/RowPagination';
 
 import { MemoryPressure } from './MemoryPressure';
+import { PartitionHint } from './PartitionHint';
 import { PlanExplorer } from './PlanExplorer';
 import { resolvePlanTree } from './PlanView';
 
@@ -72,12 +73,7 @@ function SpillRow({
         Disk: {formatBytes(stage?.diskBytesSpilled ?? 0)}
       </p>
       <ImpactEstimate finding={finding} />
-      {partitionHint ? (
-        <p className="text-xs text-muted-foreground">
-          Try: <code>spark.sql.shuffle.partitions = {partitionHint.recommended}</code>
-          {` (current ${partitionHint.current} tasks, target 128 MB per partition)`}
-        </p>
-      ) : null}
+      {partitionHint ? <PartitionHint hint={partitionHint} /> : null}
       {showPlanExplorer ? (
         <div className="pt-1">
           <PlanExplorer stageId={finding.stageId} appModel={appModel} />

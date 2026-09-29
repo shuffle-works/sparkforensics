@@ -4,7 +4,7 @@ import { IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
@@ -82,7 +82,7 @@ export const StageSlowness = memo(function StageSlowness({ appModel, catalog, de
       summary={
         <WidgetLeadSummary
           value={metricLabel(issues[0])}
-          context={`${issues.length} issue${issues.length === 1 ? '' : 's'} flagged`}
+          context={findingCount(issues.length)}
         />
       }
     >

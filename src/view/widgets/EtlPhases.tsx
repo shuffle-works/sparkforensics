@@ -40,13 +40,12 @@ export function EtlPhases() {
         {/* Plain in both views: a phase can read longer than the whole run,
             which looks like a bug unless the reader knows the times are summed. */}
         <div className="text-xs text-muted-foreground">
-          Each phase adds up the run time of its stages. Stages that run at the same time both count, so a phase
-          can add up to more than the run's wall-clock.
+          Sums the run time of each phase's stages, so overlapping stages count twice and a phase can exceed
+          the wall-clock.
         </div>
         <AdvancedOnly>
           <div className="text-xs text-muted-foreground">
-            Heuristic: a stage that both shuffles and writes counts in Transform and Load, so
-            phases can overlap and need not sum to wall-clock.
+            Heuristic: a stage that both shuffles and writes counts in Transform and Load.
           </div>
         </AdvancedOnly>
       </div>

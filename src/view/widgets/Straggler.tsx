@@ -7,7 +7,7 @@ import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { StageHeader } from '@/view/StageHeader';
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import type { StragglerFinding } from '@sparkforensics/core/finding-types.ts';
@@ -93,7 +93,7 @@ export const Straggler = memo(function Straggler({ appModel, catalog, defaultCol
       summary={
         <WidgetLeadSummary
           value={stragglerDetail(issues[0])}
-          context={`${issues.length} issue${issues.length === 1 ? '' : 's'} flagged`}
+          context={findingCount(issues.length)}
         />
       }
     >

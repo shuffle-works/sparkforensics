@@ -2,10 +2,11 @@ import { memo, useState } from 'react';
 
 import { formatMetricValue, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
+import { SLOW_HOST_DIMENSION_LABEL } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import type { SlowHostFinding } from '@sparkforensics/core/finding-types.ts';
@@ -26,7 +27,7 @@ export type SlowHostProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultC
 function slowHostDetail(f: SlowHostFinding): string {
   const value = numericValue(f);
   if (f.metric === 'execMaxMedianRatio') {
-    return `Executor ${f.executorId}: ${formatMetricValue('ratio', value)} median on ${f.dimension ?? 'this metric'}`;
+    return `Executor ${f.executorId}: ${formatMetricValue('ratio', value)} the median ${f.dimension ? SLOW_HOST_DIMENSION_LABEL[f.dimension] : 'value'}`;
   }
   const taskSharePct = Math.round((f.hostTaskShare ?? 0) * 100);
   if (f.metric === 'hostDurationShare') {
@@ -94,7 +95,7 @@ export const SlowHost = memo(function SlowHost({ appModel, catalog, defaultColla
       summary={
         <WidgetLeadSummary
           value={slowHostDetail(issues[0])}
-          context={`${issues.length} issue${issues.length === 1 ? '' : 's'} flagged`}
+          context={findingCount(issues.length)}
         />
       }
     >

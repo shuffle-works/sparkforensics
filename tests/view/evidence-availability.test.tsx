@@ -303,10 +303,9 @@ test('the evidence detail sentence is inline text at Advanced tier, hover-only a
   cleanup();
   store.getState().setWidgetDensity('advanced');
   render(<EvidenceAvailabilityWidget ledger={ledger} />);
-  // At Advanced tier, detail is visible as inline text
+  // At Advanced tier the count is visible inline; a summary that only restates the state stays in the tooltip
   const advancedItem = screen.getByRole('listitem');
-  const visibleDetailSpans = within(advancedItem).queryAllByText(/config captured.*3 observed/i);
-  // Should have both sr-only and visible span; verify at least one is visible
-  expect(visibleDetailSpans.some((s) => !s.className.includes('sr-only'))).toBe(true);
+  expect(within(advancedItem).getByText('3 observed')).toBeInTheDocument();
+  expect(within(advancedItem).queryAllByText(/config captured/i).every((s) => s.className.includes('sr-only'))).toBe(true);
   store.getState().setWidgetDensity('basic');
 });

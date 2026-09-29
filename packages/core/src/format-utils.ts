@@ -207,7 +207,8 @@ export function formatDuration(ms: number | undefined): string {
   if (!ms || ms <= 0) return '—';
   if (ms < 1000) return `${Math.round(ms)}ms`;
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+  if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+  return `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m`;
 }
 
 export function recommendPartitions(stage: {shuffleReadBytes?: number; taskCount?: number}): {recommended: number; current: number} | null {

@@ -9,7 +9,7 @@ import { RowPagination } from '@/view/RowPagination';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { formatMetricValue, formatRawWaste, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
@@ -161,7 +161,7 @@ export const MemoryUtilization = memo(function MemoryUtilization({ catalog, defa
       summary={
         <WidgetLeadSummary
           value={rowLabel(worst)}
-          context={`${findings.length} item${findings.length === 1 ? '' : 's'} flagged`}
+          context={findingCount(findings.length)}
         />
       }
     >

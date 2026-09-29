@@ -69,7 +69,7 @@ describe('StageShape', () => {
     ];
     render(<StageShape appModel={appModel} catalog={catalog} getTaskData={vi.fn(async () => TASK_DATA)} />);
 
-    expect(screen.getByText('Low parallelism: 0.3')).toBeInTheDocument();
+    expect(screen.getByText('Low parallelism: 0.3 tasks per core')).toBeInTheDocument();
     expect(screen.getByText('Data explosion: 12')).toBeInTheDocument();
     expect(screen.getByText('Task/stage skew: 6')).toBeInTheDocument();
   });

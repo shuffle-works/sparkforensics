@@ -51,6 +51,26 @@ describe('StageTable', () => {
     openStage.mockClear();
   });
 
+  it('shows the scroll hint only while the table is wider than its container', () => {
+    // jsdom has no layout: stand in a ResizeObserver that reports at once, and a container width.
+    const widths = { scroll: 500, client: 800 };
+    vi.stubGlobal('ResizeObserver', class { constructor(private cb: () => void) {} observe() { this.cb(); } disconnect() {} });
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(() => widths.scroll);
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => widths.client);
+    try {
+      const appModel = buildAppModel([[1, makeStage(1)]]);
+      const { unmount } = render(<StageTable appModel={appModel} catalog={[]} getTaskData={noTaskData} />);
+      expect(screen.getByText(/Scroll sideways/)).toHaveClass('invisible');
+      unmount();
+      widths.scroll = 1200;
+      render(<StageTable appModel={appModel} catalog={[]} getTaskData={noTaskData} />);
+      expect(screen.getByText(/Scroll sideways/)).not.toHaveClass('invisible');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    }
+  });
+
   it('renders a table with sortable column headers that flip order on click', async () => {
     const user = userEvent.setup();
     const appModel = buildAppModel([

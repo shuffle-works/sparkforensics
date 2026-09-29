@@ -148,7 +148,7 @@ test('card defaults collapsed and shows a finding-count summary', async () => {
   );
   // Lead value is the distinct stage count, not a repeat of the "Oversized Broadcast Join" title.
   expect(screen.getByText('2 stages')).toBeInTheDocument();
-  expect(screen.getByText('2 findings flagged')).toBeInTheDocument();
+  expect(screen.getByText('2 findings')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Oversized Broadcast Join' }));
   expect(screen.getByRole('button', { name: 'Stage' })).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');

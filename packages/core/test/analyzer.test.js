@@ -420,6 +420,7 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
     const f = analyze(makeApp(), stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'inputBytes');
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('critical');
+    expect(f[0].recommendation).toMatch(/^Executor e1's input read is 10× the median: /);
   });
 
   // Byte imbalance carries no time estimate, so its ratio tier is its band. A stage too short
@@ -699,6 +700,11 @@ describe('analyze: partition sizing (§4)', () => {
     const f = analyze(makeApp(), stages, [], []).filter(b => b.type === 'partitionSizing' && b.rule === 'shufflePartitionSkew');
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('critical');
+  });
+  it('describes skew over an empty median without a ratio', () => {
+    const stages = new Map([[1, makeStage({ shuffleReadP50: 0, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 })]]);
+    const [f] = analyze(makeApp(), stages, [], []).filter(b => b.rule === 'shufflePartitionSkew');
+    expect(f.recommendation).toContain('is far larger than the median, which is effectively empty: ');
   });
   it('flags low shuffle parallelism (≥1GiB over ≤7 tasks)', () => {
     const stages = new Map([[1, makeStage({ shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0 })]]);

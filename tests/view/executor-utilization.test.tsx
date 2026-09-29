@@ -60,7 +60,7 @@ test('card defaults collapsed with a summary when there are findings', () => {
     testFinding({ type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42, recommendation: 'Average executor utilization < 60%.', utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42 }),
   ];
   render(<ExecutorUtilization catalog={catalog} />);
-  expect(screen.getByText(/1 item flagged/)).toBeInTheDocument();
+  expect(screen.getByText('1 finding')).toBeInTheDocument();
 });
 
 test('stays domain-agnostic: no company/industry copy leaks', () => {

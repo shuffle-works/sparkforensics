@@ -11,6 +11,7 @@ import { PartitionSizing } from '@/view/widgets/PartitionSizing';
 import { emptyAppModel, store } from '@/store/store';
 import { expectImpactThenStageOrderByArray } from './_shared/sort-order-toggle';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 function buildAppModel(stages: Record<number, Record<string, unknown>>): AppModel {
   const map = new Map<number, unknown>(
@@ -27,6 +28,17 @@ test('renders the WidgetCard heading', () => {
   }];
   render(<PartitionSizing appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByRole('heading', { name: 'Partition Sizing' })).toBeInTheDocument();
+});
+
+test('states a stage\'s savings once per rule, not again above the rules', () => {
+  const appModel = buildAppModel({ 3: { taskCount: 4 } });
+  const catalog: Finding[] = [{
+    type: 'partitionSizing', stageId: 3, impactBand: 'warning', rule: 'lowShuffleParallelism', value: 4, recommendation: 'r',
+    impactEstimate: { basis: 'serial', wallClock: { low: 2000, high: 2000 }, estimateMethod: 'modeled' },
+  }];
+  installInterpretation(catalog, appModel);
+  render(<PartitionSizing appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
+  expect(screen.getAllByText(/Potential savings/)).toHaveLength(1);
 });
 
 test('flags every affected stage, not just the worst', () => {

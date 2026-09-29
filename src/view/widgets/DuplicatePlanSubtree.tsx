@@ -12,7 +12,7 @@ import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePillGroup } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
-import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
+import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { canToggleSort, stageIdOf } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
@@ -102,7 +102,7 @@ export const DuplicatePlanSubtree = memo(function DuplicatePlanSubtree({ catalog
       summary={
         <WidgetLeadSummary
           value={`${pills.length} stage${pills.length === 1 ? '' : 's'}`}
-          context={`${findings.length} finding${findings.length === 1 ? '' : 's'} flagged`}
+          context={findingCount(findings.length)}
         />
       }
     >
