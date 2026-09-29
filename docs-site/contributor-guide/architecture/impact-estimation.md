@@ -258,9 +258,11 @@ next to a `time`-tier "recoverable time" total would read as directly
 comparable when it isn't: the resource figure was never gate-clipped against
 any stage's occupancy, so it can exceed what the stage actually spent.
 `rollupGroupStat` (same module) calls this out in the trailing-stat copy
-`FixTheseFirst.tsx` renders: a `resource`-kind group (any unit, including `ms`) always reads "resource-cost
-projection", never "recoverable", so the two ms-shaped numbers are never
-mistaken for the same kind of claim.
+`FixTheseFirst.tsx` renders: a `resource`-kind group (any unit, including `ms`)
+shows the finding count plus the summed raw waste (omitted when it reads as
+zero), and its tooltip calls the total "a resource cost, not run time". It never
+says "recoverable", so the two ms-shaped numbers are never mistaken for the same
+kind of claim.
 
 ## Per-formula spot-checks
 

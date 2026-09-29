@@ -308,8 +308,9 @@ A tuned run says so wherever it reports:
   slowness finding, so the override decides which of those you see.
 - A clean check measured against a tuned threshold carries
   `tunedThresholds` too, with the tuned value and the default. Its
-  `thresholdSummary` shows the tuned number only where the summary names one
-  (for example `spill`, `slowHost`).
+  `thresholdSummary` shows the tuned numbers for most detectors (for example
+  `skew`, `gc`, `spill`, `slowHost`). A few summaries are fixed text with no
+  number to tune.
 - `summary.tunedThresholds` lists every tuned detector, and each tuned row
   of the `detectors` catalog shows the thresholds the run used.
 - The Markdown report adds a `Tuned thresholds` line to its header and a
