@@ -118,24 +118,24 @@ describe('estimateProvenance', () => {
 
   it('calls a serial figure close to a point estimate and notes ms raw waste only when the floor clipped it', () => {
     expect(estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 2000, high: 2000 }, estimateMethod: 'measured', rawWaste: { value: 2000, unit: 'ms' } })))
-      .toBe('2.0s, measured. The stage ran effectively alone, so this is close to a point estimate.');
+      .toBe('Measured; the stage ran alone, so this is close to a point estimate.');
     expect(estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 2000, high: 2000 }, estimateMethod: 'measured', rawWaste: { value: 900, unit: 'ms' } })))
-      .toBe('2.0s, measured. The stage ran effectively alone, so this is close to a point estimate.');
+      .toBe('Measured; the stage ran alone, so this is close to a point estimate.');
     expect(estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 2000, high: 2000 }, estimateMethod: 'measured', rawWaste: { value: 9000, unit: 'ms' } })))
-      .toBe('2.0s, measured. The stage ran effectively alone, so this is close to a point estimate. Raw waste before the floor clipped it: 9.0s.');
+      .toBe('Measured; the stage ran alone, so this is close to a point estimate. Raw waste before the floor clipped it: 9.0s.');
   });
 
   it('describes a bytes raw waste as the resource measured, never as clipped time', () => {
     const text = estimateProvenance(withEstimate({ basis: 'serial', wallClock: { low: 4000, high: 4000 }, estimateMethod: 'modeled', rawWaste: { value: 3.2e9, unit: 'bytes' } }));
-    expect(text).toMatch(/^4\.0s, modeled\. The stage ran effectively alone, so this is close to a point estimate\. Resource waste measured: 3\.2 GB\.$/);
+    expect(text).toMatch(/^Modeled; the stage ran alone, so this is close to a point estimate\. Resource waste measured: 3\.2 GB\.$/);
     expect(text).not.toContain('clipped');
   });
 
   it('explains a contended range as a floor and an optimistic high, without a degenerate range', () => {
     expect(estimateProvenance(withEstimate({ basis: 'contended', wallClock: { low: 1000, high: 3000 }, estimateMethod: 'modeled' })))
-      .toBe('1.0s-3.0s, modeled. The stage shared the cluster with others: 1.0s is the floor, 3.0s assumes the fix fully lands.');
+      .toBe('Modeled; the stage shared the cluster: 1.0s is the floor, 3.0s if the fix fully lands.');
     expect(estimateProvenance(withEstimate({ basis: 'contended', wallClock: { low: 141_100, high: 141_400 }, estimateMethod: 'modeled' })))
-      .toBe('2m 21s, modeled. The stage shared the cluster with others: its floor and optimistic high agree.');
+      .toBe('Modeled; the stage shared the cluster: its floor and high agree.');
   });
 
   it('says nothing for a figure that reads as zero, like the step itself', () => {
@@ -145,7 +145,7 @@ describe('estimateProvenance', () => {
 
   it('makes no run-time claim for a resource-only figure, and says nothing without a model', () => {
     expect(estimateProvenance(withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 5000, unit: 'coreMs' } })))
-      .toBe('No run-time claim, modeled. 5.0 core-s was wasted, but it may not shorten the run.');
+      .toBe('Modeled; 5.0 core-s wasted, which may not shorten the run.');
     expect(estimateProvenance(withEstimate({ basis: 'informational', wallClock: null, estimateMethod: 'none' }))).toBeNull();
     expect(estimateProvenance(withEstimate(undefined))).toBeNull();
   });

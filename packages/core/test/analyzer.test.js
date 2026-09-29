@@ -1270,7 +1270,7 @@ describe('analyze: spill confidence metadata', () => {
     const borderline = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 310 })]]);
     const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'skew');
     expect(b1.confidence).toBe('low');
-    expect(b1.validationRequired).toMatch(/noise floor/);
+    expect(b1.validationRequired).toMatch(/costs at least 0\.5% of run time/);
 
     const mid = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600 })]]);
     const b2 = analyze(makeApp(), mid, [], []).find(x => x.type === 'skew');
@@ -1288,7 +1288,7 @@ describe('analyze: spill confidence metadata', () => {
     const borderline = new Map([[1, makeStage({ taskCount: 100, stragglerCount: 6, taskDurationP50: 100, taskDurationMax: 500 })]]);
     const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'straggler');
     expect(b1.confidence).toBe('low');
-    expect(b1.validationRequired).toMatch(/noise floor/);
+    expect(b1.validationRequired).toMatch(/Warning needs at least 0\.5% of run time at stake, critical 2%/);
 
     // 5/20 = 25% straggler share, well past critPct (20%).
     const strong = new Map([[1, makeStage({ taskCount: 20, stragglerCount: 5, taskDurationP50: 100, taskDurationMax: 500 })]]);
@@ -1300,7 +1300,7 @@ describe('analyze: spill confidence metadata', () => {
     const borderline = new Map([[1, makeStage({ gcPct: 15, executorRunTime: 60000 })]]);
     const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'gc' && x.direction !== 'low');
     expect(b1.confidence).toBe('low');
-    expect(b1.validationRequired).toMatch(/noise floor/);
+    expect(b1.validationRequired).toMatch(/at least 10s of executor run time/);
 
     const strong = new Map([[1, makeStage({ gcPct: 35, executorRunTime: 60000 })]]);
     const b2 = analyze(makeApp(), strong, [], []).find(x => x.type === 'gc' && x.direction !== 'low');
@@ -2131,8 +2131,20 @@ describe('analyze, cacheUtilization detector', () => {
     expect(partial.confidence).toBe('high');
     expect(partial.validationRequired).toMatch(/Storage tab/);
     expect(partial.recommendation).toBe(
-      'RDD orders_cached is 38% evicted from cache (62% of partitions cached). Increase executor memory or reduce the cached dataset size.',
+      'RDD orders_cached is 38% evicted from cache (62% of partitions cached): increase executor memory or reduce the cached dataset size.',
     );
+  });
+
+  it('names a long RDD by its first 40 characters and an unnamed one as RDD <id>, keeping the full name on the finding', () => {
+    const plan = '*(1) Project [id#0L AS row_id#1L, cast((rand(42) * 1000.0) as bigint) AS join_key#2L]';
+    const rddInfo = new Map([
+      [3, makeRdd(3, { name: plan, numPartitions: 100, numCachedPartitions: 62 })],
+      [4, makeRdd(4, { name: '', numPartitions: 100, numCachedPartitions: 62 })],
+    ]);
+    const byRdd = new Map(cacheFindings(makeApp({ rddInfo })).map((f) => [f.rddId, f]));
+    expect(byRdd.get(3).rddName).toBe(plan);
+    expect(byRdd.get(3).recommendation).toMatch(/^RDD \*\(1\) Project \[id#0L AS row_id#1L, cast\(\(\.\.\. is 38% evicted/);
+    expect(byRdd.get(4).recommendation).toMatch(/^RDD 4 is 38% evicted/);
   });
 
   it('confidence scales with numPartitions (sample size), not a flat medium, for both variants', () => {
@@ -2167,7 +2179,7 @@ describe('analyze, cacheUtilization detector', () => {
     })]]);
     const spill = cacheFindings(makeApp({ rddInfo })).find((f) => f.variant === 'diskSpillover');
     expect(spill.recommendation).toBe(
-      'RDD orders_cached is 71% spilled to disk despite requesting MEMORY_AND_DISK. Executor memory may be too small for this cached dataset.',
+      'RDD orders_cached is 71% spilled to disk despite requesting MEMORY_AND_DISK: executor memory may be too small for it.',
     );
   });
 
@@ -2682,7 +2694,7 @@ describe('analyze: threshold overrides', () => {
     expect(run({ skew: { ratioWarn: 4 } }).some((f) => f.type === 'skew')).toBe(false);
     const [skew] = run({ skew: { ratioWarn: 2 } }).filter((f) => f.type === 'skew');
     expect(skew.tunedThresholds).toEqual({ ratioWarn: { value: 2, default: 3 } });
-    expect(skew.validationRequired).toContain('0.5% runtime-floor threshold');
+    expect(skew.validationRequired).toContain('at least 0.5% of run time');
     expect(skew.validationRequired).toContain('Produced with tuned thresholds: ratioWarn 2 (default 3).');
     expect(skew.validationRequired).toContain('estimate is unvalidated');
   });
@@ -2733,12 +2745,12 @@ describe('analyze: threshold overrides', () => {
     const gcStage = () => new Map([[1, makeStage({ executorRunTime: 120000, gcPct: 20 })]]);
     const gc = (thresholds) => analyze(makeApp(), gcStage(), [], [], new Map(), new Map(), null, { thresholds })
       .find((f) => f.type === 'gc');
-    expect(gc(undefined).validationRequired).toBe('This finding is gated by a 10-second minimum-runtime floor, our own noise floor for this metric.');
+    expect(gc(undefined).validationRequired).toBe('Checked only on stages with at least 10s of executor run time.');
     const tuned = gc({ gc: { minRunTimeMs: 60000 } }).validationRequired;
-    expect(tuned).toContain('a 60-second minimum-runtime floor');
-    expect(tuned).not.toContain('10-second');
+    expect(tuned).toContain('at least 60s of executor run time');
+    expect(tuned).not.toContain('10s');
     expect(run({ skew: { ratioWarn: 2, floorPctWarn: 0.01 } }).find((f) => f.type === 'skew').validationRequired)
-      .toContain('gated by a 1% runtime-floor threshold');
+      .toContain('at least 1% of run time');
   });
 
   it('adds the unvalidated-estimate caveat only to a tuned finding that carries an estimate figure', () => {

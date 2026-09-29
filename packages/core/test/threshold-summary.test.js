@@ -13,12 +13,12 @@ describe('getThresholdSummary', () => {
 
   it('states both slowHost ratios from the detector\'s own thresholds', () => {
     const { ratioWarn, ratioTiers } = thresholdsOf('slowHost');
-    expect(getThresholdSummary('slowHost')).toContain(`${ratioWarn}x+ slower`);
-    expect(getThresholdSummary('slowHost')).toContain(`starting at ${ratioTiers[0]}x`);
+    expect(getThresholdSummary('slowHost')).toContain(`${ratioWarn}× slower`);
+    expect(getThresholdSummary('slowHost')).toContain(`from ${ratioTiers[0]}×`);
   });
 
   it('summarizes each emitted broadcast type, not the broadcastSizing entry', () => {
-    expect(getThresholdSummary('overBroadcast')).toMatch(/size ceiling/);
+    expect(getThresholdSummary('overBroadcast')).toBe('a broadcast over 1 GiB');
     expect(getThresholdSummary('underBroadcast')).toMatch(/size floor/);
     expect(getThresholdSummary('broadcastSizing')).toBe('criteria not met');
   });
@@ -26,6 +26,11 @@ describe('getThresholdSummary', () => {
   it('reads a tuned run\'s thresholds when given its overrides', () => {
     expect(getThresholdSummary('spill', { spill: { singleTaskDiskGiB: 8 } })).toBe('single-task disk spill above 8 GiB');
     expect(getThresholdSummary('spill', { skew: { ratioWarn: 8 } })).toBe(getThresholdSummary('spill'));
+  });
+
+  it('states a tuned rate as a whole percent, without float noise', () => {
+    expect(getThresholdSummary('failures')).toBe("over 5% of a stage's tasks failing");
+    expect(getThresholdSummary('failures', { failures: { warnRate: 0.07 } })).toBe("over 7% of a stage's tasks failing");
   });
 
   it('falls back to a generic string for an unmapped type', () => {

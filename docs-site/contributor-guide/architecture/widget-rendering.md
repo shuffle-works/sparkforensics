@@ -99,8 +99,9 @@ by worst impact band, never by their incomparable raw magnitudes.
 A summary row's tag and dot, plus its text, all come from the group's own
 highest-impact member (via the same three-tier comparator, computed
 locally in `FixTheseFirst.tsx`); the trailing stat depends on the group's
-kind (`×N · <time> recoverable`, `×N · resource-cost projection`, or a
-plain per-impact-band tally). Clicking it expands straight to the group's
+kind (`×N · <time> recoverable`, `×N · <total>` with the summed resource
+waste the CLI report also prints, or `×N` alone, adding a per-impact-band
+tally only when the group mixes bands). Clicking it expands straight to the group's
 full, impact-ranked list, with no intermediate "worst-K" step, paginated at
 10 rows per page (`data-testid="fix-these-first-group-row"`; no pager renders
 for a group of 10 or fewer findings; it appears once a group exceeds 10).
@@ -151,10 +152,10 @@ finding surfaces in its own impact band like any other active widget.
 
 Below the impact bands, `Alerts.tsx`'s exported `CleanChecks` renders a
 collapsed "Clean checks" disclosure
-of `CleanCheckRow` lines (`src/view/widgets/CleanCheckRow.tsx`: label, the
-threshold it was measured against, the interpretation's
-`detectors[type].thresholdSummary` from `getThresholdSummary`, and "No fix
-needed.") built per detector *type* (every `REGISTRY` key except that one
+of `CleanCheckRow` lines (`src/view/widgets/CleanCheckRow.tsx`: label and the
+threshold it was held to, the interpretation's
+`detectors[type].thresholdSummary` from `getThresholdSummary`, which states
+the detector's own numbers) built per detector *type* (every `REGISTRY` key except that one
 always-mounted key). Types the log could not check (an `isEvidenceCaveat`
 finding of that type, every per-stage type when no stage finished, or the
 run-span types `RUN_SPAN_CHECK_TYPES` on an `incompleteRun` log, the same

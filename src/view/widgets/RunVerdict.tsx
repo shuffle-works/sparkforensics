@@ -317,8 +317,8 @@ export function RunVerdict({ interpretation, onRoute }: RunVerdictProps) {
       {density === 'advanced' && shown.length > 1 ? (
         <p className="text-xs text-muted-foreground">
           {failed
-            ? 'Order: failures first, then by the high end of potential savings; impact band breaks ties.'
-            : 'Order: by the high end of potential savings, quantified estimates before unquantified ones; impact band breaks ties.'}
+            ? 'Order: failures first, then highest potential savings; impact band breaks ties.'
+            : 'Order: highest potential savings first, unestimated last; impact band breaks ties.'}
         </p>
       ) : null}
     </section>
