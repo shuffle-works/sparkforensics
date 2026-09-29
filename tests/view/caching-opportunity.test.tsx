@@ -262,8 +262,6 @@ test('two composite findings sharing format/relation/executionIds (but from genu
 
     // Both rows rendered (not deduped/collapsed by React reconciling a shared key).
     expect(screen.getAllByText(fullTextOf('mx.a join mx.b'))).toHaveLength(2);
-    expect(screen.getByText(/\[variant X\]/)).toBeInTheDocument();
-    expect(screen.getByText(/\[variant Y\]/)).toBeInTheDocument();
 
     // No "Encountered two children with the same key" (or similar) React warning.
     const keyWarning = consoleError.mock.calls.some((args) =>

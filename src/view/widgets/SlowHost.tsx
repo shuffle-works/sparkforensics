@@ -35,22 +35,8 @@ function slowHostDetail(f: SlowHostFinding): string {
   return `${f.host}: ${formatMetricValue('ratio', value)} median task time (${formatMetricValue('pct', taskSharePct)} of tasks)`;
 }
 
-// hostDurationShare/execMaxMedianRatio recommendations restate slowHostDetail's
-// host/ratio/dimension figures before a colon, then the real advice; strip that
-// redundant clause so the detail line extends into the advice instead of
-// repeating it. Always visible, same as hostMeanRatio's recommendation below,
-// which has no such restatement and so returns null here and stays fully
-// visible unconditionally via its own paragraph.
-function slowHostAdvice(f: SlowHostFinding): string | null {
-  if (f.metric !== 'hostDurationShare' && f.metric !== 'execMaxMedianRatio') return null;
-  const recommendation = f.recommendation ?? '';
-  const adviceStart = recommendation.indexOf(': ');
-  return adviceStart === -1 ? null : recommendation.slice(adviceStart);
-}
-
 function SlowHostRow({ finding, appModel }: { finding: SlowHostFinding; appModel: WidgetProps['appModel'] }) {
   const anchor = useAnchoredRow([finding]);
-  const advice = slowHostAdvice(finding);
   return (
     <li
       ref={anchor.ref}
@@ -62,12 +48,8 @@ function SlowHostRow({ finding, appModel }: { finding: SlowHostFinding; appModel
         <ImpactDot impactBand={finding.impactBand} />
         {finding.stageId != null ? <StageHeader stageId={finding.stageId} appModel={appModel} /> : null}
       </div>
-      <p className="text-xs text-muted-foreground">
-        {slowHostDetail(finding)}
-        {advice}
-      </p>
+      <p className="text-xs text-muted-foreground">{slowHostDetail(finding)}</p>
       <ImpactEstimate finding={finding} />
-      {advice == null ? <p className="text-muted-foreground pt-1">{finding.recommendation}</p> : null}
     </li>
   );
 }
@@ -98,6 +80,7 @@ export const SlowHost = memo(function SlowHost({ appModel, catalog, defaultColla
     <WidgetCard
       title="Slow Executor Host"
       impactBand={issues[0].impactBand}
+      fixFor={issues}
       badges={
         <>
           <TagBadge type="slowHost" impactBand={issues[0].impactBand} />

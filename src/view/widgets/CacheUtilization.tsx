@@ -11,7 +11,6 @@ import {
 import { pathBasename, formatBytes, formatMetricValue, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { CacheUtilizationFinding } from '@sparkforensics/core/finding-types.ts';
-import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { DocsLink } from '@/view/DocsContext';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
@@ -88,7 +87,8 @@ function cacheFindingDetail(f: CacheUtilizationFinding): string {
 
 /** One flagged RDD finding's row, anchored so a triage route focuses the row
  * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order.
- * The recommendation is always visible. */
+ * The row shows its measured detail and the card states the fix once; a
+ * storageUnobserved caveat has no shared fix, so its row keeps its own text. */
 function CacheFindingRow({ finding }: { finding: CacheUtilizationFinding }) {
   const anchor = useAnchoredRow([finding]);
   const label = finding.dataUnavailable ? 'Cache storage not logged' : finding.rddName ?? `RDD ${finding.rddId}`;
@@ -104,11 +104,8 @@ function CacheFindingRow({ finding }: { finding: CacheUtilizationFinding }) {
         <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
         <span>{label}</span>
       </p>
-      <AdvancedOnly>
-        <p className="text-xs text-muted-foreground">{cacheFindingDetail(finding)}</p>
-      </AdvancedOnly>
+      <p className="text-xs text-muted-foreground">{finding.dataUnavailable ? finding.recommendation : cacheFindingDetail(finding)}</p>
       <ImpactEstimate finding={finding} />
-      <p className="text-sm">{finding.recommendation}</p>
     </div>
   );
 }
@@ -152,6 +149,7 @@ export const CacheUtilization = memo(function CacheUtilization({ appModel, catal
     <div data-widget="cache-utilization">
       <WidgetCard
         title="Cache Storage"
+        fixFor={allFindings}
         impactBand={worstImpactBand(allFindings)}
         badges={
           <>

@@ -53,13 +53,13 @@ test('renders a WidgetCard heading with the PLAN tag', async () => {
   store.getState().setWidgetDensity('basic');
 });
 
-test('flags every finding, each with its own recommendation and stage pills', () => {
+test('flags every finding, each with what repeats and its stage pills', () => {
   renderWidget([
-    finding({ stageIds: [1], recommendation: 'dup rec A' }),
-    finding({ stageIds: [2], recommendation: 'dup rec B' }),
+    finding({ stageIds: [1], rootName: 'SubtreeA' }),
+    finding({ stageIds: [2], rootName: 'SubtreeB' }),
   ]);
-  expect(screen.getByText(/dup rec A/)).toBeInTheDocument();
-  expect(screen.getByText(/dup rec B/)).toBeInTheDocument();
+  expect(screen.getByText(/rooted at SubtreeA repeats 2x/)).toBeInTheDocument();
+  expect(screen.getByText(/rooted at SubtreeB repeats 2x/)).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Open details for Stage 1' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Open details for Stage 2' })).toBeInTheDocument();
 });
@@ -105,12 +105,12 @@ test('defaults to impact order (highest potential savings first), and a toggle f
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
   renderWidget([
-    finding({ stageIds: [1], recommendation: 'Dedupe stage 1', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } }),
-    finding({ stageIds: [2], recommendation: 'Dedupe stage 2', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } }),
+    finding({ stageIds: [1], rootName: 'RootOne', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } }),
+    finding({ stageIds: [2], rootName: 'RootTwo', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } }),
   ]);
 
   const listItems = () => screen.getAllByRole('listitem').map((li) => li.textContent ?? '');
-  await expectImpactThenStageOrderByText(user, listItems, /Dedupe stage 1/, /Dedupe stage 2/);
+  await expectImpactThenStageOrderByText(user, listItems, /rooted at RootOne/, /rooted at RootTwo/);
   store.getState().setWidgetDensity('basic');
 });
 

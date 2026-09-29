@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from 'react';
 
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { FindingOf } from '@sparkforensics/core/types.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
@@ -38,7 +39,7 @@ function DuplicatePlanSubtreeRow({ finding }: { finding: FindingOf<'duplicatePla
         <StagePillGroup pills={finding.stageIds.map((id) => ({ id }))} />
       ) : null}
       <p>
-        {finding.recommendation} <ImpactEstimate finding={finding} />
+        {`${duplicateSubtreeDetail(finding)}.${finding.occurrencesIdentical ? '' : ` ${DUPLICATE_SUBTREE_DIFFERING_NOTE}`}`} <ImpactEstimate finding={finding} />
       </p>
     </li>
   );
@@ -75,6 +76,7 @@ export const DuplicatePlanSubtree = memo(function DuplicatePlanSubtree({ catalog
   return (
     <WidgetCard
       title="Redundant Plan Subtree"
+      fixFor={findings}
       impactBand={worstImpactBand(findings)}
       open={cardOpen}
       onOpenChange={setCardOpen}

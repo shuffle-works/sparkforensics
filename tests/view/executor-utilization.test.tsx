@@ -22,13 +22,12 @@ test('renders the WidgetCard heading, UTIL badge, and the average-utilization ro
   expect(screen.getByText('42%')).toBeInTheDocument();
 });
 
-test("a utilization row's recommendation is visible unconditionally, with no per-row toggle", () => {
+test("the card's fix is visible unconditionally, with no per-row toggle", () => {
   const catalog: Finding[] = [
     testFinding({ type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42, recommendation: 'Average executor utilization < 60%: consider reducing cluster size or enabling dynamic allocation.', utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42 }),
   ];
   render(<ExecutorUtilization catalog={catalog} defaultCollapsed={false} />);
-  const recommendation = /Average executor utilization < 60%/i;
-  expect(screen.getByText(recommendation)).toBeInTheDocument();
+  expect(screen.getByText('Consider reducing cluster size or enabling dynamic allocation.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /recommendation for executor utilization/i })).not.toBeInTheDocument();
 });
 
@@ -52,8 +51,8 @@ test('flags every affected row, not just the worst, sorted worst-first', () => {
     testFinding({ type: 'utilization', stageId: null, impactBand: 'warning', metric: 'avgUtilization', value: 30, recommendation: 'r-warning', utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42 }),
   ];
   render(<ExecutorUtilization catalog={catalog} defaultCollapsed={false} />);
-  expect(screen.getByText(/r-warning/)).toBeInTheDocument();
-  expect(screen.getByText(/r-info/)).toBeInTheDocument();
+  expect(screen.getByText('30%')).toBeInTheDocument();
+  expect(screen.getByText('55%')).toBeInTheDocument();
 });
 
 test('card defaults collapsed with a summary when there are findings', () => {

@@ -237,8 +237,10 @@ empty catalog filter (except Core Usage by Locality, the one always-mounted
   `alwaysMountedWidgets()`/`isAlwaysMountedType()` rather than
   early-returning on an empty catalog filter).
 - Tier B (the row/expand pattern): a row's collapsed state shows its core
-  metric(s), `ImpactEstimate`, its recommendation text, any config-hint code
-  snippet/list, and docs links, all unconditionally. Confidence and evidence
+  metric(s), `ImpactEstimate`, any config-hint code snippet/list, and docs
+  links, all unconditionally. The fix is stated once per card: `WidgetCard`'s
+  `fixFor` prints each distinct `coreFindingGenericRecommendation` above the
+  body, so rows don't repeat a recommendation that restates their number. Confidence and evidence
   are unconditional too, since the 2026-09 redesign: `RowStatusCluster`
   (`src/view/RowStatusCluster.tsx`) is a single, fixed-position pill
   combining both, replacing the old per-row `ExpandToggleButton` +
@@ -341,8 +343,8 @@ wrapper or pagination, which still apply to all three:
 - `CacheUtilization.tsx`'s RDD `<Table>` holds reference columns (name,
   storage level, partitions, memory, disk bytes) with no recommendation
   attached to any row. Paginated like every other Tier B list, but with no
-  per-row expand. Its separate recommendation list below the table is full
-  Tier B (unconditional, no toggle, per the paragraph above).
+  per-row expand. Its separate finding list below the table is full Tier B
+  (unconditional, no toggle, per the paragraph above).
 - `IncompleteRun.tsx` leads with no metric of its own: this app-scoped,
   single-finding widget has no natural lead figure distinct from its
   title/badge, unlike every other Gold Standard widget, which leads with a

@@ -12,7 +12,7 @@ test('renders nothing when the catalog has no coldStart findings', () => {
   expect(container).toBeEmptyDOMElement();
 });
 
-test('renders the WidgetCard heading, COLD tag, the measured metric value, and its recommendation', () => {
+test('renders the WidgetCard heading, COLD tag, the measured metric value, and the card\'s fix', () => {
   const catalog: Finding[] = [
     { type: 'coldStart', stageId: null, impactBand: 'warning', value: 45, recommendation: 'Consider pre-warming the cluster.' },
   ];
@@ -20,7 +20,7 @@ test('renders the WidgetCard heading, COLD tag, the measured metric value, and i
   expect(screen.getByRole('heading', { name: 'Cold Start' })).toBeInTheDocument();
   expect(screen.getAllByText('COLD').length).toBeGreaterThan(0);
   expect(screen.getByText('45s', { selector: 'strong' })).toBeInTheDocument();
-  expect(screen.getByText('Consider pre-warming the cluster.')).toBeInTheDocument();
+  expect(screen.getByText(/^Keep a warm pool of idle executors/)).toBeInTheDocument();
 });
 
 test('shows the COLD tag once, in the header, and keeps a per-row impact dot for every flagged finding', () => {

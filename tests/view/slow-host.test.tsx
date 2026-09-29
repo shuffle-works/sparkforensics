@@ -30,7 +30,7 @@ test('renders the WidgetCard heading and the SLOW... tag for a slowHost finding'
   expect(screen.getByRole('heading', { name: 'Slow Executor Host' })).toBeInTheDocument();
   expect(screen.getAllByText('HOST').length).toBeGreaterThan(0);
   expect(screen.getByText('worker-3: 2.3× median task time (42% of tasks)')).toBeInTheDocument();
-  expect(screen.getByText('Check executor logs for worker-3.')).toBeInTheDocument();
+  expect(screen.getByText(/^Check what this host was running:/)).toBeInTheDocument();
 });
 
 test('shows the HOST tag once, in the header, and keeps a per-row impact dot for every flagged stage', () => {
@@ -57,34 +57,34 @@ test('flags every affected stage, not just the worst', () => {
   expect(screen.getByRole('button', { name: /open details for stage 2/i })).toBeInTheDocument();
 });
 
-test('surfaces the per-host duration-share detail and its advice extension, always visible regardless of density', async () => {
+test('surfaces the per-host duration-share detail and its variant\'s fix, always visible regardless of density', async () => {
   const catalog: Finding[] = [
-    { type: 'slowHost', stageId: 4, impactBand: 'warning', metric: 'hostDurationShare', value: 0.82, host: 'worker-1', hostTaskShare: 0.6, recommendation: 'worker-1 is doing most of the work: consider salting the join key.' } as Finding,
+    { type: 'slowHost', variant: 'durationShare', stageId: 4, impactBand: 'warning', metric: 'hostDurationShare', value: 0.82, host: 'worker-1', hostTaskShare: 0.6, recommendation: 'worker-1 is doing most of the work: consider salting the join key.' } as Finding,
   ];
   render(<SlowHost appModel={appModelWithStage(4)} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByText(/worker-1: 82% of this stage's task time \(60% of tasks\)/)).toBeInTheDocument();
-  expect(screen.getByText(/consider salting the join key/)).toBeInTheDocument();
+  expect(screen.getByText('Check for data locality or partition assignment skewing work onto one node.')).toBeInTheDocument();
 
   const { store } = await import('@/store/store');
   store.getState().setWidgetDensity('advanced');
   render(<SlowHost appModel={appModelWithStage(4)} catalog={catalog} defaultCollapsed={false} />);
-  expect(screen.getAllByText(/consider salting the join key/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Check for data locality or partition assignment skewing work onto one node.').length).toBeGreaterThan(0);
   store.getState().setWidgetDensity('basic');
 });
 
-test('surfaces the per-executor multiDim detail with its advice always visible, regardless of density', async () => {
+test('surfaces the per-executor multiDim detail with its variant\'s fix always visible, regardless of density', async () => {
   const catalog: Finding[] = [
-    { type: 'slowHost', stageId: 4, impactBand: 'info', metric: 'execMaxMedianRatio', value: 3.5, executorId: '7', dimension: 'shuffleBytes', recommendation: 'Executor 7 deviates on shuffleBytes: check for a hot key.' } as Finding,
+    { type: 'slowHost', variant: 'multiDim', stageId: 4, impactBand: 'info', metric: 'execMaxMedianRatio', value: 3.5, executorId: '7', dimension: 'shuffleBytes', recommendation: 'Executor 7 deviates on shuffleBytes: check for a hot key.' } as Finding,
   ];
   render(<SlowHost appModel={appModelWithStage(4)} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByText(/Executor 7: 3\.5× median on shuffleBytes/)).toBeInTheDocument();
-  expect(screen.getByText(/check for a hot key/)).toBeInTheDocument();
+  expect(screen.getByText('Investigate uneven partition assignment or a degraded executor.')).toBeInTheDocument();
 
   // Density doesn't change anything for this sub-rule: still visible at Advanced.
   const { store } = await import('@/store/store');
   store.getState().setWidgetDensity('advanced');
   render(<SlowHost appModel={appModelWithStage(4)} catalog={catalog} defaultCollapsed={false} />);
-  expect(screen.getAllByText(/check for a hot key/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Investigate uneven partition assignment or a degraded executor.').length).toBeGreaterThan(0);
   store.getState().setWidgetDensity('basic');
 });
 

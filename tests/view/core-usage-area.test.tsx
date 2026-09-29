@@ -230,7 +230,7 @@ test('reflects a new interpretation after a cached-file switch', async () => {
   expect(screen.getByText('10 cores')).toBeInTheDocument();
 });
 
-test('shows the LOCAL badge, impact band, and recommendation when a coreLocality finding exists in catalog', async () => {
+test('shows the LOCAL badge, impact band, and fix when a coreLocality finding exists in catalog', async () => {
   const catalog: Finding[] = [{
     type: 'coreLocality', stageId: null, impactBand: 'critical',
     metric: 'nonLocalRatio', value: 40, nonLocalTaskCount: 0,
@@ -246,7 +246,7 @@ test('shows the LOCAL badge, impact band, and recommendation when a coreLocality
 
   expect(screen.getByText('LOCAL')).toBeInTheDocument();
   expect(screen.getByText(/40% non-local/)).toBeInTheDocument();
-  expect(screen.getByText(/check spark\.locality\.wait settings/)).toBeInTheDocument();
+  expect(screen.getByText(/Check spark\.locality\.wait settings/)).toBeInTheDocument();
 });
 
 test('renders the core-time raw-waste figure when a coreLocality finding carries an impactEstimate', async () => {

@@ -78,7 +78,6 @@ function SpillRow({
           {` (current ${partitionHint.current} tasks, target 128 MB per partition)`}
         </p>
       ) : null}
-      {finding.recommendation ? <p className="text-xs text-muted-foreground">{finding.recommendation}</p> : null}
       {showPlanExplorer ? (
         <div className="pt-1">
           <PlanExplorer stageId={finding.stageId} appModel={appModel} />
@@ -132,6 +131,7 @@ export const Spill = memo(function Spill({ appModel, catalog, defaultCollapsed =
   return (
     <WidgetCard
       title="Spill"
+      fixFor={sorted}
       impactBand={impactBand}
       badges={
         <>

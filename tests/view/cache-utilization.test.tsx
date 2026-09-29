@@ -153,21 +153,21 @@ test('shows the CSTOR tag once, in the header, and keeps a per-row impact dot fo
   expect(rows[2].querySelectorAll('.size-2.rounded-full')).toHaveLength(0);
 });
 
-test('lists the recommendation text for every flagged RDD below the table, worst-first', async () => {
+test('lists the detail line for every flagged RDD below the table, worst-first', async () => {
   const rddInfo = new Map([
     [1, rdd(1, { numCachedPartitions: 8 })], // 0.80 -> info tier
     [2, rdd(2, { numCachedPartitions: 4 })], // 0.40 -> warning tier
   ]);
   const catalog = [
-    cacheUtilizationFinding({ rddId: 1, rddName: 'rdd1', impactBand: 'info', recommendation: 'RDD rdd1 is 20% evicted from cache (80% of partitions cached), increase executor memory or reduce the cached dataset size.' }),
+    cacheUtilizationFinding({ rddId: 1, rddName: 'rdd1', impactBand: 'info', value: 80, numCachedPartitions: 8, recommendation: 'RDD rdd1 is 20% evicted from cache (80% of partitions cached), increase executor memory or reduce the cached dataset size.' }),
     cacheUtilizationFinding({ rddId: 2, rddName: 'rdd2', impactBand: 'warning', recommendation: 'RDD rdd2 is 60% evicted from cache (40% of partitions cached), increase executor memory or reduce the cached dataset size.' }),
   ];
   renderWidget(buildAppModel(rddInfo), catalog);
 
-  const texts = screen.getAllByText(/evicted from cache/).map((el) => el.textContent);
-  // Worst-first: the warning (rdd2) recommendation must appear before the info (rdd1) one.
-  expect(texts[0]).toContain('rdd2');
-  expect(texts[1]).toContain('rdd1');
+  const texts = screen.getAllByText(/% cached \(/).map((el) => el.textContent);
+  // Worst-first: the warning (rdd2, 40%) row must appear before the info (rdd1, 80%) one.
+  expect(texts[0]).toContain('40%');
+  expect(texts[1]).toContain('80%');
 });
 
 test('renders memory/disk size and partition counts in the Advanced-only detail line', () => {
@@ -183,14 +183,14 @@ test('renders memory/disk size and partition counts in the Advanced-only detail 
   store.getState().setWidgetDensity('basic');
 });
 
-test('hides the memory/disk size and partition-count detail line at Basic density', () => {
+test('shows the memory/disk size and partition-count detail line at Basic density too', () => {
   const rddInfo = new Map([[1, rdd(1, { numCachedPartitions: 4 })]]);
   const catalog = [cacheUtilizationFinding({
     rddId: 1, variant: 'partialCache', memorySize: 2e8, diskSize: 0, numCachedPartitions: 4, numPartitions: 10,
   })];
   renderWidget(buildAppModel(rddInfo), catalog);
 
-  expect(screen.queryByText('40% cached (4/10 partitions)')).not.toBeInTheDocument();
+  expect(screen.getByText('40% cached (4/10 partitions)')).toBeInTheDocument();
 });
 
 test('renders both findings for an RDD that crosses both the partialCache and diskSpillover tiers', async () => {
@@ -213,11 +213,10 @@ test('renders both findings for an RDD that crosses both the partialCache and di
   store.getState().setWidgetDensity('advanced');
   renderWidget(buildAppModel(rddInfo), catalog);
 
-  expect(screen.getByText(/60% evicted from cache/)).toBeInTheDocument();
-  // Exactly two matches: the Advanced-only detail line ("70% spilled to
-  // disk: ...") and the recommendation prose itself, proving the
-  // recommendation actually renders and not just the detail line.
-  expect(screen.getAllByText(/70% spilled to disk/)).toHaveLength(2);
+  expect(screen.getByText('40% cached (4/10 partitions)')).toBeInTheDocument();
+  // One match: the detail line. The card states each variant's fix once instead of the
+  // recommendation prose, which would restate it.
+  expect(screen.getAllByText(/70% spilled to disk/)).toHaveLength(1);
   store.getState().setWidgetDensity('basic');
 });
 
@@ -284,10 +283,10 @@ test('paginates the recommendation list 6-at-a-time, independent of the RDD tabl
 
   // Recommendations are expanded by default; count them directly (the table
   // itself paginates independently).
-  expect(screen.getAllByText(/evicted from cache/)).toHaveLength(6);
+  expect(screen.getAllByText('40% cached (4/10 partitions)')).toHaveLength(6);
 });
 
-test('shows each RDD\'s recommendation unconditionally, with no per-row toggle', async () => {
+test('shows the card\'s fix unconditionally, with no per-row toggle', async () => {
   const user = userEvent.setup();
   const rddInfo = new Map([[1, rdd(1, { numCachedPartitions: 4 })]]);
   const catalog = [cacheUtilizationFinding({
@@ -299,8 +298,7 @@ test('shows each RDD\'s recommendation unconditionally, with no per-row toggle',
   // Expand the collapsed widget to reach the recommendation rows.
   await user.click(screen.getByRole('button', { name: /cache storage/i }));
 
-  const recommendation = 'RDD rdd1 is 60% evicted from cache (40% of partitions cached), increase executor memory or reduce the cached dataset size.';
-  expect(screen.getByText(recommendation)).toBeInTheDocument();
+  expect(screen.getByText('Increase executor memory or reduce the cached dataset size so more of it stays cached.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /hide recommendation for rdd1/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /show recommendation for rdd1/i })).not.toBeInTheDocument();
 });

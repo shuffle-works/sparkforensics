@@ -32,8 +32,8 @@ function sortedByValue(findings: Finding[]): Finding[] {
 }
 
 /** One flagged stage's GC%/executor-run-time figures. Every stage gets its own
- * row (never just the worst); the header carries the shared GC tag, so rows
- * don't repeat it. The recommendation is always visible. */
+ * row (never just the worst); the header carries the shared GC tag and the
+ * card states the fix once, so rows repeat neither. */
 function GcStageRow({ finding, appModel }: { finding: Finding; appModel: AppModel }) {
   const anchor = useAnchoredRow([finding]);
   const stage = finding.stageId != null ? appModel.stages.get(finding.stageId) : undefined;
@@ -56,7 +56,6 @@ function GcStageRow({ finding, appModel }: { finding: Finding; appModel: AppMode
         <strong>{formatDuration(runTime ?? 0)}</strong>
       </p>
       <ImpactEstimate finding={finding} />
-      <p className="text-xs text-muted-foreground">{finding.recommendation}</p>
     </li>
   );
 }
@@ -146,6 +145,7 @@ export function GcPressure({ catalog, appModel, defaultCollapsed = true }: GcPre
     <WidgetCard
       title="GC Pressure"
       impactBand={impactBand}
+      fixFor={findings}
       badges={
         <>
           <TagBadge type="gc" impactBand={impactBand ?? 'info'} />

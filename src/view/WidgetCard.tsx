@@ -8,7 +8,8 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
-import type { ImpactBand } from '@sparkforensics/core/types.ts';
+import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
+import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
 import { DisclosureOpenContext } from '@/view/DisclosureContext';
 import { useWidgetGridCard, WidgetGridCardBoundary } from '@/view/WidgetGrid';
@@ -37,6 +38,9 @@ export interface WidgetCardProps {
   routeFocused?: boolean;
   /** Exposes the existing disclosure trigger without changing its behavior. */
   disclosureButtonRef?: Ref<HTMLButtonElement>;
+  /** The card's findings: each distinct generic fix among them is stated once above `children`,
+   * so rows show what they measured instead of repeating the same recommendation. */
+  fixFor?: readonly Finding[];
   children: ReactNode;
   id?: string;
 }
@@ -54,9 +58,17 @@ export function WidgetCard({
   compact = false,
   routeFocused,
   disclosureButtonRef,
+  fixFor = [],
   children,
   id,
 }: WidgetCardProps) {
+  const fixes = [...new Set(fixFor.map(coreFindingGenericRecommendation).filter((fix) => fix !== undefined))];
+  const body = (
+    <>
+      {fixes.length > 0 ? <div className="mb-3 space-y-1 text-sm">{fixes.map((fix) => <p key={fix}>{fix}</p>)}</div> : null}
+      {children}
+    </>
+  );
   const gridCard = useWidgetGridCard();
   const cardRef = useRef<HTMLDivElement>(null);
   // Reference-region tiles start collapsed and share a uniform collapsed height,
@@ -146,7 +158,7 @@ export function WidgetCard({
 
   const content = (
     <WidgetGridCardBoundary>
-      <CardContent>{children}</CardContent>
+      <CardContent>{body}</CardContent>
     </WidgetGridCardBoundary>
   );
 
@@ -175,7 +187,7 @@ export function WidgetCard({
                   text stays queryable/find-able; the context lets charts skip
                   mounting a 0×0 ResponsiveContainer until the card is open. */}
               <DisclosureOpenContext.Provider value={open}>
-                <CardContent>{children}</CardContent>
+                <CardContent>{body}</CardContent>
               </DisclosureOpenContext.Provider>
             </CollapsibleContent>
           </WidgetGridCardBoundary>
