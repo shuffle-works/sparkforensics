@@ -1002,14 +1002,22 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'stageShape', order: 35, fixEffort: 'code', version: 1,
+    type: 'stageShape', order: 35, fixEffort: 'code', version: 2,
     emits: ['stageShape'],
     docAnchor: '#bottleneck-stage-shape',
     // lowParallelismFloorPct: the same 0.5% runtime floor the tiered detectors use. Parallelizing a
     // stage can't save more than the stage's own duration, so a shorter stage can't clear it; on
     // the 14 real logs that was 2839 of 3005 lowParallelism findings (2168 on sub-second stages).
     // App-wide idle capacity stays covered by utilization.
-    thresholds: { pRatioMax: 0.5, oiRatioMax: 10, skewWarn: 3, lowParallelismFloorPct: 0.005 },
+    // taskStageSkew: stageShareMin is the share of the stage's wall-clock the longest task must
+    // span, and skewWarn how far past the median task it must run (skew's own max/median 3×).
+    // The share alone can't tell a straggler apart: on a single wave (tasks <= cores) the longest
+    // task spans nearly the whole stage however even the tasks are. taskStageSkewFloorPct is the
+    // same 0.5% runtime floor as lowParallelismFloorPct.
+    thresholds: {
+      pRatioMax: 0.5, oiRatioMax: 10, skewWarn: 3, stageShareMin: 0.5,
+      lowParallelismFloorPct: 0.005, taskStageSkewFloorPct: 0.005,
+    },
     detect(stage, ctx, thresholds): Finding[] {
       const out: Finding[] = [];
       const execCount = (stage.executorStats ?? []).length;
@@ -1040,18 +1048,21 @@ export const DETECTORS = [
           });
         }
       }
-      // TaskStageSkew: straggler cost vs stage wall-clock. Skip near-zero duration. Always info
-      // like its siblings: this trigger forces the occupancy-clipped estimate to exactly zero on
-      // every firing, so there's no wall-clock-backed tier left to gate on.
-      if (stageDurationMs > 0) {
-        const ratio = stage.taskDurationMax / stageDurationMs;
-        if (ratio > thresholds.skewWarn) {
+      // TaskStageSkew: one straggler sets when the stage ends. A task runs inside its stage's
+      // window, so the longest task's share of the stage's wall-clock is at most 1. Skip a
+      // zero-length or single-task stage. Always info like its siblings: skew and straggler
+      // already make the wall-clock claim for the same tail, so this one reports idle core-time.
+      if (stageDurationMs > 0 && stage.taskCount > 1 && stage.taskDurationP50 > 0
+        && !stageBelowRuntimeFloor(stage, ctx, thresholds.taskStageSkewFloorPct)) {
+        const share = stage.taskDurationMax / stageDurationMs;
+        const vsMedian = stage.taskDurationMax / stage.taskDurationP50;
+        if (share > thresholds.stageShareMin && vsMedian > thresholds.skewWarn) {
           out.push({
             type: 'stageShape', stageId: stage.id, impactBand: 'info',
-            rule: 'taskStageSkew', metric: 'taskStageSkew', value: Math.round(ratio * 10) / 10,
+            rule: 'taskStageSkew', metric: 'taskStageSkew', value: Math.round(share * 100) / 100,
             // Absolute core count, for the impact estimator's idle-core-ms figure.
             totalCores,
-            recommendation: `One task takes ${Math.round(ratio * 10) / 10}× this stage's wall-clock duration; a single straggler is gating the whole stage.`,
+            recommendation: `The longest task ran for ${Math.round(share * 100)}% of this stage's wall-clock, ${Math.round(vsMedian * 10) / 10}× the median task: a single straggler is gating the whole stage.`,
           });
         }
       }
@@ -1076,8 +1087,8 @@ export const DETECTORS = [
         const totalCores = (finding.totalCores as number | undefined) ?? 0;
         const taskCount = stage.taskCount ?? 0;
         // Cores idle during the straggler's tail, at achieved concurrency (not full cluster
-        // capacity, which is lowParallelism's territory): this rule's trigger forces the
-        // occupancy-clipped estimate to zero on every firing, so it's resourceOnly, not a wall-clock claim.
+        // capacity, which is lowParallelism's territory): resourceOnly, since skew and straggler
+        // already claim that tail's wall-clock time.
         const idleCoreMs =
           Math.max(0, Math.min(totalCores, taskCount) - 1) *
           Math.max(0, (stage.taskDurationMax ?? 0) - (stage.taskDurationP50 ?? 0));

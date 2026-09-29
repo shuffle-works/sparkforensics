@@ -287,13 +287,11 @@ finding's magnitude, since both detectors also carry a `confidence` field that s
 `low`/`medium`/`high` off how far the finding sits past its own runtime-floor threshold (still
 unvalidated; see the confidence-disclosure note in detector-contract.md).
 
-`stageShape`'s `taskStageSkew` rule no longer participates in this caveat: it reports a
+`stageShape`'s `taskStageSkew` rule doesn't participate in this caveat: it reports a
 `resourceOnly` idle-core-ms figure (see the coverage table below) instead of a wall-clock
-claim, so there's nothing left to double-count against `skew`/`straggler`. Its trigger
-condition (`taskDurationMax / stageDurationMs > skewWarn`) mathematically forces the
-occupancy-clipped wall-clock estimate to exactly zero on every firing (see `src/detectors.ts`'s
-`taskStageSkew` comment), which is why it was moved off the wall-clock path entirely rather
-than reconciled against the same ceiling clip as its two siblings above.
+claim, so there's nothing left to double-count against `skew`/`straggler`. It fires on the
+same straggler tail those two price (on the corpus, each of its 6 firings shares a stage with a
+`skew` or `straggler` finding), which is why it stays off the wall-clock path.
 
 ## Tuned thresholds
 

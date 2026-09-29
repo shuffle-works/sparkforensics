@@ -98,10 +98,11 @@ large per-task data volume driving heavy shuffle and spill.
 
 ### `SHAPE`: Stage shape {#shape}
 
-The stage has an inefficient task count, output shape, or task-to-stage
-balance: for example, one straggler task taking a large fraction of the
-stage's wall-clock time. A too-low task count is only flagged on stages that
-take at least 0.5% of the run.
+The stage has an inefficient task count, output shape (output more than 10×
+input), or task-to-stage balance: one straggler task running for more than
+half the stage's wall-clock time and over 3× the median task, so it alone
+sets when the stage ends. A too-low task count and a straggler are only
+flagged on stages that take at least 0.5% of the run.
 
 ### `HOST`: Slow host {#host}
 
