@@ -88,26 +88,26 @@ export function findingId(f: Finding): string {
   return fnv1a(`${f.type}|${locationKey(f)}|${f.metric ?? ''}|${f.value ?? f.valueText ?? ''}|${disc}`);
 }
 
-// skew's max/median branch (stage.taskCount below minTasksForP95) and straggler are both driven
-// by the identical (taskDurationMax - taskDurationP50) delta on the same stage: the same
-// dominant outlier task reported by two detectors, each independently clipped (see "Overlap
-// caveat: skew / straggler" in impact-estimation.md). skew's P95/median branch samples a
-// different task and stays independent. Flags both sides via validationRequired (rather than
-// suppressing either) so neither finding's own diagnostic value is lost; the flag rides the same
+// skew (either branch) and straggler both claim the stage's replayed tail recovery
+// (tailReplayRecoveryMs via tailRecoveryMs): the same slow-task tail reported by two detectors
+// (see "Overlap caveat: skew / straggler" in impact-estimation.md). skew's branch only changes
+// the fallback single-task delta on a stage without the replay, so every skew + straggler pair
+// on a stage is flagged. Flags both sides via validationRequired (rather than suppressing
+// either) so neither finding's own diagnostic value is lost; the flag rides the same
 // confidence-caveat UI a reader already sees before trusting either finding's magnitude.
 function overlapNote(otherType: 'skew' | 'straggler'): string {
-  return `This overlaps with the ${otherType} finding on this stage: both are driven by the same dominant outlier task, so don't add their recoverable-time figures together.`;
+  return `This overlaps with the ${otherType} finding on this stage: both measure the same slow-task tail, so don't add their recoverable-time figures together.`;
 }
 
 function flagSkewStragglerOverlap(findings: Finding[]): void {
-  const maxMedianSkewStages = new Set(
-    findings.filter((f) => f.type === 'skew' && f.metric === 'max/median' && f.stageId != null).map((f) => f.stageId),
+  const skewStages = new Set(
+    findings.filter((f) => f.type === 'skew' && f.stageId != null).map((f) => f.stageId),
   );
-  if (maxMedianSkewStages.size === 0) return;
+  if (skewStages.size === 0) return;
   const stragglerStages = new Set(
     findings.filter((f) => f.type === 'straggler' && f.stageId != null).map((f) => f.stageId),
   );
-  const overlapStages = new Set([...maxMedianSkewStages].filter((id) => stragglerStages.has(id)));
+  const overlapStages = new Set([...skewStages].filter((id) => stragglerStages.has(id)));
   if (overlapStages.size === 0) return;
   for (const f of findings) {
     if (f.stageId == null || !overlapStages.has(f.stageId)) continue;

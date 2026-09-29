@@ -631,8 +631,7 @@ describe('analyze: speculative / straggler', () => {
 
 describe('analyze: skew/straggler same-stage overlap disclosure (§4)', () => {
   it('flags both findings when skew (max/median branch) and straggler fire on the same stage', () => {
-    // taskCount below minTasksForP95 (20): skew uses its max/median branch, driven by the exact
-    // same (taskDurationMax - taskDurationP50) delta straggler's own wallClock estimate uses.
+    // taskCount below minTasksForP95 (20): skew uses its max/median branch.
     const stages = new Map([[1, makeStage({
       taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
       speculativeTasks: 0, stragglerCount: 2,
@@ -647,10 +646,10 @@ describe('analyze: skew/straggler same-stage overlap disclosure (§4)', () => {
     expect(straggler.validationRequired).toMatch(/overlaps with the skew finding/);
   });
 
-  it('does not flag an overlap when skew uses its P95/median branch (a different task, not the same delta)', () => {
+  it('flags both findings when skew uses its P95/median branch (both claim the same replayed tail)', () => {
     const stages = new Map([[1, makeStage({
       taskCount: 25, taskDurationP50: 100, taskDurationP95: 600, taskDurationMax: 900,
-      speculativeTasks: 0, stragglerCount: 2,
+      tailReplayRecoveryMs: 800, speculativeTasks: 0, stragglerCount: 2,
     })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     const skew = catalog.find(b => b.type === 'skew');
@@ -658,8 +657,9 @@ describe('analyze: skew/straggler same-stage overlap disclosure (§4)', () => {
     expect(skew).toBeTruthy();
     expect(skew.metric).toBe('P95/median');
     expect(straggler).toBeTruthy();
-    expect(skew.validationRequired ?? '').not.toMatch(/overlaps with/);
-    expect(straggler.validationRequired ?? '').not.toMatch(/overlaps with/);
+    expect(skew.wallClock).toEqual(straggler.wallClock);
+    expect(skew.validationRequired).toMatch(/overlaps with the straggler finding/);
+    expect(straggler.validationRequired).toMatch(/overlaps with the skew finding/);
   });
 
   it('does not flag skew when no straggler fires on the same stage', () => {
