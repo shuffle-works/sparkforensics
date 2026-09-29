@@ -594,7 +594,7 @@ describe('renderComparisonMarkdown', () => {
     expect(md).toMatch(/### Resolved findings \(1\)\n\n- \[warning\] spill: 1 -> 0/);
   });
 
-  it('opens with the comparison verdict, naming which run is A and which is B', () => {
+  it('opens with the comparison verdict, naming the baseline and the candidate', () => {
     const run = (jobs, label) => ({
       label,
       snapshot: { app: { name: 'JobX', startTime: 0, endTime: 1000 }, stages: new Map(), sql: new Map(), jobs, catalog: [] },
@@ -610,8 +610,8 @@ describe('renderComparisonMarkdown', () => {
       candidate: { failedJobs: 0, totalJobs: 1, incomplete: false },
     });
     const verdict = comparisonVerdict(result);
-    expect(verdict).toMatchObject({ title: 'Run A had 1 of 2 jobs fail; run B completed', tone: 'better' });
+    expect(verdict).toMatchObject({ title: 'The baseline had 1 of 2 jobs fail; the candidate completed', tone: 'better' });
     const md = renderComparisonMarkdown(result, verdict);
-    expect(md).toMatch(/^\n## Comparison to baseline\n\nRun A: base · Run B: cand\n\nRun A had 1 of 2 jobs fail; run B completed\n\n/);
+    expect(md).toMatch(/^\n## Comparison to baseline\n\nBaseline: base · Candidate: cand\n\nThe baseline had 1 of 2 jobs fail; the candidate completed\n\n/);
   });
 });

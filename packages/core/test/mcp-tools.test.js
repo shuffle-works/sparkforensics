@@ -679,7 +679,7 @@ describe('compareRuns', () => {
       expect(wallClock.baseline).toBe(2000);
       expect(wallClock.candidate).toBe(1000);
       expect(wallClock.direction).toBe('improvement');
-      expect(result.verdict).toEqual({ title: 'Run B finished 1.0s faster than run A (50%)', tone: 'better', sentences: [] });
+      expect(result.verdict).toEqual({ title: 'The candidate finished 1.0s faster than the baseline (50%)', tone: 'better', sentences: [] });
     } finally {
       rmSync(a.dir, { recursive: true, force: true });
       rmSync(b.dir, { recursive: true, force: true });

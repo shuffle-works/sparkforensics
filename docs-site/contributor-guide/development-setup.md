@@ -140,11 +140,11 @@ skips injecting its bar into any built page that contains it.
   clicking **Choose file**, then `setInputFiles` on
   `[data-testid=file-input]` or handle the `filechooser` event.
 - Run comparison: on the landing page, click **Compare two runs**, fill the
-  **Run A** and **Run B** slots the same way (each has its own
+  **Baseline** and **Candidate** slots the same way (each has its own
   `[data-testid=file-input]`), then click **Compare**. Both runs parse one
   after the other through the one worker. From a run's dashboard, the
   topbar's **Compare with another run** opens the same view with that run in
-  Run A (a `cached` `RunSource`, not parsed again). **View run A/B dashboard**
+  the baseline slot (a `cached` `RunSource`, not parsed again). **View baseline/candidate dashboard**
   drills into one run, and **← Back to comparison** returns.
 - The landing page's **Try a sample run** (`src/view/DropZone.tsx`) loads a
   gzip-compressed corpus log from `public/sample-runs/`. It was chosen by

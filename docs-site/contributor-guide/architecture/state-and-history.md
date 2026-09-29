@@ -177,7 +177,7 @@ already-parsed snapshots, with no worker involved.
 independently when matched stage coverage falls below 0.5 (`LOW_COVERAGE_THRESHOLD`;
 either condition alone is enough, both are weak signals, not a hard gate). The view
 lives in `src/view/RunComparison.tsx`
-(the comparison page), `CompareLanding.tsx` (the two-slot Run A / Run B intake
+(the comparison page), `CompareLanding.tsx` (the two-slot baseline / candidate intake
 off the landing), and `PinnedStageDeltas.tsx` (the manual per-stage pinning
 panel fed by `baseStages`/`candStages`).
 

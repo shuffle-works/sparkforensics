@@ -4,8 +4,8 @@ Put two runs side by side to see whether a tuning change helped.
 
 ## Starting a comparison
 
-From the landing page, click **Compare two runs**. Two slots appear: **Run
-A (baseline)** and **Run B (candidate)**.
+From the landing page, click **Compare two runs**. Two slots appear:
+**Baseline** and **Candidate**.
 
 1. Load a file into each slot the same way you'd load a single run (drag
    and drop, or **Choose file**).
@@ -16,24 +16,25 @@ both finish, the comparison view opens.
 
 Already looking at a run, for example the one before a change? Click
 **Compare with another run** in the top bar (or the **More options** menu on
-a phone). The compare view opens with that run as Run A, so you only load
-Run B, and the open run is not parsed again. **Back to the run** returns to
+a phone). The compare view opens with that run as the baseline, so you only
+load the candidate, and the open run is not parsed again. **Back to the run** returns to
 its dashboard.
 
 ## Reading the comparison
 
-The page opens with a verdict: whether run B finished faster or slower than
-run A, and by how much (a change under 2% reads as "about as long"). When
-either run had failed jobs, the verdict leads with that instead, for example
-"Run B had 2 of 5 jobs fail (run A: none)" or "Run B's only job failed", and
+The page opens with a verdict: whether the candidate finished faster or
+slower than the baseline, and by how much (a change under 2% reads as "about
+as long"). When either run had failed jobs, the verdict leads with that
+instead, for example "The candidate had 2 of 5 jobs fail (baseline: none)" or
+"The candidate's only job failed", and
 the run-time line follows. When either log has no end-of-run record (the run
 was killed or the log cut off), the verdict says how much run time each log
 covers, in a neutral tone, instead of calling the shorter run faster. It then
-lists which cost metrics got worse or better in run B (again ignoring changes
+lists which cost metrics got worse or better in the candidate (again ignoring changes
 under 2%), and which finding categories became more or less frequent. Volume and count metrics (input,
 output, tasks, executors) are left out, since more or less of them is not
-better or worse on its own. **See where to start in run B** opens run B's
-dashboard, whose own verdict names the first thing to fix.
+better or worse on its own. **See where to start in the candidate** opens the
+candidate's dashboard, whose own verdict names the first thing to fix.
 
 The **Metrics** table covers the whole run: wall-clock duration, shuffle
 spill, task skew, failed-task rate, disk spill, GC time, input/output bytes,
@@ -57,13 +58,13 @@ yourself and pin the pair, then shows their duration, executor run-time, GC
 time, memory/disk spill, input/output bytes, task count, and failed tasks
 side by side. Pin as many pairs as you want to check.
 
-For either run's full dashboard, click **View run A dashboard** or **View
-run B dashboard**. **← Back to comparison** takes you back.
+For either run's full dashboard, click **View baseline dashboard** or **View
+candidate dashboard**. **← Back to comparison** takes you back.
 
 ## Comparing without the dashboard
 
 The same comparison runs headlessly, and opens with the same verdict: the
-positional run is run B, the `--baseline` run is run A. The CLI's `--baseline` flag adds a
+positional run is the candidate, the `--baseline` run the baseline. The CLI's `--baseline` flag adds a
 comparison section to its output (`comparison.verdict` in JSON) and can gate a build on it
 (`--max-regression-pct`, `--fail-on-introduced`; see [Getting
 started](./getting-started.md#ci-and-automation)). The MCP server's

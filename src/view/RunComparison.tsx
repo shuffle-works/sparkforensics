@@ -160,7 +160,7 @@ const VERDICT_TONE_CLASS: Record<ComparisonTone, string> = {
   unknown: 'border-border',
 };
 
-/** The comparison's answer first: whether run B got faster or slower, which
+/** The comparison's answer first: whether the candidate got faster or slower, which
  * cost metrics moved each way, which finding categories came or went, and
  * where to go next. The tables below stay the evidence for each claim. */
 function ComparisonVerdict({ model, onDrillIn }: { model: ComparisonModel; onDrillIn?: (which: 'baseline' | 'candidate') => void }) {
@@ -172,16 +172,16 @@ function ComparisonVerdict({ model, onDrillIn }: { model: ComparisonModel; onDri
       className={cn('space-y-3 rounded-xl border bg-card p-4 sm:p-5', VERDICT_TONE_CLASS[verdict.tone])}
     >
       <h2 id="comparison-verdict-title" className="font-heading text-lg font-semibold">{verdict.title}</h2>
-      <p className="max-w-prose text-sm text-muted-foreground">
-        Run A is the baseline and run B the candidate. {verdict.sentences.join(' ')}
-      </p>
+      {verdict.sentences.length > 0 ? (
+        <p className="max-w-prose text-sm text-muted-foreground">{verdict.sentences.join(' ')}</p>
+      ) : null}
       {onDrillIn ? (
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" onClick={() => onDrillIn('candidate')}>
-            See where to start in run B
+            See where to start in the candidate
             <ArrowRight aria-hidden="true" />
           </Button>
-          <span className="text-xs text-muted-foreground">Opens run B's own verdict and next steps.</span>
+          <span className="text-xs text-muted-foreground">Opens the candidate's own verdict and next steps.</span>
         </div>
       ) : null}
     </section>
@@ -216,8 +216,8 @@ export function RunComparison({
       <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
         {onDrillIn ? (
           <>
-            <Button variant="outline" size="sm" onClick={() => onDrillIn('baseline')}>View run A dashboard</Button>
-            <Button variant="outline" size="sm" onClick={() => onDrillIn('candidate')}>View run B dashboard</Button>
+            <Button variant="outline" size="sm" onClick={() => onDrillIn('baseline')}>View baseline dashboard</Button>
+            <Button variant="outline" size="sm" onClick={() => onDrillIn('candidate')}>View candidate dashboard</Button>
           </>
         ) : null}
         <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>

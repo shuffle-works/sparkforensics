@@ -59,7 +59,7 @@ interface State {
   comparison: { active: boolean; baselineId: string | null; candidateId: string | null };
   compareLoad: { current: 1 | 2 } | null;
   /** A run already parsed this session that the landing's compare view
-   * should open with as Run A ("Compare with another run" on a dashboard).
+   * should open with as the baseline ("Compare with another run" on a dashboard).
    * Cleared when that comparison opens or the reader leaves the seeded view. */
   compareSeed: { id: string; label: string } | null;
   setCompareSeed: (seed: { id: string; label: string } | null) => void;

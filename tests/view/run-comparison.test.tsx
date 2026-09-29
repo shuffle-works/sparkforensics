@@ -158,9 +158,9 @@ test('drill-in links invoke onDrillIn for each run', async () => {
     findings: { introduced: [], resolved: [] }, stageSkew: [],
   };
   render(<RunComparison model={model as any} onClose={vi.fn()} onDrillIn={onDrillIn} />);
-  await user.click(screen.getByRole('button', { name: /view run a dashboard/i }));
+  await user.click(screen.getByRole('button', { name: /view baseline dashboard/i }));
   expect(onDrillIn).toHaveBeenCalledWith('baseline');
-  await user.click(screen.getByRole('button', { name: /view run b dashboard/i }));
+  await user.click(screen.getByRole('button', { name: /view candidate dashboard/i }));
   expect(onDrillIn).toHaveBeenCalledWith('candidate');
 });
 
