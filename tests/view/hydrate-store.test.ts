@@ -89,6 +89,10 @@ test('accepts only the payload version this bundle was built for', () => {
   expect(older).toContain(`only reads version ${EXPORT_DATA_SCHEMA_VERSION}`);
   expect(unsupportedPayloadReason({ ...sampleData(), schemaVersion: EXPORT_DATA_SCHEMA_VERSION + 1 }))
     .toContain(`version ${EXPORT_DATA_SCHEMA_VERSION + 1}`);
+  // Version 2 findings carried their text in `value` (stageFailed, configAudit, incompleteRun),
+  // not `valueText`, and could omit planNodeIds: this bundle can't render one.
+  expect(EXPORT_DATA_SCHEMA_VERSION).toBe(3);
+  expect(unsupportedPayloadReason({ ...sampleData(), schemaVersion: 2 })).toContain('version 2');
   expect(unsupportedPayloadReason({ app: null })).toContain('an unknown version');
   expect(unsupportedPayloadReason(null)).toContain('an unknown version');
 });

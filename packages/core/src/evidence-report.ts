@@ -4,7 +4,7 @@
 import { analyze, auditConfig } from './analyzer.ts';
 import type { ThresholdOverrides } from './detectors.ts';
 import {
-  describeTunedThresholds, tunedDetectorCatalog, tunedDetectors, tunedThresholdsForType,
+  describeTunedThresholds, tunedDetectorCatalog, tunedDetectors, tunedRunNote, tunedThresholdsForType,
 } from './threshold-overrides.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
 import {
@@ -601,10 +601,7 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
   lines.push('');
   lines.push(`- Application: ${summary.app.name ?? '(unknown)'} (${summary.app.id ?? 'n/a'})`);
   lines.push(`- Spark version: ${summary.app.sparkVersion ?? 'n/a'}`);
-  if (summary.tunedThresholds) {
-    const tuned = Object.entries(summary.tunedThresholds).map(([type, t]) => `${type} ${describeTunedThresholds(t)}`).join('; ');
-    lines.push(`- Tuned thresholds: ${tuned}. Findings from these detectors are marked, and their impact estimates are uncalibrated: the estimates are calibrated against the default thresholds.`);
-  }
+  if (summary.tunedThresholds) lines.push(`- Tuned thresholds: ${tunedRunNote(summary.tunedThresholds)}`);
   lines.push(`- Stages: ${summary.stageCount} · Jobs: ${summary.jobCount} · SQL executions: ${summary.sqlExecutionCount}`);
   lines.push(`- Findings: ${summary.findingCount} (critical ${summary.impactBandCounts.critical}, warning ${summary.impactBandCounts.warning}, info ${summary.impactBandCounts.info})`);
   const actionableCounts = summary.actionableImpactBandCounts;

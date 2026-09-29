@@ -2712,7 +2712,43 @@ describe('analyze: threshold overrides', () => {
 
   it('refuses an override the entry does not declare, or one shaped unlike its default', () => {
     expect(() => run({ skew: { ratioWarm: 2 } })).toThrow('Detector skew has no threshold "ratioWarm".');
+    expect(() => run({ skew: { constructor: 2 } })).toThrow('Detector skew has no threshold "constructor".');
+    expect(() => run({ skew: { toString: 2 } })).toThrow('Detector skew has no threshold "toString".');
     expect(() => run({ slowHost: { ratioTiers: [1, 2] } })).toThrow('Threshold slowHost.ratioTiers must have the same shape as its default.');
     expect(() => run({ skew: { ratioWarn: [2] } })).toThrow('must have the same shape');
+  });
+
+  it('grades a tuned straggler finding against its tuned runtime floors', () => {
+    // 8% stragglers; a 200ms tail on the 5s fixture run is 4%, over the default 2% critical floor.
+    const stages = () => new Map([[1, makeStage({ taskCount: 100, speculativeTasks: 0, stragglerCount: 8, taskDurationMax: 300 })]]);
+    const straggler = (thresholds) => analyze(makeApp(), stages(), [], [], new Map(), new Map(), null, { thresholds })
+      .find((f) => f.type === 'straggler');
+    expect(straggler(undefined).impactBand).toBe('critical');
+    expect(straggler({ straggler: { floorPctCrit: 0.5 } }).impactBand).toBe('warning');
+    // An 8% share fires past shareWarn whatever the floor; a 5% warn floor now grades its 4% tail info.
+    expect(straggler({ straggler: { floorPctWarn: 0.05, floorPctCrit: 0.1 } }).impactBand).toBe('info');
+  });
+
+  it('states the tuned floor in the finding\'s own caveat text', () => {
+    const gcStage = () => new Map([[1, makeStage({ executorRunTime: 120000, gcPct: 20 })]]);
+    const gc = (thresholds) => analyze(makeApp(), gcStage(), [], [], new Map(), new Map(), null, { thresholds })
+      .find((f) => f.type === 'gc');
+    expect(gc(undefined).validationRequired).toBe('This finding is gated by a 10-second minimum-runtime floor, our own noise floor for this metric.');
+    const tuned = gc({ gc: { minRunTimeMs: 60000 } }).validationRequired;
+    expect(tuned).toContain('a 60-second minimum-runtime floor');
+    expect(tuned).not.toContain('10-second');
+    expect(run({ skew: { ratioWarn: 2, floorPctWarn: 0.01 } }).find((f) => f.type === 'skew').validationRequired)
+      .toContain('gated by a 1% runtime-floor threshold');
+  });
+
+  it('adds the unvalidated-estimate caveat only to a tuned finding that carries an estimate figure', () => {
+    // 10% failed tasks: over a tuned 1% warnRate. failures has no waste model, so no figure to caveat.
+    const stages = new Map([[1, makeStage({ taskCount: 100, failedTasks: 10 })]]);
+    const failures = analyze(makeApp(), stages, [], [], new Map(), new Map(), null, { thresholds: { failures: { warnRate: 0.01 } } })
+      .find((f) => f.type === 'failures');
+    expect(failures.tunedThresholds).toEqual({ warnRate: { value: 0.01, default: 0.05 } });
+    expect(failures.impactEstimate.basis).toBe('informational');
+    expect(failures.validationRequired ?? '').toContain('Produced with tuned thresholds: warnRate 0.01 (default 0.05).');
+    expect(failures.validationRequired ?? '').not.toContain('estimate');
   });
 });

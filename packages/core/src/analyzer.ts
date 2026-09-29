@@ -1,10 +1,10 @@
-import { DETECTORS, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
-import { findingTunedThresholds, overridesFor, tunedEstimateNote } from './threshold-overrides.ts';
+import { DETECTORS, ENTRY_BY_TYPE, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
+import { effectiveThresholds, findingTunedThresholds, overridesFor, tunedThresholdsNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
 import { estimateImpact, type EstimateCtx } from './impact-estimator.ts';
 import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
-import { deriveImpactBand } from './impact-band.ts';
+import { deriveImpactBand, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
 import { IMPACT_BAND_ORDER } from './format-utils.ts';
 import type {
   Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
@@ -17,8 +17,9 @@ const detectors: readonly Detector[] = DETECTORS;
 export interface AnalyzeOptions {
   /** Per-detector overrides merged over each entry's own thresholds (validate user input with
    * parseThresholdOverrides first). Findings from an entry an override moves off its defaults, or
-   * whose `suppressedBy` entry it moves, carry `tunedThresholds` and an uncalibrated-estimate
-   * caveat. Omitted: the specification. */
+   * whose `suppressedBy` entry it moves, carry `tunedThresholds` (with an uncalibrated-estimate
+   * caveat when they have an estimate figure), and an entry's tuned floorPctWarn/floorPctCrit
+   * grade its findings' impact band. Omitted: the specification. */
   thresholds?: ThresholdOverrides;
 }
 
@@ -64,6 +65,11 @@ const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & key
   underBroadcast: ['largerSideBytes'], overBroadcast: [],
 };
 
+// ID_DISCRIMINATORS as Sets, built once: findingId runs once per finding.
+const ID_DISCRIMINATOR_SETS = new Map<string, ReadonlySet<DiscriminatorSlot>>(
+  Object.entries(ID_DISCRIMINATORS).map(([type, slots]) => [type, new Set<DiscriminatorSlot>(slots)]),
+);
+
 // Location key: stage, else SQL execution, else audited config property.
 function locationKey(f: Finding): number | string {
   if (f.stageId != null) return f.stageId;
@@ -74,9 +80,9 @@ function locationKey(f: Finding): number | string {
 
 export function findingId(f: Finding): string {
   const fields = f as unknown as Partial<Record<DiscriminatorSlot, unknown>>;
-  const listed = new Set<DiscriminatorSlot>(ID_DISCRIMINATORS[f.type]);
+  const listed = ID_DISCRIMINATOR_SETS.get(f.type);
   const disc = DISCRIMINATOR_SLOTS.map((slot) => {
-    const v = listed.has(slot) ? fields[slot] : undefined;
+    const v = listed?.has(slot) ? fields[slot] : undefined;
     return Array.isArray(v) ? v.join(',') : v ?? '';
   }).join('|');
   return fnv1a(`${f.type}|${locationKey(f)}|${f.metric ?? ''}|${f.value ?? f.valueText ?? ''}|${disc}`);
@@ -117,17 +123,37 @@ function push(out: Finding[], entry: Detector, result: Finding | Finding[] | nul
   for (const f of (Array.isArray(result) ? result : [result])) {
     if (!f) continue;
     const stamped = { ...f, docAnchor: f.docAnchor ?? entry.docAnchor, detectorVersion };
-    if (tuned) {
-      stamped.tunedThresholds = tuned;
-      const note = tunedEstimateNote(tuned);
-      stamped.validationRequired = stamped.validationRequired ? `${stamped.validationRequired} ${note}` : note;
-    }
+    if (tuned) stamped.tunedThresholds = tuned;
     const id = findingId(stamped);
     // Dedup guard: same id => same finding, keep first. Correctness depends on
     // findingId's discriminators being unique per distinct finding, not on this line.
     if (out.some((existing) => existing.id === id)) continue;
     out.push({ ...stamped, id });
   }
+}
+
+// A tuned finding's caveat, once its estimate is known: only a finding with an estimate figure
+// (wall-clock or raw waste) says that figure is unvalidated.
+function noteTunedThresholds(findings: Finding[]): void {
+  for (const f of findings) {
+    if (!f.tunedThresholds) continue;
+    const hasFigure = f.impactEstimate != null && f.impactEstimate.basis !== 'informational';
+    const note = tunedThresholdsNote(f.tunedThresholds, hasFigure);
+    f.validationRequired = f.validationRequired ? `${f.validationRequired} ${note}` : note;
+  }
+}
+
+// skew and straggler gate on floorPctWarn/floorPctCrit thresholds that default to the band's own
+// floors, so a finding they admit at their warn floor grades at least warning. A tuned floor grades
+// that entry's findings too; a type whose entry has no such threshold keeps the defaults.
+function bandFloors(type: string, overrides: ThresholdOverrides): ImpactBandFloors | null {
+  const entry = ENTRY_BY_TYPE.get(type);
+  if (!entry) return null;
+  const { floorPctWarn, floorPctCrit } = effectiveThresholds(entry, overrides);
+  return {
+    warnPct: typeof floorPctWarn === 'number' ? floorPctWarn : IMPACT_FLOOR_PCT_WARN,
+    critPct: typeof floorPctCrit === 'number' ? floorPctCrit : IMPACT_FLOOR_PCT_CRIT,
+  };
 }
 
 // An entry's `suppressedBy` names another entry: drop its findings on every stage that entry
@@ -214,7 +240,8 @@ export function analyze(
   }
   const findings = applySuppression(out);
   estimateImpact(findings, impact);
-  deriveImpactBand(findings, app);
+  noteTunedThresholds(findings);
+  deriveImpactBand(findings, app, thresholds ? (type) => bandFloors(type, thresholds) : undefined);
   flagSkewStragglerOverlap(findings);
   // Ascending IMPACT_BAND_ORDER (critical 0 -> info 2) puts the worst band first;
   // stable sort keeps DETECTORS declaration order within a band.

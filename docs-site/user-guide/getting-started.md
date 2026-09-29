@@ -268,7 +268,8 @@ A tuned run says so wherever it reports:
 
 - Each finding from a tuned detector carries `tunedThresholds` (each
   overridden threshold's `value` and `default`), and its `validationRequired`
-  text says its impact estimate is unvalidated. The estimates are calibrated
+  text names them and, when the finding has an impact estimate, says that
+  estimate is unvalidated. The estimates are calibrated
   against the default thresholds, so they were never checked for a finding
   your override lets through. Tuning `slowHost` also labels `stageSlowness`
   findings (as `slowHost.<name>`), because a slow host hides a stage's
@@ -282,8 +283,10 @@ A tuned run says so wherever it reports:
 
 An override equal to the default changes nothing and is not labeled.
 `--baseline` runs the baseline with the same overrides, so the comparison
-compares like with like. The budget flags (`--max-skew` and the rest) are
-separate gates and ignore the file. `--export-html` writes the dashboard
+compares like with like. The budget flags are separate gates computed from
+the run's own figures; the one that recomputes a detector's figure,
+`--max-skew`, uses the file's `skew.minTasksForP95`, so it measures the
+same ratio the skew finding reports. `--export-html` writes the dashboard
 with the default thresholds, because the dashboard never tunes, and prints
 a note to stderr saying so. The browser dashboard has no tuning.
 

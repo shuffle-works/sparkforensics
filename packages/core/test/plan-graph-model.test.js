@@ -446,6 +446,16 @@ describe('buildPlanGraphModel', () => {
     expect(model.nodes.every((n) => n.findings.length === 0)).toBe(true);
   });
 
+  it('attaches nothing, without throwing, for a finding that carries no planNodeIds', () => {
+    const leaf = node('Scan parquet');
+    const root = node('SortMergeJoin', [leaf]);
+    const appModel = makeAppModel({ planTree: root });
+    const finding = { type: 'smallFiles', stageIds: [1], impactBand: 'warning', executionId: 1 };
+
+    const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel, findings: [finding] });
+    expect(model.nodes.every((n) => n.findings.length === 0)).toBe(true);
+  });
+
   it('does not attach a finding from a different SQL execution, even when its planNodeIds collide with the current tree (node ids are only unique per execution)', () => {
     // resolvePlanTree resets its `n0, n1, ...` id counter on every call, so
     // two independent SQL executions' plan trees can both legitimately

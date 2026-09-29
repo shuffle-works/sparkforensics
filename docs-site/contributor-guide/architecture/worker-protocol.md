@@ -82,6 +82,20 @@ back the same way. The progress
 being parsed. The self-contained `file://` export never parses in the browser
 (it opens with its run already analyzed), so it never starts either worker.
 
+### zstd in the browser and in Node
+
+The browser decodes zstd with the vendored fzstd, since Chrome has no
+`DecompressionStream('zstd')`. The Node CLI and MCP path (`collectRun`,
+`shs-load.ts`) uses `packages/core/src/cli/native-zstd.ts` instead, which walks
+frame boundaries itself: Node's own zstd decoders stop after the first frame,
+and Spark writes thousands of small ones. A parser change that depends on
+chunk shape must hold for both. Native chunks are whole frames, often one full
+event line and up to tens of MB (`buildChunkDecoder` decodes those in 512 KiB
+slices). For local files, frames of 64 KB or more decompress off the main
+thread and arrive as 256 KB pieces, so a native `push()` is async and
+`streamFile` awaits it. fzstd's chunks are views of one reused buffer, valid
+only until its `ondata` callback returns: copy one before keeping it.
+
 ### Evidence-availability worker input
 
 `packages/core/src/event-handlers.ts`'s `createState()`/per-event handlers start and

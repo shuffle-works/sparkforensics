@@ -6,6 +6,11 @@ import type { Finding, SparkAppInfo } from './types.ts';
 export const IMPACT_FLOOR_PCT_WARN = 0.005;
 export const IMPACT_FLOOR_PCT_CRIT = 0.02;
 
+/** The share-of-run floors one finding grades against. */
+export interface ImpactBandFloors { warnPct: number; critPct: number }
+
+const DEFAULT_FLOORS: ImpactBandFloors = { warnPct: IMPACT_FLOOR_PCT_WARN, critPct: IMPACT_FLOOR_PCT_CRIT };
+
 /** The run's wall-clock duration, or null when unknown or non-positive: the denominator of both
  * this band and the detectors' runtime floors. */
 export function appDurationMs(app: { startTime?: number | null; endTime?: number | null } | null): number | null {
@@ -25,8 +30,13 @@ export function appDurationMs(app: { startTime?: number | null; endTime?: number
  * figure), a deliberate split from view/impact-sort.ts's 'impact' sort, which ranks by .low so an
  * optimistic-but-contended finding never outranks a smaller certain one. Same range, two fields for
  * two questions.
+ *
+ * `floorsFor` supplies a finding type's floors when a tuned run moved them (skew's and straggler's
+ * own floorPctWarn/floorPctCrit); omitted, or for any type it returns nothing, the defaults above.
  */
-export function deriveImpactBand(findings: Finding[], app: SparkAppInfo | null): Finding[] {
+export function deriveImpactBand(
+  findings: Finding[], app: SparkAppInfo | null, floorsFor?: (type: string) => ImpactBandFloors | null,
+): Finding[] {
   const durationMs = appDurationMs(app);
   if (durationMs == null) return findings;
   for (const finding of findings) {
@@ -40,7 +50,8 @@ export function deriveImpactBand(findings: Finding[], app: SparkAppInfo | null):
     const recoverableMs = finding.impactEstimate?.wallClock?.high;
     if (recoverableMs == null) continue;
     const pct = recoverableMs / durationMs;
-    finding.impactBand = pct >= IMPACT_FLOOR_PCT_CRIT ? 'critical' : pct >= IMPACT_FLOOR_PCT_WARN ? 'warning' : 'info';
+    const { warnPct, critPct } = floorsFor?.(finding.type) ?? DEFAULT_FLOORS;
+    finding.impactBand = pct >= critPct ? 'critical' : pct >= warnPct ? 'warning' : 'info';
   }
   return findings;
 }

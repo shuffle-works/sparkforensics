@@ -2,7 +2,8 @@ import { computeWallClock } from './wall-clock.ts';
 import { normalizeDetail } from './detectors.ts';
 import { cyrb53 } from './string-hash.ts';
 import { captureSnapshot } from './session-snapshot.ts';
-import type { Stage, PlanNode, SparkAppInfo, AppModel, Finding } from './types.ts';
+import { tunedRunNote } from './threshold-overrides.ts';
+import type { Stage, PlanNode, SparkAppInfo, AppModel, Finding, TunedThresholds } from './types.ts';
 import type { SessionSnapshot } from './session-snapshot.ts';
 import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
 import { isIncompleteRun } from './check-coverage.ts';
@@ -458,8 +459,13 @@ function renderFindingsSection(title: string, findings: FindingsDeltaRow[]): str
 // evidence-report.ts's renderMarkdown house style (## section heading, ###
 // subheadings, `- key: value` bullets). Shared by the CLI's --baseline
 // markdown output and the MCP server's compare_runs `format: 'md'`.
-export function renderComparisonMarkdown(comparison: CompareRunsResult, verdict?: ComparisonVerdictText): string {
+/** `tuned`: tunedDetectors() for the overrides both runs were analyzed with, named in the output
+ * as the evidence report names them. */
+export function renderComparisonMarkdown(
+  comparison: CompareRunsResult, verdict?: ComparisonVerdictText, tuned?: Record<string, TunedThresholds> | null,
+): string {
   const lines = ['', '## Comparison to baseline', ''];
+  if (tuned) lines.push(`- Tuned thresholds (both runs): ${tunedRunNote(tuned)}`, '');
   if (verdict) {
     // The dashboard comparison page's headline: run A is the baseline, run B the candidate.
     lines.push(`Run A: ${comparison.baselineLabel} · Run B: ${comparison.candidateLabel}`, '', verdict.title);

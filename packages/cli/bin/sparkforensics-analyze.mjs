@@ -378,7 +378,7 @@ export async function main(argv, { fetchImpl } = {}) {
   if (values.out) writeFileSync(values.out, output);
   else process.stdout.write(output);
 
-  const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison });
+  const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
   for (const r of results) {
     if (r.status === 'inconclusive') process.stderr.write(`[inconclusive] ${r.name}: ${r.detail}\n`);
     else if (r.status === 'violation') process.stderr.write(`[violation] ${r.name}: ${r.detail}\n`);

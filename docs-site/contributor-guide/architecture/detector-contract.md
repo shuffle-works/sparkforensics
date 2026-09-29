@@ -204,11 +204,14 @@ tune. A file that can't be read or parsed refuses the run the same way. The
 documents the file.
 
 A finding from an entry whose overrides move a threshold off its default
-carries `tunedThresholds` (`{ <name>: { value, default } }`), and `push()`
-appends a caveat to its `validationRequired`: impact estimates are
-calibrated against the default thresholds (see
-[Impact estimation](./impact-estimation.md)), so a tuned finding's estimate
-is unvalidated. An override equal to the default labels nothing. Tuning a
+carries `tunedThresholds` (`{ <name>: { value, default } }`), and once its
+estimate is attached the analyzer appends a caveat to its
+`validationRequired` naming the tuned values. When the finding has an
+estimate figure (wall-clock or raw waste), the caveat adds that impact
+estimates are calibrated against the default thresholds (see
+[Impact estimation](./impact-estimation.md)), so its estimate is
+unvalidated; an informational finding gets the label alone. An override
+equal to the default labels nothing. Tuning a
 `suppressedBy` target changes which of the suppressed entry's findings
 survive, so those findings carry the suppressor's tuned thresholds too,
 named `<suppressor>.<name>` (e.g. `slowHost.minHosts` on `stageSlowness`).
@@ -218,11 +221,15 @@ evidence report repeats the label on the finding row, the clean check, the
 and in `summary.tunedThresholds`; see
 [Portable evidence report](./worker-protocol.md#portable-evidence-report-v1).
 
-Three things a tuned run does not change: the impact-band floors in
-`impact-band.ts`, which reuse `straggler`'s default floor percentages for
-every finding; the CLI budget flags, which are gates computed from the run's
-own figures (`--max-skew` keeps `skew`'s default `minTasksForP95`); and the
-HTML export, which always renders the default-threshold analysis.
+A tuned `floorPctWarn`/`floorPctCrit` on `skew` or `straggler` also grades
+that entry's own findings in `deriveImpactBand` (`impact-band.ts`); every
+other finding keeps the run-wide default floors. `--max-skew` recomputes the
+ratio with the run's effective `minTasksForP95`, so the budget measures the
+same ratio the skew finding reports. Caveat text that names a threshold
+(`gc`, `skew`, `straggler`, `memoryUtilization`, `coreLocality`) and the
+`broadcastSizing` over-broadcast recommendation state the value the detector
+ran with. The HTML export still renders the
+default-threshold analysis.
 
 ## Per-operator duration attribution
 
@@ -342,7 +349,8 @@ most rules below), `analyzer.ts` calls `deriveImpactBand()`
 duration (`>= 2%` critical, `>= 0.5%` warning, else info: `IMPACT_FLOOR_PCT_CRIT`/
 `IMPACT_FLOOR_PCT_WARN`, which `skew`'s `floorPctWarn` and `straggler`'s
 `floorPctWarn`/`floorPctCrit` default to, so a tail those gates admit grades
-at least warning; a tuned run moves the detector's gate, never the band). For those rules, the table below documents their firing
+at least warning; a tuned `skew` or `straggler` floor also grades that
+entry's own findings, see [Tuning thresholds](#tuning-thresholds)). For those rules, the table below documents their firing
 gate plus their fixed fallback constant, which surfaces only when this run's
 finding of that type didn't get a wallClock estimate (a stage excluded from
 the occupancy sweep). For rules whose finding type never gets
@@ -425,6 +433,15 @@ thresholds sit well above their disk counterparts at every tier.
 | Cache utilization: partial caching (this repo) | `numCachedPartitions / numPartitions < 0.90` (info) | `< 0.50` (warning) |
 | Cache utilization: disk spillover (this repo) | `diskSize / (memorySize + diskSize) > 0.15` (info), `MEMORY_AND_DISK*` only | `> 0.40` (warning) |
 | Cache utilization: storage unobserved | persisted RDDs, but no `SparkListenerBlockUpdated` for any `rdd_*` block and every RDD Info figure 0 (`spark.eventLog.logBlockUpdates.enabled` off on Spark 2.3+): a missing-evidence caveat, not a threshold | none (single tier, info) |
+
+The RDD Info cache figures on stage events (`Number of Cached Partitions`,
+`Memory Size`, `Disk Size`) are always 0 since Spark 2.3; Spark 1.x fills them
+only on `StageCompleted`. Real cache evidence is `SparkListenerBlockUpdated`,
+written only with `spark.eventLog.logBlockUpdates.enabled=true`
+(`recordBlockUpdate` in `event-handlers.ts`); the corpus
+`cache-memory-only`/`cache-memory-and-disk` logs carry it. Count a block's
+sizes only where its storage level says it lives: a drop to disk still reports
+the dropped bytes as `Memory Size`.
 
 Spill classification: ≥80% tasks with zero spill → `skew`; <20% zero →
 `volume`; else `unclassified`. The classification badge is always shown in

@@ -555,9 +555,9 @@ describe('broadcast sizing', () => {
       metrics: value != null ? [{ name: 'data size', value, metricType: 'size' }] : [],
     };
   }
-  function run(planNode) {
+  function run(planNode, thresholds) {
     const sql = new Map([[1, makeSqlExec(1, planNode)]]);
-    const catalog = analyze(makeApp(), new Map(), [], [], new Map(), sql);
+    const catalog = analyze(makeApp(), new Map(), [], [], new Map(), sql, null, { thresholds });
     return catalog.filter(b => b.type === 'underBroadcast' || b.type === 'overBroadcast');
   }
 
@@ -602,6 +602,32 @@ describe('broadcast sizing', () => {
     const bx = sizeNode('BroadcastExchange', [], 2 * 1024 * 1024 * 1024);
     const [finding] = run(bx);
     expect(finding.recommendation).toContain(formatBytes(finding.value));
+  });
+
+  it('overBroadcast: states the default 1 GB threshold', () => {
+    const [finding] = run(sizeNode('BroadcastExchange', [], 3 * 1024 * 1024 * 1024));
+    expect(finding.recommendation).toContain('exceeds the 1 GB threshold');
+  });
+
+  it('overBroadcast: states a tuned overBroadcastBytes, not the default', () => {
+    const bx = sizeNode('BroadcastExchange', [], 3 * 1024 * 1024 * 1024);
+    const [finding] = run(bx, { broadcastSizing: { overBroadcastBytes: 2 * 1024 * 1024 * 1024 } });
+    expect(finding.recommendation).toContain('exceeds the 2 GB threshold');
+    expect(finding.recommendation).not.toContain('1 GB threshold');
+  });
+
+  it('overBroadcast: states a sub-GB tuned overBroadcastBytes in MB', () => {
+    const bx = sizeNode('BroadcastExchange', [], 200 * 1024 * 1024);
+    expect(run(bx, { broadcastSizing: { overBroadcastBytes: 32 * 1024 * 1024 } })[0].recommendation)
+      .toContain('exceeds the 32 MB threshold');
+    expect(run(bx, { broadcastSizing: { overBroadcastBytes: 100 * 1024 * 1024 } })[0].recommendation)
+      .toContain('exceeds the 100 MB threshold');
+  });
+
+  it('overBroadcast: states a fractional multi-GB tuned overBroadcastBytes to one decimal', () => {
+    const bx = sizeNode('BroadcastExchange', [], 5 * 1024 * 1024 * 1024);
+    const [finding] = run(bx, { broadcastSizing: { overBroadcastBytes: 2.5 * 1024 * 1024 * 1024 } });
+    expect(finding.recommendation).toContain('exceeds the 2.5 GB threshold');
   });
 });
 

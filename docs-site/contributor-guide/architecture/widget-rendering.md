@@ -513,7 +513,9 @@ of its own, so its trigger renders as a direct sibling in the row body.
 
 Plan detection logic belongs in a `packages/core/src/detectors.ts` entry (`scope:'sql'`)
 consuming `planTree`. `packages/core/src/plan-summary.ts` is display-only summarization; do
-not add detection heuristics there.
+not add detection heuristics there. It is best-effort: `summarizePlanTree` reads each resolved
+`planTree` node's `detail` with lenient regexes and silently omits a fragment it can't parse,
+never surfacing an error.
 
 `StageHeader.tsx` (`StagePill` plus a `<span>` naming the stage) vs. bare
 `StagePill`/`StagePillGroup` is a deliberate row-density choice, not an
