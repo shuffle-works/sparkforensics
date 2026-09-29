@@ -242,7 +242,7 @@ export function verdictSummary(eligible: Finding[], steps: NextStep[], facts: Ru
       sentences.push(`The first fix could save up to ${formatDuration(wallClock.high)} of this ${formatDuration(facts.runMs)} run.`);
     }
     if (steps.some((step) => step.related.length > 0)) {
-      sentences.push('Findings in the same stage usually share one cause, so they are grouped together and their savings overlap rather than add up.');
+      sentences.push('Findings on one stage are grouped, and their savings overlap.');
     }
   }
   if (facts.incomplete) {

@@ -51,14 +51,20 @@ describe('RunVerdict', () => {
     const verdict = screen.getByTestId('run-verdict');
     expect(verdict).toHaveTextContent('3 findings in 2 places.');
     expect(verdict).toHaveTextContent('The first fix could save up to 2.4s of this 20.0s run.');
-    expect(verdict).toHaveTextContent('their savings overlap rather than add up');
+    expect(verdict).toHaveTextContent('Findings on one stage are grouped, and their savings overlap.');
 
     const steps = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step');
     expect(steps).toHaveLength(2);
-    // Plain-language explanation first, then the detector's concrete fix.
-    expect(steps[0]).toHaveTextContent("What's happening: A small number of tasks take much longer than their peers.");
+    // A recommendation with no measurement shows no tag definition, only what to try.
+    expect(steps[0]).not.toHaveTextContent("What's happening");
     expect(steps[0]).toHaveTextContent('What to try: Fix skew in Stage 7.');
-    expect(steps[0]).toHaveTextContent('Also flagged here:');
+    expect(steps[0]).toHaveTextContent('Also flagged here, likely the same cause: straggling task.');
+  });
+
+  it('shows the finding\'s measurement under What\'s happening and its fix under What to try', () => {
+    renderVerdict([{ ...timed('skew', 7, 2_400), recommendation: 'Task duration ratio (P95/median) is 29.8×: salt the key.' }]);
+    const step = screen.getByTestId('next-step');
+    expect(step).toHaveTextContent("What's happening: Task duration ratio (P95/median) is 29.8×What to try: salt the key.");
   });
 
   it('routes a step to its evidence and opens the stage from its own control', async () => {
@@ -77,7 +83,7 @@ describe('RunVerdict', () => {
   it('lists at most three places and counts the rest', () => {
     renderVerdict([1, 2, 3, 4, 5].map((stageId) => timed('spill', stageId, stageId * 100, 'warning')));
     expect(screen.getAllByTestId('next-step')).toHaveLength(3);
-    expect(screen.getByText('2 more places to look at in the full list under Findings.')).toBeInTheDocument();
+    expect(screen.getByText('2 more places under Findings.')).toBeInTheDocument();
   });
 
   it('copies a step summary and confirms it', async () => {

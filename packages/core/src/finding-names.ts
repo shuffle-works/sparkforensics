@@ -25,3 +25,10 @@ export function recommendationText(finding: Finding): string {
   if (text) return text;
   return findingName(finding.type);
 }
+
+/** A recommendation's two halves: detectors write "<measurement>: <fix>", split at the last ": "
+ * since a measurement can quote an error with colons. Text with no split has no `measured`. */
+export function recommendationParts(text: string): { measured: string | null; fix: string } {
+  const at = text.lastIndexOf(': ');
+  return at > 0 ? { measured: text.slice(0, at), fix: text.slice(at + 2) } : { measured: null, fix: text };
+}

@@ -4,14 +4,12 @@ import { ArrowRight, CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleCheck, Cir
 import { Button } from '@/components/ui/button';
 import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
-import { typeTag } from '@sparkforensics/core/format-utils.ts';
 import type { InterpretedStep } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useStore, useWidgetDensity, type InterpretationState } from '@/store/store';
-import { findingName } from '@sparkforensics/core/finding-names.ts';
+import { findingName, recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { useOptionalDocs } from '@/view/DocsContext';
 import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
-import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';
@@ -87,7 +85,7 @@ function NextStepItem({
   onRoute: (target: TriageTarget) => void;
 }) {
   const { openStage } = useStageDetail();
-  const help = TAG_HELP[typeTag(finding.type)];
+  const { measured, fix } = recommendationParts(step.recommendation);
   const savings = savingsOf(interpretation, finding);
   const impact = savings?.figure ?? null;
   const meaning = savings?.meaning ?? null;
@@ -122,15 +120,15 @@ function NextStepItem({
             </span>
           ) : null}
         </div>
-        {help ? (
+        {measured ? (
           <p className="text-sm">
             <span className="font-medium">What's happening: </span>
-            {help.description}
+            {measured}
           </p>
         ) : null}
         <p className="text-sm text-muted-foreground">
           <span className="font-medium text-foreground">What to try: </span>
-          {step.recommendation}
+          {fix}
         </p>
         {provenance || confidence ? (
           // Advanced view: how far to trust the step's number and the finding.
@@ -151,8 +149,7 @@ function NextStepItem({
         ) : null}
         {step.relatedTypes.length > 0 ? (
           <p className="text-xs text-muted-foreground">
-            Also flagged here: {step.relatedTypes.map(findingName).join(', ')}. These
-            often share this cause, so the same fix may clear them too.
+            Also flagged here, likely the same cause: {step.relatedTypes.map(findingName).join(', ')}.
           </p>
         ) : null}
         <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -305,7 +302,7 @@ export function RunVerdict({ interpretation, onRoute }: RunVerdictProps) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           {remaining > 0 ? (
             <p className="text-xs text-muted-foreground">
-              {plural(remaining, 'more place')} to look at in the full list under Findings.
+              {plural(remaining, 'more place')} under Findings.
             </p>
           ) : (
             <span />

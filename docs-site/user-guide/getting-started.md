@@ -77,7 +77,7 @@ would barely move your run time.
 
 The board opens with a verdict: one line saying where to start, a short
 summary of what was found, and up to three numbered next steps. Each step
-explains in plain language what is happening, says what to try, and has a
+says what the finding measured and what to try, and has a
 **Show evidence** button that jumps to the finding's detail widget. Findings
 on the same stage are folded into one step, because they usually share a
 cause and their savings overlap rather than add up. Each savings figure says
@@ -109,8 +109,8 @@ better; **Not measured** when no stage in the log recorded an end) and **Unused 
 the same idle figure a verdict step reports; lower is better). A collapsed **New to Spark tuning?** primer in the verdict
 explains stages, tasks, executors, shuffle and how to read savings. Stage
 labels such as **Stage 7** open that stage's details: how long it ran and
-what share of the run that was, then each of its findings with what is
-happening, what to try and a **Show evidence** button, followed by its task,
+what share of the run that was, then each of its findings with what it
+measured, what to try and a **Show evidence** button, followed by its task,
 locality, I/O and plan sections.
 Below it, two tabs split the rest of the board:
 

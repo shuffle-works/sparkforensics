@@ -11,14 +11,14 @@ import { CHART_COLORS, ChartFrame } from '@/view/charts/ChartTheme';
 import { DurationHistogram } from '@/view/charts/DurationHistogram';
 import { Section } from '@/view/Section';
 import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
-import { TAG_HELP } from '@/view/finding-tag-help';
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf, useInterpretation } from '@/view/interpretation';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { PlanView, resolvePlanTree } from '@/view/widgets/PlanView';
-import { formatBytes, formatDuration, IMPACT_BAND_ORDER, typeTag } from '@sparkforensics/core/format-utils.ts';
+import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
+import { formatBytes, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import type { AppModel, Finding, ImpactBand, Stage, TaskData } from '@sparkforensics/core/types.ts';
 
 export interface StageDetailDialogProps {
@@ -132,11 +132,13 @@ function RecommendationRow({
   finding: Finding;
   showImpactEstimate: boolean;
 }) {
+  const { measured, fix } = recommendationParts(rec);
   return (
     <div className="space-y-1 text-sm">
+      {measured ? <p className="max-w-full leading-normal break-words"><span className="font-medium">What's happening: </span>{measured}</p> : null}
       <p className="max-w-full leading-normal break-words">
         <span className="font-medium">What to try: </span>
-        {rec}
+        {fix}
       </p>
       {extended ? <p className="text-xs text-muted-foreground">{extended}</p> : null}
       {showImpactEstimate ? <ImpactEstimate finding={finding} /> : null}
@@ -171,7 +173,7 @@ function stageSummary(stage: Stage, runMs: number | null, findingTypes: number):
 
 /** "Why was this stage flagged": the stage's place in the run, then every
  * finding for it grouped by type, each read like a verdict step: what to do,
- * what is happening in plain language, what to try, what it could save, and
+ * what it measured, what to try, what it could save, and
  * a route to its evidence on the board. */
 function StageVerdict({
   stage,
@@ -201,7 +203,6 @@ function StageVerdict({
             // an informational estimate has the field but `<ImpactEstimate>` renders
             // nothing for it, which would leave an empty gap below the recommendation.
             const hasEstimate = savingsOf(interpretation, finding)?.compact != null;
-            const help = TAG_HELP[typeTag(type)];
             const target = onShowEvidence ? selectTriageTargetForFinding(finding, catalog) : null;
             return (
               <li key={type} className="space-y-1.5" data-testid="stage-finding">
@@ -209,12 +210,6 @@ function StageVerdict({
                   <TagBadge type={type} impactBand={impactBand} />
                   <h3 className="text-sm font-semibold">{findingActionLabel(finding)}</h3>
                 </div>
-                {help ? (
-                  <p className="text-sm">
-                    <span className="font-medium">What's happening: </span>
-                    {help.description}
-                  </p>
-                ) : null}
                 {[...recs.entries()].map(([rec, { extended }], i) => (
                   <RecommendationRow
                     key={i}
