@@ -147,8 +147,8 @@ export function CleanChecks({
             </div>
           ) : null}
           <p className="pb-2 text-xs text-muted-foreground">
-            {cleanWidgets.length === 0 ? 'No check could run on this log.' : 'Every check below passed. No fix needed.'}
-            <AdvancedOnly> Each line's caption states the threshold it was measured against.</AdvancedOnly>
+            {cleanWidgets.length === 0 ? 'No check could run on this log.' : 'Every check below passed.'}
+            <AdvancedOnly> Each caption gives the threshold it was held to.</AdvancedOnly>
           </p>
           {SCOPE_ORDER.map((scope) => {
             const widgets = cleanWidgetsByScope.get(scope);

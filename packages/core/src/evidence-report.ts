@@ -8,14 +8,14 @@ import {
 } from './threshold-overrides.ts';
 import { getThresholdSummary } from './threshold-summary.ts';
 import {
-  typeTag, formatBytes, formatCores, formatDuration, formatRawWaste, formatWallClockRange, IMPACT_BAND_ORDER, readsAsZero,
+  typeTag, formatBytes, formatCores, formatDuration, formatWallClockRange, IMPACT_BAND_ORDER,
 } from './format-utils.ts';
 import { findingName, titleCase } from './finding-names.ts';
 import { redactReport, redactRunModel } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
 import { findingActionLabel } from './finding-action-label.ts';
 import { matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
-import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, type RollupGroup } from './recommendation-rollup.ts';
+import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
 import { buildRunVerdict, stepCopyRecommendation, stepCopyText, type RunVerdictModel } from './run-verdict.ts';
 import {
@@ -311,8 +311,7 @@ function buildRecommendations(
       };
     }
     if (group.kind === 'resource') {
-      const text = formatRawWaste({ value: group.total, unit: group.unit });
-      const shown = readsAsZero(text) ? null : text;
+      const shown = resourceGroupTotal(group);
       return {
         ...base,
         kind: 'resource',

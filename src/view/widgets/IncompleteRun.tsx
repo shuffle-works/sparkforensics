@@ -15,10 +15,7 @@ function IncompleteRunRow({ finding }: { finding: Finding }) {
         ApplicationEnd event: <strong>missing</strong>
       </p>
       <ImpactEstimate finding={finding} />
-      <div className="space-y-1 pt-1">
-        <p>This run&rsquo;s event log never recorded an ApplicationEnd event.</p>
-        {recommendation ? <p>{recommendation}</p> : null}
-      </div>
+      {recommendation ? <p className="pt-1">{recommendation}</p> : null}
     </div>
   );
 }

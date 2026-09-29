@@ -44,11 +44,8 @@ test('shows the recommendation text and no doc link (this detector sets no docAn
   const cardDisclosure = screen.getByRole('button', { name: 'Incomplete Run' });
   await user.click(cardDisclosure);
 
-  // Explanatory text and recommendation are both shown unconditionally now
-  // (the old per-row toggle that used to hide the recommendation is gone).
-  expect(
-    screen.getByText(/this run.s event log never recorded an applicationend event/i),
-  ).toBeInTheDocument();
+  // The recommendation is shown unconditionally, and the card no longer restates the missing event.
+  expect(screen.queryByText(/this run.s event log never recorded an applicationend event/i)).not.toBeInTheDocument();
   expect(screen.getByText(/reflect only what was captured before the run was cut off/i)).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /learn more/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /show incomplete run/i })).not.toBeInTheDocument();

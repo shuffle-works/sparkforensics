@@ -112,6 +112,8 @@ describe('RunVerdict', () => {
     renderVerdict([idleCores]);
     expect(screen.getByRole('heading', { level: 2, name: 'Start with cluster size: 92% of executor capacity sat idle' }))
       .toBeInTheDocument();
+    // The title gives the idle share and step 1 the fix, so the summary adds no idle sentence.
+    expect(screen.getByTestId('run-verdict')).not.toHaveTextContent('free the idle cores');
   });
 
   it('states a non-leading idle-capacity step as idle executor capacity', () => {
@@ -397,9 +399,9 @@ describe('RunVerdict in Advanced view', () => {
     store.getState().setWidgetDensity('advanced');
     renderVerdict([skew, spill]);
     const [first] = screen.getAllByTestId('next-step-provenance');
-    expect(first).toHaveTextContent('Estimate: 2.4s, modeled. The stage ran effectively alone');
+    expect(first).toHaveTextContent('Estimate: Modeled; the stage ran alone');
     expect(first).toHaveTextContent('Medium confidence: verify before acting.');
-    expect(screen.getByTestId('run-verdict')).toHaveTextContent('Order: by the high end of potential savings');
+    expect(screen.getByTestId('run-verdict')).toHaveTextContent('Order: highest potential savings first, unestimated last');
   });
 });
 

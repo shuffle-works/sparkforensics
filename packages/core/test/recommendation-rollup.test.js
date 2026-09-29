@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeStageUnionMs } from '../src/recommendation-rollup.ts';
+import { computeStageUnionMs, rollupGroupStat } from '../src/recommendation-rollup.ts';
 
 describe('computeStageUnionMs', () => {
   it('sums non-overlapping stage durations', () => {
@@ -185,5 +185,20 @@ describe('isEligible', () => {
 
   it('includes an ordinary finding', () => {
     expect(isEligible({ type: 'skew', impactBand: 'critical' })).toBe(true);
+  });
+});
+
+describe('rollupGroupStat', () => {
+  const resource = (total) => ({ kind: 'resource', type: 'memoryUtilization', findingCount: 2, unit: 'coreHours', total, findings: [] });
+  const count = (byImpactBand) => ({ kind: 'count', type: 'configAudit', findingCount: 3, byImpactBand, findings: [] });
+
+  it('gives a resource group its summed waste, and only the count when that total reads as zero', () => {
+    expect(rollupGroupStat(resource(2.6)).stat).toBe('×2 · 2.6 core-h');
+    expect(rollupGroupStat(resource(0)).stat).toBe('×2');
+  });
+
+  it('gives a one-band count group only its count, and a mixed one its band tally', () => {
+    expect(rollupGroupStat(count({ info: 3 })).stat).toBe('×3');
+    expect(rollupGroupStat(count({ critical: 2, warning: 1 })).stat).toBe('×3 · 2 critical, 1 warning');
   });
 });

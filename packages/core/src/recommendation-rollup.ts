@@ -1,7 +1,7 @@
 // Explicit .ts extensions: plain Node's ESM resolver (the runtime CLI/MCP path
 // runs under) requires the exact specifier, unlike a bundler.
 import { mergeIntervals } from './intervals.ts';
-import { formatWallClockRange, worstImpactBand, IMPACT_BAND_ORDER } from './format-utils.ts';
+import { formatRawWaste, formatWallClockRange, readsAsZero, worstImpactBand, IMPACT_BAND_ORDER } from './format-utils.ts';
 import type { Finding, RawWasteUnit, ImpactBand } from './types.ts';
 
 interface StageInterval {
@@ -124,11 +124,15 @@ export function buildRecommendationRollup(
   });
 }
 
-/** A group's trailing figure on the Findings board, and its tooltip. `time`
- * and `resource` both lead with the "×N" finding count (the "worth
- * expanding" signal); `count` skips it since the impact-band tally already
- * implies N. The row stays terse ("×2 · 476ms recoverable") to fit a dense
- * right-aligned column; the title spells the shorthand out. */
+/** A resource group's summed waste as the board and CLI print it; null when it reads as zero. */
+export function resourceGroupTotal(group: { total: number; unit: RawWasteUnit }): string | null {
+  const text = formatRawWaste({ value: group.total, unit: group.unit });
+  return readsAsZero(text) ? null : text;
+}
+
+/** A group's trailing figure on the Findings board, and its tooltip. Every kind leads with the
+ * "×N" finding count (the "worth expanding" signal). The row stays terse ("×2 · 476ms
+ * recoverable") to fit a dense right-aligned column; the title spells the shorthand out. */
 export function rollupGroupStat(group: RollupGroup): { stat: string; statTitle: string } {
   if (group.kind === 'time') {
     const recoverable = formatWallClockRange(group.recoverableMsHigh, group.recoverableMsHigh);
@@ -138,13 +142,16 @@ export function rollupGroupStat(group: RollupGroup): { stat: string; statTitle: 
     };
   }
   if (group.kind === 'resource') {
+    const total = resourceGroupTotal(group);
     return {
-      stat: `×${group.findingCount} · resource-cost projection`,
-      statTitle: `${group.findingCount} findings of this type; a resource-cost estimate (not run time) is projected for fixing them`,
+      stat: total ? `×${group.findingCount} · ${total}` : `×${group.findingCount}`,
+      statTitle: `${group.findingCount} findings of this type${total ? `; ${total} in total, a resource cost, not run time` : ''}`,
     };
   }
+  // The band heading above the row already names a one-band group's band.
+  const bands = Object.entries(group.byImpactBand);
   return {
-    stat: Object.entries(group.byImpactBand).map(([impactBand, count]) => `${count} ${impactBand}`).join(', '),
+    stat: bands.length === 1 ? `×${group.findingCount}` : `×${group.findingCount} · ${bands.map(([impactBand, count]) => `${count} ${impactBand}`).join(', ')}`,
     statTitle: `${group.findingCount} findings of this type, by impact`,
   };
 }

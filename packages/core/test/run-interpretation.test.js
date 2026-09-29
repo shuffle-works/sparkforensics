@@ -45,7 +45,7 @@ describe('interpretRun', () => {
       meaning: 'of run time',
       board: impactEstimateFigure(catalog[1].impactEstimate).text,
       compact: impactEstimateCompact(catalog[1].impactEstimate),
-      provenance: expect.stringContaining('2.4s'),
+      provenance: expect.stringContaining('point estimate'),
     });
     expect(interpretation.savings[2].figure).toBeNull();
     expect(interpretation.verdict.steps.map((step) => all[step.leadIndex])).toEqual([catalog[1], catalog[0], config[0]]);

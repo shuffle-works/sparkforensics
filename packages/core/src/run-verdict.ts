@@ -236,9 +236,8 @@ export function verdictSummary(eligible: Finding[], steps: NextStep[], facts: Ru
   } else {
     sentences.push(`${plural(eligible.length, 'finding')} in ${plural(steps.length, 'place')}.`);
     const wallClock = steps[0].lead.impactEstimate?.wallClock;
-    if (isIdleCapacityStep(steps[0])) {
-      sentences.push('A smaller cluster or dynamic allocation would free the idle cores for other jobs.');
-    } else if (wallClock && facts.runMs != null) {
+    // An idle-capacity lead needs no sentence here: the title gives the idle share and step 1 the fix.
+    if (!isIdleCapacityStep(steps[0]) && wallClock && facts.runMs != null) {
       sentences.push(`The first fix could save up to ${formatDuration(wallClock.high)} of this ${formatDuration(facts.runMs)} run.`);
     }
     if (steps.some((step) => step.related.length > 0)) {

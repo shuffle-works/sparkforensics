@@ -1,4 +1,5 @@
 import { pathBasename, formatBytes, nsToMs, IMPACT_BAND_ORDER } from './format-utils.ts';
+import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId } from './plan-summary.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
@@ -670,34 +671,38 @@ function cacheSampleConfidence(numPartitions: number): 'low' | 'medium' | 'high'
   return 'medium';
 }
 
+/** A sentence names a cached RDD by its first 40 characters, since RDD names are often a whole
+ * plan string (the Cache Storage card shows it in full); an unnamed RDD reads "RDD <id>". */
+function rddLabel({ id, name }: DetectorRddInfo): string {
+  return `RDD ${!name ? id : name.length > 40 ? `${name.slice(0, 40)}...` : name}`;
+}
+
 function partialCacheFinding(rdd: DetectorRddInfo, cachedRatio: number, impactBand: 'warning' | 'info'): Finding {
-  const rddName = rdd.name || `RDD ${rdd.id}`;
   const cachedPct = Math.round(cachedRatio * 100);
   const evictedPct = 100 - cachedPct;
   return {
     type: 'cacheUtilization', variant: 'partialCache', stageId: null,
-    rddId: rdd.id, rddName,
+    rddId: rdd.id, rddName: rdd.name || `RDD ${rdd.id}`,
     impactBand, metric: 'cachedRatio', value: cachedPct,
     confidence: cacheSampleConfidence(rdd.numPartitions),
     validationRequired: CACHE_UTILIZATION_VALIDATION[rdd.storageSource ?? 'rddInfo'],
     memorySize: rdd.memorySize, diskSize: rdd.diskSize,
     numCachedPartitions: rdd.numCachedPartitions, numPartitions: rdd.numPartitions,
-    recommendation: `RDD ${rddName} is ${evictedPct}% evicted from cache (${cachedPct}% of partitions cached). Increase executor memory or reduce the cached dataset size.`,
+    recommendation: `${rddLabel(rdd)} is ${evictedPct}% evicted from cache (${cachedPct}% of partitions cached): increase executor memory or reduce the cached dataset size.`,
   };
 }
 
 function diskSpilloverFinding(rdd: DetectorRddInfo, diskRatio: number, impactBand: 'warning' | 'info'): Finding {
-  const rddName = rdd.name || `RDD ${rdd.id}`;
   const diskPct = Math.round(diskRatio * 100);
   return {
     type: 'cacheUtilization', variant: 'diskSpillover', stageId: null,
-    rddId: rdd.id, rddName,
+    rddId: rdd.id, rddName: rdd.name || `RDD ${rdd.id}`,
     impactBand, metric: 'diskRatio', value: diskPct,
     confidence: cacheSampleConfidence(rdd.numPartitions),
     validationRequired: CACHE_UTILIZATION_VALIDATION[rdd.storageSource ?? 'rddInfo'],
     memorySize: rdd.memorySize, diskSize: rdd.diskSize,
     numCachedPartitions: rdd.numCachedPartitions, numPartitions: rdd.numPartitions,
-    recommendation: `RDD ${rddName} is ${diskPct}% spilled to disk despite requesting MEMORY_AND_DISK. Executor memory may be too small for this cached dataset.`,
+    recommendation: `${rddLabel(rdd)} is ${diskPct}% spilled to disk despite requesting MEMORY_AND_DISK: executor memory may be too small for it.`,
   };
 }
 
@@ -956,19 +961,13 @@ function cachingReuseConfidence(occurrences: number, minExecutions: number): 'lo
   return 'medium';
 }
 
-// A share threshold as caveat text states it: 0.005 -> "0.5%". Rounded to 4 decimals of a percent
-// so float noise (0.07 * 100) never prints.
-function shareLabel(share: number): string {
-  return `${Math.round(share * 1e6) / 1e4}%`;
-}
-
 // Caveats that name a threshold read it from the thresholds the detector ran with, so a tuned run
 // states the floor it actually used.
 function gcValidation(minRunTimeMs: number): string {
-  return `This finding is gated by a ${minRunTimeMs / 1000}-second minimum-runtime floor, our own noise floor for this metric.`;
+  return `Checked only on stages with at least ${minRunTimeMs / 1000}s of executor run time.`;
 }
 
-const INCOMPLETE_RUN_RECOMMENDATION = 'This event log never recorded an ApplicationEnd event: the capture stopped before the run finished (an in-flight job, a rotated-away log, or a cut-short capture). Findings and metrics elsewhere on this board reflect only what was captured up to that point, not the full run.';
+const INCOMPLETE_RUN_RECOMMENDATION = 'This event log never recorded an ApplicationEnd event: the capture stopped before the run finished (a job still running, a rotated log, or a cut-short capture), so every figure on this board covers only what was captured.';
 
 export const DETECTORS = [
   defineStageDetector({
@@ -990,8 +989,8 @@ export const DETECTORS = [
         impactBand: 'warning',
         metric, value,
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
-        validationRequired: `This finding is gated by a ${shareLabel(thresholds.floorPctWarn)} runtime-floor threshold, our own noise floor for this metric.`,
-        recommendation: `Task duration ratio (${metric}) is ${value}×: for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key to reduce task skew.`,
+        validationRequired: `Flagged only when it costs at least ${shareLabel(thresholds.floorPctWarn)} of run time.`,
+        recommendation: `Task duration ratio (${metric}) is ${value}×: for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.`,
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
@@ -1572,7 +1571,7 @@ export const DETECTORS = [
         confidence: useSpeculativeMetric
           ? stragglerConfidence(speculativeShare, thresholds.warnPct, thresholds.critPct)
           : stragglerConfidence(stragglerShare, thresholds.shareWarn, thresholds.critPct),
-        validationRequired: `This finding is gated by ${shareLabel(thresholds.floorPctWarn)}/${shareLabel(thresholds.floorPctCrit)} runtime-floor thresholds, our own noise floor for this metric.`,
+        validationRequired: `Warning needs at least ${shareLabel(thresholds.floorPctWarn)} of run time at stake, critical ${shareLabel(thresholds.floorPctCrit)}.`,
         recommendation: `${detail}: rule out a GC pause or a slow shuffle fetch before assuming a hardware issue; if a skewed key is the real cause, that's a candidate for AQE's skew-join handling.`,
       };
     },
@@ -2039,7 +2038,7 @@ export const DETECTORS = [
         // Raw count behind the ratio, for the impact estimator. Non-null whenever totalTasks is.
         nonLocalTaskCount: nonLocalTasks!,
         confidence: coreLocalityConfidence(ratio!, totalTasks, thresholds),
-        validationRequired: `This finding is gated by ${shareLabel(thresholds.warnRatio)}/${shareLabel(thresholds.critRatio)} non-local-ratio thresholds (and a ${thresholds.minTasks}-task minimum), our own noise floor for this metric.`,
+        validationRequired: `Flagged when at least ${shareLabel(thresholds.warnRatio)} of tasks run non-local (critical at ${shareLabel(thresholds.critRatio)}), on runs of ${thresholds.minTasks}+ tasks.`,
         recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement: check spark.locality.wait settings and executor/data colocation.`,
       };
     },
@@ -2445,7 +2444,7 @@ export const DETECTORS = [
           rootName: g.rootName, subtreeSize: g.subtreeSize, sampleRelation: g.sampleRelation,
           groupIndex: g.groupIndex,
           confidence: occurrencesIdentical ? duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, thresholds) : 'low',
-          validationRequired: 'Duplicate-subtree matching compares operator names and metric names only, not literal values or expr IDs: confirm the repeated work is real in the Spark SQL plan tab before acting.',
+          validationRequired: 'Matching compares operator and metric names only, not literals or expression IDs: confirm the repeat in the Spark UI SQL tab before acting.',
           recommendation: (g.isExchangeRoot
             ? `${detail}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`
             : `${detail}: consider caching/persisting the shared computation or check for a duplicated query branch.`) + differing,

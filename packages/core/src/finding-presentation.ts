@@ -26,6 +26,9 @@ export interface FindingPresentation<T extends FindingType> {
   genericRecommendation(finding: FindingOf<T>): string | undefined;
 }
 
+/** A share threshold as captions and caveats state it: 0.005 -> "0.5%", never float noise like 7.000000000000001%. */
+export const shareLabel = (share: number): string => `${Math.round(share * 1e6) / 1e4}%`;
+
 // The four configAudit DETECTORS entries share this row, one per audited property.
 const CONFIG_AUDIT_PRESENTATION: FindingPresentation<'configAudit'> = {
   name: 'config audit',
@@ -66,14 +69,14 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   skew: {
     name: 'task skew',
     tag: 'SKEW',
-    thresholdSummary: () => 'task duration skew above the configured ratio',
+    thresholdSummary: (t) => `P95 task time over ${t.ratioWarn}× the median (the longest task on stages under ${t.minTasksForP95} tasks)`,
     actionLabel: () => 'Fix task skew',
-    genericRecommendation: () => 'For join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key to reduce task skew.',
+    genericRecommendation: () => 'For join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.',
   },
   stageShape: {
     name: 'stage shape',
     tag: 'SHAPE',
-    thresholdSummary: () => 'low parallelism, data explosion, or task-count skew relative to core count',
+    thresholdSummary: (t) => `under ${t.pRatioMax} tasks per core, output over ${t.oiRatioMax}× input, or one task over ${t.skewWarn}× the stage's wall-clock`,
     actionLabel(f) {
       switch (f.rule) {
         case 'lowParallelism': return 'Increase parallelism';
@@ -94,7 +97,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   tinyTask: {
     name: 'tiny tasks',
     tag: 'TINY',
-    thresholdSummary: () => 'median task duration below the configured floor',
+    thresholdSummary: (t) => `${t.minTasks}+ tasks with a median of ${t.maxP50}ms or less and a P95 of ${t.maxP95}ms or less`,
     actionLabel: () => 'Coalesce small tasks',
     // The shuffle-vs-no-shuffle fix isn't a Finding field, so one sentence covers both.
     genericRecommendation: () => 'Scheduler overhead may dominate: lower spark.sql.shuffle.partitions, or coalesce down to fewer, larger tasks.',
@@ -103,14 +106,14 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   shuffle: {
     name: 'shuffle I/O',
     tag: 'SHFL',
-    thresholdSummary: () => 'shuffle read above the configured minimum byte threshold',
+    thresholdSummary: (t) => `stage shuffle read above ${t.minBytes / 1048576} MiB`,
     actionLabel: () => 'Reduce shuffle size',
-    genericRecommendation: () => 'Consider increasing spark.sql.shuffle.partitions or adding a broadcast join to shrink the shuffle.',
+    genericRecommendation: () => 'Raise spark.sql.shuffle.partitions, or use a broadcast join for the smaller side.',
   },
   partitionSizing: {
     name: 'partition sizing',
     tag: 'PART',
-    thresholdSummary: () => 'partition byte size outside the configured target range',
+    thresholdSummary: (t) => `a shuffle partition over ${t.skewRatio}× the median or over ${t.maxPartBytes / 1073741824} GiB, or ${t.lowParTotalBytes / 1073741824} GiB of shuffle on ${t.lowParMaxTasks} tasks or fewer`,
     actionLabel(f) {
       switch (f.rule) {
         case 'shufflePartitionSkew': return 'Fix skewed partition';
@@ -141,7 +144,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   gc: {
     name: 'GC pressure',
     tag: 'GC',
-    thresholdSummary: () => 'JVM GC time share above the configured ratio',
+    thresholdSummary: (t) => `GC above ${t.warnPct100}% (or below ${t.lowInfoPct100}%) of executor run time`,
     actionLabel: (f) => (f.direction === 'low' ? 'Right-size executor memory' : 'Reduce GC pressure'),
     genericRecommendation: (f) => (f.direction === 'low'
       ? 'Memory may be over-provisioned here: consider reducing spark.executor.memory for cost savings.'
@@ -158,14 +161,14 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   failures: {
     name: 'failed tasks',
     tag: 'FAIL',
-    thresholdSummary: () => 'task failures above the configured rate',
+    thresholdSummary: (t) => `over ${shareLabel(t.warnRate)} of a stage's tasks failing`,
     actionLabel: () => 'Investigate task failures',
     genericRecommendation: () => 'Investigate driver logs for executor instability or data-driven errors.',
   },
   retryWaste: {
     name: 'retry waste',
     tag: 'RETRY',
-    thresholdSummary: () => 'retried task attempts consuming executor time',
+    thresholdSummary: (t) => `${t.minWasted}+ retried attempts wasting at least ${t.minWasteMs / 1000}s`,
     actionLabel: () => 'Investigate retry cause',
     genericRecommendation: () => 'Investigate executor loss or fetch failures behind the retried attempts.',
   },
@@ -173,7 +176,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   slowHost: {
     name: 'slow executor host',
     tag: 'HOST',
-    thresholdSummary: (t) => `a host running ${t.ratioWarn}x+ slower than its peers by mean task duration (per-executor byte/time dimensions use a separate, narrower ratio ladder starting at ${t.ratioTiers[0]}x; only those can reach critical on ratio alone)`,
+    thresholdSummary: (t) => `a host ${t.ratioWarn}× slower than its peers by mean task time (per-executor figures from ${t.ratioTiers[0]}×)`,
     actionLabel(f) {
       if (f.variant === 'durationShare') return 'Fix data locality';
       if (f.variant === 'multiDim') return 'Investigate degraded executor';
@@ -202,14 +205,14 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   speculationWaste: {
     name: 'speculation waste',
     tag: 'SPEC',
-    thresholdSummary: () => 'speculative task attempts that completed after the original',
+    thresholdSummary: (t) => `${t.minWasted}+ discarded speculative attempts wasting at least ${t.minWasteMs / 1000}s`,
     actionLabel: () => 'Tune speculation settings',
     genericRecommendation: () => 'If task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile.',
   },
   coldStart: {
     name: 'cold start',
     tag: 'COLD',
-    thresholdSummary: () => 'executor startup time above the configured floor',
+    thresholdSummary: (t) => `the first stage waiting over ${t.gapSeconds}s for an executor`,
     actionLabel: () => 'Pre-warm cluster',
     genericRecommendation: () => 'Keep a warm pool of idle executors, or if using dynamic allocation, raise the minimum/initial executor count so it does not scale up from zero.',
   },
@@ -244,7 +247,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   utilization: {
     name: 'executor utilization',
     tag: 'UTIL',
-    thresholdSummary: () => 'core occupancy below the configured floor across the run',
+    thresholdSummary: (t) => `average executor utilization below ${shareLabel(t.minUtil)}`,
     actionLabel: () => 'Reduce cluster size',
     genericRecommendation: () => 'Consider reducing cluster size or enabling dynamic allocation.',
   },
@@ -280,14 +283,14 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   jobFailureRate: {
     name: 'job failure rate',
     tag: 'JOBS',
-    thresholdSummary: () => 'job failure rate above the configured threshold',
+    thresholdSummary: (t) => `at least ${shareLabel(t.infoRate)} of jobs failing`,
     actionLabel: () => 'Investigate failed jobs',
     genericRecommendation: () => 'Inspect the driver log for the failed job(s) and the stage failures that triggered them.',
   },
   autoscalingChurn: {
     name: 'autoscaling churn',
     tag: 'CHRN',
-    thresholdSummary: () => 'executor add/remove churn above the configured rate',
+    thresholdSummary: (t) => `over ${shareLabel(t.warningPct)} of executors living under ${t.shortLivedMs / 60000} minutes`,
     actionLabel: () => 'Reduce autoscaling churn',
     genericRecommendation: () => 'This looks like wasteful re-provisioning rather than normal scale-down: consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.',
   },
@@ -305,7 +308,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   smallFiles: {
     name: 'small files',
     tag: 'PLAN',
-    thresholdSummary: () => 'output files below the configured target size',
+    thresholdSummary: (t) => `over ${t.minFiles} files averaging under ${t.maxAvgFileSizeMB} MiB`,
     actionLabel: (f) => (f.direction === 'write' ? 'Coalesce output files' : 'Compact small files'),
     genericRecommendation: (f) => (f.direction === 'write'
       ? 'Repartition or coalesce before writing to raise the average file size.'
@@ -321,7 +324,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   overBroadcast: {
     name: 'oversized broadcast join',
     tag: 'PLAN',
-    thresholdSummary: () => 'a broadcast join above the configured size ceiling',
+    thresholdSummary: (t) => `a broadcast over ${t.overBroadcastBytes / 1073741824} GiB`,
     actionLabel: () => 'Fix oversized broadcast',
     genericRecommendation: () => 'Check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.',
   },

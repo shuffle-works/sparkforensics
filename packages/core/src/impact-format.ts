@@ -84,16 +84,17 @@ export function impactEstimateCompact(estimate: ImpactEstimate | undefined): str
  * and the raw waste behind it. Null when the finding carries no estimate
  * model (`estimateMethod: 'none'`), no estimate at all, or a figure that
  * reads as zero (the step shows no savings then either). Uses the same
- * formatting and zero rules as the step's own savings figure. */
+ * formatting and zero rules as the step's own savings figure, which it does
+ * not repeat: the step already shows it. */
 export function estimateProvenance(finding: Pick<Finding, 'impactEstimate'>): string | null {
   const estimate = finding.impactEstimate;
   if (!estimate || estimate.estimateMethod === 'none') return null;
-  const method = estimate.estimateMethod;
+  const method = `${estimate.estimateMethod[0].toUpperCase()}${estimate.estimateMethod.slice(1)}`;
   const rawWaste = estimate.rawWaste && estimate.rawWaste.value > 0 ? estimate.rawWaste : null;
   const raw = rawWaste && !readsAsZero(formatRawWaste(rawWaste)) ? formatRawWaste(rawWaste) : null;
   const wallClock = estimate.wallClock;
   if (estimate.basis === 'resourceOnly') {
-    return raw ? `No run-time claim, ${method}. ${raw} was wasted, but it may not shorten the run.` : null;
+    return raw ? `${method}; ${raw} wasted, which may not shorten the run.` : null;
   }
   if (!wallClock || wallClock.high <= 0) return null;
   const highText = formatWallClockRange(wallClock.high, wallClock.high);
@@ -102,13 +103,12 @@ export function estimateProvenance(finding: Pick<Finding, 'impactEstimate'>): st
   if (raw && rawWaste!.unit !== 'ms') rawNote = ` Resource waste measured: ${raw}.`;
   else if (raw && rawWaste!.value > wallClock.high && raw !== highText) rawNote = ` Raw waste before the floor clipped it: ${raw}.`;
   if (estimate.basis === 'serial') {
-    return `${highText}, ${method}. The stage ran effectively alone, so this is close to a point estimate.${rawNote}`;
+    return `${method}; the stage ran alone, so this is close to a point estimate.${rawNote}`;
   }
   if (estimate.basis === 'contended') {
     const lowText = formatWallClockRange(wallClock.low, wallClock.low);
-    const range = formatWallClockRange(wallClock.low, wallClock.high);
-    const spread = lowText === highText ? 'its floor and optimistic high agree' : `${lowText} is the floor, ${highText} assumes the fix fully lands`;
-    return `${range}, ${method}. The stage shared the cluster with others: ${spread}.${rawNote}`;
+    const spread = lowText === highText ? 'its floor and high agree' : `${lowText} is the floor, ${highText} if the fix fully lands`;
+    return `${method}; the stage shared the cluster: ${spread}.${rawNote}`;
   }
   return null;
 }
