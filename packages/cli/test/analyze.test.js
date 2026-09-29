@@ -657,7 +657,8 @@ describe('sparkforensics-analyze CLI', () => {
 
         const redacted = JSON.parse(runCli([path, '--redact']).stdout);
         expect(redacted.summary.app.id).toBe('app-1');
-        expect(redacted.summary.app.name).toMatch(/^host-\d+$/);
+        // The app name takes the app id's pseudonym, as list_runs does.
+        expect(redacted.summary.app.name).toBe('app-1');
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -674,7 +675,7 @@ describe('sparkforensics-analyze CLI', () => {
         expect(status).toBe(0);
         const parsed = JSON.parse(stdout);
         expect(parsed.candidate.summary.app.id).toBe('app-1');
-        expect(parsed.candidate.summary.app.name).toMatch(/^host-\d+$/);
+        expect(parsed.candidate.summary.app.name).toBe('app-1');
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -712,7 +713,8 @@ describe('sparkforensics-analyze CLI', () => {
         const { stdout, status } = runCli([path, '--stage', '1']);
         expect(status).toBe(0);
         const { findings } = JSON.parse(stdout);
-        expect(findings.map((f) => f.type).sort()).toEqual(['skew', 'straggler']);
+        // The one 2000ms task gates the whole 2000ms stage, so stageShape's taskStageSkew fires too.
+        expect(findings.map((f) => f.type).sort()).toEqual(['skew', 'stageShape', 'straggler']);
         expect(findings.every((f) => f.stageId === 1)).toBe(true);
       } finally {
         rmSync(dir, { recursive: true, force: true });
