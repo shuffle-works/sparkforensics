@@ -614,4 +614,15 @@ describe('renderComparisonMarkdown', () => {
     const md = renderComparisonMarkdown(result, verdict);
     expect(md).toMatch(/^\n## Comparison to baseline\n\nBaseline: base · Candidate: cand\n\nThe baseline had 1 of 2 jobs fail; the candidate completed\n\n/);
   });
+
+  it('skips the label line when the labels are just the role names', () => {
+    const run = (label) => ({
+      label,
+      snapshot: { app: { name: 'JobX', startTime: 0, endTime: 1000 }, stages: new Map(), sql: new Map(), jobs: new Map(), catalog: [] },
+    });
+    const result = compareRuns(run('baseline'), run('candidate'));
+    const md = renderComparisonMarkdown(result, comparisonVerdict(result));
+    expect(md).toMatch(/^\n## Comparison to baseline\n\nThe candidate took about as long as the baseline\n/);
+    expect(md).not.toContain('Baseline: baseline');
+  });
 });
