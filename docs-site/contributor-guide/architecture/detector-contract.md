@@ -226,8 +226,9 @@ that entry's own findings in `deriveImpactBand` (`impact-band.ts`); every
 other finding keeps the run-wide default floors. `--max-skew` recomputes the
 ratio with the run's effective `minTasksForP95`, so the budget measures the
 same ratio the skew finding reports. Caveat text that names a threshold
-(`gc`, `skew`, `straggler`, `memoryUtilization`, `coreLocality`) states the
-value the detector ran with. The HTML export still renders the
+(`gc`, `skew`, `straggler`, `memoryUtilization`, `coreLocality`) and the
+`broadcastSizing` over-broadcast recommendation state the value the detector
+ran with. The HTML export still renders the
 default-threshold analysis.
 
 ## Per-operator duration attribution
