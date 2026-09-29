@@ -94,7 +94,7 @@ export interface TopbarProps {
   activeFileId: string | null;
   onPickRecent: (id: string) => void;
   onRemoveRecent: (id: string) => void;
-  /** Opens the two-run comparison with the open run as Run A. Omitted where
+  /** Opens the two-run comparison with the open run as the baseline. Omitted where
    * there is nothing to compare from (the export bundle). */
   onCompare?: () => void;
   /** Shows the Findings list at the given impact band (the top bar's count
@@ -133,7 +133,7 @@ export function Topbar({
   const comparison = useStore((s) => s.comparison);
   // Not while a comparison is paused behind "Back to comparison": that
   // control already leads back to one. Needs app, the condition for the open
-  // run to be snapshotted as Run A.
+  // run to be snapshotted as the baseline.
   const showCompare = onCompare != null && !sectionControls && !exportMode && activeFileId != null && app != null && !comparison.baselineId;
   const evidence = useEvidenceExport();
   const appModel = useStore((s) => s.appModel);

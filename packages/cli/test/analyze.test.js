@@ -552,7 +552,8 @@ describe('sparkforensics-analyze CLI', () => {
         const { stdout, status } = runCli([candidatePath, '--baseline', baselinePath, '--format', 'md']);
         expect(status).toBe(0);
         expect(stdout).toMatch(/^# Spark run evidence report/);
-        expect(stdout).toMatch(/## Comparison to baseline\n\nRun A: baseline · Run B: candidate\n\n\S/);
+        // The CLI's labels are the role names, so the verdict follows the heading directly.
+        expect(stdout).toMatch(/## Comparison to baseline\n\n(?!Baseline:)\S/);
       });
     });
 

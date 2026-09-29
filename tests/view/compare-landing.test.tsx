@@ -100,7 +100,7 @@ test('toggle shows two slots; Compare enables only after both are filled', async
   await user.click(screen.getByRole('button', { name: /compare two runs/i }));
   (window as any).showOpenFilePicker = undefined;
 
-  expect(screen.getByText(/run a as the baseline and run b as the candidate/i)).toBeVisible();
+  expect(screen.getByText(/load a baseline run and a candidate run/i)).toBeVisible();
   expect(screen.getByText(/structurally matched stages/i)).toBeVisible();
 
   const compareBtn = screen.getByRole('button', { name: /^compare$/i });
@@ -150,7 +150,7 @@ test('re-focuses the alert when errorNonce advances even though the message text
   expect(screen.getByRole('alert')).toHaveFocus();
 });
 
-test('opened from a dashboard, compare mode starts with that run as Run A and Back returns to it', async () => {
+test('opened from a dashboard, compare mode starts with that run as the baseline and Back returns to it', async () => {
   const user = userEvent.setup();
   store.setState({ compareSeed: { id: 'a::1::2', label: 'first-run.log' } });
   render(
@@ -163,7 +163,7 @@ test('opened from a dashboard, compare mode starts with that run as Run A and Ba
 
   expect(screen.getByRole('heading', { name: 'Compare two runs' })).toBeInTheDocument();
   expect(within(screen.getByTestId('compare-slot-a')).getByText('first-run.log')).toBeInTheDocument();
-  expect(screen.getByText(/Run A is the run you had open/)).toBeInTheDocument();
+  expect(screen.getByText(/The baseline is the run you had open/)).toBeInTheDocument();
 
   await user.click(screen.getByRole('button', { name: 'Back to the run' }));
   expect(drillIntoRun).toHaveBeenCalledWith('a::1::2');
@@ -171,22 +171,22 @@ test('opened from a dashboard, compare mode starts with that run as Run A and Ba
   expect(store.getState().compareSeed).toBeNull();
 });
 
-test('a failed Run B load remounts the seeded view with Run A still filled and Back to the run', () => {
+test('a failed candidate load remounts the seeded view with the baseline still filled and Back to the run', () => {
   store.setState({ compareSeed: { id: 'a::1::2', label: 'first-run.log' } });
   const tree = <ThemeProvider><DocsProvider><CompareLanding /></DocsProvider></ThemeProvider>;
   // The landing unmounts while the compare load shows progress, then mounts
-  // again with the error when Run B fails.
+  // again with the error when the candidate fails.
   render(tree).unmount();
   render(
-    <ThemeProvider><DocsProvider><CompareLanding errorMessage="Run B: could not parse." errorNonce={1} /></DocsProvider></ThemeProvider>,
+    <ThemeProvider><DocsProvider><CompareLanding errorMessage="Candidate: could not parse." errorNonce={1} /></DocsProvider></ThemeProvider>,
   );
 
   expect(within(screen.getByTestId('compare-slot-a')).getByText('first-run.log')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Back to the run' })).toBeInTheDocument();
-  expect(screen.getByRole('alert')).toHaveTextContent('Run B: could not parse.');
+  expect(screen.getByRole('alert')).toHaveTextContent('Candidate: could not parse.');
 });
 
-test('changing Run A in the seeded view clears the seed', async () => {
+test('changing the baseline in the seeded view clears the seed', async () => {
   const user = userEvent.setup();
   store.setState({ compareSeed: { id: 'a::1::2', label: 'first-run.log' } });
   render(<ThemeProvider><DocsProvider><CompareLanding /></DocsProvider></ThemeProvider>);

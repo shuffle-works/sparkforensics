@@ -52,7 +52,7 @@ export interface RunSummary {
 export interface McpCompareRunsResult {
   runIdA: string;
   runIdB: string;
-  // The dashboard comparison page's headline (run A = runIdA, run B = runIdB).
+  // The dashboard comparison page's headline (baseline = runIdA, candidate = runIdB).
   verdict: ComparisonVerdictText;
   findingsDelta: CompareRunsResult['findings'];
   metricDeltas: CompareRunsResult['metrics'];

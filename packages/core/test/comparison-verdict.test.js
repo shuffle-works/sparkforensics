@@ -8,16 +8,16 @@ function metric(key, label, baseline, candidate, direction) {
 const noFindings = { introduced: [], resolved: [] };
 
 describe('summarizeComparison', () => {
-  it('leads with how much faster or slower run B finished', () => {
+  it('leads with how much faster or slower the candidate finished', () => {
     expect(summarizeComparison([metric('wallClock', 'Wall-clock duration', 20_000, 15_000, 'improvement')], noFindings))
-      .toMatchObject({ title: 'Run B finished 5.0s faster than run A (25%)', tone: 'better' });
+      .toMatchObject({ title: 'The candidate finished 5.0s faster than the baseline (25%)', tone: 'better' });
     expect(summarizeComparison([metric('wallClock', 'Wall-clock duration', 17_200, 30_100, 'regression')], noFindings))
-      .toMatchObject({ title: 'Run B finished 12.9s slower than run A (75%)', tone: 'worse' });
+      .toMatchObject({ title: 'The candidate finished 12.9s slower than the baseline (75%)', tone: 'worse' });
   });
 
   it('calls a run-time change under 2% about the same', () => {
     expect(summarizeComparison([metric('wallClock', 'Wall-clock duration', 100_000, 101_000, 'regression')], noFindings))
-      .toMatchObject({ title: 'Run B took about as long as run A', tone: 'same' });
+      .toMatchObject({ title: 'The candidate took about as long as the baseline', tone: 'same' });
   });
 
   it('says so when run time cannot be compared', () => {
@@ -32,7 +32,7 @@ describe('summarizeComparison', () => {
       metric('diskSpill', 'Disk spill', 9, 2, 'improvement'),
       metric('inputBytes', 'Input read', 10, 99, 'neutral'),
     ], noFindings);
-    expect(sentences).toEqual(['Worse in run B: GC time.', 'Better in run B: Disk spill.']);
+    expect(sentences).toEqual(['Worse in the candidate: GC time.', 'Better in the candidate: Disk spill.']);
   });
 
   it('nets finding categories across impact bands, so a rule is never both more and less frequent', () => {
@@ -47,8 +47,8 @@ describe('summarizeComparison', () => {
         { type: 'spill', baseCount: 3, candCount: 1 },
       ],
     });
-    expect(sentences).toContain('New or more frequent in run B: Garbage collection pressure.');
-    expect(sentences).toContain('Less frequent in run B: Memory and disk spill.');
+    expect(sentences).toContain('New or more frequent in the candidate: Garbage collection pressure.');
+    expect(sentences).toContain('Less frequent in the candidate: Memory and disk spill.');
     expect(sentences.join(' ')).not.toContain('Task skew');
   });
 
@@ -68,7 +68,7 @@ describe('summarizeComparison', () => {
       ],
       resolved: [{ type: 'memoryUtilization', baseCount: 1, candCount: 0 }],
     });
-    expect(sentences).toEqual(['New or more frequent in run B: Partition sizing.']);
+    expect(sentences).toEqual(['New or more frequent in the candidate: Partition sizing.']);
   });
 
   it('says nothing about cost metrics when none has values in both runs', () => {
@@ -90,44 +90,44 @@ describe('summarizeComparison', () => {
 describe('summarizeComparison with failed jobs', () => {
   const sameTime = [metric('wallClock', 'Wall-clock duration', 100_000, 100_500, 'regression')];
 
-  it('leads with a failed run B, keeping run time as the first sentence', () => {
+  it('leads with a failed candidate, keeping run time as the first sentence', () => {
     const verdict = summarizeComparison(sameTime, noFindings, {
       baseline: { failedJobs: 0, totalJobs: 5 },
       candidate: { failedJobs: 2, totalJobs: 5 },
     });
-    expect(verdict).toMatchObject({ title: 'Run B had 2 of 5 jobs fail (run A: none)', tone: 'worse' });
-    expect(verdict.sentences[0]).toBe('Run B took about as long as run A.');
+    expect(verdict).toMatchObject({ title: 'The candidate had 2 of 5 jobs fail (baseline: none)', tone: 'worse' });
+    expect(verdict.sentences[0]).toBe('The candidate took about as long as the baseline.');
   });
 
-  it('leads with a failed run A when run B completed', () => {
+  it('leads with a failed baseline when the candidate completed', () => {
     expect(summarizeComparison(sameTime, noFindings, {
       baseline: { failedJobs: 1, totalJobs: 4 },
       candidate: { failedJobs: 0, totalJobs: 4 },
-    })).toMatchObject({ title: 'Run A had 1 of 4 jobs fail; run B completed', tone: 'better' });
+    })).toMatchObject({ title: 'The baseline had 1 of 4 jobs fail; the candidate completed', tone: 'better' });
   });
 
-  it('keeps a neutral tone when both runs had as many failed jobs, even if run B was faster', () => {
+  it('keeps a neutral tone when both runs had as many failed jobs, even if the candidate was faster', () => {
     const verdict = summarizeComparison([metric('wallClock', 'Wall-clock duration', 20_000, 14_000, 'improvement')], noFindings, {
       baseline: { failedJobs: 2, totalJobs: 5 },
       candidate: { failedJobs: 2, totalJobs: 5 },
     });
-    expect(verdict).toMatchObject({ title: 'Run B had 2 of 5 jobs fail (run A: 2 of 5)', tone: 'same' });
-    expect(verdict.sentences[0]).toBe('Run B finished 6.0s faster than run A (30%).');
+    expect(verdict).toMatchObject({ title: 'The candidate had 2 of 5 jobs fail (baseline: 2 of 5)', tone: 'same' });
+    expect(verdict.sentences[0]).toBe('The candidate finished 6.0s faster than the baseline (30%).');
   });
 
   it('says a run whose every job failed plainly, not as "1 of 1 jobs"', () => {
     expect(summarizeComparison(sameTime, noFindings, {
       baseline: { failedJobs: 1, totalJobs: 3 },
       candidate: { failedJobs: 1, totalJobs: 1 },
-    }).title).toBe("Run B's only job failed (run A: 1 of 3)");
+    }).title).toBe("The candidate's only job failed (baseline: 1 of 3)");
     expect(summarizeComparison(sameTime, noFindings, {
       baseline: { failedJobs: 2, totalJobs: 2 },
       candidate: { failedJobs: 3, totalJobs: 3 },
-    }).title).toBe("All 3 of run B's jobs failed (run A: all 2 failed)");
+    }).title).toBe("All 3 of the candidate's jobs failed (baseline: all 2 failed)");
     expect(summarizeComparison(sameTime, noFindings, {
       baseline: { failedJobs: 1, totalJobs: 1 },
       candidate: { failedJobs: 0, totalJobs: 1 },
-    }).title).toBe("Run A's only job failed; run B completed");
+    }).title).toBe("The baseline's only job failed; the candidate completed");
   });
 
   it('never calls an incomplete run faster: states what each log covers, in a neutral tone', () => {
@@ -136,8 +136,8 @@ describe('summarizeComparison with failed jobs', () => {
       baseline: { failedJobs: 0, totalJobs: 3 },
       candidate: { failedJobs: 0, totalJobs: 2, incomplete: true },
     });
-    expect(verdict).toMatchObject({ title: "Run B's log covers 9.1s less run time than run A's", tone: 'unknown' });
-    expect(verdict.sentences).toContain("Run B's log has no end-of-run record, so its time covers only what the log captured, not how long the run took.");
+    expect(verdict).toMatchObject({ title: "The candidate's log covers 9.1s less run time than the baseline's", tone: 'unknown' });
+    expect(verdict.sentences).toContain("The candidate's log has no end-of-run record, so its time covers only what the log captured, not how long the run took.");
     expect(verdict.title).not.toMatch(/faster/);
   });
 
@@ -146,8 +146,8 @@ describe('summarizeComparison with failed jobs', () => {
       baseline: { failedJobs: 0, totalJobs: 5 },
       candidate: { failedJobs: 0, totalJobs: 5 },
     });
-    expect(verdict).toMatchObject({ title: 'Run B took about as long as run A', tone: 'same' });
-    expect(verdict.sentences).not.toContain('Run B took about as long as run A.');
+    expect(verdict).toMatchObject({ title: 'The candidate took about as long as the baseline', tone: 'same' });
+    expect(verdict.sentences).not.toContain('The candidate took about as long as the baseline.');
   });
 });
 

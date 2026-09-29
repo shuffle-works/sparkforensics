@@ -160,9 +160,9 @@ function NextStepsRail({ onCompare }: { onCompare: () => void }) {
 export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: string | null; errorNonce?: number } = {}) {
   const { startCompareLoad, drillIntoRun } = useIngest();
   const { theme, toggle } = useTheme();
-  // A dashboard's "Compare with another run" leaves its run here as Run A.
+  // A dashboard's "Compare with another run" leaves its run here as the baseline.
   // It stays in the store until the comparison opens or the reader leaves
-  // it, so a failed Run B load remounts this view still seeded.
+  // it, so a failed candidate load remounts this view still seeded.
   const [seed] = useState(() => store.getState().compareSeed);
   const [compareMode, setCompareMode] = useState(seed != null);
   const [a, setA] = useState<RunSource | null>(seed ? { kind: 'cached', ...seed } : null);
@@ -243,18 +243,18 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
       </div>
       <p className="landing-compare-intro">
         {seededRunKept
-          ? 'Run A is the run you had open. Pick the run to compare it with, for example the same job after a change, as Run B.'
-          : 'Use Run A as the baseline and Run B as the candidate. Compare structurally matched stages to review material changes in a shared stage-level context.'}
+          ? 'The baseline is the run you had open. Pick the candidate to compare it with, for example the same job after a change.'
+          : 'Load a baseline run and a candidate run. Compare structurally matched stages to review material changes in a shared stage-level context.'}
       </p>
       {errorMessage ? <FileLoadAlert message={errorMessage} nonce={errorNonce} /> : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">Run A (baseline)</p>
-          <Slot testId="compare-slot-a" ariaLabel="Run A" source={a} onPick={setA} onChange={() => { store.getState().setCompareSeed(null); setA(null); }} />
+          <p className="mb-2 text-sm font-medium text-muted-foreground">Baseline</p>
+          <Slot testId="compare-slot-a" ariaLabel="Baseline" source={a} onPick={setA} onChange={() => { store.getState().setCompareSeed(null); setA(null); }} />
         </div>
         <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">Run B (candidate)</p>
-          <Slot testId="compare-slot-b" ariaLabel="Run B" source={b} onPick={setB} onChange={() => setB(null)} />
+          <p className="mb-2 text-sm font-medium text-muted-foreground">Candidate</p>
+          <Slot testId="compare-slot-b" ariaLabel="Candidate" source={b} onPick={setB} onChange={() => setB(null)} />
         </div>
       </div>
       <div className="flex justify-end">

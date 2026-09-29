@@ -41,7 +41,7 @@ beforeEach(() => {
 
 test('startCompareLoad parses A then B, snapshots both, opens the comparison', async () => {
   const client = makeFakeClient(['SameApp', 'SameApp']);
-  // Record every sessionCache.set so we can prove run B's snapshot is written
+  // Record every sessionCache.set so we can prove the candidate's snapshot is written
   // once (by snapshotParsedRun) and never clobbered by openComparison.
   const cache = new RecordingMap<string, SessionSnapshot>();
   store.setState({ sessionCache: cache });
@@ -61,7 +61,7 @@ test('startCompareLoad parses A then B, snapshots both, opens the comparison', a
   expect((cache.get('a::1::2') as any)?.evidenceAvailability).not.toBeNull();
   expect((cache.get('b::3::4') as any)?.evidenceAvailability).not.toBeNull();
 
-  // Regression: run B's snapshot is set exactly once (by snapshotParsedRun) and
+  // Regression: the candidate's snapshot is set exactly once (by snapshotParsedRun) and
   // never overwritten by openComparison's auto-snapshot.
   const bSets = cache.sets.filter(([k]) => k === 'b::3::4');
   expect(bSets.length).toBe(1);
@@ -93,7 +93,7 @@ test('startCompareLoad exposes compareLoad progress while each run parses', asyn
 });
 
 test('a recent-source that is gone surfaces a run-named error prefixed exactly once', async () => {
-  // Regression: resolveSourceInput already prefixes "Run B: "; the abort path
+  // Regression: resolveSourceInput already prefixes "Candidate: "; the abort path
   // must not prefix it again.
   const getHandleSpy = vi.spyOn(recentFiles, 'getHandle').mockResolvedValue(null as any);
   const client = makeFakeClient(['A']);
@@ -107,14 +107,14 @@ test('a recent-source that is gone surfaces a run-named error prefixed exactly o
     await Promise.resolve();
   });
   const msg = store.getState().errorMessage ?? '';
-  expect(msg).toBe('Run B: this recent file is no longer available.');
-  expect(msg.match(/Run B:/g)).toHaveLength(1);
+  expect(msg).toBe('Candidate: this recent file is no longer available.');
+  expect(msg.match(/Candidate:/g)).toHaveLength(1);
   expect(store.getState().compareLoad).toBeNull();
   expect(store.getState().comparison.active).toBe(false);
   getHandleSpy.mockRestore();
 });
 
-test('a parse error on run B aborts the compare and surfaces a run-named error', async () => {
+test('a parse error on the candidate aborts the compare and surfaces a run-named error', async () => {
   const client = {
     ...makeFakeClient(['SameApp']),
     startParse: vi.fn()
@@ -126,7 +126,7 @@ test('a parse error on run B aborts the compare and surfaces a run-named error',
     result.current.startCompareLoad(fileSource('a::1::2', 'a.log'), fileSource('b::3::4', 'b.log'));
     await Promise.resolve();
   });
-  expect(store.getState().errorMessage).toMatch(/Run B/);
+  expect(store.getState().errorMessage).toMatch(/^Candidate: /);
   expect(store.getState().compareLoad).toBeNull();
   expect(store.getState().comparison.active).toBe(false);
 });
@@ -154,7 +154,7 @@ test('drillIntoRun restores one cached run without evicting the other', () => {
   expect(store.getState().sessionCache.has('b::3::4')).toBe(true); // not evicted
 });
 
-test('compareWithAnotherRun keeps the open run as a cached Run A and seeds the landing compare view', async () => {
+test('compareWithAnotherRun keeps the open run as a cached baseline and seeds the landing compare view', async () => {
   const cache = new Map<string, SessionSnapshot>();
   store.setState({
     sessionCache: cache,
@@ -182,7 +182,7 @@ test('compareWithAnotherRun stays on the dashboard when the open run has no app 
   expect(store.getState().activeFileId).toBe('a::1::2');
 });
 
-test('startCompareLoad reuses a cached Run A: only Run B is parsed, and A is never re-snapshotted', async () => {
+test('startCompareLoad reuses a cached baseline: only the candidate is parsed, and the baseline is never re-snapshotted', async () => {
   const startParse = vi.fn();
   const client = makeFakeClient(['B']);
   const cache = new RecordingMap<string, SessionSnapshot>();
@@ -202,7 +202,7 @@ test('startCompareLoad reuses a cached Run A: only Run B is parsed, and A is nev
   expect(store.getState().comparison).toEqual({ active: true, baselineId: 'a::1::2', candidateId: 'b::3::4' });
 });
 
-test('startCompareLoad keeps the compare seed when Run B fails, and clears it once the comparison opens', async () => {
+test('startCompareLoad keeps the compare seed when the candidate fails, and clears it once the comparison opens', async () => {
   const seed = { id: 'a::1::2', label: 'a.log' };
   const cache = new Map<string, SessionSnapshot>([['a::1::2', { appModel: emptyAppModel() } as unknown as SessionSnapshot]]);
   const failing = { ...makeFakeClient([]), startParse: (_f: File, h: any) => h.onError?.(new Error('bad log')) };
@@ -225,12 +225,12 @@ test('startCompareLoad keeps the compare seed when Run B fails, and clears it on
   expect(store.getState().compareSeed).toBeNull();
 });
 
-test('startCompareLoad reports a cached Run A that is no longer loaded instead of comparing', async () => {
+test('startCompareLoad reports a cached baseline that is no longer loaded instead of comparing', async () => {
   const { result } = renderHook(() => useIngest({ makeClient: () => makeFakeClient(['B']) as any }));
   await act(async () => {
     result.current.startCompareLoad({ kind: 'cached', id: 'gone::1::2', label: 'a.log' }, fileSource('b::3::4', 'b.log'));
     await Promise.resolve();
   });
-  expect(store.getState().errorMessage).toMatch(/^Run A: this run is no longer loaded/);
+  expect(store.getState().errorMessage).toMatch(/^Baseline: this run is no longer loaded/);
   expect(store.getState().comparison.active).toBe(false);
 });

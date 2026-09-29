@@ -36,6 +36,9 @@ export type RunSource =
    * compare load reuses it instead of parsing it again. */
   | { kind: 'cached'; id: string; label: string };
 
+/** How a compare-load error names each slot: slot A is the baseline, slot B the candidate. */
+const COMPARE_RUN_NAME = { A: 'Baseline', B: 'Candidate' } as const;
+
 /** recent-files.js stores FileSystemFileHandles as opaque `unknown`; callers
  * narrow only what they actually call. */
 interface FileHandleLike {
@@ -235,12 +238,12 @@ export function useIngest(opts: Opts = {}) {
     if (source.kind === 'cached') return null;
     // recent: resolve the persisted handle to a File, re-granting permission.
     const handle = (source.handle as FileHandleLike | undefined) ?? (await recentFiles.getHandle(source.id));
-    if (!handle) { store.getState().setError(`Run ${which}: this recent file is no longer available.`); return null; }
+    if (!handle) { store.getState().setError(`${COMPARE_RUN_NAME[which]}: this recent file is no longer available.`); return null; }
     const granted = await recentFiles.ensurePermission(handle);
-    if (!granted) { store.getState().setError(`Run ${which}: permission to read this file was denied.`); return null; }
+    if (!granted) { store.getState().setError(`${COMPARE_RUN_NAME[which]}: permission to read this file was denied.`); return null; }
     let file: File;
     try { file = await handle.getFile(); }
-    catch { store.getState().setError(`Run ${which}: this recent file could not be read.`); return null; }
+    catch { store.getState().setError(`${COMPARE_RUN_NAME[which]}: this recent file could not be read.`); return null; }
     return { start: (h) => clientRef.current!.startParse(file, h) };
   }, []);
 
@@ -263,7 +266,7 @@ export function useIngest(opts: Opts = {}) {
       store.getState().setCompareLoad(null);
       store.getState().setComparisonActive(false);
       const msg = (e as { message?: string })?.message ?? String(e);
-      store.getState().setError(`Run ${which}: ${msg}`);
+      store.getState().setError(`${COMPARE_RUN_NAME[which]}: ${msg}`);
     };
 
     const parseInto = async (source: RunSource, which: 'A' | 'B', onDone: (skippedLines: number) => void) => {
@@ -277,7 +280,7 @@ export function useIngest(opts: Opts = {}) {
       const resolved = await resolveSourceInput(source, which);
       if (!resolved) {
         // resolveSourceInput already set a run-named error; tear down directly
-        // rather than routing through abort (which would re-prefix "Run X: ").
+        // rather than routing through abort (which would prefix the run's name again).
         clientRef.current?.terminate();
         store.getState().setCompareLoad(null);
         store.getState().setComparisonActive(false);
@@ -295,7 +298,7 @@ export function useIngest(opts: Opts = {}) {
     const load = (source: RunSource, which: 'A' | 'B', next: () => void) => {
       if (source.kind === 'cached') {
         if (!store.getState().sessionCache.has(source.id)) {
-          store.getState().setError(`Run ${which}: this run is no longer loaded. Load its event log again.`);
+          store.getState().setError(`${COMPARE_RUN_NAME[which]}: this run is no longer loaded. Load its event log again.`);
           return;
         }
         next();
@@ -320,7 +323,7 @@ export function useIngest(opts: Opts = {}) {
     });
   }, [make, resolveSourceInput, snapshotParsedRun]);
 
-  // "Compare with another run" from a dashboard: keep the open run as Run A
+  // "Compare with another run" from a dashboard: keep the open run as the baseline
   // (resetToDropZone snapshots it, which needs app) and open the landing's compare view with
   // that slot already filled, so the reader only picks the other run.
   const compareWithAnotherRun = useCallback(() => {

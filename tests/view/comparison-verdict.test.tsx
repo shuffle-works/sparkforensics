@@ -14,25 +14,25 @@ describe('RunComparison verdict', () => {
     stageSkew: [],
   };
 
-  it('puts the answer first and offers run B as the next step', async () => {
+  it('puts the answer first and offers the candidate as the next step', async () => {
     const user = userEvent.setup();
     const onDrillIn = vi.fn();
     render(<RunComparison model={model as any} onClose={vi.fn()} onDrillIn={onDrillIn} />);
 
-    expect(screen.getByRole('heading', { level: 2, name: 'Run B finished 5.0s faster than run A (25%)' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /see where to start in run b/i }));
+    expect(screen.getByRole('heading', { level: 2, name: 'The candidate finished 5.0s faster than the baseline (25%)' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /see where to start in the candidate/i }));
     expect(onDrillIn).toHaveBeenCalledWith('candidate');
   });
 
-  it('heads the verdict with run B\'s failed jobs', () => {
+  it('heads the verdict with the candidate\'s failed jobs', () => {
     const failed = { ...model, jobOutcomes: { baseline: { failedJobs: 0, totalJobs: 5 }, candidate: { failedJobs: 2, totalJobs: 5 } } };
     render(<RunComparison model={failed as any} onClose={vi.fn()} />);
-    expect(screen.getByRole('heading', { level: 2, name: 'Run B had 2 of 5 jobs fail (run A: none)' })).toBeInTheDocument();
-    expect(screen.getByTestId('comparison-verdict')).toHaveTextContent('Run B finished 5.0s faster than run A (25%).');
+    expect(screen.getByRole('heading', { level: 2, name: 'The candidate had 2 of 5 jobs fail (baseline: none)' })).toBeInTheDocument();
+    expect(screen.getByTestId('comparison-verdict')).toHaveTextContent('The candidate finished 5.0s faster than the baseline (25%).');
   });
 
   it('has no drill-in button when there is nowhere to drill into', () => {
     render(<RunComparison model={model as any} onClose={vi.fn()} />);
-    expect(screen.queryByRole('button', { name: /see where to start in run b/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /see where to start in the candidate/i })).not.toBeInTheDocument();
   });
 });

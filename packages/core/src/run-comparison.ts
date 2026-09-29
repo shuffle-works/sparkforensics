@@ -467,8 +467,12 @@ export function renderComparisonMarkdown(
   const lines = ['', '## Comparison to baseline', ''];
   if (tuned) lines.push(`- Tuned thresholds (both runs): ${tunedRunNote(tuned)}`, '');
   if (verdict) {
-    // The dashboard comparison page's headline: run A is the baseline, run B the candidate.
-    lines.push(`Run A: ${comparison.baselineLabel} · Run B: ${comparison.candidateLabel}`, '', verdict.title);
+    // Names each run by its label (MCP's run IDs), unless the labels are just the role names the
+    // CLI passes, where the verdict below already says baseline and candidate.
+    if (comparison.baselineLabel !== 'baseline' || comparison.candidateLabel !== 'candidate') {
+      lines.push(`Baseline: ${comparison.baselineLabel} · Candidate: ${comparison.candidateLabel}`, '');
+    }
+    lines.push(verdict.title);
     if (verdict.sentences.length > 0) lines.push('', verdict.sentences.join(' '));
     lines.push('');
   }
