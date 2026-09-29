@@ -46,7 +46,7 @@ describe('GcPressure', () => {
     expect(screen.getByRole('button', { name: /open details for stage 9/i })).toBeInTheDocument();
   });
 
-  it('renders the low-GC (cost) branch and flags every low-GC stage with its recommendation always visible', async () => {
+  it('renders the low-GC (cost) branch and flags every low-GC stage, stating its fix once', async () => {
     const user = userEvent.setup();
     const catalog: Finding[] = [
       {
@@ -65,7 +65,7 @@ describe('GcPressure', () => {
     expect(screen.getByRole('button', { name: /open details for stage 7/i })).toBeInTheDocument();
 
 
-    expect(screen.getAllByText(/over-provisioned/i)).toHaveLength(2);
+    expect(screen.getAllByText(/over-provisioned/i)).toHaveLength(1);
   });
 
   it('renders both the high-GC and low-GC branches together when both fired', () => {
@@ -213,16 +213,15 @@ describe('GcPressure', () => {
     expect(stagePills[1]).toHaveAccessibleName(/stage 1/i);
   });
 
-  it('shows every stage\'s recommendation unconditionally, with no per-row toggle', () => {
+  it('shows the card\'s fix unconditionally, with no per-row toggle', () => {
     const catalog: Finding[] = [
       { type: 'gc', stageId: 1, impactBand: 'critical', value: 45, recommendation: 'Reduce object creation for stage 1.' },
       { type: 'gc', stageId: 2, impactBand: 'warning', value: 30, recommendation: 'Reduce object creation for stage 2.' },
     ];
     render(<GcPressure catalog={catalog} appModel={buildAppModel()} defaultCollapsed={false} />);
 
-    // Recommendations render unconditionally now; there's no toggle to collapse them.
-    expect(screen.getByText('Reduce object creation for stage 1.')).toBeInTheDocument();
-    expect(screen.getByText('Reduce object creation for stage 2.')).toBeInTheDocument();
+    // The fix renders unconditionally, once for both stages; there's no toggle to collapse it.
+    expect(screen.getByText('Reduce object creation, use primitive types, avoid UDFs, or increase executor memory to cut GC time.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /recommendation/i })).not.toBeInTheDocument();
   });
 

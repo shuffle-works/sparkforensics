@@ -31,7 +31,6 @@ function UtilizationRow({ finding }: { finding: Finding }) {
         <strong>{formatMetricValue('pct', numericValue(finding))}</strong> average executor utilization
       </p>
       <ImpactEstimate finding={finding} />
-      <p>{finding.recommendation}</p>
     </div>
   );
 }
@@ -63,6 +62,7 @@ export const ExecutorUtilization = memo(function ExecutorUtilization({ catalog, 
   return (
     <WidgetCard
       title="Executor Utilization"
+      fixFor={findings}
       impactBand={worstImpactBand(findings)}
       badges={<TagBadge type="utilization" impactBand={worstImpactBand(findings) ?? 'info'} />}
       defaultCollapsed={defaultCollapsed}

@@ -26,17 +26,17 @@ test('renders nothing when the catalog has no straggler findings', () => {
   expect(container).toBeEmptyDOMElement();
 });
 
-test('surfaces the speculative-count detail with its single-clause recommendation always visible (no "; " split to gate)', () => {
+test('surfaces the speculative-count detail and the card\'s fix', () => {
   const catalog: Finding[] = [
     { type: 'straggler', stageId: 9, impactBand: 'critical', metric: 'speculativeTasks', value: 4, unit: 'count', recommendation: '4 speculative attempts discarded: investigate stragglers.' } as Finding,
   ];
   renderStraggler(appModelWithStage(9), catalog, false);
   expect(screen.getByRole('heading', { name: 'Stragglers' })).toBeInTheDocument();
   expect(screen.getByText(/4 speculative attempts discarded/)).toBeInTheDocument();
-  expect(screen.getByText(/investigate stragglers/)).toBeInTheDocument();
+  expect(screen.getByText(/^Rule out a GC pause or a slow shuffle fetch/)).toBeInTheDocument();
 });
 
-test('splits a genuine two-clause recommendation: the general-cause advice is always visible, the skewed-key/AQE pointer is Advanced-only', async () => {
+test('states the card\'s fix, skewed-key/AQE pointer included, at every density', async () => {
   const catalog: Finding[] = [
     {
       type: 'straggler', stageId: 9, impactBand: 'warning', metric: 'stragglerShare', value: 35, unit: 'pct',
@@ -45,8 +45,8 @@ test('splits a genuine two-clause recommendation: the general-cause advice is al
     } as Finding,
   ];
   renderStraggler(appModelWithStage(9), catalog, false);
-  expect(screen.getByText(/rule out a GC pause or a slow shuffle fetch before assuming a hardware issue/)).toBeInTheDocument();
-  expect(screen.queryByText(/AQE's skew-join handling/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Rule out a GC pause or a slow shuffle fetch before assuming a hardware issue/)).toBeInTheDocument();
+  expect(screen.getByText(/AQE's skew-join handling/)).toBeInTheDocument();
 
   store.getState().setWidgetDensity('advanced');
   renderStraggler(appModelWithStage(9), catalog, false);

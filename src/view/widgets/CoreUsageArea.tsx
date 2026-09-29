@@ -3,6 +3,7 @@ import { Inbox } from 'lucide-react';
 import { Area, AreaChart, CartesianGrid, Legend, Tooltip, XAxis, YAxis } from 'recharts';
 
 import type { LocalityChartPoint } from '@sparkforensics/core/core-usage-locality.ts';
+import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { formatCores } from '@sparkforensics/core/format-utils.ts';
 import { useInterpretation } from '@/view/interpretation';
 import { CHART_COLORS, CHART_TOOLTIP_PROPS, ChartFrame } from '@/view/charts/ChartTheme';
@@ -116,7 +117,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
           <p className="flex flex-wrap items-start gap-2 text-sm">
             <ImpactDot impactBand={coreLocalityFinding.impactBand} className="mt-1.5" />
             <span>
-              <strong>{coreLocalityFinding.value}% non-local</strong>: {coreLocalityFinding.recommendation}
+              <strong>{coreLocalityFinding.value}% non-local</strong>. {coreFindingGenericRecommendation(coreLocalityFinding)}
             </span>
           </p>
         ) : null}

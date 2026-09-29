@@ -13,6 +13,7 @@ import {
   type EstimateCtx,
 } from './impact-model.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
+import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail } from './finding-generic-recommendation.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
@@ -2431,8 +2432,8 @@ export const DETECTORS = [
         const stageShares = stageOperatorShares(nodes, operatorsByStage);
         // resolvePlanTree always sets id; safe downstream of it.
         const planNodeIds = nodes.map((n) => n.id!).filter(Boolean);
-        const touching = g.sampleRelation ? ` (touching ${g.sampleRelation})` : '';
-        const differing = occurrencesIdentical ? '' : ' Their filters, columns or scanned tables differ, so the repeats may compute different data.';
+        const detail = duplicateSubtreeDetail({ ...g, value: g.occurrences });
+        const differing = occurrencesIdentical ? '' : ` ${DUPLICATE_SUBTREE_DIFFERING_NOTE}`;
         return {
           type: 'duplicatePlanSubtree', executionId: sqlExec.id, stageIds, planNodeIds,
           stageShares, occurrencesIdentical,
@@ -2446,8 +2447,8 @@ export const DETECTORS = [
           confidence: occurrencesIdentical ? duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, thresholds) : 'low',
           validationRequired: 'Duplicate-subtree matching compares operator names and metric names only, not literal values or expr IDs: confirm the repeated work is real in the Spark SQL plan tab before acting.',
           recommendation: (g.isExchangeRoot
-            ? `A ${g.subtreeSize}-node subtree rooted at ${pathBasename(g.rootName)} repeats ${g.occurrences}x in this plan${touching}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`
-            : `A ${g.subtreeSize}-node subtree rooted at ${pathBasename(g.rootName)} repeats ${g.occurrences}x in this plan${touching}: consider caching/persisting the shared computation or check for a duplicated query branch.`) + differing,
+            ? `${detail}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`
+            : `${detail}: consider caching/persisting the shared computation or check for a duplicated query branch.`) + differing,
         };
       }).filter((f): f is Finding => f !== null);
       return findings.length > 0 ? findings : null;

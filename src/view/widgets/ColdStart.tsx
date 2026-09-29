@@ -17,8 +17,7 @@ import { usePagedRows } from '@/view/usePagedRows';
 
 export type ColdStartProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
 
-// coldStart's recommendation is a static string that never embeds the
-// measured number, so surface the metric here to show the actual gap.
+// The row shows the measured wait; the card states the fix once.
 function metricLabel(f: Finding): string {
   return `${f.value}s`;
 }
@@ -37,7 +36,6 @@ function IssueRow({ finding }: { finding: Finding }) {
         <strong>{metricLabel(finding)}</strong>
       </div>
       <ImpactEstimate finding={finding} />
-      <p className="text-muted-foreground pt-1">{finding.recommendation}</p>
     </li>
   );
 }
@@ -67,6 +65,7 @@ export const ColdStart = memo(function ColdStart({ catalog, defaultCollapsed = t
   return (
     <WidgetCard
       title="Cold Start"
+      fixFor={issues}
       impactBand={issues[0].impactBand}
       badges={
         <>

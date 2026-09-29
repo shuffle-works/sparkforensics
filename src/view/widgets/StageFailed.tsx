@@ -41,7 +41,6 @@ function StageFailedRow({ finding }: { finding: FindingOf<'stageFailed'> & { sta
         Stage attempt failed outright. Reason: <strong>{finding.valueText}</strong>
       </p>
       <ImpactEstimate finding={finding} />
-      {finding.recommendation ? <p className="text-xs text-muted-foreground">{finding.recommendation}</p> : null}
     </li>
   );
 }
@@ -79,6 +78,7 @@ export function StageFailed({ appModel, catalog, defaultCollapsed = true }: Stag
   return (
     <WidgetCard
       title="Failed Stages"
+      fixFor={findings}
       impactBand={worstImpactBand(findings)}
       badges={
         <>

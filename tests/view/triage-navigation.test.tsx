@@ -180,16 +180,17 @@ function memoryBandFinding(executorId: number | string, impactBand: Finding['imp
 // `stageId` defaults to `null` to match the real plan detectors, which never
 // set a singular `stageId` (only the plural `stageIds` DuplicatePlanSubtree.tsx groups by).
 // A test below overrides it to get a precise per-finding StageTable route button.
+// `label` doubles as the root name: the card's row says what repeats, not the recommendation.
 function duplicatePlanSubtreeFinding(
   stageIds: number[],
-  recommendation: string,
+  label: string,
   opts: { impactBand?: Finding['impactBand']; stageId?: number | null } = {},
 ): Finding {
   const { impactBand = 'warning', stageId = null } = opts;
   return testFinding({
-    type: 'duplicatePlanSubtree', impactBand, stageId, stageIds, recommendation,
+    type: 'duplicatePlanSubtree', impactBand, stageId, stageIds, recommendation: label,
     executionId: 1, planNodeIds: [], stageShares: {}, occurrencesIdentical: true,
-    rootName: 'Filter', subtreeSize: 1, sampleRelation: null, groupIndex: 0,
+    rootName: label, value: 2, subtreeSize: 1, sampleRelation: null, groupIndex: 0,
   });
 }
 
@@ -1401,7 +1402,7 @@ test('DuplicatePlanSubtree.tsx jumps its own pagination to the page containing a
   const card = screen
     .getByRole('heading', { name: 'Redundant Plan Subtree' })
     .closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
-  expect(within(card).queryByText('Consolidate subtree target.')).not.toBeInTheDocument();
+  expect(within(card).queryByText(/Consolidate subtree target\./)).not.toBeInTheDocument();
   expect(within(card).getByText('Page 1 of 2')).toBeInTheDocument();
 
   // Stage Summary (StageTable) lives inside the Full app report tab: expand

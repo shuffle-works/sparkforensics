@@ -73,12 +73,12 @@ describe('StageFailed', () => {
     expect(screen.getByRole('button', { name: /open details for stage 3/i })).toBeInTheDocument();
   });
 
-  it('shows a row\'s recommendation by default, with no per-row toggle', async () => {
+  it('shows the card\'s fix by default, with no per-row toggle', async () => {
     const catalog = [
       stageFailedFinding(3, 'ExecutorLostFailure', 'Inspect the driver log for the failure reason.'),
     ];
     render_(catalog);
-    expect(screen.getByText('Inspect the driver log for the failure reason.')).toBeInTheDocument();
+    expect(screen.getByText('Inspect the driver log for the failure reason and the job that triggered it.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /confidence|evidence|task detail/i })).not.toBeInTheDocument();
   });
 

@@ -84,7 +84,6 @@ function CachingRow({ finding }: { finding: FindingOf<'cachingOpportunity'> }) {
       <TableCell className="text-right">{formatBytes(finding.totalReadBytes)}</TableCell>
       <TableCell>
         <ImpactEstimate finding={finding} />
-        <p className="mt-1">{finding.recommendation}</p>
         <AdvancedOnly>
           <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} />
         </AdvancedOnly>
@@ -116,6 +115,7 @@ export const CachingOpportunity = memo(function CachingOpportunity({ catalog, de
   return (
     <WidgetCard
       title="Caching Opportunities"
+      fixFor={findings}
       impactBand="info"
       badges={<TagBadge type="cachingOpportunity" impactBand="info" />}
       defaultCollapsed={defaultCollapsed}
@@ -133,7 +133,7 @@ export const CachingOpportunity = memo(function CachingOpportunity({ catalog, de
               <TableHead>Relation</TableHead>
               <TableHead>Read by</TableHead>
               <TableHead className="text-right">Data read</TableHead>
-              <TableHead>Recommendation</TableHead>
+              <TableHead>Estimate</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

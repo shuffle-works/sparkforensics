@@ -30,24 +30,8 @@ function stragglerDetail(f: StragglerFinding): string {
     : `${formatMetricValue('pct', value)} of tasks straggled`;
 }
 
-// The real detector always prefixes its recommendation with stragglerDetail's
-// exact text; strip that shared prefix so it reads as a continuation of the
-// line above, not a restatement. What's left is a genuine two-part split at
-// "; ": a general troubleshooting clause (always visible, actionable on its
-// own) and a skewed-key-specific pointer to AQE's skew-join handling (kept
-// Advanced-only, as extra depth once the simpler causes are ruled out).
-function stragglerClauses(f: StragglerFinding): { primary: string; extended: string | null } {
-  const detail = stragglerDetail(f);
-  const recommendation = f.recommendation ?? '';
-  const rest = recommendation.startsWith(detail) ? recommendation.slice(detail.length) : ` ${recommendation}`;
-  const splitAt = rest.indexOf('; ');
-  if (splitAt === -1) return { primary: rest, extended: null };
-  return { primary: rest.slice(0, splitAt), extended: rest.slice(splitAt + 2) };
-}
-
 function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appModel: WidgetProps['appModel'] }) {
   const anchor = useAnchoredRow([finding]);
-  const { primary, extended } = stragglerClauses(finding);
   return (
     <li
       ref={anchor.ref}
@@ -64,11 +48,7 @@ function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appMod
           <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} />
         </AdvancedOnly>
       </div>
-      <p className="text-xs text-muted-foreground">
-        {stragglerDetail(finding)}
-        {primary}
-        {extended != null ? <AdvancedOnly>{`; ${extended}`}</AdvancedOnly> : null}
-      </p>
+      <p className="text-xs text-muted-foreground">{stragglerDetail(finding)}</p>
       <ImpactEstimate finding={finding} />
     </li>
   );
@@ -99,6 +79,7 @@ export const Straggler = memo(function Straggler({ appModel, catalog, defaultCol
     <WidgetCard
       title="Stragglers"
       impactBand={issues[0].impactBand}
+      fixFor={issues}
       badges={
         <>
           <TagBadge type="straggler" impactBand={issues[0].impactBand} />
