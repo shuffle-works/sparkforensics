@@ -20,6 +20,9 @@ function navSidebar(navIndexUrl: string, base: string) {
   return [...bySection].map(([text, items]) => ({ text, items }));
 }
 
+// Measures the pinned top chrome into --sf-anchor-offset; see the file itself.
+const anchorOffsetScript = readFileSync(fileURLToPath(new URL('./anchor-offset.js', import.meta.url)), 'utf8');
+
 const tuningSidebar = navSidebar(
   new URL('../../packages/core/src/docs-content/chapters/nav-index.json', import.meta.url).href,
   '/tuning-reference/',
@@ -29,7 +32,11 @@ export default defineConfig({
   title: 'SparkForensics',
   description: 'Docs for using and contributing to SparkForensics',
   base: DOCS_BASE,
+  // In-page links VitePress intercepts land below the probe that
+  // anchor-offset.js sizes to the measured chrome (its gap included).
+  scrollOffset: { selector: '[data-sf-anchor-offset]', padding: 0 },
   head: [
+    ['script', {}, anchorOffsetScript],
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${DOCS_BASE}favicon.svg` }],
     ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
     ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
