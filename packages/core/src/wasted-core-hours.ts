@@ -2,7 +2,7 @@
 // the memoryUtilization detector's idle-cores math uses: capacity core-time vs.
 // core-time that actually ran tasks. Feeds a report widget only, no detector.
 
-import { computeTotalCores } from './core-count.ts';
+import { computePeakConcurrentCores } from './core-count.ts';
 import { MS_PER_CORE_HOUR } from './format-utils.ts';
 
 const TOP_N = 5;
@@ -30,21 +30,24 @@ interface RunAggregates {
 
 // `app`/`runAggregates` are nullable because real callers pass null (app is
 // SparkAppInfo | null before parsing completes), which the guard below already
-// tolerates. `resources` is on app's shape so the computeTotalCores pass-through
-// type-checks; real app objects always carry it.
+// tolerates. `resources` is on app's shape so the computePeakConcurrentCores
+// pass-through type-checks; real app objects always carry it. An omitted
+// `executorsRemoved` means no executor left, where peak cores equal the sum.
 export function computeWastedCoreHours(
   app: { startTime?: number; endTime?: number | null; resources?: { executor?: { cores?: number } } } | null,
-  executorsAdded: Array<{ totalCores?: number }> | undefined = [],
+  executorsAdded: Array<{ executorId: string; timestamp: number; totalCores?: number }> | undefined = [],
   runAggregates: RunAggregates | null,
+  executorsRemoved: Array<{ executorId: string; timestamp: number }> = [],
 ): WastedCoreHoursResult {
   // Nullish (not falsy) guard on times: a literal startTime:0 is valid.
   if (!runAggregates || app?.startTime == null || app?.endTime == null) return EMPTY;
   const appDurationMs = app.endTime - app.startTime;
   if (appDurationMs <= 0) return EMPTY;
 
-  // Total cores: prefer real Executor-Added Total Cores, else peakExecutors ×
-  // configured cores (same fallback as the memoryUtilization detector).
-  const totalCores = computeTotalCores(app, executorsAdded);
+  // Total cores: peak concurrent Executor-Added Total Cores, else peak executors ×
+  // configured cores. Same capacity as the memoryUtilization detector, so an
+  // executor replaced mid-run is not counted twice.
+  const totalCores = computePeakConcurrentCores(app, executorsAdded, executorsRemoved);
   if (totalCores <= 0) return EMPTY;
 
   const totalCoreHours = (totalCores * appDurationMs) / MS_PER_CORE_HOUR;

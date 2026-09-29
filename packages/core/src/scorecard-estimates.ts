@@ -45,6 +45,7 @@ export function getScorecardEstimates(appModel: AppModel): {
     app: appModel.app,
     stages: appModel.stages,
     executorsAdded: appModel.executors.added,
+    executorsRemoved: appModel.executors.removed,
     runAggregates: appModel.runAggregates,
   });
 

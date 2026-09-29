@@ -161,13 +161,14 @@ Two shared helpers back multiple detectors and reports. `packages/core/src/plan-
 `walkPlanTree(root, visit, {dedupe})` is the iterative pre-order plan-tree
 traversal used by `detectors.ts` and every `plan-*.ts` module
 (`plan-summary.ts`, `plan-duration-attribution.ts`, `plan-node-detail.ts`,
-`plan-dot.ts`). `packages/core/src/core-count.ts`'s `computeTotalCores(app, executorsAdded)`
-is the shared core-count logic used by `efficiency-model.ts`, `scaling-sim.ts`, and
-`wasted-core-hours.ts`. `detectors.ts`'s own `utilization` and `memoryUtilization` entries use
-the same file's `computePeakConcurrentCores`/`computePeakConcurrentExecutorCount` instead:
-`computeTotalCores` sums every `ExecutorAdded` event with no regard for overlap, so under
-executor churn (spot preemption, `dynamicAllocation` replacement) it double-counts a churned
-executor's capacity against its replacement's; the peak-concurrent sweeps don't.
+`plan-dot.ts`). `packages/core/src/core-count.ts` holds the shared core-count logic. Its
+`computePeakConcurrentCores`/`computePeakConcurrentExecutorCount` sweeps back `detectors.ts`'s
+`utilization` and `memoryUtilization` entries, `efficiency-model.ts` and `wasted-core-hours.ts`,
+so the Scorecard's Unused core time and the verdict's idle figure share one capacity.
+`computeTotalCores(app, executorsAdded)`, now used only by `scaling-sim.ts`, sums every
+`ExecutorAdded` event with no regard for overlap, so under executor churn (spot preemption,
+`dynamicAllocation` replacement) it double-counts a churned executor's capacity against its
+replacement's; the peak-concurrent sweeps don't.
 
 ## Cross-detector suppression
 

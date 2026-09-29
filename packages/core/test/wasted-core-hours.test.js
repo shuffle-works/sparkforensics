@@ -63,6 +63,17 @@ describe('computeWastedCoreHours', () => {
     expect(r.totalCoreHours).toBe(4);
   });
 
+  it('counts a replaced executor once: capacity is peak concurrent cores', () => {
+    // Executor a leaves at the half-hour as its same-size replacement joins: 4 cores are
+    // ever concurrent although 8 were added.
+    const added = [{ executorId: 'a', timestamp: 0, totalCores: 4 }, { executorId: 'b', timestamp: 1_800_000, totalCores: 4 }];
+    const removed = [{ executorId: 'a', timestamp: 1_800_000 }];
+    const r = computeWastedCoreHours(app, added, runAggregates, removed);
+    expect(r.totalCores).toBe(4);
+    expect(r.totalCoreHours).toBe(4);
+    expect(r.wastedCoreHours).toBe(3.5);
+  });
+
   it('returns nulls/empties without throwing when runAggregates is missing', () => {
     const r = computeWastedCoreHours(app, executorsAdded, null);
     expect(r).toEqual({
