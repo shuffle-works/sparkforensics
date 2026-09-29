@@ -581,7 +581,7 @@ function renderVerdict(verdict: VerdictJson): string[] {
       lines.push(`${i + 1}. [${step.tag}] ${step.text}`);
       if (step.relatedTypes.length > 0) {
         const related = step.relatedTypes.map(findingName).join(', ');
-        lines.push(`   - Also flagged here: ${related}. These often share this cause, so the same fix may clear them too.`);
+        lines.push(`   - Also flagged here, likely the same cause: ${related}.`);
       }
     });
     if (verdict.remainingPlaces > 0) {

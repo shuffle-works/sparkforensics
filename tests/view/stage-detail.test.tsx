@@ -431,7 +431,7 @@ describe('StageDetailDialog reads like a verdict step', () => {
     expect(dialog).toHaveTextContent('Ran for 4.0s, 50% of this 8.0s run, split into 10 tasks. 2 findings here. They often share one cause, so start with the first.');
     const steps = within(dialog).getAllByTestId('stage-finding');
     // Same band, so the one with potential savings leads.
-    expect(steps[0]).toHaveTextContent("Fix task skewWhat's happening: A small number of tasks take much longer than their peers.What to try: Rebalance partitioning.");
+    expect(steps[0]).toHaveTextContent('Fix task skewWhat to try: Rebalance partitioning.');
   });
 
   it('orders finding types the way the run verdict ranks them: a quantified warning leads an unquantified critical', async () => {
