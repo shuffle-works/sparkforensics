@@ -1,13 +1,14 @@
 // §5 Efficiency/wastage model. DESIGN SPIKE:
 // decomposes available compute-hours into driver-bound vs executor-bound waste, plus two floors.
 import { computeWallClock } from './wall-clock.ts';
-import { computeTotalCores } from './core-count.ts';
+import { computePeakConcurrentCores } from './core-count.ts';
 import type { ExecutorEvent, RunAggregates, SparkAppInfo } from './types.ts';
 
-export function computeEfficiencyModel({ app, stages, executorsAdded, runAggregates }: {
+export function computeEfficiencyModel({ app, stages, executorsAdded, executorsRemoved, runAggregates }: {
   app: SparkAppInfo | null;
   stages: Map<number, unknown>;
   executorsAdded: ExecutorEvent[];
+  executorsRemoved: ExecutorEvent[];
   runAggregates: RunAggregates | null;
 }): {
   availableComputeHours: number;
@@ -17,10 +18,11 @@ export function computeEfficiencyModel({ app, stages, executorsAdded, runAggrega
   floorZeroSkewMs: number;
   dominantWaste: 'driver' | 'executor' | null;
 } {
-  // `app ?? {}`: computeTotalCores falls back to the executor core sum when resources is absent,
-  // and callers tolerate a null app (malformed logs); `app!` would crash on app.resources.
-  // Cast: computeTotalCores reads only totalCores, absent on ExecutorRemovedEvent, so the union mismatches.
-  const totalCores = computeTotalCores(app ?? {}, executorsAdded as Array<{ totalCores?: number }>);
+  // Capacity is the peak concurrent core count, the one the utilization and idle-cores detectors
+  // use, so the Unused core time tile matches the verdict's idle figure. Summing every addition
+  // (computeTotalCores) counts a replaced executor's cores alongside its replacement's.
+  // `app ?? {}`: callers tolerate a null app (malformed logs); `app!` would crash on app.resources.
+  const totalCores = computePeakConcurrentCores(app ?? {}, executorsAdded, executorsRemoved);
   const appDurationMs = (app?.endTime ?? 0) - (app?.startTime ?? 0);
   const wc = computeWallClock(app, stages as Map<number, { submittedAt?: number; completedAt?: number }>);
 

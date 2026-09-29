@@ -174,6 +174,22 @@ describe('evaluateBudgets', () => {
     expect(results[0]).toMatchObject({ name: 'min-efficiency', status: 'violation', detail: 'Busy core time 0% below budget 90%.' });
   });
 
+  it('measures busy core time against peak concurrent cores when an executor was replaced', () => {
+    // Executor 1 leaves at 5s as its same-size replacement joins: 4 cores are ever concurrent,
+    // so 20s of busy core time is 50%, not the 25% a sum of every addition would give.
+    const appModel = baseAppModel({
+      stages: new Map([[1, { id: 1, submittedAt: 0, completedAt: 10_000 }]]),
+      executors: {
+        added: [{ executorId: '1', timestamp: 0, totalCores: 4 }, { executorId: '2', timestamp: 5_000, totalCores: 4 }],
+        removed: [{ executorId: '1', timestamp: 5_000 }],
+      },
+      runAggregates: { busyCoreMs: 20_000, perStage: { 1: { taskCount: 10, totalTaskDurationSum: 20_000 } } },
+    });
+    const { results, violated } = evaluateBudgets({ appModel, catalog: [], budgets: { minEfficiencyPct: 50 } });
+    expect(violated).toBe(false);
+    expect(results[0]).toMatchObject({ name: 'min-efficiency', status: 'pass', detail: 'Busy core time 50% meets budget 50%.' });
+  });
+
   it('reports efficiency inconclusive when taskCoreTime evidence is absent', () => {
     const appModel = baseAppModel({
       evidenceAvailability: { entries: [{ key: 'taskCoreTime', state: 'unknown', reasonCode: 'parseIncomplete' }] },

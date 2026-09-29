@@ -107,7 +107,8 @@ function checkEfficiency(appModel: AppModel, minPct: number): BudgetResult {
   }
   const model = computeEfficiencyModel({
     app: appModel.app, stages: appModel.stages,
-    executorsAdded: appModel.executors.added, runAggregates: appModel.runAggregates,
+    executorsAdded: appModel.executors.added, executorsRemoved: appModel.executors.removed,
+    runAggregates: appModel.runAggregates,
   });
   if (model.wastagePct == null) {
     return { name: 'min-efficiency', status: 'inconclusive', detail: 'Busy core time could not be computed (no available compute hours).' };

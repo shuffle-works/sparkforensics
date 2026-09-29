@@ -105,9 +105,8 @@ Spark has one, the setting to turn on for the next run (for example
 
 A run scorecard sits under the verdict: **Wall-clock** (total run time),
 **Efficiency** (the share of that time with a stage running; higher is
-better; **Not measured** when no stage in the log recorded an end) and **Unused core time** (driver idle plus executor slack across the
-whole run, so it can run higher than the idle capacity a verdict step
-reports; lower is better). A collapsed **New to Spark tuning?** primer in the verdict
+better; **Not measured** when no stage in the log recorded an end) and **Unused core time** (the share of executor core time that ran no task,
+the same idle figure a verdict step reports; lower is better). A collapsed **New to Spark tuning?** primer in the verdict
 explains stages, tasks, executors, shuffle and how to read savings. Stage
 labels such as **Stage 7** open that stage's details: how long it ran and
 what share of the run that was, then each of its findings with what is

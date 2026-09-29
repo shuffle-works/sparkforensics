@@ -192,6 +192,7 @@ function interpretEfficiency(appModel: AppModel): EfficiencyData | null {
     app: appModel.app,
     stages: appModel.stages,
     executorsAdded: appModel.executors.added,
+    executorsRemoved: appModel.executors.removed,
     runAggregates: appModel.runAggregates,
   });
 }
@@ -270,7 +271,7 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
     coverage: interpretCoverage(appModel, allFindings),
     runShape: interpretRunShape(appModel),
     wallClock: computeWallClock(appModel.app, appModel.stages),
-    wastedCoreHours: computeWastedCoreHours(appModel.app, appModel.executors.added, appModel.runAggregates),
+    wastedCoreHours: computeWastedCoreHours(appModel.app, appModel.executors.added, appModel.runAggregates, appModel.executors.removed),
     efficiency: interpretEfficiency(appModel),
     wallClockReliable: checkConcurrentJobGroups(appModel.jobs).wallClockReliable,
     etlPhases: attributeEtlPhases(appModel.stages),

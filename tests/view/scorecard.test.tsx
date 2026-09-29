@@ -88,7 +88,7 @@ test('renders an Unused core time tile driven by computeEfficiencyModel when run
 
   const { rerender } = render(<Scorecard {...scorecardProps(appModel, [])} />);
   expect(screen.getByTestId('kpi-wastage')).toHaveTextContent('Unused core time100%');
-  expect(screen.getByText('Driver idle plus executor slack across the whole run, so it can run higher than the idle capacity a verdict step reports. Lower is better. Not a cost figure.')).toBeInTheDocument();
+  expect(screen.getByText('Share of executor core time that ran no task. Lower is better. Not a cost figure.')).toBeInTheDocument();
 
   store.getState().setWidgetDensity('advanced');
   rerender(<Scorecard {...scorecardProps(appModel, [])} />);

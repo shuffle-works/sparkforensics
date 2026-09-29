@@ -136,6 +136,31 @@ describe('interpretRun', () => {
     expect(interpretation.rollup.groups.length).toBeGreaterThan(0);
   });
 
+  it('gives the Unused core time tile the verdict\'s idle share on a run that replaced an executor', () => {
+    // Executor 1 leaves at 50s as its same-size replacement joins: 4 cores are ever concurrent
+    // although 8 were added. One busy core for the whole run leaves 75% of the capacity idle;
+    // summing every addition would have put the tile at 88% beside a 75% verdict.
+    const added = [
+      { kind: 'added', executorId: '1', timestamp: 0, host: 'host-1', totalCores: 4, resourceProfileId: null },
+      { kind: 'added', executorId: '2', timestamp: 50_000, host: 'host-2', totalCores: 4, resourceProfileId: null },
+    ];
+    const removed = [{ kind: 'removed', executorId: '1', timestamp: 50_000, reason: 'replaced' }];
+    const model = appModel({
+      app: makeApp({ startTime: 0, endTime: 100_000 }),
+      stages: new Map([[1, makeStage({ id: 1, submittedAt: 0, completedAt: 100_000 })]]),
+      executors: { added, removed },
+      runAggregates: { busyCoreMs: 100_000, perStage: { 1: { totalTaskDurationSum: 100_000, taskCount: 100 } } },
+    });
+    const catalog = analyze(model.app, model.stages, added, removed, model.jobs, model.sql, model.runAggregates);
+    const interpretation = interpretRun(model, catalog, []);
+
+    const idleCores = catalog.find((f) => f.type === 'memoryUtilization' && f.variant === 'idleCores');
+    expect(idleCores.value).toBe(75);
+    expect(interpretation.runShape.unusedCoreTimePct).toBe(75);
+    expect(interpretation.efficiency.wastagePct).toBe(75);
+    expect(interpretation.wastedCoreHours.totalCores).toBe(4);
+  });
+
   it('carries the Findings board: eligible findings, groups in fix-first order, bands and figures', () => {
     const incomplete = { type: 'incompleteRun', stageId: null, impactBand: 'warning', recommendation: 'r' };
     const bigInfo = timed('skew', 7, 5_000, 'info');
