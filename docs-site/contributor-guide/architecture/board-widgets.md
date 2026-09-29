@@ -19,13 +19,13 @@ to its own component: 24 `action` and 4 `reference` entries.
   log, or a capture cut short. Order 5, the lowest of any detector, so within
   the Warning band (its fixed impact band) its card comes first. The Findings tab's recommendation rollup (rendered by `FixTheseFirst.tsx`)
   excludes `incompleteRun` from that list outright (see
-  [Widget rendering order](./widget-rendering.md#widget-rendering-order-fixed-spec-§5)):
+  [Widget rendering order](./widget-rendering.md#widget-rendering-order)):
   it's a pipeline-completeness caveat, not an addressable fix, so it never
   competes with other findings for a ranked slot there. Self-gates to `null`
   (no card in the DOM) once the run completed normally. Unrelated to
   `evidence-availability.ts`'s own
   `trustworthy` gate (see
-  [Evidence-availability contract](./worker-protocol.md#evidence-availability-contract-v1)):
+  [Evidence-availability contract](./worker-protocol.md#evidence-availability-contract)):
   that ledger only downgrades *absence* conclusions for individual evidence
   categories, never becomes a `DETECTORS` finding itself, and this card does
   not read it. No `docAnchor` is set: this is a tool-specific signal with no
@@ -56,8 +56,8 @@ to its own component: 24 `action` and 4 `reference` entries.
   reuse count descending; the card states the fix once (`fixFor`), not per row. Rows are paged `VISIBLE_LIMIT`
   (6) at a time (`usePagedRows` + `RowPagination`), and a route to a row jumps
   to its page. Pure-RDD-API apps (no SQL executions) produce no finding:
-  a deliberate trade-off replacing the former RDD-lineage heuristic, which
-  surfaced only internal query-engine RDDs on DataFrame/SQL workloads.
+  a deliberate trade-off, since an RDD-lineage heuristic surfaces only
+  internal query-engine RDDs on DataFrame/SQL workloads.
 
   It also detects composite reuse. When the same join/union subtree (not just a
   leaf scan) recurs across `>= minExecutions` distinct SQL executions, the
@@ -98,13 +98,13 @@ to its own component: 24 `action` and 4 `reference` entries.
   (`thresholds.shortLivedMs`). Warns above 30% short-lived, escalates to
   critical above 60% (`confidence` scales `low`/`medium`/`high` via
   `autoscalingChurnConfidence`, off how far the short-lived share sits past
-  `warningPct`/`criticalPct`: these thresholds are still an unvalidated
-  design-spike estimate, not yet checked against real autoscaling-heavy
+  `warningPct`/`criticalPct`: these thresholds are an unvalidated
+  design-spike estimate, not checked against real autoscaling-heavy
   logs). Returns no finding below 5 total executors (noise
   floor) or when `app.endTime` is missing (truncated/still-running log). The
-  widget itself is unchanged apart from a finding-driven verdict banner
-  (impact dot + `CHRN` tag + recommendation) above its existing add/remove
-  chart. The chart's muted scale-down bar coloring is untouched. Its
+  widget shows a finding-driven verdict banner (impact dot + `CHRN` tag +
+  recommendation) above its add/remove chart, whose scale-down bars are
+  muted. Its
   `docAnchor` is `#bottleneck-autoscaling-churn`, a section of the
   cluster-config chapter (`docs-content/chapters/11-cluster-config.md`), not
   a bottleneck page of its own: `pageForAnchor` maps it there, so the `CHRN`
@@ -116,9 +116,9 @@ to its own component: 24 `action` and 4 `reference` entries.
   serializer, low executor `memoryOverhead`. Computed outside the runtime
   bottleneck catalog: its findings live in the separate `configFindings`
   stream, not `catalog`. But `FixTheseFirst`/`Alerts` both merge `catalog`
-  and `configFindings` (neither reads `region` any more), so a Config Audit
-  finding is still eligible for a row in the Findings tab's recommendation
-  rollup and still gets its own card in the active grid, alongside genuine
+  and `configFindings` (neither reads `region`), so a Config Audit
+  finding is eligible for a row in the Findings tab's recommendation
+  rollup and gets its own card in the active grid, alongside genuine
   bottleneck-catalog findings.
 - **Plan Advisor** (tag `PLAN`): SQL-plan-level findings computed from
   `appModel.sql`'s resolved `planTree` (DETECTORS entries
@@ -130,31 +130,29 @@ to its own component: 24 `action` and 4 `reference` entries.
   exchange reuse), small-files read/write (>100 files
   averaging <3 MiB), and broadcast-join sizing in both directions (missed-
   broadcast info finding, over-broadcast warning at >1 GB). Each of the four
-  emitted types now renders as its own card (`DuplicatePlanSubtree.tsx`,
-  `SmallFiles.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`; the
-  2026-09 widget/finding-type 1:1 mapping redesign split what used to be one
-  shared `PlanFindings.tsx` card): all four still share the `PLAN` tag and
+  emitted types renders as its own card (`DuplicatePlanSubtree.tsx`,
+  `SmallFiles.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`): all four
+  share the `PLAN` tag and
   the same `--plan-aggregate` badge tint (`src/view/plan-finding-shared.ts`).
   Their `docAnchor`s (`#bottleneck-duplicate-plan-subtree`,
   `#bottleneck-small-files`, `#bottleneck-broadcast-sizing`) each resolve to
   their own page in the vendored tuning reference.
 
-`detector-registry.tsx`'s `REGISTRY` still carries `region: 'reference'` on
-four entries, each its own component now: `memoryUtilization`
+`detector-registry.tsx`'s `REGISTRY` carries `region: 'reference'` on
+four entries, each its own component: `memoryUtilization`
 (`MemoryUtilization`), `utilization` (`ExecutorUtilization`),
 `cacheUtilization` (`CacheUtilization`), and `coreLocality`
-(`CoreUsageArea`). `broadcastSizing` is gone from `REGISTRY` entirely (the
-2026-09 widget/finding-type 1:1 mapping redesign dropped it): it never
-backed a real `Finding` (the `broadcastSizing` `DETECTORS` entry only ever
-emits `underBroadcast`/`overBroadcast`, both `region: 'action'`, each now
-its own Plan Advisor card), so there is no key left for it to occupy or a
+(`CoreUsageArea`). `broadcastSizing` has no `REGISTRY` entry: it never
+backs a real `Finding` (the `broadcastSizing` `DETECTORS` entry only
+emits `underBroadcast`/`overBroadcast`, both `region: 'action'`, each
+its own Plan Advisor card), so there is no key for it to occupy or
 clean-check line for it to render.
 Autoscaling Churn, the other executor-provisioning-lifecycle detector
 alongside `utilization`/`memoryUtilization`, was deliberately given `action`
 rather than `reference` (see "Beyond the fixed six" above).
 
 `region` decides one thing (see
-[Widget rendering order](./widget-rendering.md#widget-rendering-order-fixed-spec-§5)):
+[Widget rendering order](./widget-rendering.md#widget-rendering-order)):
 whether a widget always mounts. `isAlwaysMountedType()` flags exactly one
 of the four `reference`-region types: Core Usage by Locality. That one
 mounts unconditionally from `appModel` at the head of the Full app report
@@ -165,12 +163,12 @@ excluded by product decision, not a component-sharing constraint
 `cacheUtilization`, `memoryUtilization`, and `utilization`): a clean run on
 any of them isn't evidence worth surfacing unconditionally, so each
 collapses to an ordinary `CleanCheckRow` like any other action-region type
-on a clean run. Every other `REGISTRY` widget still renders unconditionally
+on a clean run. Every other `REGISTRY` widget renders unconditionally
 as either an active card or a clean-check line, and `region`, then detector
 order, breaks ties between cards of the same impact band
 (`computeActiveWidgets` ranks by worst impact band first; `ImpactBoard`
 groups cards Critical, Warning, Info). The Full app report tab reads no other
-`REGISTRY` entry. So Core Usage by Locality, the one widget still tagged
+`REGISTRY` entry. So Core Usage by Locality, the one widget tagged
 `region: 'reference'` and exempt from `ALWAYS_MOUNTED_EXCEPTIONS`, renders
 in the Full app report beside the other run-wide reference views, and a
 route to a `coreLocality` finding switches to that tab (Memory Utilization, Executor Utilization, and
@@ -185,17 +183,13 @@ Cache Storage all render through the ordinary active/clean paths instead):
   an unverified memory-waste model (`confidence` scales `low`/`medium`/`high`
   via `memoryWasteConfidence`, off how far the wasted/used ratio sits past
   the 1.5× buffer).
-  The driver-memory half of the original spec is dropped: the worker only
+  There is no driver-memory band: the worker only
   extracts *allocated* `spark.driver.memory`, never a driver actual-usage
   metric, so there is nothing to band against. The separate `utilization`
   DETECTORS entry (an `avgUtilization` info finding: active-executor-time
   fraction below 60%) has its own card, **Executor Utilization** (tag
   `UTIL`, `ExecutorUtilization.tsx`): a `reference`-region widget in its own
-  right that renders only with an active finding, split out of this same
-  combined widget in the 2026-09 widget/finding-type 1:1 mapping redesign
-  (it used to render inline here; the former `ExecutorTimeline.tsx`, whose
-  executor-count chart is now `ExecutorCountChart.tsx`, never owned this
-  type, despite the tag's letters).
+  right that renders only with an active finding.
 - **Cache Storage** (tag `CSTOR`): app-level card driven by the
   `cacheUtilization` DETECTORS entry (`packages/core/src/detectors.ts`), evaluating two
   per-RDD proxies over `ctx.app.rddInfo` since Spark event logs carry no
@@ -230,9 +224,8 @@ Cache Storage all render through the ordinary active/clean paths instead):
   `memoryUtilization`'s caveat it counts for `isRealFinding`, so the card
   still mounts (with the caveat and no table) and Cache Storage never lands
   in Clean checks for a run that couldn't be checked; `isEligible` keeps it
-  out of Fix these first. The existing RDD
-  table (ported from the legacy `src/widgets/cache-utilization.js` canvas
-  widget) still renders unconditionally; flagged rows get an inline `CSTOR`
+  out of Fix these first. The RDD
+  table renders unconditionally; flagged rows get an inline `CSTOR`
   tag next to the RDD name, and every flagged RDD's recommendation renders
   below the table, worst-first.
 - **Core Usage by Locality** (tag `LOCAL`, `CoreUsageArea.tsx`): app-level
@@ -244,13 +237,13 @@ Cache Storage all render through the ordinary active/clean paths instead):
   `packages/core/src/core-locality-ratio.ts`). `NO_PREF` stays in the denominator only,
   since it's what shuffle-read stages legitimately report with no locality
   problem. Below 50 total tasks or below a 15% non-local ratio: no finding;
-  15%-35%: warning; >= 35%: critical, still unvalidated design-spike
+  15%-35%: warning; >= 35%: critical, unvalidated design-spike
   thresholds (`confidence` scales `low`/`medium`/`high` via
   `coreLocalityConfidence`, off whichever is weaker of the non-local ratio
   and the sampled task count, the same evidence-strength convention as the
   memory-waste model above).
   The widget's always-rendered stacked-area chart (`packages/core/src/core-usage-locality.ts`)
-  is unaffected. The finding only adds a threshold/impact-band section above it, a
+  does not depend on the finding. The finding adds a threshold/impact-band section above it, a
   per-stage non-local breakdown below it (shown whenever any non-local tasks
   exist at all, independent of whether the aggregate crossed threshold), and
   a one-line cross-reference to Memory Utilization when its `idleCores`
@@ -272,7 +265,7 @@ design spike: makespan predictions are unvalidated and carry a Model Error
 indicator), and Compute Efficiency (`packages/core/src/efficiency-model.ts` +
 `EfficiencyModel.tsx`, design spike: allocated vs. used core-hours with
 `wasted-core-hours.ts`'s top stages by task core-time, the driver-vs-executor
-waste split, two theoretical floors, and the §6 right-sizing copy) are main-thread
+waste split, two theoretical floors, and the right-sizing copy) are main-thread
 report modules, not `DETECTORS` entries: descriptive lenses with no
 impact-band threshold, rendered unconditionally into the Full app report tab
 rather than participating in the bottleneck catalog. `packages/core/src/job-groups.ts`
@@ -302,29 +295,26 @@ are `low`. Deterministic detectors stay unmarked, treated as high confidence.
 Tailwind CSS v4 + shadcn/ui (Base UI primitives). The design tokens (colors,
 including the telemetry-console dark palette) are defined as CSS variables in
 an `@theme inline` block and consumed via Tailwind utility classes; there is
-no more hand-authored BEM CSS. Theme polarity is unchanged from the legacy
-app: dark = bare `:root` (no attribute), light =
+no hand-authored BEM CSS. Theme polarity:
+dark = bare `:root` (no attribute), light =
 `:root[data-theme="light"]`, toggled by `src/theme/ThemeProvider.tsx` and
 persisted to `localStorage`. `index.html`'s inline FOUC-prevention script
-still runs before React mounts. Mono is still the typeface for numerics
+runs before React mounts. Mono is the typeface for numerics
 (`--font-mono`), applied via a `.num`-equivalent Tailwind utility per call
 site rather than one global class. Charts are Recharts
 (`src/view/charts/ChartTheme.tsx`'s `CHART_COLORS`, read from the same CSS
-tokens) instead of Chart.js. React re-renders on theme toggle, so chart colors
-update live with the theme, unlike the old Chart.js canvases, which were built
-once per parse. `ChartFrame` can also expose the underlying rows through a
+tokens). React re-renders on theme toggle, so chart colors
+update live with the theme. `ChartFrame` can also expose the underlying rows through a
 toggleable accessible table and copy them to the clipboard as TSV.
 
 ## Templating (XSS-safe)
 
-JSX auto-escapes every interpolated value by default. The hand-rolled
-auto-escaping `` html`` `` tagged template (`src/widgets/utils.js`) and its
-`no-raw-innerhtml` guard test are gone, and no `.innerHTML` assignment is
-left anywhere in the view layer (the one `dangerouslySetInnerHTML` left,
+JSX auto-escapes every interpolated value by default. No `.innerHTML`
+assignment exists anywhere in the view layer (the one `dangerouslySetInnerHTML`,
 shadcn's `ChartStyle` in `src/components/ui/chart.tsx`, only writes CSS
 variables from the static chart config).
 
-One Base UI-specific gotcha carried no equivalent in the legacy app:
+One Base UI-specific gotcha:
 `WidgetCard.tsx` passes `aria-expanded={String(open) as 'true' | 'false'}`
 rather than the raw boolean, because Base UI's `Collapsible.Trigger` otherwise
 overrides a boolean `aria-expanded` prop with its own internal state via prop

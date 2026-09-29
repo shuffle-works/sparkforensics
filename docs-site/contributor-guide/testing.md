@@ -38,9 +38,7 @@ view-logic tests (`tests/view/*.test.ts`) under Node, and component tests
 (`tests/view/*.test.tsx`), which declare
 `// @vitest-environment jsdom` and use React Testing Library
 (`render`/`screen`/`userEvent`). There are no hand-rolled DOM-mounting jsdom
-tests left: the old `tests/widgets/*.test.js` suite called
-`src/widgets/*.js`'s `renderX(mount, ...)` functions directly, and every
-behavior it covered now has an RTL equivalent.
+tests.
 
 `packages/cli`, `packages/mcp` and `packages/server` are separate npm
 packages, each with its own Vitest config and suite, not run by the root
@@ -90,11 +88,11 @@ names:
 literal before it writes the committed fixture; keep it that way if you
 extract another one.
 
-Of the finding types moved onto the Gold Standard row/expand contract in the
-widget-gold-standard plan, only `retryWaste` and `autoscalingChurn` fire on
-any of the 15 real logs in `../spark-log-examples/`. `failures`,
-`stageFailed`, and `jobFailureRate` fire on none of them; they were verified
-with unit tests only (`tests/view/task-failures.test.tsx`,
+Of the finding types `retryWaste`, `autoscalingChurn`, `failures`,
+`stageFailed` and `jobFailureRate`, only `retryWaste` and `autoscalingChurn`
+fire on any of the 15 real logs in `../spark-log-examples/`. `failures`,
+`stageFailed`, and `jobFailureRate` fire on none of them; they are covered
+by unit tests only (`tests/view/task-failures.test.tsx`,
 `tests/view/stage-failed.test.tsx`, `tests/view/job-failures.test.tsx`), not against a real log.
 
 `dev/log-corpus/` is a git submodule pointing at the public
@@ -161,14 +159,13 @@ it serves the app and answers `initialize` on `/mcp`.
 
 ## Test-suite growth discipline
 
-Widget and detector test files collect copy-pasted boilerplate fast (a
-2026-09 pass trimmed 19 files by a net 272 lines with no behavior change).
+Widget and detector test files collect copy-pasted boilerplate fast.
 Before adding a widget test file, or a per-widget or per-detector test:
 
 - Cross-cutting widget behavior (impact/stage sort-toggle default and flip,
   density-gated visibility, 6-at-a-time pagination) belongs in a shared
   helper under `tests/view/_shared/`, called from each widget's test file.
-  Today it holds `testFinding` (`finding.ts`), `installInterpretation` and
+  It holds `testFinding` (`finding.ts`), `installInterpretation` and
   the sort-order helpers (`sort-order-toggle.ts`); add a density or
   pagination helper there the first time two widget tests would share one.
   Extract into it only when a test body is identical to an existing one apart

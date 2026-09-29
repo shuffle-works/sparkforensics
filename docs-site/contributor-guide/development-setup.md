@@ -156,10 +156,10 @@ skips injecting its bar into any built page that contains it.
   the baseline slot (a `cached` `RunSource`, not parsed again). **View baseline/candidate dashboard**
   drills into one run, and **← Back to comparison** returns.
 - The landing page's **Try a sample run** (`src/view/DropZone.tsx`) loads a
-  gzip-compressed corpus log from `public/sample-runs/`. It was chosen by
-  running `sparkforensics-analyze --format json` over every corpus candidate
-  and taking the one with the most findings. Repeat that scan, against the
-  current corpus, before swapping the bundled sample.
+  gzip-compressed corpus log from `public/sample-runs/`: the corpus candidate
+  with the most findings under `sparkforensics-analyze --format json`. Rerun
+  that scan over every candidate, against the current corpus, before swapping
+  the bundled sample.
 - Screenshots on a PR: the `gh` token can't use GitHub's browser-only
   attachment uploader. Commit the PNGs to a throwaway asset branch and embed
   them by commit SHA as

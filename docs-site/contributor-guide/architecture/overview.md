@@ -116,11 +116,12 @@ one still incomplete after 64 MiB compressed, a malformed one, or a truncated
 tail goes to fzstd instead. Spark's frames declare no content size, so each
 one's output is capped at 64 MiB as it decodes: past that, the inline decoder
 hands the frame to fzstd and the threaded one streams it, pausing while 64 MiB
-wait to be parsed. On the real logs this made parsing 42% faster. For local files (`nodeParseCodecs`, `createThreadedZstdDecoder`), frames of
+wait to be parsed. On the real logs this parses 42% faster than fzstd alone. For local files (`nodeParseCodecs`, `createThreadedZstdDecoder`), frames of
 64 KB or more compressed decompress on libuv's threadpool, up to 4 at a time,
 while the main thread parses earlier output; `streamFile` awaits each `push`, and
-chunks still arrive in stream order. That took another 24% off the largest real
-log (4.2s to 3.2s) for 139 MB more peak RSS. SHS archives fetched from a
+chunks still arrive in stream order. On the largest real
+log this cuts parsing from 4.2s to 3.2s over the inline decoder, for 139 MB
+more peak RSS. SHS archives fetched from a
 History Server keep the inline decoder (`nodeArchiveCodecs`).
 
 Rolling `eventlog_v2_*` directories (Spark's multi-file event-log format,

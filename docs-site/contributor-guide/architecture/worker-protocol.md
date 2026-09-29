@@ -58,10 +58,10 @@ so their widgets render immediately. Unflagged stages are on-demand.
 A dropped zstd file (`parse`, and each zstd file of a `parseFiles` directory)
 is decompressed in a second, nested worker, `packages/core/src/zstd-worker.ts`,
 so fzstd and the NDJSON parser run at the same time. On the largest real log,
-fzstd had been about 47% of the parse worker's time. The parse worker starts it
+in-thread fzstd takes about 47% of the parse worker's time. The parse worker starts it
 on the first zstd file and reuses it for the rest of the parse. It dies with
 the parse worker, so the page's `terminate()` also cancels it. Other codecs and
-the SHS path (`parseFromUrl`) still decompress on the parse worker. A dropped
+the SHS path (`parseFromUrl`) decompress on the parse worker. A dropped
 History Server zip (`parse`) streams its zstd entries through the decompress
 worker too.
 
@@ -90,7 +90,7 @@ which surfaces on the next `push()`.
 
 When the nested worker cannot start (`new Worker` throws or its script fails to
 load), the parse worker logs a warning
-and decodes with in-thread fzstd, as it did before, with identical output. A
+and decodes with in-thread fzstd, with identical output. A
 crash after startup fails the stream it was decoding, and later streams fall
 back the same way. The progress
 `pct` is the read position, so it can run up to the window ahead of the slice
@@ -136,10 +136,10 @@ used for evidence-availability conclusions. On the main thread, `useIngest`
 combines the normalized `AppModel` with `done.skippedLines`, derives the ledger
 before calling `analyze()`, and stores it as `appModel.evidenceAvailability`.
 
-### Evidence-availability contract (V1)
+### Evidence-availability contract
 
 `packages/core/src/evidence-availability.ts` is the single reusable taxonomy for the
-browser, future report output, and future headless consumers. Its serialized
+browser, the evidence report, and the headless CLI and MCP consumers. Its serialized
 ledger shape is `{ schemaVersion: 1, entries: EvidenceAvailabilityEntry[] }`.
 Entries are ordered by the following fixed eight-key enum:
 
@@ -149,13 +149,13 @@ taskCoreTime, infrastructureContext, sourceContext, costContext
 ```
 
 Each entry has the stable fields `key`, `state`, `reasonCode`, `summary`, and
-optional `evidence`. The closed V1 state enum is:
+optional `evidence`. The closed state enum is:
 
 ```text
 present, disabled, notEmitted, notApplicable, outsideEventLog, unknown
 ```
 
-The closed V1 reason-code enum is:
+The closed reason-code enum is:
 
 ```text
 observed, explicitlyDisabled, noObservedExecutorMetrics,
@@ -198,7 +198,7 @@ no-bottleneck behavior, or detector suppression. `session-snapshot.ts`
 captures and restores `evidenceAvailability` with the normalized model, so a
 recent-file switch retains the same ledger without reparsing.
 
-### Portable evidence report (V1)
+### Portable evidence report
 
 `packages/core/src/evidence-report.ts`'s `buildEvidenceReport(appModel, { redact })` returns
 `{ markdown, json }`: a self-contained, byte-stable document that runs the
@@ -237,18 +237,18 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, reco
 - `detectors` is `detectorCatalog()` output: one `{ type, version, scope,
   thresholds, docAnchor }` per detector, in `DETECTORS` order, so the exact
   threshold set that produced each finding travels with the evidence. On a
-  tuned run (see the tuned-thresholds update below) a tuned row's
+  tuned run (see the tuned-run paragraph below) a tuned row's
   `thresholds` are the ones the run used, plus `tunedThresholds`.
 - `findings` are deterministically sorted rows (impact band → type → stage → id),
   each with a stable `id`, `tag`, core columns, an always-present `actionLabel`,
   and an `evidence` sub-object holding that finding type's declared evidence
-  fields (see the schema-5 update below); `confidence`/
+  fields (see the per-type evidence paragraph below); `confidence`/
   `validationRequired`/`docAnchor` appear only when the detector emitted them.
 - `recommendations` is the impact-ranked `buildRecommendationRollup` output
   (`packages/core/src/recommendation-rollup.ts`), and `cleanChecks` lists every detector type
-  that fired zero findings this run and could run: see the 2026-09-03 update below.
+  that fired zero findings this run and could run: see the rollup and clean-checks paragraph below.
 - `notRunChecks` lists the zero-finding types the log lacked the data to run, each with a
-  `reason`: see the schema-4 update below.
+  `reason`: see the not-run checks paragraph below.
 
 Determinism holds because detector order, finding sort, and object key order
 are all fixed, so a given `appModel` serializes identically across calls.
@@ -270,7 +270,7 @@ replaced and the message text stripped from its `stackExcerpt`
 (`redactTaskFailureGroup` in `task-failure.ts`). That covers the evidence
 report and both the findings and the stage records of the HTML export.
 
-The Markdown rendering mirrors the JSON's AC3 field set: each finding block
+The Markdown rendering mirrors the JSON's field set: each finding block
 prints its `detector version`, its sorted `evidence` entries (byte-magnitude
 keys humanized), and the report ends with a `## Detectors` catalog carrying the
 version + threshold set. A finding's `impactEstimate` prints as its own `- impact: ` line
@@ -288,99 +288,72 @@ resource figure that rounds to zero. `EvidenceExport` names downloads
 pseudonymized when redacting) report so a redacted file never leaks the real id
 and is never name-identical to a raw export.
 
-Decision 9 (design spec): `Finding`'s `impactEstimate` field, plus the
-`utilizationFraction`/`memorySize`/`diskSize`/`numCachedPartitions`/`numPartitions`
-instrumentation fields the impact estimator reads, were added without bumping
-`EVIDENCE_SCHEMA_VERSION` past `1`. Both additions are purely optional and ride
-`Finding`'s existing optional-field-plus-catch-all convention, so an evidence report
-built before these fields existed still deserializes and compares byte-for-byte against
-one built after: nothing about the schema's stability guarantee changed, only its
-surface grew. A future reader who notices `impactEstimate` in the JSON without a schema bump is
-looking at this deliberate call, not an oversight.
+A finding row carries `impactEstimate` when the finding has one, with the full contract
+documented in [Impact estimation](./impact-estimation.md#occupancy-weighted-attribution)
+(basis, wallClock, estimateMethod, rawWaste). It appears after the pinned core columns (`id`,
+`type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`, `detectorVersion`, plus
+optional but pinned `confidence`, `validationRequired`, `docAnchor`) without displacing any of
+them. The full row shape is `FindingRowColumns` in `evidence-report.ts`, which also carries
+`name`, `tag`, `valueText`, `actionLabel`, `impact`/`impactMeaning` and, on a tuned run,
+`tunedThresholds`.
 
-2026-08-30 update: `EVIDENCE_SCHEMA_VERSION` was bumped to `2` for the occupancy-weighted
-attribution redesign (see [Occupancy-weighted attribution](./impact-estimation.md#occupancy-weighted-attribution)):
-`ImpactEstimate`'s shape changed from `{low, high}` to `{basis, wallClock, estimateMethod,
-rawWaste?}`, a real, non-additive breaking change to a field this same Decision 9 previously
-shipped without a bump. `impactEstimate` had zero consumers outside `packages/core/src/impact-estimator.ts`
-and its own tests at the time of this bump (confirmed by grep across `src/view/*` and
-`packages/core/src/evidence-report.ts`), so no other code needed migrating alongside it.
-
-`FindingRow`'s schema was extended to surface `impactEstimate` as a first-class column
-without further bumping `EVIDENCE_SCHEMA_VERSION` past `2`, consistent with `Finding`'s
-existing optional-field-plus-catch-all convention. It appears after the pinned core
-columns (`id`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`,
-`detectorVersion`, plus optional but pinned `confidence`, `validationRequired`, `docAnchor`)
-without displacing any of them (today's full row shape is `FindingRowColumns` in
-`evidence-report.ts`, which also carries `name`, `tag`, `valueText`, `actionLabel`,
-`impact`/`impactMeaning` and, on a tuned run, `tunedThresholds`); byte-for-byte deserializability of existing reports is
-preserved. `FindingRow.impactEstimate` carries the full contract documented in
-[Impact estimation](./impact-estimation.md#occupancy-weighted-attribution) (basis, wallClock,
-estimateMethod, rawWaste).
-
-2026-09-03 update: the "Fix These First" dashboard redesign (impact-ranked recommendation
-rollup, short per-finding action labels, a clean-checks table) was UI-only when it shipped;
-this update ports the underlying data into `buildEvidenceReport()` so the CLI
-(`packages/cli/bin/sparkforensics-analyze.mjs`) and the MCP tool (`diagnoseRun` in `packages/core/src/mcp-tools.ts`) get
-it too, not just the web markdown/JSON download. Three additions, all purely additive, so this
-does not bump `EVIDENCE_SCHEMA_VERSION` past `2`, the same rationale as the `impactEstimate`
-addition immediately above: `FindingRow.actionLabel` is now always present (a short imperative
-label like "Reduce shuffle size"), from `findingActionLabel`
-(`packages/core/src/finding-action-label.ts`), which reads the type's `actionLabel` in
-`finding-presentation.ts` and falls back to the type's name. The dashboard, the run verdict
-and the report rows all call it.
+The report carries the same recommendation data the dashboard's "Fix These First" view shows,
+so the CLI (`packages/cli/bin/sparkforensics-analyze.mjs`) and the MCP tool (`diagnoseRun` in
+`packages/core/src/mcp-tools.ts`) get it too, not just the web markdown/JSON download.
+`FindingRow.actionLabel` is always present (a short imperative label like "Reduce shuffle
+size"), from `findingActionLabel` (`packages/core/src/finding-action-label.ts`), which reads the
+type's `actionLabel` in `finding-presentation.ts` and falls back to the type's name. The
+dashboard, the run verdict and the report rows all call it.
 `EvidenceReportJson.recommendations` is the same impact-ranked
 `buildRecommendationRollup` grouping (`packages/core/src/recommendation-rollup.ts`) that
 `FixTheseFirst.tsx` renders, so CLI/MCP/download consumers get the same "what's the
-highest-impact fix" ranking the dashboard shows, without changing the existing `findings`
-array's own impact-band-sorted order at all. `EvidenceReportJson.cleanChecks` lists every
+highest-impact fix" ranking the dashboard shows, without changing the `findings` array's own
+impact-band-sorted order at all. `EvidenceReportJson.cleanChecks` lists every
 detector type that fired zero findings this run, each with `getThresholdSummary`'s one-line
 "what would have tripped it" sentence; unlike the dashboard's `Alerts.tsx` clean-checks table,
 it deliberately includes the one "always-mounted" reference type (`coreLocality`) even when it
 has no findings, since a flat evidence report has no separate always-visible surface for it to
 already appear on the way that widget does on the board.
 
-Schema `4` update: a check the log could not run is no longer listed as clean.
+A check the log could not run is not listed as clean.
 `packages/core/src/check-coverage.ts` holds the one rule, shared with the dashboard's verdict,
 top bar and Clean checks: a type whose only finding is an evidence caveat, every `scope: 'stage'`
 type on a log where no stage recorded an end, and the run-span types (`utilization`,
-`memoryUtilization`, `autoscalingChurn`) on a log with no ApplicationEnd. Those types move from
-`cleanChecks` to `notRunChecks`, each `{ type, tag, thresholdSummary, reason }`, where `reason` is
-the caveat's own recommendation (it names the setting to turn on) or the log-wide sentence. The
-Markdown gains a `## Not checked on this log` section above `## Clean checks`, and a
+`memoryUtilization`, `autoscalingChurn`) on a log with no ApplicationEnd. Those types are listed
+in `notRunChecks` instead of `cleanChecks`, each `{ type, tag, thresholdSummary, reason }`, where
+`reason` is the caveat's own recommendation (it names the setting to turn on) or the log-wide
+sentence. The Markdown has a `## Not checked on this log` section above `## Clean checks`, and a
 `Findings to act on` header line.
 
-Schema `5` update: `Finding` is a union discriminated on `type`, one member per emitted
+`Finding` is a union discriminated on `type`, one member per emitted
 finding type (`packages/core/src/finding-types.ts`), and a finding row's `evidence` is an
 explicit per-type projection. Each type's `<Type>Evidence` interface names its public fields,
 and `EVIDENCE_KEYS` in `evidence-report.ts` lists the same keys, checked both ways at compile
-time. Before, `evidence` was every finding field outside a fixed core-column list, so a field a
-detector added only for another core module became report contract. Rows lose these fields:
-`stageShape`'s `totalCores`; `utilization`'s `utilizationFraction`, `appDurationMs` and
-`totalCores`; `memoryUtilization`'s `idleRateFraction`, `allocatedMB`, `peakExecutors`,
-`appDurationMs` and `allocatedBytes`; `retryWaste`'s `extended` display copy. The impact
-estimator still reads them on the finding. `value` is now always numeric or `null`: the
+time, so a field a detector adds only for another core module does not become report contract.
+Rows leave out these fields: `stageShape`'s `totalCores`; `utilization`'s `utilizationFraction`,
+`appDurationMs` and `totalCores`; `memoryUtilization`'s `idleRateFraction`, `allocatedMB`,
+`peakExecutors`, `appDurationMs` and `allocatedBytes`; `retryWaste`'s `extended` display copy.
+The impact estimator reads them on the finding. `value` is always numeric or `null`: the
 text-valued findings (`stageFailed`'s failure reason, `configAudit`'s current setting,
 `incompleteRun`'s `missing`) carry their text in a `valueText` column, present only on those
 rows, and the Markdown prints it where `value` would go. Renaming or removing an evidence field
-is a breaking change and needs another bump. `cleanChecks`/`notRunChecks` list emitted finding
+is a breaking change and needs a schema bump. `cleanChecks`/`notRunChecks` list emitted finding
 types, the set the dashboard's Clean checks shows: `overBroadcast` and `underBroadcast` in place
 of the `broadcastSizing` detector entry. A finding row's `actionLabel` for a (type, discriminant)
 combination with no label of its own is the type's name, the same fallback the verdict step
-uses, where it used to be the raw `type`.
+uses.
 
-Tuned-thresholds update: `buildEvidenceReport(appModel, { thresholds })` runs the detectors
+`buildEvidenceReport(appModel, { thresholds })` runs the detectors
 with a user's validated overrides (the CLI's and MCP server's `--thresholds`; see
 [Tuning thresholds](./detector-contract.md#tuning-thresholds)). Only a tuned run adds keys:
 `tunedThresholds` (`{ <name>: { value, default } }`) on each finding row and each
 `cleanChecks`/`notRunChecks` entry from a detector an override moved off its defaults (or
 whose `suppressedBy` detector it moved), on that detector's `detectors` row, and as `summary.tunedThresholds` keyed by detector type. The
 Markdown adds a `- Tuned thresholds:` header line, a `- tuned thresholds:` line per affected
-finding, and marks tuned catalog rows and clean checks. A default run's report is
-byte-identical to before, and every addition is optional, so `EVIDENCE_SCHEMA_VERSION` stays
-`5`. The report caches key on the overrides object as well as the `appModel`, so one model's
-default and tuned reports never mix. Finding ids ignore thresholds: a finding a tuned run
-still emits keeps the id it has in a default run.
+finding, and marks tuned catalog rows and clean checks. A default run's report carries none of
+these keys, and every one is optional. The report caches key on the overrides object as well as
+the `appModel`, so one model's default and tuned reports never mix. Finding ids ignore
+thresholds: a finding a tuned run still emits keeps the id it has in a default run.
 
 ### Finding identity
 
@@ -391,7 +364,7 @@ entry). The two are deliberately decoupled: `id` is derived only from a
 finding's evidence tuple, never from `detectorVersion`, so a threshold or
 logic tweak that bumps a detector's `version` does not change the `id` of
 findings it still emits at the same location/metric. A saved reference
-(dashboard bookmark, exported report row, future URL-restored filter) keeps
+(dashboard bookmark, exported report row) keeps
 pointing at the same logical finding across detector revisions;
 `detectorVersion` is separate provenance metadata for "which ruleset
 produced this," not part of identity. See
@@ -400,8 +373,7 @@ produced this," not part of identity. See
 The discriminators are declared per finding type (`ID_DISCRIMINATORS` in
 `analyzer.ts`, each key checked against that type's fields) and joined in the
 fixed `DISCRIMINATOR_SLOTS` order, and the value slot takes `value`, else
-`valueText`. The schema-5 change kept that hash input byte-identical, so every
-finding keeps the id it had under schema 4.
+`valueText`.
 
 `id` stability holds for equivalent reruns of the same schema/analyzer
 version on the same input. Changing the id-derivation rule itself (the hash
@@ -409,7 +381,7 @@ algorithm, or which fields feed the location key/discriminators) is an
 intentional breaking change and must bump `EVIDENCE_SCHEMA_VERSION`
 (`packages/core/src/evidence-report.ts`); there is no separate id-scheme version.
 
-### Headless analysis CLI (V1)
+### Headless analysis CLI
 
 `packages/cli/bin/sparkforensics-analyze.mjs` runs the same parser + detector contracts outside the
 browser, for CI. It accepts a single event-log file or a rolling-log
@@ -449,7 +421,7 @@ when the catalog has an `incompleteRun` finding, so a run with no
 absolute budgets and this check apply to the candidate run; the MCP
 `evaluate_budgets` tool below uses the same function with the same roles.
 
-### MCP server (V1)
+### MCP server
 
 `packages/core/src/mcp-server-factory.ts`'s `createMcpServer()` registers 8 tools:
 `list_runs` (candidate runs in a local directory or on a Spark History Server, to
@@ -554,17 +526,17 @@ iterative-over-recursive approach for the *resolved* tree; `event-schemas.ts`
 applies it one layer earlier, to the raw JSON before it becomes a tree at all.
 
 There are two external-data boundaries, the two places this codebase parses
-data it does not control. Both now run that data through a schema, and both
+data it does not control. Both run that data through a schema, and both
 treat a validation failure the same way: a silent skip, not a distinct error.
 
 - `dispatchLine` (`event-handlers.ts`): after `JSON.parse` succeeds, a line
   whose `Event` value is one of the 17 modeled types but fails that type's own
-  schema now increments `skippedLines` (previously: no shape validation
-  existed at all, and a malformed event silently corrupted downstream state
-  with no signal anywhere). An `Event` value outside the 17 modeled types is
-  still silently ignored without incrementing `skippedLines`, unchanged from
-  before migration (see the note below on why the broader design was
-  rejected). One exception: an AQE update that a later update for the same
+  schema increments `skippedLines`. An `Event` value outside the 17 modeled
+  types is silently ignored without incrementing `skippedLines`: real Spark
+  logs always carry plenty of ordinary event types this tool does not model
+  (`TaskStart`, `BlockManagerAdded`, `ExecutorMetricsUpdate`, and others), and
+  counting them would trip `evidence-availability.ts`'s fail-closed
+  `trustworthy` gate on healthy logs. One exception: an AQE update that a later update for the same
   open execution supersedes is never parsed (`deferAdaptiveUpdate`, see
   [the detector contract](./detector-contract.md)), so a malformed
   superseded update is not counted.
@@ -578,30 +550,12 @@ treat a validation failure the same way: a silent skip, not a distinct error.
 
 Neither boundary distinguishes "malformed JSON" from "wrong shape" from
 "unrecognized variant" in what it reports outward: all three collapse into
-the same skip/fallback path. That was a deliberate scope decision. The
-correction below says why the *line* boundary stops there rather than flagging
-every unrecognized event type.
-
-> Correction made during migration, not part of the original design: an
-> earlier draft counted *any* `Event` value outside the 17 modeled types
-> toward `skippedLines`, not just ones that fail their own schema. Running
-> that design against real Spark event logs (which always contain plenty of
-> ordinary event types this tool has never modeled: `TaskStart`,
-> `BlockManagerAdded`, `ExecutorMetricsUpdate`, and others, always silently
-> ignored pre-migration) pushed `skippedLines` from 0 to the tens of thousands
-> on completely healthy logs. That would have tripped
-> `evidence-availability.ts`'s fail-closed `trustworthy` gate and shown a
-> false "malformed JSON" warning on every real file. Caught in review against
-> real fixtures, not synthetic ones; fixed to the narrower rule described
-> above before merging. `evidence-availability.ts`'s gate itself
-> (`trustworthy = skippedLines === 0 && applicationEnds > 0`) needed no code
-> change once this was fixed: it was already correct, the input feeding it
-> was not.
+the same skip/fallback path. That is a deliberate scope decision.
 
 The exhaustiveness convention is `packages/core/src/assert-never.ts`. `assertNever(x: never):
 never` throws at runtime and, more importantly, fails `tsc` at compile time if
 `x` is not actually `never`, i.e. if some case of a union type isn't handled.
-Used today at the `default` arm of `event-handlers.ts`'s `processEvent` switch
+Used at the `default` arm of `event-handlers.ts`'s `processEvent` switch
 (over `SparkEvent`) and `analyzer.ts`'s scope-dispatch switch (over a
 detector's `scope: 'stage' | 'sql' | 'app' | 'config'`). It is the project's
 standard pattern for any future exhaustive switch or dispatch over a closed

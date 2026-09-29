@@ -1,7 +1,7 @@
 # Drill-down
 
-`StageDetailProvider` (`src/view/StageDetailContext.tsx`) replaces the legacy
-`openStageDetail` `window` `CustomEvent` with React context. Any component calls
+`StageDetailProvider` (`src/view/StageDetailContext.tsx`) exposes stage
+drill-down through React context. Any component calls
 `useStageDetail().openStage(stageId)` to open `StageDetailDialog.tsx`, a
 shadcn `Dialog` (base-ui), for that stage. The direct callers are StagePill,
 Timeline, StageTable and RunVerdict (a step's stage button). Every widget that
@@ -25,10 +25,6 @@ hides the target, as the verdict's own route does);
 `finalFocus` skips returning focus to the opener in that case, so the route's
 own focus on the evidence stands. Without `onRoute` the button is not shown.
 
-The legacy `drillDownToStage` force-expand-and-`scrollIntoView` event has no
-replacement. No code ever dispatched it, so it was dormant even before the
-migration.
-
 ## Plan DOT serialization
 
 `packages/core/src/plan-dot.ts` (entry `planTreeToDot(planTree, { title })`) serializes a
@@ -42,7 +38,7 @@ Spark's own plan orientation.
 
 It carries no metric annotation: pure structure. Adding metric annotation is a
 deferred roadmap item. A null plan returns an empty string. There is no
-download/export UI for this output anymore (removed); `PlanView.tsx` calls it
+download/export UI for this output; `PlanView.tsx` calls it
 only to decide whether a stage's plan tree can render as a graph at all, and a
 non-empty result gates the "View plan graph" button.
 
@@ -78,10 +74,10 @@ an exchange for display purposes but is never split: it carries no
 `exchangeRole` and stays a single node. The write half is grouped with its
 children's producer component; the read half is grouped with its parent's
 consumer component. Both halves get their own entry in `buildDurationMap`'s
-duration share now (the write half no longer hard-codes to null):
+duration share:
 `PlanGraphNode.tsx` only suppresses the displayed value for the read half,
-since the read half occupies the exact tree position the original unsplit
-node used to.
+since the read half occupies the exact tree position of the unsplit raw
+node.
 
 Default scope is `segment`: one Exchange-bounded slice of the plan, resolved via
 `computeSegments`/`zipSegmentsToStages` (`packages/core/src/plan-duration-attribution.ts`,
@@ -124,12 +120,12 @@ helper), plus a count when the node carries more than one finding. Hovering
 or focusing the badge opens a tooltip listing each finding by its
 `findingActionLabel` (e.g. "Dedupe repeated subtree", "Compact small
 files"), so the node discloses which findings hit it without leaving the
-graph. Every other finding type still has no plan-node pointer and renders
+graph. Every other finding type has no plan-node pointer and renders
 at the stage level only, via `Finding.stageId`/`Finding.stageIds`.
 
 `resolvePlanTree` prefixes every plan-node id with its owning SQL execution
 (`e<executionId>:n0`, `e<executionId>:n1`, ...), so ids are unique across
-executions. `buildPlanGraphModel` still filters `findings` to
+executions. `buildPlanGraphModel` also filters `findings` to
 `finding.executionId === sqlExecutionId` (the execution the stage being
 graphed belongs to) before indexing by node id, as defense in depth: a
 hand-built or stale finding whose `planNodeIds` collide with this tree's ids
@@ -193,11 +189,11 @@ contain the outer box around its nested segment box(es).
 
 Every global control lives on one **vertical control rail** down the left edge
 (`PlanGraphControlRail.tsx`), grouped View / Navigate / Display, so nothing
-floats in its own corner. View is zoom in/out and fit (replacing React Flow's
+floats in its own corner. View is zoom in/out and fit (in place of React Flow's
 `Controls`); Navigate is "Next worst duration" and "Next problem" (cycling to
 the worst-share node and the worst-finding stage, via `setCenter`); Display is
 the node-filter/duration Settings popover (`PlanGraphSettingsControl` with its
-`iconOnly` rail variant, moved off the topbar), plus the legend and minimap
+`iconOnly` rail variant), plus the legend and minimap
 toggles. The rail renders inside `ReactFlowProvider` alongside `<ReactFlow>`, so
 its `useReactFlow` zoom/center calls drive the same instance.
 
@@ -245,7 +241,7 @@ control, which opens the full plan (`initialScope: 'full'`, still behind the
 300-node guardrail). Both set a `planGraph: { active, stageId, initialScope }`
 Zustand slice
 (`openPlanGraph`/`closePlanGraph`, `src/store/store.ts`) driving a top-level
-`AppRoutes` branch in `src/App.tsx`, modeled directly on the existing
+`AppRoutes` branch in `src/App.tsx`, modeled on the
 `comparison`/`RunComparisonRoute` full-takeover pattern.
 
 `buildPlanGraphModel`'s output is memoized per `(activeFileId, stageId, scope, durationMode)`
@@ -266,21 +262,19 @@ The Summary/Context/Details 3-tier framing (collapsed lead metric → expanded
 widget body → per-stage `StageDetailDialog`) does not apply uniformly across the
 28 registry widgets (`src/view/detector-registry.tsx`). 18 have a stage-anchored
 Details tier reachable via `StagePill`/`StagePillGroup`: Skew, StageShape,
-TinyTask (all split from TaskSkew), ShuffleIO, PartitionSizing (split from
-ShuffleIO), Spill, GcPressure, StageFailed, TaskFailures, RetryWaste (split
-from Failures), SlowHost, StageSlowness, Straggler, SpeculationWaste
-(split from ExecutorTimeline), and DuplicatePlanSubtree, SmallFiles,
-UnderBroadcast and OverBroadcast (all split from PlanFindings; sql-scope, so
+TinyTask, ShuffleIO, PartitionSizing, Spill, GcPressure, StageFailed,
+TaskFailures, RetryWaste, SlowHost, StageSlowness, Straggler,
+SpeculationWaste, and DuplicatePlanSubtree, SmallFiles, UnderBroadcast and
+OverBroadcast (sql-scope, so
 they list every stage in `stageIds` as a `StagePillGroup` rather than one
 `StagePill`). The other 10 are app- or config-scope with no stage to
 drill into, by design, so they stop at Summary/Context: MemoryUtilization,
-ExecutorUtilization (split from the same widget as MemoryUtilization;
-`utilization` is an app-wide average, no stage), JobFailures, ConfigAudit,
+ExecutorUtilization (`utilization` is an app-wide average, no stage), JobFailures, ConfigAudit,
 CacheUtilization, CoreUsageArea, AutoscalingChurn, CachingOpportunity (`scope:
 'app'`, `stageId: null` on both its finding constructions, so it has no stage
 to anchor to despite reading like a per-stage widget), IncompleteRun, and
-ColdStart (split from ExecutorTimeline, but unlike SlowHost, StageSlowness,
-Straggler and SpeculationWaste, app-scoped with no `stageId`).
+ColdStart (unlike SlowHost, StageSlowness, Straggler and SpeculationWaste,
+app-scoped with no `stageId`).
 
 ## Reference panel
 
@@ -307,7 +301,7 @@ a same-origin frame's own document and closes on Escape unless the docs'
 search popup is open (a cross-origin frame keeps only the close button).
 Exported dashboards have no docs, so they never open this panel. There is a single `DocsTarget` shape
 (`{ kind: 'site', source: 'reference' | 'guide', path }`, set by `open(anchor)`
-or `openSite(path)`; `source` only picks the panel title): no vendor HTML and no `'vendor'` target kind, so
+or `openSite(path)`; `source` only picks the panel title), so
 `DocsSheet` always drives the iframe the same way, reassigning `src` on any
 path or theme change.
 
@@ -331,7 +325,7 @@ and docs usable when `dist/` is deployed under a URL subpath.
 against every detector's `docAnchor` and warns (never fails) on dead links
 (detector points at an anchor the nav index doesn't have) or orphaned
 Detector Catalog anchors (no detector points at them); see
-`scripts/doc-anchor-coverage.js`. The ported landing page
+`scripts/doc-anchor-coverage.js`. The landing page
 (`docs-site/tuning-reference/index.md`, the symptom-picker entry page) is
 hand-authored, committed markdown, unlike the generated pages next to it.
 

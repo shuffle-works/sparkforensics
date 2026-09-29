@@ -1,6 +1,6 @@
 # Widget rendering
 
-## Render order (fixed, spec §5) {#widget-rendering-order-fixed-spec-§5}
+## Render order {#widget-rendering-order}
 
 `src/view/Dashboard.tsx`'s `FilteredBoard` renders inside a `<main>` that
 opens with `SampleRunNotice` (only while the bundled sample run is open),
@@ -10,17 +10,15 @@ filter) and (only when an active filter empties both finding streams)
 `NoMatchBanner`, then (when
 the active filter doesn't empty the board) a two-tab `Tabs`
 (`src/components/ui/tabs.tsx`, a base-ui primitive): **Findings** and
-**Full app report** (2026-09-03 tabbed-impact-band-board redesign, replacing the
-prior three stacked sections: All recommendations, Suggested Improvements,
-Full app report, with a merged, impact-grouped Findings tab and an
-always-reachable Full app report tab). Both `TabsContent` panels pass
+**Full app report**, the first grouped by impact band and the second
+always reachable. Both `TabsContent` panels pass
 `keepMounted`, so the inactive one is hidden (native `hidden` attribute)
 rather than unmounted: switching tabs keeps each widget's local state (e.g.
 ImpactBoard's expanded group) and scroll position.
 
-`region` on `RegistryEntry` (`src/view/detector-registry.tsx`) is read again,
-but only to decide whether a widget always mounts: `isAlwaysMountedType()`
-flags the one `reference`-region type still carved out as an always-mounted
+`region` on `RegistryEntry` (`src/view/detector-registry.tsx`) is read
+only to decide whether a widget always mounts: `isAlwaysMountedType()`
+flags the one `reference`-region type carved out as an always-mounted
 exception, `coreLocality` → `CoreUsageArea`. The other `reference`-region
 types stay ordinary finding-gated instead: `cacheUtilization`,
 `memoryUtilization`, and `utilization` are a product decision: a clean run
@@ -61,13 +59,12 @@ links stay real `<a>`s. The HTML export renders no badge links at all
 ### Findings tab
 
 Rendered by `FilteredBoard`'s `TabsContent value="findings"`
-(`src/view/widgets/ImpactBoard.tsx`). Merges what used to be
-two stacked sections, All recommendations and Suggested Improvements, into
-one impact-ranked board. The recommendation-rollup logic lives in
-`src/view/widgets/FixTheseFirst.tsx` (kept as its own file and its own
-directly-testable exports, but no longer rendered as a standalone page
-section by `Dashboard.tsx`) and the active-widget logic lives in
-`src/view/widgets/Alerts.tsx` (same: kept, no longer rendered standalone).
+(`src/view/widgets/ImpactBoard.tsx`): recommendation rows and active
+widget cards in one impact-ranked board. The recommendation-rollup logic lives in
+`src/view/widgets/FixTheseFirst.tsx` (its own file with directly-testable
+exports, not rendered as a standalone page section by `Dashboard.tsx`) and
+the active-widget logic lives in `src/view/widgets/Alerts.tsx` (same: not
+rendered standalone).
 `ImpactBoard` calls `FixTheseFirst.tsx`'s exported `useFixTheseFirstData`
 (eligible findings, rollup groups, the top triage target) and
 `Alerts.tsx`'s exported `computeActiveWidgets` (the ranked active-`REGISTRY`
@@ -84,8 +81,7 @@ active widget's own `worstImpactBand`.
 Eligible findings for the rollup are `catalog` ∪ `configFindings` that pass
 core `isEligible` (`packages/core/src/recommendation-rollup.ts`) and have a
 display type (`FINDING_DISPLAY_ORDER`): `incompleteRun` (a
-pipeline-completeness caveat, not an addressable fix; see the spec's
-`fixEffort` table) and every `dataUnavailable` evidence caveat (e.g.
+pipeline-completeness caveat, not an addressable fix) and every `dataUnavailable` evidence caveat (e.g.
 `memoryUtilization`'s `memoryBand` variant, already covered by Evidence
 availability's own `executorMetrics` entry,
 `packages/core/src/evidence-availability.ts`) are excluded. Findings are grouped strictly by `finding.type` via
@@ -178,7 +174,7 @@ neutral rather than clean green, after the interpretation's `coverage.gaps`
 (`verdictGaps`) lines saying why
 and naming the setting to turn on. A clean run lands `cacheUtilization`,
 `memoryUtilization`, and `utilization` here too, same as any ordinary
-action-region type. Caching Opportunities, Config Audit, and the four split
+action-region type. Caching Opportunities, Config Audit, and the four
 Plan Advisor widgets (Redundant Plan Subtree, Excessive Small Files, Missed
 Broadcast Join, Oversized Broadcast Join) render through the ordinary
 active/clean paths above (see
@@ -204,8 +200,8 @@ Each of the widgets below gets its `sortMode` (`SortMode`, `'impact' | 'stage'`,
 `SortModeToggle` in the `WidgetCard` `badges` slot, so it sits on the title row itself
 rather than floating in the body: a button alongside the widget's tag badges (a
 `WidgetCard` header renders `badges` beside the title heading, never inside another
-control). Every one of the former combined widgets' split single-type widgets carries the
-same `canToggleSort` check its parent did, so the toggle only actually renders for a type
+control). Every widget below carries the same `canToggleSort` check, so the toggle only
+actually renders for a type
 whose finding can carry a wall-clock estimate: `Skew.tsx`, `TinyTask.tsx` (`stageShape`'s
 own rules never produce one, so `StageShape.tsx` carries the same check but it never
 fires), `ShuffleIO.tsx` (narrowed to `shuffle`), `PartitionSizing.tsx`, `Spill.tsx`,
@@ -213,16 +209,13 @@ fires), `ShuffleIO.tsx` (narrowed to `shuffle`), `PartitionSizing.tsx`, `Spill.t
 `RetryWaste.tsx` (its siblings `StageFailed.tsx`/`TaskFailures.tsx` carry the same check,
 but `stageFailed`/`failures` are `estimateMethod: 'none'`, so it never fires there either),
 `SlowHost.tsx`, `StageSlowness.tsx`, `Straggler.tsx`, `SpeculationWaste.tsx`,
-`ColdStart.tsx` (five widgets now, one per type, each sorting only its own flat issue
-list; the old cross-type "coldStart sinks to the bottom under By stage" note no longer
-applies now that each type has its own single-type list), and `DuplicatePlanSubtree.tsx`/
+`ColdStart.tsx` (one widget per type, each sorting only its own flat issue list), and `DuplicatePlanSubtree.tsx`/
 `SmallFiles.tsx`/`UnderBroadcast.tsx`/`OverBroadcast.tsx` (each reorders its own list by
 `stageIdOf`, the lowest stage id its finding touches).
 It is a two-segment `ToggleGroup` (Impact / Stage; optional `stageLabel`, default "Stage",
-which no caller overrides), wrapped in `AdvancedOnly`: stage number is the one axis every one of these widgets' items can be compared on, unlike the
-impact/raw-metric order this pattern replaced (dropped: comparing findings by impact band
-ranks them by how bad they are, not by how much fixing them would save, which is a worse
-default now that a real potential-savings figure exists to sort by instead). A per-stage
+which no caller overrides), wrapped in `AdvancedOnly`: stage number is the one axis every one of these widgets' items
+can be compared on. Neither mode sorts by impact band, which ranks findings by how bad they
+are, not by how much fixing them would save. A per-stage
 detector's own `finding.stageId` is the sort key directly; a sql-scope finding that spans
 several stages (`duplicatePlanSubtree`, `smallFiles`, `underBroadcast`, `overBroadcast`,
 via `stageIds`) sorts by the lowest stage id it touches (`stageIdOf`). The toggle renders
@@ -231,8 +224,8 @@ there is more than one row, and the card is open; re-sorting a list with no wall
 claim would be a silent no-op. Both comparators return `0` when
 neither side has a comparable value, so those items keep their prior relative order
 (`Array.prototype.sort`'s stability) rather than being shuffled.
-`FixTheseFirst`'s own expanded group list (see "Findings tab" above) already sorted
-by impact before this pattern existed and does not use it; it has no stage-order toggle.
+`FixTheseFirst`'s own expanded group list (see "Findings tab" above) sorts by impact
+on its own and does not use this pattern; it has no stage-order toggle.
 
 ### Gold Standard row/expand contract
 
@@ -265,15 +258,14 @@ empty catalog filter (except Core Usage by Locality, the one always-mounted
   `OverBroadcast.tsx`, `StageSlowness.tsx`, `SpeculationWaste.tsx`,
   `PartitionSizing.tsx`, `TaskFailures.tsx`, `ConfigAudit.tsx`,
   `AutoscalingChurn.tsx`, `MemoryUtilization.tsx`).
-  Confidence and evidence are unconditional too, since the 2026-09 redesign: `RowStatusCluster`
+  Confidence and evidence are unconditional too: `RowStatusCluster`
   (`src/view/RowStatusCluster.tsx`) is a single, fixed-position pill
-  combining both, replacing the old per-row `ExpandToggleButton` +
-  `ConfidenceMarker` + `EvidenceLink` trio entirely. Every widget that
+  combining both. Every widget that
   carries one wraps it in `AdvancedOnly` (`src/view/AdvancedOnly.tsx`), so it
   only renders at the Advanced density tier: this is a content-visibility
   gate (Basic vs. Advanced), not a per-row collapse, and it's applied
-  consistently across every adopting widget. There is nothing left to gate
-  behind a per-row click for confidence or evidence in any widget. A
+  consistently across every adopting widget. No widget gates confidence or
+  evidence behind a per-row click. A
   widget-header `RowStatusCluster` (passed as `WidgetCard`'s `statusBadge`
   prop) carries one further, unrelated gate on top of `AdvancedOnly`: `open &&
   statusBadge` (`WidgetCard.tsx`'s header) keeps it out of the collapsed
@@ -290,13 +282,12 @@ empty catalog filter (except Core Usage by Locality, the one always-mounted
   target. Evidence renders as the cluster's one real click target: a button
   whose visible text is just the evidence label (e.g. "SQL plan") but whose
   accessible name always carries the "Evidence: ..." prefix via an explicit
-  `aria-label`, regardless of what else sits nearby (the old `bare`
-  prop/prefix distinction is gone: there's only one form now). Clicking it
-  calls the same `revealEvidence` navigation the retired `EvidenceLink` used.
+  `aria-label`, regardless of what else sits nearby. Clicking it calls
+  `revealEvidence`.
   `RowStatusCluster`'s fixed slot is the row's own stage-pill/title line
   (`justify-between`, cluster right-aligned), the same position in every
   adopting widget, not floating with the row's detail below.
-  Lists longer than `VISIBLE_LIMIT` (6, `packages/core/src/format-utils.ts`) still get
+  Lists longer than `VISIBLE_LIMIT` (6, `packages/core/src/format-utils.ts`) get
   page-based navigation (Previous/Next, `usePagedRows`/`RowPagination`,
   `src/view/usePagedRows.ts`/`src/view/RowPagination.tsx`) instead of
   rendering unconditionally: the one sanctioned cap mechanism across every
@@ -312,19 +303,18 @@ The following widgets carry a `RowStatusCluster`, all Advanced-only:
 the evidence key doesn't vary per row; also the control shown in the
 widget's empty-findings/no-data states), `MemoryUtilization.tsx`'s widget
 header (confidence + evidence, one marker, since `executorMetrics` is
-widget-wide; `ExecutorUtilization.tsx`'s rows, split out of the same former
-combined widget, carry neither), each of the four split Plan Advisor
-widgets' (`DuplicatePlanSubtree.tsx`, `SmallFiles.tsx`, `UnderBroadcast.tsx`,
-`OverBroadcast.tsx`) widget header (confidence + `sqlPlan` evidence, one
-marker per widget now that each is its own finding-type, replacing the old
-`PlanFindings.tsx` per-group heading; no per-row control), `ScalingSim.tsx`
+widget-wide; `ExecutorUtilization.tsx`'s rows carry neither), each of the
+four Plan Advisor widgets' (`DuplicatePlanSubtree.tsx`, `SmallFiles.tsx`,
+`UnderBroadcast.tsx`, `OverBroadcast.tsx`) widget header (confidence +
+`sqlPlan` evidence, one marker per widget since each is its own finding
+type; no per-row control), `ScalingSim.tsx`
 (two call sites, evidence only), `CoreUsageArea.tsx`, `EfficiencyModel.tsx`
 and `PlanView.tsx` (three call sites) (these last confidence-only;
 all standalone rather than per-finding-row: a card-header
 badge, a widget-level single marker, a plan-tree node/summary-row marker, or
 an "unavailable data" message: the same component, same visual language,
-regardless of where it sits); and, since `skew`/`straggler`/`gc` started
-disclosing their own unvalidated noise-floor thresholds (confidence only,
+regardless of where it sits); and, because `skew`/`straggler`/`gc`
+disclose their own unvalidated noise-floor thresholds (confidence only,
 per-row, no `evidenceKey` passed), `GcPressure.tsx`'s rows, `Straggler.tsx`'s
 rows, `CachingOpportunity.tsx`'s rows (the `cachingOpportunity` detector
 scales `confidence` per finding via `cachingReuseConfidence`, so the badge
@@ -337,17 +327,14 @@ One named exception:
 
 - `Skew.tsx`/`StageShape.tsx`/`TinyTask.tsx`: their per-row histogram toggle
   (`ExpandToggleButton` + `useExpandableRow`) gates a lazily-fetched duration
-  histogram, unrelated to confidence/evidence, so it was untouched by the
-  2026-09 redesign and untouched again when `RowStatusCluster` was later
-  added alongside it in the shared `StageFindingGroup.tsx` row. The two
-  controls coexist per row. `ExpandToggleButton` is now single-purpose
-  (always the task-detail toggle) since these three (split out of the former
-  combined `TaskSkew.tsx`) are its only remaining adopters.
+  histogram, unrelated to confidence/evidence. It sits alongside
+  `RowStatusCluster` in the shared `StageFindingGroup.tsx` row; the two
+  controls coexist per row. `ExpandToggleButton` is single-purpose
+  (always the task-detail toggle) since these three are its only adopters.
 
 No toggle at all, unconditional content (the fix per row or once via
-`fixFor`, see Tier B), same as before this redesign (unaffected either way,
-since these widgets never carried confidence/evidence display in the first
-place): `IncompleteRun.tsx`, `ShuffleIO.tsx`, `PartitionSizing.tsx`,
+`fixFor`, see Tier B; these widgets carry no confidence/evidence
+display): `IncompleteRun.tsx`, `ShuffleIO.tsx`, `PartitionSizing.tsx`,
 `StageFailed.tsx`, `TaskFailures.tsx`, `RetryWaste.tsx`, `ColdStart.tsx`,
 `SlowHost.tsx`, `StageSlowness.tsx`, `SpeculationWaste.tsx`,
 `ExecutorCountChart.tsx`, `ExecutorUtilization.tsx`, `JobFailures.tsx`,
@@ -377,18 +364,17 @@ tab label "Full app report". A plain
 `<div>`, structural-only, reading none of `REGISTRY`/`orderedWidgets()` at
 all. Its heading is a visually-hidden (`sr-only`) `<h2>Full app
 report</h2>`, matching the tab's own label for the accessibility-tree
-heading outline without visually duplicating the tab text. No longer an
-`Accordion`: selecting the tab is the disclosure; the panel stays mounted
+heading outline without visually duplicating the tab text. Selecting the
+tab is the disclosure; the panel stays mounted
 but hidden while Findings is active (see "Render order" above). Its exact order is WallClock
 → Timeline → Executor Count Over Time (`ExecutorCountChart.tsx`, the
-executor add/remove count chart extracted out of the former combined
-`ExecutorTimeline.tsx`; not driven by any finding, so it isn't a
+executor add/remove count chart; not driven by any finding, so it isn't a
 `REGISTRY` entry) → StageTable → a `WidgetGrid` holding Core
 Usage by Locality (the one always-mounted `REGISTRY` card) → Evidence
 availability → ETL Phase Attribution → What-If Executor Scaling →
 Compute Efficiency → Core-Usage Distribution.
-Scorecard used to lead this
-section; it now renders once, above the tabs themselves, in
+Scorecard is not part of this
+section; it renders once, above the tabs themselves, in
 `FilteredBoard` (`src/view/Dashboard.tsx`), so it stays visible regardless
 of which tab is active rather than living inside either one (a three-tile
 run-info row: Wall-clock, Efficiency, Unused core time; see
@@ -403,14 +389,13 @@ Utilization, and Cache Storage live in the Findings tab above and surface
 there only when they have an active finding.
 
 The Evidence availability card is the persistent, non-impact-band ledger
-[defined in the worker protocol](./worker-protocol.md#evidence-availability-contract-v1),
+[defined in the worker protocol](./worker-protocol.md#evidence-availability-contract),
 not an alert or detector widget. An `Evidence: …`
 control appears only where a conclusion or unavailable report lens declares
 a relevant ledger dependency. `revealEvidence`
 (`src/view/EvidenceAvailabilityContext.tsx`) sets `referenceOpen` true,
 which `DashboardContent` (`src/view/Dashboard.tsx`) watches in a `useEffect`
-and translates into `setActiveTab('full-report')`, replacing what used to
-be "expand the Reference accordion": mouse and keyboard activation switches
+and translates into `setActiveTab('full-report')`: mouse and keyboard activation switches
 to the Full app report tab, opens the ledger card, then focuses the
 referenced stable entry id (`evidence-availability-<key>`). The control
 explains evidence availability; it does not promise an unavailable signal
@@ -432,27 +417,26 @@ one route destination.
 Firm constraint: `orderedWidgets(detectors)` (in `src/view/detector-registry.tsx`)
 sorts the run interpretation's per-type `DetectorInfo` entries by region
 (`action` before `reference`), then ascending detector `order`; it does not
-walk the static `DETECTORS` import. The component-identity dedup it
-used to need is gone now that every `REGISTRY` entry maps to its own unique
-component (2026-09 widget/finding-type 1:1 mapping redesign).
+walk the static `DETECTORS` import. Every `REGISTRY` entry maps to its own
+unique component, so it needs no component-identity dedup.
 `cacheUtilization`, `memoryUtilization`, and `utilization` (`reference`-region)
-can still reach the active grid alongside `duplicatePlanSubtree`
+can reach the active grid alongside `duplicatePlanSubtree`
 (`action`-region) and any other active finding, since none of them is the
 one always-mounted exception filtered out before that grid.
-`computeActiveWidgets` (`Alerts.tsx`) is still its main consumer, now filtered
+`computeActiveWidgets` (`Alerts.tsx`) is its main consumer, filtered
 through `isAlwaysMountedType()` to exclude that one always-mounted component;
 the clean-check list bypasses `orderedWidgets()` entirely, iterating
 `Object.keys(REGISTRY)` per type instead (see "Findings tab" above). `DETECTORS`'
 own array order and iteration, plus its cross-detector `suppressedBy` logic
 (e.g. `stageSlowness` deferring to `slowHost`, see
 [Detector contract](./detector-contract.md#detector-contract)), live entirely in
-`packages/core/src/detectors.ts`/`packages/core/src/analyzer.ts`, untouched by this redesign. Which React
-component each finding type resolves to is still registry-owned.
+`packages/core/src/detectors.ts`/`packages/core/src/analyzer.ts`. Which React
+component each finding type resolves to is registry-owned.
 
 ### First investigation routing
 
 The dashboard has a view-only per-finding route, not a single
-first-investigation pick any more: every Findings-tab recommendation row
+first-investigation pick: every Findings-tab recommendation row
 (rendered by `FixTheseFirst.tsx`'s row components inside `ImpactBoard`)
 and the visible-finding control in Stage Summary (`StageTable.tsx`) each
 independently resolve and request their own target.
@@ -472,14 +456,12 @@ CLI/MCP verdict), which orders every routeable finding by potential savings
 unquantified one, then impact band, then widget display order
 (`FINDING_DISPLAY_ORDER`, core's copy of `orderedWidgets()`, which a
 `tests/view/detector-registry.test.tsx` case keeps equal), then catalog order;
-`selectTriageTarget` is its first entry. Ranking by potential savings replaced the earlier
-severity-first routing once the occupancy-weighted impact estimator gave
-every finding a real, comparable `impactEstimate.wallClock` figure:
-severity-first could point a "start here" pick at a `skew`/`straggler`
-finding ranked `critical` on a ratio basis while its occupancy-clipped
-recoverable time was near zero, passing over a lower-severity finding with
-an order-of-magnitude larger real recoverable-time estimate right next to
-it. Impact band only breaks ties. `RunVerdict`'s next steps are built from
+`selectTriageTarget` is its first entry. The occupancy-weighted impact
+estimator gives every finding a comparable `impactEstimate.wallClock`
+figure, and ranking by it keeps a "start here" pick off a `skew`/`straggler`
+finding ranked `critical` on a ratio basis whose occupancy-clipped
+recoverable time is near zero, when a lower-severity finding beside it has
+an order-of-magnitude larger recoverable-time estimate. Impact band only breaks ties. `RunVerdict`'s next steps are built from
 this ranking (see "Full render sequence" below).
 
 The route is re-derived from the current catalog before each asynchronous
@@ -502,7 +484,7 @@ panels stay mounted, but a route can still mount its target card fresh in
 the same commit as the route landing: a Basic-view band's "Show the
 evidence" fold mounts its cards only when opened, and opens itself when a
 route targets one of them (see "Findings tab" above). Two routing paths
-have to account for that: `reportWidgetOpen` no longer clears a
+have to account for that: `reportWidgetOpen` does not clear a
 route just because the target `WidgetGridItem` hasn't registered yet in this
 commit (a child `WidgetCard` reports its own open state before its parent
 `WidgetGridItem`'s registration effect runs on a fresh mount, so treating
@@ -555,7 +537,7 @@ naming the stage adds context (`SlowHost.tsx`, `StageSlowness.tsx`,
 `StageShape.tsx`, `TinyTask.tsx`, `PartitionSizing.tsx`), while bare
 `StagePill`/`StagePillGroup` is for compact, multi-row lists where many
 stages appear per widget (`StageFailed.tsx`, `TaskFailures.tsx`,
-`RetryWaste.tsx`, the four split Plan Advisor widgets, `Spill.tsx`, and
+`RetryWaste.tsx`, the four Plan Advisor widgets, `Spill.tsx`, and
 `StageTable.tsx`). `ShuffleIO.tsx` uses both in different parts of its own
 row, which is fine: it isn't a violation of the convention above.
 

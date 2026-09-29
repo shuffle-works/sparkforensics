@@ -70,8 +70,8 @@ widget with findings as props installs an interpretation first with
 Not every view judgment follows the rule yet. StageTable's RETRY, fetch-wait,
 spill and I/O-ratio chips, PlanView's cross-join, long-filter and exchange-count
 warnings, and the plan graph's duration-share heat colours use thresholds in
-the view code, with no finding behind them. They predate the interpretation and
-are open work, not a pattern to copy.
+the view code, with no finding behind them. They are open work, not a pattern
+to copy.
 
 The HTML export carries the same result. `buildHtmlExportData`
 (`packages/core/src/html-export.ts`), shared by the CLI's `--export-html` and
@@ -87,9 +87,9 @@ same. The export bundle never installs the live interpreter:
 `hydrateExportStore` installs the payload's interpretation as is, and
 `src/export/main-export.tsx` refuses, before rendering, any payload whose
 `schemaVersion` it was not built for, or that lacks its `configFindings` or
-`interpretation` (`unsupportedPayloadReason`). An old file therefore shows the
-conclusions of the core that wrote it, and cannot be reinterpreted by a newer
-bundle.
+`interpretation` (`unsupportedPayloadReason`). An exported file therefore shows
+the conclusions of the core that wrote it, and cannot be reinterpreted by a
+later bundle.
 
 What the bundle may import is checked at build time.
 `vite.export.config.ts` resolves the live-only modules to stand-ins in
@@ -196,7 +196,7 @@ panel fed by `baseStages`/`candStages`).
 `DropZone` keeps the History Server disclosure, Base URL, Application ID,
 optional Attempt ID, validation/touched state, recoverable SHS error, and
 local-server reachability in mounted React state rather than Zustand. The
-local browser-first path is still the default: **Choose file** loads a single
+local browser-first path is the default: **Choose file** loads a single
 event log, while **Choose rolling-log folder** accepts only an
 `eventlog_v2_*` directory and directs a rejected folder back to the file
 picker.
@@ -241,7 +241,7 @@ codes. It never forwards upstream response text, status details, locations, or
 credentials to the browser.
 
 Routing preserves the recovery boundary: local file and folder failures use the
-existing page-level error route. A typed SHS failure instead resets the model
+page-level error route. A typed SHS failure instead resets the model
 to idle and returns to the still-mounted, expanded History Server disclosure,
 which retains its values and shows safe recovery guidance along with local
 file intake. During an SHS parse, the mounted intake shows progress in place;
