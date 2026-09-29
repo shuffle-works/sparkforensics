@@ -1,5 +1,5 @@
 // Plain-language help per finding tag: the expansion the tag stands for and a one-line description
-// of what it means. Shared by the dashboard (tag tooltips, verdict "What's happening") and the
+// of what it means. Shared by the dashboard (tag tooltips) and the
 // comparison verdict, which names finding categories by their expansion on every path.
 type TagHelp = {
   expansion: string;

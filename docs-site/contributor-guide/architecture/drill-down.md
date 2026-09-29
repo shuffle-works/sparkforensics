@@ -13,7 +13,7 @@ with one sentence placing the stage in the run (duration, share of the run's
 wall-clock, task count, how many finding types it carries), then lists each
 finding type at the stage (`locationKey`'s rule, the one the verdict groups
 steps by: a `stageId` match, or a `stageIds` list naming only this stage)
-the way `RunVerdict` lists a step: tag and action label, the `TAG_HELP` plain explanation, "What to try", the impact estimate, and a
+the way `RunVerdict` lists a step: tag and action label, the measurement ("What's happening", split off by `recommendationParts`), "What to try", the impact estimate, and a
 **Show evidence** button. Types follow the verdict's own order
 (`buildNextSteps`: potential savings first, failure findings first on a run
 whose jobs failed), with types the verdict can't route after them, worst band
@@ -93,7 +93,7 @@ The view has an opt-in "Expand to full plan" toggle gated by a 300-node
 confirmation dialog (`ExpandConfirmDialog.tsx`). A segment-lookup failure that
 would otherwise render an unguarded full plan is routed through the same
 guardrail rather than bypassing it. That same failure can also resolve to a
-full-scope model *below* the guardrail threshold, rendering immediately with no
+full-scope model _below_ the guardrail threshold, rendering immediately with no
 dialog and no `requestedScope` change. Since it's a permanent property of that
 stage's plan (`buildPlanGraphModel` is deterministic per `(planTree, stageId,
 appModel)`), there is no segment view left for that stage to switch back to. So
@@ -130,6 +130,7 @@ unrelated executions' trees can both contain a node named e.g. `n1`, and a
 finding from one would badge onto the other's same-named node.
 
 Two other per-node UI features render independently of findings:
+
 - A traffic-light **duration heat bar** on each node
   (`plan-graph-heat.ts`'s `heatBand`, consumed by `PlanGraphNode.tsx`) bands
   the node's duration share into critical/warning/info, reusing the
@@ -217,6 +218,7 @@ the inspector first and the whole route only on a second press. Nodes are
 don't move.
 
 The remaining legibility aids sit on the canvas itself:
+
 - The **MiniMap** (bottom-right, toggled from the rail) colors each node by the
   worst finding band on it (`planGraphMiniMapNodeColor`, `plan-graph-minimap.ts`),
   so the overview shows where the problems are; a node with no finding keeps the

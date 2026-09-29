@@ -132,7 +132,7 @@ Card interiors use a 16px default rhythm and a 12px compact rhythm. Tables may o
 
 ### Reading order and disclosure
 
-The run board reads top to bottom as verdict, then numbers, then evidence. `RunVerdict` answers "how did this run go and where do I start" in one sentence, then lists at most three numbered next steps, each in the same order: what is happening in plain language, what to try, and a route to the evidence. The Scorecard follows, then the Findings and Full app report tabs holding every finding and widget.
+The run board reads top to bottom as verdict, then numbers, then evidence. `RunVerdict` answers "how did this run go and where do I start" in one sentence, then lists at most three numbered next steps, each in the same order: what the finding measured, what to try, and a route to the evidence. The Scorecard follows, then the Findings and Full app report tabs holding every finding and widget.
 
 - **One place, one step.** Findings on the same stage fold into one step, because they usually share a cause and their savings overlap. Never show one root cause as several equal problems.
 - **Plain language leads, Spark terms follow.** A step's first line is the plain explanation; metric names, ratios and configuration keys come after it.
