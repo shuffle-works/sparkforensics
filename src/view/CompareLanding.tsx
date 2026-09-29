@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Activity, ArrowRight, Bot, BookOpen, FileText, GitCompareArrows, Moon, ShieldCheck, Sun, TriangleAlert, Workflow } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { docsUrl } from '@sparkforensics/core/docs-config.ts';
+import { DOCS_BASE_DIR } from '@sparkforensics/core/docs-config.ts';
 import { DropZone } from '@/view/DropZone';
 import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
 import { cn } from '@/lib/utils';
@@ -96,7 +96,7 @@ function ResourceLinks() {
         </span>
         <ArrowRight aria-hidden="true" className="landing-resource-arrow" />
       </a>
-      <a href={docsUrl('#intro')} target="_blank" rel="noopener noreferrer" className="landing-resource-card">
+      <a href={`${DOCS_BASE_DIR}/intro.html`} target="_blank" rel="noopener noreferrer" className="landing-resource-card">
         <BookOpen aria-hidden="true" />
         <span>
           <strong>Spark optimization reference</strong>
