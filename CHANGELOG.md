@@ -1,5 +1,108 @@
 # sparkforensics-web
 
+## 0.26.0
+
+### Minor Changes
+
+- d7ea65a: Advanced view shows how each verdict step's savings figure was estimated: measured or modeled, a near-point figure when the stage ran alone or a floor-to-optimistic range when it shared the cluster, the raw waste when the stage's floor clipped it or the resource waste the finding measured, and the finding's confidence marker. A line under the steps states how they are ordered.
+- d7ea65a: Advanced view now has single-key triage shortcuts: `j`/`k` move between the verdict's steps and
+  every finding row, `Enter` shows the focused finding's evidence, or expands a grouped finding, `f` jumps to the finding filters,
+  and `1`/`2` switch between Findings and Full app report. They are listed in the keyboard shortcuts
+  dialog (`?`) and stay off in the default view. The Advanced view toggle's "on" state is now a
+  selected toggle (accent border, wash and dot) instead of a solid accent fill, so it no longer
+  competes with the verdict's primary action.
+- 8ad8560: Cache storage (`CSTOR`): the cached-partition counts and memory/disk sizes now come from
+  `SparkListenerBlockUpdated` events, which Spark writes when
+  `spark.eventLog.logBlockUpdates.enabled=true`. Before, the check read only the RDD Info in
+  stage-submission events, whose cache figures Spark has written as 0 since 2.3, so it could not fire
+  on any current Spark version. Each RDD reports its peak cache residency, so an `unpersist()` before
+  the log ends no longer hides partitions that never fit. Thresholds are unchanged. RDD Info stays as
+  the fallback. When a Spark 2.3+ run persists RDDs but its log has neither source and block-update logging was
+  off, the check reports that cache
+  storage was not logged, naming `spark.eventLog.logBlockUpdates.enabled`, instead of listing Cache
+  Storage as a passed check. Block-update lines for broadcast and shuffle blocks are dropped before
+  JSON parsing.
+- d7ea65a: Compare with another run from a run's dashboard. The top bar (the More options menu on a phone) opens the two-run compare view with the open run already in Run A, so checking whether a change helped means loading only the new run; the open run is reused, not parsed again, and Back to the run returns to its dashboard.
+- d7ea65a: The run comparison page now leads with a verdict: whether run B finished faster or slower than run
+  A and by how much, which cost metrics got worse or better (changes under 2% read as about the
+  same), and which finding categories became more or less frequent (netted per category name, so a
+  category never reads as both). When either run had failed jobs, the verdict leads with that
+  instead, for example "Run B had 2 of 5 jobs fail (run A: none)" or "Run B's only job failed". When
+  either log has no end-of-run record, the verdict says how much run time each log covers, in a
+  neutral tone, rather than calling the cut-off run faster. A **See where to
+  start in run B** button opens run B's dashboard and its own next steps. The page header also stacks
+  on phones instead of pushing the page wider than the screen.
+- d7ea65a: Copy next steps copies the run verdict as a plain checklist for a ticket or a message: the run and its verdict, the numbered steps with their stage, what to try and the savings, how many more places the full list holds, and what the log could not check.
+- d7ea65a: The scorecard now explains itself: Wall-clock, Efficiency and Unused core time (renamed from Wastage)
+  each say in Basic view what they measure and whether higher or lower is better, so a high
+  Efficiency next to a high Unused core time no longer reads as a contradiction. Advanced view keeps the
+  raw run and idle-time breakdown. Stage pills read "Stage 7" instead of "S 7". The verdict adds a
+  collapsed "New to Spark tuning?" primer on stages, tasks, executors, shuffle, savings and impact
+  colors, with a link to the finding guide; Advanced view hides it.
+  
+  On phones, finding rows now put the stage and savings on their own line under the recommendation
+  instead of cutting them off at the screen edge.
+- 4538c3e: HTML exports now carry their conclusions. The run verdict, next steps, what the log could not check, savings figures and run-shape numbers are computed when the file is exported, by both `--export-html` and **Download HTML dashboard**, so an exported dashboard always agrees with the report the same run produced. The export data format moves to version 2: an exported dashboard refuses a file of another version with a message instead of rendering it partially, and its footer names the tool, core version and build that produced it. An exported dashboard no longer offers **Export evidence**, since every format there reruns the analysis.
+- d7ea65a: The run verdict says how the run ended. A run with a failed job leads with "This run failed" (or how many jobs failed), quotes the first line of the reason Spark recorded, and lists the failure before any speed-up; the step for that failure then points at the quoted reason and keeps the driver log for the full stack trace. A run whose jobs all succeeded says so. Finding rows no longer print a savings figure that rounds to zero, such as "0.0 core-h".
+- e6f01b9: Evidence report schema 5 (CLI JSON, MCP `diagnose_run` and `get_finding_evidence`). A finding row's `evidence` now holds only the fields its finding type declares as evidence, so fields detectors kept for the impact estimator no longer appear: `stageShape`'s `totalCores`; `utilization`'s `utilizationFraction`, `appDurationMs` and `totalCores`; `memoryUtilization`'s `idleRateFraction`, `allocatedMB`, `peakExecutors`, `appDurationMs` and `allocatedBytes`; and `retryWaste`'s `extended` text. `value` is now always a number or `null`: `stageFailed`, `configAudit` and `incompleteRun` rows carry their text in a new `valueText` field instead. Finding ids are unchanged.
+- d7ea65a: In Basic view, each impact band on the Findings tab leads with its recommendation rows and folds its detail widgets behind "Show the evidence". The collapsed widget cards used to follow every band as a second list that repeated the rows. Show evidence, from the verdict, a row or Full app report, opens the fold and lands on the finding. Advanced view shows every widget as before.
+- 4feed5e: Download the self-contained HTML dashboard from the Export evidence menu. Until now it came only from the CLI's `--export-html`. The new item writes one `.html` file for the open run that opens in any browser with no server. It follows the Redact identifiers toggle and the Markdown and JSON naming, with a `-redacted` suffix when redaction is on. The main build ships the export template as `export-template.html` beside the app and fetches it only when someone picks HTML, so normal page loads don't carry it.
+  
+  Exported dashboards no longer link to docs, in either form. Finding tags and "learn more" references render as plain text, and the Docs button and the newcomer primer's guide pointer are left out, so an exported file names no docs address and needs no network. With nothing linking to it, the CLI's `--export-html` folder no longer ships a `docs/` copy. The build pieces that existed only for that copy are gone: the export build's docs step, VitePress's multi-page mode, and the step that rewrote copied docs paths to relative ones.
+  
+  The CLI and the dashboard now build the payload with the same core code: config audit, serialization, redaction, and the inline `window.__SPARKFORENSICS_RUN_GZ__` statement. The CLI's `data.js` is unchanged.
+- d7ea65a: The landing page puts **Choose file** and **Try a sample run** in the first screen, directly under
+  the headline and the docs links, instead of below the fold. A new **Where do I find my event log?** guide explains how
+  to turn event logging on, where Spark writes the log, and how to download one from a Spark History
+  Server. The parsing screen now says roughly how long is left, notes that the log stays on this
+  machine, and has a **Cancel** button.
+- 98591c4: The evidence report (CLI md/json, MCP `diagnose_run`, and the dashboard's Export evidence download) no longer lists checks the log could not run as clean. It uses the dashboard's rule: every per-stage check on a log where no stage finished, the run-span checks (`utilization`, `memoryUtilization`, `autoscalingChurn`) on a log with no end-of-run record, and any check whose only finding is a missing-data caveat move from `cleanChecks` to a new `notRunChecks` list. Each entry carries a `reason`, and the Markdown shows them under "Not checked on this log". The summary gains `actionableFindingCount` and `actionableImpactBandCounts`, which leave out evidence caveats and the incomplete-run row as the dashboard's top bar does, and `clean`, the dashboard's clean-run rule. The report's `schemaVersion` is now 4.
+- 98591c4: The evidence report and MCP `get_run_summary` now say how the run ended, as the dashboard verdict does. The report summary gains `outcome` (`failedJobs`, `totalJobs`, `failureReason`, `failureReasonStageId`), and the Markdown adds a line such as "Outcome: 1 of 3 jobs failed. Spark's recorded reason (stage 1): ...", quoting only the first line of Spark's reason. `get_run_summary` returns the same four fields next to `runComplete`. With `redact`, its app identity now comes from the same redacted report, so a host in the app name and in the failure reason get the same pseudonym.
+- 98591c4: The evidence report (CLI md/json, MCP `diagnose_run`, and the dashboard's Export evidence download) now opens with the dashboard's run verdict. A new `verdict` field carries the same title, summary sentences and first three next steps the verdict card shows, in the same order: grouped by place, ranked by potential savings, with failures first on a run whose jobs failed. Each step has its action, what to try, the potential savings and what that figure counts, and the other finding types flagged at the same place. `copyText` is the card's "Copy next steps" checklist. The Markdown adds a `## Verdict` section above "Fix these first", which stays: it ranks fix types, the verdict ranks places. The verdict's ranking and wording moved from the dashboard into the shared core package, so both paths run one implementation.
+- 98591c4: Savings figures in the evidence report (CLI md/json, MCP, and the dashboard's Export evidence download) now read as the dashboard prints them. Memory reads in GB-h from 0.1 GB-h up instead of MB-s, core time in core-s or core-h instead of core-ms, and a figure that rounds to zero is left out instead of printing "0.0 core-h". Each figure says what it counts ("of run time", "of core time", "of unused executor memory"): `recommendations` rows gain `impactMeaning`, finding rows gain `impact` and `impactMeaning`, and the Markdown adds a `- estimate:` line explaining how each figure was derived.
+  
+  **Changed output:** time figures no longer carry an "Estimated" prefix. "Estimated 26.1s" is now "26.1s of run time", in `recommendations[].impact` and in the Markdown `impact:` lines. Update any script that matched the old prefix. The Markdown `- impact:` line now carries a single figure: it used to print the time range and the raw resource figure together, joined by a middot. The resource figure behind a time estimate has moved to the new `- estimate:` line, and a raw waste in milliseconds that is below the estimate's high is no longer printed.
+  
+  The `--min-efficiency` budget (and MCP `minEfficiencyPct`) detail now reads "Busy core time 26% below budget 90%." instead of "Efficiency 26% ...", so it no longer reads as the dashboard's Efficiency tile, which measures something else. What the flag measures, the share of executor core time that ran tasks, is unchanged, and so are its exit codes.
+- 98591c4: The CLI `--stage` filter and MCP `diagnose_run`'s `stageId` now keep a SQL plan finding whose only stage is the one asked for, such as a small-files finding on stage 3, the same rule the dashboard's Stage details uses.
+  
+  The evidence report summary and MCP `get_run_summary` gain `runShape`, the run-shape figures the dashboard shows: wall-clock, Efficiency (the share of the run with a stage running), Unused core time, the ETL phases' summed stage time, and the peak busy cores from Core Usage by Locality. Each is null where the dashboard shows "Not measured" or "Unavailable", and the Markdown lists them under the header with what each one measures.
+  
+  Run from a repository checkout, the CLI, MCP and server entry points no longer silently use a leftover `vendor-core/` built from older core sources. They use it only while it matches `packages/core/src`, and otherwise print a one-line warning and run the current sources. The packed `vendor-core/` now records the hash of the sources it was built from.
+- d7ea65a: The dashboard now opens with a run verdict: one line saying where to start, a short summary, and
+  up to three numbered next steps. Each step says in plain language what is happening and what to
+  try, and links to its evidence and stage details. Findings on the same stage fold into one step,
+  since their savings overlap. Steps follow the same savings ranking as the rest of the dashboard. The separate "Highest impact" callout is gone,
+  and the finding filter bar now shows in Advanced view, or whenever a filter is active.
+- d7ea65a: The sample run says it is the sample. A line above its verdict explains that the board shows a real Spark job from a public example corpus, picked for its common problems, and offers Load my event log and a link to where to find one, so a newcomer who started from Try a sample run has a next step to their own log.
+- d7ea65a: Stage details read like a verdict step. The dialog is titled "Stage N", with Spark's code-line stage name labelled as the code location, and opens with one sentence placing the stage in the run: how long it ran, its share of the run and its task count. Each finding shows its action, a plain explanation, what to try and its potential savings, ordered as the verdict orders them, with a Show evidence button that closes the dialog and jumps to the finding's widget.
+- d7ea65a: The top bar's count chip agrees with the verdict and leads somewhere. It counts the findings the verdict ranks (config findings included, evidence caveats left out), reads "No findings" only for a run the verdict calls clean, "Not fully checked" when the log lacked evidence and "Run failed" when a job failed, and clicking it opens that band of the Findings list. A "Skip to the verdict" link is the first Tab stop on the dashboard.
+- d7ea65a: The run verdict no longer calls a run clean when the log lacked evidence a check needs, such as executor metrics for memory or block updates for cache storage: a run is called clean only when nothing is missing, and a log in which no stage finished says so instead of "Every check passed".
+
+### Patch Changes
+
+- d7ea65a: Clean checks no longer lists checks the log could not run as passed. On a log with no finished stage, every per-stage check, and any check whose only finding is a missing-data caveat, moves to a neutral "Not checked on this log" group. So do the core usage, memory and executor churn checks on a log with no end-of-run record. The verdict uses the same rule.
+- d7ea65a: Run comparison finding rows now carry the finding's `type` next to its `rule`, so a sub-rule such as
+  `maxPartitionTooBig` can be grouped under its category (`partitionSizing`). The web comparison page's
+  **Findings by category** list uses it, so sub-rule rows show their category tag instead of the raw
+  rule name.
+- d7ea65a: Core usage by locality moves from the Findings tab to the Full app report, beside the other run-wide charts, and its summary reads "busy at the peak". Show evidence on a locality finding now opens the Full app report and lands on the chart.
+- d7ea65a: `--export-html` no longer opens to a blank page for a log with cached RDDs. The export payload flattened the run's RDD storage map and each stage's executor metrics to empty objects, so the Cache Storage card threw on load. Nested maps and sets now keep their type through the export, with or without `--redact`.
+- e6f01b9: A finding's action label is now the same on every surface. Where a finding has no specific label, the dashboard, the verdict step and the report row all show the finding type's name; report rows used to show the raw type. The report's `cleanChecks` and `notRunChecks` now list `overBroadcast` and `underBroadcast`, matching the dashboard, where they used to list the `broadcastSizing` detector. The Config Audit widget's heading is now "Config Audit", the name used everywhere else, where it used to read "Config Sanity".
+- 6b3c2ba: The Speculation waste (`SPEC`) finding now counts losing speculative attempts whose TaskEnd arrives
+  after their stage's StageCompleted. Spark kills the losing copy only once the stage finishes
+  ("Stage cancelled: Stage finished"), so on a real cluster this is the usual order, and the parser
+  used to drop those attempts, leaving the finding silent for runs with speculation enabled. Only the
+  stage's speculation waste totals change; every other stat still excludes late attempts.
+- d7ea65a: Say what each verdict savings figure counts: run time, or the core time, unused memory or extra data a fix would recover. Large memory-time figures read in GB-hours instead of millions of MB-seconds, and core-time figures in core-hours or core-seconds instead of core-milliseconds.
+- 98591c4: Run comparisons outside the dashboard now open with the dashboard comparison page's verdict. The CLI's `--baseline` output gains `comparison.verdict` in JSON (`title`, `tone`, `sentences`) and a verdict at the top of the Markdown "Comparison to baseline" section, which also names run A (the baseline) and run B (the candidate). MCP `compare_runs` returns the same `verdict`. It leads with failed jobs when either run had any ("Run A had 1 of 3 jobs fail; run B completed"), states the run-time change with a 2% noise band, never calls a cut-off log's shorter time faster, and names which cost metrics and finding categories moved each way. The verdict and the finding-tag names it uses moved from the dashboard into the shared core package, and the core comparison result now carries each run's job outcome, so the dashboard and the headless paths run one implementation.
+- d7ea65a: Full app report figures now say what they measure. Stage Summary's "Flagged" column, which counted board widgets and showed "—" for a stage with three flags, is now "Findings", the number of finding types on the stage. Core usage no longer rounds a short run's peak down to "0 cores": a chart window that runs past the last stage's end is averaged over the part the stages cover. The expanded ETL phases card says phases are summed stage time, which is why a phase can exceed the run. The executor chart steps between counts instead of drawing fractional executors, and its tooltip reads "At 7s: Active executors 2". Chart tooltips draw on the theme's own surface, so they stay readable in the dark theme. The scaling estimate reads "with 5× the executors" instead of "at 500% executors", and a long card summary wraps under its value instead of cutting it off.
+- e6f01b9: A tuned run now states and applies its thresholds consistently. `--max-skew` measures skew with the run's `skew.minTasksForP95`, so the budget checks the same ratio the skew finding reports. A tuned `floorPctWarn` or `floorPctCrit` on `skew` or `straggler` now grades that detector's impact bands. Caveat text that names a threshold (GC, skew, straggler, memory utilization, core locality) states the value the run used, not the default. The "estimate is unvalidated" caveat appears only on a tuned finding that has an estimate figure. A threshold file naming a built-in object key such as `constructor` or `toString` is refused as an unknown threshold. The MCP `compare_runs` Markdown now names the tuned thresholds, as `diagnose_run` does. The HTML export data format moves to version 3, so a dashboard built by this release refuses an older export with a message to export again, instead of rendering blank config-audit and stage-failure values. Default-threshold output is unchanged.
+- 49ff617: Title each Spark Tuning Reference docs page "<Topic> | Spark Tuning Reference" and give it its own meta
+  description from the reference manifest's `brief`, in place of the site-wide SparkForensics title suffix and
+  description.
+- d7ea65a: The Efficiency tile reads "Not measured" instead of a red "0%" when no stage in the log recorded an end, matching the verdict. Esc now closes the docs panel while focus is inside it, except while the docs' own search popup is open.
+
 ## 0.25.0
 
 ### Minor Changes

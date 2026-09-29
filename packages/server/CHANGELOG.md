@@ -1,5 +1,54 @@
 # sparkforensics-server
 
+## 0.4.0
+
+### Minor Changes
+
+- 8ad8560: Cache storage (`CSTOR`): the cached-partition counts and memory/disk sizes now come from
+  `SparkListenerBlockUpdated` events, which Spark writes when
+  `spark.eventLog.logBlockUpdates.enabled=true`. Before, the check read only the RDD Info in
+  stage-submission events, whose cache figures Spark has written as 0 since 2.3, so it could not fire
+  on any current Spark version. Each RDD reports its peak cache residency, so an `unpersist()` before
+  the log ends no longer hides partitions that never fit. Thresholds are unchanged. RDD Info stays as
+  the fallback. When a Spark 2.3+ run persists RDDs but its log has neither source and block-update logging was
+  off, the check reports that cache
+  storage was not logged, naming `spark.eventLog.logBlockUpdates.enabled`, instead of listing Cache
+  Storage as a passed check. Block-update lines for broadcast and shuffle blocks are dropped before
+  JSON parsing.
+- 3fbd34b: **Breaking (MCP):** `evaluate_budgets` with two runs now applies the absolute budgets
+  (`maxRuntimeMs`, `maxSpillGb`, `maxSkewRatio`, `maxFailedTaskRatePct`, `minEfficiencyPct`) to the
+  candidate run (`sourceB`/`runIdB`), matching `sparkforensics-analyze --baseline`. Before, they were
+  evaluated on `source`/`runId`, the regression baseline. The tool also always reports a
+  `run-complete` result with status `inconclusive` when the evaluated run (the candidate, with two
+  runs) has no ApplicationEnd event, the same check the CLI uses to exit 3, so a truncated log no
+  longer reads as a pass. Clients that passed the run to gate as `source` alongside a `sourceB` must
+  swap the two.
+  
+  The CLI now takes its `run-complete` check from the same shared budget evaluation. Its output and
+  exit codes are unchanged.
+- 98591c4: Run comparisons outside the dashboard now open with the dashboard comparison page's verdict. The CLI's `--baseline` output gains `comparison.verdict` in JSON (`title`, `tone`, `sentences`) and a verdict at the top of the Markdown "Comparison to baseline" section, which also names run A (the baseline) and run B (the candidate). MCP `compare_runs` returns the same `verdict`. It leads with failed jobs when either run had any ("Run A had 1 of 3 jobs fail; run B completed"), states the run-time change with a 2% noise band, never calls a cut-off log's shorter time faster, and names which cost metrics and finding categories moved each way. The verdict and the finding-tag names it uses moved from the dashboard into the shared core package, and the core comparison result now carries each run's job outcome, so the dashboard and the headless paths run one implementation.
+- 98591c4: The evidence report (CLI md/json, MCP `diagnose_run`, and the dashboard's Export evidence download) no longer lists checks the log could not run as clean. It uses the dashboard's rule: every per-stage check on a log where no stage finished, the run-span checks (`utilization`, `memoryUtilization`, `autoscalingChurn`) on a log with no end-of-run record, and any check whose only finding is a missing-data caveat move from `cleanChecks` to a new `notRunChecks` list. Each entry carries a `reason`, and the Markdown shows them under "Not checked on this log". The summary gains `actionableFindingCount` and `actionableImpactBandCounts`, which leave out evidence caveats and the incomplete-run row as the dashboard's top bar does, and `clean`, the dashboard's clean-run rule. The report's `schemaVersion` is now 4.
+- 98591c4: The evidence report and MCP `get_run_summary` now say how the run ended, as the dashboard verdict does. The report summary gains `outcome` (`failedJobs`, `totalJobs`, `failureReason`, `failureReasonStageId`), and the Markdown adds a line such as "Outcome: 1 of 3 jobs failed. Spark's recorded reason (stage 1): ...", quoting only the first line of Spark's reason. `get_run_summary` returns the same four fields next to `runComplete`. With `redact`, its app identity now comes from the same redacted report, so a host in the app name and in the failure reason get the same pseudonym.
+- 98591c4: The evidence report (CLI md/json, MCP `diagnose_run`, and the dashboard's Export evidence download) now opens with the dashboard's run verdict. A new `verdict` field carries the same title, summary sentences and first three next steps the verdict card shows, in the same order: grouped by place, ranked by potential savings, with failures first on a run whose jobs failed. Each step has its action, what to try, the potential savings and what that figure counts, and the other finding types flagged at the same place. `copyText` is the card's "Copy next steps" checklist. The Markdown adds a `## Verdict` section above "Fix these first", which stays: it ranks fix types, the verdict ranks places. The verdict's ranking and wording moved from the dashboard into the shared core package, so both paths run one implementation.
+- 98591c4: Savings figures in the evidence report (CLI md/json, MCP, and the dashboard's Export evidence download) now read as the dashboard prints them. Memory reads in GB-h from 0.1 GB-h up instead of MB-s, core time in core-s or core-h instead of core-ms, and a figure that rounds to zero is left out instead of printing "0.0 core-h". Each figure says what it counts ("of run time", "of core time", "of unused executor memory"): `recommendations` rows gain `impactMeaning`, finding rows gain `impact` and `impactMeaning`, and the Markdown adds a `- estimate:` line explaining how each figure was derived.
+  
+  **Changed output:** time figures no longer carry an "Estimated" prefix. "Estimated 26.1s" is now "26.1s of run time", in `recommendations[].impact` and in the Markdown `impact:` lines. Update any script that matched the old prefix. The Markdown `- impact:` line now carries a single figure: it used to print the time range and the raw resource figure together, joined by a middot. The resource figure behind a time estimate has moved to the new `- estimate:` line, and a raw waste in milliseconds that is below the estimate's high is no longer printed.
+  
+  The `--min-efficiency` budget (and MCP `minEfficiencyPct`) detail now reads "Busy core time 26% below budget 90%." instead of "Efficiency 26% ...", so it no longer reads as the dashboard's Efficiency tile, which measures something else. What the flag measures, the share of executor core time that ran tasks, is unchanged, and so are its exit codes.
+- 98591c4: The CLI `--stage` filter and MCP `diagnose_run`'s `stageId` now keep a SQL plan finding whose only stage is the one asked for, such as a small-files finding on stage 3, the same rule the dashboard's Stage details uses.
+  
+  The evidence report summary and MCP `get_run_summary` gain `runShape`, the run-shape figures the dashboard shows: wall-clock, Efficiency (the share of the run with a stage running), Unused core time, the ETL phases' summed stage time, and the peak busy cores from Core Usage by Locality. Each is null where the dashboard shows "Not measured" or "Unavailable", and the Markdown lists them under the header with what each one measures.
+  
+  Run from a repository checkout, the CLI, MCP and server entry points no longer silently use a leftover `vendor-core/` built from older core sources. They use it only while it matches `packages/core/src`, and otherwise print a one-line warning and run the current sources. The packed `vendor-core/` now records the hash of the sources it was built from.
+
+### Patch Changes
+
+- 6b3c2ba: The Speculation waste (`SPEC`) finding now counts losing speculative attempts whose TaskEnd arrives
+  after their stage's StageCompleted. Spark kills the losing copy only once the stage finishes
+  ("Stage cancelled: Stage finished"), so on a real cluster this is the usual order, and the parser
+  used to drop those attempts, leaving the finding silent for runs with speculation enabled. Only the
+  stage's speculation waste totals change; every other stat still excludes late attempts.
+
 ## 0.3.0
 
 ### Minor Changes
