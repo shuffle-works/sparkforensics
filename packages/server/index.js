@@ -121,6 +121,9 @@ Server fetches on your behalf (server-to-server, so no browser CORS
 restriction). Binds to 127.0.0.1 only. Default port ${DEFAULT_PORT},
 overridden by --port or the PORT env var.
 
+Also serves the SparkForensics MCP tools over streamable HTTP at /mcp,
+for clients on this machine, with the default detector thresholds.
+
 See https://github.com/shuffle-works/sparkforensics#readme for details.
 `;
 

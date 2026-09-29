@@ -135,7 +135,9 @@ npx sparkforensics-server
 It listens on `http://127.0.0.1:4173` by default (override with `--port` or
 the `PORT` env var) and binds to localhost only. Open the URL in Chrome and
 use the **Fetch from Spark History Server** disclosure on the intake
-screen.
+screen. The same server serves the MCP tools over streamable HTTP at `/mcp`,
+for clients on the same machine; see
+[Connecting over HTTP](https://shuffle-works.github.io/sparkforensics/docs/user-guide/mcp-tools#connecting-over-http).
 
 History Server fetching requires local-server mode, a History Server
 reachable from the machine running that server, and a supported base

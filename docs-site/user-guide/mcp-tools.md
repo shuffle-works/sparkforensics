@@ -49,6 +49,35 @@ each finding and clean check from a tuned detector carries its own
 `tunedThresholds`, as in the CLI report. The Markdown output of
 `diagnose_run` and `compare_runs` names the tuned thresholds too.
 
+### Connecting over HTTP
+
+The local server (`npx sparkforensics-server`, see
+[Run it locally](./getting-started.md#local-server-mode)) also serves the
+same eight tools over MCP's streamable HTTP transport at
+`http://127.0.0.1:4173/mcp` (or the port you pass with `--port`). Point a
+client that speaks streamable HTTP, such as Claude Code, at that URL:
+
+```json
+{
+  "mcpServers": {
+    "sparkforensics": { "type": "http", "url": "http://127.0.0.1:4173/mcp" }
+  }
+}
+```
+
+It is for clients on the same machine only. The server listens on
+127.0.0.1, and a request whose `Host` header isn't `127.0.0.1:<port>` or
+`localhost:<port>` gets a 403, which blocks DNS-rebinding attacks from web
+pages. Use `127.0.0.1` in the URL: `localhost` can resolve to the IPv6
+address `::1`, where the server doesn't listen.
+
+The endpoint always runs the default detector thresholds: the server takes
+no `--thresholds` flag. To tune thresholds, run `sparkforensics-mcp` over
+stdio instead. Runs are cached in the server process as they are for
+`sparkforensics-mcp`, so a `runId` from one request works in later ones
+until it expires. A relative `source.path` resolves against the directory
+you started the server from.
+
 ## `diagnose_run`
 
 Diagnose a Spark run: thresholded findings with remediation text, led by the
