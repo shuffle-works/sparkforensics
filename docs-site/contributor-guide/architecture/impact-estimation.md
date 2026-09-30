@@ -56,6 +56,11 @@ worker CPU. A finding with no measured figure and no wall-clock claim, or whose 
 time or duration, gets `null`. `autoscalingChurn` and `jobFailureRate` are excluded: their
 `coreHours` figures count executor-hours and job-hours with no cores multiplied in.
 
+Every surface reads `coreTimeMs` and `remediation` from the one `analyze()` result: the dashboard
+stores it, the HTML export ships it in its `catalog`, and the CLI report and MCP tools put it in
+their finding rows through `buildEvidenceReport()`. `surface-parity.test.js` compares the four on the
+public corpus logs.
+
 `coreTimeMs` is busy time only. A finding whose waste is allocated capacity that ran no task has
 `coreTimeMs: null` and keeps its idle figure in `rawWaste`, which for these counts idle core time
 rather than task time a fix removes: `utilization` (`coreHours`), `stageShape`'s `lowParallelism`
