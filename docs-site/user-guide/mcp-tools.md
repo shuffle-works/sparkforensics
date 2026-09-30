@@ -175,8 +175,9 @@ other findings are left out):
       "recommendation": "This event log never recorded an ApplicationEnd event: the capture stopped before the run finished...",
       "detectorVersion": 1,
       "evidence": {},
+      "remediation": [],
       "actionLabel": "incomplete run",
-      "impactEstimate": { "basis": "informational", "wallClock": null, "estimateMethod": "none" }
+      "impactEstimate": { "basis": "informational", "wallClock": null, "estimateMethod": "none", "coreTimeMs": null }
     }
   ]
 }
@@ -425,8 +426,9 @@ Example response:
     "recommendation": "This event log never recorded an ApplicationEnd event: the capture stopped before the run finished...",
     "detectorVersion": 1,
     "evidence": {},
+    "remediation": [],
     "actionLabel": "incomplete run",
-    "impactEstimate": { "basis": "informational", "wallClock": null, "estimateMethod": "none" }
+    "impactEstimate": { "basis": "informational", "wallClock": null, "estimateMethod": "none", "coreTimeMs": null }
   }
 }
 ```

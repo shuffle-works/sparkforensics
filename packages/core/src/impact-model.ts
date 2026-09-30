@@ -1,7 +1,7 @@
 // The waste models every detector entry's estimate() builds its ImpactEstimate from: the assumed
 // throughputs, the per-stage measurements behind them and the occupancy clip wrappers. Each
 // finding type's own composition of these lives on its DETECTORS entry, next to its detect().
-import type { ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, Stage } from './types.ts';
+import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, Stage } from './types.ts';
 import { nsToMs } from './format-utils.ts';
 import {
   estimateSingleStage, estimateMultiStage,
@@ -172,4 +172,22 @@ export function stageMappableWasteOrCostOnly(
   const wasteMsByStage = new Map(stageIds.map((id) => [id, perStageWasteMs]));
   // null: every stage excluded from the sweep
   return multiStageImpact(stageIds, wasteMsByStage, ctx, 'modeled', rawWaste) ?? costOnly('modeled', rawWaste);
+}
+
+// Finding types whose raw figure is busy core time read straight from the log: gc's jvmGCTime
+// (coreMs) and the discarded speculative or retried attempts' run time ('ms' cross-task sums).
+// Any other core figure is idle capacity, or modeled on an assumed constant (coreLocality's
+// per-task fetch penalty, autoscalingChurn's executor-hours, jobFailureRate's job-hours).
+const MEASURED_CORE_TIME_FIGURE: ReadonlySet<string> = new Set(['gc', 'retryWaste', 'speculationWaste']);
+
+/** The busy core time a finding's fix removes, in core-milliseconds, or null when the detector
+ * measures none. Only a measured figure counts: one its estimate() already set (skew and
+ * straggler's removed task time), or the raw figure of a MEASURED_CORE_TIME_FIGURE type. A
+ * wall-clock claim, an idle capacity figure and a modeled figure are never converted. It never
+ * reads executorCpuTime, which leaves out Python worker CPU. */
+export function coreTimeFor(finding: Finding, estimate: ImpactEstimate): { low: number; high: number } | null {
+  if (estimate.coreTimeMs !== undefined) return estimate.coreTimeMs;
+  const raw = estimate.rawWaste;
+  if (!raw || !MEASURED_CORE_TIME_FIGURE.has(finding.type)) return null;
+  return { low: raw.value, high: raw.value };
 }

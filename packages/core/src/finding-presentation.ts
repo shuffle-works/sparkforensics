@@ -8,6 +8,7 @@
 // detectors.ts is type-only, so it is erased at build time. A detector's scope, order and emits
 // list stay on its DETECTORS entry; renderers get them through detectorInfoByType().
 import type { ThresholdsOf } from './detectors.ts';
+import type { Remediation } from './finding-types.ts';
 import type { FindingOf, FindingType } from './types.ts';
 
 export interface FindingPresentation<T extends FindingType> {
@@ -28,6 +29,25 @@ export interface FindingPresentation<T extends FindingType> {
 
 /** A share threshold as captions and caveats state it: 0.005 -> "0.5%", never float noise like 7.000000000000001%. */
 export const shareLabel = (share: number): string => `${Math.round(share * 1e6) / 1e4}%`;
+
+// Whether the detector found `key` already logged on for this run. Its switchFix (detectors.ts)
+// then worded the row's own text for that case and left the property out of the remediation, so
+// a generic line reads the same decision and never recommends a switch the row says is on.
+// A finding with no remediation (older or hand-built data) keeps the property wording.
+function switchAlreadyOn(finding: { remediation?: Remediation[] }, key: string): boolean {
+  return finding.remediation != null && !finding.remediation.some((r) => r.key === key);
+}
+
+const SKEW_JOIN_KEY = 'spark.sql.adaptive.skewJoin.enabled';
+const SKEW_JOIN_ALREADY_ON = 'AQE skew-join handling is already on, so salt the key or repartition on a better key.';
+const SKEW_JOIN_AQE_OFF = 'AQE is off, so enable it (spark.sql.adaptive.enabled) for skew-join handling to apply; otherwise salt the key or repartition on a better key.';
+
+// The skew-join generic line, worded per the row's remediation: AQE logged off, switch already on, or neither.
+function skewJoinGeneric(f: { remediation?: Remediation[] }, unset: string): string {
+  if (f.remediation?.some((r) => r.key === 'spark.sql.adaptive.enabled')) return SKEW_JOIN_AQE_OFF;
+  return switchAlreadyOn(f, SKEW_JOIN_KEY) ? SKEW_JOIN_ALREADY_ON : unset;
+}
+const DYNAMIC_ALLOCATION_KEY = 'spark.dynamicAllocation.enabled';
 
 // The four configAudit DETECTORS entries share this row, one per audited property.
 const CONFIG_AUDIT_PRESENTATION: FindingPresentation<'configAudit'> = {
@@ -71,7 +91,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'SKEW',
     thresholdSummary: (t) => `P95 task time over ${t.ratioWarn}× the median (the longest task on stages under ${t.minTasksForP95} tasks)`,
     actionLabel: () => 'Fix task skew',
-    genericRecommendation: () => 'For join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.',
+    genericRecommendation: (f) => skewJoinGeneric(f,
+      'For join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.'),
   },
   stageShape: {
     name: 'stage shape',
@@ -124,8 +145,10 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     },
     genericRecommendation(f) {
       switch (f.rule) {
-        case 'shufflePartitionSkew': return 'For join skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.';
-        case 'lowShuffleParallelism': return 'Raise spark.sql.shuffle.partitions so each partition is smaller.';
+        case 'shufflePartitionSkew': return skewJoinGeneric(f, 'For join skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.');
+        case 'lowShuffleParallelism': return switchAlreadyOn(f, 'spark.sql.shuffle.partitions')
+          ? "spark.sql.shuffle.partitions is already high enough, so raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller."
+          : 'Raise spark.sql.shuffle.partitions so each partition is smaller.';
         case 'maxPartitionTooBig': return 'Repartition to break up the oversized partition before this stage.';
       }
       return undefined;
@@ -185,7 +208,10 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     genericRecommendation(f) {
       if (f.variant === 'durationShare') return 'Check for data locality or partition assignment skewing work onto one node.';
       if (f.variant === 'multiDim') return 'Investigate uneven partition assignment or a degraded executor.';
-      return 'Check what this host was running: it may just hold data locality for its tasks or carry one heavy stage, rather than a hardware fault. Enable spark.speculation to relaunch a lagging task automatically.';
+      const check = 'Check what this host was running: it may just hold data locality for its tasks or carry one heavy stage, rather than a hardware fault.';
+      return switchAlreadyOn(f, 'spark.speculation')
+        ? `${check} Speculation is already on, so a lagging task there is already relaunched.`
+        : `${check} Enable spark.speculation to relaunch a lagging task automatically.`;
     },
   },
   stageSlowness: {
@@ -233,7 +259,9 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     },
     genericRecommendation(f) {
       switch (f.variant) {
-        case 'idleCores': return 'Reduce cluster size or enable dynamic allocation.';
+        case 'idleCores': return switchAlreadyOn(f, DYNAMIC_ALLOCATION_KEY)
+          ? 'Dynamic allocation is already on, so reduce cluster size.'
+          : 'Reduce cluster size or enable dynamic allocation.';
         case 'wasteModel': return 'Review spark.executor.memory and executor count.';
         case 'memoryBand':
           if (f.dataUnavailable) return undefined;
@@ -249,14 +277,16 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'UTIL',
     thresholdSummary: (t) => `average executor utilization below ${shareLabel(t.minUtil)}`,
     actionLabel: () => 'Reduce cluster size',
-    genericRecommendation: () => 'Consider reducing cluster size or enabling dynamic allocation.',
+    genericRecommendation: (f) => (switchAlreadyOn(f, DYNAMIC_ALLOCATION_KEY)
+      ? 'Dynamic allocation is already on, so consider reducing cluster size.'
+      : 'Consider reducing cluster size or enabling dynamic allocation.'),
   },
   coreLocality: {
     name: 'core locality',
     tag: 'LOCAL',
     thresholdSummary: () => 'task placement missing data-local core assignment',
     actionLabel: () => 'Fix data locality',
-    genericRecommendation: () => 'Check spark.locality.wait settings and executor/data colocation.',
+    genericRecommendation: () => 'Check executor/data colocation.',
   },
   cachingOpportunity: {
     name: 'caching opportunity',
@@ -326,7 +356,9 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'PLAN',
     thresholdSummary: (t) => `a broadcast over ${t.overBroadcastBytes / 1073741824} GiB`,
     actionLabel: () => 'Fix oversized broadcast',
-    genericRecommendation: () => 'Check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.',
+    genericRecommendation: (f) => (switchAlreadyOn(f, 'spark.sql.autoBroadcastJoinThreshold')
+      ? 'Automatic broadcast is already disabled, so remove the broadcast() hint that forced it.'
+      : 'Check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.'),
   },
 };
 

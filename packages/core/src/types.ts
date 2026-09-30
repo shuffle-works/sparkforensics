@@ -276,6 +276,9 @@ export type RawWasteUnit = 'ms' | 'bytes' | 'mbSeconds' | 'coreHours' | 'coreMs'
 export interface RawWasteFigure {
   value: number;
   unit: RawWasteUnit;
+  /** Set on a coreMs/coreHours figure that counts allocated core capacity no task ran on
+   * (utilization, stageShape's lowParallelism and taskStageSkew), not task time. */
+  idle?: true;
 }
 
 export type ImpactEstimateBasis = 'serial' | 'contended' | 'resourceOnly' | 'informational';
@@ -292,11 +295,20 @@ export interface ImpactEstimate {
   wallClock: { low: number; high: number } | null;
   estimateMethod: ImpactEstimateMethod;
   rawWaste?: RawWasteFigure;
+  /** Busy core time the fix removes (executor task time), in core-milliseconds, as a low..high
+   * range; set by estimateImpact (see coreTimeFor). Only a figure read from the log as removed
+   * task time counts: skew and straggler's removed task time, gc's jvmGCTime, or retried and
+   * speculative attempts' cross-task executor time, taken as is (low equals high) whether or not
+   * the log records executor cores. Null for every finding with only a wall-clock claim, for a
+   * modeled figure resting on an assumed constant (coreLocality, autoscalingChurn,
+   * jobFailureRate), and for an idle capacity figure (`rawWaste.idle`). skew and straggler on one stage count its slow tail once:
+   * skew carries it and straggler is null. Never 0 for "unknown". */
+  coreTimeMs?: { low: number; high: number } | null;
 }
 
 // `Finding` is a union discriminated on `type`, one member per emitted finding type: see
 // finding-types.ts for each detector's shape and which of its fields are public evidence.
-export type { Finding, FindingOf, FindingEvidenceMap, TunedThreshold, TunedThresholds } from './finding-types.ts';
+export type { Finding, FindingOf, FindingEvidenceMap, Remediation, TunedThreshold, TunedThresholds } from './finding-types.ts';
 
 export interface TaskData { metrics: Float64Array | number[]; fieldNames: string[]; }
 

@@ -1,7 +1,7 @@
 # Impact estimation
 
 Every finding covered by this section carries an optional `impactEstimate: {basis,
-wallClock, estimateMethod, rawWaste?}` (`packages/core/src/types.ts`), attached by
+wallClock, estimateMethod, rawWaste?, coreTimeMs?}` (`packages/core/src/types.ts`), attached by
 its `DETECTORS` entry's `estimate()` (`packages/core/src/detectors.ts`), which
 `estimateImpact()` (`packages/core/src/impact-estimator.ts`) runs as a post-pass once detection
 and suppression finish (`packages/core/src/analyzer.ts`). The waste models those methods compose
@@ -36,6 +36,34 @@ all), holding the formula's pre-clip magnitude in the formula's own natural unit
 bytes or core-ms). `wallClock` is what the occupancy model says is recoverable, which clips
 against the stage's own physical floor; `rawWaste` is what the stage really wasted either
 way. The two answer different questions.
+
+`coreTimeMs` is the busy core time the fix removes, the executor task time, as `{low, high}`
+core-milliseconds with `low === high`, or `null` when the detector measures none (never 0 for
+unknown). `estimateImpact()` sets it for every estimate through `coreTimeFor()` in
+`packages/core/src/impact-model.ts`, and only from a measured figure: skew and straggler's
+removed task time (`tailClaimImpact()` sets it from the claim's `removedCoreWorkMs`), or the raw
+figure of a type in `MEASURED_CORE_TIME_FIGURE`: gc's `jvmGCTime` (`coreMs`) and the cross-task
+executor-time `ms` sums of `retryWaste` and `speculationWaste`. These are set even when the log
+has no executor cores. A wall-clock claim is never converted to core time, so every finding with
+only a wall-clock claim gets `null`. A modeled figure, one that rests on an assumed constant, gets
+`null` too: coreLocality's `coreMs` (non-local tasks × `NETWORK_FETCH_PENALTY_MS`) and the
+`coreHours` of `autoscalingChurn` and `jobFailureRate`. `estimateMethod` does not decide this,
+because it describes the wall-clock figure: gc's is `modeled` while its `jvmGCTime` is read from
+the log. `executorCpuTime` is never read because it leaves out Python worker CPU.
+
+Every surface reads `coreTimeMs` and `remediation` from the one `analyze()` result: the dashboard
+stores it, the HTML export ships it in its `catalog`, and the CLI report and MCP tools put it in
+their finding rows through `buildEvidenceReport()`. `surface-parity.test.js` compares the four on the
+public corpus logs.
+
+`coreTimeMs` is busy time only. A `coreMs`/`coreHours` raw figure that counts allocated capacity
+no task ran on carries `rawWaste.idle: true`: `utilization` (`coreHours`) and `stageShape`'s
+`lowParallelism` and `taskStageSkew` (`coreMs`). `coreTimeFor()` gives those `null`, and
+`rawWasteMeaning()` in `packages/core/src/impact-format.ts` labels them "of idle core capacity"
+instead of "of core time" on every surface. `memoryUtilization`'s `idleCores` counts `mbSeconds`,
+which has no core time either. A stage's slow tail is also counted once: `skew` and `straggler`
+both measure the task time removed from it, so on one stage `skew` carries it and `straggler` has
+`null` (`countTailCoreTimeOnce()` in `packages/core/src/impact-estimator.ts`).
 
 ## Occupancy-weighted attribution
 

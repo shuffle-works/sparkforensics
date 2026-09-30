@@ -312,7 +312,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const { findings } = diagnoseRun(runId);
       const incomplete = findings.find((f) => f.type === 'incompleteRun');
       expect(incomplete).toBeDefined();
-      expect(incomplete.impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
+      expect(incomplete.impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none', coreTimeMs: null });
 
       const { finding } = getFindingEvidence(runId, incomplete.id);
       expect(finding.impactEstimate).toEqual(incomplete.impactEstimate);

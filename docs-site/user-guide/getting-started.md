@@ -88,7 +88,8 @@ cause and their savings overlap rather than add up. Each savings figure says
 what it counts: a time such as "58.6s of run time" is how much sooner the run
 could finish, while a resource figure such as "3.0 GB-h of unused executor
 memory" or "0.7 core-h of core time" is cluster time a fix would free up,
-which cuts cost but may not shorten the run. **Copy next steps**
+which cuts cost but may not shorten the run. A figure "of idle core capacity"
+counts allocated cores that ran no task, not work a fix removes. **Copy next steps**
 copies the whole plan as a plain checklist (run, verdict, and numbered steps
 with their stage and savings) to paste into a ticket or a message. Steps
 follow the same savings ranking as the rest of the board. When much of the
@@ -250,6 +251,77 @@ run into `<dir>` (which must not already exist or must be empty). Open
 get the same interactive dashboard offline, without the docs links. This
 makes it easy to archive or share a run. `--redact` applies to the exported
 report too.
+
+### Machine-readable fixes and costs
+
+Each row of the JSON report's `findings` array carries two fields for a script
+or tuning loop that acts on the output without reading prose.
+
+`remediation` is an array of the property changes the row's `recommendation`
+names, in structured form. It is empty when the recommendation names no Spark
+property.
+
+```json
+"remediation": [
+  { "kind": "conf", "key": "spark.sql.shuffle.partitions", "direction": "increase", "suggested": 800 }
+]
+```
+
+- `kind` is always `"conf"`: a Spark property.
+- `direction` is `"increase"` or `"decrease"` (move the current value that
+  way) or `"set"` (take the `suggested` value, for a switch or a class name).
+- `suggested` is the value the detector computed, or `null` when it computes
+  none. Counts are numbers, switches are booleans, sizes carry a Spark unit
+  suffix (`"1024m"`).
+
+`impactEstimate.coreTimeMs` is the busy core time the fix removes: the
+executor task time, in core-milliseconds, next to the `wallClock` range
+(elapsed time). It is a `{ "low": ..., "high": ... }` range with `low` equal
+to `high`, or `null` when the detector measures no such figure: `null` means
+unknown, never zero. Only figures read from the log count: GC time, the
+executor time of retried and discarded speculative attempts, and for skew
+and straggler findings the task time the fix removes from the slow tasks. These are set even when the log has
+no executor core data. A finding with only a wall-clock claim has
+`coreTimeMs: null`: its elapsed time is not converted to core time. Task run
+time is used, not `executorCpuTime`, so Python worker CPU is not missed.
+
+Findings whose only figure is bytes or memory-time have `coreTimeMs: null`, as
+do findings whose core figure rests on an assumed constant: `coreLocality`'s
+per-task fetch penalty and the executor-hours or job-hours of
+`autoscalingChurn` and `jobFailureRate`. Their `rawWaste` is unchanged.
+
+`coreTimeMs` never includes idle capacity. A finding whose waste is allocated
+cores that ran no task (`utilization`, `stageShape`'s low parallelism and
+task/stage skew rows) has `coreTimeMs: null` and keeps its figure in
+`impactEstimate.rawWaste` with `"idle": true`; every surface labels it "of
+idle core capacity", not "of core time". A stage's slow tail is counted once:
+when `skew` and `straggler` both flag the same stage, `skew` carries the
+removed task time and `straggler` has `null`.
+
+When the logged `spark.sql.shuffle.partitions` is already at or above the
+count a low-parallelism shuffle stage needs, the property is not what limits
+that stage: the recommendation points at the stage's own partitioning
+(`repartition(n)` or RDD parallelism) and `remediation` is empty.
+
+A `remediation` that sets a property to a fixed value (for example
+`spark.sql.adaptive.skewJoin.enabled`, `spark.speculation` or
+`spark.dynamicAllocation.enabled`) is left out when the run's logged conf
+already has that value; booleans compare case-insensitively. The
+recommendation then stops naming that property and points at the remedy
+left (for example "AQE skew-join handling is already on, so salt the key or
+repartition on a better key"), so the text and `remediation` never disagree.
+The dashboard's one-line fix for a group of such findings follows the same
+logged conf. Only properties
+the event log records count: Spark's unlogged version defaults (such as
+skew-join handling being on by default with AQE in Spark 3.2+) are not
+modeled, so such a run can still get the suggestion.
+
+Two logged settings change which fix is offered. Skew-join handling counts as
+already on only when `spark.sql.adaptive.enabled` is not logged `false`; with
+AQE logged off, the skew findings suggest setting `spark.sql.adaptive.enabled`
+to `true` instead. When `spark.sql.autoBroadcastJoinThreshold` is logged `-1`
+(auto-broadcast disabled), an over-broadcast finding has an empty `remediation`
+and points at removing the `broadcast()` hint.
 
 The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,

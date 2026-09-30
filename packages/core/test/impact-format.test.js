@@ -93,7 +93,13 @@ describe('impactEstimateFigure', () => {
 
   it('reads core time in core-s below a tenth of a core-hour', () => {
     expect(formatRawWaste({ value: 12_300, unit: 'coreMs' })).toBe('12.3 core-s');
-    expect(rawWasteMeaning('coreMs')).toBe('of core time');
+    expect(rawWasteMeaning({ value: 12_300, unit: 'coreMs' })).toBe('of core time');
+  });
+
+  it('labels an idle core figure as idle capacity, not core time', () => {
+    const idle = { basis: 'resourceOnly', estimateMethod: 'measured', wallClock: null, rawWaste: { value: 12.3, unit: 'coreHours', idle: true } };
+    expect(impactEstimateFigure(idle)).toEqual({ text: '12.3 core-h', meaning: 'of idle core capacity' });
+    expect(rawWasteMeaning({ value: 12_300, unit: 'coreMs', idle: true })).toBe('of idle core capacity');
   });
 });
 

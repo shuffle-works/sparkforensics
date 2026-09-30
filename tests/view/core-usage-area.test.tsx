@@ -234,7 +234,7 @@ test('shows the LOCAL badge, impact band, and fix when a coreLocality finding ex
   const catalog: Finding[] = [{
     type: 'coreLocality', stageId: null, impactBand: 'critical',
     metric: 'nonLocalRatio', value: 40, nonLocalTaskCount: 0,
-    recommendation: 'Tasks are running without process- or node-local data placement more than expected, check spark.locality.wait settings and executor/data colocation.',
+    recommendation: '40% of tasks (0) ran without process- or node-local data placement: check executor/data colocation.',
   }];
 
   installInterpretation(catalog, buildAppModel());
@@ -246,7 +246,7 @@ test('shows the LOCAL badge, impact band, and fix when a coreLocality finding ex
 
   expect(screen.getByText('LOCAL')).toBeInTheDocument();
   expect(screen.getByText(/40% non-local/)).toBeInTheDocument();
-  expect(screen.getByText(/Check spark\.locality\.wait settings/)).toBeInTheDocument();
+  expect(screen.getByText(/Check executor\/data colocation\./)).toBeInTheDocument();
 });
 
 test('renders the core-time raw-waste figure when a coreLocality finding carries an impactEstimate', async () => {

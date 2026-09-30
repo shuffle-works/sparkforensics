@@ -3,8 +3,12 @@ import { estimateImpact } from '../src/impact-estimator.js';
 import { computeOccupancy } from '../src/occupancy.js';
 
 // estimateImpact reads analyze()'s one occupancy sweep: build it here the way analyze() does.
+// coreTimeMs is covered by impact-core-time.test.js; dropped here so these assertions stay about
+// the wall-clock and raw figures.
 function estimate(findings, stages, totalCores = 0) {
-  return estimateImpact(findings, { stages, totalCores, occupancy: computeOccupancy(stages, totalCores) });
+  estimateImpact(findings, { stages, totalCores, occupancy: computeOccupancy(stages, totalCores) });
+  for (const f of findings) if (f.impactEstimate) delete f.impactEstimate.coreTimeMs;
+  return findings;
 }
 
 describe('estimateImpact: skeleton', () => {
@@ -780,7 +784,7 @@ describe('estimateImpact: cost-only group A', () => {
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
-      rawWaste: { value: 6, unit: 'coreHours' },
+      rawWaste: { value: 6, unit: 'coreHours', idle: true },
     });
   });
 
@@ -893,7 +897,7 @@ describe('estimateImpact: cost-only group B', () => {
     //            = (min(10, 5) - 1) * (8000 - 500) = 4 * 7500 = 30000.
     expect(est).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
-      rawWaste: { value: 30000, unit: 'coreMs' },
+      rawWaste: { value: 30000, unit: 'coreMs', idle: true },
     });
   });
 
