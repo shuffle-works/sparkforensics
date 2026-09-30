@@ -423,7 +423,7 @@ thresholds sit well above their disk counterparts at every tier.
 | Stage failed outright | none | any `stageFailureReason` present |
 | Slow host: multi-dimensional | max/median ratio across taskTime/inputBytes/shuffleBytes/storageMemory ≥ 1.33× (info); each dimension's sample must also clear an absolute floor (1000 ms for taskTime, 64 MiB for the byte dimensions). A stage lasting under `stageFloorPct` = 0.5% of the run is skipped (see the mean-duration row): a byte dimension there has no time estimate and would otherwise keep its ratio tier (66 of 90 warning/critical on the 14 real logs). The taskTime dimension falls back to `info` and takes its band from its wall-clock estimate; the byte dimensions get no time estimate and keep the ratio tier | ≥ `ratioTiers[1]` = 1.78× warning, ≥ `ratioTiers[3]` = 10× critical (`ratioTiers[2]` = 3.16 is not read) |
 | Utilization | avg active executors / peak < 60% (info) | none |
-| Autoscaling churn: short-lived executors (design spike, unvalidated thresholds) | > 30% of executors alive under 2 min (min 5 executors) | > 60% |
+| Autoscaling churn: short-lived executors | > 30% of executors alive under 2 min (min 5 executors) | > 60% |
 | Job failure rate | ≥ 30% (≥ 10% info) | ≥ 50% |
 | Idle cores | busy-core-time / (peak cores × wall-clock) idle > 50% (warning) | none |
 | Memory band | peak heap / allocated > 95% too-small (warning); < 70% over-provisioned (info) | none |

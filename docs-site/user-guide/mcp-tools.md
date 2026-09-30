@@ -599,7 +599,7 @@ The codes:
   when the server can't be reached or doesn't answer in time.
   `SPARKFORENSICS_SHS_TIMEOUT_MS` (default 30000) sets these timeouts. If the
   server is unreachable entirely (an SSH-only cluster), see
-  [Alternative ways to get the logs](./alternative-log-retrieval.md).
+  [Behind an SSH bastion](./alternative-log-retrieval.md#behind-an-ssh-bastion).
 - `archive-too-large`: the History Server archive blew the byte cap (1 GiB
   by default). Override it with `SPARKFORENSICS_MAX_ARCHIVE_BYTES`.
 - `directory-not-found`: `list_runs`'s `dir` doesn't exist, isn't a
