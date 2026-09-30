@@ -247,6 +247,46 @@ get the same interactive dashboard offline, without the docs links. This
 makes it easy to archive or share a run. `--redact` applies to the exported
 report too.
 
+### Machine-readable fixes and costs
+
+Each row of the JSON report's `findings` array carries two fields for a script
+or tuning loop that acts on the output without reading prose.
+
+`remediation` is an array of the property changes the row's `recommendation`
+names, in structured form. It is empty when the recommendation names no Spark
+property.
+
+```json
+"remediation": [
+  { "kind": "conf", "key": "spark.sql.shuffle.partitions", "direction": "increase", "suggested": 800 }
+]
+```
+
+- `kind` is always `"conf"`: a Spark property.
+- `direction` is `"increase"` or `"decrease"` (move the current value that
+  way) or `"set"` (take the `suggested` value, for a switch or a class name).
+- `suggested` is the value the detector computed, or `null` when it computes
+  none. Counts are numbers, switches are booleans, sizes carry a Spark unit
+  suffix (`"1024m"`).
+
+`impactEstimate.coreTimeMs` is the cluster capacity the fix frees, in
+core-milliseconds, next to the `wallClock` range (elapsed time) it comes from.
+It is a `{ "low": ..., "high": ... }` range, or `null` when the log cannot
+support a figure: `null` means unknown, never zero. It is derived two ways:
+
+- A finding with a wall-clock claim: `wallClock.low` and `wallClock.high`
+  times the peak concurrent executor cores of the run (the `Executor Added`
+  core counts, or the configured cores per executor). Stage wall-clock comes
+  from task run time, not from `executorCpuTime`, so Python worker CPU is not
+  missed. A log with no executor core data gives `null`.
+- A finding whose `rawWaste` is already core time (`coreMs`, or `coreHours`
+  converted to core-ms): that figure, with `low` equal to `high`.
+
+Findings whose only figure is bytes, memory-time, or executor-hours or
+job-hours (`autoscalingChurn`, `jobFailureRate`) have `coreTimeMs: null`. Peak
+cores over-count a run that scaled down under dynamic allocation, so read the
+figure to rank fixes against each other rather than as billed core-hours.
+
 The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,
 comparing a candidate run against a baseline with regression gating

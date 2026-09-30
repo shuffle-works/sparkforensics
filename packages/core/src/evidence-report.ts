@@ -25,7 +25,7 @@ import { computeRunShape, type RunShape } from './run-shape.ts';
 import { detectorInfoByType } from './detector-docs.ts';
 import type {
   AppModel, Finding, FindingEvidenceMap, FindingType, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,
-  TunedThresholds,
+  TunedThresholds, Remediation,
 } from './types.ts';
 
 export const EVIDENCE_SCHEMA_VERSION: number = 5;
@@ -43,6 +43,8 @@ interface FindingRowColumns {
   id: string | null; name: string; tag: string; impactBand: 'critical'|'warning'|'info';
   stageId: number | null; metric?: string | null; value?: number | null; valueText?: string;
   recommendation?: string | null; detectorVersion: number;
+  // The property changes `recommendation` names, structured: empty when it names none.
+  remediation: Remediation[];
   // Always present (unlike confidence/validationRequired/docAnchor/impactEstimate):
   // findingActionLabel falls back to the type's name, so a label is always computable (see
   // findingRow()).
@@ -244,6 +246,7 @@ function findingRow(f: Finding): FindingRow {
     recommendation: f.recommendation ?? null,
     detectorVersion: f.detectorVersion ?? 1,
     evidence: projectEvidence(f),
+    remediation: f.remediation ?? [],
     actionLabel: findingActionLabel(f),
   } as FindingRow;
   // Threshold/confidence provenance, only when the detector emitted it.

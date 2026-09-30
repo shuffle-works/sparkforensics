@@ -6,7 +6,11 @@ declarative `DETECTORS` entry per pattern, each carrying `type`, `scope`
 `thresholds` object, an `emits` list, an optional `docAnchor` (every entry but
 `incompleteRun` sets one), optional `inScorecard`, `property` and
 `suppressedBy`, and co-located `detect()` and `estimate()` functions. Each
-finding's `impactBand` and recommendation copy are set inside `detect()`.
+finding's `impactBand` and recommendation copy are set inside `detect()`, and so is its
+`remediation`: the structured `{kind: 'conf', key, direction, suggested}` form of the Spark
+properties that copy names (`increaseConf`, `decreaseConf` and `setConf` in
+`packages/core/src/remediation.ts`). A detector adds an entry only for a property its
+recommendation already names, and leaves `suggested` null unless it computes the value itself.
 
 Each entry is built by the helper for its scope: `defineStageDetector`,
 `defineSqlDetector`, `defineAppDetector` or `defineConfigDetector`. The

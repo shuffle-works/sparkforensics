@@ -10,6 +10,16 @@
 import type { ImpactBand, ImpactEstimate, StageId } from './types.ts';
 import type { TaskFailureGroup } from './task-failure.ts';
 
+/** One concrete change a finding's fix makes, alongside its prose `recommendation`. Only a Spark
+ * property the detector already names; `suggested` is null when it computes no value. Sizes carry a
+ * Spark unit suffix ("384m"), counts are plain numbers, switches are booleans. */
+export interface Remediation {
+  kind: 'conf';
+  key: string;
+  direction: 'increase' | 'decrease' | 'set';
+  suggested: number | string | boolean | null;
+}
+
 // The columns every finding carries, whatever its detector.
 interface FindingCore<T extends string> {
   id?: string;
@@ -22,6 +32,8 @@ interface FindingCore<T extends string> {
   impactBand: ImpactBand;
   metric?: string;
   recommendation?: string;
+  // Structured form of the property changes `recommendation` names; absent when it names none.
+  remediation?: Remediation[];
   docAnchor?: string;
   confidence?: string;
   validationRequired?: string;

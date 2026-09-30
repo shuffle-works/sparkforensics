@@ -17,6 +17,7 @@ import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
+import { decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure } from './types.ts';
 import type { FindingOf, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
@@ -689,6 +690,7 @@ function partialCacheFinding(rdd: DetectorRddInfo, cachedRatio: number, impactBa
     memorySize: rdd.memorySize, diskSize: rdd.diskSize,
     numCachedPartitions: rdd.numCachedPartitions, numPartitions: rdd.numPartitions,
     recommendation: `${rddLabel(rdd)} is ${evictedPct}% evicted from cache (${cachedPct}% of partitions cached): increase executor memory or reduce the cached dataset size.`,
+    remediation: [increaseConf('spark.executor.memory')],
   };
 }
 
@@ -703,6 +705,7 @@ function diskSpilloverFinding(rdd: DetectorRddInfo, diskRatio: number, impactBan
     memorySize: rdd.memorySize, diskSize: rdd.diskSize,
     numCachedPartitions: rdd.numCachedPartitions, numPartitions: rdd.numPartitions,
     recommendation: `${rddLabel(rdd)} is ${diskPct}% spilled to disk despite requesting MEMORY_AND_DISK: executor memory may be too small for it.`,
+    remediation: [increaseConf('spark.executor.memory')],
   };
 }
 
@@ -715,6 +718,7 @@ function storageUnobservedFinding(persistedRddCount: number): Finding {
     type: 'cacheUtilization', variant: 'storageUnobserved', stageId: null,
     impactBand: 'info', metric: 'persistedRdds', value: persistedRddCount, dataUnavailable: true,
     recommendation: `${rdds} no cache-storage evidence in this log, so eviction and disk spillover can't be checked: Spark 2.3+ records cached sizes only as block updates, which need spark.eventLog.logBlockUpdates.enabled=true.`,
+    remediation: [setConf('spark.eventLog.logBlockUpdates.enabled', true)],
   };
 }
 
@@ -991,6 +995,7 @@ export const DETECTORS = [
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
         validationRequired: `Flagged only when it costs at least ${shareLabel(thresholds.floorPctWarn)} of run time.`,
         recommendation: `Task duration ratio (${metric}) is ${value}×: for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.`,
+        remediation: [setConf('spark.sql.adaptive.skewJoin.enabled', true)],
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
@@ -1114,6 +1119,7 @@ export const DETECTORS = [
         impactBand: 'info',
         metric: 'shuffleReadBytes', value: bytes,
         recommendation: `${formatBytes(bytes)} shuffled in this stage: consider increasing spark.sql.shuffle.partitions or adding a broadcast join.`,
+        remediation: [increaseConf('spark.sql.shuffle.partitions')],
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
@@ -1149,6 +1155,7 @@ export const DETECTORS = [
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'shufflePartitionSkew', metric: 'shuffleReadMax', value: max,
           recommendation: `The largest shuffle partition (${formatBytes(max)}) is ${ratioText}: for join skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.`,
+          remediation: [setConf('spark.sql.adaptive.skewJoin.enabled', true)],
         });
       }
       if (total >= thresholds.lowParTotalBytes && taskCount <= thresholds.lowParMaxTasks) {
@@ -1156,6 +1163,8 @@ export const DETECTORS = [
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'lowShuffleParallelism', metric: 'taskCount', value: taskCount,
           recommendation: `${Math.round(total / GB * 10) / 10} GB of shuffle spread over only ${taskCount} tasks: raise spark.sql.shuffle.partitions so each partition is smaller.`,
+          // The partition count that brings each one down to the ideal size, as the estimate models it.
+          remediation: [increaseConf('spark.sql.shuffle.partitions', Math.ceil(total / IDEAL_BYTES_PER_PARTITION_TASK))],
         });
       }
       if (max >= thresholds.maxPartBytes) {
@@ -1223,6 +1232,7 @@ export const DETECTORS = [
         recommendation: cls === 'skew'
           ? `${formatBytes(stage.memoryBytesSpilled)} spilled, skew-driven: fix task skew first; adding memory will not help.`
           : `${formatBytes(stage.memoryBytesSpilled)} spilled: raise spark.sql.shuffle.partitions or increase executor memory.`,
+        remediation: cls === 'skew' ? [] : [increaseConf('spark.sql.shuffle.partitions'), increaseConf('spark.executor.memory')],
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
@@ -1262,6 +1272,7 @@ export const DETECTORS = [
           metric: 'gcPct', value,
           confidence: gcConfidence(pct, thresholds, 'high'), validationRequired: gcValidation(thresholds.minRunTimeMs),
           recommendation: `GC consumed ${value}% of executor run time: reduce object creation, use primitive types, avoid UDFs, increase executor memory.`,
+          remediation: [increaseConf('spark.executor.memory')],
         };
       }
       // Low-GC (cost) branch: only for stages that ran long enough to be meaningful.
@@ -1275,6 +1286,7 @@ export const DETECTORS = [
           metric: 'gcPct', value,
           confidence: gcConfidence(pct, thresholds, 'low'), validationRequired: gcValidation(thresholds.minRunTimeMs),
           recommendation: `GC consumed only ${value}% of executor run time: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.`,
+          remediation: [decreaseConf('spark.executor.memory')],
         };
       }
       return null;
@@ -1343,6 +1355,7 @@ export const DETECTORS = [
               hostMeanMs: h.mean,
               host: h.host, hostTaskShare: Math.round(share * 100) / 100,
               recommendation: `${h.host} may just hold data locality for its tasks or carry one heavy stage, not necessarily a hardware fault: check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically.`,
+              remediation: [setConf('spark.speculation', true)],
             });
           }
         }
@@ -1445,6 +1458,7 @@ export const DETECTORS = [
         type: 'stageSlowness', stageId: stage.id, impactBand,
         metric: 'stageDurationMinutes', value,
         recommendation: `This stage ran ${value} minutes with no more specific cause flagged: often a partition-count problem, raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.`,
+        remediation: [increaseConf('spark.sql.shuffle.partitions'), increaseConf('spark.default.parallelism')],
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
@@ -1608,6 +1622,7 @@ export const DETECTORS = [
         metric: 'speculationWasteMs', value: wastedMs,
         confidence: speculationWasteConfidence(wastedMs, thresholds.minWasteMs),
         recommendation: `Speculative execution discarded ${Math.round(wastedMs / 1000)}s of executor time in this stage: if task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile.`,
+        remediation: [increaseConf('spark.speculation.multiplier'), increaseConf('spark.speculation.quantile')],
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
@@ -1669,6 +1684,7 @@ export const DETECTORS = [
         type: 'tinyTask', stageId: stage.id, impactBand: 'info',
         metric: 'taskDurationP50', value: Math.round(stage.taskDurationP50),
         recommendation: `Many small tasks (${stage.taskCount}, P50 ${Math.round(stage.taskDurationP50)}ms): scheduler overhead may dominate. Try ${fix}.`,
+        remediation: stage.shuffleReadBytes > 0 ? [decreaseConf('spark.sql.shuffle.partitions', coalesceTo)] : [],
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
@@ -1747,6 +1763,7 @@ export const DETECTORS = [
         type: 'coldStart', stageId: null, impactBand: 'warning',
         metric: 'startupGapSeconds', value,
         recommendation: `The first stage waited ${value}s for an executor to become available: keep a warm pool of idle executors, or if using dynamic allocation, raise the minimum/initial executor count so it doesn't scale up from zero.`,
+        remediation: [increaseConf('spark.dynamicAllocation.minExecutors'), increaseConf('spark.dynamicAllocation.initialExecutors')],
       };
     },
     estimate(finding): ImpactEstimate | null {
@@ -1802,6 +1819,7 @@ export const DETECTORS = [
         totalCores,
         cpuUtilizationPct,
         recommendation: `Average executor utilization was only ${value}%: consider reducing cluster size or enabling dynamic allocation.`,
+        remediation: [setConf('spark.dynamicAllocation.enabled', true)],
       };
     },
     estimate(finding): ImpactEstimate | null {
@@ -1855,6 +1873,7 @@ export const DETECTORS = [
             // Raw (unrounded) rate plus sizing inputs for the impact estimator: `value` is rounded pct.
             idleRateFraction: idleRate, allocatedMB, peakExecutors, appDurationMs,
             recommendation: `${value}% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.`,
+            remediation: [setConf('spark.dynamicAllocation.enabled', true)],
           });
         }
       }
@@ -1875,6 +1894,7 @@ export const DETECTORS = [
           type: 'memoryUtilization', variant: 'memoryBand', stageId: null,
           impactBand: 'info', metric: 'memoryBand', dataUnavailable: true,
           recommendation: 'Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true: not enabled for this run.',
+          remediation: [setConf('spark.eventLog.logStageExecutorMetrics', true)],
         });
       } else if (allocatedMB != null && allocatedMB > 0) {
         const allocatedBytes = allocatedMB * 1024 * 1024;
@@ -1888,6 +1908,7 @@ export const DETECTORS = [
               stageId: null, executorId: execId,
               impactBand: 'warning', metric: 'heapUsedRatio', value: Math.round(ratio * 100),
               recommendation: `Executor ${execId} peaked at ${Math.round(ratio * 100)}% of allocated heap: memory may be too small; raise spark.executor.memory to avoid OOM/spill.`,
+              remediation: [increaseConf('spark.executor.memory')],
             });
           } else if (ratio < thresholds.bandTooHigh) {
             out.push({
@@ -1898,6 +1919,7 @@ export const DETECTORS = [
               // unused-memory-over-time model.
               allocatedBytes, heap, appDurationMs,
               recommendation: `Executor ${execId} used only ${Math.round(ratio * 100)}% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.`,
+              remediation: [decreaseConf('spark.executor.memory')],
             });
           }
         }
@@ -1918,6 +1940,7 @@ export const DETECTORS = [
             confidence: memoryWasteConfidence(wastedMBSeconds, usedMBSeconds, thresholds.wasteBufferMultiplier),
             validationRequired: `Memory-waste estimate uses allocated-vs-used memory-time and a ${thresholds.wasteBufferMultiplier}x buffer: confirm against the Spark UI before acting.`,
             recommendation: `Allocated executor memory sat largely idle over the run (~${value.toLocaleString('en-US')} MB-seconds wasted): review spark.executor.memory and executor count.`,
+            remediation: [decreaseConf('spark.executor.memory')],
           });
         }
       }
@@ -2095,6 +2118,7 @@ export const DETECTORS = [
         shortLivedExecutorCount: shortLivedCount,
         confidence: autoscalingChurnConfidence(shortLivedPct, thresholds.warningPct, thresholds.criticalPct),
         recommendation: `${pct}% of executors ran for under 2 minutes before being removed: this looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.`,
+        remediation: [increaseConf('spark.dynamicAllocation.executorIdleTimeout')],
       };
     },
     estimate(finding): ImpactEstimate | null {
@@ -2339,6 +2363,7 @@ export const DETECTORS = [
           type: 'configAudit', property: 'spark.shuffle.service.enabled',
           impactBand: 'warning', metric: 'config', valueText: 'false',
           recommendation: 'Dynamic allocation is on but the external shuffle service is off: set spark.shuffle.service.enabled=true so shuffle data survives executor removal.',
+          remediation: [setConf('spark.shuffle.service.enabled', true)],
         };
       }
       return null;
@@ -2359,6 +2384,7 @@ export const DETECTORS = [
           type: 'configAudit', property: 'spark.dynamicAllocation.minExecutors',
           impactBand: 'critical', metric: 'config', valueText: `${minN} > ${maxN}`,
           recommendation: `spark.dynamicAllocation.minExecutors (${minN}) exceeds maxExecutors (${maxN}): set min ≤ max.`,
+          remediation: [decreaseConf('spark.dynamicAllocation.minExecutors', maxN)],
         };
       }
       if (maxN == null) {
@@ -2366,6 +2392,7 @@ export const DETECTORS = [
           type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors',
           impactBand: 'info', metric: 'config', valueText: '(unset)',
           recommendation: 'Dynamic allocation is on with no upper bound: set spark.dynamicAllocation.maxExecutors to cap cluster growth.',
+          remediation: [setConf('spark.dynamicAllocation.maxExecutors')],
         };
       }
       return null;
@@ -2386,6 +2413,7 @@ export const DETECTORS = [
         type: 'configAudit', property: 'spark.serializer',
         impactBand: 'info', metric: 'config', valueText: ser ?? '(default JavaSerializer)',
         recommendation: `Current serializer is ${ser ?? 'the default JavaSerializer'}: consider spark.serializer=org.apache.spark.serializer.KryoSerializer for faster, smaller buffers.`,
+        remediation: [setConf('spark.serializer', 'org.apache.spark.serializer.KryoSerializer')],
       };
     },
     estimate: noWasteModel,
@@ -2405,6 +2433,7 @@ export const DETECTORS = [
         type: 'configAudit', property: 'spark.executor.memoryOverhead',
         impactBand: 'info', metric: 'config', valueText: `${ovMB} MiB`,
         recommendation: `Executor memoryOverhead (${ovMB} MiB) is below Spark's default floor of ${floor} MiB (max of 384 MiB or 10% of executor memory): raise it to avoid off-heap OOM-kills.`,
+        remediation: [increaseConf('spark.executor.memoryOverhead', `${floor}m`)],
       };
     },
     estimate: noWasteModel,
@@ -2594,6 +2623,7 @@ export const DETECTORS = [
                 impactBand: 'info', metric: 'smallerSideBytes', value: smaller,
                 largerSideBytes: larger,
                 recommendation: `The smaller input to this Sort Merge Join (${formatBytes(smaller)}) is well under the broadcast threshold relative to the larger side (${formatBytes(larger)}): this could have been a broadcast join. Consider a broadcast() hint or raising spark.sql.autoBroadcastJoinThreshold.`,
+                remediation: [increaseConf('spark.sql.autoBroadcastJoinThreshold')],
               });
             }
           }
@@ -2612,6 +2642,7 @@ export const DETECTORS = [
               planNodeIds: [node.id!].filter(Boolean),
               impactBand: 'warning', metric: 'broadcastBytes', value: m.value,
               recommendation: `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.`,
+              remediation: [decreaseConf('spark.sql.autoBroadcastJoinThreshold')],
             });
           }
         }

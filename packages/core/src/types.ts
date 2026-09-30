@@ -288,11 +288,16 @@ export interface ImpactEstimate {
   wallClock: { low: number; high: number } | null;
   estimateMethod: ImpactEstimateMethod;
   rawWaste?: RawWasteFigure;
+  /** Core-milliseconds of cluster capacity the fix frees, in the same low..high range as
+   * `wallClock`; set by estimateImpact (see coreTimeFor), null when no figure is defensible (no
+   * executor cores in the log, or an estimate with neither a wall-clock claim nor a core-time
+   * raw figure). Never 0 for "unknown". */
+  coreTimeMs?: { low: number; high: number } | null;
 }
 
 // `Finding` is a union discriminated on `type`, one member per emitted finding type: see
 // finding-types.ts for each detector's shape and which of its fields are public evidence.
-export type { Finding, FindingOf, FindingEvidenceMap, TunedThreshold, TunedThresholds } from './finding-types.ts';
+export type { Finding, FindingOf, FindingEvidenceMap, Remediation, TunedThreshold, TunedThresholds } from './finding-types.ts';
 
 export interface TaskData { metrics: Float64Array | number[]; fieldNames: string[]; }
 

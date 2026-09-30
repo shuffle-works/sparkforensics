@@ -3,8 +3,12 @@ import { estimateImpact } from '../src/impact-estimator.js';
 import { computeOccupancy } from '../src/occupancy.js';
 
 // estimateImpact reads analyze()'s one occupancy sweep: build it here the way analyze() does.
+// coreTimeMs is covered by impact-core-time.test.js; dropped here so these assertions stay about
+// the wall-clock and raw figures.
 function estimate(findings, stages, totalCores = 0) {
-  return estimateImpact(findings, { stages, totalCores, occupancy: computeOccupancy(stages, totalCores) });
+  estimateImpact(findings, { stages, totalCores, occupancy: computeOccupancy(stages, totalCores) });
+  for (const f of findings) if (f.impactEstimate) delete f.impactEstimate.coreTimeMs;
+  return findings;
 }
 
 describe('estimateImpact: skeleton', () => {

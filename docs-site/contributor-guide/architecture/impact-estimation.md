@@ -1,7 +1,7 @@
 # Impact estimation
 
 Every finding covered by this section carries an optional `impactEstimate: {basis,
-wallClock, estimateMethod, rawWaste?}` (`packages/core/src/types.ts`), attached by
+wallClock, estimateMethod, rawWaste?, coreTimeMs?}` (`packages/core/src/types.ts`), attached by
 its `DETECTORS` entry's `estimate()` (`packages/core/src/detectors.ts`), which
 `estimateImpact()` (`packages/core/src/impact-estimator.ts`) runs as a post-pass once detection
 and suppression finish (`packages/core/src/analyzer.ts`). The waste models those methods compose
@@ -36,6 +36,17 @@ all), holding the formula's pre-clip magnitude in the formula's own natural unit
 bytes or core-ms). `wallClock` is what the occupancy model says is recoverable, which clips
 against the stage's own physical floor; `rawWaste` is what the stage really wasted either
 way. The two answer different questions.
+
+`coreTimeMs` is the same claim in cluster capacity: `{low, high}` core-milliseconds, or
+`null` when no figure is defensible (never 0 for unknown). `estimateImpact()` sets it for every
+estimate through `coreTimeFor()` in `packages/core/src/impact-model.ts`, so a detector's
+`estimate()` does not build it. A `rawWaste` already in core time (`coreMs`, or `coreHours` times
+3.6e6) is taken as measured, `low === high`. Otherwise `wallClock.low` and `wallClock.high` are
+multiplied by `EstimateCtx.totalCores`, the peak concurrent executor cores; the wall-clock is built
+from task run time, and `executorCpuTime` is never read because it leaves out Python worker CPU.
+Without executor cores, a wall-clock claim, or a core-time raw figure it is `null`. `autoscalingChurn`
+and `jobFailureRate` are excluded: their `coreHours` figures count executor-hours and job-hours with
+no cores multiplied in. Peak cores over-count a run that scaled down under dynamic allocation.
 
 ## Occupancy-weighted attribution
 
