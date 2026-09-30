@@ -10,8 +10,7 @@ export function estimateImpact(findings: Finding[], ctx: EstimateCtx): Finding[]
   for (const f of findings) {
     const estimate = ENTRY_BY_TYPE.get(f.type)?.estimate(f, ctx);
     if (!estimate) continue;
-    const { stageClaims: _stageClaims, ...reported } = estimate;
-    f.impactEstimate = { ...reported, coreTimeMs: coreTimeFor(f, estimate, ctx) };
+    f.impactEstimate = { ...estimate, coreTimeMs: coreTimeFor(f, estimate) };
   }
   countTailCoreTimeOnce(findings);
   return findings;

@@ -256,7 +256,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'LOCAL',
     thresholdSummary: () => 'task placement missing data-local core assignment',
     actionLabel: () => 'Fix data locality',
-    genericRecommendation: () => 'Check spark.locality.wait settings and executor/data colocation.',
+    genericRecommendation: () => 'Check executor/data colocation.',
   },
   cachingOpportunity: {
     name: 'caching opportunity',

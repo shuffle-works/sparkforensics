@@ -321,7 +321,7 @@ function buildRecommendations(
         unit: group.unit,
         total: group.total,
         impact: shown,
-        impactMeaning: shown ? rawWasteMeaning(group.unit) : null,
+        impactMeaning: shown ? rawWasteMeaning(representative.impactEstimate?.rawWaste) : null,
       };
     }
     return {

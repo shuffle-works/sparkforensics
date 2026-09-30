@@ -38,26 +38,15 @@ against the stage's own physical floor; `rawWaste` is what the stage really wast
 way. The two answer different questions.
 
 `coreTimeMs` is the busy core time the fix removes, the executor task time, as `{low, high}`
-core-milliseconds, or `null` when no figure is defensible (never 0 for unknown).
-`estimateImpact()` sets it for every estimate through `coreTimeFor()` in
-`packages/core/src/impact-model.ts`; a detector's `estimate()` builds it only for skew and
-straggler (`tailClaimImpact()`), which set it to the task time the fix removes
-(`tailRemovedWorkMs()`): during the tail only the slow tasks hold cores, so the stage's average
-occupancy would overstate it. Where the detector measures core time, that figure is taken as is,
-`low === high`: skew and straggler's removed task time, a `coreMs` raw figure (gc's `jvmGCTime`,
-coreLocality's non-local penalty), `coreHours` times 3.6e6, or the cross-task
-executor-time `ms` sums of `retryWaste` and `speculationWaste`. These are set even
-when the log has no executor cores. Otherwise each claimed stage's clipped claim is multiplied
-by the cores that stage kept busy (its `executorRunTime` over its window) and the products are summed,
-never the run's peak cores. The claim is the one `estimateSingleStage()` clipped to the stage's own
-floor, before the contention gate and the multi-stage union cap (`OccupancyEstimate.stageClaims`,
-which `estimateImpact()` drops from the reported estimate): those two model how far overlap
-with other stages lets the run finish sooner, not how much task time the fix removes, so
-`low` equals `high`. A stage's window is the one the claims measure: `taskActiveMs`,
-the time at least one of its tasks ran, or submit to complete on a stage without it, so a stage
-left queued for cores does not dilute the figure. `executorCpuTime` is never read because it leaves out Python
-worker CPU. A finding with no measured figure and no wall-clock claim, or whose stages have no run
-time or duration, gets `null`. `autoscalingChurn` and `jobFailureRate` are excluded: their
+core-milliseconds with `low === high`, or `null` when the detector measures none (never 0 for
+unknown). `estimateImpact()` sets it for every estimate through `coreTimeFor()` in
+`packages/core/src/impact-model.ts`, and only from a measured figure: skew and straggler's
+removed task time (`tailClaimImpact()` sets it from the claim's `removedCoreWorkMs`), a `coreMs`
+raw figure (gc's `jvmGCTime`, coreLocality's non-local penalty), `coreHours` times 3.6e6, or the
+cross-task executor-time `ms` sums of `retryWaste` and `speculationWaste`. These are set even
+when the log has no executor cores. A wall-clock claim is never converted to core time, so every
+finding with only a wall-clock claim gets `null`. `executorCpuTime` is never read because it
+leaves out Python worker CPU. `autoscalingChurn` and `jobFailureRate` are excluded: their
 `coreHours` figures count executor-hours and job-hours with no cores multiplied in.
 
 Every surface reads `coreTimeMs` and `remediation` from the one `analyze()` result: the dashboard
@@ -65,14 +54,14 @@ stores it, the HTML export ships it in its `catalog`, and the CLI report and MCP
 their finding rows through `buildEvidenceReport()`. `surface-parity.test.js` compares the four on the
 public corpus logs.
 
-`coreTimeMs` is busy time only. A finding whose waste is allocated capacity that ran no task has
-`coreTimeMs: null` and keeps its idle figure in `rawWaste`, which for these counts idle core time
-rather than task time a fix removes: `utilization` (`coreHours`), `stageShape`'s `lowParallelism`
-and `taskStageSkew` (`coreMs`), and `memoryUtilization`'s `idleCores` (`mbSeconds`). A stage's slow
-tail is also counted once: `skew` and `straggler` both claim it, so on one stage `skew` carries
-the removed task time and `straggler` has `null` (`countTailCoreTimeOnce()` in
-`packages/core/src/impact-estimator.ts`). `stageSlowness` is a separate more-partitions claim, not
-removed tail time, and keeps its own figure.
+`coreTimeMs` is busy time only. A `coreMs`/`coreHours` raw figure that counts allocated capacity
+no task ran on carries `rawWaste.idle: true`: `utilization` (`coreHours`) and `stageShape`'s
+`lowParallelism` and `taskStageSkew` (`coreMs`). `coreTimeFor()` gives those `null`, and
+`rawWasteMeaning()` in `packages/core/src/impact-format.ts` labels them "of idle core capacity"
+instead of "of core time" on every surface. `memoryUtilization`'s `idleCores` counts `mbSeconds`,
+which has no core time either. A stage's slow tail is also counted once: `skew` and `straggler`
+both measure the task time removed from it, so on one stage `skew` carries it and `straggler` has
+`null` (`countTailCoreTimeOnce()` in `packages/core/src/impact-estimator.ts`).
 
 ## Occupancy-weighted attribution
 

@@ -18,12 +18,13 @@ export function impactFigure(finding: Finding): string | null {
   return null;
 }
 
-/** What a raw-waste figure counts, by its unit, as the words that follow it. */
-export function rawWasteMeaning(unit: RawWasteFigure['unit'] | undefined): string | null {
-  switch (unit) {
+/** What a raw-waste figure counts, by its unit, as the words that follow it: an idle core
+ * figure is capacity no task ran on, not core time. */
+export function rawWasteMeaning(rawWaste: RawWasteFigure | undefined): string | null {
+  switch (rawWaste?.unit) {
     case 'mbSeconds': return 'of unused executor memory';
     case 'coreHours':
-    case 'coreMs': return 'of core time';
+    case 'coreMs': return rawWaste.idle ? 'of idle core capacity' : 'of core time';
     case 'bytes': return 'of extra data written';
     case 'ms': return 'of task time';
     default: return null;
@@ -39,7 +40,7 @@ export function savingsMeaning(finding: Finding): string | null {
   const estimate = finding.impactEstimate;
   if (!estimate) return null;
   if (estimate.wallClock) return 'of run time';
-  return rawWasteMeaning(estimate.rawWaste?.unit);
+  return rawWasteMeaning(estimate.rawWaste);
 }
 
 /** A finding's "Potential savings" figure as the widget board shows it: the
@@ -54,7 +55,7 @@ export function impactEstimateFigure(estimate: ImpactEstimate | undefined): { te
     return { text: formatWallClockRange(estimate.wallClock!.low, estimate.wallClock!.high), meaning: 'of run time' };
   }
   const rawWasteText = estimate.rawWaste && estimate.rawWaste.value > 0 ? formatRawWaste(estimate.rawWaste) : null;
-  if (rawWasteText && !readsAsZero(rawWasteText)) return { text: rawWasteText, meaning: rawWasteMeaning(estimate.rawWaste!.unit) };
+  if (rawWasteText && !readsAsZero(rawWasteText)) return { text: rawWasteText, meaning: rawWasteMeaning(estimate.rawWaste) };
   return null;
 }
 

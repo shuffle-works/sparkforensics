@@ -145,10 +145,6 @@ const SERIAL_GATE_THRESHOLD = 0.999;
 export interface OccupancyEstimate {
   basis: 'serial' | 'contended';
   wallClock: { low: number; high: number };
-  // Each stage's claim as clipped to its own physical floor, before the contention gate and the
-  // union cap: the recoverable task time of that stage, which overlap with other stages does
-  // not change.
-  stageClaims: { stageId: number; ms: number }[];
 }
 
 export interface TailStage {
@@ -230,9 +226,9 @@ export function estimateSingleStage(
     : stageInfo.ceiling;
   const clipped = clipToCeiling(wasteMsClaimed, stage, ceiling);
   if (stageInfo.gate >= SERIAL_GATE_THRESHOLD) {
-    return { basis: 'serial', wallClock: { low: clipped, high: clipped }, stageClaims: [{ stageId, ms: clipped }] };
+    return { basis: 'serial', wallClock: { low: clipped, high: clipped } };
   }
-  return { basis: 'contended', wallClock: { low: clipped * stageInfo.gate, high: clipped }, stageClaims: [{ stageId, ms: clipped }] };
+  return { basis: 'contended', wallClock: { low: clipped * stageInfo.gate, high: clipped } };
 }
 
 /**
@@ -267,5 +263,5 @@ export function estimateMultiStage(
   // fully-overlapping stages each at gate 0.5). Only claim 'serial' when
   // every contributing per-stage estimate was itself serial.
   const basis = perStage.every((e) => e.basis === 'serial') ? 'serial' : 'contended';
-  return { basis, wallClock: { low, high }, stageClaims: perStage.flatMap((e) => e.stageClaims) };
+  return { basis, wallClock: { low, high } };
 }

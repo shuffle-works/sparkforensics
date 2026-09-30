@@ -784,7 +784,7 @@ describe('estimateImpact: cost-only group A', () => {
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
-      rawWaste: { value: 6, unit: 'coreHours' },
+      rawWaste: { value: 6, unit: 'coreHours', idle: true },
     });
   });
 
@@ -897,7 +897,7 @@ describe('estimateImpact: cost-only group B', () => {
     //            = (min(10, 5) - 1) * (8000 - 500) = 4 * 7500 = 30000.
     expect(est).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
-      rawWaste: { value: 30000, unit: 'coreMs' },
+      rawWaste: { value: 30000, unit: 'coreMs', idle: true },
     });
   });
 

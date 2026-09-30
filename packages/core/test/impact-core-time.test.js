@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { estimateImpact } from '../src/impact-estimator.js';
-import { multiStageImpact, coreTimeFor } from '../src/impact-model.js';
 import { computeOccupancy } from '../src/occupancy.js';
 import { analyze } from '../src/analyzer.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
+import { impactEstimateFigure } from '../src/impact-format.js';
+import { findingSavings } from '../src/run-interpretation.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
 function estimate(findings, stages, totalCores) {
@@ -13,7 +14,6 @@ function estimate(findings, stages, totalCores) {
 
 const retry = () => ({ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 1200, impactBand: 'warning' });
 const soloStage = () => new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], retryWasteMs: 1200 }]]);
-// 100 tasks, 10s of task run time over a 5s window: 2 cores busy on average.
 const tiny = () => ({ type: 'tinyTask', stageId: 0, value: 50, impactBand: 'info' });
 const twoCoreStage = (extra = {}) => new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], taskCount: 100, executorRunTime: 10000, ...extra }]]);
 
@@ -42,27 +42,21 @@ describe('impact estimate coreTimeMs', () => {
     expect(est.coreTimeMs).toEqual({ low: 900, high: 900 });
   });
 
-  it('multiplies a wall-clock-only claim by its stage\'s busy cores, not the run\'s peak cores', () => {
-    for (const totalCores of [8, 64]) {
-      const [est] = estimate([tiny()], twoCoreStage(), totalCores);
-      expect(est.rawWaste.unit).toBe('ms');
-      expect(est.wallClock.high).toBeGreaterThan(0);
-      expect(est.coreTimeMs).toEqual({ low: est.wallClock.low * 2, high: est.wallClock.high * 2 });
-    }
+  it('is null, not 0, for a wall-clock-only claim, however busy its stage\'s cores were', () => {
+    // 100 tasks, 10s of task run time over a 5s window: 2 cores busy on average.
+    const [est] = estimate([tiny()], twoCoreStage(), 8);
+    expect(est.rawWaste.unit).toBe('ms');
+    expect(est.wallClock.high).toBeGreaterThan(0);
+    expect(est.coreTimeMs).toBeNull();
   });
 
-  it('reads a queued stage\'s busy cores over the time its tasks ran, not the time it sat open', () => {
-    // Open 2491s, tasks running for 60s of it on 8 cores.
-    const stage = { id: 0, submittedAt: 0, completedAt: 2_491_000, taskActiveMs: 60_000, parentIds: [], taskCount: 100, executorRunTime: 480_000 };
-    const [est] = estimate([tiny()], new Map([[0, stage]]), 8);
-    expect(est.wallClock.high).toBeGreaterThan(0);
-    expect(est.coreTimeMs.low).toBeCloseTo(est.wallClock.low * 8);
-    expect(est.coreTimeMs.high).toBeCloseTo(est.wallClock.high * 8);
-  });
-
-  it('is null, not 0, for a wall-clock-only claim whose stage recorded no task run time', () => {
-    const [est] = estimate([tiny()], twoCoreStage({ executorRunTime: 0 }), 8);
-    expect(est.wallClock.high).toBeGreaterThan(0);
+  it('is null for a queued stage\'s wall-clock claim, which would otherwise exceed its task time', () => {
+    // Open 2491s, tasks running for 60s of it: 5 tasks of 60s, 300 core-s in all.
+    const stage = { id: 0, submittedAt: 0, completedAt: 2_491_000, taskActiveMs: 60_000, parentIds: [], taskCount: 5, executorRunTime: 300_000,
+      shuffleReadBytes: 8 * 1024 ** 3, shuffleReadP50: 0, shuffleReadMax: 0 };
+    const finding = { type: 'partitionSizing', rule: 'lowShuffleParallelism', stageId: 0, metric: 'taskCount', value: 5, impactBand: 'warning' };
+    const [est] = estimate([finding], new Map([[0, stage]]), 8);
+    expect(est.wallClock.high).toBeGreaterThan(300_000);
     expect(est.coreTimeMs).toBeNull();
   });
 
@@ -87,7 +81,7 @@ describe('impact estimate coreTimeMs', () => {
   it('keeps the idle-capacity raw figure of an idle-core finding and gives it no coreTimeMs', () => {
     const utilization = { type: 'utilization', stageId: null, value: 25, utilizationFraction: 0.25, appDurationMs: 3_600_000, totalCores: 4, impactBand: 'info' };
     const [u] = estimate([utilization], new Map(), 4);
-    expect(u.rawWaste).toEqual({ value: 0.75 * 4, unit: 'coreHours' });
+    expect(u.rawWaste).toEqual({ value: 0.75 * 4, unit: 'coreHours', idle: true });
     expect(u.coreTimeMs).toBeNull();
 
     const stages = new Map([[0, makeStage({ id: 0, taskCount: 2, submittedAt: 0, completedAt: 10_000, taskDurationP50: 1000, taskDurationMax: 9000 })]]);
@@ -95,13 +89,25 @@ describe('impact estimate coreTimeMs', () => {
     const tailShape = { type: 'stageShape', rule: 'taskStageSkew', stageId: 0, totalCores: 10, impactBand: 'info' };
     const idleCores = { type: 'memoryUtilization', variant: 'idleCores', stageId: null, idleRateFraction: 0.5, allocatedMB: 1024, peakExecutors: 2, appDurationMs: 10_000, impactBand: 'warning' };
     const [l, t, i] = estimate([lowPar, tailShape, idleCores], stages, 10);
-    expect(l.rawWaste).toEqual({ value: 80_000, unit: 'coreMs' });
-    expect(t.rawWaste.unit).toBe('coreMs');
+    expect(l.rawWaste).toEqual({ value: 80_000, unit: 'coreMs', idle: true });
+    expect(t.rawWaste).toMatchObject({ unit: 'coreMs', idle: true });
     expect(i.rawWaste.unit).toBe('mbSeconds');
     for (const est of [l, t, i]) expect(est.coreTimeMs).toBeNull();
   });
 
-  it('counts a stage\'s slow tail once across skew and straggler, leaving stageSlowness its own claim', () => {
+  it('labels an idle-core finding\'s figure as idle capacity on the dashboard and in report rows alike', () => {
+    const utilization = { type: 'utilization', stageId: null, value: 25, utilizationFraction: 0.25, appDurationMs: 3_600_000, totalCores: 4, impactBand: 'info' };
+    const stages = new Map([[0, makeStage({ id: 0, taskCount: 2, submittedAt: 0, completedAt: 10_000 })]]);
+    const lowPar = { type: 'stageShape', rule: 'lowParallelism', stageId: 0, totalCores: 10, impactBand: 'info' };
+    estimate([utilization, lowPar], stages, 10);
+    for (const f of [utilization, lowPar]) {
+      const board = findingSavings(f);
+      expect(board.meaning, f.type).toBe('of idle core capacity');
+      expect(impactEstimateFigure(f.impactEstimate)).toEqual({ text: board.board, meaning: board.meaning });
+    }
+  });
+
+  it('counts a stage\'s slow tail once across skew and straggler', () => {
     const stage = {
       id: 0, submittedAt: 0, completedAt: 1_000_000, parentIds: [], taskCount: 100, executorRunTime: 2_000_000,
       taskDurationP50: 10_000, taskDurationP95: 200_000, taskDurationMax: 500_000, stragglerExcessMs: 490_000, stragglerCount: 1,
@@ -115,7 +121,7 @@ describe('impact estimate coreTimeMs', () => {
     const [slow, straggler, skew] = estimate(findings, new Map([[0, stage]]), 10);
     expect(skew.coreTimeMs.high).toBeGreaterThan(0);
     expect(straggler.coreTimeMs).toBeNull();
-    expect(slow.coreTimeMs).not.toBeNull();
+    expect(slow.coreTimeMs).toBeNull();
     // A second stage's tail is its own.
     const other = { ...stage, id: 1 };
     const both = estimate(
@@ -147,13 +153,14 @@ describe('impact estimate coreTimeMs', () => {
   });
 
   it('does not depend on executorCpuTime', () => {
-    const withCpu = twoCoreStage({ executorCpuTime: 123 });
-    expect(estimate([tiny()], withCpu, 8)[0].coreTimeMs).toEqual(estimate([tiny()], twoCoreStage(), 8)[0].coreTimeMs);
+    const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], executorRunTime: 10000, jvmGCTime: 1200 }]]);
+    const withCpu = new Map([[0, { ...stages.get(0), executorCpuTime: 123 }]]);
+    const gc = () => ({ type: 'gc', stageId: 0, direction: 'high', value: 12, impactBand: 'warning' });
+    expect(estimate([gc()], withCpu, 8)[0].coreTimeMs).toEqual(estimate([gc()], stages, 8)[0].coreTimeMs);
   });
 });
 
 describe('coreTimeMs in the evidence report', () => {
-  // 40s of task run time over a 20s stage: 2 busy cores.
   const slowStage = () => makeStage({ id: 1, taskCount: 100, taskDurationP50: 100, taskDurationP95: 600, taskDurationMax: 4000, completedAt: 20000, executorRunTime: 40000 });
   const fixture = (executors) => ({
     app: makeApp({ endTime: 20000 }),
@@ -163,15 +170,12 @@ describe('coreTimeMs in the evidence report', () => {
   const TAIL_CLAIMS = new Set(['skew', 'straggler']);
   const wallClockOnlyRows = (json) => json.findings.filter((r) => r.impactEstimate?.wallClock && r.impactEstimate.rawWaste?.unit === 'ms' && !TAIL_CLAIMS.has(r.type));
 
-  it('is the wall-clock claim times the stage\'s busy cores, with or without executor data', () => {
+  it('is null on every wall-clock-only row, with or without executor data', () => {
     const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }, { executorId: '2', timestamp: 0, totalCores: 4 }];
     for (const executors of [[], added]) {
       const rows = wallClockOnlyRows(buildEvidenceReport(fixture(executors)).json);
       expect(rows.length).toBeGreaterThan(0);
-      for (const row of rows) {
-        const { wallClock, coreTimeMs } = row.impactEstimate;
-        expect(coreTimeMs, row.type).toEqual({ low: wallClock.low * 2, high: wallClock.high * 2 });
-      }
+      for (const row of rows) expect(row.impactEstimate.coreTimeMs, row.type).toBeNull();
     }
   });
 
@@ -179,41 +183,5 @@ describe('coreTimeMs in the evidence report', () => {
     const findings = analyze(makeApp({ endTime: null }), new Map(), [], [], new Map());
     const incomplete = findings.find((f) => f.type === 'incompleteRun');
     expect(incomplete.impactEstimate.coreTimeMs).toBeNull();
-  });
-});
-
-describe('coreTimeMs under contention', () => {
-  // Two stages run side by side over the same 100s window, 8 busy cores each.
-  const overlapped = () => new Map([0, 1].map((id) => [id, makeStage({
-    id, submittedAt: 0, completedAt: 100_000, executorRunTime: 800_000, taskActiveMs: 100_000, taskDurationMax: 1000,
-  })]));
-  const ctxOf = (stages) => ({ stages, totalCores: 16, occupancy: computeOccupancy(stages, 16) });
-
-  it('takes the per-stage claim before the contention gate, not the gated wall-clock range', () => {
-    const ctx = ctxOf(overlapped());
-    const est = multiStageImpact([0], new Map([[0, 40_000]]), ctx, 'modeled');
-    // Gate 0.5: the run recovers 20s..40s, but the fix removes 40s of stage time on 8 cores.
-    expect(est.wallClock).toEqual({ low: 20_000, high: 40_000 });
-    expect(est.stageClaims).toEqual([{ stageId: 0, ms: 40_000 }]);
-    expect(coreTimeFor({ type: 'tinyTask', stageId: 0 }, est, ctx)).toEqual({ low: 320_000, high: 320_000 });
-  });
-
-  it('adds up overlapping stages\' claims instead of capping them at the union of their windows', () => {
-    // 2 busy cores each, so the floor leaves 87.5s of each 100s window to claim.
-    const stages = new Map([0, 1].map((id) => [id, makeStage({
-      id, submittedAt: 0, completedAt: 100_000, executorRunTime: 200_000, taskActiveMs: 100_000, taskDurationMax: 1000,
-    })]));
-    const ctx = ctxOf(stages);
-    const est = multiStageImpact([0, 1], new Map([[0, 90_000], [1, 90_000]]), ctx, 'modeled');
-    expect(est.wallClock.high).toBe(100_000); // the union of the two windows
-    expect(est.stageClaims).toEqual([{ stageId: 0, ms: 87_500 }, { stageId: 1, ms: 87_500 }]);
-    expect(coreTimeFor({ type: 'duplicatePlanSubtree', stageIds: [0, 1] }, est, ctx)).toEqual({ low: 350_000, high: 350_000 });
-  });
-
-  it('keeps the internal claims out of the reported estimate', () => {
-    const stages = overlapped();
-    const findings = [{ type: 'tinyTask', stageId: 0, value: 1, impactBand: 'info' }];
-    estimateImpact(findings, ctxOf(stages));
-    expect(findings[0].impactEstimate).not.toHaveProperty('stageClaims');
   });
 });

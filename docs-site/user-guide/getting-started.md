@@ -88,7 +88,8 @@ cause and their savings overlap rather than add up. Each savings figure says
 what it counts: a time such as "58.6s of run time" is how much sooner the run
 could finish, while a resource figure such as "3.0 GB-h of unused executor
 memory" or "0.7 core-h of core time" is cluster time a fix would free up,
-which cuts cost but may not shorten the run. **Copy next steps**
+which cuts cost but may not shorten the run. A figure "of idle core capacity"
+counts allocated cores that ran no task, not work a fix removes. **Copy next steps**
 copies the whole plan as a plain checklist (run, verdict, and numbered steps
 with their stage and savings) to paste into a ticket or a message. Steps
 follow the same savings ranking as the rest of the board. When much of the
@@ -271,36 +272,31 @@ property.
 
 `impactEstimate.coreTimeMs` is the busy core time the fix removes: the
 executor task time, in core-milliseconds, next to the `wallClock` range
-(elapsed time). It is a `{ "low": ..., "high": ... }` range, or `null` when
-the log cannot support a figure: `null` means unknown, never zero. It is
-derived two ways:
-
-- Where the detector measures core time: that figure, with `low` equal to
-  `high`. This covers a `coreMs` or `coreHours` `rawWaste` (GC time, for
-  example), the executor time of retried and discarded speculative
-  attempts, and for skew and straggler findings the task time the fix
-  removes from the slow tasks. It is set even when the log has no executor core data.
-- Otherwise, a finding with a wall-clock claim: each claimed stage's
-  recoverable time times the cores that stage kept busy (its task run time
-  over the time its tasks were running, or over the stage's whole duration
-  when the log lacks that), summed, not the run's peak cores. The recoverable
-  time is taken before the adjustment for stages that overlap, which shortens
-  the run by less without changing the task time removed, so `low` equals
-  `high`. Task run time
-  is used, not `executorCpuTime`, so Python worker CPU is not missed. Stages
-  with no run time or duration give `null`.
+(elapsed time). It is a `{ "low": ..., "high": ... }` range with `low` equal
+to `high`, or `null` when the detector measures no such figure: `null` means
+unknown, never zero. Only measured figures count: a `coreMs` or `coreHours`
+`rawWaste` (GC time, for example), the executor time of retried and
+discarded speculative attempts, and for skew and straggler findings the task
+time the fix removes from the slow tasks. These are set even when the log has
+no executor core data. A finding with only a wall-clock claim has
+`coreTimeMs: null`: its elapsed time is not converted to core time. Task run
+time is used, not `executorCpuTime`, so Python worker CPU is not missed.
 
 Findings whose only figure is bytes, memory-time, or executor-hours or
 job-hours (`autoscalingChurn`, `jobFailureRate`) have `coreTimeMs: null`.
 
 `coreTimeMs` never includes idle capacity. A finding whose waste is allocated
 cores that ran no task (`utilization`, `stageShape`'s low parallelism and
-task/stage skew rows, `memoryUtilization`'s idle cores) has `coreTimeMs: null`
-and keeps its idle-capacity figure in `impactEstimate.rawWaste` (core-hours,
-core-milliseconds or memory-seconds). A stage's slow tail is counted once: when
-`skew` and `straggler` both flag the same stage, `skew` carries the removed
-task time and `straggler` has `null`. `stageSlowness` claims what more
-partitions recover, not the tail, and keeps its own figure.
+task/stage skew rows) has `coreTimeMs: null` and keeps its figure in
+`impactEstimate.rawWaste` with `"idle": true`; every surface labels it "of
+idle core capacity", not "of core time". A stage's slow tail is counted once:
+when `skew` and `straggler` both flag the same stage, `skew` carries the
+removed task time and `straggler` has `null`.
+
+When the logged `spark.sql.shuffle.partitions` is already at or above the
+count a low-parallelism shuffle stage needs, the property is not what limits
+that stage: the recommendation points at the stage's own partitioning
+(`repartition(n)` or RDD parallelism) and `remediation` is empty.
 
 A `remediation` that sets a property to a fixed value (for example
 `spark.sql.adaptive.skewJoin.enabled`, `spark.speculation` or

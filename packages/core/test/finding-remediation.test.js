@@ -12,10 +12,11 @@ function catalogOf(stages, app = makeApp()) {
 
 describe('structured remediation', () => {
   describe('lowShuffleParallelism against the logged shuffle partition count', () => {
-    const run = (config) => catalogOf(
+    const finding = (config) => catalogOf(
       [makeStage({ shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0 })],
       makeApp({ config }),
-    ).find((x) => x.rule === 'lowShuffleParallelism').remediation;
+    ).find((x) => x.rule === 'lowShuffleParallelism');
+    const run = (config) => finding(config).remediation;
     const increase = (suggested) => [{ kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'increase', suggested }];
 
     it('suggests the count that reaches the ideal partition size when the logged value is below it', () => {
@@ -30,6 +31,15 @@ describe('structured remediation', () => {
     it('suggests nothing when the logged value is already at or above the count, since it does not limit that stage', () => {
       expect(run({ 'spark.sql.shuffle.partitions': '200' })).toEqual([]);
       expect(run({ 'spark.sql.shuffle.partitions': '16' })).toEqual([]);
+    });
+
+    it('points the text at the stage\'s own partitioning, not the property, when the logged value is already enough', () => {
+      const { recommendation } = finding({ 'spark.sql.shuffle.partitions': '200' });
+      expect(recommendation).not.toMatch(/raise spark\.sql\.shuffle\.partitions/);
+      expect(recommendation).toMatch(/repartition\(n\)/);
+      for (const config of [{}, { 'spark.sql.shuffle.partitions': '8' }]) {
+        expect(finding(config).recommendation).toMatch(/raise spark\.sql\.shuffle\.partitions/);
+      }
     });
   });
 
@@ -102,8 +112,8 @@ describe('structured remediation', () => {
   });
 
   it('carries a remediation entry for every property a recommendation names, bar the ones with no stated direction', () => {
-    // coreLocality and autoscalingChurn name properties without saying which way to move them.
-    const NO_DIRECTION = new Set(['spark.locality.wait', 'spark.dynamicAllocation.minExecutors', 'spark.dynamicAllocation.maxExecutors']);
+    // autoscalingChurn names its bounds without saying which way to move each.
+    const NO_DIRECTION = new Set(['spark.dynamicAllocation.minExecutors', 'spark.dynamicAllocation.maxExecutors']);
     const findings = [
       ...catalogOf([
         makeStage({ id: 1, shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0, gcPct: 40, jvmGCTime: 4000, memoryBytesSpilled: 3000 * MiB }),
@@ -111,9 +121,11 @@ describe('structured remediation', () => {
         makeStage({ id: 3, taskDurationP50: 100, taskDurationP95: 900, taskDurationMax: 2000 }),
         makeStage({ id: 4, shuffleReadBytes: 300 * MiB, completedAt: 20 * 60_000 }),
         makeStage({ id: 5, speculationWastedAttempts: 10, speculationWasteMs: 120_000 }),
+        makeStage({ id: 6, localityStats: [{ locality: 'PROCESS_LOCAL', count: 50 }, { locality: 'ANY', count: 50 }] }),
       ]),
       ...auditConfig({ config: {}, resources: { executor: { memoryMB: 10240, memoryOverheadMB: 256 }, driver: {}, dynamicAllocationEnabled: true, shuffleServiceEnabled: false, serializer: null } }),
     ];
+    expect(findings.some((f) => f.type === 'coreLocality')).toBe(true);
     let checked = 0;
     for (const f of findings) {
       const named = new Set((f.recommendation ?? '').match(/spark\.[A-Za-z.]*[A-Za-z]/g) ?? []);

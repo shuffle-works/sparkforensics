@@ -641,8 +641,7 @@ function stragglerTailClaim(stage: TailStage): TailClaim {
 }
 
 // A tail claim shortens the stage's longest task, hence TAIL_CLAIM (see occupancy.ts). Its core
-// time is the task time the fix removes: during the tail only the slow tasks hold cores, so the
-// stage's average occupancy would overstate it.
+// time is the measured task time the fix removes (removedCoreWorkMs).
 function tailClaimImpact(claim: TailClaim, stageId: number, ctx: EstimateCtx): ImpactEstimate {
   const estimate = singleStageImpact(claim.wasteMs, stageId, ctx, 'measured', { value: claim.wasteMs, unit: 'ms' },
     { ...TAIL_CLAIM, removedCoreWorkMs: claim.removedCoreWorkMs, longestTaskAfterFixMs: claim.longestTaskAfterFixMs });
@@ -672,15 +671,29 @@ function enableDynamicAllocation(app: DetectorApp): Remediation[] {
   return setConfUnlessLogged(app, 'spark.dynamicAllocation.enabled', true);
 }
 
-// The partition count that brings each shuffle partition down to the ideal size, as the estimate
-// models it, is per stage; the property is job-wide. A logged value at or above it means the
-// property is not what limits that stage (a repartition(n) or an RDD shuffle is), and lowering it
-// would be no increase, so nothing is suggested. Unlogged, the count is not a safe value: null.
-function raiseShufflePartitions(app: DetectorApp | null, computed: number): Remediation[] {
-  const key = 'spark.sql.shuffle.partitions';
-  const logged = app?.config?.[key]?.trim();
-  if (logged == null || !/^\d+$/.test(logged)) return [increaseConf(key)];
-  return Number(logged) >= computed ? [] : [increaseConf(key, computed)];
+// The run's logged spark.sql.shuffle.partitions as a count, or null when unlogged or not a count.
+function loggedShufflePartitions(app: DetectorApp | null): number | null {
+  const logged = app?.config?.['spark.sql.shuffle.partitions']?.trim();
+  return logged != null && /^\d+$/.test(logged) ? Number(logged) : null;
+}
+
+// lowShuffleParallelism's fix. The partition count that brings each shuffle partition down to the
+// ideal size, as the estimate models it, is per stage; the property is job-wide. A logged value at
+// or above it means the property is not what limits that stage (a repartition(n) or an RDD
+// shuffle is), so the text points at the stage's own partitioning and no property is suggested.
+// Unlogged, the count is not a safe value: null.
+function lowShuffleParallelismFix(app: DetectorApp | null, needed: number): { text: string; remediation: Remediation[] } {
+  const logged = loggedShufflePartitions(app);
+  if (logged != null && logged >= needed) {
+    return {
+      text: `spark.sql.shuffle.partitions is already ${logged}, so raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller`,
+      remediation: [],
+    };
+  }
+  return {
+    text: 'raise spark.sql.shuffle.partitions so each partition is smaller',
+    remediation: [increaseConf('spark.sql.shuffle.partitions', logged == null ? null : needed)],
+  };
 }
 
 // No dynamic-allocation property has an effect on a run whose logged conf turns it off.
@@ -1117,7 +1130,7 @@ export const DETECTORS = [
         const idleCoreMs =
           Math.max(0, ((finding.totalCores as number | undefined) ?? 0) - (stage.taskCount ?? 0)) * stageDurationMs;
         // Real per-stage data (cores, task count, duration), no assumed constant.
-        return costOnly('measured', { value: idleCoreMs, unit: 'coreMs' });
+        return costOnly('measured', { value: idleCoreMs, unit: 'coreMs', idle: true });
       }
       if (finding.rule === 'dataExplosion') {
         const excessBytes = Math.max(0, (stage.outputBytes ?? 0) - (stage.inputBytes ?? 0));
@@ -1133,7 +1146,7 @@ export const DETECTORS = [
         const idleCoreMs =
           Math.max(0, Math.min(totalCores, taskCount) - 1) *
           Math.max(0, (stage.taskDurationMax ?? 0) - (stage.taskDurationP50 ?? 0));
-        return costOnly('measured', { value: idleCoreMs, unit: 'coreMs' });
+        return costOnly('measured', { value: idleCoreMs, unit: 'coreMs', idle: true });
       }
       return null;
     },
@@ -1195,11 +1208,12 @@ export const DETECTORS = [
         });
       }
       if (total >= thresholds.lowParTotalBytes && taskCount <= thresholds.lowParMaxTasks) {
+        const fix = lowShuffleParallelismFix(ctx.app, Math.ceil(total / IDEAL_BYTES_PER_PARTITION_TASK));
         out.push({
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'lowShuffleParallelism', metric: 'taskCount', value: taskCount,
-          recommendation: `${Math.round(total / GB * 10) / 10} GB of shuffle spread over only ${taskCount} tasks: raise spark.sql.shuffle.partitions so each partition is smaller.`,
-          remediation: raiseShufflePartitions(ctx.app, Math.ceil(total / IDEAL_BYTES_PER_PARTITION_TASK)),
+          recommendation: `${Math.round(total / GB * 10) / 10} GB of shuffle spread over only ${taskCount} tasks: ${fix.text}.`,
+          remediation: fix.remediation,
         });
       }
       if (max >= thresholds.maxPartBytes) {
@@ -1865,7 +1879,7 @@ export const DETECTORS = [
         return costOnly('measured');
       }
       const idleCoreHours = (1 - fraction) * appDurationMs * totalCores / 3.6e6;
-      return costOnly('measured', { value: idleCoreHours, unit: 'coreHours' });
+      return costOnly('measured', { value: idleCoreHours, unit: 'coreHours', idle: true });
     },
   }),
   defineAppDetector({
@@ -2108,7 +2122,7 @@ export const DETECTORS = [
         nonLocalTaskCount: nonLocalTasks!,
         confidence: coreLocalityConfidence(ratio!, totalTasks, thresholds),
         validationRequired: `Flagged when at least ${shareLabel(thresholds.warnRatio)} of tasks run non-local (critical at ${shareLabel(thresholds.critRatio)}), on runs of ${thresholds.minTasks}+ tasks.`,
-        recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement: check spark.locality.wait settings and executor/data colocation.`,
+        recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement: check executor/data colocation.`,
       };
     },
     estimate(finding): ImpactEstimate | null {

@@ -272,6 +272,9 @@ export type RawWasteUnit = 'ms' | 'bytes' | 'mbSeconds' | 'coreHours' | 'coreMs'
 export interface RawWasteFigure {
   value: number;
   unit: RawWasteUnit;
+  /** Set on a coreMs/coreHours figure that counts allocated core capacity no task ran on
+   * (utilization, stageShape's lowParallelism and taskStageSkew), not task time. */
+  idle?: true;
 }
 
 export type ImpactEstimateBasis = 'serial' | 'contended' | 'resourceOnly' | 'informational';
@@ -289,19 +292,13 @@ export interface ImpactEstimate {
   estimateMethod: ImpactEstimateMethod;
   rawWaste?: RawWasteFigure;
   /** Busy core time the fix removes (executor task time), in core-milliseconds, as a low..high
-   * range; set by estimateImpact (see coreTimeFor). A measured core-time figure (skew and
-   * straggler's removed task time, a coreMs or coreHours raw figure, or a cross-task
-   * executor-time 'ms' sum) is taken as is, whether or not the log records executor cores.
-   * Otherwise each claimed stage's clipped claim, before the contention gate and the union cap,
-   * times the cores that stage kept busy (executorRunTime over its task-active window,
-   * taskActiveMs, or over submit to complete when taskActiveMs is absent), summed; low equals high. Null when neither can be derived, and for a finding whose waste is
-   * allocated capacity that ran no task (utilization, idle cores, taskStageSkew): its idle
-   * figure stays in `rawWaste`. skew and straggler on one stage count its slow tail once: skew
-   * carries it and straggler is null; stageSlowness keeps its own figure. Never 0 for "unknown". */
+   * range; set by estimateImpact (see coreTimeFor). Only a figure the detector measures as removed
+   * task time counts: skew and straggler's removed task time, a coreMs or coreHours raw figure, or
+   * a cross-task executor-time 'ms' sum, taken as is (low equals high) whether or not the log
+   * records executor cores. Null for every finding with only a wall-clock claim, and for an idle
+   * capacity figure (`rawWaste.idle`). skew and straggler on one stage count its slow tail once:
+   * skew carries it and straggler is null. Never 0 for "unknown". */
   coreTimeMs?: { low: number; high: number } | null;
-  /** Internal: each stage's clipped claim before the contention gate and the union cap, for
-   * coreTimeFor; estimateImpact removes it, so it never reaches a report. */
-  stageClaims?: { stageId: number; ms: number }[];
 }
 
 // `Finding` is a union discriminated on `type`, one member per emitted finding type: see

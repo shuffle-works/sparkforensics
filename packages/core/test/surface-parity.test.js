@@ -41,8 +41,9 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
       const dashboard = new Map([...catalog, ...config].map((f) => [f.id, shared(f)]));
 
       // HTML export: the findings it ships for the dashboard bundle to render.
+      const interpretation = interpretRun(appModel, catalog, config);
       const exported = buildExportRunData(
-        appModel, catalog, config, skippedLines, interpretRun(appModel, catalog, config),
+        appModel, catalog, config, skippedLines, interpretation,
         { coreVersion: CORE_VERSION, buildId: 'parity', producer: 'parity-test' },
       );
       const exportedFindings = new Map([...exported.catalog, ...exported.configFindings].map((f) => [f.id, shared(f)]));
@@ -59,6 +60,19 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
         }
       }
       expect(exportedFindings, file).toEqual(dashboard);
+
+      // The savings figure and its label ("of core time", "of idle core capacity") the dashboard
+      // board shows are the ones the CLI and MCP rows carry.
+      const cliById = new Map(json.findings.map((r) => [r.id, r]));
+      const mcpById = new Map(mcp.map((r) => [r.id, r]));
+      [...catalog, ...config].forEach((f, i) => {
+        const { board, meaning } = interpretation.savings[i];
+        if (board == null || f.impactEstimate?.wallClock) return;
+        for (const [surface, row] of [['cli', cliById.get(f.id)], ['mcp', mcpById.get(f.id)]]) {
+          expect({ impact: row.impact, impactMeaning: row.impactMeaning }, `${file} ${surface} ${f.type} ${f.id}`)
+            .toEqual({ impact: board, impactMeaning: meaning });
+        }
+      });
 
       for (const v of dashboard.values()) {
         if (v.remediation.length) withRemediation += 1;
