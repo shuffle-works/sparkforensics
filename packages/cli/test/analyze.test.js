@@ -136,25 +136,25 @@ describe('sparkforensics-analyze CLI', () => {
     }
   });
 
-  it('exits 2 on a malformed (non-Spark) input file', () => {
+  it('exits 4 on a malformed (non-Spark) input file', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-bad-'));
     const path = join(dir, 'garbage.txt');
     writeFileSync(path, 'this is not an event log\n');
     try {
       const { status, stderr } = runCli([path]);
-      expect(status).toBe(2);
+      expect(status).toBe(4);
       expect(stderr).toMatch(/Not a Spark event log/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('exits 2 on an unsupported (non-rolling) directory', () => {
+  it('exits 4 on an unsupported (non-rolling) directory', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-dir-'));
     writeFileSync(join(dir, 'notes.txt'), 'hello');
     try {
       const { status, stderr } = runCli([dir]);
-      expect(status).toBe(2);
+      expect(status).toBe(4);
       expect(stderr).toMatch(/rolling event-log directory/i);
     } finally {
       rmSync(dir, { recursive: true, force: true });

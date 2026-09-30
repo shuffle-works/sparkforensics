@@ -102,20 +102,35 @@ describe('several candidate logs', () => {
     expect(lines[0].status).toBe('inconclusive');
   });
 
-  it('turns a candidate that cannot be read or parsed into an exit-2 error line, and keeps going', async () => {
+  it('turns a candidate that cannot be read or parsed into an exit-4 error line, and keeps going', async () => {
     const { status, lines } = await run([p('garbage'), p('same'), p('nope'), '--baseline', p('baseline')]);
     expect(lines.map((l) => l.status)).toEqual(['error', 'pass', 'error']);
     for (const [i, name] of [[0, 'garbage'], [2, 'nope']]) {
-      expect(lines[i]).toMatchObject({ log: p(name), exitCode: 2, candidate: null, comparison: null, budgets: [] });
+      expect(lines[i]).toMatchObject({ log: p(name), exitCode: 4, candidate: null, comparison: null, budgets: [] });
       expect(lines[i].error).toEqual(expect.any(String));
     }
-    expect(status).toBe(2);
+    expect(status).toBe(4);
   });
 
-  it('lets an error line outrank a violation', async () => {
-    const { status, lines } = await run([p('slower'), p('garbage'), '--baseline', p('baseline'), '--regression-budget', 'wallClock:10']);
-    expect(lines.map((l) => l.exitCode)).toEqual([1, 2]);
-    expect(status).toBe(2);
+  it('ranks the aggregate exit code 4 over 1 over 3 over 0', async () => {
+    const budget = ['--baseline', p('baseline'), '--regression-budget', 'wallClock:10'];
+    const cases = [
+      [[p('slower'), p('garbage'), p('cut-off'), p('same')], [1, 4, 3, 0], 4],
+      [[p('same'), p('cut-off'), p('slower')], [0, 3, 1], 1],
+      [[p('same'), p('cut-off')], [0, 3], 3],
+      [[p('same'), p('same')], [0, 0], 0],
+    ];
+    for (const [logs, lineCodes, aggregate] of cases) {
+      const { status, lines } = await run([...logs, ...budget]);
+      expect(lines.map((l) => l.exitCode)).toEqual(lineCodes);
+      expect(status).toBe(aggregate);
+    }
+  });
+
+  it('exits 6 when the output cannot be written', async () => {
+    const { status, stderr } = await run([p('same'), p('slower'), '--baseline', p('baseline'), '--out', p('no-such-dir/out.ndjson')]);
+    expect(status).toBe(6);
+    expect(stderr).toMatch(/^Internal error/);
   });
 
   it('names candidates by position and writes no candidate path under --redact', async () => {
@@ -133,12 +148,18 @@ describe('several candidate logs', () => {
       expect(text).not.toContain(dir);
       expect(text).not.toContain('nope');
     }
-    expect(status).toBe(2);
+    expect(status).toBe(4);
   });
 
-  it('exits 2 without output when the baseline cannot be read', async () => {
-    const { status, stdout } = await run([p('same'), p('slower'), '--baseline', p('missing')]);
-    expect(status).toBe(2);
+  it.each(['missing', 'garbage'])('exits 5 without output when the baseline (%s) cannot be read or parsed', async (name) => {
+    const { status, stdout } = await run([p('same'), p('slower'), '--baseline', p(name)]);
+    expect(status).toBe(5);
+    expect(stdout).toBe('');
+  });
+
+  it('exits 5, not 4, when both the baseline and a candidate are unreadable', async () => {
+    const { status, stdout } = await run([p('garbage'), p('same'), '--baseline', p('missing')]);
+    expect(status).toBe(5);
     expect(stdout).toBe('');
   });
 
@@ -238,5 +259,29 @@ describe('several regression budgets', () => {
     const { status, stderr } = await run([p('same'), flag, flag === '--budgets' ? p('budgets.json') : 'wallClock:10']);
     expect(status).toBe(2);
     expect(stderr).toMatch(/require --baseline/);
+  });
+});
+
+describe('single-candidate exit codes for unreadable input', () => {
+  it('exits 4 for an unreadable candidate and 5 for an unreadable baseline', async () => {
+    expect((await run([p('garbage'), '--baseline', p('baseline')])).status).toBe(4);
+    expect((await run([p('missing'), '--baseline', p('baseline')])).status).toBe(4);
+    expect((await run([p('same'), '--baseline', p('garbage')])).status).toBe(5);
+    expect((await run([p('same'), '--baseline', p('missing')])).status).toBe(5);
+  });
+
+  it('exits 5 when both are unreadable, the worse of the two', async () => {
+    expect((await run([p('garbage'), '--baseline', p('missing')])).status).toBe(5);
+  });
+
+  it('exits 6 on an internal failure such as an unwritable --out', async () => {
+    const { status, stderr } = await run([p('same'), '--out', p('no-such-dir/report.json')]);
+    expect(status).toBe(6);
+    expect(stderr).toMatch(/^Internal error/);
+  });
+
+  it('keeps exit 2 for usage errors and a bad budgets file', async () => {
+    expect((await run([p('same'), '--max-skew', 'x'])).status).toBe(2);
+    expect((await run([p('same'), '--baseline', p('baseline'), '--budgets', p('missing-budgets.json')])).status).toBe(2);
   });
 });

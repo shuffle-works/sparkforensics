@@ -251,10 +251,13 @@ pairs with `--shs-base-url`/`--app-id` for a non-default attempt;
 `--regression-metric` picks which metric `--max-regression-pct` checks
 (default `wallClock`); `--format md` switches output to Markdown (default
 `json`); `--out <path>` writes it to a file instead of stdout. Exit codes:
-`0` pass, `1` a budget was violated, `2` bad input/usage, `3` a budget was
-inconclusive (e.g. missing evidence for a regression check). With several
-candidates the exit code is the worst line: `2`, then `1`, then `3`, then `0`;
-a candidate that can't be read or parsed gives its line `2`.
+`0` pass, `1` a budget was violated, `2` usage error (bad flags, arguments or
+a `--thresholds`/`--budgets` file), `3` a budget was inconclusive (e.g. missing
+evidence for a regression check), `4` the candidate log can't be read or
+parsed, `5` the baseline log can't be read or parsed, `6` internal error. When
+several apply, the worst wins in the order `6`, `5`, `4`, `1`, `3`, `0`; with
+several candidates that means the worst line, and a candidate that can't be
+read or parsed gives its own line `4`.
 
 > **Node version:** the published `sparkforensics-cli`, `sparkforensics-mcp`,
 > and `sparkforensics-server` packages all pre-strip their vendored

@@ -403,7 +403,7 @@ the run from a Spark History Server instead (mutually exclusive with the
 positional file/directory argument), calling `resolveFromShs`
 (`packages/core/src/shs-load.ts`, shared with the MCP server's SHS source path below) directly;
 no dependency on the `packages/server` package. A failed SHS fetch reports its message
-to `stderr` and exits `2`, same as a local file that can't be parsed.
+to `stderr` and exits `4`, same as a candidate file that can't be parsed.
 
 Regression budgets beyond the `--max-regression-pct` pair come from repeated
 `--regression-budget <metric>:<pct>` flags and a `--budgets` file, parsed in
@@ -414,7 +414,9 @@ budgeted twice is a usage error. With two or more positional candidates (or
 then evaluates each candidate in turn and writes one NDJSON line per candidate
 (`log`, `status`, `exitCode`, `error`, `budgets`, `candidate`, `comparison`). A
 candidate that can't be read or parsed gets a `status: "error"` line with
-`exitCode` `2`; the exit code is the worst line (`2` > `1` > `3` > `0`). Under
+`exitCode` `4` (`6` for an internal failure on that candidate); the exit code is
+the worst line (`6` > `5` > `4` > `1` > `3` > `0`, `EXIT_SEVERITY`). A baseline
+that can't be read exits `5` with no lines. Under
 `--redact`, `log` and the `stderr` prefixes are `candidate-<n>` (1-based argument
 position) and an error line's message is generic, so no candidate path, which
 usually carries the app id, reaches the output.
@@ -430,12 +432,15 @@ whose required evidence is missing (e.g. the run never emitted
 `ApplicationEnd`, or has no usable per-task `runAggregates`) is reported as
 inconclusive (`stderr` warning) rather than silently passing, and gets its own
 exit code distinct from both pass and violation. Exit codes: `0` pass, `1`
-a configured budget was violated, `2` bad arguments (unknown or value-less
-flag, unknown `--regression-metric` key), an unreadable or invalid `--thresholds`
-or `--budgets` file, a failed `--export-html` export, a failed SHS fetch, or input that could not
-be parsed at all,
-`3` no violations but at least one budget was inconclusive. A violation always
-wins over an inconclusive result in the same run (exit `1`, not `3`).
+a configured budget was violated, `2` a usage error (unknown or value-less
+flag, unknown `--regression-metric` key, an unreadable or invalid `--thresholds`
+or `--budgets` file), `3` no violations but at least one budget was inconclusive,
+`4` the candidate could not be read or parsed (or its SHS fetch failed), `5` the
+`--baseline` could not be read or parsed, `6` an internal error (an unhandled
+failure, a failed `--export-html` export). `main` catches anything unhandled and
+exits `6` rather than letting Node exit `1`, which would read as a violation.
+When several apply the worst wins: `6`, `5`, `4`, `1`, `3`, `0`; a violation
+always wins over an inconclusive result in the same run (exit `1`, not `3`).
 `evaluateBudgets()` also always adds an inconclusive `run-complete` result
 when the catalog has an `incompleteRun` finding, so a run with no
 `ApplicationEnd` exits `3` even with no budget flags. With `--baseline`, the

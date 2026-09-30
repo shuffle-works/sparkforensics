@@ -98,13 +98,17 @@ Several candidates: pass two or more logs as positional arguments, with --baseli
 each against the baseline, which is parsed once. Output is NDJSON, one line per candidate in
 argument order: {"log", "status", "exitCode", "error", "budgets", "candidate", "comparison"}.
 status is pass, violation, inconclusive or error. A candidate that cannot be read or parsed gets
-an "error" line (exitCode 2, candidate and comparison null); the rest still run. With --redact,
-"log" and the stderr prefixes name a candidate by position (candidate-1, candidate-2, ...) and an
-error line carries a generic message, so no candidate path is written. Not combinable with
---export-html, --shs-base-url or --format json|md. The exit code is the worst line: 2, then 1,
-then 3, then 0.
+an "error" line (exitCode 4, candidate and comparison null); the rest still run. An internal
+failure while analyzing one candidate gets an "error" line with exitCode 6. With --redact, "log"
+and the stderr prefixes name a candidate by position (candidate-1, candidate-2, ...) and an error
+line carries a generic message, so no candidate path is written. Not combinable with
+--export-html, --shs-base-url or --format json|md. The exit code is the worst line, in the order
+6, 5, 4, 1, 3, 0; a usage error exits 2 before any candidate runs.
 
-Exit codes: 0 pass, 1 budget violated, 2 bad arguments, an unreadable or invalid --thresholds or --budgets file, the local input could not be parsed, or the --shs-base-url fetch failed, 3 a budget was inconclusive.
+Exit codes: 0 pass, 1 a budget was violated, 2 usage error (bad flags or arguments, an unreadable
+or invalid --thresholds or --budgets file), 3 a budget was inconclusive, 4 the candidate log could
+not be read or parsed (or the --shs-base-url fetch failed), 5 the --baseline log could not be read
+or parsed (no candidate lines are written), 6 internal error (including a failed --export-html).
 `;
 
 function parseCliArgs(argv) {
@@ -204,13 +208,18 @@ async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redac
   }
 }
 
-// Worst-wins order of the exit codes a candidate line can carry: an unparsable candidate (2)
-// outranks a violation (1), which outranks an inconclusive result (3), as in a single-candidate run.
-const EXIT_SEVERITY = { 0: 0, 3: 1, 1: 2, 2: 3 };
+const EXIT = { PASS: 0, VIOLATION: 1, USAGE: 2, INCONCLUSIVE: 3, CANDIDATE_UNREADABLE: 4, BASELINE_UNREADABLE: 5, INTERNAL: 6 };
+
+// Worst-wins order of the exit codes several candidates can produce, least to most severe:
+// 0, 3, 1, 4, 5, 6. (2 is a usage error and exits before any candidate runs.)
+const EXIT_SEVERITY = Object.fromEntries([0, 3, 1, 4, 5, 6].map((code, rank) => [code, rank]));
+
+// Marks a read/parse failure with the exit code of the log it came from.
+const unreadable = (promise, exitCode) => promise.catch((e) => { e.exitCode = exitCode; throw e; });
 
 // One baseline against several candidates, one NDJSON line each. The baseline is parsed and
 // analyzed once; candidates run one at a time so only one parsed log is held at once. A candidate
-// that cannot be parsed yields an "error" line (exit code 2) and the rest still run. Under --redact
+// that cannot be read or parsed yields an "error" line (exit code 4) and the rest still run. Under --redact
 // a candidate is named by its position (candidate-1, ...): log file names usually carry the app id.
 async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, findingsFilter, redact, outPath }) {
   let baselineAppModel;
@@ -218,7 +227,7 @@ async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, 
     ({ appModel: baselineAppModel } = await collectWithEvidence(baselinePath));
   } catch (e) {
     process.stderr.write(`${e.message}\n`);
-    process.exitCode = 2;
+    process.exitCode = EXIT.BASELINE_UNREADABLE;
     return;
   }
   const baselineCatalog = analyzeModel(baselineAppModel, { thresholds });
@@ -234,7 +243,7 @@ async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, 
     const log = redact ? `candidate-${index + 1}` : path;
     let line;
     try {
-      const { appModel } = await collectWithEvidence(path);
+      const { appModel } = await unreadable(collectWithEvidence(path), EXIT.CANDIDATE_UNREADABLE);
       const catalog = analyzeModel(appModel, { thresholds });
       let comparison = buildComparison(
         { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
@@ -246,7 +255,7 @@ async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, 
       for (const r of results) {
         if (r.status !== 'pass') process.stderr.write(`${log}: [${r.status === 'violation' ? 'violation' : 'inconclusive'}] ${r.name}: ${r.detail}\n`);
       }
-      const exitCode = violated ? 1 : inconclusive ? 3 : 0;
+      const exitCode = violated ? EXIT.VIOLATION : inconclusive ? EXIT.INCONCLUSIVE : EXIT.PASS;
       line = {
         log,
         status: violated ? 'violation' : inconclusive ? 'inconclusive' : 'pass',
@@ -264,9 +273,12 @@ async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, 
         },
       };
     } catch (e) {
-      const error = redact ? 'The event log could not be read or parsed.' : e.message;
+      const exitCode = e.exitCode ?? EXIT.INTERNAL;
+      const error = redact
+        ? (exitCode === EXIT.INTERNAL ? 'The candidate could not be analyzed.' : 'The event log could not be read or parsed.')
+        : e.message;
       process.stderr.write(`${log}: [error] ${error}\n`);
-      line = { log, status: 'error', exitCode: 2, error, budgets: [], candidate: null, comparison: null };
+      line = { log, status: 'error', exitCode, error, budgets: [], candidate: null, comparison: null };
     }
     emit(line);
     if (EXIT_SEVERITY[line.exitCode] > EXIT_SEVERITY[worstExit]) worstExit = line.exitCode;
@@ -274,7 +286,18 @@ async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, 
   process.exitCode = worstExit;
 }
 
-export async function main(argv, { fetchImpl } = {}) {
+// Any failure not handled below (a bug, an unwritable --out) exits 6 instead of crashing with
+// Node's own exit code, which would read as a violation.
+export async function main(argv, options) {
+  try {
+    await runCli(argv, options);
+  } catch (e) {
+    process.stderr.write(`Internal error: ${e?.stack ?? e}\n`);
+    process.exitCode = EXIT.INTERNAL;
+  }
+}
+
+async function runCli(argv, { fetchImpl } = {}) {
   let parsed;
   try {
     parsed = parseCliArgs(argv);
@@ -434,30 +457,36 @@ export async function main(argv, { fetchImpl } = {}) {
   let skippedLines;
   try {
     if (usingShs) {
-      const shsPromise = resolveFromShs(
+      const shsPromise = unreadable(resolveFromShs(
         values['shs-base-url'], values['app-id'], values['attempt-id'],
         fetchImpl !== undefined ? { fetchImpl } : {},
-      );
+      ), EXIT.CANDIDATE_UNREADABLE);
       // SHS fetch (network) and local --baseline parse (disk) are independent,
       // so run them concurrently. Not done for local+local below: both are CPU
       // work, so parallelizing wouldn't help.
       if (usingBaseline) {
-        const [shsResult, baselineResult] = await Promise.all([shsPromise, collectWithEvidence(values.baseline)]);
-        ({ appModel, skippedLines } = shsResult);
-        baselineAppModel = baselineResult.appModel;
+        const [shsResult, baselineResult] = await Promise.allSettled([
+          shsPromise, unreadable(collectWithEvidence(values.baseline), EXIT.BASELINE_UNREADABLE),
+        ]);
+        // The baseline's failure wins, as it does for local logs (exit 5 outranks 4).
+        if (baselineResult.status === 'rejected') throw baselineResult.reason;
+        if (shsResult.status === 'rejected') throw shsResult.reason;
+        ({ appModel, skippedLines } = shsResult.value);
+        baselineAppModel = baselineResult.value.appModel;
       } else {
         ({ appModel, skippedLines } = await shsPromise);
       }
     } else {
-      ({ appModel, skippedLines } = await collectWithEvidence(positionals[0]));
+      // Baseline first, so a batch with both logs unreadable reports the worse exit code (5).
       if (usingBaseline) {
-        const baselineResult = await collectWithEvidence(values.baseline);
+        const baselineResult = await unreadable(collectWithEvidence(values.baseline), EXIT.BASELINE_UNREADABLE);
         baselineAppModel = baselineResult.appModel;
       }
+      ({ appModel, skippedLines } = await unreadable(collectWithEvidence(positionals[0]), EXIT.CANDIDATE_UNREADABLE));
     }
   } catch (e) {
     process.stderr.write(`${e.message}\n`);
-    process.exitCode = 2;
+    process.exitCode = e.exitCode ?? EXIT.INTERNAL;
     return;
   }
 
@@ -473,7 +502,7 @@ export async function main(argv, { fetchImpl } = {}) {
       await writeHtmlExport(exportHtmlDir, appModel, tuned ? analyzeModel(appModel) : catalog, skippedLines, { redact: values.redact });
     } catch (e) {
       process.stderr.write(`--export-html failed: ${e.message}\n`);
-      process.exitCode = 2;
+      process.exitCode = EXIT.INTERNAL;
       return;
     }
   }

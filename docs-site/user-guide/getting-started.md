@@ -224,8 +224,12 @@ Output is JSON by default; `--format md` writes the Markdown report instead.
 Budget violations and inconclusive budgets print to stderr as
 `[violation] ...` and `[inconclusive] ...` lines. The exit code is 0 when
 every budget passes, 1 when one is violated, 3 when none is violated but one
-is inconclusive, and 2 for bad arguments, an invalid `--thresholds` or
-`--budgets` file, an unreadable log or a failed History Server fetch.
+is inconclusive, 2 for a usage error (bad flags or arguments, an invalid
+`--thresholds` or `--budgets` file), 4 when the candidate log can't be read or
+parsed or its History Server fetch fails, 5 when the `--baseline` log can't be
+read or parsed, and 6 for an internal error, including a failed `--export-html`.
+When several of these apply, the worst wins in this order: 6, 5, 4, 1, 3, 0.
+A usage error exits 2 before any log is read.
 
 `--min-efficiency` checks busy core time, the share of executor core time that
 ran tasks (100 minus the dashboard's Unused core time). It is not the
@@ -403,7 +407,7 @@ Each line is one JSON object:
 | --- | --- |
 | `log` | The candidate path, as given on the command line. With `--redact`, `candidate-<n>` instead, `n` being the candidate's 1-based position. |
 | `status` | `pass`, `violation`, `inconclusive` or `error`. |
-| `exitCode` | The exit code this line alone would give: `0` for `pass`, `1` for `violation`, `3` for `inconclusive` and `2` for `error`. |
+| `exitCode` | The exit code this line alone would give: `0` for `pass`, `1` for `violation`, `3` for `inconclusive`, and for `error` `4` (the log can't be read or parsed) or `6` (an internal failure while analyzing it). |
 | `error` | The message when `status` is `error`; otherwise `null`. With `--redact`, a generic message that names no path. |
 | `budgets` | This candidate's budget results, each with `name`, `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric` on `max-regression`. Empty for an `error` line. |
 | `candidate` | The candidate's report, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
@@ -415,13 +419,21 @@ budget result is a violation, else `inconclusive` if any is inconclusive
 else `pass`.
 
 A candidate that can't be read or parsed doesn't stop the others. Its line
-has `status: "error"`, `exitCode: 2`, the message in `error`, and `null` for
-`candidate` and `comparison`, as a single-candidate run exits `2` for a local
-input it can't parse. The process exit code is the worst line, in this order:
-`2`, then `1`, then `3`, then `0`, so an unreadable candidate outranks a
-violation. A problem with the invocation as a whole also exits `2`, and writes
-no lines: a usage error, an unreadable `--thresholds` or `--budgets` file, or a
-baseline that can't be parsed.
+has `status: "error"`, `exitCode: 4`, the message in `error`, and `null` for
+`candidate` and `comparison`, as a single-candidate run exits `4` for a
+candidate it can't parse. The process exit code is the worst line, in the
+order `6`, `5`, `4`, `1`, `3`, `0`, so an unreadable candidate outranks a
+violation and a violation outranks an inconclusive result.
+
+Two failures stop the batch before any line is written:
+
+- A usage error (bad flags or arguments, an invalid `--thresholds` or
+  `--budgets` file) exits `2`.
+- A baseline that can't be read or parsed exits `5`. Fix the baseline and run
+  the batch again.
+
+An internal failure that isn't tied to one candidate, such as an unwritable
+`--out` path, exits `6`.
 
 With `--redact`, no candidate path is written anywhere, since event-log file
 names usually carry the app id. `log` and the `stderr` line prefixes name each
