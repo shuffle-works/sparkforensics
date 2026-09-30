@@ -45,6 +45,7 @@ const WRITE_WORDS = new Set([
 // Any join (SortMergeJoin) is excluded by name in isWriteLike.
 const NOT_WRITES = new Set([
   'WriteFiles', 'AppendColumns', 'AppendColumnsWithObject', 'MergeRows', 'StateStoreSave',
+  'StateStoreRestore', 'SessionWindowStateStoreSave', 'SessionWindowStateStoreRestore',
   'UpdateEventTimeWatermarkColumn',
 ]);
 
@@ -164,18 +165,19 @@ function parseSaveIntoDataSource(args: Arg[]): Parsed | null {
 }
 
 // The one target every match of `pattern` names, or null when there is none, when they name
-// different targets, or when one of them is cut: a string that also prints another plan (a MERGE
-// source, a subquery) cannot tell which match is written.
+// different targets, or when one of them is cut: a string that also prints another plan (a
+// subquery) cannot tell which match is written. `pattern` captures the target, then its closing
+// delimiter; a match without the delimiter was cut before it.
 function soleMatch(detail: string, pattern: RegExp, normalize: (text: string) => string | null): string | null {
   const targets = new Set<string | null>();
-  for (const m of detail.matchAll(pattern)) targets.add(isCut(m[1]) ? null : normalize(m[1]));
+  for (const m of detail.matchAll(pattern)) targets.add(m[2] === undefined || isCut(m[1]) ? null : normalize(m[1]));
   const [target] = targets;
   return targets.size === 1 ? target : null;
 }
 
 // DataSource V2 writes print the connector's Write object; Iceberg's is IcebergWrite(table=t, ...).
 function parseV2Write(detail: string): Parsed | null {
-  const name = soleMatch(detail, /\b\w*Write\(table=([^,()\s]+)[,)]/g, tableName);
+  const name = soleMatch(detail, /\b\w*Write\(table=([^,()\s]*)([,)])?/g, tableName);
   return name ? { kind: 'table', target: name } : null;
 }
 
@@ -191,7 +193,7 @@ function parseV2TableAsSelect(args: Arg[]): Parsed | null {
 
 // Delta prints a path-based table as delta.`<path>`.
 function parseDeltaPath(detail: string): Parsed | null {
-  const path = soleMatch(detail, /\bdelta\.`([^`]+)`/g, (text) => text);
+  const path = soleMatch(detail, /\bdelta\.`([^`]*)(`)?/g, (text) => text);
   return path ? { kind: 'path', target: path } : null;
 }
 
@@ -225,6 +227,8 @@ function parseWrite(command: string, detail: string): [boolean, Parsed | null] {
   if (argParser) return [true, argParser(splitArgs(argsOf(detail, command)))];
   if (V2_WRITES.has(command)) return [true, parseV2Write(detail)];
   if (V2_TABLE_AS_SELECT.has(command)) return [true, parseV2TableAsSelect(splitArgs(argsOf(detail, command)))];
+  // A MERGE prints its source relation too, so a delta. path in it may be the source, not the target.
+  if (command === 'MergeIntoCommand') return [true, null];
   if (DELTA_COMMANDS.has(command)) return [true, parseDeltaPath(detail)];
   return [false, null];
 }

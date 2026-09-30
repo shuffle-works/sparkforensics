@@ -72,6 +72,9 @@ describe('extractWriteTargets', () => {
       node('SortMergeJoin', 'SortMergeJoin [a#1], [b#2], Inner'),
       node('AppendColumns', 'AppendColumns x'),
       node('MergeRows', 'MergeRows'),
+      node('StateStoreRestore', 'StateStoreRestore [k#1], state info [ checkpoint = file:/c, runId = r, opId = 0, ver = 0, numPartitions = 2]'),
+      node('SessionWindowStateStoreRestore', 'SessionWindowStateStoreRestore [k#1]'),
+      node('SessionWindowStateStoreSave', 'SessionWindowStateStoreSave [k#1]'),
       node('Scan parquet', 'FileScan parquet [a#1]'),
     ] });
     expect(writesOf(plan)).toEqual([]);

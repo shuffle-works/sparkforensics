@@ -307,8 +307,9 @@ It has no Markdown counterpart.
   covers a node whose plan string has no target (Spark omits it for some
   commands, and a Delta write made through `SaveIntoDataSourceCommand` often
   has none), a redacted option value, a plan string that names more than one
-  candidate target (a Delta `MERGE` whose source is also a `delta.` path), and
-  a plan string Spark cut short. A
+  candidate target, a Delta `MERGE` (its plan string also prints the source,
+  so a `delta.` path in it may not be the target), and a plan string Spark cut
+  short. A
   target is reported only when its whole text is followed by a delimiter in
   the plan string: a path cut by `spark.sql.maxMetadataStringLength` or a
   name with a `...` marker in it is `null`, never a partial path. A trailing
@@ -336,7 +337,8 @@ Recognized commands and where their target comes from:
 | `SaveIntoDataSourceCommand` | `path` from the `path` option, or `table` from the JDBC `dbtable`/`table` option |
 | `AppendData`, `OverwriteByExpression`, `OverwritePartitionsDynamic`, `ReplaceData`, `WriteDelta`, `WriteToDataSourceV2` | `table`: the `table=` of the connector's write object, for example Iceberg's `IcebergWrite(table=..., ...)` |
 | `CreateTableAsSelect`, `AtomicCreateTableAsSelect`, `ReplaceTableAsSelect`, `AtomicReplaceTableAsSelect` | `table`: the identifier after the catalog |
-| `WriteIntoDelta`, `WriteIntoDeltaCommand`, `MergeIntoCommand`, `UpdateCommand`, `DeleteCommand`, `CreateDeltaTableCommand`, `OptimizeTableCommand`, `RestoreTableCommand` | `path`: a `delta.` path table, otherwise `null` |
+| `WriteIntoDelta`, `WriteIntoDeltaCommand`, `UpdateCommand`, `DeleteCommand`, `CreateDeltaTableCommand`, `OptimizeTableCommand`, `RestoreTableCommand` | `path`: a `delta.` path table, otherwise `null` |
+| `MergeIntoCommand` | always `null` |
 
 A plan node not in the table is a write when its name, split into CamelCase
 words, contains `Write`, `Insert`, `Save`, `Overwrite`, `Append`, `Merge`,
@@ -345,7 +347,8 @@ words, contains `Write`, `Insert`, `Save`, `Overwrite`, `Append`, `Merge`,
 `TableAsSelect`. A name containing `Join` (`SortMergeJoin`) and these
 operators that share a word with a write but write nothing are not: `WriteFiles`
 (the child of a write command), `AppendColumns`, `AppendColumnsWithObject`,
-`MergeRows`, `StateStoreSave` and `UpdateEventTimeWatermarkColumn`. The
+`MergeRows`, `StateStoreSave`, `StateStoreRestore`, `SessionWindowStateStoreSave`,
+`SessionWindowStateStoreRestore` and `UpdateEventTimeWatermarkColumn`. The
 classification leans toward reporting too much: a node that matches by name is
 listed with a `null` target rather than dropped.
 
