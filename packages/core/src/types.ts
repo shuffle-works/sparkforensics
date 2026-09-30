@@ -296,8 +296,8 @@ export interface ImpactEstimate {
    * over the stage's task-active window (taskActiveMs), or over submit to complete when
    * taskActiveMs is absent. Null when neither can be derived, and for a finding whose waste is
    * allocated capacity that ran no task (utilization, idle cores, taskStageSkew): its idle
-   * figure stays in `rawWaste`. A stage's slow tail is counted once: skew, else straggler, else
-   * stageSlowness carries it and the others on that stage are null. Never 0 for "unknown". */
+   * figure stays in `rawWaste`. skew and straggler on one stage count its slow tail once: skew
+   * carries it and straggler is null; stageSlowness keeps its own figure. Never 0 for "unknown". */
   coreTimeMs?: { low: number; high: number } | null;
 }
 
