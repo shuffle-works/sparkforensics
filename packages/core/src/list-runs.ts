@@ -5,6 +5,7 @@ import { reassembleRollingEntries } from './parser-worker.ts';
 import { peekLogHeader } from './log-header-peek.ts';
 import { mcpError } from './mcp-error.ts';
 import { normalizeBaseUrl } from './shs-request.js';
+import { isConnectionFailure } from './proxy.js';
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_ARCHIVE_BYTES } from './shs-load.ts';
 
 export interface RunListEntry {
@@ -205,10 +206,12 @@ export async function listRunsShs(
   let res: Response;
   try {
     // An unresponsive SHS would otherwise hang the tool call forever. A timed-out signal rejects
-    // the fetch with an AbortError, which this same catch turns into access-or-upstream-failure.
+    // the fetch with a TimeoutError, which this same catch turns into upstream-unreachable, the
+    // code a refused connection gets too.
     res = await fetchImpl(url.toString(), { signal: AbortSignal.timeout(DEFAULT_IDLE_TIMEOUT_MS) });
   } catch (e) {
-    throw mcpError('access-or-upstream-failure', `Could not reach ${normalized}: ${e instanceof Error ? e.message : String(e)}`);
+    const code = isConnectionFailure(e) ? 'upstream-unreachable' : 'access-or-upstream-failure';
+    throw mcpError(code, `Could not reach ${normalized}: ${e instanceof Error ? e.message : String(e)}`);
   }
   if (!res.ok) {
     throw mcpError('access-or-upstream-failure', `SHS applications list request failed with status ${res.status}.`);

@@ -159,9 +159,9 @@ const FINDING_METRIC_UNIT: Record<string, 'bytes' | 'ms' | 'minutes' | 'ratio' |
   speculationWasteMs: 'ms', retryWasteMs: 'ms', taskDurationP50: 'ms',
   stageDurationMinutes: 'minutes',
   'P95/median': 'ratio', 'max/median': 'ratio', pRatio: 'ratio', oiRatio: 'ratio',
-  taskStageSkew: 'ratio', hostMeanRatio: 'ratio', execMaxMedianRatio: 'ratio',
+  hostMeanRatio: 'ratio', execMaxMedianRatio: 'ratio',
   gcPct: 'pct', failureRate: 'pct', stragglerShare: 'pct',
-  hostDurationShare: 'pctFraction',
+  hostDurationShare: 'pctFraction', taskStageSkew: 'pctFraction',
   taskCount: 'count', speculativeTasks: 'count', subtreeOccurrences: 'count',
 };
 

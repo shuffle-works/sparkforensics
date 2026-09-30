@@ -421,7 +421,7 @@ thresholds sit well above their disk counterparts at every tier.
 |---|---|---|
 | Stage shape: PRatio | `taskCount / totalCores < 0.5` (info, under-parallelized), on a stage lasting ≥ `lowParallelismFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length): parallelizing can't save more than the stage's duration, and on the 14 real logs 2839 of 3005 firings were below it | none |
 | Stage shape: OIRatio | `outputBytes / inputBytes > 10×` (info, data explosion) | none |
-| Stage shape: TaskStageSkew | `taskDurationMax / stageDuration > 3×` (info) | none |
+| Stage shape: TaskStageSkew | `taskDurationMax / stageDuration > stageShareMin` = 0.5 **and** `taskDurationMax / taskDurationP50 > skewWarn` = 3× (info), on a multi-task stage lasting ≥ `taskStageSkewFloorPct` = 0.5% of the run. A task runs inside its stage, so the share is at most 1; the median gate is needed because on a single wave of even tasks the longest one spans the whole stage too | none |
 | Failed tasks | failure rate > 5% (min 10 tasks) | > 20% |
 | Stage failed outright | none | any `stageFailureReason` present |
 | Slow host: multi-dimensional | max/median ratio across taskTime/inputBytes/shuffleBytes/storageMemory ≥ 1.33× (info); each dimension's sample must also clear an absolute floor (1000 ms for taskTime, 64 MiB for the byte dimensions). A stage lasting under `stageFloorPct` = 0.5% of the run is skipped (see the mean-duration row): a byte dimension there, which has no time estimate, used to keep its ratio tier (66 of 90 warning/critical on the 14 real logs) until 6298149 graded it `info` | ≥ 3.16× warning, ≥ 10× critical |

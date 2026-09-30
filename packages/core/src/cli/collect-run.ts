@@ -5,6 +5,7 @@ import { nodeParseCodecs } from './native-zstd.ts';
 import { createModelCallbacks } from '../model-assembler.ts';
 import { routeMessage, type IngestHandlers } from '../ingest.ts';
 import type { AppModel } from '../types.ts';
+import { mcpError } from '../mcp-error.ts';
 
 // No whole-file arrayBuffer(): the parser only ever reads bounded slices, and a
 // whole-file read is what capped local logs at 2 GiB.
@@ -149,10 +150,13 @@ export async function collectRun(inputPath: string): Promise<{ appModel: AppMode
     return file;
   };
   try {
+    // A file or folder that isn't a decodable event log rejects with invalid-event-log, the code
+    // shs-load.ts gives an archive that fails to decode, so MCP reports both the same way. The
+    // CLI reads only the message.
     return await collectViaDispatch((state, emit, reject) => {
       if (stat.isDirectory()) {
         if (!isRollingLogDirectory(inputPath)) {
-          reject(new Error("This isn't a Spark rolling event-log directory. Pass a single event-log file instead."));
+          reject(mcpError('invalid-event-log', "This isn't a Spark rolling event-log directory. Pass a single event-log file instead."));
           return;
         }
         const names = readdirSync(inputPath);
@@ -160,7 +164,7 @@ export async function collectRun(inputPath: string): Promise<{ appModel: AppMode
         try {
           ordered = reassembleRollingEntries(names);
         } catch (e) {
-          reject(e);
+          reject(mcpError('invalid-event-log', (e as Error).message));
           return;
         }
         const files = ordered.map((name) => open(join(inputPath, name)));
@@ -170,7 +174,7 @@ export async function collectRun(inputPath: string): Promise<{ appModel: AppMode
       } else {
         runParse(open(inputPath), state, { emit, ...nodeParseCodecs }).catch(reject);
       }
-    }, (msg) => new Error((msg as { message: string }).message));
+    }, (msg) => mcpError('invalid-event-log', (msg as { message: string }).message));
   } finally {
     for (const file of opened) file.close();
   }

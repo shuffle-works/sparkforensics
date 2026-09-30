@@ -186,8 +186,8 @@ its own. A file written by an incompatible
 release opens to a message saying so; export the run again with your current
 release. Turn on
 **Redact identifiers** first if the export is headed outside the environment
-that produced it, since that pseudonymizes the app id and any host/IP tokens
-in all three formats. **Keyboard shortcuts**
+that produced it, since that pseudonymizes the app id, the app name and any
+host/IP tokens in all three formats. **Keyboard shortcuts**
 (press `?` from anywhere) lists every shortcut. Rounding it out: a **Docs**
 link and a theme toggle.
 
@@ -231,8 +231,8 @@ The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,
 comparing a candidate run against a baseline with regression gating
 (`--baseline`/`--max-regression-pct`/`--regression-metric`/
-`--fail-on-introduced`), redacting the app id and any host/IP tokens before
-sharing output (`--redact`), and narrowing the findings to certain impact
+`--fail-on-introduced`), redacting the app id, the app name and any host/IP
+tokens before sharing output (`--redact`), and narrowing the findings to certain impact
 bands, types, or a stage (`--impact`/`--type`/`--stage`), and tuning
 detector thresholds from a file (`--thresholds`, below). Run it with
 `--help` for the full flag list.
@@ -296,8 +296,8 @@ a note to stderr saying so. The browser dashboard has no tuning.
 
 - `wallClock`: wall-clock duration
 - `executorRunTime`: summed executor run time
-- `shuffleSpill`: shuffle spill
-- `diskSpill`: disk spill
+- `shuffleSpill`: memory spill (Spark's `memoryBytesSpilled`)
+- `diskSpill`: disk spill (Spark's `diskBytesSpilled`)
 - `gcTime`: JVM GC time
 - `taskSkew`: p95 task skew
 - `failedTaskRate`: failed-task rate

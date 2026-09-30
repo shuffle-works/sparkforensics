@@ -76,7 +76,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   stageShape: {
     name: 'stage shape',
     tag: 'SHAPE',
-    thresholdSummary: (t) => `under ${t.pRatioMax} tasks per core, output over ${t.oiRatioMax}× input, or one task over ${t.skewWarn}× the stage's wall-clock`,
+    thresholdSummary: (t) => `under ${t.pRatioMax} tasks per core, output over ${t.oiRatioMax}× input, or one task spanning over ${Math.round(t.stageShareMin * 100)}% of the stage's wall-clock at over ${t.skewWarn}× the median task`,
     actionLabel(f) {
       switch (f.rule) {
         case 'lowParallelism': return 'Increase parallelism';

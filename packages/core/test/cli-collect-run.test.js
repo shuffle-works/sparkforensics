@@ -73,7 +73,18 @@ describe('collectRun', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-cli-empty-'));
     writeFileSync(join(dir, 'readme.txt'), 'not a log');
     try {
-      await expect(collectRun(dir)).rejects.toThrow(/rolling event-log directory/i);
+      await expect(collectRun(dir)).rejects.toMatchObject({ code: 'invalid-event-log', message: expect.stringMatching(/rolling event-log directory/i) });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects a rolling directory with a missing file as invalid-event-log', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-cli-gap-'));
+    writeFileSync(join(dir, 'events_1_app-1'), '{"Event":"SparkListenerApplicationStart","App ID":"app-1","App Name":"t","Timestamp":1}\n');
+    writeFileSync(join(dir, 'events_3_app-1'), '{"Event":"SparkListenerApplicationEnd","Timestamp":2}\n');
+    try {
+      await expect(collectRun(dir)).rejects.toMatchObject({ code: 'invalid-event-log', message: expect.stringMatching(/missing file/i) });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

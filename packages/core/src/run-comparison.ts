@@ -234,14 +234,15 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
     computeWallClock(baseSnap.app, baseSnap.stages).total,
     computeWallClock(candSnap.app, candSnap.stages).total));
 
-  // Shuffle spill over the whole run: a sum needs no stage matching, and
-  // matching is unreliable on real logs (see plan rationale), so scope it to
-  // all stages exactly like task-skew and failed-rate below.
+  // Memory spill (Spark's memoryBytesSpilled) over the whole run: a sum needs no
+  // stage matching, and matching is unreliable on real logs, so scope it to all
+  // stages exactly like task-skew and failed-rate below. The key stays
+  // `shuffleSpill` so existing --regression-metric callers keep working.
   const bSpill = sumField([...baseSnap.stages.values()], 'memoryBytesSpilled');
   const cSpill = sumField([...candSnap.stages.values()], 'memoryBytesSpilled');
-  out.push(metric('shuffleSpill', 'Shuffle spill',
+  out.push(metric('shuffleSpill', 'Memory spill',
     bSpill.present ? bSpill.sum : null, cSpill.present ? cSpill.sum : null,
-    { unavailableReason: bSpill.present && cSpill.present ? undefined : 'No shuffle-spill data recorded for a run' }));
+    { unavailableReason: bSpill.present && cSpill.present ? undefined : 'No memory-spill data recorded for a run' }));
 
   // Task skew: p95 of per-stage ratio across the whole run.
   const bSkew = p95(skewRatios([...baseSnap.stages.values()]));

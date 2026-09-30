@@ -108,6 +108,25 @@ describe('resolveOrCreateRun (path source)', () => {
     await expect(resolveOrCreateRun({ source: { path: '/definitely/does/not/exist' } }))
       .rejects.toMatchObject({ code: 'invalid-event-log' });
   });
+
+  // A local file or folder that isn't a decodable event log reports the same code a History
+  // Server archive that fails to decode does, with the decode message kept.
+  it.each([
+    ['a file that is not an event log', (dir) => { const p = join(dir, 'notes.txt'); writeFileSync(p, 'not json\nat all\n'); return p; }],
+    ['a corrupt .gz', (dir) => { const p = join(dir, 'run.gz'); writeFileSync(p, Buffer.from([0x1f, 0x8b, 0x08, 0x00, 1, 2, 3, 4, 5, 6, 7])); return p; }],
+    ['a corrupt .zstd', (dir) => { const p = join(dir, 'run.zstd'); writeFileSync(p, Buffer.from([0x28, 0xb5, 0x2f, 0xfd, 1, 2, 3, 4, 5, 6, 7])); return p; }],
+    ['a directory that is not a rolling event log', (dir) => { writeFileSync(join(dir, 'a.txt'), 'x'); return dir; }],
+  ])('throws invalid-event-log for %s', async (_label, make) => {
+    const dir = mkdtempSync(join(tmpdir(), 'sf-mcp-bad-'));
+    try {
+      const path = make(dir);
+      const err = await resolveOrCreateRun({ source: { path } }).catch((e) => e);
+      expect(err).toMatchObject({ code: 'invalid-event-log' });
+      expect(err.message.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('resolveOrCreateRun (SHS source)', () => {
@@ -421,8 +440,9 @@ describe('diagnoseRun / getFindingEvidence', () => {
       try {
         const { runId } = await resolveOrCreateRun({ source: { path } });
         const { findings } = diagnoseRun(runId, { stageId: 1 });
-        // The fixture's one 2000ms task gates its whole 2000ms stage: both skew and straggler fire.
-        expect(findings.map((f) => f.type).sort()).toEqual(['skew', 'straggler']);
+        // The fixture's one 2000ms task gates its whole 2000ms stage: skew, straggler and
+        // stageShape's taskStageSkew rule all fire.
+        expect(findings.map((f) => f.type).sort()).toEqual(['skew', 'stageShape', 'straggler']);
         expect(findings.every((f) => f.stageId === 1)).toBe(true);
       } finally {
         rmSync(dir, { recursive: true, force: true });
@@ -608,6 +628,24 @@ describe('getRunSummary', () => {
     }
   });
 
+  // diagnose_run and get_run_summary redact the app name the way list_runs does: it takes the
+  // app id's pseudonym, in the summary, the verdict's copy text and the Markdown report alike.
+  it('replaces app.name with the app id pseudonym under { redact: true } in both report tools', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, '{"Event":"SparkListenerApplicationStart","App ID":"app-name-redact-test","App Name":"orders-nightly-rollup","Timestamp":0}\n');
+    try {
+      const { runId } = await resolveOrCreateRun({ source: { path } });
+      expect(getRunSummary(runId).app.name).toBe('orders-nightly-rollup');
+      expect(getRunSummary(runId, { redact: true }).app.name).toBe('app-1');
+      const report = diagnoseRun(runId, { redact: true, include: ['summary'], markdown: true });
+      expect(report.summary.app.name).toBe('app-1');
+      expect(JSON.stringify(report)).not.toContain('orders-nightly-rollup');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('pseudonymizes a host-shaped app.name with { redact: true }, leaves sparkVersion untouched', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
     const path = join(dir, 'eventlog');
@@ -621,7 +659,7 @@ describe('getRunSummary', () => {
 
       const redacted = getRunSummary(runId, { redact: true });
       expect(redacted.app.name).not.toBe('ip-10-20-30-40');
-      expect(redacted.app.name).toMatch(/^host-\d+$/);
+      expect(redacted.app.name).toBe(redacted.app.id);
       expect(redacted.app.sparkVersion).toBe(plain.app.sparkVersion);
     } finally {
       rmSync(dir, { recursive: true, force: true });

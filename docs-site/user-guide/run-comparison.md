@@ -36,7 +36,7 @@ output, tasks, executors) are left out, since more or less of them is not
 better or worse on its own. **See where to start in the candidate** opens the
 candidate's dashboard, whose own verdict names the first thing to fix.
 
-The **Metrics** table covers the whole run: wall-clock duration, shuffle
+The **Metrics** table covers the whole run: wall-clock duration, memory
 spill, task skew, failed-task rate, disk spill, GC time, input/output bytes,
 executor run-time, and task/executor counts, baseline against candidate with
 the change. **Findings by category** lists which finding types appeared or

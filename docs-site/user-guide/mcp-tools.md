@@ -7,7 +7,8 @@ Five of the eight tools (`list_runs`, `diagnose_run`, `get_run_summary`,
 `compare_runs`, `get_finding_evidence`) accept an optional `redact: boolean`
 parameter (default `false`) that pseudonymizes the app id and any host/IP
 tokens in the response (`app-1`, `host-1`, ...), so a result can be shared
-outside the environment that produced it. On `compare_runs`, `runIdA`/
+outside the environment that produced it. The app name is as identifying as
+the id, so every tool replaces it with the app id's pseudonym. On `compare_runs`, `runIdA`/
 `runIdB` are caller-supplied identifiers, not Spark application ids, so
 there's no single app-id field to redact; `redact` instead scans stage names
 and other free text for embedded app ids and host/IP tokens and
@@ -48,6 +49,35 @@ each finding and clean check from a tuned detector carries its own
 `tunedThresholds`, as in the CLI report. The Markdown output of
 `diagnose_run` and `compare_runs` names the tuned thresholds too.
 
+### Connecting over HTTP
+
+The local server (`npx sparkforensics-server`, see
+[Run it locally](./getting-started.md#local-server-mode)) also serves the
+same eight tools over MCP's streamable HTTP transport at
+`http://127.0.0.1:4173/mcp` (or the port you pass with `--port`). Point a
+client that speaks streamable HTTP, such as Claude Code, at that URL:
+
+```json
+{
+  "mcpServers": {
+    "sparkforensics": { "type": "http", "url": "http://127.0.0.1:4173/mcp" }
+  }
+}
+```
+
+It is for clients on the same machine only. The server listens on
+127.0.0.1, and a request whose `Host` header isn't `127.0.0.1:<port>` or
+`localhost:<port>` gets a 403, which blocks DNS-rebinding attacks from web
+pages. Use `127.0.0.1` in the URL: `localhost` can resolve to the IPv6
+address `::1`, where the server doesn't listen.
+
+The endpoint always runs the default detector thresholds: the server takes
+no `--thresholds` flag. To tune thresholds, run `sparkforensics-mcp` over
+stdio instead. Runs are cached in the server process as they are for
+`sparkforensics-mcp`, so a `runId` from one request works in later ones
+until it expires. A relative `source.path` resolves against the directory
+you started the server from.
+
 ## `diagnose_run`
 
 Diagnose a Spark run: thresholded findings with remediation text, led by the
@@ -64,7 +94,8 @@ a `runId` for one already loaded in this session):
 - `source`: `{ path: string }` or `{ shsBaseUrl: string, appId: string, attemptId?: string }`
 - `runId`: `string`
 - `redact`: `boolean` (default `false`), pseudonymizes the app id and any
-  host/IP tokens in the response
+  host/IP tokens in the response, and replaces the app name with the app
+  id's pseudonym
 - `include`: array of `"summary" | "evidenceAvailability" | "detectors"`
   (default omitted, i.e. none). Each requested value adds one extra top-level
   field to the response, on top of the default `verdict`/`findings`/`recommendations`/
@@ -490,12 +521,16 @@ The codes:
   parseable date.
 - `invalid-type`: that finding `type` isn't one `get_finding_documentation` recognizes.
 - `invalid-anchor`: that `anchor` doesn't resolve to a known `get_reference_doc` page.
-- `invalid-event-log`: the file doesn't exist, or the event log (or History
-  Server archive) couldn't be decoded.
+- `invalid-event-log`: the file doesn't exist, the file isn't a decodable
+  event log, the folder isn't a rolling event-log directory, or the History
+  Server archive couldn't be decoded.
 - `application-not-found`: the History Server returned a 404 for that
   `appId`/`attemptId`.
-- `upstream-unreachable`: the History Server response stalled mid-body.
-  Override the idle timeout with `SPARKFORENSICS_SHS_TIMEOUT_MS`. If the
+- `upstream-unreachable`: loading a run from the History Server failed
+  because the server couldn't be reached (connection refused, DNS failure),
+  didn't send headers in time, or stalled mid-body. `list_runs` reports it
+  when the server can't be reached or doesn't answer in time.
+  `SPARKFORENSICS_SHS_TIMEOUT_MS` (default 30000) sets these timeouts. If the
   server is unreachable entirely (an SSH-only cluster), see
   [Alternative ways to get the logs](./alternative-log-retrieval.md).
 - `archive-too-large`: the History Server archive blew the byte cap.

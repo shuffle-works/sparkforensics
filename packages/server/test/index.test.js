@@ -2,7 +2,10 @@ import { describe, it, expect, afterEach } from 'vitest';
 import http from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { fileURLToPath } from 'node:url';
 import { createServer, serverStartupGuidance } from '../index.js';
+
+const SAMPLE_LOG = fileURLToPath(new URL('../../../public/sample-runs/sample-run.ndjson.gz', import.meta.url));
 
 // node:http (unlike fetch) lets a caller send an explicit Host header, needed
 // to simulate a DNS-rebinding attempt against the /mcp route.
@@ -69,7 +72,7 @@ describe('createServer routing', () => {
 });
 
 describe('/mcp route', () => {
-  it('lists all 6 tools over streamable HTTP', async () => {
+  it('lists all 8 tools over streamable HTTP', async () => {
     const port = await listen({ staticRoot: process.cwd(), fetchImpl: fetch });
     const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`));
     const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -79,6 +82,30 @@ describe('/mcp route', () => {
       'compare_runs', 'diagnose_run', 'evaluate_budgets', 'get_finding_documentation', 'get_finding_evidence', 'get_reference_doc', 'get_run_summary', 'list_runs',
     ]);
     await client.close();
+  });
+
+  // Each request gets a fresh server, but the run cache is shared, so a runId from one
+  // connection resolves on the next. The endpoint runs the default thresholds.
+  it('diagnoses a run and reuses its runId from a later request', async () => {
+    const port = await listen({ staticRoot: process.cwd(), fetchImpl: fetch });
+    const connect = async () => {
+      const client = new Client({ name: 'test-client', version: '1.0.0' });
+      await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`)));
+      return client;
+    };
+    const first = await connect();
+    const diagnosed = await first.callTool({ name: 'diagnose_run', arguments: { source: { path: SAMPLE_LOG } } });
+    await first.close();
+    expect(diagnosed.isError).toBeFalsy();
+    const { runId, findings, tunedThresholds } = diagnosed.structuredContent;
+    expect(findings.length).toBeGreaterThan(0);
+    expect(tunedThresholds).toBeUndefined();
+
+    const second = await connect();
+    const summary = await second.callTool({ name: 'get_run_summary', arguments: { runId } });
+    await second.close();
+    expect(summary.isError).toBeFalsy();
+    expect(summary.structuredContent.runId).toBe(runId);
   });
 
   it('surfaces run-not-found as isError with structuredContent.code over HTTP', async () => {

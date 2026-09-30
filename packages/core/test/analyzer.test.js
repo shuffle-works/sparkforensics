@@ -777,19 +777,33 @@ describe('analyze: stage shape smells (§7)', () => {
     expect(f).toHaveLength(1);
     expect(f[0].stageId).toBe(1);
   });
-  it('flags taskStageSkew (always info, no floor gate) and skips near-zero stage duration', () => {
-    const app = makeApp();
-    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskDurationMax: 4000, executorStats: execs(2) }); // 4×
-    const f = analyze(app, new Map([[1, s]]), [], []).filter(b => b.rule === 'taskStageSkew');
+  // taskStageSkew: the longest task spans more than half the stage's wall-clock and runs over
+  // 3x the median task, so one straggler, not the work as a whole, sets when the stage ends.
+  const tss = (app, stage) => analyze(app, new Map([[1, stage]]), [], []).filter(b => b.rule === 'taskStageSkew');
+  it('flags taskStageSkew as info when one straggler spans most of the stage', () => {
+    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 900, executorStats: execs(2) });
+    const f = tss(makeApp(), s);
     expect(f).toHaveLength(1);
     expect(f[0].impactBand).toBe('info');
+    expect(f[0].value).toBe(0.9);
   });
-  it('flags taskStageSkew as info even far past the old skewCrit (5×) tier', () => {
-    const app = makeApp();
-    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskDurationMax: 9000, executorStats: execs(2) }); // 9×
-    const f = analyze(app, new Map([[1, s]]), [], []).filter(b => b.rule === 'taskStageSkew');
-    expect(f).toHaveLength(1);
-    expect(f[0].impactBand).toBe('info');
+  it('skips taskStageSkew when the longest task spans half the stage or less', () => {
+    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 500, executorStats: execs(2) });
+    expect(tss(makeApp(), s)).toHaveLength(0);
+  });
+  it('skips taskStageSkew on a single wave of even tasks, whose longest task always spans the stage', () => {
+    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 4, taskDurationP50: 950, taskDurationMax: 990, executorStats: execs(4) });
+    expect(tss(makeApp(), s)).toHaveLength(0);
+  });
+  it('skips taskStageSkew on a single-task stage', () => {
+    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 1, taskDurationP50: 100, taskDurationMax: 990, executorStats: execs(1) });
+    expect(tss(makeApp(), s)).toHaveLength(0);
+  });
+  it('skips taskStageSkew on a stage shorter than 0.5% of the run, and on a zero-length stage', () => {
+    const s = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 900, executorStats: execs(2) });
+    expect(tss(makeApp({ startTime: 0, endTime: 400_000 }), s)).toHaveLength(0); // 1s = 0.25%
+    expect(tss(makeApp({ startTime: 0, endTime: 200_000 }), s)).toHaveLength(1); // 1s = 0.5%
+    expect(tss(makeApp(), { ...s, completedAt: 0 })).toHaveLength(0);
   });
 });
 
@@ -2516,11 +2530,12 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
     expect(b.recommendation).toContain(`${b.value}×`);
   });
 
-  it('stageShape (taskStageSkew): includes the ratio', () => {
+  it('stageShape (taskStageSkew): includes the stage share and the ratio to the median task', () => {
     const execs = (n) => Array.from({ length: n }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 }));
-    const stage = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskDurationMax: 4000, executorStats: execs(2) });
+    const stage = makeStage({ id: 1, submittedAt: 0, completedAt: 1000, taskCount: 20, taskDurationP50: 100, taskDurationMax: 900, executorStats: execs(2) });
     const found = analyze(makeApp(), new Map([[1, stage]]), [], []).find(b => b.rule === 'taskStageSkew');
-    expect(found.recommendation).toContain(`${found.value}×`);
+    expect(found.recommendation).toContain('90%');
+    expect(found.recommendation).toContain('9×');
   });
 
   it('shuffle: includes the shuffled byte figure', () => {
