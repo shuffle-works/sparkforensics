@@ -945,11 +945,16 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
     });
   });
 
-  it('exits 2 on an invalid --conf-redact-regex or an empty --conf-keys', () => {
-    withLog(ndjsonWithConf(), (path) => {
-      expect(runCli([path, '--conf-redact-regex', '(']).status).toBe(2);
-      expect(runCli([path, '--conf-keys', ',']).status).toBe(2);
-    });
+  it('exits 2 on an invalid --conf-redact-regex or an empty --conf-keys', async () => {
+    // Both are rejected before the log is read, so a path that does not exist is enough.
+    const badRegex = await runMainInProcess(['missing-eventlog', '--conf-redact-regex', '(']);
+    expect(badRegex.status).toBe(2);
+    expect(badRegex.stderr).toContain('--conf-redact-regex:');
+    expect(badRegex.stdout).toBe('');
+    const emptyKeys = await runMainInProcess(['missing-eventlog', '--conf-keys', ',']);
+    expect(emptyKeys.status).toBe(2);
+    expect(emptyKeys.stderr).toContain('--conf-keys needs at least one property name.');
+    expect(emptyKeys.stdout).toBe('');
   });
 
   it('puts both blocks under candidate in --baseline mode and accepts the new regression metrics', () => {
