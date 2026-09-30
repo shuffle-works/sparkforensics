@@ -104,7 +104,7 @@ error line carries a generic message, so no candidate path is written. Not combi
 --export-html, --shs-base-url or --format json|md. The exit code is the worst line: 2, then 1,
 then 3, then 0.
 
-Exit codes: 0 pass, 1 budget violated, 2 bad arguments, an unreadable or invalid --thresholds file, the local input could not be parsed, or the --shs-base-url fetch failed, 3 a budget was inconclusive.
+Exit codes: 0 pass, 1 budget violated, 2 bad arguments, an unreadable or invalid --thresholds or --budgets file, the local input could not be parsed, or the --shs-base-url fetch failed, 3 a budget was inconclusive.
 `;
 
 function parseCliArgs(argv) {
