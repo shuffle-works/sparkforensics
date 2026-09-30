@@ -20,7 +20,6 @@ const NO_MEASUREMENT = {
   stageFailed: 'the stage failure itself is the whole finding: there is no figure to quote, only where to look',
 };
 
-const okApp = () => makeApp();
 const executors = (n) => Array.from({ length: n }, (_, i) => ({ executorId: String(i), timestamp: 0, totalCores: 4 }));
 const failedJob = (id) => ({ id, result: 'JobFailed', succeeded: false, stageIds: [1], submissionTime: 0, completionTime: 1000 });
 
