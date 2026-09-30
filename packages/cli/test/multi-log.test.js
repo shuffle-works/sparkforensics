@@ -159,7 +159,7 @@ describe('several candidate logs', () => {
 
   it('writes a generic message for an internal failure under --redact', async () => {
     const { status, stdout, stderr, lines } = await run([p('fails-analysis'), p('same'), '--baseline', p('baseline'), '--redact']);
-    expect(lines[0]).toMatchObject({ log: 'candidate-1', status: 'error', exitCode: 6, error: 'The candidate could not be analyzed.' });
+    expect(lines[0]).toMatchObject({ log: 'candidate-1', status: 'error', exitCode: 6, error: 'Candidate 1 could not be analyzed.' });
     expect(stdout + stderr).not.toContain(dir);
     expect(status).toBe(6);
   });
@@ -178,7 +178,7 @@ describe('several candidate logs', () => {
     const written = readFileSync(out, 'utf8');
     const lines = written.trim().split('\n').map((l) => JSON.parse(l));
     expect(lines.map((l) => [l.log, l.status])).toEqual([['candidate-1', 'violation'], ['candidate-2', 'error']]);
-    expect(lines[1].error).toEqual(expect.any(String));
+    expect(lines[1].error).toBe('Candidate 2 could not be read or parsed.');
     expect(stderr).toContain('candidate-1: [violation] max-regression');
     expect(stderr).toContain('candidate-2: [error]');
     for (const text of [written, stderr]) {
@@ -192,6 +192,13 @@ describe('several candidate logs', () => {
     const { status, stdout } = await run([p('same'), p('slower'), '--baseline', p(name)]);
     expect(status).toBe(5);
     expect(stdout).toBe('');
+  });
+
+  it('names the baseline, not its path, when it cannot be read under --redact', async () => {
+    const { status, stdout, stderr } = await run([p('same'), p('slower'), '--baseline', p('missing'), '--redact']);
+    expect(status).toBe(5);
+    expect(stdout).toBe('');
+    expect(stderr).toBe('The baseline could not be read or parsed.\n');
   });
 
   it('exits 5, not 4, when both the baseline and a candidate are unreadable', async () => {
@@ -220,11 +227,19 @@ describe('several candidate logs', () => {
     [['a', 'b', '--baseline', 'x', '--format', 'md']],
     [['a', 'b', '--baseline', 'x', '--export-html', 'out']],
     [['a', '--format', 'ndjson']],
-    [['--shs-base-url', 'http://h', '--app-id', 'x', '--baseline', 'x', '--format', 'ndjson']],
   ])('exits 2 on the unsupported combination %j', async (argv) => {
     const { status, stdout } = await run(argv);
     expect(status).toBe(2);
     expect(stdout).toBe('');
+  });
+
+  it('exits 2 when --format ndjson is combined with --shs-base-url', async () => {
+    const { status, stdout, stderr } = await run([
+      '--shs-base-url', 'http://h', '--app-id', 'application_0000000000000_0001', '--baseline', 'x', '--format', 'ndjson',
+    ]);
+    expect(status).toBe(2);
+    expect(stdout).toBe('');
+    expect(stderr).toMatch(/^--format ndjson requires --baseline and a local candidate log\./);
   });
 });
 
@@ -305,6 +320,23 @@ describe('single-candidate exit codes for unreadable input', () => {
     expect((await run([p('missing'), '--baseline', p('baseline')])).status).toBe(4);
     expect((await run([p('same'), '--baseline', p('garbage')])).status).toBe(5);
     expect((await run([p('same'), '--baseline', p('missing')])).status).toBe(5);
+  });
+
+  it.each([
+    [['missing', '--baseline', 'baseline'], 4, 'The candidate could not be read or parsed.\n'],
+    [['same', '--baseline', 'missing'], 5, 'The baseline could not be read or parsed.\n'],
+  ])('names the role, not the path, of an unreadable log under --redact (%j)', async (argv, code, message) => {
+    const { status, stdout, stderr } = await run([...argv.map((a) => (a.startsWith('--') ? a : p(a))), '--redact']);
+    expect(status).toBe(code);
+    expect(stdout).toBe('');
+    expect(stderr).toBe(message);
+  });
+
+  it('names the role, not the URL, of a failed --shs-base-url fetch under --redact', async () => {
+    const shs = ['--shs-base-url', 'http://shs:18080', '--app-id', 'application_0000000000000_0001', '--redact'];
+    const { status, stderr } = await run(shs, { fetchImpl: shsZipFetch('', { status: 500 }) });
+    expect(status).toBe(4);
+    expect(stderr).toBe('The candidate could not be read or parsed.\n');
   });
 
   it('exits 5 when both are unreadable, the worse of the two', async () => {

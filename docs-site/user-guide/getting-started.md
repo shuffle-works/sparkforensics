@@ -439,4 +439,7 @@ With `--redact`, no candidate path is written anywhere, since event-log file
 names usually carry the app id. `log` and the `stderr` line prefixes name each
 candidate by its 1-based position (`candidate-1`, `candidate-2`, ...), and an
 `error` line carries a generic message instead of the parser's, which may
-quote the path.
+quote the path: `Candidate 2 could not be read or parsed.`, or `could not be
+analyzed` for an internal failure. An unreadable baseline prints `The baseline
+could not be read or parsed.` to `stderr`. A single-candidate run does the
+same, naming `The baseline` or `The candidate`.

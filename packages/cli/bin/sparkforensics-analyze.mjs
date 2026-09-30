@@ -110,6 +110,9 @@ Exit codes: 0 pass, 1 a budget was violated, 2 usage error (bad flags or argumen
 or invalid --thresholds or --budgets file), 3 a budget was inconclusive, 4 the candidate log could
 not be read or parsed (or the --shs-base-url fetch failed), 5 the --baseline log could not be read
 or parsed (no candidate lines are written), 6 internal error (including a failed --export-html).
+With --redact, a log that cannot be read, parsed or analyzed is reported by its role (the baseline,
+the candidate, or candidate N with several candidates) instead of the error text, which may carry
+its path.
 `;
 
 function parseCliArgs(argv) {
@@ -220,6 +223,9 @@ const EXIT_SEVERITY = Object.fromEntries([0, 3, 1, 4, 5, 6].map((code, rank) => 
 // Marks a read/parse failure with the exit code of the log it came from.
 const unreadable = (promise, exitCode) => promise.catch((e) => { e.exitCode = exitCode; throw e; });
 
+// The --redact stand-in for a log failure's own message, which may carry the log path (and so the app id).
+const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode === EXIT.INTERNAL ? 'analyzed' : 'read or parsed'}.`;
+
 // One baseline against several candidates, one NDJSON line each. The baseline is parsed and
 // analyzed once; candidates run one at a time so only one parsed log is held at once. A candidate
 // that cannot be read or parsed yields an "error" line (exit code 4) and the rest still run. Under --redact
@@ -229,7 +235,7 @@ async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, 
   try {
     ({ appModel: baselineAppModel } = await collectWithEvidence(baselinePath));
   } catch (e) {
-    process.stderr.write(`${e.message}\n`);
+    process.stderr.write(`${redact ? redactedFailure('The baseline', EXIT.BASELINE_UNREADABLE) : e.message}\n`);
     process.exitCode = EXIT.BASELINE_UNREADABLE;
     return;
   }
@@ -277,9 +283,7 @@ async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, 
       };
     } catch (e) {
       const exitCode = e.exitCode ?? EXIT.INTERNAL;
-      const error = redact
-        ? (exitCode === EXIT.INTERNAL ? 'The candidate could not be analyzed.' : 'The event log could not be read or parsed.')
-        : e.message;
+      const error = redact ? redactedFailure(`Candidate ${index + 1}`, exitCode) : e.message;
       process.stderr.write(`${log}: [error] ${error}\n`);
       line = { log, status: 'error', exitCode, error, budgets: [], candidate: null, comparison: null };
     }
@@ -495,8 +499,10 @@ async function runCli(argv, { fetchImpl } = {}) {
       ({ appModel, skippedLines } = await unreadable(collectWithEvidence(positionals[0]), EXIT.CANDIDATE_UNREADABLE));
     }
   } catch (e) {
-    process.stderr.write(`${e.message}\n`);
-    process.exitCode = e.exitCode ?? EXIT.INTERNAL;
+    const exitCode = e.exitCode ?? EXIT.INTERNAL;
+    const role = exitCode === EXIT.BASELINE_UNREADABLE ? 'The baseline' : 'The candidate';
+    process.stderr.write(`${values.redact ? redactedFailure(role, exitCode) : e.message}\n`);
+    process.exitCode = exitCode;
     return;
   }
 
