@@ -83,6 +83,41 @@ async function runMainInProcess(argv, mainOpts) {
 }
 
 describe('sparkforensics-analyze CLI', () => {
+
+  it('reports SQL write targets in the JSON output', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-writes-'));
+    const path = join(dir, 'eventlog');
+    const write = (id, nodeName, simpleString, metrics = []) => JSON.stringify({
+      Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: id, time: id,
+      sparkPlanInfo: { nodeName, simpleString, children: [], metrics },
+    });
+    writeFileSync(path, [
+      '{"Event":"SparkListenerApplicationStart","App ID":"app-writes","App Name":"t","Timestamp":0}',
+      write(1, 'Execute InsertIntoHadoopFsRelationCommand', 'Execute InsertIntoHadoopFsRelationCommand /sandbox/out, false, Parquet, [path=/sandbox/out], Append, [a, ... 3 more fields]'),
+      write(2, 'Execute InsertIntoHadoopFsRelationCommand', 'Execute InsertIntoHadoopFsRelationCommand /sandbox/out/cut'),
+      write(3, 'AppendData', 'AppendData IcebergWrite(table=cat.sandbox.t, format=PARQUET)'),
+      // Execution 4 never ends (a cut-off log), so its plan is not in the model.
+      write(4, 'Execute InsertIntoHadoopFsRelationCommand', 'Execute InsertIntoHadoopFsRelationCommand /elsewhere, false, Parquet'),
+      ...[1, 2, 3].map((id) => JSON.stringify({
+        Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd', executionId: id, time: 20 + id,
+      })),
+      '{"Event":"SparkListenerApplicationEnd","Timestamp":10}',
+    ].join('\n'));
+    try {
+      const { stdout, status } = runCli([path]);
+      expect(status).toBe(0);
+      const { writeTargets } = JSON.parse(stdout);
+      expect(writeTargets.executionsWithoutPlan).toEqual([4]);
+      expect(writeTargets.writes.map((w) => [w.sqlExecutionId, w.command, w.kind, w.target, w.outputRows])).toEqual([
+        [1, 'InsertIntoHadoopFsRelationCommand', 'path', '/sandbox/out', null],
+        [2, 'InsertIntoHadoopFsRelationCommand', null, null, null],
+        [3, 'AppendData', 'table', 'cat.sandbox.t', null],
+      ]);
+      expect(writeTargets.writes[1].raw).toContain('/sandbox/out/cut');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it('produces the same normalized findings as the in-process buildEvidenceReport path', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-'));
     const path = join(dir, 'eventlog');

@@ -270,6 +270,86 @@ Spark job, so you don't have to wire up the call yourself.
 Want an AI assistant to diagnose a run directly, without the dashboard or a
 CI gate? See [MCP tools reference](./mcp-tools.md).
 
+### Write targets {#write-targets}
+
+The JSON report has a top-level `writeTargets` object listing every SQL write
+in the run, so a script can check where a job wrote without reading the plan.
+It has no Markdown counterpart.
+
+```json
+{
+  "writes": [
+    {
+      "sqlExecutionId": 3,
+      "nodeId": "e3:n0",
+      "command": "InsertIntoHadoopFsRelationCommand",
+      "recognized": true,
+      "kind": "path",
+      "target": "hdfs://nn/sandbox/out/t1",
+      "outputRows": 5000000,
+      "raw": "Execute InsertIntoHadoopFsRelationCommand hdfs://nn/sandbox/out/t1, false, Parquet, ..."
+    }
+  ],
+  "executionsWithoutPlan": []
+}
+```
+
+- `writes` holds one row per write node, ordered by SQL execution id and then
+  by position in the plan. `command` is the plan node's name without the
+  `Execute ` prefix, `nodeId` is the plan node's id, and `raw` is the node's
+  full plan string as the log recorded it.
+- `kind` says how to read `target`. `path` is a filesystem location and
+  `table` is a table name. Both are copied verbatim from the plan string:
+  nothing is resolved, so a relative path, an unexpanded `${var}` placeholder
+  or a catalog-relative table name such as `default.events` appears exactly as
+  the log states it. Backticks around table name parts are dropped.
+- `target` and `kind` are `null` when the target cannot be determined. That
+  covers a node whose plan string has no target (Spark omits it for some
+  commands, and a Delta write made through `SaveIntoDataSourceCommand` often
+  has none), a redacted option value, and a plan string Spark cut short. A
+  target is reported only when its whole text is followed by a delimiter in
+  the plan string: a path cut by `spark.sql.maxMetadataStringLength` or a
+  name with a `...` marker in it is `null`, never a partial path. A trailing
+  `... N more fields` after the target, such as the column list of
+  `InsertIntoHadoopFsRelationCommand`, does not affect the target before it.
+  Treat a `null` target as unknown, not as inside or outside any location.
+- `outputRows` is the node's own `number of output rows` SQL metric. It is
+  `null` when the log has no such metric for that node, which is the case for
+  the DataSource V2 and Delta write nodes that report other metrics.
+- `recognized` is `true` for the commands below and `false` for a write-like
+  node that is not in that list. An unrecognized write always has `target` and
+  `kind` `null`, and `raw` is the only information about it.
+- `executionsWithoutPlan` lists the SQL executions whose plan the log does not
+  contain, such as an execution still running when the log was cut off (a plan
+  is read when its execution ends). A write in
+  one of them is not in `writes`, so a non-empty list means the report may be
+  incomplete.
+
+Recognized commands and where their target comes from:
+
+| Command | Target |
+| --- | --- |
+| `InsertIntoHadoopFsRelationCommand` | `path`: the first argument |
+| `InsertIntoHiveTable`, `CreateDataSourceTableAsSelectCommand`, `CreateHiveTableAsSelectCommand` | `table`: the first argument |
+| `SaveIntoDataSourceCommand` | `path` from the `path` option, or `table` from the JDBC `dbtable`/`table` option |
+| `AppendData`, `OverwriteByExpression`, `OverwritePartitionsDynamic`, `ReplaceData`, `WriteDelta`, `WriteToDataSourceV2` | `table`: the `table=` of the connector's write object, for example Iceberg's `IcebergWrite(table=..., ...)` |
+| `CreateTableAsSelect`, `AtomicCreateTableAsSelect`, `ReplaceTableAsSelect`, `AtomicReplaceTableAsSelect` | `table`: the identifier after the catalog |
+| `WriteIntoDelta`, `WriteIntoDeltaCommand`, `MergeIntoCommand`, `UpdateCommand`, `DeleteCommand`, `CreateDeltaTableCommand`, `OptimizeTableCommand`, `RestoreTableCommand` | `path`: a `delta.` path table, otherwise `null` |
+
+A plan node not in the table is a write when its name, split into CamelCase
+words, contains `Write`, `Insert`, `Save`, `Overwrite`, `Append`, `Merge`,
+`Update`, `Delete`, `Truncate`, `Replace` or `Drop`, or contains
+`TableAsSelect`. A name containing `Join` (`SortMergeJoin`) and these
+operators that share a word with a write but write nothing are not: `WriteFiles`
+(the child of a write command), `AppendColumns`, `AppendColumnsWithObject`,
+`MergeRows`, `StateStoreSave` and `UpdateEventTimeWatermarkColumn`. The
+classification leans toward reporting too much: a node that matches by name is
+listed with a `null` target rather than dropped.
+
+Only SQL writes are covered. Writes made outside Spark SQL, such as an RDD
+`saveAsTextFile` or a direct filesystem call from the driver, do not appear in
+the event log and are not in `writeTargets`.
+
 ### Tuning detector thresholds
 
 Every check fires at a fixed default threshold. When your normal workload
