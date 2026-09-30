@@ -40,10 +40,13 @@ way. The two answer different questions.
 `coreTimeMs` is the busy core time the fix removes, the executor task time, as `{low, high}`
 core-milliseconds, or `null` when no figure is defensible (never 0 for unknown).
 `estimateImpact()` sets it for every estimate through `coreTimeFor()` in
-`packages/core/src/impact-model.ts`, so a detector's `estimate()` does not build it. Where the
-detector measures core time, that figure is taken as is, `low === high`: a `coreMs` raw figure
-(gc's `jvmGCTime`, coreLocality, lowParallelism's idle cores), `coreHours` times 3.6e6, or the
-cross-task executor-time `ms` sums of `retryWaste` and `speculationWaste`. These are set even
+`packages/core/src/impact-model.ts`; a detector's `estimate()` builds it only for skew and
+straggler (`tailClaimImpact()`), which set it to the task time the fix removes
+(`tailRemovedWorkMs()`): during the tail only the slow tasks hold cores, so the stage's average
+occupancy would overstate it. Where the detector measures core time, that figure is taken as is,
+`low === high`: skew and straggler's removed task time, a `coreMs` raw figure (gc's `jvmGCTime`,
+coreLocality, lowParallelism's idle cores), `coreHours` times 3.6e6, or the cross-task
+executor-time `ms` sums of `retryWaste` and `speculationWaste`. These are set even
 when the log has no executor cores. Otherwise `wallClock.low` and `wallClock.high` are multiplied
 by the cores the finding's own stages kept busy: their summed `executorRunTime` over their summed
 windows, never the run's peak cores. A stage's window is the one the claims measure: `taskActiveMs`,

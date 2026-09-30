@@ -201,12 +201,14 @@ function occupiedCores(finding: Finding, ctx: EstimateCtx): number | null {
 }
 
 /** The busy core time a finding's fix removes, in core-milliseconds, or null when the log can't
- * say. Where the detector measures it, that figure as measured: a coreMs or coreHours raw figure,
- * or a cross-task executor-time 'ms' sum (CORE_TIME_MS_FIGURE). Otherwise a wall-clock claim times
+ * say. Where the detector measures it, that figure as measured: one its estimate() already set
+ * (skew and straggler's removed task time), a coreMs or coreHours raw figure, or a cross-task
+ * executor-time 'ms' sum (CORE_TIME_MS_FIGURE). Otherwise a wall-clock claim times
  * the cores the finding's own stages kept busy (occupiedCores), not the run's peak cores, so a
  * stage that ran on few of the cluster's cores costs few. It never reads executorCpuTime, which
  * leaves out Python worker CPU. Nothing else converts: bytes and memory figures have no core time. */
 export function coreTimeFor(finding: Finding, estimate: ImpactEstimate, ctx: EstimateCtx): { low: number; high: number } | null {
+  if (estimate.coreTimeMs !== undefined) return estimate.coreTimeMs;
   const raw = estimate.rawWaste;
   if (raw && NOT_CORE_TIME_FIGURE.has(finding.type)) return null;
   if (raw?.unit === 'coreMs' || (raw?.unit === 'ms' && CORE_TIME_MS_FIGURE.has(finding.type))) {

@@ -93,6 +93,19 @@ describe('impact estimate coreTimeMs', () => {
     expect(s.coreTimeMs).toBeNull();
   });
 
+  it('gives a straggler the task time its fix removes, not the tail times the stage\'s average cores', () => {
+    // 1000 tasks of 10s on 100 cores plus one 500s task: ~21 cores busy on average, one in the tail.
+    const stage = {
+      id: 0, submittedAt: 0, completedAt: 500_000, parentIds: [], taskCount: 1001, executorRunTime: 10_500_000,
+      taskDurationP50: 10_000, taskDurationMax: 500_000, stragglerExcessMs: 490_000, stragglerCount: 1,
+      longestNonStragglerMs: 10_000, peakConcurrentTasks: 100,
+    };
+    const [est] = estimate([{ type: 'straggler', stageId: 0, value: 50, impactBand: 'warning' }], new Map([[0, stage]]), 100);
+    expect(est.wallClock.high).toBeGreaterThan(0);
+    expect(est.rawWaste.unit).toBe('ms');
+    expect(est.coreTimeMs).toEqual({ low: 490_000, high: 490_000 });
+  });
+
   it('does not depend on executorCpuTime', () => {
     const withCpu = twoCoreStage({ executorCpuTime: 123 });
     expect(estimate([tiny()], withCpu, 8)[0].coreTimeMs).toEqual(estimate([tiny()], twoCoreStage(), 8)[0].coreTimeMs);
@@ -107,7 +120,8 @@ describe('coreTimeMs in the evidence report', () => {
     stages: new Map([[1, slowStage()]]),
     executors: { added: executors, removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null,
   });
-  const wallClockOnlyRows = (json) => json.findings.filter((r) => r.impactEstimate?.wallClock && r.impactEstimate.rawWaste?.unit === 'ms');
+  const TAIL_CLAIMS = new Set(['skew', 'straggler']);
+  const wallClockOnlyRows = (json) => json.findings.filter((r) => r.impactEstimate?.wallClock && r.impactEstimate.rawWaste?.unit === 'ms' && !TAIL_CLAIMS.has(r.type));
 
   it('is the wall-clock claim times the stage\'s busy cores, with or without executor data', () => {
     const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }, { executorId: '2', timestamp: 0, totalCores: 4 }];

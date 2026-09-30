@@ -277,8 +277,9 @@ derived two ways:
 
 - Where the detector measures core time: that figure, with `low` equal to
   `high`. This covers a `coreMs` or `coreHours` `rawWaste` (GC time, for
-  example) and the executor time of retried and discarded speculative
-  attempts. It is set even when the log has no executor core data.
+  example), the executor time of retried and discarded speculative
+  attempts, and for skew and straggler findings the task time the fix
+  removes from the slow tasks. It is set even when the log has no executor core data.
 - Otherwise, a finding with a wall-clock claim: `wallClock.low` and
   `wallClock.high` times the cores the finding's own stages kept busy (their
   task run time over the time their tasks were running, or over the stage's

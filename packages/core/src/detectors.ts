@@ -640,10 +640,13 @@ function stragglerTailClaim(stage: TailStage): TailClaim {
   return tailClaim(stage, Math.max(0, (stage.taskDurationMax ?? 0) - longestTaskAfterFixMs), longestTaskAfterFixMs);
 }
 
-// A tail claim shortens the stage's longest task, hence TAIL_CLAIM (see occupancy.ts).
+// A tail claim shortens the stage's longest task, hence TAIL_CLAIM (see occupancy.ts). Its core
+// time is the task time the fix removes: during the tail only the slow tasks hold cores, so the
+// stage's average occupancy would overstate it.
 function tailClaimImpact(claim: TailClaim, stageId: number, ctx: EstimateCtx): ImpactEstimate {
-  return singleStageImpact(claim.wasteMs, stageId, ctx, 'measured', { value: claim.wasteMs, unit: 'ms' },
+  const estimate = singleStageImpact(claim.wasteMs, stageId, ctx, 'measured', { value: claim.wasteMs, unit: 'ms' },
     { ...TAIL_CLAIM, removedCoreWorkMs: claim.removedCoreWorkMs, longestTaskAfterFixMs: claim.longestTaskAfterFixMs });
+  return { ...estimate, coreTimeMs: { low: claim.removedCoreWorkMs, high: claim.removedCoreWorkMs } };
 }
 
 // The figure a runtime floor checks: the claim's recoverable wall-clock, not a delta a physical
