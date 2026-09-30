@@ -611,7 +611,7 @@ A stage is a Python stage when either signal holds:
 The "tasks mostly idle" check that keeps a low-CPU stage from being treated
 as waiting on an external system uses the same test.
 
-### Effective conf
+#### Other surfaces
 
 Every figure the metrics block shares with another surface reads the same core
 code as that surface. The run comparison (the dashboard's comparison view, the
@@ -626,6 +626,8 @@ task attempts that won, so a stage's own figures can be smaller than its row in
 `allocation.coreHours` (cores times the hours each executor was alive) under
 dynamic allocation. The utilization finding's `cpuUtilizationPct` is null, as
 `time.executorCpuTimeMs` is, when the log recorded no CPU time.
+
+### Effective conf
 
 The JSON output also carries `effectiveConf` (with its own `schemaVersion`),
 the Spark properties the run
