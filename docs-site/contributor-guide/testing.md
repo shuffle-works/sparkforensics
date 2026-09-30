@@ -5,11 +5,14 @@ Before opening a PR:
 1. Run the full suite: `npm test` (root), plus `npm run test:core`,
    `npm run test:cli`, `npm run test:mcp` and `npm run test:server` for the
    packages you touched. Each of those four packages has its own Vitest
-   config and suite, none of them covered by the root `npm test`.
+   config and suite, none of them covered by the root `npm test`. Run
+   `npm run build` first on a fresh checkout: `tests/vite-entry.test.js`
+   checks the production bundle in `dist/`.
 2. Typecheck: `npx tsc --noEmit`.
-3. Lint: `npm run lint`. This also runs automatically on every commit via
-   `.githooks/pre-commit`, but run it yourself so you catch failures before
-   committing.
+3. Lint: `npm run lint`. A pre-commit hook (`.githooks/pre-commit`) runs
+   eslint on staged `.js`/`.mjs` files only, so run the full lint yourself
+   before committing. Neither lints `.ts`/`.tsx` (see `eslint.config.js`):
+   `tsc` is their only check.
 4. For any UI change, verify it in a real browser (Playwright or headless
    Chrome). Unit and jsdom tests check code correctness; they don't prove a
    feature works end-to-end. Drive the app, exercise the golden path and the
@@ -30,13 +33,12 @@ text. Use the neutral `private-log-NN` labels under
 Vitest throughout. Core logic tests (`packages/core/test/*.test.js`,
 covering parser, analyzer, detectors, format-utils, etc.) run under Node via
 `npm run test:core`. The root `npm test` runs two environments in one run:
-root-level tooling tests (`tests/*.test.js`) under Node, and view tests
+root-level tooling tests (`tests/*.test.js`, `tests/*.test.ts`) and pure
+view-logic tests (`tests/view/*.test.ts`) under Node, and component tests
 (`tests/view/*.test.tsx`), which declare
 `// @vitest-environment jsdom` and use React Testing Library
 (`render`/`screen`/`userEvent`). There are no hand-rolled DOM-mounting jsdom
-tests left: the old `tests/widgets/*.test.js` suite called
-`src/widgets/*.js`'s `renderX(mount, ...)` functions directly, and every
-behavior it covered now has an RTL equivalent.
+tests.
 
 `packages/cli`, `packages/mcp` and `packages/server` are separate npm
 packages, each with its own Vitest config and suite, not run by the root
@@ -45,10 +47,18 @@ suite. Each has a pack-and-spawn test (for example
 published tarball and spawns the real `.bin` entry point, exercising the
 production build end-to-end.
 
-Two contract tests guard invariants that a future edit could silently break.
-The "detector contract" suite in `packages/core/test/analyzer.test.js` asserts
-`stageSlowness` stays array-index-after `slowHost` in `DETECTORS` (see
-[Detector contract](./architecture/detector-contract.md#detector-contract)).
+`npm run test:core`, `test:cli` and `test:mcp` run with v8 coverage; CI
+uploads every suite's lcov to Coveralls. No coverage threshold is enforced
+(see the comment in `vitest.config.js`).
+
+Two checks guard invariants that a future edit could silently break. The
+`detector contract` suite in `packages/core/test/analyzer.test.js` asserts
+every `DETECTORS` entry's contract fields, that `detectorInfoByType` covers
+exactly the emitted types, that each entry's thresholds are frozen, and that
+the only `suppressedBy` pair is `stageSlowness` -> `slowHost`, both
+stage-scope (see
+[Cross-detector suppression](./architecture/detector-contract.md#cross-detector-suppression);
+declaration order does not matter).
 `REGISTRY` and `FINDING_PRESENTATION` completeness is a compile-time check,
 not a test: both are typed against the emitted `FindingType` union, so
 `npx tsc --noEmit` fails on a missing or extra key (see
@@ -78,21 +88,24 @@ names:
 literal before it writes the committed fixture; keep it that way if you
 extract another one.
 
-Of the finding types moved onto the Gold Standard row/expand contract in the
-widget-gold-standard plan, only `retryWaste` and `autoscalingChurn` fire on
-any of the 15 real logs in `../spark-log-examples/`. `failures`,
-`stageFailed`, and `jobFailureRate` fire on none of them; they were verified
-with unit tests only (`tests/view/task-failures.test.tsx`,
+Of the finding types `retryWaste`, `autoscalingChurn`, `failures`,
+`stageFailed` and `jobFailureRate`, only `retryWaste` and `autoscalingChurn`
+fire on any of the 15 real logs in `../spark-log-examples/`. `failures`,
+`stageFailed`, and `jobFailureRate` fire on none of them; they are covered
+by unit tests only (`tests/view/task-failures.test.tsx`,
 `tests/view/stage-failed.test.tsx`, `tests/view/job-failures.test.tsx`), not against a real log.
 
 `dev/log-corpus/` is a git submodule pointing at the public
-`spark-event-corpus-data` repo, pinned to a tag. It backs
-`packages/server/test/shs-proxy-fixture.test.js`, which loads a real
-`*-parquet-baseline.ndjson` fixture and asserts the `/shs-proxy` route
-streams it back unmodified. Populate it locally with
-`git submodule update --init dev/log-corpus`; without it, the test suite
-skips (see [Development setup](./development-setup.md)). CI checks it out, so
-these tests run there.
+`spark-event-corpus-data` repo, pinned to a tag. It backs the corpus-backed
+tests in `packages/core/test/` (for example `list-runs.test.js`,
+`task-failure.test.js`) and `packages/server/test/shs-proxy-fixture.test.js`
+(which loads a real `*-parquet-baseline.ndjson` fixture and asserts the
+`/shs-proxy` route streams it back unmodified), plus the
+[corpus regression snapshot](#corpus-regression-snapshot). Populate it
+locally with `git submodule update --init dev/log-corpus`; without it, those
+tests skip and the snapshot check has no logs (see
+[Development setup](./development-setup.md)). CI's `core`, `server` and
+`node18` jobs check it out.
 
 ### Corpus regression snapshot
 
@@ -146,13 +159,15 @@ it serves the app and answers `initialize` on `/mcp`.
 
 ## Test-suite growth discipline
 
-Widget and detector test files collect copy-pasted boilerplate fast (a
-2026-09 pass trimmed 19 files by a net 272 lines with no behavior change).
+Widget and detector test files collect copy-pasted boilerplate fast.
 Before adding a widget test file, or a per-widget or per-detector test:
 
 - Cross-cutting widget behavior (impact/stage sort-toggle default and flip,
   density-gated visibility, 6-at-a-time pagination) belongs in a shared
   helper under `tests/view/_shared/`, called from each widget's test file.
+  It holds `testFinding` (`finding.ts`), `installInterpretation` and
+  the sort-order helpers (`sort-order-toggle.ts`); add a density or
+  pagination helper there the first time two widget tests would share one.
   Extract into it only when a test body is identical to an existing one apart
   from the widget name, fixture or label. A widget with a real difference
   (a `React.lazy`-loaded chunk, a custom row finder) keeps its own test.
@@ -163,7 +178,8 @@ Before adding a widget test file, or a per-widget or per-detector test:
   block already covers that surface. A detector-catalog shape check, for
   example, belongs in `analyzer.test.js`'s `detector contract` block.
 - Calling an exported pure function directly, or calling the documented
-  event reducer (`processEvent` in `parser-worker.ts`, see the
+  event reducer (`processEvent` in `packages/core/src/event-handlers.ts`,
+  re-exported from `parser-worker.ts`; see the
   [worker protocol](./architecture/worker-protocol.md)) with one event and
   inspecting the state, is normal unit testing. Don't rewrite reducer-style
   tests into NDJSON-through-`runParse` integration tests to avoid touching

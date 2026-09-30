@@ -2,9 +2,11 @@
 
 ## Where does new content go?
 
-- `docs/` is for internal engineering records: ADRs, audits, competitive
-  research. It stays flat, unstructured markdown, read by contributors
-  through GitHub's own file viewer.
+- `docs/` is for internal engineering records, such as the design and
+  product notes in `docs/DESIGN.md` and `docs/PRODUCT.md`. It stays flat,
+  unstructured markdown, read through GitHub's own file viewer. Working plans
+  and specs (`docs/plans/`, `docs/specs/`, `docs/superpowers/`), like audits
+  in `docs/audit/`, are gitignored: never commit them.
 - `docs-site/` (this site) is the published documentation for users and
   contributors. If you're writing something a user or a first-time
   contributor should read, it belongs here, not in `docs/`.
@@ -19,8 +21,8 @@ To run the same linter by hand, use `npm run lint`.
 
 ## Changesets and releases
 
-A changeset is required for a PR that touches `packages/cli`, `packages/mcp`,
-`packages/server`, `packages/analyze`, `packages/sparkforensics`, or the root site app (`src/`, `index.html`,
+A changeset is required for a PR that touches `packages/core`, `packages/cli`,
+`packages/mcp`, `packages/server`, `packages/analyze`, `packages/sparkforensics`, or the root site app (`src/`, `index.html`,
 `vite.config.ts`, or the root `package.json`). Run `npx changeset add`,
 answer its prompts, and commit the generated `.changeset/*.md` file. CI's
 `changeset` job (`scripts/check-changeset.sh`) fails the PR otherwise, with
@@ -41,14 +43,17 @@ its changeset only bumps its `package.json` version and writes a
 `CHANGELOG.md` entry, via `.changeset/config.json`'s `privatePackages.version`
 setting. `@sparkforensics/core` is the other private package but stays out
 of this entirely (`.changeset/config.json`'s `ignore` list): it's vendored
-into cli/mcp by filesystem copy at pack time, not read as a real dependency,
-so versioning it would have no consumer.
+into each publishable code package (`packages/{cli,mcp,server}`) by
+filesystem copy at pack time (`scripts/vendor-core.mjs`), not read as a real
+dependency, so versioning it would have no consumer.
 
 A release itself is two merges, not one: merging your feature PR into `main`
 runs `.github/workflows/release.yml`, which opens (or updates) a "Version
 Packages" PR collecting all pending changesets. Nothing publishes yet.
-Merging *that* PR is what actually bumps versions, writes changelogs, and
-runs `npm publish` for whichever publishable packages had pending changesets.
+Merging *that* PR lands the version bumps and changelog entries it carries,
+and the release run that follows runs the full build and test suite, then
+`npm publish` for each publishable package whose new version isn't on npm
+yet.
 
 ### Publishing a new package name (maintainers)
 
@@ -58,8 +63,13 @@ package needs one manual publish from a maintainer's npm account first, then
 a Trusted Publisher entry. All five current packages (`sparkforensics-cli`,
 `sparkforensics-mcp`, `sparkforensics-server`, `sparkforensics-analyze` and
 `sparkforensics`) are already set up; this only applies to a package added
-later. Until it's done, the release run fails at that package's publish step
-(the other packages still publish).
+later. Until it's done, that package's publish step fails and the release
+run exits non-zero; packages that don't depend on it still publish.
+
+First add the package to `PACKAGES` in `scripts/publish-packages.mjs` and to
+the path regex in `scripts/check-changeset.sh` (the comments in both list
+every place to keep in sync); an alias of the CLI also goes in
+`.changeset/config.json`'s `fixed` group. Then:
 
 1. From a clean checkout of `main`, logged in with `npm login`, publish the
    new package at the version in its `package.json`:

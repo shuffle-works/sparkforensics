@@ -2,9 +2,11 @@
 
 `packages/core/src/detectors.ts` is the single source of Spark-optimization logic: one
 declarative `DETECTORS` entry per pattern, each carrying `type`, `scope`
-(`stage` / `app` / `config` / `sql`), `order`, `fixEffort`, a `thresholds`
-object, impactBand/copy, a `docAnchor`, an `emits` list, and co-located
-`detect()` and `estimate()` functions.
+(`stage` / `app` / `config` / `sql`), `order`, `fixEffort`, `version`, a
+`thresholds` object, an `emits` list, an optional `docAnchor` (every entry but
+`incompleteRun` sets one), optional `inScorecard`, `property` and
+`suppressedBy`, and co-located `detect()` and `estimate()` functions. Each
+finding's `impactBand` and recommendation copy are set inside `detect()`.
 
 Each entry is built by the helper for its scope: `defineStageDetector`,
 `defineSqlDetector`, `defineAppDetector` or `defineConfigDetector`. The
@@ -83,7 +85,13 @@ a text-valued finding (`stageFailed`, `configAudit`, `incompleteRun`) sets
 `estimate()` on that entry that covers it, a `finding-types.ts` member, an `EVIDENCE_KEYS` entry, an `ID_DISCRIMINATORS`
 entry in `analyzer.ts`, a `FINDING_PRESENTATION` row and a view `REGISTRY`
 entry. The compiler
-reports each one that is missing. The view narrows with
+reports each one that is missing. Tests and process, not the compiler, cover
+the rest: a new board tag goes in AGENTS.md's tag list
+(`packages/core/test/tag-vocabulary.test.js` fails otherwise), an intended
+finding change is checked with `node dev/bench-analyze.mjs --check
+dev/corpus-snapshot.json` and then `--update`d, and the PR needs a
+`.changeset/*.md`. A `docAnchor` must have a section in the detection docs
+(`packages/core/test/docs-config.test.js`). The view narrows with
 `findingsOfType(catalog, type)` (`packages/core/src/findings-of-type.ts`)
 rather than re-declaring a finding's fields.
 
@@ -95,32 +103,25 @@ Both consumers are thin loops over that array:
   bottleneck catalog because each sets `inScorecard:false`, not because of
   `scope:'config'`: a future config-scope detector without that flag would run
   through `analyze()` too. Each finding is stamped with its entry's `docAnchor`.
-- `src/view/detector-registry.tsx`: a `REGISTRY: Record<findingType,
-  {component, region, widgetId, routeable}>`, view-only concerns, replaces `dashboard-renderer.js`'s `render:`
-  bindings, one entry per emitted finding type. `orderedWidgets()` walks
-  `DETECTORS` ascending by `order`, then sorts `action`-region components
-  before `reference`-region ones. Every `finding.type` maps to its own
-  component now (the 2026-09 widget/finding-type 1:1 mapping redesign split
-  six components that used to multiplex several types each: `TaskSkew` into
-  `Skew`/`StageShape`/`TinyTask`; `ShuffleIO` narrowed to `shuffle` only,
-  plus a new `PartitionSizing`; `Failures` into `StageFailed`/
-  `TaskFailures`/`RetryWaste`; `ExecutorTimeline` into `SlowHost`/
-  `StageSlowness`/`Straggler`/`SpeculationWaste`/`ColdStart` (its
-  non-finding-driven executor-count chart moved to `ExecutorCountChart`, a
-  `ReferenceSection` tile, not a `REGISTRY` entry); `MemoryUtilization`
-  narrowed to `memoryUtilization` only, plus a new `ExecutorUtilization` for
-  `utilization`; `PlanFindings` into `DuplicatePlanSubtree`/`SmallFiles`/
-  `UnderBroadcast`/`OverBroadcast`, dropping the dead `broadcastSizing` key
-  entirely). No two `REGISTRY` entries share a `component` value any more.
+- `src/view/detector-registry.tsx`: `REGISTRY` maps each emitted finding type
+  to `{component, region, widgetId, routeable}` (view-only concerns), checked
+  with `satisfies Record<FindingType, RegistryEntry>`. Each type has its own
+  component, and no two entries share one. The executor-count chart
+  (`ExecutorCountChart`) is a `ReferenceSection` tile, not a `REGISTRY` entry.
+  `orderedWidgets(detectors)` takes the run interpretation's
+  `detectorInfoByType()` record (`DetectorInfo` per type), keeps the types that
+  have a `REGISTRY` entry, and sorts `action`-region components before
+  `reference`-region ones, then by ascending `order`, using the record's
+  declaration order to break ties.
 
   Each widget component receives the full catalog and self-gates when it has
   nothing to show, rendering `null` or a muted "no issue" card for the
   always-visible ones. `orderedWidgets()` itself has no empty/non-empty
-  branching, since it iterates the static `DETECTORS` import, not the runtime
-  `catalog`.
+  branching, since it iterates the static per-type detector info, not the
+  runtime `catalog`.
 
 Default thresholds live only in each entry's `thresholds`; see
-[Bottleneck thresholds](#bottleneck-thresholds-spec-§4). Only the CLI and
+[Bottleneck thresholds](#bottleneck-thresholds). Only the CLI and
 the MCP server can override them, per run: see
 [Tuning thresholds](#tuning-thresholds).
 
@@ -128,7 +129,7 @@ the MCP server can override them, per run: see
 
 A `Finding` may carry `confidence: 'low' | 'medium' |
 'high'` plus a `validationRequired` string. `RowStatusCluster` (`src/view/RowStatusCluster.tsx`)
-is the one place that renders it, gated to Advanced density: a plain "&lt;confidence&gt;
+renders it on widget rows (the verdict's steps print their own "verify before acting" line), gated to Advanced density: a plain "&lt;confidence&gt;
 confidence" badge whose tooltip carries the full `validationRequired` text. A finding with no
 `confidence` field renders identically to a fully-validated one, so every detector whose
 thresholds are our own unvalidated noise floor (marked `NOT SOURCED` in a code comment) should
@@ -147,25 +148,22 @@ Each `Detector` entry also carries `fixEffort: 'config' | 'code' |
 'rearchitect'`, alongside `order` and `thresholds`: a rough estimate of how
 much work resolving the finding takes.
 
-No view currently reads it. The quadrant impact/effort bucketing this field
-was meant to feed (`bucketFinding`/`effortTier`/`computeImpactMagnitude` in a
-since-deleted `src/quadrant-bucket.ts`, gated behind a
-`FIX_EFFORT_MAPPING_REVIEWED` flag that never flipped to `true`) was removed
-as dead code in the recommendations-consolidation redesign:
-`FixTheseFirst` (`src/view/widgets/FixTheseFirst.tsx`) ranks purely by impact
-magnitude. See
-[Widget rendering order](./widget-rendering.md#widget-rendering-order-fixed-spec-§5)
-for how it ranks findings today.
+No view reads it:
+the ranking `FixTheseFirst` (`src/view/widgets/FixTheseFirst.tsx`) renders is
+computed in core by `interpretRun` (`rankedRollup`/`rankFindings` in
+`packages/core/src/recommendation-rollup.ts`), by estimate tier and impact,
+never by `fixEffort`. See
+[Widget rendering order](./widget-rendering.md#widget-rendering-order)
+for how it ranks findings.
 
 Two shared helpers back multiple detectors and reports. `packages/core/src/plan-tree-walk.ts`'s
 `walkPlanTree(root, visit, {dedupe})` is the iterative pre-order plan-tree
-traversal used by `detectors.ts` and every `plan-*.ts` module
-(`plan-summary.ts`, `plan-duration-attribution.ts`, `plan-node-detail.ts`,
-`plan-dot.ts`). `packages/core/src/core-count.ts` holds the shared core-count logic. Its
+traversal used by `detectors.ts`, `plan-summary.ts`,
+`plan-duration-attribution.ts`, `plan-dot.ts` and `plan-graph-model.ts`. `packages/core/src/core-count.ts` holds the shared core-count logic. Its
 `computePeakConcurrentCores`/`computePeakConcurrentExecutorCount` sweeps back `detectors.ts`'s
 `utilization` and `memoryUtilization` entries, `efficiency-model.ts` and `wasted-core-hours.ts`,
 so the Scorecard's Unused core time and the verdict's idle figure share one capacity.
-`computeTotalCores(app, executorsAdded)`, now used only by `scaling-sim.ts`, sums every
+`computeTotalCores(app, executorsAdded)`, used only by `scaling-sim.ts`, sums every
 `ExecutorAdded` event with no regard for overlap, so under executor churn (spot preemption,
 `dynamicAllocation` replacement) it double-counts a churned executor's capacity against its
 replacement's; the peak-concurrent sweeps don't.
@@ -198,7 +196,8 @@ JSON file of that shape (`packages/core/src/cli/threshold-config.ts`) and
 validate it with `parseThresholdOverrides()`
 (`packages/core/src/threshold-overrides.ts`), which refuses an unknown
 detector or threshold, a negative or non-numeric value, a tier table of a
-different length or out of ascending order, and any `configAudit` override:
+different length or out of ascending order, an entry with no thresholds
+(`stageFailed`, `incompleteRun`), and any `configAudit` (config-scope) override:
 those checks compare against Spark's own defaults, so there is nothing to
 tune. A file that can't be read or parsed refuses the run the same way. The
 [user guide](../../user-guide/getting-started.md#tuning-detector-thresholds)
@@ -220,7 +219,7 @@ Only that one link is followed. The
 evidence report repeats the label on the finding row, the clean check, the
 `detectors` catalog row (whose `thresholds` are then the effective ones)
 and in `summary.tunedThresholds`; see
-[Portable evidence report](./worker-protocol.md#portable-evidence-report-v1).
+[Portable evidence report](./worker-protocol.md#portable-evidence-report).
 
 A tuned `floorPctWarn`/`floorPctCrit` on `skew` or `straggler` also grades
 that entry's own findings in `deriveImpactBand` (`impact-band.ts`); every
@@ -238,14 +237,13 @@ default-threshold analysis.
 `attributeStageDurationToPlan(planTree, stagesById, sqlExec)`) approximates how a SQL execution's
 stage wall-time splits across plan operators, returning a
 `Map<planNode, milliseconds>`. It cuts the plan tree at Exchange boundaries
-into connected components: since the Exchange write/read split (`resolvePlanTree`
+into connected components: because `resolvePlanTree`
 in `event-handlers.ts` always synthesizes a `read` node wrapping a `write` node
-for every raw `Exchange`/`BroadcastExchange`), the cut is keyed off
+for every raw `Exchange`/`BroadcastExchange`, the cut is keyed off
 `PlanNode.exchangeRole === 'read'` on the parent, not a name regex: the write
 half starts the new component, the read half stays in its parent's. A node
 with no `exchangeRole` at all (for example `ReusedExchange`, which is never
-split) never starts a new component on its own, unlike the old name-based
-regex, which matched any Exchange-family name regardless of split state. Each
+split) never starts a new component on its own. Each
 component receives a stable pre-order identity
 and separate parent/depth/traversal metadata; the identity itself does not
 encode its count of Exchange ancestors. It zips components deepest-first by
@@ -276,17 +274,17 @@ When an execution has no stage universe at all (no jobs ever recorded against it
 which is true for 42% of real-log SQL executions with a plan tree, typically
 job-less/driver-only executions), the clip drops every candidate stage ID instead
 of passing them through: every node in that execution's tree ends up with no
-`stageIds` anywhere, same "coverage is partial" framing as below. (An
-earlier version of this clip treated "no stage universe" as "no clip," which let a
-foreign accumulator ID collision, e.g. the `ReusedSubquery` case above, leak
-another execution's stages into a job-less execution's nodes; the clip is now
-unconditional on `executionStageIds` being present.)
+`stageIds` anywhere, same "coverage is partial" framing as below. (The clip
+is unconditional on `executionStageIds` being present: treating "no stage
+universe" as "no clip" would let a foreign accumulator ID collision, e.g. the
+`ReusedSubquery` case above, leak another execution's stages into a job-less
+execution's nodes.)
 
 Coverage is partial by Spark's own design: whole-stage-codegen wrapper nodes (`InputAdapter`, and other purely
 structural passthrough markers) carry no accumulators at all, and
 `BroadcastExchangeExec`'s own metrics are computed entirely on the driver and
-never appear on any `TaskEnd` (real Spark behavior). Since the Exchange
-write/read split, those driver-computed metrics live specifically on the
+never appear on any `TaskEnd` (real Spark behavior). Those driver-computed
+metrics live specifically on the
 synthesized *write* half (`exchangeRole: 'write'`); the *read* half always
 carries `metrics: []`. The write half's immediate child, which does carry
 executor-side metrics, is unioned in instead, see `overBroadcast`'s wiring. A
@@ -313,11 +311,10 @@ value that crosses a slice boundary without decoding them.
 No eviction/pruning is added to `taskAccumStages`, a deliberate choice, not an
 oversight: measured on real logs, it holds roughly 1,050 keys per compressed MB
 (9,850 keys on an 11.6 MB fixture, about 29,000 keys on a 28.1 MB fixture).
-Extrapolated to a 240MB+ log, the scale this tool targets (see `CLAUDE.md`), that
+Extrapolated to a 240MB+ log, the scale this tool targets, that
 is roughly 250,000 keys, around 45 MB of heap for an equivalent synthetic
-`Map<number, Set<number>>`. This heap estimate is still small relative to this
-tool's other in-memory state. It is higher, though, than the fixture-only
-measurements taken when this mechanism was built suggested.
+`Map<number, Set<number>>`. This heap estimate is small relative to this
+tool's other in-memory state.
 
 Per-execution pruning (e.g. dropping a `taskAccumStages` entry once its stage
 finalizes or its owning SQL execution resolves, mirroring how `accumState` is
@@ -338,7 +335,7 @@ which a stricter check would reject along with the whole task. When every entry 
 Spark's flat `{"ID":n,...}` form, `parseTaskEnd` (`event-handlers.ts`) reads the IDs with a
 string scan and cuts the array out before `JSON.parse`; any other shape is parsed whole.
 
-## Bottleneck thresholds (spec §4)
+## Bottleneck thresholds
 
 Every change to `packages/core/src/detectors.ts` should reference this table.
 
@@ -356,8 +353,8 @@ gate plus their fixed fallback constant, which surfaces only when this run's
 finding of that type didn't get a wallClock estimate (a stage excluded from
 the occupancy sweep). For rules whose finding type never gets
 a wallClock estimate (`resourceOnly`/`informational` basis, e.g.
-`configAudit`, or a rule that keeps its own ratio-tiered classification per
-the design's Decision 2, e.g. `failures`), the full threshold table below is
+`configAudit`, or a rule that keeps its own ratio-tiered classification,
+e.g. `failures`), the full threshold table below is
 the real, displayed classification: `detectors.ts` sets `impactBand`
 directly and nothing overwrites it. `partitionSizing`'s `maxPartitionTooBig`
 rule is a third case: it does carry a `wallClock` estimate but is explicitly
@@ -367,32 +364,32 @@ stands regardless of how small that estimate is relative to the run.
 
 ### Fixed fallback only (usually wallClock-derived instead)
 
-These rules' *band* tiers were deleted from `packages/core/src/detectors.ts` (they were
-always overwritten by `deriveImpactBand` whenever a wallClock estimate was
+These rules have no *band* tiers in `packages/core/src/detectors.ts`
+(`deriveImpactBand` sets the band whenever a wallClock estimate is
 available); the constant in the last column is only a floor-case fallback.
-Their *firing* gate is untouched and still lives in each entry's
+Their *firing* gate lives in each entry's
 `thresholds` object: it decides whether the rule reports anything, so it
 stays documented here in full.
 
 | Rule | Fires when | Fallback |
 |---|---|---|
 | Task skew | `taskDurationP95 / taskDurationP50 > 3×` (`taskDurationMax / P50` for stages under `minTasksForP95` = 20 tasks), **and** the occupancy-clipped tail recovery (`tailRecoveryMs`: `finalizeStage`'s task-level replay of the stage with every task over 4× P50 capped at P50) is ≥ `floorPctWarn` = 0.5% of app runtime. The clip floors the claim at the longest task the fix leaves, not the current one, and at the core work the fix leaves over every core (see impact-estimation.md's occupancy section); `straggler`'s floors use the same clip | `warning` |
-| Shuffle read | `shuffleReadBytes > minBytes` = 50 MiB, on a stage that isn't shorter than `stageFloorPct` = 0.5% of the run (a zero-length stage or an unknown run duration passes; the claim is clipped to the stage, so a shorter one graded `info`: 182 of 284 on the 14 real logs, the shuffle itself still there) | `info` |
+| Shuffle read | `shuffleReadBytes > minBytes` = 50 MiB, on a stage that isn't shorter than `stageFloorPct` = 0.5% of the run (a zero-length stage or an unknown run duration passes; the claim is clipped to the stage, so a shorter one would grade `info`: 182 of 284 on the 14 real logs, the shuffle itself still there) | `info` |
 | Partition sizing: skew | `shuffleReadMax > 5×` `shuffleReadP50` **and** `shuffleReadMax > 256 MiB` | `warning` |
 | Partition sizing: low parallelism | `shuffleReadBytes ≥ 1 GiB` **and** `taskCount ≤ 7` | `warning` |
 | Partition sizing: oversized partition | `shuffleReadMax ≥ 5 GiB` | `critical` |
 | GC | `executorRunTime ≥ minRunTimeMs` = 10 s **and** `gcPct > 10%` | `warning` |
-| GC (low / cost) | `executorRunTime ≥ 10 s` **and** `gcPct < lowInfoPct100` = 5% (checked only when the GC row above did not fire) **and** the stage lasts ≥ `lowInfoFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, such as one with no completion time). Gets no wall-clock estimate (an over-provisioning signal), so this band always stands. The floor dropped 464 of 685 low-GC notes on the 14 real logs (none on the corpus): low GC is still true on those stages, but a memory-sizing note from a stage that barely ran adds nothing | `info` |
-| Spill (magnitude v2) | any non-zero `memoryBytesSpilled`, on a stage that isn't shorter than `stageFloorPct` = 0.5% of the run (as for shuffle read: 12 of 38 on the 14 real logs, all `info`). The magnitude sub-table below classifies *how much*, but does not gate firing | `warning` |
-| Cold start | `firstExecutorAddedAt − firstStageSubmittedAt > gapSeconds` = 30 s (no finding without executor-added events): the time a runnable stage waited for its first executor. An executor added before the first stage and still alive at submission means no wait and no finding; one removed at or before submission is ignored, so the gap runs to the next executor added after it. It used to be `firstStageSubmittedAt − app.startTime`, the driver's own startup, which read 36-47 s on all 9 real logs that fired whatever the executors did, and flagged 6 corpus logs whose first executor was up 44-313 s before the first stage (5 of them) or arrived 4.4 s after it | `warning` |
-| Slow host: mean-duration ratio | stage has ≥ `minHosts` = 3 hosts (or executors) and ≥ `minTasks` = 15 tasks, and lasts ≥ `stageFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, which gets no estimate and keeps its fallback band; every slow-host finding on a shorter stage graded `info`, 324 of 452 on the 14 real logs, the imbalance itself still true; this gate covers every slowHost row); then per host: mean task duration / overall median ≥ `ratioWarn` = 2.0× **and** host task-share ≥ `minShare` = 20% **and** host mean ≥ `floorMs` = 1000 ms (absolute-magnitude floor, rules out sub-second noise) | `warning` |
+| GC (low / cost) | `executorRunTime ≥ 10 s` **and** `gcPct < lowInfoPct100` = 5% (checked only when the GC row above did not fire) **and** the stage lasts ≥ `lowInfoFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, such as one with no completion time). Gets no wall-clock estimate (an over-provisioning signal), so this band always stands. The floor drops 464 of 685 low-GC notes on the 14 real logs (none on the corpus): low GC is still true on those stages, but a memory-sizing note from a stage that barely ran adds nothing | `info` |
+| Spill | any non-zero `memoryBytesSpilled`, on a stage that isn't shorter than `stageFloorPct` = 0.5% of the run (as for shuffle read: 12 of 38 on the 14 real logs, all `info`). The magnitude sub-table below classifies *how much*, but does not gate firing | `warning` |
+| Cold start | `firstExecutorAddedAt − firstStageSubmittedAt > gapSeconds` = 30 s (no finding without executor-added events): the time a runnable stage waited for its first executor. An executor added before the first stage and still alive at submission means no wait and no finding; one removed at or before submission is ignored, so the gap runs to the next executor added after it. | `warning` |
+| Slow host: mean-duration ratio | stage has ≥ `minHosts` = 3 hosts (or executors) and ≥ `minTasks` = 15 tasks, and lasts ≥ `stageFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, which gets no estimate and keeps its fallback band; every slow-host finding on a shorter stage would grade `info`, 324 of 452 on the 14 real logs, the imbalance itself still true; this gate covers every slowHost row); then per host: mean task duration / overall median ≥ `ratioWarn` = 2.0× **and** host task-share ≥ `minShare` = 20% **and** host mean ≥ `floorMs` = 1000 ms (absolute-magnitude floor, rules out sub-second noise) | `warning` |
 | Slow host: duration-share | same stage gate as the row above; then per host: ≥ `shareWarn` = 75% of the stage's total task-duration **and** ≥ `taskShareWarn` = 50% of its task count | `warning` |
 | Stage slowness: absolute fallback, suppressed when `slowHost` already fired | stage wall-clock duration ≥ `infoMin` = 15 min. The band then comes from the partitioning-headroom estimate (see impact-estimation.md), not the duration | `info` |
-| Straggler / speculative-execution | `taskCount ≥ minTasks` = 10, **and** the stage lasts ≥ `floorPctWarn` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, such as one with no completion time; a shorter stage's tail can't cost more than its own duration, so every finding there graded `info`: 671 of 753 on the 14 real logs, 3 on the corpus, the slow tail itself still true), **and** either any speculative task ran, **or** straggler share > `shareWarn` = 5%, **or** straggler share > `shareWarnAtFloor` = 2.5% with the occupancy-clipped tail recovery (`tailRecoveryMs`, as for skew) already ≥ `floorPctWarn` (0.5% of app runtime). The lower gate is scored against a task-level replay of every stage on 14 real logs (recoverable = list-scheduling replay with each task over 4× P50 capped at P50; positive = ≥ 0.5% of app runtime): it found 3 stages whose stragglers gated them for 10-48s at 2.7-4% of their tasks, for 1 borderline miss, lifting skew-or-straggler recall from 0.86 to 0.92 at precision 0.91 → 0.89. Admitting every 2.5% share instead would add 86 findings below the floor. The same sweep kept skew's `ratioWarn` = 3 (2.5 added false positives, 4 lost true ones) and the 0.5% floor (1% halved skew recall). `warnPct`/`critPct` (10%/20% speculative share) and `floorPctWarn`/`floorPctCrit` (0.5%/2% of app runtime) no longer set the band; they rank the straggler-vs-speculative tiers that pick which *metric* the finding reports | `info` |
-| Speculation waste (new) | `speculationWastedAttempts ≥ minWasted` = 5 **and** `speculationWasteMs ≥ minWasteMs` = 60 s | `warning` |
-| Retry waste | `wastedAttempts ≥ minWasted` = 3 **and** `retryWasteMs ≥ minWasteMs` = 30 s, on a stage that still completed | `warning` |
-| Tiny tasks | `taskCount ≥ minTasks` = 100 **and** `taskDurationP50 ≤ maxP50` = 500 ms **and** `taskDurationP95 ≤ maxP95` = 1000 ms **and** the stage lasts ≥ `stageFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length; coalescing can't save more than the stage's own duration, so every finding on a shorter stage graded `info`: 132 of 151 on the 14 real logs, the tasks still tiny). Checked (2026-09-23) against each stage's measured per-task overhead (task wall time minus executor run time, the estimate's own input) on 14 real logs and the corpus: of 228 stages with 100+ tasks outside the P50/P95 gate, none would save 0.5% of its run by coalescing (median overhead 0.2-3% of task time); of 170 inside it, 25 would, and all 25 grade above `info` | `info` |
-| Duplicate plan subtree | a subtree of ≥ `minSubtreeSize` = 3 nodes whose shape fingerprint repeats ≥ `minOccurrences` = 2× in the plan, unless its linked stages together lasted less than `stageFloorPct` = 0.5% of the run (a repeat with no linked stage time, or an unknown run duration, is kept; the claim counts at most each stage's own task-active time, so such a repeat graded `info`: 340 of 545 on the 14 real logs, the repeat still in the plan). `occurrencesIdentical` records whether the repeats also agree node-for-node on normalized detail, ignoring AQE query-stage numbers; when they don't (same shape over another table, filter or projection: 270 of 546 groups on the 14 real logs) the finding is `info` with confidence `low` and no time claim. `stageShares` gives, per stage, the repeated operators' share of the stage's operators (WholeStageCodegen wrappers and Exchange write halves not counted); with no attributed stage the finding is `info` | `warning` |
+| Straggler / speculative-execution | `taskCount ≥ minTasks` = 10, **and** the stage lasts ≥ `floorPctWarn` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, such as one with no completion time; a shorter stage's tail can't cost more than its own duration, so every finding there would grade `info`: 671 of 753 on the 14 real logs, 3 on the corpus, the slow tail itself still true), **and** either any speculative task ran, **or** straggler share > `shareWarn` = 5%, **or** straggler share > `shareWarnAtFloor` = 2.5% with the occupancy-clipped tail recovery (`tailRecoveryMs`, as for skew) already ≥ `floorPctWarn` (0.5% of app runtime). The lower gate is scored against a task-level replay of every stage on 14 real logs (recoverable = list-scheduling replay with each task over 4× P50 capped at P50; positive = ≥ 0.5% of app runtime): it found 3 stages whose stragglers gated them for 10-48s at 2.7-4% of their tasks, for 1 borderline miss, lifting skew-or-straggler recall from 0.86 to 0.92 at precision 0.91 → 0.89. Admitting every 2.5% share instead would add 86 findings below the floor. The same sweep kept skew's `ratioWarn` = 3 (2.5 added false positives, 4 lost true ones) and the 0.5% floor (1% halved skew recall). `warnPct`/`critPct` (10%/20% speculative share) and `floorPctWarn`/`floorPctCrit` (0.5%/2% of app runtime) do not set the band; they rank the straggler-vs-speculative tiers that pick which *metric* the finding reports | `info` |
+| Speculation waste | `speculationWastedAttempts ≥ minWasted` = 5 **and** `speculationWasteMs ≥ minWasteMs` = 60 s | `warning` |
+| Retry waste | `wastedAttempts ≥ minWasted` = 3 **and** `retryWasteMs ≥ minWasteMs` = 30 s (attempts superseded by a later retry of the same task) | `warning` |
+| Tiny tasks | `taskCount ≥ minTasks` = 100 **and** `taskDurationP50 ≤ maxP50` = 500 ms **and** `taskDurationP95 ≤ maxP95` = 1000 ms **and** the stage lasts ≥ `stageFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length; coalescing can't save more than the stage's own duration, so every finding on a shorter stage would grade `info`: 132 of 151 on the 14 real logs, the tasks still tiny). Checked against each stage's measured per-task overhead (task wall time minus executor run time, the estimate's own input) on 14 real logs and the corpus: of 228 stages with 100+ tasks outside the P50/P95 gate, none would save 0.5% of its run by coalescing (median overhead 0.2-3% of task time); of 170 inside it, 25 would, and all 25 grade above `info` | `info` |
+| Duplicate plan subtree | a subtree of ≥ `minSubtreeSize` = 3 nodes whose shape fingerprint repeats ≥ `minOccurrences` = 2× in the plan, unless its linked stages together lasted less than `stageFloorPct` = 0.5% of the run (a repeat with no linked stage time, or an unknown run duration, is kept; the claim counts at most each stage's own task-active time, so such a repeat would grade `info`: 340 of 545 on the 14 real logs, the repeat still in the plan). `occurrencesIdentical` records whether the repeats also agree node-for-node on normalized detail, ignoring AQE query-stage numbers; when they don't (same shape over another table, filter or projection: 270 of 546 groups on the 14 real logs) the finding is `info` with confidence `low` and no time claim. `stageShares` gives, per stage, the repeated operators' share of the stage's operators (WholeStageCodegen wrappers and Exchange write halves not counted); with no attributed stage the finding is `info` | `warning` |
 | Small files read/write | per read/write side: file count > `minFiles` = 100 **and** average file size < `maxAvgFileSizeMB` = 3 MiB | `warning` |
 | Broadcast sizing: missed | a 2-child `SortMergeJoin` whose smaller side is < 10 MiB (unconditional), or < 100 MiB with the larger side > 10 GiB, or < 1 GiB with larger > 300 GiB, or < 5 GiB with larger > 1 TiB (`broadcastTiers` × `comparisonTiers`) | `info` |
 | Broadcast sizing: oversized | a `BroadcastExchange` node whose `data size` metric > `overBroadcastBytes` = 1 GiB | `warning` |
@@ -400,7 +397,7 @@ stays documented here in full.
 #### Spill magnitude tiers
 
 The spill row's band is a fixed `warning` fallback, but `computeSpillMagnitude`
-(`packages/core/src/detectors.ts`) still runs on every spill finding and sets its
+(`packages/core/src/detectors.ts`) runs on every spill finding and sets its
 `spillMagnitude` field, which the Spill widget displays. Its tiers, in
 evaluation order (first match wins, `null` when nothing matches):
 
@@ -424,7 +421,7 @@ thresholds sit well above their disk counterparts at every tier.
 | Stage shape: TaskStageSkew | `taskDurationMax / stageDuration > stageShareMin` = 0.5 **and** `taskDurationMax / taskDurationP50 > skewWarn` = 3× (info), on a multi-task stage lasting ≥ `taskStageSkewFloorPct` = 0.5% of the run. A task runs inside its stage, so the share is at most 1; the median gate is needed because on a single wave of even tasks the longest one spans the whole stage too | none |
 | Failed tasks | failure rate > 5% (min 10 tasks) | > 20% |
 | Stage failed outright | none | any `stageFailureReason` present |
-| Slow host: multi-dimensional | max/median ratio across taskTime/inputBytes/shuffleBytes/storageMemory ≥ 1.33× (info); each dimension's sample must also clear an absolute floor (1000 ms for taskTime, 64 MiB for the byte dimensions). A stage lasting under `stageFloorPct` = 0.5% of the run is skipped (see the mean-duration row): a byte dimension there, which has no time estimate, used to keep its ratio tier (66 of 90 warning/critical on the 14 real logs) until 6298149 graded it `info` | ≥ 3.16× warning, ≥ 10× critical |
+| Slow host: multi-dimensional | max/median ratio across taskTime/inputBytes/shuffleBytes/storageMemory ≥ 1.33× (info); each dimension's sample must also clear an absolute floor (1000 ms for taskTime, 64 MiB for the byte dimensions). A stage lasting under `stageFloorPct` = 0.5% of the run is skipped (see the mean-duration row): a byte dimension there has no time estimate and would otherwise keep its ratio tier (66 of 90 warning/critical on the 14 real logs) | ≥ 3.16× warning, ≥ 10× critical |
 | Utilization | avg active executors / peak < 60% (info) | none |
 | Autoscaling churn: short-lived executors (design spike, unvalidated thresholds) | > 30% of executors alive under 2 min (min 5 executors) | > 60% |
 | Job failure rate | ≥ 30% (≥ 10% info) | ≥ 50% |
@@ -434,6 +431,8 @@ thresholds sit well above their disk counterparts at every tier.
 | Cache utilization: partial caching (this repo) | `numCachedPartitions / numPartitions < 0.90` (info) | `< 0.50` (warning) |
 | Cache utilization: disk spillover (this repo) | `diskSize / (memorySize + diskSize) > 0.15` (info), `MEMORY_AND_DISK*` only | `> 0.40` (warning) |
 | Cache utilization: storage unobserved | persisted RDDs, but no `SparkListenerBlockUpdated` for any `rdd_*` block and every RDD Info figure 0 (`spark.eventLog.logBlockUpdates.enabled` off on Spark 2.3+): a missing-evidence caveat, not a threshold | none (single tier, info) |
+| Core locality | non-local task ratio ≥ `warnRatio` = 15% (min `minTasks` = 50 tasks) | ≥ `critRatio` = 35% |
+| Config: memory overhead | `spark.executor.memoryOverhead` below max(`floorMB` = 384 MiB, `floorPct` = 10% of executor memory) (info) | none |
 
 The RDD Info cache figures on stage events (`Number of Cached Partitions`,
 `Memory Size`, `Disk Size`) are always 0 since Spark 2.3; Spark 1.x fills them
@@ -452,8 +451,8 @@ says *how much*.
 
 #### Evidence fields (`stageFailed` / `retryWaste`)
 
-Neither entry's `detect()` used to put anything beyond a scalar `metric`/
-`value` on its finding. Both now also attach:
+Beyond a scalar `metric`/`value`, both entries' `detect()` attach to the
+finding:
 
 - `numTasks`: `stage.taskCount` at detection time.
 - `memoryBytesSpilled`: `stage.memoryBytesSpilled` at detection time.

@@ -3,6 +3,8 @@
 This page is for working on SparkForensics itself. To run the dashboard as a
 user, see [Run it locally](../user-guide/getting-started.md#local-server-mode).
 
+You need Node 22.18+ (CI uses the version in `.nvmrc`) and `git` on your
+PATH: the first test or build run fetches the tuning reference with it.
 Clone the repo, then:
 
 ```bash
@@ -16,14 +18,15 @@ npm run test:mcp      # packages/mcp's suite (packs and spawns the real tarball)
 npm run dev           # Vite dev server for the app itself
 npm run build         # production build, outputs dist/ (plus dist/export-template.html, the HTML download's template)
 npm run preview       # serves dist/ locally
-npx tsc --noEmit      # typecheck (strict TypeScript across src/ and packages/core/src/)
-npm run lint          # eslint over the repo
+npx tsc --noEmit      # typecheck (strict TypeScript across src/, tests/view/ and packages/core/src/)
+npm run lint          # eslint over the repo's JS (.ts/.tsx are covered only by tsc)
 node packages/cli/bin/sparkforensics-analyze.mjs <file|rolling-log-dir>   # run the CLI analyzer against a log, outside the browser
 ```
 
-`npm run test:coverage`, at the root or inside any `packages/*` directory,
-runs that package's suite with `--coverage` (v8 provider, `lcov` and `text`
-reporters, written to `<pkg>/coverage/lcov.info`). CI's `build`, `core`,
+`npm run test:coverage`, at the root or inside `packages/core`, `cli`, `mcp`
+or `server`, runs that suite with `--coverage` (v8 provider, `lcov` and
+`text` reporters, plus `html` at the root; written to
+`<pkg>/coverage/lcov.info`). CI's `build`, `core`,
 `cli`, `mcp` and `server` jobs all run through it and upload to Coveralls,
 merged by a final `finish` job.
 
@@ -68,8 +71,11 @@ it sits at the pinned commit with no uncommitted `content/` changes.
 `spark-event-corpus-data` repo. It's optional locally: if you skip the
 `git submodule update` step above, the corpus-backed tests (such as
 `packages/server/test/shs-proxy-fixture.test.js`) report as skipped rather
-than failed, which is expected, not a bug. CI always checks it out and runs
-them, plus the [corpus regression snapshot](./testing#corpus-regression-snapshot).
+than failed, which is expected, not a bug. CI's `core` and `server` jobs
+check it out and run them (plus the
+[corpus regression snapshot](./testing#corpus-regression-snapshot) in
+`core`); the `build`, `cli` and `mcp` jobs don't, so a corpus-backed test
+belongs in `packages/core` or `packages/server`.
 
 The `packages/server/` package (the optional local-server deploy mode) keeps
 its own dependencies and test suite. Run it from the repo root: a second
@@ -103,9 +109,12 @@ npm run docs:preview   # serves the built docs site locally
   which uses a leftover `vendor-core/` only while its `core-source-hash.txt`
   matches `packages/core/src`; otherwise it warns on stderr and runs the
   source.
-- The CLI's `export-template/` has no such check: rebuild it with
-  `node scripts/vendor-export-template.mjs` before trusting a local
-  `--export-html`.
+- The CLI's `export-template/` has no such check. Without it,
+  `--export-html` from source uses the repo-root `dist-export/` from
+  `npm run build:export` (not produced by `npm run build`); a leftover
+  `export-template/` wins over that, so rebuild it with
+  `node scripts/vendor-export-template.mjs` or delete it before trusting a
+  local `--export-html`.
 
 ## The docs site's anchor clicks
 
@@ -147,10 +156,10 @@ skips injecting its bar into any built page that contains it.
   the baseline slot (a `cached` `RunSource`, not parsed again). **View baseline/candidate dashboard**
   drills into one run, and **← Back to comparison** returns.
 - The landing page's **Try a sample run** (`src/view/DropZone.tsx`) loads a
-  gzip-compressed corpus log from `public/sample-runs/`. It was chosen by
-  running `sparkforensics-analyze --format json` over every corpus candidate
-  and taking the one with the most findings. Repeat that scan, against the
-  current corpus, before swapping the bundled sample.
+  gzip-compressed corpus log from `public/sample-runs/`: the corpus candidate
+  with the most findings under `sparkforensics-analyze --format json`. Rerun
+  that scan over every candidate, against the current corpus, before swapping
+  the bundled sample.
 - Screenshots on a PR: the `gh` token can't use GitHub's browser-only
   attachment uploader. Commit the PNGs to a throwaway asset branch and embed
   them by commit SHA as

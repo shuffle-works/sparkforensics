@@ -4,28 +4,37 @@
 
 `src/store/store.ts` is a single Zustand store (`createStore` from
 `zustand/vanilla`, wrapped by a `useStore` hook). It holds all shared state; no
-component keeps a `useState` of its own for anything shared: `appModel:
-AppModel`, `catalog: Finding[]`, `activeFileId`, `sessionCache` (in-memory
-snapshot cache for instant file-switching, see `session-snapshot.ts`),
-`taskDataCache`, `parse: {pct, lines, etaMs}`, `status:
-'idle'|'parsing'|'ready'|'error'`, `errorMessage`, `theme`, `skippedLines`
-(malformed-JSON-line count from the parser's `done` payload).
+component keeps a `useState` of its own for anything shared. Run state:
+`appModel: AppModel`, `catalog: Finding[]`, `configFindings: Finding[]`,
+`interpretation` (see [Run interpretation](#run-interpretation)),
+`taskDataCache`, `skippedLines` (malformed-JSON-line count from the parser's
+`done` payload). File and parse state: `activeFileId`, `sessionCache`
+(in-memory snapshot cache for instant file-switching, see
+`packages/core/src/session-snapshot.ts`), `parse: {pct, lines, etaMs}`,
+`status: 'idle'|'parsing'|'ready'|'error'`, `shsParsing`, `errorMessage`,
+`errorNonce`. View state: `theme`, `widgetDensity`,
+`comparison`/`compareLoad`/`compareSeed`, `planGraph`. Export-only:
+`exportMode` and `exportProvenance`, both set by `src/export/hydrate-store.ts`.
 
 `src/store/useIngest.ts` is the only writer during a parse. It builds
 `createModelCallbacks`' `onProgress`/`onDone`/`onError` handlers to call the
-store's setters directly (`setParse`, `setCatalog`, `setStatus`,
-`setSkippedLines`, ...). Components never talk to the worker: they use
-`useIngest()`'s returned actions
+store's setters directly (`setParse`, `setFindings`, `setStatus`,
+`setSkippedLines`, `setTaskData`, ...). Components never talk to the worker:
+they use `useIngest()`'s returned actions
 (`startLoad`/`startLoadFolder`/`startLoadFromUrl`/`pickRecent`/`getTaskData`/
-`resetToDropZone`/`cancelParse`) and the store's read state.
+`resetToDropZone`/`cancelParse`, plus the comparison actions
+`prepareComparison`/`startCompareLoad`/`compareWithAnotherRun`/`drillIntoRun`)
+and the store's read state.
 `resetToDropZone` snapshots the current run into `sessionCache` before
 resetting; `cancelParse` (the parse screen's **Cancel**) terminates the worker
 and never snapshots, so a half-parsed model with no findings can't be restored
 later.
 
-`resetModel()` empties `appModel`/`catalog`/`taskDataCache`/`skippedLines` on
-every new parse, reset-to-drop-zone or cancelled parse, and bumps
-`modelResetCount`. That
+`resetModel()` empties the run state (`appModel`, `catalog`,
+`configFindings`, `interpretation`, `taskDataCache`, `skippedLines`), returns
+`status` to idle, closes any comparison or plan-graph view, and bumps
+`modelResetCount`. It runs on every new parse, reset-to-drop-zone, cancelled
+parse, typed SHS failure and compare-load parse. That
 counter has no setter of its own; only `PlanGraphRoute.tsx`'s `store.subscribe`
 reads it, to evict the plan-graph model memo cache (see
 [Plan graph view](./drill-down.md#plan-graph-view)).
@@ -61,8 +70,8 @@ widget with findings as props installs an interpretation first with
 Not every view judgment follows the rule yet. StageTable's RETRY, fetch-wait,
 spill and I/O-ratio chips, PlanView's cross-join, long-filter and exchange-count
 warnings, and the plan graph's duration-share heat colours use thresholds in
-the view code, with no finding behind them. They predate the interpretation and
-are open work, not a pattern to copy.
+the view code, with no finding behind them. They are open work, not a pattern
+to copy.
 
 The HTML export carries the same result. `buildHtmlExportData`
 (`packages/core/src/html-export.ts`), shared by the CLI's `--export-html` and
@@ -78,9 +87,9 @@ same. The export bundle never installs the live interpreter:
 `hydrateExportStore` installs the payload's interpretation as is, and
 `src/export/main-export.tsx` refuses, before rendering, any payload whose
 `schemaVersion` it was not built for, or that lacks its `configFindings` or
-`interpretation` (`unsupportedPayloadReason`). An old file therefore shows the
-conclusions of the core that wrote it, and cannot be reinterpreted by a newer
-bundle.
+`interpretation` (`unsupportedPayloadReason`). An exported file therefore shows
+the conclusions of the core that wrote it, and cannot be reinterpreted by a
+later bundle.
 
 What the bundle may import is checked at build time.
 `vite.export.config.ts` resolves the live-only modules to stand-ins in
@@ -127,7 +136,8 @@ Two mechanisms cover reopening a file, at different lifetimes.
 in-memory and per-session: it makes switching between files already loaded in
 the current tab instant, and it is gone on reload.
 
-Recent files (`src/recent-files.ts`, consumed by `src/view/useRecentFiles.ts`)
+Recent files (`packages/core/src/recent-files.ts`, consumed by
+`src/view/useRecentFiles.ts`, `DropZone.tsx` and `useIngest.ts`)
 is IndexedDB-backed and cross-session. It persists each file's
 `FileSystemFileHandle` plus light metadata (name, size, `lastModified`, app
 name, issue count, `lastOpenedAt`), capped at 10 entries with the oldest evicted
@@ -137,10 +147,10 @@ re-parses from the handle; no parsed model is ever persisted.
 
 ## Run comparison
 
-`src/run-comparison.ts` is the whole A/B engine. The entry point
+`packages/core/src/run-comparison.ts` is the whole A/B engine. The entry point
 `compareRuns(baseline, candidate)` takes two `{ label, snapshot }` run records
-(each `snapshot` a normalized model: `app`, `stages`, `sql`, `catalog`,
-`executors`) and returns one plain object the view renders. It runs on
+(each `snapshot` a `SessionSnapshot`: `app`, `stages`, `executors`, `sql`,
+`jobs`, `runAggregates`, `evidenceAvailability`, `catalog`, `taskData`) and returns one plain object the view renders. It runs on
 already-parsed snapshots, with no worker involved.
 
 - `stageIdentity(stage, snapshot)` is a run-independent key: `normalizeStageName`
@@ -151,7 +161,7 @@ already-parsed snapshots, with no worker involved.
   Exchange stages) don't collapse onto one identity; it falls back to a
   bottom-up structural fingerprint of the whole resolved `planTree`
   (`planTreeIdentity`, `normalizeDetail`-normalized: the same normalizer
-  `cachingOpportunity` uses in `src/detectors.ts`) when a stage has no such
+  `cachingOpportunity` uses in `packages/core/src/detectors.ts`) when a stage has no such
   attribution.
   `matchStages(baseSnap, candSnap)` indexes each run by that identity and pairs
   identities that map to exactly one stage on both sides. An identity colliding
@@ -186,7 +196,7 @@ panel fed by `baseStages`/`candStages`).
 `DropZone` keeps the History Server disclosure, Base URL, Application ID,
 optional Attempt ID, validation/touched state, recoverable SHS error, and
 local-server reachability in mounted React state rather than Zustand. The
-local browser-first path is still the default: **Choose file** loads a single
+local browser-first path is the default: **Choose file** loads a single
 event log, while **Choose rolling-log folder** accepts only an
 `eventlog_v2_*` directory and directs a rejected folder back to the file
 picker.
@@ -213,8 +223,9 @@ it; the disclosure itself doesn't move or auto-expand.
 
 The collapsed **Fetch from Spark History Server** disclosure requires
 local-server mode, a reachable History Server, and a supported base application
-ID: `application_<timestamp>_<id>`, `local-<timestamp>`, or
-`app-<identifier>`. `packages/core/src/shs-request.js` trims and validates the three
+ID: `application_<timestamp>_<id>`, `local-<timestamp>`, `app-<identifier>`,
+`spark-<identifier>` or `driver-<number>` (`APP_ID_PATTERNS` in
+`packages/core/src/shs-request.js`). `packages/core/src/shs-request.js` trims and validates the three
 request fields, accepts only absolute credential-free `http:`/`https:` base
 URLs without a query or fragment, preserves a reverse-proxy path prefix, and
 canonicalizes the base URL to one trailing slash. The optional attempt is a
@@ -230,7 +241,7 @@ codes. It never forwards upstream response text, status details, locations, or
 credentials to the browser.
 
 Routing preserves the recovery boundary: local file and folder failures use the
-existing page-level error route. A typed SHS failure instead resets the model
+page-level error route. A typed SHS failure instead resets the model
 to idle and returns to the still-mounted, expanded History Server disclosure,
 which retains its values and shows safe recovery guidance along with local
 file intake. During an SHS parse, the mounted intake shows progress in place;

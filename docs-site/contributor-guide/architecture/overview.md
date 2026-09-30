@@ -15,53 +15,60 @@ proxies Spark History Server fetches to sidestep CORS.
 Owns the DOM (React) and a summary `AppModel` (jobs, stages, sql, executors, no
 raw tasks), held in a Zustand store (`src/store/store.ts`).
 
-`src/store/useIngest.ts` is the composition root. It owns the `IngestClient`
-lifecycle and wires `model-assembler.ts`'s `createModelCallbacks`
-(worker-message → `AppModel`, unchanged from before the view migration) into
-store updates: `onProgress` → `parse`; `onDone` → derives
+`src/store/useIngest.ts` is the composition root. It owns the ingest client's
+lifecycle (`createIngestClient`, `@sparkforensics/core/ingest.ts`) and wires
+`model-assembler.ts`'s `createModelCallbacks` (worker message → `AppModel`)
+into store updates: `onProgress` → `parse`; `onDone` → derives
 `evidenceAvailability` from the final normalized model plus
 `done.skippedLines`, runs `analyzer.ts`, sets `catalog`, and prefetches
 flagged-stage task data.
 
-`src/App.tsx` routes on store `status`: idle/error → `DropZone`, parsing → a
-live progress readout, ready → `Dashboard`. `src/view/Dashboard.tsx` and
-`src/view/detector-registry.tsx` replace `dashboard-renderer.js`'s widget board
-(see [Widget rendering](./widget-rendering.md)).
+`src/App.tsx` routes on store state: a two-run compare load, the plan-graph
+route and the run comparison take precedence; otherwise idle/error →
+`CompareLanding` (one or two `DropZone`s), parsing → a live progress readout
+(an SHS parse keeps its intake form instead), ready → the lazy-loaded
+`Dashboard`. `src/view/Dashboard.tsx` renders widgets from
+`src/view/detector-registry.tsx`'s `REGISTRY` (see
+[Widget rendering](./widget-rendering.md)).
 
-### Worker (Web Worker, core JS)
+### Worker (Web Worker, `packages/core`)
 
 Owns the file and `taskStore: Map<stageId, Float64Array>`, keyed by 8-field
 stride
 `[duration, gcTime, memSpilled, diskSpilled, shuffleRead, shuffleWrite, launchTime, finishTime]`.
-Four modules:
+Five modules, plus the rolling-log helper:
 
-- `src/stage-quantiles.ts`, a pure leaf, exporting `finalizeStage`,
+- `packages/core/src/stage-quantiles.ts`, a pure leaf, exporting `finalizeStage`,
   `computeFieldQuantiles`, `computeDurationQuantiles`, `classifySpill`,
   `FIELDS`, and `TASK_FIELD_NAMES` for the task-field packed-array layout.
-- `src/event-handlers.ts`, holding `processEvent` and the per-event handler
+- `packages/core/src/event-handlers.ts`, holding `processEvent` and the per-event handler
   functions, `accumulateTask`, `createState`, `dispatchLine`,
   `buildChunkDecoder`, `emitParseCompletion`, `collectStageExecutorMetrics`,
   `collectLateSpeculationWaste`.
-- `src/shs-fetch.ts`, the SHS zip-fetch/decompress path: `runParseFromUrl`,
-  `decodeShsArchive`, `parseZipArchive`, `naturalCompare`,
-  `reassembleRollingEntries`, `sniffCodec`.
-- `src/zip-archive.ts`, the random-access zip reader both zip paths use:
+- `packages/core/src/shs-fetch.ts`, the SHS zip-fetch/decompress path:
+  `runParseFromUrl`, `decodeShsArchive`, `parseZipArchive`, `sniffCodec`.
+- `packages/core/src/rolling-log-reassembly.ts`, import-free on purpose so the
+  main-thread `DropZone` can use it: `naturalCompare`,
+  `reassembleRollingEntries`.
+- `packages/core/src/zip-archive.ts`, the random-access zip reader both zip paths use:
   `isZip`, `listZipEntries`, `streamZipEntry`.
-- `src/parser-worker.ts`, a thin entrypoint (`streamFile`, `runParse`,
-  `runParseFiles`, the `isWorker`/`self.onmessage` bus) that barrel-re-exports
-  the other three. It is the only piece needing the File/Blob streaming API.
+- `packages/core/src/parser-worker.ts`, a thin entrypoint (`streamFile`,
+  `runParse`, `runParseFiles`, the `isWorker`/`self.onmessage` bus) that
+  re-exports the public parts of `event-handlers.ts`, `stage-quantiles.ts`,
+  `shs-fetch.ts` and `rolling-log-reassembly.ts`. It is the only piece needing the File/Blob streaming API.
 
-Dropped zstd files also run a nested decompress worker, `src/zstd-worker.ts`,
-driven from the parse worker by `src/zstd-worker-client.ts` (see
+Dropped zstd files also run a nested decompress worker, `packages/core/src/zstd-worker.ts`,
+driven from the parse worker by `packages/core/src/zstd-worker-client.ts` (see
 [Decompress worker](./worker-protocol.md#decompress-worker)).
 
 ## Streaming
 
-Worker reads the `File` in 4 MB chunks via `file.slice(...).arrayBuffer()`,
-`TextDecoder({ stream: true })`, splits on `\n`, JSON-parses, dispatches per event
-type. Quantiles (P50/P95/max) and spill classification (`skew | volume |
+The worker reads the `File` in 512 KB slices (smaller for small files, so
+every file gets at least 100 progress steps) via `file.slice(...).arrayBuffer()`,
+decodes each decompressed chunk with one streaming `TextDecoder`, splits on
+`\n`, JSON-parses and dispatches per event type. Quantiles (P50/P95/max) and spill classification (`skew | volume |
 unclassified`) are computed at `SparkListenerStageCompleted` time, before posting
-`StageAggregate` to main.
+the stage's `{ type: 'stage' }` message to main.
 
 When `spark.eventLog.logStageExecutorMetrics=true` (default `false`),
 `SparkListenerStageExecutorMetrics` events populate
@@ -70,7 +77,7 @@ fields verbatim (camelCased), consumed by the `memoryUtilization` detector's
 per-executor memory bands (see [Memory Utilization](./board-widgets.md)).
 
 These events can arrive *after* `SparkListenerStageCompleted` for the same
-stage, so the per-stage `StageAggregate` message posted at completion time
+stage, so the per-stage `stage` message posted at completion time
 never carries them. Instead, `collectStageExecutorMetrics(state)` walks every
 stage once more just before `done`, and the worker re-posts a single
 `stageExecutorMetrics` message (`Map<stageId, Map<execId, metrics>>`, empty
@@ -87,13 +94,15 @@ winner kept for that purpose. `collectLateSpeculationWaste(state)` re-posts
 the updated totals of those stages once, just before `done`, as a
 `stageSpeculationWaste` message (`Map<stageId, { speculationWasteMs,
 speculationWastedAttempts }>`, empty when no speculative attempt ended late).
+`emitParseCompletion` sends these after `runAggregates` (whole-run aggregates
+computed from `taskStore`) and before the final `app` and `done` messages.
 
 Compressed logs are inflated inline. `sniffCodec` reads the leading magic bytes:
 gzip (`1f 8b`), Zstandard (`28 b5 2f fd`, Spark's `spark.io.compression.codec=zstd`),
 Spark's custom `LZ4Block` framing, or Spark's Snappy framing (`org.xerial.snappy`'s
-`\x82SNAPPY\0` header, `spark.io.compression.codec=snappy`), falling back to the
-filename suffix. Both the dropped-file path and the SHS-fetch path stream
-block-by-block (fflate `Gunzip` / fzstd `Decompress` / the LZ4Block decoder /
+`\x82SNAPPY\0` header, `spark.io.compression.codec=snappy`). Only a zip entry
+falls back to its name's suffix (see [Zip archives](#zip-archives)). Both the
+dropped-file path and the SHS-fetch path stream block-by-block (fflate `Gunzip` / fzstd `Decompress` / the LZ4Block decoder /
 the Snappy block decoder) to keep one decompressed chunk live at a time.
 In the browser, a dropped zstd file decompresses in a second worker while the
 parse worker parses earlier output, with a three-slice window bounding what is
@@ -107,11 +116,12 @@ one still incomplete after 64 MiB compressed, a malformed one, or a truncated
 tail goes to fzstd instead. Spark's frames declare no content size, so each
 one's output is capped at 64 MiB as it decodes: past that, the inline decoder
 hands the frame to fzstd and the threaded one streams it, pausing while 64 MiB
-wait to be parsed. On the real logs this made parsing 42% faster. For local files (`nodeParseCodecs`, `createThreadedZstdDecoder`), frames of
+wait to be parsed. On the real logs this parses 42% faster than fzstd alone. For local files (`nodeParseCodecs`, `createThreadedZstdDecoder`), frames of
 64 KB or more compressed decompress on libuv's threadpool, up to 4 at a time,
 while the main thread parses earlier output; `streamFile` awaits each `push`, and
-chunks still arrive in stream order. That took another 24% off the largest real
-log (4.2s to 3.2s) for 139 MB more peak RSS. SHS archives fetched from a
+chunks still arrive in stream order. On the largest real
+log this cuts parsing from 4.2s to 3.2s over the inline decoder, for 139 MB
+more peak RSS. SHS archives fetched from a
 History Server keep the inline decoder (`nodeArchiveCodecs`).
 
 Rolling `eventlog_v2_*` directories (Spark's multi-file event-log format,
@@ -119,9 +129,10 @@ Rolling `eventlog_v2_*` directories (Spark's multi-file event-log format,
 completion marker and, periodically, one `*.compact` merge file) are
 reassembled into parse order by `reassembleRollingEntries(names)`: drop the
 marker, drop every non-compact `events_*` file at or below the most recent
-`.compact` file's index, sort the rest numerically. The zip path
-(`parseZipArchive`) and the local folder-drop path (`runParseFiles`) both call
-this one function.
+`.compact` file's index, sort the rest numerically, and throw if an index is missing. The zip path
+(`parseZipArchive`) calls it on member names; for a dropped folder, `DropZone`
+(and the CLI's `collectRun`) call it before handing the ordered files to
+`runParseFiles`.
 
 `runParseFiles` streams each file in the resulting order through the same
 chunked codec dispatch as `runParse`, with a fresh decompressor per file, since
@@ -134,13 +145,13 @@ on a line boundary.
 A History Server download is a zip, whether fetched by `runParseFromUrl` or
 dropped as a file (the Spark UI's download link, or `GET
 /api/v1/applications/<appId>/logs` saved to disk). Both go through
-`parseZipArchive` (`src/shs-fetch.ts`): `runParse` checks for the zip
+`parseZipArchive` (`packages/core/src/shs-fetch.ts`): `runParse` checks for the zip
 signature before its codec dispatch, and `decodeShsArchive` wraps the
 downloaded bytes in the same `slice()` interface a `File` has. The two differ
 only in how they report failure (a plain `error` message for a dropped file,
 `{ source: 'shs', code: 'invalid-event-log' }` for a fetch).
 
-`src/zip-archive.ts` reads the central directory from the archive's tail,
+`packages/core/src/zip-archive.ts` reads the central directory from the archive's tail,
 then streams one entry at a time through fflate's `UnzipInflate` in
 `chunkSize` slices. A dropped file is read a slice at a time, and no
 decompressed entry is ever held whole (the SHS fetch still buffers its

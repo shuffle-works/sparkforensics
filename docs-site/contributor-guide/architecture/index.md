@@ -1,7 +1,9 @@
 # Architecture
 
-These pages cover one concern each: the worker protocol, the state model, the
-detector contract, and the fixed widget rendering order.
+These pages cover one concern each: the two-actor overview, the worker
+protocol, state plus History Server intake, the detector contract, impact
+estimation, the fixed widget rendering order, the board's widgets, and the
+stage and plan drill-downs.
 
 Where to start:
 
@@ -13,5 +15,5 @@ Where to start:
   a wall-clock/resource waste estimate attached.
 - [Testing layout](../testing.md#testing-layout): where tests live and what each
   layer covers.
-- [Contributing](../contributing.md): how architectural decisions get recorded as
-  ADRs.
+- [Contributing](../contributing.md): where new docs go, changesets and the
+  release flow.

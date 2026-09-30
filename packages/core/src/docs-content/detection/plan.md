@@ -7,7 +7,8 @@ this tag:
   plan. When the repeats have the same shape but different filters, columns
   or tables, the finding stays informational and claims no time. Only flagged
   when the repeat's stages take at least 0.5% of the run.
-- Small files: reading an excessive number of small files.
+- Small files: one plan node reads or writes more than 100 files averaging
+  under 3 MB. Compact upstream output, or coalesce before writing.
 - Under-broadcast: the smaller side of a Sort Merge Join looks well under
   the broadcast threshold; consider a `broadcast()` hint or raising
   `spark.sql.autoBroadcastJoinThreshold`.
