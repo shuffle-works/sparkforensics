@@ -164,7 +164,7 @@ export async function collectRun(inputPath: string): Promise<{ appModel: AppMode
         try {
           ordered = reassembleRollingEntries(names);
         } catch (e) {
-          reject(mcpError('invalid-event-log', e instanceof Error ? e.message : String(e)));
+          reject(mcpError('invalid-event-log', (e as Error).message));
           return;
         }
         const files = ordered.map((name) => open(join(inputPath, name)));

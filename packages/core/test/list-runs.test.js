@@ -321,6 +321,12 @@ describe('listRunsShs', () => {
       .rejects.toMatchObject({ code: 'upstream-unreachable' });
   });
 
+  it('throws access-or-upstream-failure for a failure that is not a connection error', async () => {
+    const fetchImpl = async () => { throw 'boom'; };
+    await expect(listRunsShs({ shsBaseUrl: 'http://shs:18080' }, { fetchImpl }))
+      .rejects.toMatchObject({ code: 'access-or-upstream-failure', message: expect.stringContaining('boom') });
+  });
+
   it('throws access-or-upstream-failure on a non-ok response', async () => {
     const fetchImpl = async () => new Response('nope', { status: 500 });
     await expect(listRunsShs({ shsBaseUrl: 'http://shs:18080' }, { fetchImpl }))
