@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 import { collectRun } from '@sparkforensics/core/cli/collect-run.ts';
@@ -52,7 +53,7 @@ const shared = (c) => ({
   metrics: c.metrics, findings: c.findings,
 });
 
-describe('CLI, MCP and dashboard parity on public corpus logs', () => {
+describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public corpus logs', () => {
   it.each(CANDIDATES)('reports the same comparison for %s', async (candidate) => {
     const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson']);
     const mcp = await compareRuns({ source: { path: BASELINE } }, { source: { path: candidate } });
