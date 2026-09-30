@@ -176,6 +176,18 @@ function sumField(stages: Stage[], field: NumericStageField): { sum: number; pre
   return { sum, present };
 }
 
+// Sums of per-task metrics (spill, GC, run time, bytes) only mean something when the log has
+// usable task records. A log cut off before any task ended sums to 0, which would read as
+// "measured, none" and as a huge improvement, so those sums are unavailable (null) instead. A
+// snapshot without an evidence ledger (hand-built) is taken at its word.
+const sumOfStages = (snap: SessionSnapshot, field: NumericStageField) => sumField([...snap.stages.values()], field);
+
+function sumTaskMetric(snap: SessionSnapshot, field: NumericStageField): { sum: number; present: boolean } {
+  const taskCoreTime = snap.evidenceAvailability?.entries?.find((e) => e.key === 'taskCoreTime');
+  if (taskCoreTime !== undefined && taskCoreTime.state !== 'present') return { sum: 0, present: false };
+  return sumField([...snap.stages.values()], field);
+}
+
 // Shared by skewRatios (whole-run p95 input) and stageSkewDeltas' `ratio`
 // closure (per-pair matched comparison): both need the identical per-stage
 // task-skew formula (max task duration over stage wall-clock duration).
@@ -238,8 +250,8 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
   // stage matching, and matching is unreliable on real logs, so scope it to all
   // stages exactly like task-skew and failed-rate below. The key stays
   // `shuffleSpill` so existing --regression-metric callers keep working.
-  const bSpill = sumField([...baseSnap.stages.values()], 'memoryBytesSpilled');
-  const cSpill = sumField([...candSnap.stages.values()], 'memoryBytesSpilled');
+  const bSpill = sumTaskMetric(baseSnap, 'memoryBytesSpilled');
+  const cSpill = sumTaskMetric(candSnap, 'memoryBytesSpilled');
   out.push(metric('shuffleSpill', 'Memory spill',
     bSpill.present ? bSpill.sum : null, cSpill.present ? cSpill.sum : null,
     { unavailableReason: bSpill.present && cSpill.present ? undefined : 'No memory-spill data recorded for a run' }));
@@ -265,9 +277,9 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
   // Additional whole-run aggregates: plain sums of fields the stage already
   // carries (set in finalizeStage). Correct at any match coverage, like the
   // sums above; no parser or detector change.
-  const sumMetric = (key: string, label: string, field: NumericStageField, reason: string) => {
-    const b = sumField([...baseSnap.stages.values()], field);
-    const c = sumField([...candSnap.stages.values()], field);
+  const sumMetric = (key: string, label: string, field: NumericStageField, reason: string, sum = sumTaskMetric) => {
+    const b = sum(baseSnap, field);
+    const c = sum(candSnap, field);
     out.push(metric(key, label, b.present ? b.sum : null, c.present ? c.sum : null,
       { unavailableReason: b.present && c.present ? undefined : reason }));
   };
@@ -276,7 +288,7 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
   sumMetric('inputBytes', 'Input read', 'inputBytes', 'No input-bytes data recorded for a run');
   sumMetric('outputBytes', 'Output written', 'outputBytes', 'No output-bytes data recorded for a run');
   sumMetric('executorRunTime', 'Executor run-time', 'executorRunTime', 'No executor run-time recorded for a run');
-  sumMetric('taskCount', 'Task count', 'taskCount', 'No task counts recorded for a run');
+  sumMetric('taskCount', 'Task count', 'taskCount', 'No task counts recorded for a run', sumOfStages);
 
   // Executor count is app-level, not per-stage. `executors` is absent on
   // hand-built snapshots; guard so it renders Unavailable, not a crash.

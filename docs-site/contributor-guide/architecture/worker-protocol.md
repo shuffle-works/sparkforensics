@@ -405,6 +405,17 @@ positional file/directory argument), calling `resolveFromShs`
 no dependency on the `packages/server` package. A failed SHS fetch reports its message
 to `stderr` and exits `2`, same as a local file that can't be parsed.
 
+Regression budgets beyond the `--max-regression-pct` pair come from repeated
+`--regression-budget <metric>:<pct>` flags and a `--budgets` file, parsed in
+`packages/core/src/cli/regression-budgets.ts` and passed to `evaluateBudgets()`
+as `regressionBudgets`; the legacy pair is one more budget, and a metric
+budgeted twice is a usage error. With two or more positional candidates (or
+`--format ndjson`), the CLI's `runMultiLog` parses and analyzes the baseline once,
+then evaluates each candidate in turn and writes one NDJSON line per candidate
+(`log`, `status`, `exitCode`, `error`, `budgets`, `candidate`, `comparison`). A
+candidate that fails to parse gets a `status: "error"` line, counted as
+inconclusive (exit `3`); the exit code is the worst line (`2` > `1` > `3` > `0`).
+
 Optional CLI-flag budgets (`--max-runtime <ms>`, `--max-spill <gb>`,
 `--max-skew <ratio>`, `--max-failed-task-rate <pct>`, `--min-efficiency <pct>`)
 are evaluated in `packages/core/src/cli/budgets.ts` against the existing finding catalog

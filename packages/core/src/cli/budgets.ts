@@ -4,6 +4,7 @@ import { effectiveThresholds } from '../threshold-overrides.ts';
 import { IMPACT_BAND_ORDER } from '../format-utils.ts';
 import type { CompareRunsResult } from '../run-comparison.ts';
 import type { AppModel, Finding, ImpactBand } from '../types.ts';
+import type { RegressionBudget } from './regression-budgets.ts';
 
 const IMPACT_BANDS = Object.keys(IMPACT_BAND_ORDER) as ImpactBand[];
 
@@ -11,12 +12,16 @@ export interface BudgetsConfig {
   maxRuntimeMs?: number; maxSpillGb?: number; maxSkewRatio?: number;
   maxFailedTaskRatePct?: number; minEfficiencyPct?: number;
   maxRegressionPct?: number; regressionMetric?: string; failOnIntroduced?: string;
+  /** Further regression budgets, one per metric, checked alongside the maxRegressionPct pair. */
+  regressionBudgets?: RegressionBudget[];
 }
 export interface BudgetResult {
   name: 'max-runtime' | 'max-spill' | 'max-skew' | 'max-failed-task-rate' | 'min-efficiency'
     | 'max-regression' | 'fail-on-introduced' | 'run-complete';
   status: 'pass' | 'violation' | 'inconclusive';
   detail: string;
+  /** Set on `max-regression` results: the metric key that budget checks. */
+  metric?: string;
 }
 
 // The skew entry's minTasksForP95 under the run's overrides, so the budget measures the same
@@ -122,23 +127,23 @@ function checkEfficiency(appModel: AppModel, minPct: number): BudgetResult {
 function checkRegression(comparison: CompareRunsResult, maxRegressionPct: number, regressionMetric: string): BudgetResult {
   const row = comparison.metrics.find((m) => m.key === regressionMetric);
   if (!row || row.direction === 'unavailable' || row.baseline == null || row.delta == null) {
-    return { name: 'max-regression', status: 'inconclusive', detail: `Metric "${regressionMetric}" is unavailable for this comparison.` };
+    return { name: 'max-regression', metric: regressionMetric, status: 'inconclusive', detail: `Metric "${regressionMetric}" is unavailable for this comparison.` };
   }
   // A neutral-direction metric (inputBytes/outputBytes/taskCount/executorsAdded) measures
   // workload volume, not performance: an increase isn't a regression, so no direction to check.
   if (row.direction === 'neutral') {
-    return { name: 'max-regression', status: 'inconclusive', detail: `Metric "${regressionMetric}" measures workload volume, not performance: it has no regression direction to check.` };
+    return { name: 'max-regression', metric: regressionMetric, status: 'inconclusive', detail: `Metric "${regressionMetric}" measures workload volume, not performance: it has no regression direction to check.` };
   }
   if (row.direction !== 'regression') {
-    return { name: 'max-regression', status: 'pass', detail: `Metric "${regressionMetric}" did not regress (${row.direction}).` };
+    return { name: 'max-regression', metric: regressionMetric, status: 'pass', detail: `Metric "${regressionMetric}" did not regress (${row.direction}).` };
   }
   const pct = row.baseline === 0 ? Infinity : Math.abs(row.delta / row.baseline) * 100;
   const pctLabel = row.baseline === 0
     ? `regressed from 0 to ${row.delta} (was absent/zero in baseline)`
     : `regressed ${pct.toFixed(1)}%`;
   return pct > maxRegressionPct
-    ? { name: 'max-regression', status: 'violation', detail: `Metric "${regressionMetric}" ${pctLabel}, exceeding budget ${maxRegressionPct}%.` }
-    : { name: 'max-regression', status: 'pass', detail: `Metric "${regressionMetric}" ${pctLabel}, within budget ${maxRegressionPct}%.` };
+    ? { name: 'max-regression', metric: regressionMetric, status: 'violation', detail: `Metric "${regressionMetric}" ${pctLabel}, exceeding budget ${maxRegressionPct}%.` }
+    : { name: 'max-regression', metric: regressionMetric, status: 'pass', detail: `Metric "${regressionMetric}" ${pctLabel}, within budget ${maxRegressionPct}%.` };
 }
 
 function checkFailOnIntroduced(comparison: CompareRunsResult, band: string): BudgetResult {
@@ -159,8 +164,12 @@ function pushComparisonBudget(
   comparison: CompareRunsResult | undefined,
   name: BudgetResult['name'],
   check: (comparison: CompareRunsResult) => BudgetResult,
+  metric?: string,
 ): void {
-  results.push(comparison ? check(comparison) : { name, status: 'inconclusive', detail: 'No baseline comparison available to evaluate this budget.' });
+  results.push(comparison ? check(comparison) : {
+    name, status: 'inconclusive', detail: 'No baseline comparison available to evaluate this budget.',
+    ...(metric !== undefined ? { metric } : {}),
+  });
 }
 
 /** `thresholds`: the overrides the catalog was analyzed with, so a budget that recomputes a
@@ -184,6 +193,9 @@ export function evaluateBudgets({ appModel, catalog, budgets, comparison, thresh
     // so an "unlimited" budget is a legitimate input (the CLI already rejects non-finite flags).
     pushComparisonBudget(results, comparison, 'max-regression',
       (c) => checkRegression(c, budgets.maxRegressionPct!, budgets.regressionMetric ?? 'wallClock'));
+  }
+  for (const { metric, maxPct } of budgets.regressionBudgets ?? []) {
+    pushComparisonBudget(results, comparison, 'max-regression', (c) => checkRegression(c, maxPct, metric), metric);
   }
   if (budgets.failOnIntroduced !== undefined) {
     pushComparisonBudget(results, comparison, 'fail-on-introduced',

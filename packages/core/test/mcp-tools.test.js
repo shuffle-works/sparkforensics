@@ -861,7 +861,7 @@ describe('evaluateBudgetsForRun', () => {
       );
       expect(typeof runId).toBe('string');
       expect(results).toEqual([{
-        name: 'max-regression', status: 'violation',
+        name: 'max-regression', metric: 'wallClock', status: 'violation',
         detail: 'Metric "wallClock" regressed 100.0%, exceeding budget 10%.',
       }]);
       expect(violated).toBe(true);
