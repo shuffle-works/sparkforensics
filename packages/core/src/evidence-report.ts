@@ -43,9 +43,9 @@ interface FindingRowColumns {
   id: string | null; name: string; tag: string; impactBand: 'critical'|'warning'|'info';
   stageId: number | null; metric?: string | null; value?: number | null; valueText?: string;
   recommendation?: string | null; detectorVersion: number;
-  // Always present (unlike confidence/validationRequired/docAnchor/impactEstimate): every finding
-  // here comes from a real DETECTORS entry, so a label is always computable (falling back to the
-  // finding's own `type` as a last resort; see findingRow()).
+  // Always present (unlike confidence/validationRequired/docAnchor/impactEstimate):
+  // findingActionLabel falls back to the type's name, so a label is always computable (see
+  // findingRow()).
   actionLabel: string;
   confidence?: string; validationRequired?: string; docAnchor?: string;
   impactEstimate?: ImpactEstimate;

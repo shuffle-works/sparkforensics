@@ -114,14 +114,13 @@ describe('html-export (shared by the CLI --export-html and the dashboard downloa
     expect(data.interpretation.verdict.steps[0].copyText).toContain(data.catalog[0].valueText);
   });
 
-  it('redacts before interpreting, so a failure reason cut mid-host keeps no fragment of it', () => {
+  it('redacts the failure reason before interpreting, so a reason cut mid-host keeps no fragment of it', () => {
     const appModel = truncatedFailureRun();
     const catalog = analyze(appModel.app, appModel.stages, [], [], appModel.jobs, appModel.sql, null);
     const data = buildHtmlExportData(appModel, catalog, 0, { redact: true, buildId: 'b', producer: 'p' });
     const { verdict } = data.interpretation;
 
-    expect(verdict.failureReason).toMatch(/\.\.\.$/);
-    expect(verdict.failureReason).toContain(' executor on host-');
+    expect(verdict.failureReason).toBe('[redacted]');
     expect(JSON.stringify(data)).not.toContain(TRUNCATED_HOST_FRAGMENT);
     // Unredacted, the same run does quote the fragment: the cut is really exercised.
     const raw = buildHtmlExportData(appModel, catalog, 0, { redact: false, buildId: 'b', producer: 'p' });

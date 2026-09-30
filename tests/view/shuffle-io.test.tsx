@@ -254,3 +254,17 @@ test('does not render pagination controls when everything fits on one page', asy
   expect(screen.queryByRole('combobox', { name: /jump to stage/i })).not.toBeInTheDocument();
 });
 
+
+test('states the fix once above the rows, however many stages are flagged', () => {
+  const appModel = buildAppModel({
+    1: { shuffleReadBytes: 200 * 1024 * 1024, shuffleWriteBytes: 5 * 1024 * 1024 },
+    2: { shuffleReadBytes: 900 * 1024 * 1024, shuffleWriteBytes: 20 * 1024 * 1024 },
+  });
+  const catalog: Finding[] = [
+    { type: 'shuffle', stageId: 1, impactBand: 'info', value: 200 * 1024 * 1024 },
+    { type: 'shuffle', stageId: 2, impactBand: 'critical', value: 900 * 1024 * 1024 },
+  ];
+  render(<ShuffleIO appModel={appModel} catalog={catalog} defaultCollapsed={false} getTaskData={async () => null as never} />);
+
+  expect(screen.getAllByText(/Raise spark\.sql\.shuffle\.partitions, or use a broadcast join/)).toHaveLength(1);
+});

@@ -213,6 +213,7 @@ export const StageFindingGroupWidget = memo(function StageFindingGroupWidget({
     <WidgetCard
       title={title}
       impactBand={widgetImpactBand}
+      fixFor={relevant}
       badges={
         <>
           <TagBadge type={type} impactBand={widgetImpactBand ?? 'info'} />

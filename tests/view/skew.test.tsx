@@ -387,3 +387,12 @@ describe('Skew', () => {
     store.getState().setWidgetDensity('basic');
   });
 });
+
+describe('Skew fix suggestion', () => {
+  it('states the fix once above the rows, however many stages are flagged', () => {
+    const catalog = [skewFinding(1, 6), skewFinding(2, 8)];
+    render(<Skew appModel={makeAppModel([1, 2])} catalog={catalog} getTaskData={vi.fn(async () => TASK_DATA)} />);
+
+    expect(screen.getAllByText(/enable AQE skew-join handling/)).toHaveLength(1);
+  });
+});

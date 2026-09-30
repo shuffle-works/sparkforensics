@@ -114,12 +114,12 @@ describe('redactReport', () => {
   });
 
   it('redacts host/IP identifiers that appear only in free-text values', () => {
-    // Host in a stageFailed valueText string (never a `host` field) plus a bare IPv4 in a recommendation; both must be pseudonymized.
+    // Host in a valueText string (never a `host` field) plus a bare IPv4 in a recommendation; both must be pseudonymized.
     const report = {
       schemaVersion: 1,
       summary: { app: { id: 'app_x' } },
       findings: [
-        { id: 'a', type: 'stageFailed', stageId: 7,
+        { id: 'a', type: 'retryWaste', stageId: 7,
           valueText: 'ExecutorLostFailure on ip-10-4-5-6.ec2.internal: Container killed' },
         { id: 'b', type: 'slowHost', stageId: 8,
           recommendation: 'Driver at 10.20.30.40 saw slow fetches.' },
@@ -205,6 +205,36 @@ describe('failure groups', () => {
     const out = redactRun(data);
     expectScrubbed(out.appModel.stages.get(1).failureGroups[0]);
     expectScrubbed(out.catalog[0].failureGroups[0]);
+    expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
+  });
+
+  const REASON = 'Job aborted due to stage failure: Lost task 0.3 (executor 4): java.io.FileNotFoundException: /warehouse/customers/part-0007';
+
+  it('redactReport replaces a stageFailed finding\'s failure reason', () => {
+    const report = sampleReport();
+    report.findings.push({
+      id: 'd', type: 'stageFailed', stageId: 7, metric: 'stageFailureReason', valueText: REASON,
+      evidence: { failedTaskDetails: [{ taskId: 1, attemptNumber: 0, host: 'worker-9.internal' }] },
+    });
+    const out = redactReport(report);
+    const finding = out.findings.find((f) => f.id === 'd');
+    expect(finding.valueText).toBe('[redacted]');
+    expect(finding.metric).toBe('stageFailureReason');
+    expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
+    expect(report.findings.find((f) => f.id === 'd').valueText).toBe(REASON); // input untouched
+  });
+
+  it('redactRunModel replaces the failure reason on the catalog finding and the stage record', () => {
+    const data = {
+      schemaVersion: 1, app: { id: 'application_1690000000000_0001', name: 'n', sparkVersion: '3.5.0', config: {} },
+      stages: [{ id: 1, name: 's', stageFailureReason: REASON }], jobs: [], sql: [],
+      executors: { added: [], removed: [] }, runAggregates: null, evidenceAvailability: null,
+      catalog: [{ type: 'stageFailed', stageId: 1, impactBand: 'critical', metric: 'stageFailureReason', valueText: REASON }],
+      configFindings: [], skippedLines: 0,
+    };
+    const out = redactRun(data);
+    expect(out.appModel.stages.get(1).stageFailureReason).toBe('[redacted]');
+    expect(out.catalog[0].valueText).toBe('[redacted]');
     expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
   });
 

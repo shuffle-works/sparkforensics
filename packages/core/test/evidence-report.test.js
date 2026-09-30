@@ -238,11 +238,11 @@ describe('buildEvidenceReport', () => {
     expect(markdown).not.toMatch(/\bEstimated\b|Est\. /);
   });
 
-  // Redaction must reach a slowHost's host where the builder nests it
-  // (evidence.host + the recommendation free text), not a never-emitted f.host.
-  it('with { redact:true } keeps no fragment of a host the failure-reason quote cuts', () => {
+  // A failure reason can carry a host the verdict's quote would cut mid-name; redaction replaces
+  // the whole reason, so no fragment survives.
+  it('with { redact:true } replaces the failure reason, leaving no fragment of a host it cuts', () => {
     const { markdown, json } = buildEvidenceReport(truncatedFailureRun(), { redact: true });
-    expect(json.summary.outcome.failureReason).toContain(' executor on host-');
+    expect(json.summary.outcome.failureReason).toBe('[redacted]');
     expect(JSON.stringify(json)).not.toContain(TRUNCATED_HOST_FRAGMENT);
     expect(markdown).not.toContain(TRUNCATED_HOST_FRAGMENT);
     // Unredacted, the quote does cut the host, so the case above is really exercised.

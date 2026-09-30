@@ -10,8 +10,8 @@ tokens in the response (`app-1`, `host-1`, ...), so a result can be shared
 outside the environment that produced it. The app name is as identifying as
 the id, so every tool replaces it with the app id's pseudonym. It also
 pseudonymizes the value of any field named `host`, and drops the message and
-stack text of failed-task errors, which can carry file paths and data values
-that no pattern recognizes. On `compare_runs`, `runIdA`/
+stack text of failed-task errors and the failure reason of a failed stage, which
+can carry file paths and data values that no pattern recognizes. On `compare_runs`, `runIdA`/
 `runIdB` are caller-supplied identifiers, not Spark application ids, so
 there's no single app-id field to redact; `redact` instead scans stage names
 and other free text for embedded app ids and host/IP tokens and

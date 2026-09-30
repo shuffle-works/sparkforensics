@@ -9,12 +9,11 @@
 
 import { decodeCollections, encodeCollections, type ExportRunData } from './export-data.ts';
 import type { AppModel, Finding } from './types.ts';
-import { redactTaskFailureGroup, type TaskFailureDetail } from './task-failure.ts';
+import { REDACTED_TEXT, redactTaskFailureGroup, type TaskFailureDetail } from './task-failure.ts';
 
 // Host / IP identifier patterns. Used to enumerate host names that surface only
-// inside free text: recommendation strings, `stageFailed`'s failure-reason
-// value, SQL relation/node names, never as a structured `host` field, so
-// redaction reaches those residuals too. Pseudonyms (`host-1`) match neither
+// inside free text: recommendation strings, SQL relation/node names,
+// never as a structured `host` field, so redaction reaches those residuals too. Pseudonyms (`host-1`) match neither
 // pattern, keeping the scan idempotent.
 const HOST_PATTERNS = [
   // EC2-style ip-10-1-2-3 with an optional dotted domain (ip-10-1-2-3.ec2.internal).
@@ -93,6 +92,29 @@ function redactFailureGroups<T>(node: T): T {
     return out as T;
   }
   return node;
+}
+
+// A stage's failure reason is Spark's free-text message and can carry file paths and data values
+// too, so it is replaced outright, like a failure group's message: a `stageFailed` finding's
+// `valueText`, and the `stageFailureReason` of a stage record. Walking by key name, like
+// collectHostFields, needs no path list. Returns a fresh tree.
+function redactStageFailureReasons<T>(node: T): T {
+  if (Array.isArray(node)) return node.map((n) => redactStageFailureReasons(n)) as T;
+  if (node && typeof node === 'object') {
+    const isStageFailed = (node as { type?: unknown }).type === 'stageFailed';
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(node)) {
+      const isReason = k === 'stageFailureReason' || (isStageFailed && k === 'valueText');
+      out[k] = isReason && typeof v === 'string' ? REDACTED_TEXT : redactStageFailureReasons(v);
+    }
+    return out as T;
+  }
+  return node;
+}
+
+// Both passes for free text no host/app-id pattern recognizes.
+function redactFailureText<T>(node: T): T {
+  return redactStageFailureReasons(redactFailureGroups(node));
 }
 
 // Spark config keys ending in `host`/`hostname` (e.g. spark.driver.host,
@@ -196,7 +218,7 @@ function withRedactedName<A extends { id?: string | null; name?: string | null }
 }
 
 export function redactReport<T extends RedactableReport>(input: T): T {
-  const report = redactFailureGroups(input);
+  const report = redactFailureText(input);
   const { appIds, hosts } = collectIds(report);
   const out = applyReplacements(report, { appIds, hosts });
   const app = out.summary?.app;
@@ -227,7 +249,7 @@ export function redactComparison<T>(comparison: T): T {
 type RunTree = Pick<ExportRunData, 'app' | 'executors' | 'catalog' | 'configFindings'>;
 
 function redactRunTree<T extends RunTree>(input: T): T {
-  const data = redactFailureGroups(input);
+  const data = redactFailureText(input);
   const appIds = new Set<string>();
   const hosts = new Set<string>();
   const appId = data.app?.id;

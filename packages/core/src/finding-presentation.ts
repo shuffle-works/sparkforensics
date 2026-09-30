@@ -61,7 +61,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   incompleteRun: {
     name: 'incomplete run',
     tag: 'INCMP',
-    thresholdSummary: () => 'an event log missing its terminal ApplicationEnd/job-completion event',
+    thresholdSummary: () => 'an event log missing its terminal ApplicationEnd event',
     actionLabel: () => undefined,
     genericRecommendation: () => undefined,
   },
