@@ -58,13 +58,16 @@ describe('alias packages', () => {
     }
   });
 
-  // One case per CLI exit code: 0 clean, 1 budget violated, 2 bad input, 3 inconclusive.
+  // One case per CLI exit code: 0 clean, 1 budget violated, 2 usage error, 3 inconclusive,
+  // 4 unreadable candidate, 5 unreadable baseline.
   const cases = [
     { status: 0, args: () => ['--help'] },
     { status: 0, args: () => [join(logDir, 'complete.ndjson'), '--format', 'md'] },
     { status: 1, args: () => [join(logDir, 'complete.ndjson'), '--format', 'md', '--max-runtime', '1'] },
-    { status: 2, args: () => [join(logDir, 'missing.ndjson')] },
+    { status: 2, args: () => [join(logDir, 'complete.ndjson'), '--no-such-flag'] },
     { status: 3, args: () => [join(logDir, 'incomplete.ndjson'), '--format', 'md'] },
+    { status: 4, args: () => [join(logDir, 'missing.ndjson')] },
+    { status: 5, args: () => [join(logDir, 'complete.ndjson'), '--baseline', join(logDir, 'missing.ndjson')] },
   ];
 
   for (const [name, dir] of Object.entries(ALIASES)) {
