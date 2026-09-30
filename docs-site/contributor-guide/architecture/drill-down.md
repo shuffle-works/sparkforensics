@@ -74,10 +74,11 @@ an exchange for display purposes but is never split: it carries no
 `exchangeRole` and stays a single node. The write half is grouped with its
 children's producer component; the read half is grouped with its parent's
 consumer component. Both halves get their own entry in `buildDurationMap`'s
-duration share:
-`PlanGraphNode.tsx` only suppresses the displayed value for the read half,
-since the read half occupies the exact tree position of the unsplit raw
-node.
+duration share. The read half has no metrics of its own and no
+same-segment descendants, so its share is 0 in exclusive and inclusive mode
+alike, and `PlanGraphNode.tsx` shows it as a 0% heat bar next to a "paired:
+see write half" note. The canvas leaves the share out of the read half's
+accessible label.
 
 Default scope is `segment`: one Exchange-bounded slice of the plan, resolved via
 `computeSegments`/`zipSegmentsToStages` (`packages/core/src/plan-duration-attribution.ts`,
