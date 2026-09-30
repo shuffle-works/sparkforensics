@@ -24,6 +24,8 @@ export interface SessionSnapshot {
   jobs: Map<number, Job>;
   runAggregates: RunAggregates | null;
   evidenceAvailability: EvidenceAvailability | null;
+  skippedLines?: number;
+  unreadableSqlExecutions?: number[];
   catalog: Finding[];
   taskData: Map<number, unknown>;
 }
@@ -44,6 +46,8 @@ export function captureSnapshot(
     jobs: new Map(appModel.jobs),
     runAggregates: appModel.runAggregates,
     evidenceAvailability: appModel.evidenceAvailability,
+    skippedLines: appModel.skippedLines,
+    unreadableSqlExecutions: appModel.unreadableSqlExecutions && [...appModel.unreadableSqlExecutions],
     catalog: [...catalog],
     taskData: new Map(taskDataCache),
   };
@@ -71,6 +75,9 @@ export function applySnapshot(
   appModel.evidenceAvailability = isSupportedEvidenceAvailability(snapshot.evidenceAvailability)
     ? snapshot.evidenceAvailability
     : null;
+  appModel.skippedLines = snapshot.skippedLines;
+  if (snapshot.unreadableSqlExecutions) appModel.unreadableSqlExecutions = [...snapshot.unreadableSqlExecutions];
+  else delete appModel.unreadableSqlExecutions;
 
   taskDataCache.clear();
   for (const [k, v] of snapshot.taskData) taskDataCache.set(k, v);

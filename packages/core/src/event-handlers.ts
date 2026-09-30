@@ -198,6 +198,9 @@ export interface ParserState {
   jobs: Map<number, Job>;
   executors: { added: ExecutorAddedEvent[]; removed: ExecutorRemovedEvent[] };
   skippedLines: number;
+  // SQL executions whose start line was skipped (unreadable, or failed its schema): their plan
+  // never reaches the model, so a write made there would otherwise go unreported.
+  unreadableSqlStarts: Set<number>;
   accumState: Map<number, Map<number, number>>;
   rddInfo: Map<number, RddInfoRecord>;
   rddBlocks: Map<number, RddBlockState>;
@@ -391,6 +394,7 @@ export function createState(): ParserState {
     jobs: new Map(),
     executors: { added: [], removed: [] },
     skippedLines: 0,
+    unreadableSqlStarts: new Set(),
     accumState: new Map(),
     rddInfo: new Map(),
     rddBlocks: new Map(),
@@ -1363,6 +1367,18 @@ export function dispatchLine(
 const BLOCK_UPDATED_PREFIX = '{"Event":"SparkListenerBlockUpdated",';
 const RDD_BLOCK_ID_FRAGMENT = '"Block ID":"rdd_';
 
+const SQL_START_EVENT = 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart';
+const SQL_START_ID = /"executionId":(\d+)/;
+
+// Records the execution id of a skipped SQL start line, when the line's head still names it: a
+// line cut off mid-plan fails JSON.parse but keeps its leading fields.
+function noteUnreadableSqlStart(line: string, state: ParserState): void {
+  const head = line.slice(0, 300);
+  if (!head.includes(`${SQL_START_EVENT}"`)) return;
+  const id = SQL_START_ID.exec(head);
+  if (id) state.unreadableSqlStarts.add(Number(id[1]));
+}
+
 function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown) => void): void {
   if (line.startsWith(BLOCK_UPDATED_PREFIX) && !line.includes(RDD_BLOCK_ID_FRAGMENT)) return;
   let parsed: unknown;
@@ -1370,6 +1386,7 @@ function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown)
     parsed = parseTaskEnd(line) ?? JSON.parse(stripPlanDescription(line));
   } catch {
     state.skippedLines++;
+    noteUnreadableSqlStart(line, state);
     return;
   }
   // A real Spark event log carries many event types this tool never modeled (BlockManagerAdded,
@@ -1382,6 +1399,7 @@ function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown)
   const result = SparkEventSchema.safeParse(parsed);
   if (!result.success) {
     state.skippedLines++;
+    if (eventType === SQL_START_EVENT) noteUnreadableSqlStart(line, state);
     return;
   }
   if (result.data.Event === 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd') {
@@ -1436,6 +1454,10 @@ export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => 
   emit({ type: 'stageSpeculationWaste', data: collectLateSpeculationWaste(state) });
   emit({ type: 'stageExecutorMetrics', data: collectStageExecutorMetrics(state) });
   emit(appMessage(state));
-  emit({ type: 'done', skippedLines: state.skippedLines });
+  emit({
+    type: 'done',
+    skippedLines: state.skippedLines,
+    ...(state.unreadableSqlStarts.size > 0 ? { unreadableSqlExecutions: [...state.unreadableSqlStarts].sort((a, b) => a - b) } : {}),
+  });
   state.accumState.clear();
 }

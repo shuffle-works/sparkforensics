@@ -40,8 +40,8 @@ export function routeMessage(
     case 'stageExecutorMetrics': handlers.onStageExecutorMetrics?.(data.data); break;
     case 'stageSpeculationWaste': handlers.onStageSpeculationWaste?.(data.data); break;
     case 'done': {
-      const { skippedLines } = data;
-      handlers.onDone?.({ skippedLines });
+      const { skippedLines, unreadableSqlExecutions } = data;
+      handlers.onDone?.(unreadableSqlExecutions ? { skippedLines, unreadableSqlExecutions } : { skippedLines });
       break;
     }
     case 'error':    handlers.onError?.(data); break;

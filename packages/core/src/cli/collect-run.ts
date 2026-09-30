@@ -130,7 +130,10 @@ export function collectViaDispatch(
   return new Promise((resolve, reject) => {
     const handlers: IngestHandlers = {
       ...cb,
-      onDone: (msg: unknown) => resolve({ appModel, skippedLines: (msg as { skippedLines?: number })?.skippedLines ?? 0 }),
+      onDone: (msg: unknown) => {
+        cb.onDone(msg); // records the parse gaps on the model, as the dashboard's ingest does
+        resolve({ appModel, skippedLines: (msg as { skippedLines?: number })?.skippedLines ?? 0 });
+      },
       onError: (msg: unknown) => reject(onDecodeError(msg)),
     };
     const emit = (msg: unknown) => dispatch(msg, handlers);

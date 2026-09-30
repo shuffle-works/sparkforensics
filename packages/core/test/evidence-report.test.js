@@ -164,7 +164,7 @@ describe('buildEvidenceReport', () => {
     const raw = buildEvidenceReport(fixture()).json;
     expect(JSON.stringify(raw)).toBe(JSON.stringify(buildEvidenceReport(fixture()).json));
     expect(Object.keys(raw)).toEqual([
-      'schemaVersion', 'summary', 'verdict', 'evidenceAvailability', 'detectors', 'findings',
+      'schemaVersion', 'summary', 'verdict', 'evidenceAvailability', 'detectors', 'findings', 'writeTargets',
       'recommendations', 'cleanChecks', 'notRunChecks',
     ]);
     // Core construction order (optional confidence/validation/docAnchor trail it).
