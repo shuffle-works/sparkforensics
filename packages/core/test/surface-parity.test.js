@@ -89,7 +89,7 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
 
 // Public corpus logs (git submodule, checked out in CI; skipped locally until initialized).
 const CORPUS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
-const LOGS = [
+const METRIC_LOGS = [
   'external-app-20161115172038-0000.ndjson',
   'external-application_1516285256255_0012.ndjson',
   'external-application_1553914137147_0018.ndjson',
@@ -98,7 +98,7 @@ const LOGS = [
 // The CLI's metrics block, the evidence report (CLI md/json and MCP tools) and the run comparison
 // (dashboard comparison view, CLI --baseline, MCP compare_runs) must agree on every figure they
 // share. The comparison of a run with itself exposes its totals as baseline values.
-describe.each(LOGS)('surface parity: %s', (path) => {
+describe.each(METRIC_LOGS)('surface parity: %s', (path) => {
   it.skipIf(!existsSync(path))('reads one figure per name across metrics, report and comparison', async () => {
     const { appModel } = await collectRun(path);
     const catalog = analyze(
