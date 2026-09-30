@@ -662,6 +662,19 @@ describe('analyze: skew/straggler same-stage overlap disclosure (§4)', () => {
     expect(straggler.validationRequired).toMatch(/overlaps with the skew finding/);
   });
 
+  it('leaves other finding types on the overlap stage unflagged', () => {
+    const stages = new Map([[1, makeStage({
+      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
+      speculativeTasks: 0, stragglerCount: 2,
+      memoryBytesSpilled: 1024, spillClassification: 'volume',
+    })]]);
+    const catalog = analyze(makeApp(), stages, [], []);
+    const spill = catalog.find(b => b.type === 'spill' && b.stageId === 1);
+    expect(catalog.find(b => b.type === 'skew').validationRequired).toMatch(/overlaps with/);
+    expect(spill).toBeTruthy();
+    expect(spill.validationRequired ?? '').not.toMatch(/overlaps with/);
+  });
+
   it('does not flag skew when no straggler fires on the same stage', () => {
     const stages = new Map([[1, makeStage({
       taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
