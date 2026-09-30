@@ -18,10 +18,11 @@ const pkgDir = dirname(binDir);
 const srcHelper = join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
 const helperPath = existsSync(srcHelper) ? srcHelper : join(pkgDir, 'vendor-core', 'load-vendored.js');
 const { coreBuildId, loadVendored } = await import(pathToFileURL(helperPath).href);
-const loadCore = (moduleName) => loadVendored(pkgDir, moduleName);
+const loadCore = (moduleName, opts) => loadVendored(pkgDir, moduleName, opts);
 
 const { collectRun } = await loadCore('cli/collect-run');
 const { resolveFromShs } = await loadCore('shs-load');
+const { validateShsRequest } = await loadCore('shs-request', { srcExt: 'js' });
 const { analyze } = await loadCore('analyzer');
 const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
 const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
@@ -208,6 +209,8 @@ async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redac
   }
 }
 
+const SHS_FLAG_BY_FIELD = { baseUrl: '--shs-base-url', appId: '--app-id', attemptId: '--attempt-id' };
+
 const EXIT = { PASS: 0, VIOLATION: 1, USAGE: 2, INCONCLUSIVE: 3, CANDIDATE_UNREADABLE: 4, BASELINE_UNREADABLE: 5, INTERNAL: 6 };
 
 // Worst-wins order of the exit codes several candidates can produce, least to most severe:
@@ -321,6 +324,13 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
     if (values['app-id'] === undefined) {
       return bail(`--shs-base-url requires --app-id.\n${USAGE}`, 2);
+    }
+    const { errors } = validateShsRequest({
+      baseUrl: values['shs-base-url'], appId: values['app-id'], attemptId: values['attempt-id'],
+    });
+    const invalid = Object.entries(errors).filter(([, message]) => message);
+    if (invalid.length > 0) {
+      return bail(`${invalid.map(([field, message]) => `Invalid ${SHS_FLAG_BY_FIELD[field]}: ${message}`).join('\n')}\n${USAGE}`, 2);
     }
   } else {
     if (positionals.length === 0 || (positionals.length > 1 && values.baseline === undefined)) {

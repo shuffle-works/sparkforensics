@@ -331,6 +331,18 @@ describe('single-candidate exit codes for unreadable input', () => {
     expect((await run([...shs, '--baseline', p('missing')], { fetchImpl })).status).toBe(5);
   });
 
+  it.each([
+    ['a non-HTTP --shs-base-url', ['--shs-base-url', 'ftp://shs', '--app-id', 'application_0000000000000_0001']],
+    ['a --shs-base-url with a query', ['--shs-base-url', 'http://shs?x=1', '--app-id', 'application_0000000000000_0001']],
+    ['an unsupported --app-id', ['--shs-base-url', 'http://shs:18080', '--app-id', 'myapp']],
+    ['a path-unsafe --attempt-id', ['--shs-base-url', 'http://shs:18080', '--app-id', 'application_0000000000000_0001', '--attempt-id', '../x']],
+  ])('exits 2 before any fetch for %s, even with an unreadable --baseline', async (_, shs) => {
+    const fetchImpl = vi.fn(shsZipFetch(log({ slowMs: 2000 })));
+    expect((await run(shs, { fetchImpl })).status).toBe(2);
+    expect((await run([...shs, '--baseline', p('garbage')], { fetchImpl })).status).toBe(2);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('keeps exit 2 for usage errors and a bad budgets file', async () => {
     expect((await run([p('same'), '--max-skew', 'x'])).status).toBe(2);
     expect((await run([p('same'), '--baseline', p('baseline'), '--budgets', p('missing-budgets.json')])).status).toBe(2);
