@@ -90,7 +90,7 @@ extract another one.
 
 Of the finding types `retryWaste`, `autoscalingChurn`, `failures`,
 `stageFailed` and `jobFailureRate`, only `retryWaste` and `autoscalingChurn`
-fire on any of the 15 real logs in `../spark-log-examples/`. `failures`,
+fire on any of the real logs in `../spark-log-examples/`. `failures`,
 `stageFailed`, and `jobFailureRate` fire on none of them; they are covered
 by unit tests only (`tests/view/task-failures.test.tsx`,
 `tests/view/stage-failed.test.tsx`, `tests/view/job-failures.test.tsx`), not against a real log.
