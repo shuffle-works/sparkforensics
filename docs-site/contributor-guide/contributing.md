@@ -49,7 +49,7 @@ dependency, so versioning it would have no consumer.
 
 A release itself is two merges, not one: merging your feature PR into `main`
 runs `.github/workflows/release.yml`, which opens (or updates) a "Version
-Packages" PR collecting all pending changesets. Nothing publishes yet.
+Packages" PR collecting all pending changesets. Nothing publishes at this step.
 Merging *that* PR lands the version bumps and changelog entries it carries,
 and the release run that follows runs the full build and test suite, then
 `npm publish` for each publishable package whose new version isn't on npm
@@ -62,7 +62,7 @@ create a package name that doesn't exist on npmjs.com yet. A new publishable
 package needs one manual publish from a maintainer's npm account first, then
 a Trusted Publisher entry. All five current packages (`sparkforensics-cli`,
 `sparkforensics-mcp`, `sparkforensics-server`, `sparkforensics-analyze` and
-`sparkforensics`) are already set up; this only applies to a package added
+`sparkforensics`) have their Trusted Publisher entries; this only applies to a package added
 later. Until it's done, that package's publish step fails and the release
 run exits non-zero; packages that don't depend on it still publish.
 

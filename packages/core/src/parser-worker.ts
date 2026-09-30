@@ -45,7 +45,7 @@ type RunOpts = { emit?: EmitFn; chunkSize?: number; zstdDecoder?: ZstdDecoderFac
 // Minimal shape streamFile/runParse/runParseFiles read off `file` (name, size,
 // slice(start,end).arrayBuffer()): narrower than the full DOM `File`. A real
 // `File` (the browser Worker path) satisfies it structurally, but so does the
-// plain object src/cli/collect-run.ts's nodeFileFromPath builds for Node, which
+// plain object packages/core/src/cli/collect-run.ts's nodeFileFromPath builds for Node, which
 // has no DOM `File` constructor.
 type FileSource = {
   name: string;

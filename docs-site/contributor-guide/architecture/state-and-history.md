@@ -32,7 +32,7 @@ later.
 
 `resetModel()` empties the run state (`appModel`, `catalog`,
 `configFindings`, `interpretation`, `taskDataCache`, `skippedLines`), returns
-`status` to idle, closes any comparison or plan-graph view, and bumps
+`status` to idle, clears `shsParsing` and `errorMessage`, closes any comparison or plan-graph view, and bumps
 `modelResetCount`. It runs on every new parse, reset-to-drop-zone, cancelled
 parse, typed SHS failure and compare-load parse. That
 counter has no setter of its own; only `PlanGraphRoute.tsx`'s `store.subscribe`
@@ -67,11 +67,10 @@ from the carried per-group numbers); and the Scaling Simulator's
 widget with findings as props installs an interpretation first with
 `tests/view/_shared/interpretation.ts`.
 
-Not every view judgment follows the rule yet. StageTable's RETRY, fetch-wait,
+Some view judgments sit outside the rule. StageTable's RETRY, fetch-wait,
 spill and I/O-ratio chips, PlanView's cross-join, long-filter and exchange-count
 warnings, and the plan graph's duration-share heat colours use thresholds in
-the view code, with no finding behind them. They are open work, not a pattern
-to copy.
+the view code, with no finding behind them. Do not copy that pattern.
 
 The HTML export carries the same result. `buildHtmlExportData`
 (`packages/core/src/html-export.ts`), shared by the CLI's `--export-html` and

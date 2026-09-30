@@ -391,7 +391,7 @@ function DashboardContent() {
     const registration = registrationsRef.current.get(widgetId);
     if (!registration) {
       // This WidgetCard just mounted in the same commit as the route request
-      // (e.g. routing back into the Findings tab after it was unmounted):
+      // (e.g. a Basic-view evidence fold opening in the same commit):
       // its own WidgetGridItem registers as a parent effect that hasn't run
       // yet. Leave the route pending rather than clearing it: registerWidget
       // bumps openRequestGeneration once it does register, which re-fires

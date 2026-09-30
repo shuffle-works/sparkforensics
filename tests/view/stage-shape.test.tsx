@@ -167,3 +167,17 @@ describe('StageShape', () => {
     expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
   });
 });
+
+describe('StageShape fix suggestion', () => {
+  it('prints one fix per rule, each once', () => {
+    const catalog = [
+      stageShapeFinding(1, 'lowParallelism', 0.2),
+      stageShapeFinding(2, 'lowParallelism', 0.3),
+      stageShapeFinding(3, 'dataExplosion', 12),
+    ];
+    render(<StageShape appModel={makeAppModel([1, 2, 3])} catalog={catalog} getTaskData={vi.fn(async () => TASK_DATA)} />);
+
+    expect(screen.getAllByText(/Too few tasks run relative to the cores available/)).toHaveLength(1);
+    expect(screen.getAllByText(/Output volume far exceeds input volume/)).toHaveLength(1);
+  });
+});

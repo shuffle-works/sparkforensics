@@ -61,7 +61,8 @@ executor loss reason stay (hosts in it are pseudonymized).
 
 A stage attempt failed outright rather than losing individual tasks within
 it. Inspect the driver log for the failure reason and the job that triggered
-it.
+it. With redaction on, the failure reason becomes `[redacted]`, since it can
+carry file paths and data values.
 
 ### `STRAG`: Straggler tasks {#strag}
 

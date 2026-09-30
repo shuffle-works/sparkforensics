@@ -103,8 +103,7 @@ being parsed. The self-contained `file://` export never parses in the browser
 
 ### zstd in the browser and in Node
 
-The browser decodes zstd with the vendored fzstd, since Chrome has no
-`DecompressionStream('zstd')`. The Node CLI and MCP path (`collectRun`,
+The browser decodes zstd with the vendored fzstd, not `DecompressionStream`. The Node CLI and MCP path (`collectRun`,
 `shs-load.ts`) uses `packages/core/src/cli/native-zstd.ts` instead, which walks
 frame boundaries itself: Node's own zstd decoders stop after the first frame,
 and Spark writes thousands of small ones. A parser change that depends on
@@ -260,7 +259,7 @@ are all fixed, so a given `appModel` serializes identically across calls.
 Redaction enumerates hosts two ways: by walking the findings tree for every
 string value under a key literally named `host` (`evidence.host`,
 `evidence.failedTaskDetails[].host`, `evidence.retriedTaskDetails[].host`,
-and any future nested `host` field, all covered without enumerating paths),
+and any nested `host` field, all covered without enumerating paths),
 and by scanning every string value for EC2-style hostnames / bare IPv4
 tokens. So identifiers that surface only in free text (recommendation copy, a
 `stageFailed` failure reason in `valueText`) are pseudonymized too. Pseudonym numbering
@@ -273,6 +272,10 @@ matches: every array under a key named `failureGroups` has its `message`
 replaced and the message text stripped from its `stackExcerpt`
 (`redactTaskFailureGroup` in `task-failure.ts`). That covers the evidence
 report and both the findings and the stage records of the HTML export.
+A stage's failure reason is replaced outright with `[redacted]` wherever it
+appears: a `stageFailed` finding's `valueText`, a stage record's
+`stageFailureReason`, a job's `exception` and the report's `failureReason`
+(`redactStageFailureReasons` in `redact.ts`).
 
 The Markdown rendering mirrors the JSON's field set: each finding block
 prints its `detector version`, its sorted `evidence` entries (byte-magnitude
@@ -438,7 +441,7 @@ flag for it),
 `evaluate_budgets` (pass/fail budget thresholds against one run, optionally
 with a second run for regression/fail-on-introduced budgets: the MCP side
 of the CLI's `evaluateBudgets()` gating), `get_finding_evidence` (raw
-evidence bundle for one finding, for drill-down after `diagnose_run`), and
+evidence bundle for one finding, for drill-down after `diagnose_run`),
 `get_finding_documentation` (detection/tuning reference docs for one
 finding type, independent of any run), and `get_reference_doc` (a full
 tuning-reference chapter or bottleneck page by doc anchor, e.g. `#joins`). None
@@ -549,8 +552,8 @@ treat a validation failure the same way: a silent skip, not a distinct error.
   (`packages/core/src/shs-schemas.ts`, `{ code: string }`, `.passthrough()`). A body that
   isn't valid JSON, or is JSON but fails that schema, falls back to the
   generic `access-or-upstream-failure` code: the same silent-skip treatment
-  as a malformed log line, collapsing what could have been a separate
-  "malformed SHS response" error code into the existing generic one.
+  as a malformed log line. There is no separate "malformed SHS response"
+  error code.
 
 Neither boundary distinguishes "malformed JSON" from "wrong shape" from
 "unrecognized variant" in what it reports outward: all three collapse into

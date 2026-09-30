@@ -147,3 +147,12 @@ describe('TinyTask', () => {
     expect(screen.getByText('300ms')).toBeInTheDocument();
   });
 });
+
+describe('TinyTask fix suggestion', () => {
+  it('states the fix once above the rows, however many stages are flagged', () => {
+    const catalog = [tinyTaskFinding(1, 42), tinyTaskFinding(2, 55)];
+    render(<TinyTask appModel={makeAppModel([1, 2])} catalog={catalog} getTaskData={vi.fn(async () => TASK_DATA)} />);
+
+    expect(screen.getAllByText(/Scheduler overhead may dominate/)).toHaveLength(1);
+  });
+});

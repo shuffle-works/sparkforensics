@@ -115,6 +115,7 @@ export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCol
     <WidgetCard
       title="Shuffle I/O"
       impactBand={combinedImpactBand}
+      fixFor={shuffleFindings}
       open={cardOpen}
       onOpenChange={setCardOpen}
       summary={
