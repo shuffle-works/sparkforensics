@@ -87,6 +87,8 @@ describe('extractWriteTargets', () => {
       node('SessionWindowStateStoreRestore', 'SessionWindowStateStoreRestore [k#1]'),
       node('SessionWindowStateStoreSave', 'SessionWindowStateStoreSave [k#1]'),
       node('Scan parquet', 'FileScan parquet [a#1]'),
+      node('Scan JDBCRelation(dbo.PriceUpdate) [numPartitions=1] ', 'Scan JDBCRelation(dbo.PriceUpdate) [numPartitions=1] [id#1] PushedFilters: [], ReadSchema: struct<id:int>'),
+      node('BatchScan pg.stg.Order_Insert', 'BatchScan pg.stg.Order_Insert[id#1] JDBCScan'),
     ] });
     expect(writesOf(plan)).toEqual([]);
   });

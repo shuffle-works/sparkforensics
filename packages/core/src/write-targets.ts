@@ -50,7 +50,7 @@ export interface WriteTargetsReport {
 
 type Parsed = { kind: NonNullable<WriteTarget['kind']>; target: string };
 
-// Write-like detection: a known command, any CamelCase word of the node name in this set, or a
+// Write-like detection: a known command, any CamelCase word of the operator name in this set, or a
 // TableAsSelect name.
 const WRITE_WORDS = new Set([
   'Write', 'Insert', 'Save', 'Overwrite', 'Append', 'Merge', 'Update', 'Delete', 'Truncate', 'Replace', 'Drop',
@@ -76,11 +76,14 @@ function commandOf(nodeName: string): string {
   return nodeName.replace(/^Execute\s+/, '').trim().replace(/Exec$/, '');
 }
 
+// Only the operator name (the first word) is classified: a scan's node name goes on to print its
+// relation and table, whose identifiers can hold a write word (Scan JDBCRelation(dbo.PriceUpdate)).
 function isWriteLike(command: string): boolean {
   if (isKnownWrite(command)) return true;
-  if (NOT_WRITES.has(command) || command.includes('Join')) return false;
-  if (WRITE_SUBSTRINGS.some((part) => command.includes(part))) return true;
-  return (command.match(/[A-Z][a-z0-9]*/g) ?? []).some((word) => WRITE_WORDS.has(word));
+  const operator = command.split(/\s/, 1)[0];
+  if (NOT_WRITES.has(operator) || operator.includes('Join')) return false;
+  if (WRITE_SUBSTRINGS.some((part) => operator.includes(part))) return true;
+  return (operator.match(/[A-Z][a-z0-9]*/g) ?? []).some((word) => WRITE_WORDS.has(word));
 }
 
 interface Arg { text: string; terminated: boolean }

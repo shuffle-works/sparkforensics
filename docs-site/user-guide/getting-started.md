@@ -359,8 +359,9 @@ Recognized commands and where their target comes from:
 | `WriteIntoDelta`, `WriteIntoDeltaCommand`, `UpdateCommand`, `DeleteCommand`, `CreateDeltaTableCommand`, `OptimizeTableCommand`, `RestoreTableCommand`, `DeltaReorgTableCommand` | `path`: the first argument when it is a `delta.` path table, otherwise `null` |
 | `MergeIntoCommand` | always `null` |
 
-A plan node not in the table is a write when its name, split into CamelCase
-words, contains `Write`, `Insert`, `Save`, `Overwrite`, `Append`, `Merge`,
+A plan node not in the table is a write when its operator name (the first word
+of the node name, so not the relation or table a scan prints after it), split
+into CamelCase words, contains `Write`, `Insert`, `Save`, `Overwrite`, `Append`, `Merge`,
 `Update`, `Delete`, `Truncate`, `Replace`, `Drop`, `Load`, `Vacuum`,
 `Convert`, `Clone`, `Restore`, `Optimize`, `Alter`, `Reorg`, `Rename` or
 `Call`, or contains `TableAsSelect`, `AddPartition`, `DropPartition`,
