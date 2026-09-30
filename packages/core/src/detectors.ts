@@ -1407,7 +1407,7 @@ export const DETECTORS = [
       const out: Finding[] = [];
       const speculation = switchFix(loggedAs(ctx.app, 'spark.speculation', true), 'spark.speculation', true,
         'check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically',
-        'check what it was running: speculation is already on, so a lagging task there is already relaunched');
+        'check what it was running; speculation is already on, so a lagging task there is already relaunched');
       if (hosts.length >= thresholds.minHosts) {
         const means = hosts.map(h => ({ host: h.host, taskCount: h.taskCount, mean: h.totalDuration / h.taskCount }));
         const sorted = [...means].map(h => h.mean).sort((a, b) => a - b);

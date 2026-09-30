@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { analyze, auditConfig } from '../src/analyzer.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
+import { recommendationParts } from '../src/finding-names.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
 const MiB = 1024 * 1024;
@@ -269,6 +270,10 @@ describe('structured remediation', () => {
       }
       expect(slowHost.recommendation).not.toMatch(/spark\.speculation|consider enabling/);
       expect(slowHost.recommendation).toMatch(/speculation is already on/);
+      expect(recommendationParts(slowHost.recommendation).fix)
+        .toBe('check what it was running; speculation is already on, so a lagging task there is already relaunched.');
+      expect(recommendationParts(pick({}).slowHost.recommendation).fix)
+        .toBe('check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically.');
       const unset = pick({});
       expect(unset.skew.recommendation).toMatch(/enable AQE skew-join handling \(spark\.sql\.adaptive\.skewJoin\.enabled\)/);
       expect(unset.partitionSkew.recommendation).toMatch(/enable AQE skew-join handling \(spark\.sql\.adaptive\.skewJoin\.enabled\)/);
