@@ -1,7 +1,7 @@
 // The waste models every detector entry's estimate() builds its ImpactEstimate from: the assumed
 // throughputs, the per-stage measurements behind them and the occupancy clip wrappers. Each
 // finding type's own composition of these lives on its DETECTORS entry, next to its detect().
-import type { ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, Stage } from './types.ts';
+import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, Stage } from './types.ts';
 import { nsToMs, MS_PER_CORE_HOUR } from './format-utils.ts';
 import {
   estimateSingleStage, estimateMultiStage,
@@ -178,21 +178,45 @@ export function stageMappableWasteOrCostOnly(
 // (jobFailureRate), with no cores multiplied in: read as core time it would understate the cost.
 const NOT_CORE_TIME_FIGURE: ReadonlySet<string> = new Set(['autoscalingChurn', 'jobFailureRate']);
 
-/** The core-time a finding's fix frees, in core-milliseconds, or null when the log can't say.
- * A raw figure already counted in core time (coreMs, coreHours) is that measurement. Otherwise a
- * wall-clock claim, itself built from task run time, is multiplied by the executor cores the run
- * held (EstimateCtx.totalCores: Executor Added core counts or the configured cores per executor),
- * so the figure ranks fixes by cluster capacity, not only by elapsed time. It deliberately does
- * not read executorCpuTime, which leaves out Python worker CPU. Nothing else converts: bytes and
- * memory figures have no core time, and a bare 'ms' task-time figure has no stated core count. */
-export function coreTimeFor(findingType: string, estimate: ImpactEstimate, ctx: EstimateCtx): { low: number; high: number } | null {
+// Finding types whose 'ms' raw figure is a cross-task sum of executor time (the discarded
+// speculative or retried attempts' run time), so already core time, like gc's jvmGCTime.
+const CORE_TIME_MS_FIGURE: ReadonlySet<string> = new Set(['retryWaste', 'speculationWaste']);
+
+// The cores a finding's own stages kept busy on average: their summed task run time over their
+// summed windows. Null when none of them has run time and a duration.
+function occupiedCores(finding: Finding, ctx: EstimateCtx): number | null {
+  const stageIds = (finding as { stageIds?: number[] }).stageIds
+    ?? (finding.stageId != null ? [finding.stageId] : []);
+  let runTimeMs = 0;
+  let durationMs = 0;
+  for (const id of stageIds) {
+    const stage = ctx.stages.get(id);
+    const stageDurationMs = (stage?.completedAt ?? 0) - (stage?.submittedAt ?? 0);
+    if (!stage || !((stage.executorRunTime ?? 0) > 0) || stageDurationMs <= 0) continue;
+    runTimeMs += stage.executorRunTime!;
+    durationMs += stageDurationMs;
+  }
+  return durationMs > 0 ? runTimeMs / durationMs : null;
+}
+
+/** The busy core time a finding's fix removes, in core-milliseconds, or null when the log can't
+ * say. Where the detector measures it, that figure as measured: a coreMs or coreHours raw figure,
+ * or a cross-task executor-time 'ms' sum (CORE_TIME_MS_FIGURE). Otherwise a wall-clock claim times
+ * the cores the finding's own stages kept busy (occupiedCores), not the run's peak cores, so a
+ * stage that ran on few of the cluster's cores costs few. It never reads executorCpuTime, which
+ * leaves out Python worker CPU. Nothing else converts: bytes and memory figures have no core time. */
+export function coreTimeFor(finding: Finding, estimate: ImpactEstimate, ctx: EstimateCtx): { low: number; high: number } | null {
   const raw = estimate.rawWaste;
-  if (raw && NOT_CORE_TIME_FIGURE.has(findingType)) return null;
-  if (raw?.unit === 'coreMs') return { low: raw.value, high: raw.value };
+  if (raw && NOT_CORE_TIME_FIGURE.has(finding.type)) return null;
+  if (raw?.unit === 'coreMs' || (raw?.unit === 'ms' && CORE_TIME_MS_FIGURE.has(finding.type))) {
+    return { low: raw.value, high: raw.value };
+  }
   if (raw?.unit === 'coreHours') {
     const coreMs = raw.value * MS_PER_CORE_HOUR;
     return { low: coreMs, high: coreMs };
   }
-  if (!estimate.wallClock || !(ctx.totalCores > 0)) return null;
-  return { low: estimate.wallClock.low * ctx.totalCores, high: estimate.wallClock.high * ctx.totalCores };
+  if (!estimate.wallClock) return null;
+  const cores = occupiedCores(finding, ctx);
+  if (cores == null) return null;
+  return { low: estimate.wallClock.low * cores, high: estimate.wallClock.high * cores };
 }

@@ -269,23 +269,24 @@ property.
   none. Counts are numbers, switches are booleans, sizes carry a Spark unit
   suffix (`"1024m"`).
 
-`impactEstimate.coreTimeMs` is the cluster capacity the fix frees, in
-core-milliseconds, next to the `wallClock` range (elapsed time) it comes from.
-It is a `{ "low": ..., "high": ... }` range, or `null` when the log cannot
-support a figure: `null` means unknown, never zero. It is derived two ways:
+`impactEstimate.coreTimeMs` is the busy core time the fix removes: the
+executor task time, in core-milliseconds, next to the `wallClock` range
+(elapsed time). It is a `{ "low": ..., "high": ... }` range, or `null` when
+the log cannot support a figure: `null` means unknown, never zero. It is
+derived two ways:
 
-- A finding with a wall-clock claim: `wallClock.low` and `wallClock.high`
-  times the peak concurrent executor cores of the run (the `Executor Added`
-  core counts, or the configured cores per executor). Stage wall-clock comes
-  from task run time, not from `executorCpuTime`, so Python worker CPU is not
-  missed. A log with no executor core data gives `null`.
-- A finding whose `rawWaste` is already core time (`coreMs`, or `coreHours`
-  converted to core-ms): that figure, with `low` equal to `high`.
+- Where the detector measures core time: that figure, with `low` equal to
+  `high`. This covers a `coreMs` or `coreHours` `rawWaste` (GC time, for
+  example) and the executor time of retried and discarded speculative
+  attempts. It is set even when the log has no executor core data.
+- Otherwise, a finding with a wall-clock claim: `wallClock.low` and
+  `wallClock.high` times the cores the finding's own stages kept busy (their
+  task run time over their duration), not the run's peak cores. Task run time
+  is used, not `executorCpuTime`, so Python worker CPU is not missed. Stages
+  with no run time or duration give `null`.
 
 Findings whose only figure is bytes, memory-time, or executor-hours or
-job-hours (`autoscalingChurn`, `jobFailureRate`) have `coreTimeMs: null`. Peak
-cores over-count a run that scaled down under dynamic allocation, so read the
-figure to rank fixes against each other rather than as billed core-hours.
+job-hours (`autoscalingChurn`, `jobFailureRate`) have `coreTimeMs: null`.
 
 The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,

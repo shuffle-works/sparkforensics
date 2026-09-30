@@ -12,30 +12,51 @@ function estimate(findings, stages, totalCores) {
 
 const retry = () => ({ type: 'retryWaste', stageId: 0, metric: 'retryWasteMs', value: 1200, impactBand: 'warning' });
 const soloStage = () => new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], retryWasteMs: 1200 }]]);
+// 100 tasks, 10s of task run time over a 5s window: 2 cores busy on average.
+const tiny = () => ({ type: 'tinyTask', stageId: 0, value: 50, impactBand: 'info' });
+const twoCoreStage = (extra = {}) => new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], taskCount: 100, executorRunTime: 10000, ...extra }]]);
 
 describe('impact estimate coreTimeMs', () => {
-  it('multiplies a wall-clock claim by the executor cores the run held', () => {
+  it('takes a cross-task executor-time figure as measured, whatever the run\'s cores', () => {
     const [est] = estimate([retry()], soloStage(), 8);
     expect(est.wallClock).toEqual({ low: 1200, high: 1200 });
-    expect(est.coreTimeMs).toEqual({ low: 9600, high: 9600 });
+    expect(est.coreTimeMs).toEqual({ low: 1200, high: 1200 });
+    expect(estimate([retry()], soloStage(), 0)[0].coreTimeMs).toEqual({ low: 1200, high: 1200 });
   });
 
-  it('carries a contended wall-clock range through as a core-time range', () => {
+  it('gives retried attempts and GC the same figure for the same executor time', () => {
     const stages = new Map([
-      [0, { id: 0, submittedAt: 0, completedAt: 50000, parentIds: [] }],
-      [1, { id: 1, submittedAt: 0, completedAt: 3000, parentIds: [], retryWasteMs: 1200 }],
+      [0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], retryWasteMs: 1200 }],
+      [1, { id: 1, submittedAt: 0, completedAt: 5000, parentIds: [], executorRunTime: 10000, jvmGCTime: 1200 }],
     ]);
-    const [est] = estimate([{ ...retry(), stageId: 1 }], stages, 4);
-    expect(est.coreTimeMs).toEqual({ low: 600 * 4, high: 1200 * 4 });
+    const gc = { type: 'gc', stageId: 1, direction: 'high', value: 12, impactBand: 'warning' };
+    const [r, g] = estimate([retry(), gc], stages, 8);
+    expect(g.coreTimeMs).toEqual({ low: 1200, high: 1200 });
+    expect(r.coreTimeMs).toEqual(g.coreTimeMs);
   });
 
-  it('is null, not 0, when the log has no executor cores', () => {
-    const [est] = estimate([retry()], soloStage(), 0);
-    expect(est.wallClock.high).toBe(1200);
+  it('takes speculation\'s discarded executor time as measured', () => {
+    const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], speculationWasteMs: 900 }]]);
+    const [est] = estimate([{ type: 'speculationWaste', stageId: 0, value: 900, impactBand: 'warning' }], stages, 8);
+    expect(est.coreTimeMs).toEqual({ low: 900, high: 900 });
+  });
+
+  it('multiplies a wall-clock-only claim by its stage\'s busy cores, not the run\'s peak cores', () => {
+    for (const totalCores of [8, 64]) {
+      const [est] = estimate([tiny()], twoCoreStage(), totalCores);
+      expect(est.rawWaste.unit).toBe('ms');
+      expect(est.wallClock.high).toBeGreaterThan(0);
+      expect(est.coreTimeMs).toEqual({ low: est.wallClock.low * 2, high: est.wallClock.high * 2 });
+    }
+  });
+
+  it('is null, not 0, for a wall-clock-only claim whose stage recorded no task run time', () => {
+    const [est] = estimate([tiny()], twoCoreStage({ executorRunTime: 0 }), 8);
+    expect(est.wallClock.high).toBeGreaterThan(0);
     expect(est.coreTimeMs).toBeNull();
   });
 
-  it('takes a core-time raw figure as measured', () => {
+  it('takes a core-time raw figure as measured, even with no executor cores in the log', () => {
     const stages = new Map([[0, makeStage({ id: 0, taskCount: 2, executorRunTime: 4000, submittedAt: 0, completedAt: 4000, peakConcurrentTasks: 2, taskDurationMax: 2000 })]]);
     const finding = { type: 'coreLocality', stageId: null, value: 50, nonLocalTaskCount: 100, impactBand: 'info' };
     const [est] = estimate([finding], stages, 0);
@@ -64,35 +85,30 @@ describe('impact estimate coreTimeMs', () => {
   });
 
   it('does not depend on executorCpuTime', () => {
-    const withCpu = soloStage();
-    withCpu.get(0).executorCpuTime = 123;
-    expect(estimate([retry()], withCpu, 8)[0].coreTimeMs).toEqual(estimate([retry()], soloStage(), 8)[0].coreTimeMs);
+    const withCpu = twoCoreStage({ executorCpuTime: 123 });
+    expect(estimate([tiny()], withCpu, 8)[0].coreTimeMs).toEqual(estimate([tiny()], twoCoreStage(), 8)[0].coreTimeMs);
   });
 });
 
 describe('coreTimeMs in the evidence report', () => {
+  // 40s of task run time over a 20s stage: 2 busy cores.
   const slowStage = () => makeStage({ id: 1, taskCount: 100, taskDurationP50: 100, taskDurationP95: 600, taskDurationMax: 4000, completedAt: 20000, executorRunTime: 40000 });
   const fixture = (executors) => ({
     app: makeApp({ endTime: 20000 }),
     stages: new Map([[1, slowStage()]]),
     executors: { added: executors, removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null,
   });
+  const wallClockOnlyRows = (json) => json.findings.filter((r) => r.impactEstimate?.wallClock && r.impactEstimate.rawWaste?.unit === 'ms');
 
-  it('is null on every estimate of a log without executor data', () => {
-    const { json } = buildEvidenceReport(fixture([]));
-    const rows = json.findings.filter((r) => r.impactEstimate?.wallClock);
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) expect(row.impactEstimate.coreTimeMs, row.type).toBeNull();
-  });
-
-  it('is wall-clock times peak cores once the log has executors', () => {
+  it('is the wall-clock claim times the stage\'s busy cores, with or without executor data', () => {
     const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }, { executorId: '2', timestamp: 0, totalCores: 4 }];
-    const { json } = buildEvidenceReport(fixture(added));
-    const rows = json.findings.filter((r) => r.impactEstimate?.wallClock);
-    expect(rows.length).toBeGreaterThan(0);
-    for (const row of rows) {
-      const { wallClock, coreTimeMs } = row.impactEstimate;
-      expect(coreTimeMs, row.type).toEqual({ low: wallClock.low * 8, high: wallClock.high * 8 });
+    for (const executors of [[], added]) {
+      const rows = wallClockOnlyRows(buildEvidenceReport(fixture(executors)).json);
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        const { wallClock, coreTimeMs } = row.impactEstimate;
+        expect(coreTimeMs, row.type).toEqual({ low: wallClock.low * 2, high: wallClock.high * 2 });
+      }
     }
   });
 

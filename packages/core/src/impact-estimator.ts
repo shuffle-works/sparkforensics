@@ -9,7 +9,7 @@ export type { EstimateCtx } from './impact-model.ts';
 export function estimateImpact(findings: Finding[], ctx: EstimateCtx): Finding[] {
   for (const f of findings) {
     const estimate = ENTRY_BY_TYPE.get(f.type)?.estimate(f, ctx);
-    if (estimate) f.impactEstimate = { ...estimate, coreTimeMs: coreTimeFor(f.type, estimate, ctx) };
+    if (estimate) f.impactEstimate = { ...estimate, coreTimeMs: coreTimeFor(f, estimate, ctx) };
   }
   return findings;
 }

@@ -20,11 +20,11 @@ describe('structured remediation', () => {
     ]);
   });
 
-  it('carries the coalesce target of a tinyTask finding on a shuffle stage, and none off one', () => {
+  it('lowers shuffle partitions for a tinyTask finding on a shuffle stage with no suggested value, and none off one', () => {
     const tiny = { taskCount: 150, taskDurationP50: 80, taskDurationP95: 150 };
     const onShuffle = catalogOf([makeStage({ ...tiny, shuffleReadBytes: 10 * MiB })]).find((x) => x.type === 'tinyTask');
     expect(onShuffle.remediation).toEqual([
-      { kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'decrease', suggested: 15 },
+      { kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'decrease', suggested: null },
     ]);
     const noShuffle = catalogOf([makeStage(tiny)]).find((x) => x.type === 'tinyTask');
     expect(noShuffle.remediation).toEqual([]);

@@ -37,16 +37,19 @@ bytes or core-ms). `wallClock` is what the occupancy model says is recoverable, 
 against the stage's own physical floor; `rawWaste` is what the stage really wasted either
 way. The two answer different questions.
 
-`coreTimeMs` is the same claim in cluster capacity: `{low, high}` core-milliseconds, or
-`null` when no figure is defensible (never 0 for unknown). `estimateImpact()` sets it for every
-estimate through `coreTimeFor()` in `packages/core/src/impact-model.ts`, so a detector's
-`estimate()` does not build it. A `rawWaste` already in core time (`coreMs`, or `coreHours` times
-3.6e6) is taken as measured, `low === high`. Otherwise `wallClock.low` and `wallClock.high` are
-multiplied by `EstimateCtx.totalCores`, the peak concurrent executor cores; the wall-clock is built
-from task run time, and `executorCpuTime` is never read because it leaves out Python worker CPU.
-Without executor cores, a wall-clock claim, or a core-time raw figure it is `null`. `autoscalingChurn`
-and `jobFailureRate` are excluded: their `coreHours` figures count executor-hours and job-hours with
-no cores multiplied in. Peak cores over-count a run that scaled down under dynamic allocation.
+`coreTimeMs` is the busy core time the fix removes, the executor task time, as `{low, high}`
+core-milliseconds, or `null` when no figure is defensible (never 0 for unknown).
+`estimateImpact()` sets it for every estimate through `coreTimeFor()` in
+`packages/core/src/impact-model.ts`, so a detector's `estimate()` does not build it. Where the
+detector measures core time, that figure is taken as is, `low === high`: a `coreMs` raw figure
+(gc's `jvmGCTime`, coreLocality, lowParallelism's idle cores), `coreHours` times 3.6e6, or the
+cross-task executor-time `ms` sums of `retryWaste` and `speculationWaste`. These are set even
+when the log has no executor cores. Otherwise `wallClock.low` and `wallClock.high` are multiplied
+by the cores the finding's own stages kept busy: their summed `executorRunTime` over their summed
+windows, never the run's peak cores. `executorCpuTime` is never read because it leaves out Python
+worker CPU. A finding with no measured figure and no wall-clock claim, or whose stages have no run
+time or duration, gets `null`. `autoscalingChurn` and `jobFailureRate` are excluded: their
+`coreHours` figures count executor-hours and job-hours with no cores multiplied in.
 
 ## Occupancy-weighted attribution
 

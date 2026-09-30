@@ -1684,7 +1684,7 @@ export const DETECTORS = [
         type: 'tinyTask', stageId: stage.id, impactBand: 'info',
         metric: 'taskDurationP50', value: Math.round(stage.taskDurationP50),
         recommendation: `Many small tasks (${stage.taskCount}, P50 ${Math.round(stage.taskDurationP50)}ms): scheduler overhead may dominate. Try ${fix}.`,
-        remediation: stage.shuffleReadBytes > 0 ? [decreaseConf('spark.sql.shuffle.partitions', coalesceTo)] : [],
+        remediation: stage.shuffleReadBytes > 0 ? [decreaseConf('spark.sql.shuffle.partitions')] : [],
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
