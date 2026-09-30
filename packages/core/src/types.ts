@@ -292,7 +292,8 @@ export interface ImpactEstimate {
    * range; set by estimateImpact (see coreTimeFor). A measured core-time raw figure (coreMs,
    * coreHours, or a cross-task executor-time 'ms' sum) is taken as is, whether or not the log
    * records executor cores. Otherwise the wall-clock claim times the cores its own stages kept
-   * busy (executorRunTime / stage duration). Null when neither can be derived. Never 0 for
+   * busy: executorRunTime over the stage's task-active window (taskActiveMs), or over submit to
+   * complete when taskActiveMs is absent. Null when neither can be derived. Never 0 for
    * "unknown". */
   coreTimeMs?: { low: number; high: number } | null;
 }
