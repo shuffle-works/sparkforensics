@@ -68,7 +68,7 @@ function syntheticFindings() {
 // The local log corpus is gitignored: the suite skips it on a checkout without logs.
 const CORPUS_DIR = fileURLToPath(new URL('../../../dev/log-corpus/logs', import.meta.url));
 const corpusFiles = existsSync(CORPUS_DIR)
-  ? readdirSync(CORPUS_DIR).map((n) => `${CORPUS_DIR}/${n}`).filter((p) => statSync(p).isFile())
+  ? readdirSync(CORPUS_DIR).filter((n) => n.endsWith('.ndjson')).map((n) => `${CORPUS_DIR}/${n}`).filter((p) => statSync(p).isFile())
   : [];
 
 function expectConvention(findings) {
