@@ -402,7 +402,9 @@ Alternatively, `--shs-base-url <url> --app-id <id> [--attempt-id <id>]` fetches
 the run from a Spark History Server instead (mutually exclusive with the
 positional file/directory argument), calling `resolveFromShs`
 (`packages/core/src/shs-load.ts`, shared with the MCP server's SHS source path below) directly;
-no dependency on the `packages/server` package. A failed SHS fetch reports its message
+no dependency on the `packages/server` package. The three flags are checked first with
+`validateShsRequest` (`packages/core/src/shs-request.js`), and a malformed one is a usage
+error (exit `2`) before any fetch. A failed SHS fetch reports its message
 to `stderr` and exits `4`, same as a candidate file that can't be parsed.
 
 Regression budgets beyond the `--max-regression-pct` pair come from repeated
