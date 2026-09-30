@@ -65,13 +65,13 @@ describe('StageShape', () => {
     const catalog = [
       stageShapeFinding(1, 'lowParallelism', 0.3),
       stageShapeFinding(2, 'dataExplosion', 12),
-      stageShapeFinding(3, 'taskStageSkew', 6),
+      stageShapeFinding(3, 'taskStageSkew', 0.87),
     ];
     render(<StageShape appModel={appModel} catalog={catalog} getTaskData={vi.fn(async () => TASK_DATA)} />);
 
     expect(screen.getByText('Low parallelism: 0.3 tasks per core')).toBeInTheDocument();
     expect(screen.getByText('Data explosion: 12')).toBeInTheDocument();
-    expect(screen.getByText('Task/stage skew: 6')).toBeInTheDocument();
+    expect(screen.getByText('Task/stage skew: 87%')).toBeInTheDocument();
   });
 
   it('shows the SHAPE tag once, in the header, and keeps a per-row impact dot for every flagged stage', () => {

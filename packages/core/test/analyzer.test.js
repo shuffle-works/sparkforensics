@@ -883,7 +883,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
   it('recommends cache/persist when total read is large (≥128 MiB)', () => {
     const sql = new Map([exec(1, parquetScan('prices', 100 * MiB)), exec(2, parquetScan('prices', 100 * MiB))]);
     const recommendation = caching(sql)[0].recommendation;
-    expect(recommendation).toMatch(/Cache\/persist the shared DataFrame/);
+    expect(recommendation).toMatch(/cache\/persist the shared DataFrame/);
     expect(recommendation).not.toMatch(/—/);
   });
   it('recommends broadcast for a small shared lookup', () => {

@@ -1033,7 +1033,7 @@ export const DETECTORS = [
             rule: 'lowParallelism', metric: 'pRatio', value: Math.round(pRatio * 100) / 100,
             // Absolute core count behind pRatio, for the impact estimator's idle-core-ms figure.
             totalCores,
-            recommendation: `This stage runs ${stage.taskCount} ${stage.taskCount === 1 ? 'task' : 'tasks'} across ~${totalCores} cores, so it is under-parallelized and leaves cluster capacity idle.`,
+            recommendation: `This stage runs ${stage.taskCount} ${stage.taskCount === 1 ? 'task' : 'tasks'} across ~${totalCores} cores: it is under-parallelized and leaves cluster capacity idle.`,
           });
         }
       }
@@ -1607,7 +1607,7 @@ export const DETECTORS = [
         impactBand: 'warning',
         metric: 'speculationWasteMs', value: wastedMs,
         confidence: speculationWasteConfidence(wastedMs, thresholds.minWasteMs),
-        recommendation: `Speculative execution discarded ${Math.round(wastedMs / 1000)}s of executor time in this stage; if task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile.`,
+        recommendation: `Speculative execution discarded ${Math.round(wastedMs / 1000)}s of executor time in this stage: if task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile.`,
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
@@ -2094,7 +2094,7 @@ export const DETECTORS = [
         // Raw count behind the percentage, for the impact estimator's startup-overhead figure.
         shortLivedExecutorCount: shortLivedCount,
         confidence: autoscalingChurnConfidence(shortLivedPct, thresholds.warningPct, thresholds.criticalPct),
-        recommendation: `${pct}% of executors ran for under 2 minutes before being removed. This looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.`,
+        recommendation: `${pct}% of executors ran for under 2 minutes before being removed: this looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.`,
       };
     },
     estimate(finding): ImpactEstimate | null {
@@ -2232,8 +2232,8 @@ export const DETECTORS = [
         const relationDisplay = rids.map(relationDisplayName).join(` ${connector} `);
         const value = finalExecutionIds.length;
         const recommendation = totalReadBytes >= 128 * MB
-          ? `${verb[0].toUpperCase()}${verb.slice(1)} result read by ${value} queries (~${formatBytes(totalReadBytes)}). Cache/persist the ${verb} DataFrame so it is computed once.`
-          : `${verb[0].toUpperCase()}${verb.slice(1)} result read by ${value} queries. Cache the ${verb} DataFrame, or reconsider whether it needs to be recomputed each time.`;
+          ? `${verb[0].toUpperCase()}${verb.slice(1)} result read by ${value} queries (~${formatBytes(totalReadBytes)}): cache/persist the ${verb} DataFrame so it is computed once.`
+          : `${verb[0].toUpperCase()}${verb.slice(1)} result read by ${value} queries: cache the ${verb} DataFrame, or reconsider whether it needs to be recomputed each time.`;
 
         out.push({
           type: 'cachingOpportunity', variant: 'composite', stageId: null, impactBand: 'info',
@@ -2263,8 +2263,8 @@ export const DETECTORS = [
         const value = residualExecutionIds.length;
         const totalReadBytes = residualExecutionIds.reduce((sum, id) => sum + (agg.executionBytes.get(id) ?? 0), 0);
         const recommendation = totalReadBytes >= 128 * MB
-          ? `Read by ${value} queries (~${formatBytes(totalReadBytes)}). Cache/persist the shared DataFrame so it is scanned once.`
-          : `Read by ${value} queries. Cache the shared DataFrame, or broadcast it if it is a small join lookup.`;
+          ? `Read by ${value} queries (~${formatBytes(totalReadBytes)}): cache/persist the shared DataFrame so it is scanned once.`
+          : `Read by ${value} queries: cache the shared DataFrame, or broadcast it if it is a small join lookup.`;
         out.push({
           type: 'cachingOpportunity', stageId: null, impactBand: 'info',
           metric: 'executionReuse', value,
@@ -2358,7 +2358,7 @@ export const DETECTORS = [
         return {
           type: 'configAudit', property: 'spark.dynamicAllocation.minExecutors',
           impactBand: 'critical', metric: 'config', valueText: `${minN} > ${maxN}`,
-          recommendation: `Autoscaling bounds are inverted: spark.dynamicAllocation.minExecutors (${minN}) exceeds maxExecutors (${maxN}). Set min ≤ max.`,
+          recommendation: `spark.dynamicAllocation.minExecutors (${minN}) exceeds maxExecutors (${maxN}): set min ≤ max.`,
         };
       }
       if (maxN == null) {
