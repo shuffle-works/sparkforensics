@@ -67,6 +67,32 @@ describe('structured remediation', () => {
     ]);
   });
 
+  it('carries a remediation entry for every property a recommendation names, bar the ones with no stated direction', () => {
+    // coreLocality and autoscalingChurn name properties without saying which way to move them.
+    const NO_DIRECTION = new Set(['spark.locality.wait', 'spark.dynamicAllocation.minExecutors', 'spark.dynamicAllocation.maxExecutors']);
+    const findings = [
+      ...catalogOf([
+        makeStage({ id: 1, shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0, gcPct: 40, jvmGCTime: 4000, memoryBytesSpilled: 3000 * MiB }),
+        makeStage({ id: 2, taskCount: 150, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 10 * MiB }),
+        makeStage({ id: 3, taskDurationP50: 100, taskDurationP95: 900, taskDurationMax: 2000 }),
+        makeStage({ id: 4, shuffleReadBytes: 300 * MiB, completedAt: 20 * 60_000 }),
+        makeStage({ id: 5, speculationWastedAttempts: 10, speculationWasteMs: 120_000 }),
+      ]),
+      ...auditConfig({ config: {}, resources: { executor: { memoryMB: 10240, memoryOverheadMB: 256 }, driver: {}, dynamicAllocationEnabled: true, shuffleServiceEnabled: false, serializer: null } }),
+    ];
+    let checked = 0;
+    for (const f of findings) {
+      const named = new Set((f.recommendation ?? '').match(/spark\.[A-Za-z.]*[A-Za-z]/g) ?? []);
+      const emitted = new Set((f.remediation ?? []).map((r) => r.key));
+      for (const key of named) {
+        if (NO_DIRECTION.has(key)) continue;
+        checked += 1;
+        expect(emitted.has(key), `${f.type}: ${key}`).toBe(true);
+      }
+    }
+    expect(checked).toBeGreaterThan(5);
+  });
+
   it('emits only well-formed entries', () => {
     const findings = [
       ...catalogOf([
@@ -101,5 +127,33 @@ describe('structured remediation', () => {
     const { json } = buildEvidenceReport(fx);
     for (const row of json.findings) expect(Array.isArray(row.remediation), row.type).toBe(true);
     expect(json.findings.find((r) => r.type === 'shuffle').remediation[0].key).toBe('spark.sql.shuffle.partitions');
+  });
+
+  describe('dynamic allocation remediation follows the effective conf', () => {
+    const lowUtil = (app) => {
+      const stages = new Map([[1, makeStage({ id: 1 })]]);
+      const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }];
+      return analyze(app, stages, added, [], new Map(), new Map(), { busyCoreMs: 100 });
+    };
+    const idleCores = (app) => lowUtil(app).find((f) => f.type === 'memoryUtilization' && f.variant === 'idleCores');
+    const utilization = (app) => lowUtil(app).find((f) => f.type === 'utilization');
+    const enable = [{ kind: 'conf', key: 'spark.dynamicAllocation.enabled', direction: 'set', suggested: true }];
+
+    it('suggests enabling it when the run has it off or unset', () => {
+      const off = makeApp({ config: { 'spark.dynamicAllocation.enabled': 'false' }, resources: { dynamicAllocationEnabled: false } });
+      for (const app of [off, makeApp()]) {
+        expect(utilization(app).remediation).toEqual(enable);
+        expect(idleCores(app).remediation).toEqual(enable);
+      }
+    });
+
+    it('suggests nothing when the run already has it on', () => {
+      const viaResources = makeApp({ resources: { dynamicAllocationEnabled: true } });
+      const viaConfig = makeApp({ config: { 'spark.dynamicAllocation.enabled': 'true' } });
+      for (const app of [viaResources, viaConfig]) {
+        expect(utilization(app).remediation).toEqual([]);
+        expect(idleCores(app).remediation).toEqual([]);
+      }
+    });
   });
 });

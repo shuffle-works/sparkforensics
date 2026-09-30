@@ -73,16 +73,55 @@ describe('impact estimate coreTimeMs', () => {
     expect(est.coreTimeMs).toEqual({ low: 2000, high: 2000 });
   });
 
-  it('converts core-hours, and leaves executor-hour and job-hour figures null', () => {
-    const utilization = { type: 'utilization', stageId: null, value: 25, utilizationFraction: 0.25, appDurationMs: 3_600_000, totalCores: 4, impactBand: 'info' };
+  it('leaves executor-hour and job-hour figures null', () => {
     const churn = { type: 'autoscalingChurn', stageId: null, value: 50, shortLivedExecutorCount: 10, impactBand: 'warning' };
     const jobs = { type: 'jobFailureRate', stageId: null, value: 50, failedJobs: 2, avgJobDurationMs: 600_000, impactBand: 'warning' };
-    const [u, c, j] = estimate([utilization, churn, jobs], new Map(), 4);
-    expect(u.coreTimeMs).toEqual({ low: 0.75 * 4 * 3_600_000, high: 0.75 * 4 * 3_600_000 });
+    const [c, j] = estimate([churn, jobs], new Map(), 4);
     expect(c.rawWaste.unit).toBe('coreHours');
     expect(c.coreTimeMs).toBeNull();
     expect(j.rawWaste.unit).toBe('coreHours');
     expect(j.coreTimeMs).toBeNull();
+  });
+
+  it('keeps the idle-capacity raw figure of an idle-core finding and gives it no coreTimeMs', () => {
+    const utilization = { type: 'utilization', stageId: null, value: 25, utilizationFraction: 0.25, appDurationMs: 3_600_000, totalCores: 4, impactBand: 'info' };
+    const [u] = estimate([utilization], new Map(), 4);
+    expect(u.rawWaste).toEqual({ value: 0.75 * 4, unit: 'coreHours' });
+    expect(u.coreTimeMs).toBeNull();
+
+    const stages = new Map([[0, makeStage({ id: 0, taskCount: 2, submittedAt: 0, completedAt: 10_000, taskDurationP50: 1000, taskDurationMax: 9000 })]]);
+    const lowPar = { type: 'stageShape', rule: 'lowParallelism', stageId: 0, totalCores: 10, impactBand: 'info' };
+    const tailShape = { type: 'stageShape', rule: 'taskStageSkew', stageId: 0, totalCores: 10, impactBand: 'info' };
+    const idleCores = { type: 'memoryUtilization', variant: 'idleCores', stageId: null, idleRateFraction: 0.5, allocatedMB: 1024, peakExecutors: 2, appDurationMs: 10_000, impactBand: 'warning' };
+    const [l, t, i] = estimate([lowPar, tailShape, idleCores], stages, 10);
+    expect(l.rawWaste).toEqual({ value: 80_000, unit: 'coreMs' });
+    expect(t.rawWaste.unit).toBe('coreMs');
+    expect(i.rawWaste.unit).toBe('mbSeconds');
+    for (const est of [l, t, i]) expect(est.coreTimeMs).toBeNull();
+  });
+
+  it('counts a stage\'s slow tail once across skew, straggler and stageSlowness', () => {
+    const stage = {
+      id: 0, submittedAt: 0, completedAt: 1_000_000, parentIds: [], taskCount: 100, executorRunTime: 2_000_000,
+      taskDurationP50: 10_000, taskDurationP95: 200_000, taskDurationMax: 500_000, stragglerExcessMs: 490_000, stragglerCount: 1,
+      longestNonStragglerMs: 10_000, peakConcurrentTasks: 10,
+    };
+    const findings = [
+      { type: 'stageSlowness', stageId: 0, value: 16, impactBand: 'info' },
+      { type: 'straggler', stageId: 0, value: 50, impactBand: 'warning' },
+      { type: 'skew', stageId: 0, metric: 'P95/median', value: 20, impactBand: 'warning' },
+    ];
+    const [slow, straggler, skew] = estimate(findings, new Map([[0, stage]]), 10);
+    expect(skew.coreTimeMs.high).toBeGreaterThan(0);
+    expect(straggler.coreTimeMs).toBeNull();
+    expect(slow.coreTimeMs).toBeNull();
+    // A second stage's tail is its own.
+    const other = { ...stage, id: 1 };
+    const both = estimate(
+      [{ type: 'straggler', stageId: 0, value: 50, impactBand: 'warning' }, { type: 'straggler', stageId: 1, value: 50, impactBand: 'warning' }],
+      new Map([[0, stage], [1, other]]), 10);
+    expect(both[0].coreTimeMs).not.toBeNull();
+    expect(both[1].coreTimeMs).not.toBeNull();
   });
 
   it('is null for byte and memory figures and for an estimate with no model', () => {

@@ -45,7 +45,7 @@ straggler (`tailClaimImpact()`), which set it to the task time the fix removes
 (`tailRemovedWorkMs()`): during the tail only the slow tasks hold cores, so the stage's average
 occupancy would overstate it. Where the detector measures core time, that figure is taken as is,
 `low === high`: skew and straggler's removed task time, a `coreMs` raw figure (gc's `jvmGCTime`,
-coreLocality, lowParallelism's idle cores), `coreHours` times 3.6e6, or the cross-task
+coreLocality's non-local penalty), `coreHours` times 3.6e6, or the cross-task
 executor-time `ms` sums of `retryWaste` and `speculationWaste`. These are set even
 when the log has no executor cores. Otherwise `wallClock.low` and `wallClock.high` are multiplied
 by the cores the finding's own stages kept busy: their summed `executorRunTime` over their summed
@@ -55,6 +55,14 @@ left queued for cores does not dilute the figure. `executorCpuTime` is never rea
 worker CPU. A finding with no measured figure and no wall-clock claim, or whose stages have no run
 time or duration, gets `null`. `autoscalingChurn` and `jobFailureRate` are excluded: their
 `coreHours` figures count executor-hours and job-hours with no cores multiplied in.
+
+`coreTimeMs` is busy time only. A finding whose waste is allocated capacity that ran no task has
+`coreTimeMs: null` and keeps its idle figure in `rawWaste`, which for these counts idle core time
+rather than task time a fix removes: `utilization` (`coreHours`), `stageShape`'s `lowParallelism`
+and `taskStageSkew` (`coreMs`), and `memoryUtilization`'s `idleCores` (`mbSeconds`). A stage's slow
+tail is also counted once: `skew`, `straggler` and `stageSlowness` each claim it, so on one stage
+the first of them in that order carries the removed task time and the others have `null`
+(`countTailCoreTimeOnce()` in `packages/core/src/impact-estimator.ts`).
 
 ## Occupancy-weighted attribution
 

@@ -200,6 +200,18 @@ function occupiedCores(finding: Finding, ctx: EstimateCtx): number | null {
   return durationMs > 0 ? runTimeMs / durationMs : null;
 }
 
+// Findings whose waste is allocated capacity that ran no task (utilization, lowParallelism's and
+// taskStageSkew's idle cores, memoryUtilization's idle cores): their raw coreMs/coreHours figure
+// stays as it is, but it is idle time, not task time a fix removes, so it is no coreTimeMs.
+function isIdleCapacityFinding(finding: Finding): boolean {
+  switch (finding.type) {
+    case 'utilization': return true;
+    case 'stageShape': return finding.rule === 'lowParallelism' || finding.rule === 'taskStageSkew';
+    case 'memoryUtilization': return finding.variant === 'idleCores';
+    default: return false;
+  }
+}
+
 /** The busy core time a finding's fix removes, in core-milliseconds, or null when the log can't
  * say. Where the detector measures it, that figure as measured: one its estimate() already set
  * (skew and straggler's removed task time), a coreMs or coreHours raw figure, or a cross-task
@@ -208,6 +220,7 @@ function occupiedCores(finding: Finding, ctx: EstimateCtx): number | null {
  * stage that ran on few of the cluster's cores costs few. It never reads executorCpuTime, which
  * leaves out Python worker CPU. Nothing else converts: bytes and memory figures have no core time. */
 export function coreTimeFor(finding: Finding, estimate: ImpactEstimate, ctx: EstimateCtx): { low: number; high: number } | null {
+  if (isIdleCapacityFinding(finding)) return null;
   if (estimate.coreTimeMs !== undefined) return estimate.coreTimeMs;
   const raw = estimate.rawWaste;
   if (raw && NOT_CORE_TIME_FIGURE.has(finding.type)) return null;

@@ -290,6 +290,18 @@ derived two ways:
 Findings whose only figure is bytes, memory-time, or executor-hours or
 job-hours (`autoscalingChurn`, `jobFailureRate`) have `coreTimeMs: null`.
 
+`coreTimeMs` never includes idle capacity. A finding whose waste is allocated
+cores that ran no task (`utilization`, `stageShape`'s low parallelism and
+task/stage skew rows, `memoryUtilization`'s idle cores) has `coreTimeMs: null`
+and keeps its idle-capacity figure in `impactEstimate.rawWaste` (core-hours,
+core-milliseconds or memory-seconds). A stage's slow tail is counted once: when
+`skew`, `straggler` and `stageSlowness` all flag the same stage, the first of
+them in that order carries the removed task time and the others have `null`.
+
+Where `remediation` would enable dynamic allocation (`utilization` and
+`memoryUtilization`'s idle cores), it is empty when the run's conf already has
+`spark.dynamicAllocation.enabled` on.
+
 The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,
 comparing a candidate run against a baseline with regression gating

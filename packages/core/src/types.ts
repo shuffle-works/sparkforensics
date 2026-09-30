@@ -294,7 +294,10 @@ export interface ImpactEstimate {
    * executor-time 'ms' sum) is taken as is, whether or not the log records executor cores.
    * Otherwise the wall-clock claim times the cores its own stages kept busy: executorRunTime
    * over the stage's task-active window (taskActiveMs), or over submit to complete when
-   * taskActiveMs is absent. Null when neither can be derived. Never 0 for "unknown". */
+   * taskActiveMs is absent. Null when neither can be derived, and for a finding whose waste is
+   * allocated capacity that ran no task (utilization, idle cores, taskStageSkew): its idle
+   * figure stays in `rawWaste`. A stage's slow tail is counted once: skew, else straggler, else
+   * stageSlowness carries it and the others on that stage are null. Never 0 for "unknown". */
   coreTimeMs?: { low: number; high: number } | null;
 }
 

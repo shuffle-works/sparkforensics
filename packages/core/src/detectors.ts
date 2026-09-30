@@ -20,7 +20,7 @@ import { cyrb53 } from './string-hash.ts';
 import { decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure } from './types.ts';
-import type { FindingOf, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
+import type { FindingOf, Remediation, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -653,6 +653,13 @@ function tailClaimImpact(claim: TailClaim, stageId: number, ctx: EstimateCtx): I
 // floor leaves unrecoverable. Falls back to the raw claim when occupancy data is unavailable.
 function tailClaimFloorMs(claim: TailClaim, stageId: number, ctx: DetectorCtx): number {
   return tailClaimImpact(claim, stageId, ctx.impact).wallClock?.high ?? claim.wasteMs;
+}
+
+// Enabling dynamic allocation is only a fix when the run's effective conf has it off: the
+// resources flag is read from the same property, and a run that set it to true needs another remedy.
+function enableDynamicAllocation(app: DetectorApp): Remediation[] {
+  const on = app.resources?.dynamicAllocationEnabled === true || app.config?.['spark.dynamicAllocation.enabled'] === 'true';
+  return on ? [] : [setConf('spark.dynamicAllocation.enabled', true)];
 }
 
 // Shared by cacheUtilization's two variants, worded per storage source: neither is a runtime
@@ -1822,7 +1829,7 @@ export const DETECTORS = [
         totalCores,
         cpuUtilizationPct,
         recommendation: `Average executor utilization was only ${value}%: consider reducing cluster size or enabling dynamic allocation.`,
-        remediation: [setConf('spark.dynamicAllocation.enabled', true)],
+        remediation: enableDynamicAllocation(app),
       };
     },
     estimate(finding): ImpactEstimate | null {
@@ -1876,7 +1883,7 @@ export const DETECTORS = [
             // Raw (unrounded) rate plus sizing inputs for the impact estimator: `value` is rounded pct.
             idleRateFraction: idleRate, allocatedMB, peakExecutors, appDurationMs,
             recommendation: `${value}% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.`,
-            remediation: [setConf('spark.dynamicAllocation.enabled', true)],
+            remediation: enableDynamicAllocation(app),
           });
         }
       }
