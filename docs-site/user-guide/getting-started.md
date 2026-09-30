@@ -274,16 +274,17 @@ property.
 executor task time, in core-milliseconds, next to the `wallClock` range
 (elapsed time). It is a `{ "low": ..., "high": ... }` range with `low` equal
 to `high`, or `null` when the detector measures no such figure: `null` means
-unknown, never zero. Only measured figures count: a `coreMs` or `coreHours`
-`rawWaste` (GC time, for example), the executor time of retried and
-discarded speculative attempts, and for skew and straggler findings the task
-time the fix removes from the slow tasks. These are set even when the log has
+unknown, never zero. Only figures read from the log count: GC time, the
+executor time of retried and discarded speculative attempts, and for skew
+and straggler findings the task time the fix removes from the slow tasks. These are set even when the log has
 no executor core data. A finding with only a wall-clock claim has
 `coreTimeMs: null`: its elapsed time is not converted to core time. Task run
 time is used, not `executorCpuTime`, so Python worker CPU is not missed.
 
-Findings whose only figure is bytes, memory-time, or executor-hours or
-job-hours (`autoscalingChurn`, `jobFailureRate`) have `coreTimeMs: null`.
+Findings whose only figure is bytes or memory-time have `coreTimeMs: null`, as
+do findings whose core figure rests on an assumed constant: `coreLocality`'s
+per-task fetch penalty and the executor-hours or job-hours of
+`autoscalingChurn` and `jobFailureRate`. Their `rawWaste` is unchanged.
 
 `coreTimeMs` never includes idle capacity. A finding whose waste is allocated
 cores that ran no task (`utilization`, `stageShape`'s low parallelism and

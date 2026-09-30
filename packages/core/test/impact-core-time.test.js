@@ -60,12 +60,19 @@ describe('impact estimate coreTimeMs', () => {
     expect(est.coreTimeMs).toBeNull();
   });
 
-  it('takes a core-time raw figure as measured, even with no executor cores in the log', () => {
-    const stages = new Map([[0, makeStage({ id: 0, taskCount: 2, executorRunTime: 4000, submittedAt: 0, completedAt: 4000, peakConcurrentTasks: 2, taskDurationMax: 2000 })]]);
-    const finding = { type: 'coreLocality', stageId: null, value: 50, nonLocalTaskCount: 100, impactBand: 'info' };
-    const [est] = estimate([finding], stages, 0);
-    expect(est.rawWaste).toEqual({ value: 2000, unit: 'coreMs' });
-    expect(est.coreTimeMs).toEqual({ low: 2000, high: 2000 });
+  it('takes GC\'s logged core-time figure as measured, even with no executor cores in the log', () => {
+    const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], executorRunTime: 10000, jvmGCTime: 1200 }]]);
+    const [est] = estimate([{ type: 'gc', stageId: 0, direction: 'high', value: 12, impactBand: 'warning' }], stages, 0);
+    expect(est.rawWaste).toEqual({ value: 1200, unit: 'coreMs' });
+    expect(est.coreTimeMs).toEqual({ low: 1200, high: 1200 });
+  });
+
+  it('is null for a core-time figure modeled on an assumed constant', () => {
+    const finding = { type: 'coreLocality', stageId: null, value: 50, nonLocalTaskCount: 100_000, impactBand: 'info' };
+    const [est] = estimate([finding], new Map(), 8);
+    expect(est.estimateMethod).toBe('modeled');
+    expect(est.rawWaste).toEqual({ value: 2_000_000, unit: 'coreMs' });
+    expect(est.coreTimeMs).toBeNull();
   });
 
   it('leaves executor-hour and job-hour figures null', () => {

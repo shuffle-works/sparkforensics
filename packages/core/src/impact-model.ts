@@ -2,7 +2,7 @@
 // throughputs, the per-stage measurements behind them and the occupancy clip wrappers. Each
 // finding type's own composition of these lives on its DETECTORS entry, next to its detect().
 import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, Stage } from './types.ts';
-import { nsToMs, MS_PER_CORE_HOUR } from './format-utils.ts';
+import { nsToMs } from './format-utils.ts';
 import {
   estimateSingleStage, estimateMultiStage,
   type OccupancyStage, type SingleStageEstimateOptions, type StageOccupancyInfo,
@@ -174,29 +174,20 @@ export function stageMappableWasteOrCostOnly(
   return multiStageImpact(stageIds, wasteMsByStage, ctx, 'modeled', rawWaste) ?? costOnly('modeled', rawWaste);
 }
 
-// Finding types whose 'coreHours' raw figure counts executor-hours (autoscalingChurn) or job-hours
-// (jobFailureRate), with no cores multiplied in: read as core time it would understate the cost.
-const NOT_CORE_TIME_FIGURE: ReadonlySet<string> = new Set(['autoscalingChurn', 'jobFailureRate']);
-
-// Finding types whose 'ms' raw figure is a cross-task sum of executor time (the discarded
-// speculative or retried attempts' run time), so already core time, like gc's jvmGCTime.
-const CORE_TIME_MS_FIGURE: ReadonlySet<string> = new Set(['retryWaste', 'speculationWaste']);
+// Finding types whose raw figure is busy core time read straight from the log: gc's jvmGCTime
+// (coreMs) and the discarded speculative or retried attempts' run time ('ms' cross-task sums).
+// Any other core figure is idle capacity, or modeled on an assumed constant (coreLocality's
+// per-task fetch penalty, autoscalingChurn's executor-hours, jobFailureRate's job-hours).
+const MEASURED_CORE_TIME_FIGURE: ReadonlySet<string> = new Set(['gc', 'retryWaste', 'speculationWaste']);
 
 /** The busy core time a finding's fix removes, in core-milliseconds, or null when the detector
  * measures none. Only a measured figure counts: one its estimate() already set (skew and
- * straggler's removed task time), a coreMs or coreHours raw figure, or a cross-task executor-time
- * 'ms' sum (CORE_TIME_MS_FIGURE). A wall-clock claim is never converted, and an idle capacity
- * figure is no task time. It never reads executorCpuTime, which leaves out Python worker CPU. */
+ * straggler's removed task time), or the raw figure of a MEASURED_CORE_TIME_FIGURE type. A
+ * wall-clock claim, an idle capacity figure and a modeled figure are never converted. It never
+ * reads executorCpuTime, which leaves out Python worker CPU. */
 export function coreTimeFor(finding: Finding, estimate: ImpactEstimate): { low: number; high: number } | null {
   if (estimate.coreTimeMs !== undefined) return estimate.coreTimeMs;
   const raw = estimate.rawWaste;
-  if (!raw || raw.idle || NOT_CORE_TIME_FIGURE.has(finding.type)) return null;
-  if (raw.unit === 'coreMs' || (raw.unit === 'ms' && CORE_TIME_MS_FIGURE.has(finding.type))) {
-    return { low: raw.value, high: raw.value };
-  }
-  if (raw.unit === 'coreHours') {
-    const coreMs = raw.value * MS_PER_CORE_HOUR;
-    return { low: coreMs, high: coreMs };
-  }
-  return null;
+  if (!raw || !MEASURED_CORE_TIME_FIGURE.has(finding.type)) return null;
+  return { low: raw.value, high: raw.value };
 }

@@ -292,11 +292,12 @@ export interface ImpactEstimate {
   estimateMethod: ImpactEstimateMethod;
   rawWaste?: RawWasteFigure;
   /** Busy core time the fix removes (executor task time), in core-milliseconds, as a low..high
-   * range; set by estimateImpact (see coreTimeFor). Only a figure the detector measures as removed
-   * task time counts: skew and straggler's removed task time, a coreMs or coreHours raw figure, or
-   * a cross-task executor-time 'ms' sum, taken as is (low equals high) whether or not the log
-   * records executor cores. Null for every finding with only a wall-clock claim, and for an idle
-   * capacity figure (`rawWaste.idle`). skew and straggler on one stage count its slow tail once:
+   * range; set by estimateImpact (see coreTimeFor). Only a figure read from the log as removed
+   * task time counts: skew and straggler's removed task time, gc's jvmGCTime, or retried and
+   * speculative attempts' cross-task executor time, taken as is (low equals high) whether or not
+   * the log records executor cores. Null for every finding with only a wall-clock claim, for a
+   * modeled figure resting on an assumed constant (coreLocality, autoscalingChurn,
+   * jobFailureRate), and for an idle capacity figure (`rawWaste.idle`). skew and straggler on one stage count its slow tail once:
    * skew carries it and straggler is null. Never 0 for "unknown". */
   coreTimeMs?: { low: number; high: number } | null;
 }

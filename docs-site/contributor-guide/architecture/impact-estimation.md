@@ -41,13 +41,15 @@ way. The two answer different questions.
 core-milliseconds with `low === high`, or `null` when the detector measures none (never 0 for
 unknown). `estimateImpact()` sets it for every estimate through `coreTimeFor()` in
 `packages/core/src/impact-model.ts`, and only from a measured figure: skew and straggler's
-removed task time (`tailClaimImpact()` sets it from the claim's `removedCoreWorkMs`), a `coreMs`
-raw figure (gc's `jvmGCTime`, coreLocality's non-local penalty), `coreHours` times 3.6e6, or the
-cross-task executor-time `ms` sums of `retryWaste` and `speculationWaste`. These are set even
-when the log has no executor cores. A wall-clock claim is never converted to core time, so every
-finding with only a wall-clock claim gets `null`. `executorCpuTime` is never read because it
-leaves out Python worker CPU. `autoscalingChurn` and `jobFailureRate` are excluded: their
-`coreHours` figures count executor-hours and job-hours with no cores multiplied in.
+removed task time (`tailClaimImpact()` sets it from the claim's `removedCoreWorkMs`), or the raw
+figure of a type in `MEASURED_CORE_TIME_FIGURE`: gc's `jvmGCTime` (`coreMs`) and the cross-task
+executor-time `ms` sums of `retryWaste` and `speculationWaste`. These are set even when the log
+has no executor cores. A wall-clock claim is never converted to core time, so every finding with
+only a wall-clock claim gets `null`. A modeled figure, one that rests on an assumed constant, gets
+`null` too: coreLocality's `coreMs` (non-local tasks × `NETWORK_FETCH_PENALTY_MS`) and the
+`coreHours` of `autoscalingChurn` and `jobFailureRate`. `estimateMethod` does not decide this,
+because it describes the wall-clock figure: gc's is `modeled` while its `jvmGCTime` is read from
+the log. `executorCpuTime` is never read because it leaves out Python worker CPU.
 
 Every surface reads `coreTimeMs` and `remediation` from the one `analyze()` result: the dashboard
 stores it, the HTML export ships it in its `catalog`, and the CLI report and MCP tools put it in
