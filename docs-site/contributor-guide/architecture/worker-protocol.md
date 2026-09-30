@@ -297,8 +297,8 @@ and is never name-identical to a raw export.
 
 A finding row carries `impactEstimate` when the finding has one, with the full contract
 documented in [Impact estimation](./impact-estimation.md#occupancy-weighted-attribution)
-(basis, wallClock, estimateMethod, rawWaste). It appears after the pinned core columns (`id`,
-`type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`, `detectorVersion`, plus
+(basis, wallClock, estimateMethod, rawWaste, coreTimeMs). It appears after the pinned core
+columns (`id`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`, `detectorVersion`, plus
 optional but pinned `confidence`, `validationRequired`, `docAnchor`) without displacing any of
 them. The full row shape is `FindingRowColumns` in `evidence-report.ts`, which also carries
 `name`, `tag`, `valueText`, `actionLabel`, `impact`/`impactMeaning` and, on a tuned run,
