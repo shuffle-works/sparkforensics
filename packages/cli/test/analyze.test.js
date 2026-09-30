@@ -84,6 +84,35 @@ async function runMainInProcess(argv, mainOpts) {
 
 describe('sparkforensics-analyze CLI', () => {
 
+  it('keeps an execution visible when its start event is too deep to validate or cut off at the end of the log', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-writes-skipped-'));
+    const path = join(dir, 'eventlog');
+    const start = 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart';
+    // A plan deeper than the parser's 500-node limit fails validation and is skipped whole.
+    let deep = { nodeName: 'Execute InsertIntoHadoopFsRelationCommand', simpleString: 'Execute InsertIntoHadoopFsRelationCommand /prod/t, false, Parquet', children: [], metrics: [] };
+    for (let i = 0; i < 600; i++) deep = { nodeName: 'Project', simpleString: 'Project', children: [deep], metrics: [] };
+    const cutOff = JSON.stringify({ Event: start, executionId: 2, time: 2, sparkPlanInfo: { nodeName: 'X', simpleString: 'Execute InsertIntoHadoopFsRelationCommand /prod/u', children: [], metrics: [] } });
+    writeFileSync(path, [
+      '{"Event":"SparkListenerApplicationStart","App ID":"app-skipped","App Name":"t","Timestamp":0}',
+      JSON.stringify({ Event: start, executionId: 1, time: 1, sparkPlanInfo: deep }),
+      cutOff.slice(0, cutOff.length - 40),
+    ].join('\n'));
+    try {
+      const { stdout, status } = runCli([path]);
+      // Skipped lines make the run's evidence inconclusive (exit 3), not a pass.
+      expect(status).toBe(3);
+      const { writeTargets } = JSON.parse(stdout);
+      expect(writeTargets.writes).toEqual([]);
+      expect(writeTargets.executionsWithoutPlan).toEqual([
+        { sqlExecutionId: 1, reason: 'unreadableStart' },
+        { sqlExecutionId: 2, reason: 'unreadableStart' },
+      ]);
+      expect(writeTargets.skippedLines).toBe(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('reports SQL write targets in the JSON output', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-writes-'));
     const path = join(dir, 'eventlog');
@@ -107,7 +136,8 @@ describe('sparkforensics-analyze CLI', () => {
       const { stdout, status } = runCli([path]);
       expect(status).toBe(0);
       const { writeTargets } = JSON.parse(stdout);
-      expect(writeTargets.executionsWithoutPlan).toEqual([4]);
+      expect(writeTargets.executionsWithoutPlan).toEqual([{ sqlExecutionId: 4, reason: 'noPlan' }]);
+      expect(writeTargets.skippedLines).toBe(0);
       expect(writeTargets.writes.map((w) => [w.sqlExecutionId, w.command, w.kind, w.target, w.outputRows])).toEqual([
         [1, 'InsertIntoHadoopFsRelationCommand', 'path', '/sandbox/out', null],
         [2, 'InsertIntoHadoopFsRelationCommand', null, null, null],

@@ -290,64 +290,87 @@ It has no Markdown counterpart.
       "raw": "Execute InsertIntoHadoopFsRelationCommand hdfs://nn/sandbox/out/t1, false, Parquet, ..."
     }
   ],
-  "executionsWithoutPlan": []
+  "executionsWithoutPlan": [{ "sqlExecutionId": 4, "reason": "noPlan" }],
+  "skippedLines": 0
 }
 ```
 
 - `writes` holds one row per write node, ordered by SQL execution id and then
   by position in the plan. `command` is the plan node's name without the
-  `Execute ` prefix or an `Exec` suffix, `nodeId` is the plan node's id, and `raw` is the node's
-  full plan string as the log recorded it.
-- `kind` says how to read `target`. `path` is a filesystem location and
-  `table` is a table name. Both are copied verbatim from the plan string:
-  nothing is resolved, so a relative path, an unexpanded `${var}` placeholder
-  or a catalog-relative table name such as `default.events` appears exactly as
-  the log states it. Backticks around table name parts are dropped.
+  `Execute ` prefix or an `Exec` suffix, `nodeId` is the plan node's id, and
+  `raw` is the node's full plan string as the log recorded it.
+- `kind` says how to read `target`:
+  - `path` is a filesystem location.
+  - `table` is a table name whose catalog the command states or implies: a
+    Hive or V1 command's `database.table`, or a DataSource V2 name with a
+    catalog part (`catalog.namespace.table`).
+  - `unqualifiedTable` is a DataSource V2 name with no catalog part, such as
+    `default.events` or `events`. The log does not say which catalog it lives
+    in, so a check on its database part alone can match the wrong catalog.
+  - `jdbcTable` is a `dbtable` of a JDBC write. It names a table in an external
+    database, not in a Spark catalog, and the database itself (the JDBC url) is
+    not reported.
+
+  Every target is copied verbatim from the plan string: nothing is resolved, so
+  a relative path, an unexpanded `${var}` placeholder or a bare table name
+  appears exactly as the log states it. Backticks around table name parts are
+  dropped.
 - `target` and `kind` are `null` when the target cannot be determined. That
   covers a node whose plan string has no target (Spark omits it for some
   commands, and a Delta write made through `SaveIntoDataSourceCommand` often
   has none), a redacted option value, a plan string that names more than one
-  candidate target, a Delta `MERGE` (its plan string also prints the source,
-  so a `delta.` path in it may not be the target), and a plan string Spark cut
-  short. A
-  target is reported only when its whole text is followed by a delimiter in
-  the plan string: a path cut by `spark.sql.maxMetadataStringLength` or a
-  name with a `...` marker in it is `null`, never a partial path. A trailing
-  `... N more fields` after the target, such as the column list of
-  `InsertIntoHadoopFsRelationCommand`, does not affect the target before it.
-  Treat a `null` target as unknown, not as inside or outside any location.
+  candidate target, a Delta `MERGE` (its plan string also prints the source),
+  a Delta command whose first argument is not a `delta.` path, and a plan string
+  Spark cut short. A target is reported only when its whole text is followed by
+  a delimiter in the plan string: a path cut by
+  `spark.sql.maxMetadataStringLength` or a name with a `...` marker in it is
+  `null`, never a partial path. A trailing `... N more fields` after the
+  target, such as the column list of `InsertIntoHadoopFsRelationCommand`, does
+  not affect the target before it. Treat a `null` target as unknown, not as
+  inside or outside any location.
 - `outputRows` is the node's own `number of output rows` SQL metric. It is
   `null` when the log has no such metric for that node, which is the case for
   the DataSource V2 and Delta write nodes that report other metrics.
 - `recognized` is `true` for the commands below and `false` for a write-like
   node that is not in that list. An unrecognized write always has `target` and
   `kind` `null`, and `raw` is the only information about it.
-- `executionsWithoutPlan` lists the SQL executions whose plan the log does not
-  contain, such as an execution still running when the log was cut off (a plan
-  is read when its execution ends). A write in
-  one of them is not in `writes`, so a non-empty list means the report may be
-  incomplete.
+- `executionsWithoutPlan` lists the SQL executions whose writes the report
+  cannot see, each with a `reason`. `noPlan` means the execution started but the
+  log has no plan for it, such as an execution still running when the log was
+  cut off (a plan is read when its execution ends). `unreadableStart` means the
+  execution's start event was skipped because it could not be read, for example
+  a plan nested deeper than 500 nodes or a start line cut off at the end of the
+  log. A write in one of these executions is not in `writes`, so a non-empty
+  list means the report may be incomplete.
+- `skippedLines` is the number of log lines the parser could not read. A line
+  cut off before its execution id is not in `executionsWithoutPlan`, so a
+  non-zero count means a write may be missing even when that list is empty. It
+  is `null` when the count is unknown.
 
 Recognized commands and where their target comes from:
 
 | Command | Target |
 | --- | --- |
-| `InsertIntoHadoopFsRelationCommand` | `path`: the first argument |
-| `InsertIntoHiveTable`, `CreateDataSourceTableAsSelectCommand`, `CreateHiveTableAsSelectCommand` | `table`: the first argument |
-| `SaveIntoDataSourceCommand` | `path` from the `path` option, or `table` from the JDBC `dbtable`/`table` option |
-| `AppendData`, `OverwriteByExpression`, `OverwritePartitionsDynamic`, `ReplaceData`, `WriteDelta`, `WriteToDataSourceV2` | `table`: the `table=` of the connector's write object, for example Iceberg's `IcebergWrite(table=..., ...)` |
-| `CreateTableAsSelect`, `AtomicCreateTableAsSelect`, `ReplaceTableAsSelect`, `AtomicReplaceTableAsSelect` | `table`: the identifier after the catalog |
-| `WriteIntoDelta`, `WriteIntoDeltaCommand`, `UpdateCommand`, `DeleteCommand`, `CreateDeltaTableCommand`, `OptimizeTableCommand`, `RestoreTableCommand` | `path`: a `delta.` path table, otherwise `null` |
+| `InsertIntoHadoopFsRelationCommand` | `path`: the first argument, including for an `INSERT OVERWRITE ... PARTITION` that prints a static-partition map after it |
+| `InsertIntoHiveTable`, `CreateDataSourceTableAsSelectCommand`, `CreateHiveTableAsSelectCommand`, `OptimizedCreateHiveTableAsSelectCommand` | `table`: the first argument |
+| `SaveIntoDataSourceCommand` | `path` from the `path` option, or `jdbcTable` from the JDBC `dbtable`/`table` option |
+| `AppendData`, `OverwriteByExpression`, `OverwritePartitionsDynamic`, `ReplaceData`, `WriteDelta`, `WriteToDataSourceV2` | `table` or `unqualifiedTable`: the `table=` of the connector's write object, for example Iceberg's `IcebergWrite(table=..., ...)` |
+| `CreateTableAsSelect`, `AtomicCreateTableAsSelect`, `ReplaceTableAsSelect`, `AtomicReplaceTableAsSelect` | `table` or `unqualifiedTable`: the identifier after the catalog object, which does not name the catalog |
+| `WriteIntoDelta`, `WriteIntoDeltaCommand`, `UpdateCommand`, `DeleteCommand`, `CreateDeltaTableCommand`, `OptimizeTableCommand`, `RestoreTableCommand`, `DeltaReorgTableCommand` | `path`: the first argument when it is a `delta.` path table, otherwise `null` |
 | `MergeIntoCommand` | always `null` |
 
 A plan node not in the table is a write when its name, split into CamelCase
 words, contains `Write`, `Insert`, `Save`, `Overwrite`, `Append`, `Merge`,
 `Update`, `Delete`, `Truncate`, `Replace`, `Drop`, `Load`, `Vacuum`,
-`Convert`, `Clone`, `Restore` or `Optimize`, or contains
-`TableAsSelect`. A name containing `Join` (`SortMergeJoin`) and these
-operators that share a word with a write but write nothing are not: `WriteFiles`
-(the child of a write command), `AppendColumns`, `AppendColumnsWithObject`,
-`MergeRows`, `StateStoreSave`, `StateStoreRestore`, `SessionWindowStateStoreSave`,
+`Convert`, `Clone`, `Restore`, `Optimize`, `Alter`, `Reorg`, `Rename` or
+`Call`, or contains `TableAsSelect`, `AddPartition`, `DropPartition`,
+`RenamePartition` or `RecoverPartitions`. That covers table DDL and
+`ADD PARTITION ... LOCATION`, and an Iceberg procedure call (`Call`), whose
+target is a procedure argument and not a path, so it is reported with a `null`
+target. A name containing `Join` (`SortMergeJoin`) and these operators that
+share a word with a write but write nothing are not: `WriteFiles` (the child of
+a write command), `AppendColumns`, `AppendColumnsWithObject`, `MergeRows`,
+`StateStoreSave`, `StateStoreRestore`, `SessionWindowStateStoreSave`,
 `SessionWindowStateStoreRestore` and `UpdateEventTimeWatermarkColumn`. The
 classification leans toward reporting too much: a node that matches by name is
 listed with a `null` target rather than dropped.

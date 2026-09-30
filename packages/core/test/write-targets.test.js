@@ -53,18 +53,28 @@ describe('extractWriteTargets', () => {
       'OverwritePartitionsDynamic', 'ReplaceData', 'WriteDelta', 'WriteToDataSourceV2', 'CreateTableAsSelect',
       'AtomicCreateTableAsSelect', 'ReplaceTableAsSelect', 'AtomicReplaceTableAsSelect', 'WriteIntoDelta',
       'WriteIntoDeltaCommand', 'MergeIntoCommand', 'UpdateCommand', 'DeleteCommand', 'CreateDeltaTableCommand',
-      'OptimizeTableCommand', 'RestoreTableCommand',
+      'OptimizeTableCommand', 'RestoreTableCommand', 'OptimizedCreateHiveTableAsSelectCommand', 'DeltaReorgTableCommand',
     ];
     for (const command of known) {
       expect(writesOf(node(`Execute ${command}`, `Execute ${command}`))).toEqual([
         expect.objectContaining({ command, recognized: true, target: null }),
       ]);
     }
-    for (const command of ['LoadDataCommand', 'VacuumCommand', 'ConvertToDeltaCommand', 'CloneTableCommand']) {
+    for (const command of [
+      'LoadDataCommand', 'VacuumCommand', 'ConvertToDeltaCommand', 'CloneTableCommand', 'AlterTableRenameCommand',
+      'AlterTableAddPartitionCommand', 'AlterTableRecoverPartitionsCommand', 'AddPartitions', 'RenameTable',
+    ]) {
       expect(writesOf(node(`Execute ${command}`, `Execute ${command}`))).toEqual([
         expect.objectContaining({ command, recognized: false, target: null }),
       ]);
     }
+  });
+
+  it('reports an Iceberg procedure call as a write with no target and its raw string', () => {
+    const detail = 'Call org.apache.iceberg.spark.procedures.RollbackToSnapshotProcedure@1a2b, [prod.t, 5]';
+    expect(writesOf(node('CallExec', detail))).toEqual([
+      expect.objectContaining({ command: 'Call', recognized: false, kind: null, target: null, raw: detail }),
+    ]);
   });
 
   it('does not treat read and query operators as writes', () => {
@@ -105,7 +115,20 @@ describe('extractWriteTargets', () => {
 
   it('lists executions with no plan instead of treating them as write-free', () => {
     const report = extractWriteTargets(new Map([[4, { id: 4, planTree: null }], [5, { id: 5 }]]));
-    expect(report).toEqual({ writes: [], executionsWithoutPlan: [4, 5] });
+    expect(report).toEqual({
+      writes: [],
+      executionsWithoutPlan: [{ sqlExecutionId: 4, reason: 'noPlan' }, { sqlExecutionId: 5, reason: 'noPlan' }],
+      skippedLines: null,
+    });
+  });
+
+  it('lists executions whose start event was unreadable, with that reason, and the skipped-line count', () => {
+    const report = extractWriteTargets(new Map([[4, { id: 4, planTree: null }]]), { unreadableSqlExecutions: [9, 4], skippedLines: 3 });
+    expect(report).toEqual({
+      writes: [],
+      executionsWithoutPlan: [{ sqlExecutionId: 4, reason: 'unreadableStart' }, { sqlExecutionId: 9, reason: 'unreadableStart' }],
+      skippedLines: 3,
+    });
   });
 });
 
@@ -120,12 +143,13 @@ describe('evidence report writeTargets contract', () => {
         sqlExecutionId: 1, nodeId: null, command: 'SaveIntoDataSourceCommand', recognized: true,
         kind: null, target: null, outputRows: null, raw: 'Execute SaveIntoDataSourceCommand',
       }],
-      executionsWithoutPlan: [2],
+      executionsWithoutPlan: [{ sqlExecutionId: 2, reason: 'noPlan' }],
+      skippedLines: null,
     });
   });
 
   it('is empty for a run with no SQL executions', () => {
     const { json } = buildEvidenceReport(emptyAppModel(), { markdown: false });
-    expect(json.writeTargets).toEqual({ writes: [], executionsWithoutPlan: [] });
+    expect(json.writeTargets).toEqual({ writes: [], executionsWithoutPlan: [], skippedLines: null });
   });
 });

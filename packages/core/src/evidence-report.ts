@@ -497,7 +497,9 @@ function buildJson(
     // Order follows DETECTORS (stable) => byte-stable serialization.
     detectors: tunedDetectorCatalog(thresholds),
     findings: rows,
-    writeTargets: extractWriteTargets(sql ?? new Map()),
+    writeTargets: extractWriteTargets(sql ?? new Map(), {
+      skippedLines: appModel.skippedLines, unreadableSqlExecutions: appModel.unreadableSqlExecutions,
+    }),
     recommendations,
     cleanChecks,
     notRunChecks,

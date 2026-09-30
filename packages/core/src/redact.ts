@@ -302,6 +302,9 @@ export function redactRunModel(
       executors: redacted.executors,
       runAggregates: redacted.runAggregates as AppModel['runAggregates'],
       evidenceAvailability: redacted.evidenceAvailability as AppModel['evidenceAvailability'],
+      // Counts and execution ids, nothing to pseudonymize.
+      skippedLines: appModel.skippedLines,
+      unreadableSqlExecutions: appModel.unreadableSqlExecutions,
     } as AppModel,
     catalog: redacted.catalog,
     configFindings: redacted.configFindings,

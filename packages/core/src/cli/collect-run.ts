@@ -130,7 +130,14 @@ export function collectViaDispatch(
   return new Promise((resolve, reject) => {
     const handlers: IngestHandlers = {
       ...cb,
-      onDone: (msg: unknown) => resolve({ appModel, skippedLines: (msg as { skippedLines?: number })?.skippedLines ?? 0 }),
+      onDone: (msg: unknown) => {
+        const done = msg as { skippedLines?: number; unreadableSqlExecutions?: number[] } | undefined;
+        const skippedLines = done?.skippedLines ?? 0;
+        // The report reads these from the model, so a caller that only takes appModel still sees them.
+        appModel.skippedLines = skippedLines;
+        if (done?.unreadableSqlExecutions) appModel.unreadableSqlExecutions = done.unreadableSqlExecutions;
+        resolve({ appModel, skippedLines });
+      },
       onError: (msg: unknown) => reject(onDecodeError(msg)),
     };
     const emit = (msg: unknown) => dispatch(msg, handlers);
