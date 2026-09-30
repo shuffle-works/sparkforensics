@@ -1,6 +1,6 @@
 # Board widgets
 
-## Beyond the fixed six {#board-widgets-beyond-the-fixed-six}
+## App- and plan-level widgets {#board-widgets-app-and-plan-widgets}
 
 (Components below live in `src/view/widgets/`, one file per widget name,
 e.g. `JobFailures.tsx`, `MemoryUtilization.tsx`.)
@@ -98,8 +98,8 @@ to its own component: 24 `action` and 4 `reference` entries.
   (`thresholds.shortLivedMs`). Warns above 30% short-lived, escalates to
   critical above 60% (`confidence` scales `low`/`medium`/`high` via
   `autoscalingChurnConfidence`, off how far the short-lived share sits past
-  `warningPct`/`criticalPct`: these thresholds are an unvalidated
-  design-spike estimate, not checked against real autoscaling-heavy
+  `warningPct`/`criticalPct`: these thresholds are unvalidated
+  estimates, not checked against real autoscaling-heavy
   logs). Returns no finding below 5 total executors (noise
   floor) or when `app.endTime` is missing (truncated/still-running log). The
   widget shows a finding-driven verdict banner (impact dot + `CHRN` tag +
@@ -148,8 +148,8 @@ emits `underBroadcast`/`overBroadcast`, both `region: 'action'`, each
 its own Plan Advisor card), so there is no key for it to occupy or
 clean-check line for it to render.
 Autoscaling Churn, the other executor-provisioning-lifecycle detector
-alongside `utilization`/`memoryUtilization`, was deliberately given `action`
-rather than `reference` (see "Beyond the fixed six" above).
+alongside `utilization`/`memoryUtilization`, is `action`, not `reference`
+(see "App- and plan-level widgets" above).
 
 `region` decides one thing (see
 [Widget rendering order](./widget-rendering.md#widget-rendering-order)):
@@ -237,8 +237,8 @@ Cache Storage all render through the ordinary active/clean paths instead):
   `packages/core/src/core-locality-ratio.ts`). `NO_PREF` stays in the denominator only,
   since it's what shuffle-read stages legitimately report with no locality
   problem. Below 50 total tasks or below a 15% non-local ratio: no finding;
-  15%-35%: warning; >= 35%: critical, unvalidated design-spike
-  thresholds (`confidence` scales `low`/`medium`/`high` via
+  15%-35%: warning; >= 35%: critical; these thresholds are unvalidated estimates
+  (`confidence` scales `low`/`medium`/`high` via
   `coreLocalityConfidence`, off whichever is weaker of the non-local ratio
   and the sampled task count, the same evidence-strength convention as the
   memory-waste model above).
@@ -261,9 +261,9 @@ run); `packages/core/test/tag-vocabulary.test.js` checks the list.
 
 ETL Phase Attribution (`packages/core/src/etl-phases.ts` + `EtlPhases.tsx`),
 What-If Executor Scaling (`packages/core/src/scaling-sim.ts` + `ScalingSim.tsx`,
-design spike: makespan predictions are unvalidated and carry a Model Error
+makespan predictions are unvalidated and carry a Model Error
 indicator), and Compute Efficiency (`packages/core/src/efficiency-model.ts` +
-`EfficiencyModel.tsx`, design spike: allocated vs. used core-hours with
+`EfficiencyModel.tsx`, allocated vs. used core-hours with
 `wasted-core-hours.ts`'s top stages by task core-time, the driver-vs-executor
 waste split, two theoretical floors, and the right-sizing copy) are main-thread
 report modules, not `DETECTORS` entries: descriptive lenses with no

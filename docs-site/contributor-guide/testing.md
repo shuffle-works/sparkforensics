@@ -37,8 +37,8 @@ root-level tooling tests (`tests/*.test.js`, `tests/*.test.ts`) and pure
 view-logic tests (`tests/view/*.test.ts`) under Node, and component tests
 (`tests/view/*.test.tsx`), which declare
 `// @vitest-environment jsdom` and use React Testing Library
-(`render`/`screen`/`userEvent`). There are no hand-rolled DOM-mounting jsdom
-tests.
+(`render`/`screen`/`userEvent`). Mount components through React Testing
+Library, not hand-rolled DOM code.
 
 `packages/cli`, `packages/mcp` and `packages/server` are separate npm
 packages, each with its own Vitest config and suite, not run by the root

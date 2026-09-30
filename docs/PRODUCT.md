@@ -24,9 +24,8 @@ This repository implements a static browser application and an optional local No
 
 ## Workspace Context
 
-This repository is now self-contained (no parent-workspace superproject); it
-no longer carries shared cross-repo architecture, integration, or
-commercialization documents. Broader product direction, CLI/automation/
+This repository is self-contained. Shared cross-repo architecture, integration
+and commercialization documents live elsewhere. Broader product direction, CLI/automation/
 agent-interface plans, and packaging or licensing choices are out of scope
 for this record.
 
@@ -56,7 +55,7 @@ The current product name is **SparkForensics**. Product language should remain t
 - The [worker protocol](../docs-site/contributor-guide/architecture/worker-protocol.md), [detector contract](../docs-site/contributor-guide/architecture/detector-contract.md), [dashboard sequence](../docs-site/contributor-guide/architecture/widget-rendering.md), and [large-log performance invariant](../docs-site/contributor-guide/architecture/overview.md#core-invariant) are documented in `docs-site/contributor-guide/architecture/`.
 - `src/detectors.js` and the React widgets under `src/view/` implement the bottleneck findings and analysis lenses.
 - Example Spark event logs under `examples/` are used for smoke and streaming-path testing.
-- No testimonials, customer claims, adoption metrics, or benchmark claims were established. Future work must not fabricate them.
+- This record makes no testimonial, customer, adoption or benchmark claims, and future copy must not invent them.
 
 ## Product Principles
 

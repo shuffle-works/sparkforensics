@@ -36,7 +36,7 @@ route and the run comparison take precedence; otherwise idle/error →
 Owns the file and `taskStore: Map<stageId, Float64Array>`, keyed by 8-field
 stride
 `[duration, gcTime, memSpilled, diskSpilled, shuffleRead, shuffleWrite, launchTime, finishTime]`.
-Five modules, plus the rolling-log helper:
+Six modules, one of them the rolling-log helper:
 
 - `packages/core/src/stage-quantiles.ts`, a pure leaf, exporting `finalizeStage`,
   `computeFieldQuantiles`, `computeDurationQuantiles`, `classifySpill`,
@@ -97,7 +97,7 @@ speculationWastedAttempts }>`, empty when no speculative attempt ended late).
 `emitParseCompletion` sends these after `runAggregates` (whole-run aggregates
 computed from `taskStore`) and before the final `app` and `done` messages.
 
-Compressed logs are inflated inline. `sniffCodec` reads the leading magic bytes:
+Compressed logs are decompressed as they stream. `sniffCodec` reads the leading magic bytes:
 gzip (`1f 8b`), Zstandard (`28 b5 2f fd`, Spark's `spark.io.compression.codec=zstd`),
 Spark's custom `LZ4Block` framing, or Spark's Snappy framing (`org.xerial.snappy`'s
 `\x82SNAPPY\0` header, `spark.io.compression.codec=snappy`). Only a zip entry

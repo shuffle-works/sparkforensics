@@ -139,7 +139,7 @@ rollup row nor an active widget: a run with no critical findings has no
 first as the headerless `Table` described above, followed by that band's
 active `REGISTRY` widget cards (`computeActiveWidgets`'s ranked list,
 filtered to this impact band) in their own `WidgetGrid`: every one of
-`orderedWidgets()`'s deduped `REGISTRY` components *except* the one
+`orderedWidgets()`'s `REGISTRY` components *except* the one
 always-mounted one below, with at least one finding in `catalog` ∪
 `configFindings`. Within a band, active widgets keep `orderedWidgets()`'s
 own order: the interpretation's `DetectorInfo` sorted by region
@@ -164,7 +164,7 @@ interpretation's `detectors[type].thresholdSummary` from
 `getThresholdSummary`, which states the detector's own numbers) built per
 detector *type* (every `REGISTRY` key
 except that one always-mounted key), under one "Every check below passed."
-line and grouped by detector scope (Per-stage, App-level,
+line (or "No check could run on this log." when none did) and grouped by detector scope (Per-stage, App-level,
 SQL plan, Config checks). Types the log could not check (an `isEvidenceCaveat`
 finding of that type, every per-stage type when no stage finished, or the
 run-span types `RUN_SPAN_CHECK_TYPES` on an `incompleteRun` log, the same
@@ -178,7 +178,7 @@ action-region type. Caching Opportunities, Config Audit, and the four
 Plan Advisor widgets (Redundant Plan Subtree, Excessive Small Files, Missed
 Broadcast Join, Oversized Broadcast Join) render through the ordinary
 active/clean paths above (see
-[Board widgets beyond the fixed six](./board-widgets.md#board-widgets-beyond-the-fixed-six)).
+[App- and plan-level widgets](./board-widgets.md#board-widgets-app-and-plan-widgets)).
 Core Usage by Locality (`coreLocality`, resolving to `CoreUsageArea`) is
 not in the Findings tab at all: it mounts unconditionally from `appModel`
 at the head of the Full app report's reference grid
@@ -250,6 +250,9 @@ empty catalog filter (except Core Usage by Locality, the one always-mounted
   links, all unconditionally. The fix is stated once per card: `WidgetCard`'s
   `fixFor` prints each distinct `coreFindingGenericRecommendation` above the
   body, so rows don't repeat a recommendation that restates their number.
+  Every finding-row widget passes it, Shuffle I/O and the Skew, Stage Shape
+  and Tiny Tasks groups (`StageFindingGroup`) included; Incomplete Run is the
+  one that doesn't.
   Where the detector's sentence is a row's only measurement (Excessive Small
   Files, Missed Broadcast Join, Oversized Broadcast Join, Config Audit), the
   row shows its measured half, split off by core's `recommendationParts`.
@@ -375,7 +378,7 @@ section; it renders once, above the tabs themselves, in
 `FilteredBoard` (`src/view/Dashboard.tsx`), so it stays visible regardless
 of which tab is active rather than living inside either one (a three-tile
 run-info row: Wall-clock, Efficiency, Unused core time; see
-[Board widgets beyond the fixed six](./board-widgets.md#board-widgets-beyond-the-fixed-six)).
+[App- and plan-level widgets](./board-widgets.md#board-widgets-app-and-plan-widgets)).
 WallClock, Timeline, Executor Count Over Time and StageTable render
 expanded. The grid tiles beside them (Core Usage by Locality, Evidence
 availability and the report lenses) are `collapsedTile`s: they start
@@ -471,7 +474,7 @@ catalog (`catalog.includes(finding)` in `selectTriageTargetForFinding`,
 `src/view/triage-target.ts`) rather than a derived key: a new parse yields
 new finding object references, so reference presence alone detects
 staleness. It is not persisted and does not extend the core `Finding`
-contract; cross-session consumers (exports, future URL-restored state) use
+contract; cross-session consumers (exports, URL-restored state) use
 the core `Finding.id` instead (see [Finding identity](./worker-protocol.md#finding-identity)).
 
 `Dashboard` owns disclosure and navigation. Every routeable `REGISTRY`

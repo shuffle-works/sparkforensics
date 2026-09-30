@@ -176,13 +176,9 @@ process, and no live History Server are needed for this.
 To verify the full Fetch-from-SHS UI flow by hand, including its
 unreachable-upstream and application-not-found recovery states, point
 `npm run local-server` at a real Spark History Server you have access to
-and use its **Fetch from Spark History Server** disclosure. This repo no
-longer ships its own Docker-based History Server fixture: once a real,
-tagged event log is one `git submodule update` away via
-`spark-event-corpus-data`, running a live Spark container here just to
-prove the same `/shs-proxy` route duplicates coverage the corpus repos
-already give for free, at the cost of a Docker dependency for every
-contributor who touches that route.
+and use its **Fetch from Spark History Server** disclosure. Automated
+coverage of `/shs-proxy` uses the `spark-event-corpus-data` logs, so no
+Docker image or live Spark process is needed.
 
 ### Running tests
 

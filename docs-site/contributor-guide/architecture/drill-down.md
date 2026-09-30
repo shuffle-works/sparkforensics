@@ -36,8 +36,7 @@ parent→child edge, since the parent's id always exists first. Edges are
 written after all node lines. The graph is laid out `rankdir=BT`, leaves at the bottom, matching
 Spark's own plan orientation.
 
-It carries no metric annotation: pure structure. Adding metric annotation is a
-deferred roadmap item. A null plan returns an empty string. There is no
+It carries no metric annotation: pure structure. A null plan returns an empty string. There is no
 download/export UI for this output; `PlanView.tsx` calls it
 only to decide whether a stage's plan tree can render as a graph at all, and a
 non-empty result gates the "View plan graph" button.
