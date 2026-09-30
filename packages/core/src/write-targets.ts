@@ -135,7 +135,7 @@ function tableName(ident: string): string | null {
 // (dt='x')) that precedes that boolean; this also rejects a path Spark printed with ", " inside.
 function parseHadoopFsPath(args: Arg[]): Parsed | null {
   const [path, second, third] = args;
-  const flag = second && /^Map\(.*\)$/s.test(second.text) && second.terminated ? third : second;
+  const flag = second && /^(Map\(.*\)|\[.*\])$/s.test(second.text) && second.terminated ? third : second;
   if (!path?.terminated || isCut(path.text) || !flag || !/^(true|false)$/.test(flag.text)) return null;
   return { kind: 'path', target: path.text };
 }
