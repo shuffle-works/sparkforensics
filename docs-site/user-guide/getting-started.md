@@ -296,7 +296,7 @@ It has no Markdown counterpart.
 
 - `writes` holds one row per write node, ordered by SQL execution id and then
   by position in the plan. `command` is the plan node's name without the
-  `Execute ` prefix, `nodeId` is the plan node's id, and `raw` is the node's
+  `Execute ` prefix or an `Exec` suffix, `nodeId` is the plan node's id, and `raw` is the node's
   full plan string as the log recorded it.
 - `kind` says how to read `target`. `path` is a filesystem location and
   `table` is a table name. Both are copied verbatim from the plan string:

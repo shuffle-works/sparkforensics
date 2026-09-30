@@ -213,7 +213,7 @@ and `spark.app.name` replaced by the app id's pseudonym) is opt-in with
 (`packages/core/src/evidence-report.ts`, surfaced as `json.schemaVersion`) and has this fixed top-level key order:
 
 ```text
-schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, recommendations, cleanChecks, notRunChecks
+schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, writeTargets, recommendations, cleanChecks, notRunChecks
 ```
 
 - `summary` is the run header: `{ app: { id, name, sparkVersion }, stageCount,
@@ -247,6 +247,9 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, reco
   and an `evidence` sub-object holding that finding type's declared evidence
   fields (see the per-type evidence paragraph below); `confidence`/
   `validationRequired`/`docAnchor` appear only when the detector emitted them.
+- `writeTargets` is `extractWriteTargets` output (`packages/core/src/write-targets.ts`): every
+  SQL write command with its path or table. The field contract is in the user guide's
+  [Write targets](../../user-guide/getting-started.md#write-targets).
 - `recommendations` is the impact-ranked `buildRecommendationRollup` output
   (`packages/core/src/recommendation-rollup.ts`), and `cleanChecks` lists every detector type
   that fired zero findings this run and could run: see the rollup and clean-checks paragraph below.
