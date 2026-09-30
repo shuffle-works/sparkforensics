@@ -160,6 +160,8 @@ interface StageRecord {
   speculativeTasks: number;
   failureReasons: Map<string, number>;
   stageFailureReason: string | null;
+  // The record's attempt, from StageSubmitted; a late TaskEnd of any other attempt is an earlier one's.
+  stageAttemptId: number;
   // Submissions of this stage id and the ones that completed with a failure reason. A resubmitted
   // stage replaces its record (submitStage), so both carry over from the replaced one.
   stageAttempts: number;
@@ -587,10 +589,11 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
   if (!stage) return null;
   // Late TaskEnd for a stage whose StageCompleted already freed taskAttempts (finalizeStage): the
   // finalized stage's figures stay as posted. A losing speculative attempt adds the wasted time the
-  // finalized stage never saw; any other task of a failed attempt is work only the metrics block
-  // reads, from lateAttemptWork.
+  // finalized stage never saw; any other task of a failed or earlier attempt is work only the
+  // metrics block reads, from lateAttemptWork.
   if (stage.taskAttempts === null) {
-    if (!accountLateSpeculativeLoser(event, stage) && stage.stageFailureReason != null) {
+    const earlierAttempt = (event['Stage Attempt ID'] ?? 0) !== stage.stageAttemptId;
+    if (!accountLateSpeculativeLoser(event, stage) && (stage.stageFailureReason != null || earlierAttempt)) {
       stage.lateAttemptWork = mergeAttemptTotals(taskAttemptTotals(taskRecordOf(event, null)), stage.lateAttemptWork);
     }
     return null;
@@ -945,6 +948,7 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
     speculativeTasks: 0,
     failureReasons: new Map(),
     stageFailureReason: null,
+    stageAttemptId: info['Stage Attempt ID'] ?? 0,
     stageAttempts: (replaced?.stageAttempts ?? 0) + 1,
     failedStageAttempts: replaced?.failedStageAttempts ?? 0,
     earlierAttempts: foldEarlierAttempts(replaced),

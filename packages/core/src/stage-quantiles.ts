@@ -204,6 +204,7 @@ export function finalizeStage(
   delete data.failureDetails; // internal-only intern table, summarized by failureGroups
   delete data.speculativeWinners; // internal-only late-TaskEnd pairing state, kept worker-side
   delete data.lateSpeculationWaste;
+  delete data.stageAttemptId;
 
   return { type: 'stage', data };
 }

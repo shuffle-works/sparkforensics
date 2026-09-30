@@ -164,6 +164,28 @@ describe('computeRunMetrics on a parsed log', () => {
     expect(appModel.stages.get(1)).toMatchObject({ taskCount: 1, failedTasks: 0, executorRunTime: 300 });
   });
 
+  it('counts an earlier failed attempt\'s task that ends after a successful retry', async () => {
+    const submitted = (attempt) => JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Stage Attempt ID': attempt, 'Stage Name': 'reduce', 'Submission Time': 1000 + attempt * 5000 } });
+    const completed = (attempt, reason) => JSON.stringify({
+      Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Submission Time': 1000 + attempt * 5000, 'Completion Time': 2000 + attempt * 5000, ...(reason ? { 'Failure Reason': reason } : {}) },
+    });
+    const appModel = await model([
+      START,
+      submitted(0), taskEnd(1, 0, { runMs: 100, cpuNs: 50e6, failed: true }), completed(0, 'FetchFailed'),
+      submitted(1), taskEnd(1, 2, { runMs: 300, cpuNs: 150e6, records: 5 }), completed(1),
+      // A zombie task of attempt 0 finishes after attempt 1 has already succeeded.
+      taskEnd(1, 1, { runMs: 400, cpuNs: 200e6, records: 4 }),
+      END,
+    ]);
+    const m = computeRunMetrics(appModel);
+    expect(m.time).toMatchObject({ executorCpuTimeMs: 400, executorRunTimeMs: 800 });
+    expect(m.data).toMatchObject({ outputRows: 9 });
+    expect(m.shape).toMatchObject({ taskCount: 3, failedTasks: 1 });
+    expect(appModel.stages.get(1)).toMatchObject({ taskCount: 1, failedTasks: 0, executorRunTime: 300 });
+    expect(appModel.stages.get(1)).not.toHaveProperty('stageAttemptId');
+  });
+
   it('keeps task-level failures and retries in failedTasks / retriedTasks', () => {
     const appModel = {
       app: makeApp(), sql: new Map(), jobs: new Map(), executors: { added: [], removed: [] },
