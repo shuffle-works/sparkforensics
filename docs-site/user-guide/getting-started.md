@@ -305,7 +305,9 @@ A `remediation` that sets a property to a fixed value (for example
 already has that value; booleans compare case-insensitively. The
 recommendation then stops naming that property and points at the remedy
 left (for example "AQE skew-join handling is already on, so salt the key or
-repartition on a better key"), so the text and `remediation` never disagree. Only properties
+repartition on a better key"), so the text and `remediation` never disagree.
+The dashboard's one-line fix for a group of such findings follows the same
+logged conf. Only properties
 the event log records count: Spark's unlogged version defaults (such as
 skew-join handling being on by default with AQE in Spark 3.2+) are not
 modeled, so such a run can still get the suggestion.

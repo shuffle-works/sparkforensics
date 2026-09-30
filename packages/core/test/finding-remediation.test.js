@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { analyze, auditConfig } from '../src/analyzer.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { recommendationParts } from '../src/finding-names.js';
+import { coreFindingGenericRecommendation } from '../src/finding-generic-recommendation.ts';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
 const MiB = 1024 * 1024;
@@ -223,6 +224,15 @@ describe('structured remediation', () => {
       expect(utilization(makeApp()).recommendation).toMatch(/enabling dynamic allocation/);
       expect(idleCores(makeApp()).recommendation).toMatch(/enable dynamic allocation/);
     });
+
+    it('words the grouped generic line for the logged conf the same way as the row', () => {
+      for (const app of [makeApp({ resources: { dynamicAllocationEnabled: true } }), makeApp({ config: { 'spark.dynamicAllocation.enabled': 'true' } })]) {
+        expect(coreFindingGenericRecommendation(utilization(app))).toBe('Dynamic allocation is already on, so consider reducing cluster size.');
+        expect(coreFindingGenericRecommendation(idleCores(app))).toBe('Dynamic allocation is already on, so reduce cluster size.');
+      }
+      expect(coreFindingGenericRecommendation(utilization(makeApp()))).toMatch(/enabling dynamic allocation/);
+      expect(coreFindingGenericRecommendation(idleCores(makeApp()))).toMatch(/enable dynamic allocation/);
+    });
   });
 
   describe('a set-to-value remediation follows the logged conf', () => {
@@ -278,6 +288,20 @@ describe('structured remediation', () => {
       expect(unset.skew.recommendation).toMatch(/enable AQE skew-join handling \(spark\.sql\.adaptive\.skewJoin\.enabled\)/);
       expect(unset.partitionSkew.recommendation).toMatch(/enable AQE skew-join handling \(spark\.sql\.adaptive\.skewJoin\.enabled\)/);
       expect(unset.slowHost.recommendation).toMatch(/consider enabling spark\.speculation/);
+    });
+
+    it('words the grouped generic line for a switch the logged conf already has on, as the row does', () => {
+      const on = pick({ 'spark.sql.adaptive.skewJoin.enabled': 'TRUE', 'spark.speculation': 'true' });
+      for (const f of [on.skew, on.partitionSkew]) {
+        expect(coreFindingGenericRecommendation(f), f.type).toBe('AQE skew-join handling is already on, so salt the key or repartition on a better key.');
+      }
+      expect(coreFindingGenericRecommendation(on.slowHost)).not.toMatch(/spark\.speculation/);
+      expect(coreFindingGenericRecommendation(on.slowHost)).toMatch(/Speculation is already on, so a lagging task there is already relaunched\.$/);
+      const unset = pick({});
+      for (const f of [unset.skew, unset.partitionSkew]) {
+        expect(coreFindingGenericRecommendation(f), f.type).toMatch(/enable AQE skew-join handling \(spark\.sql\.adaptive\.skewJoin\.enabled\)/);
+      }
+      expect(coreFindingGenericRecommendation(unset.slowHost)).toMatch(/Enable spark\.speculation/);
     });
 
     it('words the missing-evidence caveats for a logging switch that is already on', () => {
