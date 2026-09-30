@@ -46,6 +46,27 @@ describe('extractWriteTargets', () => {
     })]);
   });
 
+  it('reports every recognized command as a recognized write, and other non-SQL-verb writes as unrecognized', () => {
+    const known = [
+      'InsertIntoHadoopFsRelationCommand', 'InsertIntoHiveTable', 'CreateDataSourceTableAsSelectCommand',
+      'CreateHiveTableAsSelectCommand', 'SaveIntoDataSourceCommand', 'AppendData', 'OverwriteByExpression',
+      'OverwritePartitionsDynamic', 'ReplaceData', 'WriteDelta', 'WriteToDataSourceV2', 'CreateTableAsSelect',
+      'AtomicCreateTableAsSelect', 'ReplaceTableAsSelect', 'AtomicReplaceTableAsSelect', 'WriteIntoDelta',
+      'WriteIntoDeltaCommand', 'MergeIntoCommand', 'UpdateCommand', 'DeleteCommand', 'CreateDeltaTableCommand',
+      'OptimizeTableCommand', 'RestoreTableCommand',
+    ];
+    for (const command of known) {
+      expect(writesOf(node(`Execute ${command}`, `Execute ${command}`))).toEqual([
+        expect.objectContaining({ command, recognized: true, target: null }),
+      ]);
+    }
+    for (const command of ['LoadDataCommand', 'VacuumCommand', 'ConvertToDeltaCommand', 'CloneTableCommand']) {
+      expect(writesOf(node(`Execute ${command}`, `Execute ${command}`))).toEqual([
+        expect.objectContaining({ command, recognized: false, target: null }),
+      ]);
+    }
+  });
+
   it('does not treat read and query operators as writes', () => {
     const plan = node('WriteFiles', 'WriteFiles', { children: [
       node('SortMergeJoin', 'SortMergeJoin [a#1], [b#2], Inner'),

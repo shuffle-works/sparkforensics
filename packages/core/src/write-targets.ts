@@ -7,6 +7,7 @@
 //   - a write-like node outside the known list is reported as an unrecognized write.
 // Targets are verbatim from the simpleString: nothing is resolved (relative paths, ${var}
 // placeholders, catalog-relative table names all pass through as the log states them).
+import { walkPlanTree } from './plan-tree-walk.ts';
 import type { PlanNode, SqlExecution } from './types.ts';
 
 export interface WriteTarget {
@@ -33,9 +34,11 @@ export interface WriteTargetsReport {
 
 type Parsed = { kind: 'path' | 'table'; target: string };
 
-// Write-like detection: any CamelCase word of the node name in this set, or a TableAsSelect name.
+// Write-like detection: a known command, any CamelCase word of the node name in this set, or a
+// TableAsSelect name.
 const WRITE_WORDS = new Set([
   'Write', 'Insert', 'Save', 'Overwrite', 'Append', 'Merge', 'Update', 'Delete', 'Truncate', 'Replace', 'Drop',
+  'Load', 'Vacuum', 'Convert', 'Clone', 'Restore', 'Optimize',
 ]);
 // Plan nodes whose name matches a write word but which write no user data: WriteFiles is the child
 // of a write command (the command is the write), the rest are query or streaming-state operators.
@@ -55,6 +58,7 @@ function commandOf(nodeName: string): string {
 }
 
 function isWriteLike(command: string): boolean {
+  if (isKnownWrite(command)) return true;
   if (NOT_WRITES.has(command) || command.includes('Join')) return false;
   if (command.includes('TableAsSelect')) return true;
   return (command.match(/[A-Z][a-z0-9]*/g) ?? []).some((word) => WRITE_WORDS.has(word));
@@ -159,11 +163,19 @@ function parseSaveIntoDataSource(args: Arg[]): Parsed | null {
   return path !== undefined ? { kind: 'path', target: value } : { kind: 'table', target: value };
 }
 
+// The one target every match of `pattern` names, or null when there is none, when they name
+// different targets, or when one of them is cut: a string that also prints another plan (a MERGE
+// source, a subquery) cannot tell which match is written.
+function soleMatch(detail: string, pattern: RegExp, normalize: (text: string) => string | null): string | null {
+  const targets = new Set<string | null>();
+  for (const m of detail.matchAll(pattern)) targets.add(isCut(m[1]) ? null : normalize(m[1]));
+  const [target] = targets;
+  return targets.size === 1 ? target : null;
+}
+
 // DataSource V2 writes print the connector's Write object; Iceberg's is IcebergWrite(table=t, ...).
 function parseV2Write(detail: string): Parsed | null {
-  const m = /\b\w*Write\(table=([^,()\s]+)[,)]/.exec(detail);
-  if (!m || isCut(m[1])) return null;
-  const name = tableName(m[1]);
+  const name = soleMatch(detail, /\b\w*Write\(table=([^,()\s]+)[,)]/g, tableName);
   return name ? { kind: 'table', target: name } : null;
 }
 
@@ -179,8 +191,8 @@ function parseV2TableAsSelect(args: Arg[]): Parsed | null {
 
 // Delta prints a path-based table as delta.`<path>`.
 function parseDeltaPath(detail: string): Parsed | null {
-  const m = /\bdelta\.`([^`]+)`/.exec(detail);
-  return m && !isCut(m[1]) ? { kind: 'path', target: m[1] } : null;
+  const path = soleMatch(detail, /\bdelta\.`([^`]+)`/g, (text) => text);
+  return path ? { kind: 'path', target: path } : null;
 }
 
 const V2_WRITES = new Set([
@@ -203,6 +215,10 @@ const ARG_PARSERS: Record<string, (args: Arg[]) => Parsed | null> = {
   SaveIntoDataSourceCommand: parseSaveIntoDataSource,
 };
 
+function isKnownWrite(command: string): boolean {
+  return command in ARG_PARSERS || V2_WRITES.has(command) || V2_TABLE_AS_SELECT.has(command) || DELTA_COMMANDS.has(command);
+}
+
 // [recognized, parsed target or null] for one write-like node.
 function parseWrite(command: string, detail: string): [boolean, Parsed | null] {
   const argParser = ARG_PARSERS[command];
@@ -219,28 +235,22 @@ function outputRowsOf(node: PlanNode): number | null {
 }
 
 function collectWrites(executionId: number, root: PlanNode, out: WriteTarget[]): void {
-  const seen = new Set<PlanNode>();
-  const visit = (node: PlanNode): void => {
-    if (seen.has(node)) return;
-    seen.add(node);
+  walkPlanTree(root, (node) => {
     const command = commandOf(node.name);
-    if (isWriteLike(command)) {
-      const detail = node.detail ?? '';
-      const [recognized, parsed] = parseWrite(command, detail);
-      out.push({
-        sqlExecutionId: executionId,
-        nodeId: node.id ?? null,
-        command,
-        recognized,
-        kind: parsed?.kind ?? null,
-        target: parsed?.target ?? null,
-        outputRows: outputRowsOf(node),
-        raw: detail !== '' ? detail : node.name,
-      });
-    }
-    for (const child of node.children) visit(child);
-  };
-  visit(root);
+    if (!isWriteLike(command)) return;
+    const detail = node.detail ?? '';
+    const [recognized, parsed] = parseWrite(command, detail);
+    out.push({
+      sqlExecutionId: executionId,
+      nodeId: node.id ?? null,
+      command,
+      recognized,
+      kind: parsed?.kind ?? null,
+      target: parsed?.target ?? null,
+      outputRows: outputRowsOf(node),
+      raw: detail !== '' ? detail : node.name,
+    });
+  }, { dedupe: true });
 }
 
 export function extractWriteTargets(sql: Map<number, SqlExecution>): WriteTargetsReport {

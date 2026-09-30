@@ -306,7 +306,9 @@ It has no Markdown counterpart.
 - `target` and `kind` are `null` when the target cannot be determined. That
   covers a node whose plan string has no target (Spark omits it for some
   commands, and a Delta write made through `SaveIntoDataSourceCommand` often
-  has none), a redacted option value, and a plan string Spark cut short. A
+  has none), a redacted option value, a plan string that names more than one
+  candidate target (a Delta `MERGE` whose source is also a `delta.` path), and
+  a plan string Spark cut short. A
   target is reported only when its whole text is followed by a delimiter in
   the plan string: a path cut by `spark.sql.maxMetadataStringLength` or a
   name with a `...` marker in it is `null`, never a partial path. A trailing
@@ -338,7 +340,8 @@ Recognized commands and where their target comes from:
 
 A plan node not in the table is a write when its name, split into CamelCase
 words, contains `Write`, `Insert`, `Save`, `Overwrite`, `Append`, `Merge`,
-`Update`, `Delete`, `Truncate`, `Replace` or `Drop`, or contains
+`Update`, `Delete`, `Truncate`, `Replace`, `Drop`, `Load`, `Vacuum`,
+`Convert`, `Clone`, `Restore` or `Optimize`, or contains
 `TableAsSelect`. A name containing `Join` (`SortMergeJoin`) and these
 operators that share a word with a write but write nothing are not: `WriteFiles`
 (the child of a write command), `AppendColumns`, `AppendColumnsWithObject`,
