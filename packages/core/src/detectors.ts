@@ -676,9 +676,16 @@ function switchFix(on: boolean, key: string, suggested: string | boolean, recomm
 
 function skewJoinFix(app: DetectorApp | null): { text: string; remediation: Remediation[] } {
   const key = 'spark.sql.adaptive.skewJoin.enabled';
+  const remedy = 'salt the key or repartition on a better key';
+  if (loggedAs(app, 'spark.sql.adaptive.enabled', false)) {
+    return {
+      text: `AQE is off, so enable it (spark.sql.adaptive.enabled) for skew-join handling to apply; otherwise ${remedy}`,
+      remediation: [setConf('spark.sql.adaptive.enabled', true), ...setConfUnlessLogged(app, key, true)],
+    };
+  }
   return switchFix(loggedAs(app, key, true), key, true,
-    `for join-driven skew, enable AQE skew-join handling (${key}); otherwise salt the key or repartition on a better key`,
-    'AQE skew-join handling is already on, so salt the key or repartition on a better key');
+    `for join-driven skew, enable AQE skew-join handling (${key}); otherwise ${remedy}`,
+    `AQE skew-join handling is already on, so ${remedy}`);
 }
 
 // The resources flag is read from the same property as the logged conf.
@@ -2717,14 +2724,17 @@ export const DETECTORS = [
             // (node.stageIds always empty in real data); its child carries the executor-side
             // metrics, so only the child unions in.
             const child = (node.children ?? [])[0];
+            const autoBroadcastOff = ctx.app?.config?.['spark.sql.autoBroadcastJoinThreshold']?.trim() === '-1';
             out.push({
               type: 'overBroadcast', executionId: sqlExec.id,
               stageIds: unionStageIds(child ? [child] : [], fallbackStageIds),
               // resolvePlanTree always sets id; safe downstream of it.
               planNodeIds: [node.id!].filter(Boolean),
               impactBand: 'warning', metric: 'broadcastBytes', value: m.value,
-              recommendation: `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.`,
-              remediation: [decreaseConf('spark.sql.autoBroadcastJoinThreshold')],
+              recommendation: autoBroadcastOff
+                ? `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: automatic broadcast is already disabled, so remove the broadcast() hint that forced it.`
+                : `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.`,
+              remediation: autoBroadcastOff ? [] : [decreaseConf('spark.sql.autoBroadcastJoinThreshold')],
             });
           }
         }

@@ -40,6 +40,13 @@ function switchAlreadyOn(finding: { remediation?: Remediation[] }, key: string):
 
 const SKEW_JOIN_KEY = 'spark.sql.adaptive.skewJoin.enabled';
 const SKEW_JOIN_ALREADY_ON = 'AQE skew-join handling is already on, so salt the key or repartition on a better key.';
+const SKEW_JOIN_AQE_OFF = 'AQE is off, so enable it (spark.sql.adaptive.enabled) for skew-join handling to apply; otherwise salt the key or repartition on a better key.';
+
+// The skew-join generic line, worded per the row's remediation: AQE logged off, switch already on, or neither.
+function skewJoinGeneric(f: { remediation?: Remediation[] }, unset: string): string {
+  if (f.remediation?.some((r) => r.key === 'spark.sql.adaptive.enabled')) return SKEW_JOIN_AQE_OFF;
+  return switchAlreadyOn(f, SKEW_JOIN_KEY) ? SKEW_JOIN_ALREADY_ON : unset;
+}
 const DYNAMIC_ALLOCATION_KEY = 'spark.dynamicAllocation.enabled';
 
 // The four configAudit DETECTORS entries share this row, one per audited property.
@@ -84,9 +91,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'SKEW',
     thresholdSummary: (t) => `P95 task time over ${t.ratioWarn}× the median (the longest task on stages under ${t.minTasksForP95} tasks)`,
     actionLabel: () => 'Fix task skew',
-    genericRecommendation: (f) => (switchAlreadyOn(f, SKEW_JOIN_KEY)
-      ? SKEW_JOIN_ALREADY_ON
-      : 'For join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.'),
+    genericRecommendation: (f) => skewJoinGeneric(f,
+      'For join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.'),
   },
   stageShape: {
     name: 'stage shape',
@@ -139,8 +145,10 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     },
     genericRecommendation(f) {
       switch (f.rule) {
-        case 'shufflePartitionSkew': return switchAlreadyOn(f, SKEW_JOIN_KEY) ? SKEW_JOIN_ALREADY_ON : 'For join skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.';
-        case 'lowShuffleParallelism': return 'Raise spark.sql.shuffle.partitions so each partition is smaller.';
+        case 'shufflePartitionSkew': return skewJoinGeneric(f, 'For join skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.');
+        case 'lowShuffleParallelism': return switchAlreadyOn(f, 'spark.sql.shuffle.partitions')
+          ? "spark.sql.shuffle.partitions is already high enough, so raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller."
+          : 'Raise spark.sql.shuffle.partitions so each partition is smaller.';
         case 'maxPartitionTooBig': return 'Repartition to break up the oversized partition before this stage.';
       }
       return undefined;
@@ -348,7 +356,9 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'PLAN',
     thresholdSummary: (t) => `a broadcast over ${t.overBroadcastBytes / 1073741824} GiB`,
     actionLabel: () => 'Fix oversized broadcast',
-    genericRecommendation: () => 'Check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.',
+    genericRecommendation: (f) => (switchAlreadyOn(f, 'spark.sql.autoBroadcastJoinThreshold')
+      ? 'Automatic broadcast is already disabled, so remove the broadcast() hint that forced it.'
+      : 'Check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.'),
   },
 };
 

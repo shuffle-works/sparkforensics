@@ -304,6 +304,54 @@ describe('structured remediation', () => {
       expect(coreFindingGenericRecommendation(unset.slowHost)).toMatch(/Enable spark\.speculation/);
     });
 
+    it('counts skew-join as on only while AQE is not logged off, and suggests enabling AQE otherwise', () => {
+      const aqe = [{ kind: 'conf', key: 'spark.sql.adaptive.enabled', direction: 'set', suggested: true }];
+      const skewJoin = set('spark.sql.adaptive.skewJoin.enabled');
+      for (const [config, remediation] of [
+        [{ 'spark.sql.adaptive.enabled': 'false', 'spark.sql.adaptive.skewJoin.enabled': 'true' }, aqe],
+        [{ 'spark.sql.adaptive.enabled': 'false' }, [...aqe, ...skewJoin]],
+      ]) {
+        const { skew, partitionSkew } = pick(config);
+        for (const f of [skew, partitionSkew]) {
+          expect(f.remediation, f.type).toEqual(remediation);
+          expect(f.recommendation, f.type).toMatch(/AQE is off, so enable it \(spark\.sql\.adaptive\.enabled\)/);
+          expect(recommendationParts(f.recommendation).fix, f.type).toMatch(/^AQE is off/);
+          expect(coreFindingGenericRecommendation(f), f.type).toMatch(/^AQE is off, so enable it \(spark\.sql\.adaptive\.enabled\)/);
+        }
+      }
+      const { skew } = pick({ 'spark.sql.adaptive.enabled': 'true', 'spark.sql.adaptive.skewJoin.enabled': 'true' });
+      expect(skew.remediation).toEqual([]);
+      expect(coreFindingGenericRecommendation(skew)).toMatch(/already on/);
+    });
+
+    it('words the grouped lowShuffleParallelism line as the row does when the logged count is already enough', () => {
+      const row = (config) => catalogOf(
+        [makeStage({ shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0 })],
+        makeApp({ config }),
+      ).find((x) => x.rule === 'lowShuffleParallelism');
+      const enough = coreFindingGenericRecommendation(row({ 'spark.sql.shuffle.partitions': '200' }));
+      expect(enough).toMatch(/repartition\(n\)/);
+      expect(enough).not.toMatch(/^Raise spark\.sql\.shuffle\.partitions/);
+      expect(coreFindingGenericRecommendation(row({ 'spark.sql.shuffle.partitions': '8' }))).toBe('Raise spark.sql.shuffle.partitions so each partition is smaller.');
+    });
+
+    it('suggests no broadcast threshold change, and points at the hint, when auto-broadcast is logged disabled', () => {
+      const tree = { name: 'BroadcastHashJoin', detail: '', metrics: [], children: [
+        { name: 'BroadcastExchange', detail: '', id: 2, metrics: [{ name: 'data size', value: 2 * 1024 * MiB, metricType: 'size' }], children: [] },
+      ] };
+      const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: tree }]]);
+      const over = (config) => analyze(makeApp({ config }), new Map(), [], [], new Map(), sql).find((f) => f.type === 'overBroadcast');
+      const off = over({ 'spark.sql.autoBroadcastJoinThreshold': '-1' });
+      expect(off.remediation).toEqual([]);
+      expect(off.recommendation).toMatch(/remove the broadcast\(\) hint/);
+      expect(coreFindingGenericRecommendation(off)).toMatch(/remove the broadcast\(\) hint/);
+      for (const config of [{}, { 'spark.sql.autoBroadcastJoinThreshold': '10485760' }]) {
+        const f = over(config);
+        expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.autoBroadcastJoinThreshold', direction: 'decrease', suggested: null }]);
+        expect(coreFindingGenericRecommendation(f)).toMatch(/misconfigured spark\.sql\.autoBroadcastJoinThreshold/);
+      }
+    });
+
     it('words the missing-evidence caveats for a logging switch that is already on', () => {
       const rdd = (id) => ({
         id, name: `rdd${id}`, storageLevel: { useMemory: true, useDisk: false, deserialized: true, replication: 1 },
