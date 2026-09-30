@@ -131,8 +131,8 @@ function tableName(ident: string): string | null {
 }
 
 // First arg of a path-writing command. The next arg must be the boolean that follows it in
-// InsertIntoHadoopFsRelationCommand, or the static-partition Map (INSERT OVERWRITE ... PARTITION
-// (dt='x')) that precedes that boolean; this also rejects a path Spark printed with ", " inside.
+// InsertIntoHadoopFsRelationCommand, or the static-partition map (INSERT OVERWRITE ... PARTITION
+// (dt='x')) that precedes that boolean, which Spark prints as `[dt=x]` (or `Map(dt -> x)`); this also rejects a path Spark printed with ", " inside.
 function parseHadoopFsPath(args: Arg[]): Parsed | null {
   const [path, second, third] = args;
   const flag = second && /^(Map\(.*\)|\[.*\])$/s.test(second.text) && second.terminated ? third : second;
