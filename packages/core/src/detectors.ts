@@ -1,4 +1,4 @@
-import { pathBasename, formatBytes, nsToMs, IMPACT_BAND_ORDER } from './format-utils.ts';
+import { pathBasename, formatBytes, IMPACT_BAND_ORDER } from './format-utils.ts';
 import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId } from './plan-summary.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
@@ -14,6 +14,7 @@ import {
   type EstimateCtx,
 } from './impact-model.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
+import { totalExecutorCpuMs } from './run-totals.ts';
 import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
@@ -1881,10 +1882,9 @@ export const DETECTORS = [
       // CPU-time-based utilization (sparkMeasure): metric only, no threshold.
       let cpuUtilizationPct: number | null = null;
       if (totalCores > 0) {
-        let cpuMs = 0;
-        // executorCpuTime is reported by Spark in nanoseconds.
-        for (const s of ctx.stages.values()) cpuMs += nsToMs(s.executorCpuTime ?? 0);
-        cpuUtilizationPct = Math.round((cpuMs / (appDuration * totalCores)) * 100);
+        // Null when no stage recorded CPU time (older Spark), the same rule as the CLI metrics block.
+        const cpuMs = totalExecutorCpuMs(ctx.stages.values());
+        cpuUtilizationPct = cpuMs == null ? null : Math.round((cpuMs / (appDuration * totalCores)) * 100);
       }
 
       const value = Math.round(utilization * 100);

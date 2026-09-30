@@ -331,6 +331,20 @@ describe('metricDeltas', () => {
     expect(reversed.allocatedCoreHours.direction).toBe('regression');
   });
 
+  it('counts the work of earlier stage attempts and superseded task attempts in the run totals', () => {
+    const work = { taskCount: 0, failedTasks: 0, wastedAttempts: 0, executorRunTime: 500, executorCpuTime: 2e8, jvmGCTime: 7,
+      memoryBytesSpilled: 40, diskBytesSpilled: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0, inputBytes: 0, outputBytes: 0,
+      outputRecords: null, peakExecutionMemoryMax: 0, durationMs: null };
+    const retried = stageFull({ executorRunTime: 1000, executorCpuTime: 1e8, jvmGCTime: 3, memoryBytesSpilled: 10, earlierAttempts: work, lateAttemptWork: work });
+    const snap = fullSnap([[1, retried]], { name: 'A', startTime: 0, endTime: 10 });
+    snap.executors = { added: [], removed: [] };
+    const byKey = Object.fromEntries(metricDeltas(snap, snap).map((m) => [m.key, m.baseline]));
+    expect(byKey.executorRunTime).toBe(2000);
+    expect(byKey.executorCpuTime).toBe(500);
+    expect(byKey.gcTime).toBe(17);
+    expect(byKey.shuffleSpill).toBe(90);
+  });
+
   it('renders CPU time and core-hours Unavailable when a log never recorded them', () => {
     const snapA = fullSnap([[1, stageFull({ executorCpuTime: 0 })]], { name: 'A', startTime: 0, endTime: 10 });
     snapA.executors = { added: [], removed: [] };

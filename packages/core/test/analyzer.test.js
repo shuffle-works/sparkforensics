@@ -1728,6 +1728,18 @@ describe('analyze: CPU utilization metric (sparkMeasure, metric-only)', () => {
     expect(util.cpuUtilizationPct).toBeLessThanOrEqual(150);
   });
 
+  it('sets cpuUtilizationPct to null, not 0, when no stage recorded CPU time', () => {
+    const app = makeApp({ startTime: 1000, endTime: 11000, resources: { executor: { cores: 4 } } });
+    const stages = new Map([[1, makeStage({ executorRunTime: 100000, executorCpuTime: 0 })]]);
+    const added = [
+      { executorId: '1', timestamp: 1000, totalCores: 4 },
+      { executorId: '2', timestamp: 1000, totalCores: 4 },
+    ];
+    const util = analyze(app, stages, added, [{ executorId: '2', timestamp: 2000 }]).find(b => b.type === 'utilization');
+    expect(util).toBeTruthy();
+    expect(util.cpuUtilizationPct).toBeNull();
+  });
+
   it('sets cpuUtilizationPct to null when cores are unknown', () => {
     const app = makeApp({ startTime: 1000, endTime: 11000, resources: { executor: { cores: null } } });
     const stages = new Map([[1, makeStage({ executorCpuTime: 16000 })]]);

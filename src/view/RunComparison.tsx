@@ -252,7 +252,7 @@ export function RunComparison({
 
         <WidgetCard title="Metrics">
           <p className="mb-3 text-xs text-muted-foreground">
-            Metrics and finding categories cover the whole run. Per-stage skew below covers only the {coveragePct}% of stages that matched by unique identity.
+            Metrics and finding categories cover the whole run, and run totals count every task attempt, failed and speculative ones too. Per-stage skew below covers only the {coveragePct}% of stages that matched by unique identity.
           </p>
           <Table>
             <TableHeader>

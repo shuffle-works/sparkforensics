@@ -613,6 +613,20 @@ as waiting on an external system uses the same test.
 
 ### Effective conf
 
+Every figure the metrics block shares with another surface reads the same core
+code as that surface. The run comparison (the dashboard's comparison view, the
+CLI's `--baseline` and the MCP `compare_runs` tool) uses the same sums for run
+time, CPU time, GC time, spill, input, output and task count, so a comparison
+metric equals the matching `metrics` field for the same run, including the
+work of failed and speculative task attempts. Per-stage views in the dashboard
+(the stage table and stage detail) describe the stage's latest attempt and the
+task attempts that won, so a stage's own figures can be smaller than its row in
+`metrics.stages`. The dashboard's Efficiency card reports available capacity
+(peak concurrent cores times run time), which differs from
+`allocation.coreHours` (cores times the hours each executor was alive) under
+dynamic allocation. The utilization finding's `cpuUtilizationPct` is null, as
+`time.executorCpuTimeMs` is, when the log recorded no CPU time.
+
 The JSON output also carries `effectiveConf` (with its own `schemaVersion`),
 the Spark properties the run
 started with, so a script can check that a `--conf` overlay took effect. It is

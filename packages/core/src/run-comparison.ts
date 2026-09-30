@@ -2,6 +2,7 @@ import { computeWallClock } from './wall-clock.ts';
 import { normalizeDetail } from './detectors.ts';
 import { cyrb53 } from './string-hash.ts';
 import { computeAllocation } from './allocation.ts';
+import { totalExecutorCpuMs, withEarlierAttempts } from './run-totals.ts';
 import { planNodesOfStage } from './stage-plan-nodes.ts';
 import { captureSnapshot } from './session-snapshot.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
@@ -226,6 +227,9 @@ function metric(
 
 export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapshot): MetricDeltaRow[] {
   const out: MetricDeltaRow[] = [];
+  // Run totals count every task attempt, failed and speculative ones too (run-totals.ts), the
+  // same sums the CLI metrics block reports; skew stays on each stage's latest attempt.
+  const attemptsOf = (snap: SessionSnapshot): Stage[] => withEarlierAttempts([...snap.stages.values()]);
 
   // Wall-clock: always computable (computeWallClock tolerates a null app).
   out.push(metric('wallClock', 'Wall-clock duration',
@@ -236,8 +240,8 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
   // stage matching, and matching is unreliable on real logs, so scope it to all
   // stages exactly like task-skew and failed-rate below. The key stays
   // `shuffleSpill` so existing --regression-metric callers keep working.
-  const bSpill = sumField([...baseSnap.stages.values()], 'memoryBytesSpilled');
-  const cSpill = sumField([...candSnap.stages.values()], 'memoryBytesSpilled');
+  const bSpill = sumField(attemptsOf(baseSnap), 'memoryBytesSpilled');
+  const cSpill = sumField(attemptsOf(candSnap), 'memoryBytesSpilled');
   out.push(metric('shuffleSpill', 'Memory spill',
     bSpill.present ? bSpill.sum : null, cSpill.present ? cSpill.sum : null,
     { unavailableReason: bSpill.present && cSpill.present ? undefined : 'No memory-spill data recorded for a run' }));
@@ -249,10 +253,10 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
     { unavailableReason: bSkew != null && cSkew != null ? undefined : 'No stage had measurable duration for a run' }));
 
   // Failed-task rate: Σ failedTasks / Σ taskCount.
-  const bTasks = sumField([...baseSnap.stages.values()], 'taskCount');
-  const cTasks = sumField([...candSnap.stages.values()], 'taskCount');
-  const bFailed = sumField([...baseSnap.stages.values()], 'failedTasks');
-  const cFailed = sumField([...candSnap.stages.values()], 'failedTasks');
+  const bTasks = sumField(attemptsOf(baseSnap), 'taskCount');
+  const cTasks = sumField(attemptsOf(candSnap), 'taskCount');
+  const bFailed = sumField(attemptsOf(baseSnap), 'failedTasks');
+  const cFailed = sumField(attemptsOf(candSnap), 'failedTasks');
   // Guard on BOTH inputs: a missing `failedTasks` field must render Unavailable,
   // not a false 0% rate (dividing an absent-and-therefore-0 numerator).
   const bRate = bTasks.present && bTasks.sum > 0 && bFailed.present ? bFailed.sum / bTasks.sum : null;
@@ -264,8 +268,8 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
   // carries (set in finalizeStage). Correct at any match coverage, like the
   // sums above; no parser or detector change.
   const sumMetric = (key: string, label: string, field: NumericStageField, reason: string) => {
-    const b = sumField([...baseSnap.stages.values()], field);
-    const c = sumField([...candSnap.stages.values()], field);
+    const b = sumField(attemptsOf(baseSnap), field);
+    const c = sumField(attemptsOf(candSnap), field);
     out.push(metric(key, label, b.present ? b.sum : null, c.present ? c.sum : null,
       { unavailableReason: b.present && c.present ? undefined : reason }));
   };
@@ -286,11 +290,7 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
 
   // Executor CPU time (ms) and allocated core-hours cost resources, so less is better. CPU time is
   // null, not 0, on a run whose log never recorded it (older Spark).
-  const cpuMs = (snap: SessionSnapshot): number | null => {
-    let ns = 0;
-    for (const s of snap.stages.values()) if (Number.isFinite(s.executorCpuTime) && (s.executorCpuTime as number) > 0) ns += s.executorCpuTime as number;
-    return ns > 0 ? ns / 1e6 : null;
-  };
+  const cpuMs = (snap: SessionSnapshot): number | null => totalExecutorCpuMs(attemptsOf(snap));
   const bCpu = cpuMs(baseSnap), cCpu = cpuMs(candSnap);
   out.push(metric('executorCpuTime', 'Executor CPU time', bCpu, cCpu,
     { unavailableReason: bCpu != null && cCpu != null ? undefined : 'No executor CPU time recorded for a run' }));

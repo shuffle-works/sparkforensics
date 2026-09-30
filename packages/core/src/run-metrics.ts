@@ -3,7 +3,7 @@
 // moves independently of the evidence report's. A figure the log cannot provide is null, never 0.
 import { computeAllocation, type Allocation } from './allocation.ts';
 import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from './detectors.ts';
-import { nsToMs } from './format-utils.ts';
+import { totalExecutorCpuMs, withEarlierAttempts } from './run-totals.ts';
 import { isPythonStage } from './python-stage.ts';
 import { stageIdentity } from './run-comparison.ts';
 import { hasCompleteApplicationInterval } from './scorecard-estimates.ts';
@@ -81,13 +81,6 @@ function sumOf(stages: Stage[], pick: (s: Stage) => number | null | undefined): 
   return present ? sum : null;
 }
 
-// Spark records CPU time in nanoseconds and the parser defaults an absent metric to 0, so a run
-// whose stages all read 0 never recorded it (older Spark): null, not a zero-second run.
-function cpuTimeMs(stages: Stage[]): number | null {
-  const ns = sumOf(stages, (s) => (finite(s.executorCpuTime) && s.executorCpuTime > 0 ? s.executorCpuTime : null));
-  return ns == null ? null : nsToMs(ns);
-}
-
 // 0 means either no execution memory used or not recorded; only a positive peak is reported.
 function peakExecutionMemory(stages: Stage[]): number | null {
   const peaks = stages.map((s) => s.peakExecutionMemoryMax).filter((v): v is number => finite(v) && v > 0);
@@ -113,14 +106,6 @@ function stageAttempts(stages: Stage[]): { failed: number; retried: number } | n
   return { failed, retried };
 }
 
-// Each stage followed by the work its own figures leave out, shaped like a stage, so every total
-// sums the attempts a resubmit replaced and the tasks of a failed attempt that ended after it.
-function withEarlierAttempts(stages: Stage[]): Stage[] {
-  return stages.flatMap((s) => [s, ...[s.earlierAttempts, s.lateAttemptWork]
-    .filter((work) => work != null)
-    .map(({ durationMs, ...totals }) => ({ id: s.id, ...totals, submittedAt: 0, completedAt: durationMs ?? undefined }))]);
-}
-
 // Metrics of a set of stages, every attempt included; a row folds the stages sharing one
 // fingerprint. Skew describes the latest attempt's task durations.
 function stageMetrics(stages: Stage[], minTasksForP95: number): StageMetrics {
@@ -134,7 +119,7 @@ function stageMetrics(stages: Stage[], minTasksForP95: number): StageMetrics {
   const durations = attempts.filter((s) => finite(s.submittedAt) && finite(s.completedAt) && (s.completedAt as number) >= (s.submittedAt as number));
   return {
     durationMs: durations.length > 0 ? sumOf(durations, (s) => (s.completedAt as number) - (s.submittedAt as number)) : null,
-    executorCpuTimeMs: cpuTimeMs(finished),
+    executorCpuTimeMs: totalExecutorCpuMs(finished),
     executorRunTimeMs: fromTasks((s) => s.executorRunTime),
     gcTimeMs: fromTasks((s) => s.jvmGCTime),
     memorySpillBytes: fromTasks((s) => s.memoryBytesSpilled),
