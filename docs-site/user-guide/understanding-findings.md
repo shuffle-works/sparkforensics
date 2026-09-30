@@ -74,9 +74,8 @@ flagged on stages that take at least 0.5% of the run.
 
 Speculative task attempts used a lot of executor time without confirming a
 genuine straggler. Self-flags a confidence that scales with how far the
-wasted time sits past the threshold: these thresholds have not been
-validated against real-world runs. If task durations are
-just naturally variable rather than genuine stragglers, tune
+wasted time sits past the threshold. If task durations are just naturally
+variable rather than genuine stragglers, tune
 `spark.speculation.multiplier`/`spark.speculation.quantile`.
 
 ### `RETRY`: Retry waste {#retry}
@@ -184,8 +183,7 @@ re-provisioning churn rather than normal scale-down. Raise
 `spark.dynamicAllocation.executorIdleTimeout`, or widen the
 `minExecutors`/`maxExecutors` bounds to reduce flapping. Self-flags a
 confidence that scales with how far the short-lived-executor share sits
-past the threshold: these thresholds have not been validated against
-real-world runs.
+past the threshold.
 
 ### `JOBS`: Job failure rate {#jobs}
 

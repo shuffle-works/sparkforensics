@@ -5,5 +5,4 @@ re-provisioning churn rather than normal scale-down. Raise
 `spark.dynamicAllocation.executorIdleTimeout`, or widen the
 `minExecutors`/`maxExecutors` bounds to reduce flapping. Self-flags a
 confidence that scales with how far the short-lived-executor share sits
-past the threshold: these thresholds have not been validated against
-real-world runs.
+past the threshold.

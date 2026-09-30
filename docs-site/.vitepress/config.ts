@@ -68,7 +68,7 @@ export default defineConfig({
             { text: 'Understanding findings', link: '/user-guide/understanding-findings' },
             { text: 'Run comparison mode', link: '/user-guide/run-comparison' },
             { text: 'MCP tools reference', link: '/user-guide/mcp-tools' },
-            { text: 'Alternative log retrieval', link: '/user-guide/alternative-log-retrieval' },
+            { text: 'Finding your event log', link: '/user-guide/alternative-log-retrieval' },
           ],
         },
       ],

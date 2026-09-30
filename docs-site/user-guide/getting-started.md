@@ -60,7 +60,7 @@ Click **Other sources** on the landing page for two more ways in:
   running, and so on) and suggests what to try next.
 
 Can't reach the History Server directly (it's only reachable through an SSH
-bastion)? See [Alternative ways to get the logs](./alternative-log-retrieval.md).
+bastion)? See [Behind an SSH bastion](./alternative-log-retrieval.md#behind-an-ssh-bastion).
 
 In Chromium-based browsers, single files you open stay listed under
 **Recent files** on the landing page. Rolling-log folders, History Server
@@ -260,7 +260,7 @@ detector thresholds from a file (`--thresholds`, below). Run it with
 
 Same caveat as above: if the History Server is only reachable through an SSH
 bastion, `--shs-base-url` can't reach it either: see
-[Alternative ways to get the logs](./alternative-log-retrieval.md).
+[Behind an SSH bastion](./alternative-log-retrieval.md#behind-an-ssh-bastion).
 
 Running in Airflow instead of a plain CI pipeline? See
 [sparkforensics-operator](https://github.com/shuffle-works/sparkforensics-operator),
