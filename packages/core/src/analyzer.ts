@@ -113,7 +113,7 @@ function flagSkewStragglerOverlap(findings: Finding[]): void {
     if (f.stageId == null || !overlapStages.has(f.stageId)) continue;
     const note = f.type === 'skew' ? overlapNote('straggler') : f.type === 'straggler' ? overlapNote('skew') : null;
     if (!note) continue;
-    f.validationRequired = f.validationRequired ? `${f.validationRequired} ${note}` : note;
+    f.validationRequired = [f.validationRequired, note].filter(Boolean).join(' ');
   }
 }
 

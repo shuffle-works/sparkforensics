@@ -675,6 +675,17 @@ describe('analyze: skew/straggler same-stage overlap disclosure (§4)', () => {
     expect(spill.validationRequired ?? '').not.toMatch(/overlaps with/);
   });
 
+  it('appends the overlap note to a caveat the finding already carries', () => {
+    const stages = new Map([[1, makeStage({
+      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
+      speculativeTasks: 0, stragglerCount: 2,
+    })]]);
+    const catalog = analyze(makeApp(), stages, [], [], new Map(), new Map(), null, { thresholds: { skew: { ratioWarn: 2 } } });
+    const skew = catalog.find(b => b.type === 'skew');
+    expect(skew.validationRequired).toContain('Produced with tuned thresholds: ratioWarn 2 (default 3).');
+    expect(skew.validationRequired).toMatch(/overlaps with the straggler finding/);
+  });
+
   it('does not flag skew when no straggler fires on the same stage', () => {
     const stages = new Map([[1, makeStage({
       taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
