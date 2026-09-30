@@ -17,11 +17,15 @@ Worker to main:
 - `stageSpeculationWaste`: the speculation totals of stages that gained
   waste from a TaskEnd after their StageCompleted, also described in
   [Streaming](./overview.md#streaming) and emitted just before `done`.
+- `stageLateAttemptWork`: the work of a failed stage attempt's tasks that
+  ended after its StageCompleted, also described in
+  [Streaming](./overview.md#streaming) and emitted just before `done`.
 - `done`, `taskData`, `error`.
 
 `emitParseCompletion` posts the tail in a fixed order: any deferred AQE `sql`
-updates, `progress` (`pct: 1`), `runAggregates`, `stageSpeculationWaste`,
-`stageExecutorMetrics`, the terminal `app`, then `done`.
+updates, `progress` (`pct: 1`), `stageLateAttemptWork`, `runAggregates`,
+`stageSpeculationWaste`, `stageExecutorMetrics`, the terminal `app`, then
+`done`.
 
 A History Server failure is always the typed payload
 `{ type: 'error', source: 'shs', code, message? }`, where `code` is one of
