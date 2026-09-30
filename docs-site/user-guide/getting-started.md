@@ -225,8 +225,12 @@ Output is JSON by default; `--format md` writes the Markdown report instead.
 Budget violations and inconclusive budgets print to stderr as
 `[violation] ...` and `[inconclusive] ...` lines. The exit code is 0 when
 every budget passes, 1 when one is violated, 3 when none is violated but one
-is inconclusive, and 2 for bad arguments, an invalid `--thresholds` file, an
-unreadable log or a failed History Server fetch.
+is inconclusive, 2 for a usage error (bad flags or arguments, an invalid
+`--thresholds` or `--budgets` file), 4 when the candidate log can't be read or
+parsed or its History Server fetch fails, 5 when the `--baseline` log can't be
+read or parsed, and 6 for an internal error, including a failed `--export-html`.
+When several of these apply, the worst wins in this order: 6, 5, 4, 1, 3, 0.
+A usage error exits 2 before any log is read.
 
 `--min-efficiency` checks busy core time, the share of executor core time that
 ran tasks (100 minus the dashboard's Unused core time). It is not the
@@ -317,7 +321,9 @@ Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,
 comparing a candidate run against a baseline with regression gating
 (`--baseline`/`--max-regression-pct`/`--regression-metric`/
 `--fail-on-introduced`; the baseline is a local file or rolling-log
-directory, no History Server), redacting the app id, the app name and any host/IP
+directory, no History Server), several regression budgets and several
+candidates in one call (`--regression-budget`/`--budgets`, see
+[Several budgets and several candidates](#several-budgets-and-several-candidates)), redacting the app id, the app name and any host/IP
 tokens before sharing output (`--redact`), and narrowing the findings to certain impact
 bands, types, or a stage (`--impact`/`--type`/`--stage`), and tuning
 detector thresholds from a file (`--thresholds`, below). Run it with
@@ -334,6 +340,117 @@ Spark job, so you don't have to wire up the call yourself.
 
 Want an AI assistant to diagnose a run directly, without the dashboard or a
 CI gate? See [MCP tools reference](./mcp-tools.md).
+
+### Write targets {#write-targets}
+
+The JSON report has a top-level `writeTargets` object listing every SQL write
+in the run, so a script can check where a job wrote without reading the plan.
+It has no Markdown counterpart.
+
+```json
+{
+  "writes": [
+    {
+      "sqlExecutionId": 3,
+      "nodeId": "e3:n0",
+      "command": "InsertIntoHadoopFsRelationCommand",
+      "recognized": true,
+      "kind": "path",
+      "target": "hdfs://nn/sandbox/out/t1",
+      "outputRows": 5000000,
+      "raw": "Execute InsertIntoHadoopFsRelationCommand hdfs://nn/sandbox/out/t1, false, Parquet, ..."
+    }
+  ],
+  "executionsWithoutPlan": [{ "sqlExecutionId": 4, "reason": "noPlan" }],
+  "skippedLines": 0
+}
+```
+
+- `writes` holds one row per write node, ordered by SQL execution id and then
+  by position in the plan. `command` is the plan node's name without the
+  `Execute ` prefix or an `Exec` suffix, `nodeId` is the plan node's id, and
+  `raw` is the node's full plan string as the log recorded it.
+- `kind` says how to read `target`:
+  - `path` is a filesystem location.
+  - `table` is a table name whose catalog the command states or implies: a
+    Hive or V1 command's `database.table`, or a DataSource V2 name with a
+    catalog part (`catalog.namespace.table`).
+  - `unqualifiedTable` is a DataSource V2 name with no catalog part, such as
+    `default.events` or `events`. The log does not say which catalog it lives
+    in, so a check on its database part alone can match the wrong catalog.
+  - `jdbcTable` is a `dbtable` of a JDBC write. It names a table in an external
+    database, not in a Spark catalog, and the database itself (the JDBC url) is
+    not reported.
+
+  Every target is copied verbatim from the plan string: nothing is resolved, so
+  a relative path, an unexpanded `${var}` placeholder or a bare table name
+  appears exactly as the log states it. Backticks around table name parts are
+  dropped.
+- `target` and `kind` are `null` when the target cannot be determined. That
+  covers a node whose plan string has no target (Spark omits it for some
+  commands, and a Delta write made through `SaveIntoDataSourceCommand` often
+  has none), a redacted option value, a plan string that names more than one
+  candidate target, a Delta `MERGE` (its plan string also prints the source),
+  a Delta command whose first argument is not a `delta.` path, and a plan string
+  Spark cut short. A target is reported only when its whole text is followed by
+  a delimiter in the plan string: a path cut by
+  `spark.sql.maxMetadataStringLength` or a name with a `...` marker in it is
+  `null`, never a partial path. A trailing `... N more fields` after the
+  target, such as the column list of `InsertIntoHadoopFsRelationCommand`, does
+  not affect the target before it. Treat a `null` target as unknown, not as
+  inside or outside any location.
+- `outputRows` is the node's own `number of output rows` SQL metric. It is
+  `null` when the log has no such metric for that node, which is the case for
+  the DataSource V2 and Delta write nodes that report other metrics.
+- `recognized` is `true` for the commands below and `false` for a write-like
+  node that is not in that list. An unrecognized write always has `target` and
+  `kind` `null`, and `raw` is the only information about it.
+- `executionsWithoutPlan` lists the SQL executions whose writes the report
+  cannot see, each with a `reason`. `noPlan` means the execution started but the
+  log has no plan for it, such as an execution still running when the log was
+  cut off (a plan is read when its execution ends). `unreadableStart` means the
+  execution's start event was skipped because it could not be read, for example
+  a plan nested deeper than 500 nodes or a start line cut off at the end of the
+  log. A write in one of these executions is not in `writes`, so a non-empty
+  list means the report may be incomplete.
+- `skippedLines` is the number of log lines the parser could not read. A line
+  cut off before its execution id is not in `executionsWithoutPlan`, so a
+  non-zero count means a write may be missing even when that list is empty. It
+  is `null` when the count is unknown.
+
+Recognized commands and where their target comes from:
+
+| Command | Target |
+| --- | --- |
+| `InsertIntoHadoopFsRelationCommand` | `path`: the first argument, including for an `INSERT OVERWRITE ... PARTITION` that prints a static-partition map after it |
+| `InsertIntoHiveTable`, `CreateDataSourceTableAsSelectCommand`, `CreateHiveTableAsSelectCommand`, `OptimizedCreateHiveTableAsSelectCommand` | `table`: the first argument |
+| `SaveIntoDataSourceCommand` | `path` from the `path` option, or `jdbcTable` from the JDBC `dbtable`/`table` option |
+| `AppendData`, `OverwriteByExpression`, `OverwritePartitionsDynamic`, `ReplaceData`, `WriteDelta`, `WriteToDataSourceV2`, `AppendDataExecV1`, `OverwriteByExpressionExecV1` | `table` or `unqualifiedTable`: the `table=` of the connector's write object, for example Iceberg's `IcebergWrite(table=..., ...)` |
+| `CreateTableAsSelect`, `AtomicCreateTableAsSelect`, `ReplaceTableAsSelect`, `AtomicReplaceTableAsSelect` | `table` or `unqualifiedTable`: the identifier after the catalog object, which does not name the catalog |
+| `WriteIntoDelta`, `WriteIntoDeltaCommand`, `UpdateCommand`, `DeleteCommand`, `CreateDeltaTableCommand`, `OptimizeTableCommand`, `RestoreTableCommand`, `DeltaReorgTableCommand` | `path`: the first argument when it is a `delta.` path table, otherwise `null` |
+| `MergeIntoCommand` | always `null` |
+
+A plan node not in the table is a write when its operator name (the first word
+of the node name after any leading `Execute`, so not the relation or table a
+scan prints after it), split
+into CamelCase words, contains `Write`, `Insert`, `Save`, `Overwrite`, `Append`, `Merge`,
+`Update`, `Delete`, `Truncate`, `Replace`, `Drop`, `Load`, `Vacuum`,
+`Convert`, `Clone`, `Restore`, `Optimize`, `Alter`, `Reorg`, `Rename` or
+`Call`, or contains `TableAsSelect`, `AddPartition`, `DropPartition`,
+`RenamePartition` or `RecoverPartitions`. That covers table DDL and
+`ADD PARTITION ... LOCATION`, and an Iceberg procedure call (`Call`), whose
+target is a procedure argument and not a path, so it is reported with a `null`
+target. A name containing `Join` (`SortMergeJoin`) and these operators that
+share a word with a write but write nothing are not: `WriteFiles` (the child of
+a write command), `AppendColumns`, `AppendColumnsWithObject`, `MergeRows`,
+`StateStoreSave`, `StateStoreRestore`, `SessionWindowStateStoreSave`,
+`SessionWindowStateStoreRestore` and `UpdateEventTimeWatermarkColumn`. The
+classification leans toward reporting too much: a node that matches by name is
+listed with a `null` target rather than dropped.
+
+Only SQL writes are covered. Writes made outside Spark SQL, such as an RDD
+`saveAsTextFile` or a direct filesystem call from the driver, do not appear in
+the event log and are not in `writeTargets`.
 
 ### Tuning detector thresholds
 
@@ -392,8 +509,9 @@ a note to stderr saying so. The browser dashboard has no tuning.
 
 ### Regression metric keys
 
-`--regression-metric` (and the MCP `evaluate_budgets` tool's
-`regressionMetric`) takes one of these keys; the default is `wallClock`:
+`--regression-metric`, `--regression-budget` and the `--budgets` file (and the
+MCP `evaluate_budgets` tool's `regressionMetric`) take one of these keys; the
+default for `--regression-metric` is `wallClock`:
 
 - `wallClock`: wall-clock duration
 - `executorRunTime`: summed executor run time
@@ -407,3 +525,97 @@ Four more keys, `inputBytes`, `outputBytes`, `taskCount` and
 `executorsAdded`, measure workload volume rather than performance. They have
 no better or worse direction, so a regression budget on one of them reports
 `inconclusive` whenever the value changes, and passes when it doesn't.
+
+### Several budgets and several candidates
+
+#### Several regression budgets
+
+`--max-regression-pct` checks one metric. To gate on several in one call,
+repeat `--regression-budget <metric>:<pct>`, or list them in a file passed
+with `--budgets <file>`. Both need `--baseline`, and each budget takes a
+[metric key](#regression-metric-keys) and a percentage of zero or more:
+
+```bash
+sparkforensics-analyze candidate --baseline baseline \
+  --regression-budget wallClock:10 --regression-budget gcTime:25
+```
+
+The `--budgets` file is JSON with one key, `regression`, mapping a metric key
+to its percentage:
+
+```json
+{ "regression": { "wallClock": 10, "gcTime": 25, "failedTaskRate": 0 } }
+```
+
+The CLI refuses to run, with exit code 2 and a message naming the problem,
+for an unknown top-level key, an unknown metric key, a percentage that is not
+a non-negative number (in the file a JSON number, not a string; on the flag
+plain digits such as `10` or `2.5`), or a file that can't be read or isn't
+valid JSON.
+
+The budgets combine like this:
+
+- `--max-regression-pct` with `--regression-metric` (default `wallClock`)
+  still works and counts as one more budget next to the new ones.
+- Each metric can be budgeted once across the legacy pair, the repeated flag
+  and the file. A metric named twice is a usage error (exit 2), even when both
+  give the same percentage.
+- Each budget is checked on its own and gives one `max-regression` result
+  that carries `metric`, the key it checks. Any violated budget makes the run
+  exit `1`; otherwise an inconclusive one makes it exit `3`. A budget on a
+  metric the baseline or the candidate log can't provide is inconclusive,
+  never a pass.
+
+#### Several candidates
+
+Pass two or more logs as positional arguments, with `--baseline`, to compare
+each against the same baseline. The baseline is parsed once. Output is
+NDJSON: one line per candidate, in argument order, written as each one
+finishes. `--out <path>` writes the lines to a file instead of stdout, and
+`--format ndjson` selects this output for a single candidate too. The mode
+can't be combined with `--export-html`, `--shs-base-url`, `--format json` or
+`--format md` (exit 2). `--redact`, `--thresholds`, `--impact`, `--type`,
+`--stage` and every budget flag apply to each candidate.
+
+Each line is one JSON object:
+
+| Field | Meaning |
+| --- | --- |
+| `log` | The candidate path, as given on the command line. With `--redact`, `candidate-<n>` instead, `n` being the candidate's 1-based position. |
+| `status` | `pass`, `violation`, `inconclusive` or `error`. |
+| `exitCode` | The exit code this line alone would give: `0` for `pass`, `1` for `violation`, `3` for `inconclusive`, and for `error` `4` (the log can't be read or parsed) or `6` (an internal failure while analyzing it). |
+| `error` | The message when `status` is `error`; otherwise `null`. With `--redact`, a generic message that names no path. |
+| `budgets` | This candidate's budget results, each with `name`, `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric` on `max-regression`. Empty for an `error` line. |
+| `candidate` | The candidate's report, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
+| `comparison` | `verdict`, `confidence`, `reason`, `matchedCoverage`, `metrics` and `findings`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
+
+A line's `status` follows the single-candidate rules: `violation` if any
+budget result is a violation, else `inconclusive` if any is inconclusive
+(including the `run-complete` check for a log with no `ApplicationEnd`),
+else `pass`.
+
+A candidate that can't be read or parsed doesn't stop the others. Its line
+has `status: "error"`, `exitCode: 4`, the message in `error`, and `null` for
+`candidate` and `comparison`, as a single-candidate run exits `4` for a
+candidate it can't parse. The process exit code is the worst line, in the
+order `6`, `5`, `4`, `1`, `3`, `0`, so an unreadable candidate outranks a
+violation and a violation outranks an inconclusive result.
+
+Two failures stop the batch before any line is written:
+
+- A usage error (bad flags or arguments, an invalid `--thresholds` or
+  `--budgets` file) exits `2`.
+- A baseline that can't be read or parsed exits `5`. Fix the baseline and run
+  the batch again.
+
+An internal failure that isn't tied to one candidate, such as an unwritable
+`--out` path, exits `6`.
+
+With `--redact`, no candidate path is written anywhere, since event-log file
+names usually carry the app id. `log` and the `stderr` line prefixes name each
+candidate by its 1-based position (`candidate-1`, `candidate-2`, ...), and an
+`error` line carries a generic message instead of the parser's, which may
+quote the path: `Candidate 2 could not be read or parsed.`, or `could not be
+analyzed` for an internal failure. An unreadable baseline prints `The baseline
+could not be read or parsed.` to `stderr`. A single-candidate run does the
+same, naming `The baseline` or `The candidate`.

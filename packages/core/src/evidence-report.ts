@@ -22,6 +22,7 @@ import {
   estimateProvenance, impactEstimateFigure, impactFigure, rawWasteMeaning, savingsMeaning,
 } from './impact-format.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
+import { extractWriteTargets, type WriteTargetsReport } from './write-targets.ts';
 import { detectorInfoByType } from './detector-docs.ts';
 import type {
   AppModel, Finding, FindingEvidenceMap, FindingType, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,
@@ -167,6 +168,8 @@ export interface EvidenceReportJson {
   evidenceAvailability: EvidenceAvailability | null;
   detectors: unknown;
   findings: FindingRow[];
+  // Every SQL write command with its path or table (see write-targets.ts for the null rules).
+  writeTargets: WriteTargetsReport;
   recommendations: RecommendationRow[];
   cleanChecks: CleanCheckEntry[];
   notRunChecks: NotRunCheckEntry[];
@@ -497,6 +500,9 @@ function buildJson(
     // Order follows DETECTORS (stable) => byte-stable serialization.
     detectors: tunedDetectorCatalog(thresholds),
     findings: rows,
+    writeTargets: extractWriteTargets(sql ?? new Map(), {
+      skippedLines: appModel.skippedLines, unreadableSqlExecutions: appModel.unreadableSqlExecutions,
+    }),
     recommendations,
     cleanChecks,
     notRunChecks,

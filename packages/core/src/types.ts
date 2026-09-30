@@ -263,6 +263,10 @@ export interface AppModel {
   jobs: Map<number, Job>;
   runAggregates: RunAggregates | null;
   evidenceAvailability: EvidenceAvailability | null;
+  /** Lines the parser skipped; absent on a model not built by a full parse. */
+  skippedLines?: number;
+  /** SQL executions whose start event was skipped, so they are not in `sql`. */
+  unreadableSqlExecutions?: number[];
 }
 
 export type ImpactEstimateMethod = 'measured' | 'modeled' | 'none';
