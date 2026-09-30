@@ -224,8 +224,8 @@ Output is JSON by default; `--format md` writes the Markdown report instead.
 Budget violations and inconclusive budgets print to stderr as
 `[violation] ...` and `[inconclusive] ...` lines. The exit code is 0 when
 every budget passes, 1 when one is violated, 3 when none is violated but one
-is inconclusive, and 2 for bad arguments, an invalid `--thresholds` file, an
-unreadable log or a failed History Server fetch.
+is inconclusive, and 2 for bad arguments, an invalid `--thresholds` or
+`--budgets` file, an unreadable log or a failed History Server fetch.
 
 `--min-efficiency` checks busy core time, the share of executor core time that
 ran tasks (100 minus the dashboard's Unused core time). It is not the
