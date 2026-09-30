@@ -421,7 +421,9 @@ the worst line (`6` > `5` > `4` > `1` > `3` > `0`, `EXIT_SEVERITY`). A baseline
 that can't be read exits `5` with no lines. Under
 `--redact`, `log` and the `stderr` prefixes are `candidate-<n>` (1-based argument
 position) and an error line's message is generic, so no candidate path, which
-usually carries the app id, reaches the output.
+usually carries the app id, reaches the output. In both modes `--redact` also
+swaps the `stderr` text of a baseline or candidate failure (SHS fetch included)
+for `redactedFailure`'s role-only message.
 
 Optional CLI-flag budgets (`--max-runtime <ms>`, `--max-spill <gb>`,
 `--max-skew <ratio>`, `--max-failed-task-rate <pct>`, `--min-efficiency <pct>`)
