@@ -97,7 +97,7 @@ describe('stripUrlCredentials', () => {
   });
 
   it('leaves non-URL values and credential-free URLs alone', () => {
-    for (const v of ['4g', 'password=x', 'yarn', 'hdfs://nn:8020/user/x', 'a,b,c']) expect(stripUrlCredentials(v)).toBe(v);
+    for (const v of ['4g', 'yarn', 'passing=x', 'bypass=1', 'hdfs://nn:8020/user/x', 'a,b,c']) expect(stripUrlCredentials(v)).toBe(v);
   });
 
   it('handles each URL in a comma-separated list', () => {
@@ -110,5 +110,43 @@ describe('compileJvmPattern', () => {
     expect(compileJvmPattern('(?i)secret').test('SECRET')).toBe(true);
     expect(compileJvmPattern('secret').test('SECRET')).toBe(false);
     expect(compileJvmPattern('(?x)a b')).toBeNull();
+  });
+});
+
+describe('credential forms beyond the Spark default pattern', () => {
+  it.each([
+    ['spark.hadoop.fs.azure.account.key.acct.dfs.core.windows.net'],
+    ['spark.myapp.apiKey'],
+    ['spark.myapp.api_key'],
+    ['spark.myapp.db.pwd'],
+    ['spark.myapp.db.pass'],
+    ['spark.hadoop.fs.azure.sas.container.acct.blob.core.windows.net'],
+    ['spark.myapp.credential'],
+    ['spark.myapp.accountKey'],
+    ['spark.myapp.privateKey'],
+  ])('withholds the value of key %s', (key) => {
+    const conf = buildEffectiveConf(app({ [key]: 'hunter2-value', 'spark.plain': 'ok' }));
+    expect(conf.maskedKeys).toEqual([key]);
+    expect(JSON.stringify(conf)).not.toContain('hunter2-value');
+  });
+
+  it('does not withhold look-alike keys', () => {
+    const conf = buildEffectiveConf(app({
+      'spark.authenticate.enableSaslEncryption': 'true', 'spark.sql.passthrough': 'x', 'spark.executor.memory': '4g',
+    }));
+    expect(conf.maskedKeys).toEqual([]);
+  });
+
+  it.each([
+    ['Server=h;Database=d;Uid=u;Pwd=hunter2;Encrypt=yes', 'Server=h;Database=d;Uid=u;Pwd=[redacted];Encrypt=yes'],
+    ['Server=h;User Id=u;pass=hunter2;', 'Server=h;User Id=u;pass=[redacted];'],
+    ['endpoint=https://h/x&apiKey=hunter2&v=1', 'endpoint=https://h/x&apiKey=[redacted]&v=1'],
+    ['AccountName=a;AccountKey=hunter2==;EndpointSuffix=x', 'AccountName=a;AccountKey=[redacted];EndpointSuffix=x'],
+    ['BlobEndpoint=https://a;SharedAccessSignature=x;sas=hunter2', 'BlobEndpoint=https://a;SharedAccessSignature=x;sas=[redacted]'],
+    ['user=u password="hunter 2" x=1', 'user=u password=[redacted] x=1'],
+  ])('strips the credential from a value that is not a URL: %s', (value, expected) => {
+    expect(stripUrlCredentials(value)).toBe(expected);
+    const conf = buildEffectiveConf(app({ 'spark.myapp.connection': value }));
+    expect(JSON.stringify(conf)).not.toContain('hunter2');
   });
 });

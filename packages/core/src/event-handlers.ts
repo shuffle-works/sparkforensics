@@ -22,6 +22,7 @@ import { assertNever } from './assert-never.ts';
 import { finalizeStage } from './stage-quantiles.ts';
 import { MAX_FAILURE_DETAILS_PER_STAGE, extractTaskFailureDetail, taskFailureKey, type TaskFailureDetail } from './task-failure.ts';
 import { computeRunAggregates } from './run-aggregates.ts';
+import { parseSparkMemoryMB } from './spark-memory.ts';
 import type {
   Job, ExecutorAddedEvent, ExecutorRemovedEvent, PlanNode, SparkAppInfo, EvidenceInputs, StageAttemptTotals,
 } from './types';
@@ -165,8 +166,10 @@ interface StageRecord {
   failedStageAttempts: number;
   // Work of the attempts a resubmit replaced (foldEarlierAttempts); null until one is.
   earlierAttempts: StageAttemptTotals | null;
-  // Tasks of a failed attempt that ended after its StageCompleted (zombie or killed tasks), carried
-  // across resubmits and re-posted before `done` (stageLateAttemptWork); null until one arrives.
+  // Work the stage's figures leave out: tasks of a failed attempt that ended after its
+  // StageCompleted (zombie or killed tasks) and attempts superseded by a winning one (failed
+  // retries, losing speculative copies). Carried across resubmits and re-posted before `done`
+  // (stageLateAttemptWork); null until some arrives.
   lateAttemptWork: StageAttemptTotals | null;
   // Largest task peak execution memory, set by finalizeStage.
   peakExecutionMemoryMax?: number;
@@ -451,23 +454,7 @@ export function normalizeSparkProperties(
   return map;
 }
 
-// Parse a Spark memory-size string to MiB. Spark's JVM-memory configs use bytesConf(ByteUnit.MiB),
-// so a bare number means MiB. A k/m/g/t suffix sets the unit (trailing "b" redundant); a lone "b"
-// ("10b") means bytes.
-export function parseSparkMemoryMB(value: unknown): number | null {
-  if (value == null) return null;
-  const m = String(value).trim().toLowerCase().match(/^([\d.]+)\s*([kmgt]?)(b?)$/);
-  if (!m) return null;
-  const n = parseFloat(m[1]);
-  if (!Number.isFinite(n)) return null;
-  switch (m[2]) {
-    case 'k': return Math.round(n / 1024);
-    case 'g': return Math.round(n * 1024);
-    case 't': return Math.round(n * 1024 * 1024);
-    case 'm': return Math.round(n);
-    default: return m[3] === 'b' ? Math.round(n / (1024 * 1024)) : Math.round(n);
-  }
-}
+export { parseSparkMemoryMB };
 
 // Derive an allocated-resource summary from the Spark config map. Absent keys degrade to null,
 // not guessed defaults.
@@ -644,9 +631,11 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
         stage.retryTaskSamples.push(taskRecordToSample(existing));
       }
     }
+    stage.lateAttemptWork = mergeAttemptTotals(discardedAttemptTotals(existing), stage.lateAttemptWork);
     stage.taskAttempts.set(key, record);
     if (record.speculative) stage.speculativeWinners.add(key);
   } else {
+    stage.lateAttemptWork = mergeAttemptTotals(discardedAttemptTotals(record), stage.lateAttemptWork);
     // Non-winning duplicate (both failed, or a race where a winner is
     // already recorded): its time is waste, its metrics are discarded.
     if (existing.speculative || record.speculative) {
@@ -677,6 +666,7 @@ function accountLateSpeculativeLoser(event: z.infer<typeof TaskEndEventSchema>, 
   stage.speculationWasteMs += (info['Finish Time'] ?? 0) - (info['Launch Time'] ?? 0);
   stage.speculationWastedAttempts++;
   stage.lateSpeculationWaste = true;
+  stage.lateAttemptWork = mergeAttemptTotals(discardedAttemptTotals(taskRecordOf(event, null)), stage.lateAttemptWork);
   return true;
 }
 
@@ -912,6 +902,13 @@ function taskAttemptTotals(t: TaskRecord): StageAttemptTotals {
     inputBytes: t.inputBytes, outputBytes: t.outputBytes, outputRecords: t.outputRecords,
     peakExecutionMemoryMax: t.peakExecMem, durationMs: null,
   };
+}
+
+// A task attempt the stage's figures drop because another attempt of the same task won (a retry
+// after a failure, a speculative twin): its CPU, run time and I/O were still spent, so the
+// metrics block counts them, but the task itself is already counted once.
+function discardedAttemptTotals(t: TaskRecord): StageAttemptTotals {
+  return { ...taskAttemptTotals(t), taskCount: 0, failedTasks: 0 };
 }
 
 // The replaced record's finalized attempt added to the attempts it had already folded. An attempt resubmitted before its StageCompleted was never finalized, so its

@@ -126,7 +126,9 @@ function withEarlierAttempts(stages: Stage[]): Stage[] {
 function stageMetrics(stages: Stage[], minTasksForP95: number): StageMetrics {
   const attempts = withEarlierAttempts(stages);
   // Task-derived figures are null for stages that never finished (no task records).
-  const finished = attempts.filter((s) => (s.taskCount ?? 0) > 0);
+  // Superseded attempts carry work but no task count of their own, so they stay in once any
+  // attempt finished a task.
+  const finished = attempts.some((s) => (s.taskCount ?? 0) > 0) ? attempts : [];
   const tasks = sumOf(attempts, (s) => s.taskCount);
   const fromTasks = (pick: (s: Stage) => number | undefined): number | null => (finished.length > 0 ? sumOf(finished, pick) : null);
   const durations = attempts.filter((s) => finite(s.submittedAt) && finite(s.completedAt) && (s.completedAt as number) >= (s.submittedAt as number));

@@ -9,6 +9,9 @@ export const EFFECTIVE_CONF_SCHEMA_VERSION = 1;
 
 /** Spark's default spark.redaction.regex, in JS syntax (the JVM pattern is `(?i)` + this). */
 export const DEFAULT_SECRET_PATTERN = 'secret|password|token|access[.]?key';
+/** Further credential names no Spark default covers, tested on keys (Azure `fs.azure.account.key.*`,
+ * `apiKey`, `pwd`, a bare `pass` or `sas` segment, `credential`). */
+export const EXTRA_SECRET_KEY_PATTERN = 'passwd|pwd|(?:^|[._-])pass(?:[._-]|$)|api[._-]?key|account[._-]?key|private[._-]?key|credential|(?:^|[._-])sas(?:[._-]|$)|(?:^|[._-])sig(?:nature)?(?:[._-]|$)';
 const REDACTED = '[redacted]';
 
 export interface EffectiveConf {
@@ -47,16 +50,25 @@ export function compileJvmPattern(source: string): RegExp | null {
 // Sensitive query/parameter names in a URL-like value: signatures of pre-signed and SAS URLs.
 const SIGNATURE_PARAMS = 'sig|signature|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential';
 
-/** Strips credentials from a value that looks like a URL: userinfo (user:password@host), the
- * Oracle thin form (jdbc:oracle:thin:user/password@host), JDBC-style password= parameters and
- * signature query parameters (Azure SAS sig=, pre-signed signatures). */
+// A `name=value` credential parameter in any value (a JDBC or ODBC string, a JVM option, a query
+// string): `password`, `pwd`, `pass`, `apikey`, `accountkey`, `sas`, `sig` and the like, alone or as
+// the tail of a longer name (`-Djavax.net.ssl.keyStorePassword=`).
+const CREDENTIAL_PARAM = new RegExp(
+  '((?:^|[\\s;&,?:"\'(]|-D)(?:[\\w.-]*?(?:password|passwd|pwd|secret|token|api[_.-]?key|account[_.-]?key|access[_.-]?key|private[_.-]?key)|pass|sas|credential|'
+  + `${SIGNATURE_PARAMS})\\s*=\\s*)("[^"]*"|'[^']*'|[^;&,\\s"']*)`, 'gi');
+
+/** Strips credentials from a value: `name=value` credential parameters anywhere (JDBC
+ * `password=`/`pwd=`/`pass=`, `apiKey=`, signature parameters such as Azure SAS `sig=`), and, in a
+ * value that looks like a URL, userinfo (user:password@host) and the Oracle thin form
+ * (jdbc:oracle:thin:user/password@host). */
 export function stripUrlCredentials(value: string): string {
-  if (!/^[a-z][a-z0-9+.-]*:/i.test(value) && !value.includes('://')) return value;
-  return value
-    .replace(/(:\/\/)[^/\s@?#,]*@/g, `$1${REDACTED}@`)
-    .replace(/^((?:[a-z][a-z0-9+.-]*:)+[^\s:/@]+\/)[^\s@]+@/i, `$1${REDACTED}@`)
-    .replace(/((?:^|[?&;,\s])(?:password|passwd|pwd)=)[^;&,\s]*/gi, `$1${REDACTED}`)
-    .replace(new RegExp(`((?:^|[?&;,\\s])(?:${SIGNATURE_PARAMS})=)[^;&,\\s]*`, 'gi'), `$1${REDACTED}`);
+  const urlLike = /^[a-z][a-z0-9+.-]*:/i.test(value) || value.includes('://');
+  const withoutUserinfo = urlLike
+    ? value
+      .replace(/(:\/\/)[^/\s@?#,]*@/g, `$1${REDACTED}@`)
+      .replace(/^((?:[a-z][a-z0-9+.-]*:)+[^\s:/@]+\/)[^\s@]+@/i, `$1${REDACTED}@`)
+    : value;
+  return withoutUserinfo.replace(CREDENTIAL_PARAM, `$1${REDACTED}`);
 }
 
 /** The run's Spark Properties as the CLI reports them; null when the log recorded none. */
@@ -64,6 +76,7 @@ export function buildEffectiveConf(app: SparkAppInfo | null, options: EffectiveC
   const config = app?.config;
   if (config == null) return null;
   const defaultPattern = new RegExp(DEFAULT_SECRET_PATTERN, 'i');
+  const extraKeyPattern = new RegExp(EXTRA_SECRET_KEY_PATTERN, 'i');
   const jobSource = config['spark.redaction.regex'] ?? null;
   const jobPattern = jobSource != null ? compileJvmPattern(jobSource) : null;
   // A job pattern this runtime cannot evaluate withholds every value rather than guess.
@@ -81,7 +94,7 @@ export function buildEffectiveConf(app: SparkAppInfo | null, options: EffectiveC
     const value = config[key];
     // Spark applies its redaction pattern to the key and the value.
     const masked = !jobPatternUsable
-      || matches(defaultPattern, key, value) || matches(jobPattern, key, value) || matches(userPattern, key, value);
+      || matches(defaultPattern, key, value) || extraKeyPattern.test(key) || matches(jobPattern, key, value) || matches(userPattern, key, value);
     if (masked) maskedKeys.push(key);
     else values[key] = stripUrlCredentials(value);
   }

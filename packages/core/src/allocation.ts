@@ -1,3 +1,4 @@
+import { parseSparkMemoryMB } from './spark-memory.ts';
 import type { ExecutorAddedEvent, ExecutorEvent, SparkAppInfo, Stage } from './types.ts';
 
 const MS_PER_HOUR = 3_600_000;
@@ -10,8 +11,8 @@ const DEFAULT_OVERHEAD_FACTOR = 0.1;
 export interface Allocation {
   /** Σ over executors of cores x hours alive; null when an executor's cores cannot be resolved. */
   coreHours: number | null;
-  /** Σ over executors of (executor memory + overhead) in GiB x hours alive; null without
-   * spark.executor.memory in the log. */
+  /** Σ over executors of container memory in GiB x hours alive; null when the log records no
+   * Spark properties or a memory key cannot be read. */
   memoryGbHours: number | null;
 }
 
@@ -35,27 +36,42 @@ export function lastObservedTimestamp(input: AllocationInput): number | null {
   return last;
 }
 
+// Spark's default executor memory when spark.executor.memory is unset.
+const DEFAULT_EXECUTOR_MEMORY_MIB = 1024;
+
+// One container's memory in MiB, as Spark requests it from the cluster manager: executor heap,
+// plus overhead, plus off-heap and PySpark worker memory when configured. Null when the log
+// records no Spark properties (nothing to tell a default from a missing config) or a memory key it
+// does record cannot be read.
 function executorMemoryMiB(app: SparkAppInfo | null): number | null {
-  const executor = (app?.resources as { executor?: { memoryMB?: number | null; memoryOverheadMB?: number | null } } | undefined)?.executor;
-  const config = app?.config ?? {};
-  const memoryMB = executor?.memoryMB ?? null;
-  if (memoryMB == null) return null;
-  if (config['spark.executor.memoryOverhead'] != null) {
-    const overheadMB = executor?.memoryOverheadMB ?? null;
-    return overheadMB == null ? null : memoryMB + overheadMB;
+  const config = app?.config;
+  if (config == null) return null;
+  // undefined: key absent; null: present but unreadable.
+  const mib = (key: string): number | null | undefined => (config[key] == null ? undefined : parseSparkMemoryMB(config[key]));
+  const heap = mib('spark.executor.memory') ?? (config['spark.executor.memory'] == null ? DEFAULT_EXECUTOR_MEMORY_MIB : null);
+  if (heap == null) return null;
+
+  let overhead = mib('spark.executor.memoryOverhead');
+  if (overhead === undefined) overhead = mib('spark.yarn.executor.memoryOverhead'); // legacy key
+  if (overhead === undefined) {
+    const factor = Number.parseFloat(config['spark.executor.memoryOverheadFactor'] ?? '');
+    overhead = Math.max(MIN_OVERHEAD_MIB, Math.round(heap * (Number.isFinite(factor) && factor > 0 ? factor : DEFAULT_OVERHEAD_FACTOR)));
   }
-  const factor = Number.parseFloat(config['spark.executor.memoryOverheadFactor'] ?? '');
-  const overheadFactor = Number.isFinite(factor) && factor > 0 ? factor : DEFAULT_OVERHEAD_FACTOR;
-  return memoryMB + Math.max(MIN_OVERHEAD_MIB, Math.round(memoryMB * overheadFactor));
+  const offHeap = String(config['spark.memory.offHeap.enabled']).toLowerCase() === 'true' ? mib('spark.memory.offHeap.size') ?? 0 : 0;
+  const pyspark = mib('spark.executor.pyspark.memory') ?? 0;
+  if (overhead === null || offHeap === null || pyspark === null) return null;
+  return heap + overhead + offHeap + pyspark;
 }
 
 /** Allocated core-hours and memory GiB-hours from the executor lifecycle: each executor counts
  * from its ExecutorAdded timestamp to its first later ExecutorRemoved timestamp. One with no
  * removal closes at the application end when the log has one, else at the last timestamp the log
  * records (a cut-off log). Cores are the ExecutorAdded event's Total Cores, else
- * spark.executor.cores; memory is spark.executor.memory plus the overhead (spark.executor.
- * memoryOverhead, else the larger of 384 MiB and spark.executor.memoryOverheadFactor, default
- * 0.1, times the memory).
+ * spark.executor.cores; memory per executor is spark.executor.memory (default 1g) plus the
+ * overhead (spark.executor.memoryOverhead, else the legacy spark.yarn.executor.memoryOverhead,
+ * else the larger of 384 MiB and spark.executor.memoryOverheadFactor, default 0.1, times the
+ * memory), plus spark.memory.offHeap.size when spark.memory.offHeap.enabled is true, plus
+ * spark.executor.pyspark.memory.
  * Null, never 0, for a figure whose inputs the log lacks. */
 export function computeAllocation(input: AllocationInput): Allocation {
   const added = input.executors.added.filter((e): e is ExecutorAddedEvent => e.kind === 'added');

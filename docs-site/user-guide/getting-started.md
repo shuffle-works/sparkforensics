@@ -531,8 +531,8 @@ the latest attempt.
 | --- | --- |
 | `runComplete` | `true` when the log has an application-end record. `false` means the log was cut off and every total covers only what it recorded. |
 | `time.wallClockMs` | Application start to end; null without both. |
-| `time.executorCpuTimeMs` | Summed task CPU time. Null when no task recorded any. Misses Python worker CPU, see `python`. |
-| `time.executorRunTimeMs`, `time.gcTimeMs` | Summed task run time and JVM GC time. |
+| `time.executorCpuTimeMs` | Summed CPU time of every task attempt, including failed attempts, retries and speculative copies that lost. Null when no task recorded any. Misses Python worker CPU, see `python`. |
+| `time.executorRunTimeMs`, `time.gcTimeMs` | Summed run time and JVM GC time of every task attempt, counted like the CPU time. |
 | `data.memorySpillBytes`, `data.diskSpillBytes` | Summed spill. |
 | `data.shuffleReadBytes`, `data.shuffleWriteBytes` | Summed shuffle bytes, local plus remote on the read side. |
 | `data.inputBytes`, `data.outputBytes`, `data.outputRows` | Summed input, output and rows written. `outputRows` is null when no task reported rows. |
@@ -576,12 +576,16 @@ Cores per executor are the executor-added event's total cores. Under dynamic
 allocation or YARN defaults, where `spark.executor.cores` is not set, that is
 the core count the cluster manager actually granted; when the event carries
 none, `spark.executor.cores` is used. If neither exists the core-hours are
-null. Memory per executor is `spark.executor.memory` plus the overhead:
-`spark.executor.memoryOverhead` when set, otherwise the larger of 384 MiB and
-`spark.executor.memoryOverheadFactor` (default 0.1) times the memory. Without
-`spark.executor.memory` in the log, memory GB-hours are null. Driver
-resources, off-heap memory and `spark.executor.pyspark.memory` are not
-included.
+null.
+
+Memory per executor is the container size Spark requests: `spark.executor.memory`
+(1g when unset), plus the overhead, plus `spark.memory.offHeap.size` when
+`spark.memory.offHeap.enabled` is `true`, plus `spark.executor.pyspark.memory`.
+The overhead is `spark.executor.memoryOverhead`, else the legacy
+`spark.yarn.executor.memoryOverhead`, else the larger of 384 MiB and
+`spark.executor.memoryOverheadFactor` (default 0.1) times the executor
+memory. Memory GB-hours are null when the log records no Spark properties at
+all, or a memory property cannot be read. Driver resources are not included.
 
 #### Python share
 
@@ -622,17 +626,22 @@ null when the log records no Spark properties. With `--baseline` it is inside
 
 A value is withheld when its key or value matches Spark's default secret
 pattern (`(?i)secret|password|token|access[.]?key`), as Spark's own redaction
-does, when the key or value matches the job's own `spark.redaction.regex` (when the log records one; if that pattern
+does, when its key names another credential form (`passwd`, `pwd`, `pass`,
+`apiKey`, `accountKey` as in `fs.azure.account.key.*`, `privateKey`, `sas`,
+`sig`, `credential`), when the key or value matches the job's own `spark.redaction.regex` (when the log records one; if that pattern
 uses syntax JavaScript cannot evaluate, every value is withheld), or when the
 key or value matches `--conf-redact-regex <pattern>`. A withheld property
 shows that it is present, not what it is set to, so the output cannot tell you
 whether a masked property has the value you expected. No hash or other
 derivative of a withheld value is emitted.
 
-In every other value that looks like a URL, credentials are replaced with
-`[redacted]`: `user:password@host` userinfo, the Oracle thin
-`user/password@host` form, JDBC-style `pwd=` and `passwd=` parameters, and
-signature parameters such as Azure SAS `sig=` and `X-Amz-Signature=`.
+In every other value, credentials are replaced with `[redacted]`: in a value
+that looks like a URL, `user:password@host` userinfo and the Oracle thin
+`user/password@host` form; in any value, `name=value` parameters named
+`password`, `passwd`, `pwd`, `pass`, `apikey`, `accountkey`, `sas`, `sig`,
+`signature` and similar (JDBC and ODBC strings, query strings, JVM options),
+including signature parameters such as Azure SAS `sig=` and
+`X-Amz-Signature=`.
 `--conf-keys a,b` narrows `values` and `maskedKeys` to the named properties.
 
 With `--redact`, the host names the report pseudonymizes become `host-N` in

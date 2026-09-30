@@ -187,6 +187,52 @@ describe('computeRunMetrics on a parsed log', () => {
   });
 });
 
+describe('computeRunMetrics counts every task attempt', () => {
+  function attempt(stageId, index, { runMs, cpuMs, failed = false, killed = false, speculative = false, attemptNumber = 0 }) {
+    return JSON.stringify({
+      Event: 'SparkListenerTaskEnd', 'Stage ID': stageId, 'Stage Attempt ID': 0,
+      'Task Info': { 'Task ID': index * 10 + attemptNumber + (speculative ? 5 : 0), Index: index, 'Attempt Number': attemptNumber, 'Launch Time': 0, 'Finish Time': runMs, Failed: failed, Killed: killed, Speculative: speculative },
+      'Task Metrics': { 'Executor Run Time': runMs, 'Executor CPU Time': cpuMs * 1e6 },
+    });
+  }
+
+  it('includes a failed attempt that a retry replaced, and a speculative copy that lost', async () => {
+    const appModel = await model([
+      START,
+      ...stageLines(1, 'map', [
+        attempt(1, 0, { runMs: 100, cpuMs: 40, failed: true }), // OOM-killed attempt
+        attempt(1, 0, { runMs: 50, cpuMs: 20, attemptNumber: 1 }), // its retry
+        attempt(1, 1, { runMs: 80, cpuMs: 30 }), // winner
+        attempt(1, 1, { runMs: 60, cpuMs: 25, killed: true, speculative: true }), // killed twin
+      ]),
+      END,
+    ]);
+    const m = computeRunMetrics(appModel);
+    expect(m.time.executorRunTimeMs).toBe(290);
+    expect(m.time.executorCpuTimeMs).toBe(115);
+    expect(m.shape.taskCount).toBe(2); // tasks, not attempts
+    expect(m.shape.failedTasks).toBe(0);
+    const row = Object.values(m.stages)[0];
+    expect(row.executorRunTimeMs).toBe(290);
+    expect(row.executorCpuTimeMs).toBe(115);
+    // The stage record the detectors read keeps the winning attempts only.
+    expect([...appModel.stages.values()][0].executorRunTime).toBe(130);
+  });
+
+  it('includes a losing speculative copy that ends after the stage completed', async () => {
+    const appModel = await model([
+      START,
+      ...stageLines(1, 'map', [attempt(1, 0, { runMs: 80, cpuMs: 30 }), attempt(1, 1, { runMs: 70, cpuMs: 10, speculative: true })]).slice(0, -1),
+      JSON.stringify({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Stage Name': 'map', Details: '', 'Number of Tasks': 2, 'Submission Time': 1000, 'Completion Time': 2000 } }),
+      attempt(1, 1, { runMs: 90, cpuMs: 45, killed: true }), // the original of index 1, killed after completion
+      END,
+    ]);
+    const m = computeRunMetrics(appModel);
+    expect(m.time.executorRunTimeMs).toBe(240);
+    expect(m.time.executorCpuTimeMs).toBe(85);
+  });
+});
+
 describe('computeRunMetrics null contract', () => {
   it('reports null, never 0, for what a cut-off log without CPU time or executors cannot provide', async () => {
     const appModel = await model([START]);
@@ -222,9 +268,9 @@ describe('computeRunMetrics null contract', () => {
     expect(m.allocation.memoryGbHours).toBeCloseTo((2432 / GIB * 2000) / 3600000, 10);
   });
 
-  it('leaves memory GB-hours null without spark.executor.memory, and core-hours null without a core count', () => {
+  it('leaves allocation null without a core count, and memory null without any Spark properties', () => {
     const appModel = {
-      app: makeApp({ endTime: 3600000, config: {}, resources: { executor: {} } }), sql: new Map(), jobs: new Map(),
+      app: makeApp({ endTime: 3600000, config: undefined, resources: { executor: {} } }), sql: new Map(), jobs: new Map(),
       stages: new Map(),
       executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, totalCores: 0 }], removed: [] },
     };
