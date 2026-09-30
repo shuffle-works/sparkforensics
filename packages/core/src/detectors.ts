@@ -657,18 +657,34 @@ function tailClaimFloorMs(claim: TailClaim, stageId: number, ctx: DetectorCtx): 
 // A setting is only a fix when the run's logged conf doesn't already have it: a run that set it
 // needs another remedy. Only explicitly logged properties count; Spark's unlogged version
 // defaults are not modeled. Booleans compare case-insensitively, as Spark parses them.
-function setConfUnlessLogged(app: DetectorApp | null, key: string, suggested: string | boolean): Remediation[] {
+function loggedAs(app: DetectorApp | null, key: string, suggested: string | boolean): boolean {
   const logged = app?.config?.[key]?.trim();
-  const already = typeof suggested === 'boolean'
+  return typeof suggested === 'boolean'
     ? logged?.toLowerCase() === String(suggested)
     : logged === suggested;
-  return already ? [] : [setConf(key, suggested)];
+}
+
+function setConfUnlessLogged(app: DetectorApp | null, key: string, suggested: string | boolean): Remediation[] {
+  return loggedAs(app, key, suggested) ? [] : [setConf(key, suggested)];
+}
+
+// A switch's fix worded for the run's logged conf: `recommend` names the property while the run
+// doesn't have it, `alreadyOn` points at the remedy left once it does, with no remediation.
+function switchFix(on: boolean, key: string, suggested: string | boolean, recommend: string, alreadyOn: string): { text: string; remediation: Remediation[] } {
+  return on ? { text: alreadyOn, remediation: [] } : { text: recommend, remediation: [setConf(key, suggested)] };
+}
+
+function skewJoinFix(app: DetectorApp | null): { text: string; remediation: Remediation[] } {
+  const key = 'spark.sql.adaptive.skewJoin.enabled';
+  return switchFix(loggedAs(app, key, true), key, true,
+    `for join-driven skew, enable AQE skew-join handling (${key}); otherwise salt the key or repartition on a better key`,
+    'AQE skew-join handling is already on, so salt the key or repartition on a better key');
 }
 
 // The resources flag is read from the same property as the logged conf.
-function enableDynamicAllocation(app: DetectorApp): Remediation[] {
-  if (app.resources?.dynamicAllocationEnabled === true) return [];
-  return setConfUnlessLogged(app, 'spark.dynamicAllocation.enabled', true);
+function dynamicAllocationFix(app: DetectorApp, recommend: string, alreadyOn: string): { text: string; remediation: Remediation[] } {
+  const key = 'spark.dynamicAllocation.enabled';
+  return switchFix(app.resources?.dynamicAllocationEnabled === true || loggedAs(app, key, true), key, true, recommend, alreadyOn);
 }
 
 // The run's logged spark.sql.shuffle.partitions as a count, or null when unlogged or not a count.
@@ -1037,14 +1053,15 @@ export const DETECTORS = [
       const floorWasteMs = tailClaimFloorMs(skewTailClaim(stage, metric === 'P95/median'), stage.id, ctx);
       if (!meetsRuntimeFloor(floorWasteMs, appDurationMs(ctx.app), thresholds.floorPctWarn)) return null;
       const value = Math.round(ratio * 10) / 10;
+      const fix = skewJoinFix(ctx.app);
       return {
         type: 'skew', stageId: stage.id,
         impactBand: 'warning',
         metric, value,
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
         validationRequired: `Flagged only when it costs at least ${shareLabel(thresholds.floorPctWarn)} of run time.`,
-        recommendation: `Task duration ratio (${metric}) is ${value}×: for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.`,
-        remediation: setConfUnlessLogged(ctx.app, 'spark.sql.adaptive.skewJoin.enabled', true),
+        recommendation: `Task duration ratio (${metric}) is ${value}×: ${fix.text}.`,
+        remediation: fix.remediation,
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
@@ -1200,11 +1217,12 @@ export const DETECTORS = [
         const ratioText = p50 > 0
           ? `${Math.round(max / p50 * 10) / 10}× the median (${formatBytes(p50)})`
           : 'far larger than the median, which is effectively empty';
+        const fix = skewJoinFix(ctx.app);
         out.push({
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'shufflePartitionSkew', metric: 'shuffleReadMax', value: max,
-          recommendation: `The largest shuffle partition (${formatBytes(max)}) is ${ratioText}: for join skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.`,
-          remediation: setConfUnlessLogged(ctx.app, 'spark.sql.adaptive.skewJoin.enabled', true),
+          recommendation: `The largest shuffle partition (${formatBytes(max)}) is ${ratioText}: ${fix.text}.`,
+          remediation: fix.remediation,
         });
       }
       if (total >= thresholds.lowParTotalBytes && taskCount <= thresholds.lowParMaxTasks) {
@@ -1387,6 +1405,9 @@ export const DETECTORS = [
       if ((hosts.length < thresholds.minHosts && execs0.length < thresholds.minHosts) || stage.taskCount < thresholds.minTasks) return null;
       if (stageBelowRuntimeFloor(stage, ctx, thresholds.stageFloorPct)) return null;
       const out: Finding[] = [];
+      const speculation = switchFix(loggedAs(ctx.app, 'spark.speculation', true), 'spark.speculation', true,
+        'check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically',
+        'check what it was running: speculation is already on, so a lagging task there is already relaunched');
       if (hosts.length >= thresholds.minHosts) {
         const means = hosts.map(h => ({ host: h.host, taskCount: h.taskCount, mean: h.totalDuration / h.taskCount }));
         const sorted = [...means].map(h => h.mean).sort((a, b) => a - b);
@@ -1403,8 +1424,8 @@ export const DETECTORS = [
               // `value` is a ratio; the estimator needs the absolute per-host mean.
               hostMeanMs: h.mean,
               host: h.host, hostTaskShare: Math.round(share * 100) / 100,
-              recommendation: `${h.host} may just hold data locality for its tasks or carry one heavy stage, not necessarily a hardware fault: check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically.`,
-              remediation: setConfUnlessLogged(ctx.app, 'spark.speculation', true),
+              recommendation: `${h.host} may just hold data locality for its tasks or carry one heavy stage, not necessarily a hardware fault: ${speculation.text}.`,
+              remediation: speculation.remediation,
             });
           }
         }
@@ -1860,6 +1881,8 @@ export const DETECTORS = [
       }
 
       const value = Math.round(utilization * 100);
+      const fix = dynamicAllocationFix(app, 'consider reducing cluster size or enabling dynamic allocation',
+        'dynamic allocation is already on, so consider reducing cluster size');
       return {
         type: 'utilization', stageId: null, impactBand: 'info',
         metric: 'avgUtilization', value,
@@ -1867,8 +1890,8 @@ export const DETECTORS = [
         appDurationMs: appDuration,
         totalCores,
         cpuUtilizationPct,
-        recommendation: `Average executor utilization was only ${value}%: consider reducing cluster size or enabling dynamic allocation.`,
-        remediation: enableDynamicAllocation(app),
+        recommendation: `Average executor utilization was only ${value}%: ${fix.text}.`,
+        remediation: fix.remediation,
       };
     },
     estimate(finding): ImpactEstimate | null {
@@ -1916,13 +1939,15 @@ export const DETECTORS = [
         const idleRate = capacityCoreMs > 0 ? 1 - (busyCoreMs / capacityCoreMs) : 0;
         if (idleRate > thresholds.idleCoreWarn) {
           const value = Math.round(idleRate * 100);
+          const fix = dynamicAllocationFix(app, 'reduce cluster size or enable dynamic allocation',
+            'dynamic allocation is already on, so reduce cluster size');
           out.push({
             type: 'memoryUtilization', variant: 'idleCores', stageId: null,
             impactBand: 'warning', metric: 'idleCoreRate', value,
             // Raw (unrounded) rate plus sizing inputs for the impact estimator: `value` is rounded pct.
             idleRateFraction: idleRate, allocatedMB, peakExecutors, appDurationMs,
-            recommendation: `${value}% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.`,
-            remediation: enableDynamicAllocation(app),
+            recommendation: `${value}% of allocated core-time ran no task: ${fix.text}.`,
+            remediation: fix.remediation,
           });
         }
       }
@@ -1939,11 +1964,15 @@ export const DETECTORS = [
         }
       }
       if (peakHeapByExec.size === 0) {
+        const key = 'spark.eventLog.logStageExecutorMetrics';
+        const fix = switchFix(loggedAs(app, key, true), key, true,
+          `Per-executor memory usage requires ${key}=true: not enabled for this run.`,
+          'Per-executor memory usage is missing from this log even though executor metrics logging is on for this run.');
         out.push({
           type: 'memoryUtilization', variant: 'memoryBand', stageId: null,
           impactBand: 'info', metric: 'memoryBand', dataUnavailable: true,
-          recommendation: 'Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true: not enabled for this run.',
-          remediation: setConfUnlessLogged(app, 'spark.eventLog.logStageExecutorMetrics', true),
+          recommendation: fix.text,
+          remediation: fix.remediation,
         });
       } else if (allocatedMB != null && allocatedMB > 0) {
         const allocatedBytes = allocatedMB * 1024 * 1024;
@@ -2167,7 +2196,11 @@ export const DETECTORS = [
         shortLivedExecutorCount: shortLivedCount,
         confidence: autoscalingChurnConfidence(shortLivedPct, thresholds.warningPct, thresholds.criticalPct),
         recommendation: `${pct}% of executors ran for under 2 minutes before being removed: this looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.`,
-        remediation: [increaseConf('spark.dynamicAllocation.executorIdleTimeout')],
+        remediation: [
+          increaseConf('spark.dynamicAllocation.executorIdleTimeout'),
+          decreaseConf('spark.dynamicAllocation.minExecutors'),
+          increaseConf('spark.dynamicAllocation.maxExecutors'),
+        ],
       };
     },
     estimate(finding): ImpactEstimate | null {

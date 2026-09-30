@@ -43,6 +43,19 @@ describe('structured remediation', () => {
     });
   });
 
+  it('gives autoscalingChurn a remediation for the idle timeout and each bound its text names', () => {
+    const added = Array.from({ length: 10 }, (_, i) => ({ executorId: String(i + 1), timestamp: 0, totalCores: 1 }));
+    const removed = added.map((e) => ({ executorId: e.executorId, timestamp: 60_000 }));
+    const churn = analyze(makeApp({ startTime: 0, endTime: 600_000 }), new Map(), added, removed)
+      .find((f) => f.type === 'autoscalingChurn');
+    expect(churn.recommendation).toMatch(/executorIdleTimeout or widening the minExecutors\/maxExecutors bounds/);
+    expect(churn.remediation).toEqual([
+      { kind: 'conf', key: 'spark.dynamicAllocation.executorIdleTimeout', direction: 'increase', suggested: null },
+      { kind: 'conf', key: 'spark.dynamicAllocation.minExecutors', direction: 'decrease', suggested: null },
+      { kind: 'conf', key: 'spark.dynamicAllocation.maxExecutors', direction: 'increase', suggested: null },
+    ]);
+  });
+
   describe('coldStart dynamic allocation remediation', () => {
     const coldStart = (app) => analyze(
       app, new Map([[1, makeStage({ id: 1, submittedAt: 60_000, completedAt: 70_000 })]]),
@@ -111,9 +124,7 @@ describe('structured remediation', () => {
     ]);
   });
 
-  it('carries a remediation entry for every property a recommendation names, bar the ones with no stated direction', () => {
-    // autoscalingChurn names its bounds without saying which way to move each.
-    const NO_DIRECTION = new Set(['spark.dynamicAllocation.minExecutors', 'spark.dynamicAllocation.maxExecutors']);
+  it('carries a remediation entry for every property a recommendation names', () => {
     const findings = [
       ...catalogOf([
         makeStage({ id: 1, shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0, gcPct: 40, jvmGCTime: 4000, memoryBytesSpilled: 3000 * MiB }),
@@ -131,7 +142,6 @@ describe('structured remediation', () => {
       const named = new Set((f.recommendation ?? '').match(/spark\.[A-Za-z.]*[A-Za-z]/g) ?? []);
       const emitted = new Set((f.remediation ?? []).map((r) => r.key));
       for (const key of named) {
-        if (NO_DIRECTION.has(key)) continue;
         checked += 1;
         expect(emitted.has(key), `${f.type}: ${key}`).toBe(true);
       }
@@ -201,6 +211,17 @@ describe('structured remediation', () => {
         expect(idleCores(app).remediation).toEqual([]);
       }
     });
+
+    it('stops recommending dynamic allocation once it is on, and points at cluster size', () => {
+      for (const app of [makeApp({ resources: { dynamicAllocationEnabled: true } }), makeApp({ config: { 'spark.dynamicAllocation.enabled': 'true' } })]) {
+        for (const f of [utilization(app), idleCores(app)]) {
+          expect(f.recommendation, f.type).not.toMatch(/enabl(e|ing) dynamic allocation/);
+          expect(f.recommendation, f.type).toMatch(/dynamic allocation is already on, so .*reduc(e|ing) cluster size/);
+        }
+      }
+      expect(utilization(makeApp()).recommendation).toMatch(/enabling dynamic allocation/);
+      expect(idleCores(makeApp()).recommendation).toMatch(/enable dynamic allocation/);
+    });
   });
 
   describe('a set-to-value remediation follows the logged conf', () => {
@@ -238,6 +259,45 @@ describe('structured remediation', () => {
       expect(skew.remediation).toEqual([]);
       expect(partitionSkew.remediation).toEqual([]);
       expect(slowHost.remediation).toEqual([]);
+    });
+
+    it('stops recommending a switch the logged conf already has on, and names the remedy left', () => {
+      const { skew, partitionSkew, slowHost } = pick({ 'spark.sql.adaptive.skewJoin.enabled': 'true', 'spark.speculation': 'true' });
+      for (const f of [skew, partitionSkew]) {
+        expect(f.recommendation, f.type).not.toMatch(/spark\.sql\.adaptive\.skewJoin\.enabled|enable AQE/);
+        expect(f.recommendation, f.type).toMatch(/already on, so salt the key or repartition on a better key/);
+      }
+      expect(slowHost.recommendation).not.toMatch(/spark\.speculation|consider enabling/);
+      expect(slowHost.recommendation).toMatch(/speculation is already on/);
+      const unset = pick({});
+      expect(unset.skew.recommendation).toMatch(/enable AQE skew-join handling \(spark\.sql\.adaptive\.skewJoin\.enabled\)/);
+      expect(unset.partitionSkew.recommendation).toMatch(/enable AQE skew-join handling \(spark\.sql\.adaptive\.skewJoin\.enabled\)/);
+      expect(unset.slowHost.recommendation).toMatch(/consider enabling spark\.speculation/);
+    });
+
+    it('words the missing-evidence caveats for a logging switch that is already on', () => {
+      const rdd = (id) => ({
+        id, name: `rdd${id}`, storageLevel: { useMemory: true, useDisk: false, deserialized: true, replication: 1 },
+        numPartitions: 10, numCachedPartitions: 0, memorySize: 0, diskSize: 0,
+      });
+      const caveats = (config) => {
+        const app = makeApp({ config, rddInfo: new Map([[1, rdd(1)]]), rddBlockUpdates: 0 });
+        const findings = analyze(app, new Map([[1, makeStage({ id: 1 })]]), [{ executorId: '1', timestamp: 0, totalCores: 4 }], [], new Map());
+        return {
+          storage: findings.find((f) => f.variant === 'storageUnobserved'),
+          memory: findings.find((f) => f.variant === 'memoryBand'),
+        };
+      };
+      const off = caveats({});
+      expect(off.storage.recommendation).toMatch(/need spark\.eventLog\.logBlockUpdates\.enabled=true/);
+      expect(off.storage.remediation).toEqual(set('spark.eventLog.logBlockUpdates.enabled'));
+      expect(off.memory.recommendation).toMatch(/requires spark\.eventLog\.logStageExecutorMetrics=true/);
+      expect(off.memory.remediation).toEqual(set('spark.eventLog.logStageExecutorMetrics'));
+      const on = caveats({ 'spark.eventLog.logBlockUpdates.enabled': 'true', 'spark.eventLog.logStageExecutorMetrics': 'true' });
+      expect(on.storage).toBeUndefined();
+      expect(on.memory.remediation).toEqual([]);
+      expect(on.memory.recommendation).not.toMatch(/spark\.eventLog/);
+      expect(on.memory.recommendation).toMatch(/executor metrics logging is on for this run/);
     });
 
     it('suggests Kryo unless the logged serializer is already Kryo', () => {
