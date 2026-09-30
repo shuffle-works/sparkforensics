@@ -15,6 +15,7 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { ReactNode } from 'react';
+import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { EvidenceAvailabilityEntry, FindingOf } from '@sparkforensics/core/types.ts';
 
@@ -43,7 +44,7 @@ function ConfigAuditRow({ finding }: { finding: FindingOf<'configAudit'> }) {
       </div>
       <ImpactEstimate finding={finding} />
       <p className="text-sm">
-        {finding.recommendation}
+        {recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation}
         {finding.docAnchor ? (
           <>
             {' '}
@@ -141,6 +142,7 @@ export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings,
   return (
     <WidgetCard
       title="Config Audit"
+      fixFor={findings}
       impactBand={impactBand}
       badges={<TagBadge type="configAudit" impactBand={impactBand ?? 'info'} docAnchor={sharedDocAnchor(findings)} />}
       statusBadge={

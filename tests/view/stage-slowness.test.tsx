@@ -34,7 +34,7 @@ test('renders nothing when the catalog has no stageSlowness findings', () => {
   expect(container).toBeEmptyDOMElement();
 });
 
-test('renders the WidgetCard heading, SLOW tag, and stage-duration metric', () => {
+test('renders the WidgetCard heading, SLOW tag, stage-duration metric and the card\'s fix', () => {
   const catalog: Finding[] = [
     { type: 'stageSlowness', stageId: 3, impactBand: 'warning', value: 40, recommendation: 'Profile the query plan for stage 3.' },
   ];
@@ -42,7 +42,8 @@ test('renders the WidgetCard heading, SLOW tag, and stage-duration metric', () =
   expect(screen.getByRole('heading', { name: 'Slow Stage' })).toBeInTheDocument();
   expect(screen.getAllByText('SLOW').length).toBeGreaterThan(0);
   expect(screen.getByText('40m stage duration', { selector: 'strong' })).toBeInTheDocument();
-  expect(screen.getByText('Profile the query plan for stage 3.')).toBeInTheDocument();
+  expect(screen.getByText(/^Often a partition-count problem/)).toBeInTheDocument();
+  expect(screen.queryByText('Profile the query plan for stage 3.')).not.toBeInTheDocument();
 });
 
 test('shows the SLOW tag once, in the header, and keeps a per-row impact dot for every flagged stage', () => {

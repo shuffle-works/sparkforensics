@@ -37,7 +37,6 @@ function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetPro
         <strong>{metricLabel(finding)}</strong>
       </div>
       <ImpactEstimate finding={finding} />
-      <p className="text-muted-foreground pt-1">{finding.recommendation}</p>
     </li>
   );
 }
@@ -68,6 +67,7 @@ export const StageSlowness = memo(function StageSlowness({ appModel, catalog, de
   return (
     <WidgetCard
       title="Slow Stage"
+      fixFor={issues}
       impactBand={issues[0].impactBand}
       badges={
         <>

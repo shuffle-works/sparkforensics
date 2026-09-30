@@ -35,18 +35,6 @@ function memoryDetail(f: MemoryUtilizationFinding): string {
   return `~${formatRawWaste({ value, unit: 'mbSeconds' })} wasted`;
 }
 
-// Every non-dataUnavailable variant's recommendation restates the same figure
-// memoryDetail already shows (in different words), then a colon, then the real
-// advice; keep just the advice half, always visible (a Basic-tier reader still
-// needs to know what to do about it). Joined with '; ' rather than the
-// recommendation's own colon, since memoryBand's detail already ends in one
-// (`... heap used: near capacity`).
-function memoryAction(f: MemoryUtilizationFinding): string {
-  const recommendation = f.recommendation ?? '';
-  const adviceStart = recommendation.indexOf(': ');
-  return adviceStart === -1 ? ` ${recommendation}` : `; ${recommendation.slice(adviceStart + 2)}`;
-}
-
 // Only the `rule`-discriminated variants (heapNearCapacity/heapOverProvisioned)
 // have a diagnosis clause worth keeping as deeper Advanced-tier context: it's
 // the same figure memoryDetail() already shows, in the detector's own words.
@@ -101,7 +89,6 @@ function MemoryRow({ finding }: { finding: MemoryUtilizationFinding }) {
       </p>
       <p className="text-xs text-muted-foreground">
         {memoryDetail(finding)}
-        {memoryAction(finding)}
         {memoryDiagnosis(finding) != null ? <AdvancedOnly>{memoryDiagnosis(finding)}</AdvancedOnly> : null}
       </p>
       <ImpactEstimate finding={finding} />
@@ -144,6 +131,7 @@ export const MemoryUtilization = memo(function MemoryUtilization({ catalog, defa
   return (
     <WidgetCard
       title="Memory Utilization"
+      fixFor={findings}
       impactBand={worstImpactBand(findings)}
       badges={<TagBadge type="memoryUtilization" impactBand={worstImpactBand(findings) ?? 'info'} />}
       statusBadge={

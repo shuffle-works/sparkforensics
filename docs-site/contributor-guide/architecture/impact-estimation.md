@@ -233,8 +233,10 @@ kind of claim.
 
 ## Overlap caveat: skew / straggler
 
-`skew` (small-stage max-P50 fallback branch) and `straggler` can both fire on the same
-stage from the same single dominant outlier task, and each is clipped independently. This
+`skew` and `straggler` both claim the stage's `tailReplayRecoveryMs` (see
+[Occupancy-weighted attribution](#occupancy-weighted-attribution)), whichever skew branch fired,
+so when both fire on one stage they report the same recovered tail. The skew branch (P95 or max
+over P50) changes only the fallback single-task delta on a stage without the replay field. This
 phase does not dedupe or suppress either: each keeps its own independently-computed
 `wallClock`. Do not sum `wallClock.high` across multiple findings on the same stage: if
 both fire together, they describe the same underlying waste, not two separate wastes. Both
@@ -245,11 +247,10 @@ instead of the near-zero room `ceiling >= taskDurationMax` would leave.
 
 `analyzer.ts`'s `flagSkewStragglerOverlap` (run after `deriveImpactBand`, once per `analyze()`
 call) surfaces this caveat to the reader instead of leaving it as an internal-only comment:
-whenever `skew`'s `max/median` branch and `straggler` both fire on the same `stageId`, it
+whenever `skew` (either branch) and `straggler` both fire on the same `stageId`, it
 appends a "this overlaps with the X finding on this stage" sentence to both findings'
 `validationRequired` text (rather than suppressing either, so neither finding's own diagnostic
-value is lost). `skew`'s `P95/median` branch samples a different task from `straggler`'s own
-`taskDurationMax - taskDurationP50` delta, so it's excluded from the flag. The note rides the
+value is lost). The note rides the
 same confidence-caveat UI (`RowStatusCluster`) a reader already sees before trusting either
 finding's magnitude, since both detectors also carry a `confidence` field that scales
 `low`/`medium`/`high` off how far the finding's own ratio (skew: `ratioWarn`) or task share

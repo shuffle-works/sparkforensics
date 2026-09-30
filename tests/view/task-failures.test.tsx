@@ -66,12 +66,13 @@ describe('TaskFailures', () => {
     expect(container.querySelectorAll('.size-2.rounded-full')).toHaveLength(3);
   });
 
-  it('shows a row\'s recommendation by default, with no per-row toggle', () => {
+  it('states the card\'s fix once instead of the row\'s recommendation, with no per-row toggle', () => {
     const catalog: Finding[] = [
       testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 12, failedTasks: 5, dominantReason: 'FetchFailed', dominantError: null, failureGroups: [], otherFailedTasks: 0, recommendation: 'Investigate driver logs for stage 1.' }),
     ];
     render_(catalog);
-    expect(screen.getByText('Investigate driver logs for stage 1.')).toBeInTheDocument();
+    expect(screen.getByText('Investigate driver logs for executor instability or data-driven errors.')).toBeInTheDocument();
+    expect(screen.queryByText('Investigate driver logs for stage 1.')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /confidence|evidence|task detail/i })).not.toBeInTheDocument();
   });
 

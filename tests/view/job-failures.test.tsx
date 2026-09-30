@@ -57,7 +57,7 @@ test('shows the failure-rate summary and task-failure context', async () => {
   // Task-failure context is Advanced-only: a derived, secondary statistic
   // restating the same problem at task granularity.
   expect(screen.getByText(/12 of 200 tasks failed/)).toBeInTheDocument();
-  expect(screen.getByText('Inspect the driver log')).toBeInTheDocument();
+  expect(screen.getByText('Inspect the driver log for the failed job(s) and the stage failures that triggered them.')).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
 });
 
@@ -101,7 +101,7 @@ test('renders the core-hours raw-waste figure when the jobFailureRate finding ca
   expect(screen.getByText('1.5 core-h')).toBeInTheDocument();
 });
 
-test('shows the recommendation unconditionally, with no toggle to hide it', async () => {
+test('states the card fix instead of the finding recommendation, with no toggle to hide it', async () => {
   const user = userEvent.setup();
   renderWidget(buildAppModel(), [finding({ recommendation: 'Inspect the driver log for job failures.' })]);
 
@@ -110,7 +110,8 @@ test('shows the recommendation unconditionally, with no toggle to hide it', asyn
   await user.click(cardToggle);
 
   expect(screen.getByText(/Failure rate:/)).toBeInTheDocument();
-  expect(screen.getByText('Inspect the driver log for job failures.')).toBeInTheDocument();
+  expect(screen.getByText('Inspect the driver log for the failed job(s) and the stage failures that triggered them.')).toBeInTheDocument();
+  expect(screen.queryByText('Inspect the driver log for job failures.')).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /recommendation/i })).not.toBeInTheDocument();
 });
 

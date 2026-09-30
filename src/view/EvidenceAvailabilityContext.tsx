@@ -18,8 +18,9 @@ export function evidenceLabel(key: EvidenceKey): string {
 }
 
 interface EvidenceAvailabilityContextValue {
-  referenceOpen: boolean;
-  setReferenceOpen: (open: boolean) => void;
+  /** Bumped by every `revealEvidence` call, so each click is a new request
+   * even when the ledger is already open. 0 until the first reveal. */
+  revealRequest: number;
   evidenceCardOpen: boolean;
   setEvidenceCardOpen: (open: boolean) => void;
   revealEvidence: (key: EvidenceKey) => void;
@@ -30,8 +31,7 @@ interface EvidenceAvailabilityContextValue {
 }
 
 const DEFAULT_CONTEXT: EvidenceAvailabilityContextValue = {
-  referenceOpen: false,
-  setReferenceOpen: () => {},
+  revealRequest: 0,
   evidenceCardOpen: true,
   setEvidenceCardOpen: () => {},
   revealEvidence: () => {},
@@ -44,7 +44,6 @@ export const EvidenceAvailabilityContext = createContext<EvidenceAvailabilityCon
  * pending focus is deliberately local UI state: evidence availability remains
  * model data, not a Zustand field or detector finding. */
 export function EvidenceAvailabilityProvider({ children }: { children: ReactNode }) {
-  const [referenceOpen, setReferenceOpen] = useState(false);
   // Starts collapsed so the ledger sits as a uniform tile in the Reference
   // grid; `revealEvidence` (evidence links across the app) re-opens it.
   const [evidenceCardOpen, setEvidenceCardOpen] = useState(false);
@@ -59,7 +58,6 @@ export function EvidenceAvailabilityProvider({ children }: { children: ReactNode
 
   const revealEvidence = useCallback((key: EvidenceKey) => {
     pendingFocus.current = key;
-    setReferenceOpen(true);
     setEvidenceCardOpen(true);
     setFocusRequest((request) => request + 1);
   }, []);
@@ -74,8 +72,8 @@ export function EvidenceAvailabilityProvider({ children }: { children: ReactNode
   }, [focusRequest]);
 
   const value = useMemo<EvidenceAvailabilityContextValue>(
-    () => ({ referenceOpen, setReferenceOpen, evidenceCardOpen, setEvidenceCardOpen, revealEvidence, registerRow }),
-    [referenceOpen, evidenceCardOpen, revealEvidence, registerRow],
+    () => ({ revealRequest: focusRequest, evidenceCardOpen, setEvidenceCardOpen, revealEvidence, registerRow }),
+    [focusRequest, evidenceCardOpen, revealEvidence, registerRow],
   );
 
   return <EvidenceAvailabilityContext.Provider value={value}>{children}</EvidenceAvailabilityContext.Provider>;
@@ -94,8 +92,8 @@ export function useEvidenceAvailabilityNavigation(): { revealEvidence: (key: Evi
  * card. The public navigation hook intentionally exposes only `revealEvidence`.
  */
 export function useEvidenceAvailabilityDisclosure() {
-  const { referenceOpen, setReferenceOpen, evidenceCardOpen, setEvidenceCardOpen } = useEvidenceAvailabilityContext();
-  return { referenceOpen, setReferenceOpen, evidenceCardOpen, setEvidenceCardOpen };
+  const { revealRequest, evidenceCardOpen, setEvidenceCardOpen } = useEvidenceAvailabilityContext();
+  return { revealRequest, evidenceCardOpen, setEvidenceCardOpen };
 }
 
 /** Row registration for ledger entries: the ledger card calls this with a
