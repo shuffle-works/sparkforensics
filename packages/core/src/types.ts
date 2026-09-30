@@ -57,6 +57,24 @@ export interface EvidenceAvailabilityEntry {
 }
 export interface EvidenceAvailability { schemaVersion: 1; entries: EvidenceAvailabilityEntry[]; }
 
+export interface StageAttemptTotals {
+  taskCount: number;
+  failedTasks: number;
+  wastedAttempts: number;
+  executorRunTime: number;
+  executorCpuTime: number;
+  jvmGCTime: number;
+  memoryBytesSpilled: number;
+  diskBytesSpilled: number;
+  shuffleReadBytes: number;
+  shuffleWriteBytes: number;
+  inputBytes: number;
+  outputBytes: number;
+  outputRecords: number | null;
+  peakExecutionMemoryMax: number;
+  durationMs: number | null;
+}
+
 export interface Stage {
   id: StageId;
   name?: string;
@@ -76,6 +94,9 @@ export interface Stage {
   // resubmits; absent on stages parsed before these fields existed.
   stageAttempts?: number;
   failedStageAttempts?: number;
+  // The summed work of the attempts before the latest one, which the stage's own figures leave
+  // out; null or absent when the stage ran once. Read only by the CLI's metrics block.
+  earlierAttempts?: StageAttemptTotals | null;
   shuffleReadBytes?: number;
   shuffleReadMax?: number;
   shuffleReadP50?: number;

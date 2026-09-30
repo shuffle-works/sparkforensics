@@ -23,7 +23,7 @@ import { finalizeStage } from './stage-quantiles.ts';
 import { MAX_FAILURE_DETAILS_PER_STAGE, extractTaskFailureDetail, taskFailureKey, type TaskFailureDetail } from './task-failure.ts';
 import { computeRunAggregates } from './run-aggregates.ts';
 import type {
-  Job, ExecutorAddedEvent, ExecutorRemovedEvent, PlanNode, SparkAppInfo, EvidenceInputs,
+  Job, ExecutorAddedEvent, ExecutorRemovedEvent, PlanNode, SparkAppInfo, EvidenceInputs, StageAttemptTotals,
 } from './types';
 
 // Internal parser-state shapes: the real runtime objects the handlers build and mutate, not the
@@ -163,6 +163,10 @@ interface StageRecord {
   // stage replaces its record (submitStage), so both carry over from the replaced one.
   stageAttempts: number;
   failedStageAttempts: number;
+  // Work of the attempts a resubmit replaced (foldEarlierAttempts); null until one is.
+  earlierAttempts: StageAttemptTotals | null;
+  // Largest task peak execution memory, set by finalizeStage.
+  peakExecutionMemoryMax?: number;
   taskAttempts: Map<string | symbol, TaskRecord> | null;
   // Distinct failures seen so far, by taskFailureKey; freed with taskAttempts at finalize.
   failureDetails: Map<string, TaskFailureDetail> | null;
@@ -866,6 +870,30 @@ export function endJob(event: z.infer<typeof JobEndEventSchema>, state: ParserSt
   return { type: 'job', data: { ...job } };
 }
 
+const SUMMED_ATTEMPT_FIELDS = [
+  'taskCount', 'failedTasks', 'wastedAttempts', 'executorRunTime', 'executorCpuTime', 'jvmGCTime',
+  'memoryBytesSpilled', 'diskBytesSpilled', 'shuffleReadBytes', 'shuffleWriteBytes', 'inputBytes', 'outputBytes',
+] as const;
+
+const addNullable = (a: number | null, b: number | null): number | null => (a == null ? b : b == null ? a : a + b);
+
+// The replaced record's finalized attempt added to the attempts it had already folded. An attempt
+// resubmitted before its StageCompleted was never finalized, so it has no totals to add.
+function foldEarlierAttempts(replaced: StageRecord | undefined): StageAttemptTotals | null {
+  if (!replaced) return null;
+  const earlier = replaced.earlierAttempts;
+  if (replaced.taskAttempts !== null) return earlier;
+  const durationMs = replaced.submittedAt > 0 && replaced.completedAt >= replaced.submittedAt
+    ? replaced.completedAt - replaced.submittedAt : null;
+  const totals = {
+    outputRecords: addNullable(replaced.outputRecords, earlier?.outputRecords ?? null),
+    peakExecutionMemoryMax: Math.max(replaced.peakExecutionMemoryMax ?? 0, earlier?.peakExecutionMemoryMax ?? 0),
+    durationMs: addNullable(durationMs, earlier?.durationMs ?? null),
+  } as StageAttemptTotals;
+  for (const field of SUMMED_ATTEMPT_FIELDS) totals[field] = replaced[field] + (earlier?.[field] ?? 0);
+  return totals;
+}
+
 export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, state: ParserState): null {
   state.evidenceInputs.stageSubmissions++;
   const info = event['Stage Info'];
@@ -887,6 +915,7 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
     stageFailureReason: null,
     stageAttempts: (replaced?.stageAttempts ?? 0) + 1,
     failedStageAttempts: replaced?.failedStageAttempts ?? 0,
+    earlierAttempts: foldEarlierAttempts(replaced),
     taskAttempts: new Map(),
     failureDetails: new Map(),
     retryTaskSamples: [],

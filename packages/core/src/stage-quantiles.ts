@@ -129,6 +129,7 @@ export function finalizeStage(
     for (let i = 0; i < TASK_FIELD_PROPS.length; i++) buf.push(t[TASK_FIELD_PROPS[i]]);
   }
   stage.taskCount = taskCount;
+  stage.peakExecutionMemoryMax = peakExecutionMemoryMax;
   stage.failedTasks = failedTasks;
   stage.speculativeTasks = speculativeTasks;
   stage.taskAttempts = null; // no longer needed after finalize, freeing memory

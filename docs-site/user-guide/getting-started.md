@@ -521,7 +521,9 @@ scripts that act on a run without reading the report. With `--baseline` it is
 inside `candidate`. It has its own `schemaVersion`, separate from the
 report's. A figure the log cannot provide is `null`, never `0`: a log from a
 Spark version that records no CPU time has `executorCpuTimeMs: null`, and a
-log cut off before any executor joined has null allocation.
+log cut off before any executor joined has null allocation. The time, data
+and task figures, run-level and per row, include the work of every attempt of
+a resubmitted stage, failed attempts too; skew describes the latest attempt.
 
 | Field | Meaning |
 | --- | --- |
@@ -593,7 +595,8 @@ A stage is a Python stage when either signal holds:
 - a plan node attributed to it is a Python operator (`PythonRDD`,
   `BatchEvalPython`, `ArrowEvalPython`, `PythonMapInArrow`, or a pandas/Arrow
   grouped or map operator such as `FlatMapGroupsInPandas`, including suffixed
-  variants such as `BatchEvalPythonUDTF` and `FlatMapGroupsInPandasWithState`),
+  variants such as `BatchEvalPythonUDTF` and `FlatMapGroupsInPandasWithState`
+  and the Spark 4.1 `ArrowAggregatePython` and `ArrowWindowPython`),
   which catches Python UDFs and UDTFs inside SQL;
 - its name or call site names `PythonRDD` or `org.apache.spark.api.python`,
   which catches RDD lambdas that have no plan and stages that cannot be

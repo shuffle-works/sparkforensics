@@ -4,9 +4,10 @@ import type { SqlExecution, Stage } from './types.ts';
 // Plan operators that hand rows to a Python worker process: the row-at-a-time and Arrow Python UDF
 // evaluators, the pandas/Arrow grouped and map operators, and the PythonRDD scan of an RDD
 // pipeline. A suffixed name is a variant of the same operator (BatchEvalPythonUDTF,
-// FlatMapGroupsInPandasWithState). Spark prefixes a whole-stage-codegen child's name with "*(n) "
-// in some plan strings.
-const PYTHON_PLAN_NODE = /^(?:\*\(\d+\)\s*)?(?:PythonRDD|BatchEvalPython|ArrowEvalPython|\w+InPandas|\w+InArrow)\w*\b/;
+// FlatMapGroupsInPandasWithState). Spark 4.1 renamed AggregateInPandas and WindowInPandas to
+// ArrowAggregatePython and ArrowWindowPython. Spark prefixes a whole-stage-codegen child's name
+// with "*(n) " in some plan strings.
+const PYTHON_PLAN_NODE = /^(?:\*\(\d+\)\s*)?(?:PythonRDD|BatchEvalPython|ArrowEvalPython|ArrowAggregatePython|ArrowWindowPython|\w+InPandas|\w+InArrow)\w*\b/;
 
 // An RDD lambda or map function has no SQL plan to match, and a stage whose plan could not be
 // matched is left with nothing but its name and call site.

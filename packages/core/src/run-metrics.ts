@@ -113,13 +113,25 @@ function stageAttempts(stages: Stage[]): { failed: number; retried: number } | n
   return { failed, retried };
 }
 
-// Metrics of a set of stages; a row folds the stages sharing one fingerprint.
+// Each stage followed by the work of its earlier attempts, shaped like a stage, so every total
+// sums the attempts a resubmit replaced.
+function withEarlierAttempts(stages: Stage[]): Stage[] {
+  return stages.flatMap((s) => {
+    if (s.earlierAttempts == null) return [s];
+    const { durationMs, ...totals } = s.earlierAttempts;
+    return [s, { id: s.id, ...totals, submittedAt: 0, completedAt: durationMs ?? undefined }];
+  });
+}
+
+// Metrics of a set of stages, every attempt included; a row folds the stages sharing one
+// fingerprint. Skew describes the latest attempt's task durations.
 function stageMetrics(stages: Stage[], minTasksForP95: number): StageMetrics {
+  const attempts = withEarlierAttempts(stages);
   // Task-derived figures are null for stages that never finished (no task records).
-  const finished = stages.filter((s) => (s.taskCount ?? 0) > 0);
-  const tasks = sumOf(stages, (s) => s.taskCount);
+  const finished = attempts.filter((s) => (s.taskCount ?? 0) > 0);
+  const tasks = sumOf(attempts, (s) => s.taskCount);
   const fromTasks = (pick: (s: Stage) => number | undefined): number | null => (finished.length > 0 ? sumOf(finished, pick) : null);
-  const durations = stages.filter((s) => finite(s.submittedAt) && finite(s.completedAt) && (s.completedAt as number) >= (s.submittedAt as number));
+  const durations = attempts.filter((s) => finite(s.submittedAt) && finite(s.completedAt) && (s.completedAt as number) >= (s.submittedAt as number));
   return {
     durationMs: durations.length > 0 ? sumOf(durations, (s) => (s.completedAt as number) - (s.submittedAt as number)) : null,
     executorCpuTimeMs: cpuTimeMs(finished),
@@ -136,7 +148,7 @@ function stageMetrics(stages: Stage[], minTasksForP95: number): StageMetrics {
     taskCount: tasks != null && tasks > 0 ? tasks : null,
     failedTasks: fromTasks((s) => s.failedTasks),
     retriedTasks: fromTasks((s) => (s.wastedAttempts as number | undefined) ?? 0),
-    skew: maxSkew(finished, minTasksForP95),
+    skew: maxSkew(stages.filter((s) => (s.taskCount ?? 0) > 0), minTasksForP95),
   };
 }
 
@@ -147,7 +159,7 @@ export function computeRunMetrics(appModel: AppModel, thresholds?: ThresholdOver
   const minTasksForP95 = effectiveThresholds(ENTRY_BY_TYPE.get('skew')!, thresholds).minTasksForP95 as number;
   const python = stageList.filter((s) => isPythonStage(s, appModel.sql));
   const runTimeMs = stageMetrics(stageList, minTasksForP95).executorRunTimeMs;
-  const pythonRunTimeMs = sumOf(python, (s) => s.executorRunTime);
+  const pythonRunTimeMs = sumOf(withEarlierAttempts(python), (s) => s.executorRunTime);
 
   const byFingerprint = new Map<string, Stage[]>();
   for (const s of stageList) {

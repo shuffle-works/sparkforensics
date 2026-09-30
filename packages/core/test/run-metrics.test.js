@@ -104,6 +104,28 @@ describe('computeRunMetrics on a parsed log', () => {
     expect(rows.map((r) => [r.stageIds, r.failed, r.retried])).toEqual([[[1], true, true], [[2], false, false]]);
   });
 
+  it('sums the work of a failed attempt with its retry, leaving the stage record at the latest attempt', async () => {
+    const submitted = (attempt) => JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Stage Attempt ID': attempt, 'Stage Name': 'reduce', 'Submission Time': 1000 + attempt * 5000 } });
+    const completed = (attempt, reason) => JSON.stringify({
+      Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Submission Time': 1000 + attempt * 5000, 'Completion Time': 2000 + attempt * 5000, ...(reason ? { 'Failure Reason': reason } : {}) },
+    });
+    const appModel = await model([
+      START,
+      submitted(0),
+      taskEnd(1, 0, { runMs: 100, cpuNs: 50e6, failed: true }), taskEnd(1, 1, { runMs: 200, cpuNs: 100e6, records: 2 }),
+      completed(0, 'FetchFailed'),
+      submitted(1), taskEnd(1, 2, { runMs: 300, cpuNs: 150e6, records: 5 }), completed(1),
+      END,
+    ]);
+    const m = computeRunMetrics(appModel);
+    expect(m.time).toMatchObject({ executorCpuTimeMs: 300, executorRunTimeMs: 600, gcTimeMs: 15 });
+    expect(m.data).toMatchObject({ inputBytes: 3000, outputRows: 7 });
+    expect(m.shape).toMatchObject({ taskCount: 3, failedTasks: 1 });
+    expect(Object.values(m.stages)[0]).toMatchObject({ taskCount: 3, failedTasks: 1, executorRunTimeMs: 600, durationMs: 2000 });
+    expect(appModel.stages.get(1)).toMatchObject({ taskCount: 1, failedTasks: 0, executorRunTime: 300 });
+  });
+
   it('keeps task-level failures and retries in failedTasks / retriedTasks', () => {
     const appModel = {
       app: makeApp(), sql: new Map(), jobs: new Map(), executors: { added: [], removed: [] },
