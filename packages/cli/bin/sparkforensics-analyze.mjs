@@ -235,11 +235,24 @@ const unreadable = (promise, exitCode) => promise.catch((e) => { e.exitCode = ex
 // The --redact stand-in for a log failure's own message, which may carry the log path (and so the app id).
 const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode === EXIT.INTERNAL ? 'analyzed' : 'read or parsed'}.`;
 
+// Additive blocks on a candidate's JSON report: each carries its own schemaVersion. Under --redact
+// they come from the run redacted with the report's own inputs, so host and app pseudonyms in stage
+// fingerprints and conf values match the report's.
+function machineReadableBlocks(appModel, catalog, { redact, thresholds, confKeys, confRedactRegex }) {
+  const blocksModel = redact ? redactRunModel(appModel, catalog, auditConfig(appModel.app)).appModel : appModel;
+  return {
+    metrics: computeRunMetrics(blocksModel, thresholds),
+    effectiveConf: buildEffectiveConf(blocksModel.app, { keys: confKeys, userPattern: confRedactRegex }),
+  };
+}
+
 // One baseline against several candidates, one NDJSON line each. The baseline is parsed and
 // analyzed once; candidates run one at a time so only one parsed log is held at once. A candidate
 // that cannot be read or parsed yields an "error" line (exit code 4) and the rest still run. Under --redact
 // a candidate is named by its position (candidate-1, ...): log file names usually carry the app id.
-async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, findingsFilter, redact, outPath }) {
+async function runMultiLog({
+  candidatePaths, baselinePath, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex,
+}) {
   let baselineAppModel;
   try {
     ({ appModel: baselineAppModel } = await collectWithEvidence(baselinePath));
@@ -280,7 +293,7 @@ async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, 
         exitCode,
         error: null,
         budgets: results,
-        candidate: json,
+        candidate: { ...json, ...machineReadableBlocks(appModel, catalog, { redact, thresholds, confKeys, confRedactRegex }) },
         comparison: {
           verdict: comparisonVerdict(comparison),
           confidence: comparison.confidence,
@@ -484,6 +497,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     return runMultiLog({
       candidatePaths: positionals, baselinePath: values.baseline, budgets, thresholds,
       findingsFilter, redact: values.redact, outPath: values.out,
+      confKeys, confRedactRegex: values['conf-redact-regex'],
     });
   }
 
@@ -564,14 +578,9 @@ async function runCli(argv, { fetchImpl } = {}) {
   if (values.format === 'md') {
     output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonVerdict(comparison))}\n` : `${markdown}\n`;
   } else {
-    // Additive blocks on the report: each carries its own schemaVersion. Under --redact they come
-    // from the run redacted with the report's own inputs, so host and app pseudonyms in stage
-    // fingerprints and conf values match the report's.
-    const blocksModel = values.redact ? redactRunModel(appModel, catalog, auditConfig(appModel.app)).appModel : appModel;
-    const machineReadable = {
-      metrics: computeRunMetrics(blocksModel, thresholds),
-      effectiveConf: buildEffectiveConf(blocksModel.app, { keys: confKeys, userPattern: values['conf-redact-regex'] }),
-    };
+    const machineReadable = machineReadableBlocks(appModel, catalog, {
+      redact: values.redact, thresholds, confKeys, confRedactRegex: values['conf-redact-regex'],
+    });
     const payload = comparison
       ? {
         candidate: { ...json, ...machineReadable },

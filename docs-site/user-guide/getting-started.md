@@ -739,7 +739,8 @@ finishes. `--out <path>` writes the lines to a file instead of stdout, and
 `--format ndjson` selects this output for a single candidate too. The mode
 can't be combined with `--export-html`, `--shs-base-url`, `--format json` or
 `--format md` (exit 2). `--redact`, `--thresholds`, `--impact`, `--type`,
-`--stage` and every budget flag apply to each candidate.
+`--stage`, `--conf-keys`, `--conf-redact-regex` and every budget flag apply
+to each candidate.
 
 Each line is one JSON object:
 
@@ -750,7 +751,7 @@ Each line is one JSON object:
 | `exitCode` | The exit code this line alone would give: `0` for `pass`, `1` for `violation`, `3` for `inconclusive`, and for `error` `4` (the log can't be read or parsed) or `6` (an internal failure while analyzing it). |
 | `error` | The message when `status` is `error`; otherwise `null`. With `--redact`, a generic message that names no path. |
 | `budgets` | This candidate's budget results, each with `name`, `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric` on `max-regression`. Empty for an `error` line. |
-| `candidate` | The candidate's report, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
+| `candidate` | The candidate's report with its `metrics` and `effectiveConf` blocks, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
 | `comparison` | `verdict`, `confidence`, `reason`, `matchedCoverage`, `metrics` and `findings`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
 
 A line's `status` follows the single-candidate rules: `violation` if any
