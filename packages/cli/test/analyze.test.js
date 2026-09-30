@@ -876,3 +876,115 @@ describe('sparkforensics-analyze CLI', () => {
     }
   });
 });
+
+describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
+  function ndjsonWithConf() {
+    const props = {
+      'spark.executor.memory': '4g',
+      'spark.executor.cores': '2',
+      'spark.sql.shuffle.partitions': '64',
+      'spark.hadoop.fs.s3a.secret.key': 'top-secret-value',
+      'spark.jdbc.url': 'jdbc:sqlserver://db:1433;user=u;password=hunter2;encrypt=true',
+      'spark.storage.url': 'https://acct.blob.core.windows.net/c?sv=1&sig=SASSIGNATURE',
+    };
+    const lines = ndjsonWithSkew().trimEnd().split('\n');
+    lines.splice(1, 0, JSON.stringify({ Event: 'SparkListenerEnvironmentUpdate', 'Spark Properties': props }));
+    lines.splice(2, 0, JSON.stringify({ Event: 'SparkListenerExecutorAdded', Timestamp: 0, 'Executor ID': '1', 'Executor Info': { Host: 'h1', 'Total Cores': 2 } }));
+    return `${lines.join('\n')}\n`;
+  }
+
+  function withLog(content, fn) {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-metrics-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path, content);
+    try { return fn(path); } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+
+  it('adds a versioned metrics block beside the unchanged evidence report', () => {
+    withLog(ndjsonWithConf(), (path) => {
+      const out = JSON.parse(runCli([path]).stdout);
+      expect(out.metrics.schemaVersion).toBe(1);
+      expect(out.metrics.runComplete).toBe(true);
+      expect(out.metrics.shape).toMatchObject({ taskCount: 10, stageCount: 1 });
+      expect(out.metrics.time.executorRunTimeMs).toBe(2900);
+      // One executor, 2 cores, alive from 0 to the 2 s application end.
+      expect(out.metrics.allocation.coreHours).toBeCloseTo((2 * 2) / 3600, 10);
+      expect(out.metrics.python.shareOfTaskRunTime).toBe(0);
+      expect(Object.keys(out.metrics.stages)).toHaveLength(1);
+      expect(out.schemaVersion).toBeGreaterThan(0); // evidence report's own version, untouched
+    });
+  });
+
+  it('reports null for what a log without CPU time cannot provide', () => {
+    withLog(ndjsonWithSkew(), (path) => {
+      const { metrics } = JSON.parse(runCli([path]).stdout);
+      expect(metrics.time.executorCpuTimeMs).toBeNull();
+      expect(metrics.allocation).toEqual({ coreHours: null, memoryGbHours: null });
+    });
+  });
+
+  it('lists the effective conf, withholding secret values and URL credentials', () => {
+    withLog(ndjsonWithConf(), (path) => {
+      const { stdout } = runCli([path]);
+      const { effectiveConf } = JSON.parse(stdout);
+      expect(effectiveConf.values['spark.sql.shuffle.partitions']).toBe('64');
+      // The default secret pattern matches the JDBC URL's value ("password"), as in Spark.
+      expect(effectiveConf.maskedKeys).toEqual(['spark.hadoop.fs.s3a.secret.key', 'spark.jdbc.url']);
+      expect(effectiveConf.values['spark.storage.url']).toContain('sig=[redacted]');
+      for (const leaked of ['top-secret-value', 'hunter2', 'SASSIGNATURE']) expect(stdout).not.toContain(leaked);
+    });
+  });
+
+  it('narrows the conf with --conf-keys and adds a --conf-redact-regex pattern', () => {
+    withLog(ndjsonWithConf(), (path) => {
+      const narrowed = JSON.parse(runCli([path, '--conf-keys', 'spark.executor.memory,spark.nope']).stdout).effectiveConf;
+      expect(narrowed.values).toEqual({ 'spark.executor.memory': '4g' });
+      expect(narrowed.absentKeys).toEqual(['spark.nope']);
+      const extra = JSON.parse(runCli([path, '--conf-redact-regex', 'shuffle']).stdout).effectiveConf;
+      expect(extra.maskedKeys).toContain('spark.sql.shuffle.partitions');
+    });
+  });
+
+  it('exits 2 on an invalid --conf-redact-regex or an empty --conf-keys', async () => {
+    // Both are rejected before the log is read, so a path that does not exist is enough.
+    const badRegex = await runMainInProcess(['missing-eventlog', '--conf-redact-regex', '(']);
+    expect(badRegex.status).toBe(2);
+    expect(badRegex.stderr).toContain('--conf-redact-regex:');
+    expect(badRegex.stdout).toBe('');
+    const emptyKeys = await runMainInProcess(['missing-eventlog', '--conf-keys', ',']);
+    expect(emptyKeys.status).toBe(2);
+    expect(emptyKeys.stderr).toContain('--conf-keys needs at least one property name.');
+    expect(emptyKeys.stdout).toBe('');
+  });
+
+  it('puts both blocks under candidate in --baseline mode and accepts the new regression metrics', () => {
+    withLog(ndjsonWithConf(), (path) => {
+      const { stdout, status } = runCli([path, '--baseline', path, '--max-regression-pct', '10', '--regression-metric', 'allocatedCoreHours']);
+      expect(status).toBe(0);
+      const parsed = JSON.parse(stdout);
+      expect(parsed.candidate.metrics.schemaVersion).toBe(1);
+      expect(parsed.candidate.effectiveConf.schemaVersion).toBe(1);
+      const keys = parsed.comparison.metrics.map((m) => m.key);
+      expect(keys).toContain('executorCpuTime');
+      expect(keys).toContain('allocatedCoreHours');
+      expect(runCli([path, '--baseline', path, '--max-regression-pct', '10', '--regression-metric', 'executorCpuTime']).status).not.toBe(2);
+    });
+  });
+
+  it('pseudonymizes a conf host name wherever it appears under --redact', () => {
+    const base = ndjsonWithConf().trimEnd().split('\n');
+    base[1] = JSON.stringify({ Event: 'SparkListenerEnvironmentUpdate', 'Spark Properties': {
+      'spark.driver.host': 'node-7.internal', 'spark.driver.appUIAddress': 'http://node-7.internal:4040',
+      'spark.app.name': 'customer-job', 'spark.a': '1',
+    } });
+    withLog(`${base.join('\n')}\n`, (path) => {
+      const { stdout } = runCli([path, '--redact']);
+      expect(stdout).not.toContain('node-7.internal');
+      expect(stdout).not.toContain('customer-job');
+      const { values } = JSON.parse(stdout).effectiveConf;
+      expect(values['spark.driver.host']).toMatch(/^host-\d+$/);
+      expect(values['spark.driver.appUIAddress']).toBe(`http://${values['spark.driver.host']}:4040`);
+      expect(values['spark.a']).toBe('1');
+    });
+  });
+});

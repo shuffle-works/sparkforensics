@@ -48,7 +48,7 @@ describe('EfficiencyModel', () => {
     expect(screen.queryByText(/low confidence/i)).not.toBeInTheDocument();
 
     // All four metrics visible unconditionally (not gated by AdvancedOnly)
-    expect(screen.getByText(/allocated:/i)).toBeInTheDocument();
+    expect(screen.getByText(/available:/i)).toBeInTheDocument();
     expect(screen.getByText(/driver-bound waste:/i)).toBeInTheDocument();
     expect(screen.getByText(/executor-bound waste:/i)).toBeInTheDocument();
     expect(screen.getByText(/floor \(same executors, zero skew\):/i)).toBeInTheDocument();
@@ -90,12 +90,12 @@ describe('EfficiencyModel', () => {
   it('names the core count only in Advanced view', () => {
     store.getState().setWidgetDensity('basic');
     renderEfficiencyModel(buildAppModel());
-    expect(screen.queryByText(/cores over the run; used = core-time/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cores over the run \(peak concurrent cores × run time\); used = core-time/i)).not.toBeInTheDocument();
     cleanup();
 
     store.getState().setWidgetDensity('advanced');
     renderEfficiencyModel(buildAppModel());
-    expect(screen.getByText(/2 cores over the run; used = core-time/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 cores over the run \(peak concurrent cores × run time\); used = core-time/i)).toBeInTheDocument();
     store.getState().setWidgetDensity('basic');
   });
 

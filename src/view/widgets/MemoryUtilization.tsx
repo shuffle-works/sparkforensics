@@ -25,7 +25,7 @@ export type MemoryUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultColla
 function memoryDetail(f: MemoryUtilizationFinding): string {
   const value = numericValue(f);
   const pct = formatMetricValue('pct', value);
-  if (f.variant === 'idleCores') return `${pct} of allocated core-time idle`;
+  if (f.variant === 'idleCores') return `${pct} of available core-time idle`;
   if (f.variant === 'memoryBand') {
     return f.rule === 'heapNearCapacity'
       ? `${pct} of allocated heap used: near capacity`

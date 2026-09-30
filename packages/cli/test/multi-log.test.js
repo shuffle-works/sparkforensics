@@ -60,6 +60,12 @@ beforeAll(() => {
   writeFileSync(p('slower'), log({ slowMs: 4000 }));
   writeFileSync(p('cut-off'), `${CUT_OFF}\n`);
   writeFileSync(p('garbage'), 'this is not an event log\n');
+  const withConf = log({ slowMs: 2000 }).split('\n');
+  withConf.splice(1, 0, JSON.stringify({
+    Event: 'SparkListenerEnvironmentUpdate',
+    'Spark Properties': { 'spark.executor.memory': '2g', 'spark.sql.shuffle.partitions': '64', 'spark.custom.hidden': 'x' },
+  }));
+  writeFileSync(p('with-conf'), withConf.join('\n'));
   writeFileSync(p('fails-analysis'), log({ slowMs: 2000 }).replace('application_0000000000000_0001', FAILING_APP_ID));
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -99,6 +105,20 @@ describe('several candidate logs', () => {
     const wall = (l) => l.comparison.metrics.find((m) => m.key === 'wallClock');
     expect(wall(lines[0]).delta).toBe(0);
     expect(wall(lines[1]).delta).toBe(2000);
+  });
+
+  it.each([[[]], [['--redact']]])('carries the single-candidate candidate object, metrics and effectiveConf included (%j)', async (extra) => {
+    const flags = ['--baseline', p('baseline'), '--conf-keys', 'spark.executor.memory,spark.custom.hidden,spark.missing',
+      '--conf-redact-regex', 'hidden', ...extra];
+    const single = JSON.parse((await run([p('with-conf'), ...flags, '--format', 'json'])).stdout).candidate;
+    const [line] = (await run([p('with-conf'), ...flags, '--format', 'ndjson'])).lines;
+    expect(line.candidate).toEqual(single);
+    expect(line.candidate.metrics.schemaVersion).toBeDefined();
+    expect(line.candidate.effectiveConf).toMatchObject({
+      values: { 'spark.executor.memory': '2g' },
+      maskedKeys: ['spark.custom.hidden'],
+      absentKeys: ['spark.missing'],
+    });
   });
 
   it('gives each line its own status and exits with the worst: violation over inconclusive over pass', async () => {

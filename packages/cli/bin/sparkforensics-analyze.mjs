@@ -23,18 +23,20 @@ const loadCore = (moduleName, opts) => loadVendored(pkgDir, moduleName, opts);
 const { collectRun } = await loadCore('cli/collect-run');
 const { resolveFromShs } = await loadCore('shs-load');
 const { validateShsRequest } = await loadCore('shs-request', { srcExt: 'js' });
-const { analyze } = await loadCore('analyzer');
+const { analyze, auditConfig } = await loadCore('analyzer');
 const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
 const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
 const { evaluateBudgets } = await loadCore('cli/budgets');
 const { buildComparison, renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
 const { comparisonVerdict } = await loadCore('comparison-verdict');
-const { redactComparison } = await loadCore('redact');
+const { redactComparison, redactRunModel } = await loadCore('redact');
 const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
 const { runPayloadScript } = await loadCore('run-payload');
 const { loadThresholdOverrides } = await loadCore('cli/threshold-config');
 const { parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets } = await loadCore('cli/regression-budgets');
 const { tunedDetectors } = await loadCore('threshold-overrides');
+const { computeRunMetrics } = await loadCore('run-metrics');
+const { buildEffectiveConf } = await loadCore('effective-conf');
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
        sparkforensics-analyze <event-log-file|rolling-log-dir>... --baseline <path> [options]
@@ -94,6 +96,11 @@ Options:
                                     tuned detector produces are marked and their impact estimates
                                     flagged as uncalibrated. Applies to --baseline too; the
                                     --export-html dashboard keeps the default thresholds.
+  --conf-keys <key[,key]>           Narrow the JSON output's effectiveConf to these Spark
+                                    properties. Keys the log does not contain are listed as absent.
+  --conf-redact-regex <pattern>     Also withhold the value of any Spark property whose key or
+                                    value matches this pattern, on top of Spark's default secret
+                                    pattern and the job's own spark.redaction.regex.
 
 Several candidates: pass two or more logs as positional arguments, with --baseline, to compare
 each against the baseline, which is parsed once. Output is NDJSON, one line per candidate in
@@ -142,6 +149,8 @@ function parseCliArgs(argv) {
       type: { type: 'string' },
       stage: { type: 'string' },
       thresholds: { type: 'string' },
+      'conf-keys': { type: 'string' },
+      'conf-redact-regex': { type: 'string' },
       help: { type: 'boolean' },
     },
   });
@@ -226,11 +235,24 @@ const unreadable = (promise, exitCode) => promise.catch((e) => { e.exitCode = ex
 // The --redact stand-in for a log failure's own message, which may carry the log path (and so the app id).
 const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode === EXIT.INTERNAL ? 'analyzed' : 'read or parsed'}.`;
 
+// Additive blocks on a candidate's JSON report: each carries its own schemaVersion. Under --redact
+// they come from the run redacted with the report's own inputs, so host and app pseudonyms in stage
+// fingerprints and conf values match the report's.
+function machineReadableBlocks(appModel, catalog, { redact, thresholds, confKeys, confRedactRegex }) {
+  const blocksModel = redact ? redactRunModel(appModel, catalog, auditConfig(appModel.app)).appModel : appModel;
+  return {
+    metrics: computeRunMetrics(blocksModel, thresholds),
+    effectiveConf: buildEffectiveConf(blocksModel.app, { keys: confKeys, userPattern: confRedactRegex }),
+  };
+}
+
 // One baseline against several candidates, one NDJSON line each. The baseline is parsed and
 // analyzed once; candidates run one at a time so only one parsed log is held at once. A candidate
 // that cannot be read or parsed yields an "error" line (exit code 4) and the rest still run. Under --redact
 // a candidate is named by its position (candidate-1, ...): log file names usually carry the app id.
-async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, findingsFilter, redact, outPath }) {
+async function runMultiLog({
+  candidatePaths, baselinePath, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex,
+}) {
   let baselineAppModel;
   try {
     ({ appModel: baselineAppModel } = await collectWithEvidence(baselinePath));
@@ -271,7 +293,7 @@ async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, 
         exitCode,
         error: null,
         budgets: results,
-        candidate: json,
+        candidate: { ...json, ...machineReadableBlocks(appModel, catalog, { redact, thresholds, confKeys, confRedactRegex }) },
         comparison: {
           verdict: comparisonVerdict(comparison),
           confidence: comparison.confidence,
@@ -458,10 +480,24 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
   }
 
+  const confKeys = splitCsv(values['conf-keys']);
+  if (confKeys !== undefined && confKeys.length === 0) {
+    return bail(`--conf-keys needs at least one property name.\n${USAGE}`, 2);
+  }
+  // Compiled before any log is parsed so a bad pattern is a usage error, not a late crash.
+  if (values['conf-redact-regex'] !== undefined) {
+    try {
+      buildEffectiveConf({ config: {} }, { userPattern: values['conf-redact-regex'] });
+    } catch (e) {
+      return bail(`--conf-redact-regex: ${e.message}\n`, 2);
+    }
+  }
+
   if (multiLog) {
     return runMultiLog({
       candidatePaths: positionals, baselinePath: values.baseline, budgets, thresholds,
       findingsFilter, redact: values.redact, outPath: values.out,
+      confKeys, confRedactRegex: values['conf-redact-regex'],
     });
   }
 
@@ -542,9 +578,12 @@ async function runCli(argv, { fetchImpl } = {}) {
   if (values.format === 'md') {
     output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonVerdict(comparison))}\n` : `${markdown}\n`;
   } else {
+    const machineReadable = machineReadableBlocks(appModel, catalog, {
+      redact: values.redact, thresholds, confKeys, confRedactRegex: values['conf-redact-regex'],
+    });
     const payload = comparison
       ? {
-        candidate: json,
+        candidate: { ...json, ...machineReadable },
         comparison: {
           verdict: comparisonVerdict(comparison),
           confidence: comparison.confidence,
@@ -554,7 +593,7 @@ async function runCli(argv, { fetchImpl } = {}) {
           findings: comparison.findings,
         },
       }
-      : json;
+      : { ...json, ...machineReadable };
     output = `${JSON.stringify(payload, null, 2)}\n`;
   }
   if (values.out) writeFileSync(values.out, output);

@@ -57,6 +57,24 @@ export interface EvidenceAvailabilityEntry {
 }
 export interface EvidenceAvailability { schemaVersion: 1; entries: EvidenceAvailabilityEntry[]; }
 
+export interface StageAttemptTotals {
+  taskCount: number;
+  failedTasks: number;
+  wastedAttempts: number;
+  executorRunTime: number;
+  executorCpuTime: number;
+  jvmGCTime: number;
+  memoryBytesSpilled: number;
+  diskBytesSpilled: number;
+  shuffleReadBytes: number;
+  shuffleWriteBytes: number;
+  inputBytes: number;
+  outputBytes: number;
+  outputRecords: number | null;
+  peakExecutionMemoryMax: number;
+  durationMs: number | null;
+}
+
 export interface Stage {
   id: StageId;
   name?: string;
@@ -70,6 +88,20 @@ export interface Stage {
   failedTasks?: number;
   inputBytes?: number;
   outputBytes?: number;
+  // Summed Records Written; null when no task of the stage reported one (absent on older stages).
+  outputRecords?: number | null;
+  // Times the stage was submitted and how many of those attempts failed, counted across
+  // resubmits; absent on stages parsed before these fields existed.
+  stageAttempts?: number;
+  failedStageAttempts?: number;
+  // The summed work of the attempts before the latest one, which the stage's own figures leave
+  // out; null or absent when the stage ran once. Read only by the CLI's metrics block.
+  earlierAttempts?: StageAttemptTotals | null;
+  // The summed work the stage's own figures also leave out: a failed attempt's tasks that ended
+  // after its StageCompleted, and task attempts another attempt of the same task superseded
+  // (failed retries, losing speculative copies); null or absent when there was none. Read only by
+  // the CLI's metrics block.
+  lateAttemptWork?: StageAttemptTotals | null;
   shuffleReadBytes?: number;
   shuffleReadMax?: number;
   shuffleReadP50?: number;

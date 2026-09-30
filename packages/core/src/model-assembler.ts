@@ -2,6 +2,7 @@ import type {
   AppModel,
   SparkAppInfo,
   Stage,
+  StageAttemptTotals,
   SqlExecution,
   PlanNode,
   ExecutorEvent,
@@ -87,6 +88,14 @@ export function createModelCallbacks(
     onDone(data: unknown) {
       recordParseGaps(appModel, data);
       onDone?.(data);
+    },
+    // Patch the late work of failed attempts, whose TaskEnds arrive after StageCompleted.
+    // `data` is Map<stageId, StageAttemptTotals>.
+    onStageLateAttemptWork(data: unknown) {
+      for (const [stageId, work] of data as Map<number, StageAttemptTotals>) {
+        const stage = appModel.stages.get(stageId);
+        if (stage) stage.lateAttemptWork = work;
+      }
     },
     onError,
   };

@@ -1,6 +1,9 @@
 import { computeWallClock } from './wall-clock.ts';
 import { normalizeDetail } from './detectors.ts';
 import { cyrb53 } from './string-hash.ts';
+import { computeAllocation } from './allocation.ts';
+import { totalExecutorCpuMs, withEarlierAttempts } from './run-totals.ts';
+import { planNodesOfStage } from './stage-plan-nodes.ts';
 import { captureSnapshot } from './session-snapshot.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
 import type { Stage, PlanNode, SparkAppInfo, AppModel, Finding, TunedThresholds } from './types.ts';
@@ -76,23 +79,18 @@ function planTreeIdentity(root: PlanNode | null | undefined): string | null {
 // Falls back to the coarser whole-tree identity when the stage has no
 // attributed nodes (hand-built snapshots without `stageIds`, or unmatched
 // accumulables).
-function sqlNodeIdentity(stage: Stage, snapshot: SessionSnapshot): string {
+function sqlNodeIdentity(stage: Stage, snapshot: Pick<SessionSnapshot, 'sql'>): string {
   const execId = stage.sqlExecutionId;
   if (execId == null) return '';
   const root = snapshot.sql.get(execId)?.planTree ?? null;
   if (!root) return '';
-  const fingerprints: string[] = [];
-  (function collect(node: PlanNode): void {
-    if (node.stageIds?.includes(stage.id)) {
-      fingerprints.push(JSON.stringify([normalizeStageName(node.name ?? ''), normalizeDetail(node.detail ?? '')]));
-    }
-    for (const child of node.children ?? []) collect(child);
-  })(root);
+  const fingerprints = planNodesOfStage(stage, snapshot.sql)
+    .map((node) => JSON.stringify([normalizeStageName(node.name ?? ''), normalizeDetail(node.detail ?? '')]));
   if (fingerprints.length === 0) return planTreeIdentity(root) ?? '';
   return cyrb53(JSON.stringify(fingerprints.sort()));
 }
 
-export function stageIdentity(stage: Stage, snapshot: SessionSnapshot): string {
+export function stageIdentity(stage: Stage, snapshot: Pick<SessionSnapshot, 'sql'>): string {
   return normalizeStageName(stage.name ?? '') + '§' + sqlNodeIdentity(stage, snapshot);
 }
 
@@ -199,6 +197,7 @@ function skewRatios(stages: Stage[]): number[] {
 export const COMPARISON_METRIC_KEYS: readonly string[] = [
   'wallClock', 'shuffleSpill', 'taskSkew', 'failedTaskRate', 'diskSpill', 'gcTime',
   'inputBytes', 'outputBytes', 'executorRunTime', 'taskCount', 'executorsAdded',
+  'executorCpuTime', 'allocatedCoreHours',
 ];
 
 // Volume/count metrics, not cost metrics: more or less input/output data, or
@@ -228,6 +227,9 @@ function metric(
 
 export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapshot): MetricDeltaRow[] {
   const out: MetricDeltaRow[] = [];
+  // Run totals count every task attempt, failed and speculative ones too (run-totals.ts), the
+  // same sums the CLI metrics block reports; skew stays on each stage's latest attempt.
+  const attemptsOf = (snap: SessionSnapshot): Stage[] => withEarlierAttempts([...snap.stages.values()]);
 
   // Wall-clock: always computable (computeWallClock tolerates a null app).
   out.push(metric('wallClock', 'Wall-clock duration',
@@ -238,8 +240,8 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
   // stage matching, and matching is unreliable on real logs, so scope it to all
   // stages exactly like task-skew and failed-rate below. The key stays
   // `shuffleSpill` so existing --regression-metric callers keep working.
-  const bSpill = sumField([...baseSnap.stages.values()], 'memoryBytesSpilled');
-  const cSpill = sumField([...candSnap.stages.values()], 'memoryBytesSpilled');
+  const bSpill = sumField(attemptsOf(baseSnap), 'memoryBytesSpilled');
+  const cSpill = sumField(attemptsOf(candSnap), 'memoryBytesSpilled');
   out.push(metric('shuffleSpill', 'Memory spill',
     bSpill.present ? bSpill.sum : null, cSpill.present ? cSpill.sum : null,
     { unavailableReason: bSpill.present && cSpill.present ? undefined : 'No memory-spill data recorded for a run' }));
@@ -251,10 +253,10 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
     { unavailableReason: bSkew != null && cSkew != null ? undefined : 'No stage had measurable duration for a run' }));
 
   // Failed-task rate: Σ failedTasks / Σ taskCount.
-  const bTasks = sumField([...baseSnap.stages.values()], 'taskCount');
-  const cTasks = sumField([...candSnap.stages.values()], 'taskCount');
-  const bFailed = sumField([...baseSnap.stages.values()], 'failedTasks');
-  const cFailed = sumField([...candSnap.stages.values()], 'failedTasks');
+  const bTasks = sumField(attemptsOf(baseSnap), 'taskCount');
+  const cTasks = sumField(attemptsOf(candSnap), 'taskCount');
+  const bFailed = sumField(attemptsOf(baseSnap), 'failedTasks');
+  const cFailed = sumField(attemptsOf(candSnap), 'failedTasks');
   // Guard on BOTH inputs: a missing `failedTasks` field must render Unavailable,
   // not a false 0% rate (dividing an absent-and-therefore-0 numerator).
   const bRate = bTasks.present && bTasks.sum > 0 && bFailed.present ? bFailed.sum / bTasks.sum : null;
@@ -266,8 +268,8 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
   // carries (set in finalizeStage). Correct at any match coverage, like the
   // sums above; no parser or detector change.
   const sumMetric = (key: string, label: string, field: NumericStageField, reason: string) => {
-    const b = sumField([...baseSnap.stages.values()], field);
-    const c = sumField([...candSnap.stages.values()], field);
+    const b = sumField(attemptsOf(baseSnap), field);
+    const c = sumField(attemptsOf(candSnap), field);
     out.push(metric(key, label, b.present ? b.sum : null, c.present ? c.sum : null,
       { unavailableReason: b.present && c.present ? undefined : reason }));
   };
@@ -285,6 +287,18 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
   const bExec = execCount(baseSnap), cExec = execCount(candSnap);
   out.push(metric('executorsAdded', 'Executors added', bExec, cExec,
     { unavailableReason: bExec != null && cExec != null ? undefined : 'No executor events recorded for a run' }));
+
+  // Executor CPU time (ms) and allocated core-hours cost resources, so less is better. CPU time is
+  // null, not 0, on a run whose log never recorded it (older Spark).
+  const cpuMs = (snap: SessionSnapshot): number | null => totalExecutorCpuMs(attemptsOf(snap));
+  const bCpu = cpuMs(baseSnap), cCpu = cpuMs(candSnap);
+  out.push(metric('executorCpuTime', 'Executor CPU time', bCpu, cCpu,
+    { unavailableReason: bCpu != null && cCpu != null ? undefined : 'No executor CPU time recorded for a run' }));
+  const coreHours = (snap: SessionSnapshot): number | null =>
+    (snap.executors ? computeAllocation(snap).coreHours : null);
+  const bCore = coreHours(baseSnap), cCore = coreHours(candSnap);
+  out.push(metric('allocatedCoreHours', 'Allocated core-hours', bCore, cCore,
+    { unavailableReason: bCore != null && cCore != null ? undefined : 'No executor lifecycle or core count recorded for a run' }));
 
   return out;
 }

@@ -201,6 +201,7 @@ export const StageSubmittedEventSchema = z.object({
   Event: z.literal('SparkListenerStageSubmitted'),
   'Stage Info': z.object({
     'Stage ID': z.number(),
+    'Stage Attempt ID': z.number().optional(),
     'Stage Name': z.string().optional(),
     Details: z.string().optional(),
     'Submission Time': z.number().optional(),
@@ -311,6 +312,7 @@ export const TaskEndEventSchema = z.object({
     }).optional(),
     'Output Metrics': z.object({
       'Bytes Written': z.number().optional(),
+      'Records Written': z.number().optional(),
     }).optional(),
   }).optional(),
 });

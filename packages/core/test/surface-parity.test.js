@@ -9,6 +9,8 @@ import { buildEvidenceReport } from '../src/evidence-report.js';
 import { buildExportRunData, CORE_VERSION } from '../src/export-data.js';
 import { interpretRun } from '../src/run-interpretation.js';
 import { resolveOrCreateRun, diagnoseRun } from '../src/mcp-tools.js';
+import { buildComparison } from '../src/run-comparison.js';
+import { computeRunMetrics } from '../src/run-metrics.js';
 
 // Public corpus logs (dev/log-corpus submodule); the suite skips without it.
 const EXTERNAL_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
@@ -83,4 +85,50 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
     expect(withRemediation).toBeGreaterThan(0);
     expect(withCoreTime).toBeGreaterThan(0);
   }, 120000);
+});
+
+// Public corpus logs (git submodule, checked out in CI; skipped locally until initialized).
+const CORPUS = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
+const METRIC_LOGS = [
+  'external-app-20161115172038-0000.ndjson',
+  'external-application_1516285256255_0012.ndjson',
+  'external-application_1553914137147_0018.ndjson',
+].map((name) => join(CORPUS, name));
+
+// The CLI's metrics block, the evidence report (CLI md/json and MCP tools) and the run comparison
+// (dashboard comparison view, CLI --baseline, MCP compare_runs) must agree on every figure they
+// share. The comparison of a run with itself exposes its totals as baseline values.
+describe.each(METRIC_LOGS)('surface parity: %s', (path) => {
+  it.skipIf(!existsSync(path))('reads one figure per name across metrics, report and comparison', async () => {
+    const { appModel } = await collectRun(path);
+    const catalog = analyze(
+      appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
+      appModel.jobs, appModel.sql, appModel.runAggregates,
+    );
+    const metrics = computeRunMetrics(appModel);
+    const { json: report } = buildEvidenceReport(appModel);
+    const side = { label: 'run', appModel, catalog };
+    const byKey = Object.fromEntries(buildComparison(side, side).metrics.map((m) => [m.key, m.baseline]));
+
+    // Run totals: the comparison reads the same sums.
+    expect(byKey.executorRunTime).toEqual(metrics.time.executorRunTimeMs);
+    expect(byKey.executorCpuTime).toEqual(metrics.time.executorCpuTimeMs);
+    expect(byKey.gcTime).toEqual(metrics.time.gcTimeMs);
+    expect(byKey.shuffleSpill).toEqual(metrics.data.memorySpillBytes);
+    expect(byKey.diskSpill).toEqual(metrics.data.diskSpillBytes);
+    expect(byKey.inputBytes).toEqual(metrics.data.inputBytes);
+    expect(byKey.outputBytes).toEqual(metrics.data.outputBytes);
+    expect(byKey.taskCount).toEqual(metrics.shape.taskCount);
+    expect(byKey.allocatedCoreHours).toEqual(metrics.allocation.coreHours);
+    if (metrics.shape.taskCount) expect(byKey.failedTaskRate).toBeCloseTo(metrics.shape.failedTasks / metrics.shape.taskCount, 10);
+
+    // Run shape and status: the report's summary is the dashboard's and MCP's figure.
+    expect(metrics.time.wallClockMs).toEqual(report.summary.runShape.wallClockMs);
+    expect(metrics.shape.stageCount).toBe(report.summary.stageCount);
+    expect(metrics.runComplete).toBe(!report.findings.some((f) => f.tag === 'INCMP'));
+
+    // CPU utilization is unavailable exactly when the metrics block has no CPU time.
+    const utilization = catalog.find((f) => f.type === 'utilization');
+    if (utilization) expect(utilization.cpuUtilizationPct == null).toBe(metrics.time.executorCpuTimeMs == null);
+  });
 });

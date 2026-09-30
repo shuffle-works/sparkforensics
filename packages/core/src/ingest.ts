@@ -14,6 +14,7 @@ export interface IngestHandlers {
   onRunAggregates?: (data: unknown) => void;
   onStageExecutorMetrics?: (data: unknown) => void;
   onStageSpeculationWaste?: (data: unknown) => void;
+  onStageLateAttemptWork?: (data: unknown) => void;
   onDone?: (data: unknown) => void;
   onError?: (data: unknown) => void;
 }
@@ -39,6 +40,7 @@ export function routeMessage(
     case 'runAggregates': handlers.onRunAggregates?.(data.data); break;
     case 'stageExecutorMetrics': handlers.onStageExecutorMetrics?.(data.data); break;
     case 'stageSpeculationWaste': handlers.onStageSpeculationWaste?.(data.data); break;
+    case 'stageLateAttemptWork': handlers.onStageLateAttemptWork?.(data.data); break;
     case 'done': {
       const { skippedLines, unreadableSqlExecutions } = data;
       handlers.onDone?.(unreadableSqlExecutions ? { skippedLines, unreadableSqlExecutions } : { skippedLines });

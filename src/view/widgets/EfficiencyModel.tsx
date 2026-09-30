@@ -48,7 +48,7 @@ export function EfficiencyModel() {
       summary={
         <WidgetLeadSummary
           value={m.wastagePct != null ? `${m.wastagePct}% wasted` : formatCoreHours(m.availableComputeHours)}
-          context={`of ${formatCoreHours(m.availableComputeHours)} allocated`}
+          context={`of ${formatCoreHours(m.availableComputeHours)} available`}
         />
       }
     >
@@ -62,7 +62,7 @@ export function EfficiencyModel() {
           </AdvancedOnly>
         )}
         <p>
-          Allocated: <strong>{formatCoreHours(m.availableComputeHours)}</strong>
+          Available: <strong>{formatCoreHours(m.availableComputeHours)}</strong>
           {usefulCoreHours != null && (
             <>
               {' '}
@@ -79,7 +79,7 @@ export function EfficiencyModel() {
         {totalCores != null && (
           <AdvancedOnly>
             <p className="text-muted-foreground text-xs">
-              Allocated = {totalCores} cores over the run; used = core-time that actually ran tasks.
+              Available = {totalCores} cores over the run (peak concurrent cores × run time); used = core-time that actually ran tasks.
             </p>
           </AdvancedOnly>
         )}

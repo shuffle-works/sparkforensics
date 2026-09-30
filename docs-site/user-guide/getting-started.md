@@ -514,6 +514,159 @@ same ratio the skew finding reports. `--export-html` writes the dashboard
 with the default thresholds, because the dashboard never tunes, and prints
 a note to stderr saying so. The browser dashboard has no tuning.
 
+### Metrics block
+
+The CLI's JSON output carries a `metrics` block next to the report, for
+scripts that act on a run without reading the report. With `--baseline` it is
+inside `candidate`. It has its own `schemaVersion`, separate from the
+report's. A figure the log cannot provide is `null`, never `0`: a log from a
+Spark version that records no CPU time has `executorCpuTimeMs: null`, and a
+log cut off before any executor joined has null allocation. The time, data
+and task figures, run-level and per row, include the work of every attempt of
+a resubmitted stage, failed attempts too, and the tasks of a failed attempt
+that end after it (killed or still running when it failed); skew describes
+the latest attempt.
+
+| Field | Meaning |
+| --- | --- |
+| `runComplete` | `true` when the log has an application-end record. `false` means the log was cut off and every total covers only what it recorded. |
+| `time.wallClockMs` | Application start to end; null without both. |
+| `time.executorCpuTimeMs` | Summed CPU time of every task attempt, including failed attempts, retries and speculative copies that lost. Null when no task recorded any. Misses Python worker CPU, see `python`. |
+| `time.executorRunTimeMs`, `time.gcTimeMs` | Summed run time and JVM GC time of every task attempt, counted like the CPU time. |
+| `data.memorySpillBytes`, `data.diskSpillBytes` | Summed spill. |
+| `data.shuffleReadBytes`, `data.shuffleWriteBytes` | Summed shuffle bytes, local plus remote on the read side. |
+| `data.inputBytes`, `data.outputBytes`, `data.outputRows` | Summed input, output and rows written. `outputRows` is null when no task reported rows. |
+| `data.peakExecutionMemoryBytes` | The largest per-task peak execution memory. Null when every task reports 0. |
+| `shape.taskCount`, `shape.stageCount` | Distinct task records and stages. |
+| `shape.failedStageAttempts` | Stage attempts that ended with a failure reason, including an attempt Spark then resubmitted (a fetch failure, for example). |
+| `shape.retriedStages` | Stages submitted more than once. |
+| `shape.failedTasks`, `shape.retriedTasks` | Task-level counts: tasks whose final attempt failed, and task attempts superseded by a retry. |
+| `shape.maxSkew` | The largest stage skew ratio, the figure `--max-skew` checks (P95 over median, or max over median for a stage with few tasks; `skew.minTasksForP95` from `--thresholds` applies). |
+| `allocation.coreHours`, `allocation.memoryGbHours` | See [Allocation](#allocation). |
+| `python.shareOfTaskRunTime` | See [Python share](#python-share). |
+| `stages` | The per-stage rows. |
+
+`stages` holds one row per stage fingerprint, keyed by the same fingerprint
+the run comparison matches stages on (the normalized stage name plus the
+stage's plan nodes), so the same stage has the same key in a baseline and a
+candidate run. A stage repeated in a loop shares one key: its row sums the
+repeats and lists them in `stageIds`. A row carries `durationMs`,
+`executorCpuTimeMs`, `executorRunTimeMs`, `gcTimeMs`, the spill, shuffle,
+input and output figures, `outputRows`, `peakExecutionMemoryBytes`,
+`taskCount`, `failedTasks`, `retriedTasks` and `skew` (the largest skew ratio
+among the repeats) as above, plus `failed` (an attempt of the stage failed),
+`retried` (the stage was submitted more than once) and `python` flags. The
+stage-attempt figures, run-level and per row, are null for a stage record
+that carries no attempt count. With `--redact` the `metrics` and
+`effectiveConf` blocks are built from the redacted run the report uses, so
+they carry the same `host-N` and `app-N` pseudonyms: the keys come from
+redacted stage names.
+
+#### Allocation
+
+`allocation.coreHours` is the sum over executors of cores times hours alive.
+`allocation.memoryGbHours` is the sum of memory times hours alive, in GiB
+(1024 MiB). An executor is alive from its executor-added event to its first
+later executor-removed event. One with no removal event closes at the
+application end when the log has one. In a cut-off log (`runComplete` false)
+it closes at the last timestamp the log records (the latest application,
+stage or executor event), so the figure is a lower bound.
+
+Cores per executor are the executor-added event's total cores. Under dynamic
+allocation or YARN defaults, where `spark.executor.cores` is not set, that is
+the core count the cluster manager actually granted; when the event carries
+none, `spark.executor.cores` is used. If neither exists the core-hours are
+null.
+
+Memory per executor is the container size Spark requests: `spark.executor.memory`
+(1g when unset), plus the overhead, plus `spark.memory.offHeap.size` when
+`spark.memory.offHeap.enabled` is `true`, plus `spark.executor.pyspark.memory`.
+The overhead is `spark.executor.memoryOverhead`, else the legacy
+`spark.yarn.executor.memoryOverhead`, else the larger of 384 MiB and
+`spark.executor.memoryOverheadFactor` (default 0.1) times the executor
+memory. Memory GB-hours are null when the log records no Spark properties at
+all, or a memory property cannot be read. Driver resources are not included.
+
+#### Python share
+
+`python.shareOfTaskRunTime` is the summed task run time of Python stages
+divided by the summed task run time of all stages; null when no task run time
+was recorded. It is `0` for a run with task time and no Python stage. Executor
+CPU time counts only the JVM task thread, so on a run with a high share it
+misses the CPU of the Python worker processes; treat `executorCpuTimeMs` as
+unreliable there.
+
+A stage is a Python stage when either signal holds:
+
+- a plan node attributed to it is a Python operator (`PythonRDD`,
+  `BatchEvalPython`, `ArrowEvalPython`, `PythonMapInArrow`, or a pandas/Arrow
+  grouped or map operator such as `FlatMapGroupsInPandas`, including suffixed
+  variants such as `BatchEvalPythonUDTF` and `FlatMapGroupsInPandasWithState`
+  and the Spark 4.1 `ArrowAggregatePython` and `ArrowWindowPython`),
+  which catches Python UDFs and UDTFs inside SQL;
+- its name or call site names `PythonRDD` or `org.apache.spark.api.python`,
+  which catches RDD lambdas that have no plan and stages that cannot be
+  matched to one.
+
+The "tasks mostly idle" check that keeps a low-CPU stage from being treated
+as waiting on an external system uses the same test.
+
+#### Other surfaces
+
+Every figure the metrics block shares with another surface reads the same core
+code as that surface. The run comparison (the dashboard's comparison view, the
+CLI's `--baseline` and the MCP `compare_runs` tool) uses the same sums for run
+time, CPU time, GC time, spill, input, output and task count, so a comparison
+metric equals the matching `metrics` field for the same run, including the
+work of failed and speculative task attempts. Per-stage views in the dashboard
+(the stage table and stage detail) describe the stage's latest attempt and the
+task attempts that won, so a stage's own figures can be smaller than its row in
+`metrics.stages`. The dashboard's Efficiency card reports available capacity
+(peak concurrent cores times run time), which differs from
+`allocation.coreHours` (cores times the hours each executor was alive) under
+dynamic allocation. The utilization finding's `cpuUtilizationPct` is null, as
+`time.executorCpuTimeMs` is, when the log recorded no CPU time.
+
+### Effective conf
+
+The JSON output also carries `effectiveConf` (with its own `schemaVersion`),
+the Spark properties the run
+started with, so a script can check that a `--conf` overlay took effect. It is
+null when the log records no Spark properties. With `--baseline` it is inside
+`candidate`.
+
+- `values`: property to value, for every property that is not withheld.
+- `maskedKeys`: properties present in the log whose value is withheld.
+- `absentKeys`: with `--conf-keys`, the requested properties the log does not
+  contain.
+
+A value is withheld when its key or value matches Spark's default secret
+pattern (`(?i)secret|password|token|access[.]?key`), as Spark's own redaction
+does, when its key names another credential form (`passwd`, `pwd`, `pass`,
+`apiKey`, `accountKey` as in `fs.azure.account.key.*`, `privateKey`, `sas`,
+`sig`, `credential`), when the key or value matches the job's own `spark.redaction.regex` (when the log records one; if that pattern
+uses syntax JavaScript cannot evaluate, every value is withheld), or when the
+key or value matches `--conf-redact-regex <pattern>`. A withheld property
+shows that it is present, not what it is set to, so the output cannot tell you
+whether a masked property has the value you expected. No hash or other
+derivative of a withheld value is emitted.
+
+In every other value, credentials are replaced with `[redacted]`: in a value
+that looks like a URL, `user:password@host` userinfo and the Oracle thin
+`user/password@host` form; in any value, `name=value` parameters named
+`password`, `passwd`, `pwd`, `pass`, `apikey`, `accountkey`, `sas`, `sig`,
+`signature` and similar (JDBC and ODBC strings, query strings, JVM options),
+including signature parameters such as Azure SAS `sig=` and
+`X-Amz-Signature=`.
+`--conf-keys a,b` narrows `values` and `maskedKeys` to the named properties.
+
+With `--redact`, the host names the report pseudonymizes become `host-N` in
+every value: the values of `*.host` and `*.hostname` properties, executor
+hosts, and IP or EC2-style addresses. `spark.app.name` becomes the
+application's `app-N` pseudonym. A host name that appears only in some other
+property, such as `spark.yarn.historyServer.address`, is left as is; withhold
+it with `--conf-redact-regex` or leave it out with `--conf-keys`.
+
 ### Regression metric keys
 
 `--regression-metric`, `--regression-budget` and the `--budgets` file (and the
@@ -527,6 +680,10 @@ default for `--regression-metric` is `wallClock`:
 - `gcTime`: JVM GC time
 - `taskSkew`: p95 task skew
 - `failedTaskRate`: failed-task rate
+- `executorCpuTime`: summed executor CPU time, in milliseconds (unavailable
+  for a run whose log never recorded it)
+- `allocatedCoreHours`: executor cores times hours alive, see
+  [Allocation](#allocation)
 
 Four more keys, `inputBytes`, `outputBytes`, `taskCount` and
 `executorsAdded`, measure workload volume rather than performance. They have
@@ -582,7 +739,8 @@ finishes. `--out <path>` writes the lines to a file instead of stdout, and
 `--format ndjson` selects this output for a single candidate too. The mode
 can't be combined with `--export-html`, `--shs-base-url`, `--format json` or
 `--format md` (exit 2). `--redact`, `--thresholds`, `--impact`, `--type`,
-`--stage` and every budget flag apply to each candidate.
+`--stage`, `--conf-keys`, `--conf-redact-regex` and every budget flag apply
+to each candidate.
 
 Each line is one JSON object:
 
@@ -593,7 +751,7 @@ Each line is one JSON object:
 | `exitCode` | The exit code this line alone would give: `0` for `pass`, `1` for `violation`, `3` for `inconclusive`, and for `error` `4` (the log can't be read or parsed) or `6` (an internal failure while analyzing it). |
 | `error` | The message when `status` is `error`; otherwise `null`. With `--redact`, a generic message that names no path. |
 | `budgets` | This candidate's budget results, each with `name`, `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric` on `max-regression`. Empty for an `error` line. |
-| `candidate` | The candidate's report, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
+| `candidate` | The candidate's report with its `metrics` and `effectiveConf` blocks, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
 | `comparison` | `verdict`, `confidence`, `reason`, `matchedCoverage`, `metrics` and `findings`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
 
 A line's `status` follows the single-candidate rules: `violation` if any

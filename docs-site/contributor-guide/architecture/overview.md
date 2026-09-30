@@ -94,8 +94,13 @@ winner kept for that purpose. `collectLateSpeculationWaste(state)` re-posts
 the updated totals of those stages once, just before `done`, as a
 `stageSpeculationWaste` message (`Map<stageId, { speculationWasteMs,
 speculationWastedAttempts }>`, empty when no speculative attempt ended late).
-`emitParseCompletion` sends these after `runAggregates` (whole-run aggregates
-computed from `taskStore`) and before the final `app` and `done` messages.
+Any other late task of a failed attempt (a zombie or killed task) leaves the
+stage's own figures alone and adds to its `lateAttemptWork`, which only the
+CLI's `metrics` block reads; `collectLateAttemptWork(state)` re-posts it as a
+`stageLateAttemptWork` message (`Map<stageId, StageAttemptTotals>`).
+`emitParseCompletion` sends the speculation totals after `runAggregates`
+(whole-run aggregates computed from `taskStore`) and before the final `app`
+and `done` messages.
 
 Compressed logs are decompressed as they stream. `sniffCodec` reads the leading magic bytes:
 gzip (`1f 8b`), Zstandard (`28 b5 2f fd`, Spark's `spark.io.compression.codec=zstd`),

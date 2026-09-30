@@ -243,7 +243,7 @@ describe('matchStages', () => {
 });
 
 // --- metric deltas ---
-import { metricDeltas, COMPARISON_METRIC_KEYS } from '../src/run-comparison.js';
+import { metricDeltas, COMPARISON_METRIC_KEYS, NEUTRAL_METRIC_KEYS } from '../src/run-comparison.js';
 
 function stageFull(over) {
   return { name: 'Exchange 1', sqlExecutionId: null, submittedAt: 0, completedAt: 1000,
@@ -309,6 +309,48 @@ describe('metricDeltas', () => {
     expect(byKey.taskCount.baseline).toBe(10);
     expect(byKey.executorsAdded.baseline).toBe(2);
     expect(byKey.executorsAdded.candidate).toBe(1);
+  });
+
+  it('compares executor CPU time (ms) and allocated core-hours, lower being better', () => {
+    const exec = (cores, removedAt) => ({
+      added: [{ kind: 'added', executorId: 'e1', timestamp: 0, totalCores: cores }],
+      removed: removedAt == null ? [] : [{ kind: 'removed', executorId: 'e1', timestamp: removedAt }],
+    });
+    const base = fullSnap([[1, stageFull({ executorCpuTime: 8e9 })]], { name: 'A', startTime: 0, endTime: 7_200_000 });
+    base.executors = exec(4, null); // 4 cores to the 2h application end = 8 core-hours
+    const cand = fullSnap([[1, stageFull({ executorCpuTime: 4e9 })]], { name: 'A', startTime: 0, endTime: 7_200_000 });
+    cand.executors = exec(4, 3_600_000); // 4 core-hours
+    const byKey = Object.fromEntries(metricDeltas(base, cand).map((m) => [m.key, m]));
+    expect(byKey.executorCpuTime).toMatchObject({ baseline: 8000, candidate: 4000, delta: -4000, direction: 'improvement' });
+    expect(byKey.allocatedCoreHours).toMatchObject({ baseline: 8, candidate: 4, delta: -4, direction: 'improvement' });
+    expect(NEUTRAL_METRIC_KEYS.has('executorCpuTime')).toBe(false);
+    expect(NEUTRAL_METRIC_KEYS.has('allocatedCoreHours')).toBe(false);
+    // The same figures going up are regressions.
+    const reversed = Object.fromEntries(metricDeltas(cand, base).map((m) => [m.key, m]));
+    expect(reversed.executorCpuTime.direction).toBe('regression');
+    expect(reversed.allocatedCoreHours.direction).toBe('regression');
+  });
+
+  it('counts the work of earlier stage attempts and superseded task attempts in the run totals', () => {
+    const work = { taskCount: 0, failedTasks: 0, wastedAttempts: 0, executorRunTime: 500, executorCpuTime: 2e8, jvmGCTime: 7,
+      memoryBytesSpilled: 40, diskBytesSpilled: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0, inputBytes: 0, outputBytes: 0,
+      outputRecords: null, peakExecutionMemoryMax: 0, durationMs: null };
+    const retried = stageFull({ executorRunTime: 1000, executorCpuTime: 1e8, jvmGCTime: 3, memoryBytesSpilled: 10, earlierAttempts: work, lateAttemptWork: work });
+    const snap = fullSnap([[1, retried]], { name: 'A', startTime: 0, endTime: 10 });
+    snap.executors = { added: [], removed: [] };
+    const byKey = Object.fromEntries(metricDeltas(snap, snap).map((m) => [m.key, m.baseline]));
+    expect(byKey.executorRunTime).toBe(2000);
+    expect(byKey.executorCpuTime).toBe(500);
+    expect(byKey.gcTime).toBe(17);
+    expect(byKey.shuffleSpill).toBe(90);
+  });
+
+  it('renders CPU time and core-hours Unavailable when a log never recorded them', () => {
+    const snapA = fullSnap([[1, stageFull({ executorCpuTime: 0 })]], { name: 'A', startTime: 0, endTime: 10 });
+    snapA.executors = { added: [], removed: [] };
+    const byKey = Object.fromEntries(metricDeltas(snapA, snapA).map((m) => [m.key, m]));
+    expect(byKey.executorCpuTime).toMatchObject({ baseline: null, direction: 'unavailable' });
+    expect(byKey.allocatedCoreHours).toMatchObject({ baseline: null, direction: 'unavailable' });
   });
 
   it('renders executor-count Unavailable when a snapshot has no executor events', () => {
@@ -424,7 +466,7 @@ describe('compareRuns', () => {
     expect(m.matchedCoverage).toBe(1);
     expect(m.baselineLabel).toBe('base.log');
     expect(m.candidateLabel).toBe('cand.log');
-    expect(m.metrics.length).toBe(11);
+    expect(m.metrics.length).toBe(13);
   });
 
   it('is deterministic and load-order independent given fixed roles', () => {
