@@ -165,6 +165,9 @@ interface StageRecord {
   failedStageAttempts: number;
   // Work of the attempts a resubmit replaced (foldEarlierAttempts); null until one is.
   earlierAttempts: StageAttemptTotals | null;
+  // Tasks of a failed attempt that ended after its StageCompleted (zombie tasks), folded into the
+  // next attempt's earlierAttempts; null until one arrives.
+  lateFailedAttemptWork: StageAttemptTotals | null;
   // Largest task peak execution memory, set by finalizeStage.
   peakExecutionMemoryMax?: number;
   taskAttempts: Map<string | symbol, TaskRecord> | null;
@@ -549,29 +552,11 @@ function internTaskFailure(stage: StageRecord, endReason: Record<string, unknown
   return detail;
 }
 
-export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state: ParserState): null {
-  const stageId = event['Stage ID'];
-  const stage = state.stages.get(stageId);
-  if (!stage) return null;
-  // Late TaskEnd for a stage whose StageCompleted already freed taskAttempts (finalizeStage): its
-  // stats are already baked into the finalized stage, don't re-add. The one exception is a losing
-  // speculative attempt, whose wasted time the finalized stage never saw.
-  if (stage.taskAttempts === null) {
-    accountLateSpeculativeLoser(event, stage);
-    return null;
-  }
+// 'Task Info' and its Failed/Killed/Speculative fields are optional in the schema; Partial<>
+// lets the {} fallback type-check while reads below default via ??/||.
+type TaskInfoRaw = Partial<NonNullable<z.infer<typeof TaskEndEventSchema>['Task Info']>>;
 
-  state.evidenceInputs.taskRecords++;
-
-  const accumulables = event['Task Info']?.Accumulables ?? [];
-  for (const acc of accumulables) {
-    if (!state.taskAccumStages.has(acc.ID)) state.taskAccumStages.set(acc.ID, new Set());
-    state.taskAccumStages.get(acc.ID)!.add(stageId);
-  }
-
-  // 'Task Info' and its Failed/Killed/Speculative fields are optional in the schema; Partial<>
-  // lets the {} fallback type-check while reads below default via ??/||.
-  type TaskInfoRaw = Partial<NonNullable<z.infer<typeof TaskEndEventSchema>['Task Info']>>;
+function taskRecordOf(event: z.infer<typeof TaskEndEventSchema>, failure: TaskFailureDetail | null): TaskRecord {
   const info: TaskInfoRaw = event['Task Info'] ?? {};
   const m = event['Task Metrics'] ?? {};
   const sr = m['Shuffle Read Metrics'] ?? {};
@@ -582,14 +567,14 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
   const duration = (info['Finish Time'] ?? 0) - (info['Launch Time'] ?? 0);
   const failed = !!(info['Failed'] || info['Killed']);
 
-  const record: TaskRecord = {
+  return {
     duration, failed,
     taskId: info['Task ID'] ?? null,
     attemptNumber: info['Attempt Number'] ?? 0,
     launchTime: info['Launch Time'] ?? 0,
     finishTime: info['Finish Time'] ?? 0,
     reason: event['Task End Reason']?.['Reason'] ?? null,
-    failure: failed ? internTaskFailure(stage, event['Task End Reason']) : null,
+    failure,
     speculative: info['Speculative'] === true,
     host: info['Host'] ?? '',
     executorId: info['Executor ID'] ?? '',
@@ -607,6 +592,34 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
     outputBytes: out['Bytes Written'] ?? 0,
     outputRecords: out['Records Written'] ?? null,
   };
+}
+
+export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state: ParserState): null {
+  const stageId = event['Stage ID'];
+  const stage = state.stages.get(stageId);
+  if (!stage) return null;
+  // Late TaskEnd for a stage whose StageCompleted already freed taskAttempts (finalizeStage): the
+  // finalized stage's figures stay as posted. A losing speculative attempt adds the wasted time the
+  // finalized stage never saw; any other task of a failed attempt is work a resubmit folds into
+  // the next attempt's earlierAttempts.
+  if (stage.taskAttempts === null) {
+    if (!accountLateSpeculativeLoser(event, stage) && stage.stageFailureReason != null) {
+      stage.lateFailedAttemptWork = mergeAttemptTotals(taskAttemptTotals(taskRecordOf(event, null)), stage.lateFailedAttemptWork);
+    }
+    return null;
+  }
+
+  state.evidenceInputs.taskRecords++;
+
+  const accumulables = event['Task Info']?.Accumulables ?? [];
+  for (const acc of accumulables) {
+    if (!state.taskAccumStages.has(acc.ID)) state.taskAccumStages.set(acc.ID, new Set());
+    state.taskAccumStages.get(acc.ID)!.add(stageId);
+  }
+
+  const info: TaskInfoRaw = event['Task Info'] ?? {};
+  const failed = !!(info['Failed'] || info['Killed']);
+  const record = taskRecordOf(event, failed ? internTaskFailure(stage, event['Task End Reason']) : null);
 
   // Dedupe only when Index is present (always true for real logs). Without it every event is a
   // distinct task, preserving behavior for fixtures that omit Index.
@@ -656,14 +669,15 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
 // its time as speculation waste, pairing it the same way accumulateTask does: the late attempt is
 // the speculative copy itself, or the original that a speculative winner beat. Every other stat
 // of a late attempt stays excluded, as the finalized stage already posted them.
-function accountLateSpeculativeLoser(event: z.infer<typeof TaskEndEventSchema>, stage: StageRecord): void {
+function accountLateSpeculativeLoser(event: z.infer<typeof TaskEndEventSchema>, stage: StageRecord): boolean {
   const info = event['Task Info'];
-  if (info?.['Index'] == null) return;
+  if (info?.['Index'] == null) return false;
   const key = `${event['Stage Attempt ID'] ?? 0}:${info['Index']}`;
-  if (info['Speculative'] !== true && !stage.speculativeWinners.has(key)) return;
+  if (info['Speculative'] !== true && !stage.speculativeWinners.has(key)) return false;
   stage.speculationWasteMs += (info['Finish Time'] ?? 0) - (info['Launch Time'] ?? 0);
   stage.speculationWastedAttempts++;
   stage.lateSpeculationWaste = true;
+  return true;
 }
 
 export function resolvePlanTree(
@@ -877,21 +891,43 @@ const SUMMED_ATTEMPT_FIELDS = [
 
 const addNullable = (a: number | null, b: number | null): number | null => (a == null ? b : b == null ? a : a + b);
 
-// The replaced record's finalized attempt added to the attempts it had already folded. An attempt
-// resubmitted before its StageCompleted was never finalized, so it has no totals to add.
+function mergeAttemptTotals(a: StageAttemptTotals, b: StageAttemptTotals | null): StageAttemptTotals {
+  if (b == null) return a;
+  const totals = {
+    outputRecords: addNullable(a.outputRecords, b.outputRecords),
+    peakExecutionMemoryMax: Math.max(a.peakExecutionMemoryMax, b.peakExecutionMemoryMax),
+    durationMs: addNullable(a.durationMs, b.durationMs),
+  } as StageAttemptTotals;
+  for (const field of SUMMED_ATTEMPT_FIELDS) totals[field] = a[field] + b[field];
+  return totals;
+}
+
+// One task's work; a late task adds no stage duration.
+function taskAttemptTotals(t: TaskRecord): StageAttemptTotals {
+  return {
+    taskCount: 1, failedTasks: t.failed ? 1 : 0, wastedAttempts: 0,
+    executorRunTime: t.executorRunTime, executorCpuTime: t.executorCpuTime, jvmGCTime: t.gcTime,
+    memoryBytesSpilled: t.memSpilled, diskBytesSpilled: t.diskSpilled,
+    shuffleReadBytes: t.shuffleRead, shuffleWriteBytes: t.shuffleWrite,
+    inputBytes: t.inputBytes, outputBytes: t.outputBytes, outputRecords: t.outputRecords,
+    peakExecutionMemoryMax: t.peakExecMem, durationMs: null,
+  };
+}
+
+// The replaced record's finalized attempt, with its late tasks, added to the attempts it had
+// already folded. An attempt resubmitted before its StageCompleted was never finalized, so its
+// tasks are not counted.
 function foldEarlierAttempts(replaced: StageRecord | undefined): StageAttemptTotals | null {
   if (!replaced) return null;
-  const earlier = replaced.earlierAttempts;
-  if (replaced.taskAttempts !== null) return earlier;
-  const durationMs = replaced.submittedAt > 0 && replaced.completedAt >= replaced.submittedAt
-    ? replaced.completedAt - replaced.submittedAt : null;
-  const totals = {
-    outputRecords: addNullable(replaced.outputRecords, earlier?.outputRecords ?? null),
-    peakExecutionMemoryMax: Math.max(replaced.peakExecutionMemoryMax ?? 0, earlier?.peakExecutionMemoryMax ?? 0),
-    durationMs: addNullable(durationMs, earlier?.durationMs ?? null),
-  } as StageAttemptTotals;
-  for (const field of SUMMED_ATTEMPT_FIELDS) totals[field] = replaced[field] + (earlier?.[field] ?? 0);
-  return totals;
+  if (replaced.taskAttempts !== null) return replaced.earlierAttempts;
+  const attempt: StageAttemptTotals = {
+    ...Object.fromEntries(SUMMED_ATTEMPT_FIELDS.map((field) => [field, replaced[field]])) as Pick<StageAttemptTotals, typeof SUMMED_ATTEMPT_FIELDS[number]>,
+    outputRecords: replaced.outputRecords,
+    peakExecutionMemoryMax: replaced.peakExecutionMemoryMax ?? 0,
+    durationMs: replaced.submittedAt > 0 && replaced.completedAt >= replaced.submittedAt
+      ? replaced.completedAt - replaced.submittedAt : null,
+  };
+  return mergeAttemptTotals(mergeAttemptTotals(attempt, replaced.lateFailedAttemptWork), replaced.earlierAttempts);
 }
 
 export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, state: ParserState): null {
@@ -916,6 +952,7 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
     stageAttempts: (replaced?.stageAttempts ?? 0) + 1,
     failedStageAttempts: replaced?.failedStageAttempts ?? 0,
     earlierAttempts: foldEarlierAttempts(replaced),
+    lateFailedAttemptWork: null,
     taskAttempts: new Map(),
     failureDetails: new Map(),
     retryTaskSamples: [],
