@@ -1556,7 +1556,7 @@ export const DETECTORS = [
         ? stage.taskActiveMs
         : Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
       const taskCount = stage.taskCount ?? 0;
-      const wasteMs = readBytes <= 0 && tasksMostlyIdle(stage) ? 0 : activeMs * Math.max(0, 1 - taskCount / ctx.totalCores);
+      const wasteMs = readBytes <= 0 && tasksMostlyIdle(stage, ctx.sql) ? 0 : activeMs * Math.max(0, 1 - taskCount / ctx.totalCores);
       return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: wasteMs, unit: 'ms' }, TAIL_CLAIM);
     },
   }),

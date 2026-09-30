@@ -162,6 +162,11 @@ already-parsed snapshots, with no worker involved.
   (`planTreeIdentity`, `normalizeDetail`-normalized: the same normalizer
   `cachingOpportunity` uses in `packages/core/src/detectors.ts`) when a stage has no such
   attribution.
+  The stage-to-plan mapping itself is `planNodesOfStage` in
+  `packages/core/src/stage-plan-nodes.ts`, shared with `isPythonStage`
+  (`python-stage.ts`), which the CLI's `metrics` block (`run-metrics.ts`) and
+  the `tasksMostlyIdle` check both read. The CLI keys its per-stage metrics rows
+  by this identity.
   `matchStages(baseSnap, candSnap)` indexes each run by that identity and pairs
   identities that map to exactly one stage on both sides. An identity colliding
   equally on both sides (same count) is also paired, positionally by sorted

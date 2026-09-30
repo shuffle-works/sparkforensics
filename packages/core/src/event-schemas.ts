@@ -311,6 +311,7 @@ export const TaskEndEventSchema = z.object({
     }).optional(),
     'Output Metrics': z.object({
       'Bytes Written': z.number().optional(),
+      'Records Written': z.number().optional(),
     }).optional(),
   }).optional(),
 });

@@ -70,6 +70,8 @@ export interface Stage {
   failedTasks?: number;
   inputBytes?: number;
   outputBytes?: number;
+  // Summed Records Written; null when no task of the stage reported one (absent on older stages).
+  outputRecords?: number | null;
   shuffleReadBytes?: number;
   shuffleReadMax?: number;
   shuffleReadP50?: number;

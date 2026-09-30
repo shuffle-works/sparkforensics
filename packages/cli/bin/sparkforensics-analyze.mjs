@@ -35,6 +35,8 @@ const { runPayloadScript } = await loadCore('run-payload');
 const { loadThresholdOverrides } = await loadCore('cli/threshold-config');
 const { parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets } = await loadCore('cli/regression-budgets');
 const { tunedDetectors } = await loadCore('threshold-overrides');
+const { computeRunMetrics } = await loadCore('run-metrics');
+const { buildEffectiveConf } = await loadCore('effective-conf');
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
        sparkforensics-analyze <event-log-file|rolling-log-dir>... --baseline <path> [options]
@@ -94,6 +96,11 @@ Options:
                                     tuned detector produces are marked and their impact estimates
                                     flagged as uncalibrated. Applies to --baseline too; the
                                     --export-html dashboard keeps the default thresholds.
+  --conf-keys <key[,key]>           Narrow the JSON output's effectiveConf to these Spark
+                                    properties. Keys the log does not contain are listed as absent.
+  --conf-redact-regex <pattern>     Also withhold the value of any Spark property whose key or
+                                    value matches this pattern, on top of Spark's default secret
+                                    pattern and the job's own spark.redaction.regex.
 
 Several candidates: pass two or more logs as positional arguments, with --baseline, to compare
 each against the baseline, which is parsed once. Output is NDJSON, one line per candidate in
@@ -142,6 +149,8 @@ function parseCliArgs(argv) {
       type: { type: 'string' },
       stage: { type: 'string' },
       thresholds: { type: 'string' },
+      'conf-keys': { type: 'string' },
+      'conf-redact-regex': { type: 'string' },
       help: { type: 'boolean' },
     },
   });
@@ -458,6 +467,19 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
   }
 
+  const confKeys = splitCsv(values['conf-keys']);
+  if (confKeys !== undefined && confKeys.length === 0) {
+    return bail(`--conf-keys needs at least one property name.\n${USAGE}`, 2);
+  }
+  // Compiled before any log is parsed so a bad pattern is a usage error, not a late crash.
+  if (values['conf-redact-regex'] !== undefined) {
+    try {
+      buildEffectiveConf({ config: {} }, { userPattern: values['conf-redact-regex'] });
+    } catch (e) {
+      return bail(`--conf-redact-regex: ${e.message}\n`, 2);
+    }
+  }
+
   if (multiLog) {
     return runMultiLog({
       candidatePaths: positionals, baselinePath: values.baseline, budgets, thresholds,
@@ -538,13 +560,20 @@ async function runCli(argv, { fetchImpl } = {}) {
   const { markdown, json } = buildEvidenceReport(appModel, {
     redact: values.redact, findingsFilter, markdown: values.format === 'md', thresholds,
   });
+  // Additive blocks on the report: each carries its own schemaVersion. --redact pseudonymizes the
+  // metrics block's stage fingerprints (they hold raw stage names) like the comparison section.
+  const metrics = computeRunMetrics(appModel, thresholds);
+  const effectiveConf = buildEffectiveConf(appModel.app, {
+    keys: confKeys, userPattern: values['conf-redact-regex'], redactIdentifiers: values.redact,
+  });
+  const machineReadable = values.redact ? redactComparison({ metrics, effectiveConf }) : { metrics, effectiveConf };
   let output;
   if (values.format === 'md') {
     output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonVerdict(comparison))}\n` : `${markdown}\n`;
   } else {
     const payload = comparison
       ? {
-        candidate: json,
+        candidate: { ...json, ...machineReadable },
         comparison: {
           verdict: comparisonVerdict(comparison),
           confidence: comparison.confidence,
@@ -554,7 +583,7 @@ async function runCli(argv, { fetchImpl } = {}) {
           findings: comparison.findings,
         },
       }
-      : json;
+      : { ...json, ...machineReadable };
     output = `${JSON.stringify(payload, null, 2)}\n`;
   }
   if (values.out) writeFileSync(values.out, output);

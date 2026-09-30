@@ -514,6 +514,119 @@ same ratio the skew finding reports. `--export-html` writes the dashboard
 with the default thresholds, because the dashboard never tunes, and prints
 a note to stderr saying so. The browser dashboard has no tuning.
 
+### Metrics block
+
+The CLI's JSON output carries a `metrics` block next to the report, for
+scripts that act on a run without reading the report. With `--baseline` it is
+inside `candidate`. It has its own `schemaVersion`, separate from the
+report's. A figure the log cannot provide is `null`, never `0`: a log from a
+Spark version that records no CPU time has `executorCpuTimeMs: null`, and a
+log cut off before any executor joined has null allocation.
+
+| Field | Meaning |
+| --- | --- |
+| `runComplete` | `true` when the log has an application-end record. `false` means the log was cut off and every total covers only what it recorded. |
+| `time.wallClockMs` | Application start to end; null without both. |
+| `time.executorCpuTimeMs` | Summed task CPU time. Null when no task recorded any. Misses Python worker CPU, see `python`. |
+| `time.executorRunTimeMs`, `time.gcTimeMs` | Summed task run time and JVM GC time. |
+| `data.memorySpillBytes`, `data.diskSpillBytes` | Summed spill. |
+| `data.shuffleReadBytes`, `data.shuffleWriteBytes` | Summed shuffle bytes, local plus remote on the read side. |
+| `data.inputBytes`, `data.outputBytes`, `data.outputRows` | Summed input, output and rows written. `outputRows` is null when no task reported rows. |
+| `data.peakExecutionMemoryBytes` | The largest per-task peak execution memory. Null when every task reports 0. |
+| `shape.taskCount`, `shape.stageCount` | Distinct task records and stages. |
+| `shape.failedStages` | Stages with a recorded failure reason. |
+| `shape.retriedStages` | Stages where at least one task attempt was retried. |
+| `shape.failedTasks`, `shape.retriedTasks` | Tasks whose final attempt failed, and attempts superseded by a retry. |
+| `shape.maxSkew` | The largest stage skew ratio, the figure `--max-skew` checks (P95 over median, or max over median for a stage with few tasks; `skew.minTasksForP95` from `--thresholds` applies). |
+| `allocation.coreHours`, `allocation.memoryGbHours` | See [Allocation](#allocation). |
+| `python.shareOfTaskRunTime`, `python.stageCount` | See [Python share](#python-share). |
+| `stages` | The per-stage rows. |
+
+`stages` holds one row per stage fingerprint, keyed by the same fingerprint
+the run comparison matches stages on (the normalized stage name plus the
+stage's plan nodes), so the same stage has the same key in a baseline and a
+candidate run. A stage repeated in a loop shares one key: its row sums the
+repeats and lists them in `stageIds`. A row carries `durationMs`,
+`executorCpuTimeMs`, `executorRunTimeMs`, `gcTimeMs`, the spill, shuffle,
+input and output figures, `outputRows`, `peakExecutionMemoryBytes`,
+`taskCount`, `failedTasks`, `retriedTasks` and `skew` (the largest skew ratio
+among the repeats) as above, plus `failed`, `retried` and `python` flags.
+`--redact` pseudonymizes host and application id tokens in the keys, as it
+does in the comparison section.
+
+#### Allocation
+
+`allocation.coreHours` is the sum over executors of cores times hours alive.
+`allocation.memoryGbHours` is the sum of memory times hours alive, in GiB
+(1024 MiB). An executor is alive from its executor-added event to its first
+later executor-removed event. One with no removal event closes at the
+application end when the log has one. In a cut-off log (`runComplete` false)
+it closes at the last timestamp the log records (the latest application,
+stage or executor event), so the figure is a lower bound.
+
+Cores per executor are the executor-added event's total cores. Under dynamic
+allocation or YARN defaults, where `spark.executor.cores` is not set, that is
+the core count the cluster manager actually granted; when the event carries
+none, `spark.executor.cores` is used. If neither exists the core-hours are
+null. Memory per executor is `spark.executor.memory` plus the overhead:
+`spark.executor.memoryOverhead` when set, otherwise the larger of 384 MiB and
+`spark.executor.memoryOverheadFactor` (default 0.1) times the memory. Without
+`spark.executor.memory` in the log, memory GB-hours are null. Driver
+resources, off-heap memory and `spark.executor.pyspark.memory` are not
+included.
+
+#### Python share
+
+`python.shareOfTaskRunTime` is the summed task run time of Python stages
+divided by the summed task run time of all stages; null when no task run time
+was recorded. It is `0` for a run with task time and no Python stage. Executor
+CPU time counts only the JVM task thread, so on a run with a high share it
+misses the CPU of the Python worker processes; treat `executorCpuTimeMs` as
+unreliable there.
+
+A stage is a Python stage when either signal holds:
+
+- a plan node attributed to it is a Python operator (`PythonRDD`,
+  `BatchEvalPython`, `ArrowEvalPython`, `PythonMapInArrow`, or a pandas/Arrow
+  grouped or map operator such as `FlatMapGroupsInPandas`), which catches
+  Python UDFs inside SQL;
+- its name or call site names `PythonRDD` or `org.apache.spark.api.python`,
+  which catches RDD lambdas that have no plan and stages that cannot be
+  matched to one.
+
+The "tasks mostly idle" check that keeps a low-CPU stage from being treated
+as waiting on an external system uses the same test.
+
+### Effective conf
+
+The JSON output also carries `effectiveConf` (with its own `schemaVersion`),
+the Spark properties the run
+started with, so a script can check that a `--conf` overlay took effect. It is
+null when the log records no Spark properties. With `--baseline` it is inside
+`candidate`.
+
+- `values`: property to value, for every property that is not withheld.
+- `maskedKeys`: properties present in the log whose value is withheld.
+- `absentKeys`: with `--conf-keys`, the requested properties the log does not
+  contain.
+- `redaction`: the patterns that decided what to withhold.
+
+A value is withheld when its key matches Spark's default secret pattern
+(`(?i)secret|password|token|access[.]?key`), when the key or value matches the
+job's own `spark.redaction.regex` (when the log records one; if that pattern
+uses syntax JavaScript cannot evaluate, every value is withheld), or when the
+key or value matches `--conf-redact-regex <pattern>`. A withheld property
+shows that it is present, not what it is set to, so the output cannot tell you
+whether a masked property has the value you expected. No hash or other
+derivative of a withheld value is emitted.
+
+In every other value that looks like a URL, credentials are replaced with
+`[redacted]`: `user:password@host` userinfo, JDBC-style `password=`
+parameters, and signature parameters such as Azure SAS `sig=` and
+`X-Amz-Signature=`. `--conf-keys a,b` narrows `values` and `maskedKeys` to the
+named properties. With `--redact`, host-name properties (`*.host`,
+`*.hostname`) and `spark.app.name` are withheld as well.
+
 ### Regression metric keys
 
 `--regression-metric`, `--regression-budget` and the `--budgets` file (and the
@@ -527,6 +640,10 @@ default for `--regression-metric` is `wallClock`:
 - `gcTime`: JVM GC time
 - `taskSkew`: p95 task skew
 - `failedTaskRate`: failed-task rate
+- `executorCpuTime`: summed executor CPU time, in milliseconds (unavailable
+  for a run whose log never recorded it)
+- `allocatedCoreHours`: executor cores times hours alive, see
+  [Allocation](#allocation)
 
 Four more keys, `inputBytes`, `outputBytes`, `taskCount` and
 `executorsAdded`, measure workload volume rather than performance. They have

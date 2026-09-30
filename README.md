@@ -249,7 +249,10 @@ the share of executor core time that ran tasks, 100 minus the dashboard's
 Unused core time, not its Efficiency tile). `--attempt-id`
 pairs with `--shs-base-url`/`--app-id` for a non-default attempt;
 `--regression-metric` picks which metric `--max-regression-pct` checks
-(default `wallClock`); `--format md` switches output to Markdown (default
+(default `wallClock`); `--conf-keys` and `--conf-redact-regex` shape the JSON
+output's `effectiveConf` block, next to its `metrics` block (both in
+[Getting started](https://github.com/shuffle-works/sparkforensics/blob/main/docs-site/user-guide/getting-started.md#metrics-block));
+`--format md` switches output to Markdown (default
 `json`); `--out <path>` writes it to a file instead of stdout. Exit codes:
 `0` pass, `1` a budget was violated, `2` usage error (bad flags, arguments or
 a `--thresholds`/`--budgets` file), `3` a budget was inconclusive (e.g. missing

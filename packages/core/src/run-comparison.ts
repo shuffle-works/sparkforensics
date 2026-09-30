@@ -1,6 +1,8 @@
 import { computeWallClock } from './wall-clock.ts';
 import { normalizeDetail } from './detectors.ts';
 import { cyrb53 } from './string-hash.ts';
+import { computeAllocation } from './allocation.ts';
+import { planNodesOfStage } from './stage-plan-nodes.ts';
 import { captureSnapshot } from './session-snapshot.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
 import type { Stage, PlanNode, SparkAppInfo, AppModel, Finding, TunedThresholds } from './types.ts';
@@ -76,23 +78,18 @@ function planTreeIdentity(root: PlanNode | null | undefined): string | null {
 // Falls back to the coarser whole-tree identity when the stage has no
 // attributed nodes (hand-built snapshots without `stageIds`, or unmatched
 // accumulables).
-function sqlNodeIdentity(stage: Stage, snapshot: SessionSnapshot): string {
+function sqlNodeIdentity(stage: Stage, snapshot: Pick<SessionSnapshot, 'sql'>): string {
   const execId = stage.sqlExecutionId;
   if (execId == null) return '';
   const root = snapshot.sql.get(execId)?.planTree ?? null;
   if (!root) return '';
-  const fingerprints: string[] = [];
-  (function collect(node: PlanNode): void {
-    if (node.stageIds?.includes(stage.id)) {
-      fingerprints.push(JSON.stringify([normalizeStageName(node.name ?? ''), normalizeDetail(node.detail ?? '')]));
-    }
-    for (const child of node.children ?? []) collect(child);
-  })(root);
+  const fingerprints = planNodesOfStage(stage, snapshot.sql)
+    .map((node) => JSON.stringify([normalizeStageName(node.name ?? ''), normalizeDetail(node.detail ?? '')]));
   if (fingerprints.length === 0) return planTreeIdentity(root) ?? '';
   return cyrb53(JSON.stringify(fingerprints.sort()));
 }
 
-export function stageIdentity(stage: Stage, snapshot: SessionSnapshot): string {
+export function stageIdentity(stage: Stage, snapshot: Pick<SessionSnapshot, 'sql'>): string {
   return normalizeStageName(stage.name ?? '') + '§' + sqlNodeIdentity(stage, snapshot);
 }
 
@@ -199,6 +196,7 @@ function skewRatios(stages: Stage[]): number[] {
 export const COMPARISON_METRIC_KEYS: readonly string[] = [
   'wallClock', 'shuffleSpill', 'taskSkew', 'failedTaskRate', 'diskSpill', 'gcTime',
   'inputBytes', 'outputBytes', 'executorRunTime', 'taskCount', 'executorsAdded',
+  'executorCpuTime', 'allocatedCoreHours',
 ];
 
 // Volume/count metrics, not cost metrics: more or less input/output data, or
@@ -285,6 +283,22 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
   const bExec = execCount(baseSnap), cExec = execCount(candSnap);
   out.push(metric('executorsAdded', 'Executors added', bExec, cExec,
     { unavailableReason: bExec != null && cExec != null ? undefined : 'No executor events recorded for a run' }));
+
+  // Executor CPU time (ms) and allocated core-hours cost resources, so less is better. CPU time is
+  // null, not 0, on a run whose log never recorded it (older Spark).
+  const cpuMs = (snap: SessionSnapshot): number | null => {
+    let ns = 0;
+    for (const s of snap.stages.values()) if (Number.isFinite(s.executorCpuTime) && (s.executorCpuTime as number) > 0) ns += s.executorCpuTime as number;
+    return ns > 0 ? ns / 1e6 : null;
+  };
+  const bCpu = cpuMs(baseSnap), cCpu = cpuMs(candSnap);
+  out.push(metric('executorCpuTime', 'Executor CPU time', bCpu, cCpu,
+    { unavailableReason: bCpu != null && cCpu != null ? undefined : 'No executor CPU time recorded for a run' }));
+  const coreHours = (snap: SessionSnapshot): number | null =>
+    (snap.executors ? computeAllocation(snap).coreHours : null);
+  const bCore = coreHours(baseSnap), cCore = coreHours(candSnap);
+  out.push(metric('allocatedCoreHours', 'Allocated core-hours', bCore, cCore,
+    { unavailableReason: bCore != null && cCore != null ? undefined : 'No executor lifecycle or core count recorded for a run' }));
 
   return out;
 }

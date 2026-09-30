@@ -1,7 +1,8 @@
 // The waste models every detector entry's estimate() builds its ImpactEstimate from: the assumed
 // throughputs, the per-stage measurements behind them and the occupancy clip wrappers. Each
 // finding type's own composition of these lives on its DETECTORS entry, next to its detect().
-import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, Stage } from './types.ts';
+import type { Finding, ImpactEstimate, ImpactEstimateMethod, RawWasteFigure, SqlExecution, Stage } from './types.ts';
+import { isPythonStage } from './python-stage.ts';
 import { nsToMs } from './format-utils.ts';
 import {
   estimateSingleStage, estimateMultiStage,
@@ -16,6 +17,8 @@ export interface EstimateCtx {
   occupancy: Map<number, StageOccupancyInfo>;
   // Peak concurrent cores (computePeakConcurrentCores); 0 when no executor data.
   totalCores: number;
+  // The run's SQL executions, for the plan nodes behind isPythonStage. Absent on hand-built ctxs.
+  sql?: Map<number, SqlExecution>;
 }
 
 // Assumed shuffle-network throughput per executor link, ~1 Gbps. Starting assumption, unvalidated.
@@ -104,13 +107,14 @@ const IDLE_CPU_SHARE_MAX = 0.01;
 
 // True when the stage's tasks spent under IDLE_CPU_SHARE_MAX of their run time on CPU. False when
 // the share can't be trusted: no CPU time recorded (older Spark logs omit the metric), or Python
-// code run through PythonRDD, whose worker-process CPU executorCpuTime (the JVM task thread's)
-// never counts (such stages read 0.1% on the same logs while computing).
-export function tasksMostlyIdle(stage: Stage): boolean {
+// code run through a Python worker (isPythonStage: a PythonRDD stage or a Python UDF operator in
+// its SQL plan), whose worker-process CPU executorCpuTime (the JVM task thread's) never counts
+// (such stages read 0.1% on the same logs while computing).
+export function tasksMostlyIdle(stage: Stage, sql: Map<number, SqlExecution> = new Map()): boolean {
   const runMs = stage.executorRunTime ?? 0;
   const cpuMs = nsToMs(stage.executorCpuTime ?? 0);
   if (runMs <= 0 || cpuMs <= 0) return false;
-  if (/PythonRDD/.test(stage.name ?? '') || /org\.apache\.spark\.api\.python\./.test(stage.details ?? '')) return false;
+  if (isPythonStage(stage, sql)) return false;
   return cpuMs / runMs < IDLE_CPU_SHARE_MAX;
 }
 

@@ -201,7 +201,7 @@ export function analyze(
   // One occupancy sweep per analysis, shared by the detectors' runtime floors and every entry's
   // estimate(), so a floor gates on the same occupancy-clipped figure displayed as savings.
   const impact: EstimateCtx = {
-    stages, totalCores,
+    stages, totalCores, sql,
     occupancy: computeOccupancy(stages as unknown as Map<number, OccupancyStage>, totalCores),
   };
   // The one cast from the posted-model types to the detector-side shapes: types.ts's Stage and

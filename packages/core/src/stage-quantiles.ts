@@ -56,6 +56,7 @@ interface StageNumericAccumulator {
   executorCpuTime: number;
   inputBytes: number;
   outputBytes: number;
+  outputRecords: number | null;
 }
 
 export function finalizeStage(
@@ -124,6 +125,7 @@ export function finalizeStage(
     acc.executorCpuTime += t.executorCpuTime;
     acc.inputBytes += t.inputBytes;
     acc.outputBytes += t.outputBytes;
+    if (t.outputRecords != null) acc.outputRecords = (acc.outputRecords ?? 0) + t.outputRecords;
     for (let i = 0; i < TASK_FIELD_PROPS.length; i++) buf.push(t[TASK_FIELD_PROPS[i]]);
   }
   stage.taskCount = taskCount;

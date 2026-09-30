@@ -51,6 +51,8 @@ const ABS_FMT: Record<string, (v: number) => string> = {
   inputBytes: formatBytes,
   outputBytes: formatBytes,
   executorRunTime: formatDuration,
+  executorCpuTime: formatDuration,
+  allocatedCoreHours: (v) => `${v.toFixed(2)} core-h`,
   // taskCount, executorsAdded → default Intl.NumberFormat (plain counts)
 };
 const absFmtFor = (key: string) => ABS_FMT[key] ?? ((v: number) => Intl.NumberFormat().format(v));

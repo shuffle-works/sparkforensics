@@ -129,6 +129,8 @@ interface TaskRecord {
   executorCpuTime: number;
   inputBytes: number;
   outputBytes: number;
+  // Null when the task's metrics carry no Records Written (older Spark, or a non-writing task).
+  outputRecords: number | null;
 }
 
 interface StageRecord {
@@ -149,6 +151,8 @@ interface StageRecord {
   executorCpuTime: number;
   inputBytes: number;
   outputBytes: number;
+  // Sum of the tasks' Records Written; null until a task reports one.
+  outputRecords: number | null;
   sqlExecutionId: number | null;
   parentIds: number[];
   hostStats: Map<string, unknown>;
@@ -593,6 +597,7 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
     executorCpuTime: m['Executor CPU Time'] ?? 0,
     inputBytes: inp['Bytes Read'] ?? 0,
     outputBytes: out['Bytes Written'] ?? 0,
+    outputRecords: out['Records Written'] ?? null,
   };
 
   // Dedupe only when Index is present (always true for real logs). Without it every event is a
@@ -868,7 +873,7 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
     shuffleReadBytes: 0, shuffleWriteBytes: 0, fetchWaitTime: 0,
     memoryBytesSpilled: 0, diskBytesSpilled: 0,
     jvmGCTime: 0, executorRunTime: 0, executorCpuTime: 0,
-    inputBytes: 0, outputBytes: 0,
+    inputBytes: 0, outputBytes: 0, outputRecords: null,
     sqlExecutionId: state.stageToSqlExec.get(id) ?? null,
     parentIds: info['Parent IDs'] ?? [],
     hostStats: new Map(),
