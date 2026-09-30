@@ -1,94 +1,112 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { auditConfig } from '../src/analyzer.js';
+import { analyze, auditConfig } from '../src/analyzer.js';
+import { collectRun } from '../src/cli/collect-run.js';
 import { recommendationParts } from '../src/finding-names.js';
+import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
 // Every detector recommendation reads "<measurement>: <fix>". recommendationParts splits it at
 // the last ": " and the UI shows the two halves in different places, so a recommendation that
-// breaks the convention puts the wrong text under "What to try". Nothing else enforces it.
-//
-// A recommendation only exists once a log trips its detector, and the corpus trips few of the
-// ~45 wordings, so this reads them out of detectors.ts instead. Every `${...}` in a template becomes the
-// placeholder "1".
+// breaks the convention puts the wrong text under "What to try". These tests run the real
+// detectors and check the text they emit: over the local log corpus when it is present, and over
+// synthetic runs that trip the wordings the corpus may not.
 
-const DETECTORS_SOURCE = fileURLToPath(new URL('../src/detectors.ts', import.meta.url));
+const MB = 1024 * 1024;
+const GB = 1024 * MB;
 
-// Wordings with no measurement to split off, and why. Matched as a prefix of the rendered text.
-const NO_MEASUREMENT = [
-  {
-    prefix: 'This stage attempt failed outright.',
-    reason: 'the stage failure itself is the whole finding: there is no figure to quote, only where to look',
-  },
+// Finding types whose wording has no measurement to split off, and why.
+const NO_MEASUREMENT = {
+  stageFailed: 'the stage failure itself is the whole finding: there is no figure to quote, only where to look',
+};
+
+const okApp = () => makeApp();
+const executors = (n) => Array.from({ length: n }, (_, i) => ({ executorId: String(i), timestamp: 0, totalCores: 4 }));
+const failedJob = (id) => ({ id, result: 'JobFailed', succeeded: false, stageIds: [1], submissionTime: 0, completionTime: 1000 });
+
+// One analyze() call per case: detectors gate on each other and on runtime floors, so a case
+// carries only the stage that should trip its detector.
+const SYNTHETIC_RUNS = [
+  { stage: { taskDurationP50: 100, taskDurationP95: 600 } },
+  { stage: { taskCount: 10, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 400 } },
+  { stage: { shuffleReadBytes: 2 * GB, fetchWaitTime: 100000 } },
+  { stage: { taskCount: 4, shuffleReadBytes: 8 * GB } },
+  { stage: { inputBytes: GB, outputBytes: 50 * GB } },
+  { stage: { taskCount: 3, executorRunTime: 100000, taskDurationP50: 1000, taskDurationMax: 2000 } },
+  { stage: { memoryBytesSpilled: 5 * GB, diskBytesSpilled: 2 * GB, spillClassification: 'skew', spillMemP50: MB, spillMemMax: GB, spillDiskP50: MB, spillDiskMax: GB } },
+  { stage: { memoryBytesSpilled: 5 * GB, diskBytesSpilled: 2 * GB, spillClassification: 'shuffle' } },
+  { stage: { memoryBytesSpilled: 5 * GB, diskBytesSpilled: 2 * GB, spillClassification: 'unclassified' } },
+  { stage: { jvmGCTime: 5000, executorRunTime: 10000, gcPct: 50 } },
+  { stage: { failedTasks: 30, failureReasons: [{ reason: 'boom: x', count: 30 }] } },
+  { stage: { stageFailureReason: 'Job aborted due to stage failure' } },
+  { stage: { taskCount: 2000, taskDurationP50: 5, taskDurationP95: 8, taskDurationMax: 10 } },
+  { stage: { submittedAt: 0, completedAt: 3600000 } },
+  { stage: { speculativeTasks: 20, speculationWastedAttempts: 20, speculationWasteMs: 100000 } },
+  { stage: { wastedAttempts: 10, retryWasteMs: 100000 } },
+  { stage: { stragglerCount: 5, taskDurationMax: 4000, taskDurationP95: 200 } },
+  { app: { endTime: undefined } },
+  { app: { endTime: 100000 }, stage: { completedAt: 1000, executorRunTime: 1000 }, added: executors(10) },
+  { jobs: [failedJob(0), failedJob(1)] },
 ];
 
-/** Reads the string or template literal starting at `i`; returns its text and the index after it. */
-function readLiteral(src, i) {
-  const quote = src[i];
-  let text = '';
-  for (i += 1; src[i] !== quote; i += 1) {
-    if (src[i] === '\\') { text += src[i + 1]; i += 1; continue; }
-    if (quote === '`' && src[i] === '$' && src[i + 1] === '{') {
-      let depth = 1;
-      for (i += 2; depth > 0; i += 1) {
-        if (/['"`]/.test(src[i])) i = readLiteral(src, i).end - 1;
-        else if (src[i] === '{') depth += 1;
-        else if (src[i] === '}') depth -= 1;
-      }
-      text += '1';
-      i -= 1;
-      continue;
+const CONFIG_APPS = [
+  { config: { a: '1' }, resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false } },
+  { config: { 'spark.dynamicAllocation.minExecutors': '5', 'spark.dynamicAllocation.maxExecutors': '3' }, resources: { dynamicAllocationEnabled: true } },
+  { config: {}, resources: { dynamicAllocationEnabled: true } },
+  { config: { a: '1' }, resources: { serializer: 'org.apache.spark.serializer.JavaSerializer' } },
+  { config: { a: '1' }, resources: { executor: { memoryMB: 8192, memoryOverheadMB: 100 } } },
+];
+
+function syntheticFindings() {
+  const analyzed = SYNTHETIC_RUNS.flatMap(({ app, stage, added = [], jobs = [] }) => {
+    const stages = new Map([[1, makeStage(stage)]]);
+    const jobMap = new Map(jobs.map((j) => [j.id, j]));
+    return analyze(makeApp(app), stages, added, [], jobMap);
+  });
+  return [...analyzed, ...CONFIG_APPS.flatMap((app) => auditConfig(makeApp(app)))];
+}
+
+// The local log corpus is gitignored: the suite skips it on a checkout without logs.
+const CORPUS_DIR = fileURLToPath(new URL('../../../dev/log-corpus/logs', import.meta.url));
+const corpusFiles = existsSync(CORPUS_DIR)
+  ? readdirSync(CORPUS_DIR).map((n) => `${CORPUS_DIR}/${n}`).filter((p) => statSync(p).isFile())
+  : [];
+
+function expectConvention(findings) {
+  const broken = [];
+  for (const f of findings) {
+    if (typeof f.recommendation !== 'string' || !f.recommendation) continue;
+    const { measured, fix } = recommendationParts(f.recommendation);
+    if (f.type in NO_MEASUREMENT) {
+      if (measured !== null) broken.push(`${f.type}: allowlisted but has a measurement: ${f.recommendation}`);
+    } else if (!measured || !fix) {
+      broken.push(`${f.type}: ${f.recommendation}`);
     }
-    text += src[i];
   }
-  return { text, end: i + 1 };
-}
-
-/** Every string/template literal in the expression that starts at `i` (ternary branches and `+` operands included). */
-function expressionLiterals(src, i) {
-  const found = [];
-  for (let depth = 0; i < src.length; i += 1) {
-    if (/['"`]/.test(src[i])) {
-      const { text, end } = readLiteral(src, i);
-      found.push(text);
-      i = end - 1;
-    } else if ('([{'.includes(src[i])) depth += 1;
-    else if (')]}'.includes(src[i])) {
-      if (depth === 0) break;
-      depth -= 1;
-    } else if (depth === 0 && src[i] === '?' && src[i + 1] !== '.' && src[i + 1] !== '?') {
-      found.length = 0; // what came before a ternary's `?` is its condition, not a wording
-    } else if (depth === 0 && (src[i] === ',' || src[i] === ';')) break;
-  }
-  return found;
-}
-
-/** Every wording bound to `recommendation` (a property or a const) or to a `...RECOMMENDATION` const in detectors.ts. */
-function detectorRecommendations() {
-  const src = readFileSync(DETECTORS_SOURCE, 'utf8');
-  const binding = /(?:\brecommendation\s*[:=]|\b[A-Z_]*RECOMMENDATION\s*=)\s*/g;
-  return [...src.matchAll(binding)].flatMap((m) => expressionLiterals(src, m.index + m[0].length));
+  expect(broken).toEqual([]);
 }
 
 describe('detector recommendations follow "<measurement>: <fix>"', () => {
-  const all = detectorRecommendations();
-
-  it('finds the detectors\' recommendations to check', () => {
-    expect(all.length).toBeGreaterThan(40);
+  it('holds for every recommendation the synthetic runs emit', () => {
+    const findings = syntheticFindings();
+    const types = new Set(findings.filter((f) => f.recommendation).map((f) => f.type));
+    // Guards the scenarios themselves: a threshold change that stops one tripping must fail here.
+    for (const type of [
+      'skew', 'shuffle', 'partitionSizing', 'stageShape', 'spill', 'gc', 'failures', 'stageFailed', 'tinyTask',
+      'stageSlowness', 'speculationWaste', 'straggler', 'retryWaste', 'incompleteRun', 'utilization', 'configAudit',
+      'jobFailureRate',
+    ]) expect(types, `no synthetic run emitted a ${type} recommendation`).toContain(type);
+    expectConvention(findings);
   });
 
-  it.each(all.map((text) => [text]))('%s', (text) => {
-    const { measured, fix } = recommendationParts(text);
-    if (NO_MEASUREMENT.some(({ prefix }) => text.startsWith(prefix))) {
-      expect(measured).toBeNull();
-      return;
-    }
-    expect(measured, 'no ": " between a measurement and a fix').toBeTruthy();
-    expect(fix.length).toBeGreaterThan(0);
+  it('keeps every allowlist entry pointing at a finding that is actually emitted', () => {
+    const emitted = new Set(syntheticFindings().map((f) => f.type));
+    for (const type of Object.keys(NO_MEASUREMENT)) expect(emitted).toContain(type);
   });
 
-  it('keeps every allowlist entry pointing at a real recommendation', () => {
-    for (const { prefix } of NO_MEASUREMENT) expect(all.some((text) => text.startsWith(prefix))).toBe(true);
+  it.skipIf(corpusFiles.length === 0).each(corpusFiles.map((p) => [p]))('holds for the corpus log %s', async (path) => {
+    const { appModel: m } = await collectRun(path);
+    expectConvention(analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates));
   });
 });
 
