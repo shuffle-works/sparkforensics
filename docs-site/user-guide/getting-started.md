@@ -281,7 +281,8 @@ derived two ways:
   attempts. It is set even when the log has no executor core data.
 - Otherwise, a finding with a wall-clock claim: `wallClock.low` and
   `wallClock.high` times the cores the finding's own stages kept busy (their
-  task run time over their duration), not the run's peak cores. Task run time
+  task run time over the time their tasks were running, or over the stage's
+  whole duration when the log lacks that), not the run's peak cores. Task run time
   is used, not `executorCpuTime`, so Python worker CPU is not missed. Stages
   with no run time or duration give `null`.
 

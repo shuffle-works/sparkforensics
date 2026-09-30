@@ -183,7 +183,8 @@ const NOT_CORE_TIME_FIGURE: ReadonlySet<string> = new Set(['autoscalingChurn', '
 const CORE_TIME_MS_FIGURE: ReadonlySet<string> = new Set(['retryWaste', 'speculationWaste']);
 
 // The cores a finding's own stages kept busy on average: their summed task run time over their
-// summed windows. Null when none of them has run time and a duration.
+// summed windows, each the time its tasks were running (taskActiveMs, the window the claims read)
+// or, on stages without it, submit to complete. Null when none of them has run time and a window.
 function occupiedCores(finding: Finding, ctx: EstimateCtx): number | null {
   const stageIds = (finding as { stageIds?: number[] }).stageIds
     ?? (finding.stageId != null ? [finding.stageId] : []);
@@ -191,10 +192,10 @@ function occupiedCores(finding: Finding, ctx: EstimateCtx): number | null {
   let durationMs = 0;
   for (const id of stageIds) {
     const stage = ctx.stages.get(id);
-    const stageDurationMs = (stage?.completedAt ?? 0) - (stage?.submittedAt ?? 0);
-    if (!stage || !((stage.executorRunTime ?? 0) > 0) || stageDurationMs <= 0) continue;
+    const windowMs = stage?.taskActiveMs ?? (stage?.completedAt ?? 0) - (stage?.submittedAt ?? 0);
+    if (!stage || !((stage.executorRunTime ?? 0) > 0) || windowMs <= 0) continue;
     runTimeMs += stage.executorRunTime!;
-    durationMs += stageDurationMs;
+    durationMs += windowMs;
   }
   return durationMs > 0 ? runTimeMs / durationMs : null;
 }

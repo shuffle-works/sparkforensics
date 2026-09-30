@@ -50,6 +50,15 @@ describe('impact estimate coreTimeMs', () => {
     }
   });
 
+  it('reads a queued stage\'s busy cores over the time its tasks ran, not the time it sat open', () => {
+    // Open 2491s, tasks running for 60s of it on 8 cores.
+    const stage = { id: 0, submittedAt: 0, completedAt: 2_491_000, taskActiveMs: 60_000, parentIds: [], taskCount: 100, executorRunTime: 480_000 };
+    const [est] = estimate([tiny()], new Map([[0, stage]]), 8);
+    expect(est.wallClock.high).toBeGreaterThan(0);
+    expect(est.coreTimeMs.low).toBeCloseTo(est.wallClock.low * 8);
+    expect(est.coreTimeMs.high).toBeCloseTo(est.wallClock.high * 8);
+  });
+
   it('is null, not 0, for a wall-clock-only claim whose stage recorded no task run time', () => {
     const [est] = estimate([tiny()], twoCoreStage({ executorRunTime: 0 }), 8);
     expect(est.wallClock.high).toBeGreaterThan(0);

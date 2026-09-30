@@ -46,7 +46,9 @@ detector measures core time, that figure is taken as is, `low === high`: a `core
 cross-task executor-time `ms` sums of `retryWaste` and `speculationWaste`. These are set even
 when the log has no executor cores. Otherwise `wallClock.low` and `wallClock.high` are multiplied
 by the cores the finding's own stages kept busy: their summed `executorRunTime` over their summed
-windows, never the run's peak cores. `executorCpuTime` is never read because it leaves out Python
+windows, never the run's peak cores. A stage's window is the one the claims measure: `taskActiveMs`,
+the time at least one of its tasks ran, or submit to complete on a stage without it, so a stage
+left queued for cores does not dilute the figure. `executorCpuTime` is never read because it leaves out Python
 worker CPU. A finding with no measured figure and no wall-clock claim, or whose stages have no run
 time or duration, gets `null`. `autoscalingChurn` and `jobFailureRate` are excluded: their
 `coreHours` figures count executor-hours and job-hours with no cores multiplied in.
