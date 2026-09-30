@@ -97,6 +97,10 @@ export interface Stage {
   // The summed work of the attempts before the latest one, which the stage's own figures leave
   // out; null or absent when the stage ran once. Read only by the CLI's metrics block.
   earlierAttempts?: StageAttemptTotals | null;
+  // The summed work of a failed attempt's tasks that ended after its StageCompleted, which the
+  // stage's own figures also leave out; null or absent when there was none. Read only by the CLI's
+  // metrics block.
+  lateAttemptWork?: StageAttemptTotals | null;
   shuffleReadBytes?: number;
   shuffleReadMax?: number;
   shuffleReadP50?: number;

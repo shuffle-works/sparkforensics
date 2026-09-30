@@ -523,7 +523,9 @@ report's. A figure the log cannot provide is `null`, never `0`: a log from a
 Spark version that records no CPU time has `executorCpuTimeMs: null`, and a
 log cut off before any executor joined has null allocation. The time, data
 and task figures, run-level and per row, include the work of every attempt of
-a resubmitted stage, failed attempts too; skew describes the latest attempt.
+a resubmitted stage, failed attempts too, and the tasks of a failed attempt
+that end after it (killed or still running when it failed); skew describes
+the latest attempt.
 
 | Field | Meaning |
 | --- | --- |

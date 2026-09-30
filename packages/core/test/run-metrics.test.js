@@ -126,6 +126,23 @@ describe('computeRunMetrics on a parsed log', () => {
     expect(appModel.stages.get(1)).toMatchObject({ taskCount: 1, failedTasks: 0, executorRunTime: 300 });
   });
 
+  it('counts the late tasks of a failed final attempt that is never resubmitted', async () => {
+    const appModel = await model([
+      START,
+      JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Stage Attempt ID': 0, 'Stage Name': 'reduce', 'Submission Time': 1000 } }),
+      taskEnd(1, 0, { runMs: 100, cpuNs: 50e6, failed: true }),
+      JSON.stringify({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 1000, 'Completion Time': 2000, 'Failure Reason': 'aborted' } }),
+      // The attempt's other running task is killed after the stage aborts.
+      taskEnd(1, 1, { runMs: 400, cpuNs: 200e6, failed: true }),
+      END,
+    ]);
+    const m = computeRunMetrics(appModel);
+    expect(m.time).toMatchObject({ executorCpuTimeMs: 250, executorRunTimeMs: 500 });
+    expect(m.shape).toMatchObject({ taskCount: 2, failedTasks: 2, failedStageAttempts: 1, retriedStages: 0 });
+    expect(Object.values(m.stages)[0]).toMatchObject({ taskCount: 2, durationMs: 1000 });
+    expect(appModel.stages.get(1)).toMatchObject({ taskCount: 1, failedTasks: 1, executorRunTime: 100 });
+  });
+
   it('counts a failed attempt\'s task that ends after its StageCompleted, leaving the stage record unchanged', async () => {
     const submitted = (attempt) => JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Stage Attempt ID': attempt, 'Stage Name': 'reduce', 'Submission Time': 1000 + attempt * 5000 } });
     const completed = (attempt, reason) => JSON.stringify({

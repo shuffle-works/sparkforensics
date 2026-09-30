@@ -113,14 +113,12 @@ function stageAttempts(stages: Stage[]): { failed: number; retried: number } | n
   return { failed, retried };
 }
 
-// Each stage followed by the work of its earlier attempts, shaped like a stage, so every total
-// sums the attempts a resubmit replaced.
+// Each stage followed by the work its own figures leave out, shaped like a stage, so every total
+// sums the attempts a resubmit replaced and the tasks of a failed attempt that ended after it.
 function withEarlierAttempts(stages: Stage[]): Stage[] {
-  return stages.flatMap((s) => {
-    if (s.earlierAttempts == null) return [s];
-    const { durationMs, ...totals } = s.earlierAttempts;
-    return [s, { id: s.id, ...totals, submittedAt: 0, completedAt: durationMs ?? undefined }];
-  });
+  return stages.flatMap((s) => [s, ...[s.earlierAttempts, s.lateAttemptWork]
+    .filter((work) => work != null)
+    .map(({ durationMs, ...totals }) => ({ id: s.id, ...totals, submittedAt: 0, completedAt: durationMs ?? undefined }))]);
 }
 
 // Metrics of a set of stages, every attempt included; a row folds the stages sharing one

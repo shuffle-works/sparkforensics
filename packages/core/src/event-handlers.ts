@@ -165,9 +165,9 @@ interface StageRecord {
   failedStageAttempts: number;
   // Work of the attempts a resubmit replaced (foldEarlierAttempts); null until one is.
   earlierAttempts: StageAttemptTotals | null;
-  // Tasks of a failed attempt that ended after its StageCompleted (zombie tasks), folded into the
-  // next attempt's earlierAttempts; null until one arrives.
-  lateFailedAttemptWork: StageAttemptTotals | null;
+  // Tasks of a failed attempt that ended after its StageCompleted (zombie or killed tasks), carried
+  // across resubmits and re-posted before `done` (stageLateAttemptWork); null until one arrives.
+  lateAttemptWork: StageAttemptTotals | null;
   // Largest task peak execution memory, set by finalizeStage.
   peakExecutionMemoryMax?: number;
   taskAttempts: Map<string | symbol, TaskRecord> | null;
@@ -600,11 +600,11 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
   if (!stage) return null;
   // Late TaskEnd for a stage whose StageCompleted already freed taskAttempts (finalizeStage): the
   // finalized stage's figures stay as posted. A losing speculative attempt adds the wasted time the
-  // finalized stage never saw; any other task of a failed attempt is work a resubmit folds into
-  // the next attempt's earlierAttempts.
+  // finalized stage never saw; any other task of a failed attempt is work only the metrics block
+  // reads, from lateAttemptWork.
   if (stage.taskAttempts === null) {
     if (!accountLateSpeculativeLoser(event, stage) && stage.stageFailureReason != null) {
-      stage.lateFailedAttemptWork = mergeAttemptTotals(taskAttemptTotals(taskRecordOf(event, null)), stage.lateFailedAttemptWork);
+      stage.lateAttemptWork = mergeAttemptTotals(taskAttemptTotals(taskRecordOf(event, null)), stage.lateAttemptWork);
     }
     return null;
   }
@@ -914,8 +914,7 @@ function taskAttemptTotals(t: TaskRecord): StageAttemptTotals {
   };
 }
 
-// The replaced record's finalized attempt, with its late tasks, added to the attempts it had
-// already folded. An attempt resubmitted before its StageCompleted was never finalized, so its
+// The replaced record's finalized attempt added to the attempts it had already folded. An attempt resubmitted before its StageCompleted was never finalized, so its
 // tasks are not counted.
 function foldEarlierAttempts(replaced: StageRecord | undefined): StageAttemptTotals | null {
   if (!replaced) return null;
@@ -927,7 +926,7 @@ function foldEarlierAttempts(replaced: StageRecord | undefined): StageAttemptTot
     durationMs: replaced.submittedAt > 0 && replaced.completedAt >= replaced.submittedAt
       ? replaced.completedAt - replaced.submittedAt : null,
   };
-  return mergeAttemptTotals(mergeAttemptTotals(attempt, replaced.lateFailedAttemptWork), replaced.earlierAttempts);
+  return mergeAttemptTotals(attempt, replaced.earlierAttempts);
 }
 
 export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, state: ParserState): null {
@@ -952,7 +951,7 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
     stageAttempts: (replaced?.stageAttempts ?? 0) + 1,
     failedStageAttempts: replaced?.failedStageAttempts ?? 0,
     earlierAttempts: foldEarlierAttempts(replaced),
-    lateFailedAttemptWork: null,
+    lateAttemptWork: replaced?.lateAttemptWork ?? null,
     taskAttempts: new Map(),
     failureDetails: new Map(),
     retryTaskSamples: [],
@@ -1526,10 +1525,21 @@ export function collectLateSpeculationWaste(
   return out;
 }
 
+// Late work of every stage a failed attempt's late TaskEnd added to, re-posted once before `done`:
+// the stage message posted at completion predates it.
+export function collectLateAttemptWork(state: ParserState): Map<number, StageAttemptTotals> {
+  const out = new Map<number, StageAttemptTotals>();
+  for (const [id, stage] of state.stages) {
+    if (stage.lateAttemptWork != null) out.set(id, stage.lateAttemptWork);
+  }
+  return out;
+}
+
 export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => void, linesProcessed: number): void {
   // Executions that never ended keep their latest AQE update, as they did before it was deferred.
   for (const executionId of [...state.pendingAdaptiveUpdates.keys()]) flushAdaptiveUpdate(executionId, state, emit);
   emit({ type: 'progress', pct: 1, linesProcessed });
+  emit({ type: 'stageLateAttemptWork', data: collectLateAttemptWork(state) });
   emit({ type: 'runAggregates', data: computeRunAggregates(state.taskStore) });
   emit({ type: 'stageSpeculationWaste', data: collectLateSpeculationWaste(state) });
   emit({ type: 'stageExecutorMetrics', data: collectStageExecutorMetrics(state) });
