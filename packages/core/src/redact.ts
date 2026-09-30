@@ -96,15 +96,17 @@ function redactFailureGroups<T>(node: T): T {
 
 // A stage's failure reason is Spark's free-text message and can carry file paths and data values
 // too, so it is replaced outright, like a failure group's message: a `stageFailed` finding's
-// `valueText`, and the `stageFailureReason` of a stage record. Walking by key name, like
+// `valueText`, the `stageFailureReason` of a stage record, a job's `exception` (the run outcome's
+// fallback reason), and the report's `failureReason` copy. Walking by key name, like
 // collectHostFields, needs no path list. Returns a fresh tree.
+const REASON_KEYS = new Set(['stageFailureReason', 'exception', 'failureReason']);
 function redactStageFailureReasons<T>(node: T): T {
   if (Array.isArray(node)) return node.map((n) => redactStageFailureReasons(n)) as T;
   if (node && typeof node === 'object') {
     const isStageFailed = (node as { type?: unknown }).type === 'stageFailed';
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(node)) {
-      const isReason = k === 'stageFailureReason' || (isStageFailed && k === 'valueText');
+      const isReason = REASON_KEYS.has(k) || (isStageFailed && k === 'valueText');
       out[k] = isReason && typeof v === 'string' ? REDACTED_TEXT : redactStageFailureReasons(v);
     }
     return out as T;

@@ -224,6 +224,27 @@ describe('failure groups', () => {
     expect(report.findings.find((f) => f.id === 'd').valueText).toBe(REASON); // input untouched
   });
 
+  it('redactReport replaces summary.outcome.failureReason', () => {
+    const report = sampleReport();
+    report.summary.outcome = { failedJobs: 1, totalJobs: 2, failureReason: REASON, failureReasonStageId: 7 };
+    const out = redactReport(report);
+    expect(out.summary.outcome.failureReason).toBe('[redacted]');
+    expect(out.summary.outcome.failedJobs).toBe(1);
+    expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
+  });
+
+  it('redactRunModel replaces a failed job\'s exception, the outcome fallback reason', () => {
+    const data = {
+      schemaVersion: 1, app: { id: 'application_1690000000000_0001', name: 'n', sparkVersion: '3.5.0', config: {} },
+      stages: [], jobs: [{ id: 1, stageIds: [], succeeded: false, result: 'JobFailed', exception: REASON }], sql: [],
+      executors: { added: [], removed: [] }, runAggregates: null, evidenceAvailability: null,
+      catalog: [], configFindings: [], skippedLines: 0,
+    };
+    const out = redactRun(data);
+    expect(out.appModel.jobs.get(1).exception).toBe('[redacted]');
+    expect(JSON.stringify(out)).not.toContain('/warehouse/customers');
+  });
+
   it('redactRunModel replaces the failure reason on the catalog finding and the stage record', () => {
     const data = {
       schemaVersion: 1, app: { id: 'application_1690000000000_0001', name: 'n', sparkVersion: '3.5.0', config: {} },
