@@ -1,8 +1,7 @@
 ### `CFG`: Configuration audit {#cfg}
 
 Flags configuration settings that may cause reliability or efficiency
-problems, independent of any one stage's behavior. Four checks run
-today:
+problems, independent of any one stage's behavior. Four checks run:
 
 - `spark.shuffle.service.enabled`: flagged when dynamic allocation is on
   but the external shuffle service is off, since shuffle data won't survive

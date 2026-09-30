@@ -320,8 +320,8 @@ rows, `CachingOpportunity.tsx`'s rows (the `cachingOpportunity` detector
 scales `confidence` per finding via `cachingReuseConfidence`, so the badge
 sits next to each row rather than as a single caveat below
 the table), and the shared `StageFindingGroup.tsx` row (adopted by
-`Skew.tsx`/`StageShape.tsx`/`TinyTask.tsx`, though today only `skew`
-findings actually carry a `confidence` field).
+`Skew.tsx`/`StageShape.tsx`/`TinyTask.tsx`, though only `skew`
+findings carry a `confidence` field).
 
 One named exception:
 
