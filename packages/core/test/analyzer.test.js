@@ -2696,7 +2696,7 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
     const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }, { executorId: '2', timestamp: 0, totalCores: 4 }];
     const catalog = analyze(app, new Map([[1, makeStage()]]), added, [], new Map(), new Map(), raBusy(20000, 8));
     const b = catalog.find(x => x.type === 'memoryUtilization' && x.variant === 'idleCores');
-    expect(b.recommendation).toContain(`${b.value}%`);
+    expect(b.recommendation).toContain(`${b.value}% of available core-time ran no task`);
   });
 
   it('memoryUtilization (wasteModel): includes the wasted MB-seconds figure', () => {

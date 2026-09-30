@@ -33,7 +33,7 @@ test('renders the WidgetCard heading, MEM badge, and every affected variant (not
     {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 75,
-      recommendation: 'Over half of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
+      recommendation: 'Over half of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
     },
     {
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity', stageId: null, executorId: '3',
@@ -98,7 +98,7 @@ test('the header MEM badge links to the docs anchor for memoryUtilization findin
     {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 75,
-      recommendation: 'Over half of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
+      recommendation: 'Over half of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
     },
   ];
   render(
@@ -145,7 +145,7 @@ test('shows a muted data-unavailable note with no bold label, impact dot, or evi
     {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 75,
-      recommendation: 'Over half of allocated core-time ran no task.',
+      recommendation: 'Over half of available core-time ran no task.',
     },
     {
       type: 'memoryUtilization', variant: 'memoryBand', stageId: null,
@@ -195,7 +195,7 @@ test('a memoryUtilization row has no per-row toggle; the card fix is always visi
     {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 75,
-      recommendation: 'Over half of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
+      recommendation: 'Over half of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
     },
   ];
   const advice = 'Reduce cluster size or enable dynamic allocation.';
@@ -203,7 +203,7 @@ test('a memoryUtilization row has no per-row toggle; the card fix is always visi
   const { unmount } = render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
   // Basic tier: the detail line (idle-core rate) and the card's fix are both
   // visible, with no toggle needed to reveal either.
-  expect(screen.getByText(/core-time idle/)).toBeInTheDocument();
+  expect(screen.getByText(/of available core-time idle/)).toBeInTheDocument();
   expect(screen.getByText(advice)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /recommendation for idle cores/i })).not.toBeInTheDocument();
   unmount();
@@ -233,7 +233,7 @@ test('stays domain-agnostic: no company/industry copy leaks', () => {
   const catalog: Finding[] = [
     {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
-      impactBand: 'warning', recommendation: 'Over half of allocated core-time ran no task.',
+      impactBand: 'warning', recommendation: 'Over half of available core-time ran no task.',
     },
   ];
   render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
@@ -291,7 +291,7 @@ test('card defaults collapsed with worst-row summary when there are findings', (
     {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 75,
-      recommendation: 'Over half of allocated core-time ran no task.',
+      recommendation: 'Over half of available core-time ran no task.',
     },
     {
       type: 'memoryUtilization', variant: 'memoryBand', stageId: null, executorId: '3',

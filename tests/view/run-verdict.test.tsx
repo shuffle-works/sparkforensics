@@ -102,7 +102,7 @@ describe('RunVerdict', () => {
   it('never moves idle capacity ahead of a smaller time-based fix, and still states the idle share', () => {
     const idleCores: Finding = {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', value: 92,
-      recommendation: '92% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
+      recommendation: '92% of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
     };
     renderVerdict([timed('skew', 7, 64), idleCores]);
     expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
@@ -119,7 +119,7 @@ describe('RunVerdict', () => {
   it('states a non-leading idle-capacity step as idle executor capacity', () => {
     renderVerdict([timed('skew', 7, 2_400), {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'info', value: 50,
-      recommendation: '50% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
+      recommendation: '50% of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
     }]);
     expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
     const verdict = screen.getByTestId('run-verdict');

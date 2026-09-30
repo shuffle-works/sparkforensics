@@ -178,7 +178,7 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
     const idleCores: Finding = {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
       impactBand: 'warning', metric: 'idleCoreRate', value: 80,
-      recommendation: '80% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
+      recommendation: '80% of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
     };
     const { eligible } = boardData([idleCores]);
     expect(eligible).toEqual([idleCores]);

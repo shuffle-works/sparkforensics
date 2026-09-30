@@ -1,7 +1,7 @@
 ### `MEM`: Memory utilization {#mem}
 
 Executor memory or core capacity may be over- or under-provisioned: more
-than 50% of allocated core time ran no task, an executor's heap peaked above
+than 50% of available core time ran no task, an executor's heap peaked above
 95% of its allocation, or it stayed below 70%. Some
 detail here needs `spark.eventLog.logStageExecutorMetrics=true` on the run
 being analyzed; without it, per-executor memory usage can't be broken down.

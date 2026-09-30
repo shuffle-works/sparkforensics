@@ -90,7 +90,7 @@ describe('buildNextSteps', () => {
 describe('idle capacity in the next steps', () => {
   const idleCores = {
     type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning',
-    recommendation: '92% of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
+    recommendation: '92% of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
   };
   const steps = () => buildNextSteps([timedMs('skew', 0, 64), idleCores]);
 

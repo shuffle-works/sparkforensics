@@ -1953,7 +1953,7 @@ export const DETECTORS = [
             impactBand: 'warning', metric: 'idleCoreRate', value,
             // Raw (unrounded) rate plus sizing inputs for the impact estimator: `value` is rounded pct.
             idleRateFraction: idleRate, allocatedMB, peakExecutors, appDurationMs,
-            recommendation: `${value}% of allocated core-time ran no task: ${fix.text}.`,
+            recommendation: `${value}% of available core-time ran no task: ${fix.text}.`,
             remediation: fix.remediation,
           });
         }
