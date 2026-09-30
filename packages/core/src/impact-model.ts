@@ -140,7 +140,7 @@ export function singleStageImpact(
   opts?: SingleStageEstimateOptions,
 ): ImpactEstimate {
   const est = estimateSingleStage(wasteMs, stageId, ctx.stages as unknown as Map<number, OccupancyStage>, ctx.occupancy, opts);
-  if (est) return { basis: est.basis, wallClock: est.wallClock, estimateMethod, rawWaste };
+  if (est) return { basis: est.basis, wallClock: est.wallClock, estimateMethod, rawWaste, stageClaims: est.stageClaims };
   return costOnly(estimateMethod, rawWaste); // stage excluded from the sweep (duration <= 0)
 }
 
@@ -154,7 +154,7 @@ export function multiStageImpact(
   rawWaste?: RawWasteFigure,
 ): ImpactEstimate | null {
   const est = estimateMultiStage(stageIds, wasteMsByStage, ctx.stages as unknown as Map<number, OccupancyStage>, ctx.occupancy);
-  return est ? { basis: est.basis, wallClock: est.wallClock, estimateMethod, rawWaste } : null;
+  return est ? { basis: est.basis, wallClock: est.wallClock, estimateMethod, rawWaste, stageClaims: est.stageClaims } : null;
 }
 
 export function stageMappableWasteOrCostOnly(
@@ -182,22 +182,28 @@ const NOT_CORE_TIME_FIGURE: ReadonlySet<string> = new Set(['autoscalingChurn', '
 // speculative or retried attempts' run time), so already core time, like gc's jvmGCTime.
 const CORE_TIME_MS_FIGURE: ReadonlySet<string> = new Set(['retryWaste', 'speculationWaste']);
 
-// The cores a finding's own stages kept busy on average: their summed task run time over their
-// summed windows, each the time its tasks were running (taskActiveMs, the window the claims read)
-// or, on stages without it, submit to complete. Null when none of them has run time and a window.
-function occupiedCores(finding: Finding, ctx: EstimateCtx): number | null {
-  const stageIds = (finding as { stageIds?: number[] }).stageIds
-    ?? (finding.stageId != null ? [finding.stageId] : []);
-  let runTimeMs = 0;
-  let durationMs = 0;
-  for (const id of stageIds) {
-    const stage = ctx.stages.get(id);
-    const windowMs = stage?.taskActiveMs ?? (stage?.completedAt ?? 0) - (stage?.submittedAt ?? 0);
-    if (!stage || !((stage.executorRunTime ?? 0) > 0) || windowMs <= 0) continue;
-    runTimeMs += stage.executorRunTime!;
-    durationMs += windowMs;
+// The cores one stage kept busy on average: its task run time over the window its claim measures
+// (taskActiveMs, the time at least one task ran, or submit to complete on a stage without it).
+// Null when the stage has no run time or window.
+function stageBusyCores(stage: Stage | undefined): number | null {
+  const windowMs = stage?.taskActiveMs ?? (stage?.completedAt ?? 0) - (stage?.submittedAt ?? 0);
+  if (!stage || !((stage.executorRunTime ?? 0) > 0) || !(windowMs > 0)) return null;
+  return stage.executorRunTime! / windowMs;
+}
+
+// Stage by stage, each clipped claim times the cores that stage kept busy, summed. The claims are
+// taken before the contention gate and the union cap: those model how far overlap lets the run
+// finish sooner, not how much task time the fix removes. Null when no claimed stage has cores.
+function derivedCoreTime(claims: { stageId: number; ms: number }[] | undefined, ctx: EstimateCtx): { low: number; high: number } | null {
+  let coreMs = 0;
+  let found = false;
+  for (const { stageId, ms } of claims ?? []) {
+    const cores = stageBusyCores(ctx.stages.get(stageId));
+    if (cores == null) continue;
+    coreMs += ms * cores;
+    found = true;
   }
-  return durationMs > 0 ? runTimeMs / durationMs : null;
+  return found ? { low: coreMs, high: coreMs } : null;
 }
 
 // Findings whose waste is allocated capacity that ran no task (utilization, lowParallelism's and
@@ -215,9 +221,9 @@ function isIdleCapacityFinding(finding: Finding): boolean {
 /** The busy core time a finding's fix removes, in core-milliseconds, or null when the log can't
  * say. Where the detector measures it, that figure as measured: one its estimate() already set
  * (skew and straggler's removed task time), a coreMs or coreHours raw figure, or a cross-task
- * executor-time 'ms' sum (CORE_TIME_MS_FIGURE). Otherwise a wall-clock claim times
- * the cores the finding's own stages kept busy (occupiedCores), not the run's peak cores, so a
- * stage that ran on few of the cluster's cores costs few. It never reads executorCpuTime, which
+ * executor-time 'ms' sum (CORE_TIME_MS_FIGURE). Otherwise each claimed stage's clipped claim
+ * (before the contention gate and the union cap) times the cores that stage kept busy, not the
+ * run's peak cores, so a stage that ran on few of the cluster's cores costs few. It never reads executorCpuTime, which
  * leaves out Python worker CPU. Nothing else converts: bytes and memory figures have no core time. */
 export function coreTimeFor(finding: Finding, estimate: ImpactEstimate, ctx: EstimateCtx): { low: number; high: number } | null {
   if (isIdleCapacityFinding(finding)) return null;
@@ -231,8 +237,5 @@ export function coreTimeFor(finding: Finding, estimate: ImpactEstimate, ctx: Est
     const coreMs = raw.value * MS_PER_CORE_HOUR;
     return { low: coreMs, high: coreMs };
   }
-  if (!estimate.wallClock) return null;
-  const cores = occupiedCores(finding, ctx);
-  if (cores == null) return null;
-  return { low: estimate.wallClock.low * cores, high: estimate.wallClock.high * cores };
+  return derivedCoreTime(estimate.stageClaims, ctx);
 }

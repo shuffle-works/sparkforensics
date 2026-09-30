@@ -11,13 +11,47 @@ function catalogOf(stages, app = makeApp()) {
 }
 
 describe('structured remediation', () => {
-  it('sizes lowShuffleParallelism to the ideal partition size the estimate uses', () => {
-    const f = catalogOf([makeStage({ shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0 })])
-      .find((x) => x.rule === 'lowShuffleParallelism');
-    // 2 GiB / 128 MiB
-    expect(f.remediation).toEqual([
-      { kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'increase', suggested: 16 },
-    ]);
+  describe('lowShuffleParallelism against the logged shuffle partition count', () => {
+    const run = (config) => catalogOf(
+      [makeStage({ shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0 })],
+      makeApp({ config }),
+    ).find((x) => x.rule === 'lowShuffleParallelism').remediation;
+    const increase = (suggested) => [{ kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'increase', suggested }];
+
+    it('suggests the count that reaches the ideal partition size when the logged value is below it', () => {
+      // 2 GiB / 128 MiB
+      expect(run({ 'spark.sql.shuffle.partitions': '8' })).toEqual(increase(16));
+    });
+
+    it('leaves suggested null when the property is not logged', () => {
+      expect(run({})).toEqual(increase(null));
+    });
+
+    it('suggests nothing when the logged value is already at or above the count, since it does not limit that stage', () => {
+      expect(run({ 'spark.sql.shuffle.partitions': '200' })).toEqual([]);
+      expect(run({ 'spark.sql.shuffle.partitions': '16' })).toEqual([]);
+    });
+  });
+
+  describe('coldStart dynamic allocation remediation', () => {
+    const coldStart = (app) => analyze(
+      app, new Map([[1, makeStage({ id: 1, submittedAt: 60_000, completedAt: 70_000 })]]),
+      [{ executorId: '1', timestamp: 120_000, totalCores: 4 }], [], new Map(),
+    ).find((f) => f.type === 'coldStart');
+    const app = (config, resources) => makeApp({ endTime: 200_000, config, resources });
+
+    it('suggests raising min and initial executors unless dynamic allocation is explicitly off', () => {
+      for (const a of [app({}), app({ 'spark.dynamicAllocation.enabled': 'true' }, { dynamicAllocationEnabled: true })]) {
+        expect(coldStart(a).remediation.map((r) => r.key)).toEqual([
+          'spark.dynamicAllocation.minExecutors', 'spark.dynamicAllocation.initialExecutors',
+        ]);
+      }
+    });
+
+    it('suggests nothing when the logged conf has dynamic allocation off', () => {
+      expect(coldStart(app({ 'spark.dynamicAllocation.enabled': 'false' }, { dynamicAllocationEnabled: false })).remediation).toEqual([]);
+      expect(coldStart(app({ 'spark.dynamicAllocation.enabled': 'FALSE' })).remediation).toEqual([]);
+    });
   });
 
   it('lowers shuffle partitions for a tinyTask finding on a shuffle stage with no suggested value, and none off one', () => {

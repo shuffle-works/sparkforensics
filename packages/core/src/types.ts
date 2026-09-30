@@ -292,13 +292,16 @@ export interface ImpactEstimate {
    * range; set by estimateImpact (see coreTimeFor). A measured core-time figure (skew and
    * straggler's removed task time, a coreMs or coreHours raw figure, or a cross-task
    * executor-time 'ms' sum) is taken as is, whether or not the log records executor cores.
-   * Otherwise the wall-clock claim times the cores its own stages kept busy: executorRunTime
-   * over the stage's task-active window (taskActiveMs), or over submit to complete when
-   * taskActiveMs is absent. Null when neither can be derived, and for a finding whose waste is
+   * Otherwise each claimed stage's clipped claim, before the contention gate and the union cap,
+   * times the cores that stage kept busy (executorRunTime over its task-active window,
+   * taskActiveMs, or over submit to complete when taskActiveMs is absent), summed; low equals high. Null when neither can be derived, and for a finding whose waste is
    * allocated capacity that ran no task (utilization, idle cores, taskStageSkew): its idle
    * figure stays in `rawWaste`. skew and straggler on one stage count its slow tail once: skew
    * carries it and straggler is null; stageSlowness keeps its own figure. Never 0 for "unknown". */
   coreTimeMs?: { low: number; high: number } | null;
+  /** Internal: each stage's clipped claim before the contention gate and the union cap, for
+   * coreTimeFor; estimateImpact removes it, so it never reaches a report. */
+  stageClaims?: { stageId: number; ms: number }[];
 }
 
 // `Finding` is a union discriminated on `type`, one member per emitted finding type: see

@@ -147,7 +147,7 @@ describe('estimateSingleStage', () => {
     const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 5000 })]]);
     const info = computeOccupancy(stages, 0);
     const est = estimateSingleStage(1200, 0, stages, info);
-    expect(est).toEqual({ basis: 'serial', wallClock: { low: 1200, high: 1200 } });
+    expect(est).toEqual({ basis: 'serial', wallClock: { low: 1200, high: 1200 }, stageClaims: [{ stageId: 0, ms: 1200 }] });
   });
 
   it('contended basis: gate < 0.999 gives high = clipped, low = clipped * gate', () => {
@@ -160,13 +160,15 @@ describe('estimateSingleStage', () => {
     expect(est.basis).toBe('contended');
     expect(est.wallClock.high).toBe(1200);
     expect(est.wallClock.low).toBe(600);
+    // The claim before the gate is what core time reads.
+    expect(est.stageClaims).toEqual([{ stageId: 0, ms: 1200 }]);
   });
 
   it('applies the ceiling clip before gate-weighting', () => {
     const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 10000, taskDurationMax: 9000 })]]);
     const info = computeOccupancy(stages, 0); // ceiling 9000, room 1000, gate 1 (solo)
     const est = estimateSingleStage(3000, 0, stages, info);
-    expect(est).toEqual({ basis: 'serial', wallClock: { low: 1000, high: 1000 } });
+    expect(est).toEqual({ basis: 'serial', wallClock: { low: 1000, high: 1000 }, stageClaims: [{ stageId: 0, ms: 1000 }] });
   });
 
   it('shortensLongestTask: floors a tail claim at the longest task the fix leaves, not at the current one', () => {
@@ -233,7 +235,7 @@ describe('estimateMultiStage', () => {
     const info = computeOccupancy(stages, 0);
     const waste = new Map([[0, 75000], [1, 75000]]);
     const est = estimateMultiStage([0, 1], waste, stages, info);
-    expect(est).toEqual({ basis: 'serial', wallClock: { low: 150000, high: 150000 } });
+    expect(est).toEqual({ basis: 'serial', wallClock: { low: 150000, high: 150000 }, stageClaims: [{ stageId: 0, ms: 75000 }, { stageId: 1, ms: 75000 }] });
   });
 
   it('caps the joint claim at the union of the finding\'s own stage windows when they overlap', () => {

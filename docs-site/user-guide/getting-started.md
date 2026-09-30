@@ -280,10 +280,13 @@ derived two ways:
   example), the executor time of retried and discarded speculative
   attempts, and for skew and straggler findings the task time the fix
   removes from the slow tasks. It is set even when the log has no executor core data.
-- Otherwise, a finding with a wall-clock claim: `wallClock.low` and
-  `wallClock.high` times the cores the finding's own stages kept busy (their
-  task run time over the time their tasks were running, or over the stage's
-  whole duration when the log lacks that), not the run's peak cores. Task run time
+- Otherwise, a finding with a wall-clock claim: each claimed stage's
+  recoverable time times the cores that stage kept busy (its task run time
+  over the time its tasks were running, or over the stage's whole duration
+  when the log lacks that), summed, not the run's peak cores. The recoverable
+  time is taken before the adjustment for stages that overlap, which shortens
+  the run by less without changing the task time removed, so `low` equals
+  `high`. Task run time
   is used, not `executorCpuTime`, so Python worker CPU is not missed. Stages
   with no run time or duration give `null`.
 

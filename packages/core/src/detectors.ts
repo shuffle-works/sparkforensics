@@ -672,6 +672,22 @@ function enableDynamicAllocation(app: DetectorApp): Remediation[] {
   return setConfUnlessLogged(app, 'spark.dynamicAllocation.enabled', true);
 }
 
+// The partition count that brings each shuffle partition down to the ideal size, as the estimate
+// models it, is per stage; the property is job-wide. A logged value at or above it means the
+// property is not what limits that stage (a repartition(n) or an RDD shuffle is), and lowering it
+// would be no increase, so nothing is suggested. Unlogged, the count is not a safe value: null.
+function raiseShufflePartitions(app: DetectorApp | null, computed: number): Remediation[] {
+  const key = 'spark.sql.shuffle.partitions';
+  const logged = app?.config?.[key]?.trim();
+  if (logged == null || !/^\d+$/.test(logged)) return [increaseConf(key)];
+  return Number(logged) >= computed ? [] : [increaseConf(key, computed)];
+}
+
+// No dynamic-allocation property has an effect on a run whose logged conf turns it off.
+function dynamicAllocationOff(app: DetectorApp | null): boolean {
+  return app?.resources?.dynamicAllocationEnabled === false || app?.config?.['spark.dynamicAllocation.enabled']?.trim().toLowerCase() === 'false';
+}
+
 // Shared by cacheUtilization's two variants, worded per storage source: neither is a runtime
 // block-access read-count.
 const CACHE_UTILIZATION_VALIDATION = {
@@ -1183,8 +1199,7 @@ export const DETECTORS = [
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'lowShuffleParallelism', metric: 'taskCount', value: taskCount,
           recommendation: `${Math.round(total / GB * 10) / 10} GB of shuffle spread over only ${taskCount} tasks: raise spark.sql.shuffle.partitions so each partition is smaller.`,
-          // The partition count that brings each one down to the ideal size, as the estimate models it.
-          remediation: [increaseConf('spark.sql.shuffle.partitions', Math.ceil(total / IDEAL_BYTES_PER_PARTITION_TASK))],
+          remediation: raiseShufflePartitions(ctx.app, Math.ceil(total / IDEAL_BYTES_PER_PARTITION_TASK)),
         });
       }
       if (max >= thresholds.maxPartBytes) {
@@ -1783,7 +1798,7 @@ export const DETECTORS = [
         type: 'coldStart', stageId: null, impactBand: 'warning',
         metric: 'startupGapSeconds', value,
         recommendation: `The first stage waited ${value}s for an executor to become available: keep a warm pool of idle executors, or if using dynamic allocation, raise the minimum/initial executor count so it doesn't scale up from zero.`,
-        remediation: [increaseConf('spark.dynamicAllocation.minExecutors'), increaseConf('spark.dynamicAllocation.initialExecutors')],
+        remediation: dynamicAllocationOff(ctx.app) ? [] : [increaseConf('spark.dynamicAllocation.minExecutors'), increaseConf('spark.dynamicAllocation.initialExecutors')],
       };
     },
     estimate(finding): ImpactEstimate | null {

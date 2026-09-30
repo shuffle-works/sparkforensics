@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { estimateImpact } from '../src/impact-estimator.js';
+import { multiStageImpact, coreTimeFor } from '../src/impact-model.js';
 import { computeOccupancy } from '../src/occupancy.js';
 import { analyze } from '../src/analyzer.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
@@ -178,5 +179,41 @@ describe('coreTimeMs in the evidence report', () => {
     const findings = analyze(makeApp({ endTime: null }), new Map(), [], [], new Map());
     const incomplete = findings.find((f) => f.type === 'incompleteRun');
     expect(incomplete.impactEstimate.coreTimeMs).toBeNull();
+  });
+});
+
+describe('coreTimeMs under contention', () => {
+  // Two stages run side by side over the same 100s window, 8 busy cores each.
+  const overlapped = () => new Map([0, 1].map((id) => [id, makeStage({
+    id, submittedAt: 0, completedAt: 100_000, executorRunTime: 800_000, taskActiveMs: 100_000, taskDurationMax: 1000,
+  })]));
+  const ctxOf = (stages) => ({ stages, totalCores: 16, occupancy: computeOccupancy(stages, 16) });
+
+  it('takes the per-stage claim before the contention gate, not the gated wall-clock range', () => {
+    const ctx = ctxOf(overlapped());
+    const est = multiStageImpact([0], new Map([[0, 40_000]]), ctx, 'modeled');
+    // Gate 0.5: the run recovers 20s..40s, but the fix removes 40s of stage time on 8 cores.
+    expect(est.wallClock).toEqual({ low: 20_000, high: 40_000 });
+    expect(est.stageClaims).toEqual([{ stageId: 0, ms: 40_000 }]);
+    expect(coreTimeFor({ type: 'tinyTask', stageId: 0 }, est, ctx)).toEqual({ low: 320_000, high: 320_000 });
+  });
+
+  it('adds up overlapping stages\' claims instead of capping them at the union of their windows', () => {
+    // 2 busy cores each, so the floor leaves 87.5s of each 100s window to claim.
+    const stages = new Map([0, 1].map((id) => [id, makeStage({
+      id, submittedAt: 0, completedAt: 100_000, executorRunTime: 200_000, taskActiveMs: 100_000, taskDurationMax: 1000,
+    })]));
+    const ctx = ctxOf(stages);
+    const est = multiStageImpact([0, 1], new Map([[0, 90_000], [1, 90_000]]), ctx, 'modeled');
+    expect(est.wallClock.high).toBe(100_000); // the union of the two windows
+    expect(est.stageClaims).toEqual([{ stageId: 0, ms: 87_500 }, { stageId: 1, ms: 87_500 }]);
+    expect(coreTimeFor({ type: 'duplicatePlanSubtree', stageIds: [0, 1] }, est, ctx)).toEqual({ low: 350_000, high: 350_000 });
+  });
+
+  it('keeps the internal claims out of the reported estimate', () => {
+    const stages = overlapped();
+    const findings = [{ type: 'tinyTask', stageId: 0, value: 1, impactBand: 'info' }];
+    estimateImpact(findings, ctxOf(stages));
+    expect(findings[0].impactEstimate).not.toHaveProperty('stageClaims');
   });
 });

@@ -47,9 +47,13 @@ occupancy would overstate it. Where the detector measures core time, that figure
 `low === high`: skew and straggler's removed task time, a `coreMs` raw figure (gc's `jvmGCTime`,
 coreLocality's non-local penalty), `coreHours` times 3.6e6, or the cross-task
 executor-time `ms` sums of `retryWaste` and `speculationWaste`. These are set even
-when the log has no executor cores. Otherwise `wallClock.low` and `wallClock.high` are multiplied
-by the cores the finding's own stages kept busy: their summed `executorRunTime` over their summed
-windows, never the run's peak cores. A stage's window is the one the claims measure: `taskActiveMs`,
+when the log has no executor cores. Otherwise each claimed stage's clipped claim is multiplied
+by the cores that stage kept busy (its `executorRunTime` over its window) and the products are summed,
+never the run's peak cores. The claim is the one `estimateSingleStage()` clipped to the stage's own
+floor, before the contention gate and the multi-stage union cap (`OccupancyEstimate.stageClaims`,
+which `estimateImpact()` drops from the reported estimate): those two model how far overlap
+with other stages lets the run finish sooner, not how much task time the fix removes, so
+`low` equals `high`. A stage's window is the one the claims measure: `taskActiveMs`,
 the time at least one of its tasks ran, or submit to complete on a stage without it, so a stage
 left queued for cores does not dilute the figure. `executorCpuTime` is never read because it leaves out Python
 worker CPU. A finding with no measured figure and no wall-clock claim, or whose stages have no run
