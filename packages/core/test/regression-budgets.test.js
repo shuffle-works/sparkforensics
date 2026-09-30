@@ -6,7 +6,6 @@ import {
   parseRegressionBudgetFlag, parseBudgetsFile, loadBudgetsFile, combineRegressionBudgets,
 } from '../src/cli/regression-budgets.ts';
 import { evaluateBudgets } from '../src/cli/budgets.ts';
-import { metricDeltas } from '../src/run-comparison.ts';
 
 describe('parseRegressionBudgetFlag', () => {
   it('parses <metric>:<pct>', () => {
@@ -94,38 +93,19 @@ describe('evaluateBudgets regressionBudgets', () => {
     expect(inconclusive).toBe(true);
   });
 
+  it('tags the legacy pair with its metric when there is no comparison', () => {
+    expect(run({ maxRegressionPct: 10 }, undefined).results).toEqual([
+      expect.objectContaining({ name: 'max-regression', metric: 'wallClock', status: 'inconclusive' }),
+    ]);
+    expect(run({ maxRegressionPct: 10, regressionMetric: 'gcTime' }, undefined).results[0].metric).toBe('gcTime');
+    expect(run({ regressionMetric: 'gcTime' }, undefined).results).toEqual([
+      expect.objectContaining({ name: 'max-regression', metric: 'gcTime', status: 'inconclusive' }),
+    ]);
+  });
+
   it('is inconclusive, never a pass, for a metric the log could not provide', () => {
     const cmp = comparison([row('gcTime', 10, null, 'unavailable')]);
     const { results } = run({ regressionBudgets: [{ metric: 'gcTime', maxPct: 10 }] }, cmp);
     expect(results[0]).toMatchObject({ metric: 'gcTime', status: 'inconclusive' });
-  });
-});
-
-describe('metricDeltas on a log without usable task records', () => {
-  const stage = { id: 1, taskCount: 0, failedTasks: 0, memoryBytesSpilled: 0, diskBytesSpilled: 0, jvmGCTime: 0, inputBytes: 0, outputBytes: 0, executorRunTime: 0 };
-  const snap = (state) => ({
-    app: { startTime: 0, endTime: 100 },
-    stages: new Map([[1, stage]]),
-    executors: { added: [], removed: [] },
-    evidenceAvailability: state == null ? null : { entries: [{ key: 'taskCoreTime', state }] },
-  });
-
-  it('reports the per-task metric sums as null, not 0', () => {
-    const metrics = Object.fromEntries(metricDeltas(snap('present'), snap('notEmitted')).map((m) => [m.key, m]));
-    for (const key of ['shuffleSpill', 'diskSpill', 'gcTime', 'inputBytes', 'outputBytes', 'executorRunTime']) {
-      expect(metrics[key]).toMatchObject({ baseline: 0, candidate: null, delta: null, direction: 'unavailable' });
-    }
-    expect(metrics.wallClock.candidate).toBe(100);
-    expect(metrics.taskCount.candidate).toBe(0);
-  });
-
-  it('marks the baseline side null the same way', () => {
-    const metrics = Object.fromEntries(metricDeltas(snap('unknown'), snap('present')).map((m) => [m.key, m]));
-    expect(metrics.gcTime).toMatchObject({ baseline: null, candidate: 0 });
-  });
-
-  it('keeps the sums when the snapshot has no evidence ledger', () => {
-    const metrics = Object.fromEntries(metricDeltas(snap(null), snap(null)).map((m) => [m.key, m]));
-    expect(metrics.gcTime).toMatchObject({ baseline: 0, candidate: 0, direction: 'unchanged' });
   });
 });

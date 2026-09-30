@@ -187,12 +187,13 @@ export function evaluateBudgets({ appModel, catalog, budgets, comparison, thresh
   // Guarded here so any evaluateBudgets caller benefits: regressionMetric without
   // maxRegressionPct would otherwise skip the `if` silently, reporting nothing.
   if (budgets.regressionMetric !== undefined && budgets.maxRegressionPct === undefined) {
-    results.push({ name: 'max-regression', status: 'inconclusive', detail: `regressionMetric "${budgets.regressionMetric}" was set without maxRegressionPct; the regression budget was not evaluated.` });
+    results.push({ name: 'max-regression', metric: budgets.regressionMetric, status: 'inconclusive', detail: `regressionMetric "${budgets.regressionMetric}" was set without maxRegressionPct; the regression budget was not evaluated.` });
   } else if (budgets.maxRegressionPct !== undefined) {
     // `!== undefined`, not Number.isFinite: a zero-baseline regression's pct is Infinity,
     // so an "unlimited" budget is a legitimate input (the CLI already rejects non-finite flags).
     pushComparisonBudget(results, comparison, 'max-regression',
-      (c) => checkRegression(c, budgets.maxRegressionPct!, budgets.regressionMetric ?? 'wallClock'));
+      (c) => checkRegression(c, budgets.maxRegressionPct!, budgets.regressionMetric ?? 'wallClock'),
+      budgets.regressionMetric ?? 'wallClock');
   }
   for (const { metric, maxPct } of budgets.regressionBudgets ?? []) {
     pushComparisonBudget(results, comparison, 'max-regression', (c) => checkRegression(c, maxPct, metric), metric);

@@ -401,10 +401,10 @@ Each line is one JSON object:
 
 | Field | Meaning |
 | --- | --- |
-| `log` | The candidate path, as given on the command line. |
+| `log` | The candidate path, as given on the command line. With `--redact`, `candidate-<n>` instead, `n` being the candidate's 1-based position. |
 | `status` | `pass`, `violation`, `inconclusive` or `error`. |
-| `exitCode` | The exit code this line alone would give: `0` for `pass`, `1` for `violation`, `3` for `inconclusive` and for `error`. |
-| `error` | The message when `status` is `error`; otherwise `null`. |
+| `exitCode` | The exit code this line alone would give: `0` for `pass`, `1` for `violation`, `3` for `inconclusive` and `2` for `error`. |
+| `error` | The message when `status` is `error`; otherwise `null`. With `--redact`, a generic message that names no path. |
 | `budgets` | This candidate's budget results, each with `name`, `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric` on `max-regression`. Empty for an `error` line. |
 | `candidate` | The candidate's report, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
 | `comparison` | `verdict`, `confidence`, `reason`, `matchedCoverage`, `metrics` and `findings`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
@@ -414,16 +414,17 @@ budget result is a violation, else `inconclusive` if any is inconclusive
 (including the `run-complete` check for a log with no `ApplicationEnd`),
 else `pass`.
 
-A candidate that can't be parsed doesn't stop the others. Its line has
-`status: "error"`, the message in `error`, and `null` for `candidate` and
-`comparison`, and it counts as inconclusive. The process exit code is the
-worst line, in this order: `2`, then `1`, then `3`, then `0`. Exit `2` is
-reserved for a problem with the invocation as a whole, which writes no lines:
-a usage error, an unreadable `--thresholds` or `--budgets` file, or a
+A candidate that can't be read or parsed doesn't stop the others. Its line
+has `status: "error"`, `exitCode: 2`, the message in `error`, and `null` for
+`candidate` and `comparison`, as a single-candidate run exits `2` for a local
+input it can't parse. The process exit code is the worst line, in this order:
+`2`, then `1`, then `3`, then `0`, so an unreadable candidate outranks a
+violation. A problem with the invocation as a whole also exits `2`, and writes
+no lines: a usage error, an unreadable `--thresholds` or `--budgets` file, or a
 baseline that can't be parsed.
 
-A metric a log can't provide is `null` in `comparison.metrics`, with
-`direction: "unavailable"` and an `unavailableReason`, never `0`. That covers
-the per-task sums (`shuffleSpill`, `diskSpill`, `gcTime`, `inputBytes`,
-`outputBytes`, `executorRunTime`) for a log with no usable task records, such
-as one cut off before any task ended.
+With `--redact`, no candidate path is written anywhere, since event-log file
+names usually carry the app id. `log` and the `stderr` line prefixes name each
+candidate by its 1-based position (`candidate-1`, `candidate-2`, ...), and an
+`error` line carries a generic message instead of the parser's, which may
+quote the path.

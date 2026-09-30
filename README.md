@@ -253,7 +253,8 @@ pairs with `--shs-base-url`/`--app-id` for a non-default attempt;
 `json`); `--out <path>` writes it to a file instead of stdout. Exit codes:
 `0` pass, `1` a budget was violated, `2` bad input/usage, `3` a budget was
 inconclusive (e.g. missing evidence for a regression check). With several
-candidates the exit code is the worst line: `2`, then `1`, then `3`, then `0`.
+candidates the exit code is the worst line: `2`, then `1`, then `3`, then `0`;
+a candidate that can't be read or parsed gives its line `2`.
 
 > **Node version:** the published `sparkforensics-cli`, `sparkforensics-mcp`,
 > and `sparkforensics-server` packages all pre-strip their vendored

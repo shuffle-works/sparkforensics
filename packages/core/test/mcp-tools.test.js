@@ -941,7 +941,7 @@ describe('evaluateBudgetsForRun', () => {
     try {
       const { results, inconclusive, violated } = await evaluateBudgetsForRun({ source: { path } }, { maxRegressionPct: 10 });
       expect(results).toEqual([{
-        name: 'max-regression', status: 'inconclusive', detail: 'No baseline comparison available to evaluate this budget.',
+        name: 'max-regression', metric: 'wallClock', status: 'inconclusive', detail: 'No baseline comparison available to evaluate this budget.',
       }]);
       expect(inconclusive).toBe(true);
       expect(violated).toBe(false);

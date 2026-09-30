@@ -413,8 +413,11 @@ budgeted twice is a usage error. With two or more positional candidates (or
 `--format ndjson`), the CLI's `runMultiLog` parses and analyzes the baseline once,
 then evaluates each candidate in turn and writes one NDJSON line per candidate
 (`log`, `status`, `exitCode`, `error`, `budgets`, `candidate`, `comparison`). A
-candidate that fails to parse gets a `status: "error"` line, counted as
-inconclusive (exit `3`); the exit code is the worst line (`2` > `1` > `3` > `0`).
+candidate that can't be read or parsed gets a `status: "error"` line with
+`exitCode` `2`; the exit code is the worst line (`2` > `1` > `3` > `0`). Under
+`--redact`, `log` and the `stderr` prefixes are `candidate-<n>` (1-based argument
+position) and an error line's message is generic, so no candidate path, which
+usually carries the app id, reaches the output.
 
 Optional CLI-flag budgets (`--max-runtime <ms>`, `--max-spill <gb>`,
 `--max-skew <ratio>`, `--max-failed-task-rate <pct>`, `--min-efficiency <pct>`)

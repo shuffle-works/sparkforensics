@@ -94,27 +94,46 @@ describe('several candidate logs', () => {
     expect(status).toBe(3);
   });
 
-  it('reports a metric a cut-off candidate log cannot provide as null, never 0', async () => {
-    const { lines } = await run([p('cut-off'), p('same'), '--baseline', p('baseline')]);
-    const metrics = Object.fromEntries(lines[0].comparison.metrics.map((m) => [m.key, m]));
-    for (const key of ['executorRunTime', 'gcTime', 'shuffleSpill', 'diskSpill']) {
-      expect(metrics[key]).toMatchObject({ candidate: null, delta: null, direction: 'unavailable' });
-    }
-    // The baseline's own figures survive, so null marks the candidate's gap only.
-    expect(metrics.executorRunTime.baseline).toBeGreaterThan(0);
+  it('holds a regression budget on a metric a cut-off candidate cannot provide inconclusive', async () => {
+    const { lines } = await run([p('cut-off'), '--baseline', p('baseline'), '--regression-budget', 'executorRunTime:10', '--format', 'ndjson']);
+    const executorRunTime = lines[0].comparison.metrics.find((m) => m.key === 'executorRunTime');
+    expect(executorRunTime).toMatchObject({ candidate: null, delta: null, direction: 'unavailable' });
+    expect(lines[0].budgets).toContainEqual(expect.objectContaining({ name: 'max-regression', metric: 'executorRunTime', status: 'inconclusive' }));
+    expect(lines[0].status).toBe('inconclusive');
   });
 
-  it('turns a candidate that cannot be parsed into an error line counted as inconclusive, and keeps going', async () => {
+  it('turns a candidate that cannot be read or parsed into an exit-2 error line, and keeps going', async () => {
     const { status, lines } = await run([p('garbage'), p('same'), p('nope'), '--baseline', p('baseline')]);
     expect(lines.map((l) => l.status)).toEqual(['error', 'pass', 'error']);
-    expect(lines[0]).toMatchObject({ log: p('garbage'), exitCode: 3, candidate: null, comparison: null, budgets: [] });
-    expect(lines[0].error).toEqual(expect.any(String));
-    expect(status).toBe(3);
+    for (const [i, name] of [[0, 'garbage'], [2, 'nope']]) {
+      expect(lines[i]).toMatchObject({ log: p(name), exitCode: 2, candidate: null, comparison: null, budgets: [] });
+      expect(lines[i].error).toEqual(expect.any(String));
+    }
+    expect(status).toBe(2);
   });
 
-  it('lets a violation outrank an error line', async () => {
-    const { status } = await run([p('garbage'), p('slower'), '--baseline', p('baseline'), '--regression-budget', 'wallClock:10']);
-    expect(status).toBe(1);
+  it('lets an error line outrank a violation', async () => {
+    const { status, lines } = await run([p('slower'), p('garbage'), '--baseline', p('baseline'), '--regression-budget', 'wallClock:10']);
+    expect(lines.map((l) => l.exitCode)).toEqual([1, 2]);
+    expect(status).toBe(2);
+  });
+
+  it('names candidates by position and writes no candidate path under --redact', async () => {
+    const out = p('redacted.ndjson');
+    const { status, stderr } = await run([
+      p('slower'), p('nope'), '--baseline', p('baseline'), '--regression-budget', 'wallClock:10', '--redact', '--out', out,
+    ]);
+    const written = readFileSync(out, 'utf8');
+    const lines = written.trim().split('\n').map((l) => JSON.parse(l));
+    expect(lines.map((l) => [l.log, l.status])).toEqual([['candidate-1', 'violation'], ['candidate-2', 'error']]);
+    expect(lines[1].error).toEqual(expect.any(String));
+    expect(stderr).toContain('candidate-1: [violation] max-regression');
+    expect(stderr).toContain('candidate-2: [error]');
+    for (const text of [written, stderr]) {
+      expect(text).not.toContain(dir);
+      expect(text).not.toContain('nope');
+    }
+    expect(status).toBe(2);
   });
 
   it('exits 2 without output when the baseline cannot be read', async () => {

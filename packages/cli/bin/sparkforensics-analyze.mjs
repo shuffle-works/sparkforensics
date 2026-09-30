@@ -97,10 +97,12 @@ Options:
 Several candidates: pass two or more logs as positional arguments, with --baseline, to compare
 each against the baseline, which is parsed once. Output is NDJSON, one line per candidate in
 argument order: {"log", "status", "exitCode", "error", "budgets", "candidate", "comparison"}.
-status is pass, violation, inconclusive or error. A candidate that cannot be parsed gets an
-"error" line (candidate and comparison null) and counts as inconclusive; the rest still run. Not
-combinable with --export-html, --shs-base-url or --format json|md. The exit code is the worst
-line: 2, then 1, then 3, then 0.
+status is pass, violation, inconclusive or error. A candidate that cannot be read or parsed gets
+an "error" line (exitCode 2, candidate and comparison null); the rest still run. With --redact,
+"log" and the stderr prefixes name a candidate by position (candidate-1, candidate-2, ...) and an
+error line carries a generic message, so no candidate path is written. Not combinable with
+--export-html, --shs-base-url or --format json|md. The exit code is the worst line: 2, then 1,
+then 3, then 0.
 
 Exit codes: 0 pass, 1 budget violated, 2 bad arguments, an unreadable or invalid --thresholds file, the local input could not be parsed, or the --shs-base-url fetch failed, 3 a budget was inconclusive.
 `;
@@ -202,13 +204,14 @@ async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redac
   }
 }
 
-// Worst-wins order of the exit codes a candidate line can carry: a violation outranks an
-// inconclusive result, as in a single-candidate run.
-const EXIT_SEVERITY = { 0: 0, 3: 1, 1: 2 };
+// Worst-wins order of the exit codes a candidate line can carry: an unparsable candidate (2)
+// outranks a violation (1), which outranks an inconclusive result (3), as in a single-candidate run.
+const EXIT_SEVERITY = { 0: 0, 3: 1, 1: 2, 2: 3 };
 
 // One baseline against several candidates, one NDJSON line each. The baseline is parsed and
 // analyzed once; candidates run one at a time so only one parsed log is held at once. A candidate
-// that cannot be parsed yields an "error" line (counted as inconclusive) and the rest still run.
+// that cannot be parsed yields an "error" line (exit code 2) and the rest still run. Under --redact
+// a candidate is named by its position (candidate-1, ...): log file names usually carry the app id.
 async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, findingsFilter, redact, outPath }) {
   let baselineAppModel;
   try {
@@ -227,10 +230,11 @@ async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, 
   };
 
   let worstExit = 0;
-  for (const log of candidatePaths) {
+  for (const [index, path] of candidatePaths.entries()) {
+    const log = redact ? `candidate-${index + 1}` : path;
     let line;
     try {
-      const { appModel } = await collectWithEvidence(log);
+      const { appModel } = await collectWithEvidence(path);
       const catalog = analyzeModel(appModel, { thresholds });
       let comparison = buildComparison(
         { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
@@ -260,8 +264,9 @@ async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, 
         },
       };
     } catch (e) {
-      process.stderr.write(`${log}: [error] ${e.message}\n`);
-      line = { log, status: 'error', exitCode: 3, error: e.message, budgets: [], candidate: null, comparison: null };
+      const error = redact ? 'The event log could not be read or parsed.' : e.message;
+      process.stderr.write(`${log}: [error] ${error}\n`);
+      line = { log, status: 'error', exitCode: 2, error, budgets: [], candidate: null, comparison: null };
     }
     emit(line);
     if (EXIT_SEVERITY[line.exitCode] > EXIT_SEVERITY[worstExit]) worstExit = line.exitCode;
