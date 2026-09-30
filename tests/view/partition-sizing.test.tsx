@@ -52,7 +52,7 @@ test('flags every affected stage, not just the worst', () => {
   expect(screen.getByRole('button', { name: /open details for stage 2/i })).toBeInTheDocument();
 });
 
-test('shows the PART tag and each rule\'s label/recommendation', () => {
+test('shows the PART tag, each rule\'s label and the card\'s fix', () => {
   const appModel = buildAppModel({ 3: { taskCount: 4 } });
   const catalog: Finding[] = [{
     type: 'partitionSizing', stageId: 3, impactBand: 'critical', rule: 'lowShuffleParallelism', value: 4,
@@ -61,7 +61,8 @@ test('shows the PART tag and each rule\'s label/recommendation', () => {
   render(<PartitionSizing appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByText('PART')).toBeInTheDocument();
   expect(screen.getByText(/4 tasks carrying the shuffle/)).toBeInTheDocument();
-  expect(screen.getByText(/repartition to break it up/i)).toBeInTheDocument();
+  expect(screen.getByText('Raise spark.sql.shuffle.partitions so each partition is smaller.')).toBeInTheDocument();
+  expect(screen.queryByText(/repartition to break it up/i)).not.toBeInTheDocument();
 });
 
 test('renders no domain/company strings and no bytes-formatting bug for a task-count value', () => {

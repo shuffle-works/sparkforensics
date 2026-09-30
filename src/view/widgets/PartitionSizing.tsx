@@ -48,19 +48,11 @@ function PartitionSizingRow({ entry, appModel }: { entry: StageEntry; appModel: 
       className={`space-y-2 ${ROW_SEPARATOR_CLASS} transition-colors ${anchor.flashClassName}`}
     >
       <StageHeader stageId={entry.stageId} appModel={appModel} />
-      <p className="text-xs text-muted-foreground">
-        {entry.partitions.map((f, i) => (
-          <span key={f.id}>
-            {i > 0 ? ' · ' : ''}
-            {partitionSizingLabel(f)}
-          </span>
-        ))}
-      </p>
       <div className="space-y-2 pt-1">
         <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
           {entry.partitions.map((f) => (
             <li key={f.id}>
-              {f.recommendation}{' '}
+              {partitionSizingLabel(f)}{' '}
               <ImpactEstimate finding={f} />
             </li>
           ))}
@@ -136,6 +128,7 @@ export const PartitionSizing = memo(function PartitionSizing({ appModel, catalog
   return (
     <WidgetCard
       title="Partition Sizing"
+      fixFor={partitionFindings}
       impactBand={combinedImpactBand}
       open={cardOpen}
       onOpenChange={setCardOpen}

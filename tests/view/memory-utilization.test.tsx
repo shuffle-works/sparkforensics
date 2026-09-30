@@ -28,7 +28,7 @@ test('renders nothing when the only memoryUtilization finding is the dataUnavail
   expect(container).toBeEmptyDOMElement();
 });
 
-test('renders the WidgetCard heading, MEM badge, and every affected variant (not just the worst), with every recommendation always visible at Basic tier', async () => {
+test('renders the WidgetCard heading, MEM badge, and every affected variant (not just the worst), with each variant fix stated once, visible at Basic tier', async () => {
   const catalog: Finding[] = [
     {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
@@ -53,8 +53,8 @@ test('renders the WidgetCard heading, MEM badge, and every affected variant (not
     },
   ];
 
-  // No density set: defaults to Basic. The advice half of every recommendation
-  // must already be visible here, unlike the diagnosis clause asserted below.
+  // No density set: defaults to Basic. The card's fixes must already be
+  // visible here, unlike the diagnosis clause asserted below.
   const { unmount } = render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
 
   expect(screen.getByRole('heading', { name: 'Memory Utilization' })).toBeInTheDocument();
@@ -64,15 +64,12 @@ test('renders the WidgetCard heading, MEM badge, and every affected variant (not
   expect(screen.getByText('Idle cores', { exact: false })).toBeInTheDocument();
   expect(screen.getByText('Memory waste', { exact: false })).toBeInTheDocument();
 
-  // Recommendation text is visible for every row without expanding anything,
-  // and without switching density. Only the advice half is asserted: the
-  // leading clause restates memoryDetail's own figure (e.g. "98% of allocated
-  // heap used: near capacity"), so it's extended rather than repeated
-  // verbatim (see memoryAction).
-  expect(screen.getByText(/reduce cluster size or enable dynamic allocation/)).toBeInTheDocument();
-  expect(screen.getByText(/memory may be too small; raise spark\.executor\.memory to avoid OOM\/spill/)).toBeInTheDocument();
-  expect(screen.getByText(/memory may be over-provisioned; consider reducing spark\.executor\.memory for cost savings/)).toBeInTheDocument();
-  expect(screen.getByText(/review spark\.executor\.memory and executor count/)).toBeInTheDocument();
+  // The card states each variant's fix once, above the rows, without
+  // expanding anything and without switching density.
+  expect(screen.getByText('Reduce cluster size or enable dynamic allocation.')).toBeInTheDocument();
+  expect(screen.getByText('Memory may be too small: raise spark.executor.memory to avoid OOM/spill.')).toBeInTheDocument();
+  expect(screen.getByText('Memory may be over-provisioned: consider reducing spark.executor.memory for cost savings.')).toBeInTheDocument();
+  expect(screen.getByText('Review spark.executor.memory and executor count.')).toBeInTheDocument();
   // The heapNearCapacity/heapOverProvisioned diagnosis clause is redundant
   // with memoryDetail() and stays Advanced-only.
   expect(screen.queryByText(/Executor 3 peaked at 98% of allocated heap\./)).not.toBeInTheDocument();
@@ -193,7 +190,7 @@ test('attaches executor-metrics evidence to ordinary memory findings (uniform di
   store.getState().setWidgetDensity('basic');
 });
 
-test('a memoryUtilization row has no per-row toggle; its advice half is always visible, at both densities', () => {
+test('a memoryUtilization row has no per-row toggle; the card fix is always visible, at both densities', () => {
   const catalog: Finding[] = [
     {
       type: 'memoryUtilization', variant: 'idleCores', stageId: null,
@@ -201,11 +198,11 @@ test('a memoryUtilization row has no per-row toggle; its advice half is always v
       recommendation: 'Over half of allocated core-time ran no task: reduce cluster size or enable dynamic allocation.',
     },
   ];
-  const advice = /reduce cluster size or enable dynamic allocation/;
+  const advice = 'Reduce cluster size or enable dynamic allocation.';
 
   const { unmount } = render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
-  // Basic tier: the detail line (idle-core rate) and the advice half of the
-  // recommendation are both visible, with no toggle needed to reveal either.
+  // Basic tier: the detail line (idle-core rate) and the card's fix are both
+  // visible, with no toggle needed to reveal either.
   expect(screen.getByText(/core-time idle/)).toBeInTheDocument();
   expect(screen.getByText(advice)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /recommendation for idle cores/i })).not.toBeInTheDocument();

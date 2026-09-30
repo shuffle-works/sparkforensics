@@ -37,7 +37,6 @@ function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetPro
         <strong>{metricLabel(finding)}</strong>
       </div>
       <ImpactEstimate finding={finding} />
-      <p className="text-muted-foreground pt-1">{finding.recommendation}</p>
     </li>
   );
 }
@@ -67,6 +66,7 @@ export const SpeculationWaste = memo(function SpeculationWaste({ appModel, catal
   return (
     <WidgetCard
       title="Speculation Waste"
+      fixFor={issues}
       impactBand={issues[0].impactBand}
       badges={
         <>

@@ -10,7 +10,7 @@ import type { FindingOf } from '@sparkforensics/core/types.ts';
 /** Single-row body for an active `jobFailureRate` finding. App-scoped (no
  * StagePill), always one row (no pagination). */
 function JobFailuresRow({ finding }: { finding: FindingOf<'jobFailureRate'> }) {
-  const { failedJobs, totalJobs, failedTasks, totalTasks, taskFailureRate, value, recommendation } = finding;
+  const { failedJobs, totalJobs, failedTasks, totalTasks, taskFailureRate, value } = finding;
 
   return (
     <div className="flex flex-col gap-1 transition-colors">
@@ -23,7 +23,6 @@ function JobFailuresRow({ finding }: { finding: FindingOf<'jobFailureRate'> }) {
         </p>
       </AdvancedOnly>
       <ImpactEstimate finding={finding} />
-      {recommendation ? <p>{recommendation}</p> : null}
     </div>
   );
 }
@@ -42,6 +41,7 @@ export function JobFailures({ catalog, defaultCollapsed = true }: WidgetProps) {
   return (
     <WidgetCard
       title="Job Failures"
+      fixFor={[finding]}
       impactBand={impactBand}
       badges={<TagBadge type="jobFailureRate" impactBand={impactBand} />}
       defaultCollapsed={defaultCollapsed}

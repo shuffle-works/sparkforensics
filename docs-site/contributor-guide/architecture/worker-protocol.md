@@ -23,11 +23,16 @@ Worker to main:
 updates, `progress` (`pct: 1`), `runAggregates`, `stageSpeculationWaste`,
 `stageExecutorMetrics`, the terminal `app`, then `done`.
 
-A History Server failure is always the typed, display-safe payload
-`{ type: 'error', source: 'shs', code }`, where `code` is one of
+A History Server failure is always the typed payload
+`{ type: 'error', source: 'shs', code, message? }`, where `code` is one of
 `local-server-unavailable`, `upstream-unreachable`, `application-not-found`,
-`access-or-upstream-failure`, or `invalid-event-log`. It never carries an
-upstream message, URL, status, or response body.
+`access-or-upstream-failure`, or `invalid-event-log`. Fetch and HTTP failures
+carry only `code`: never an upstream message, URL, status, or response body.
+An `invalid-event-log` from the archive decode can carry a `message` written
+by `decodeShsArchive` (`packages/core/src/shs-fetch.ts`): the zip is
+unreadable, holds several application attempts or no event log, or an entry
+failed to decompress, in which case it names the zip entry and includes the
+decoder's error text. The intake shows that message under the recovery text.
 
 Evidence availability has no dedicated worker message: the final `app` message
 carries a compact `evidenceInputs` counter summary, and `done.skippedLines`
@@ -57,8 +62,7 @@ so their widgets render immediately. Unflagged stages are on-demand.
 
 A dropped zstd file (`parse`, and each zstd file of a `parseFiles` directory)
 is decompressed in a second, nested worker, `packages/core/src/zstd-worker.ts`,
-so fzstd and the NDJSON parser run at the same time. On the largest real log,
-in-thread fzstd takes about 47% of the parse worker's time. The parse worker starts it
+so fzstd and the NDJSON parser run at the same time. The parse worker starts it
 on the first zstd file and reuses it for the rest of the parse. It dies with
 the parse worker, so the page's `terminate()` also cancels it. Other codecs and
 the SHS path (`parseFromUrl`) decompress on the parse worker. A dropped

@@ -631,8 +631,7 @@ describe('analyze: speculative / straggler', () => {
 
 describe('analyze: skew/straggler same-stage overlap disclosure (§4)', () => {
   it('flags both findings when skew (max/median branch) and straggler fire on the same stage', () => {
-    // taskCount below minTasksForP95 (20): skew uses its max/median branch, driven by the exact
-    // same (taskDurationMax - taskDurationP50) delta straggler's own wallClock estimate uses.
+    // taskCount below minTasksForP95 (20): skew uses its max/median branch.
     const stages = new Map([[1, makeStage({
       taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
       speculativeTasks: 0, stragglerCount: 2,
@@ -647,10 +646,10 @@ describe('analyze: skew/straggler same-stage overlap disclosure (§4)', () => {
     expect(straggler.validationRequired).toMatch(/overlaps with the skew finding/);
   });
 
-  it('does not flag an overlap when skew uses its P95/median branch (a different task, not the same delta)', () => {
+  it('flags both findings when skew uses its P95/median branch (both claim the same replayed tail)', () => {
     const stages = new Map([[1, makeStage({
       taskCount: 25, taskDurationP50: 100, taskDurationP95: 600, taskDurationMax: 900,
-      speculativeTasks: 0, stragglerCount: 2,
+      tailReplayRecoveryMs: 800, speculativeTasks: 0, stragglerCount: 2,
     })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     const skew = catalog.find(b => b.type === 'skew');
@@ -658,8 +657,33 @@ describe('analyze: skew/straggler same-stage overlap disclosure (§4)', () => {
     expect(skew).toBeTruthy();
     expect(skew.metric).toBe('P95/median');
     expect(straggler).toBeTruthy();
-    expect(skew.validationRequired ?? '').not.toMatch(/overlaps with/);
-    expect(straggler.validationRequired ?? '').not.toMatch(/overlaps with/);
+    expect(skew.wallClock).toEqual(straggler.wallClock);
+    expect(skew.validationRequired).toMatch(/overlaps with the straggler finding/);
+    expect(straggler.validationRequired).toMatch(/overlaps with the skew finding/);
+  });
+
+  it('leaves other finding types on the overlap stage unflagged', () => {
+    const stages = new Map([[1, makeStage({
+      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
+      speculativeTasks: 0, stragglerCount: 2,
+      memoryBytesSpilled: 1024, spillClassification: 'volume',
+    })]]);
+    const catalog = analyze(makeApp(), stages, [], []);
+    const spill = catalog.find(b => b.type === 'spill' && b.stageId === 1);
+    expect(catalog.find(b => b.type === 'skew').validationRequired).toMatch(/overlaps with/);
+    expect(spill).toBeTruthy();
+    expect(spill.validationRequired ?? '').not.toMatch(/overlaps with/);
+  });
+
+  it('appends the overlap note to a caveat the finding already carries', () => {
+    const stages = new Map([[1, makeStage({
+      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
+      speculativeTasks: 0, stragglerCount: 2,
+    })]]);
+    const catalog = analyze(makeApp(), stages, [], [], new Map(), new Map(), null, { thresholds: { skew: { ratioWarn: 2 } } });
+    const skew = catalog.find(b => b.type === 'skew');
+    expect(skew.validationRequired).toContain('Produced with tuned thresholds: ratioWarn 2 (default 3).');
+    expect(skew.validationRequired).toMatch(/overlaps with the straggler finding/);
   });
 
   it('does not flag skew when no straggler fires on the same stage', () => {

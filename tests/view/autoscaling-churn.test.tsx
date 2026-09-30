@@ -131,7 +131,7 @@ describe('AutoscalingChurn', () => {
     expect(screen.queryByRole('link', { name: /learn more/i })).not.toBeInTheDocument();
   });
 
-  it('renders an impact-band banner (dot + CHRN tag + recommendation) when an autoscalingChurn finding is present', async () => {
+  it('renders an impact-band banner (dot + CHRN tag + the card fix) when an autoscalingChurn finding is present', async () => {
     const appModel = makeAppModel({
       app: { startTime: 0, endTime: 120_000 } as AppModel['app'],
       executors: {
@@ -155,7 +155,8 @@ describe('AutoscalingChurn', () => {
 
     expect(screen.getByText('CHRN')).toBeInTheDocument();
     expect(screen.getByText(fullTextOf('Short-lived executors: 70%'))).toBeInTheDocument();
-    expect(screen.getByText(/70% of executors ran for under 2 minutes/i)).toBeInTheDocument();
+    expect(screen.getByText(/^This looks like wasteful re-provisioning/)).toBeInTheDocument();
+    expect(screen.queryByText(/70% of executors ran for under 2 minutes/i)).not.toBeInTheDocument();
   });
 
   it('renders the core-hours raw-waste figure when an autoscalingChurn finding carries an impactEstimate', async () => {
@@ -184,7 +185,7 @@ describe('AutoscalingChurn', () => {
     expect(screen.getByText('3.0 core-h')).toBeInTheDocument();
   });
 
-  it('shows the short-lived-executor stat and the recommendation unconditionally, with no per-row toggle', async () => {
+  it('shows the short-lived-executor stat and the card fix unconditionally, with no per-row toggle', async () => {
     const user = userEvent.setup();
     const appModel = makeAppModel({
       app: { startTime: 0, endTime: 120_000 } as AppModel['app'],
@@ -210,9 +211,9 @@ describe('AutoscalingChurn', () => {
     // Card is collapsed by default; expand it to reach the row content.
     await user.click(screen.getByRole('button', { name: /^autoscaling churn$/i }));
 
-    // Stat line and recommendation both render unconditionally, with no per-row toggle.
+    // Stat line and the card's fix both render unconditionally, with no per-row toggle.
     expect(screen.getByText(fullTextOf('Short-lived executors: 70%'))).toBeInTheDocument();
-    expect(screen.getByText(/Consider raising spark\.dynamicAllocation\.executorIdleTimeout\./)).toBeInTheDocument();
+    expect(screen.getByText(/consider raising spark\.dynamicAllocation\.executorIdleTimeout/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /hide recommendation/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /show recommendation/i })).not.toBeInTheDocument();
   });
