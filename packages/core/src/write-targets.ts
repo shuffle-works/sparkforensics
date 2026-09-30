@@ -228,6 +228,8 @@ function parseDeltaPath(args: Arg[]): Parsed | null {
 const V2_WRITES = new Set([
   'AppendData', 'OverwriteByExpression', 'OverwritePartitionsDynamic', 'ReplaceData', 'WriteDelta',
   'WriteToDataSourceV2',
+  // V1-fallback writers (Delta tables): their node names keep the V1 suffix, not ending in Exec.
+  'AppendDataExecV1', 'OverwriteByExpressionExecV1',
 ]);
 const V2_TABLE_AS_SELECT = new Set([
   'CreateTableAsSelect', 'AtomicCreateTableAsSelect', 'ReplaceTableAsSelect', 'AtomicReplaceTableAsSelect',

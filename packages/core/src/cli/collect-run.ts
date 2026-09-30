@@ -131,12 +131,8 @@ export function collectViaDispatch(
     const handlers: IngestHandlers = {
       ...cb,
       onDone: (msg: unknown) => {
-        const done = msg as { skippedLines?: number; unreadableSqlExecutions?: number[] } | undefined;
-        const skippedLines = done?.skippedLines ?? 0;
-        // The report reads these from the model, so a caller that only takes appModel still sees them.
-        appModel.skippedLines = skippedLines;
-        if (done?.unreadableSqlExecutions) appModel.unreadableSqlExecutions = done.unreadableSqlExecutions;
-        resolve({ appModel, skippedLines });
+        cb.onDone(msg); // records the parse gaps on the model, as the dashboard's ingest does
+        resolve({ appModel, skippedLines: (msg as { skippedLines?: number })?.skippedLines ?? 0 });
       },
       onError: (msg: unknown) => reject(onDecodeError(msg)),
     };

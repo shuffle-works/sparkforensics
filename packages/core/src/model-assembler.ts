@@ -9,6 +9,15 @@ import type {
   RunAggregates,
 } from './types.ts';
 
+// The done message's counts of what the parse could not read. On the model, not only passed to onDone,
+// so every consumer of the model (dashboard export, CLI, MCP) reports them the same way.
+function recordParseGaps(appModel: AppModel, data: unknown): void {
+  const done = data as { skippedLines?: number; unreadableSqlExecutions?: number[] } | undefined;
+  appModel.skippedLines = done?.skippedLines ?? 0;
+  if (done?.unreadableSqlExecutions) appModel.unreadableSqlExecutions = done.unreadableSqlExecutions;
+  else delete appModel.unreadableSqlExecutions;
+}
+
 // Worker-message -> appModel assembly. Shared by the file-load and SHS-URL-load paths. Pure model
 // mutation: analysis/render/persist stay in the caller via the onDone/onProgress/onError hooks.
 export function createModelCallbacks(
@@ -75,6 +84,10 @@ export function createModelCallbacks(
         }
       }
     },
-    onDone, onError,
+    onDone(data: unknown) {
+      recordParseGaps(appModel, data);
+      onDone?.(data);
+    },
+    onError,
   };
 }

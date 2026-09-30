@@ -54,6 +54,7 @@ describe('extractWriteTargets', () => {
       'AtomicCreateTableAsSelect', 'ReplaceTableAsSelect', 'AtomicReplaceTableAsSelect', 'WriteIntoDelta',
       'WriteIntoDeltaCommand', 'MergeIntoCommand', 'UpdateCommand', 'DeleteCommand', 'CreateDeltaTableCommand',
       'OptimizeTableCommand', 'RestoreTableCommand', 'OptimizedCreateHiveTableAsSelectCommand', 'DeltaReorgTableCommand',
+      'AppendDataExecV1', 'OverwriteByExpressionExecV1',
     ];
     for (const command of known) {
       expect(writesOf(node(`Execute ${command}`, `Execute ${command}`))).toEqual([
