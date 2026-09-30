@@ -2,7 +2,7 @@
 import { parseArgs } from 'node:util';
 import {
   readFileSync, writeFileSync, existsSync, realpathSync,
-  mkdtempSync, mkdirSync, rmSync, renameSync, readdirSync, cpSync,
+  mkdtempSync, mkdirSync, rmSync, renameSync, readdirSync, cpSync, appendFileSync,
 } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -18,10 +18,11 @@ const pkgDir = dirname(binDir);
 const srcHelper = join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
 const helperPath = existsSync(srcHelper) ? srcHelper : join(pkgDir, 'vendor-core', 'load-vendored.js');
 const { coreBuildId, loadVendored } = await import(pathToFileURL(helperPath).href);
-const loadCore = (moduleName) => loadVendored(pkgDir, moduleName);
+const loadCore = (moduleName, opts) => loadVendored(pkgDir, moduleName, opts);
 
 const { collectRun } = await loadCore('cli/collect-run');
 const { resolveFromShs } = await loadCore('shs-load');
+const { validateShsRequest } = await loadCore('shs-request', { srcExt: 'js' });
 const { analyze } = await loadCore('analyzer');
 const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
 const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
@@ -32,13 +33,16 @@ const { redactComparison } = await loadCore('redact');
 const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
 const { runPayloadScript } = await loadCore('run-payload');
 const { loadThresholdOverrides } = await loadCore('cli/threshold-config');
+const { parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets } = await loadCore('cli/regression-budgets');
 const { tunedDetectors } = await loadCore('threshold-overrides');
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
+       sparkforensics-analyze <event-log-file|rolling-log-dir>... --baseline <path> [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id> [--attempt-id <id>] [options]
 
 Options:
-  --format md|json                 Output format (default: json).
+  --format md|json|ndjson          Output format (default: json; ndjson with two or more candidate
+                                    logs). ndjson requires --baseline, see "Several candidates".
   --out <path>                    Write output to a file instead of stdout.
   --export-html <dir>              Write a self-contained HTML dashboard for this run into <dir>
                                     (must not exist or be empty). Open <dir>/index.html directly, no
@@ -62,6 +66,16 @@ Options:
                                     --regression-metric) regressed by more than this percent.
   --regression-metric <key>         Metric key to check with --max-regression-pct (default:
                                     wallClock). Requires --baseline and --max-regression-pct.
+  --regression-budget <metric>:<pct>
+                                    Requires --baseline. Fail if <metric> regressed by more than
+                                    <pct> percent. Repeat the flag for several metrics. A metric can
+                                    be budgeted once across this flag, --budgets and the
+                                    --max-regression-pct/--regression-metric pair (which counts as
+                                    one more budget).
+  --budgets <file>                  Requires --baseline. JSON file {"regression": {"<metric>": <pct>}}
+                                    with the same budgets as --regression-budget. Unknown keys and
+                                    metrics, and a percentage that is not a non-negative number, are
+                                    rejected.
   --fail-on-introduced <band|all>   Requires --baseline. Fail if any finding was introduced by
                                     the candidate matching this impact band (or any, with "all").
   --redact                          Pseudonymize the app id and any host/IP tokens in the output
@@ -81,7 +95,24 @@ Options:
                                     flagged as uncalibrated. Applies to --baseline too; the
                                     --export-html dashboard keeps the default thresholds.
 
-Exit codes: 0 pass, 1 budget violated, 2 bad arguments, an unreadable or invalid --thresholds file, the local input could not be parsed, or the --shs-base-url fetch failed, 3 a budget was inconclusive.
+Several candidates: pass two or more logs as positional arguments, with --baseline, to compare
+each against the baseline, which is parsed once. Output is NDJSON, one line per candidate in
+argument order: {"log", "status", "exitCode", "error", "budgets", "candidate", "comparison"}.
+status is pass, violation, inconclusive or error. A candidate that cannot be read or parsed gets
+an "error" line (exitCode 4, candidate and comparison null); the rest still run. An internal
+failure while analyzing one candidate gets an "error" line with exitCode 6. With --redact, "log"
+and the stderr prefixes name a candidate by position (candidate-1, candidate-2, ...) and an error
+line carries a generic message, so no candidate path is written. Not combinable with
+--export-html, --shs-base-url or --format json|md. The exit code is the worst line, in the order
+6, 5, 4, 1, 3, 0; a usage error exits 2 before any candidate runs.
+
+Exit codes: 0 pass, 1 a budget was violated, 2 usage error (bad flags or arguments, an unreadable
+or invalid --thresholds or --budgets file), 3 a budget was inconclusive, 4 the candidate log could
+not be read or parsed (or the --shs-base-url fetch failed), 5 the --baseline log could not be read
+or parsed (no candidate lines are written), 6 internal error (including a failed --export-html).
+With --redact, a log that cannot be read, parsed or analyzed is reported by its role (the baseline,
+the candidate, or candidate N with several candidates) instead of the error text, which may carry
+its path.
 `;
 
 function parseCliArgs(argv) {
@@ -102,6 +133,8 @@ function parseCliArgs(argv) {
       baseline: { type: 'string' },
       'max-regression-pct': { type: 'string' },
       'regression-metric': { type: 'string' },
+      'regression-budget': { type: 'string', multiple: true },
+      budgets: { type: 'string' },
       'fail-on-introduced': { type: 'string' },
       redact: { type: 'boolean' },
       'export-html': { type: 'string' },
@@ -129,6 +162,13 @@ async function collectWithEvidence(path) {
   const { appModel, skippedLines } = await collectRun(path);
   appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
   return { appModel, skippedLines };
+}
+
+function analyzeModel(model, options) {
+  return analyze(
+    model.app, model.stages, model.executors.added, model.executors.removed,
+    model.jobs, model.sql, model.runAggregates, options,
+  );
 }
 
 // The export's provenance stamp: this CLI's own name and version, and the build id of the core it
@@ -172,7 +212,99 @@ async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redac
   }
 }
 
-export async function main(argv, { fetchImpl } = {}) {
+const SHS_FLAG_BY_FIELD = { baseUrl: '--shs-base-url', appId: '--app-id', attemptId: '--attempt-id' };
+
+const EXIT = { PASS: 0, VIOLATION: 1, USAGE: 2, INCONCLUSIVE: 3, CANDIDATE_UNREADABLE: 4, BASELINE_UNREADABLE: 5, INTERNAL: 6 };
+
+// Worst-wins order of the exit codes several candidates can produce, least to most severe:
+// 0, 3, 1, 4, 5, 6. (2 is a usage error and exits before any candidate runs.)
+const EXIT_SEVERITY = Object.fromEntries([0, 3, 1, 4, 5, 6].map((code, rank) => [code, rank]));
+
+// Marks a read/parse failure with the exit code of the log it came from.
+const unreadable = (promise, exitCode) => promise.catch((e) => { e.exitCode = exitCode; throw e; });
+
+// The --redact stand-in for a log failure's own message, which may carry the log path (and so the app id).
+const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode === EXIT.INTERNAL ? 'analyzed' : 'read or parsed'}.`;
+
+// One baseline against several candidates, one NDJSON line each. The baseline is parsed and
+// analyzed once; candidates run one at a time so only one parsed log is held at once. A candidate
+// that cannot be read or parsed yields an "error" line (exit code 4) and the rest still run. Under --redact
+// a candidate is named by its position (candidate-1, ...): log file names usually carry the app id.
+async function runMultiLog({ candidatePaths, baselinePath, budgets, thresholds, findingsFilter, redact, outPath }) {
+  let baselineAppModel;
+  try {
+    ({ appModel: baselineAppModel } = await collectWithEvidence(baselinePath));
+  } catch (e) {
+    process.stderr.write(`${redact ? redactedFailure('The baseline', EXIT.BASELINE_UNREADABLE) : e.message}\n`);
+    process.exitCode = EXIT.BASELINE_UNREADABLE;
+    return;
+  }
+  const baselineCatalog = analyzeModel(baselineAppModel, { thresholds });
+  if (outPath) writeFileSync(outPath, '');
+  const emit = (line) => {
+    const text = `${JSON.stringify(line)}\n`;
+    if (outPath) appendFileSync(outPath, text);
+    else process.stdout.write(text);
+  };
+
+  let worstExit = 0;
+  for (const [index, path] of candidatePaths.entries()) {
+    const log = redact ? `candidate-${index + 1}` : path;
+    let line;
+    try {
+      const { appModel } = await unreadable(collectWithEvidence(path), EXIT.CANDIDATE_UNREADABLE);
+      const catalog = analyzeModel(appModel, { thresholds });
+      let comparison = buildComparison(
+        { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
+        { label: 'candidate', appModel, catalog },
+      );
+      if (redact) comparison = redactComparison(comparison);
+      const { json } = buildEvidenceReport(appModel, { redact, findingsFilter, markdown: false, thresholds });
+      const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
+      for (const r of results) {
+        if (r.status !== 'pass') process.stderr.write(`${log}: [${r.status === 'violation' ? 'violation' : 'inconclusive'}] ${r.name}: ${r.detail}\n`);
+      }
+      const exitCode = violated ? EXIT.VIOLATION : inconclusive ? EXIT.INCONCLUSIVE : EXIT.PASS;
+      line = {
+        log,
+        status: violated ? 'violation' : inconclusive ? 'inconclusive' : 'pass',
+        exitCode,
+        error: null,
+        budgets: results,
+        candidate: json,
+        comparison: {
+          verdict: comparisonVerdict(comparison),
+          confidence: comparison.confidence,
+          reason: comparison.reason,
+          matchedCoverage: comparison.matchedCoverage,
+          metrics: comparison.metrics,
+          findings: comparison.findings,
+        },
+      };
+    } catch (e) {
+      const exitCode = e.exitCode ?? EXIT.INTERNAL;
+      const error = redact ? redactedFailure(`Candidate ${index + 1}`, exitCode) : e.message;
+      process.stderr.write(`${log}: [error] ${error}\n`);
+      line = { log, status: 'error', exitCode, error, budgets: [], candidate: null, comparison: null };
+    }
+    emit(line);
+    if (EXIT_SEVERITY[line.exitCode] > EXIT_SEVERITY[worstExit]) worstExit = line.exitCode;
+  }
+  process.exitCode = worstExit;
+}
+
+// Any failure not handled below (a bug, an unwritable --out) exits 6 instead of crashing with
+// Node's own exit code, which would read as a violation.
+export async function main(argv, options) {
+  try {
+    await runCli(argv, options);
+  } catch (e) {
+    process.stderr.write(`Internal error: ${e?.stack ?? e}\n`);
+    process.exitCode = EXIT.INTERNAL;
+  }
+}
+
+async function runCli(argv, { fetchImpl } = {}) {
   let parsed;
   try {
     parsed = parseCliArgs(argv);
@@ -197,8 +329,15 @@ export async function main(argv, { fetchImpl } = {}) {
     if (values['app-id'] === undefined) {
       return bail(`--shs-base-url requires --app-id.\n${USAGE}`, 2);
     }
+    const { errors } = validateShsRequest({
+      baseUrl: values['shs-base-url'], appId: values['app-id'], attemptId: values['attempt-id'],
+    });
+    const invalid = Object.entries(errors).filter(([, message]) => message);
+    if (invalid.length > 0) {
+      return bail(`${invalid.map(([field, message]) => `Invalid ${SHS_FLAG_BY_FIELD[field]}: ${message}`).join('\n')}\n${USAGE}`, 2);
+    }
   } else {
-    if (positionals.length !== 1) {
+    if (positionals.length === 0 || (positionals.length > 1 && values.baseline === undefined)) {
       return bail(USAGE, 2);
     }
     if (values['app-id'] !== undefined || values['attempt-id'] !== undefined) {
@@ -206,8 +345,21 @@ export async function main(argv, { fetchImpl } = {}) {
     }
   }
 
-  if (values.format !== undefined && values.format !== 'json' && values.format !== 'md') {
-    return bail(`Invalid value for --format (expected "json" or "md").\n${USAGE}`, 2);
+  if (values.format !== undefined && !['json', 'md', 'ndjson'].includes(values.format)) {
+    return bail(`Invalid value for --format (expected "json", "md" or "ndjson").\n${USAGE}`, 2);
+  }
+  // Two or more candidates, or an explicit ndjson, run the multi-candidate mode.
+  const multiLog = !usingShs && (positionals.length > 1 || values.format === 'ndjson');
+  if (multiLog) {
+    if (values.baseline === undefined) return bail(`--format ndjson requires --baseline.\n${USAGE}`, 2);
+    if (values.format !== undefined && values.format !== 'ndjson') {
+      return bail(`Several candidate logs write NDJSON; --format ${values.format} cannot be combined with them.\n${USAGE}`, 2);
+    }
+    if (values['export-html'] !== undefined) {
+      return bail(`--export-html writes one dashboard and cannot be combined with several candidate logs.\n${USAGE}`, 2);
+    }
+  } else if (values.format === 'ndjson') {
+    return bail(`--format ndjson requires --baseline and a local candidate log.\n${USAGE}`, 2);
   }
 
   let exportHtmlDir;
@@ -230,9 +382,9 @@ export async function main(argv, { fetchImpl } = {}) {
   const usingBaseline = values.baseline !== undefined;
   // Single source of truth for which flags need --baseline: append a future
   // flag here rather than adding its own OR-condition (easy to forget).
-  const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced'];
+  const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced', 'regression-budget', 'budgets'];
   if (!usingBaseline && BASELINE_DEPENDENT_FLAGS.some((flag) => values[flag] !== undefined)) {
-    return bail(`--max-regression-pct/--regression-metric/--fail-on-introduced require --baseline.\n${USAGE}`, 2);
+    return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--fail-on-introduced require --baseline.\n${USAGE}`, 2);
   }
   if (values['regression-metric'] !== undefined && values['max-regression-pct'] === undefined) {
     return bail(`--regression-metric requires --max-regression-pct.\n${USAGE}`, 2);
@@ -266,6 +418,25 @@ export async function main(argv, { fetchImpl } = {}) {
   if (values['regression-metric'] !== undefined) budgets.regressionMetric = values['regression-metric'];
   if (values['fail-on-introduced'] !== undefined) budgets.failOnIntroduced = values['fail-on-introduced'];
 
+  // --regression-budget and --budgets add to the legacy pair; a metric budgeted twice is refused.
+  if (values['regression-budget'] !== undefined || values.budgets !== undefined) {
+    try {
+      const extra = (values['regression-budget'] ?? []).map((spec) => (
+        { origin: '--regression-budget', budget: parseRegressionBudgetFlag(spec) }));
+      if (values.budgets !== undefined) {
+        for (const budget of loadBudgetsFile(values.budgets)) extra.push({ origin: '--budgets', budget });
+      }
+      const legacy = budgets.maxRegressionPct === undefined ? [] : [{
+        origin: '--max-regression-pct/--regression-metric',
+        budget: { metric: budgets.regressionMetric ?? 'wallClock', maxPct: budgets.maxRegressionPct },
+      }];
+      combineRegressionBudgets([...legacy, ...extra]);
+      budgets.regressionBudgets = extra.map((e) => e.budget);
+    } catch (e) {
+      return bail(`${e.message}\n${USAGE}`, 2);
+    }
+  }
+
   const impactBand = splitCsv(values.impact);
   const type = splitCsv(values.type);
   let stageId;
@@ -287,43 +458,54 @@ export async function main(argv, { fetchImpl } = {}) {
     }
   }
 
+  if (multiLog) {
+    return runMultiLog({
+      candidatePaths: positionals, baselinePath: values.baseline, budgets, thresholds,
+      findingsFilter, redact: values.redact, outPath: values.out,
+    });
+  }
+
   let appModel;
   let baselineAppModel;
   // Assigned by every branch below before it's read.
   let skippedLines;
   try {
     if (usingShs) {
-      const shsPromise = resolveFromShs(
+      const shsPromise = unreadable(resolveFromShs(
         values['shs-base-url'], values['app-id'], values['attempt-id'],
         fetchImpl !== undefined ? { fetchImpl } : {},
-      );
+      ), EXIT.CANDIDATE_UNREADABLE);
       // SHS fetch (network) and local --baseline parse (disk) are independent,
       // so run them concurrently. Not done for local+local below: both are CPU
       // work, so parallelizing wouldn't help.
       if (usingBaseline) {
-        const [shsResult, baselineResult] = await Promise.all([shsPromise, collectWithEvidence(values.baseline)]);
-        ({ appModel, skippedLines } = shsResult);
-        baselineAppModel = baselineResult.appModel;
+        const [shsResult, baselineResult] = await Promise.allSettled([
+          shsPromise, unreadable(collectWithEvidence(values.baseline), EXIT.BASELINE_UNREADABLE),
+        ]);
+        // The baseline's failure wins, as it does for local logs (exit 5 outranks 4).
+        if (baselineResult.status === 'rejected') throw baselineResult.reason;
+        if (shsResult.status === 'rejected') throw shsResult.reason;
+        ({ appModel, skippedLines } = shsResult.value);
+        baselineAppModel = baselineResult.value.appModel;
       } else {
         ({ appModel, skippedLines } = await shsPromise);
       }
     } else {
-      ({ appModel, skippedLines } = await collectWithEvidence(positionals[0]));
+      // Baseline first, so a batch with both logs unreadable reports the worse exit code (5).
       if (usingBaseline) {
-        const baselineResult = await collectWithEvidence(values.baseline);
+        const baselineResult = await unreadable(collectWithEvidence(values.baseline), EXIT.BASELINE_UNREADABLE);
         baselineAppModel = baselineResult.appModel;
       }
+      ({ appModel, skippedLines } = await unreadable(collectWithEvidence(positionals[0]), EXIT.CANDIDATE_UNREADABLE));
     }
   } catch (e) {
-    process.stderr.write(`${e.message}\n`);
-    process.exitCode = 2;
+    const exitCode = e.exitCode ?? EXIT.INTERNAL;
+    const role = exitCode === EXIT.BASELINE_UNREADABLE ? 'The baseline' : 'The candidate';
+    process.stderr.write(`${values.redact ? redactedFailure(role, exitCode) : e.message}\n`);
+    process.exitCode = exitCode;
     return;
   }
 
-  const analyzeModel = (model, options) => analyze(
-    model.app, model.stages, model.executors.added, model.executors.removed,
-    model.jobs, model.sql, model.runAggregates, options,
-  );
   const catalog = analyzeModel(appModel, { thresholds });
 
   if (exportHtmlDir !== undefined) {
@@ -336,7 +518,7 @@ export async function main(argv, { fetchImpl } = {}) {
       await writeHtmlExport(exportHtmlDir, appModel, tuned ? analyzeModel(appModel) : catalog, skippedLines, { redact: values.redact });
     } catch (e) {
       process.stderr.write(`--export-html failed: ${e.message}\n`);
-      process.exitCode = 2;
+      process.exitCode = EXIT.INTERNAL;
       return;
     }
   }

@@ -153,7 +153,7 @@ describe('--export-html argument handling', () => {
     });
     try {
       const { status, stderr } = await runMainInProcess([logPath, '--export-html', destDir]);
-      expect(status).toBe(2);
+      expect(status).toBe(6);
       // The old, unguarded rename produced a bare "--export-html failed: EBUSY: ..." with no
       // guidance; the fix wraps it the same way a write failure already is, naming the temp dir
       // and telling the caller to remove it manually.

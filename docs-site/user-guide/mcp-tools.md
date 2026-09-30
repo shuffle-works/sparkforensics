@@ -275,7 +275,8 @@ runs, the check applies to the candidate.
 
 Each result's `name` is one of `max-runtime`, `max-spill`, `max-skew`,
 `max-failed-task-rate`, `min-efficiency`, `max-regression`,
-`fail-on-introduced` and `run-complete`. The returned `runId` is the first
+`fail-on-introduced` and `run-complete`. A `max-regression` result also
+carries `metric`, the key it checked. The returned `runId` is the first
 run's (the baseline, when two runs are given).
 
 Example call:
@@ -300,6 +301,7 @@ Example response:
   "results": [
     {
       "name": "max-regression",
+      "metric": "wallClock",
       "status": "violation",
       "detail": "Metric \"wallClock\" regressed 100.0%, exceeding budget 10%."
     },
