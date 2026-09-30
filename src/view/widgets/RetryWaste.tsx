@@ -32,16 +32,6 @@ function retryWasteAdvancedExtension(f: FindingOf<'retryWaste'>): string {
   return extended.replace(/, wasting \d+s of executor time\./, '.');
 }
 
-// `recommendation` restates the same wasted-time figure the stat line above
-// already shows, then a colon, then the actual advice; keep just the advice
-// half, always visible (unlike `extended`'s causes/cross-reference, this is
-// the one thing a Basic-tier reader needs to act on the finding).
-function retryWasteAction(f: Finding): string {
-  const recommendation = String(f.recommendation ?? '');
-  const adviceStart = recommendation.indexOf(': ');
-  return adviceStart === -1 ? recommendation : recommendation.slice(adviceStart + 2);
-}
-
 function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stageId: number } }) {
   const anchor = useAnchoredRow([finding]);
   return (
@@ -59,7 +49,6 @@ function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stage
         Wasted <strong>{formatDuration(numericValue(finding))}</strong> of executor time.
         {finding.extended ? <AdvancedOnly> {retryWasteAdvancedExtension(finding)}</AdvancedOnly> : null}
       </p>
-      {finding.recommendation ? <p className="text-xs text-muted-foreground">{retryWasteAction(finding)}</p> : null}
       <ImpactEstimate finding={finding} />
     </li>
   );
@@ -99,6 +88,7 @@ export function RetryWaste({ appModel, catalog, defaultCollapsed = true }: Retry
   return (
     <WidgetCard
       title="Retry Waste"
+      fixFor={findings}
       impactBand={worstImpactBand(findings)}
       badges={
         <>

@@ -376,7 +376,7 @@ describe('Skew', () => {
     const catalog: Finding[] = [{
       ...skewFinding(1, 8),
       confidence: 'low',
-      validationRequired: "This overlaps with the straggler finding on this stage: both are driven by the same dominant outlier task, so don't add their recoverable-time figures together.",
+      validationRequired: "This overlaps with the straggler finding on this stage: both measure the same slow-task tail, so don't add their recoverable-time figures together.",
     }];
     const getTaskData = vi.fn(async () => TASK_DATA);
 

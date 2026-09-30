@@ -167,3 +167,14 @@ test('confidence and evidence markers stay out of the summary view until the car
   expect(screen.getByRole('button', { name: /evidence:/i })).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
 });
+
+test('a row shows what it measured and the card states the fix once', () => {
+  renderWidget([
+    finding({ direction: 'write', recommendation: '199 small files were written at InsertIntoHadoopFsRelationCommand: repartition or coalesce before writing to raise the average file size.' }),
+    finding({ executionId: 2, stageIds: [7], direction: 'write', recommendation: '50 small files were written at InsertIntoHadoopFsRelationCommand: repartition or coalesce before writing to raise the average file size.' }),
+  ]);
+  expect(screen.getByText(/^199 small files were written at InsertIntoHadoopFsRelationCommand/)).toBeInTheDocument();
+  expect(screen.getByText(/^50 small files were written at InsertIntoHadoopFsRelationCommand/)).toBeInTheDocument();
+  expect(screen.getAllByText(/repartition or coalesce before writing/i)).toHaveLength(1);
+  expect(screen.getByText('Repartition or coalesce before writing to raise the average file size.')).toBeInTheDocument();
+});

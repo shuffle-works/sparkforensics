@@ -272,7 +272,7 @@ function DashboardContent() {
   const showFindings = useCallback(() => setActiveTab('findings'), []);
   const showFullReport = useCallback(() => setActiveTab('full-report'), []);
   useTriageShortcuts({ enabled: density === 'advanced', showFindings, showFullReport });
-  const { referenceOpen } = useEvidenceAvailabilityDisclosure();
+  const { revealRequest } = useEvidenceAvailabilityDisclosure();
   const [routeRequest, setRouteRequest] = useState<RouteRequest | null>(null);
   const [routeFocusedWidgetId, setRouteFocusedWidgetId] = useState<string | null>(null);
   const [flashedFinding, setFlashedFinding] = useState<Finding | null>(null);
@@ -301,13 +301,15 @@ function DashboardContent() {
     };
   }, []);
 
-  // `revealEvidence` (evidence links across the app) sets `referenceOpen`
-  // true to mean "the reader wants Full app report visible"; under the tab
-  // layout that means switching to that tab rather than expanding an
-  // accordion.
-  useEffect(() => {
-    if (referenceOpen) setActiveTab('full-report');
-  }, [referenceOpen]);
+  // Every `revealEvidence` call (evidence links across the app) bumps
+  // `revealRequest`, and each bump switches to the Full app report tab where
+  // the ledger lives, even after the reader has gone back to Findings. A
+  // layout effect, so the tab is visible before the provider's queued row
+  // focus runs: both panels stay mounted, and a row in the hidden panel
+  // can't take focus.
+  useLayoutEffect(() => {
+    if (revealRequest > 0) setActiveTab('full-report');
+  }, [revealRequest]);
 
   const clearRoute = useCallback((token: number) => {
     if (routeRef.current?.token !== token) return;

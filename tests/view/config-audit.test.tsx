@@ -171,7 +171,7 @@ test('renders a doc link naming the property it explains, for every triggered pr
   expect(screen.getByText(/external shuffle service is off/i)).toBeInTheDocument();
 });
 
-test('the recommendation is always visible per row, with no toggle to hide it', async () => {
+test('each row shows what it measured and the card states its fix once, with no toggle', async () => {
   const user = userEvent.setup();
   renderWidget({
     config: { 'spark.dynamicAllocation.maxExecutors': '10' },
@@ -182,11 +182,12 @@ test('the recommendation is always visible per row, with no toggle to hide it', 
   const collapseButton = screen.getByRole('button', { name: /config audit/i });
   await user.click(collapseButton);
 
-  const recommendation = /external shuffle service is off/i;
-  expect(screen.getByText(recommendation)).toBeInTheDocument();
+  expect(screen.getByText(/external shuffle service is off/i)).toBeInTheDocument();
+  expect(screen.getByText('Set spark.shuffle.service.enabled=true so shuffle data survives executor removal.')).toBeInTheDocument();
+  expect(screen.getAllByText(/spark\.shuffle\.service\.enabled=true/)).toHaveLength(1);
   expect(screen.getByRole('link', { name: /why spark\.shuffle\.service\.enabled matters/i })).toBeInTheDocument();
 
-  // The per-row expand/collapse toggle was removed; there's nothing left to hide the recommendation.
+  // No per-row expand/collapse toggle.
   expect(screen.queryByRole('button', { name: /recommendation for spark\.shuffle\.service\.enabled/i })).not.toBeInTheDocument();
 });
 
