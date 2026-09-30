@@ -3,6 +3,28 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { main } from '../bin/sparkforensics-analyze.mjs';
+import { shsZipFetch } from '../../../tests/helpers/shs-fixtures.js';
+
+// The bin loads core from vendor-core/ when a fresh copy exists, else from core/src/: fail the
+// comparison of one sentinel app in either, to reach the per-candidate internal-error path.
+const { FAILING_APP_ID, failComparisonFor } = vi.hoisted(() => {
+  const failingAppId = 'application_0000000000000_0666';
+  return {
+    FAILING_APP_ID: failingAppId,
+    failComparisonFor: async (importOriginal) => {
+      const actual = await importOriginal();
+      return {
+        ...actual,
+        buildComparison: (baseline, candidate) => {
+          if (candidate.appModel.app.id === failingAppId) throw new Error('comparison failed');
+          return actual.buildComparison(baseline, candidate);
+        },
+      };
+    },
+  };
+});
+vi.mock('../../core/src/run-comparison.ts', failComparisonFor);
+vi.mock('../vendor-core/run-comparison.js', failComparisonFor);
 
 // Synthetic single-stage log: ten tasks, the last `slowMs` long, finishing at `slowMs`.
 function log({ slowMs }) {
@@ -38,16 +60,17 @@ beforeAll(() => {
   writeFileSync(p('slower'), log({ slowMs: 4000 }));
   writeFileSync(p('cut-off'), `${CUT_OFF}\n`);
   writeFileSync(p('garbage'), 'this is not an event log\n');
+  writeFileSync(p('fails-analysis'), log({ slowMs: 2000 }).replace('application_0000000000000_0001', FAILING_APP_ID));
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-async function run(argv) {
+async function run(argv, options) {
   const out = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
   const err = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
   const previous = process.exitCode;
   process.exitCode = undefined;
   try {
-    await main(argv);
+    await main(argv, options);
     const stdout = out.mock.calls.map(([c]) => c).join('');
     return {
       status: process.exitCode,
@@ -125,6 +148,20 @@ describe('several candidate logs', () => {
       expect(lines.map((l) => l.exitCode)).toEqual(lineCodes);
       expect(status).toBe(aggregate);
     }
+  });
+
+  it('turns an internal failure on one candidate into an exit-6 error line, and keeps going', async () => {
+    const { status, lines } = await run([p('fails-analysis'), p('same'), '--baseline', p('baseline')]);
+    expect(lines.map((l) => [l.status, l.exitCode])).toEqual([['error', 6], ['pass', 0]]);
+    expect(lines[0]).toMatchObject({ log: p('fails-analysis'), candidate: null, comparison: null, budgets: [] });
+    expect(status).toBe(6);
+  });
+
+  it('writes a generic message for an internal failure under --redact', async () => {
+    const { status, stdout, stderr, lines } = await run([p('fails-analysis'), p('same'), '--baseline', p('baseline'), '--redact']);
+    expect(lines[0]).toMatchObject({ log: 'candidate-1', status: 'error', exitCode: 6, error: 'The candidate could not be analyzed.' });
+    expect(stdout + stderr).not.toContain(dir);
+    expect(status).toBe(6);
   });
 
   it('exits 6 when the output cannot be written', async () => {
@@ -278,6 +315,20 @@ describe('single-candidate exit codes for unreadable input', () => {
     const { status, stderr } = await run([p('same'), '--out', p('no-such-dir/report.json')]);
     expect(status).toBe(6);
     expect(stderr).toMatch(/^Internal error/);
+  });
+
+  it('exits 4 when the --shs-base-url fetch fails', async () => {
+    const shs = ['--shs-base-url', 'http://shs:18080', '--app-id', 'application_0000000000000_0001'];
+    const fetchImpl = shsZipFetch('', { status: 500 });
+    expect((await run(shs, { fetchImpl })).status).toBe(4);
+    expect((await run([...shs, '--baseline', p('baseline')], { fetchImpl })).status).toBe(4);
+  });
+
+  it('exits 5, not 4, when the --shs-base-url fetch and the --baseline both fail', async () => {
+    const shs = ['--shs-base-url', 'http://shs:18080', '--app-id', 'application_0000000000000_0001'];
+    const fetchImpl = shsZipFetch('', { status: 500 });
+    expect((await run([...shs, '--baseline', p('garbage')], { fetchImpl })).status).toBe(5);
+    expect((await run([...shs, '--baseline', p('missing')], { fetchImpl })).status).toBe(5);
   });
 
   it('keeps exit 2 for usage errors and a bad budgets file', async () => {
