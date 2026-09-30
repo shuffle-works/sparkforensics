@@ -23,13 +23,13 @@ const loadCore = (moduleName, opts) => loadVendored(pkgDir, moduleName, opts);
 const { collectRun } = await loadCore('cli/collect-run');
 const { resolveFromShs } = await loadCore('shs-load');
 const { validateShsRequest } = await loadCore('shs-request', { srcExt: 'js' });
-const { analyze } = await loadCore('analyzer');
+const { analyze, auditConfig } = await loadCore('analyzer');
 const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
 const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
 const { evaluateBudgets } = await loadCore('cli/budgets');
 const { buildComparison, renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
 const { comparisonVerdict } = await loadCore('comparison-verdict');
-const { redactComparison } = await loadCore('redact');
+const { redactComparison, redactRunModel } = await loadCore('redact');
 const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
 const { runPayloadScript } = await loadCore('run-payload');
 const { loadThresholdOverrides } = await loadCore('cli/threshold-config');
@@ -560,13 +560,14 @@ async function runCli(argv, { fetchImpl } = {}) {
   const { markdown, json } = buildEvidenceReport(appModel, {
     redact: values.redact, findingsFilter, markdown: values.format === 'md', thresholds,
   });
-  // Additive blocks on the report: each carries its own schemaVersion. --redact pseudonymizes the
-  // metrics block's stage fingerprints (they hold raw stage names) like the comparison section.
-  const metrics = computeRunMetrics(appModel, thresholds);
-  const effectiveConf = buildEffectiveConf(appModel.app, {
-    keys: confKeys, userPattern: values['conf-redact-regex'], redactIdentifiers: values.redact,
-  });
-  const machineReadable = values.redact ? redactComparison({ metrics, effectiveConf }) : { metrics, effectiveConf };
+  // Additive blocks on the report: each carries its own schemaVersion. Under --redact they come
+  // from the run redacted with the report's own inputs, so host and app pseudonyms in stage
+  // fingerprints and conf values match the report's.
+  const blocksModel = values.redact ? redactRunModel(appModel, catalog, auditConfig(appModel.app)).appModel : appModel;
+  const machineReadable = {
+    metrics: computeRunMetrics(blocksModel, thresholds),
+    effectiveConf: buildEffectiveConf(blocksModel.app, { keys: confKeys, userPattern: values['conf-redact-regex'] }),
+  };
   let output;
   if (values.format === 'md') {
     output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonVerdict(comparison))}\n` : `${markdown}\n`;

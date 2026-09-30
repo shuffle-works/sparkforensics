@@ -534,12 +534,12 @@ log cut off before any executor joined has null allocation.
 | `data.inputBytes`, `data.outputBytes`, `data.outputRows` | Summed input, output and rows written. `outputRows` is null when no task reported rows. |
 | `data.peakExecutionMemoryBytes` | The largest per-task peak execution memory. Null when every task reports 0. |
 | `shape.taskCount`, `shape.stageCount` | Distinct task records and stages. |
-| `shape.failedStages` | Stages with a recorded failure reason. |
-| `shape.retriedStages` | Stages where at least one task attempt was retried. |
-| `shape.failedTasks`, `shape.retriedTasks` | Tasks whose final attempt failed, and attempts superseded by a retry. |
+| `shape.failedStageAttempts` | Stage attempts that ended with a failure reason, including an attempt Spark then resubmitted (a fetch failure, for example). |
+| `shape.retriedStages` | Stages submitted more than once. |
+| `shape.failedTasks`, `shape.retriedTasks` | Task-level counts: tasks whose final attempt failed, and task attempts superseded by a retry. |
 | `shape.maxSkew` | The largest stage skew ratio, the figure `--max-skew` checks (P95 over median, or max over median for a stage with few tasks; `skew.minTasksForP95` from `--thresholds` applies). |
 | `allocation.coreHours`, `allocation.memoryGbHours` | See [Allocation](#allocation). |
-| `python.shareOfTaskRunTime`, `python.stageCount` | See [Python share](#python-share). |
+| `python.shareOfTaskRunTime` | See [Python share](#python-share). |
 | `stages` | The per-stage rows. |
 
 `stages` holds one row per stage fingerprint, keyed by the same fingerprint
@@ -550,9 +550,13 @@ repeats and lists them in `stageIds`. A row carries `durationMs`,
 `executorCpuTimeMs`, `executorRunTimeMs`, `gcTimeMs`, the spill, shuffle,
 input and output figures, `outputRows`, `peakExecutionMemoryBytes`,
 `taskCount`, `failedTasks`, `retriedTasks` and `skew` (the largest skew ratio
-among the repeats) as above, plus `failed`, `retried` and `python` flags.
-`--redact` pseudonymizes host and application id tokens in the keys, as it
-does in the comparison section.
+among the repeats) as above, plus `failed` (an attempt of the stage failed),
+`retried` (the stage was submitted more than once) and `python` flags. The
+stage-attempt figures, run-level and per row, are null for a stage record
+that carries no attempt count. With `--redact` the `metrics` and
+`effectiveConf` blocks are built from the redacted run the report uses, so
+they carry the same `host-N` and `app-N` pseudonyms: the keys come from
+redacted stage names.
 
 #### Allocation
 
@@ -588,8 +592,9 @@ A stage is a Python stage when either signal holds:
 
 - a plan node attributed to it is a Python operator (`PythonRDD`,
   `BatchEvalPython`, `ArrowEvalPython`, `PythonMapInArrow`, or a pandas/Arrow
-  grouped or map operator such as `FlatMapGroupsInPandas`), which catches
-  Python UDFs inside SQL;
+  grouped or map operator such as `FlatMapGroupsInPandas`, including suffixed
+  variants such as `BatchEvalPythonUDTF` and `FlatMapGroupsInPandasWithState`),
+  which catches Python UDFs and UDTFs inside SQL;
 - its name or call site names `PythonRDD` or `org.apache.spark.api.python`,
   which catches RDD lambdas that have no plan and stages that cannot be
   matched to one.
@@ -609,11 +614,10 @@ null when the log records no Spark properties. With `--baseline` it is inside
 - `maskedKeys`: properties present in the log whose value is withheld.
 - `absentKeys`: with `--conf-keys`, the requested properties the log does not
   contain.
-- `redaction`: the patterns that decided what to withhold.
 
-A value is withheld when its key matches Spark's default secret pattern
-(`(?i)secret|password|token|access[.]?key`), when the key or value matches the
-job's own `spark.redaction.regex` (when the log records one; if that pattern
+A value is withheld when its key or value matches Spark's default secret
+pattern (`(?i)secret|password|token|access[.]?key`), as Spark's own redaction
+does, when the key or value matches the job's own `spark.redaction.regex` (when the log records one; if that pattern
 uses syntax JavaScript cannot evaluate, every value is withheld), or when the
 key or value matches `--conf-redact-regex <pattern>`. A withheld property
 shows that it is present, not what it is set to, so the output cannot tell you
@@ -621,11 +625,17 @@ whether a masked property has the value you expected. No hash or other
 derivative of a withheld value is emitted.
 
 In every other value that looks like a URL, credentials are replaced with
-`[redacted]`: `user:password@host` userinfo, JDBC-style `password=`
-parameters, and signature parameters such as Azure SAS `sig=` and
-`X-Amz-Signature=`. `--conf-keys a,b` narrows `values` and `maskedKeys` to the
-named properties. With `--redact`, host-name properties (`*.host`,
-`*.hostname`) and `spark.app.name` are withheld as well.
+`[redacted]`: `user:password@host` userinfo, the Oracle thin
+`user/password@host` form, JDBC-style `pwd=` and `passwd=` parameters, and
+signature parameters such as Azure SAS `sig=` and `X-Amz-Signature=`.
+`--conf-keys a,b` narrows `values` and `maskedKeys` to the named properties.
+
+With `--redact`, the host names the report pseudonymizes become `host-N` in
+every value: the values of `*.host` and `*.hostname` properties, executor
+hosts, and IP or EC2-style addresses. `spark.app.name` becomes the
+application's `app-N` pseudonym. A host name that appears only in some other
+property, such as `spark.yarn.historyServer.address`, is left as is; withhold
+it with `--conf-redact-regex` or leave it out with `--conf-keys`.
 
 ### Regression metric keys
 

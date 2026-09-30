@@ -31,12 +31,20 @@ describe('buildEffectiveConf', () => {
     }));
     expect(conf.maskedKeys).toEqual(['spark.my.PRIVATE.thing', 'spark.plain', 'spark.redaction.regex']);
     expect(conf.values['spark.ok']).toBe('fine');
-    expect(conf.redaction).toMatchObject({ jobPattern: '(?i)private|jdbc', jobPatternUsable: true });
+  });
+
+  it('applies the default secret pattern to values as well as keys, as Spark does', () => {
+    const conf = buildEffectiveConf(app({
+      'spark.driver.extraJavaOptions': '-Djavax.net.ssl.keyStorePassword=x',
+      'spark.api.url': 'https://h/api?access_token=x',
+      'spark.plain': 'value',
+    }));
+    expect(conf.maskedKeys).toEqual(['spark.api.url', 'spark.driver.extraJavaOptions']);
+    expect(conf.values).toEqual({ 'spark.plain': 'value' });
   });
 
   it('withholds every value when the job\'s pattern cannot be evaluated', () => {
     const conf = buildEffectiveConf(app({ 'spark.redaction.regex': '(?<n>a)\\k<m>(', 'spark.a': '1' }));
-    expect(conf.redaction.jobPatternUsable).toBe(false);
     expect(conf.values).toEqual({});
     expect(conf.maskedKeys).toEqual(['spark.a', 'spark.redaction.regex']);
   });
@@ -63,12 +71,8 @@ describe('buildEffectiveConf', () => {
 
   it('never emits a hash or other derivative of a withheld value', () => {
     const conf = buildEffectiveConf(app({ 'spark.a.password': 'hunter2' }));
-    expect(Object.keys(conf).sort()).toEqual(['absentKeys', 'maskedKeys', 'redaction', 'schemaVersion', 'values']);
-  });
-
-  it('withholds host names and the app name under redactIdentifiers', () => {
-    const conf = buildEffectiveConf(app({ 'spark.driver.host': 'node-7', 'spark.app.name': 'job', 'spark.a': '1' }), { redactIdentifiers: true });
-    expect(conf.maskedKeys).toEqual(['spark.app.name', 'spark.driver.host']);
+    expect(Object.keys(conf).sort()).toEqual(['absentKeys', 'maskedKeys', 'schemaVersion', 'values']);
+    expect(JSON.stringify(conf)).not.toContain('hunter2');
   });
 });
 
@@ -84,6 +88,12 @@ describe('stripUrlCredentials', () => {
       .toBe('https://acct.blob.core.windows.net/c?sv=2021&sig=[redacted]&se=2030');
     expect(stripUrlCredentials('https://b.s3.amazonaws.com/k?X-Amz-Signature=abcd&X-Amz-Expires=60'))
       .toBe('https://b.s3.amazonaws.com/k?X-Amz-Signature=[redacted]&X-Amz-Expires=60');
+  });
+
+  it('removes the password of the Oracle thin user/password@ form', () => {
+    expect(stripUrlCredentials('jdbc:oracle:thin:scott/tiger@//db:1521/orcl')).toBe('jdbc:oracle:thin:scott/[redacted]@//db:1521/orcl');
+    expect(stripUrlCredentials('jdbc:oracle:thin:scott/tiger@db:1521:orcl')).toBe('jdbc:oracle:thin:scott/[redacted]@db:1521:orcl');
+    expect(stripUrlCredentials('jdbc:oracle:thin:@//db:1521/orcl')).toBe('jdbc:oracle:thin:@//db:1521/orcl');
   });
 
   it('leaves non-URL values and credential-free URLs alone', () => {

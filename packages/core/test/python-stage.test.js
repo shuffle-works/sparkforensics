@@ -10,7 +10,10 @@ const sqlWith = (nodeName, stageId, execId = 1) => new Map([[execId, {
 }]]);
 
 describe('isPythonStage', () => {
-  it.each(['BatchEvalPython', 'ArrowEvalPython', 'PythonRDD', 'FlatMapGroupsInPandas', 'MapInPandas', 'PythonMapInArrow'])(
+  it.each([
+    'BatchEvalPython', 'ArrowEvalPython', 'PythonRDD', 'FlatMapGroupsInPandas', 'MapInPandas', 'PythonMapInArrow',
+    'BatchEvalPythonUDTF', 'ArrowEvalPythonUDTF', 'FlatMapGroupsInPandasWithState', '*(2) ArrowEvalPython',
+  ])(
     'matches a %s plan node attributed to the stage', (node) => {
       expect(isPythonStage(makeStage({ id: 4, sqlExecutionId: 1 }), sqlWith(node, 4))).toBe(true);
     });

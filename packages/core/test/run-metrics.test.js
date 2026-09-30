@@ -56,7 +56,7 @@ describe('computeRunMetrics on a parsed log', () => {
       END,
     ]);
     const m = computeRunMetrics(appModel);
-    expect(m.python).toEqual({ shareOfTaskRunTime: 0, stageCount: 0 });
+    expect(m.python).toEqual({ shareOfTaskRunTime: 0 });
     expect(m.schemaVersion).toBe(METRICS_SCHEMA_VERSION);
     expect(m.runComplete).toBe(true);
     expect(m.time).toEqual({ wallClockMs: 3600000, executorCpuTimeMs: 300, executorRunTimeMs: 600, gcTimeMs: 15 });
@@ -64,11 +64,11 @@ describe('computeRunMetrics on a parsed log', () => {
       memorySpillBytes: 200, diskSpillBytes: 100, shuffleReadBytes: 45, shuffleWriteBytes: 21,
       inputBytes: 3000, outputBytes: 1500, outputRows: 17, peakExecutionMemoryBytes: 128,
     });
-    expect(m.shape).toMatchObject({ taskCount: 3, stageCount: 2, failedStages: 0, retriedStages: 0, failedTasks: 0, retriedTasks: 0 });
+    expect(m.shape).toMatchObject({ taskCount: 3, stageCount: 2, failedStageAttempts: 0, retriedStages: 0, failedTasks: 0, retriedTasks: 0 });
     const keys = Object.keys(m.stages);
     expect(keys).toEqual([...appModel.stages.values()].map((s) => stageIdentity(s, appModel)));
     const first = m.stages[keys[0]];
-    expect(first).toMatchObject({ stageIds: [1], taskCount: 2, executorCpuTimeMs: 200, outputRows: 7, durationMs: 1000, python: false });
+    expect(first).toMatchObject({ stageIds: [1], taskCount: 2, executorCpuTimeMs: 200, outputRows: 7, durationMs: 1000, failed: false, retried: false, python: false });
   });
 
   it('computes allocation from executor lifecycle, closing survivors at application end', async () => {
@@ -84,16 +84,46 @@ describe('computeRunMetrics on a parsed log', () => {
     expect(allocation.memoryGbHours).toBeCloseTo(5 * 0.5 + 5 * 0.5, 10);
   });
 
-  it('counts the failed and retried stages and tasks', () => {
+  it('counts stage attempts across a resubmit, apart from task retries', async () => {
+    const completed = (id, reason) => JSON.stringify({
+      Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': id, 'Submission Time': 1000, 'Completion Time': 2000, ...(reason ? { 'Failure Reason': reason } : {}) },
+    });
+    const submitted = (id, attempt) => JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': id, 'Stage Attempt ID': attempt, 'Stage Name': 'reduce', 'Submission Time': 1000 } });
+    const appModel = await model([
+      START,
+      // Attempt 0 hits a fetch failure; attempt 1 succeeds, so the final record has no failure reason.
+      submitted(1, 0), taskEnd(1, 0, { failed: true }), completed(1, 'FetchFailed'),
+      submitted(1, 1), taskEnd(1, 1), completed(1),
+      ...stageLines(2, 'map', [taskEnd(2, 0)]),
+      END,
+    ]);
+    const m = computeRunMetrics(appModel);
+    expect(m.shape).toMatchObject({ stageCount: 2, failedStageAttempts: 1, retriedStages: 1 });
+    const rows = Object.values(m.stages);
+    expect(rows.map((r) => [r.stageIds, r.failed, r.retried])).toEqual([[[1], true, true], [[2], false, false]]);
+  });
+
+  it('keeps task-level failures and retries in failedTasks / retriedTasks', () => {
     const appModel = {
       app: makeApp(), sql: new Map(), jobs: new Map(), executors: { added: [], removed: [] },
       stages: new Map([
-        [1, makeStage({ id: 1, name: 'a', stageFailureReason: 'boom', failedTasks: 3, taskCount: 4 })],
-        [2, makeStage({ id: 2, name: 'b', wastedAttempts: 2 })],
+        [1, makeStage({ id: 1, name: 'a', stageAttempts: 1, failedStageAttempts: 0, failedTasks: 3, taskCount: 4 })],
+        [2, makeStage({ id: 2, name: 'b', stageAttempts: 1, failedStageAttempts: 0, wastedAttempts: 2 })],
       ]),
     };
     const m = computeRunMetrics(appModel);
-    expect(m.shape).toMatchObject({ failedStages: 1, retriedStages: 1, failedTasks: 3, retriedTasks: 2 });
+    expect(m.shape).toMatchObject({ failedStageAttempts: 0, retriedStages: 0, failedTasks: 3, retriedTasks: 2 });
+  });
+
+  it('reports null stage-attempt figures when a stage record carries no attempt count', () => {
+    const appModel = {
+      app: makeApp(), sql: new Map(), jobs: new Map(), executors: { added: [], removed: [] },
+      stages: new Map([[1, makeStage({ id: 1, name: 'a' })]]),
+    };
+    const m = computeRunMetrics(appModel);
+    expect(m.shape).toMatchObject({ failedStageAttempts: null, retriedStages: null });
+    expect(Object.values(m.stages)[0]).toMatchObject({ failed: null, retried: null });
   });
 });
 
@@ -164,7 +194,7 @@ describe('python share', () => {
       ]),
     };
     const { python, stages } = computeRunMetrics(appModel);
-    expect(python).toEqual({ shareOfTaskRunTime: 0.5, stageCount: 2 });
+    expect(python).toEqual({ shareOfTaskRunTime: 0.5 });
     expect(Object.values(stages).map((r) => r.python)).toEqual([true, true, false]);
   });
 });

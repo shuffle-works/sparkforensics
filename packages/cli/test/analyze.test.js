@@ -928,8 +928,8 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
       const { stdout } = runCli([path]);
       const { effectiveConf } = JSON.parse(stdout);
       expect(effectiveConf.values['spark.sql.shuffle.partitions']).toBe('64');
-      expect(effectiveConf.maskedKeys).toEqual(['spark.hadoop.fs.s3a.secret.key']);
-      expect(effectiveConf.values['spark.jdbc.url']).toBe('jdbc:sqlserver://db:1433;user=u;password=[redacted];encrypt=true');
+      // The default secret pattern matches the JDBC URL's value ("password"), as in Spark.
+      expect(effectiveConf.maskedKeys).toEqual(['spark.hadoop.fs.s3a.secret.key', 'spark.jdbc.url']);
       expect(effectiveConf.values['spark.storage.url']).toContain('sig=[redacted]');
       for (const leaked of ['top-secret-value', 'hunter2', 'SASSIGNATURE']) expect(stdout).not.toContain(leaked);
     });
@@ -966,14 +966,20 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
     });
   });
 
-  it('withholds host and app-name conf values under --redact', () => {
+  it('pseudonymizes a conf host name wherever it appears under --redact', () => {
     const base = ndjsonWithConf().trimEnd().split('\n');
-    base[1] = JSON.stringify({ Event: 'SparkListenerEnvironmentUpdate', 'Spark Properties': { 'spark.driver.host': 'node-7.internal', 'spark.app.name': 'customer-job', 'spark.a': '1' } });
+    base[1] = JSON.stringify({ Event: 'SparkListenerEnvironmentUpdate', 'Spark Properties': {
+      'spark.driver.host': 'node-7.internal', 'spark.driver.appUIAddress': 'http://node-7.internal:4040',
+      'spark.app.name': 'customer-job', 'spark.a': '1',
+    } });
     withLog(`${base.join('\n')}\n`, (path) => {
       const { stdout } = runCli([path, '--redact']);
       expect(stdout).not.toContain('node-7.internal');
       expect(stdout).not.toContain('customer-job');
-      expect(JSON.parse(stdout).effectiveConf.values).toEqual({ 'spark.a': '1' });
+      const { values } = JSON.parse(stdout).effectiveConf;
+      expect(values['spark.driver.host']).toMatch(/^host-\d+$/);
+      expect(values['spark.driver.appUIAddress']).toBe(`http://${values['spark.driver.host']}:4040`);
+      expect(values['spark.a']).toBe('1');
     });
   });
 });

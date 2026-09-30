@@ -35,8 +35,10 @@ export interface StageMetrics {
 export interface StageMetricsRow extends StageMetrics {
   /** Every stage id that folded into this fingerprint (a stage repeated in a loop shares one). */
   stageIds: number[];
-  failed: boolean;
-  retried: boolean;
+  /** A stage attempt failed / the stage was submitted more than once; null when a stage record
+   * carries no attempt count. */
+  failed: boolean | null;
+  retried: boolean | null;
   python: boolean;
 }
 
@@ -53,14 +55,16 @@ export interface RunMetrics {
     peakExecutionMemoryBytes: number | null;
   };
   shape: {
-    taskCount: number | null; stageCount: number; failedStages: number; retriedStages: number;
+    taskCount: number | null; stageCount: number;
+    /** Stage attempts that failed, and stages submitted more than once (null when a stage record
+     * carries no attempt count). Task-level retries are failedTasks / retriedTasks. */
+    failedStageAttempts: number | null; retriedStages: number | null;
     failedTasks: number | null; retriedTasks: number | null; maxSkew: number | null;
   };
   allocation: Allocation;
   python: {
     /** Task run time of Python stages over all task run time; null without task run time. */
     shareOfTaskRunTime: number | null;
-    stageCount: number;
   };
   stages: Record<string, StageMetricsRow>;
 }
@@ -95,6 +99,18 @@ function maxSkew(stages: Stage[], minTasksForP95: number): number | null {
     .map((s) => computeSkewRatio(s, minTasksForP95)?.ratio)
     .filter((r): r is number => finite(r));
   return ratios.length > 0 ? Math.max(...ratios) : null;
+}
+
+// Failed stage attempts and stages submitted more than once, from the parser's per-stage attempt
+// counts; null when any stage record lacks them.
+function stageAttempts(stages: Stage[]): { failed: number; retried: number } | null {
+  let failed = 0, retried = 0;
+  for (const s of stages) {
+    if (!finite(s.stageAttempts) || !finite(s.failedStageAttempts)) return null;
+    failed += s.failedStageAttempts;
+    if (s.stageAttempts > 1) retried++;
+  }
+  return { failed, retried };
 }
 
 // Metrics of a set of stages; a row folds the stages sharing one fingerprint.
@@ -141,16 +157,18 @@ export function computeRunMetrics(appModel: AppModel, thresholds?: ThresholdOver
   }
   const stages: Record<string, StageMetricsRow> = {};
   for (const [key, group] of byFingerprint) {
+    const attempts = stageAttempts(group);
     stages[key] = {
       stageIds: group.map((s) => s.id).sort((a, b) => a - b),
-      failed: group.some((s) => s.stageFailureReason != null),
-      retried: group.some((s) => ((s.wastedAttempts as number | undefined) ?? 0) > 0),
+      failed: attempts ? attempts.failed > 0 : null,
+      retried: attempts ? attempts.retried > 0 : null,
       python: group.some((s) => isPythonStage(s, appModel.sql)),
       ...stageMetrics(group, minTasksForP95),
     };
   }
 
   const all = stageMetrics(stageList, minTasksForP95);
+  const attempts = stageAttempts(stageList);
   return {
     schemaVersion: METRICS_SCHEMA_VERSION,
     runComplete: appModel.app?.endTime != null,
@@ -169,8 +187,8 @@ export function computeRunMetrics(appModel: AppModel, thresholds?: ThresholdOver
     shape: {
       taskCount: all.taskCount,
       stageCount: stageList.length,
-      failedStages: stageList.filter((s) => s.stageFailureReason != null).length,
-      retriedStages: stageList.filter((s) => ((s.wastedAttempts as number | undefined) ?? 0) > 0).length,
+      failedStageAttempts: attempts?.failed ?? null,
+      retriedStages: attempts?.retried ?? null,
       failedTasks: all.failedTasks,
       retriedTasks: all.retriedTasks,
       maxSkew: all.skew,
@@ -178,7 +196,6 @@ export function computeRunMetrics(appModel: AppModel, thresholds?: ThresholdOver
     allocation: computeAllocation(appModel),
     python: {
       shareOfTaskRunTime: runTimeMs != null && runTimeMs > 0 ? (pythonRunTimeMs ?? 0) / runTimeMs : null,
-      stageCount: python.length,
     },
     stages,
   };

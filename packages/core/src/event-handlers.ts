@@ -159,6 +159,10 @@ interface StageRecord {
   speculativeTasks: number;
   failureReasons: Map<string, number>;
   stageFailureReason: string | null;
+  // Submissions of this stage id and the ones that completed with a failure reason. A resubmitted
+  // stage replaces its record (submitStage), so both carry over from the replaced one.
+  stageAttempts: number;
+  failedStageAttempts: number;
   taskAttempts: Map<string | symbol, TaskRecord> | null;
   // Distinct failures seen so far, by taskFailureKey; freed with taskAttempts at finalize.
   failureDetails: Map<string, TaskFailureDetail> | null;
@@ -866,6 +870,7 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
   state.evidenceInputs.stageSubmissions++;
   const info = event['Stage Info'];
   const id = info['Stage ID'];
+  const replaced = state.stages.get(id);
   state.stages.set(id, {
     id, name: info['Stage Name'] ?? '', details: info['Details'] ?? '',
     submittedAt: info['Submission Time'] ?? 0, completedAt: 0,
@@ -880,6 +885,8 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
     speculativeTasks: 0,
     failureReasons: new Map(),
     stageFailureReason: null,
+    stageAttempts: (replaced?.stageAttempts ?? 0) + 1,
+    failedStageAttempts: replaced?.failedStageAttempts ?? 0,
     taskAttempts: new Map(),
     failureDetails: new Map(),
     retryTaskSamples: [],
@@ -1173,6 +1180,8 @@ export function processEvent(event: SparkEvent, state: ParserState): unknown {
       // every stage-duration figure becomes the epoch timestamp itself (a "47-year" stage).
       if (!stage.submittedAt && info['Submission Time'] != null) stage.submittedAt = info['Submission Time'];
       stage.stageFailureReason = info['Failure Reason'] ?? null;
+      // A duplicate StageCompleted of an already-finalized attempt is not another failed attempt.
+      if (stage.stageFailureReason != null && stage.taskAttempts !== null) stage.failedStageAttempts++;
       // finalizeStage keeps its `stage` parameter typed as a loose Record (see that module); bridge
       // StageRecord's more precise shape across that boundary with an explicit cast.
       return finalizeStage(

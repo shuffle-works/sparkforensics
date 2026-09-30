@@ -72,6 +72,10 @@ export interface Stage {
   outputBytes?: number;
   // Summed Records Written; null when no task of the stage reported one (absent on older stages).
   outputRecords?: number | null;
+  // Times the stage was submitted and how many of those attempts failed, counted across
+  // resubmits; absent on stages parsed before these fields existed.
+  stageAttempts?: number;
+  failedStageAttempts?: number;
   shuffleReadBytes?: number;
   shuffleReadMax?: number;
   shuffleReadP50?: number;
