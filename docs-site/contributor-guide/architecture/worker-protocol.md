@@ -272,8 +272,10 @@ matches: every array under a key named `failureGroups` has its `message`
 replaced and the message text stripped from its `stackExcerpt`
 (`redactTaskFailureGroup` in `task-failure.ts`). That covers the evidence
 report and both the findings and the stage records of the HTML export.
-A stage's failure reason is replaced outright with `[redacted]`, both a
-`stageFailed` finding's `valueText` and a stage record's `stageFailureReason`.
+A stage's failure reason is replaced outright with `[redacted]` wherever it
+appears: a `stageFailed` finding's `valueText`, a stage record's
+`stageFailureReason`, a job's `exception` and the report's `failureReason`
+(`redactStageFailureReasons` in `redact.ts`).
 
 The Markdown rendering mirrors the JSON's field set: each finding block
 prints its `detector version`, its sorted `evidence` entries (byte-magnitude

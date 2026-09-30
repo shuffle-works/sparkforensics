@@ -12,9 +12,9 @@ import type { AppModel, Finding } from './types.ts';
 import { REDACTED_TEXT, redactTaskFailureGroup, type TaskFailureDetail } from './task-failure.ts';
 
 // Host / IP identifier patterns. Used to enumerate host names that surface only
-// inside free text: recommendation strings, SQL relation/node names,
-// never as a structured `host` field, so redaction reaches those residuals too. Pseudonyms (`host-1`) match neither
-// pattern, keeping the scan idempotent.
+// inside free text: recommendation strings, SQL relation/node names, never as a
+// structured `host` field, so redaction reaches those residuals too. Pseudonyms
+// (`host-1`) match neither pattern, keeping the scan idempotent.
 const HOST_PATTERNS = [
   // EC2-style ip-10-1-2-3 with an optional dotted domain (ip-10-1-2-3.ec2.internal).
   // Each domain label must start with an alphanumeric, so a trailing sentence
