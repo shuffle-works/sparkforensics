@@ -206,8 +206,8 @@ detectors over an `appModel` and serializes the result for sharing outside the
 tool. Raw task records are never included; identifier redaction (app id + host
 names → `app-1`/`host-1` pseudonyms via `packages/core/src/redact.ts`, with the app name
 and `spark.app.name` replaced by the app id's pseudonym) is opt-in with
-`{ redact: true }`. The JSON is pinned by `EVIDENCE_SCHEMA_VERSION` (currently
-`5`, surfaced as `json.schemaVersion`) and has this fixed top-level key order:
+`{ redact: true }`. The JSON is pinned by `EVIDENCE_SCHEMA_VERSION`
+(`packages/core/src/evidence-report.ts`, surfaced as `json.schemaVersion`) and has this fixed top-level key order:
 
 ```text
 schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, recommendations, cleanChecks, notRunChecks
