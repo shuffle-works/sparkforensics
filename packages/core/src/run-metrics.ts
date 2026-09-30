@@ -142,8 +142,8 @@ function stageMetrics(stages: Stage[], minTasksForP95: number): StageMetrics {
 export function computeRunMetrics(appModel: AppModel, thresholds?: ThresholdOverrides): RunMetrics {
   const stageList = [...appModel.stages.values()];
   const minTasksForP95 = effectiveThresholds(ENTRY_BY_TYPE.get('skew')!, thresholds).minTasksForP95 as number;
+  const all = stageMetrics(stageList, minTasksForP95);
   const python = stageList.filter((s) => isPythonStage(s, appModel.sql));
-  const runTimeMs = stageMetrics(stageList, minTasksForP95).executorRunTimeMs;
   const pythonRunTimeMs = sumOf(withEarlierAttempts(python), (s) => s.executorRunTime);
 
   const byFingerprint = new Map<string, Stage[]>();
@@ -164,7 +164,6 @@ export function computeRunMetrics(appModel: AppModel, thresholds?: ThresholdOver
     };
   }
 
-  const all = stageMetrics(stageList, minTasksForP95);
   const attempts = stageAttempts(stageList);
   return {
     schemaVersion: METRICS_SCHEMA_VERSION,
@@ -192,7 +191,7 @@ export function computeRunMetrics(appModel: AppModel, thresholds?: ThresholdOver
     },
     allocation: computeAllocation(appModel),
     python: {
-      shareOfTaskRunTime: runTimeMs != null && runTimeMs > 0 ? (pythonRunTimeMs ?? 0) / runTimeMs : null,
+      shareOfTaskRunTime: all.executorRunTimeMs != null && all.executorRunTimeMs > 0 ? (pythonRunTimeMs ?? 0) / all.executorRunTimeMs : null,
     },
     stages,
   };

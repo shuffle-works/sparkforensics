@@ -560,18 +560,18 @@ async function runCli(argv, { fetchImpl } = {}) {
   const { markdown, json } = buildEvidenceReport(appModel, {
     redact: values.redact, findingsFilter, markdown: values.format === 'md', thresholds,
   });
-  // Additive blocks on the report: each carries its own schemaVersion. Under --redact they come
-  // from the run redacted with the report's own inputs, so host and app pseudonyms in stage
-  // fingerprints and conf values match the report's.
-  const blocksModel = values.redact ? redactRunModel(appModel, catalog, auditConfig(appModel.app)).appModel : appModel;
-  const machineReadable = {
-    metrics: computeRunMetrics(blocksModel, thresholds),
-    effectiveConf: buildEffectiveConf(blocksModel.app, { keys: confKeys, userPattern: values['conf-redact-regex'] }),
-  };
   let output;
   if (values.format === 'md') {
     output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonVerdict(comparison))}\n` : `${markdown}\n`;
   } else {
+    // Additive blocks on the report: each carries its own schemaVersion. Under --redact they come
+    // from the run redacted with the report's own inputs, so host and app pseudonyms in stage
+    // fingerprints and conf values match the report's.
+    const blocksModel = values.redact ? redactRunModel(appModel, catalog, auditConfig(appModel.app)).appModel : appModel;
+    const machineReadable = {
+      metrics: computeRunMetrics(blocksModel, thresholds),
+      effectiveConf: buildEffectiveConf(blocksModel.app, { keys: confKeys, userPattern: values['conf-redact-regex'] }),
+    };
     const payload = comparison
       ? {
         candidate: { ...json, ...machineReadable },

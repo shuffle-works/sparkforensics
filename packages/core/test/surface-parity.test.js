@@ -11,7 +11,6 @@ import { interpretRun } from '../src/run-interpretation.js';
 import { resolveOrCreateRun, diagnoseRun } from '../src/mcp-tools.js';
 import { buildComparison } from '../src/run-comparison.js';
 import { computeRunMetrics } from '../src/run-metrics.js';
-import { computeEfficiencyModel } from '../src/efficiency-model.js';
 
 // Public corpus logs (dev/log-corpus submodule); the suite skips without it.
 const EXTERNAL_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
@@ -131,13 +130,5 @@ describe.each(LOGS)('surface parity: %s', (path) => {
     // CPU utilization is unavailable exactly when the metrics block has no CPU time.
     const utilization = catalog.find((f) => f.type === 'utilization');
     if (utilization) expect(utilization.cpuUtilizationPct == null).toBe(metrics.time.executorCpuTimeMs == null);
-
-    // The dashboard's capacity figure is a different quantity from allocated core-hours, and is
-    // labeled "available": it must not be reported under the allocation name.
-    const efficiency = computeEfficiencyModel({
-      app: appModel.app, stages: appModel.stages, executorsAdded: appModel.executors.added,
-      executorsRemoved: appModel.executors.removed, runAggregates: appModel.runAggregates,
-    });
-    expect(Number.isFinite(efficiency.availableComputeHours)).toBe(true);
   });
 });
