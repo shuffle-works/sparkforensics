@@ -655,11 +655,21 @@ function tailClaimFloorMs(claim: TailClaim, stageId: number, ctx: DetectorCtx): 
   return tailClaimImpact(claim, stageId, ctx.impact).wallClock?.high ?? claim.wasteMs;
 }
 
-// Enabling dynamic allocation is only a fix when the run's effective conf has it off: the
-// resources flag is read from the same property, and a run that set it to true needs another remedy.
+// A setting is only a fix when the run's logged conf doesn't already have it: a run that set it
+// needs another remedy. Only explicitly logged properties count; Spark's unlogged version
+// defaults are not modeled. Booleans compare case-insensitively, as Spark parses them.
+function setConfUnlessLogged(app: DetectorApp | null, key: string, suggested: string | boolean): Remediation[] {
+  const logged = app?.config?.[key]?.trim();
+  const already = typeof suggested === 'boolean'
+    ? logged?.toLowerCase() === String(suggested)
+    : logged === suggested;
+  return already ? [] : [setConf(key, suggested)];
+}
+
+// The resources flag is read from the same property as the logged conf.
 function enableDynamicAllocation(app: DetectorApp): Remediation[] {
-  const on = app.resources?.dynamicAllocationEnabled === true || app.config?.['spark.dynamicAllocation.enabled'] === 'true';
-  return on ? [] : [setConf('spark.dynamicAllocation.enabled', true)];
+  if (app.resources?.dynamicAllocationEnabled === true) return [];
+  return setConfUnlessLogged(app, 'spark.dynamicAllocation.enabled', true);
 }
 
 // Shared by cacheUtilization's two variants, worded per storage source: neither is a runtime
@@ -722,13 +732,13 @@ function diskSpilloverFinding(rdd: DetectorRddInfo, diskRatio: number, impactBan
 // Persisted RDDs with no storage evidence at all: no block updates in the log, and RDD Info's
 // sizes are the 0 that Spark 2.3+ always writes. Reports the gap instead of a clean result, the
 // same missing-evidence shape as memoryUtilization's dataUnavailable caveat.
-function storageUnobservedFinding(persistedRddCount: number): Finding {
+function storageUnobservedFinding(persistedRddCount: number, app: DetectorApp | null): Finding {
   const rdds = persistedRddCount === 1 ? '1 persisted RDD has' : `${persistedRddCount} persisted RDDs have`;
   return {
     type: 'cacheUtilization', variant: 'storageUnobserved', stageId: null,
     impactBand: 'info', metric: 'persistedRdds', value: persistedRddCount, dataUnavailable: true,
     recommendation: `${rdds} no cache-storage evidence in this log, so eviction and disk spillover can't be checked: Spark 2.3+ records cached sizes only as block updates, which need spark.eventLog.logBlockUpdates.enabled=true.`,
-    remediation: [setConf('spark.eventLog.logBlockUpdates.enabled', true)],
+    remediation: setConfUnlessLogged(app, 'spark.eventLog.logBlockUpdates.enabled', true),
   };
 }
 
@@ -1005,7 +1015,7 @@ export const DETECTORS = [
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
         validationRequired: `Flagged only when it costs at least ${shareLabel(thresholds.floorPctWarn)} of run time.`,
         recommendation: `Task duration ratio (${metric}) is ${value}×: for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.`,
-        remediation: [setConf('spark.sql.adaptive.skewJoin.enabled', true)],
+        remediation: setConfUnlessLogged(ctx.app, 'spark.sql.adaptive.skewJoin.enabled', true),
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
@@ -1152,7 +1162,7 @@ export const DETECTORS = [
     emits: ['partitionSizing'],
     docAnchor: '#bottleneck-partition-sizing',
     thresholds: { skewRatio: 5, skewFloorBytes: 256 * MB, lowParTotalBytes: GB, lowParMaxTasks: 7, maxPartBytes: 5 * GB },
-    detect(stage, _ctx, thresholds): Finding[] {
+    detect(stage, ctx, thresholds): Finding[] {
       const out: Finding[] = [];
       const { shuffleReadP50: p50, shuffleReadMax: max, shuffleReadBytes: total, taskCount } = stage;
       if (max > thresholds.skewRatio * p50 && max > thresholds.skewFloorBytes) {
@@ -1165,7 +1175,7 @@ export const DETECTORS = [
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'shufflePartitionSkew', metric: 'shuffleReadMax', value: max,
           recommendation: `The largest shuffle partition (${formatBytes(max)}) is ${ratioText}: for join skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.`,
-          remediation: [setConf('spark.sql.adaptive.skewJoin.enabled', true)],
+          remediation: setConfUnlessLogged(ctx.app, 'spark.sql.adaptive.skewJoin.enabled', true),
         });
       }
       if (total >= thresholds.lowParTotalBytes && taskCount <= thresholds.lowParMaxTasks) {
@@ -1365,7 +1375,7 @@ export const DETECTORS = [
               hostMeanMs: h.mean,
               host: h.host, hostTaskShare: Math.round(share * 100) / 100,
               recommendation: `${h.host} may just hold data locality for its tasks or carry one heavy stage, not necessarily a hardware fault: check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically.`,
-              remediation: [setConf('spark.speculation', true)],
+              remediation: setConfUnlessLogged(ctx.app, 'spark.speculation', true),
             });
           }
         }
@@ -1904,7 +1914,7 @@ export const DETECTORS = [
           type: 'memoryUtilization', variant: 'memoryBand', stageId: null,
           impactBand: 'info', metric: 'memoryBand', dataUnavailable: true,
           recommendation: 'Per-executor memory usage requires spark.eventLog.logStageExecutorMetrics=true: not enabled for this run.',
-          remediation: [setConf('spark.eventLog.logStageExecutorMetrics', true)],
+          remediation: setConfUnlessLogged(app, 'spark.eventLog.logStageExecutorMetrics', true),
         });
       } else if (allocatedMB != null && allocatedMB > 0) {
         const allocatedBytes = allocatedMB * 1024 * 1024;
@@ -2038,7 +2048,7 @@ export const DETECTORS = [
           }
         }
       }
-      if (persistedRddCount > 0 && !anyStorageEvidence) out.push(storageUnobservedFinding(persistedRddCount));
+      if (persistedRddCount > 0 && !anyStorageEvidence) out.push(storageUnobservedFinding(persistedRddCount, ctx.app));
       return out;
     },
     estimate(finding): ImpactEstimate | null {
@@ -2373,7 +2383,7 @@ export const DETECTORS = [
           type: 'configAudit', property: 'spark.shuffle.service.enabled',
           impactBand: 'warning', metric: 'config', valueText: 'false',
           recommendation: 'Dynamic allocation is on but the external shuffle service is off: set spark.shuffle.service.enabled=true so shuffle data survives executor removal.',
-          remediation: [setConf('spark.shuffle.service.enabled', true)],
+          remediation: setConfUnlessLogged(target.app, 'spark.shuffle.service.enabled', true),
         };
       }
       return null;
@@ -2423,7 +2433,7 @@ export const DETECTORS = [
         type: 'configAudit', property: 'spark.serializer',
         impactBand: 'info', metric: 'config', valueText: ser ?? '(default JavaSerializer)',
         recommendation: `Current serializer is ${ser ?? 'the default JavaSerializer'}: consider spark.serializer=org.apache.spark.serializer.KryoSerializer for faster, smaller buffers.`,
-        remediation: [setConf('spark.serializer', 'org.apache.spark.serializer.KryoSerializer')],
+        remediation: setConfUnlessLogged(app, 'spark.serializer', 'org.apache.spark.serializer.KryoSerializer'),
       };
     },
     estimate: noWasteModel,

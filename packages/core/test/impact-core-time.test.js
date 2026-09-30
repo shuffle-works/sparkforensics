@@ -100,7 +100,7 @@ describe('impact estimate coreTimeMs', () => {
     for (const est of [l, t, i]) expect(est.coreTimeMs).toBeNull();
   });
 
-  it('counts a stage\'s slow tail once across skew, straggler and stageSlowness', () => {
+  it('counts a stage\'s slow tail once across skew and straggler, leaving stageSlowness its own claim', () => {
     const stage = {
       id: 0, submittedAt: 0, completedAt: 1_000_000, parentIds: [], taskCount: 100, executorRunTime: 2_000_000,
       taskDurationP50: 10_000, taskDurationP95: 200_000, taskDurationMax: 500_000, stragglerExcessMs: 490_000, stragglerCount: 1,
@@ -114,7 +114,7 @@ describe('impact estimate coreTimeMs', () => {
     const [slow, straggler, skew] = estimate(findings, new Map([[0, stage]]), 10);
     expect(skew.coreTimeMs.high).toBeGreaterThan(0);
     expect(straggler.coreTimeMs).toBeNull();
-    expect(slow.coreTimeMs).toBeNull();
+    expect(slow.coreTimeMs).not.toBeNull();
     // A second stage's tail is its own.
     const other = { ...stage, id: 1 };
     const both = estimate(

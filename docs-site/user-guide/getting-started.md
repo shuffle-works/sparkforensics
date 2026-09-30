@@ -295,12 +295,17 @@ cores that ran no task (`utilization`, `stageShape`'s low parallelism and
 task/stage skew rows, `memoryUtilization`'s idle cores) has `coreTimeMs: null`
 and keeps its idle-capacity figure in `impactEstimate.rawWaste` (core-hours,
 core-milliseconds or memory-seconds). A stage's slow tail is counted once: when
-`skew`, `straggler` and `stageSlowness` all flag the same stage, the first of
-them in that order carries the removed task time and the others have `null`.
+`skew` and `straggler` both flag the same stage, `skew` carries the removed
+task time and `straggler` has `null`. `stageSlowness` claims what more
+partitions recover, not the tail, and keeps its own figure.
 
-Where `remediation` would enable dynamic allocation (`utilization` and
-`memoryUtilization`'s idle cores), it is empty when the run's conf already has
-`spark.dynamicAllocation.enabled` on.
+A `remediation` that sets a property to a fixed value (for example
+`spark.sql.adaptive.skewJoin.enabled`, `spark.speculation` or
+`spark.dynamicAllocation.enabled`) is left out when the run's logged conf
+already has that value; booleans compare case-insensitively. Only properties
+the event log records count: Spark's unlogged version defaults (such as
+skew-join handling being on by default with AQE in Spark 3.2+) are not
+modeled, so such a run can still get the suggestion.
 
 The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,

@@ -156,4 +156,50 @@ describe('structured remediation', () => {
       }
     });
   });
+
+  describe('a set-to-value remediation follows the logged conf', () => {
+    const skewStage = makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600 });
+    const partitionSkewStage = makeStage({ id: 2, shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 });
+    const slowHostStage = makeStage({
+      id: 3, taskCount: 60,
+      hostStats: [
+        { host: 'a', taskCount: 20, totalDuration: 200000 },
+        { host: 'b', taskCount: 20, totalDuration: 200000 },
+        { host: 'c', taskCount: 20, totalDuration: 600000 },
+      ],
+    });
+    const pick = (config) => {
+      const on = (stage) => catalogOf([stage], makeApp({ config }));
+      return {
+        skew: on(skewStage).find((f) => f.type === 'skew'),
+        partitionSkew: on(partitionSkewStage).find((f) => f.rule === 'shufflePartitionSkew'),
+        slowHost: on(slowHostStage).find((f) => f.type === 'slowHost'),
+      };
+    };
+    const set = (key) => [{ kind: 'conf', key, direction: 'set', suggested: true }];
+
+    it('suggests the switch when the run has it off or unset', () => {
+      for (const config of [{}, { 'spark.sql.adaptive.skewJoin.enabled': 'false', 'spark.speculation': 'false' }]) {
+        const { skew, partitionSkew, slowHost } = pick(config);
+        expect(skew.remediation).toEqual(set('spark.sql.adaptive.skewJoin.enabled'));
+        expect(partitionSkew.remediation).toEqual(set('spark.sql.adaptive.skewJoin.enabled'));
+        expect(slowHost.remediation).toEqual(set('spark.speculation'));
+      }
+    });
+
+    it('suggests nothing when the logged conf already has it, compared case-insensitively', () => {
+      const { skew, partitionSkew, slowHost } = pick({ 'spark.sql.adaptive.skewJoin.enabled': 'TRUE', 'spark.speculation': 'True' });
+      expect(skew.remediation).toEqual([]);
+      expect(partitionSkew.remediation).toEqual([]);
+      expect(slowHost.remediation).toEqual([]);
+    });
+
+    it('suggests Kryo unless the logged serializer is already Kryo', () => {
+      const res = { executor: {}, driver: {}, dynamicAllocationEnabled: false, shuffleServiceEnabled: true, serializer: null };
+      const java = auditConfig({ config: { 'spark.app.name': 'x' }, resources: res }).find((f) => f.property === 'spark.serializer');
+      expect(java.remediation).toEqual([{ kind: 'conf', key: 'spark.serializer', direction: 'set', suggested: KRYO }]);
+      const kryo = auditConfig({ config: { 'spark.serializer': KRYO }, resources: res }).find((f) => f.property === 'spark.serializer');
+      expect(kryo).toBeUndefined();
+    });
+  });
 });

@@ -15,11 +15,10 @@ export function estimateImpact(findings: Finding[], ctx: EstimateCtx): Finding[]
   return findings;
 }
 
-// skew, straggler and stageSlowness each claim the same slow tail of a stage, so each reports
-// its removed task time: summed over a stage's findings that would count the tail up to three
-// times. The first of them in this order keeps the figure; the others carry null, since
-// their tail is already counted there.
-const TAIL_CORE_TIME_ORDER = ['skew', 'straggler', 'stageSlowness'];
+// skew and straggler claim the same slow tail of a stage, so each reports its removed task time:
+// summed over a stage's findings that would count the tail twice. skew keeps the figure; a
+// straggler on the same stage carries null, since its tail is already counted there.
+const TAIL_CORE_TIME_ORDER = ['skew', 'straggler'];
 
 function countTailCoreTimeOnce(findings: Finding[]): void {
   const counted = new Set<number>();

@@ -60,9 +60,10 @@ time or duration, gets `null`. `autoscalingChurn` and `jobFailureRate` are exclu
 `coreTimeMs: null` and keeps its idle figure in `rawWaste`, which for these counts idle core time
 rather than task time a fix removes: `utilization` (`coreHours`), `stageShape`'s `lowParallelism`
 and `taskStageSkew` (`coreMs`), and `memoryUtilization`'s `idleCores` (`mbSeconds`). A stage's slow
-tail is also counted once: `skew`, `straggler` and `stageSlowness` each claim it, so on one stage
-the first of them in that order carries the removed task time and the others have `null`
-(`countTailCoreTimeOnce()` in `packages/core/src/impact-estimator.ts`).
+tail is also counted once: `skew` and `straggler` both claim it, so on one stage `skew` carries
+the removed task time and `straggler` has `null` (`countTailCoreTimeOnce()` in
+`packages/core/src/impact-estimator.ts`). `stageSlowness` is a separate more-partitions claim, not
+removed tail time, and keeps its own figure.
 
 ## Occupancy-weighted attribution
 
