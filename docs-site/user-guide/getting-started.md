@@ -316,6 +316,13 @@ the event log records count: Spark's unlogged version defaults (such as
 skew-join handling being on by default with AQE in Spark 3.2+) are not
 modeled, so such a run can still get the suggestion.
 
+Two logged settings change which fix is offered. Skew-join handling counts as
+already on only when `spark.sql.adaptive.enabled` is not logged `false`; with
+AQE logged off, the skew findings suggest setting `spark.sql.adaptive.enabled`
+to `true` instead. When `spark.sql.autoBroadcastJoinThreshold` is logged `-1`
+(auto-broadcast disabled), an over-broadcast finding has an empty `remediation`
+and points at removing the `broadcast()` hint.
+
 The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,
 comparing a candidate run against a baseline with regression gating
