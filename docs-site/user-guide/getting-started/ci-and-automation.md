@@ -252,8 +252,8 @@ listed with a `null` target rather than dropped.
 
 On a real log a Delta command node (`MergeIntoCommand`, `UpdateCommand`,
 `DeleteCommand`, `WriteIntoDelta`, `SaveIntoDataSourceCommand`) is a bare name:
-its plan string has no target. The target is read from two other places, in
-this order, and is `null` when neither names exactly one target.
+its plan string has no target. The target is read from up to two other places,
+in this order, and is `null` when neither names exactly one target.
 
 1. The command's `Arguments:` line in Spark's physical plan description. The
    parser drops the rest of that text to save memory, but keeps this one line
@@ -263,11 +263,16 @@ this order, and is `null` when neither names exactly one target.
    the line shows a Delta source, and its target is the `path` option. A
    description that spans two read chunks is not kept for a
    `SaveIntoDataSourceCommand`, which prints its whole query plan under it; its
-   target then falls to the next step.
-2. The `_delta_log` path in the plans of the executions that share the command's
+   target is then `null`.
+2. For `MergeIntoCommand`, `UpdateCommand` and `DeleteCommand` only, the
+   `_delta_log` path in the plans of the executions that share the command's
    root execution, as `kind: "path"`. Exactly one distinct path must appear. It
    applies only when the command is its own root execution, and a source that is
-   itself a Delta table adds a second path and leaves the target `null`.
+   itself a Delta table adds a second path and leaves the target `null`. The
+   write commands (`WriteIntoDelta`, `WriteIntoDeltaCommand`,
+   `SaveIntoDataSourceCommand`) never take this step, because a write may read
+   another Delta table as its source: with no table or `path` option on the
+   arguments line, their target is `null`.
 
 An append or overwrite of an existing Delta table (`saveAsTable` in `append` or
 `overwrite` mode on an existing table, `INSERT INTO`, `INSERT OVERWRITE`) prints
@@ -291,9 +296,11 @@ are a `MERGE operation` description and adjacent execution ids. Each run of
 consecutive ids with such a description is reported as one write with the
 synthetic command `DeltaMerge`, `kind: "path"` and the table path from the
 `_delta_log` of the plans in the run. The log holds no table name for these
-merges. The target is `null`, and `raw` says why when it applies, when the run
-names zero or several paths, a plan or start time is missing, or the run's
-start times overlap another run's (merges on concurrent threads). Two merges
+merges. The run must hold a write phase (a description containing `writing` or
+`rewriting`), because a run that only scanned may have read the merge's source.
+The target is `null`, and `raw` says why when it applies, when the run has no
+write phase, names zero or several paths, a plan or start time is missing, or
+the run's start times overlap another run's (merges on concurrent threads). Two merges
 whose executions have consecutive ids are one run and name two paths, so they
 get no target. A description a user sets that starts with `MERGE operation` is
 indistinguishable from Delta's and is reported the same way. `raw` reads

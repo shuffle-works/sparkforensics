@@ -3,7 +3,9 @@
 // sparkPlanInfo on real logs; the target lives in two other places:
 //   1. the `Arguments:` line of the command in the physical plan description, which the parser
 //      keeps for these commands only (SqlExecution.commandArguments). It names the table.
-//   2. the `_delta_log` path in the plans of executions that share the command's root execution.
+//   2. for MERGE, UPDATE and DELETE only, the `_delta_log` path in the plans of executions that
+//      share the command's root execution: they always scan their target. A write command may
+//      read another Delta table as its source, so it never takes this step.
 // resolveDeltaCommandTarget tries them in that order and otherwise reports null: a rule that
 // cannot name exactly one target never names one (see the header of write-targets.ts).
 //
@@ -22,6 +24,9 @@ export const DELTA_COMMANDS_WITH_HIDDEN_TARGET: ReadonlySet<string> = new Set([
   'MergeIntoCommand', 'UpdateCommand', 'DeleteCommand', 'WriteIntoDelta', 'WriteIntoDeltaCommand',
   'SaveIntoDataSourceCommand',
 ]);
+
+// Commands that always scan their target, so the one Delta log in their root's children is it.
+const DELTA_COMMANDS_THAT_SCAN_TARGET: ReadonlySet<string> = new Set(['MergeIntoCommand', 'UpdateCommand', 'DeleteCommand']);
 
 export type ExecutionsByRoot = ReadonlyMap<number, SqlExecution[]>;
 
@@ -119,7 +124,8 @@ function pathFromSaveOptions(args: string): Resolved | null {
 
 /**
  * The target of a Delta command whose simpleString names none: the table on its kept `Arguments:`
- * line, else the single `_delta_log` path of the executions that share its root, else null.
+ * line, else (MERGE, UPDATE and DELETE only) the single `_delta_log` path of the executions that
+ * share its root, else null.
  * `node` must be the root node of `exec`'s plan: the kept line is the root command's.
  */
 export function resolveDeltaCommandTarget(
@@ -137,6 +143,7 @@ export function resolveDeltaCommandTarget(
     const table = tableFromArguments(args);
     if (table) return table;
   }
+  if (!DELTA_COMMANDS_THAT_SCAN_TARGET.has(command)) return null;
   // Child executions are the root's own only when it is the root: a command run under another
   // execution shares that execution's children, which may belong to unrelated work.
   if (exec.rootExecutionId !== exec.id) return null;
@@ -181,6 +188,10 @@ export const API_MERGE_COMMAND = 'DeltaMerge';
 // Delta labels its MERGE sub-queries "MERGE operation - <phase>", prefixed "Delta: " in some.
 const MERGE_DESCRIPTION = /^(?:Delta: )?MERGE operation\b/;
 
+// The sub-queries that write: "writing new files ...", "Rewriting N files". A group without one
+// only scanned, and a scan may read the merge's source rather than its target.
+const MERGE_WRITE_PHASE = /\b(?:re)?writing\b/i;
+
 interface MergeGroup { members: SqlExecution[]; unclean: string | null }
 
 // Selected executions have a MERGE description. A SQL MERGE's own sub-queries carry the same
@@ -200,6 +211,7 @@ function selectMergeExecutions(sql: Map<number, SqlExecution>): SqlExecution[] {
 // marked `unclean` instead of attributed:
 //   - the ids of two merges that ran concurrently interleave, so their start-time spans overlap;
 //   - a start time is missing, so the span is unknown.
+//   - no member writes, so the one path it names may be a source's.
 // Merges that ran back to back with no other execution between them still fuse into one run; the
 // run then names two paths and gets no target.
 function groupMerges(selected: SqlExecution[]): MergeGroup[] {
@@ -218,6 +230,7 @@ function groupMerges(selected: SqlExecution[]): MergeGroup[] {
     if (mine === null) { group.unclean = 'start time missing'; return; }
     const overlaps = spans.some((other, j) => j !== i && other !== null && other[0] <= mine[1] && mine[0] <= other[1]);
     if (overlaps) group.unclean = 'overlaps another merge in time';
+    else if (!group.members.some((m) => MERGE_WRITE_PHASE.test(m.description ?? ''))) group.unclean = 'no write phase';
   });
   return groups;
 }

@@ -17,9 +17,12 @@ const sqlOf = (...execs) => new Map(execs.map((e) => [e.id, e]));
 const writesOf = (...execs) => extractWriteTargets(sqlOf(...execs)).writes;
 const targetsOf = (writes) => writes.map(({ command, kind, target }) => ({ command, kind, target }));
 
+const writeStep = (id, planTree = project(), fields = {}) =>
+  mergeStep(id, planTree, { description: 'MERGE operation - writing new files for only inserts', ...fields });
+
 // Eight executions of one API merge, from `first`: the write step (last) carries no path.
 const apiMerge = (first, table) => Array.from({ length: 8 }, (_, k) =>
-  mergeStep(first + k, k < 5 ? logScan(table) : project()));
+  k < 7 ? mergeStep(first + k, k < 5 ? logScan(table) : project()) : writeStep(first + k));
 
 describe('SQL MERGE, UPDATE, DELETE and saves: target from the kept arguments line', () => {
   const withArgs = (command, args, fields = {}) => exec(1, {
@@ -80,16 +83,26 @@ describe('SQL MERGE, UPDATE, DELETE and saves: target from the child executions'
   });
 
   it.each([
-    ['DeleteCommand'], ['UpdateCommand'], ['WriteIntoDelta'],
+    ['DeleteCommand'], ['UpdateCommand'],
   ])('does the same for %s', (command) => {
     const writes = writesOf(exec(1, { planTree: node(`Execute ${command}`) }), child(2, logScan('t_one')));
     expect(targetsOf(writes)).toEqual([{ command, kind: 'path', target: `${BASE}/t_one` }]);
   });
 
-  it('takes the path for a Delta save whose arguments name no path option', () => {
-    const save = exec(1, { planTree: node('Execute SaveIntoDataSourceCommand'),
-      commandArguments: 'SaveIntoDataSourceCommand\nArguments: org.apache.spark.sql.delta.sources.DeltaDataSource@1, [mode=x], Append' });
-    expect(writesOf(save, child(2, logScan('t_one')))[0]).toMatchObject({ kind: 'path', target: `${BASE}/t_one` });
+  it.each([
+    ['WriteIntoDelta'], ['WriteIntoDeltaCommand'], ['SaveIntoDataSourceCommand'],
+  ])('never takes the children of %s, which may read another table as its source', (command) => {
+    const commandArguments = `${command}\nArguments: org.apache.spark.sql.delta.sources.DeltaDataSource@1, [mode=x], Append`;
+    const writes = writesOf(exec(1, { planTree: node(`Execute ${command}`), commandArguments }), child(2, logScan('t_source')));
+    expect(targetsOf(writes)).toEqual([{ command, kind: null, target: null }]);
+    expect(targetsOf(writesOf(exec(1, { planTree: node(`Execute ${command}`) }), child(2, logScan('t_source')))))
+      .toEqual([{ command, kind: null, target: null }]);
+  });
+
+  it('names a write that reads a Delta source by its own arguments, not by the source', () => {
+    const write = exec(1, { planTree: node('Execute WriteIntoDelta'),
+      commandArguments: 'WriteIntoDelta\nArguments: Delta[version=0], `spark_catalog`.`db`.`t_target`, Append' });
+    expect(targetsOf(writesOf(write, child(2, logScan('t_source'))))).toEqual([{ command: 'WriteIntoDelta', kind: 'table', target: 'db.t_target' }]);
   });
 
   it('reports null when the children name two tables, none, a cut path, or have no plan', () => {
@@ -126,7 +139,7 @@ describe('DeltaTable API merges', () => {
   });
 
   it('takes the path from a group whose write step names none', () => {
-    expect(writesOf(mergeStep(16, logScan('t_api')), mergeStep(17, project()))[0]).toMatchObject({ kind: 'path', target: `${BASE}/t_api` });
+    expect(writesOf(mergeStep(16, logScan('t_api')), writeStep(17))[0]).toMatchObject({ kind: 'path', target: `${BASE}/t_api` });
   });
 
   it('reports one write per merge for groups separated by other executions', () => {
@@ -139,13 +152,13 @@ describe('DeltaTable API merges', () => {
   });
 
   it('counts a sub-query rooted in another execution of the same merge as a member', () => {
-    const writes = writesOf(mergeStep(14, logScan('t_api')), mergeStep(15, project(), { rootExecutionId: 14 }), mergeStep(16, project()));
+    const writes = writesOf(mergeStep(14, logScan('t_api')), mergeStep(15, project(), { rootExecutionId: 14 }), writeStep(16));
     expect(writes).toHaveLength(1);
     expect(writes[0].raw).toBe('Delta MERGE operation, executions 14-16');
   });
 
   it('reads the Delta: prefixed descriptions too', () => {
-    const writes = writesOf(exec(1, { description: 'Delta: MERGE operation - scanning files for matches: Compute snapshot', planTree: logScan('t_api') }));
+    const writes = writesOf(exec(1, { description: 'Delta: MERGE operation - Writing modified data - MERGE operation - Rewriting 1 files', planTree: logScan('t_api') }));
     expect(writes[0]).toMatchObject({ command: 'DeltaMerge', target: `${BASE}/t_api` });
   });
 
@@ -157,13 +170,39 @@ describe('DeltaTable API merges', () => {
 
   it('gives no path to merges that ran concurrently, whose executions interleave in time', () => {
     // Merge A's steps start at 100 and 300, merge B's at 200 and 250: B runs inside A's span.
-    const a = [mergeStep(10, logScan('t_one'), { startTime: 100 }), mergeStep(11, logScan('t_one'), { startTime: 300 })];
-    const b = [mergeStep(20, logScan('t_two'), { startTime: 200 }), mergeStep(21, logScan('t_two'), { startTime: 250 })];
+    const a = [mergeStep(10, logScan('t_one'), { startTime: 100 }), writeStep(11, logScan('t_one'), { startTime: 300 })];
+    const b = [mergeStep(20, logScan('t_two'), { startTime: 200 }), writeStep(21, logScan('t_two'), { startTime: 250 })];
     const writes = writesOf(...a, ...b);
     expect(writes.map(({ kind, target, raw }) => ({ kind, target, raw }))).toEqual([
       { kind: null, target: null, raw: 'Delta MERGE operation, executions 10-11 (overlaps another merge in time)' },
       { kind: null, target: null, raw: 'Delta MERGE operation, executions 20-21 (overlaps another merge in time)' },
     ]);
+  });
+
+  it('gives no path to a run that only scanned, whose one path may be the merge source', () => {
+    expect(writesOf(mergeStep(10, logScan('t_source')), mergeStep(11, project()))[0]).toMatchObject({
+      kind: null, target: null, raw: 'Delta MERGE operation, executions 10-11 (no write phase)',
+    });
+  });
+
+  it('gives no path to threaded phases split into singleton groups, a source-only phase among them', () => {
+    // Other threads' ids fall between this merge's phases: every group is a singleton whose
+    // start-time span is a point, so none overlaps another. Only the write phase names a target.
+    const phases = [
+      mergeStep(10, logScan('t_source'), { description: 'Delta: MERGE operation - scanning files for matches: Compute snapshot' }),
+      mergeStep(12, logScan('t_source')),
+      writeStep(14, logScan('t_target')),
+    ];
+    expect(targetsOf(writesOf(...phases, exec(11), exec(13)))).toEqual([
+      { command: 'DeltaMerge', kind: null, target: null },
+      { command: 'DeltaMerge', kind: null, target: null },
+      { command: 'DeltaMerge', kind: 'path', target: `${BASE}/t_target` },
+    ]);
+  });
+
+  it('reads a rewrite phase as a write phase', () => {
+    const rewrite = mergeStep(10, logScan('t_api'), { description: 'MERGE operation - Rewriting 1 files' });
+    expect(targetsOf(writesOf(rewrite))).toEqual([{ command: 'DeltaMerge', kind: 'path', target: `${BASE}/t_api` }]);
   });
 
   it('gives no path to one run holding interleaved steps of two merges', () => {
@@ -173,9 +212,9 @@ describe('DeltaTable API merges', () => {
   });
 
   it('gives no path to a group with a member that has no plan, no start time, or a cut path', () => {
-    expect(writesOf(mergeStep(10, logScan('t_api')), mergeStep(11, null))[0]).toMatchObject({ kind: null, target: null });
-    expect(writesOf(mergeStep(10, logScan('t_api'), { startTime: undefined }))[0]).toMatchObject({ kind: null, target: null });
-    expect(writesOf(mergeStep(10, node('Scan State - hdfs://nn/db.db/...x/_delta_log')))[0]).toMatchObject({ kind: null, target: null });
+    expect(writesOf(mergeStep(10, logScan('t_api')), writeStep(11, null))[0]).toMatchObject({ kind: null, target: null });
+    expect(writesOf(writeStep(10, logScan('t_api'), { startTime: undefined }))[0]).toMatchObject({ kind: null, target: null });
+    expect(writesOf(writeStep(10, node('Scan State - hdfs://nn/db.db/...x/_delta_log')))[0]).toMatchObject({ kind: null, target: null });
   });
 
   it('does not take a path from a non-MERGE execution', () => {
@@ -194,7 +233,7 @@ describe('DeltaTable API merges', () => {
   it('reports a root whose user-set description starts with MERGE operation as a merge group', () => {
     // A job description set by the user is indistinguishable from Delta's: the group is reported
     // with the one table the execution reads, and a null target when it reads none.
-    expect(writesOf(exec(1, { description: 'MERGE operation (nightly)', planTree: logScan('t_read') }))[0])
+    expect(writesOf(exec(1, { description: 'MERGE operation (nightly) writing', planTree: logScan('t_read') }))[0])
       .toMatchObject({ command: 'DeltaMerge', kind: 'path', target: `${BASE}/t_read` });
     expect(writesOf(exec(1, { description: 'MERGE operation (nightly)' }))[0]).toMatchObject({ command: 'DeltaMerge', kind: null, target: null });
   });
