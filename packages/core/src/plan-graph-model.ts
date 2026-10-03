@@ -1,6 +1,6 @@
 // Flattens a resolved planTree into a { nodes, edges } graph shape for the
 // React Flow + Dagre plan graph view ("Plan graph view" in
-// docs-site/contributor-guide/architecture/drill-down.md). The Exchange
+// docs-site/contributor-guide/architecture/drill-down/plan-graph.md). The Exchange
 // write/read split is done upstream now, in resolvePlanTree
 // (event-handlers.ts): this file just walks the already-split tree and maps
 // each real PlanNode onto a PlanGraphNodeData. sourceNodeId still lets a

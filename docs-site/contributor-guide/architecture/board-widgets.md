@@ -25,7 +25,7 @@ to its own component: 24 `action` and 4 `reference` entries.
   (no card in the DOM) once the run completed normally. Unrelated to
   `evidence-availability.ts`'s own
   `trustworthy` gate (see
-  [Evidence-availability contract](./worker-protocol.md#evidence-availability-contract)):
+  [Evidence-availability contract](./worker-protocol/evidence-availability.md#evidence-availability-contract)):
   that ledger only downgrades *absence* conclusions for individual evidence
   categories, never becomes a `DETECTORS` finding itself, and this card does
   not read it. No `docAnchor` is set: this is a tool-specific signal with no

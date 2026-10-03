@@ -208,7 +208,7 @@ export function registryTypes(): string[] {
 
 // The one single-purpose reference widget that always mounts from
 // `appModel`, independent of finding state, in the Full app report tab (Core
-// Usage by Locality; see docs-site's widget-rendering.md). `region:
+// Usage by Locality; see docs-site's widget-rendering/reference-section.md). `region:
 // 'reference'` marks the candidate set; `cacheUtilization`,
 // `memoryUtilization`, and `utilization` are `reference` too (same
 // single-purpose shape) but are excluded by product decision: a clean run

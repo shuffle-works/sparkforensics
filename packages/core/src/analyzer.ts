@@ -90,7 +90,7 @@ export function findingId(f: Finding): string {
 
 // skew (either branch) and straggler both claim the stage's replayed tail recovery
 // (tailReplayRecoveryMs via tailRecoveryMs): the same slow-task tail reported by two detectors
-// (see "Overlap caveat: skew / straggler" in impact-estimation.md). skew's branch only changes
+// (see "Overlap caveat: skew / straggler" in impact-estimation/caveats-tuning-and-coverage.md). skew's branch only changes
 // the fallback single-task delta on a stage without the replay, so every skew + straggler pair
 // on a stage is flagged. Flags both sides via validationRequired (rather than suppressing
 // either) so neither finding's own diagnostic value is lost; the flag rides the same

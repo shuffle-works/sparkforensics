@@ -1,9 +1,9 @@
 # Architecture
 
-These pages cover one concern each: the two-actor overview, the worker
-protocol, state plus History Server intake, the detector contract, impact
-estimation, the fixed widget rendering order, the board's widgets, and the
-stage and plan drill-downs.
+Each page covers one concern, and the larger ones split into child pages
+that the sidebar nests beneath them. Start with the two-actor overview, then
+the worker protocol, state and History Server intake, the detector contract,
+impact estimation, widget rendering, the board's widgets and the drill-downs.
 
 Where to start:
 

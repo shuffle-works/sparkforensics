@@ -225,7 +225,7 @@ baseline (NDJSON, one line per candidate; the baseline is parsed once):
 npx -p sparkforensics-cli sparkforensics-analyze cand-1 cand-2 cand-3 --baseline base --regression-budget wallClock:10 --regression-budget gcTime:25
 ```
 
-See [Several budgets and several candidates](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started.html#several-budgets-and-several-candidates)
+See [Several budgets and several candidates](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started/ci-and-automation.html#several-budgets-and-several-candidates)
 for the `--budgets` file, the NDJSON line fields and the exit code rules.
 
 Redact the app id, the app name and any host/IP tokens before sharing the output outside
@@ -251,7 +251,7 @@ pairs with `--shs-base-url`/`--app-id` for a non-default attempt;
 `--regression-metric` picks which metric `--max-regression-pct` checks
 (default `wallClock`); `--conf-keys` and `--conf-redact-regex` shape the JSON
 output's `effectiveConf` block, next to its `metrics` block (both in
-[Getting started](https://github.com/shuffle-works/sparkforensics/blob/main/docs-site/user-guide/getting-started.md#metrics-block));
+[Getting started](https://github.com/shuffle-works/sparkforensics/blob/main/docs-site/user-guide/getting-started/ci-and-automation.md#metrics-block));
 `--format md` switches output to Markdown (default
 `json`); `--out <path>` writes it to a file instead of stdout. Exit codes:
 `0` pass, `1` a budget was violated, `2` usage error (bad flags, arguments or

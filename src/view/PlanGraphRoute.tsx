@@ -104,7 +104,7 @@ function safeBuildPlanGraphModel(
 // since stageId isn't unique across loaded runs, applySnapshot mutates
 // appModel in place rather than replacing it, and a duration-mode flip needs
 // its own cached model (see the "Plan graph view" section in
-// docs-site/contributor-guide/architecture/drill-down.md).
+// docs-site/contributor-guide/architecture/drill-down/plan-graph.md).
 type CacheKey = string;
 const planGraphModelCache = new Map<CacheKey, PlanGraphModel>();
 

@@ -64,11 +64,50 @@ export default defineConfig({
         {
           text: 'User Guide',
           items: [
-            { text: 'Getting started', link: '/user-guide/getting-started' },
+            {
+              text: 'Getting started',
+              link: '/user-guide/getting-started',
+              collapsed: true,
+              items: [
+                { text: 'Reading the dashboard', link: '/user-guide/getting-started/reading-the-dashboard' },
+                { text: 'CI and automation', link: '/user-guide/getting-started/ci-and-automation' },
+                { text: 'Tuning detector thresholds', link: '/user-guide/getting-started/tuning-thresholds' },
+                { text: 'Regression metric keys', link: '/user-guide/getting-started/regression-metric-keys' },
+              ],
+            },
             { text: 'Understanding findings', link: '/user-guide/understanding-findings' },
-            { text: 'Run comparison mode', link: '/user-guide/run-comparison' },
-            { text: 'MCP tools reference', link: '/user-guide/mcp-tools' },
-            { text: 'Finding your event log', link: '/user-guide/alternative-log-retrieval' },
+            {
+              text: 'Run comparison mode',
+              link: '/user-guide/run-comparison',
+              collapsed: true,
+              items: [
+                { text: 'How stages are matched', link: '/user-guide/run-comparison/how-stages-are-matched' },
+              ],
+            },
+            {
+              text: 'MCP tools reference',
+              link: '/user-guide/mcp-tools',
+              collapsed: true,
+              items: [
+                { text: 'diagnose_run', link: '/user-guide/mcp-tools/diagnose-run' },
+                { text: 'get_run_summary', link: '/user-guide/mcp-tools/get-run-summary' },
+                { text: 'evaluate_budgets', link: '/user-guide/mcp-tools/evaluate-budgets' },
+                { text: 'compare_runs', link: '/user-guide/mcp-tools/compare-runs' },
+                { text: 'get_finding_evidence', link: '/user-guide/mcp-tools/get-finding-evidence' },
+                { text: 'get_finding_documentation', link: '/user-guide/mcp-tools/get-finding-documentation' },
+                { text: 'get_reference_doc', link: '/user-guide/mcp-tools/get-reference-doc' },
+                { text: 'list_runs', link: '/user-guide/mcp-tools/list-runs' },
+              ],
+            },
+            {
+              text: 'Finding your event log',
+              link: '/user-guide/alternative-log-retrieval',
+              collapsed: true,
+              items: [
+                { text: 'Managed platforms', link: '/user-guide/alternative-log-retrieval/managed-platforms' },
+                { text: 'Behind an SSH bastion', link: '/user-guide/alternative-log-retrieval/ssh-bastion' },
+              ],
+            },
           ],
         },
       ],
@@ -83,13 +122,65 @@ export default defineConfig({
               collapsed: true,
               items: [
                 { text: 'Overview', link: '/contributor-guide/architecture/overview' },
-                { text: 'Worker protocol', link: '/contributor-guide/architecture/worker-protocol' },
-                { text: 'State & history intake', link: '/contributor-guide/architecture/state-and-history' },
-                { text: 'Detector contract', link: '/contributor-guide/architecture/detector-contract' },
-                { text: 'Impact estimation', link: '/contributor-guide/architecture/impact-estimation' },
-                { text: 'Widget rendering', link: '/contributor-guide/architecture/widget-rendering' },
+                {
+                  text: 'Worker protocol',
+                  link: '/contributor-guide/architecture/worker-protocol',
+                  collapsed: true,
+                  items: [
+                    { text: 'Evidence availability', link: '/contributor-guide/architecture/worker-protocol/evidence-availability' },
+                    { text: 'Evidence report and finding identity', link: '/contributor-guide/architecture/worker-protocol/evidence-report' },
+                    { text: 'CLI and MCP server', link: '/contributor-guide/architecture/worker-protocol/cli-and-mcp' },
+                    { text: 'Core and event validation', link: '/contributor-guide/architecture/worker-protocol/core-and-event-validation' },
+                  ],
+                },
+                {
+                  text: 'State & history intake',
+                  link: '/contributor-guide/architecture/state-and-history',
+                  collapsed: true,
+                  items: [
+                    { text: 'Run comparison internals', link: '/contributor-guide/architecture/state-and-history/run-comparison-internals' },
+                    { text: 'History Server intake', link: '/contributor-guide/architecture/state-and-history/history-server-intake' },
+                  ],
+                },
+                {
+                  text: 'Detector contract',
+                  link: '/contributor-guide/architecture/detector-contract',
+                  collapsed: true,
+                  items: [
+                    { text: 'Plan attribution', link: '/contributor-guide/architecture/detector-contract/plan-attribution' },
+                    { text: 'Threshold tables', link: '/contributor-guide/architecture/detector-contract/threshold-tables' },
+                  ],
+                },
+                {
+                  text: 'Impact estimation',
+                  link: '/contributor-guide/architecture/impact-estimation',
+                  collapsed: true,
+                  items: [
+                    { text: 'Stage union rollup', link: '/contributor-guide/architecture/impact-estimation/stage-union-rollup' },
+                    { text: 'Caveats, tuning and coverage', link: '/contributor-guide/architecture/impact-estimation/caveats-tuning-and-coverage' },
+                  ],
+                },
+                {
+                  text: 'Widget rendering',
+                  link: '/contributor-guide/architecture/widget-rendering',
+                  collapsed: true,
+                  items: [
+                    { text: 'Findings tab', link: '/contributor-guide/architecture/widget-rendering/findings-tab' },
+                    { text: 'List sort mode', link: '/contributor-guide/architecture/widget-rendering/list-sort-mode' },
+                    { text: 'Row/expand contract', link: '/contributor-guide/architecture/widget-rendering/row-expand-contract' },
+                    { text: 'ReferenceSection', link: '/contributor-guide/architecture/widget-rendering/reference-section' },
+                    { text: 'Investigation routing', link: '/contributor-guide/architecture/widget-rendering/investigation-routing' },
+                  ],
+                },
                 { text: 'Board widgets', link: '/contributor-guide/architecture/board-widgets' },
-                { text: 'Drill-down', link: '/contributor-guide/architecture/drill-down' },
+                {
+                  text: 'Drill-down',
+                  link: '/contributor-guide/architecture/drill-down',
+                  collapsed: true,
+                  items: [
+                    { text: 'Plan graph', link: '/contributor-guide/architecture/drill-down/plan-graph' },
+                  ],
+                },
               ],
             },
             { text: 'Testing & verification', link: '/contributor-guide/testing' },

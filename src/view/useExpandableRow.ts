@@ -9,7 +9,7 @@ export interface ExpandableRowState<T> {
 }
 
 /** Shared per-row disclosure state for the Gold Standard row/expand pattern
- * (docs-site/contributor-guide/architecture/widget-rendering.md). Pass a
+ * (docs-site/contributor-guide/architecture/widget-rendering/row-expand-contract.md). Pass a
  * `fetchFn` for rows with async detail to lazily fetch on first expand
  * (e.g. Skew.tsx's duration histogram); omit it for rows whose expanded
  * content is already available synchronously (recommendation text,

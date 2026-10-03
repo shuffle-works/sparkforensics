@@ -62,102 +62,8 @@ SparkForensics can also fetch the log for you when your machine reaches the
 History Server directly: **Other sources > Fetch from Spark History Server**
 in [local-server mode](./getting-started.md#local-server-mode),
 `--shs-base-url` and `--app-id` in the
-[CLI](./getting-started.md#ci-and-automation), or a
+[CLI](./getting-started/ci-and-automation.md#ci-and-automation), or a
 `{ shsBaseUrl, appId }` source in the [MCP tools](./mcp-tools.md).
-
-## Amazon EMR
-
-EMR turns event logging on by default. On the cluster, the logs sit on HDFS
-under `/var/log/spark/apps/`:
-
-```bash
-hdfs dfs -ls /var/log/spark/apps/
-hdfs dfs -get /var/log/spark/apps/application_XXXX_XXXX .
-```
-
-If your cluster sets `spark.eventLog.dir` to an S3 path, download the file
-from there instead (for example with `aws s3 cp`). AWS's
-[EMR best-practices guide](https://aws.github.io/aws-emr-best-practices/docs/benchmarks/Analyzing/retrieve_event_logs/)
-covers both.
-
-## AWS Glue
-
-Glue writes event logs to S3 when the job has the Spark UI turned on. In the
-job parameters:
-
-```text
---enable-spark-ui true
---spark-event-logs-path s3://my-bucket/spark-events/
---enable-spark-ui-legacy-path true
-```
-
-Glue has two log formats: Standard, for its own console, and Legacy, which
-AWS documents for viewing on a Spark History Server. Ask for Legacy, as the
-last parameter above does, or pick it in the console under **Spark UI logging
-and monitoring configuration**.
-
-After the run, download the file, or the rolling-log directory when the job
-uses `spark.eventLog.rolling.enabled`, from that S3 path. See
-[Enabling the Apache Spark web UI for AWS Glue jobs](https://docs.aws.amazon.com/glue/latest/dg/monitor-spark-ui-jobs.html).
-
-## Databricks
-
-Set up compute log delivery on the cluster or job compute before it runs:
-**Advanced > Logging**, then pick a Unity Catalog volume, S3 or DBFS path.
-Databricks delivers driver, worker and event logs into a subfolder of that
-path named after the cluster ID, and keeps delivering until the compute
-shuts down. Copy the event log from there. See
-[compute log delivery](https://docs.databricks.com/aws/en/compute/configure#compute-log-delivery).
-
-## Dataproc
-
-Google Cloud Dataproc (also called Managed Service for Apache Spark) saves
-Spark job history to the cluster's temp bucket, in its
-`/spark-job-history` directory, unless the cluster sets
-`spark.eventLog.dir` somewhere else. Download the file with
-`gcloud storage cp`. See
-[Persistent History Server](https://cloud.google.com/dataproc/docs/concepts/jobs/history-server).
-
-## Behind an SSH bastion
-
-The most common hard case is a Spark History Server (SHS) reachable only
-through an SSH bastion or jump host (the recipe below is the same regardless
-of what's issuing the SSH session), with the event logs themselves living on
-Kerberized HDFS and no direct HTTP path from your machine to SHS.
-
-### Why `--shs-base-url` won't work here
-
-The CLI's `--shs-base-url`/`--app-id` flags and the MCP tools'
-`{ shsBaseUrl, appId }` source both make a direct HTTP request from wherever
-SparkForensics runs to the History Server's REST API. There's no `--via-ssh`
-flag. If the bastion can reach the History Server's HTTP port, forward it
-(`ssh -L 18080:<shs-host>:18080 <bastion>`) and use
-`--shs-base-url http://127.0.0.1:18080`. SparkForensics sends no credentials,
-so a History Server that requires Kerberos/SPNEGO sign-in can't be fetched
-this way: use the recipe below.
-
-Running in Airflow? The
-[sparkforensics-operator](https://github.com/shuffle-works/sparkforensics-operator)
-can fetch the log from a History Server behind an SSH tunnel, or run the
-analysis on an SSH host that already sees the logs.
-
-### The recipe
-
-1. SSH into the edge node (through the bastion, or whatever gets you there).
-2. Pull the event log off HDFS onto local disk on the edge node:
-
-   ```bash
-   hdfs dfs -get /path/to/spark-events/application_XXXX_XXXX /tmp/application_XXXX_XXXX
-   ```
-
-3. Copy that file back to your own machine through the same bastion, e.g.
-   with `scp` or `sftp`:
-
-   ```bash
-   scp edge-node:/tmp/application_XXXX_XXXX ./application_XXXX_XXXX
-   ```
-
-4. Load the local copy as described in [Loading the file](#loading-the-file).
 
 ## Loading the file
 
@@ -166,7 +72,7 @@ Once the log is on your machine:
 - Browser: drop the file onto the landing page, same as any other run
   (see [Getting started](./getting-started.md)).
 - CLI: `npx -p sparkforensics-cli sparkforensics-analyze ./application_XXXX_XXXX` (full flag
-  list in [Getting started](./getting-started.md#ci-and-automation)).
+  list in [Getting started](./getting-started/ci-and-automation.md#ci-and-automation)).
 - MCP: call a tool with an absolute path, for example
   `{ "source": { "path": "/home/me/application_XXXX_XXXX" } }` (a relative
   path resolves against the MCP server's working directory, which the

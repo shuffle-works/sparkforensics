@@ -44,15 +44,7 @@ the change. **Findings by category** lists which finding types became more or le
 frequent in the candidate, per impact level, with the count in each run and the
 affected stages.
 
-Stage-level detail depends on matching a stage in the baseline to its
-counterpart in the candidate, and SparkForensics only does that
-automatically when a stage's identity (its position in the SQL plan)
-resolves to exactly one match on both sides; AQE's runtime replanning makes
-a plain stage-ID match unreliable. The **Per-stage task skew** table covers
-only stages matched this way, and the page states what percentage of stages
-that was. If matching is uncertain (the two runs have different application names,
-or fewer than half their stages matched), a warning banner says so; the metric deltas
-above it still hold; they don't depend on stage matching.
+How stages are paired, and what the matching confidence means, is in [How stages are matched](./run-comparison/how-stages-are-matched.md).
 
 For everything else, matching is manual: the **Pinned per-stage deltas**
 widget lets you pick one stage from the baseline and one from the candidate
@@ -73,6 +65,6 @@ under `comparison` (`comparison.verdict` is the headline); in Markdown the
 comparison section follows the report. `--baseline` can also gate a build on
 the comparison
 (`--max-regression-pct`, `--fail-on-introduced`; see [Getting
-started](./getting-started.md#ci-and-automation)). The MCP server's
+started](./getting-started/ci-and-automation.md#ci-and-automation)). The MCP server's
 `compare_runs` and `evaluate_budgets` tools do the same for an AI assistant;
 see [MCP tools reference](./mcp-tools.md).
