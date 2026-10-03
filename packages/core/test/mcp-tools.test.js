@@ -729,6 +729,22 @@ describe('compareRuns', () => {
     }
   });
 
+  it('returns stagePairs only when asked for through include', async () => {
+    const a = tmpEventLogWithDuration('app-a', 2000);
+    const b = tmpEventLogWithDuration('app-b', 1000);
+    try {
+      const summary = await compareRuns({ source: { path: a.path } }, { source: { path: b.path } });
+      expect(summary).not.toHaveProperty('stagePairs');
+      expect(summary).toMatchObject({ comparisonSchemaVersion: 1, replanned: [], runtimeCoverage: null });
+      expect(summary.unmatched).toEqual({ baseStageIds: [], candStageIds: [] });
+      const full = await compareRuns({ source: { path: a.path } }, { source: { path: b.path } }, { include: ['stagePairs'] });
+      expect(full.stagePairs).toEqual([]);
+    } finally {
+      rmSync(a.dir, { recursive: true, force: true });
+      rmSync(b.dir, { recursive: true, force: true });
+    }
+  });
+
   it('accepts a mix of source and runId for either side', async () => {
     const a = tmpEventLogWithDuration('app-a', 2000);
     const b = tmpEventLogWithDuration('app-b', 1000);

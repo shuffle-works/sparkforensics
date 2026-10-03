@@ -28,6 +28,17 @@ describe('comparisonOutput', () => {
   });
 });
 
+describe('comparisonOutput views', () => {
+  it('leaves only stagePairs out of the summary view', () => {
+    const built = buildComparison(run('baseline', 'App', 'app-1'), run('candidate', 'App', 'app-2'));
+    const full = comparisonOutput(built, 'full');
+    const summary = comparisonOutput(built, 'summary');
+    expect(Object.keys(full)).toContain('stagePairs');
+    expect(Object.keys(summary)).toEqual(Object.keys(full).filter((k) => k !== 'stagePairs'));
+    expect(comparisonOutput(built)).toEqual(full);
+  });
+});
+
 describe('buildComparisonOutput', () => {
   it('returns the raw comparison and its projection', () => {
     const { comparison, output } = buildComparisonOutput(run('baseline', 'App', 'app-1'), run('candidate', 'App', 'app-2'));

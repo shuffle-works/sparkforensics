@@ -3,12 +3,13 @@
 Reference for the `compare_runs` tool of the SparkForensics MCP server.
 
 Compare two runs: the comparison page's verdict, metric deltas (`metrics`) and
-categorized findings delta (`findings`), and the stage pairs (`stagePairs`)
-with the share of executor run time they hold (`runtimeCoverage`). The result
+categorized findings delta (`findings`), and the share of executor run time in
+paired stages (`runtimeCoverage`). The result
 carries the same `verdict`, `confidence`, `reason`, `matchedCoverage`,
 `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`,
-`stagePairs`, `unmatched`, `replanned` and `bookkeepingStageIds` as the
-`comparison` object of the CLI's `--baseline` JSON output, plus
+`unmatched`, `replanned` and `bookkeepingStageIds` as the
+`comparison` object of the CLI's `--baseline` JSON output, plus `stagePairs`
+when `include` asks for it (the CLI always carries it), plus
 `runIdA` and `runIdB`. `metricDeltas` and `findingsDelta` repeat `metrics` and
 `findings` under their earlier names; they are deprecated and will be removed
 in a later release. `verdict` is the headline the dashboard's comparison page
@@ -27,6 +28,8 @@ Parameters:
 - `redact`: `boolean` (default `false`), pseudonymizes any app id or host/IP
   tokens embedded in free text (stage names and similar) in the response: see
   the note at the top of this page
+- `include`: `["stagePairs"]` (optional), adds `stagePairs`, one row per paired
+  stage. It is left out by default because it grows with the number of stages.
 - `normalizePath`: `string[]` (optional), regular expressions whose every match
   in a plan node's text is replaced with a fixed token before stages are
   paired, so text that is specific to your runs does not keep the same stage
@@ -44,7 +47,7 @@ Parameters:
 Each side needs either a `runId` or a `source`, and you can mix them: a
 cached run ID for the baseline, a fresh file for the candidate.
 
-Example call:
+Example call (add `"include": ["stagePairs"]` to the arguments for the pair rows):
 
 ```json
 {
@@ -56,7 +59,7 @@ Example call:
 }
 ```
 
-Example response (`metrics` and `metricDeltas` trimmed to their first row of 13, and each pair's `deltas` to three of its eight metrics):
+Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` trimmed to their first row of 13, and each pair's `deltas` to three of its eight metrics):
 
 ```json
 {
@@ -119,7 +122,7 @@ more isn't worse) or `unavailable`, and an unavailable row carries an
 
 The comparison block (`comparisonSchemaVersion` `1`) holds:
 
-- `stagePairs`: one entry per pair of stages, `pairId` (stable for one pair of
+- `stagePairs` (only with `include`): one entry per pair of stages, `pairId` (stable for one pair of
   runs; key on it), `baseStageIds` and `candStageIds`, `quality` (`exact`,
   `structural` or `aligned`), `score` (0 to 1) and `deltas`. `deltas` has one
   `{ baseline, candidate, delta }` entry for each of `executorRunTime`,

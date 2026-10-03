@@ -350,7 +350,8 @@ async function resolveAndAnalyze(
 }
 
 export async function compareRuns(
-  a: RunRef, b: RunRef, opts?: { redact?: boolean; markdown?: boolean; thresholds?: ThresholdOverrides; normalizePath?: readonly string[] },
+  a: RunRef, b: RunRef, opts?: { redact?: boolean; markdown?: boolean; thresholds?: ThresholdOverrides; normalizePath?: readonly string[];
+    /** `stagePairs`: add the per-pair rows, which the default view leaves out. */ include?: Array<'stagePairs'> },
 ): Promise<McpCompareRunsResult & { markdown?: string; tunedThresholds?: Record<string, TunedThresholds> }> {
   // Before any log is read: a bad pattern refuses the call, as the CLI's usage error does.
   try {
@@ -370,7 +371,7 @@ export async function compareRuns(
   const { comparison, output } = buildComparisonOutput(
     { label: runIdA, appModel: appModelA, catalog: catalogA },
     { label: runIdB, appModel: appModelB, catalog: catalogB },
-    { redact: opts?.redact, normalizePath: opts?.normalizePath },
+    { redact: opts?.redact, normalizePath: opts?.normalizePath, view: opts?.include?.includes('stagePairs') ? 'full' : 'summary' },
   );
 
   return {

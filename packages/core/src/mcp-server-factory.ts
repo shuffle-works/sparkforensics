@@ -97,12 +97,14 @@ export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverride
       runIdA: z.string().optional(), sourceA: sourceSchema.optional(),
       ...secondRunRefSchema,
       redact: z.boolean().optional(),
+      include: z.array(z.enum(['stagePairs'])).optional()
+        .describe('Extra blocks to return. stagePairs: one row per paired stage with its deltas, which can be large.'),
       normalizePath: z.array(z.string().max(MAX_NORMALIZE_PATTERN_LENGTH)).max(MAX_NORMALIZE_PATTERNS).optional()
         .describe('Regular expressions whose every match in a plan node\'s text is replaced with a fixed token before stages are paired, so run-specific text (an output directory that differs per run) does not keep the same stage from pairing. A generic pattern, not only for paths. Affects stage pairing, runtimeCoverage and confidence, never findings. A pattern that backtracks catastrophically can stall the server: keep them simple and anchored.'),
       ...formatSchema,
     },
-  }, ({ runIdA, sourceA, runIdB, sourceB, redact, normalizePath, format }) => toolResultWithMarkdown(
-    compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath }),
+  }, ({ runIdA, sourceA, runIdB, sourceB, redact, include, normalizePath, format }) => toolResultWithMarkdown(
+    compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, include }),
   ));
 
   server.registerTool('evaluate_budgets', {

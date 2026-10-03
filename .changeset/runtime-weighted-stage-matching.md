@@ -11,7 +11,7 @@ Comparisons pair stages with a new aligner and judge confidence by executor run 
 
 **New confidence value: `insufficient`.** It is reported when neither run recorded any executor run time, so there is no work to compare. `runtimeCoverage` is `null` then. Typed consumers of `confidence` (`"ok" | "low"`) need to accept it. The dashboard banner renders it.
 
-New comparison block, in the CLI's `comparison` object, in MCP `compare_runs` and in the Markdown output, with `comparisonSchemaVersion: 1`:
+New comparison block, in the CLI's `comparison` object, in MCP `compare_runs` and in the Markdown output (MCP returns `stagePairs` only when `include: ["stagePairs"]` asks for it, because it grows with the stage count), with `comparisonSchemaVersion: 1`:
 
 - `stagePairs`: `pairId`, `baseStageIds`, `candStageIds`, `quality`, `score` and `deltas` for executor run time, CPU time, spill, input, output and shuffle bytes. Deltas count every task attempt of the stage, failed ones included.
 - `unmatched`, `replanned` (always empty), `bookkeepingStageIds` and `runtimeCoverage`.

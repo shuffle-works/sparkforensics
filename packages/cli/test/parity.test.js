@@ -39,6 +39,7 @@ const RUN_REPORT_ALLOWED = [
 const COMPARISON_ALLOWED = [
   { path: 'runIdA', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
   { path: 'runIdB', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
+  { path: 'stagePairs', only: 'cli', reason: 'One row per paired stage can be large, so compare_runs returns it only with include: [\'stagePairs\']; the CLI always does. Checked equal with that include below.' },
   { path: 'metricDeltas', only: 'mcp', reason: 'Deprecated alias of `metrics`, kept for one release; checked equal to `metrics` below.' },
   { path: 'findingsDelta', only: 'mcp', reason: 'Deprecated alias of `findings`, kept for one release; checked equal to `findings` below.' },
 ];
@@ -157,6 +158,8 @@ const INCLUDE_ALL = ['summary', 'evidenceAvailability', 'detectors'];
 const COMPARISON_BLOCK_FIELDS = [
   'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'runtimeCoverage',
 ];
+// compare_runs leaves stagePairs out unless asked (see COMPARISON_ALLOWED).
+const MCP_DEFAULT_FIELDS = COMPARISON_BLOCK_FIELDS.filter((f) => f !== 'stagePairs');
 
 describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public corpus logs', () => {
   describe.each(CANDIDATES)('%s', (candidate) => {
@@ -192,7 +195,8 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
     // Every field of the comparison block, on both surfaces and in the dashboard's compareRuns.
     it('reports every stage-pair field on the CLI, compare_runs and the dashboard', async () => {
       const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson']);
-      const viaMcp = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate } });
+      const viaMcp = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate }, include: ['stagePairs'] });
+      const viaMcpDefault = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate } });
       const dashboard = JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate))));
       for (const surface of [line.comparison, viaMcp, dashboard]) {
         expect(Object.keys(surface)).toEqual(expect.arrayContaining(COMPARISON_BLOCK_FIELDS));
@@ -201,6 +205,10 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
         expect(surface.confidence).toMatch(/^(ok|low|insufficient)$/);
       }
       for (const field of COMPARISON_BLOCK_FIELDS) expect(viaMcp[field]).toEqual(line.comparison[field]);
+      // The default MCP view carries every other field and leaves only stagePairs out.
+      expect(Object.keys(viaMcpDefault)).toEqual(expect.arrayContaining(MCP_DEFAULT_FIELDS));
+      expect(viaMcpDefault).not.toHaveProperty('stagePairs');
+      for (const field of MCP_DEFAULT_FIELDS) expect(viaMcpDefault[field]).toEqual(line.comparison[field]);
       // The corpus pair may share no stage: the shape of a pair is read from a run against itself.
       const [self] = await cliLines([BASELINE, '--baseline', BASELINE, '--format', 'ndjson']);
       expect(self.comparison.stagePairs[0]).toEqual({
