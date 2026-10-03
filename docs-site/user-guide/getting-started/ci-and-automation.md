@@ -298,11 +298,11 @@ synthetic command `DeltaMerge`, `kind: "path"` and the table path from the
 `_delta_log` of the plans in the run. The log holds no table name for these
 merges. The run must hold a write phase (a description containing `writing` or
 `rewriting`), because a run that only scanned may have read the merge's source.
-The target is `null`, and `raw` says why when it applies, when the run has no
-write phase, names zero or several paths, a plan or start time is missing, or
-the run's start times overlap another run's (merges on concurrent threads). Two merges
-whose executions have consecutive ids are one run and name two paths, so they
-get no target. A description a user sets that starts with `MERGE operation` is
+The target is `null` when the run has no write phase, names zero or several
+paths, has a plan or start time missing, or has start times that overlap another
+run's (merges on concurrent threads); `raw` says which. Two merges whose
+executions have consecutive ids are one run and name two paths, so they get no
+target. A description a user sets that starts with `MERGE operation` is
 indistinguishable from Delta's and is reported the same way. `raw` reads
 `Delta MERGE operation, executions 10-17`.
 
