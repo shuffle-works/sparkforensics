@@ -28,8 +28,8 @@ describe('SQL MERGE, UPDATE, DELETE and saves: target from the kept arguments li
 
   it.each([
     ['MergeIntoCommand', 'SubqueryAlias source, SubqueryAlias target, `spark_catalog`.`db`.`t_merge`, org.apache.hadoop.hive.serde2.lazy.X, Delta[version=0, ... db.db/t_merge], (id#1 = id#2)'],
-    ['UpdateCommand', 'Delta[version=3, ... db.db/t_merge], `spark_catalog`.`db`.`t_merge`, Relation [id#1] parquet, [(x#2 = 1)]'],
-    ['DeleteCommand', 'Delta[version=3, ... db.db/t_merge], `spark_catalog`.`db`.`t_merge`, Relation [id#1] parquet, (id#1 > 0)'],
+    ['UpdateCommand', 'Delta[version=3, hdfs://nn/sandbox/db.db/t_merge], `spark_catalog`.`db`.`t_merge`, org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe, [id#1L, 99], (id#1L < 10)'],
+    ['DeleteCommand', 'org.apache.spark.sql.delta.DeltaLog@1a2b, `spark_catalog`.`db`.`t_merge`, org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe, (id#1L < 10)'],
     ['WriteIntoDelta', 'Delta[version=3, ... db.db/t_merge], `spark_catalog`.`db`.`t_merge`, Append'],
   ])('reports %s as table db.t_merge', (command, args) => {
     expect(targetsOf(writesOf(withArgs(command, args)))).toEqual([{ command, kind: 'table', target: 'db.t_merge' }]);

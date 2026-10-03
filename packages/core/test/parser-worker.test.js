@@ -138,9 +138,10 @@ describe('buildChunkDecoder', () => {
     for (let cut = 0; cut <= bytes.length; cut++) {
       expect(terminated(decodeInChunks([cut]).map(stripPlanDescription))).toEqual(terminated(expected));
     }
-    // A cut just past line 2's key: its value is dropped by the decoder itself, not the text strip.
+    // A cut just past line 2's key, inside the first character of its value: too little has arrived to
+    // tell whether it is a kept description, so the decoder holds it, and the text strip empties it.
     const keyEnd = text.indexOf('"physicalPlanDescription":"', text.indexOf(lines[2])) + '"physicalPlanDescription":"'.length;
-    expect(decodeInChunks([enc.encode(text.slice(0, keyEnd)).length + 3])[2]).toBe(expected[2]);
+    expect(stripPlanDescription(decodeInChunks([enc.encode(text.slice(0, keyEnd)).length + 3])[2])).toBe(expected[2]);
   });
 
   describe('Delta command arguments in the plan description', () => {
@@ -192,21 +193,31 @@ describe('buildChunkDecoder', () => {
       expect('rootExecutionId' in noRoot.data).toBe(false);
     });
 
-    it('keeps a small command description that spans decoder chunks, cut at any offset', () => {
+    it('keeps a small command description that spans decoder chunks, cut at any offset including inside its header', () => {
       const line = startLine(described('MergeIntoCommand', 'a, `spark_catalog`.`db`.`t`, b'));
       const expected = stripPlanDescription(line);
       const bytes = enc.encode(`${line}\n${line}\n`);
-      // The description's value starts after the key, then "== Physical Plan ==\nExecute <name> ".
-      const nameDone = line.indexOf('MergeIntoCommand (1)') + 'MergeIntoCommand'.length + 1;
-      const emptied = startLine('');
       for (let cut = 1; cut < bytes.length; cut++) {
         const dec = buildChunkDecoder();
         const got = [...dec.decode(bytes.subarray(0, cut)), ...dec.decode(bytes.subarray(cut)), ...dec.flush()].map(stripPlanDescription);
-        expect(got).toHaveLength(2);
-        // A cut before the command name is complete drops the value (the target then falls back
-        // to the child executions); a later cut keeps it.
-        for (const g of got) expect([expected, emptied]).toContain(g);
-        if (cut > nameDone && cut < line.length) expect(got[0]).toBe(expected);
+        expect(got).toEqual([expected, expected]);
+      }
+      // Cut into more than two pieces, down to one byte at a time.
+      for (const size of [1, 2, 7, 31]) {
+        const dec = buildChunkDecoder();
+        const got = [];
+        for (let at = 0; at < bytes.length; at += size) got.push(...dec.decode(bytes.subarray(at, at + size)));
+        expect([...got, ...dec.flush()].map(stripPlanDescription)).toEqual([expected, expected]);
+      }
+    });
+
+    it('still drops another description that spans chunks, cut inside the part that tells it apart', () => {
+      const line = startLine(described('InsertIntoHadoopFsRelationCommand', 'x'.repeat(300)));
+      const bytes = enc.encode(`${line}\n`);
+      for (let cut = 1; cut < bytes.length; cut++) {
+        const dec = buildChunkDecoder();
+        const got = [...dec.decode(bytes.subarray(0, cut)), ...dec.decode(bytes.subarray(cut)), ...dec.flush()].map(stripPlanDescription);
+        expect(JSON.parse(got[0]).physicalPlanDescription).toBe('');
       }
     });
 

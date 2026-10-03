@@ -98,7 +98,10 @@ describe('Delta write targets from a log', () => {
     { sqlExecutionId: 10, command: 'DeltaMerge', kind: 'path', target: `${BASE}/t_api_one` },
     { sqlExecutionId: 22, command: 'DeltaMerge', kind: 'path', target: `${BASE}/t_api_two` },
     { sqlExecutionId: 40, command: 'UpdateCommand', kind: 'table', target: 'db.t_update' },
-    { sqlExecutionId: 41, command: 'DeleteCommand', kind: 'path', target: `${BASE}/t_delete` },
+    { sqlExecutionId: 41, command: 'DeleteCommand', kind: 'table', target: 'db.t_delete' },
+    // DeltaTable API merges: a command root with sub-queries of two threads interleaved.
+    { sqlExecutionId: 50, command: 'MergeIntoCommand', kind: 'table', target: 'db.t_cmd_one' },
+    { sqlExecutionId: 52, command: 'MergeIntoCommand', kind: 'table', target: 'db.t_cmd_two' },
   ];
 
   it('reports the same targets from the dashboard ingest and from the CLI ingest', async () => {

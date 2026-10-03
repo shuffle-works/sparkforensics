@@ -284,6 +284,10 @@ export function buildChunkDecoder() {
   // line again after every slice scanned about 10 GB on a 100 MB line.
   let pendingIsSqlEvent = false;
   let keyTail = '';
+  // Where the pending line's plan-description value starts, once its key is found but too little
+  // of the value has arrived to tell whether it is a small Delta command description (see
+  // descriptionDisposition); -1 otherwise.
+  let undecidedValueStart = -1;
   let skippingPlanDescription = false;
   // Length of the backslash run the skipped bytes ended with, which escapes a quote at the start
   // of the next chunk when odd.
@@ -317,15 +321,24 @@ export function buildChunkDecoder() {
       keyTail = '';
       appended = pending; // nothing of it was searched while it was shorter than the prefix
     }
-    const keyAt = findPlanKey(appended);
-    if (keyAt === -1) return; // the key may still arrive in a later chunk
-    pendingSettled = true;
-    const valueStart = keyAt + PLAN_DESCRIPTION_KEY.length;
-    if (closingQuoteIndex(pending, valueStart) !== -1) return; // complete: stripPlanDescription empties it
+    let valueStart = undecidedValueStart;
+    if (valueStart === -1) {
+      const keyAt = findPlanKey(appended);
+      if (keyAt === -1) return; // the key may still arrive in a later chunk
+      valueStart = keyAt + PLAN_DESCRIPTION_KEY.length;
+    }
+    if (closingQuoteIndex(pending, valueStart) !== -1) { // complete: stripPlanDescription handles it
+      undecidedValueStart = -1;
+      pendingSettled = true;
+      return;
+    }
     // A small kept description is not skipped: the line completes in a later chunk and
-    // stripPlanDescription keeps its arguments line. (A name cut off at the chunk end is skipped.)
-    const described = describedCommand(pending, valueStart);
-    if (described !== null && SMALL_DESCRIPTION_COMMANDS.has(described)) return;
+    // stripPlanDescription keeps its arguments line.
+    const disposition = descriptionDisposition(pending, valueStart);
+    if (disposition === 'wait') { undecidedValueStart = valueStart; return; }
+    undecidedValueStart = -1;
+    pendingSettled = true;
+    if (disposition === 'keep') return;
     // Only a chunk whose last byte is a backslash carries a run over; any other last byte (such
     // as part of a split multibyte char) ends it.
     let run = 0;
@@ -387,6 +400,7 @@ export function buildChunkDecoder() {
       pending = pendingHead = appended = start < text.length ? text.substring(start) : '';
       pendingSettled = false;
       pendingIsSqlEvent = false;
+      undecidedValueStart = -1;
     }
     if (!pendingSettled && pending !== '') settlePending(buffer[buffer.length - 1], appended);
   }
@@ -1370,6 +1384,17 @@ function describedCommand(text: string, valueStart: number): string | null {
   let nameEnd = nameStart;
   while (nameEnd < text.length && /[A-Za-z]/.test(text[nameEnd])) nameEnd++;
   return nameEnd < text.length ? text.slice(nameStart, nameEnd) : null;
+}
+
+// What to do with an open description value whose first bytes are text[valueStart...]: 'keep' it
+// (a small Delta command description), 'skip' it, or 'wait' when too little has arrived to tell.
+function descriptionDisposition(text: string, valueStart: number): 'keep' | 'skip' | 'wait' {
+  const seen = text.slice(valueStart, valueStart + PLAN_HEADER.length);
+  if (!PLAN_HEADER.startsWith(seen)) return 'skip';
+  if (seen.length < PLAN_HEADER.length) return 'wait';
+  const command = describedCommand(text, valueStart);
+  if (command === null) return 'wait'; // the command name is still arriving
+  return SMALL_DESCRIPTION_COMMANDS.has(command) ? 'keep' : 'skip';
 }
 
 // The `<Command>\nArguments: <line>` part (still JSON-escaped) of the root command of a plan

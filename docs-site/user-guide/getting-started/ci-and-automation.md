@@ -269,8 +269,12 @@ this order, and is `null` when neither names exactly one target.
    applies only when the command is its own root execution, and a source that is
    itself a Delta table adds a second path and leaves the target `null`.
 
-A merge made with `DeltaTable.merge(...).execute()` runs no command node. Its
-queries are separate root executions, and the only things tying them together
+A merge made with `DeltaTable.merge(...).execute()` normally runs a
+`MergeIntoCommand` too (its description is `toDataset$ at DeltaMergeBuilder`),
+and is reported like a SQL MERGE, including two merges run from threads of one
+session, whose sub-queries are told apart by their root execution. Some logs
+have no such command execution for an API merge. Its queries are then separate
+root executions, and the only things tying them together
 are a `MERGE operation` description and adjacent execution ids. Each run of
 consecutive ids with such a description is reported as one write with the
 synthetic command `DeltaMerge`, `kind: "path"` and the table path from the

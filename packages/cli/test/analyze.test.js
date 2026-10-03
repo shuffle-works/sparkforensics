@@ -93,7 +93,9 @@ describe('sparkforensics-analyze CLI', () => {
       [10, 'DeltaMerge', 'path', 'hdfs://nn/sandbox/db.db/t_api_one'],
       [22, 'DeltaMerge', 'path', 'hdfs://nn/sandbox/db.db/t_api_two'],
       [40, 'UpdateCommand', 'table', 'db.t_update'],
-      [41, 'DeleteCommand', 'path', 'hdfs://nn/sandbox/db.db/t_delete'],
+      [41, 'DeleteCommand', 'table', 'db.t_delete'],
+      [50, 'MergeIntoCommand', 'table', 'db.t_cmd_one'],
+      [52, 'MergeIntoCommand', 'table', 'db.t_cmd_two'],
     ]);
   });
 
