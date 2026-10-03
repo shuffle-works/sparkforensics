@@ -17,11 +17,11 @@ same job is rewritten to a fixed form:
 - dates and timestamps, such as the run date in a predicate
 - `IN` and `INSET` lists, which grow with the processing window
 - file counts in a file index, such as `DeltaLogFileIndex(4 paths)`
-- the order of the entries in a bracketed list such as `[a, b, c]`, so a grouping set that a program emits in a
-  different order each time still matches
 
 Numbers, paths and string literals in general are not rewritten: two stages that
-differ in a filter constant or an input path stay different stages. Text that
+differ in a filter constant or an input path stay different stages. The order of
+a column list is not normalized either, so a grouping set that a program emits in
+a different order each time can leave those stages unpaired. Text that
 is specific to your runs, such as an output directory that includes the run's
 variant name, can be rewritten with the CLI's `--normalize-path` flag or the
 MCP `compare_runs` tool's `normalizePath` parameter. Despite the name it is a

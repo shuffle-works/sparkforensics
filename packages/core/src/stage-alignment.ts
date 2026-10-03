@@ -5,7 +5,7 @@
 //
 // Pairing keys on `comparisonIdentity`: the `stageIdentity` recipe run with the comparison
 // normalizer, so the volatile tokens that make two runs of one job differ (staging directories,
-// dates, IN-lists, Delta log file counts, column order) and the caller's `--normalize-path`
+// dates, IN-lists, Delta log file counts) and the caller's `--normalize-path`
 // patterns do not split a stage in two. `stageIdentity` itself stays the frozen exact key.
 
 import { normalizeDetail } from './detectors.ts';
@@ -45,30 +45,7 @@ export const COMPARISON_PATCHES: ReadonlyArray<{ name: string; apply: (s: string
     apply: (s) => s.replace(/\/([A-Za-z0-9]{6,8})(?=\/)/g, (m, seg: string) =>
       (/[A-Z]/.test(seg) && /[a-z]/.test(seg)) || (/[A-Za-z]/.test(seg) && /\d/.test(seg)) ? '/TMP' : m),
   },
-  // Column order: the entries of each innermost bracketed list are sorted, for lists a Python set
-  // emits in a different order per process (Expand projections, grouping ids). Text outside the
-  // brackets, operators and parentheses stay as printed.
-  { name: 'columnOrder', apply: (s) => s.replace(/\[([^[\]]*)\]/g, (_m, list: string) => `[${sortListEntries(list).join(', ')}]`) },
 ];
-
-// Splits a bracketed list at its top-level commas (commas inside parentheses stay put), trims
-// each entry and sorts them.
-function sortListEntries(list: string): string[] {
-  const entries: string[] = [];
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < list.length; i++) {
-    const ch = list[i];
-    if (ch === '(') depth++;
-    else if (ch === ')') depth = Math.max(0, depth - 1);
-    else if (ch === ',' && depth === 0) {
-      entries.push(list.slice(start, i).trim());
-      start = i + 1;
-    }
-  }
-  entries.push(list.slice(start).trim());
-  return entries.sort();
-}
 
 /** What every match of a caller-supplied pattern is replaced with. */
 export const NORMALIZE_PATH_TOKEN = 'NORMALIZED';

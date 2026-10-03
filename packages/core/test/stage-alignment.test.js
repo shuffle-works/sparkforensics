@@ -60,20 +60,8 @@ describe('comparison normalizer patches', () => {
     expect(normalize('InMemoryFileIndex(12 paths)')).toBe(normalize('InMemoryFileIndex(3 paths)'));
   });
 
-  it('treats a column list as an unordered bag', () => {
-    expect(normalize('Expand [[a, b, 0], [a, null, 1]], [a, gid]')).toBe(normalize('Expand [[b, a, 0], [null, a, 1]], [gid, a]'));
-  });
-
-  it('ignores the order of entries in a bracketed list only', () => {
-    expect(normalize('Project [a#1, b#2, c#3]')).toBe(normalize('Project [c#3, a#1, b#2]'));
-    expect(normalize('Project [a#1, b#2]')).not.toBe(normalize('Project [a#1, b#3]'));
-  });
-
-  it('keeps comparison and arithmetic operators and parentheses in the key', () => {
-    expect(normalize('Filter (x#1 > 5)')).not.toBe(normalize('Filter (x#1 < 5)'));
-    expect(normalize('Filter (x#1 > 5)')).not.toBe(normalize('Filter (x#1 >= 5)'));
-    expect(normalize('Project [(a#1 + b#2) AS c#3]')).not.toBe(normalize('Project [(a#1 - b#2) AS c#3]'));
-    expect(normalize('Filter ((a#1 > 1) AND (b#2 < 2))')).not.toBe(normalize('Filter (a#1 > 1) AND ((b#2 < 2))'));
+  it('does not normalize the order of a column list', () => {
+    expect(normalize('Expand [[a, b, 0], [a, null, 1]], [a, gid]')).not.toBe(normalize('Expand [[b, a, 0], [null, a, 1]], [gid, a]'));
   });
 
   it('keeps distinct details distinct: no blanket numeric, path or quoted-literal stripping', () => {
@@ -119,7 +107,6 @@ describe('alignStages: a pair of runs differing in one volatile token still pair
     ['a run date in a predicate', 'Filter (event_date#1 <= 2026-01-15)', 'Filter (event_date#1 <= 2026-01-16)'],
     ['an INSET date list that gains an element', 'Filter d#1 INSET 2026-01-01, 2026-01-02)', 'Filter d#1 INSET 2026-01-01, 2026-01-02, 2026-01-03)'],
     ['Delta log file counts', 'FileScan parquet [a#1] Location: PreparedDeltaFileIndex(4 paths)[x]', 'FileScan parquet [a#1] Location: PreparedDeltaFileIndex(8 paths)[x]'],
-    ['grouping columns in another order', 'Expand [[a#1, b#2, 0], [a#1, null, 1]], [a#1, b#2, gid#3]', 'Expand [[b#2, a#1, 0], [null, a#1, 1]], [b#2, a#1, gid#3]'],
   ])('pairs stages differing only in %s', (_label, baseDetail, candDetail) => {
     const base = snapshotOf([{ id: 1, name: 'Exchange 1', nodes: [node('Filter', baseDetail, [1])] }]);
     const cand = snapshotOf([{ id: 5, name: 'Exchange 2', nodes: [node('Filter', candDetail, [5])] }]);
