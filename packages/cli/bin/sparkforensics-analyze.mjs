@@ -23,9 +23,8 @@ const loadCore = (moduleName, opts) => loadVendored(pkgDir, moduleName, opts);
 const { collectRun } = await loadCore('cli/collect-run');
 const { resolveFromShs } = await loadCore('shs-load');
 const { validateShsRequest } = await loadCore('shs-request', { srcExt: 'js' });
-const { analyzeModel } = await loadCore('analyzer');
 const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
-const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
+const { buildEvidenceReport, runFindings, toFindingsFilter } = await loadCore('evidence-report');
 const { evaluateBudgets } = await loadCore('cli/budgets');
 const { renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
 const { buildComparisonOutput } = await loadCore('comparison-output');
@@ -242,7 +241,7 @@ async function runMultiLog({
     process.exitCode = EXIT.BASELINE_UNREADABLE;
     return;
   }
-  const baselineCatalog = analyzeModel(baselineAppModel, { thresholds });
+  const baselineCatalog = runFindings(baselineAppModel, thresholds).catalog;
   if (outPath) writeFileSync(outPath, '');
   const emit = (line) => {
     const text = `${JSON.stringify(line)}\n`;
@@ -256,7 +255,7 @@ async function runMultiLog({
     let line;
     try {
       const { appModel } = await unreadable(collectWithEvidence(path), EXIT.CANDIDATE_UNREADABLE);
-      const catalog = analyzeModel(appModel, { thresholds });
+      const catalog = runFindings(appModel, thresholds).catalog;
       const { comparison, output } = buildComparisonOutput(
         { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
         { label: 'candidate', appModel, catalog },
@@ -516,7 +515,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     return;
   }
 
-  const catalog = analyzeModel(appModel, { thresholds });
+  const catalog = runFindings(appModel, thresholds).catalog;
 
   if (exportHtmlDir !== undefined) {
     // The dashboard never tunes, so the export is the default-threshold analysis of the run.
@@ -525,7 +524,7 @@ async function runCli(argv, { fetchImpl } = {}) {
       process.stderr.write('--export-html: the exported dashboard uses the default detector thresholds; --thresholds applies to the report only.\n');
     }
     try {
-      await writeHtmlExport(exportHtmlDir, appModel, tuned ? analyzeModel(appModel) : catalog, skippedLines, { redact: values.redact });
+      await writeHtmlExport(exportHtmlDir, appModel, tuned ? runFindings(appModel).catalog : catalog, skippedLines, { redact: values.redact });
     } catch (e) {
       process.stderr.write(`--export-html failed: ${e.message}\n`);
       process.exitCode = EXIT.INTERNAL;
@@ -536,7 +535,7 @@ async function runCli(argv, { fetchImpl } = {}) {
   let comparison;
   let comparisonJson;
   if (usingBaseline) {
-    const baselineCatalog = analyzeModel(baselineAppModel, { thresholds });
+    const baselineCatalog = runFindings(baselineAppModel, thresholds).catalog;
     // The builder applies --redact: stage names in the comparison carry raw Spark stage text,
     // which --redact promises to pseudonymize.
     ({ comparison, output: comparisonJson } = buildComparisonOutput(

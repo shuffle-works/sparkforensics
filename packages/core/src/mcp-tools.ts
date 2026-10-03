@@ -6,9 +6,8 @@ import { collectRun } from './cli/collect-run.ts';
 import { deriveEvidenceAvailability } from './evidence-availability.ts';
 import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
 import { mcpError } from './mcp-error.ts';
-import { buildEvidenceReport, toFindingsFilter, type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson } from './evidence-report.ts';
+import { buildEvidenceReport, runFindings, toFindingsFilter, type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson } from './evidence-report.ts';
 import { computeWallClock } from './wall-clock.ts';
-import { analyzeModel } from './analyzer.ts';
 import { renderComparisonMarkdown, type CompareRunsResult } from './run-comparison.ts';
 import { buildComparisonOutput, type ComparisonOutput } from './comparison-output.ts';
 import { runOutputBlocks } from './run-output.ts';
@@ -346,7 +345,7 @@ async function resolveAndAnalyze(
   ref: RunRef, thresholds: ThresholdOverrides | undefined,
 ): Promise<{ runId: string; appModel: AppModel; catalog: Finding[] }> {
   const { runId, appModel } = await resolveOrCreateRun(ref);
-  return { runId, appModel, catalog: analyzeModel(appModel, { thresholds }) };
+  return { runId, appModel, catalog: runFindings(appModel, thresholds).catalog };
 }
 
 export async function compareRuns(
