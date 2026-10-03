@@ -203,7 +203,7 @@ export function diagnoseRun(runId: string, opts?: {
     notRunChecks: json.notRunChecks,
     // The CLI report's own blocks, so a run reads the same through either surface.
     writeTargets: json.writeTargets,
-    ...runOutputBlocks(appModel, analyzeModel(appModel, opts), { redact: opts?.redact, thresholds: opts?.thresholds }),
+    ...runOutputBlocks(appModel, { redact: opts?.redact, thresholds: opts?.thresholds }),
     runComplete: appModel.app?.endTime != null,
     // Top level too, so a client that never asks for `summary` still sees the run was tuned.
     ...(tuned ? { tunedThresholds: tuned } : {}),

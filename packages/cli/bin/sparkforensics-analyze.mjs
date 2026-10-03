@@ -274,7 +274,7 @@ async function runMultiLog({
         exitCode,
         error: null,
         budgets: results,
-        candidate: { ...json, ...runOutputBlocks(appModel, catalog, { redact, thresholds, confKeys, confRedactRegex }) },
+        candidate: { ...json, ...runOutputBlocks(appModel, { redact, thresholds, confKeys, confRedactRegex }) },
         comparison: output,
       };
     } catch (e) {
@@ -553,7 +553,7 @@ async function runCli(argv, { fetchImpl } = {}) {
   if (values.format === 'md') {
     output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonJson.verdict)}\n` : `${markdown}\n`;
   } else {
-    const machineReadable = runOutputBlocks(appModel, catalog, {
+    const machineReadable = runOutputBlocks(appModel, {
       redact: values.redact, thresholds, confKeys, confRedactRegex: values['conf-redact-regex'],
     });
     const payload = comparison

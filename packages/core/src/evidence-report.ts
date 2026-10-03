@@ -405,13 +405,13 @@ function verdictJson(model: RunVerdictModel): VerdictJson {
 // A WeakMap needs no invalidation: once mcp-tools.ts evicts the appModel, this entry is collectible.
 // Each cache is split first by the overrides object the report ran under (one fixed, frozen object
 // per CLI invocation or MCP server process; DEFAULT_THRESHOLDS for the specification's).
-type ReportCache = WeakMap<object, WeakMap<AppModel, EvidenceReportJson>>;
+type ReportCache<T = EvidenceReportJson> = WeakMap<object, WeakMap<AppModel, T>>;
 const DEFAULT_THRESHOLDS = {};
 const jsonCache: ReportCache = new WeakMap();
 // The redacted report, keyed by the unredacted appModel it was built from.
 const redactedJsonCache: ReportCache = new WeakMap();
 
-function cacheFor(cache: ReportCache, thresholds: ThresholdOverrides | undefined): WeakMap<AppModel, EvidenceReportJson> {
+function cacheFor<T>(cache: ReportCache<T>, thresholds: ThresholdOverrides | undefined): WeakMap<AppModel, T> {
   const key = thresholds ?? DEFAULT_THRESHOLDS;
   let byModel = cache.get(key);
   if (!byModel) {
@@ -421,14 +421,23 @@ function cacheFor(cache: ReportCache, thresholds: ThresholdOverrides | undefined
   return byModel;
 }
 
-function runFindings(appModel: AppModel, thresholds: ThresholdOverrides | undefined): { catalog: Finding[]; config: Finding[] } {
+const findingsCache: ReportCache<{ catalog: Finding[]; config: Finding[] }> = new WeakMap();
+
+/** The run's detector catalog and config audit, computed once per run and overrides so the report
+ * and the blocks built beside it (run-output.ts) share one analysis. */
+export function runFindings(appModel: AppModel, thresholds: ThresholdOverrides | undefined): { catalog: Finding[]; config: Finding[] } {
+  const cache = cacheFor(findingsCache, thresholds);
+  const cached = cache.get(appModel);
+  if (cached) return cached;
   const { app, stages, executors, sql, jobs, runAggregates } = appModel;
   const catalog = analyze(
     app, stages, executors?.added ?? [], executors?.removed ?? [],
     jobs ?? new Map(), sql ?? new Map(),
     runAggregates ?? null, { thresholds },
   );
-  return { catalog, config: auditConfig(app) };
+  const result = { catalog, config: auditConfig(app) };
+  cache.set(appModel, result);
+  return result;
 }
 
 // Redacts the model and findings before the report derives any text from them, the same order

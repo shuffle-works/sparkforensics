@@ -47,7 +47,7 @@ describe('buildComparisonOutput', () => {
 
 describe('runOutputBlocks', () => {
   it('returns the run\'s metrics and effective conf', () => {
-    const blocks = runOutputBlocks(appModel('App', 'app-1'), []);
+    const blocks = runOutputBlocks(appModel('App', 'app-1'));
     expect(Object.keys(blocks)).toEqual(['metrics', 'effectiveConf']);
     expect(blocks.metrics.schemaVersion).toBeTypeOf('number');
   });
