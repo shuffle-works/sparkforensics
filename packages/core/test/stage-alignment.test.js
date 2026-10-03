@@ -64,6 +64,18 @@ describe('comparison normalizer patches', () => {
     expect(normalize('Expand [[a, b, 0], [a, null, 1]], [a, gid]')).toBe(normalize('Expand [[b, a, 0], [null, a, 1]], [gid, a]'));
   });
 
+  it('ignores the order of entries in a bracketed list only', () => {
+    expect(normalize('Project [a#1, b#2, c#3]')).toBe(normalize('Project [c#3, a#1, b#2]'));
+    expect(normalize('Project [a#1, b#2]')).not.toBe(normalize('Project [a#1, b#3]'));
+  });
+
+  it('keeps comparison and arithmetic operators and parentheses in the key', () => {
+    expect(normalize('Filter (x#1 > 5)')).not.toBe(normalize('Filter (x#1 < 5)'));
+    expect(normalize('Filter (x#1 > 5)')).not.toBe(normalize('Filter (x#1 >= 5)'));
+    expect(normalize('Project [(a#1 + b#2) AS c#3]')).not.toBe(normalize('Project [(a#1 - b#2) AS c#3]'));
+    expect(normalize('Filter ((a#1 > 1) AND (b#2 < 2))')).not.toBe(normalize('Filter (a#1 > 1) AND ((b#2 < 2))'));
+  });
+
   it('keeps distinct details distinct: no blanket numeric, path or quoted-literal stripping', () => {
     expect(normalize('Filter (amount#1 > 5)')).not.toBe(normalize('Filter (amount#1 > 7)'));
     expect(normalize("Filter (region#1 = 'north')")).not.toBe(normalize("Filter (region#1 = 'south')"));

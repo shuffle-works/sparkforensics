@@ -49,7 +49,7 @@ already-parsed snapshots, with no worker involved.
   keys. It keys on `comparisonIdentity`, the `stageIdentity` recipe (shared in
   `packages/core/src/stage-identity.ts`) run with the comparison normalizer:
   `normalizeDetail`, then the targeted patches in `COMPARISON_PATCHES` (staging
-  directories, dates, `IN` lists, file-index counts, column order), with any
+  directories, dates, `IN` lists, file-index counts, and the entry order of bracketed lists; operators and parentheses stay in the key), with any
   caller-supplied patterns (`compileNormalizePatterns`) applied first to the text
   as Spark printed it. `stageIdentity` stays the exact key the CLI's per-stage
   metrics rows use, and `normalizeDetail` stays untouched, so findings do not

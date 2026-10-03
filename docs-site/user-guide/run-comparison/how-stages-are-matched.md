@@ -17,7 +17,7 @@ same job is rewritten to a fixed form:
 - dates and timestamps, such as the run date in a predicate
 - `IN` and `INSET` lists, which grow with the processing window
 - file counts in a file index, such as `DeltaLogFileIndex(4 paths)`
-- the order of a column list, so a grouping set that a program emits in a
+- the order of the entries in a bracketed list such as `[a, b, c]`, so a grouping set that a program emits in a
   different order each time still matches
 
 Numbers, paths and string literals in general are not rewritten: two stages that
