@@ -451,8 +451,8 @@ const C = (stages, app) => ({ label: 'cand.log', snapshot: { app, stages: new Ma
 
 describe('compareRuns', () => {
   it('sets low confidence (not unavailable) when app names differ, still computing metrics', () => {
-    const m = compareRuns(B([[1, { name: 'X 1' }]], { name: 'App A' }),
-                          C([[1, { name: 'X 1' }]], { name: 'App B' }));
+    const m = compareRuns(B([[1, { name: 'X 1', executorRunTime: 100 }]], { name: 'App A' }),
+                          C([[1, { name: 'X 1', executorRunTime: 100 }]], { name: 'App B' }));
     expect(m.confidence).toBe('low');
     expect(m.reason).toMatch(/name/i);
     expect(m.metrics.length).toBeGreaterThan(0); // deltas still computed across different names
@@ -460,9 +460,10 @@ describe('compareRuns', () => {
   });
 
   it('is ok with aligned stages and reports coverage + labels', () => {
-    const m = compareRuns(B([[1, { name: 'Exchange 1' }]], { name: 'A' }),
-                          C([[9, { name: 'Exchange 2' }]], { name: 'A' }));
+    const m = compareRuns(B([[1, { name: 'Exchange 1', executorRunTime: 100 }]], { name: 'A' }),
+                          C([[9, { name: 'Exchange 2', executorRunTime: 100 }]], { name: 'A' }));
     expect(m.confidence).toBe('ok');
+    expect(m.runtimeCoverage).toBe(1);
     expect(m.matchedCoverage).toBe(1);
     expect(m.baselineLabel).toBe('base.log');
     expect(m.candidateLabel).toBe('cand.log');
@@ -488,29 +489,39 @@ describe('compareRuns', () => {
 });
 
 describe('compareRuns confidence', () => {
-  const run = (catalog, app, label) => ({ label, snapshot: { app, stages: new Map(), sql: new Map(), jobs: new Map(), catalog } });
+  const run = (catalog, app, label, stages = []) => ({ label, snapshot: { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog } });
+  const timed = (name) => [[1, { name, sqlExecutionId: null, executorRunTime: 100 }]];
 
   it("is 'low' (never 'unavailable') when application names differ", () => {
-    const b = run([], { name: 'JobX', startTime: 0, endTime: 10 }, 'base');
-    const c = run([], { name: 'JobY', startTime: 0, endTime: 10 }, 'cand');
+    const b = run([], { name: 'JobX', startTime: 0, endTime: 10 }, 'base', timed('Exchange 1'));
+    const c = run([], { name: 'JobY', startTime: 0, endTime: 10 }, 'cand', timed('Exchange 1'));
     const m = compareRuns(b, c);
     expect(m.confidence).toBe('low');
     expect(m.reason).toMatch(/differ/i);
   });
 
-  it("is 'ok' for same-named runs even with zero matched stages (coverage 1: both runs are stage-less)", () => {
+  it("is 'insufficient' for same-named runs with no executor run time, and still computes the deltas", () => {
     const b = run([{ rule: 'spill', impactBand: 'warn' }], { name: 'JobX', startTime: 0, endTime: 10 }, 'base');
     const c = run([], { name: 'JobX', startTime: 0, endTime: 20 }, 'cand');
     const m = compareRuns(b, c);
-    expect(m.confidence).toBe('ok');
+    expect(m.confidence).toBe('insufficient');
+    expect(m.runtimeCoverage).toBeNull();
+    expect(m.reason).toMatch(/no executor run time/i);
     expect(m.findings.resolved).toHaveLength(1);        // spill/warn present in base, absent in cand
     expect(m.metrics.find((x) => x.key === 'wallClock').delta).toBe(10);
   });
 
+  it("is 'insufficient' when stages exist but none recorded run time", () => {
+    const stages = [[1, { name: 'Exchange 1', sqlExecutionId: null }]];
+    const m = compareRuns(run([], { name: 'JobX' }, 'base', stages), run([], { name: 'JobX' }, 'cand', stages));
+    expect(m.matchedCoverage).toBe(1);
+    expect(m.confidence).toBe('insufficient');
+  });
+
   it("is 'ok' when names match and most stages pair off (high coverage)", () => {
     const stages = [
-      [1, { name: 'Exchange 1', sqlExecutionId: null }],
-      [2, { name: 'Filter 1', sqlExecutionId: null }],
+      [1, { name: 'Exchange 1', sqlExecutionId: null, executorRunTime: 50 }],
+      [2, { name: 'Filter 1', sqlExecutionId: null, executorRunTime: 50 }],
     ];
     const b = { label: 'base', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
     const c = { label: 'cand', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
@@ -521,31 +532,32 @@ describe('compareRuns confidence', () => {
   });
 
   it("is 'low' when names match but stage coverage is poor, and explains why", () => {
-    // Base has 4 stages, candidate shares only 1 identity with it: pairs.length
-    // = 1, total = 4 + 4 = 8, coverage = 2*1/8 = 0.25 (below the 0.5 threshold).
+    // Base has 4 stages of 100 run time, candidate shares only 1 identity with it: the pair holds
+    // 200 of the 800 total, so runtime coverage is 0.25 (below the 0.9 gate).
     const b = run([], { name: 'JobX', startTime: 0, endTime: 10 }, 'base');
     b.snapshot.stages = new Map([
-      [1, { name: 'Shared 1', sqlExecutionId: null }],
-      [2, { name: 'BaseOnly 1', sqlExecutionId: null }],
-      [3, { name: 'BaseOnly 2', sqlExecutionId: null }],
-      [4, { name: 'BaseOnly 3', sqlExecutionId: null }],
+      [1, { name: 'Shared 1', sqlExecutionId: null, executorRunTime: 100 }],
+      [2, { name: 'BaseOnly 1', sqlExecutionId: null, executorRunTime: 100 }],
+      [3, { name: 'BaseOnly 2', sqlExecutionId: null, executorRunTime: 100 }],
+      [4, { name: 'BaseOnly 3', sqlExecutionId: null, executorRunTime: 100 }],
     ]);
     const c = run([], { name: 'JobX', startTime: 0, endTime: 10 }, 'cand');
     c.snapshot.stages = new Map([
-      [11, { name: 'Shared 2', sqlExecutionId: null }],
-      [12, { name: 'CandOnly 1', sqlExecutionId: null }],
-      [13, { name: 'CandOnly 2', sqlExecutionId: null }],
-      [14, { name: 'CandOnly 3', sqlExecutionId: null }],
+      [11, { name: 'Shared 2', sqlExecutionId: null, executorRunTime: 100 }],
+      [12, { name: 'CandOnly 1', sqlExecutionId: null, executorRunTime: 100 }],
+      [13, { name: 'CandOnly 2', sqlExecutionId: null, executorRunTime: 100 }],
+      [14, { name: 'CandOnly 3', sqlExecutionId: null, executorRunTime: 100 }],
     ]);
     const m = compareRuns(b, c);
     expect(m.matchedCoverage).toBeCloseTo(0.25);
+    expect(m.runtimeCoverage).toBeCloseTo(0.25);
     expect(m.confidence).toBe('low');
-    expect(m.reason).toMatch(/25%/);
+    expect(m.reason).toBe('Only 25% of executor run time is in matched stages, so per-stage rows mostly compare unrelated work.');
     expect(m.reason).not.toMatch(/name/i); // names match here, so the reason must not blame naming
   });
 
   it("still reports 'low' with a name-mismatch reason when names differ even if coverage happens to be high", () => {
-    const stages = [[1, { name: 'Exchange 1', sqlExecutionId: null }]];
+    const stages = [[1, { name: 'Exchange 1', sqlExecutionId: null, executorRunTime: 100 }]];
     const b = { label: 'base', snapshot: { app: { name: 'JobX' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
     const c = { label: 'cand', snapshot: { app: { name: 'JobY' }, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } };
     const m = compareRuns(b, c);
@@ -618,13 +630,15 @@ import { comparisonVerdict } from '../src/comparison-verdict.ts';
 describe('renderComparisonMarkdown', () => {
   it('renders the confidence/coverage/metrics/findings sections', () => {
     const m = compareRuns(
-      B([[1, { name: 'X 1', submittedAt: 0, completedAt: 100 }]], { name: 'JobX' }),
-      C([[9, { name: 'X 2', submittedAt: 0, completedAt: 200 }]], { name: 'JobY' }),
+      B([[1, { name: 'X 1', submittedAt: 0, completedAt: 100, executorRunTime: 80 }]], { name: 'JobX' }),
+      C([[9, { name: 'X 2', submittedAt: 0, completedAt: 200, executorRunTime: 80 }]], { name: 'JobY' }),
     );
     const md = renderComparisonMarkdown(m);
     expect(md).toMatch(/^\n## Comparison to baseline\n/);
     expect(md).toMatch(/- confidence: low, .*name/i);
     expect(md).toMatch(/- matched stage coverage: 100\.0%/);
+    expect(md).toMatch(/- runtime coverage: 100\.0%/);
+    expect(md).toMatch(/- stage pairs: 1, unmatched: 0 baseline \/ 0 candidate, Delta bookkeeping: 0 baseline \/ 0 candidate/);
     expect(md).toMatch(/### Metric deltas\n\n- Wall-clock duration: 100 -> 200 \(regression\)/);
     expect(md).toMatch(/### Introduced findings \(0\)/);
     expect(md).toMatch(/### Resolved findings \(0\)/);

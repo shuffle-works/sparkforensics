@@ -19,7 +19,10 @@ describe('comparisonOutput', () => {
   it('projects the fields the CLI reports, in the CLI\'s key order', () => {
     const built = buildComparison(run('baseline', 'App', 'app-1'), run('candidate', 'App', 'app-2'));
     const out = comparisonOutput(built);
-    expect(Object.keys(out)).toEqual(['verdict', 'confidence', 'reason', 'matchedCoverage', 'metrics', 'findings']);
+    expect(Object.keys(out)).toEqual([
+      'verdict', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
+      'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds',
+    ]);
     expect(out.verdict).toEqual(comparisonVerdict(built));
     expect(out.metrics).toBe(built.metrics);
   });

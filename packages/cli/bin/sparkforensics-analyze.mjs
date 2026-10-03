@@ -28,6 +28,7 @@ const { buildEvidenceReport, runFindings, toFindingsFilter } = await loadCore('e
 const { evaluateBudgets } = await loadCore('cli/budgets');
 const { renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
 const { buildComparisonOutput } = await loadCore('comparison-output');
+const { compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } = await loadCore('stage-alignment');
 const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
 const { runPayloadScript } = await loadCore('run-payload');
 const { loadThresholdOverrides } = await loadCore('cli/threshold-config');
@@ -88,6 +89,15 @@ Options:
   --type <type[,type]>              Filter the output's findings array to these finding types.
   --stage <id>                      Filter the output's findings array to this stage id,
                                     including a SQL plan finding whose only stage it is.
+  --normalize-path <regex>          Requires --baseline. Repeatable. A regular expression whose every
+                                    match in a plan node's text is replaced with a fixed token before
+                                    stages are paired between the runs, so run-specific text, such as
+                                    an output directory that differs per run, does not keep the same
+                                    stage from pairing. Despite the name it is a generic pattern, not
+                                    only for paths. It affects stage pairing and the runtime coverage
+                                    and confidence derived from it, never the findings. Up to
+                                    ${MAX_NORMALIZE_PATTERNS} patterns of ${MAX_NORMALIZE_PATTERN_LENGTH} characters; a pattern
+                                    that matches the empty string is refused.
   --thresholds <file>               Run the detectors with the threshold overrides in this JSON
                                     file ({"<detector>": {"<threshold>": value}}; names, units and
                                     defaults are in the report's detectors catalog). Findings a
@@ -147,6 +157,7 @@ function parseCliArgs(argv) {
       type: { type: 'string' },
       stage: { type: 'string' },
       thresholds: { type: 'string' },
+      'normalize-path': { type: 'string', multiple: true },
       'conf-keys': { type: 'string' },
       'conf-redact-regex': { type: 'string' },
       help: { type: 'boolean' },
@@ -231,7 +242,7 @@ const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode ===
 // that cannot be read or parsed yields an "error" line (exit code 4) and the rest still run. Under --redact
 // a candidate is named by its position (candidate-1, ...): log file names usually carry the app id.
 async function runMultiLog({
-  candidatePaths, baselinePath, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex,
+  candidatePaths, baselinePath, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath,
 }) {
   let baselineAppModel;
   try {
@@ -259,7 +270,7 @@ async function runMultiLog({
       const { comparison, output } = buildComparisonOutput(
         { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
         { label: 'candidate', appModel, catalog },
-        { redact },
+        { redact, normalizePath },
       );
       const { json } = buildEvidenceReport(appModel, { redact, findingsFilter, markdown: false, thresholds });
       const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
@@ -377,9 +388,9 @@ async function runCli(argv, { fetchImpl } = {}) {
   const usingBaseline = values.baseline !== undefined;
   // Single source of truth for which flags need --baseline: append a future
   // flag here rather than adding its own OR-condition (easy to forget).
-  const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced', 'regression-budget', 'budgets'];
+  const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced', 'regression-budget', 'budgets', 'normalize-path'];
   if (!usingBaseline && BASELINE_DEPENDENT_FLAGS.some((flag) => values[flag] !== undefined)) {
-    return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--fail-on-introduced require --baseline.\n${USAGE}`, 2);
+    return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--fail-on-introduced/--normalize-path require --baseline.\n${USAGE}`, 2);
   }
   if (values['regression-metric'] !== undefined && values['max-regression-pct'] === undefined) {
     return bail(`--regression-metric requires --max-regression-pct.\n${USAGE}`, 2);
@@ -453,6 +464,16 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
   }
 
+  // Compiled before any log is parsed so a bad pattern is a usage error, not a late crash.
+  const normalizePath = values['normalize-path'];
+  if (normalizePath !== undefined) {
+    try {
+      compileNormalizePatterns(normalizePath);
+    } catch (e) {
+      return bail(`--normalize-path: ${e.message}\n`, 2);
+    }
+  }
+
   const confKeys = splitCsv(values['conf-keys']);
   if (confKeys !== undefined && confKeys.length === 0) {
     return bail(`--conf-keys needs at least one property name.\n${USAGE}`, 2);
@@ -470,7 +491,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     return runMultiLog({
       candidatePaths: positionals, baselinePath: values.baseline, budgets, thresholds,
       findingsFilter, redact: values.redact, outPath: values.out,
-      confKeys, confRedactRegex: values['conf-redact-regex'],
+      confKeys, confRedactRegex: values['conf-redact-regex'], normalizePath,
     });
   }
 
@@ -541,7 +562,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     ({ comparison, output: comparisonJson } = buildComparisonOutput(
       { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
       { label: 'candidate', appModel, catalog },
-      { redact: values.redact },
+      { redact: values.redact, normalizePath },
     ));
   }
 

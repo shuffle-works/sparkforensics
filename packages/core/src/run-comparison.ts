@@ -1,12 +1,12 @@
 import { computeWallClock } from './wall-clock.ts';
 import { normalizeDetail } from './detectors.ts';
-import { cyrb53 } from './string-hash.ts';
+import { normalizeStageName, stageIdentityWith, identityIndexWith, pairEqualCounts } from './stage-identity.ts';
 import { computeAllocation } from './allocation.ts';
 import { totalExecutorCpuMs, withEarlierAttempts } from './run-totals.ts';
-import { planNodesOfStage } from './stage-plan-nodes.ts';
 import { captureSnapshot } from './session-snapshot.ts';
+import { alignStages, compileNormalizePatterns, COMPARISON_SCHEMA_VERSION, type StageAlignment, type StagePair } from './stage-alignment.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
-import type { Stage, PlanNode, SparkAppInfo, AppModel, Finding, TunedThresholds } from './types.ts';
+import type { Stage, SparkAppInfo, AppModel, Finding, TunedThresholds } from './types.ts';
 import type { SessionSnapshot } from './session-snapshot.ts';
 import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
 import { isIncompleteRun } from './check-coverage.ts';
@@ -21,13 +21,26 @@ export interface MetricDeltaRow {
 export interface FindingsDeltaRow {
   rule: string; type: string; impactBand: string; baseCount: number; candCount: number; delta: number; stages: string[];
 }
+export interface StageSkewRow {
+  pairId: string; name: string; baseId: number; candId: number;
+  baseline: number | null; candidate: number | null; delta: number | null;
+}
 export interface CompareRunsResult {
   baselineLabel: string; candidateLabel: string;
-  confidence: 'ok' | 'low'; reason: string | null;
+  // `insufficient`: neither run recorded any executor run time, so there is nothing to compare.
+  confidence: 'ok' | 'low' | 'insufficient'; reason: string | null;
+  // Share of stages the old exact matcher (`matchStages`) paired, by count. `runtimeCoverage` is
+  // the gate: the share of executor run time that sits in paired stages.
   matchedCoverage: number;
+  comparisonSchemaVersion: typeof COMPARISON_SCHEMA_VERSION;
+  runtimeCoverage: number | null;
+  stagePairs: StagePair[];
+  unmatched: StageAlignment['unmatched'];
+  replanned: StageAlignment['replanned'];
+  bookkeepingStageIds: StageAlignment['bookkeepingStageIds'];
   metrics: MetricDeltaRow[];
   findings: { introduced: FindingsDeltaRow[]; resolved: FindingsDeltaRow[] };
-  stageSkew: Array<{ identity: string; baseId: number; candId: number; baseline: number | null; candidate: number | null; delta: number | null }>;
+  stageSkew: StageSkewRow[];
   baseStages: Array<{ id: number; name: string; metrics: StageMetricsRow }>;
   candStages: Array<{ id: number; name: string; metrics: StageMetricsRow }>;
   // Each run's job results as its own run verdict counts them, and whether its log lacks an
@@ -41,68 +54,10 @@ function jobOutcome(snapshot: SessionSnapshot): VerdictJobOutcome {
   return { failedJobs, totalJobs, incomplete: isIncompleteRun(snapshot.catalog) };
 }
 
-// Replace run-varying tokens (digit runs, long hex ids) with a stable marker so
-// the same logical stage across two runs normalizes to one identity.
-export function normalizeStageName(name: string): string {
-  return String(name)
-    .toLowerCase()
-    .replace(/\b[0-9a-f]{8,}\b/g, '#') // hex ids/uuids first (they contain digits)
-    .replace(/\d+/g, '#')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-// Bottom-up, order-independent structural identity of a resolved plan tree:
-// each node folds its normalized name/detail with its children's digests
-// (children sorted, so AQE picking a different broadcast side still matches),
-// so two plans collide only when their whole shape and every node's detail
-// agree. `normalizeDetail` strips the run-to-run noise (expr ids, `plan_id=`,
-// codegen numbers, AQE build-side choice, commutative-operand order). Each
-// node folds to a fixed-length cyrb53 digest (JSON.stringify-encoded, so
-// detail text containing `<`/`>`/`{`/`,` can't collide two different plans)
-// instead of embedding full child identity strings, which would re-escape
-// every level below and blow identity size up to ~2^depth on the 20-60+
-// operator-deep plans real Spark produces.
-function planTreeIdentity(root: PlanNode | null | undefined): string | null {
-  if (!root) return null;
-  function visit(node: PlanNode): string {
-    const childDigests = (node.children ?? []).map(visit).sort();
-    return cyrb53(JSON.stringify([normalizeStageName(node.name ?? ''), normalizeDetail(node.detail ?? ''), childDigests]));
-  }
-  return visit(root);
-}
-
-// Plan identity for the stage's SQL execution, scoped to only the plan nodes
-// this stage actually ran (`node.stageIds`), not the whole tree: two stages
-// sharing one SQL execution (e.g. a self-join's two Exchange stages) otherwise
-// collapse onto one identity regardless of which part of the plan each ran.
-// Falls back to the coarser whole-tree identity when the stage has no
-// attributed nodes (hand-built snapshots without `stageIds`, or unmatched
-// accumulables).
-function sqlNodeIdentity(stage: Stage, snapshot: Pick<SessionSnapshot, 'sql'>): string {
-  const execId = stage.sqlExecutionId;
-  if (execId == null) return '';
-  const root = snapshot.sql.get(execId)?.planTree ?? null;
-  if (!root) return '';
-  const fingerprints = planNodesOfStage(stage, snapshot.sql)
-    .map((node) => JSON.stringify([normalizeStageName(node.name ?? ''), normalizeDetail(node.detail ?? '')]));
-  if (fingerprints.length === 0) return planTreeIdentity(root) ?? '';
-  return cyrb53(JSON.stringify(fingerprints.sort()));
-}
+export { normalizeStageName };
 
 export function stageIdentity(stage: Stage, snapshot: Pick<SessionSnapshot, 'sql'>): string {
-  return normalizeStageName(stage.name ?? '') + '§' + sqlNodeIdentity(stage, snapshot);
-}
-
-function identityIndex(snapshot: SessionSnapshot): Map<string, number[]> {
-  const byIdentity = new Map<string, number[]>();
-  for (const [id, stage] of snapshot.stages) {
-    const key = stageIdentity(stage, snapshot);
-    const ids = byIdentity.get(key);
-    if (ids) ids.push(id);
-    else byIdentity.set(key, [id]);
-  }
-  return byIdentity;
+  return stageIdentityWith(stage, snapshot, normalizeDetail);
 }
 
 export function matchStages(baseSnap: SessionSnapshot, candSnap: SessionSnapshot): {
@@ -111,10 +66,8 @@ export function matchStages(baseSnap: SessionSnapshot, candSnap: SessionSnapshot
   collisionIdentities: Set<string>;
   coverage: number;
 } {
-  const baseIdx = identityIndex(baseSnap);
-  const candIdx = identityIndex(candSnap);
-  const pairs: Array<{ identity: string; baseId: number; candId: number }> = [];
-  const matchedIdentities = new Set<string>();
+  const baseIdx = identityIndexWith(baseSnap, (stage) => stageIdentity(stage, baseSnap));
+  const candIdx = identityIndexWith(candSnap, (stage) => stageIdentity(stage, candSnap));
   const collisionIdentities = new Set<string>();
   // A collision is a single-run property: more than one stage in the SAME run
   // shares an identity. Recorded per-run regardless of whether the other run
@@ -122,26 +75,7 @@ export function matchStages(baseSnap: SessionSnapshot, candSnap: SessionSnapshot
   // don't, so this set means "was ambiguous", not "stayed unpaired".
   for (const idx of [baseIdx, candIdx])
     for (const [identity, ids] of idx) if (ids.length > 1) collisionIdentities.add(identity);
-  // An identity colliding equally on both sides has no genuine ambiguity about
-  // *count*, so pair its stages off positionally by sorted id rather than
-  // dropping them. This is exact when the identity actually distinguishes
-  // stages (e.g. self-comparing a run: every stage matches itself). It's a
-  // best-effort guess when the identity is coarse (no SQL/attribution) and
-  // the two sides are genuinely different runs -- two unrelated same-named
-  // stages could get cross-paired. Accepted tradeoff: dropping them instead
-  // would also sacrifice the exact-self-comparison case, which matters more.
-  for (const identity of [...baseIdx.keys()].sort()) {
-    const candIds = candIdx.get(identity);
-    if (!candIds) continue;
-    const baseIds = baseIdx.get(identity)!;
-    if (baseIds.length !== candIds.length) continue;
-    const sortedBaseIds = [...baseIds].sort((a, b) => a - b);
-    const sortedCandIds = [...candIds].sort((a, b) => a - b);
-    for (let i = 0; i < sortedBaseIds.length; i++) {
-      pairs.push({ identity, baseId: sortedBaseIds[i], candId: sortedCandIds[i] });
-    }
-    matchedIdentities.add(identity);
-  }
+  const { pairs, matchedIdentities } = pairEqualCounts(baseIdx, candIdx);
   const total = baseSnap.stages.size + candSnap.stages.size;
   // Both runs stage-less: nothing to compare, not "nothing matched".
   const coverage = total === 0 ? 1 : (2 * pairs.length) / total;
@@ -348,19 +282,19 @@ function namesConflict(a: SparkAppInfo | null, b: SparkAppInfo | null): boolean 
 }
 
 // A pair's skew ratio is null when the stage's duration wasn't measurable (see
-// `stageSkewRatio`). `baseId`/`candId` are carried through so a consumer can
-// key rows uniquely: two pairs can share one `identity` (a same-run collision
-// resolved positionally in matchStages), but never the same baseId+candId.
-function stageSkewDeltas(
-  baseSnap: SessionSnapshot,
-  candSnap: SessionSnapshot,
-  match: { pairs: Array<{ identity: string; baseId: number; candId: number }> },
-): Array<{ identity: string; baseId: number; candId: number; baseline: number | null; candidate: number | null; delta: number | null }> {
-  return match.pairs.map((p) => {
-    const b = stageSkewRatio(baseSnap.stages.get(p.baseId)!);
-    const c = stageSkewRatio(candSnap.stages.get(p.candId)!);
-    return { identity: p.identity, baseId: p.baseId, candId: p.candId, baseline: b, candidate: c, delta: b != null && c != null ? c - b : null };
-  }).sort((x, y) => x.identity < y.identity ? -1 : x.identity > y.identity ? 1 : 0);
+// `stageSkewRatio`). Rows come from the aligner's `stagePairs`, so the table and the coverage
+// banner agree. A pair covers one stage per side here; `pairId` is the unique row key.
+function stageSkewDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, stagePairs: StagePair[]): StageSkewRow[] {
+  return stagePairs.map((p) => {
+    const baseId = p.baseStageIds[0], candId = p.candStageIds[0];
+    const baseStage = baseSnap.stages.get(baseId)!;
+    const b = stageSkewRatio(baseStage);
+    const c = stageSkewRatio(candSnap.stages.get(candId)!);
+    return {
+      pairId: p.pairId, name: normalizeStageName(baseStage.name ?? ''), baseId, candId,
+      baseline: b, candidate: c, delta: b != null && c != null ? c - b : null,
+    };
+  }).sort((x, y) => x.name < y.name ? -1 : x.name > y.name ? 1 : x.baseId - y.baseId);
 }
 
 // Compact, view-friendly per-stage record for the manual stage-pinning panel.
@@ -402,6 +336,14 @@ function stageList(snap: SessionSnapshot): Array<{ id: number; name: string; met
 // caller's reference, so one shared empty Map is safe here.
 const EMPTY_TASK_DATA = new Map<number, unknown>();
 
+export interface CompareOptions {
+  /** Caller-supplied regular expressions (sources), applied to plan node detail before stages are
+   * paired: every match is replaced with a fixed token, so run-specific text such as a per-run
+   * output directory no longer splits a stage in two. Findings and `stageIdentity` never see them.
+   * Invalid, over-long or empty-matching patterns throw (see `compileNormalizePatterns`). */
+  normalizePath?: readonly string[];
+}
+
 // Wraps the analyze()-to-compareRuns() snapshot-building sequence shared by
 // the CLI's --baseline path and mcp-tools.ts's compareRuns tool: both need
 // captureSnapshot (with an empty taskDataCache, the interactive drill-down
@@ -410,50 +352,65 @@ const EMPTY_TASK_DATA = new Map<number, unknown>();
 export function buildComparison(
   baseline: { label: string; appModel: AppModel; catalog: Finding[] },
   candidate: { label: string; appModel: AppModel; catalog: Finding[] },
+  options?: CompareOptions,
 ): CompareRunsResult {
   return compareRuns(
     { label: baseline.label, snapshot: captureSnapshot(baseline.appModel, baseline.catalog, EMPTY_TASK_DATA) },
     { label: candidate.label, snapshot: captureSnapshot(candidate.appModel, candidate.catalog, EMPTY_TASK_DATA) },
+    options,
   );
 }
 
-// matchStages' coverage is a Dice coefficient: (2 * pairs.length) / (baseCount
-// + candCount). Below 0.5, more than half of each run's stages went unpaired,
-// so the stage-level rows (stageSkew, baseStages/candStages) mostly show
-// unrelated work side by side rather than the same stage before/after -- the
-// comparison is dominated by guesswork, not genuine pairing. 0.5 is thus the
-// natural midpoint for "more matched than not," not an arbitrary tuning knob.
-const LOW_COVERAGE_THRESHOLD = 0.5;
+// `ok` needs this share of both runs' executor run time to sit in paired stages. Run time, not
+// stage count: the stages a run spends its time in decide whether a per-stage delta compares the
+// same work, and a count lets many small matched stages hide an unmatched heavy one.
+const RUNTIME_COVERAGE_THRESHOLD = 0.9;
 
 export function compareRuns(
   baseline: { label: string; snapshot: SessionSnapshot },
   candidate: { label: string; snapshot: SessionSnapshot },
+  options: CompareOptions = {},
 ): CompareRunsResult {
   const baseSnap = baseline.snapshot, candSnap = candidate.snapshot;
+  // The old exact matcher stays the source of `matchedCoverage`; pairs and the gate come from the aligner.
   const match = matchStages(baseSnap, candSnap);
+  const alignment = alignStages(baseSnap, candSnap, { normalizePath: compileNormalizePatterns(options.normalizePath) });
+  const runtimeCoverage = alignment.runtimeCoverage;
   // Name equality is a weak confidence signal, not a hard gate: renaming a job
   // is the normal way to label an A/B experiment, so a mismatch must not block
   // the (matching-free, name-independent) deltas. Surface it as `low` instead.
   const namesDiffer = namesConflict(baseSnap.app, candSnap.app);
-  // Coverage is the other half of the signal: identical names on two runs that
-  // barely share any stages are just as misleading as differing names on two
-  // runs that match well, so either condition alone drops confidence to `low`.
-  const lowCoverage = match.coverage < LOW_COVERAGE_THRESHOLD;
-  const reason = namesDiffer && lowCoverage
-    ? `Run names differ and only ${(match.coverage * 100).toFixed(0)}% of stages matched, so deltas may compare different work.`
+  // Runtime coverage is the other half of the signal: identical names on two runs whose heavy
+  // stages do not pair are just as misleading as differing names on two runs that pair well, so
+  // either condition alone drops confidence to `low`. No run time at all is `insufficient`.
+  const insufficient = runtimeCoverage === null;
+  const lowCoverage = runtimeCoverage !== null && runtimeCoverage < RUNTIME_COVERAGE_THRESHOLD;
+  const confidence: CompareRunsResult['confidence'] = insufficient ? 'insufficient' : namesDiffer || lowCoverage ? 'low' : 'ok';
+  // Rounded down, so a share just under the gate never reads as 90%.
+  const share = runtimeCoverage === null ? '' : `${Math.floor(runtimeCoverage * 100)}%`;
+  const reason = insufficient
+    ? `${namesDiffer ? 'Run names differ and no' : 'No'} executor run time was recorded in either run, so there is no work to compare.`
+    : namesDiffer && lowCoverage
+    ? `Run names differ and only ${share} of executor run time is in matched stages, so deltas may compare different work.`
     : namesDiffer
     ? 'Run names differ, so deltas may compare different work.'
     : lowCoverage
-    ? `Only ${(match.coverage * 100).toFixed(0)}% of stages matched between runs, so per-stage rows mostly compare unrelated work.`
+    ? `Only ${share} of executor run time is in matched stages, so per-stage rows mostly compare unrelated work.`
     : null;
   return {
     baselineLabel: baseline.label, candidateLabel: candidate.label,
-    confidence: namesDiffer || lowCoverage ? 'low' : 'ok',
+    confidence,
     reason,
     matchedCoverage: match.coverage,
+    comparisonSchemaVersion: COMPARISON_SCHEMA_VERSION,
+    runtimeCoverage,
+    stagePairs: alignment.pairs,
+    unmatched: alignment.unmatched,
+    replanned: alignment.replanned,
+    bookkeepingStageIds: alignment.bookkeepingStageIds,
     metrics: metricDeltas(baseSnap, candSnap),
     findings: findingsDelta(baseSnap, candSnap),
-    stageSkew: stageSkewDeltas(baseSnap, candSnap, match),
+    stageSkew: stageSkewDeltas(baseSnap, candSnap, alignment.pairs),
     baseStages: stageList(baseSnap),
     candStages: stageList(candSnap),
     jobOutcomes: { baseline: jobOutcome(baseSnap), candidate: jobOutcome(candSnap) },
@@ -491,11 +448,13 @@ export function renderComparisonMarkdown(
     if (verdict.sentences.length > 0) lines.push('', verdict.sentences.join(' '));
     lines.push('');
   }
-  if (comparison.confidence === 'low') {
-    lines.push(`- confidence: low, ${comparison.reason}`);
+  if (comparison.confidence !== 'ok') {
+    lines.push(`- confidence: ${comparison.confidence}, ${comparison.reason}`);
     lines.push('');
   }
   lines.push(`- matched stage coverage: ${(comparison.matchedCoverage * 100).toFixed(1)}%`);
+  lines.push(`- runtime coverage: ${comparison.runtimeCoverage === null ? 'n/a' : `${(comparison.runtimeCoverage * 100).toFixed(1)}%`}`);
+  lines.push(`- stage pairs: ${comparison.stagePairs.length}, unmatched: ${comparison.unmatched.baseStageIds.length} baseline / ${comparison.unmatched.candStageIds.length} candidate, Delta bookkeeping: ${comparison.bookkeepingStageIds.baseStageIds.length} baseline / ${comparison.bookkeepingStageIds.candStageIds.length} candidate`);
   lines.push('');
   lines.push('### Metric deltas');
   lines.push('');

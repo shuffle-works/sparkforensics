@@ -76,6 +76,11 @@ build config needs a `.changeset/*.md` (`scripts/check-changeset.sh`,
   `ALLOWED_EXPORT_CORE_MODULES` (`scripts/export-analysis-guard.mjs`): never
   widen it to get past the guard, and keep `detectors.ts` imports type-only
   there (`architecture/state-and-history.md#run-interpretation`).
+- Run comparison: stages pair in `packages/core/src/stage-alignment.ts` (the
+  comparison normalizer, `stagePairs`, runtime coverage); `stageIdentity` stays
+  the frozen exact key. A deliberate change to pairing updates
+  `packages/core/test/fixtures/stage-alignment-coverage.json` with
+  `UPDATE_ALIGNMENT_SNAPSHOT=1`.
 - CLI and MCP output: add a field to a run or comparison once, in
   `packages/core/src/comparison-output.ts` or `run-output.ts`, never by hand in
   the CLI or `mcp-tools.ts`. `packages/cli/test/parity.test.js` diffs both

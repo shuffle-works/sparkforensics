@@ -44,6 +44,17 @@ function pushLongFilterWarning(result: PlanSummary, len: number): void {
   result.warnings.push({ type: 'longFilterCondition', detail: `Filter condition is ${len} characters: consider simplifying or pushing the filter down closer to the scan.` });
 }
 
+// True when a node reads internal Delta metadata: the _delta_log state scan or an anonymous
+// commit/checkpoint read. `Location:` is often truncated to `Del...`, so it also keys off
+// DeltaLogFileIndex or the Delta-log action column signature. (Column-signature heuristic: a
+// future Spark renaming those action columns would leak a noise row; acceptable.) Shared by
+// `scanRelationId` and the comparison's Delta bookkeeping flag (stage-alignment.ts).
+export function isDeltaLogRead(name: string, detail: string): boolean {
+  return /_delta_log/.test(name) || /_delta_log/.test(detail) ||
+    /DeltaLogFileIndex/i.test(name + detail) ||
+    /checkpointMetadata#|sidecar#|commitInfo#/.test(name + detail);
+}
+
 // Stable relation-identity key for a scan node: "<format>:<relation>" (e.g.
 // "delta:mx.store_map", "parquet:warehouse.sales", "jdbc:dw.dim_product")
 // or null when the node is internal Delta metadata / a non-scan / un-nameable.
@@ -70,16 +81,8 @@ export function scanRelationId(name: string, detail: string): string | null {
     return `${format}:${table.replace(/^spark_catalog\./, '')}`;
   }
 
-  // 2. Internal Delta metadata (the _delta_log state scan and anonymous
-  //    commit/checkpoint reads) → null. Location: is often truncated to `Del...`,
-  //    so also key off DeltaLogFileIndex or the Delta-log action column signature.
-  //    (Column-signature heuristic: a future Spark renaming those action columns
-  //    would leak a noise row; acceptable.)
-  if (/_delta_log/.test(name) || /_delta_log/.test(detail) ||
-      /DeltaLogFileIndex/i.test(name + detail) ||
-      /checkpointMetadata#|sidecar#|commitInfo#/.test(name + detail)) {
-    return null;
-  }
+  // 2. Internal Delta metadata (see isDeltaLogRead) → null.
+  if (isDeltaLogRead(name, detail)) return null;
 
   // 3. Anonymous real file read (InMemoryFileIndex, no catalog name) →
   //    best-effort Location basename. Preserves temp/snapshot self-reuse; a

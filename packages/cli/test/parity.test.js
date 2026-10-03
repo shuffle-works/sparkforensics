@@ -153,6 +153,11 @@ async function dashboardComparison(baselinePath, candidatePath) {
 
 const INCLUDE_ALL = ['summary', 'evidenceAvailability', 'detectors'];
 
+// The fields of the comparison block (stage pairs and the run-time coverage they feed).
+const COMPARISON_BLOCK_FIELDS = [
+  'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'runtimeCoverage',
+];
+
 describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public corpus logs', () => {
   describe.each(CANDIDATES)('%s', (candidate) => {
     it.each([[false], [true]])('reports the same run (redact: %s) through the CLI and diagnose_run', async (redact) => {
@@ -182,6 +187,38 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
       // The deprecated MCP names carry the same values as the CLI names.
       expect(viaMcp.metricDeltas).toEqual(viaMcp.metrics);
       expect(viaMcp.findingsDelta).toEqual(viaMcp.findings);
+    });
+
+    // Every field of the comparison block, on both surfaces and in the dashboard's compareRuns.
+    it('reports every stage-pair field on the CLI, compare_runs and the dashboard', async () => {
+      const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson']);
+      const viaMcp = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate } });
+      const dashboard = JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate))));
+      for (const surface of [line.comparison, viaMcp, dashboard]) {
+        expect(Object.keys(surface)).toEqual(expect.arrayContaining(COMPARISON_BLOCK_FIELDS));
+        expect(surface.comparisonSchemaVersion).toBe(1);
+        expect(surface.replanned).toEqual([]);
+        expect(surface.confidence).toMatch(/^(ok|low|insufficient)$/);
+      }
+      for (const field of COMPARISON_BLOCK_FIELDS) expect(viaMcp[field]).toEqual(line.comparison[field]);
+      // The corpus pair may share no stage: the shape of a pair is read from a run against itself.
+      const [self] = await cliLines([BASELINE, '--baseline', BASELINE, '--format', 'ndjson']);
+      expect(self.comparison.stagePairs[0]).toEqual({
+        pairId: expect.any(String), baseStageIds: expect.any(Array), candStageIds: expect.any(Array),
+        quality: 'exact', score: 1, deltas: expect.any(Object),
+      });
+      expect(Object.keys(self.comparison.stagePairs[0].deltas)).toEqual([
+        'executorRunTime', 'executorCpuTime', 'memoryBytesSpilled', 'diskBytesSpilled',
+        'inputBytes', 'outputBytes', 'shuffleReadBytes', 'shuffleWriteBytes',
+      ]);
+    });
+
+    it('applies --normalize-path and normalizePath the same way', async () => {
+      const patterns = ['/staging/[A-Za-z0-9]+/', 'unused-pattern-[0-9]+'];
+      const flags = patterns.flatMap((p) => ['--normalize-path', p]);
+      const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson', ...flags]);
+      const viaMcp = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate }, normalizePath: patterns });
+      expect(diffSurfaces(line.comparison, viaMcp, COMPARISON_ALLOWED)).toEqual([]);
     });
 
     it('reports the same comparison as the dashboard\'s compareRuns', async () => {
@@ -215,6 +252,21 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
       expect(viaMcp.violated).toBe(line.exitCode === 1);
       expect(viaMcp.inconclusive).toBe(line.budgets.some((r) => r.status === 'inconclusive'));
     });
+  });
+
+  it('refuses an invalid --normalize-path, and one without --baseline, with a usage error', async () => {
+    const invalid = await cliOutput([CANDIDATES[0], '--baseline', BASELINE, '--normalize-path', '(unclosed']);
+    expect(invalid.exitCode).toBe(2);
+    expect(invalid.stderr).toMatch(/--normalize-path: Normalize pattern "\(unclosed" is not a valid regular expression/);
+    expect(invalid.stdout).toBe('');
+
+    const withoutBaseline = await cliOutput([CANDIDATES[0], '--normalize-path', 'x']);
+    expect(withoutBaseline.exitCode).toBe(2);
+    expect(withoutBaseline.stderr).toMatch(/--normalize-path require --baseline/);
+
+    await expect(mcpCall('compare_runs', {
+      sourceA: { path: BASELINE }, sourceB: { path: CANDIDATES[0] }, normalizePath: ['(unclosed'],
+    })).rejects.toThrow(/normalizePath: Normalize pattern/);
   });
 
   it('keeps the stderr line and exit code the operator reads for a violated budget', async () => {
