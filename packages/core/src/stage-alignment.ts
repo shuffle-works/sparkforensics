@@ -80,8 +80,7 @@ export function compileNormalizePatterns(patterns: readonly string[] | undefined
 }
 
 /** The detail normalizer the comparison keys use: caller patterns first, on the text as Spark
- * printed it (a path pattern would not match once the column bag below has split it), then
- * `normalizeDetail`, then the targeted patches. */
+ * printed it, then `normalizeDetail`, then the targeted patches. */
 export function comparisonDetailNormalizer(callerPatterns: readonly RegExp[] = []): DetailNormalizer {
   return (detail) => {
     let s = detail;
