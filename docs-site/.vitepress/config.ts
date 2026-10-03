@@ -172,7 +172,16 @@ export default defineConfig({
                     { text: 'Investigation routing', link: '/contributor-guide/architecture/widget-rendering/investigation-routing' },
                   ],
                 },
-                { text: 'Board widgets', link: '/contributor-guide/architecture/board-widgets' },
+                {
+                  text: 'Board widgets',
+                  link: '/contributor-guide/architecture/board-widgets',
+                  collapsed: true,
+                  items: [
+                    { text: 'Plan Advisor', link: '/contributor-guide/architecture/board-widgets/plan-advisor' },
+                    { text: 'Caching and memory widgets', link: '/contributor-guide/architecture/board-widgets/caching-and-memory' },
+                    { text: 'Visual system and templating', link: '/contributor-guide/architecture/board-widgets/visual-system-and-templating' },
+                  ],
+                },
                 {
                   text: 'Drill-down',
                   link: '/contributor-guide/architecture/drill-down',

@@ -74,7 +74,7 @@ When `spark.eventLog.logStageExecutorMetrics=true` (default `false`),
 `SparkListenerStageExecutorMetrics` events populate
 `stage.executorMetrics: Map<execId, {...}>` with the 23 raw peak-memory/GC
 fields verbatim (camelCased), consumed by the `memoryUtilization` detector's
-per-executor memory bands (see [Memory Utilization](./board-widgets.md)).
+per-executor memory bands (see [Memory Utilization](./board-widgets/caching-and-memory.md)).
 
 These events can arrive *after* `SparkListenerStageCompleted` for the same
 stage, so the per-stage `stage` message posted at completion time
