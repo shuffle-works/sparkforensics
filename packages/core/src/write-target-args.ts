@@ -43,3 +43,6 @@ export function tableName(ident: string): string | null {
   });
   return parts.join('.');
 }
+
+/** A write target found without parsing the node's simpleString. */
+export interface FoundTarget { kind: 'path' | 'table'; target: string }

@@ -1,38 +1,22 @@
-// Delta write targets that the plan node's simpleString does not carry. A Delta command node
-// (MERGE, UPDATE, DELETE, WriteIntoDelta, SaveIntoDataSourceCommand) is a bare name in
-// sparkPlanInfo on real logs; the target lives in two other places:
-//   1. the `Arguments:` line of the command in the physical plan description, which the parser
-//      keeps for these commands only (SqlExecution.commandArguments). It names the table.
-//   2. for MERGE, UPDATE and DELETE only, the `_delta_log` path in the plans of executions that
-//      share the command's root execution: they always scan their target. A write command may
-//      read another Delta table as its source, so it never takes this step.
-// resolveDeltaCommandTarget tries them in that order and otherwise reports null: a rule that
-// cannot name exactly one target never names one (see the header of write-targets.ts).
-//
-// A DeltaTable.merge(...).execute() call runs no command node at all: each of its internal
-// queries is its own root execution, tied together only by a "MERGE operation" description and
-// adjacent ids. apiMergeWrites reports one DeltaMerge write per run of such executions.
-import { walkPlanTree } from './plan-tree-walk.ts';
-import { isCut, splitArgs, tableName } from './write-target-args.ts';
+// Delta write targets that the plan node's simpleString does not carry. A Delta command node is a
+// bare name in sparkPlanInfo on real logs; its target is read from the `Arguments:` line the parser
+// keeps (SqlExecution.commandArguments, one reader per command in COMMANDS), and for a command that
+// always scans its target (MERGE, UPDATE, DELETE) from the single `_delta_log` path of the executions
+// sharing its root. A write command may read another Delta table as its source, so it never takes
+// that step. Otherwise the target is null: a rule that cannot name exactly one target names none.
+import { isDeltaCommand, type DeltaCommand } from './delta-commands.ts';
+import { soleLogPath } from './delta-log-paths.ts';
+import { isCut, splitArgs, tableName, type FoundTarget } from './write-target-args.ts';
 import type { PlanNode, SqlExecution } from './types.ts';
 import type { WriteTarget } from './write-targets.ts';
 
-type Resolved = { kind: 'path' | 'table'; target: string };
+type CommandExecution = Pick<SqlExecution, 'id' | 'rootExecutionId' | 'commandArguments' | 'planTree'>;
 
-/** Commands whose root node carries its target outside the simpleString. */
-export const DELTA_COMMANDS_WITH_HIDDEN_TARGET: ReadonlySet<string> = new Set([
-  'MergeIntoCommand', 'UpdateCommand', 'DeleteCommand', 'WriteIntoDelta', 'WriteIntoDeltaCommand',
-  'SaveIntoDataSourceCommand',
-]);
-
-// Commands that always scan their target, so the one Delta log in their root's children is it.
-const DELTA_COMMANDS_THAT_SCAN_TARGET: ReadonlySet<string> = new Set(['MergeIntoCommand', 'UpdateCommand', 'DeleteCommand']);
-
-export type ExecutionsByRoot = ReadonlyMap<number, SqlExecution[]>;
+export type ExecutionsByRoot = ReadonlyMap<number, CommandExecution[]>;
 
 /** Executions grouped by rootExecutionId, each group excluding the root itself. */
-export function indexByRoot(sql: Map<number, SqlExecution>): ExecutionsByRoot {
-  const byRoot = new Map<number, SqlExecution[]>();
+export function indexByRoot(sql: Map<number, CommandExecution>): ExecutionsByRoot {
+  const byRoot = new Map<number, CommandExecution[]>();
   for (const exec of sql.values()) {
     if (exec.rootExecutionId === undefined || exec.rootExecutionId === exec.id) continue;
     const list = byRoot.get(exec.rootExecutionId);
@@ -42,50 +26,8 @@ export function indexByRoot(sql: Map<number, SqlExecution>): ExecutionsByRoot {
   return byRoot;
 }
 
-// ---- _delta_log paths ------------------------------------------------------------------------
-
-// A table path printed before `/_delta_log`: a URI or an absolute path with no spaces or list
-// punctuation. Delta prints it in scans as `... State #0 - <path>/_delta_log[cols]` and in
-// DeltaLogFileIndex as `[<path>/_delta_log/<file>, ...]`.
-const DELTA_LOG_PATH = /((?:[A-Za-z][A-Za-z0-9+.-]*:\/{1,3}|\/)[^\s,[\]()#]+?)\/_delta_log(?=[/[\],\s)]|$)/g;
-
-interface LogPaths { paths: Set<string>; unreliable: boolean }
-
-// Every distinct `<table path>/_delta_log` named in the plans. `unreliable` is set when a plan is
-// missing or a printed path is cut short, so the set may be missing a table.
-function deltaLogPaths(executions: SqlExecution[]): LogPaths {
-  const paths = new Set<string>();
-  let unreliable = false;
-  for (const exec of executions) {
-    if (!exec.planTree) { unreliable = true; continue; }
-    walkPlanTree(exec.planTree, (node) => {
-      for (const text of [node.name, node.detail ?? '']) {
-        const mentions = text.split('/_delta_log').length - 1;
-        if (mentions === 0) continue;
-        const matches = [...text.matchAll(DELTA_LOG_PATH)];
-        // A `/_delta_log` that is not read as a path is a table this set cannot name.
-        if (matches.length < mentions) unreliable = true;
-        for (const m of matches) {
-          if (isCut(m[1])) unreliable = true;
-          else paths.add(m[1].replace(/\/+$/, ''));
-        }
-      }
-    }, { dedupe: true });
-  }
-  return { paths, unreliable };
-}
-
-function soleLogPath(executions: SqlExecution[]): Resolved | null {
-  const { paths, unreliable } = deltaLogPaths(executions);
-  const [path] = paths;
-  return !unreliable && paths.size === 1 ? { kind: 'path', target: path } : null;
-}
-
-// ---- Arguments line ---------------------------------------------------------------------------
-
-// The text after `<Command>\nArguments: ` for this command, or null when the execution kept
-// none or kept another command's.
-function argumentsOf(exec: SqlExecution, command: string): string | null {
+// The text after `<Command>\nArguments: `, or null when the execution kept none for this command.
+function argumentsOf(exec: CommandExecution, command: string): string | null {
   const kept = exec.commandArguments;
   const head = `${command}\nArguments: `;
   return kept !== undefined && kept.startsWith(head) ? kept.slice(head.length) : null;
@@ -96,7 +38,7 @@ function argumentsOf(exec: SqlExecution, command: string): string | null {
 // implied by a Hive or V1 table name, so it is dropped: `spark_catalog`.`db`.`t` is db.t.
 const QUOTED_TABLE = /^`[^`]+`(?:\.`[^`]+`){1,2}$/;
 
-function tableFromArguments(args: string): Resolved | null {
+function tableFromArguments(args: string): FoundTarget | null {
   const candidates = splitArgs(args).filter((arg) => QUOTED_TABLE.test(arg.text));
   if (candidates.length !== 1 || !candidates[0].terminated) return null;
   const name = tableName(candidates[0].text);
@@ -107,7 +49,7 @@ function tableFromArguments(args: string): Resolved | null {
 
 // SaveIntoDataSourceCommand prints `<provider>@<hash>, [k=v, k2=v2], <mode>`. The target is the
 // one `path` option of a Delta provider.
-function pathFromSaveOptions(args: string): Resolved | null {
+function pathFromSaveOptions(args: string): FoundTarget | null {
   const options = splitArgs(args)[1];
   if (!options?.terminated || !/^\[[\s\S]*\]$/.test(options.text)) return null;
   const body = options.text.slice(1, -1);
@@ -120,48 +62,54 @@ function pathFromSaveOptions(args: string): Resolved | null {
   return { kind: 'path', target: paths[0] };
 }
 
-// ---- Command target ---------------------------------------------------------------------------
-
-/**
- * The target of a Delta command whose simpleString names none: the table on its kept `Arguments:`
- * line, else (MERGE, UPDATE and DELETE only) the single `_delta_log` path of the executions that
- * share its root, else null.
- * `node` must be the root node of `exec`'s plan: the kept line is the root command's.
- */
-export function resolveDeltaCommandTarget(
-  command: string, exec: SqlExecution, node: PlanNode, byRoot: ExecutionsByRoot,
-): Resolved | null {
-  if (!DELTA_COMMANDS_WITH_HIDDEN_TARGET.has(command) || node !== exec.planTree) return null;
-  const args = argumentsOf(exec, command);
-  if (command === 'SaveIntoDataSourceCommand') {
-    // Only the arguments say this save is a Delta one; a JDBC save with a Delta table in its
-    // source would otherwise take that table as its target.
-    if (args === null || !args.includes('DeltaDataSource')) return null;
-    const path = pathFromSaveOptions(args);
-    if (path) return path;
-  } else if (args !== null) {
-    const table = tableFromArguments(args);
-    if (table) return table;
-  }
-  if (!DELTA_COMMANDS_THAT_SCAN_TARGET.has(command)) return null;
-  // Child executions are the root's own only when it is the root: a command run under another
-  // execution shares that execution's children, which may belong to unrelated work.
-  if (exec.rootExecutionId !== exec.id) return null;
-  return soleLogPath(byRoot.get(exec.id) ?? []);
+interface CommandHandler {
+  /** Reads the target from the text after `<Command>\nArguments: `. */
+  fromArguments(args: string): FoundTarget | null;
+  /** The command always scans its target, so the one Delta log in its root's children is it. */
+  scansTarget: boolean;
 }
 
-// ---- V1-fallback writes ------------------------------------------------------------------------
+const tableCommand: CommandHandler = { fromArguments: tableFromArguments, scansTarget: false };
+const scanningTableCommand: CommandHandler = { ...tableCommand, scansTarget: true };
 
-// A Delta append or overwrite of an existing table (df.write.mode(...).saveAsTable, INSERT INTO or
-// OVERWRITE) is `AppendDataExecV1` or `OverwriteByExpressionExecV1` whose first argument is the
-// table object: `DeltaTableV2(<session>,<path>,Some(CatalogTable(\nCatalog: c\nDatabase: d\nTable: t
-// \n...)),Some(d.t),None,Map())`. Its multi-line CatalogTable block names the table; a path-based
-// table has `None` there and only the path.
+// One entry per Delta command: a new command is added here (and to DELTA_COMMANDS), not in the resolver.
+const COMMANDS: Record<DeltaCommand, CommandHandler> = {
+  MergeIntoCommand: scanningTableCommand,
+  UpdateCommand: scanningTableCommand,
+  DeleteCommand: scanningTableCommand,
+  WriteIntoDelta: tableCommand,
+  WriteIntoDeltaCommand: tableCommand,
+  // Only the arguments say a save is a Delta one; a JDBC save with a Delta table in its source
+  // would otherwise take that table as its target.
+  SaveIntoDataSourceCommand: {
+    fromArguments: (args) => (args.includes('DeltaDataSource') ? pathFromSaveOptions(args) : null),
+    scansTarget: false,
+  },
+};
+
+/** Target of a Delta command whose simpleString names none; `node` must be the root of `exec`'s plan. */
+export function resolveDeltaCommandTarget(
+  command: string, exec: CommandExecution, node: PlanNode, byRoot: ExecutionsByRoot,
+): FoundTarget | null {
+  if (!isDeltaCommand(command) || node !== exec.planTree) return null;
+  const handler = COMMANDS[command];
+  const args = argumentsOf(exec, command);
+  const found = args === null ? null : handler.fromArguments(args);
+  if (found || !handler.scansTarget) return found;
+  // Child executions are the root's own only when it is the root: a command run under another
+  // execution shares that execution's children, which may belong to unrelated work.
+  return exec.rootExecutionId === exec.id ? soleLogPath(byRoot.get(exec.id) ?? []) : null;
+}
+
+// An append or overwrite of an existing Delta table (saveAsTable, INSERT INTO or OVERWRITE) is an
+// `AppendDataExecV1` or `OverwriteByExpressionExecV1` whose first argument is the table object:
+// `DeltaTableV2(<session>,<path>,Some(CatalogTable(\nCatalog: c\nDatabase: d\nTable: t\n...)),...)`.
+// Its CatalogTable block names the table; a path-based table has `None` there and only the path.
 const DELTA_TABLE_V2 = /^\w+ DeltaTableV2\([^,\s]*,([^,\n]*),(?:Some\(CatalogTable\(\n(?:Catalog: (\S+)\n)?Database: (\S+)\nTable: (\S+)\n|None,)/;
 const SIMPLE_NAME = /^[A-Za-z0-9_$]+$/;
 
 /** Target of a V1-fallback write on a DeltaTableV2 table, or null when the detail has another shape. */
-export function parseDeltaTableV2(detail: string): Resolved | null {
+export function parseDeltaTableV2(detail: string): FoundTarget | null {
   const m = DELTA_TABLE_V2.exec(detail);
   if (!m) return null;
   const [, path, catalog, database, table] = m;
@@ -172,85 +120,8 @@ export function parseDeltaTableV2(detail: string): Resolved | null {
   return { kind: 'table', target: catalog === undefined || catalog === 'spark_catalog' ? name : `${catalog}.${name}` };
 }
 
-/**
- * True for the write a CTAS or RTAS of a Delta table runs under its own root execution: its first
- * argument is the staged table, which has no name. The target is that of the root's own write.
- */
+/** The append a Delta CTAS or RTAS runs under its own root: its staged table has no name. */
 export function isStagedDeltaWrite(write: Pick<WriteTarget, 'command' | 'raw'>): boolean {
   return (write.command === 'AppendDataExecV1' || write.command === 'OverwriteByExpressionExecV1')
     && /^\w+ \S*DeltaCatalog\$StagedDeltaTableV2@/.test(write.raw);
-}
-
-// ---- DeltaTable API merges ---------------------------------------------------------------------
-
-export const API_MERGE_COMMAND = 'DeltaMerge';
-
-// Delta labels its MERGE sub-queries "MERGE operation - <phase>", prefixed "Delta: " in some.
-const MERGE_DESCRIPTION = /^(?:Delta: )?MERGE operation\b/;
-
-// The sub-queries that write: "writing new files ...", "Rewriting N files". A group without one
-// only scanned, and a scan may read the merge's source rather than its target.
-const MERGE_WRITE_PHASE = /\b(?:re)?writing\b/i;
-
-interface MergeGroup { members: SqlExecution[]; unclean: string | null }
-
-// Selected executions have a MERGE description. A SQL MERGE's own sub-queries carry the same
-// description but belong to the MergeIntoCommand execution they share a root with, which is
-// attributed through its own node (resolveDeltaCommandTarget), so they are left out. A sub-query
-// of an API merge may have another of its executions as its root, so a root alone does not exclude.
-function selectMergeExecutions(sql: Map<number, SqlExecution>): SqlExecution[] {
-  const isSqlMergeRoot = (id: number | undefined): boolean =>
-    id !== undefined && /^Execute\s+MergeIntoCommand\b/.test(sql.get(id)?.planTree?.name ?? '');
-  return [...sql.values()]
-    .filter((exec) => MERGE_DESCRIPTION.test(exec.description ?? '') && !isSqlMergeRoot(exec.rootExecutionId))
-    .sort((a, b) => a.id - b.id);
-}
-
-// A run of consecutive execution ids. Nothing in the log ties the members of one merge together,
-// so adjacency is a guess, and a wrong one fuses or splits merges. Each way it can go wrong is
-// marked `unclean` instead of attributed:
-//   - the ids of two merges that ran concurrently interleave, so their start-time spans overlap;
-//   - a start time is missing, so the span is unknown.
-//   - no member writes, so the one path it names may be a source's.
-// Merges that ran back to back with no other execution between them still fuse into one run; the
-// run then names two paths and gets no target.
-function groupMerges(selected: SqlExecution[]): MergeGroup[] {
-  const groups: MergeGroup[] = [];
-  for (const exec of selected) {
-    const last = groups[groups.length - 1];
-    if (last && last.members[last.members.length - 1].id + 1 === exec.id) last.members.push(exec);
-    else groups.push({ members: [exec], unclean: null });
-  }
-  const spans = groups.map(({ members }) => {
-    const starts = members.map((m) => m.startTime);
-    return starts.every((t): t is number => typeof t === 'number') ? [Math.min(...starts), Math.max(...starts)] : null;
-  });
-  groups.forEach((group, i) => {
-    const mine = spans[i];
-    if (mine === null) { group.unclean = 'start time missing'; return; }
-    const overlaps = spans.some((other, j) => j !== i && other !== null && other[0] <= mine[1] && mine[0] <= other[1]);
-    if (overlaps) group.unclean = 'overlaps another merge in time';
-    else if (!group.members.some((m) => MERGE_WRITE_PHASE.test(m.description ?? ''))) group.unclean = 'no write phase';
-  });
-  return groups;
-}
-
-/** One DeltaMerge write per run of API merge executions; null target unless one path is certain. */
-export function apiMergeWrites(sql: Map<number, SqlExecution>): WriteTarget[] {
-  return groupMerges(selectMergeExecutions(sql)).map((group) => {
-    const first = group.members[0].id;
-    const last = group.members[group.members.length - 1].id;
-    const resolved = group.unclean === null ? soleLogPath(group.members) : null;
-    const span = first === last ? `${first}` : `${first}-${last}`;
-    return {
-      sqlExecutionId: first,
-      nodeId: null,
-      command: API_MERGE_COMMAND,
-      recognized: true,
-      kind: resolved?.kind ?? null,
-      target: resolved?.target ?? null,
-      outputRows: null,
-      raw: `Delta MERGE operation, executions ${span}${group.unclean ? ` (${group.unclean})` : ''}`,
-    };
-  });
 }

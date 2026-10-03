@@ -18,6 +18,7 @@ import {
   type SparkEvent,
   type SparkPlanInfo,
 } from './event-schemas.ts';
+import { DELTA_COMMANDS } from './delta-commands.ts';
 import { assertNever } from './assert-never.ts';
 import { finalizeStage } from './stage-quantiles.ts';
 import { MAX_FAILURE_DETAILS_PER_STAGE, extractTaskFailureDetail, taskFailureKey, type TaskFailureDetail } from './task-failure.ts';
@@ -198,10 +199,8 @@ interface SqlExecutionRecord {
   startTime: number;
   endTime: number | null;
   stageIds: number[];
-  // The execution that spawned this one, its own id for a root; absent when the log has none.
   rootExecutionId?: number;
-  // `<Command>\nArguments: <line>` of a Delta write command's root node, the only part of the
-  // physical plan description that is kept (see stripPlanDescription).
+  // The one line of the plan description that is kept (see stripPlanDescription).
   commandArguments?: string;
   // Released (set to null) by endSqlExecution once the plan tree is resolved and posted.
   sparkPlanInfo: SparkPlanInfo | null;
@@ -1133,7 +1132,6 @@ export function startSqlExecution(event: z.infer<typeof SqlExecutionStartEventSc
     hadAdaptiveUpdate: false,
   };
   if (event.rootExecutionId !== undefined) exec.rootExecutionId = event.rootExecutionId;
-  // Only stripPlanDescription's kept form: a full description (not stripped) is never retained.
   if (event.physicalPlanDescription && KEPT_ARGUMENTS.test(event.physicalPlanDescription)) {
     exec.commandArguments = event.physicalPlanDescription;
   }
@@ -1339,10 +1337,7 @@ const QUOTE = 0x22, BACKSLASH = 0x5c, NEWLINE = 0x0a, LOWER_N = 0x6e;
 
 // Delta commands whose root node carries no target in sparkPlanInfo. The description of a
 // command execution starts `== Physical Plan ==\nExecute <Command> (1)` (JSON-escaped newline).
-const KEPT_ARGUMENTS_COMMANDS: ReadonlySet<string> = new Set([
-  'MergeIntoCommand', 'UpdateCommand', 'DeleteCommand', 'WriteIntoDelta', 'WriteIntoDeltaCommand',
-  'SaveIntoDataSourceCommand',
-]);
+const KEPT_ARGUMENTS_COMMANDS: ReadonlySet<string> = new Set(DELTA_COMMANDS);
 // Those whose description is just the command (no child plan printed under it), so it is small
 // enough to decode whole when it spans decoder chunks. SaveIntoDataSourceCommand prints the whole
 // query under it, which can be as large as any other plan description.

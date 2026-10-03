@@ -7,13 +7,13 @@
 //   - a write-like node outside the known list is reported as an unrecognized write;
 //   - an execution whose plan is not in the model (or whose start event could not be read) is
 //     listed, never skipped, and the count of unreadable log lines is reported;
-//   - a Delta command's target comes from its kept arguments or its child executions only when
-//     exactly one table or path is named, and DeltaTable API merges are reported as DeltaMerge
-//     writes whose path is set only for a group no other merge can be mixed into (delta-targets.ts).
+//   - a Delta target is set only when exactly one table or path is named (delta-targets.ts,
+//     api-merge-writes.ts).
 // Targets are verbatim from the simpleString: nothing is resolved (relative paths, ${var}
 // placeholders, catalog-relative table names all pass through as the log states them).
 import { walkPlanTree } from './plan-tree-walk.ts';
-import { apiMergeWrites, indexByRoot, isStagedDeltaWrite, parseDeltaTableV2, resolveDeltaCommandTarget, type ExecutionsByRoot } from './delta-targets.ts';
+import { apiMergeWrites } from './api-merge-writes.ts';
+import { indexByRoot, isStagedDeltaWrite, parseDeltaTableV2, resolveDeltaCommandTarget, type ExecutionsByRoot } from './delta-targets.ts';
 import { IDENT_PARTS, isCut, splitArgs, tableName, type Arg } from './write-target-args.ts';
 import type { PlanNode, SqlExecution } from './types.ts';
 
@@ -255,8 +255,7 @@ function collectWrites(exec: SqlExecution, root: PlanNode, byRoot: ExecutionsByR
   }, { dedupe: true });
 }
 
-// The write a Delta CTAS or RTAS stages under its own root execution names no table: it writes
-// the table its root's CTAS/RTAS node names, when the root has exactly one such node.
+// A staged Delta write writes the table its root's CTAS/RTAS node names, when it has exactly one.
 function attributeStagedWrites(writes: WriteTarget[], sql: Map<number, SqlExecution>): void {
   for (const write of writes) {
     if (write.target !== null || !isStagedDeltaWrite(write)) continue;
