@@ -321,13 +321,17 @@ export const TaskEndEventSchema = z.object({
 export const SqlExecutionStartEventSchema = z.object({
   Event: z.literal('org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart'),
   executionId: z.number(),
+  // The execution that spawned this one (its own id for a root). Absent before Spark 3.0.
+  rootExecutionId: z.number().optional(),
   description: z.string().optional(),
+  // Emptied by stripPlanDescription except for one Delta command's own `Arguments:` line.
+  physicalPlanDescription: z.string().optional(),
   time: z.number(),
   sparkPlanInfo: SparkPlanInfoFieldSchema,
 });
 
 // applyAdaptiveExecutionUpdate: AQE re-plans mid-query and re-emits sparkPlanInfo for the same
-// executionId; last write wins. Neither SQL schema declares physicalPlanDescription: nothing reads
+// executionId; last write wins. This schema does not declare physicalPlanDescription: nothing reads
 // it, so zod strips it (dispatchLine already empties it before JSON.parse, see stripPlanDescription).
 export const SqlAdaptiveExecutionUpdateEventSchema = z.object({
   Event: z.literal('org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate'),

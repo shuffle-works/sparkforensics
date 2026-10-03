@@ -143,6 +143,83 @@ describe('buildChunkDecoder', () => {
     expect(decodeInChunks([enc.encode(text.slice(0, keyEnd)).length + 3])[2]).toBe(expected[2]);
   });
 
+  describe('Delta command arguments in the plan description', () => {
+    const startLine = (description) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart","executionId":1,"rootExecutionId":1,"description":"q","physicalPlanDescription":${JSON.stringify(description)},"sparkPlanInfo":{"nodeName":"Execute X","simpleString":"Execute X","children":[],"metadata":{},"metrics":[]},"time":1}`;
+    const described = (command, args, tail = '') =>
+      `== Physical Plan ==\nExecute ${command} (1)\n   +- ${command} (2)${tail}\n\n\n(1) Execute ${command}\nOutput: []\n\n(2) ${command}\nArguments: ${args}\n\n(3) Range\nArguments: 0, 10, 1\n`;
+    const keptOf = (line) => JSON.parse(stripPlanDescription(line)).physicalPlanDescription;
+
+    it('cuts the description of a Delta command to its own Arguments line', () => {
+      const args = 'SubqueryAlias source, `spark_catalog`.`db`.`t`, "quoted\\" \\\\n", [Update [x]]';
+      expect(keptOf(startLine(described('MergeIntoCommand', args)))).toBe(`MergeIntoCommand\nArguments: ${args}`);
+      for (const command of ['UpdateCommand', 'DeleteCommand', 'WriteIntoDelta', 'WriteIntoDeltaCommand']) {
+        expect(keptOf(startLine(described(command, 'a, b')))).toBe(`${command}\nArguments: a, b`);
+      }
+    });
+
+    it('keeps the last line of a description that has no trailing newline', () => {
+      expect(keptOf(startLine('== Physical Plan ==\nExecute DeleteCommand (1)\n\n(2) DeleteCommand\nArguments: a, b'))).toBe('DeleteCommand\nArguments: a, b');
+    });
+
+    it('empties every other description, and a Save that is not a Delta source', () => {
+      expect(keptOf(startLine(described('InsertIntoHadoopFsRelationCommand', 'a, b')))).toBe('');
+      expect(keptOf(startLine('Scan\nArguments: MergeIntoCommand\nArguments: x'))).toBe('');
+      expect(keptOf(startLine(described('MergeIntoCommand', 'a').replace('(2) MergeIntoCommand\nArguments:', '(2) Other\nArguments:')))).toBe('');
+      expect(keptOf(startLine(described('SaveIntoDataSourceCommand', 'org.apache.spark.sql.jdbc.JdbcRelationProvider@1, [url=x], Append')))).toBe('');
+      expect(keptOf(startLine(described('SaveIntoDataSourceCommand', 'org.apache.spark.sql.delta.sources.DeltaDataSource@1, [path=/t], Append', '\n         +- Range (3)'))))
+        .toBe('SaveIntoDataSourceCommand\nArguments: org.apache.spark.sql.delta.sources.DeltaDataSource@1, [path=/t], Append');
+    });
+
+    it('only keeps the description on a start event', () => {
+      const update = `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":1,"physicalPlanDescription":${JSON.stringify(described('MergeIntoCommand', 'a'))},"sparkPlanInfo":{"nodeName":"N"}}`;
+      const state = createState();
+      processEvent(JSON.parse(stripPlanDescription(update)), state);
+      expect(state.sqlExecutions.size).toBe(0);
+    });
+
+    it('records the root execution and the kept line on the execution, never a whole description', () => {
+      const state = createState();
+      const start = (id, physicalPlanDescription) => ({
+        Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: id, rootExecutionId: 4, time: 1, physicalPlanDescription,
+      });
+      processEvent(start(1, 'MergeIntoCommand\nArguments: a, b'), state);
+      processEvent(start(2, described('MergeIntoCommand', 'a')), state);
+      processEvent(start(3, ''), state);
+      expect(state.sqlExecutions.get(1)).toMatchObject({ rootExecutionId: 4, commandArguments: 'MergeIntoCommand\nArguments: a, b' });
+      expect(state.sqlExecutions.get(2).commandArguments).toBeUndefined();
+      expect(state.sqlExecutions.get(3).commandArguments).toBeUndefined();
+      const noRoot = processEvent({ ...start(5, ''), rootExecutionId: undefined }, state);
+      expect('rootExecutionId' in noRoot.data).toBe(false);
+    });
+
+    it('keeps a small command description that spans decoder chunks, cut at any offset', () => {
+      const line = startLine(described('MergeIntoCommand', 'a, `spark_catalog`.`db`.`t`, b'));
+      const expected = stripPlanDescription(line);
+      const bytes = enc.encode(`${line}\n${line}\n`);
+      // The description's value starts after the key, then "== Physical Plan ==\nExecute <name> ".
+      const nameDone = line.indexOf('MergeIntoCommand (1)') + 'MergeIntoCommand'.length + 1;
+      const emptied = startLine('');
+      for (let cut = 1; cut < bytes.length; cut++) {
+        const dec = buildChunkDecoder();
+        const got = [...dec.decode(bytes.subarray(0, cut)), ...dec.decode(bytes.subarray(cut)), ...dec.flush()].map(stripPlanDescription);
+        expect(got).toHaveLength(2);
+        // A cut before the command name is complete drops the value (the target then falls back
+        // to the child executions); a later cut keeps it.
+        for (const g of got) expect([expected, emptied]).toContain(g);
+        if (cut > nameDone && cut < line.length) expect(got[0]).toBe(expected);
+      }
+    });
+
+    it('drops a chunk-spanning Save description, which holds its whole query plan', () => {
+      const line = startLine(described('SaveIntoDataSourceCommand', 'org.apache.spark.sql.delta.sources.DeltaDataSource@1, [path=/t], Append'));
+      const bytes = enc.encode(`${line}\n`);
+      const dec = buildChunkDecoder();
+      const cut = line.indexOf('Range') - 10;
+      const got = [...dec.decode(bytes.subarray(0, cut)), ...dec.decode(bytes.subarray(cut)), ...dec.flush()].map(stripPlanDescription);
+      expect(JSON.parse(got[0]).physicalPlanDescription).toBe('');
+    });
+  });
+
   // A SQL event line without the plan key is searched for it once in all: searching the whole
   // pending line again after every slice scanned about 10 GB on a 100 MB line.
   it('searches a long SQL event line for the plan key only in text it has not searched yet', () => {

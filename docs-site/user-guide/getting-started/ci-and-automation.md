@@ -165,14 +165,17 @@ It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
 ```
 
 - `writes` holds one row per write node, ordered by SQL execution id and then
-  by position in the plan. `command` is the plan node's name without the
+  by position in the plan. A `DeltaTable` API merge has no write node: it is one
+  extra row per merge, see [Delta writes](#delta-writes). `command` is the plan node's name without the
   `Execute ` prefix or an `Exec` suffix, `nodeId` is the plan node's id, and
   `raw` is the node's full plan string as the log recorded it.
 - `kind` says how to read `target`:
   - `path` is a filesystem location.
   - `table` is a table name whose catalog the command states or implies: a
-    Hive or V1 command's `database.table`, or a DataSource V2 name with a
-    catalog part (`catalog.namespace.table`).
+    Hive or V1 command's `database.table`, a DataSource V2 name with a
+    catalog part (`catalog.namespace.table`), or a Delta command's table as
+    `database.table` (a table in the session catalog) or
+    `catalog.database.table`.
   - `unqualifiedTable` is a DataSource V2 name with no catalog part, such as
     `default.events` or `events`. The log does not say which catalog it lives
     in, so a check on its database part alone can match the wrong catalog.
@@ -186,11 +189,9 @@ It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
   dropped.
 - `target` and `kind` are `null` when the target cannot be determined. That
   covers a node whose plan string has no target (Spark omits it for some
-  commands, and a Delta write made through `SaveIntoDataSourceCommand` often
-  has none), a redacted option value, a plan string that names more than one
-  candidate target, a Delta `MERGE` (its plan string also prints the source),
-  a Delta command whose first argument is not a `delta.` path, and a plan string
-  Spark cut short. A target is reported only when its whole text is followed by
+  commands, and Delta command nodes carry none on real logs, which
+  [Delta writes](#delta-writes) covers), a redacted option value, a plan string
+  that names more than one candidate target, and a plan string Spark cut short. A target is reported only when its whole text is followed by
   a delimiter in the plan string: a path cut by
   `spark.sql.maxMetadataStringLength` or a name with a `...` marker in it is
   `null`, never a partial path. A trailing `... N more fields` after the
@@ -225,8 +226,9 @@ Recognized commands and where their target comes from:
 | `SaveIntoDataSourceCommand` | `path` from the `path` option, or `jdbcTable` from the JDBC `dbtable`/`table` option |
 | `AppendData`, `OverwriteByExpression`, `OverwritePartitionsDynamic`, `ReplaceData`, `WriteDelta`, `WriteToDataSourceV2`, `AppendDataExecV1`, `OverwriteByExpressionExecV1` | `table` or `unqualifiedTable`: the `table=` of the connector's write object, for example Iceberg's `IcebergWrite(table=..., ...)` |
 | `CreateTableAsSelect`, `AtomicCreateTableAsSelect`, `ReplaceTableAsSelect`, `AtomicReplaceTableAsSelect` | `table` or `unqualifiedTable`: the identifier after the catalog object, which does not name the catalog |
-| `WriteIntoDelta`, `WriteIntoDeltaCommand`, `UpdateCommand`, `DeleteCommand`, `CreateDeltaTableCommand`, `OptimizeTableCommand`, `RestoreTableCommand`, `DeltaReorgTableCommand` | `path`: the first argument when it is a `delta.` path table, otherwise `null` |
-| `MergeIntoCommand` | always `null` |
+| `WriteIntoDelta`, `WriteIntoDeltaCommand`, `UpdateCommand`, `DeleteCommand`, `MergeIntoCommand` | `path`: the first argument when it is a `delta.` path table (never for `MergeIntoCommand`, whose plan string also prints the source); otherwise as in [Delta writes](#delta-writes) |
+| `CreateDeltaTableCommand`, `OptimizeTableCommand`, `RestoreTableCommand`, `DeltaReorgTableCommand` | `path`: the first argument when it is a `delta.` path table, otherwise `null` |
+| `DeltaMerge` | not a plan node: one row per `DeltaTable` API merge, see [Delta writes](#delta-writes) |
 
 A plan node not in the table is a write when its operator name (the first word
 of the node name after any leading `Execute`, so not the relation or table a
@@ -245,6 +247,41 @@ a write command), `AppendColumns`, `AppendColumnsWithObject`, `MergeRows`,
 `SessionWindowStateStoreRestore` and `UpdateEventTimeWatermarkColumn`. The
 classification leans toward reporting too much: a node that matches by name is
 listed with a `null` target rather than dropped.
+
+### Delta writes {#delta-writes}
+
+On a real log a Delta command node (`MergeIntoCommand`, `UpdateCommand`,
+`DeleteCommand`, `WriteIntoDelta`, `SaveIntoDataSourceCommand`) is a bare name:
+its plan string has no target. The target is read from two other places, in
+this order, and is `null` when neither names exactly one target.
+
+1. The command's `Arguments:` line in Spark's physical plan description. The
+   parser drops the rest of that text to save memory, but keeps this one line
+   for these commands. A quoted table name that appears once on the line is the
+   target, as `kind: "table"` (`spark_catalog` is dropped, so it reads
+   `database.table`). A `SaveIntoDataSourceCommand` is read this way only when
+   the line shows a Delta source, and its target is the `path` option. A
+   description that spans two read chunks is not kept for a
+   `SaveIntoDataSourceCommand`, which prints its whole query plan under it; its
+   target then falls to the next step.
+2. The `_delta_log` path in the plans of the executions that share the command's
+   root execution, as `kind: "path"`. Exactly one distinct path must appear. It
+   applies only when the command is its own root execution, and a source that is
+   itself a Delta table adds a second path and leaves the target `null`.
+
+A merge made with `DeltaTable.merge(...).execute()` runs no command node. Its
+queries are separate root executions, and the only things tying them together
+are a `MERGE operation` description and adjacent execution ids. Each run of
+consecutive ids with such a description is reported as one write with the
+synthetic command `DeltaMerge`, `kind: "path"` and the table path from the
+`_delta_log` of the plans in the run. The log holds no table name for these
+merges. The target is `null`, and `raw` says why when it applies, when the run
+names zero or several paths, a plan or start time is missing, or the run's
+start times overlap another run's (merges on concurrent threads). Two merges
+whose executions have consecutive ids are one run and name two paths, so they
+get no target. A description a user sets that starts with `MERGE operation` is
+indistinguishable from Delta's and is reported the same way. `raw` reads
+`Delta MERGE operation, executions 10-17`.
 
 Only SQL writes are covered. Writes made outside Spark SQL, such as an RDD
 `saveAsTextFile` or a direct filesystem call from the driver, do not appear in

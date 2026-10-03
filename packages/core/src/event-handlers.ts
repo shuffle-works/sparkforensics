@@ -198,6 +198,11 @@ interface SqlExecutionRecord {
   startTime: number;
   endTime: number | null;
   stageIds: number[];
+  // The execution that spawned this one, its own id for a root; absent when the log has none.
+  rootExecutionId?: number;
+  // `<Command>\nArguments: <line>` of a Delta write command's root node, the only part of the
+  // physical plan description that is kept (see stripPlanDescription).
+  commandArguments?: string;
   // Released (set to null) by endSqlExecution once the plan tree is resolved and posted.
   sparkPlanInfo: SparkPlanInfo | null;
   // Set by applyAdaptiveExecutionUpdate when AQE re-plans this execution mid-run; a per-execution
@@ -317,6 +322,10 @@ export function buildChunkDecoder() {
     pendingSettled = true;
     const valueStart = keyAt + PLAN_DESCRIPTION_KEY.length;
     if (closingQuoteIndex(pending, valueStart) !== -1) return; // complete: stripPlanDescription empties it
+    // A small kept description is not skipped: the line completes in a later chunk and
+    // stripPlanDescription keeps its arguments line. (A name cut off at the chunk end is skipped.)
+    const described = describedCommand(pending, valueStart);
+    if (described !== null && SMALL_DESCRIPTION_COMMANDS.has(described)) return;
     // Only a chunk whose last byte is a backslash carries a run over; any other last byte (such
     // as part of a split multibyte char) ends it.
     let run = 0;
@@ -1109,6 +1118,11 @@ export function startSqlExecution(event: z.infer<typeof SqlExecutionStartEventSc
     sparkPlanInfo,
     hadAdaptiveUpdate: false,
   };
+  if (event.rootExecutionId !== undefined) exec.rootExecutionId = event.rootExecutionId;
+  // Only stripPlanDescription's kept form: a full description (not stripped) is never retained.
+  if (event.physicalPlanDescription && KEPT_ARGUMENTS.test(event.physicalPlanDescription)) {
+    exec.commandArguments = event.physicalPlanDescription;
+  }
   state.sqlExecutions.set(exec.id, exec);
   // A restarted execution carries a new plan: its next end must resolve it again.
   state.resolvedPlanExecutions.delete(exec.id);
@@ -1295,13 +1309,35 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set(
 );
 
 // SQLExecutionStart and SQLAdaptiveExecutionUpdate carry `physicalPlanDescription`, Spark's text
-// rendering of the plan. Nothing reads it (the plan tree comes from sparkPlanInfo), yet on a real
-// 3.5 GB log it was 72% of the AQE-update bytes, which were themselves 73% of the log. Cutting its
+// rendering of the plan. The plan tree comes from sparkPlanInfo, yet on a real 3.5 GB log the
+// description was 72% of the AQE-update bytes, which were themselves 73% of the log. Cutting its
 // string value out before JSON.parse halves the parse cost of those lines.
+//
+// One exception: a Delta write command's node prints only its bare name in sparkPlanInfo, and its
+// target table appears only on its `Arguments:` line of the description. When the description is
+// that of one of KEPT_ARGUMENTS_COMMANDS (checked on its first bytes, so no other line pays for it),
+// the value is cut down to that one line, never kept whole. A value that spans decoder chunks is
+// still dropped unread (buildChunkDecoder), so the write target then falls back to its child paths.
 const SQL_UI_EVENT_PREFIX = '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQL';
 const PLAN_DESCRIPTION_KEY = '"physicalPlanDescription":"';
 
-const QUOTE = 0x22, BACKSLASH = 0x5c, NEWLINE = 0x0a;
+const QUOTE = 0x22, BACKSLASH = 0x5c, NEWLINE = 0x0a, LOWER_N = 0x6e;
+
+// Delta commands whose root node carries no target in sparkPlanInfo. The description of a
+// command execution starts `== Physical Plan ==\nExecute <Command> (1)` (JSON-escaped newline).
+const KEPT_ARGUMENTS_COMMANDS: ReadonlySet<string> = new Set([
+  'MergeIntoCommand', 'UpdateCommand', 'DeleteCommand', 'WriteIntoDelta', 'WriteIntoDeltaCommand',
+  'SaveIntoDataSourceCommand',
+]);
+// Those whose description is just the command (no child plan printed under it), so it is small
+// enough to decode whole when it spans decoder chunks. SaveIntoDataSourceCommand prints the whole
+// query under it, which can be as large as any other plan description.
+const SMALL_DESCRIPTION_COMMANDS: ReadonlySet<string> = new Set(
+  [...KEPT_ARGUMENTS_COMMANDS].filter((command) => command !== 'SaveIntoDataSourceCommand'),
+);
+const PLAN_HEADER = '== Physical Plan ==\\nExecute ';
+// The kept form once JSON-parsed: `<Command>\nArguments: <line>`.
+const KEPT_ARGUMENTS = /^[A-Za-z]+\nArguments: /;
 
 // Index of the closing quote of the JSON string whose content starts at `valueStart`: the first
 // quote preceded by an even number of backslashes. -1 when the string is unterminated.
@@ -1326,7 +1362,37 @@ function closingQuoteAt(buf: Uint8Array, limit: number, carried: number): number
   return -1;
 }
 
-// Returns `line` with the physicalPlanDescription string value emptied, or `line` unchanged when
+// The command named by a description that starts at text[valueStart] with PLAN_HEADER, when text
+// holds the whole name; null otherwise.
+function describedCommand(text: string, valueStart: number): string | null {
+  if (!text.startsWith(PLAN_HEADER, valueStart)) return null;
+  const nameStart = valueStart + PLAN_HEADER.length;
+  let nameEnd = nameStart;
+  while (nameEnd < text.length && /[A-Za-z]/.test(text[nameEnd])) nameEnd++;
+  return nameEnd < text.length ? text.slice(nameStart, nameEnd) : null;
+}
+
+// The `<Command>\nArguments: <line>` part (still JSON-escaped) of the root command of a plan
+// description whose value spans line[valueStart, quote), or null when it is not one of
+// KEPT_ARGUMENTS_COMMANDS. SaveIntoDataSourceCommand is kept only for the Delta source: its other
+// providers (JDBC) print option maps that this tool has no use for.
+function keptCommandArguments(line: string, valueStart: number, quote: number): string | null {
+  const command = describedCommand(line, valueStart);
+  if (command === null || !KEPT_ARGUMENTS_COMMANDS.has(command)) return null;
+  const key = `${command}\\nArguments: `;
+  const at = line.indexOf(key, valueStart + PLAN_HEADER.length + command.length);
+  if (at === -1 || at >= quote) return null;
+  // The line ends at the first escaped newline: a backslash starts a two-char escape.
+  let end = at + key.length;
+  while (end < quote && !(line.charCodeAt(end) === BACKSLASH && line.charCodeAt(end + 1) === LOWER_N)) {
+    end += line.charCodeAt(end) === BACKSLASH ? 2 : 1;
+  }
+  const kept = line.slice(at, Math.min(end, quote));
+  return command === 'SaveIntoDataSourceCommand' && !kept.includes('DeltaDataSource') ? null : kept;
+}
+
+// Returns `line` with the physicalPlanDescription string value emptied (or cut to the kept
+// arguments line, see keptCommandArguments), or `line` unchanged when
 // the key isn't found in Spark's compact form. The key pattern can't match inside another JSON
 // string: there its quotes would be backslash-escaped. buildChunkDecoder already empties a value
 // that spans chunks, so here the value is empty or within one chunk.
@@ -1339,7 +1405,7 @@ export function stripPlanDescription(line: string): string {
   const quote = closingQuoteIndex(line, valueStart);
   // Unterminated string (a truncated line): leave it for JSON.parse to reject.
   if (quote === -1) return line;
-  return line.slice(0, valueStart) + line.slice(quote);
+  return line.slice(0, valueStart) + (keptCommandArguments(line, valueStart, quote) ?? '') + line.slice(quote);
 }
 
 const TASK_END_PREFIX = '{"Event":"SparkListenerTaskEnd",';

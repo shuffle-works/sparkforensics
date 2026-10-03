@@ -6,10 +6,15 @@
 //   - a target Spark cut short (no delimiter after it, or a "..." marker in it) is unparseable;
 //   - a write-like node outside the known list is reported as an unrecognized write;
 //   - an execution whose plan is not in the model (or whose start event could not be read) is
-//     listed, never skipped, and the count of unreadable log lines is reported.
+//     listed, never skipped, and the count of unreadable log lines is reported;
+//   - a Delta command's target comes from its kept arguments or its child executions only when
+//     exactly one table or path is named, and DeltaTable API merges are reported as DeltaMerge
+//     writes whose path is set only for a group no other merge can be mixed into (delta-targets.ts).
 // Targets are verbatim from the simpleString: nothing is resolved (relative paths, ${var}
 // placeholders, catalog-relative table names all pass through as the log states them).
 import { walkPlanTree } from './plan-tree-walk.ts';
+import { apiMergeWrites, indexByRoot, resolveDeltaCommandTarget, type ExecutionsByRoot } from './delta-targets.ts';
+import { IDENT_PARTS, isCut, splitArgs, tableName, type Arg } from './write-target-args.ts';
 import type { PlanNode, SqlExecution } from './types.ts';
 
 export interface WriteTarget {
@@ -67,11 +72,6 @@ const NOT_WRITES = new Set([
   'UpdateEventTimeWatermarkColumn',
 ]);
 
-const IDENT_PART = String.raw`(?:\`(?:[^\`]|\`\`)*\`|[A-Za-z0-9_$]+)`;
-const IDENTIFIER = new RegExp(`^${IDENT_PART}(?:\\.${IDENT_PART})*$`);
-const IDENT_PARTS = new RegExp(IDENT_PART, 'g');
-const TRUNCATION_MARKER = /\.\.\.(?:\s*\d+ more fields)?/;
-
 function commandOf(nodeName: string): string {
   return nodeName.replace(/^Execute\s+/, '').trim().replace(/Exec$/, '');
 }
@@ -86,51 +86,12 @@ function isWriteLike(command: string): boolean {
   return (operator.match(/[A-Z][a-z0-9]*/g) ?? []).some((word) => WRITE_WORDS.has(word));
 }
 
-interface Arg { text: string; terminated: boolean }
-
-// Splits at top-level commas, ignoring commas inside (), [], {} and backticks. `terminated` is
-// true when a comma follows the arg: the last arg of a cut-off string is never terminated.
-function splitArgs(args: string): Arg[] {
-  const out: Arg[] = [];
-  let depth = 0;
-  let quoted = false;
-  let start = 0;
-  for (let i = 0; i < args.length; i++) {
-    const c = args[i];
-    if (c === '`') quoted = !quoted;
-    else if (quoted) continue;
-    else if (c === '(' || c === '[' || c === '{') depth++;
-    else if (c === ')' || c === ']' || c === '}') depth--;
-    else if (c === ',' && depth === 0) {
-      out.push({ text: args.slice(start, i).trim(), terminated: true });
-      start = i + 1;
-    }
-  }
-  out.push({ text: args.slice(start).trim(), terminated: false });
-  return out;
-}
-
 // Text after the command name in the simpleString. Empty when the simpleString does not start
 // with the command (so nothing after it can be trusted).
 function argsOf(detail: string, command: string): string {
   const m = /^(?:Execute\s+)?(\S+)\s*([\s\S]*)$/.exec(detail.trim());
   if (!m || commandOf(m[1]) !== command) return '';
   return m[2];
-}
-
-function isCut(text: string): boolean {
-  return text === '' || TRUNCATION_MARKER.test(text);
-}
-
-// `db`.`t` or db.t -> db.t. A part that itself contains a dot or backtick keeps its quoting.
-function tableName(ident: string): string | null {
-  if (!IDENTIFIER.test(ident)) return null;
-  const parts = (ident.match(IDENT_PARTS) ?? []).map((p) => {
-    if (!p.startsWith('`')) return p;
-    const inner = p.slice(1, -1).replace(/``/g, '`');
-    return /[.`]/.test(inner) ? p : inner;
-  });
-  return parts.join('.');
 }
 
 // First arg of a path-writing command. The next arg must be the boolean that follows it in
@@ -262,6 +223,7 @@ function parseWrite(command: string, detail: string): [boolean, Parsed | null] {
   if (V2_WRITES.has(command)) return [true, parseV2Write(detail)];
   if (V2_TABLE_AS_SELECT.has(command)) return [true, parseV2TableAsSelect(splitArgs(argsOf(detail, command)))];
   // A MERGE prints its source relation too, so a delta. path in it may be the source, not the target.
+  // Its target comes from resolveDeltaCommandTarget alone.
   if (command === 'MergeIntoCommand') return [true, null];
   if (DELTA_COMMANDS.has(command)) return [true, parseDeltaPath(splitArgs(argsOf(detail, command)))];
   return [false, null];
@@ -272,14 +234,16 @@ function outputRowsOf(node: PlanNode): number | null {
   return metric !== undefined && Number.isFinite(metric.value) ? metric.value : null;
 }
 
-function collectWrites(executionId: number, root: PlanNode, out: WriteTarget[]): void {
+function collectWrites(exec: SqlExecution, root: PlanNode, byRoot: ExecutionsByRoot, out: WriteTarget[]): void {
   walkPlanTree(root, (node) => {
     const command = commandOf(node.name);
     if (!isWriteLike(command)) return;
     const detail = node.detail ?? '';
-    const [recognized, parsed] = parseWrite(command, detail);
+    const [recognized, parsedFromDetail] = parseWrite(command, detail);
+    // A Delta command's simpleString is bare on real logs: its target is found elsewhere.
+    const parsed = parsedFromDetail ?? resolveDeltaCommandTarget(command, exec, node, byRoot);
     out.push({
-      sqlExecutionId: executionId,
+      sqlExecutionId: exec.id,
       nodeId: node.id ?? null,
       command,
       recognized,
@@ -301,11 +265,15 @@ export function extractWriteTargets(sql: Map<number, SqlExecution>, input: Write
   const writes: WriteTarget[] = [];
   const withoutPlan = new Map<number, ExecutionWithoutPlan['reason']>();
   for (const id of input.unreadableSqlExecutions ?? []) if (!sql.get(id)?.planTree) withoutPlan.set(id, 'unreadableStart');
+  const byRoot = indexByRoot(sql);
   for (const id of [...sql.keys()].sort((a, b) => a - b)) {
-    const planTree = sql.get(id)!.planTree;
-    if (!planTree) withoutPlan.set(id, withoutPlan.get(id) ?? 'noPlan');
-    else collectWrites(id, planTree, writes);
+    const exec = sql.get(id)!;
+    if (!exec.planTree) withoutPlan.set(id, withoutPlan.get(id) ?? 'noPlan');
+    else collectWrites(exec, exec.planTree, byRoot, writes);
   }
+  // DeltaTable API merges run no command node: they are found by their executions' descriptions.
+  writes.push(...apiMergeWrites(sql));
+  writes.sort((a, b) => a.sqlExecutionId - b.sqlExecutionId);
   const executionsWithoutPlan = [...withoutPlan].sort((a, b) => a[0] - b[0])
     .map(([sqlExecutionId, reason]) => ({ sqlExecutionId, reason }));
   return { writes, executionsWithoutPlan, skippedLines: input.skippedLines ?? null };
