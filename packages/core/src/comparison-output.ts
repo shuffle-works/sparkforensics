@@ -6,15 +6,9 @@ import type { AppModel, Finding } from './types.ts';
 export interface ComparisonRunInput { label: string; appModel: AppModel; catalog: Finding[] }
 
 // The comparison a surface reports: the CLI's `comparison` object and the shared part of MCP
-// compare_runs. Adding a field here adds it to every surface; neither one lists fields by hand.
-export interface ComparisonOutput {
-  verdict: ComparisonVerdictText;
-  confidence: CompareRunsResult['confidence'];
-  reason: CompareRunsResult['reason'];
-  matchedCoverage: CompareRunsResult['matchedCoverage'];
-  metrics: CompareRunsResult['metrics'];
-  findings: CompareRunsResult['findings'];
-}
+// compare_runs. A field added here reaches every surface.
+export type ComparisonOutput = { verdict: ComparisonVerdictText }
+  & Pick<CompareRunsResult, 'confidence' | 'reason' | 'matchedCoverage' | 'metrics' | 'findings'>;
 
 /** The reported projection of a comparison. Key order is the CLI's JSON order. */
 export function comparisonOutput(comparison: CompareRunsResult): ComparisonOutput {
@@ -28,10 +22,9 @@ export function comparisonOutput(comparison: CompareRunsResult): ComparisonOutpu
   };
 }
 
-/** Diffs the two runs and applies `redact` here, so no surface can report or budget on an
- * unredacted comparison by skipping it (stage names carry raw Spark text that can embed a host
- * or IP). `comparison` is the redacted raw result: the budget checks and the Markdown renderer
- * read it; `output` is the projection to serialize. */
+/** Diffs the two runs and applies `redact` here, so no surface can skip it (stage names carry raw
+ * Spark text that can embed a host or IP). `comparison` is the (redacted) raw result for budgets
+ * and Markdown; `output` is the projection to serialize. */
 export function buildComparisonOutput(
   baseline: ComparisonRunInput, candidate: ComparisonRunInput, { redact }: { redact?: boolean } = {},
 ): { comparison: CompareRunsResult; output: ComparisonOutput } {

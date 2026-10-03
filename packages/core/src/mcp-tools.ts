@@ -8,7 +8,7 @@ import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } fr
 import { mcpError } from './mcp-error.ts';
 import { buildEvidenceReport, toFindingsFilter, type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson } from './evidence-report.ts';
 import { computeWallClock } from './wall-clock.ts';
-import { analyze } from './analyzer.ts';
+import { analyzeModel } from './analyzer.ts';
 import { renderComparisonMarkdown, type CompareRunsResult } from './run-comparison.ts';
 import { buildComparisonOutput, type ComparisonOutput } from './comparison-output.ts';
 import { runOutputBlocks } from './run-output.ts';
@@ -47,16 +47,14 @@ export interface RunSummary {
   // Efficiency, unused core time, ETL phases and peak busy cores, as the dashboard shows them.
   runShape: RunShape;
 }
-// compareRuns returns the shared comparison projection (comparison-output.ts, the same one the CLI's
-// `comparison` object is), not the full raw shape (no baselineLabel/stageSkew/baseStages/candStages/
-// jobOutcomes). `verdict` is the dashboard comparison page's headline (baseline = runIdA, candidate
-// = runIdB).
+// compareRuns returns the shared comparison projection (comparison-output.ts, the CLI's `comparison`
+// object), not the full raw shape (no baselineLabel/stageSkew/baseStages/candStages/jobOutcomes).
+// `verdict` is the dashboard comparison page's headline (baseline = runIdA, candidate = runIdB).
 export interface McpCompareRunsResult extends ComparisonOutput {
   runIdA: string;
   runIdB: string;
-  /** @deprecated Same value as `findings`, the name the CLI uses. Kept for one release. */
+  /** @deprecated Aliases of `findings` and `metrics`, kept for one release. */
   findingsDelta: ComparisonOutput['findings'];
-  /** @deprecated Same value as `metrics`, the name the CLI uses. Kept for one release. */
   metricDeltas: ComparisonOutput['metrics'];
 }
 
@@ -200,17 +198,12 @@ export function diagnoseRun(runId: string, opts?: {
   });
   const include = opts?.include ?? [];
   const tuned = json.summary.tunedThresholds;
-  const catalog = analyze(
-    appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-    appModel.jobs, appModel.sql, appModel.runAggregates, { thresholds: opts?.thresholds },
-  );
   return {
     runId, verdict: json.verdict, findings: json.findings, recommendations: json.recommendations, cleanChecks: json.cleanChecks,
     notRunChecks: json.notRunChecks,
-    // The CLI report's own blocks (write targets, per-stage metrics, effective Spark conf), so a
-    // run reads the same through either surface.
+    // The CLI report's own blocks, so a run reads the same through either surface.
     writeTargets: json.writeTargets,
-    ...runOutputBlocks(appModel, catalog, { redact: opts?.redact, thresholds: opts?.thresholds }),
+    ...runOutputBlocks(appModel, analyzeModel(appModel, opts), { redact: opts?.redact, thresholds: opts?.thresholds }),
     runComplete: appModel.app?.endTime != null,
     // Top level too, so a client that never asks for `summary` still sees the run was tuned.
     ...(tuned ? { tunedThresholds: tuned } : {}),
@@ -353,11 +346,7 @@ async function resolveAndAnalyze(
   ref: RunRef, thresholds: ThresholdOverrides | undefined,
 ): Promise<{ runId: string; appModel: AppModel; catalog: Finding[] }> {
   const { runId, appModel } = await resolveOrCreateRun(ref);
-  const catalog = analyze(
-    appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-    appModel.jobs, appModel.sql, appModel.runAggregates, { thresholds },
-  );
-  return { runId, appModel, catalog };
+  return { runId, appModel, catalog: analyzeModel(appModel, { thresholds }) };
 }
 
 export async function compareRuns(
@@ -412,11 +401,9 @@ export async function evaluateBudgetsForRun(
   }
   // The CLI's rule: a metric is budgeted once across the single pair and the list.
   try {
+    const pair = budgets.maxRegressionPct === undefined ? [] : [{ metric: budgets.regressionMetric ?? 'wallClock', maxPct: budgets.maxRegressionPct }];
     combineRegressionBudgets([
-      ...(budgets.maxRegressionPct === undefined ? [] : [{
-        origin: 'maxRegressionPct/regressionMetric',
-        budget: { metric: budgets.regressionMetric ?? 'wallClock', maxPct: budgets.maxRegressionPct },
-      }]),
+      ...pair.map((budget) => ({ origin: 'maxRegressionPct/regressionMetric', budget })),
       ...(budgets.regressionBudgets ?? []).map((budget) => ({ origin: 'regressionBudgets', budget })),
     ]);
   } catch (e) {
@@ -432,8 +419,7 @@ export async function evaluateBudgetsForRun(
   // apply to the candidate.
   const candidate = second ?? first;
   const baseline = second ? first : undefined;
-  // Not redacted: redaction only renames free text (stage names), which no budget reads. The
-  // parity suite checks that, so this tool needs no `redact` input.
+  // Not redacted: no budget reads the stage text redaction rewrites (the parity suite checks it).
   const comparison: CompareRunsResult | undefined = baseline
     ? buildComparisonOutput(
       { label: baseline.runId, appModel: baseline.appModel, catalog: baseline.catalog },

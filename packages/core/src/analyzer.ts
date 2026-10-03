@@ -7,7 +7,7 @@ import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
 import { deriveImpactBand, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
 import { IMPACT_BAND_ORDER } from './format-utils.ts';
 import type {
-  Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
+  AppModel, Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
 } from './types.ts';
 
 // The runner reads each entry through the Detector contract, not its own precise `as const` shape:
@@ -174,6 +174,14 @@ function applySuppression(out: Finding[]): Finding[] {
   }
   if (dropped.size === 0) return out;
   return out.filter((f) => f.stageId == null || !dropped.get(f.type)?.has(f.stageId));
+}
+
+/** analyze() over a parsed run, the one call shape the CLI and the MCP tools share. */
+export function analyzeModel(model: AppModel, options?: AnalyzeOptions): Finding[] {
+  return analyze(
+    model.app, model.stages, model.executors.added, model.executors.removed,
+    model.jobs, model.sql, model.runAggregates, options,
+  );
 }
 
 // `app` widened to `SparkAppInfo | null` to match real callers (AppModel.app is

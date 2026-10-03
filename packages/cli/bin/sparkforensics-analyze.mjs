@@ -23,7 +23,7 @@ const loadCore = (moduleName, opts) => loadVendored(pkgDir, moduleName, opts);
 const { collectRun } = await loadCore('cli/collect-run');
 const { resolveFromShs } = await loadCore('shs-load');
 const { validateShsRequest } = await loadCore('shs-request', { srcExt: 'js' });
-const { analyze } = await loadCore('analyzer');
+const { analyzeModel } = await loadCore('analyzer');
 const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
 const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
 const { evaluateBudgets } = await loadCore('cli/budgets');
@@ -170,13 +170,6 @@ async function collectWithEvidence(path) {
   const { appModel, skippedLines } = await collectRun(path);
   appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
   return { appModel, skippedLines };
-}
-
-function analyzeModel(model, options) {
-  return analyze(
-    model.app, model.stages, model.executors.added, model.executors.removed,
-    model.jobs, model.sql, model.runAggregates, options,
-  );
 }
 
 // The export's provenance stamp: this CLI's own name and version, and the build id of the core it
