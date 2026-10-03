@@ -224,7 +224,7 @@ Recognized commands and where their target comes from:
 | `InsertIntoHadoopFsRelationCommand` | `path`: the first argument, including for an `INSERT OVERWRITE ... PARTITION` that prints a static-partition map after it |
 | `InsertIntoHiveTable`, `CreateDataSourceTableAsSelectCommand`, `CreateHiveTableAsSelectCommand`, `OptimizedCreateHiveTableAsSelectCommand` | `table`: the first argument |
 | `SaveIntoDataSourceCommand` | `path` from the `path` option, or `jdbcTable` from the JDBC `dbtable`/`table` option |
-| `AppendData`, `OverwriteByExpression`, `OverwritePartitionsDynamic`, `ReplaceData`, `WriteDelta`, `WriteToDataSourceV2`, `AppendDataExecV1`, `OverwriteByExpressionExecV1` | `table` or `unqualifiedTable`: the `table=` of the connector's write object, for example Iceberg's `IcebergWrite(table=..., ...)` |
+| `AppendData`, `OverwriteByExpression`, `OverwritePartitionsDynamic`, `ReplaceData`, `WriteDelta`, `WriteToDataSourceV2`, `AppendDataExecV1`, `OverwriteByExpressionExecV1` | `table` or `unqualifiedTable`: the `table=` of the connector's write object, for example Iceberg's `IcebergWrite(table=..., ...)`. For a Delta table, see [Delta writes](#delta-writes) |
 | `CreateTableAsSelect`, `AtomicCreateTableAsSelect`, `ReplaceTableAsSelect`, `AtomicReplaceTableAsSelect` | `table` or `unqualifiedTable`: the identifier after the catalog object, which does not name the catalog |
 | `WriteIntoDelta`, `WriteIntoDeltaCommand`, `UpdateCommand`, `DeleteCommand`, `MergeIntoCommand` | `path`: the first argument when it is a `delta.` path table (never for `MergeIntoCommand`, whose plan string also prints the source); otherwise as in [Delta writes](#delta-writes) |
 | `CreateDeltaTableCommand`, `OptimizeTableCommand`, `RestoreTableCommand`, `DeltaReorgTableCommand` | `path`: the first argument when it is a `delta.` path table, otherwise `null` |
@@ -268,6 +268,18 @@ this order, and is `null` when neither names exactly one target.
    root execution, as `kind: "path"`. Exactly one distinct path must appear. It
    applies only when the command is its own root execution, and a source that is
    itself a Delta table adds a second path and leaves the target `null`.
+
+An append or overwrite of an existing Delta table (`saveAsTable` in `append` or
+`overwrite` mode on an existing table, `INSERT INTO`, `INSERT OVERWRITE`) prints
+the table object as its first argument, and that names the table: `kind:
+"table"` as `database.table` (`catalog.database.table` outside the session
+catalog), or `kind: "path"` for a path-based table. A `CREATE TABLE ... AS
+SELECT`, `CREATE OR REPLACE TABLE` or `saveAsTable` that creates or replaces a
+table runs two executions under one root: the create or replace node, which
+names the table as `unqualifiedTable` because Delta's catalog object does not
+state its catalog name, and an `AppendDataExecV1` whose staged table has no name.
+That append takes the table its root's create or replace node names, and is
+`null` when the root has no single such node.
 
 A merge made with `DeltaTable.merge(...).execute()` normally runs a
 `MergeIntoCommand` too (its description is `toDataset$ at DeltaMergeBuilder`),

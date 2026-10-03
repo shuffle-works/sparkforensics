@@ -209,3 +209,62 @@ describe('DeltaTable API merges', () => {
     ]);
   });
 });
+
+describe('Delta appends, overwrites and CTAS of a table', () => {
+  // Shapes printed by Delta 3.3.2 on Spark 3.5: the table object of an append to an existing table,
+  // and the staged table of the append a CTAS or RTAS runs under its own root.
+  const tableV2 = (command, { catalog = 'Catalog: spark_catalog\n', table = 'Table: t_one\n', path = 'hdfs://nn/sandbox/db.db/t_one', rest = '' } = {}) =>
+    `${command} DeltaTableV2(org.apache.spark.sql.SparkSession@5a1b2c,${path},Some(CatalogTable(\n${catalog}Database: db\n${table}Owner: spark\nProvider: delta\n)),Some(db.t_one),None,Map())${rest}, Project [id#1L], org.apache.spark.sql.delta.catalog.WriteIntoDeltaBuilder$$anon$1@25dc875`;
+  const staged = 'AppendDataExecV1 org.apache.spark.sql.delta.catalog.DeltaCatalog$StagedDeltaTableV2@3dee60f, Project [id#1L], org.apache.spark.sql.execution.datasources.v2.DataSourceV2Strategy$$Lambda$2233/0x0000000841505440@1a7945a4';
+  const ctas = (name = 'db.t_one', command = 'AtomicCreateTableAsSelect') =>
+    node(`${command}`, `${command} org.apache.spark.sql.delta.catalog.DeltaCatalog@70e14c40, ${name}, Project [id#1L], TableSpec(Map(),Some(delta),Map(),None,None,None,false), false`);
+  const write = (id, command, detail, fields = {}) => exec(id, { planTree: node(command, detail), ...fields });
+
+  it.each(['AppendDataExecV1', 'OverwriteByExpressionExecV1'])('reports %s on an existing table as table db.t', (command) => {
+    expect(targetsOf(writesOf(write(1, command, tableV2(command))))).toEqual([{ command, kind: 'table', target: 'db.t_one' }]);
+  });
+
+  it('keeps a catalog other than the session catalog, and reads a table object with no Catalog line', () => {
+    expect(writesOf(write(1, 'AppendDataExecV1', tableV2('AppendDataExecV1', { catalog: 'Catalog: other\n' })))[0])
+      .toMatchObject({ kind: 'table', target: 'other.db.t_one' });
+    expect(writesOf(write(1, 'AppendDataExecV1', tableV2('AppendDataExecV1', { catalog: '' })))[0])
+      .toMatchObject({ kind: 'table', target: 'db.t_one' });
+  });
+
+  it('reports a path table by its path, and nothing for a name or path it cannot read', () => {
+    const pathBased = 'AppendDataExecV1 DeltaTableV2(org.apache.spark.sql.SparkSession@5a1b2c,hdfs://nn/sandbox/db.db/t_path,None,None,None,Map()), Project [id#1L]';
+    expect(writesOf(write(1, 'AppendDataExecV1', pathBased))[0]).toMatchObject({ kind: 'path', target: 'hdfs://nn/sandbox/db.db/t_path' });
+    expect(writesOf(write(1, 'AppendDataExecV1', pathBased.replace('hdfs://nn/sandbox/db.db/t_path', 'hdfs://nn/.../t_path')))[0])
+      .toMatchObject({ kind: null, target: null });
+    expect(writesOf(write(1, 'AppendDataExecV1', tableV2('AppendDataExecV1', { table: 'Table: my table\n' })))[0])
+      .toMatchObject({ kind: null, target: null });
+    expect(writesOf(write(1, 'AppendDataExecV1', tableV2('AppendDataExecV1').replace('Database: db\n', '')))[0])
+      .toMatchObject({ kind: null, target: null });
+  });
+
+  it('still reads a V2 write object that names its table', () => {
+    expect(writesOf(write(1, 'AppendData', 'AppendData IcebergWrite(table=cat.db.events, format=PARQUET)'))[0])
+      .toMatchObject({ kind: 'table', target: 'cat.db.events' });
+  });
+
+  it.each(['AtomicCreateTableAsSelect', 'AtomicReplaceTableAsSelect'])('gives the staged append of a %s the table its root names', (command) => {
+    const writes = writesOf(exec(1, { planTree: ctas('db.t_one', command) }), write(2, 'AppendDataExecV1', staged, { rootExecutionId: 1 }));
+    expect(writes.map(({ sqlExecutionId, command: c, kind, target }) => [sqlExecutionId, c, kind, target])).toEqual([
+      [1, command, 'unqualifiedTable', 'db.t_one'],
+      [2, 'AppendDataExecV1', 'unqualifiedTable', 'db.t_one'],
+    ]);
+  });
+
+  it('leaves a staged append with no single named CTAS root unattributed', () => {
+    const append = (fields) => write(2, 'AppendDataExecV1', staged, fields);
+    expect(writesOf(append({ rootExecutionId: 2 }))[0]).toMatchObject({ kind: null, target: null });
+    expect(writesOf(append({ rootExecutionId: undefined }))[0]).toMatchObject({ kind: null, target: null });
+    expect(writesOf(append({ rootExecutionId: 1 }))[0]).toMatchObject({ kind: null, target: null });
+    expect(writesOf(exec(1, { planTree: ctas('t_bare', 'AtomicCreateTableAsSelect') }), append({ rootExecutionId: 1 }))[1])
+      .toMatchObject({ kind: 'unqualifiedTable', target: 't_bare' });
+    expect(writesOf(exec(1, { planTree: node('Execute Other', 'Execute Other', [ctas('db.a'), ctas('db.b')]) }), append({ rootExecutionId: 1 }))
+      .find((w) => w.command === 'AppendDataExecV1')).toMatchObject({ kind: null, target: null });
+    expect(writesOf(exec(1, { planTree: ctas('db.t_one', 'AtomicCreateTableAsSelect') }), write(2, 'AppendDataExecV1', 'AppendDataExecV1 Other@1, x', { rootExecutionId: 1 }))[1])
+      .toMatchObject({ kind: null, target: null });
+  });
+});

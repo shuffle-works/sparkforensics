@@ -143,6 +143,37 @@ export function resolveDeltaCommandTarget(
   return soleLogPath(byRoot.get(exec.id) ?? []);
 }
 
+// ---- V1-fallback writes ------------------------------------------------------------------------
+
+// A Delta append or overwrite of an existing table (df.write.mode(...).saveAsTable, INSERT INTO or
+// OVERWRITE) is `AppendDataExecV1` or `OverwriteByExpressionExecV1` whose first argument is the
+// table object: `DeltaTableV2(<session>,<path>,Some(CatalogTable(\nCatalog: c\nDatabase: d\nTable: t
+// \n...)),Some(d.t),None,Map())`. Its multi-line CatalogTable block names the table; a path-based
+// table has `None` there and only the path.
+const DELTA_TABLE_V2 = /^\w+ DeltaTableV2\([^,\s]*,([^,\n]*),(?:Some\(CatalogTable\(\n(?:Catalog: (\S+)\n)?Database: (\S+)\nTable: (\S+)\n|None,)/;
+const SIMPLE_NAME = /^[A-Za-z0-9_$]+$/;
+
+/** Target of a V1-fallback write on a DeltaTableV2 table, or null when the detail has another shape. */
+export function parseDeltaTableV2(detail: string): Resolved | null {
+  const m = DELTA_TABLE_V2.exec(detail);
+  if (!m) return null;
+  const [, path, catalog, database, table] = m;
+  if (table === undefined) return path && !isCut(path) ? { kind: 'path', target: path } : null;
+  if (![database, table, catalog ?? 'spark_catalog'].every((part) => SIMPLE_NAME.test(part))) return null;
+  // The session catalog is implied by a V1 name, so it is dropped (as for a Delta command).
+  const name = `${database}.${table}`;
+  return { kind: 'table', target: catalog === undefined || catalog === 'spark_catalog' ? name : `${catalog}.${name}` };
+}
+
+/**
+ * True for the write a CTAS or RTAS of a Delta table runs under its own root execution: its first
+ * argument is the staged table, which has no name. The target is that of the root's own write.
+ */
+export function isStagedDeltaWrite(write: Pick<WriteTarget, 'command' | 'raw'>): boolean {
+  return (write.command === 'AppendDataExecV1' || write.command === 'OverwriteByExpressionExecV1')
+    && /^\w+ \S*DeltaCatalog\$StagedDeltaTableV2@/.test(write.raw);
+}
+
 // ---- DeltaTable API merges ---------------------------------------------------------------------
 
 export const API_MERGE_COMMAND = 'DeltaMerge';

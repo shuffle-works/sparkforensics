@@ -102,6 +102,12 @@ describe('Delta write targets from a log', () => {
     // DeltaTable API merges: a command root with sub-queries of two threads interleaved.
     { sqlExecutionId: 50, command: 'MergeIntoCommand', kind: 'table', target: 'db.t_cmd_one' },
     { sqlExecutionId: 52, command: 'MergeIntoCommand', kind: 'table', target: 'db.t_cmd_two' },
+    // An append and an overwrite of an existing table name it in the table object; a CTAS stages its
+    // append under its own root, and the append takes the table the CTAS names.
+    { sqlExecutionId: 60, command: 'AppendDataExecV1', kind: 'table', target: 'db.t_append' },
+    { sqlExecutionId: 62, command: 'OverwriteByExpressionExecV1', kind: 'table', target: 'db.t_overwrite' },
+    { sqlExecutionId: 64, command: 'AtomicCreateTableAsSelect', kind: 'unqualifiedTable', target: 'db.t_ctas' },
+    { sqlExecutionId: 65, command: 'AppendDataExecV1', kind: 'unqualifiedTable', target: 'db.t_ctas' },
   ];
 
   it('reports the same targets from the dashboard ingest and from the CLI ingest', async () => {

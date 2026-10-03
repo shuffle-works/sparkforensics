@@ -13,7 +13,7 @@
 // Targets are verbatim from the simpleString: nothing is resolved (relative paths, ${var}
 // placeholders, catalog-relative table names all pass through as the log states them).
 import { walkPlanTree } from './plan-tree-walk.ts';
-import { apiMergeWrites, indexByRoot, resolveDeltaCommandTarget, type ExecutionsByRoot } from './delta-targets.ts';
+import { apiMergeWrites, indexByRoot, isStagedDeltaWrite, parseDeltaTableV2, resolveDeltaCommandTarget, type ExecutionsByRoot } from './delta-targets.ts';
 import { IDENT_PARTS, isCut, splitArgs, tableName, type Arg } from './write-target-args.ts';
 import type { PlanNode, SqlExecution } from './types.ts';
 
@@ -220,7 +220,7 @@ function isKnownWrite(command: string): boolean {
 function parseWrite(command: string, detail: string): [boolean, Parsed | null] {
   const argParser = ARG_PARSERS[command];
   if (argParser) return [true, argParser(splitArgs(argsOf(detail, command)))];
-  if (V2_WRITES.has(command)) return [true, parseV2Write(detail)];
+  if (V2_WRITES.has(command)) return [true, parseDeltaTableV2(detail) ?? parseV2Write(detail)];
   if (V2_TABLE_AS_SELECT.has(command)) return [true, parseV2TableAsSelect(splitArgs(argsOf(detail, command)))];
   // A MERGE prints its source relation too, so a delta. path in it may be the source, not the target.
   // Its target comes from resolveDeltaCommandTarget alone.
@@ -255,6 +255,21 @@ function collectWrites(exec: SqlExecution, root: PlanNode, byRoot: ExecutionsByR
   }, { dedupe: true });
 }
 
+// The write a Delta CTAS or RTAS stages under its own root execution names no table: it writes
+// the table its root's CTAS/RTAS node names, when the root has exactly one such node.
+function attributeStagedWrites(writes: WriteTarget[], sql: Map<number, SqlExecution>): void {
+  for (const write of writes) {
+    if (write.target !== null || !isStagedDeltaWrite(write)) continue;
+    const root = sql.get(write.sqlExecutionId)?.rootExecutionId;
+    if (root === undefined || root === write.sqlExecutionId) continue;
+    const parents = writes.filter((w) => w.sqlExecutionId === root && V2_TABLE_AS_SELECT.has(w.command));
+    if (parents.length === 1 && parents[0].target !== null) {
+      write.kind = parents[0].kind;
+      write.target = parents[0].target;
+    }
+  }
+}
+
 export interface WriteTargetsInput {
   /** Start events the parser could not read: their executions are not in `sql`. */
   unreadableSqlExecutions?: number[];
@@ -272,6 +287,7 @@ export function extractWriteTargets(sql: Map<number, SqlExecution>, input: Write
     else collectWrites(exec, exec.planTree, byRoot, writes);
   }
   // DeltaTable API merges run no command node: they are found by their executions' descriptions.
+  attributeStagedWrites(writes, sql);
   writes.push(...apiMergeWrites(sql));
   writes.sort((a, b) => a.sqlExecutionId - b.sqlExecutionId);
   const executionsWithoutPlan = [...withoutPlan].sort((a, b) => a[0] - b[0])

@@ -96,6 +96,10 @@ describe('sparkforensics-analyze CLI', () => {
       [41, 'DeleteCommand', 'table', 'db.t_delete'],
       [50, 'MergeIntoCommand', 'table', 'db.t_cmd_one'],
       [52, 'MergeIntoCommand', 'table', 'db.t_cmd_two'],
+      [60, 'AppendDataExecV1', 'table', 'db.t_append'],
+      [62, 'OverwriteByExpressionExecV1', 'table', 'db.t_overwrite'],
+      [64, 'AtomicCreateTableAsSelect', 'unqualifiedTable', 'db.t_ctas'],
+      [65, 'AppendDataExecV1', 'unqualifiedTable', 'db.t_ctas'],
     ]);
   });
 
