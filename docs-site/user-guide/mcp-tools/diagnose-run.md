@@ -11,6 +11,18 @@ finding types flagged at the same place), `remainingPlaces`, how many more
 places the full list holds, and `copyText`, the dashboard's "Copy next steps"
 checklist.
 
+The response also carries the three machine-readable blocks of the CLI's JSON
+report, with the same content: `writeTargets` (every SQL write with its path or
+table, see [Write targets](../getting-started/ci-and-automation.md#write-targets)), `metrics`
+(run totals and one row per stage, see
+[Metrics block](../getting-started/ci-and-automation.md#metrics-block)) and `effectiveConf` (the Spark
+properties the run started with, `null` when the log records none, see
+[Effective conf](../getting-started/ci-and-automation.md#effective-conf)). With `redact` they are
+built from the redacted run, as in the CLI. The tool has no counterpart of
+the CLI's `--conf-keys` and `--conf-redact-regex`: `effectiveConf` always lists
+every property, withholding Spark's default secret pattern and the job's own
+`spark.redaction.regex`.
+
 Parameters (all optional, but pass either a `source` to load a fresh run, or
 a `runId` for one already loaded in this session; passing neither is an
 error, and when both are given `runId` wins):
@@ -26,7 +38,7 @@ error, and when both are given `runId` wins):
 - `include`: array of `"summary" | "evidenceAvailability" | "detectors"`
   (default omitted, i.e. none). Each requested value adds one extra top-level
   field to the response, on top of the default `verdict`/`findings`/`recommendations`/
-  `cleanChecks`/`notRunChecks`/`runComplete`:
+  `cleanChecks`/`notRunChecks`/`runComplete`/`writeTargets`/`metrics`/`effectiveConf`:
   - `summary`: app id/name/Spark version, stage/job/SQL-execution counts, a
     finding count broken down by impact band, the same counts without evidence
     caveats and the incomplete-run row (`actionableFindingCount`,

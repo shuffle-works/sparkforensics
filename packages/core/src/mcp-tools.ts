@@ -6,13 +6,13 @@ import { collectRun } from './cli/collect-run.ts';
 import { deriveEvidenceAvailability } from './evidence-availability.ts';
 import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
 import { mcpError } from './mcp-error.ts';
-import { buildEvidenceReport, toFindingsFilter, type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson } from './evidence-report.ts';
-import { redactComparison } from './redact.ts';
+import { buildEvidenceReport, runFindings, toFindingsFilter, type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson } from './evidence-report.ts';
 import { computeWallClock } from './wall-clock.ts';
-import { analyze } from './analyzer.ts';
-import { buildComparison, renderComparisonMarkdown, type CompareRunsResult } from './run-comparison.ts';
-import { comparisonVerdict, type ComparisonVerdictText } from './comparison-verdict.ts';
+import { renderComparisonMarkdown, type CompareRunsResult } from './run-comparison.ts';
+import { buildComparisonOutput, type ComparisonOutput } from './comparison-output.ts';
+import { runOutputBlocks } from './run-output.ts';
 import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
+import { combineRegressionBudgets } from './cli/regression-budgets.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { docAnchorForType } from './detector-docs.ts';
 import { DETECTORS, type ThresholdOverrides } from './detectors.ts';
@@ -46,19 +46,15 @@ export interface RunSummary {
   // Efficiency, unused core time, ETL phases and peak busy cores, as the dashboard shows them.
   runShape: RunShape;
 }
-// compareRuns returns a smaller MCP-facing projection of CompareRunsResult
-// (runIdA/runIdB/verdict/findingsDelta/metricDeltas/confidence/reason/matchedCoverage), not the full
-// raw shape (no baselineLabel/stageSkew/baseStages/candStages/jobOutcomes).
-export interface McpCompareRunsResult {
+// compareRuns returns the shared comparison projection (comparison-output.ts, the CLI's `comparison`
+// object), not the full raw shape (no baselineLabel/stageSkew/baseStages/candStages/jobOutcomes).
+// `verdict` is the dashboard comparison page's headline (baseline = runIdA, candidate = runIdB).
+export interface McpCompareRunsResult extends ComparisonOutput {
   runIdA: string;
   runIdB: string;
-  // The dashboard comparison page's headline (baseline = runIdA, candidate = runIdB).
-  verdict: ComparisonVerdictText;
-  findingsDelta: CompareRunsResult['findings'];
-  metricDeltas: CompareRunsResult['metrics'];
-  confidence: CompareRunsResult['confidence'];
-  reason: CompareRunsResult['reason'];
-  matchedCoverage: CompareRunsResult['matchedCoverage'];
+  /** @deprecated Aliases of `findings` and `metrics`, kept for one release. */
+  findingsDelta: ComparisonOutput['findings'];
+  metricDeltas: ComparisonOutput['metrics'];
 }
 
 function envInt(name: string, fallback: number): number {
@@ -192,7 +188,8 @@ export function diagnoseRun(runId: string, opts?: {
   runId: string; verdict: EvidenceReportJson['verdict']; findings: FindingRow[]; runComplete: boolean;
   recommendations: RecommendationRow[]; cleanChecks: CleanCheckEntry[]; notRunChecks: NotRunCheckEntry[];
   tunedThresholds?: Record<string, TunedThresholds>;
-} & Partial<Pick<EvidenceReportJson, 'summary' | 'evidenceAvailability' | 'detectors'>> & { markdown?: string } {
+} & Pick<EvidenceReportJson, 'writeTargets'> & ReturnType<typeof runOutputBlocks>
+  & Partial<Pick<EvidenceReportJson, 'summary' | 'evidenceAvailability' | 'detectors'>> & { markdown?: string } {
   const appModel = getCachedAppModel(runId);
   const findingsFilter = toFindingsFilter(opts?.impactBand, opts?.type, opts?.stageId);
   const { json, markdown } = buildEvidenceReport(appModel, {
@@ -203,6 +200,9 @@ export function diagnoseRun(runId: string, opts?: {
   return {
     runId, verdict: json.verdict, findings: json.findings, recommendations: json.recommendations, cleanChecks: json.cleanChecks,
     notRunChecks: json.notRunChecks,
+    // The CLI report's own blocks, so a run reads the same through either surface.
+    writeTargets: json.writeTargets,
+    ...runOutputBlocks(appModel, { redact: opts?.redact, thresholds: opts?.thresholds }),
     runComplete: appModel.app?.endTime != null,
     // Top level too, so a client that never asks for `summary` still sees the run was tuned.
     ...(tuned ? { tunedThresholds: tuned } : {}),
@@ -345,11 +345,7 @@ async function resolveAndAnalyze(
   ref: RunRef, thresholds: ThresholdOverrides | undefined,
 ): Promise<{ runId: string; appModel: AppModel; catalog: Finding[] }> {
   const { runId, appModel } = await resolveOrCreateRun(ref);
-  const catalog = analyze(
-    appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
-    appModel.jobs, appModel.sql, appModel.runAggregates, { thresholds },
-  );
-  return { runId, appModel, catalog };
+  return { runId, appModel, catalog: runFindings(appModel, thresholds).catalog };
 }
 
 export async function compareRuns(
@@ -364,26 +360,20 @@ export async function compareRuns(
   // interactive stage-detail drill-down, which none of compare/matchStages/metricDeltas/findingsDelta
   // read. Findings/metrics come from `catalog` and appModel.stages/sql, both fully populated. Produces
   // identical output to the dashboard; the MCP tool just never exposes per-task drill-down.
-  const built = buildComparison(
+  const { comparison, output } = buildComparisonOutput(
     { label: runIdA, appModel: appModelA, catalog: catalogA },
     { label: runIdB, appModel: appModelB, catalog: catalogB },
+    { redact: opts?.redact },
   );
-  // Stage names throughout `built` carry raw Spark stage text, which can embed a host/IP token as
-  // free text, the same residual redactReport() already scrubs from the evidence report.
-  const result = opts?.redact ? redactComparison(built) : built;
-  const verdict = comparisonVerdict(result);
 
   return {
     runIdA,
     runIdB,
-    verdict,
-    findingsDelta: result.findings,
-    metricDeltas: result.metrics,
-    confidence: result.confidence,
-    reason: result.reason,
-    matchedCoverage: result.matchedCoverage,
+    ...output,
+    findingsDelta: output.findings,
+    metricDeltas: output.metrics,
     ...tunedField(opts?.thresholds),
-    ...(opts?.markdown ? { markdown: renderComparisonMarkdown(result, verdict, tunedDetectors(opts?.thresholds)) } : {}),
+    ...(opts?.markdown ? { markdown: renderComparisonMarkdown(comparison, output.verdict, tunedDetectors(opts?.thresholds)) } : {}),
   };
 }
 
@@ -408,6 +398,16 @@ export async function evaluateBudgetsForRun(
   if (budgets.regressionMetric !== undefined && budgets.maxRegressionPct === undefined) {
     throw mcpError('access-or-upstream-failure', 'regressionMetric requires maxRegressionPct.');
   }
+  // The CLI's rule: a metric is budgeted once across the single pair and the list.
+  try {
+    const pair = budgets.maxRegressionPct === undefined ? [] : [{ metric: budgets.regressionMetric ?? 'wallClock', maxPct: budgets.maxRegressionPct }];
+    combineRegressionBudgets([
+      ...pair.map((budget) => ({ origin: 'maxRegressionPct/regressionMetric', budget })),
+      ...(budgets.regressionBudgets ?? []).map((budget) => ({ origin: 'regressionBudgets', budget })),
+    ]);
+  } catch (e) {
+    throw mcpError('access-or-upstream-failure', (e as Error).message);
+  }
   const [first, second] = await Promise.all([
     resolveAndAnalyze(primary, opts?.thresholds),
     secondary ? resolveAndAnalyze(secondary, opts?.thresholds) : Promise.resolve(undefined),
@@ -418,11 +418,12 @@ export async function evaluateBudgetsForRun(
   // apply to the candidate.
   const candidate = second ?? first;
   const baseline = second ? first : undefined;
+  // Not redacted: no budget reads the stage text redaction rewrites (the parity suite checks it).
   const comparison: CompareRunsResult | undefined = baseline
-    ? buildComparison(
+    ? buildComparisonOutput(
       { label: baseline.runId, appModel: baseline.appModel, catalog: baseline.catalog },
       { label: candidate.runId, appModel: candidate.appModel, catalog: candidate.catalog },
-    )
+    ).comparison
     : undefined;
 
   const { results, violated, inconclusive } = evaluateBudgets({

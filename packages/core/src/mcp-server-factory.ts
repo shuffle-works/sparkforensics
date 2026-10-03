@@ -71,7 +71,7 @@ export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverride
   }, (params) => toolResult(listRuns(params)));
 
   server.registerTool('diagnose_run', {
-    description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by potential savings), thresholded findings with remediation text, an impact-ranked fix recommendation rollup, clean-check status, and the checks the log lacked the data to run. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated.',
+    description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by potential savings), thresholded findings with remediation text, an impact-ranked fix recommendation rollup, clean-check status, the checks the log lacked the data to run, and the writeTargets, metrics and effectiveConf blocks of the CLI report. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated.',
     inputSchema: {
       ...runRefSchema, redact: z.boolean().optional(),
       include: z.array(z.enum(['summary', 'evidenceAvailability', 'detectors'])).optional(),
@@ -91,7 +91,7 @@ export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverride
   ));
 
   server.registerTool('compare_runs', {
-    description: 'Compare two runs: categorized findings delta and metric deltas.',
+    description: 'Compare two runs: the verdict, metric deltas (metrics) and categorized findings delta (findings). metricDeltas and findingsDelta repeat them under their earlier names and will be removed.',
     inputSchema: {
       runIdA: z.string().optional(), sourceA: sourceSchema.optional(),
       ...secondRunRefSchema,
@@ -112,14 +112,16 @@ export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverride
       sourceB: sourceSchema.optional().describe('Optional candidate run, compared against source/runId as the regression baseline (maxRegressionPct/failOnIntroduced). When given, the absolute budgets (maxRuntimeMs etc.) are evaluated on this run.'),
       runIdB: secondRunRefSchema.runIdB.describe('Same as `sourceB`, referencing an already-resolved run by id.'),
       maxRegressionPct: z.number().optional(), regressionMetric: z.string().optional(), failOnIntroduced: z.string().optional(),
+      regressionBudgets: z.array(z.object({ metric: z.string(), maxPct: z.number().nonnegative() })).optional()
+        .describe('Further regression budgets, one per metric (the CLI\'s repeated --regression-budget). A metric can be budgeted once across this list and maxRegressionPct/regressionMetric.'),
     },
   }, ({
     source, runId, runIdB, sourceB,
     maxRuntimeMs, maxSpillGb, maxSkewRatio, maxFailedTaskRatePct, minEfficiencyPct,
-    maxRegressionPct, regressionMetric, failOnIntroduced,
+    maxRegressionPct, regressionMetric, failOnIntroduced, regressionBudgets,
   }) => toolResult(evaluateBudgetsForRun(
     { source, runId },
-    { maxRuntimeMs, maxSpillGb, maxSkewRatio, maxFailedTaskRatePct, minEfficiencyPct, maxRegressionPct, regressionMetric, failOnIntroduced },
+    { maxRuntimeMs, maxSpillGb, maxSkewRatio, maxFailedTaskRatePct, minEfficiencyPct, maxRegressionPct, regressionMetric, failOnIntroduced, regressionBudgets },
     (runIdB || sourceB) ? { runId: runIdB, source: sourceB } : undefined,
     { thresholds },
   )));

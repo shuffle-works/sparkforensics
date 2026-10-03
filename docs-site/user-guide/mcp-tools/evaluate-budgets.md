@@ -31,13 +31,22 @@ Parameters (all optional):
   call. A volume key (`inputBytes`, `outputBytes`, `taskCount`,
   `executorsAdded`), which has no regression direction, or an unknown key
   reports `inconclusive`.
+- `regressionBudgets`: further regression budgets, an array of
+  `{ "metric": "<key>", "maxPct": <number> }`, the MCP form of the CLI's
+  repeated `--regression-budget <metric>:<pct>`. Each is checked like
+  `maxRegressionPct` and reports its own `max-regression` result. A metric can
+  be budgeted once across this list and the `maxRegressionPct`/`regressionMetric`
+  pair (which counts as one budget); a repeat fails the call. Requires
+  `runIdB`/`sourceB`, as `maxRegressionPct` does.
 - `failOnIntroduced`: fail if the second run introduces any finding in the
   given impact band (`"all"` or one of the impact band names). Requires
   `runIdB`/`sourceB`. A band name it doesn't recognize reports `inconclusive`.
 
 A budget whose required evidence is missing (e.g. no `runIdB`/`sourceB` for a
 regression budget, or a run with no trustworthy task-level evidence) reports
-`inconclusive`, not a false pass. Independent of which budgets you pass, an
+`inconclusive`, not a false pass. The tool has no `redact` input: the
+budgets read figures and impact bands, never the stage text redaction rewrites,
+so a redacted comparison gives the same results. Independent of which budgets you pass, an
 evaluated run with no ApplicationEnd event adds a `run-complete` result with
 status `inconclusive`, the same check that makes the CLI exit `3`. With two
 runs, the check applies to the candidate.
