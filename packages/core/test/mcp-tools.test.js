@@ -8,6 +8,11 @@ import {
 import * as collectRunModule from '../src/cli/collect-run.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
+import { collectRun } from '../src/cli/collect-run.js';
+import { analyze } from '../src/analyzer.js';
+import { evaluateBudgets } from '../src/cli/budgets.js';
+import { buildComparisonOutput } from '../src/comparison-output.js';
+import { COMPARISON_METRIC_KEYS } from '../src/run-comparison.js';
 // Helper lives at repo-root tests/helpers/: shared with tests/cli-sparkforensics-analyze.test.js.
 import { shsZipFetch } from '../../../tests/helpers/shs-fixtures.js';
 
@@ -358,7 +363,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       const result = diagnoseRun(runId, include === undefined ? undefined : { include });
       expect(Object.keys(result).sort()).toEqual(
-        ['cleanChecks', 'findings', 'notRunChecks', 'recommendations', 'runComplete', 'runId', 'verdict'].sort(),
+        ['cleanChecks', 'effectiveConf', 'findings', 'metrics', 'notRunChecks', 'recommendations', 'runComplete', 'runId', 'verdict', 'writeTargets'].sort(),
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -972,6 +977,111 @@ describe('evaluateBudgetsForRun', () => {
         .rejects.toMatchObject({ code: 'run-not-found' });
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('diagnoseRun run blocks', () => {
+  it('returns the write targets, per-stage metrics and effective conf the CLI report carries', async () => {
+    const { dir, path } = tmpEventLogWithFindings();
+    try {
+      const { runId } = await resolveOrCreateRun({ source: { path } });
+      const result = diagnoseRun(runId);
+      expect(result.writeTargets).toEqual(buildEvidenceReport((await resolveOrCreateRun({ runId })).appModel, { markdown: false }).json.writeTargets);
+      expect(result.metrics).toMatchObject({ schemaVersion: expect.any(Number) });
+      expect(result.effectiveConf).toMatchObject({ schemaVersion: expect.any(Number) });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('compareRuns CLI-named fields', () => {
+  it('reports metrics and findings, and repeats them as the deprecated metricDeltas and findingsDelta', async () => {
+    const a = tmpEventLogWithDuration('app-a', 2000);
+    const b = tmpEventLogWithDuration('app-b', 1000);
+    try {
+      const result = await compareRuns({ source: { path: a.path } }, { source: { path: b.path } });
+      expect(result.metrics.find((m) => m.key === 'wallClock')).toMatchObject({ baseline: 2000, candidate: 1000 });
+      expect(result.metricDeltas).toEqual(result.metrics);
+      expect(result.findingsDelta).toEqual(result.findings);
+    } finally {
+      rmSync(a.dir, { recursive: true, force: true });
+      rmSync(b.dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('evaluateBudgetsForRun several regression budgets', () => {
+  it('evaluates every budget in regressionBudgets next to the maxRegressionPct pair', async () => {
+    const a = tmpEventLogWithDuration('app-a', 1000);
+    const b = tmpEventLogWithDuration('app-b', 2000);
+    try {
+      const { results } = await evaluateBudgetsForRun(
+        { source: { path: a.path } },
+        { maxRegressionPct: 10, regressionBudgets: [{ metric: 'gcTime', maxPct: 5 }, { metric: 'taskCount', maxPct: 5 }] },
+        { source: { path: b.path } },
+      );
+      expect(results.map((r) => [r.name, r.metric, r.status])).toEqual([
+        ['max-regression', 'wallClock', 'violation'],
+        ['max-regression', 'gcTime', expect.any(String)],
+        ['max-regression', 'taskCount', 'inconclusive'],
+      ]);
+    } finally {
+      rmSync(a.dir, { recursive: true, force: true });
+      rmSync(b.dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a metric budgeted twice, as the CLI does', async () => {
+    const a = tmpEventLogWithDuration('app-a', 1000);
+    const b = tmpEventLogWithDuration('app-b', 2000);
+    try {
+      await expect(evaluateBudgetsForRun(
+        { source: { path: a.path } },
+        { maxRegressionPct: 10, regressionBudgets: [{ metric: 'wallClock', maxPct: 5 }] },
+        { source: { path: b.path } },
+      )).rejects.toThrow(/Metric "wallClock" has two regression budgets/);
+    } finally {
+      rmSync(a.dir, { recursive: true, force: true });
+      rmSync(b.dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('budgets on a redacted comparison', () => {
+  // The CLI budgets the redacted comparison; evaluate_budgets has no redact input and budgets the
+  // raw one. That is only safe while redaction cannot move a result.
+  it('gives the same results for the raw and the redacted comparison, with host tokens in stage names', async () => {
+    const baseline = tmpEventLogWithStage('app-a', 's1', 100);
+    const candidate = tmpEventLogWithStage('app-b', 'collect at ip-10-1-2-3.ec2.internal.scala:42', 2000);
+    try {
+      const prepare = async (path) => {
+        const { appModel } = await collectRun(path);
+        const catalog = analyze(
+          appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
+          appModel.jobs, appModel.sql, appModel.runAggregates,
+        );
+        return { appModel, catalog };
+      };
+      const base = await prepare(baseline.path);
+      const cand = await prepare(candidate.path);
+      const raw = buildComparisonOutput({ label: 'baseline', ...base }, { label: 'candidate', ...cand }).comparison;
+      const redacted = buildComparisonOutput({ label: 'baseline', ...base }, { label: 'candidate', ...cand }, { redact: true }).comparison;
+      // Precondition: redaction did change the comparison, and there is an introduced finding to budget.
+      expect(JSON.stringify(redacted)).not.toBe(JSON.stringify(raw));
+      expect(raw.findings.introduced.length).toBeGreaterThan(0);
+
+      const budgets = {
+        maxRegressionPct: 0, regressionBudgets: COMPARISON_METRIC_KEYS.map((metric) => ({ metric, maxPct: 0 })).filter((b) => b.metric !== 'wallClock'),
+        failOnIntroduced: 'all',
+      };
+      const run = (comparison) => evaluateBudgets({ appModel: cand.appModel, catalog: cand.catalog, budgets, comparison });
+      expect(run(redacted)).toEqual(run(raw));
+      expect(run(raw).violated).toBe(true);
+    } finally {
+      rmSync(baseline.dir, { recursive: true, force: true });
+      rmSync(candidate.dir, { recursive: true, force: true });
     }
   });
 });

@@ -23,19 +23,18 @@ const loadCore = (moduleName, opts) => loadVendored(pkgDir, moduleName, opts);
 const { collectRun } = await loadCore('cli/collect-run');
 const { resolveFromShs } = await loadCore('shs-load');
 const { validateShsRequest } = await loadCore('shs-request', { srcExt: 'js' });
-const { analyze, auditConfig } = await loadCore('analyzer');
+const { analyze } = await loadCore('analyzer');
 const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
 const { buildEvidenceReport, toFindingsFilter } = await loadCore('evidence-report');
 const { evaluateBudgets } = await loadCore('cli/budgets');
-const { buildComparison, renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
-const { comparisonVerdict } = await loadCore('comparison-verdict');
-const { redactComparison, redactRunModel } = await loadCore('redact');
+const { renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
+const { buildComparisonOutput } = await loadCore('comparison-output');
 const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
 const { runPayloadScript } = await loadCore('run-payload');
 const { loadThresholdOverrides } = await loadCore('cli/threshold-config');
 const { parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets } = await loadCore('cli/regression-budgets');
 const { tunedDetectors } = await loadCore('threshold-overrides');
-const { computeRunMetrics } = await loadCore('run-metrics');
+const { runOutputBlocks } = await loadCore('run-output');
 const { buildEffectiveConf } = await loadCore('effective-conf');
 
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
@@ -235,17 +234,6 @@ const unreadable = (promise, exitCode) => promise.catch((e) => { e.exitCode = ex
 // The --redact stand-in for a log failure's own message, which may carry the log path (and so the app id).
 const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode === EXIT.INTERNAL ? 'analyzed' : 'read or parsed'}.`;
 
-// Additive blocks on a candidate's JSON report: each carries its own schemaVersion. Under --redact
-// they come from the run redacted with the report's own inputs, so host and app pseudonyms in stage
-// fingerprints and conf values match the report's.
-function machineReadableBlocks(appModel, catalog, { redact, thresholds, confKeys, confRedactRegex }) {
-  const blocksModel = redact ? redactRunModel(appModel, catalog, auditConfig(appModel.app)).appModel : appModel;
-  return {
-    metrics: computeRunMetrics(blocksModel, thresholds),
-    effectiveConf: buildEffectiveConf(blocksModel.app, { keys: confKeys, userPattern: confRedactRegex }),
-  };
-}
-
 // One baseline against several candidates, one NDJSON line each. The baseline is parsed and
 // analyzed once; candidates run one at a time so only one parsed log is held at once. A candidate
 // that cannot be read or parsed yields an "error" line (exit code 4) and the rest still run. Under --redact
@@ -276,11 +264,11 @@ async function runMultiLog({
     try {
       const { appModel } = await unreadable(collectWithEvidence(path), EXIT.CANDIDATE_UNREADABLE);
       const catalog = analyzeModel(appModel, { thresholds });
-      let comparison = buildComparison(
+      const { comparison, output } = buildComparisonOutput(
         { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
         { label: 'candidate', appModel, catalog },
+        { redact },
       );
-      if (redact) comparison = redactComparison(comparison);
       const { json } = buildEvidenceReport(appModel, { redact, findingsFilter, markdown: false, thresholds });
       const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
       for (const r of results) {
@@ -293,15 +281,8 @@ async function runMultiLog({
         exitCode,
         error: null,
         budgets: results,
-        candidate: { ...json, ...machineReadableBlocks(appModel, catalog, { redact, thresholds, confKeys, confRedactRegex }) },
-        comparison: {
-          verdict: comparisonVerdict(comparison),
-          confidence: comparison.confidence,
-          reason: comparison.reason,
-          matchedCoverage: comparison.matchedCoverage,
-          metrics: comparison.metrics,
-          findings: comparison.findings,
-        },
+        candidate: { ...json, ...runOutputBlocks(appModel, catalog, { redact, thresholds, confKeys, confRedactRegex }) },
+        comparison: output,
       };
     } catch (e) {
       const exitCode = e.exitCode ?? EXIT.INTERNAL;
@@ -560,15 +541,16 @@ async function runCli(argv, { fetchImpl } = {}) {
   }
 
   let comparison;
+  let comparisonJson;
   if (usingBaseline) {
     const baselineCatalog = analyzeModel(baselineAppModel, { thresholds });
-    comparison = buildComparison(
+    // The builder applies --redact: stage names in the comparison carry raw Spark stage text,
+    // which --redact promises to pseudonymize.
+    ({ comparison, output: comparisonJson } = buildComparisonOutput(
       { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
       { label: 'candidate', appModel, catalog },
-    );
-    // --redact must also scrub the comparison section: stage names there carry
-    // raw Spark stage text, which --redact promises to pseudonymize.
-    if (values.redact) comparison = redactComparison(comparison);
+      { redact: values.redact },
+    ));
   }
 
   const { markdown, json } = buildEvidenceReport(appModel, {
@@ -576,23 +558,13 @@ async function runCli(argv, { fetchImpl } = {}) {
   });
   let output;
   if (values.format === 'md') {
-    output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonVerdict(comparison))}\n` : `${markdown}\n`;
+    output = comparison ? `${markdown}${renderComparisonMarkdown(comparison, comparisonJson.verdict)}\n` : `${markdown}\n`;
   } else {
-    const machineReadable = machineReadableBlocks(appModel, catalog, {
+    const machineReadable = runOutputBlocks(appModel, catalog, {
       redact: values.redact, thresholds, confKeys, confRedactRegex: values['conf-redact-regex'],
     });
     const payload = comparison
-      ? {
-        candidate: { ...json, ...machineReadable },
-        comparison: {
-          verdict: comparisonVerdict(comparison),
-          confidence: comparison.confidence,
-          reason: comparison.reason,
-          matchedCoverage: comparison.matchedCoverage,
-          metrics: comparison.metrics,
-          findings: comparison.findings,
-        },
-      }
+      ? { candidate: { ...json, ...machineReadable }, comparison: comparisonJson }
       : { ...json, ...machineReadable };
     output = `${JSON.stringify(payload, null, 2)}\n`;
   }

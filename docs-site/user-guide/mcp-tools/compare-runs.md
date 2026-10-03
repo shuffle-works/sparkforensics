@@ -2,8 +2,13 @@
 
 Reference for the `compare_runs` tool of the SparkForensics MCP server.
 
-Compare two runs: the comparison page's verdict, categorized findings delta
-and metric deltas. `verdict` is the headline the dashboard's comparison page
+Compare two runs: the comparison page's verdict, metric deltas (`metrics`) and
+categorized findings delta (`findings`). The result carries the same
+`verdict`, `confidence`, `reason`, `matchedCoverage`, `metrics` and `findings`
+as the `comparison` object of the CLI's `--baseline` JSON output, plus
+`runIdA` and `runIdB`. `metricDeltas` and `findingsDelta` repeat `metrics` and
+`findings` under their earlier names; they are deprecated and will be removed
+in a later release. `verdict` is the headline the dashboard's comparison page
 opens with (the baseline is `runIdA`/`sourceA`, the candidate `runIdB`/`sourceB`): a
 `title` such as "The candidate finished 9.9s faster than the baseline (37%)", or a failed-job
 headline when either run had jobs fail, a `tone` (`better`, `worse`, `same` or
@@ -38,14 +43,27 @@ Example call:
 }
 ```
 
-Example response (`metricDeltas` trimmed to its first row of 11):
+Example response (`metrics` and `metricDeltas` trimmed to their first row of 11):
 
 ```json
 {
   "runIdA": "aaaa1111-...",
   "runIdB": "bbbb2222-...",
   "verdict": { "title": "The candidate finished 1.0s faster than the baseline (50%)", "tone": "better", "sentences": [] },
-  "findingsDelta": { "introduced": [], "resolved": [] },
+  "confidence": "ok",
+  "reason": null,
+  "matchedCoverage": 1,
+  "metrics": [
+    {
+      "key": "wallClock",
+      "label": "Wall-clock duration",
+      "baseline": 2000,
+      "candidate": 1000,
+      "delta": -1000,
+      "direction": "improvement"
+    }
+  ],
+  "findings": { "introduced": [], "resolved": [] },
   "metricDeltas": [
     {
       "key": "wallClock",
@@ -56,15 +74,13 @@ Example response (`metricDeltas` trimmed to its first row of 11):
       "direction": "improvement"
     }
   ],
-  "confidence": "ok",
-  "reason": null,
-  "matchedCoverage": 1
+  "findingsDelta": { "introduced": [], "resolved": [] }
 }
 ```
 
-Each `findingsDelta.introduced`/`resolved` row is
+Each `findings.introduced`/`resolved` row is
 `{ rule, type, impactBand, baseCount, candCount, delta, stages }`, with
-`stages` naming the affected stages. A `metricDeltas` row's `direction` is
+`stages` naming the affected stages. A `metrics` row's `direction` is
 `improvement`, `regression`, `unchanged`, `neutral` (a volume metric, where
 more isn't worse) or `unavailable`, and an unavailable row carries an
 `unavailableReason`. `confidence` is `low` when the two runs' names differ or

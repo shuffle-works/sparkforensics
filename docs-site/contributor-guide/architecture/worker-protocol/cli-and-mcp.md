@@ -105,6 +105,33 @@ and `SPARKFORENSICS_MCP_CACHE_TTL_MS`, lazily swept on access) keyed by resolved
 via `resolveOrCreateRun` and reuses it across subsequent tool calls instead of
 re-parsing.
 
+### One output builder for the CLI and MCP
+
+Neither surface lists the fields of a run or a comparison by hand. The CLI's
+JSON and the MCP tools call the same core functions:
+
+- `buildComparisonOutput()` in `packages/core/src/comparison-output.ts` diffs the
+  two runs, applies `--redact`/`redact` itself (so no surface can budget or
+  report an unredacted comparison by skipping it), and returns the redacted
+  `CompareRunsResult` for the budget checks and the Markdown renderer, plus
+  `comparisonOutput()`'s projection: `verdict`, `confidence`, `reason`,
+  `matchedCoverage`, `metrics`, `findings`. That projection is the CLI's
+  `comparison` object and the shared part of `compare_runs`. `compare_runs` also
+  returns `metricDeltas` and `findingsDelta`, deprecated aliases of `metrics` and
+  `findings` kept for one release.
+- `runOutputBlocks()` in `packages/core/src/run-output.ts` builds the report's
+  `metrics` and `effectiveConf` blocks, redacted from the redacted run, for both
+  the CLI report and `diagnose_run`, which also returns the report's `writeTargets`.
+
+Neither surface wraps the other: MCP handlers hold a run cache and report errors
+by code, while the CLI maps failures to exit codes and owns stdout. Adding a field
+to the projection adds it to both. `packages/cli/test/parity.test.js` runs the CLI's
+`main()` and the MCP tools through an in-memory client on public corpus logs,
+flattens both outputs and diffs their key sets and values. The differences that
+stay (the MCP run handles, the deprecated aliases, the CLI's `schemaVersion`)
+are in a commented allowlist in that file, and an entry that explains no
+difference fails the test.
+
 Every tool failure comes back as `{isError: true, content: [...],
 structuredContent: {code}}`, never an HTTP-status-shaped error; `code` is one
 of the 5 existing SHS codes (`SHS_ERROR_CODES`, `packages/core/src/shs-request.js`)

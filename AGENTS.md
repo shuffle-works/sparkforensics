@@ -76,6 +76,11 @@ build config needs a `.changeset/*.md` (`scripts/check-changeset.sh`,
   `ALLOWED_EXPORT_CORE_MODULES` (`scripts/export-analysis-guard.mjs`): never
   widen it to get past the guard, and keep `detectors.ts` imports type-only
   there (`architecture/state-and-history.md#run-interpretation`).
+- CLI and MCP output: add a field to a run or comparison once, in
+  `packages/core/src/comparison-output.ts` or `run-output.ts`, never by hand in
+  the CLI or `mcp-tools.ts`. `packages/cli/test/parity.test.js` diffs both
+  surfaces and fails on a field only one side has, unless it is in its
+  commented allowlist.
 - Generated content, never hand-edited:
   `packages/core/src/docs-content/{chapters,tuning,diagrams}` comes from the
   pinned tuning reference (fix upstream, then `npm run docs:bump`), and

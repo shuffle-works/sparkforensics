@@ -143,7 +143,7 @@ CI gate? See [MCP tools reference](../mcp-tools.md).
 
 The JSON report has a top-level `writeTargets` object listing every SQL write
 in the run, so a script can check where a job wrote without reading the plan.
-It has no Markdown counterpart.
+It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
 
 ```json
 {
@@ -254,7 +254,7 @@ the event log and are not in `writeTargets`.
 
 The CLI's JSON output carries a `metrics` block next to the report, for
 scripts that act on a run without reading the report. With `--baseline` it is
-inside `candidate`. It has its own `schemaVersion`, separate from the
+inside `candidate`. The MCP `diagnose_run` tool returns the same block. It has its own `schemaVersion`, separate from the
 report's. A figure the log cannot provide is `null`, never `0`: a log from a
 Spark version that records no CPU time has `executorCpuTimeMs: null`, and a
 log cut off before any executor joined has null allocation. The time, data
@@ -369,7 +369,7 @@ The JSON output also carries `effectiveConf` (with its own `schemaVersion`),
 the Spark properties the run
 started with, so a script can check that a `--conf` overlay took effect. It is
 null when the log records no Spark properties. With `--baseline` it is inside
-`candidate`.
+`candidate`. The MCP `diagnose_run` tool returns the same block.
 
 - `values`: property to value, for every property that is not withheld.
 - `maskedKeys`: properties present in the log whose value is withheld.
