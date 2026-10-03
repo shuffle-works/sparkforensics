@@ -58,9 +58,16 @@ jobs:
             docs:
               - 'docs-site/**'
               - 'docs/**'
+              - 'README.md'
+              - 'AGENTS.md'
+              - 'CONTRIBUTING.md'
+              - 'scripts/check-doc-anchors.mjs'
       - name: Build docs site (validates internal links/anchors)
         if: steps.docs-filter.outputs.docs == 'true'
         run: npm run docs:build
+      - name: Check doc anchors
+        if: steps.docs-filter.outputs.docs == 'true'
+        run: node scripts/check-doc-anchors.mjs
 
   # packages/core has no bin to pack-and-spawn: its unit tests run directly
   # against packages/core/src, no vendoring involved.

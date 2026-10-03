@@ -6,7 +6,7 @@ per tag: what it means, and what to do about it.
 Each tag links to the matching section of the Spark
 [tuning reference](../tuning-reference/index.md), opened in an in-app **Reference**
 panel next to the board. `INCMP` has no reference section, so its tag opens
-this page instead. Turn on [Advanced view](./getting-started.md#advanced-view)
+this page instead. Turn on [Advanced view](./getting-started/reading-the-dashboard.md#advanced-view)
 to also see a finding's confidence when it is below high, and a page icon
 beside the tag that opens this page's entry. Some tags point into another
 tag's reference page because the material overlaps: `SFAIL` shares `FAIL`'s
