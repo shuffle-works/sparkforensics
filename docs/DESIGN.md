@@ -296,4 +296,4 @@ A single compact top bar with a bottom rule: the current-file switcher at left w
 - Don't load fonts from a CDN or add a runtime font request to the app, export or docs.
 - Don't use pure black, neon or glow in dark mode.
 - Don't replace tags with emoji, glyph icons or nonstandard status symbols.
-- Don't place a mono label above a heading as a decorative kicker.
+- Don't place mono labels above headings as decoration. The one exception is the verdict panel's "Verdict" label, which names the panel's role.

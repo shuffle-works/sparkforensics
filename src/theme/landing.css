@@ -12,13 +12,6 @@
   border-radius: var(--radius-panel);
 }
 
-.trace-eyebrow {
-  font: 500 11px/1.4 var(--font-mono);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-}
-
 /* ---- Drop zone: a panel, not a dashed box. Drag-over turns it into a
    dashed accent target so the drop affordance still reads. ---- */
 .drop-zone-panel {
