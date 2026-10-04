@@ -806,9 +806,9 @@ function lowShuffleParallelismFix(stage: DetectorStage, app: DetectorApp | null)
       remediation: [decreaseConf(ADVISORY_PARTITION_SIZE_KEY)],
     };
   }
-  if (partitions === 'ownPartitioning' || partitions === 'sufficient') {
+  if (partitions === 'ownPartitioning') {
     return {
-      partitions: 'ownPartitioning',
+      partitions,
       text: `spark.sql.shuffle.partitions is already ${count}, so raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller`,
       remediation: [],
     };
