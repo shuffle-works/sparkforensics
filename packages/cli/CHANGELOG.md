@@ -1,5 +1,41 @@
 # sparkforensics-cli
 
+## 0.7.0
+
+### Minor Changes
+
+- 2a7acea: Skew remediation now fits the stage and the run's effective conf, and every median is the textbook median.
+  
+  **Median.** The P50 of task duration, shuffle read and spill (`taskDurationP50`, `shuffleReadP50`, `spillMemP50`, `spillDiskP50`) is the mean of the two middle values on an even task count; it was the lower middle value. The slow-host mean-duration median and the executor max/median ratio took the upper middle value and now use the same median. P95 and max are unchanged. A bimodal stage with six tasks of 137, 219, 257, 28345, 34157 and 44374 ms now reports max/median 3.1 instead of 172.7, so such stages no longer lead the findings by an inflated ratio, and some skew, straggler and stage-shape findings that only cleared their threshold on the lower median no longer fire.
+  
+  **Effective conf.** A conf a finding would set is left out when its effective value already matches: the logged property, else Spark's default for the run's `sparkVersion`. Modeled defaults are `spark.sql.adaptive.enabled` (on from Spark 3.2) and `spark.sql.adaptive.skewJoin.enabled` (on from 3.0). On Spark 3.5 with AQE on, skew findings no longer suggest `spark.sql.adaptive.skewJoin.enabled`; on Spark 3.0 and 3.1 with AQE unlogged they suggest `spark.sql.adaptive.enabled`.
+  
+  **Stage shape.** Skew-join handling is suggested only for a stage that reads a shuffle in a SQL execution whose plan has a sort-merge or shuffled-hash join. Skew findings and `shufflePartitionSkew` gain `evidence.origin` (`shuffleJoin`, `inputScan` or `other`). A scan stage with uneven input gets a `spark.sql.files.maxPartitionBytes` decrease and file-size advice, and any other stage gets the salting advice with no conf. `stageSlowness` gains `evidence.reads` (`shuffle`, `input` or `other`) and suggests `spark.sql.shuffle.partitions` and `spark.default.parallelism` only for a stage that reads a shuffle; a scan stage gets the `maxPartitionBytes` decrease instead.
+  
+  **Other finding types.** The same three checks now apply wherever a finding carries a conf or a median:
+  
+  - `spill` and `tinyTask` suggest `spark.sql.shuffle.partitions` only for a stage that reads a shuffle, and carry `evidence.reads`.
+  - `shuffle` and `partitionSizing` (`lowShuffleParallelism`) read the effective `spark.sql.shuffle.partitions` (logged, else Spark's 200), and carry `evidence.partitions`: `raise`, `sufficient` (tasks already a good size), `aqeCoalesced` (AQE merged the partitions, so `spark.sql.adaptive.advisoryPartitionSizeInBytes` is the lever) or `ownPartitioning`. A shuffle finding with no partition-count problem now has an empty `remediation`.
+  - `autoscalingChurn` and `coldStart` suggest no dynamic-allocation property when the run turns it off, and carry `evidence.dynamicAllocation`.
+  - `straggler` words its skew advice from the stage as a skew finding does, carries the matching `remediation` and `evidence.origin`.
+  - `underBroadcast` and `overBroadcast` compare against the effective `spark.sql.autoBroadcastJoinThreshold` (logged, else 10 MiB, `-1` disabled) and carry `evidence.broadcastThreshold`; a threshold that already admits the smaller side, or is already below the broadcast, is not suggested.
+  - A skew finding on Spark before 3.0 suggests no AQE conf.
+  - Effective defaults modeled: `spark.sql.shuffle.partitions` (200), `spark.sql.autoBroadcastJoinThreshold` (10 MiB), `spark.sql.adaptive.coalescePartitions.enabled` (on from 3.0), besides the AQE keys above.
+- 7db426c: The dashboard comparison page now shows a **Stages compared** table, and comparisons can be gated per paired stage.
+  
+  The table lists each pair from `stagePairs` with its change in run time, CPU time, spill, input, output and shuffle, sorted by the absolute run-time change, with the pair's `quality` and `score`. Re-planned groups and unmatched stages are listed below it, and selecting a stage shows both runs' figures for it side by side inside the comparison, with links to open it in either run's dashboard. The comparison page is about 30% wider, and the Metrics columns read Baseline and Candidate with the full run name on hover.
+  
+  New budget `max-stage-regression`: `--stage-regression-budget <metric>:<pct>` (repeatable, needs `--baseline`) on the CLI and `stageRegressionBudgets` on MCP `evaluate_budgets` fail when any paired stage's `executorRunTime`, `executorCpuTime`, `memoryBytesSpilled`, `diskBytesSpilled`, `shuffleReadBytes` or `shuffleWriteBytes` grew by more than the percentage. By default only `exact` and `structural` pairs count; `--stage-quality` and `stageQualities` choose the qualities. It is inconclusive when no eligible stage pairs. `inputBytes` and `outputBytes` are refused (usage error on the CLI, call error on MCP) because volume has no regression direction. Existing budgets and exit codes are unchanged, and `confidence` still does not affect any budget.
+- e740c9a: Stages now pair in two levels, and the stages a re-plan leaves over are reported as `replanned` instead of `unmatched`.
+  
+  SQL executions of the two runs align first, in submission order, scored on call site, description and plan structure. Then the stages inside each aligned pair of executions pair as `exact` (same normalized name and plan text), `structural` (same plan shape and sorted attribute names, with literals, paths, file counts and ids left out) or `aligned` (similar text, or no plan to compare and paired by position among stages of one name). A loop that ran 14 times in one run and 15 in the other pairs 14 iterations, a self-join subtree counted 3 times against 2 pairs 2, and a grouping set emitted in another column order each run pairs structurally. The `structural` and `aligned` qualities were reserved values before; `score` is 1 for `exact`, the text similarity for the other two, and 0.5 for a pair made by position.
+  
+  When an aligned execution pair has different stage counts (a broadcast join took out an exchange) and stages are left over, they are reported once in `replanned`: `baseExecutionId`, `candExecutionId`, `baseStageIds`, `candStageIds` and `deltas` (the total of each delta metric per side). Leftovers under equal stage counts stay `unmatched`.
+  
+  **Behaviour change: `runtimeCoverage` and `confidence` count replanned run time.** `runtimeCoverage` is the share of both runs' executor run time in paired and replanned stages, so a conf change that re-plans a join can report `ok`. `replanned` carries the totals so a caller can see how much run time that is. Runs whose SQL executions share too little work to be one job (fewer than half of the smaller run's executions pair) get no stage pairs at all, so a comparison of two different jobs reports `low` instead of pairing generic stages such as a lone `count`.
+  
+  New field `executionAlignment` in the comparison block (`baseExecutions`, `candExecutions`, `pairedExecutions`, `agreement`, `accepted`, `bounded`), in the CLI's `comparison` object, MCP `compare_runs` and the dashboard's result. The execution alignment runs in full up to 1,000,000 execution pairs and in a band around the diagonal above that; `bounded` says which. `comparisonSchemaVersion` stays 1: the change is additive.
+
 ## 0.6.0
 
 ### Minor Changes
