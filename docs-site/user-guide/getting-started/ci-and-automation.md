@@ -117,10 +117,11 @@ removing the `broadcast()` hint.
 
 Skew-join handling is only suggested for a stage that reads a shuffle in a SQL
 execution whose plan has a sort-merge or shuffled-hash join. Skew findings
-(and `shufflePartitionSkew`) carry `evidence.origin`: `shuffleJoin` (the
-conf above applies), `inputScan` (a stage reading uneven input files: the
-remediation lowers `spark.sql.files.maxPartitionBytes`) or `other` (no conf is
-suggested). A `stageSlowness` finding carries `evidence.reads` (`shuffle`,
+carry `evidence.origin`: `shuffleJoin` (the conf above applies), `inputScan`
+(a stage reading uneven input files: the remediation lowers
+`spark.sql.files.maxPartitionBytes`) or `other` (no conf is suggested).
+`shufflePartitionSkew` carries the same field but is judged on shuffle-read
+sizes, so it is only ever `shuffleJoin` or `other`. A `stageSlowness` finding carries `evidence.reads` (`shuffle`,
 `input` or `other`) and suggests shuffle partitions only for `shuffle`.
 
 The CLI also supports fetching a run directly from a reachable Spark History
