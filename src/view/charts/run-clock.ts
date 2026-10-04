@@ -1,7 +1,5 @@
-// Pure helpers for the shared run clock: run-time views plot seconds from app
-// start on the same [0, runEndSec] domain with the same ticks, so a stage
-// reads at the same place wherever it is drawn (the verdict's stage strip,
-// the Job Timeline).
+// Pure helpers for the run clock: seconds from app start on a [0, runEndSec]
+// domain, used by the verdict's stage strip.
 
 interface RunTimingSource {
   app?: { startTime?: number | null; endTime?: number | null } | null;

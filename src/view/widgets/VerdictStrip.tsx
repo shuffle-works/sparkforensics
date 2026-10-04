@@ -5,7 +5,7 @@ import { useStore, type InterpretationState } from '@/store/store';
 import type { ImpactBand, Stage } from '@sparkforensics/core/types.ts';
 import { computeRunEndSec, formatRunClock, runClockTicks, runStartMs } from '@/view/charts/run-clock';
 import { IMPACT_BG_CLASS, IMPACT_TEXT_CLASS } from '@/view/ImpactBadge';
-import { findingAt } from '@/view/interpretation';
+import { findingAt, stepCodes } from '@/view/interpretation';
 import { selectTimelineStages } from '@/view/widgets/Timeline';
 
 /** Rows the strip shows before capping to the longest stages (step stages always stay). */
@@ -28,9 +28,8 @@ interface StripRow {
 
 const pct = (sec: number, runEndSec: number) => Math.max(0, Math.min(100, (sec / runEndSec) * 100));
 
-/** The verdict's compact stage strip: the longest stages as bars on the shared
- * run clock (seconds from app start, same domain and ticks as the Job
- * Timeline), with each verdict step's stage in its status color and labelled
+/** The verdict's compact stage strip: the longest stages as bars on a run clock
+ * (seconds from app start, 0 to the run's end), with each verdict step's stage in its status color and labelled
  * with its step code. Renders nothing when the run has no usable timing. */
 export function VerdictStrip({ interpretation }: { interpretation: InterpretationState }) {
   const appModel = useStore((s) => s.appModel);
@@ -42,10 +41,11 @@ export function VerdictStrip({ interpretation }: { interpretation: Interpretatio
     if (runEndSec == null || startMs == null) return null;
 
     const stepByStage = new Map<number, StripStep>();
+    const { byStage } = stepCodes(interpretation);
     steps.forEach((step, i) => {
       const lead = findingAt(interpretation, step.leadIndex);
-      if (step.stageId == null || !lead || stepByStage.has(step.stageId)) return;
-      stepByStage.set(step.stageId, { code: `F${i + 1}`, impactBand: lead.impactBand });
+      if (step.stageId == null || !lead || byStage.get(step.stageId) !== `F${i + 1}`) return;
+      stepByStage.set(step.stageId, { code: byStage.get(step.stageId)!, impactBand: lead.impactBand });
     });
 
     const timed = [...appModel.stages.values()].filter((s) => s.submittedAt && s.completedAt);
