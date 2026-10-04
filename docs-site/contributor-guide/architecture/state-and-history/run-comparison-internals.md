@@ -74,7 +74,7 @@ already-parsed snapshots, with no worker involved.
     mirror-symmetric. Up to `FULL_ALIGNMENT_MAX_CELLS` (1,000,000) the table is
     full; above it the table is a band of half-width `BAND_BASE_HALF_WIDTH` (100)
     plus half of the length difference, and `executionAlignment.bounded` says so.
-    If fewer than `MIN_EXECUTION_AGREEMENT` (0.5) of both runs' executions pair,
+    If fewer than `MIN_EXECUTION_AGREEMENT` (0.5) of the smaller run's executions pair,
     no stage pairs (`executionAlignment.accepted` is false).
   - Stages second (`alignWithin`). In each aligned execution pair: equal exact
     key (`exact`, pairing off in stage-id order as many as both sides have), equal

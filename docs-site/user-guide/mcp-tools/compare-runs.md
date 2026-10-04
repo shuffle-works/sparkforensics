@@ -150,9 +150,8 @@ The comparison block (`comparisonSchemaVersion` `1`) holds:
   recorded any.
 - `executionAlignment`: how the SQL executions of the two runs lined up:
   `baseExecutions` and `candExecutions` (executions with at least one stage
-  outside the Delta bookkeeping set), `pairedExecutions`, `agreement` (`2 *
-  pairedExecutions / (baseExecutions + candExecutions)`, `null` when either run
-  has none), `accepted` (false when `agreement` is under 0.5: the runs share too
+  outside the Delta bookkeeping set), `pairedExecutions`, `agreement` (`pairedExecutions
+  / min(baseExecutions, candExecutions)`, `null` when either run has none), `accepted` (false when `agreement` is under 0.5: the runs share too
   little SQL work to be one job, and no stage pairs) and `bounded` (true when
   the alignment ran in its band form, which happens above 1,000,000 execution
   pairs).

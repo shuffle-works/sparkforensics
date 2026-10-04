@@ -50,9 +50,10 @@ Stages outside any SQL execution (RDD jobs, for example) form one
 pseudo-execution per run, paired with each other and matched on stage name and
 call-site text.
 
-The alignment needs at least half of both runs' executions to pair
-(`2 * paired / (baseline executions + candidate executions)` is at least 0.5).
-Below that the two runs are not treated as one job and no stage pairs: stages as
+The alignment needs at least half of the smaller run's executions to pair
+(`paired / min(baseline executions, candidate executions)` is at least 0.5). A
+candidate that removes work, such as caching that drops repeated queries, still
+pairs everything it kept. Below that the two runs are not treated as one job and no stage pairs: stages as
 generic as a `count` or a `collect` repeat across unrelated jobs, and only the
 executions around them tell the jobs apart. The comparison reports the counts
 and the ratio as `executionAlignment`.

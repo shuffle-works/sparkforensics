@@ -248,6 +248,21 @@ describe('alignStages: executions align first', () => {
     expect(alignStages(base, cand).pairs).toHaveLength(1);
   });
 
+  it('still pairs when the candidate drops most executions: 100 against 30, all 30 matching', () => {
+    const q = (i, stageId) => ({ id: i, description: `save at q${i}.py:0`, stages: [{ id: stageId, name: `s${i}`, nodes: [node('Filter', `c${i}#1 > 1`, [stageId])] }] });
+    const base = snapshotOfExecutions(Array.from({ length: 100 }, (_, i) => q(i, i)));
+    const cand = snapshotOfExecutions(Array.from({ length: 30 }, (_, i) => q(i, i)));
+    const result = alignStages(base, cand);
+    expect(result.executionAlignment).toMatchObject({ baseExecutions: 100, candExecutions: 30, pairedExecutions: 30, agreement: 1, accepted: true });
+    expect(result.pairs).toHaveLength(30);
+    // The 70 dropped executions are unmatched baseline stages; run time decides the confidence.
+    expect(result.unmatched.baseStageIds).toHaveLength(70);
+    const heavy = (n) => Array.from({ length: n }, (_, i) => ({ ...q(i, i), stages: [{ ...q(i, i).stages[0], executorRunTime: i < 30 ? 1000 : 1 }] }));
+    const compared = compareRuns({ label: 'b', snapshot: snapshotOfExecutions(heavy(100)) }, { label: 'c', snapshot: snapshotOfExecutions(heavy(30)) });
+    expect(compared.runtimeCoverage).toBeGreaterThan(0.9);
+    expect(compared.confidence).toBe('ok');
+  });
+
   it('pairs no stage when the runs share too little SQL work to be one job', () => {
     const generic = (stageId, extra) => ({ id: stageId, name: 'count at NativeMethodAccessorImpl.java:0', nodes: [node('HashAggregate', 'keys=[], functions=[count(1)]', [stageId]), ...extra] });
     const lonely = (id, stageId, tag) => ({ id, description: `save at ${tag}.py:1`, stages: [{ id: stageId, nodes: [node('Project', `${tag}_col#1`, [stageId])] }] });

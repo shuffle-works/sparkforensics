@@ -169,8 +169,9 @@ export interface ExecutionAlignment {
   pairedExecutions: number;
   /** True when the alignment ran in the band form (see `FULL_ALIGNMENT_MAX_CELLS`). */
   bounded: boolean;
-  /** The share of both runs' executions that paired, `2 * pairedExecutions / (baseExecutions +
-   * candExecutions)`; null when either run has none. */
+  /** The share of the smaller run's executions that paired, `pairedExecutions / min(baseExecutions,
+   * candExecutions)`; null when either run has none. A candidate that removes work (caching that
+   * drops repeated queries) still reaches 1 when everything it kept pairs. */
   agreement: number | null;
   /** False when `agreement` is below `MIN_EXECUTION_AGREEMENT`: the runs share too little SQL work to
    * be one job, so no stage is paired. */
@@ -200,7 +201,7 @@ export interface AlignOptions {
 /** An execution pair scores at least this (0-1) on call site, description and plan structure to be
  * matched. */
 export const EXECUTION_MATCH_MIN = 0.55;
-/** Share of both runs' executions that must pair (see `ExecutionAlignment.agreement`) for the two runs
+/** Share of the smaller run's executions that must pair (see `ExecutionAlignment.agreement`) for the two runs
  * to count as one job. Below it no stage pairs: stages as generic as a `count` or a `collect` repeat
  * across unrelated jobs, and only the surrounding executions tell the jobs apart. */
 export const MIN_EXECUTION_AGREEMENT = 0.5;
@@ -505,8 +506,8 @@ export function alignStages(baseSnap: SessionSnapshot, candSnap: SessionSnapshot
     (i, j) => similarityOf(base.executions[i], cand.executions[j]), Math.round(1000 * EXECUTION_MATCH_MIN),
     (i) => base.executions[i].id!, (j) => cand.executions[j].id!,
   );
-  const bothRuns = base.executions.length + cand.executions.length;
-  const agreement = base.executions.length > 0 && cand.executions.length > 0 ? (2 * sequence.pairs.length) / bothRuns : null;
+  const smaller = Math.min(base.executions.length, cand.executions.length);
+  const agreement = smaller > 0 ? sequence.pairs.length / smaller : null;
   const accepted = agreement === null || agreement >= MIN_EXECUTION_AGREEMENT;
 
   const executionPairs: Array<[ExecInfo, ExecInfo]> = [];
