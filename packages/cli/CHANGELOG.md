@@ -1,5 +1,42 @@
 # sparkforensics-cli
 
+## 0.6.0
+
+### Minor Changes
+
+- 2d2e51b: `writeTargets` now names the target of Delta writes whose plan node carries none, which on real logs is every Delta command node.
+  
+  - `MergeIntoCommand`, `UpdateCommand`, `DeleteCommand`, `WriteIntoDelta` and a Delta `SaveIntoDataSourceCommand` are resolved from the command's `Arguments:` line (a `table` as `database.table`, or the save's `path`), else (`MergeIntoCommand`, `UpdateCommand` and `DeleteCommand` only) from the single `_delta_log` path of the executions that share its root execution (`path`), else `null`. The parser now keeps that one line of the physical plan description for these commands; every other description is still dropped.
+  - A merge made with `DeltaTable.merge(...).execute()` has no command node and used to be missing from `writeTargets`. Each run of its `MERGE operation` executions is now one `DeltaMerge` write with `kind: "path"`. Runs that cannot be told apart from another merge (consecutive ids, overlapping start times, several or no paths) or that have no write phase get a `null` target.
+  - `SqlExecutionStart` events now carry `rootExecutionId` into the model.
+- 67aecba: Comparisons pair stages with a new aligner and judge confidence by executor run time instead of stage count.
+  
+  **Behaviour change: a stricter `confidence: "ok"` gate.** `ok` now needs 90% of both runs' executor run time to sit in paired stages (`runtimeCoverage`). Before, it needed 50% of the stages paired by count (`matchedCoverage`), so a pair of runs that passed at 54% stage coverage because its small stages matched, while its heavy stages did not, can now report `low`. `reason` names the run-time share, for example "Only 62% of executor run time is in matched stages". The application-name check is unchanged. Exit codes do not move: the comparison budgets (`--max-regression-pct`, `--regression-budget`, `--fail-on-introduced`) never read `confidence`. A consumer that passes `confidence` through, such as the Airflow operator's DAG summary, now receives `low` for runs it passed as `ok` before.
+  
+  **New confidence value: `insufficient`.** It is reported when neither run recorded any executor run time, so there is no work to compare. `runtimeCoverage` is `null` then. Typed consumers of `confidence` (`"ok" | "low"`) need to accept it. The dashboard banner renders it.
+  
+  New comparison block, in the CLI's `comparison` object, in MCP `compare_runs` and in the Markdown output (MCP returns `stagePairs` only when `include: ["stagePairs"]` asks for it, because it grows with the stage count), with `comparisonSchemaVersion: 1`:
+  
+  - `stagePairs`: `pairId`, `baseStageIds`, `candStageIds`, `quality`, `score` and `deltas` for executor run time, CPU time, spill, input, output and shuffle bytes. Deltas count every task attempt of the stage, failed ones included.
+  - `unmatched`, `replanned` (always empty), `bookkeepingStageIds` and `runtimeCoverage`.
+  - `matchedCoverage`, `baseStages`, `candStages` and the whole-run `metrics` keep their meaning. Stages that only read the Delta log or its checkpoints are reported in `bookkeepingStageIds` and counted in neither the pairs nor the coverage. A consumer that joined per-stage metrics rows by identity should read `stagePairs` instead.
+  
+  Stages now pair after the text that differs between runs of one job is rewritten: random staging directories, dates, `IN` lists, Delta log file counts. The new `--normalize-path <regex>` flag (repeatable, needs `--baseline`) and the MCP `compare_runs` parameter `normalizePath` add caller-supplied patterns for run-specific text such as a per-run output directory. Despite the name they are generic regular expressions. They change stage pairing only, never findings. The CLI refuses an invalid pattern with exit code 2. MCP caps a pattern at 200 characters, but a pattern that backtracks catastrophically can still stall the server.
+  
+  The dashboard's per-stage skew table lists the aligner's pairs and states the share of executor run time they hold.
+
+### Patch Changes
+
+- ad67597: The CLI and the MCP server now build their run and comparison output from the same core functions, and a contract test diffs the two surfaces on public corpus logs.
+  
+  Changes to the MCP server's output (intentional, additive):
+  
+  - `diagnose_run` returns `writeTargets`, `metrics` and `effectiveConf` by default, the same blocks as the CLI's JSON report. Clients that read only the fields it returned before see no difference.
+  - `compare_runs` returns `metrics` and `findings`, the names the CLI's `comparison` object uses. `metricDeltas` and `findingsDelta` still carry the same values and are deprecated: they will be removed in the next release.
+  - `evaluate_budgets` takes `regressionBudgets`, an array of `{ metric, maxPct }`, matching the CLI's repeated `--regression-budget`. A metric budgeted twice fails the call, as it does on the CLI.
+  
+  The CLI's JSON, Markdown and NDJSON output, its `[violation] name: detail` stderr line and its exit codes are unchanged.
+
 ## 0.5.0
 
 ### Minor Changes
