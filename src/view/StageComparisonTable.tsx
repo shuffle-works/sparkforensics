@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { WidgetCard } from '@/view/WidgetCard';
+import { PairTable, type StageSummary } from '@/view/PinnedStageDeltas';
 import { cn } from '@/lib/utils';
 import { formatBytes, formatDuration } from '@sparkforensics/core/format-utils.ts';
 import type { PairDeltaMetric, ReplannedGroup, StageAlignment, StageDelta, StagePair } from '@sparkforensics/core/stage-alignment.ts';
@@ -12,9 +14,12 @@ export interface StageComparisonInput {
   stagePairs: StagePair[];
   unmatched: StageAlignment['unmatched'];
   replanned: ReplannedGroup[];
-  baseStages?: Array<{ id: number; name: string }>;
-  candStages?: Array<{ id: number; name: string }>;
+  baseStages?: StageSummary[];
+  candStages?: StageSummary[];
 }
+
+/** The stages a row, replanned group or unmatched list stands for, opened side by side. */
+interface Selection { title: string; note: string | null; baseStageIds: number[]; candStageIds: number[] }
 
 const INITIAL_ROWS = 25;
 const MORE_ROWS = 50;
@@ -55,27 +60,7 @@ function DeltaCell({ value, column }: { value: number | null; column: Column }) 
   return <TableCell className={cn('font-medium', color)}>{text}</TableCell>;
 }
 
-const linkClass = 'cursor-pointer rounded text-xs underline-offset-2 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 outline-none';
-
-/** One open-in-run link per stage id. A pair or group can hold several stages per side. */
-function OpenLinks({ side, ids, onOpen }: { side: StageSide; ids: number[]; onOpen: (side: StageSide, stageId: number) => void }) {
-  if (ids.length === 0) return <span className="text-xs text-muted-foreground">none</span>;
-  return (
-    <>
-      {ids.map((id) => (
-        <button
-          key={id}
-          type="button"
-          className={cn(linkClass, 'mr-2')}
-          aria-label={`Open stage ${id} in the ${side} run`}
-          onClick={() => onOpen(side, id)}
-        >
-          {side === 'baseline' ? 'Baseline' : 'Candidate'} stage {id}
-        </button>
-      ))}
-    </>
-  );
-}
+const linkClass = 'cursor-pointer rounded text-left text-xs underline-offset-2 hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 outline-none';
 
 function SideTotals({ label, deltas }: { label: string; deltas: ReplannedGroup['deltas'] }) {
   const t = deltas.executorRunTime;
@@ -84,8 +69,15 @@ function SideTotals({ label, deltas }: { label: string; deltas: ReplannedGroup['
 
 /** The paired stages of a comparison with each metric's change, biggest run-time change first.
  * Reads the aligner's result as given; nothing here pairs stages. */
-export function StageComparisonTable({ model, onOpenStage }: { model: StageComparisonInput; onOpenStage: (side: StageSide, stageId: number) => void }) {
+export function StageComparisonTable({ model, baselineLabel, candidateLabel, onOpenStage }: {
+  model: StageComparisonInput;
+  baselineLabel: string;
+  candidateLabel: string;
+  /** Opens one stage in that run's own dashboard. */
+  onOpenStage: (side: StageSide, stageId: number) => void;
+}) {
   const [shown, setShown] = useState(INITIAL_ROWS);
+  const [selection, setSelection] = useState<Selection | null>(null);
   const nameOf = (stages: StageComparisonInput['baseStages'], id: number) => stages?.find((s) => s.id === id)?.name;
   const pairs = [...model.stagePairs].sort((a, b) =>
     Math.abs(b.deltas.executorRunTime.delta ?? 0) - Math.abs(a.deltas.executorRunTime.delta ?? 0)
@@ -101,7 +93,7 @@ export function StageComparisonTable({ model, onOpenStage }: { model: StageCompa
       ) : (
         <>
           <p className="mb-3 text-xs text-muted-foreground">
-            Change from baseline to candidate, largest run-time change first. Under each stage, quality says how the pair was matched and score is how alike they are, from 0 to 1.
+            Change from baseline to candidate, largest run-time change first. Under each stage, quality says how the pair was matched and score is how alike they are, from 0 to 1. Select a stage to see both runs side by side.
           </p>
           <Table>
             <TableHeader>
@@ -111,23 +103,31 @@ export function StageComparisonTable({ model, onOpenStage }: { model: StageCompa
               </TableRow>
             </TableHeader>
             <TableBody>
-              {pairs.slice(0, shown).map((p) => (
-                <TableRow key={p.pairId} data-testid="stage-pair-row" data-quality={p.quality}>
-                  <TableHead scope="row" className="text-left">
-                    <div className="max-w-[14rem] truncate" title={nameOf(model.baseStages, p.baseStageIds[0]) ?? undefined}>
-                      {nameOf(model.baseStages, p.baseStageIds[0]) ?? `Stage ${p.baseStageIds[0]}`}
-                    </div>
-                    <div className="mt-0.5 text-xs font-normal text-muted-foreground" title={QUALITY_HELP[p.quality]}>
-                      {p.quality} · {p.score.toFixed(2)}
-                    </div>
-                    <div className="mt-1 flex flex-wrap">
-                      <OpenLinks side="baseline" ids={p.baseStageIds} onOpen={onOpenStage} />
-                      <OpenLinks side="candidate" ids={p.candStageIds} onOpen={onOpenStage} />
-                    </div>
-                  </TableHead>
-                  {COLUMNS.map((c) => <DeltaCell key={c.label} value={columnDelta(p.deltas, c.metrics)} column={c} />)}
-                </TableRow>
-              ))}
+              {pairs.slice(0, shown).map((p) => {
+                const name = nameOf(model.baseStages, p.baseStageIds[0]) ?? `Stage ${p.baseStageIds[0]}`;
+                return (
+                  <TableRow key={p.pairId} data-testid="stage-pair-row" data-quality={p.quality}>
+                    <TableHead scope="row" className="text-left">
+                      <button
+                        type="button"
+                        className={cn(linkClass, 'block max-w-[22rem] truncate text-sm font-medium')}
+                        title={name}
+                        aria-label={`Compare ${name} in both runs`}
+                        onClick={() => setSelection({
+                          title: name, note: `${p.quality} match, score ${p.score.toFixed(2)}. ${QUALITY_HELP[p.quality]}`,
+                          baseStageIds: p.baseStageIds, candStageIds: p.candStageIds,
+                        })}
+                      >
+                        {name}
+                      </button>
+                      <div className="mt-0.5 text-xs font-normal text-muted-foreground" title={QUALITY_HELP[p.quality]}>
+                        {p.quality} · {p.score.toFixed(2)}
+                      </div>
+                    </TableHead>
+                    {COLUMNS.map((c) => <DeltaCell key={c.label} value={columnDelta(p.deltas, c.metrics)} column={c} />)}
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
           {pairs.length > shown ? (
@@ -151,10 +151,17 @@ export function StageComparisonTable({ model, onOpenStage }: { model: StageCompa
                   <span>Query {g.baseExecutionId} → {g.candExecutionId}</span>
                   <SideTotals label="Run time" deltas={g.deltas} />
                 </div>
-                <div className="mt-1 flex flex-wrap">
-                  <OpenLinks side="baseline" ids={g.baseStageIds} onOpen={onOpenStage} />
-                  <OpenLinks side="candidate" ids={g.candStageIds} onOpen={onOpenStage} />
-                </div>
+                <button
+                  type="button"
+                  className={cn(linkClass, 'mt-1')}
+                  onClick={() => setSelection({
+                    title: `Re-planned query ${g.baseExecutionId} → ${g.candExecutionId}`,
+                    note: 'The two runs ran a different number of stages here, so these leftover stages are not paired one to one.',
+                    baseStageIds: g.baseStageIds, candStageIds: g.candStageIds,
+                  })}
+                >
+                  Baseline {stageList(g.baseStageIds)} · Candidate {stageList(g.candStageIds)}
+                </button>
               </li>
             ))}
           </ul>
@@ -164,12 +171,96 @@ export function StageComparisonTable({ model, onOpenStage }: { model: StageCompa
       {hasUnmatched ? (
         <div className="mt-4" data-testid="unmatched-stages">
           <h4 className="mb-1 text-xs font-semibold text-muted-foreground">Unmatched stages</h4>
-          <div className="flex flex-wrap">
-            <OpenLinks side="baseline" ids={unmatched.baseStageIds} onOpen={onOpenStage} />
-            <OpenLinks side="candidate" ids={unmatched.candStageIds} onOpen={onOpenStage} />
-          </div>
+          <button
+            type="button"
+            className={linkClass}
+            onClick={() => setSelection({
+              title: 'Unmatched stages', note: 'These stages paired with nothing in the other run.',
+              baseStageIds: unmatched.baseStageIds, candStageIds: unmatched.candStageIds,
+            })}
+          >
+            Baseline {stageList(unmatched.baseStageIds)} · Candidate {stageList(unmatched.candStageIds)}
+          </button>
         </div>
       ) : null}
+
+      <StagePairDialog
+        selection={selection}
+        baseStages={model.baseStages ?? []}
+        candStages={model.candStages ?? []}
+        baselineLabel={baselineLabel}
+        candidateLabel={candidateLabel}
+        onClose={() => setSelection(null)}
+        onOpenStage={onOpenStage}
+      />
     </WidgetCard>
+  );
+}
+
+const stageList = (ids: number[]) => (ids.length === 0 ? 'none' : ids.join(', '));
+
+const MISSING: StageSummary = {
+  id: -1, name: '—',
+  metrics: { duration: null, memoryBytesSpilled: null, diskBytesSpilled: null, jvmGCTime: null, inputBytes: null, outputBytes: null, executorRunTime: null, taskCount: null, failedTasks: null },
+};
+
+/** Both runs' figures for the selected stages in one table, without leaving the comparison. A group
+ * with several stages per side lines them up in id order; a side with fewer shows dashes. */
+function StagePairDialog({ selection, baseStages, candStages, baselineLabel, candidateLabel, onClose, onOpenStage }: {
+  selection: Selection | null;
+  baseStages: StageSummary[];
+  candStages: StageSummary[];
+  baselineLabel: string;
+  candidateLabel: string;
+  onClose: () => void;
+  onOpenStage: (side: StageSide, stageId: number) => void;
+}) {
+  const find = (stages: StageSummary[], id: number | undefined) => stages.find((s) => s.id === id) ?? MISSING;
+  const rows = selection
+    ? Array.from({ length: Math.max(selection.baseStageIds.length, selection.candStageIds.length) }, (_, i) => ({
+        baseId: selection.baseStageIds[i], candId: selection.candStageIds[i],
+      }))
+    : [];
+  return (
+    <Dialog open={selection !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-5xl" data-testid="stage-pair-dialog">
+        {selection ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="[overflow-wrap:anywhere]">{selection.title}</DialogTitle>
+              {selection.note ? <DialogDescription>{selection.note}</DialogDescription> : null}
+            </DialogHeader>
+            <div className="flex flex-col gap-4">
+              {rows.map(({ baseId, candId }, i) => {
+                const base = find(baseStages, baseId), cand = find(candStages, candId);
+                return (
+                  <section key={i} aria-label={`Stage ${baseId ?? 'none'} and stage ${candId ?? 'none'}`} className="rounded border border-border p-3">
+                    <div className="mb-2 grid gap-2 text-xs sm:grid-cols-2">
+                      <div title={baselineLabel}>
+                        <div className="font-semibold">Baseline{baseId === undefined ? '' : ` · stage ${baseId}`}</div>
+                        <div className="font-mono text-muted-foreground [overflow-wrap:anywhere]">{base.name}</div>
+                      </div>
+                      <div title={candidateLabel}>
+                        <div className="font-semibold">Candidate{candId === undefined ? '' : ` · stage ${candId}`}</div>
+                        <div className="font-mono text-muted-foreground [overflow-wrap:anywhere]">{cand.name}</div>
+                      </div>
+                    </div>
+                    <PairTable base={base} cand={cand} />
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {baseId !== undefined ? (
+                        <Button variant="outline" size="sm" onClick={() => onOpenStage('baseline', baseId)}>Open stage {baseId} in the baseline dashboard</Button>
+                      ) : null}
+                      {candId !== undefined ? (
+                        <Button variant="outline" size="sm" onClick={() => onOpenStage('candidate', candId)}>Open stage {candId} in the candidate dashboard</Button>
+                      ) : null}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }

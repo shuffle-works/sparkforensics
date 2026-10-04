@@ -48,15 +48,23 @@ The **Stages compared** table lists every paired stage with its change in run
 time, CPU time, spill (memory and disk together), input, output and shuffle
 (read and write together), largest run-time change first. A faster candidate
 reads green and a slower one red; input and output are workload volume, so
-they stay neutral. The **Match** column gives each pair's quality (`exact`,
+they stay neutral. Under each stage name sit the pair's quality (`exact`,
 `structural` or `aligned`) and its score from 0 to 1. An `aligned` pair was
-matched on similarity or position, so treat its change with care. Each row has
-a **Baseline stage N** and a **Candidate stage N** link that opens that stage's
-detail in the run's dashboard; **← Back to comparison** returns here. Below the
-table, **Re-planned work** lists queries that ran a different number of stages
-in the two runs, with the leftover stages and their total run time per side,
-and **Unmatched stages** lists stages that paired with nothing. The table
-shows 25 pairs and reveals more on request.
+matched on similarity or position, so treat its change with care.
+
+Select a stage's name to see both runs' figures for it side by side without
+leaving the comparison: the stage's name in each run, then duration, run time,
+GC time, spill, input, output and task counts with the change. **Open stage N
+in the baseline dashboard** and **Open stage N in the candidate dashboard**
+open that stage's detail in the run's own dashboard, and **← Back to
+comparison** returns here. Below the table, **Re-planned work** lists queries
+that ran a different number of stages in the two runs, with the leftover
+stages and their total run time per side, and **Unmatched stages** lists
+stages that paired with nothing. Both open in the same side-by-side view. The
+table shows 25 pairs and reveals more on request.
+
+The table columns read **Baseline** and **Candidate**; hover a column heading
+to see the full name of the run.
 
 A banner above the verdict appears when the match is weak. It reads `low` when
 under 90% of executor run time sits in paired stages (or the application names

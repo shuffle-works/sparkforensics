@@ -18,14 +18,20 @@ function pair(pairId: string, baseId: number, candId: number, quality: string, s
   };
 }
 
+const metrics = (executorRunTime: number) => ({
+  duration: executorRunTime, memoryBytesSpilled: 0, diskBytesSpilled: 0, jvmGCTime: 0, inputBytes: 0, outputBytes: 0,
+  executorRunTime, taskCount: 4, failedTasks: 0,
+});
+const stage = (id: number, name: string, runTime: number) => ({ id, name, metrics: metrics(runTime) });
+
 const model = {
   baselineLabel: 'base.log', candidateLabel: 'cand.log',
   confidence: 'ok', reason: null, runtimeCoverage: 1,
   metrics: [{ key: 'wallClock', label: 'Wall-clock duration', baseline: 20_000, candidate: 15_000, delta: -5_000, direction: 'improvement' }],
   findings: { introduced: [], resolved: [] },
   stageSkew: [],
-  baseStages: [{ id: 1, name: 'small stage' }, { id: 2, name: 'big stage' }],
-  candStages: [{ id: 11, name: 'small stage' }, { id: 12, name: 'big stage' }],
+  baseStages: [stage(1, 'small stage', 1_000), stage(2, 'big stage', 60_000), stage(5, 'left over 5', 4_000), stage(6, 'left over 6', 5_000), stage(7, 'only in baseline', 800)],
+  candStages: [stage(11, 'small stage', 1_100), stage(12, 'big stage', 30_000), stage(8, 'left over 8', 4_000)],
   stagePairs: [
     pair('b1-c11', 1, 11, 'exact', 1, [1_000, 1_100]),
     pair('b2-c12', 2, 12, 'aligned', 0.62, [60_000, 30_000], { diskBytesSpilled: d(2048, 0), outputBytes: d(10, 99) }),
@@ -48,28 +54,46 @@ describe('StageComparisonTable', () => {
     expect(within(rows[1]).getByText('exact · 1.00')).toBeInTheDocument();
   });
 
-  it('opens the paired stage in the chosen run', async () => {
+  it('shows both runs of a pair side by side without leaving the comparison', async () => {
     const user = userEvent.setup();
     const onDrillIn = vi.fn();
     render(<RunComparison model={model as any} onClose={vi.fn()} onDrillIn={onDrillIn} />);
-    const [row] = screen.getAllByTestId('stage-pair-row');
-    await user.click(within(row).getByRole('button', { name: 'Open stage 12 in the candidate run' }));
+    await user.click(screen.getByRole('button', { name: 'Compare big stage in both runs' }));
+    const dialog = await screen.findByTestId('stage-pair-dialog');
+    expect(dialog).toHaveTextContent('aligned match, score 0.62');
+    expect(within(dialog).getByText('Baseline · stage 2')).toBeInTheDocument();
+    expect(within(dialog).getByText('Candidate · stage 12')).toBeInTheDocument();
+    expect(within(dialog).getByRole('row', { name: 'Executor run-time' })).toHaveTextContent('1m 0s30.0s-30.0s');
+    expect(onDrillIn).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Open stage 12 in the candidate dashboard' }));
     expect(onDrillIn).toHaveBeenLastCalledWith('candidate', 12);
-    await user.click(within(row).getByRole('button', { name: 'Open stage 2 in the baseline run' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Open stage 2 in the baseline dashboard' }));
     expect(onDrillIn).toHaveBeenLastCalledWith('baseline', 2);
   });
 
-  it('lists re-planned groups and unmatched stages with drill-in links', async () => {
+  it('lists re-planned groups and unmatched stages and opens them in the same dialog', async () => {
     const user = userEvent.setup();
-    const onDrillIn = vi.fn();
-    render(<RunComparison model={model as any} onClose={vi.fn()} onDrillIn={onDrillIn} />);
+    render(<RunComparison model={model as any} onClose={vi.fn()} onDrillIn={vi.fn()} />);
     const replanned = screen.getByTestId('replanned-stages');
     expect(replanned).toHaveTextContent('Query 3 → 4');
     expect(replanned).toHaveTextContent('Run time: 9.0s → 4.0s');
-    await user.click(within(replanned).getByRole('button', { name: 'Open stage 6 in the baseline run' }));
-    expect(onDrillIn).toHaveBeenLastCalledWith('baseline', 6);
-    const unmatched = screen.getByTestId('unmatched-stages');
-    expect(within(unmatched).getByRole('button', { name: 'Open stage 7 in the baseline run' })).toBeInTheDocument();
+    await user.click(within(replanned).getByRole('button', { name: /Baseline 5, 6/ }));
+    const dialog = await screen.findByTestId('stage-pair-dialog');
+    expect(within(dialog).getByText('Baseline · stage 6')).toBeInTheDocument();
+    expect(within(dialog).getByText('Candidate · stage 8')).toBeInTheDocument();
+    expect(within(dialog).queryByText('Candidate · stage 9')).not.toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    await user.click(within(screen.getByTestId('unmatched-stages')).getByRole('button', { name: /Baseline 7/ }));
+    expect(await screen.findByText('Baseline · stage 7')).toBeInTheDocument();
+  });
+
+  it('labels the metrics columns Baseline and Candidate and keeps the full run names in a tooltip', () => {
+    const long = { ...model, baselineLabel: 'a-very-long-baseline-event-log-file-name.ndjson', candidateLabel: 'a-very-long-candidate-event-log-file-name.ndjson' };
+    render(<RunComparison model={long as any} onClose={vi.fn()} />);
+    const header = screen.getByRole('columnheader', { name: 'Baseline' });
+    expect(header).toHaveAttribute('title', long.baselineLabel);
+    expect(screen.getByRole('columnheader', { name: 'Candidate' })).toHaveAttribute('title', long.candidateLabel);
   });
 
   it('says so when nothing paired, and omits the table for a model without pairs', () => {

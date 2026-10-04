@@ -244,7 +244,7 @@ export function RunComparison({
       // the other, never both), so without this it would drop the only
       // signal that script has and let the chrome pop back in.
       data-testid="dashboard"
-      className="mx-auto flex max-w-4xl flex-col gap-6 p-6"
+      className="mx-auto flex max-w-[72rem] flex-col gap-6 p-6"
     >
       {header}
       {/* display:contents keeps these as direct flex/gap-6 children of the
@@ -268,8 +268,8 @@ export function RunComparison({
             <TableHeader>
               <TableRow>
                 <TableHead className="text-left">Metric</TableHead>
-                <TableHead>Baseline ({model.baselineLabel})</TableHead>
-                <TableHead>Candidate ({model.candidateLabel})</TableHead>
+                <TableHead title={model.baselineLabel}>Baseline</TableHead>
+                <TableHead title={model.candidateLabel}>Candidate</TableHead>
                 <TableHead>Change</TableHead>
               </TableRow>
             </TableHeader>
@@ -297,6 +297,8 @@ export function RunComparison({
         {model.stagePairs ? (
           <StageComparisonTable
             model={{ stagePairs: model.stagePairs, unmatched: model.unmatched ?? { baseStageIds: [], candStageIds: [] }, replanned: model.replanned ?? [], baseStages: model.baseStages, candStages: model.candStages }}
+            baselineLabel={model.baselineLabel}
+            candidateLabel={model.candidateLabel}
             onOpenStage={(side, stageId) => onDrillIn?.(side, stageId)}
           />
         ) : null}
