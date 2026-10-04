@@ -1,4 +1,5 @@
 import { pathBasename, formatBytes, IMPACT_BAND_ORDER } from './format-utils.ts';
+import { medianOfSorted } from './median.ts';
 import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId } from './plan-summary.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
@@ -21,7 +22,7 @@ import { cyrb53 } from './string-hash.ts';
 import { decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure } from './types.ts';
-import type { FindingOf, Remediation, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
+import type { FindingOf, Remediation, SkewOrigin, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -543,7 +544,7 @@ function maxMedianRatio(
 ): { key: string; ratio: number; value: number } | null {
   if (samples.length < 3) return null;
   const vals = samples.map(s => s.value).sort((a, b) => a - b);
-  const median = vals[Math.floor(vals.length / 2)];
+  const median = medianOfSorted(vals);
   if (median <= 0) return null;
   const top = samples.reduce((a, b) => (b.value > a.value ? b : a));
   return { key: top.key, ratio: top.value / median, value: top.value };
@@ -655,14 +656,28 @@ function tailClaimFloorMs(claim: TailClaim, stageId: number, ctx: DetectorCtx): 
   return tailClaimImpact(claim, stageId, ctx.impact).wallClock?.high ?? claim.wasteMs;
 }
 
-// A setting is only a fix when the run's logged conf doesn't already have it: a run that set it
-// needs another remedy. Only explicitly logged properties count; Spark's unlogged version
-// defaults are not modeled. Booleans compare case-insensitively, as Spark parses them.
+// Spark's default for the properties the skew fix reads, by the run's version, for a run that did
+// not log them. Undefined when the version is unknown or the property is not modeled: only these
+// two have a default that has already made a suggestion a no-op (every other property a detector
+// suggests defaults off, or to a value other than the suggested one).
+function versionDefault(app: DetectorApp | null, key: string): string | undefined {
+  const version = /^(\d+)\.(\d+)/.exec(app?.sparkVersion ?? '');
+  if (version == null) return undefined;
+  const [major, minor] = [Number(version[1]), Number(version[2])];
+  if (key === 'spark.sql.adaptive.enabled') return major > 3 || (major === 3 && minor >= 2) ? 'true' : 'false';
+  if (key === 'spark.sql.adaptive.skewJoin.enabled') return major >= 3 ? 'true' : undefined;
+  return undefined;
+}
+
+// A setting is only a fix when the run's effective conf doesn't already have it: a run that set it,
+// or whose Spark version defaults to it, needs another remedy. The effective value is the logged
+// property, else the version default for the keys versionDefault models. Booleans compare
+// case-insensitively, as Spark parses them.
 function loggedAs(app: DetectorApp | null, key: string, suggested: string | boolean): boolean {
-  const logged = app?.config?.[key]?.trim();
+  const effective = (app?.config?.[key] ?? versionDefault(app, key))?.trim();
   return typeof suggested === 'boolean'
-    ? logged?.toLowerCase() === String(suggested)
-    : logged === suggested;
+    ? effective?.toLowerCase() === String(suggested)
+    : effective === suggested;
 }
 
 function setConfUnlessLogged(app: DetectorApp | null, key: string, suggested: string | boolean): Remediation[] {
@@ -675,18 +690,51 @@ function switchFix(on: boolean, key: string, suggested: string | boolean, recomm
   return on ? { text: alreadyOn, remediation: [] } : { text: recommend, remediation: [setConf(key, suggested)] };
 }
 
+const SKEW_KEY_REMEDY = 'salt the key or repartition on a better key';
+
+// What a skewed stage reads, which decides whether AQE skew-join handling can act on it. It splits
+// skewed partitions on the shuffle-read side of a sort-merge or shuffled-hash join, so only a stage
+// that reads a shuffle, in a SQL execution whose plan has such a join, is 'shuffleJoin'. A plan does
+// not say which stage runs which join (a node's stageIds are empty in real logs), so the join is
+// matched per execution. 'inputScan' reads mostly files (its tasks differ in input size);
+// 'other' is any stage the plan cannot tie to a join (an aggregation's shuffle, no plan, no input).
+function skewOrigin(stage: DetectorStage, ctx: DetectorCtx): 'shuffleJoin' | 'inputScan' | 'other' {
+  if (stage.shuffleReadBytes > 0 && stage.shuffleReadBytes >= stage.inputBytes) {
+    let hasJoin = false;
+    const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
+    walkPlanTree(plan, (node) => { if (SKEW_JOIN_NODES.has(node.name)) hasJoin = true; });
+    return hasJoin ? 'shuffleJoin' : 'other';
+  }
+  return stage.inputBytes > 0 ? 'inputScan' : 'other';
+}
+const SKEW_JOIN_NODES = new Set(['SortMergeJoin', 'ShuffledHashJoin']);
+
+// The skew finding's fix for the stage's origin. Join-driven skew gets AQE skew-join handling,
+// unless the run's effective conf already has it; uneven input gets the file-size remedy.
+function skewFix(stage: DetectorStage, ctx: DetectorCtx): { origin: SkewOrigin; text: string; remediation: Remediation[] } {
+  const origin = skewOrigin(stage, ctx);
+  if (origin === 'inputScan') {
+    return {
+      origin,
+      text: 'the stage reads uneven input files: compact small files or split large ones (lower spark.sql.files.maxPartitionBytes)',
+      remediation: [decreaseConf('spark.sql.files.maxPartitionBytes')],
+    };
+  }
+  if (origin === 'other') return { origin, text: SKEW_KEY_REMEDY, remediation: [] };
+  return { origin, ...skewJoinFix(ctx.app) };
+}
+
 function skewJoinFix(app: DetectorApp | null): { text: string; remediation: Remediation[] } {
   const key = 'spark.sql.adaptive.skewJoin.enabled';
-  const remedy = 'salt the key or repartition on a better key';
   if (loggedAs(app, 'spark.sql.adaptive.enabled', false)) {
     return {
-      text: `AQE is off, so enable it (spark.sql.adaptive.enabled) for skew-join handling to apply; otherwise ${remedy}`,
+      text: `AQE is off, so enable it (spark.sql.adaptive.enabled) for skew-join handling to apply; otherwise ${SKEW_KEY_REMEDY}`,
       remediation: [setConf('spark.sql.adaptive.enabled', true), ...setConfUnlessLogged(app, key, true)],
     };
   }
   return switchFix(loggedAs(app, key, true), key, true,
-    `for join-driven skew, enable AQE skew-join handling (${key}); otherwise ${remedy}`,
-    `AQE skew-join handling is already on, so ${remedy}`);
+    `for join-driven skew, enable AQE skew-join handling (${key}); otherwise ${SKEW_KEY_REMEDY}`,
+    `AQE skew-join handling is already on, so ${SKEW_KEY_REMEDY}`);
 }
 
 // The resources flag is read from the same property as the logged conf.
@@ -1061,9 +1109,9 @@ export const DETECTORS = [
       const floorWasteMs = tailClaimFloorMs(skewTailClaim(stage, metric === 'P95/median'), stage.id, ctx);
       if (!meetsRuntimeFloor(floorWasteMs, appDurationMs(ctx.app), thresholds.floorPctWarn)) return null;
       const value = Math.round(ratio * 10) / 10;
-      const fix = skewJoinFix(ctx.app);
+      const fix = skewFix(stage, ctx);
       return {
-        type: 'skew', stageId: stage.id,
+        type: 'skew', stageId: stage.id, origin: fix.origin,
         impactBand: 'warning',
         metric, value,
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
@@ -1225,10 +1273,10 @@ export const DETECTORS = [
         const ratioText = p50 > 0
           ? `${Math.round(max / p50 * 10) / 10}× the median (${formatBytes(p50)})`
           : 'far larger than the median, which is effectively empty';
-        const fix = skewJoinFix(ctx.app);
+        const fix = skewFix(stage, ctx);
         out.push({
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
-          rule: 'shufflePartitionSkew', metric: 'shuffleReadMax', value: max,
+          rule: 'shufflePartitionSkew', origin: fix.origin, metric: 'shuffleReadMax', value: max,
           recommendation: `The largest shuffle partition (${formatBytes(max)}) is ${ratioText}: ${fix.text}.`,
           remediation: fix.remediation,
         });
@@ -1419,7 +1467,7 @@ export const DETECTORS = [
       if (hosts.length >= thresholds.minHosts) {
         const means = hosts.map(h => ({ host: h.host, taskCount: h.taskCount, mean: h.totalDuration / h.taskCount }));
         const sorted = [...means].map(h => h.mean).sort((a, b) => a - b);
-        const overallMedian = sorted[Math.floor(sorted.length / 2)];
+        const overallMedian = medianOfSorted(sorted);
         if (overallMedian > 0) {
           for (const h of means) {
             const ratio = h.mean / overallMedian;
@@ -1532,11 +1580,21 @@ export const DETECTORS = [
       const impactBand = durationMinutes >= t.infoMin ? 'info' : null;
       if (!impactBand) return null;
       const value = Math.round(durationMinutes * 10) / 10;
+      // shuffle.partitions and default.parallelism size a shuffle's reduce side: a stage that reads
+      // no shuffle gets the input-partitioning remedy instead.
+      const reads = stage.shuffleReadBytes > 0 ? 'shuffle' : stage.inputBytes > 0 ? 'input' : 'other';
+      const recommendation = reads === 'shuffle'
+        ? `This stage ran ${value} minutes with no more specific cause flagged: often a partition-count problem, raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.`
+        : reads === 'input'
+          ? `This stage ran ${value} minutes with no more specific cause flagged and reads no shuffle: often too few or too uneven input partitions, so check input file sizes and lower spark.sql.files.maxPartitionBytes, or look for a large per-task data volume driving heavy spill.`
+          : `This stage ran ${value} minutes with no more specific cause flagged and reads neither shuffle nor input files: check what it computes and for a large per-task data volume driving heavy spill.`;
       return {
         type: 'stageSlowness', stageId: stage.id, impactBand,
-        metric: 'stageDurationMinutes', value,
-        recommendation: `This stage ran ${value} minutes with no more specific cause flagged: often a partition-count problem, raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.`,
-        remediation: [increaseConf('spark.sql.shuffle.partitions'), increaseConf('spark.default.parallelism')],
+        metric: 'stageDurationMinutes', value, reads,
+        recommendation,
+        remediation: reads === 'shuffle'
+          ? [increaseConf('spark.sql.shuffle.partitions'), increaseConf('spark.default.parallelism')]
+          : reads === 'input' ? [decreaseConf('spark.sql.files.maxPartitionBytes')] : [],
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {

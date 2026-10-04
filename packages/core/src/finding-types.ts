@@ -79,7 +79,13 @@ export interface TaskAttemptSample {
 
 // ── Per-stage detectors ─────────────────────────────────────────────────────
 
-export type SkewEvidence = Record<never, never>;
+/** What a skewed stage reads, which decides the fix: 'shuffleJoin' (a shuffle feeding a join, where
+ * AQE skew-join handling applies), 'inputScan' (uneven input files) or 'other'. */
+export type SkewOrigin = 'shuffleJoin' | 'inputScan' | 'other';
+
+export interface SkewEvidence {
+  origin?: SkewOrigin;
+}
 export interface SkewFinding extends NumericFinding<'skew'>, SkewEvidence {}
 
 export interface StageShapeEvidence {
@@ -95,6 +101,8 @@ export interface ShuffleFinding extends NumericFinding<'shuffle'>, ShuffleEviden
 
 export interface PartitionSizingEvidence {
   rule: 'shufflePartitionSkew' | 'lowShuffleParallelism' | 'maxPartitionTooBig';
+  // Only on 'shufflePartitionSkew': see SkewOrigin.
+  origin?: SkewOrigin;
 }
 export interface PartitionSizingFinding extends NumericFinding<'partitionSizing'>, PartitionSizingEvidence {}
 
@@ -124,7 +132,10 @@ export interface SlowHostEvidence {
 }
 export interface SlowHostFinding extends NumericFinding<'slowHost'>, SlowHostEvidence {}
 
-export type StageSlownessEvidence = Record<never, never>;
+export interface StageSlownessEvidence {
+  // What the stage reads, which decides the fix: a shuffle, input files, or neither.
+  reads?: 'shuffle' | 'input' | 'other';
+}
 export interface StageSlownessFinding extends NumericFinding<'stageSlowness'>, StageSlownessEvidence {}
 
 export interface StageFailedEvidence {

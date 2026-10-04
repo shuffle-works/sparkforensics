@@ -1,4 +1,5 @@
 import type { FailedTaskSample } from './event-handlers.ts';
+import { medianOfSorted } from './median.ts';
 import type { TaskFailureDetail, TaskFailureGroup } from './task-failure.ts';
 
 // Single source of truth for the packed per-task numeric array: FIELDS (offset
@@ -304,6 +305,7 @@ function listScheduleEndMs(
   return endMs;
 }
 
+// p50 is the textbook median (the mean of the two middle values on an even count); p95 is nearest-rank.
 export function computeFieldQuantiles(arr: Float64Array, fieldIndex: number): { p50: number; p95: number; max: number } {
   const taskCount = arr.length / FIELDS.STRIDE;
   if (taskCount === 0) return { p50: 0, p95: 0, max: 0 };
@@ -313,7 +315,7 @@ export function computeFieldQuantiles(arr: Float64Array, fieldIndex: number): { 
   values.sort();
 
   return {
-    p50: values[Math.ceil(taskCount * 0.50) - 1],
+    p50: medianOfSorted(values),
     p95: values[Math.ceil(taskCount * 0.95) - 1],
     max: values[taskCount - 1],
   };

@@ -18,11 +18,17 @@ section; `PART` is on the `SHFL` page, `SPEC` on `STRAG`, `SHAPE` on `SKEW`,
 ### `SKEW`: Task skew {#skew}
 
 A small number of tasks take much longer than their peers in the same
-stage. For join-driven skew, enable AQE skew-join handling
-(`spark.sql.adaptive.skewJoin.enabled`); otherwise salt the key or
-repartition on a better key. Flagged when P95 task time (the longest task,
-on a stage with fewer than 20 tasks) exceeds 3x the median and the
-recoverable tail is at least 0.5% of the run.
+stage. The fix depends on what the stage reads, which the finding's
+`evidence.origin` records. A stage that reads a shuffle feeding a join
+(`shuffleJoin`) gets AQE skew-join handling
+(`spark.sql.adaptive.skewJoin.enabled`), unless the run's effective conf
+already has it; otherwise salt the key or repartition on a better key. A
+stage that reads files with uneven sizes (`inputScan`) gets compaction of
+small files or a lower `spark.sql.files.maxPartitionBytes`. Any other stage
+(`other`) gets the salting advice and no conf. Flagged when P95 task time
+(the longest task, on a stage with fewer than 20 tasks) exceeds 3x the median
+and the recoverable tail is at least 0.5% of the run. The median is the
+textbook one: on an even task count, the mean of the two middle values.
 
 ### `SHFL`: Shuffle I/O {#shfl}
 
@@ -99,9 +105,13 @@ repartition to break it up before the stage runs.
 ### `SLOW`: Stage slowness {#slow}
 
 A stage ran for 15 minutes or more and no slow host was flagged on it. It
-can appear alongside other findings on the same stage. Often a partition-count problem: raise parallelism via
+can appear alongside other findings on the same stage. On a stage that reads a
+shuffle, often a partition-count problem: raise parallelism via
 `spark.sql.shuffle.partitions` or `spark.default.parallelism`, or check for a
-large per-task data volume driving heavy shuffle and spill.
+large per-task data volume driving heavy shuffle and spill. On a stage that
+reads input files and no shuffle, check input file sizes and lower
+`spark.sql.files.maxPartitionBytes`. `evidence.reads` says which case
+applied (`shuffle`, `input` or `other`).
 
 ### `SHAPE`: Stage shape {#shape}
 

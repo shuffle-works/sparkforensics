@@ -180,14 +180,14 @@ export interface EvidenceReportJson {
 // module (stageShape's totalCores, utilization's unrounded fraction) is left off both, so it never
 // reaches the report; adding, renaming or dropping a key here changes the report contract.
 const EVIDENCE_KEYS = {
-  skew: [],
+  skew: ['origin'],
   stageShape: ['rule'],
   shuffle: [],
-  partitionSizing: ['rule'],
+  partitionSizing: ['rule', 'origin'],
   spill: ['spillMagnitude'],
   gc: ['direction'],
   slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue'],
-  stageSlowness: [],
+  stageSlowness: ['reads'],
   stageFailed: ['variant', 'numTasks', 'memoryBytesSpilled', 'failedTaskDetails'],
   failures: ['failedTasks', 'dominantReason', 'dominantError', 'failureGroups', 'otherFailedTasks'],
   straggler: ['unit', 'speculativeTasks', 'stragglerCount'],

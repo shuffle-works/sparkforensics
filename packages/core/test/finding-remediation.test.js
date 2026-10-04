@@ -8,9 +8,14 @@ import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 const MiB = 1024 * 1024;
 const KRYO = 'org.apache.spark.serializer.KryoSerializer';
 
-function catalogOf(stages, app = makeApp()) {
-  return analyze(app, new Map(stages.map((s) => [s.id, s])), [], []);
+function catalogOf(stages, app = makeApp(), sql = new Map()) {
+  return analyze(app, new Map(stages.map((s) => [s.id, s])), [], [], new Map(), sql);
 }
+
+// A SQL execution whose plan joins two exchanges: the shape AQE skew-join handling acts on.
+const JOIN_SQL = new Map([[7, { id: 7, planTree: { name: 'SortMergeJoin', detail: '', metrics: [], children: [
+  { name: 'Exchange', detail: '', metrics: [], children: [] }, { name: 'Exchange', detail: '', metrics: [], children: [] },
+] } }]]);
 
 describe('structured remediation', () => {
   describe('lowShuffleParallelism against the logged shuffle partition count', () => {
@@ -236,8 +241,8 @@ describe('structured remediation', () => {
   });
 
   describe('a set-to-value remediation follows the logged conf', () => {
-    const skewStage = makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600 });
-    const partitionSkewStage = makeStage({ id: 2, shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 });
+    const skewStage = makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB });
+    const partitionSkewStage = makeStage({ id: 2, shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50, sqlExecutionId: 7 });
     const slowHostStage = makeStage({
       id: 3, taskCount: 60,
       hostStats: [
@@ -246,8 +251,9 @@ describe('structured remediation', () => {
         { host: 'c', taskCount: 20, totalDuration: 600000 },
       ],
     });
-    const pick = (config) => {
-      const on = (stage) => catalogOf([stage], makeApp({ config }));
+    // An unknown Spark version models no defaults, so only the logged conf decides.
+    const pick = (config, sparkVersion = null) => {
+      const on = (stage) => catalogOf([stage], makeApp({ config, sparkVersion }), JOIN_SQL);
       return {
         skew: on(skewStage).find((f) => f.type === 'skew'),
         partitionSkew: on(partitionSkewStage).find((f) => f.rule === 'shufflePartitionSkew'),
@@ -288,6 +294,25 @@ describe('structured remediation', () => {
       expect(unset.skew.recommendation).toMatch(/enable AQE skew-join handling \(spark\.sql\.adaptive\.skewJoin\.enabled\)/);
       expect(unset.partitionSkew.recommendation).toMatch(/enable AQE skew-join handling \(spark\.sql\.adaptive\.skewJoin\.enabled\)/);
       expect(unset.slowHost.recommendation).toMatch(/consider enabling spark\.speculation/);
+    });
+
+    it('treats the Spark version default as the effective value when the key is not logged', () => {
+      const aqe = [{ kind: 'conf', key: 'spark.sql.adaptive.enabled', direction: 'set', suggested: true }];
+      // 3.2+: AQE and skew-join handling both default on, so there is nothing to suggest.
+      for (const version of ['3.2.0', '3.5.3', '4.0.0']) {
+        const { skew, partitionSkew } = pick({}, version);
+        for (const f of [skew, partitionSkew]) {
+          expect(f.remediation, `${f.type} ${version}`).toEqual([]);
+          expect(f.recommendation).toMatch(/already on/);
+        }
+      }
+      // 3.0 and 3.1: AQE defaults off, skew-join handling on once AQE is.
+      for (const version of ['3.0.3', '3.1.2']) {
+        expect(pick({}, version).skew.remediation, version).toEqual(aqe);
+      }
+      // A logged value beats the default.
+      expect(pick({ 'spark.sql.adaptive.skewJoin.enabled': 'false' }, '3.5.3').skew.remediation).toEqual(set('spark.sql.adaptive.skewJoin.enabled'));
+      expect(pick({ 'spark.sql.adaptive.enabled': 'false' }, '3.5.3').skew.remediation).toEqual(aqe);
     });
 
     it('words the grouped generic line for a switch the logged conf already has on, as the row does', () => {
@@ -384,5 +409,86 @@ describe('structured remediation', () => {
       const kryo = auditConfig({ config: { 'spark.serializer': KRYO }, resources: res }).find((f) => f.property === 'spark.serializer');
       expect(kryo).toBeUndefined();
     });
+  });
+});
+
+describe('skew remediation follows what the stage reads', () => {
+  const app = makeApp({ sparkVersion: '3.1.2', config: {} });
+  const AGG_SQL = new Map([[8, { id: 8, planTree: { name: 'HashAggregate', detail: '', metrics: [], children: [] } }]]);
+  const skewOf = (stage, sql) => catalogOf([stage], app, sql).find((f) => f.type === 'skew');
+  const skewed = { taskDurationP50: 100, taskDurationP95: 600 };
+
+  it('flags a shuffle read feeding a join as shuffleJoin and suggests skew-join handling', () => {
+    const f = skewOf(makeStage({ ...skewed, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB }), JOIN_SQL);
+    expect(f.origin).toBe('shuffleJoin');
+    expect(f.remediation.map((r) => r.key)).toEqual(['spark.sql.adaptive.enabled']);
+    expect(f.recommendation).toMatch(/skew-join/);
+  });
+
+  it('points a scan with uneven input at file sizes, not at skew-join handling', () => {
+    const f = skewOf(makeStage({ ...skewed, sqlExecutionId: 7, inputBytes: 220 * MiB }), JOIN_SQL);
+    expect(f.origin).toBe('inputScan');
+    expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.files.maxPartitionBytes', direction: 'decrease', suggested: null }]);
+    expect(f.recommendation).toMatch(/compact small files.*maxPartitionBytes/);
+    expect(f.recommendation).not.toMatch(/skewJoin|AQE/);
+    expect(coreFindingGenericRecommendation(f)).toMatch(/compact small files/);
+  });
+
+  it('suggests no conf for a shuffle that feeds no join, or for a stage the plan cannot tie to one', () => {
+    for (const [stage, sql] of [
+      [makeStage({ ...skewed, sqlExecutionId: 8, shuffleReadBytes: 400 * MiB }), AGG_SQL],
+      [makeStage({ ...skewed, shuffleReadBytes: 400 * MiB }), new Map()],
+      [makeStage({ ...skewed }), new Map()],
+    ]) {
+      const f = skewOf(stage, sql);
+      expect(f.origin).toBe('other');
+      expect(f.remediation).toEqual([]);
+      expect(f.recommendation).not.toMatch(/skewJoin|AQE/);
+      expect(coreFindingGenericRecommendation(f)).toMatch(/salt the key/);
+    }
+  });
+
+  it('gates the partition-skew rule the same way and publishes the origin as evidence', () => {
+    const stage = { shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 };
+    const join = catalogOf([makeStage({ ...stage, sqlExecutionId: 7 })], app, JOIN_SQL).find((f) => f.rule === 'shufflePartitionSkew');
+    const agg = catalogOf([makeStage({ ...stage, sqlExecutionId: 8 })], app, AGG_SQL).find((f) => f.rule === 'shufflePartitionSkew');
+    expect(join.origin).toBe('shuffleJoin');
+    expect(join.remediation.length).toBeGreaterThan(0);
+    expect(agg.origin).toBe('other');
+    expect(agg.remediation).toEqual([]);
+    const fx = {
+      app, stages: new Map([[1, makeStage({ ...stage, sqlExecutionId: 8 })]]),
+      executors: { added: [], removed: [] }, sql: AGG_SQL, jobs: new Map(), runAggregates: null, evidenceAvailability: null,
+    };
+    const { json } = buildEvidenceReport(fx);
+    expect(json.findings.find((r) => r.evidence.rule === 'shufflePartitionSkew').evidence.origin).toBe('other');
+  });
+});
+
+describe('findings for stages that read no shuffle or that have an even host count', () => {
+  const app = makeApp();
+
+  it('does not suggest shuffle partitions for a slow stage that reads no shuffle', () => {
+    const slow = (extra) => catalogOf([makeStage({ submittedAt: 0, completedAt: 20 * 60000, ...extra })], app).find((f) => f.type === 'stageSlowness');
+    const shuffle = slow({ shuffleReadBytes: 10 * MiB });
+    expect(shuffle.reads).toBe('shuffle');
+    expect(shuffle.remediation.map((r) => r.key)).toEqual(['spark.sql.shuffle.partitions', 'spark.default.parallelism']);
+    const scan = slow({ inputBytes: 10 * MiB });
+    expect(scan.reads).toBe('input');
+    expect(scan.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.files.maxPartitionBytes', direction: 'decrease', suggested: null }]);
+    expect(scan.recommendation).not.toMatch(/shuffle\.partitions/);
+    expect(coreFindingGenericRecommendation(scan)).toMatch(/maxPartitionBytes/);
+    const neither = slow({});
+    expect(neither.reads).toBe('other');
+    expect(neither.remediation).toEqual([]);
+  });
+
+  it('measures a slow host against the textbook median of the host means', () => {
+    // Means 1000, 1000, 1900, 3700 ms: the median is 1450 (not the upper middle, 1900), so the
+    // slowest host runs 2.55x it and is flagged; against 1900 it would be 1.95x and pass.
+    const hostStats = [1000, 1000, 1900, 3700].map((mean, i) => ({ host: `h${i}`, taskCount: 10, totalDuration: mean * 10 }));
+    const found = catalogOf([makeStage({ taskCount: 40, hostStats })], app).filter((f) => f.type === 'slowHost');
+    expect(found.map((f) => f.host)).toEqual(['h3']);
+    expect(found[0].value).toBe(2.6);
   });
 });

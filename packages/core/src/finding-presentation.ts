@@ -8,7 +8,7 @@
 // detectors.ts is type-only, so it is erased at build time. A detector's scope, order and emits
 // list stay on its DETECTORS entry; renderers get them through detectorInfoByType().
 import type { ThresholdsOf } from './detectors.ts';
-import type { Remediation } from './finding-types.ts';
+import type { Remediation, SkewOrigin } from './finding-types.ts';
 import type { FindingOf, FindingType } from './types.ts';
 
 export interface FindingPresentation<T extends FindingType> {
@@ -43,7 +43,9 @@ const SKEW_JOIN_ALREADY_ON = 'AQE skew-join handling is already on, so salt the 
 const SKEW_JOIN_AQE_OFF = 'AQE is off, so enable it (spark.sql.adaptive.enabled) for skew-join handling to apply; otherwise salt the key or repartition on a better key.';
 
 // The skew-join generic line, worded per the row's remediation: AQE logged off, switch already on, or neither.
-function skewJoinGeneric(f: { remediation?: Remediation[] }, unset: string): string {
+function skewJoinGeneric(f: { remediation?: Remediation[]; origin?: SkewOrigin }, unset: string): string {
+  if (f.origin === 'inputScan') return 'Uneven input files: compact small files or split large ones (lower spark.sql.files.maxPartitionBytes).';
+  if (f.origin === 'other') return 'Work is uneven across tasks: salt the key or repartition on a better key.';
   if (f.remediation?.some((r) => r.key === 'spark.sql.adaptive.enabled')) return SKEW_JOIN_AQE_OFF;
   return switchAlreadyOn(f, SKEW_JOIN_KEY) ? SKEW_JOIN_ALREADY_ON : unset;
 }
@@ -219,7 +221,11 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'SLOW',
     thresholdSummary: () => 'a stage running far longer than its peers, not attributable to a single slow host',
     actionLabel: () => 'Profile slow stage',
-    genericRecommendation: () => 'Often a partition-count problem: raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.',
+    genericRecommendation: (f) => f.reads === 'input'
+      ? 'Often too few or too uneven input partitions: check input file sizes and lower spark.sql.files.maxPartitionBytes, or look for a large per-task data volume driving heavy spill.'
+      : f.reads === 'other'
+        ? 'Check what the stage computes and for a large per-task data volume driving heavy spill.'
+        : 'Often a partition-count problem: raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.',
   },
   straggler: {
     name: 'straggling task',
