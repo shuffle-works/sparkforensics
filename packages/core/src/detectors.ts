@@ -1582,11 +1582,11 @@ export const DETECTORS = [
       const value = Math.round(durationMinutes * 10) / 10;
       // shuffle.partitions and default.parallelism size a shuffle's reduce side: a stage that reads
       // no shuffle gets the input-partitioning remedy instead.
-      const reads = stage.shuffleReadBytes > 0 ? 'shuffle' : stage.inputBytes > 0 ? 'input' : 'other';
+      const reads = stage.shuffleReadBytes > 0 && stage.shuffleReadBytes >= stage.inputBytes ? 'shuffle' : stage.inputBytes > 0 ? 'input' : 'other';
       const recommendation = reads === 'shuffle'
         ? `This stage ran ${value} minutes with no more specific cause flagged: often a partition-count problem, raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.`
         : reads === 'input'
-          ? `This stage ran ${value} minutes with no more specific cause flagged and reads no shuffle: often too few or too uneven input partitions, so check input file sizes and lower spark.sql.files.maxPartitionBytes, or look for a large per-task data volume driving heavy spill.`
+          ? `This stage ran ${value} minutes with no more specific cause flagged and reads mostly input files: often too few or too uneven input partitions, so check input file sizes and lower spark.sql.files.maxPartitionBytes, or look for a large per-task data volume driving heavy spill.`
           : `This stage ran ${value} minutes with no more specific cause flagged and reads neither shuffle nor input files: check what it computes and for a large per-task data volume driving heavy spill.`;
       return {
         type: 'stageSlowness', stageId: stage.id, impactBand,
