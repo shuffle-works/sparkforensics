@@ -62,7 +62,7 @@
      "type": "skew",
      "band": "critical",
      "confidence": "medium",
-     "value": 14.9,
+     "value": 14.7,
      "basis": "contended",
      "method": "measured",
      "wcLow": 611.2346683216023,
@@ -77,13 +77,13 @@
      "type": "skew",
      "band": "critical",
      "confidence": "high",
-     "value": 29.8,
+     "value": 26.2,
      "basis": "contended",
      "method": "measured",
-     "wcLow": 411.0946643221193,
-     "wcHigh": 1269,
+     "wcLow": 408.8270026591919,
+     "wcHigh": 1262,
      "rawWaste": {
-      "value": 1269,
+      "value": 1262,
       "unit": "ms"
      }
     },
@@ -125,10 +125,10 @@
      "value": 20,
      "basis": "contended",
      "method": "measured",
-     "wcLow": 411.0946643221193,
-     "wcHigh": 1269,
+     "wcLow": 408.8270026591919,
+     "wcHigh": 1262,
      "rawWaste": {
-      "value": 1269,
+      "value": 1262,
       "unit": "ms"
      }
     },
@@ -140,10 +140,10 @@
      "value": 10,
      "basis": "serial",
      "method": "measured",
-     "wcLow": 124,
-     "wcHigh": 124,
+     "wcLow": 123,
+     "wcHigh": 123,
      "rawWaste": {
-      "value": 124,
+      "value": 123,
       "unit": "ms"
      }
     },
@@ -244,13 +244,13 @@
      "type": "skew",
      "band": "critical",
      "confidence": "high",
-     "value": 22.7,
+     "value": 22.1,
      "basis": "contended",
      "method": "measured",
-     "wcLow": 342.2875431552146,
-     "wcHigh": 852,
+     "wcLow": 341.68492424120893,
+     "wcHigh": 850.5,
      "rawWaste": {
-      "value": 852,
+      "value": 850.5,
       "unit": "ms"
      }
     },
@@ -259,7 +259,7 @@
      "type": "skew",
      "band": "critical",
      "confidence": "high",
-     "value": 22.1,
+     "value": 21.6,
      "basis": "contended",
      "method": "measured",
      "wcLow": 668.6448055719953,
@@ -274,7 +274,7 @@
      "type": "skew",
      "band": "warning",
      "confidence": "low",
-     "value": 4.4,
+     "value": 4.3,
      "basis": "contended",
      "method": "measured",
      "wcLow": 283.44326285910796,
@@ -307,10 +307,10 @@
      "value": 10,
      "basis": "contended",
      "method": "measured",
-     "wcLow": 342.2875431552146,
-     "wcHigh": 852,
+     "wcLow": 341.68492424120893,
+     "wcHigh": 850.5,
      "rawWaste": {
-      "value": 852,
+      "value": 850.5,
       "unit": "ms"
      }
     },
@@ -586,13 +586,13 @@
      "type": "skew",
      "band": "critical",
      "confidence": "high",
-     "value": 138.6,
+     "value": 133.2,
      "basis": "serial",
      "method": "measured",
-     "wcLow": 10858,
-     "wcHigh": 10858,
+     "wcLow": 10849,
+     "wcHigh": 10849,
      "rawWaste": {
-      "value": 10858,
+      "value": 10849,
       "unit": "ms"
      }
     },
@@ -616,10 +616,10 @@
      "value": 40,
      "basis": "serial",
      "method": "measured",
-     "wcLow": 10858,
-     "wcHigh": 10858,
+     "wcLow": 10849,
+     "wcHigh": 10849,
      "rawWaste": {
-      "value": 10858,
+      "value": 10849,
       "unit": "ms"
      }
     },
@@ -1132,10 +1132,10 @@
      "value": 4.2,
      "basis": "serial",
      "method": "measured",
-     "wcLow": 1082,
-     "wcHigh": 1082,
+     "wcLow": 1081.5,
+     "wcHigh": 1081.5,
      "rawWaste": {
-      "value": 1082,
+      "value": 1081.5,
       "unit": "ms"
      }
     },
@@ -1162,10 +1162,10 @@
      "value": 6,
      "basis": "serial",
      "method": "measured",
-     "wcLow": 1082,
-     "wcHigh": 1082,
+     "wcLow": 1081.5,
+     "wcHigh": 1081.5,
      "rawWaste": {
-      "value": 1082,
+      "value": 1081.5,
       "unit": "ms"
      }
     },
@@ -1174,7 +1174,7 @@
      "type": "tinyTask",
      "band": "critical",
      "confidence": null,
-     "value": 93,
+     "value": 94,
      "basis": "serial",
      "method": "measured",
      "wcLow": 1882.4074087821539,
@@ -1574,10 +1574,10 @@
      "value": 3.4,
      "basis": "serial",
      "method": "measured",
-     "wcLow": 1565,
-     "wcHigh": 1565,
+     "wcLow": 1563.5,
+     "wcHigh": 1563.5,
      "rawWaste": {
-      "value": 1565,
+      "value": 1563.5,
       "unit": "ms"
      }
     },
@@ -1604,10 +1604,10 @@
      "value": 5,
      "basis": "serial",
      "method": "measured",
-     "wcLow": 1565,
-     "wcHigh": 1565,
+     "wcLow": 1563.5,
+     "wcHigh": 1563.5,
      "rawWaste": {
-      "value": 1565,
+      "value": 1563.5,
       "unit": "ms"
      }
     },
@@ -1616,7 +1616,7 @@
      "type": "tinyTask",
      "band": "critical",
      "confidence": null,
-     "value": 66,
+     "value": 67,
      "basis": "serial",
      "method": "measured",
      "wcLow": 1549.2562990499796,
@@ -1943,7 +1943,7 @@
      "type": "tinyTask",
      "band": "critical",
      "confidence": null,
-     "value": 72,
+     "value": 73,
      "basis": "serial",
      "method": "measured",
      "wcLow": 2426.191953470066,
@@ -2005,7 +2005,7 @@
      "type": "tinyTask",
      "band": "critical",
      "confidence": null,
-     "value": 93,
+     "value": 94,
      "basis": "serial",
      "method": "measured",
      "wcLow": 3042.174114616871,
@@ -2380,51 +2380,6 @@
      "rawWaste": null
     },
     {
-     "key": "skew|0|max/median|||||||||||",
-     "type": "skew",
-     "band": "warning",
-     "confidence": "high",
-     "value": 19.8,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 781,
-     "wcHigh": 781,
-     "rawWaste": {
-      "value": 781,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "stageShape|0|taskStageSkew|taskStageSkew||||||||||",
-     "type": "stageShape",
-     "band": "info",
-     "confidence": null,
-     "value": 0.96,
-     "basis": "resourceOnly",
-     "method": "measured",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": {
-      "value": 825,
-      "unit": "coreMs"
-     }
-    },
-    {
-     "key": "straggler|0|stragglerShare|||||||||||",
-     "type": "straggler",
-     "band": "warning",
-     "confidence": "high",
-     "value": 50,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 781,
-     "wcHigh": 781,
-     "rawWaste": {
-      "value": 781,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "utilization||avgUtilization|||||||||||",
      "type": "utilization",
      "band": "info",
@@ -2470,51 +2425,6 @@
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": null
-    },
-    {
-     "key": "skew|0|max/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "high",
-     "value": 20.8,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 737,
-     "wcHigh": 737,
-     "rawWaste": {
-      "value": 737,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "stageShape|0|taskStageSkew|taskStageSkew||||||||||",
-     "type": "stageShape",
-     "band": "info",
-     "confidence": null,
-     "value": 0.99,
-     "basis": "resourceOnly",
-     "method": "measured",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": {
-      "value": 774,
-      "unit": "coreMs"
-     }
-    },
-    {
-     "key": "straggler|0|stragglerShare|||||||||||",
-     "type": "straggler",
-     "band": "critical",
-     "confidence": "high",
-     "value": 50,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 737,
-     "wcHigh": 737,
-     "rawWaste": {
-      "value": 737,
-      "unit": "ms"
-     }
     },
     {
      "key": "utilization||avgUtilization|||||||||||",
@@ -2686,7 +2596,7 @@
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 3898,
+      "value": 3881,
       "unit": "coreMs"
      }
     },
@@ -2698,10 +2608,10 @@
      "value": 30,
      "basis": "serial",
      "method": "measured",
-     "wcLow": 1853,
-     "wcHigh": 1853,
+     "wcLow": 1844.5,
+     "wcHigh": 1844.5,
      "rawWaste": {
-      "value": 1853,
+      "value": 1844.5,
       "unit": "ms"
      }
     },
@@ -3012,7 +2922,7 @@
      "type": "skew",
      "band": "critical",
      "confidence": "high",
-     "value": 24.1,
+     "value": 16.4,
      "basis": "serial",
      "method": "measured",
      "wcLow": 58649,
@@ -3033,7 +2943,7 @@
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 183378,
+      "value": 179662.5,
       "unit": "coreMs"
      }
     },
@@ -3560,7 +3470,7 @@
      "type": "skew",
      "band": "critical",
      "confidence": "medium",
-     "value": 7.3,
+     "value": 5.8,
      "basis": "serial",
      "method": "measured",
      "wcLow": 64,
@@ -3568,36 +3478,6 @@
      "rawWaste": {
       "value": 64,
       "unit": "ms"
-     }
-    },
-    {
-     "key": "skew|2|max/median|||||||||||",
-     "type": "skew",
-     "band": "warning",
-     "confidence": "medium",
-     "value": 7.9,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 48,
-     "wcHigh": 48,
-     "rawWaste": {
-      "value": 48,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "stageShape|2|taskStageSkew|taskStageSkew||||||||||",
-     "type": "stageShape",
-     "band": "info",
-     "confidence": null,
-     "value": 0.85,
-     "basis": "resourceOnly",
-     "method": "measured",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": {
-      "value": 0,
-      "unit": "coreMs"
      }
     },
     {

@@ -79,7 +79,22 @@ export interface TaskAttemptSample {
 
 // ── Per-stage detectors ─────────────────────────────────────────────────────
 
-export type SkewEvidence = Record<never, never>;
+/** What a skewed stage reads, which decides the fix: 'shuffleJoin' (a shuffle feeding a join, where
+ * AQE skew-join handling applies), 'inputScan' (uneven input files) or 'other'. */
+export type SkewOrigin = 'shuffleJoin' | 'inputScan' | 'other';
+
+/** What a stage reads, by the dominant side: a shuffle, input files, or neither. */
+export type StageReads = 'shuffle' | 'input' | 'other';
+
+/** Why a shuffle finding's partition-count advice is or is not given: 'raise' (the property limits
+ * the stage), 'sufficient' (tasks are already a good size), 'aqeCoalesced' (AQE merged the
+ * partitions, so the advisory size is the lever) or 'ownPartitioning' (the property is already high
+ * enough, so the stage's own repartition(n) or RDD parallelism is). */
+export type ShufflePartitions = 'raise' | 'sufficient' | 'aqeCoalesced' | 'ownPartitioning';
+
+export interface SkewEvidence {
+  origin?: SkewOrigin;
+}
 export interface SkewFinding extends NumericFinding<'skew'>, SkewEvidence {}
 
 export interface StageShapeEvidence {
@@ -90,16 +105,24 @@ export interface StageShapeFinding extends NumericFinding<'stageShape'>, StageSh
   totalCores?: number;
 }
 
-export type ShuffleEvidence = Record<never, never>;
+export interface ShuffleEvidence {
+  partitions?: ShufflePartitions;
+}
 export interface ShuffleFinding extends NumericFinding<'shuffle'>, ShuffleEvidence {}
 
 export interface PartitionSizingEvidence {
   rule: 'shufflePartitionSkew' | 'lowShuffleParallelism' | 'maxPartitionTooBig';
+  // Only on 'shufflePartitionSkew': see SkewOrigin.
+  origin?: SkewOrigin;
+  // Only on 'lowShuffleParallelism': see ShufflePartitions ('raise', 'aqeCoalesced' or 'ownPartitioning').
+  partitions?: ShufflePartitions;
 }
 export interface PartitionSizingFinding extends NumericFinding<'partitionSizing'>, PartitionSizingEvidence {}
 
 export interface SpillEvidence {
   spillMagnitude?: 'severe' | 'high' | 'medium';
+  // What the stage reads: shuffle-partition advice applies only to 'shuffle'.
+  reads?: StageReads;
 }
 export interface SpillFinding extends NumericFinding<'spill'>, SpillEvidence {}
 
@@ -124,7 +147,10 @@ export interface SlowHostEvidence {
 }
 export interface SlowHostFinding extends NumericFinding<'slowHost'>, SlowHostEvidence {}
 
-export type StageSlownessEvidence = Record<never, never>;
+export interface StageSlownessEvidence {
+  // What the stage reads, which decides the fix: a shuffle, input files, or neither.
+  reads?: StageReads;
+}
 export interface StageSlownessFinding extends NumericFinding<'stageSlowness'>, StageSlownessEvidence {}
 
 export interface StageFailedEvidence {
@@ -151,6 +177,8 @@ export interface StragglerEvidence {
   unit: 'count' | 'pct';
   speculativeTasks: number;
   stragglerCount: number;
+  // The case the skew advice in the recommendation was written for (see SkewOrigin).
+  origin?: SkewOrigin;
 }
 export interface StragglerFinding extends NumericFinding<'straggler'>, StragglerEvidence {}
 
@@ -167,7 +195,10 @@ export interface RetryWasteFinding extends NumericFinding<'retryWaste'>, RetryWa
   extended?: string;
 }
 
-export type TinyTaskEvidence = Record<never, never>;
+export interface TinyTaskEvidence {
+  // What the stage reads: the shuffle-partition remedy applies only to 'shuffle'.
+  reads?: StageReads;
+}
 export interface TinyTaskFinding extends NumericFinding<'tinyTask'>, TinyTaskEvidence {}
 
 // ── App-level detectors ─────────────────────────────────────────────────────
@@ -176,7 +207,10 @@ export type IncompleteRunEvidence = Record<never, never>;
 // valueText is always 'missing': the ApplicationEnd event the log lacks.
 export interface IncompleteRunFinding extends TextFinding<'incompleteRun'>, IncompleteRunEvidence {}
 
-export type ColdStartEvidence = Record<never, never>;
+export interface ColdStartEvidence {
+  // 'off' when the run's conf turns dynamic allocation off: no executor-count property applies.
+  dynamicAllocation?: 'on' | 'off';
+}
 export interface ColdStartFinding extends NumericFinding<'coldStart'>, ColdStartEvidence {}
 
 export interface UtilizationEvidence {
@@ -231,6 +265,8 @@ export interface CoreLocalityFinding extends NumericFinding<'coreLocality'>, Cor
 
 export interface AutoscalingChurnEvidence {
   shortLivedExecutorCount: number;
+  // 'off' when the run's conf turns dynamic allocation off: its properties have no effect.
+  dynamicAllocation?: 'on' | 'off';
 }
 export interface AutoscalingChurnFinding extends NumericFinding<'autoscalingChurn'>, AutoscalingChurnEvidence {}
 
@@ -297,12 +333,20 @@ export interface SmallFilesEvidence extends PlanFindingEvidence {
 }
 export interface SmallFilesFinding extends NumericFinding<'smallFiles'>, SmallFilesEvidence, PlanNodeOrigin {}
 
+/** How the effective spark.sql.autoBroadcastJoinThreshold relates to the finding: 'limits' (the
+ * property decided it, or is unknown), 'notLimiting' (already admits, or already below, the
+ * broadcast, so something else decided it) or 'disabled' (-1). */
+export type BroadcastThreshold = 'limits' | 'notLimiting' | 'disabled';
+
 export interface UnderBroadcastEvidence extends PlanFindingEvidence {
   largerSideBytes: number;
+  broadcastThreshold?: BroadcastThreshold;
 }
 export interface UnderBroadcastFinding extends NumericFinding<'underBroadcast'>, UnderBroadcastEvidence, PlanNodeOrigin {}
 
-export type OverBroadcastEvidence = PlanFindingEvidence;
+export interface OverBroadcastEvidence extends PlanFindingEvidence {
+  broadcastThreshold?: BroadcastThreshold;
+}
 export interface OverBroadcastFinding extends NumericFinding<'overBroadcast'>, OverBroadcastEvidence, PlanNodeOrigin {}
 
 // ── Unions ──────────────────────────────────────────────────────────────────

@@ -11,7 +11,14 @@ this tag:
   under 3 MB. Compact upstream output, or coalesce before writing.
 - Under-broadcast: the smaller side of a Sort Merge Join looks well under
   the broadcast threshold; consider a `broadcast()` hint or raising
-  `spark.sql.autoBroadcastJoinThreshold`.
+  `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold
+  (logged, else Spark's 10 MiB) already admits the smaller side
+  (`evidence.broadcastThreshold` is `notLimiting`), the threshold is not what
+  stopped the broadcast, so `remediation` is empty and the advice is a hint or
+  table statistics.
 - Over-broadcast: a broadcast exceeds the 1 GB threshold; check for a
   misapplied broadcast hint or a misconfigured
-  `spark.sql.autoBroadcastJoinThreshold`.
+  `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold is
+  below the broadcast or auto-broadcast is disabled (`evidence.broadcastThreshold`
+  is `notLimiting` or `disabled`), a hint forced it: remove the hint, and
+  `remediation` is empty.

@@ -8,40 +8,63 @@ import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 const MiB = 1024 * 1024;
 const KRYO = 'org.apache.spark.serializer.KryoSerializer';
 
-function catalogOf(stages, app = makeApp()) {
-  return analyze(app, new Map(stages.map((s) => [s.id, s])), [], []);
+function catalogOf(stages, app = makeApp(), sql = new Map()) {
+  return analyze(app, new Map(stages.map((s) => [s.id, s])), [], [], new Map(), sql);
 }
 
+// A SQL execution whose plan joins two exchanges: the shape AQE skew-join handling acts on.
+const JOIN_SQL = new Map([[7, { id: 7, planTree: { name: 'SortMergeJoin', detail: '', metrics: [], children: [
+  { name: 'Exchange', detail: '', metrics: [], children: [] }, { name: 'Exchange', detail: '', metrics: [], children: [] },
+] } }]]);
+
 describe('structured remediation', () => {
-  describe('lowShuffleParallelism against the logged shuffle partition count', () => {
-    const finding = (config) => catalogOf(
+  describe('lowShuffleParallelism against the effective shuffle partition count', () => {
+    // An unknown Spark version has no AQE default, so the stage's own tasks are not read as coalesced.
+    const finding = (config, sparkVersion = null) => catalogOf(
       [makeStage({ shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0 })],
-      makeApp({ config }),
+      makeApp({ config, sparkVersion }),
     ).find((x) => x.rule === 'lowShuffleParallelism');
-    const run = (config) => finding(config).remediation;
+    const run = (config, sparkVersion) => finding(config, sparkVersion).remediation;
     const increase = (suggested) => [{ kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'increase', suggested }];
 
     it('suggests the count that reaches the ideal partition size when the logged value is below it', () => {
       // 2 GiB / 128 MiB
       expect(run({ 'spark.sql.shuffle.partitions': '8' })).toEqual(increase(16));
+      expect(finding({ 'spark.sql.shuffle.partitions': '8' }).partitions).toBe('raise');
     });
 
-    it('leaves suggested null when the property is not logged', () => {
-      expect(run({})).toEqual(increase(null));
+    it('treats the unlogged default of 200 as the effective count', () => {
+      const unlogged = finding({});
+      expect(unlogged.remediation).toEqual([]);
+      expect(unlogged.partitions).toBe('ownPartitioning');
+      expect(unlogged.recommendation).toMatch(/already 200.*repartition\(n\)/);
+      // A 200-partition default is too few for 40 GiB: 40 GiB / 128 MiB = 320.
+      const big = catalogOf(
+        [makeStage({ shuffleReadBytes: 40 * 1024 * MiB, taskCount: 5 })], makeApp({ config: {}, sparkVersion: null }),
+      ).find((x) => x.rule === 'lowShuffleParallelism');
+      expect(big.remediation).toEqual(increase(320));
     });
 
-    it('suggests nothing when the logged value is already at or above the count, since it does not limit that stage', () => {
+    it('suggests nothing when the effective value is already at or above the count, since it does not limit that stage', () => {
       expect(run({ 'spark.sql.shuffle.partitions': '200' })).toEqual([]);
       expect(run({ 'spark.sql.shuffle.partitions': '16' })).toEqual([]);
     });
 
-    it('points the text at the stage\'s own partitioning, not the property, when the logged value is already enough', () => {
+    it('points the text at the stage\'s own partitioning, not the property, when the effective value is already enough', () => {
       const { recommendation } = finding({ 'spark.sql.shuffle.partitions': '200' });
       expect(recommendation).not.toMatch(/raise spark\.sql\.shuffle\.partitions/);
       expect(recommendation).toMatch(/repartition\(n\)/);
-      for (const config of [{}, { 'spark.sql.shuffle.partitions': '8' }]) {
-        expect(finding(config).recommendation).toMatch(/raise spark\.sql\.shuffle\.partitions/);
-      }
+      expect(finding({ 'spark.sql.shuffle.partitions': '8' }).recommendation).toMatch(/raise spark\.sql\.shuffle\.partitions/);
+    });
+
+    it('points at the advisory partition size when AQE coalesced the shuffle into few tasks', () => {
+      const f = finding({}, '3.5.3');
+      expect(f.partitions).toBe('aqeCoalesced');
+      expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.adaptive.advisoryPartitionSizeInBytes', direction: 'decrease', suggested: null }]);
+      expect(coreFindingGenericRecommendation(f)).toMatch(/advisoryPartitionSizeInBytes/);
+      // AQE off or coalescing off: the property is again the question.
+      expect(finding({ 'spark.sql.adaptive.enabled': 'false' }, '3.5.3').partitions).toBe('ownPartitioning');
+      expect(finding({ 'spark.sql.adaptive.coalescePartitions.enabled': 'false' }, '3.5.3').partitions).toBe('ownPartitioning');
     });
   });
 
@@ -90,7 +113,10 @@ describe('structured remediation', () => {
   });
 
   it('leaves suggested null where the detector computes no value', () => {
-    const f = catalogOf([makeStage({ shuffleReadBytes: 200 * MiB })]).find((x) => x.type === 'shuffle');
+    // One 200 MiB task is over the ideal partition size, and the logged count of 1 limits it.
+    const app = makeApp({ config: { 'spark.sql.shuffle.partitions': '1', 'spark.sql.adaptive.enabled': 'false' } });
+    const f = catalogOf([makeStage({ shuffleReadBytes: 200 * MiB, taskCount: 1 })], app).find((x) => x.type === 'shuffle');
+    expect(f.partitions).toBe('raise');
     expect(f.remediation).toEqual([
       { kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'increase', suggested: null },
     ]);
@@ -175,9 +201,9 @@ describe('structured remediation', () => {
 
   it('reports remediation on every evidence-report row, empty when none applies', () => {
     const fx = {
-      app: makeApp(),
+      app: makeApp({ config: { 'spark.sql.shuffle.partitions': '2', 'spark.sql.adaptive.enabled': 'false' } }),
       stages: new Map([
-        [1, makeStage({ id: 1, shuffleReadBytes: 300 * MiB })],
+        [1, makeStage({ id: 1, shuffleReadBytes: 300 * MiB, taskCount: 2 })],
         [2, makeStage({ id: 2, taskDurationP50: 100, taskDurationP95: 600 })],
       ]),
       executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(), runAggregates: null, evidenceAvailability: null,
@@ -236,8 +262,8 @@ describe('structured remediation', () => {
   });
 
   describe('a set-to-value remediation follows the logged conf', () => {
-    const skewStage = makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600 });
-    const partitionSkewStage = makeStage({ id: 2, shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 });
+    const skewStage = makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB });
+    const partitionSkewStage = makeStage({ id: 2, shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50, sqlExecutionId: 7 });
     const slowHostStage = makeStage({
       id: 3, taskCount: 60,
       hostStats: [
@@ -246,8 +272,9 @@ describe('structured remediation', () => {
         { host: 'c', taskCount: 20, totalDuration: 600000 },
       ],
     });
-    const pick = (config) => {
-      const on = (stage) => catalogOf([stage], makeApp({ config }));
+    // An unknown Spark version models no defaults, so only the logged conf decides.
+    const pick = (config, sparkVersion = null) => {
+      const on = (stage) => catalogOf([stage], makeApp({ config, sparkVersion }), JOIN_SQL);
       return {
         skew: on(skewStage).find((f) => f.type === 'skew'),
         partitionSkew: on(partitionSkewStage).find((f) => f.rule === 'shufflePartitionSkew'),
@@ -290,6 +317,25 @@ describe('structured remediation', () => {
       expect(unset.slowHost.recommendation).toMatch(/consider enabling spark\.speculation/);
     });
 
+    it('treats the Spark version default as the effective value when the key is not logged', () => {
+      const aqe = [{ kind: 'conf', key: 'spark.sql.adaptive.enabled', direction: 'set', suggested: true }];
+      // 3.2+: AQE and skew-join handling both default on, so there is nothing to suggest.
+      for (const version of ['3.2.0', '3.5.3', '4.0.0']) {
+        const { skew, partitionSkew } = pick({}, version);
+        for (const f of [skew, partitionSkew]) {
+          expect(f.remediation, `${f.type} ${version}`).toEqual([]);
+          expect(f.recommendation).toMatch(/already on/);
+        }
+      }
+      // 3.0 and 3.1: AQE defaults off, skew-join handling on once AQE is.
+      for (const version of ['3.0.3', '3.1.2']) {
+        expect(pick({}, version).skew.remediation, version).toEqual(aqe);
+      }
+      // A logged value beats the default.
+      expect(pick({ 'spark.sql.adaptive.skewJoin.enabled': 'false' }, '3.5.3').skew.remediation).toEqual(set('spark.sql.adaptive.skewJoin.enabled'));
+      expect(pick({ 'spark.sql.adaptive.enabled': 'false' }, '3.5.3').skew.remediation).toEqual(aqe);
+    });
+
     it('words the grouped generic line for a switch the logged conf already has on, as the row does', () => {
       const on = pick({ 'spark.sql.adaptive.skewJoin.enabled': 'TRUE', 'spark.speculation': 'true' });
       for (const f of [on.skew, on.partitionSkew]) {
@@ -327,7 +373,7 @@ describe('structured remediation', () => {
     it('words the grouped lowShuffleParallelism line as the row does when the logged count is already enough', () => {
       const row = (config) => catalogOf(
         [makeStage({ shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0 })],
-        makeApp({ config }),
+        makeApp({ config: { 'spark.sql.adaptive.enabled': 'false', ...config } }),
       ).find((x) => x.rule === 'lowShuffleParallelism');
       const enough = coreFindingGenericRecommendation(row({ 'spark.sql.shuffle.partitions': '200' }));
       expect(enough).toMatch(/repartition\(n\)/);
@@ -345,7 +391,8 @@ describe('structured remediation', () => {
       expect(off.remediation).toEqual([]);
       expect(off.recommendation).toMatch(/remove the broadcast\(\) hint/);
       expect(coreFindingGenericRecommendation(off)).toMatch(/remove the broadcast\(\) hint/);
-      for (const config of [{}, { 'spark.sql.autoBroadcastJoinThreshold': '10485760' }]) {
+      // Only a threshold above the broadcast could have admitted it, so only then is lowering it advice.
+      for (const config of [{ 'spark.sql.autoBroadcastJoinThreshold': '4g' }, { 'spark.sql.autoBroadcastJoinThreshold': '4294967296' }]) {
         const f = over(config);
         expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.autoBroadcastJoinThreshold', direction: 'decrease', suggested: null }]);
         expect(coreFindingGenericRecommendation(f)).toMatch(/misconfigured spark\.sql\.autoBroadcastJoinThreshold/);
@@ -383,6 +430,265 @@ describe('structured remediation', () => {
       expect(java.remediation).toEqual([{ kind: 'conf', key: 'spark.serializer', direction: 'set', suggested: KRYO }]);
       const kryo = auditConfig({ config: { 'spark.serializer': KRYO }, resources: res }).find((f) => f.property === 'spark.serializer');
       expect(kryo).toBeUndefined();
+    });
+  });
+});
+
+describe('skew remediation follows what the stage reads', () => {
+  const app = makeApp({ sparkVersion: '3.1.2', config: {} });
+  const AGG_SQL = new Map([[8, { id: 8, planTree: { name: 'HashAggregate', detail: '', metrics: [], children: [] } }]]);
+  const skewOf = (stage, sql) => catalogOf([stage], app, sql).find((f) => f.type === 'skew');
+  const skewed = { taskDurationP50: 100, taskDurationP95: 600 };
+
+  it('flags a shuffle read feeding a join as shuffleJoin and suggests skew-join handling', () => {
+    const f = skewOf(makeStage({ ...skewed, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB }), JOIN_SQL);
+    expect(f.origin).toBe('shuffleJoin');
+    expect(f.remediation.map((r) => r.key)).toEqual(['spark.sql.adaptive.enabled']);
+    expect(f.recommendation).toMatch(/skew-join/);
+  });
+
+  it('points a scan with uneven input at file sizes, not at skew-join handling', () => {
+    const f = skewOf(makeStage({ ...skewed, sqlExecutionId: 7, inputBytes: 220 * MiB }), JOIN_SQL);
+    expect(f.origin).toBe('inputScan');
+    expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.files.maxPartitionBytes', direction: 'decrease', suggested: null }]);
+    expect(f.recommendation).toMatch(/compact small files.*maxPartitionBytes/);
+    expect(f.recommendation).not.toMatch(/skewJoin|AQE/);
+    expect(coreFindingGenericRecommendation(f)).toMatch(/compact small files/);
+  });
+
+  it('suggests no conf for a shuffle that feeds no join, or for a stage the plan cannot tie to one', () => {
+    for (const [stage, sql] of [
+      [makeStage({ ...skewed, sqlExecutionId: 8, shuffleReadBytes: 400 * MiB }), AGG_SQL],
+      [makeStage({ ...skewed, shuffleReadBytes: 400 * MiB }), new Map()],
+      [makeStage({ ...skewed }), new Map()],
+    ]) {
+      const f = skewOf(stage, sql);
+      expect(f.origin).toBe('other');
+      expect(f.remediation).toEqual([]);
+      expect(f.recommendation).not.toMatch(/skewJoin|AQE/);
+      expect(coreFindingGenericRecommendation(f)).toMatch(/salt the key/);
+    }
+  });
+
+  it('gates the partition-skew rule the same way and publishes the origin as evidence', () => {
+    const stage = { shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 };
+    const join = catalogOf([makeStage({ ...stage, sqlExecutionId: 7 })], app, JOIN_SQL).find((f) => f.rule === 'shufflePartitionSkew');
+    const agg = catalogOf([makeStage({ ...stage, sqlExecutionId: 8 })], app, AGG_SQL).find((f) => f.rule === 'shufflePartitionSkew');
+    expect(join.origin).toBe('shuffleJoin');
+    expect(join.remediation.length).toBeGreaterThan(0);
+    expect(agg.origin).toBe('other');
+    expect(agg.remediation).toEqual([]);
+    const fx = {
+      app, stages: new Map([[1, makeStage({ ...stage, sqlExecutionId: 8 })]]),
+      executors: { added: [], removed: [] }, sql: AGG_SQL, jobs: new Map(), runAggregates: null, evidenceAvailability: null,
+    };
+    const { json } = buildEvidenceReport(fx);
+    expect(json.findings.find((r) => r.evidence.rule === 'shufflePartitionSkew').evidence.origin).toBe('other');
+  });
+});
+
+describe('partition-skew rule on a stage whose input exceeds its shuffle read', () => {
+  it('keeps a shuffle-based origin, never the input-file remedy', () => {
+    const app = makeApp();
+    const stage = makeStage({
+      shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB,
+      inputBytes: 2000 * MiB, taskCount: 50, sqlExecutionId: 7,
+    });
+    const f = catalogOf([stage], app, JOIN_SQL).find((x) => x.rule === 'shufflePartitionSkew');
+    expect(f.origin).toBe('shuffleJoin');
+    expect(f.recommendation).not.toMatch(/maxPartitionBytes/);
+    expect(f.remediation.map((r) => r.key ?? r.name)).not.toContain('spark.sql.files.maxPartitionBytes');
+  });
+});
+
+describe('findings for stages that read no shuffle or that have an even host count', () => {
+  const app = makeApp();
+
+  it('does not suggest shuffle partitions for a slow stage that reads no shuffle', () => {
+    const slow = (extra) => catalogOf([makeStage({ submittedAt: 0, completedAt: 20 * 60000, ...extra })], app).find((f) => f.type === 'stageSlowness');
+    const shuffle = slow({ shuffleReadBytes: 10 * MiB });
+    expect(shuffle.reads).toBe('shuffle');
+    expect(shuffle.remediation.map((r) => r.key)).toEqual(['spark.sql.shuffle.partitions', 'spark.default.parallelism']);
+    const scan = slow({ inputBytes: 10 * MiB });
+    expect(scan.reads).toBe('input');
+    expect(scan.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.files.maxPartitionBytes', direction: 'decrease', suggested: null }]);
+    expect(scan.recommendation).not.toMatch(/shuffle\.partitions/);
+    expect(coreFindingGenericRecommendation(scan)).toMatch(/maxPartitionBytes/);
+    const neither = slow({});
+    expect(neither.reads).toBe('other');
+    expect(neither.remediation).toEqual([]);
+  });
+
+  it('measures a slow host against the textbook median of the host means', () => {
+    // Means 1000, 1000, 1900, 3700 ms: the median is 1450 (not the upper middle, 1900), so the
+    // slowest host runs 2.55x it and is flagged; against 1900 it would be 1.95x and pass.
+    const hostStats = [1000, 1000, 1900, 3700].map((mean, i) => ({ host: `h${i}`, taskCount: 10, totalDuration: mean * 10 }));
+    const found = catalogOf([makeStage({ taskCount: 40, hostStats })], app).filter((f) => f.type === 'slowHost');
+    expect(found.map((f) => f.host)).toEqual(['h3']);
+    expect(found[0].value).toBe(2.6);
+  });
+});
+
+describe('remediation fits the stage, plan and effective conf across finding types', () => {
+  const GiB = 1024 * MiB;
+  const keys = (f) => f.remediation.map((r) => r.key);
+  const of = (type, stages, app, sql = new Map(), rule) => catalogOf(stages, app, sql).find((f) => f.type === type && (rule == null || f.rule === rule));
+  const key = (name, direction) => ({ kind: 'conf', key: name, direction, suggested: null });
+
+  describe('spill', () => {
+    const spilled = { memoryBytesSpilled: 5 * GiB, spillClassification: 'unclassified' };
+    it('drops the shuffle-partition advice for a stage that reads no shuffle, and says why in evidence', () => {
+      const scan = of('spill', [makeStage({ ...spilled, inputBytes: 10 * GiB })], makeApp());
+      expect(scan.reads).toBe('input');
+      expect(keys(scan)).toEqual(['spark.executor.memory']);
+      expect(scan.recommendation).not.toMatch(/shuffle\.partitions/);
+      expect(coreFindingGenericRecommendation(scan)).not.toMatch(/shuffle\.partitions/);
+    });
+    it('keeps it for a stage that reads a shuffle', () => {
+      const f = of('spill', [makeStage({ ...spilled, shuffleReadBytes: 10 * GiB })], makeApp());
+      expect(f.reads).toBe('shuffle');
+      expect(keys(f)).toEqual(['spark.sql.shuffle.partitions', 'spark.executor.memory']);
+    });
+  });
+
+  describe('shuffle', () => {
+    const app = (config, sparkVersion = null) => makeApp({ config, sparkVersion });
+    it('does not suggest more partitions when the tasks are already a good size', () => {
+      // 200 MiB over 5000 tasks with a logged count of 5000.
+      const f = of('shuffle', [makeStage({ shuffleReadBytes: 200 * MiB, taskCount: 5000 })], app({ 'spark.sql.shuffle.partitions': '5000' }));
+      expect(f.partitions).toBe('sufficient');
+      expect(f.remediation).toEqual([]);
+      expect(f.recommendation).toMatch(/broadcast join/);
+      expect(f.recommendation).not.toMatch(/increasing spark\.sql\.shuffle\.partitions/);
+    });
+    it('points at the advisory partition size when AQE coalesced a shuffle that is still large', () => {
+      const f = of('shuffle', [makeStage({ shuffleReadBytes: 600 * MiB, taskCount: 2 })], app({}, '3.5.3'));
+      expect(f.partitions).toBe('aqeCoalesced');
+      expect(f.remediation).toEqual([key('spark.sql.adaptive.advisoryPartitionSizeInBytes', 'decrease')]);
+    });
+    it('points at the stage\'s own partitioning when the property already gives the count needed', () => {
+      const f = of('shuffle', [makeStage({ shuffleReadBytes: 600 * MiB, taskCount: 2 })], app({ 'spark.sql.adaptive.enabled': 'false' }));
+      expect(f.partitions).toBe('ownPartitioning');
+      expect(f.remediation).toEqual([]);
+      expect(f.recommendation).toMatch(/repartition\(n\)/);
+    });
+    it('suggests more partitions when the property is what limits the stage', () => {
+      const f = of('shuffle', [makeStage({ shuffleReadBytes: 600 * MiB, taskCount: 2 })], app({ 'spark.sql.shuffle.partitions': '2', 'spark.sql.adaptive.enabled': 'false' }));
+      expect(f.partitions).toBe('raise');
+      expect(f.remediation).toEqual([key('spark.sql.shuffle.partitions', 'increase')]);
+    });
+  });
+
+  describe('autoscalingChurn and coldStart follow dynamic allocation', () => {
+    const added = Array.from({ length: 10 }, (_, i) => ({ executorId: String(i + 1), timestamp: 0, totalCores: 1 }));
+    const removed = added.map((e) => ({ executorId: e.executorId, timestamp: 60_000 }));
+    const churn = (config) => analyze(makeApp({ startTime: 0, endTime: 600_000, config }), new Map(), added, removed, new Map())
+      .find((f) => f.type === 'autoscalingChurn');
+    it('gives no dynamic-allocation advice when the run turns it off', () => {
+      const off = churn({ 'spark.dynamicAllocation.enabled': 'false' });
+      expect(off.dynamicAllocation).toBe('off');
+      expect(off.remediation).toEqual([]);
+      expect(off.recommendation).not.toMatch(/spark\.dynamicAllocation/);
+      expect(coreFindingGenericRecommendation(off)).not.toMatch(/spark\.dynamicAllocation/);
+      const on = churn({ 'spark.dynamicAllocation.enabled': 'true' });
+      expect(on.dynamicAllocation).toBe('on');
+      expect(on.remediation).toHaveLength(3);
+    });
+    it('records on coldStart which case fired', () => {
+      const cold = (config) => analyze(
+        makeApp({ config }), new Map([[1, makeStage({ id: 1, submittedAt: 60_000, completedAt: 70_000 })]]),
+        [{ executorId: '1', timestamp: 120_000, totalCores: 4 }], [], new Map(),
+      ).find((f) => f.type === 'coldStart');
+      expect(cold({ 'spark.dynamicAllocation.enabled': 'false' }).dynamicAllocation).toBe('off');
+      expect(cold({ 'spark.dynamicAllocation.enabled': 'false' }).remediation).toEqual([]);
+      expect(cold({ 'spark.dynamicAllocation.enabled': 'true' }).dynamicAllocation).toBe('on');
+    });
+  });
+
+  describe('straggler prose follows the stage', () => {
+    const straggler = { taskCount: 100, stragglerCount: 20, taskDurationP50: 100, taskDurationP95: 900, taskDurationMax: 5000 };
+    const app = makeApp({ sparkVersion: '3.5.3' });
+    it('names no AQE skew-join sentence for a scan stage, and no conf for an unrelated one', () => {
+      const scan = of('straggler', [makeStage({ ...straggler, inputBytes: 10 * GiB })], app);
+      expect(scan.origin).toBe('inputScan');
+      expect(scan.recommendation).not.toMatch(/AQE|skewJoin/);
+      expect(keys(scan)).toEqual(['spark.sql.files.maxPartitionBytes']);
+      expect(coreFindingGenericRecommendation(scan)).not.toMatch(/AQE|skewJoin/);
+      const other = of('straggler', [makeStage({ ...straggler })], app);
+      expect(other.origin).toBe('other');
+      expect(other.remediation).toEqual([]);
+    });
+    it('says skew-join handling is already on for a join stage on Spark 3.5, and suggests it where it is off', () => {
+      const stage = makeStage({ ...straggler, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB });
+      const on = of('straggler', [stage], app, JOIN_SQL);
+      expect(on.origin).toBe('shuffleJoin');
+      expect(on.remediation).toEqual([]);
+      expect(on.recommendation).toMatch(/already on/);
+      const off = of('straggler', [stage], makeApp({ sparkVersion: '3.5.3', config: { 'spark.sql.adaptive.skewJoin.enabled': 'false' } }), JOIN_SQL);
+      expect(keys(off)).toEqual(['spark.sql.adaptive.skewJoin.enabled']);
+    });
+  });
+
+  describe('broadcast thresholds', () => {
+    const exchange = (bytes) => ({ name: 'Exchange', detail: '', id: 'x', metrics: [{ name: 'data size', value: bytes, metricType: 'size' }], children: [] });
+    const joinPlan = (small, large) => new Map([[1, { id: 1, planTree: { name: 'SortMergeJoin', detail: '', metrics: [], children: [exchange(small), exchange(large)] } }]]);
+    const broadcastPlan = (bytes) => new Map([[1, { id: 1, planTree: { name: 'BroadcastExchange', detail: '', id: 'b', metrics: [{ name: 'data size', value: bytes, metricType: 'size' }], children: [] } }]]);
+    const run = (type, sql, config) => catalogOf([], makeApp({ config, sparkVersion: null }), sql).find((f) => f.type === type);
+
+    it('does not raise a threshold that already admits the smaller side', () => {
+      // 5 MiB is under both Spark's 10 MiB default and a logged 1 GiB.
+      for (const config of [{}, { 'spark.sql.autoBroadcastJoinThreshold': '1g' }]) {
+        const f = run('underBroadcast', joinPlan(5 * MiB, 20 * GiB), config);
+        expect(f.broadcastThreshold).toBe('notLimiting');
+        expect(f.remediation).toEqual([]);
+        expect(f.recommendation).toMatch(/statistics/);
+        expect(coreFindingGenericRecommendation(f)).toMatch(/already admits/);
+      }
+    });
+    it('still raises it when the threshold is below the smaller side or auto-broadcast is disabled', () => {
+      const below = run('underBroadcast', joinPlan(5 * MiB, 20 * GiB), { 'spark.sql.autoBroadcastJoinThreshold': '1m' });
+      expect(below.broadcastThreshold).toBe('limits');
+      expect(keys(below)).toEqual(['spark.sql.autoBroadcastJoinThreshold']);
+      const off = run('underBroadcast', joinPlan(5 * MiB, 20 * GiB), { 'spark.sql.autoBroadcastJoinThreshold': '-1' });
+      expect(off.broadcastThreshold).toBe('disabled');
+      expect(keys(off)).toEqual(['spark.sql.autoBroadcastJoinThreshold']);
+    });
+    it('does not lower a threshold that is already below the broadcast that fired', () => {
+      // A 1.5 GiB broadcast cannot come from the 10 MiB default: a hint forced it.
+      for (const config of [{}, { 'spark.sql.autoBroadcastJoinThreshold': '100m' }]) {
+        const f = run('overBroadcast', broadcastPlan(1.5 * GiB), config);
+        expect(f.broadcastThreshold).toBe('notLimiting');
+        expect(f.remediation).toEqual([]);
+        expect(f.recommendation).toMatch(/hint forced it/);
+        expect(coreFindingGenericRecommendation(f)).toMatch(/remove the broadcast\(\) hint/);
+      }
+      const huge = run('overBroadcast', broadcastPlan(1.5 * GiB), { 'spark.sql.autoBroadcastJoinThreshold': '4g' });
+      expect(huge.broadcastThreshold).toBe('limits');
+      expect(keys(huge)).toEqual(['spark.sql.autoBroadcastJoinThreshold']);
+      expect(run('overBroadcast', broadcastPlan(1.5 * GiB), { 'spark.sql.autoBroadcastJoinThreshold': '-1' }).broadcastThreshold).toBe('disabled');
+    });
+  });
+
+  describe('skew advice on Spark 2.x', () => {
+    it('does not suggest AQE, which does not exist before Spark 3.0', () => {
+      const f = of('skew', [makeStage({ taskDurationP50: 100, taskDurationP95: 600, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB })], makeApp({ sparkVersion: '2.4.8' }), JOIN_SQL);
+      expect(f.origin).toBe('other');
+      expect(f.remediation).toEqual([]);
+      expect(f.recommendation).not.toMatch(/AQE/);
+    });
+  });
+
+  describe('tinyTask, speculationWaste and the shuffle remedy', () => {
+    const tiny = { taskCount: 200, taskDurationP50: 50, taskDurationP95: 100, taskDurationMax: 100 };
+    it('records what a tiny-task stage reads and gives the shuffle remedy only to a shuffle stage', () => {
+      const shuffle = of('tinyTask', [makeStage({ ...tiny, shuffleReadBytes: 10 * MiB })], makeApp());
+      expect(shuffle.reads).toBe('shuffle');
+      expect(keys(shuffle)).toEqual(['spark.sql.shuffle.partitions']);
+      const scan = of('tinyTask', [makeStage({ ...tiny, inputBytes: 10 * GiB, shuffleReadBytes: 1024 })], makeApp());
+      expect(scan.reads).toBe('input');
+      expect(scan.remediation).toEqual([]);
+      expect(scan.recommendation).not.toMatch(/shuffle\.partitions/);
+      expect(coreFindingGenericRecommendation(scan)).not.toMatch(/shuffle\.partitions/);
     });
   });
 });

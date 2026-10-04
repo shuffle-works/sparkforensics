@@ -18,17 +18,29 @@ section; `PART` is on the `SHFL` page, `SPEC` on `STRAG`, `SHAPE` on `SKEW`,
 ### `SKEW`: Task skew {#skew}
 
 A small number of tasks take much longer than their peers in the same
-stage. For join-driven skew, enable AQE skew-join handling
-(`spark.sql.adaptive.skewJoin.enabled`); otherwise salt the key or
-repartition on a better key. Flagged when P95 task time (the longest task,
-on a stage with fewer than 20 tasks) exceeds 3x the median and the
-recoverable tail is at least 0.5% of the run.
+stage. The fix depends on what the stage reads, which the finding's
+`evidence.origin` records. A stage that reads a shuffle feeding a join
+(`shuffleJoin`) gets AQE skew-join handling
+(`spark.sql.adaptive.skewJoin.enabled`), unless the run's effective conf
+already has it; otherwise salt the key or repartition on a better key. A
+stage that reads files with uneven sizes (`inputScan`) gets compaction of
+small files or a lower `spark.sql.files.maxPartitionBytes`. Any other stage
+(`other`) gets the salting advice and no conf. Flagged when P95 task time
+(the longest task, on a stage with fewer than 20 tasks) exceeds 3x the median
+and the recoverable tail is at least 0.5% of the run. The median is the
+textbook one: on an even task count, the mean of the two middle values.
 
 ### `SHFL`: Shuffle I/O {#shfl}
 
 Tasks move a large amount of intermediate data between stages. Raise
-`spark.sql.shuffle.partitions`, or add a broadcast join. Only flagged on
-stages that take at least 0.5% of the run.
+`spark.sql.shuffle.partitions`, or add a broadcast join. The partition-count
+advice follows the effective conf (`evidence.partitions`): `raise` when the
+property limits the stage, `sufficient` when the tasks already read a good
+size each, `aqeCoalesced` when AQE merged the partitions (lower
+`spark.sql.adaptive.advisoryPartitionSizeInBytes`), and `ownPartitioning` when
+the property is already high enough (the stage's own `repartition(n)` or RDD
+parallelism limits it). Only flagged on stages that take at least 0.5% of the
+run.
 
 ### `SPILL`: Memory and disk spill {#spill}
 
@@ -36,7 +48,10 @@ Tasks are writing data out of memory, which slows execution. Two spill
 patterns get flagged differently: skew spill, where a few heavy tasks spill
 while most don't (rebalance partitioning), and volume spill, where most
 tasks spill because the data genuinely exceeds available memory (add
-partitions or executor memory). Only flagged on stages that take at least 0.5% of the run.
+partitions or executor memory). `spark.sql.shuffle.partitions` is suggested
+only for a stage that reads a shuffle; `evidence.reads` says what the stage
+reads (`shuffle`, `input` or `other`). Only flagged on stages that take at
+least 0.5% of the run.
 
 ### `GC`: Garbage collection pressure {#gc}
 
@@ -67,9 +82,11 @@ carry file paths and data values.
 ### `STRAG`: Straggler tasks {#strag}
 
 A few tasks run much slower than the rest of their stage. Rule out a GC
-pause or a slow shuffle fetch before assuming a hardware issue; if a skewed
-key is the real cause, that's a candidate for AQE's skew-join handling. Only
-flagged on stages that take at least 0.5% of the run.
+pause or a slow shuffle fetch before assuming a hardware issue. If uneven
+data is the cause, the advice is the one a skew finding gives for the same
+stage (`evidence.origin`, see `SKEW`): AQE skew-join handling for a shuffle
+feeding a join, file sizes for a scan, salting otherwise. Only flagged on
+stages that take at least 0.5% of the run.
 
 ### `SPEC`: Speculation waste {#spec}
 
@@ -87,8 +104,9 @@ completed. Investigate executor loss or fetch failures.
 ### `TINY`: Tiny tasks {#tiny}
 
 Many very short tasks add scheduling overhead out of proportion to the work
-each one does. Repartition to fewer, larger tasks. Only flagged on stages that
-take at least 0.5% of the run.
+each one does. Repartition to fewer, larger tasks; a stage that reads a shuffle
+(`evidence.reads` is `shuffle`) can also lower `spark.sql.shuffle.partitions`.
+Only flagged on stages that take at least 0.5% of the run.
 
 ### `PART`: Partition sizing {#part}
 
@@ -99,9 +117,13 @@ repartition to break it up before the stage runs.
 ### `SLOW`: Stage slowness {#slow}
 
 A stage ran for 15 minutes or more and no slow host was flagged on it. It
-can appear alongside other findings on the same stage. Often a partition-count problem: raise parallelism via
+can appear alongside other findings on the same stage. On a stage that reads a
+shuffle, often a partition-count problem: raise parallelism via
 `spark.sql.shuffle.partitions` or `spark.default.parallelism`, or check for a
-large per-task data volume driving heavy shuffle and spill.
+large per-task data volume driving heavy shuffle and spill. On a stage that
+reads input files and no shuffle, check input file sizes and lower
+`spark.sql.files.maxPartitionBytes`. `evidence.reads` says which case
+applied (`shuffle`, `input` or `other`).
 
 ### `SHAPE`: Stage shape {#shape}
 
@@ -126,7 +148,8 @@ flagged on stages that take at least 0.5% of the run.
 The first stage waited more than 30 s for an executor. Keep a warm pool of
 executors, or, with dynamic allocation, raise
 `spark.dynamicAllocation.minExecutors`/`initialExecutors` so the app doesn't
-scale up from zero.
+scale up from zero. With dynamic allocation off (`evidence.dynamicAllocation`
+is `off`) no executor-count property applies and `remediation` is empty.
 
 ### `UTIL`: Low utilization {#util}
 
@@ -182,7 +205,9 @@ size: the thresholds are our own noise floor for this metric.
 Executors are stood up and torn down again before they can do useful work:
 re-provisioning churn rather than normal scale-down. Raise
 `spark.dynamicAllocation.executorIdleTimeout`, or widen the
-`minExecutors`/`maxExecutors` bounds to reduce flapping. Self-flags a
+`minExecutors`/`maxExecutors` bounds to reduce flapping. With dynamic
+allocation off (`evidence.dynamicAllocation` is `off`) none of those applies:
+the churn is executor loss or preemption, and `remediation` is empty. Self-flags a
 confidence that scales with how far the short-lived-executor share sits
 past the threshold.
 
@@ -232,7 +257,14 @@ this tag:
   under 3 MB. Compact upstream output, or coalesce before writing.
 - Under-broadcast: the smaller side of a Sort Merge Join looks well under
   the broadcast threshold; consider a `broadcast()` hint or raising
-  `spark.sql.autoBroadcastJoinThreshold`.
+  `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold
+  (logged, else Spark's 10 MiB) already admits the smaller side
+  (`evidence.broadcastThreshold` is `notLimiting`), the threshold is not what
+  stopped the broadcast, so `remediation` is empty and the advice is a hint or
+  table statistics.
 - Over-broadcast: a broadcast exceeds the 1 GB threshold; check for a
   misapplied broadcast hint or a misconfigured
-  `spark.sql.autoBroadcastJoinThreshold`.
+  `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold is
+  below the broadcast or auto-broadcast is disabled (`evidence.broadcastThreshold`
+  is `notLimiting` or `disabled`), a hint forced it: remove the hint, and
+  `remediation` is empty.

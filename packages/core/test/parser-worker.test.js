@@ -586,7 +586,7 @@ describe('computeDurationQuantiles', () => {
     const arr = new Float64Array(10 * FIELDS.STRIDE);
     for (let i = 0; i < 10; i++) arr[i * FIELDS.STRIDE + FIELDS.DURATION] = i + 1;
     const { p50, p95, max } = computeDurationQuantiles(arr);
-    expect(p50).toBe(5);
+    expect(p50).toBe(5.5);
     expect(p95).toBe(10);
     expect(max).toBe(10);
   });
@@ -610,9 +610,30 @@ describe('computeFieldQuantiles', () => {
     const arr = new Float64Array(10 * FIELDS.STRIDE);
     for (let i = 0; i < 10; i++) arr[i * FIELDS.STRIDE + FIELDS.SHUFFLE_READ] = (i + 1) * 100;
     const { p50, p95, max } = computeFieldQuantiles(arr, FIELDS.SHUFFLE_READ);
-    expect(p50).toBe(500);
+    expect(p50).toBe(550);
     expect(p95).toBe(1000);
     expect(max).toBe(1000);
+  });
+
+  it('takes the median of an even count as the mean of the two middle values', () => {
+    // Six task durations from a bimodal scan stage: the lower middle value (257) is not the median.
+    const durations = [137, 219, 257, 28345, 34157, 44374];
+    const arr = new Float64Array(durations.length * FIELDS.STRIDE);
+    durations.forEach((d, i) => { arr[i * FIELDS.STRIDE + FIELDS.DURATION] = d; });
+    const { p50, max } = computeDurationQuantiles(arr);
+    expect(p50).toBe(14301);
+    expect(Math.round((max / p50) * 10) / 10).toBe(3.1);
+  });
+
+  it('takes the middle value of an odd count and keeps shuffle-read and spill medians textbook too', () => {
+    for (const field of [FIELDS.SHUFFLE_READ, FIELDS.MEM_SPILLED, FIELDS.DISK_SPILLED]) {
+      const arr = new Float64Array(4 * FIELDS.STRIDE);
+      [0, 10, 20, 100].forEach((v, i) => { arr[i * FIELDS.STRIDE + field] = v; });
+      expect(computeFieldQuantiles(arr, field).p50).toBe(15);
+      const odd = new Float64Array(3 * FIELDS.STRIDE);
+      [0, 10, 100].forEach((v, i) => { odd[i * FIELDS.STRIDE + field] = v; });
+      expect(computeFieldQuantiles(odd, field).p50).toBe(10);
+    }
   });
 
   it('computeDurationQuantiles is a thin wrapper over computeFieldQuantiles(arr, FIELDS.DURATION)', () => {
