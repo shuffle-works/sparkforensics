@@ -115,7 +115,19 @@ JSON and the MCP tools call the same core functions:
   report an unredacted comparison by skipping it), and returns the redacted
   `CompareRunsResult` for the budget checks and the Markdown renderer, plus
   `comparisonOutput()`'s projection: `verdict`, `confidence`, `reason`,
-  `matchedCoverage`, `metrics`, `findings`. That projection is the CLI's
+  `matchedCoverage`, `runtimeCoverage`, `metrics`, `findings`, and the
+  comparison block `comparisonSchemaVersion`, `stagePairs`, `unmatched`,
+  `replanned`, `bookkeepingStageIds` (built by the aligner, see
+  [Run comparison internals](../state-and-history/run-comparison-internals.md)).
+  `comparisonOutput()` takes a `view`: `full` (the CLI) carries every field,
+  `summary` (MCP's default) leaves out `stagePairs`, which `compare_runs` adds
+  back for `include: ['stagePairs']`.
+  `buildComparisonOutput()` also takes `normalizePath`, the CLI's repeatable
+  `--normalize-path` and `compare_runs`' `normalizePath`: it reaches
+  `compareRuns` the way `thresholds` reaches `analyze()` and stays out of the run
+  cache key, because it only affects the comparison. The CLI validates the
+  patterns before any log is parsed (exit 2) and MCP before any run is resolved.
+  That projection is the CLI's
   `comparison` object and the shared part of `compare_runs`. `compare_runs` also
   returns `metricDeltas` and `findingsDelta`, deprecated aliases of `metrics` and
   `findings` kept for one release.

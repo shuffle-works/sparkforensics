@@ -10,6 +10,7 @@ import { buildEvidenceReport, runFindings, toFindingsFilter, type FindingRow, ty
 import { computeWallClock } from './wall-clock.ts';
 import { renderComparisonMarkdown, type CompareRunsResult } from './run-comparison.ts';
 import { buildComparisonOutput, type ComparisonOutput } from './comparison-output.ts';
+import { compileNormalizePatterns } from './stage-alignment.ts';
 import { runOutputBlocks } from './run-output.ts';
 import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { combineRegressionBudgets } from './cli/regression-budgets.ts';
@@ -349,8 +350,15 @@ async function resolveAndAnalyze(
 }
 
 export async function compareRuns(
-  a: RunRef, b: RunRef, opts?: { redact?: boolean; markdown?: boolean; thresholds?: ThresholdOverrides },
+  a: RunRef, b: RunRef, opts?: { redact?: boolean; markdown?: boolean; thresholds?: ThresholdOverrides; normalizePath?: readonly string[];
+    /** `stagePairs`: add the per-pair rows, which the default view leaves out. */ include?: Array<'stagePairs'> },
 ): Promise<McpCompareRunsResult & { markdown?: string; tunedThresholds?: Record<string, TunedThresholds> }> {
+  // Before any log is read: a bad pattern refuses the call, as the CLI's usage error does.
+  try {
+    compileNormalizePatterns(opts?.normalizePath);
+  } catch (e) {
+    throw mcpError('access-or-upstream-failure', `normalizePath: ${(e as Error).message}`);
+  }
   const [
     { runId: runIdA, appModel: appModelA, catalog: catalogA },
     { runId: runIdB, appModel: appModelB, catalog: catalogB },
@@ -363,7 +371,7 @@ export async function compareRuns(
   const { comparison, output } = buildComparisonOutput(
     { label: runIdA, appModel: appModelA, catalog: catalogA },
     { label: runIdB, appModel: appModelB, catalog: catalogB },
-    { redact: opts?.redact },
+    { redact: opts?.redact, normalizePath: opts?.normalizePath, view: opts?.include?.includes('stagePairs') ? 'full' : 'summary' },
   );
 
   return {

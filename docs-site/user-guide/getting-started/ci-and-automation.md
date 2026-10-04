@@ -121,7 +121,9 @@ comparing a candidate run against a baseline with regression gating
 `--fail-on-introduced`; the baseline is a local file or rolling-log
 directory, no History Server), several regression budgets and several
 candidates in one call (`--regression-budget`/`--budgets`, see
-[Several budgets and several candidates](#several-budgets-and-several-candidates)), redacting the app id, the app name and any host/IP
+[Several budgets and several candidates](#several-budgets-and-several-candidates)),
+rewriting run-specific text before stages are paired (`--normalize-path`, see
+[Pairing stages across runs](#pairing-stages-across-runs)), redacting the app id, the app name and any host/IP
 tokens before sharing output (`--redact`), and narrowing the findings to certain impact
 bands, types, or a stage (`--impact`/`--type`/`--stage`), and tuning
 detector thresholds from a file (`--thresholds`, below). Run it with
@@ -463,6 +465,36 @@ application's `app-N` pseudonym. A host name that appears only in some other
 property, such as `spark.yarn.historyServer.address`, is left as is; withhold
 it with `--conf-redact-regex` or leave it out with `--conf-keys`.
 
+## Pairing stages across runs {#pairing-stages-across-runs}
+
+With `--baseline`, the `comparison` object pairs the stages of the two runs
+(`stagePairs`, with each pair's `deltas`) and reports `runtimeCoverage`, the
+share of both runs' executor run time that sits in paired stages. `confidence`
+is `ok`, `low` or `insufficient`: `low` when the application names differ or
+`runtimeCoverage` is under 0.9, `insufficient` when neither run recorded any
+executor run time. `confidence` does not change an exit code. The fields and
+the matching rules are in [`compare_runs`](../mcp-tools/compare-runs.md) and
+[How stages are matched](../run-comparison/how-stages-are-matched.md).
+
+When a stage writes to a path that differs per run, for example
+`{sandbox_root}/{session}/{variant}/{batch}` where the variant is `baseline` in
+one run and `c07b` in the other, the write stage cannot pair, and it is often
+the heaviest. Pass `--normalize-path <regex>`, repeatable, to rewrite what the
+patterns match, in every plan node's text, before stages are paired:
+
+```bash
+sparkforensics-analyze candidate --baseline baseline \
+  --normalize-path '/sandbox/[^/]+/[^/]+/' --format json
+```
+
+Every match is replaced with a fixed token. Despite the name it is a generic
+regular expression, not only for paths. It needs `--baseline` and applies to
+every candidate of a several-candidates run. It changes which stages pair, and
+so `stagePairs`, `runtimeCoverage` and `confidence`; findings and the other
+metrics are untouched. At most 16 patterns of 200 characters each. An invalid
+pattern, or one that matches the empty string, exits `2` before any log is
+read.
+
 ## Several budgets and several candidates
 
 ### Several regression budgets
@@ -525,7 +557,7 @@ Each line is one JSON object:
 | `error` | The message when `status` is `error`; otherwise `null`. With `--redact`, a generic message that names no path. |
 | `budgets` | This candidate's budget results, each with `name`, `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric` on `max-regression`. Empty for an `error` line. |
 | `candidate` | The candidate's report with its `metrics` and `effectiveConf` blocks, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
-| `comparison` | `verdict`, `confidence`, `reason`, `matchedCoverage`, `metrics` and `findings`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
+| `comparison` | `verdict`, `confidence`, `reason`, `matchedCoverage`, `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`, `stagePairs`, `unmatched`, `replanned` and `bookkeepingStageIds`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
 
 A line's `status` follows the single-candidate rules: `violation` if any
 budget result is a violation, else `inconclusive` if any is inconclusive

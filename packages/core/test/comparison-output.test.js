@@ -19,9 +19,23 @@ describe('comparisonOutput', () => {
   it('projects the fields the CLI reports, in the CLI\'s key order', () => {
     const built = buildComparison(run('baseline', 'App', 'app-1'), run('candidate', 'App', 'app-2'));
     const out = comparisonOutput(built);
-    expect(Object.keys(out)).toEqual(['verdict', 'confidence', 'reason', 'matchedCoverage', 'metrics', 'findings']);
+    expect(Object.keys(out)).toEqual([
+      'verdict', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
+      'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds',
+    ]);
     expect(out.verdict).toEqual(comparisonVerdict(built));
     expect(out.metrics).toBe(built.metrics);
+  });
+});
+
+describe('comparisonOutput views', () => {
+  it('leaves only stagePairs out of the summary view', () => {
+    const built = buildComparison(run('baseline', 'App', 'app-1'), run('candidate', 'App', 'app-2'));
+    const full = comparisonOutput(built, 'full');
+    const summary = comparisonOutput(built, 'summary');
+    expect(Object.keys(full)).toContain('stagePairs');
+    expect(Object.keys(summary)).toEqual(Object.keys(full).filter((k) => k !== 'stagePairs'));
+    expect(comparisonOutput(built)).toEqual(full);
   });
 });
 

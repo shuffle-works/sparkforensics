@@ -3,9 +3,13 @@
 Reference for the `compare_runs` tool of the SparkForensics MCP server.
 
 Compare two runs: the comparison page's verdict, metric deltas (`metrics`) and
-categorized findings delta (`findings`). The result carries the same
-`verdict`, `confidence`, `reason`, `matchedCoverage`, `metrics` and `findings`
-as the `comparison` object of the CLI's `--baseline` JSON output, plus
+categorized findings delta (`findings`), and the share of executor run time in
+paired stages (`runtimeCoverage`). The result
+carries the same `verdict`, `confidence`, `reason`, `matchedCoverage`,
+`runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`,
+`unmatched`, `replanned` and `bookkeepingStageIds` as the
+`comparison` object of the CLI's `--baseline` JSON output, plus `stagePairs`
+when `include` asks for it (the CLI always carries it), plus
 `runIdA` and `runIdB`. `metricDeltas` and `findingsDelta` repeat `metrics` and
 `findings` under their earlier names; they are deprecated and will be removed
 in a later release. `verdict` is the headline the dashboard's comparison page
@@ -24,6 +28,18 @@ Parameters:
 - `redact`: `boolean` (default `false`), pseudonymizes any app id or host/IP
   tokens embedded in free text (stage names and similar) in the response: see
   the note at the top of this page
+- `include`: `["stagePairs"]` (optional), adds `stagePairs`, one row per paired
+  stage. It is left out by default because it grows with the number of stages.
+- `normalizePath`: `string[]` (optional), regular expressions whose every match
+  in a plan node's text is replaced with a fixed token before stages are
+  paired, so text that is specific to your runs does not keep the same stage
+  from pairing. Despite the name it is a generic pattern, not only for paths.
+  It affects stage pairing, `runtimeCoverage` and `confidence`, never the
+  findings. At most 16 patterns of 200 characters each. An invalid pattern, or
+  one that matches the empty string, fails the call before any log is read. A
+  pattern that backtracks catastrophically can stall the server, and the length
+  cap does not prevent that: an agent passing patterns should keep them simple
+  and anchored.
 - `format`: `"json" | "md"` (default `"json"`), switches `content[0].text` to
   a rendered Markdown report instead of JSON. `structuredContent` always
   stays JSON-shaped, regardless of `format`.
@@ -31,7 +47,7 @@ Parameters:
 Each side needs either a `runId` or a `source`, and you can mix them: a
 cached run ID for the baseline, a fresh file for the candidate.
 
-Example call:
+Example call (add `"include": ["stagePairs"]` to the arguments for the pair rows):
 
 ```json
 {
@@ -43,7 +59,7 @@ Example call:
 }
 ```
 
-Example response (`metrics` and `metricDeltas` trimmed to their first row of 11):
+Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` trimmed to their first row of 13, and each pair's `deltas` to three of its eight metrics):
 
 ```json
 {
@@ -53,6 +69,7 @@ Example response (`metrics` and `metricDeltas` trimmed to their first row of 11)
   "confidence": "ok",
   "reason": null,
   "matchedCoverage": 1,
+  "runtimeCoverage": 1,
   "metrics": [
     {
       "key": "wallClock",
@@ -64,6 +81,24 @@ Example response (`metrics` and `metricDeltas` trimmed to their first row of 11)
     }
   ],
   "findings": { "introduced": [], "resolved": [] },
+  "comparisonSchemaVersion": 1,
+  "stagePairs": [
+    {
+      "pairId": "b0-c0",
+      "baseStageIds": [0],
+      "candStageIds": [0],
+      "quality": "exact",
+      "score": 1,
+      "deltas": {
+        "executorRunTime": { "baseline": 1800, "candidate": 900, "delta": -900 },
+        "executorCpuTime": { "baseline": null, "candidate": null, "delta": null },
+        "memoryBytesSpilled": { "baseline": 0, "candidate": 0, "delta": 0 }
+      }
+    }
+  ],
+  "unmatched": { "baseStageIds": [], "candStageIds": [] },
+  "replanned": [],
+  "bookkeepingStageIds": { "baseStageIds": [], "candStageIds": [] },
   "metricDeltas": [
     {
       "key": "wallClock",
@@ -83,6 +118,35 @@ Each `findings.introduced`/`resolved` row is
 `stages` naming the affected stages. A `metrics` row's `direction` is
 `improvement`, `regression`, `unchanged`, `neutral` (a volume metric, where
 more isn't worse) or `unavailable`, and an unavailable row carries an
-`unavailableReason`. `confidence` is `low` when the two runs' names differ or
-under 50% of stages matched between them (`matchedCoverage`), and `reason`
-then says which.
+`unavailableReason`.
+
+The comparison block (`comparisonSchemaVersion` `1`) holds:
+
+- `stagePairs` (only with `include`): one entry per pair of stages, `pairId` (stable for one pair of
+  runs; key on it), `baseStageIds` and `candStageIds`, `quality` (`exact`,
+  `structural` or `aligned`), `score` (0 to 1) and `deltas`. `deltas` has one
+  `{ baseline, candidate, delta }` entry for each of `executorRunTime`,
+  `executorCpuTime` (ms), `memoryBytesSpilled`, `diskBytesSpilled`,
+  `inputBytes`, `outputBytes`, `shuffleReadBytes` and `shuffleWriteBytes`. The
+  figures count every task attempt of the stage, failed ones included, the
+  same sums the whole-run `metrics` use; a figure the log did not record is
+  `null`. A stage's own record in the run report keeps the latest attempt's
+  figures.
+- `unmatched`: `{ baseStageIds, candStageIds }`, the stages that paired with
+  nothing.
+- `replanned`: groups of stages whose plan changed between the runs. Always an
+  empty array.
+- `bookkeepingStageIds`: `{ baseStageIds, candStageIds }`, stages that only read
+  the Delta log or its checkpoints. They are in no pair, not in `unmatched` and
+  not in the coverage.
+- `runtimeCoverage`: the share of both runs' executor run time (bookkeeping
+  stages excluded) in paired stages, or `null` when neither run recorded any.
+- `matchedCoverage`: the share of stages paired by exact match, by count.
+
+Every pair has the quality `exact`; `structural` and `aligned` are reserved values. See [How stages are matched](../run-comparison/how-stages-are-matched.md).
+
+`confidence` is `ok`, `low` or `insufficient`, and `reason` says why when it
+is not `ok`. It is `low` when the two runs' names differ, or when under 90% of
+executor run time is in paired stages (`runtimeCoverage`), for example "Only
+62% of executor run time is in matched stages". It is `insufficient` when
+neither run recorded any executor run time.

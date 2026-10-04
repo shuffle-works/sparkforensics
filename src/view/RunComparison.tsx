@@ -25,11 +25,13 @@ interface CategoryDelta {
 }
 interface ComparisonModel {
   baselineLabel: string; candidateLabel: string;
-  confidence: 'ok' | 'low';
-  reason: string | null; matchedCoverage: number;
+  confidence: 'ok' | 'low' | 'insufficient';
+  reason: string | null;
+  /** Share of executor run time in paired stages; null when neither run recorded any. */
+  runtimeCoverage: number | null;
   metrics: MetricDelta[];
   findings: { introduced: CategoryDelta[]; resolved: CategoryDelta[] };
-  stageSkew: Array<{ identity: string; baseId: number; candId: number; baseline: number | null; candidate: number | null; delta: number | null }>;
+  stageSkew: Array<{ pairId: string; name: string; baseId: number; candId: number; baseline: number | null; candidate: number | null; delta: number | null }>;
   baseStages?: StageSummary[];
   candStages?: StageSummary[];
   /** Failed-job counts per run, when the caller has each run's job results. */
@@ -135,13 +137,13 @@ function FindingRows({ items }: { items: CategoryDelta[] }) {
   );
 }
 
-// Names differing is a soft signal, not a block: warn, let the user dismiss,
+// Names differing, thin run-time coverage or no run time at all is a soft signal, not a block: warn, let the user dismiss,
 // and still show every (name-independent) delta below.
-function LowConfidenceBanner({ reason }: { reason: string }) {
+function LowConfidenceBanner({ reason, confidence }: { reason: string; confidence: 'low' | 'insufficient' }) {
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
   return (
-    <div role="alert" className="mb-4 flex items-start justify-between gap-3 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+    <div role="alert" data-confidence={confidence} className="mb-4 flex items-start justify-between gap-3 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
       <span>{reason}</span>
       <button
         type="button"
@@ -197,7 +199,6 @@ export function RunComparison({
   onClose: () => void;
   onDrillIn?: (which: 'baseline' | 'candidate') => void;
 }) {
-  const coveragePct = Math.round(model.matchedCoverage * 100);
   // Full-page route (not a dialog), so wire Escape to close as a courtesy.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -247,12 +248,14 @@ export function RunComparison({
         {/* WidgetCard always renders its title as an <h3> (one level below a
             board's <h2> section header, see WidgetCard.tsx); the verdict's
             own <h2> keeps the h1 -> h2 -> h3 order intact. */}
-        {model.confidence === 'low' && model.reason ? <LowConfidenceBanner reason={model.reason} /> : null}
+        {model.confidence !== 'ok' && model.reason ? <LowConfidenceBanner reason={model.reason} confidence={model.confidence} /> : null}
         <ComparisonVerdict model={model} onDrillIn={onDrillIn} />
 
         <WidgetCard title="Metrics">
           <p className="mb-3 text-xs text-muted-foreground">
-            Metrics and finding categories cover the whole run, and run totals count every task attempt, failed and speculative ones too. Per-stage skew below covers only the {coveragePct}% of stages that matched by unique identity.
+            Metrics and finding categories cover the whole run, and run totals count every task attempt, failed and speculative ones too. {model.runtimeCoverage == null
+              ? 'Neither run recorded executor run time, so no stages are paired by run time.'
+              : `Per-stage skew below covers only the stages paired between the runs, which hold ${Math.floor(model.runtimeCoverage * 100)}% of executor run time.`}
           </p>
           <Table>
             <TableHeader>
@@ -298,8 +301,8 @@ export function RunComparison({
                 {[...model.stageSkew]
                   .sort((a, b) => Math.abs(b.delta ?? 0) - Math.abs(a.delta ?? 0))
                   .map((s) => (
-                    <TableRow key={`${s.baseId}-${s.candId}`}>
-                      <TableHead scope="row" className="text-left">{s.identity.split('§')[0]}</TableHead>
+                    <TableRow key={s.pairId}>
+                      <TableHead scope="row" className="text-left">{s.name}</TableHead>
                       <TableCell>{s.baseline == null ? '—' : ratioFmt(s.baseline)}</TableCell>
                       <TableCell>{s.candidate == null ? '—' : ratioFmt(s.candidate)}</TableCell>
                     </TableRow>

@@ -99,7 +99,10 @@ describe('several candidate logs', () => {
     expect(lines.map((l) => l.log)).toEqual([p('same'), p('slower')]);
     for (const l of lines) {
       expect(l).toMatchObject({ status: 'pass', exitCode: 0, error: null, budgets: [] });
-      expect(Object.keys(l.comparison)).toEqual(['verdict', 'confidence', 'reason', 'matchedCoverage', 'metrics', 'findings']);
+      expect(Object.keys(l.comparison)).toEqual([
+        'verdict', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
+        'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds',
+      ]);
       expect(l.candidate.summary).toBeDefined();
     }
     const wall = (l) => l.comparison.metrics.find((m) => m.key === 'wallClock');

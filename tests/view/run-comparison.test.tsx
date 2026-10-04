@@ -15,13 +15,13 @@ const mk = (stages: any, app: any) => ({
 
 test('labels baseline and candidate and shows the coverage caveat in a card body', () => {
   const model = compareRuns(
-    { label: 'base.log', ...mk([[1, { name: 'Exchange 1' }]], { name: 'A' }) },
-    { label: 'cand.log', ...mk([[9, { name: 'Exchange 2' }]], { name: 'A' }) },
+    { label: 'base.log', ...mk([[1, { name: 'Exchange 1', executorRunTime: 100 }]], { name: 'A' }) },
+    { label: 'cand.log', ...mk([[9, { name: 'Exchange 2', executorRunTime: 100 }]], { name: 'A' }) },
   );
   render(<RunComparison model={model as any} onClose={vi.fn()} />);
   expect(screen.getByText('base.log')).toBeInTheDocument();
   expect(screen.getByText('cand.log')).toBeInTheDocument();
-  expect(screen.getByText(/% of stages that matched by unique identity/i)).toBeInTheDocument();
+  expect(screen.getByText(/paired between the runs, which hold 100% of executor run time/i)).toBeInTheDocument();
 });
 
 test('renders findings as tag badges with base→cand counts and stage chips', () => {
@@ -141,7 +141,7 @@ test('per-stage skew table formats ratios like the Metrics table (x.xx×)', () =
     baselineLabel: 'base.log', candidateLabel: 'cand.log',
     confidence: 'ok', reason: null, matchedCoverage: 1, metrics: [],
     findings: { introduced: [], resolved: [] },
-    stageSkew: [{ identity: 'Exchange 1§0', baseline: 0.7185185185185186, candidate: 1.5, delta: -0.78 }],
+    stageSkew: [{ pairId: 'b1-c9', name: 'exchange #', baseId: 1, candId: 9, baseline: 0.7185185185185186, candidate: 1.5, delta: -0.78 }],
   };
   render(<RunComparison model={model as any} onClose={vi.fn()} />);
   expect(screen.getByText('0.72×')).toBeInTheDocument();
@@ -180,4 +180,42 @@ test('new aggregate metrics render with byte/duration units, not raw numbers', (
   expect(screen.getByText('2 MB')).toBeInTheDocument();     // formatBytes, not "2000000"
   expect(screen.getByText('-1 MB')).toBeInTheDocument();    // signed delta via formatBytes
   expect(screen.getByText('5.0s')).toBeInTheDocument();     // formatDuration for GC time (confirmed via node: formatDuration(5000) === '5.0s', not '5s')
+});
+
+// The banner follows `confidence`: `ok` shows none, `low` and `insufficient` each show their reason.
+const timedStage = (over: any) => ({ name: 'Exchange 1', sqlExecutionId: null, executorRunTime: 100, ...over });
+
+test('confidence ok shows no banner', () => {
+  const model = compareRuns(
+    { label: 'base.log', ...mk([[1, timedStage({})]], { name: 'A' }) },
+    { label: 'cand.log', ...mk([[1, timedStage({})]], { name: 'A' }) },
+  );
+  expect(model.confidence).toBe('ok');
+  render(<RunComparison model={model as any} onClose={vi.fn()} />);
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('confidence low from thin run-time coverage names the runtime share', () => {
+  const model = compareRuns(
+    { label: 'base.log', ...mk([[1, timedStage({ name: 'Shared 1' })], [2, timedStage({ name: 'BaseOnly 1' })]], { name: 'A' }) },
+    { label: 'cand.log', ...mk([[1, timedStage({ name: 'Shared 1' })], [2, timedStage({ name: 'CandOnly 1' })]], { name: 'A' }) },
+  );
+  expect(model.confidence).toBe('low');
+  render(<RunComparison model={model as any} onClose={vi.fn()} />);
+  const alert = screen.getByRole('alert');
+  expect(alert).toHaveAttribute('data-confidence', 'low');
+  expect(alert).toHaveTextContent(/only 50% of executor run time is in matched stages/i);
+});
+
+test('confidence insufficient renders its own banner and keeps the metrics', () => {
+  const model = compareRuns(
+    { label: 'base.log', ...mk([[1, timedStage({ executorRunTime: undefined })]], { name: 'A' }) },
+    { label: 'cand.log', ...mk([[1, timedStage({ executorRunTime: undefined })]], { name: 'A' }) },
+  );
+  expect(model.confidence).toBe('insufficient');
+  render(<RunComparison model={model as any} onClose={vi.fn()} />);
+  const alert = screen.getByRole('alert');
+  expect(alert).toHaveAttribute('data-confidence', 'insufficient');
+  expect(alert).toHaveTextContent(/no executor run time was recorded in either run/i);
+  expect(screen.getByRole('row', { name: /wall-clock/i })).toBeInTheDocument();
 });
