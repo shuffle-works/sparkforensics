@@ -48,7 +48,7 @@ Parameters (all optional):
   names the worst pairs by `pairId` (the same id `compare_runs` returns in
   `stagePairs`). Each metric gets its own `max-stage-regression` result, and a
   metric can be budgeted once. Requires `runIdB`/`sourceB`. It reports
-  `inconclusive` when no eligible stage pairs, when the metric is missing on
+  `inconclusive` when no stage pair is eligible or the metric is missing on
   every eligible pair. `inputBytes` and `outputBytes` are workload volume
   with no regression direction, so the call fails if either is named.
 - `stageQualities`: the pair qualities `stageRegressionBudgets` read, from

@@ -540,8 +540,8 @@ The budgets combine like this:
 `--max-regression-pct` and `--regression-budget` judge a whole-run metric. To
 gate on the stages themselves, repeat
 `--stage-regression-budget <metric>:<pct>` (with `--baseline`). The budget
-fails when any paired stage's metric grew by more than the percentage against its baseline stage. The metric
-is one of `executorRunTime`, `executorCpuTime`, `memoryBytesSpilled`,
+fails when any paired stage's metric grew by more than the percentage against
+its baseline stage. The metric is one of `executorRunTime`, `executorCpuTime`, `memoryBytesSpilled`,
 `diskBytesSpilled`, `shuffleReadBytes` and `shuffleWriteBytes`:
 
 ```sh
