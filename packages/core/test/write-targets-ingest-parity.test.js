@@ -1,7 +1,8 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { collectRun, emptyAppModel, nodeFileFromPath } from '../src/cli/collect-run.ts';
 import { nodeParseCodecs } from '../src/cli/native-zstd.ts';
 import { createState, runParse } from '../src/parser-worker.ts';
@@ -82,5 +83,49 @@ describe('write targets agree across ingest paths', () => {
     callbacks.onDone({ skippedLines: 0 });
     expect(appModel.skippedLines).toBe(0);
     expect(appModel.unreadableSqlExecutions).toBeUndefined();
+  });
+});
+
+// Synthetic log shaped like a real Delta run: bare command leaves, a SQL MERGE with sub-queries under
+// its root, two DeltaTable API merges of independent root executions, and reads that name a
+// _delta_log without writing.
+const DELTA_LOG = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'delta-write-events.ndjson');
+const BASE = 'hdfs://nn/sandbox/db.db';
+
+describe('Delta write targets from a log', () => {
+  const expectedWrites = [
+    { sqlExecutionId: 3, command: 'MergeIntoCommand', kind: 'table', target: 'db.t_sql_merge' },
+    { sqlExecutionId: 10, command: 'DeltaMerge', kind: 'path', target: `${BASE}/t_api_one` },
+    { sqlExecutionId: 22, command: 'DeltaMerge', kind: 'path', target: `${BASE}/t_api_two` },
+    { sqlExecutionId: 40, command: 'UpdateCommand', kind: 'table', target: 'db.t_update' },
+    { sqlExecutionId: 41, command: 'DeleteCommand', kind: 'table', target: 'db.t_delete' },
+    // DeltaTable API merges: a command root with sub-queries of two threads interleaved.
+    { sqlExecutionId: 50, command: 'MergeIntoCommand', kind: 'table', target: 'db.t_cmd_one' },
+    { sqlExecutionId: 52, command: 'MergeIntoCommand', kind: 'table', target: 'db.t_cmd_two' },
+    // An append and an overwrite of an existing table name it in the table object; a CTAS stages its
+    // append under its own root, and the append takes the table the CTAS names.
+    { sqlExecutionId: 60, command: 'AppendDataExecV1', kind: 'table', target: 'db.t_append' },
+    { sqlExecutionId: 62, command: 'OverwriteByExpressionExecV1', kind: 'table', target: 'db.t_overwrite' },
+    { sqlExecutionId: 64, command: 'AtomicCreateTableAsSelect', kind: 'unqualifiedTable', target: 'db.t_ctas' },
+    { sqlExecutionId: 65, command: 'AppendDataExecV1', kind: 'unqualifiedTable', target: 'db.t_ctas' },
+  ];
+
+  it('reports the same targets from the dashboard ingest and from the CLI ingest', async () => {
+    const dashboard = await ingestLikeTheDashboard(DELTA_LOG);
+    const { appModel: cli } = await collectRun(DELTA_LOG);
+    const dashboardTargets = buildEvidenceReport(dashboard, { markdown: false }).json.writeTargets;
+    const cliTargets = buildEvidenceReport(cli, { markdown: false }).json.writeTargets;
+    expect(cliTargets.writes.map(({ sqlExecutionId, command, kind, target }) => ({ sqlExecutionId, command, kind, target })))
+      .toEqual(expectedWrites);
+    expect(cliTargets.executionsWithoutPlan).toEqual([]);
+    expect(dashboardTargets).toEqual(cliTargets);
+  });
+
+  it('keeps the targets through a session snapshot round trip', async () => {
+    const dashboard = await ingestLikeTheDashboard(DELTA_LOG);
+    const before = buildEvidenceReport(dashboard, { markdown: false }).json.writeTargets;
+    const restored = emptyAppModel();
+    applySnapshot(restored, new Map(), captureSnapshot(dashboard, [], new Map()));
+    expect(buildEvidenceReport(restored, { markdown: false }).json.writeTargets).toEqual(before);
   });
 });

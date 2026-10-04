@@ -84,6 +84,25 @@ async function runMainInProcess(argv, mainOpts) {
 
 describe('sparkforensics-analyze CLI', () => {
 
+  it('reports Delta MERGE, UPDATE and DELETE targets of a log whose command nodes are bare', () => {
+    const log = join(process.cwd(), '..', 'core', 'test', 'fixtures', 'delta-write-events.ndjson');
+    const { stdout } = runCli([log]);
+    const { writes } = JSON.parse(stdout).writeTargets;
+    expect(writes.map(({ sqlExecutionId, command, kind, target }) => [sqlExecutionId, command, kind, target])).toEqual([
+      [3, 'MergeIntoCommand', 'table', 'db.t_sql_merge'],
+      [10, 'DeltaMerge', 'path', 'hdfs://nn/sandbox/db.db/t_api_one'],
+      [22, 'DeltaMerge', 'path', 'hdfs://nn/sandbox/db.db/t_api_two'],
+      [40, 'UpdateCommand', 'table', 'db.t_update'],
+      [41, 'DeleteCommand', 'table', 'db.t_delete'],
+      [50, 'MergeIntoCommand', 'table', 'db.t_cmd_one'],
+      [52, 'MergeIntoCommand', 'table', 'db.t_cmd_two'],
+      [60, 'AppendDataExecV1', 'table', 'db.t_append'],
+      [62, 'OverwriteByExpressionExecV1', 'table', 'db.t_overwrite'],
+      [64, 'AtomicCreateTableAsSelect', 'unqualifiedTable', 'db.t_ctas'],
+      [65, 'AppendDataExecV1', 'unqualifiedTable', 'db.t_ctas'],
+    ]);
+  });
+
   it('keeps an execution visible when its start event is too deep to validate or cut off at the end of the log', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-writes-skipped-'));
     const path = join(dir, 'eventlog');

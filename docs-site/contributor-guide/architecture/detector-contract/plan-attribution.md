@@ -74,8 +74,10 @@ when `SQLExecutionEnd` arrives or at parse completion (`deferAdaptiveUpdate`,
 `buildChunkDecoder` reports for a line joined across slices (`JoinedLine`), so a
 superseded update is never copied into one flat string either. The raw `sparkPlanInfo` stays worker-side and is released
 once `SQLExecutionEnd` resolves it into `planTree`; `physicalPlanDescription` (Spark's
-text rendering of the plan, which nothing reads) is emptied before `JSON.parse` and
-never retained (`stripPlanDescription`, `event-handlers.ts`). `buildChunkDecoder`
+text rendering of the plan) is emptied before `JSON.parse` and never retained,
+except the one `Arguments:` line of a Delta write command, which
+`delta-targets.ts` reads to name the write target (`stripPlanDescription`,
+`event-handlers.ts`). `buildChunkDecoder`
 decodes each decompressed chunk in slices of at most 512 KiB, and drops the bytes of a
 value that crosses a slice boundary without decoding them.
 

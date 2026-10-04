@@ -156,6 +156,11 @@ export interface PlanNode {
 export interface SqlExecution {
   id: number;
   planTree?: PlanNode | null;
+  description?: string;
+  startTime?: number;
+  rootExecutionId?: number;
+  /** `<Command>\nArguments: <line>` of a Delta write command's root node (see stripPlanDescription). */
+  commandArguments?: string;
   [key: string]: unknown;
 }
 export interface PlanGraphNodeData {
