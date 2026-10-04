@@ -46,11 +46,11 @@ test('states the card\'s fix, skewed-key/AQE pointer included, at every density'
   ];
   renderStraggler(appModelWithStage(9), catalog, false);
   expect(screen.getByText(/Rule out a GC pause or a slow shuffle fetch before assuming a hardware issue/)).toBeInTheDocument();
-  expect(screen.getByText(/AQE's skew-join handling/)).toBeInTheDocument();
+  expect(screen.getByText(/AQE skew-join handling/)).toBeInTheDocument();
 
   store.getState().setWidgetDensity('advanced');
   renderStraggler(appModelWithStage(9), catalog, false);
-  expect(screen.getAllByText(/AQE's skew-join handling/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/AQE skew-join handling/).length).toBeGreaterThan(0);
   store.getState().setWidgetDensity('basic');
 });
 

@@ -3,4 +3,5 @@
 The first stage waited more than 30 s for an executor. Keep a warm pool of
 executors, or, with dynamic allocation, raise
 `spark.dynamicAllocation.minExecutors`/`initialExecutors` so the app doesn't
-scale up from zero.
+scale up from zero. With dynamic allocation off (`evidence.dynamicAllocation`
+is `off`) no executor-count property applies and `remediation` is empty.

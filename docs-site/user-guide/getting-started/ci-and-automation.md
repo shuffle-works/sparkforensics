@@ -89,18 +89,27 @@ idle core capacity", not "of core time". A stage's slow tail is counted once:
 when `skew` and `straggler` both flag the same stage, `skew` carries the
 removed task time and `straggler` has `null`.
 
-When the logged `spark.sql.shuffle.partitions` is already at or above the
-count a low-parallelism shuffle stage needs, the property is not what limits
-that stage: the recommendation points at the stage's own partitioning
-(`repartition(n)` or RDD parallelism) and `remediation` is empty.
+When the effective `spark.sql.shuffle.partitions` (logged, else Spark's 200) is
+already at or above the count a low-parallelism shuffle stage needs, the
+property is not what limits that stage: the recommendation points at the
+stage's own partitioning (`repartition(n)` or RDD parallelism) and
+`remediation` is empty. When AQE coalescing is on and the stage ran fewer tasks
+than the property, AQE merged the partitions and the recommendation points at
+`spark.sql.adaptive.advisoryPartitionSizeInBytes` instead. `shuffle` and
+`partitionSizing` (`lowShuffleParallelism`) findings carry `evidence.partitions`
+(`raise`, `sufficient`, `aqeCoalesced` or `ownPartitioning`) for the case.
 
 A `remediation` that sets a property to a fixed value (for example
 `spark.sql.adaptive.skewJoin.enabled`, `spark.speculation` or
 `spark.dynamicAllocation.enabled`) is left out when the run's effective conf
 already has that value. The effective value is the logged property, else
 Spark's default for the run's `sparkVersion`; the defaults modeled are
-`spark.sql.adaptive.enabled` (off before Spark 3.2, on from 3.2) and
-`spark.sql.adaptive.skewJoin.enabled` (on from 3.0). Booleans compare
+`spark.sql.adaptive.enabled` (off before Spark 3.2, on from 3.2),
+`spark.sql.adaptive.skewJoin.enabled` and
+`spark.sql.adaptive.coalescePartitions.enabled` (both on from 3.0), and, for
+every version, `spark.sql.shuffle.partitions` (200) and
+`spark.sql.autoBroadcastJoinThreshold` (10 MiB). Spark before 3.0 has no AQE
+skew-join handling, so a skew finding on such a run suggests no conf. Booleans compare
 case-insensitively. The recommendation then stops naming that property and
 points at the remedy left (for example "AQE skew-join handling is already on,
 so salt the key or repartition on a better key"), so the text and
@@ -122,7 +131,15 @@ carry `evidence.origin`: `shuffleJoin` (the conf above applies), `inputScan`
 `spark.sql.files.maxPartitionBytes`) or `other` (no conf is suggested).
 `shufflePartitionSkew` carries the same field but is judged on shuffle-read
 sizes, so it is only ever `shuffleJoin` or `other`. A `stageSlowness` finding carries `evidence.reads` (`shuffle`,
-`input` or `other`) and suggests shuffle partitions only for `shuffle`.
+`input` or `other`) and suggests shuffle partitions only for `shuffle`; `spill`
+and `tinyTask` carry the same `reads` key and gate their shuffle-partition
+advice the same way. `straggler` carries `evidence.origin` and the same skew
+advice as a skew finding on that stage. `coldStart` and `autoscalingChurn`
+carry `evidence.dynamicAllocation` (`on` or `off`) and suggest no
+dynamic-allocation property when it is `off`. `underBroadcast` and
+`overBroadcast` carry `evidence.broadcastThreshold` (`limits`, `notLimiting` or
+`disabled`) and suggest changing the threshold only when it limits the join.
+`speculationWaste` carries `evidence.wastedAttempts`.
 
 The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,
