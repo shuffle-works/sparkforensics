@@ -11,7 +11,7 @@ export interface ComparisonRunInput { label: string; appModel: AppModel; catalog
 export type ComparisonOutput = { verdict: ComparisonVerdictText }
   & Pick<CompareRunsResult,
     'confidence' | 'reason' | 'matchedCoverage' | 'runtimeCoverage' | 'metrics' | 'findings'
-    | 'comparisonSchemaVersion' | 'unmatched' | 'replanned' | 'bookkeepingStageIds'>
+    | 'comparisonSchemaVersion' | 'unmatched' | 'replanned' | 'bookkeepingStageIds' | 'executionAlignment'>
   & Partial<Pick<CompareRunsResult, 'stagePairs'>>;
 
 /** `full` carries every field (the CLI); `summary` leaves out `stagePairs` (MCP, which returns them
@@ -33,6 +33,7 @@ export function comparisonOutput(comparison: CompareRunsResult, view: Comparison
     unmatched: comparison.unmatched,
     replanned: comparison.replanned,
     bookkeepingStageIds: comparison.bookkeepingStageIds,
+    executionAlignment: comparison.executionAlignment,
   };
 }
 
