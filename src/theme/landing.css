@@ -1,0 +1,185 @@
+/* Trace look for the landing (before a log loads) and the run comparison.
+   Panels on the gray canvas, mono eyebrows and numbers, indigo accent.
+   Status colors appear only on comparison deltas and load errors.
+   Imported once from src/index.css. Selectors that already existed there
+   (.landing-hero, .landing-resource-card, ...) are restyled in place in
+   index.css; this file holds only the classes added for Trace. */
+
+/* ---- Landing: shared panel + eyebrow vocabulary ---- */
+.trace-panel {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-panel);
+}
+
+/* ---- Drop zone: a panel, not a dashed box. Drag-over turns it into a
+   dashed accent target so the drop affordance still reads. ---- */
+.drop-zone-panel {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-panel);
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.drop-zone-panel.is-drag-over {
+  border-style: dashed;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 60%, var(--panel));
+}
+.drop-zone-icon {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-button);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.drop-zone-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  font-stretch: var(--font-stretch-heading);
+  color: var(--ink);
+}
+.drop-zone-formats {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+}
+/* Rule-separated disclosure rows inside the drop zone panel. */
+.drop-zone-disclosure {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-button);
+  background: var(--panel);
+}
+.drop-zone-disclosure:hover { background: var(--canvas); }
+.drop-zone-subpanel {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-button);
+  background: var(--canvas);
+}
+.drop-zone-subpanel code,
+.landing-other-sources code {
+  font-family: var(--font-mono);
+  font-size: .75rem;
+  padding: 1px 4px;
+  border-radius: var(--radius-tag);
+  background: var(--panel);
+  border: 1px solid var(--rule);
+}
+.drop-zone-recent {
+  border-top: 1px solid var(--rule);
+  padding-top: 1rem;
+}
+.recent-entry-meta { font-family: var(--font-mono); font-size: 11px; }
+
+/* MCP guide snippets: mono on the canvas inside a panel. */
+.mcp-snippet {
+  font-family: var(--font-mono);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-button);
+  background: var(--canvas);
+}
+
+/* ---- Compare landing ---- */
+.compare-landing-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-stretch: var(--font-stretch-heading);
+  letter-spacing: -.01em;
+}
+
+/* ---- Run comparison: tables follow the board's Trace table ---- */
+.trace-table thead th {
+  font: 500 11px/1.4 var(--font-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  height: auto;
+  padding: 8px;
+}
+.trace-table thead th:not(:first-child) { text-align: right; }
+/* Row headers reuse TableHead, whose default is now the mono uppercase column
+   label: undo that so metric and stage names keep their own case. */
+.trace-table tbody th {
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
+  padding: 8px;
+}
+.trace-table td {
+  padding: 8px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.trace-table td[colspan] {
+  font-family: var(--font);
+  font-size: 13px;
+  text-align: left;
+}
+.trace-table tr { border-color: var(--rule); }
+.trace-table tbody tr:hover { background: color-mix(in srgb, var(--canvas) 70%, transparent); }
+.trace-table .stage-pair-meta {
+  font: 400 11px/1.4 var(--font-mono);
+  color: var(--text-muted);
+}
+
+.comparison-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-stretch: var(--font-stretch-heading);
+  letter-spacing: -.01em;
+}
+.comparison-run-label {
+  font-family: var(--font-mono);
+  font-size: .8125rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+/* Verdict: one panel, its tone carried by a 3px left rule (status colors
+   only for better/worse, neutral otherwise). */
+.comparison-verdict {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-left-width: 3px;
+  border-radius: var(--radius-panel);
+}
+.comparison-verdict[data-tone="better"] { border-left-color: var(--clean); }
+.comparison-verdict[data-tone="worse"] { border-left-color: var(--critical); }
+.comparison-verdict[data-tone="same"],
+.comparison-verdict[data-tone="unknown"] { border-left-color: var(--accent); }
+.comparison-verdict h2 {
+  font-size: 1.625rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.comparison-stage-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-tag);
+  color: var(--text-muted);
+  background: var(--canvas);
+}
+.comparison-count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.comparison-subpanel {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-panel);
+  background: var(--panel);
+}
+.comparison-select {
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-button);
+  background: var(--panel);
+}

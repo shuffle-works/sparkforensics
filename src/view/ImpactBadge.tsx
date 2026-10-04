@@ -49,6 +49,7 @@ const dotVariants = cva('inline-block size-2 shrink-0 rounded-full', {
   defaultVariants: { impactBand: 'info' },
 });
 
+// Trace tag chip: 3px corners (Badge's rounded-sm), status text on its own tint.
 export const severityBadgeVariants = cva('gap-1.5 border-transparent', {
   variants: {
     impactBand: {
@@ -168,8 +169,8 @@ export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }:
       // hovering every single one.
       className={cn(
         severityBadgeVariants({ impactBand }),
-        'h-6',
-        pillHref && 'underline decoration-dotted underline-offset-2',
+        'h-5 px-1.5 font-mono text-[11px] font-semibold tracking-[.06em]',
+        pillHref && 'underline decoration-current/40 decoration-dotted underline-offset-2',
         showGuideLink ? cn('rounded-r-none', className) : className,
       )}
       render={pillHref ? (
@@ -211,7 +212,7 @@ export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }:
               docs.openSite(guidePath);
             }}
             className={cn(
-              'tap-target-comfortable tap-target-comfortable--sm inline-flex h-6 shrink-0 items-center rounded-r-4xl border border-transparent py-0.5 pr-2 pl-1 text-xs font-medium whitespace-nowrap transition-colors',
+              'tap-target-comfortable tap-target-comfortable--sm inline-flex h-5 shrink-0 items-center rounded-r-sm border border-transparent py-0.5 pr-2 pl-1 text-xs font-medium whitespace-nowrap transition-colors',
               severityBadgeVariants({ impactBand }),
               className,
               'text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
@@ -236,7 +237,7 @@ export interface ChipProps {
  * spill-classification badges) where the label isn't a `typeTag` lookup. */
 export function Chip({ label, impactBand, title, className }: ChipProps) {
   return (
-    <Badge title={title} className={cn(severityBadgeVariants({ impactBand }), 'font-mono', className)}>
+    <Badge title={title} className={cn(severityBadgeVariants({ impactBand }), 'font-mono text-[11px] font-semibold', className)}>
       {label}
     </Badge>
   );

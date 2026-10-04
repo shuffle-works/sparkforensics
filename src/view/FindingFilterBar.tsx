@@ -54,7 +54,7 @@ function DimensionMenu({
       >
         {label}
         {count > 0 && (
-          <span className="rounded-full bg-primary px-1.5 text-xs font-medium text-primary-foreground">{count}</span>
+          <span className="rounded-sm bg-primary px-1.5 text-xs font-medium text-primary-foreground">{count}</span>
         )}
         <ChevronDown aria-hidden="true" className="opacity-60" />
       </DropdownMenuTrigger>
@@ -251,7 +251,7 @@ export function FindingFilterBar({ options, resultCount }: { options: FilterOpti
                 type="button"
                 onClick={chip.onRemove}
                 aria-label={`Remove filter: ${chip.label}`}
-                className="tap-target-comfortable inline-flex cursor-pointer items-center gap-1 rounded-full border border-border bg-muted px-2 py-0.5 text-xs hover:bg-muted/70"
+                className="tap-target-comfortable inline-flex cursor-pointer items-center gap-1 rounded-sm border border-border bg-muted px-2 py-0.5 text-xs hover:bg-muted/70"
               >
                 {chip.label} <X aria-hidden="true" className="size-3" />
               </button>

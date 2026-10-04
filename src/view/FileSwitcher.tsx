@@ -66,7 +66,7 @@ export function FileSwitcher({
           <ChevronDown aria-hidden="true" className="ml-auto shrink-0 opacity-60" />
         </span>
         {activeSub ? (
-          <span className="w-full min-w-0 truncate text-left text-xs text-muted-foreground">{activeSub}</span>
+          <span className="w-full min-w-0 truncate text-left font-mono text-xs text-muted-foreground">{activeSub}</span>
         ) : null}
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-72 p-2">

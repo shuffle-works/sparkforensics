@@ -84,7 +84,7 @@ export function DurationHistogram({ metrics, fieldNames, markers = {} }: Duratio
           formatter={(value) => [`${Number(value)} task${Number(value) === 1 ? '' : 's'}`, 'Count']}
           labelFormatter={(label, payload) => (payload?.[0]?.payload as HistogramRow | undefined)?.range ?? label}
         />
-        <Bar dataKey="count" name="Tasks" fill={CHART_COLORS.accent} />
+        <Bar dataKey="count" name="Tasks" fill={CHART_COLORS.stage} />
         {p50Bin ? <ReferenceLine x={p50Bin} stroke={CHART_COLORS.accent} label="P50" /> : null}
         {p95Bin ? <ReferenceLine x={p95Bin} stroke={CHART_COLORS.warning} label="P95" /> : null}
       </BarChart>

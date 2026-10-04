@@ -101,7 +101,7 @@ export function CoreUsageHistogram({ appModel, getTaskData }: CoreUsageHistogram
                 width={48}
                 tickFormatter={(value: number) => formatDuration(value)}
               />
-              <Bar dataKey="ms" name="Time" fill={CHART_COLORS.accent} />
+              <Bar dataKey="ms" name="Time" fill={CHART_COLORS.stage} />
             </BarChart>
           </ChartFrame>
           {incomplete ? (

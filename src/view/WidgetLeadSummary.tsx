@@ -24,12 +24,12 @@ export function WidgetLeadSummary({ value, context }: WidgetLeadSummaryProps) {
           it off ("0.01 core-l"). */}
       <p className="flex min-h-[4rem] flex-wrap content-start items-baseline gap-x-2">
         <span
-          className="line-clamp-2 text-2xl font-semibold tracking-tight"
+          className="line-clamp-2 font-mono text-xl font-semibold tracking-[-0.02em]"
           title={typeof value === 'string' ? value : undefined}
         >
           {value}
         </span>
-        <span className="text-xs text-muted-foreground">{context}</span>
+        <span className="font-mono text-xs text-muted-foreground">{context}</span>
       </p>
     </div>
   );

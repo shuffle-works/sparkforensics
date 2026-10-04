@@ -24,6 +24,12 @@ export const CHART_COLORS = {
   info: 'var(--color-info)',
   clean: 'var(--color-clean)',
   muted: 'var(--color-muted-foreground)',
+  // Non-status series: neutral stage/volume bars, startup, scheduler gaps,
+  // idle capacity. Status colors above are for analysis status only.
+  stage: 'var(--color-chart-stage)',
+  startup: 'var(--color-chart-startup)',
+  gap: 'var(--color-chart-gap)',
+  idle: 'var(--color-chart-idle)',
 } as const;
 
 // Recharts' default tooltip is a white box whose label inherits the page text

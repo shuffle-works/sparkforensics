@@ -29,12 +29,12 @@ function legendColorFor(color: string, fillOpacity: number): string {
   return fillOpacity >= 1 ? color : `color-mix(in srgb, ${color} ${fillOpacity * 100}%, transparent)`;
 }
 
-// Segment colors: startup=info, active=clean, gaps=warning, idle=faint/muted.
+// Segment colors: chart series tokens for startup/active/gaps; idle=faint muted.
 function buildSegments(result: WallClockData): Segment[] {
   return [
-    { key: 'startup', label: 'Startup', value: result.startup, color: CHART_COLORS.info, fillOpacity: 1 },
-    { key: 'stagesActive', label: 'Stages active', value: result.stagesActive, color: CHART_COLORS.clean, fillOpacity: 1 },
-    { key: 'gaps', label: 'Scheduler gaps', value: result.gaps, color: CHART_COLORS.warning, fillOpacity: 1 },
+    { key: 'startup', label: 'Startup', value: result.startup, color: CHART_COLORS.startup, fillOpacity: 1 },
+    { key: 'stagesActive', label: 'Stages active', value: result.stagesActive, color: CHART_COLORS.stage, fillOpacity: 1 },
+    { key: 'gaps', label: 'Scheduler gaps', value: result.gaps, color: CHART_COLORS.gap, fillOpacity: 1 },
     { key: 'idle', label: 'Idle', value: result.idle, color: CHART_COLORS.muted, fillOpacity: 0.6 },
   ]
     .filter((s) => s.value > 0)
@@ -65,7 +65,7 @@ export const WallClock = memo(function WallClock() {
   return (
     <WidgetCard
       title="Wall-Clock Breakdown"
-      badges={<span className="text-xs text-muted-foreground">{formatDuration(result.total)} total</span>}
+      subtitle={`${formatDuration(result.total)} total`}
       summary={
         <WidgetLeadSummary
           value={`${dominant.label} ${Math.round(pct(dominant.value))}%`}

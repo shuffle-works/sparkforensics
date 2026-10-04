@@ -82,13 +82,14 @@ function ImpactGroup({
   const foldEvidence = density === 'basic' && groups.length > 0 && widgets.length > 0;
   const showEvidence = !foldEvidence || evidenceOpen || routedHere;
   return (
-    <section aria-labelledby={headingId} className="space-y-3">
+    <section aria-labelledby={headingId} className="space-y-2">
       {/* tabIndex -1: the top bar's count chip focuses the band it names. */}
-      <h2 id={headingId} tabIndex={-1} className="scroll-mt-20 rounded-sm font-heading text-base font-semibold outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      {/* Mono uppercase group label (Trace): the band reads from the tags below it. */}
+      <h2 id={headingId} tabIndex={-1} className="trace-eyebrow scroll-mt-20 rounded-sm px-1 pt-2 outline-none focus-visible:ring-2 focus-visible:ring-ring">
         {IMPACT_BAND_LABEL[impactBand]}
       </h2>
       {groups.length > 0 && (
-        <Table>
+        <Table className="findings-table">
           <TableBody>
             {groups.map((group) => {
               if (group.findings.length === 1) {

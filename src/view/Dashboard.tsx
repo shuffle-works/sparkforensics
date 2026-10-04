@@ -175,6 +175,11 @@ function FilteredBoard({
   }, [interpretation, selection, revealFinding, onActiveTabChange]);
   const filteredCatalog = useMemo(() => filterFindings(catalog, selection), [catalog, selection]);
   const filteredConfig = useMemo(() => filterFindings(configFindings ?? [], selection), [configFindings, selection]);
+  // The Findings tab's count: what the board lists (eligible findings) under the active filter.
+  const listedCount = useMemo(() => {
+    const shown = new Set([...filteredCatalog, ...filteredConfig]);
+    return eligibleFindings(interpretation).filter((finding) => shown.has(finding)).length;
+  }, [interpretation, filteredCatalog, filteredConfig]);
 
   // The board renders two filtered streams (catalog + config), so the count and
   // the no-match state must consider both: filtering to a CFG-only type (e.g.
@@ -187,7 +192,7 @@ function FilteredBoard({
   return (
     <>
     {renderTopbar(jumpToFindings)}
-    <main className="flex-1 space-y-6 p-4">
+    <main className="mx-auto w-full max-w-[80rem] min-w-0 flex-1 space-y-4 px-4 pt-5 pb-12 sm:px-8">
       <SampleRunNotice />
       {/* Verdict first, from the unfiltered catalog: it answers "how did this
           run go and where do I start", which a board filter must not change. */}
@@ -213,7 +218,10 @@ function FilteredBoard({
                 height + border-t), above the 32px baseline tap-target-comfortable
                 assumes, so the base -6px inset alone already clears 44px; no
                 --sm modifier needed here. */}
-            <TabsTrigger value="findings" className="tap-target-comfortable">Findings</TabsTrigger>
+            <TabsTrigger value="findings" className="tap-target-comfortable">
+              Findings
+              {listedCount > 0 ? <span aria-hidden="true" className="font-mono text-xs font-normal text-muted-foreground tabular-nums">{listedCount}</span> : null}
+            </TabsTrigger>
             <TabsTrigger value="full-report" className="tap-target-comfortable">Full app report</TabsTrigger>
           </TabsList>
           {/* keepMounted: switching tabs must not reset ImpactBoard's local

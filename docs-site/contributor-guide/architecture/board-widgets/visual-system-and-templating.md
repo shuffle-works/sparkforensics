@@ -5,7 +5,7 @@ The styling system the board widgets share and the rules that keep their templat
 ## Visual system
 
 Tailwind CSS v4 + shadcn/ui (Base UI primitives). The design tokens (colors,
-including the telemetry-console dark palette) are defined as CSS variables in
+including the Trace palette, see `docs/DESIGN.md`) are defined as CSS variables in
 an `@theme inline` block and consumed via Tailwind utility classes; there is
 no hand-authored BEM CSS. Theme polarity:
 dark = bare `:root` (no attribute), light =

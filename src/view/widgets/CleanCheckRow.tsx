@@ -30,8 +30,8 @@ export function CleanCheckRow({ type, label, thresholdSummary, status = 'passed'
         <span
           className={
             notRun
-              ? 'inline-flex h-6 items-center gap-1 rounded-full bg-muted px-2 font-mono text-xs font-medium whitespace-nowrap text-muted-foreground'
-              : 'inline-flex h-6 items-center gap-1 rounded-full bg-clean/10 px-2 font-mono text-xs font-medium whitespace-nowrap text-clean'
+              ? 'inline-flex h-6 items-center gap-1 rounded-sm bg-muted px-2 font-mono text-xs font-medium whitespace-nowrap text-muted-foreground'
+              : 'inline-flex h-6 items-center gap-1 rounded-sm bg-clean/10 px-2 font-mono text-xs font-medium whitespace-nowrap text-clean'
           }
         >
           <Icon aria-hidden="true" className="size-3.5 shrink-0" />

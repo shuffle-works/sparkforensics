@@ -153,7 +153,7 @@ function AppRoutes() {
   }
 
   return (
-    <main className="min-h-screen p-6 sm:p-10">
+    <main className="min-h-screen px-4 py-6 sm:p-10">
       <CompareLanding errorMessage={status === 'error' ? errorMessage : null} errorNonce={errorNonce} />
     </main>
   );

@@ -13,6 +13,8 @@ import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';
+import { StepCode } from '@/view/StepCode';
+import { VerdictStrip } from '@/view/widgets/VerdictStrip';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
 
 export interface RunVerdictProps {
@@ -32,6 +34,7 @@ function CopyTextButton({ text, label, testId }: { text: string; label: string; 
     <Button
       variant="outline"
       size="sm"
+      className="h-7 border-border bg-transparent text-xs"
       data-testid={testId}
       onClick={() => {
         copyText(text)
@@ -63,12 +66,15 @@ function CopyStepButton({ text }: { text: string }) {
     }
   };
   return (
-    <Button variant="ghost" size="sm" data-testid="copy-finding-button" onClick={() => void handleCopy()}>
+    <Button variant="outline" size="sm" className={STEP_ACTION} data-testid="copy-finding-button" onClick={() => void handleCopy()}>
       {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
       {copied ? 'Copied' : 'Copy'}
     </Button>
   );
 }
+
+/** The verdict step's small bordered actions; the first step's evidence button is the soft primary. */
+const STEP_ACTION = 'h-6 border-border bg-transparent px-2 text-xs font-medium dark:bg-transparent';
 
 function NextStepItem({
   step,
@@ -95,39 +101,33 @@ function NextStepItem({
   // Same rule every widget uses: only a marker other than high is shown.
   const confidence = advanced && finding.confidence && finding.confidence !== 'high' ? finding.confidence : null;
   return (
-    <li className="flex gap-3" data-testid="next-step" aria-labelledby={titleId}>
-      <span
-        aria-hidden="true"
-        className={cn(
-          'mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums',
-          index === 0 ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground',
-        )}
-      >
-        {index + 1}
-      </span>
-      <div className="min-w-0 flex-1 space-y-1.5 [overflow-wrap:anywhere]">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
-          <h3 id={titleId} className="text-sm font-semibold">
-            {findingActionLabel(finding)}
-            {step.stageId != null ? <span className="font-normal text-muted-foreground"> in Stage {step.stageId}</span> : null}
-          </h3>
-          {impact ? (
-            <span className="font-mono text-xs text-muted-foreground tabular-nums sm:ml-auto">
-              <span className="font-sans">Potential savings </span>
-              <span className="font-semibold text-foreground">{impact}</span>
-              {meaning ? <span className="font-sans"> {meaning}</span> : null}
-            </span>
-          ) : null}
-        </div>
+    <li className="verdict-step" data-testid="next-step" aria-labelledby={titleId}>
+      {/* The step code (F1, F2, ...) also marks this step's Findings row, its
+          bar on the stage strip and its Stage Summary row. */}
+      <StepCode code={`F${index + 1}`} impactBand={index === 0 ? finding.impactBand : undefined} className="pt-0.5" />
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 [overflow-wrap:anywhere]">
+        <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
+        <h3 id={titleId} className="text-[0.9375rem] font-semibold">
+          {findingActionLabel(finding)}
+          {step.stageId != null ? <span className="font-normal text-muted-foreground"> in Stage {step.stageId}</span> : null}
+        </h3>
+      </div>
+      {impact ? (
+        <p className="verdict-step__save font-mono text-xs text-muted-foreground tabular-nums">
+          <span className="verdict-step__save-label">Potential savings </span>
+          <span className="verdict-step__save-figure font-semibold text-foreground">{impact}</span>
+          {meaning ? <span className="verdict-step__save-meaning"> {meaning}</span> : null}
+        </p>
+      ) : <span aria-hidden="true" />}
+      <div className="verdict-step__body min-w-0 space-y-1 [overflow-wrap:anywhere]">
         {measured ? (
-          <p className="text-sm">
-            <span className="font-medium">What's happening: </span>
+          <p className="text-[0.8125rem] text-muted-foreground">
+            <span className="font-semibold text-foreground">What's happening: </span>
             {measured}
           </p>
         ) : null}
-        <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">What to try: </span>
+        <p className="text-[0.8125rem] text-muted-foreground">
+          <span className="font-semibold text-foreground">What to try: </span>
           {fix}
         </p>
         {provenance || confidence ? (
@@ -152,17 +152,23 @@ function NextStepItem({
             Also flagged here, likely the same cause: {step.relatedTypes.map(findingName).join(', ')}.
           </p>
         ) : null}
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <Button size="sm" variant={index === 0 ? 'default' : 'outline'} data-shortcut-target onClick={() => {
-            // Every step lead passed the same routeable check, so the target is never null.
-            const target = triageTargetFor(finding);
-            if (target) onRoute(target);
-          }}>
+        <div className="flex flex-wrap items-center gap-1 pt-1">
+          <Button
+            size="sm"
+            variant={index === 0 ? 'soft' : 'outline'}
+            className={cn(STEP_ACTION, index === 0 && 'border-transparent bg-accent-soft dark:bg-accent-soft')}
+            data-shortcut-target
+            onClick={() => {
+              // Every step lead passed the same routeable check, so the target is never null.
+              const target = triageTargetFor(finding);
+              if (target) onRoute(target);
+            }}
+          >
             Show evidence
             <ArrowRight aria-hidden="true" />
           </Button>
           {step.stageId != null ? (
-            <Button size="sm" variant="ghost" onClick={() => openStage(step.stageId!)}>
+            <Button size="sm" variant="outline" className={STEP_ACTION} onClick={() => openStage(step.stageId!)}>
               Stage {step.stageId} details
             </Button>
           ) : null}
@@ -262,20 +268,21 @@ export function RunVerdict({ interpretation, onRoute }: RunVerdictProps) {
       aria-labelledby="run-verdict-title"
       data-testid="run-verdict"
       className={cn(
-        'scroll-mt-20 space-y-4 rounded-xl border bg-card p-4 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5',
+        'scroll-mt-20 rounded-xl border bg-card px-4 pt-5 pb-4 outline-none focus-visible:ring-2 focus-visible:ring-ring sm:px-5',
         clean ? 'border-clean/40' : failed ? 'border-critical/40' : 'border-border',
       )}
     >
-      <div className="space-y-1">
+      <div>
+        <p className="trace-eyebrow" aria-hidden="true">Verdict</p>
         <h2
           id="run-verdict-title"
-          className={cn('flex items-center gap-2 font-heading text-lg font-semibold', clean && 'text-clean', failed && 'text-critical')}
+          className={cn('mt-1 flex items-center gap-2 font-heading text-[1.375rem] leading-tight font-semibold sm:text-[1.625rem]', clean && 'text-clean', failed && 'text-critical')}
         >
           {clean ? <CircleCheck aria-hidden="true" className="size-5 shrink-0" /> : null}
           {failed ? <CircleX aria-hidden="true" className="size-5 shrink-0" /> : null}
           {title}
         </h2>
-        <p className="max-w-prose text-sm text-muted-foreground">{summary.join(' ')}</p>
+        <p className="mt-1.5 max-w-[72ch] text-sm text-muted-foreground">{summary.join(' ')}</p>
         {failureReason ? (
           <p data-testid="run-failure-reason" className="max-w-prose pt-1 text-sm">
             <span className="font-medium">Spark's recorded reason: </span>
@@ -283,9 +290,10 @@ export function RunVerdict({ interpretation, onRoute }: RunVerdictProps) {
           </p>
         ) : null}
       </div>
-      {density === 'advanced' ? null : <NewcomerPrimer />}
+      <VerdictStrip interpretation={interpretation} />
+      {density === 'advanced' ? null : <div className="mt-4"><NewcomerPrimer /></div>}
       {shown.length > 0 ? (
-        <ol aria-label="Next steps" className="space-y-4">
+        <ol aria-label="Next steps" className="verdict-steps">
           {shown.map(({ step, finding }, index) => (
             <NextStepItem
               key={step.key}
@@ -299,7 +307,7 @@ export function RunVerdict({ interpretation, onRoute }: RunVerdictProps) {
         </ol>
       ) : null}
       {shown.length > 0 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           {remaining > 0 ? (
             <p className="text-xs text-muted-foreground">
               {plural(remaining, 'more place')} under Findings.
@@ -315,7 +323,7 @@ export function RunVerdict({ interpretation, onRoute }: RunVerdictProps) {
         </div>
       ) : null}
       {density === 'advanced' && shown.length > 1 ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="mt-2 text-xs text-muted-foreground">
           {failed
             ? 'Order: failures first, then highest potential savings; impact band breaks ties.'
             : 'Order: highest potential savings first, unestimated last; impact band breaks ties.'}

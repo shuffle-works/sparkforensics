@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { VISIBLE_LIMIT } from '@sparkforensics/core/format-utils.ts';
 
 const pillClassName =
-  'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-full border border-border bg-background px-2.5 text-xs font-medium whitespace-nowrap outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50';
+  'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-sm border border-border bg-background px-2 font-mono text-xs font-medium whitespace-nowrap outline-none transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50';
 
 export interface StagePillProps {
   stageId: number;

@@ -116,8 +116,8 @@ export const ExecutorCountChart = memo(function ExecutorCountChart({ appModel, a
             type="stepAfter"
             dataKey="count"
             name="Active executors"
-            stroke={CHART_COLORS.clean}
-            fill={CHART_COLORS.clean}
+            stroke={CHART_COLORS.stage}
+            fill={CHART_COLORS.stage}
             fillOpacity={0.15}
           />
         </AreaChart>

@@ -371,7 +371,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
     <section className="landing-history-server w-full text-left">
       <button
         type="button"
-        className="tap-target-comfortable flex w-full cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2 text-left text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="drop-zone-disclosure tap-target-comfortable flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-expanded={isShsPanelOpen}
         aria-controls="shs-fetch-panel"
         onClick={() => setShsOpen((open) => !open)}
@@ -384,7 +384,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
         )}
       </button>
       {isShsPanelOpen ? (
-        <div id="shs-fetch-panel" className="mt-3 rounded-md border border-border p-4">
+        <div id="shs-fetch-panel" className="drop-zone-subpanel mt-3 p-4">
           <p className="mb-3 text-sm text-muted-foreground">
             Requires local-server mode and a History Server reachable from this machine.
           </p>
@@ -401,7 +401,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
                   aria-label="Spark History Server base URL"
                   aria-invalid={Boolean(fieldError('baseUrl'))}
                   aria-describedby={fieldError('baseUrl') ? 'shs-base-url-error' : undefined}
-                  className="tap-target-input rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
+                  className="tap-target-input rounded-md border border-input bg-card px-2 py-1 font-mono text-sm text-foreground"
                 />
                 {fieldError('baseUrl') ? <span id="shs-base-url-error" className="text-destructive">{fieldError('baseUrl')}</span> : null}
               </label>
@@ -416,7 +416,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
                   aria-label="Application ID"
                   aria-invalid={Boolean(fieldError('appId'))}
                   aria-describedby={fieldError('appId') ? 'shs-app-id-error' : undefined}
-                  className="tap-target-input rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
+                  className="tap-target-input rounded-md border border-input bg-card px-2 py-1 font-mono text-sm text-foreground"
                 />
                 {fieldError('appId') ? <span id="shs-app-id-error" className="text-destructive">{fieldError('appId')}</span> : null}
               </label>
@@ -431,7 +431,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
                   aria-label="Attempt ID (optional)"
                   aria-invalid={Boolean(fieldError('attemptId'))}
                   aria-describedby={fieldError('attemptId') ? 'shs-attempt-id-error' : undefined}
-                  className="tap-target-input rounded-md border border-input bg-background px-2 py-1 text-sm text-foreground"
+                  className="tap-target-input rounded-md border border-input bg-card px-2 py-1 font-mono text-sm text-foreground"
                 />
                 {fieldError('attemptId') ? <span id="shs-attempt-id-error" className="text-destructive">{fieldError('attemptId')}</span> : null}
               </label>
@@ -448,7 +448,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
               <Button type="submit" className="tap-target-comfortable" disabled={!isShsRequestValid(shsValidation) || shsParsing}>
                 Fetch
               </Button>
-              <span className="text-xs text-muted-foreground">Application IDs: application_…, local-…, app-…, spark-…, or driver-…</span>
+              <span className="font-mono text-[11px] text-muted-foreground">Application IDs: application_…, local-…, app-…, spark-…, or driver-…</span>
             </div>
           </form>
         </div>
@@ -462,9 +462,9 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
       role="region"
       aria-label="Drop Spark event log file here"
       className={cn(
-        'mx-auto flex w-full flex-col items-center justify-center gap-6 rounded-xl border-2 border-dashed border-border p-6 text-center transition-colors',
+        'drop-zone-panel mx-auto flex w-full flex-col items-center justify-center gap-6 p-6 text-center',
         compact ? 'max-w-full' : 'landing-drop-zone max-w-none p-6 sm:p-8',
-        dragOver && 'border-primary bg-primary/5',
+        dragOver && 'is-drag-over',
       )}
       onDragOver={(e) => {
         e.preventDefault();
@@ -473,12 +473,14 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
       onDragLeave={() => setDragOver(false)}
       onDrop={onDrop}
     >
-      <Upload aria-hidden="true" className="size-10 text-primary" />
+      <span className="drop-zone-icon" aria-hidden="true">
+        <Upload className="size-5" />
+      </span>
 
       <div>
-        <p className="font-heading text-lg font-semibold">Choose a Spark event log</p>
-        <p className="text-sm text-muted-foreground">Drop an event log file here, or choose a file below.</p>
-        <p className="mt-1 max-w-xl text-xs text-muted-foreground">
+        <p className="drop-zone-title font-heading">Choose a Spark event log</p>
+        <p className="mt-1 text-sm text-muted-foreground">Drop an event log file here, or choose a file below.</p>
+        <p className="drop-zone-formats mx-auto mt-2 max-w-xl text-muted-foreground">
           Accepts a Spark event log file: newline-delimited JSON, one event per line, optionally
           gzip/Zstandard/LZ4/Snappy-compressed, or the .zip a Spark History Server download returns.
         </p>
@@ -525,7 +527,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
             )}
           </button>
           {findLogOpen ? (
-            <div id="find-event-log-panel" className="mt-3 rounded-md border border-border bg-background p-4 text-sm">
+            <div id="find-event-log-panel" className="drop-zone-subpanel mt-3 p-4 text-sm">
               <ol className="list-decimal space-y-2 pl-5 text-muted-foreground">
                 <li>
                   <span className="font-medium text-foreground">Turn event logging on.</span> Spark writes one log per
@@ -592,7 +594,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
       ) : (
         <>
           {shsReachable ? (
-            <div className="flex w-full max-w-2xl items-start gap-2 rounded-md border border-border p-4 text-left">
+            <div className="drop-zone-subpanel flex w-full max-w-2xl items-start gap-2 p-4 text-left">
               <Server aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">
                 If a Spark History Server is reachable, open{' '}
@@ -604,7 +606,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
           <section className="landing-other-sources w-full max-w-2xl text-left">
             <button
               type="button"
-              className="tap-target-comfortable flex w-full cursor-pointer items-center justify-between rounded-md border border-border px-3 py-2 text-left text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="drop-zone-disclosure tap-target-comfortable flex w-full cursor-pointer items-center justify-between px-3 py-2 text-left text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-expanded={isOtherSourcesOpen}
               aria-controls="other-sources-panel"
               onClick={() => setOtherSourcesOpen((open) => !open)}
@@ -617,7 +619,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
               )}
             </button>
             {isOtherSourcesOpen ? (
-              <div id="other-sources-panel" className="mt-3 flex flex-col gap-3 rounded-md border border-border p-4">
+              <div id="other-sources-panel" className="drop-zone-subpanel mt-3 flex flex-col gap-3 p-4">
                 <p className="text-sm text-muted-foreground">
                   Use these for a rolling <code>eventlog_v2_*</code> directory or to fetch an application from a local Spark History Server.
                 </p>
@@ -634,8 +636,8 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
       )}
 
       {entries.length > 0 && (
-        <div className="w-full max-w-md text-left">
-          <p className="mb-1 px-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        <div className="drop-zone-recent w-full max-w-md text-left">
+          <p className="trace-eyebrow mb-1 px-1.5">
             Recent files
           </p>
           <RecentList entries={entries} onPick={(id) => void onPickRecent(id)} onRemove={onRemoveRecent} />

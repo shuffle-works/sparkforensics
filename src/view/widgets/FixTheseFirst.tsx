@@ -11,7 +11,8 @@ import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePill, StagePillGroup } from '@/view/StagePill';
 import { recommendationText } from '@sparkforensics/core/finding-names.ts';
-import { boardRollup, useFindingSavings, type BoardGroup } from '@/view/interpretation';
+import { boardRollup, useFindingSavings, useStepCodes, type BoardGroup } from '@/view/interpretation';
+import { StepCode } from '@/view/StepCode';
 import type { InterpretationState } from '@/store/store';
 import { RowPagination } from '@/view/RowPagination';
 import { selectTriageTarget, selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
@@ -118,6 +119,7 @@ export function FindingRow({
   const impact = useFindingSavings(finding)?.figure ?? null;
   const text = recommendationText(finding);
   const label = findingActionLabel(finding);
+  const stepCode = useStepCodes().byFinding.get(finding) ?? null;
   return (
     <TableRow data-testid="fix-these-first-row" data-finding-type={finding.type} className={STACKED_ROW}>
       <TableCell className={cn('w-px', STACKED_TAG_CELL)}>
@@ -130,8 +132,8 @@ export function FindingRow({
           className="cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={() => target && onRoute(target)}
         >
-          <span className="block text-sm font-medium">{label}</span>
-          <span className="block text-xs text-muted-foreground">{text}</span>
+          <span className="block text-sm font-semibold">{label}</span>
+          <span className="block text-[0.8125rem] text-muted-foreground">{text}</span>
         </button>
       </TableCell>
       {/* flex, not one joined string: as one truncated nowrap string, the
@@ -142,9 +144,10 @@ export function FindingRow({
         className={cn('w-px text-right font-mono text-xs text-muted-foreground', STACKED_TRAILING_CELL)}
         title={[location, impact].filter(Boolean).join(' · ')}
       >
-        <span className="flex items-center justify-end gap-1.5 max-sm:justify-start">
+        <span className="flex items-center justify-end gap-2 max-sm:justify-start">
+          {stepCode ? <StepCode code={stepCode} impactBand={stepCode === 'F1' ? finding.impactBand : undefined} /> : null}
           <LocationBadge finding={finding} />
-          {impact ? <span className="shrink-0">{impact}</span> : null}
+          {impact ? <span className="shrink-0 font-semibold text-foreground">{impact}</span> : null}
         </span>
       </TableCell>
     </TableRow>
@@ -239,6 +242,8 @@ export function TypeGroupRow({
   // to instance text, which would reintroduce the same problem.
   const title = coreFindingGenericRecommendation(best);
   const label = findingActionLabel(best);
+  const codes = useStepCodes().byFinding;
+  const stepCode = group.findings.map((finding) => codes.get(finding)).find((code) => code != null) ?? null;
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
   // Clamp the page used for slicing (not the stored state) so a stale index
   // can't strand the view on an empty page when a finding filter shrinks the
@@ -265,12 +270,13 @@ export function TypeGroupRow({
             className="cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             onClick={onToggle}
           >
-            <span className="block text-sm font-medium">{label}</span>
-            {title ? <span className="block text-xs text-muted-foreground">{title}</span> : null}
+            <span className="block text-sm font-semibold">{label}</span>
+            {title ? <span className="block text-[0.8125rem] text-muted-foreground">{title}</span> : null}
           </button>
         </TableCell>
         <TableCell className={cn('w-px text-right font-mono text-xs text-muted-foreground', STACKED_TRAILING_CELL)}>
           <span className="inline-flex items-center justify-end gap-1.5" title={group.statTitle}>
+            {stepCode ? <StepCode code={stepCode} className="mr-0.5" /> : null}
             {group.stat}
             {expanded ? (
               <ChevronUpIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />

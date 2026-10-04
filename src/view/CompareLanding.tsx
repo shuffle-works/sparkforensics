@@ -3,8 +3,6 @@ import { Activity, ArrowRight, Bot, BookOpen, FileText, GitCompareArrows, Moon, 
 import { Button } from '@/components/ui/button';
 import { DOCS_BASE_DIR } from '@sparkforensics/core/docs-config.ts';
 import { DropZone } from '@/view/DropZone';
-import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
-import { cn } from '@/lib/utils';
 import { McpSetupGuide } from '@/view/McpSetupGuide';
 import { ProductBarPortal } from '@/view/ProductBarPortal';
 import { store } from '@/store/store';
@@ -13,9 +11,8 @@ import { useTheme } from '@/theme/ThemeProvider';
 
 /** Styled replacement for the old bare `<p role="alert">`: a file-load error
  * (bad format, unreadable file, malformed rolling-log folder) now reads as a
- * real diagnostic card, matching the impact-band border every finding widget
- * already uses (`IMPACT_BORDER_CLASS.critical`), instead of a plain line of
- * red text easy to miss above the fold. Auto-focuses itself, mirroring the
+ * real diagnostic panel with a 3px critical left rule, instead of a plain
+ * line of red text easy to miss above the fold. Auto-focuses itself, mirroring the
  * SHS-fetch panel's existing error-focus pattern below. */
 function FileLoadAlert({ message, nonce }: { message: string; nonce?: number }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -30,10 +27,7 @@ function FileLoadAlert({ message, nonce }: { message: string; nonce?: number }) 
       ref={ref}
       role="alert"
       tabIndex={-1}
-      className={cn(
-        'mb-4 flex items-start gap-3 rounded-lg border-l-4 bg-critical/10 p-4 text-sm text-foreground',
-        IMPACT_BORDER_CLASS.critical,
-      )}
+      className="mb-4 flex items-start gap-3 rounded-xl border border-l-[3px] border-border border-l-critical bg-card p-4 text-sm text-foreground"
     >
       <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-critical" />
       <p>{message}</p>
@@ -50,9 +44,9 @@ const DOCS_SITE_ROOT = 'docs/';
  * DropZone once a source is picked. */
 function FilledSlot({ label, onChange }: { label: string; onChange: () => void }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-border p-4">
-      <span className="min-w-0 truncate text-sm">
-        <span aria-hidden="true" className="mr-2 text-clean">✓</span>
+    <div className="trace-panel flex items-center justify-between gap-3 p-4">
+      <span className="min-w-0 truncate font-mono text-sm">
+        <span aria-hidden="true" className="mr-2 text-accent">✓</span>
         {label}
       </span>
       <Button type="button" variant="ghost" size="sm" className="tap-target-comfortable" onClick={onChange}>Change</Button>
@@ -220,7 +214,7 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-heading text-lg font-semibold">Compare two runs</h2>
+        <h2 className="compare-landing-title font-heading">Compare two runs</h2>
         <Button
           type="button"
           variant="ghost"
@@ -249,11 +243,11 @@ export function CompareLanding({ errorMessage, errorNonce }: { errorMessage?: st
       {errorMessage ? <FileLoadAlert message={errorMessage} nonce={errorNonce} /> : null}
       <div className="grid gap-4 lg:grid-cols-2">
         <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">Baseline</p>
+          <p className="trace-eyebrow mb-2">Baseline</p>
           <Slot testId="compare-slot-a" ariaLabel="Baseline" source={a} onPick={setA} onChange={() => { store.getState().setCompareSeed(null); setA(null); }} />
         </div>
         <div>
-          <p className="mb-2 text-sm font-medium text-muted-foreground">Candidate</p>
+          <p className="trace-eyebrow mb-2">Candidate</p>
           <Slot testId="compare-slot-b" ariaLabel="Candidate" source={b} onPick={setB} onChange={() => setB(null)} />
         </div>
       </div>
