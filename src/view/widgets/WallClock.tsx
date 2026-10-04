@@ -65,7 +65,7 @@ export const WallClock = memo(function WallClock() {
   return (
     <WidgetCard
       title="Wall-Clock Breakdown"
-      badges={<span className="text-xs text-muted-foreground">{formatDuration(result.total)} total</span>}
+      subtitle={`${formatDuration(result.total)} total`}
       summary={
         <WidgetLeadSummary
           value={`${dominant.label} ${Math.round(pct(dominant.value))}%`}

@@ -108,7 +108,7 @@ test.each([
   expect(tile).not.toHaveTextContent('0%');
 });
 
-test('a flagged tile carries an inset accent shadow, not a border-left, so the grid divider under an unflagged neighbor stays visible', () => {
+test('a flagged tile reads from its status dot and gauge, never a border-left, so the grid divider under an unflagged neighbor stays visible', () => {
   // Default fixture: 1s of stage activity across a 60s run is a critical
   // (<75%) efficiency, so this exercises the real flagged-tile styling
   // without a bespoke fixture.
@@ -119,11 +119,12 @@ test('a flagged tile carries an inset accent shadow, not a border-left, so the g
   // A border-left utility on the tile itself (even `border-transparent`)
   // would override the parent grid's `divide-x`/`divide-y` separator on
   // the same CSS property, silently erasing the boundary between two
-  // healthy tiles; the accent must be a box-shadow instead.
-  expect(efficiency.style.boxShadow).toContain('var(--color-critical)');
-  expect(efficiency.className).not.toMatch(/\bborder-l-4\b/);
-  expect(wallClock.style.boxShadow).toBe('');
-  expect(wallClock.className).not.toMatch(/\bborder-l-4\b/);
+  // healthy tiles; the flag shows as a status dot and a status-colored gauge.
+  expect(efficiency.querySelector('.size-2.rounded-full.bg-critical')).not.toBeNull();
+  expect(efficiency.querySelector('[role="img"] .bg-critical')).not.toBeNull();
+  expect(efficiency.className).not.toMatch(/\bborder-l-/);
+  expect(wallClock.querySelector('.bg-critical, .bg-warning, .bg-clean')).toBeNull();
+  expect(wallClock.className).not.toMatch(/\bborder-l-/);
 });
 
 test('renders no domain/company strings', () => {

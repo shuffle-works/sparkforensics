@@ -21,14 +21,14 @@ export function SampleRunNotice() {
     <section
       aria-label="Sample run"
       data-testid="sample-run-notice"
-      className="flex flex-col gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm sm:flex-row sm:items-center sm:justify-between"
+      className="flex flex-col gap-2 rounded-xl border border-border border-l-[3px] border-l-accent bg-card px-4 py-2.5 text-[0.8125rem] text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:gap-4"
     >
       <p className="max-w-prose">
-        <span className="font-medium">This is the sample run</span>, a real Spark job from a public example corpus,
+        <span className="font-medium text-foreground">This is the sample run</span>, a real Spark job from a public example corpus,
         picked because it shows several common problems. Everything below works the same on your own event log.
       </p>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" onClick={resetToDropZone}>
+      <div className="-ml-2.5 flex shrink-0 flex-wrap items-center gap-1 sm:ml-0">
+        <Button size="sm" variant="ghost" className="text-accent hover:text-accent" onClick={resetToDropZone}>
           Load my event log
           <ArrowRight aria-hidden="true" />
         </Button>
@@ -36,7 +36,7 @@ export function SampleRunNotice() {
           href={ALTERNATIVE_LOG_RETRIEVAL_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="tap-target-comfortable inline-flex items-center rounded-sm px-2 text-primary underline-offset-4 hover:underline"
+          className="tap-target-comfortable inline-flex h-7 items-center rounded-lg px-2.5 text-[0.8rem] font-medium text-accent underline-offset-4 hover:underline"
           onClick={(event) => {
             // Same passthrough as every other in-app docs link: a modified or
             // non-primary click keeps the browser's own new-tab behavior.

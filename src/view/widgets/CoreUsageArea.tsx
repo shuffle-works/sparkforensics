@@ -142,14 +142,20 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
               <XAxis
                 dataKey="t"
                 tick={{ fontSize: 10 }}
-                label={{ value: 'seconds from app start', position: 'insideBottom', offset: -2, fontSize: 10 }}
+                // Unit on the ticks, not an axis title: the title collided with the legend.
+                tickFormatter={(value) => `${value}s`}
               />
               <YAxis
                 tick={{ fontSize: 10 }}
                 width={36}
                 label={{ value: 'avg concurrent cores', angle: -90, position: 'insideLeft', fontSize: 10 }}
               />
-              <Tooltip {...CHART_TOOLTIP_PROPS} />
+              <Tooltip
+                {...CHART_TOOLTIP_PROPS}
+                labelFormatter={(label) => `${label}s from app start`}
+                // Bucket averages are fractional cores; two decimals is the readable precision.
+                formatter={(value) => (typeof value === 'number' ? value.toFixed(2) : String(value))}
+              />
               <Legend wrapperStyle={{ fontSize: 10 }} />
               {order.map((tier) => (
                 <Area

@@ -7,14 +7,10 @@ import { store, useWidgetDensity } from '@/store/store';
 const DENSITY_HINT = 'Show confidence levels, evidence, documentation links, finding filters and triage shortcuts (j/k, f, 1/2)';
 
 /** Desktop's always-visible inline control, in the `sm:flex` action cluster.
- * `variant="outline"` gives the OFF state a visible border (the shared
- * Toggle's default variant is borderless/`bg-transparent`, which reads as
- * inert text rather than a control). The ON state is a selected toggle
- * (accent border, light accent wash and an accent dot around foreground
- * text), not a solid accent fill: a filled button read as the page's primary
- * call to action, louder than the verdict's own "Show evidence". Accent-
- * colored text on the wash measured 4.2:1 in the light theme, under AA, so
- * the text stays foreground. */
+ * Trace's soft primary: accent text on the accent-soft wash, never a solid
+ * fill (a filled button would out-shout the verdict's own "Show evidence").
+ * The ON state adds an accent border and dot. Accent on accent-soft clears
+ * 4.5:1 in both Trace themes. */
 export function WidgetDensityControl() {
   const advanced = useWidgetDensity() === 'advanced';
   return (
@@ -22,10 +18,10 @@ export function WidgetDensityControl() {
       variant="outline"
       pressed={advanced}
       onPressedChange={(pressed) => store.getState().setWidgetDensity(pressed ? 'advanced' : 'basic')}
-      className="tap-target-comfortable aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-foreground aria-pressed:hover:bg-primary/15"
+      className="tap-target-comfortable border-transparent bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent aria-pressed:border-accent aria-pressed:bg-accent-soft aria-pressed:text-accent aria-pressed:hover:bg-accent-soft"
       title={DENSITY_HINT}
     >
-      {advanced ? <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-primary" /> : null}
+      {advanced ? <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-accent" /> : null}
       Advanced view
     </Toggle>
   );

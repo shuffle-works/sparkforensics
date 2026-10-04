@@ -79,3 +79,37 @@ export function boardRollup(
     : rankedRollup(eligible, stages).map(boardGroup);
   return { eligible, groups };
 }
+
+/** Step codes for the verdict's next steps (F1 is the first step), so a step can be found
+ * again wherever its lead finding or its stage appears on the board (Findings rows, the
+ * stage strip, the Stage Summary table). */
+export interface StepCodes {
+  byFinding: Map<Finding, string>;
+  byStage: Map<number, string>;
+}
+
+const EMPTY_STEP_CODES: StepCodes = { byFinding: new Map(), byStage: new Map() };
+const stepCodesByState = new WeakMap<InterpretationState, StepCodes>();
+
+export function stepCodes(state: InterpretationState | null): StepCodes {
+  if (!state) return EMPTY_STEP_CODES;
+  let codes = stepCodesByState.get(state);
+  if (!codes) {
+    const byFinding = new Map<Finding, string>();
+    const byStage = new Map<number, string>();
+    state.data.verdict.steps.forEach((step, i) => {
+      const code = `F${i + 1}`;
+      const lead = state.findings[step.leadIndex];
+      if (lead) byFinding.set(lead, code);
+      // The first step that names a stage owns its code.
+      if (step.stageId != null && !byStage.has(step.stageId)) byStage.set(step.stageId, code);
+    });
+    codes = { byFinding, byStage };
+    stepCodesByState.set(state, codes);
+  }
+  return codes;
+}
+
+export function useStepCodes(): StepCodes {
+  return stepCodes(useInterpretation());
+}

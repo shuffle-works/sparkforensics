@@ -187,7 +187,7 @@ export function Topbar({
   const failed = verdict?.failed ?? false;
 
   return (
-    <header className="sticky top-0 z-30 flex min-w-0 flex-wrap items-center gap-3 border-b border-border bg-background/95 px-4 py-2 backdrop-blur">
+    <header className="sticky top-0 z-30 flex min-w-0 flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-2 sm:px-8">
       {/* PlanGraphRoute supplies its own <h1> via sectionControls; Dashboard
           (the only caller with no sectionControls) has none of its own, so
           this is its one page heading. */}
@@ -205,10 +205,13 @@ export function Topbar({
             <Home aria-hidden="true" />
           </Button>
         ) : null}
+        {/* Visible wordmark beside the sr-only h1; hidden on narrow screens to leave the run name room. */}
+        <span aria-hidden="true" className="hidden shrink-0 font-mono text-[13px] font-semibold tracking-[.02em] md:inline">sparkforensics</span>
+        <span aria-hidden="true" className="hidden shrink-0 text-muted-foreground md:inline">/</span>
         {exportMode ? (
           <div className="flex min-w-0 shrink flex-col items-start justify-center gap-0 py-1">
             <span className="min-w-0 truncate font-heading text-sm font-semibold">{name}</span>
-            {sub ? <span className="w-full min-w-0 truncate text-left text-xs text-muted-foreground">{sub}</span> : null}
+            {sub ? <span className="w-full min-w-0 truncate text-left font-mono text-xs text-muted-foreground">{sub}</span> : null}
           </div>
         ) : (
           <FileSwitcher
@@ -244,7 +247,7 @@ export function Topbar({
             className={cn(
               badgeVariants(),
               severityBadgeVariants({ impactBand: worst }),
-              'tap-target-comfortable cursor-pointer font-mono hover:underline focus-visible:outline-none',
+              'tap-target-comfortable cursor-pointer font-mono text-[11px] font-semibold hover:underline focus-visible:outline-none',
             )}
           >
             {verdictLabel(worst, count)}
@@ -257,7 +260,7 @@ export function Topbar({
       ) : clean ? (
         <span
           className={cn(
-            'inline-flex shrink-0 items-center gap-1.5 rounded-full bg-clean/10 px-2 py-0.5 text-xs font-medium text-clean',
+            'inline-flex shrink-0 items-center gap-1.5 rounded-sm bg-clean/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-clean',
           )}
         >
           <span aria-hidden="true" className="inline-block size-2 shrink-0 rounded-full bg-clean" />
@@ -265,7 +268,7 @@ export function Topbar({
         </span>
       ) : (
         // Nothing to fix, but the verdict lists checks this log could not run.
-        <span className="inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground">
+        <span className="inline-flex shrink-0 items-center rounded-sm border border-border px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
           Not fully checked
         </span>
       )}

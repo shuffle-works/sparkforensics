@@ -28,7 +28,7 @@ export function RowStatusCluster({ confidence, validationRequired, evidenceKey }
 
   return (
     <span
-      className="relative inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-muted/60 px-2.5 text-xs font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      className="relative inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm border border-border bg-muted/60 px-2 text-xs font-medium text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
       // Focusable only when it actually carries a tooltip to reveal: native
       // `title` never fires on keyboard focus, so without this tab stop a
       // sighted keyboard-only user could never reach the confidence caveat

@@ -16,6 +16,8 @@ import { useWidgetGridCard, WidgetGridCardBoundary } from '@/view/WidgetGrid';
 
 export interface WidgetCardProps {
   title: string;
+  /** A short mono line under the title (scope, totals), such as "17.2s total". */
+  subtitle?: ReactNode;
   impactBand?: ImpactBand;
   badges?: ReactNode;
   /** Like `badges`, but rendered next to the title only while the card is
@@ -47,6 +49,7 @@ export interface WidgetCardProps {
 
 export function WidgetCard({
   title,
+  subtitle,
   impactBand,
   badges,
   statusBadge,
@@ -137,7 +140,7 @@ export function WidgetCard({
         >
           {/* h3: one level below the board's h2 section headers, keeping the
               document outline nested. */}
-          <h3 className="font-heading text-base leading-snug font-bold">{title}</h3>
+          <h3 className="font-heading text-sm leading-snug font-semibold">{title}</h3>
           {open ? (
             <ChevronUpIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
           ) : (
@@ -145,7 +148,7 @@ export function WidgetCard({
           )}
         </CollapsibleTrigger>
       ) : (
-        <h3 className="min-w-0 font-heading text-base leading-snug font-bold sm:flex-1">{title}</h3>
+        <h3 className="min-w-0 font-heading text-sm leading-snug font-semibold sm:flex-1">{title}</h3>
       )}
       {badges || (open && statusBadge) ? (
         <div className="flex shrink-0 flex-wrap items-center gap-1">
@@ -153,6 +156,7 @@ export function WidgetCard({
           {open ? statusBadge : null}
         </div>
       ) : null}
+      {subtitle ? <p className="w-full basis-full font-mono text-xs text-muted-foreground sm:-mt-1.5">{subtitle}</p> : null}
     </div>
   );
 
@@ -168,8 +172,8 @@ export function WidgetCard({
       id={id}
       size={compact ? 'sm' : 'default'}
       className={cn(
-        'border-l-4',
-        impactBand ? IMPACT_BORDER_CLASS[impactBand] : 'border-transparent',
+        // Trace panel: the Card's 1px rule all round; a flagged card adds a 3px status rule on its left.
+        impactBand ? cn('border-l-[3px]', IMPACT_BORDER_CLASS[impactBand]) : 'border-l-0',
         // Uniform collapsed height for reference-grid tiles so header-only and
         // header+summary cards line up; drops once the tile is expanded.
         collapsedTile && !open && 'min-h-[6.5rem]',
@@ -209,7 +213,7 @@ export function WidgetCard({
  */
 export function WidgetCardSkeleton() {
   return (
-    <Card className="border-l-4 border-transparent" aria-hidden="true">
+    <Card aria-hidden="true">
       <CardContent>
         <div className="h-5 w-1/3 animate-pulse rounded-md bg-muted motion-reduce:animate-none" />
       </CardContent>

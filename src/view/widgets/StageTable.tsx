@@ -38,7 +38,8 @@ import { formatBytes, formatDuration, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE, wors
 import { Chip, TagBadge } from '@/view/ImpactBadge';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useWidgetDensity } from '@/store/store';
-import { savingsOf, useInterpretation } from '@/view/interpretation';
+import { savingsOf, stepCodes, useInterpretation } from '@/view/interpretation';
+import { StepCode } from '@/view/StepCode';
 import { WidgetCard } from '@/view/WidgetCard';
 import type { AppModel, Finding, Stage, TaskData } from '@sparkforensics/core/types.ts';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
@@ -217,7 +218,9 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
         // of the table structure for assistive tech.
         cell: ({ getValue }) => {
           const id = getValue<number>();
+          const code = stepCodes(interpretation).byStage.get(id);
           return (
+            <span className="inline-flex items-center gap-2">
             <button
               type="button"
               // Distinct from StagePill's "Open details for Stage N" so the
@@ -230,8 +233,10 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
                 openStage(id);
               }}
             >
-              <strong>{id}</strong>
+              <strong className="font-mono font-semibold">{id}</strong>
             </button>
+            {code ? <StepCode code={code} /> : null}
+            </span>
           );
         },
       },
@@ -255,7 +260,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
                         type="button"
                         aria-label={`Investigate ${route.target.findingLabel} in Stage ${stageId}`}
                         title={`Investigate ${route.target.findingLabel} in Stage ${stageId}`}
-                        className="inline-flex cursor-pointer items-center rounded-full hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="inline-flex cursor-pointer items-center rounded-sm hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                         onClick={(event) => {
                           event.stopPropagation();
                           route.onRoute(route.target);
@@ -405,7 +410,10 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
     dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : 'none';
 
   return (
-    <WidgetCard title="Stage Summary">
+    <WidgetCard
+      title="Stage Summary"
+      subtitle={`${rows.length} of ${appModel.stages.size} stage${appModel.stages.size === 1 ? '' : 's'}`}
+    >
       <div ref={tableAreaRef} className="space-y-3">
         <Input
           type="text"
@@ -477,6 +485,8 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
+                  // Flagged rows carry a 3px status rule on their first cell (see theme/board.css).
+                  data-flag={worstImpactBand(row.original.tags) ?? undefined}
                   // Pointer-only convenience: the accessible primary action is
                   // the real "Open details" button in the Stage cell.
                   className="cursor-pointer"

@@ -103,6 +103,7 @@ export function Timeline({ appModel, catalog }: TimelineProps) {
   return (
     <WidgetCard
       title="Job Timeline"
+      subtitle="seconds from app start"
       summary={
         total > 0 ? (
           <WidgetLeadSummary
