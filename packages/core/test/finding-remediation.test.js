@@ -465,6 +465,20 @@ describe('skew remediation follows what the stage reads', () => {
   });
 });
 
+describe('partition-skew rule on a stage whose input exceeds its shuffle read', () => {
+  it('keeps a shuffle-based origin, never the input-file remedy', () => {
+    const app = makeApp();
+    const stage = makeStage({
+      shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB,
+      inputBytes: 2000 * MiB, taskCount: 50, sqlExecutionId: 7,
+    });
+    const f = catalogOf([stage], app, JOIN_SQL).find((x) => x.rule === 'shufflePartitionSkew');
+    expect(f.origin).toBe('shuffleJoin');
+    expect(f.recommendation).not.toMatch(/maxPartitionBytes/);
+    expect(f.remediation.map((r) => r.key ?? r.name)).not.toContain('spark.sql.files.maxPartitionBytes');
+  });
+});
+
 describe('findings for stages that read no shuffle or that have an even host count', () => {
   const app = makeApp();
 

@@ -698,8 +698,8 @@ const SKEW_KEY_REMEDY = 'salt the key or repartition on a better key';
 // not say which stage runs which join (a node's stageIds are empty in real logs), so the join is
 // matched per execution. 'inputScan' reads mostly files (its tasks differ in input size);
 // 'other' is any stage the plan cannot tie to a join (an aggregation's shuffle, no plan, no input).
-function skewOrigin(stage: DetectorStage, ctx: DetectorCtx): 'shuffleJoin' | 'inputScan' | 'other' {
-  if (stage.shuffleReadBytes > 0 && stage.shuffleReadBytes >= stage.inputBytes) {
+function skewOrigin(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence: boolean): 'shuffleJoin' | 'inputScan' | 'other' {
+  if (shuffleEvidence || (stage.shuffleReadBytes > 0 && stage.shuffleReadBytes >= stage.inputBytes)) {
     let hasJoin = false;
     const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
     walkPlanTree(plan, (node) => { if (SKEW_JOIN_NODES.has(node.name)) hasJoin = true; });
@@ -711,8 +711,8 @@ const SKEW_JOIN_NODES = new Set(['SortMergeJoin', 'ShuffledHashJoin']);
 
 // The skew finding's fix for the stage's origin. Join-driven skew gets AQE skew-join handling,
 // unless the run's effective conf already has it; uneven input gets the file-size remedy.
-function skewFix(stage: DetectorStage, ctx: DetectorCtx): { origin: SkewOrigin; text: string; remediation: Remediation[] } {
-  const origin = skewOrigin(stage, ctx);
+function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false): { origin: SkewOrigin; text: string; remediation: Remediation[] } {
+  const origin = skewOrigin(stage, ctx, shuffleEvidence);
   if (origin === 'inputScan') {
     return {
       origin,
@@ -1273,7 +1273,7 @@ export const DETECTORS = [
         const ratioText = p50 > 0
           ? `${Math.round(max / p50 * 10) / 10}× the median (${formatBytes(p50)})`
           : 'far larger than the median, which is effectively empty';
-        const fix = skewFix(stage, ctx);
+        const fix = skewFix(stage, ctx, true);
         out.push({
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'shufflePartitionSkew', origin: fix.origin, metric: 'shuffleReadMax', value: max,
