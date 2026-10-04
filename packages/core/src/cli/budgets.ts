@@ -25,7 +25,7 @@ export interface BudgetsConfig {
 export const STAGE_QUALITIES: readonly StagePair['quality'][] = ['exact', 'structural', 'aligned'];
 export const DEFAULT_STAGE_BUDGET_QUALITIES: readonly StagePair['quality'][] = ['exact', 'structural'];
 /** Metrics with a regression direction (higher is worse). Input and output volume are workload, not performance. */
-const NEUTRAL_PAIR_METRICS: ReadonlySet<string> = new Set(['inputBytes', 'outputBytes']);
+export const NEUTRAL_PAIR_METRICS: ReadonlySet<string> = new Set(['inputBytes', 'outputBytes']);
 export interface BudgetResult {
   name: 'max-runtime' | 'max-spill' | 'max-skew' | 'max-failed-task-rate' | 'min-efficiency'
     | 'max-regression' | 'max-stage-regression' | 'fail-on-introduced' | 'run-complete';

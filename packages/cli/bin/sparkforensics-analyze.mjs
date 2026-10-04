@@ -82,8 +82,9 @@ Options:
                                     (executorRunTime, executorCpuTime, memoryBytesSpilled,
                                     diskBytesSpilled, shuffleReadBytes, shuffleWriteBytes) grew
                                     by more than <pct> percent against its baseline stage.
-                                    Repeat the flag for several metrics. Inconclusive (exit 3)
-                                    when no stage pairs or the metric is missing.
+                                    Repeat the flag for several metrics. inputBytes and outputBytes
+                                    are refused (usage error): volume has no regression direction.
+                                    Inconclusive (exit 3) when no stage pairs or the metric is missing.
   --stage-quality <q[,q]>           Requires --stage-regression-budget. Pair qualities the stage
                                     budgets read, from exact, structural, aligned (default:
                                     exact,structural; an aligned pair may compare different work).

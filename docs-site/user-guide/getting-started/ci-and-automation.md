@@ -562,7 +562,8 @@ sparkforensics-analyze candidate.zstd --baseline baseline.zstd \
   `insufficient` confidence is still judged on the pairs it has.
 - A metric can be budgeted once. `--stage-quality` without
   `--stage-regression-budget`, an unknown metric or quality, and a metric
-  named twice are usage errors (exit `2`).
+  named twice are usage errors (exit `2`), and so are `inputBytes` and
+  `outputBytes`: workload volume has no regression direction.
 
 ### Several candidates
 

@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { COMPARISON_METRIC_KEYS } from '../run-comparison.ts';
 import { PAIR_DELTA_METRICS } from '../stage-alignment.ts';
-import { STAGE_QUALITIES } from './budgets.ts';
+import { NEUTRAL_PAIR_METRICS, STAGE_QUALITIES } from './budgets.ts';
 import type { StagePair } from '../stage-alignment.ts';
 
 export interface RegressionBudget { metric: string; maxPct: number; }
@@ -85,6 +85,16 @@ export function combineRegressionBudgets(sources: RegressionBudgetSource[]): Reg
   return sources.map((s) => s.budget);
 }
 
+/** Refuses a stage budget metric that is not a paired-stage metric or has no regression direction. */
+export function assertStageBudgetMetric(metric: string, origin: string): void {
+  if (!(PAIR_DELTA_METRICS as readonly string[]).includes(metric)) {
+    throw new Error(`${origin}: unknown paired-stage metric "${metric}" (expected one of: ${PAIR_DELTA_METRICS.filter((m) => !NEUTRAL_PAIR_METRICS.has(m)).join(', ')}).`);
+  }
+  if (NEUTRAL_PAIR_METRICS.has(metric)) {
+    throw new Error(`${origin}: "${metric}" measures workload volume, not performance, so it has no regression direction to budget.`);
+  }
+}
+
 /** One `--stage-regression-budget` value, `<metric>:<pct>`, over the paired-stage metrics. */
 export function parseStageRegressionBudgetFlag(spec: string): RegressionBudget {
   const origin = `--stage-regression-budget "${spec}"`;
@@ -92,9 +102,7 @@ export function parseStageRegressionBudgetFlag(spec: string): RegressionBudget {
   if (colon === -1) throw new Error(`${origin}: expected <metric>:<pct>.`);
   const metric = spec.slice(0, colon);
   const pct = spec.slice(colon + 1);
-  if (!(PAIR_DELTA_METRICS as readonly string[]).includes(metric)) {
-    throw new Error(`${origin}: unknown paired-stage metric "${metric}" (expected one of: ${PAIR_DELTA_METRICS.join(', ')}).`);
-  }
+  assertStageBudgetMetric(metric, origin);
   if (!PCT_PATTERN.test(pct)) throw new Error(`${origin}: "${pct}" is not a non-negative percentage.`);
   return { metric, maxPct: Number(pct) };
 }

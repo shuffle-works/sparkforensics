@@ -303,6 +303,12 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
     const unknown = await cliOutput([CANDIDATES[0], '--baseline', BASELINE, '--stage-regression-budget', 'wallClock:10']);
     expect(unknown.exitCode).toBe(2);
     expect(unknown.stderr).toMatch(/unknown paired-stage metric "wallClock"/);
+    const neutral = await cliOutput([CANDIDATES[0], '--baseline', BASELINE, '--stage-regression-budget', 'inputBytes:10']);
+    expect(neutral.exitCode).toBe(2);
+    expect(neutral.stderr).toMatch(/"inputBytes" measures workload volume/);
+    await expect(mcpCall('evaluate_budgets', {
+      source: { path: BASELINE }, sourceB: { path: CANDIDATES[0] }, stageRegressionBudgets: [{ metric: 'outputBytes', maxPct: 10 }],
+    })).rejects.toThrow(/"outputBytes" measures workload volume/);
     const quality = await cliOutput([CANDIDATES[0], '--baseline', BASELINE, '--stage-quality', 'exact']);
     expect(quality.exitCode).toBe(2);
     expect(quality.stderr).toMatch(/--stage-quality requires --stage-regression-budget/);

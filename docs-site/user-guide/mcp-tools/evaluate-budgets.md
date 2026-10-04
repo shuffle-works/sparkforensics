@@ -49,8 +49,8 @@ Parameters (all optional):
   `stagePairs`). Each metric gets its own `max-stage-regression` result, and a
   metric can be budgeted once. Requires `runIdB`/`sourceB`. It reports
   `inconclusive` when no eligible stage pairs, when the metric is missing on
-  every eligible pair, and for `inputBytes` and `outputBytes`, which are
-  workload volume with no regression direction.
+  every eligible pair. `inputBytes` and `outputBytes` are workload volume
+  with no regression direction, so the call fails if either is named.
 - `stageQualities`: the pair qualities `stageRegressionBudgets` read, from
   `exact`, `structural` and `aligned` (default `exact` and `structural`). An
   `aligned` pair was matched on similarity or position and may compare

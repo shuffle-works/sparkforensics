@@ -79,7 +79,7 @@ describe('max-stage-regression', () => {
     expect(results[0].detail).toMatch(/from 0/);
   });
 
-  it('is inconclusive for a volume metric with no regression direction', () => {
+  it('is inconclusive for a volume metric when called directly', () => {
     const { results } = run([pair('p1', 'exact', [1, 1])], { stageRegressionBudgets: [{ metric: 'inputBytes', maxPct: 5 }] });
     expect(results[0]).toMatchObject({ status: 'inconclusive', metric: 'inputBytes' });
   });
@@ -110,7 +110,7 @@ describe('stage budget parsing', () => {
     expect(parseStageRegressionBudgetFlag('executorRunTime:12.5')).toEqual({ metric: 'executorRunTime', maxPct: 12.5 });
   });
 
-  it.each(['executorRunTime', 'wallClock:10', 'executorRunTime:-1', 'executorRunTime:x'])('rejects %j', (spec) => {
+  it.each(['executorRunTime', 'wallClock:10', 'inputBytes:10', 'outputBytes:10', 'executorRunTime:-1', 'executorRunTime:x'])('rejects %j', (spec) => {
     expect(() => parseStageRegressionBudgetFlag(spec)).toThrow();
   });
 
