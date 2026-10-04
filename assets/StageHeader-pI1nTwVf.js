@@ -1,0 +1,1 @@
+import{p as e}from"./plan-graph-vendor-BYl-AzN5.js";import{i as t}from"./Dashboard-BgKodJl2.js";var n=e();function r({stageId:e,appModel:r}){let i=r.stages.get(e);return(0,n.jsxs)(`div`,{className:`flex flex-wrap items-center gap-2`,children:[(0,n.jsx)(t,{stageId:e}),(0,n.jsx)(`span`,{className:`text-sm font-medium`,children:i?.name??`Stage ${e}`})]})}export{r as t};
