@@ -105,9 +105,15 @@
   padding: 8px;
 }
 .trace-table thead th:not(:first-child) { text-align: right; }
+/* Row headers reuse TableHead, whose default is now the mono uppercase column
+   label: undo that so metric and stage names keep their own case. */
 .trace-table tbody th {
+  font-family: var(--font);
   font-size: 13px;
   font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--ink);
   padding: 8px;
 }
 .trace-table td {
