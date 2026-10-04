@@ -56,6 +56,14 @@ describe.skipIf(LOGS.length === 0)('stage aligner on the public corpus', () => {
         expect(pairsOf(backward).map(([x, y]) => [y, x]).sort((p, q) => p[0] - q[0] || p[1] - q[1])).toEqual(pairsOf(forward));
         expect(backward.unmatched).toEqual({ baseStageIds: forward.unmatched.candStageIds, candStageIds: forward.unmatched.baseStageIds });
         expect(backward.runtimeCoverage).toBe(forward.runtimeCoverage);
+        // Replanned groups mirror too: the sides swap, the executions and the totals swap with them.
+        expect(backward.replanned).toEqual(forward.replanned.map((g) => ({
+          baseExecutionId: g.candExecutionId, candExecutionId: g.baseExecutionId,
+          baseStageIds: g.candStageIds, candStageIds: g.baseStageIds,
+          deltas: Object.fromEntries(Object.entries(g.deltas).map(([k, d]) => [k, {
+            baseline: d.candidate, candidate: d.baseline, delta: d.delta == null ? null : 0 - d.delta,
+          }])),
+        })));
         expect(JSON.stringify(alignStages(a, b))).toBe(JSON.stringify(forward));
       }
     }
@@ -71,6 +79,36 @@ describe.skipIf(LOGS.length === 0)('stage aligner on the public corpus', () => {
       const comparison = new Set(kept.map((s) => comparisonIdentity(s, snap, normalizer)));
       expect(comparison.size, name).toBeGreaterThanOrEqual(exact.size);
     }
+  });
+
+  // Checkpoints 2 and 3's over-merge check, with the replanned fallback on. The structural key is
+  // coarser than the exact one by design, so a distinct-key count proves nothing here. Instead a
+  // run paired with itself pairs every stage with itself (above), and runs of different jobs pair
+  // nothing, which keeps them out of `ok`. The generated workload logs and the failure and external
+  // logs come from different jobs; a log of a single generic stage (a lone `count`) is left out,
+  // since it is the same stage in any job.
+  describe('negative control: runs of different jobs', () => {
+    const generated = ['pairwise-01.ndjson', 'pairwise-04.ndjson', 'cache-memory-only.ndjson', 'spark-3.5.9-parquet-baseline.ndjson'];
+    const others = [...snapshots.keys()].filter((n) => /^(failure-|external\/)/.test(n));
+
+    it('gets no pair, so none is exact, and cannot reach ok', () => {
+      for (const g of generated) for (const o of others) {
+        const [a, b] = [snapshots.get(g), snapshots.get(o)];
+        if (!a || !b) continue;
+        const result = compareRuns({ label: 'b', snapshot: a }, { label: 'c', snapshot: b });
+        expect(result.stagePairs.filter((p) => p.quality === 'exact'), `${g} vs ${o}`).toEqual([]);
+        expect(result.confidence, `${g} vs ${o}`).not.toBe('ok');
+      }
+    });
+
+    it('counts replanned run time toward coverage only where executions agree', () => {
+      for (const g of generated) for (const o of others) {
+        const [a, b] = [snapshots.get(g), snapshots.get(o)];
+        if (!a || !b) continue;
+        const result = alignStages(a, b);
+        expect(result.replanned, `${g} vs ${o}`).toEqual([]);
+      }
+    });
   });
 
   describe('pairwise-* expected coverage', () => {

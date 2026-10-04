@@ -21,7 +21,7 @@ describe('comparisonOutput', () => {
     const out = comparisonOutput(built);
     expect(Object.keys(out)).toEqual([
       'verdict', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
-      'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds',
+      'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'executionAlignment',
     ]);
     expect(out.verdict).toEqual(comparisonVerdict(built));
     expect(out.metrics).toBe(built.metrics);

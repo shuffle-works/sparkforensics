@@ -469,8 +469,8 @@ it with `--conf-redact-regex` or leave it out with `--conf-keys`.
 
 With `--baseline`, the `comparison` object pairs the stages of the two runs
 (`stagePairs`, with each pair's `deltas`) and reports `runtimeCoverage`, the
-share of both runs' executor run time that sits in paired stages. `confidence`
-is `ok`, `low` or `insufficient`: `low` when the application names differ or
+share of both runs' executor run time that sits in paired or replanned stages.
+`confidence` is `ok`, `low` or `insufficient`: `low` when the application names differ or
 `runtimeCoverage` is under 0.9, `insufficient` when neither run recorded any
 executor run time. `confidence` does not change an exit code. The fields and
 the matching rules are in [`compare_runs`](../mcp-tools/compare-runs.md) and
@@ -557,7 +557,7 @@ Each line is one JSON object:
 | `error` | The message when `status` is `error`; otherwise `null`. With `--redact`, a generic message that names no path. |
 | `budgets` | This candidate's budget results, each with `name`, `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric` on `max-regression`. Empty for an `error` line. |
 | `candidate` | The candidate's report with its `metrics` and `effectiveConf` blocks, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
-| `comparison` | `verdict`, `confidence`, `reason`, `matchedCoverage`, `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`, `stagePairs`, `unmatched`, `replanned` and `bookkeepingStageIds`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
+| `comparison` | `verdict`, `confidence`, `reason`, `matchedCoverage`, `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`, `stagePairs`, `unmatched`, `replanned`, `bookkeepingStageIds` and `executionAlignment`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
 
 A line's `status` follows the single-candidate rules: `violation` if any
 budget result is a violation, else `inconclusive` if any is inconclusive

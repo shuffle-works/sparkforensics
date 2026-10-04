@@ -38,6 +38,7 @@ export interface CompareRunsResult {
   unmatched: StageAlignment['unmatched'];
   replanned: StageAlignment['replanned'];
   bookkeepingStageIds: StageAlignment['bookkeepingStageIds'];
+  executionAlignment: StageAlignment['executionAlignment'];
   metrics: MetricDeltaRow[];
   findings: { introduced: FindingsDeltaRow[]; resolved: FindingsDeltaRow[] };
   stageSkew: StageSkewRow[];
@@ -408,6 +409,7 @@ export function compareRuns(
     unmatched: alignment.unmatched,
     replanned: alignment.replanned,
     bookkeepingStageIds: alignment.bookkeepingStageIds,
+    executionAlignment: alignment.executionAlignment,
     metrics: metricDeltas(baseSnap, candSnap),
     findings: findingsDelta(baseSnap, candSnap),
     stageSkew: stageSkewDeltas(baseSnap, candSnap, alignment.pairs),

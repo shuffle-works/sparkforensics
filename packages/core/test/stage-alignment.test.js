@@ -19,8 +19,25 @@ function snapshotOf(stageSpecs, app = { name: 'job' }) {
     if (nodes) {
       const existing = sql.get(sqlExecutionId)?.planTree;
       const children = [...(existing?.children ?? []), ...nodes];
-      sql.set(sqlExecutionId, { planTree: { name: 'Root', detail: '', metrics: [], children } });
+      sql.set(sqlExecutionId, { id: sqlExecutionId, description: 'save at X.java:0', planTree: { name: 'Root', detail: '', metrics: [], children } });
     }
+  }
+  return { app, stages, sql, jobs: new Map(), catalog: [], executors: { added: [], removed: [] } };
+}
+
+// Several SQL executions in submission order. `executions`: [{ id, description, stages: [spec] }]; each
+// stage's plan nodes sit under that execution's own plan root.
+function snapshotOfExecutions(executions, app = { name: 'job' }) {
+  const stages = new Map();
+  const sql = new Map();
+  for (const { id, description = 'save at X.java:0', stages: specs } of executions) {
+    const children = [];
+    for (const spec of specs) {
+      const { id: stageId, name = `Stage ${stageId}`, nodes = [], ...figures } = spec;
+      stages.set(stageId, { id: stageId, name, sqlExecutionId: id, executorRunTime: 100, ...figures });
+      children.push(...nodes);
+    }
+    sql.set(id, { id, description, planTree: { name: 'Root', detail: '', metrics: [], children } });
   }
   return { app, stages, sql, jobs: new Map(), catalog: [], executors: { added: [], removed: [] } };
 }
@@ -130,35 +147,188 @@ describe('alignStages: a pair of runs differing in one volatile token still pair
     const detail = (variant) => `Location: [/sandbox/session-9/${variant}/batch-4/out]`;
     const base = snapshotOf([{ id: 1, name: 'save at X.java:0', nodes: [scan(1, detail('baseline'))] }]);
     const cand = snapshotOf([{ id: 2, name: 'save at X.java:0', nodes: [scan(2, detail('c07b'))] }]);
-    expect(alignStages(base, cand).pairs).toHaveLength(0);
+    expect(alignStages(base, cand).pairs.map((p) => p.quality)).toEqual(['structural']);
     const aligned = alignStages(base, cand, { normalizePath: compileNormalizePatterns(['/sandbox/session-9/[a-z0-9]+/']) });
     expect(pairsOf(aligned)).toEqual([[1, 2]]);
+    expect(aligned.pairs[0].quality).toBe('exact');
   });
 
-  it('leaves a re-planned stage unpaired and reports no replanned group', () => {
-    // SortMergeJoin in one run, BroadcastHashJoin (no exchange stage) in the other.
+  it('reports the stages a re-plan leaves over as one replanned group, not as unmatched', () => {
+    // SortMergeJoin with two exchange stages in one run, BroadcastHashJoin and no exchange stage in the other.
+    const base = snapshotOf([
+      { id: 1, name: 'Exchange 1', nodes: [scan(1, 'a#1'), node('Exchange', 'hashpartitioning(k#1, 200)', [1])], executorRunTime: 10 },
+      { id: 2, name: 'Exchange 2', nodes: [scan(2, 'b#2'), node('Exchange', 'hashpartitioning(k#2, 200)', [2])], executorRunTime: 20, shuffleWriteBytes: 7 },
+      { id: 3, name: 'save at X.java:0', nodes: [node('SortMergeJoin', '[k#1], [k#2], Inner', [3]), node('Project', 'k#1, v#3', [3])], executorRunTime: 30 },
+    ]);
+    const cand = snapshotOf([
+      { id: 1, name: 'Exchange 1', nodes: [scan(1, 'a#1'), node('Exchange', 'hashpartitioning(k#1, 200)', [1])], executorRunTime: 10 },
+      { id: 2, name: 'save at X.java:0', nodes: [node('BroadcastHashJoin', '[k#1], [k#2], Inner, BuildRight', [2]), node('Project', 'k#1, v#3', [2])], executorRunTime: 12 },
+    ]);
+    const result = alignStages(base, cand);
+    // The shared exchange pairs exactly, the join stage pairs across its two implementations, and the
+    // second exchange stage, which the broadcast join made unnecessary, is the leftover.
+    expect(result.pairs.map((p) => [p.baseStageIds[0], p.candStageIds[0], p.quality])).toEqual([[1, 1, 'exact'], [3, 2, 'aligned']]);
+    expect(result.unmatched).toEqual({ baseStageIds: [], candStageIds: [] });
+    expect(result.replanned).toHaveLength(1);
+    const [group] = result.replanned;
+    expect([group.baseExecutionId, group.candExecutionId]).toEqual([1, 1]);
+    expect([group.baseStageIds, group.candStageIds]).toEqual([[2], []]);
+    expect(group.deltas.executorRunTime).toEqual({ baseline: 20, candidate: null, delta: null });
+    expect(group.deltas.shuffleWriteBytes).toEqual({ baseline: 7, candidate: null, delta: null });
+    // Paired plus replanned run time over the total of both runs.
+    expect(result.runtimeCoverage).toBe(1);
+  });
+
+  it('leaves stages unmatched when an aligned execution pair has equal stage counts', () => {
     const base = snapshotOf([
       { id: 1, name: 'Exchange 1', nodes: [node('Exchange', 'hashpartitioning(k#1, 200)', [1])] },
-      { id: 2, name: 'Exchange 2', nodes: [node('Exchange', 'hashpartitioning(j#2, 200)', [2])] },
-      { id: 3, name: 'save at X.java:0', nodes: [node('SortMergeJoin', '[k#1], [k#2], Inner', [3])] },
+      { id: 2, name: 'save at X.java:0', nodes: [node('SortMergeJoin', '[k#1], [k#2], Inner', [2])] },
     ]);
     const cand = snapshotOf([
       { id: 1, name: 'Exchange 1', nodes: [node('Exchange', 'hashpartitioning(k#1, 200)', [1])] },
-      { id: 2, name: 'save at X.java:0', nodes: [node('BroadcastHashJoin', '[k#1], [k#2], Inner, BuildRight', [2])] },
+      { id: 2, name: 'collect at Y.java:0', nodes: [node('Window', 'row_number() over (partition by z#9)', [2])] },
     ]);
+    for (const snap of [base, cand]) snap.sql.get(1).description = 'save at X.java:0';
     const result = alignStages(base, cand);
     expect(pairsOf(result)).toEqual([[1, 1]]);
-    expect(result.unmatched).toEqual({ baseStageIds: [2, 3], candStageIds: [2] });
     expect(result.replanned).toEqual([]);
+    expect(result.unmatched).toEqual({ baseStageIds: [2], candStageIds: [2] });
   });
 
-  it('leaves a loop run 14 times against 15 times unpaired (equal-count rule)', () => {
-    const loop = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, name: 'collect at X.java:0', nodes: [scan(i + 1, 'Location: [/data/in]')] }));
-    const result = alignStages(snapshotOf(loop(14)), snapshotOf(loop(15)));
-    expect(result.pairs).toHaveLength(0);
-    expect(result.unmatched.baseStageIds).toHaveLength(14);
-    expect(result.unmatched.candStageIds).toHaveLength(15);
+  it('does not report a replanned group for the stages outside any SQL execution', () => {
+    const base = snapshotOf([{ id: 1, name: 'map at a.py:1' }, { id: 2, name: 'reduce at a.py:9' }]);
+    const cand = snapshotOf([{ id: 1, name: 'map at a.py:1' }]);
+    const result = alignStages(base, cand);
+    expect(pairsOf(result)).toEqual([[1, 1]]);
+    expect(result.replanned).toEqual([]);
+    expect(result.unmatched).toEqual({ baseStageIds: [2], candStageIds: [] });
+  });
+});
+
+describe('alignStages: executions align first', () => {
+  const loop = (count, first = 1) => Array.from({ length: count }, (_, i) => ({
+    id: i, stages: [{ id: first + i, name: 'collect at X.java:0', nodes: [scan(first + i, 'Location: [/data/in]')] }],
+  }));
+  const scan = (stageId, detail) => node('Scan parquet', detail, [stageId]);
+
+  it('pairs 14 iterations of a loop that ran 14 times in one run and 15 in the other', () => {
+    const base = snapshotOfExecutions(loop(14)), cand = snapshotOfExecutions(loop(15));
+    const result = alignStages(base, cand);
+    expect(result.pairs).toHaveLength(14);
+    expect(pairsOf(result)).toEqual(Array.from({ length: 14 }, (_, i) => [i + 1, i + 1]));
+    expect(result.pairs.every((p) => p.quality === 'exact')).toBe(true);
+    // The extra run's last iteration is the one left over.
+    expect(result.unmatched).toEqual({ baseStageIds: [], candStageIds: [15] });
+    expect(result.executionAlignment).toMatchObject({ baseExecutions: 14, candExecutions: 15, pairedExecutions: 14, bounded: false, accepted: true });
+    expect(result.runtimeCoverage).toBeCloseTo(2800 / 2900);
+  });
+
+  it('mirrors that alignment when the runs swap', () => {
+    const forward = alignStages(snapshotOfExecutions(loop(14)), snapshotOfExecutions(loop(15)));
+    const backward = alignStages(snapshotOfExecutions(loop(15)), snapshotOfExecutions(loop(14)));
+    expect(pairsOf(backward)).toEqual(pairsOf(forward));
+    expect(backward.unmatched).toEqual({ baseStageIds: [15], candStageIds: [] });
+  });
+
+  it('keeps pairing across an execution one run has and the other lacks', () => {
+    const q = (id, stageId, col) => ({ id, description: `save at job.py:${id}`, stages: [{ id: stageId, nodes: [node('Filter', `${col}#1 > 1`, [stageId])] }] });
+    const base = snapshotOfExecutions([q(0, 1, 'a'), q(1, 2, 'b'), q(2, 3, 'c')]);
+    const cand = snapshotOfExecutions([q(0, 1, 'a'), q(2, 2, 'c')]);
+    const result = alignStages(base, cand);
+    expect(pairsOf(result)).toEqual([[1, 1], [3, 2]]);
+    expect(result.unmatched).toEqual({ baseStageIds: [2], candStageIds: [] });
+  });
+
+  it('scores executions on call site, description and plan structure, not on description alone', () => {
+    // Two executions share a generic description; only their plans tell them apart.
+    const e = (id, stageId, op) => ({ id, description: 'save at NativeMethodAccessorImpl.java:0', stages: [{ id: stageId, nodes: [node(op, `${op.toLowerCase()}#1`, [stageId])] }] });
+    const base = snapshotOfExecutions([e(0, 1, 'Sort'), e(1, 2, 'Window')]);
+    const cand = snapshotOfExecutions([e(0, 1, 'Window'), e(1, 2, 'Sort')]);
+    // Order-preserving: the two matches cross, so at most one of them can pair.
+    expect(alignStages(base, cand).pairs).toHaveLength(1);
+  });
+
+  it('pairs no stage when the runs share too little SQL work to be one job', () => {
+    const generic = (stageId, extra) => ({ id: stageId, name: 'count at NativeMethodAccessorImpl.java:0', nodes: [node('HashAggregate', 'keys=[], functions=[count(1)]', [stageId]), ...extra] });
+    const lonely = (id, stageId, tag) => ({ id, description: `save at ${tag}.py:1`, stages: [{ id: stageId, nodes: [node('Project', `${tag}_col#1`, [stageId])] }] });
+    const shared = { id: 5, description: 'count at NativeMethodAccessorImpl.java:0', stages: [generic(9, [])] };
+    const base = snapshotOfExecutions([lonely(0, 1, 'a'), lonely(1, 2, 'b'), lonely(2, 3, 'c'), shared]);
+    const cand = snapshotOfExecutions([lonely(0, 1, 'x'), lonely(1, 2, 'y'), lonely(2, 3, 'z'), { ...shared, stages: [generic(9, [])] }]);
+    const result = alignStages(base, cand);
+    expect(result.executionAlignment).toMatchObject({ pairedExecutions: 1, agreement: 0.25, accepted: false });
+    expect(result.pairs).toEqual([]);
     expect(result.runtimeCoverage).toBe(0);
+  });
+
+  it('reports the bounded form when the alignment table is too large to run in full', () => {
+    const many = (n) => Array.from({ length: n }, (_, i) => ({ id: i, description: `save at q${i % 7}.py:0`, stages: [{ id: i, name: `s${i % 7}`, nodes: [node('Filter', `c${i % 7}#1 > 1`, [i])] }] }));
+    const result = alignStages(snapshotOfExecutions(many(1100)), snapshotOfExecutions(many(1100)));
+    expect(result.executionAlignment).toMatchObject({ baseExecutions: 1100, pairedExecutions: 1100, bounded: true, accepted: true });
+    expect(pairsOf(result).every(([b, c]) => b === c)).toBe(true);
+  });
+});
+
+describe('alignStages: stages inside an aligned execution pair', () => {
+  it('pairs two of three identical self-join subtrees against two', () => {
+    const sub = (ids) => ids.map((id) => ({ id, name: 'Exchange', nodes: [node('Exchange', 'hashpartitioning(k#1, 200)', [id])] }));
+    const result = alignStages(snapshotOf(sub([1, 2, 3])), snapshotOf(sub([1, 2])));
+    expect(pairsOf(result)).toEqual([[1, 1], [2, 2]]);
+    expect(result.pairs.every((p) => p.quality === 'exact')).toBe(true);
+    // The count differs under one aligned execution, so the third subtree is replanned.
+    expect(result.replanned.map((g) => [g.baseStageIds, g.candStageIds])).toEqual([[[3], []]]);
+  });
+
+  it('pairs a stage whose grouping columns come in another order as structural', () => {
+    const agg = (cols, gid) => node('Expand', `[[${cols.join(', ')}, ${gid}]], [${cols.join(', ')}, gid#${gid}]`, [1]);
+    const base = snapshotOf([{ id: 1, name: 'Exchange 1', nodes: [agg(['region#1', 'sku#2'], 5)] }]);
+    const cand = snapshotOf([{ id: 1, name: 'Exchange 1', nodes: [agg(['sku#7', 'region#9'], 8)] }]);
+    const [pair] = alignStages(base, cand).pairs;
+    expect(pair.quality).toBe('structural');
+    expect(pair.score).toBeGreaterThan(0.5);
+  });
+
+  it('keeps stages that differ in operator or attribute names apart in the structural key', () => {
+    const base = snapshotOf([{ id: 1, nodes: [node('Filter', 'region#1 = x', [1])] }]);
+    const cand = snapshotOf([{ id: 1, nodes: [node('Project', 'sku#1', [1])] }]);
+    expect(alignStages(base, cand).pairs).toEqual([]);
+  });
+
+  it('pairs stages of different structure as aligned when their details are similar enough', () => {
+    const base = snapshotOf([{ id: 1, name: 'save at X.java:0', nodes: [node('Filter', 'amount#1 > 5 AND region#2 = north AND kind#3 = a', [1])] }]);
+    const cand = snapshotOf([{ id: 1, name: 'save at X.java:0', nodes: [node('Filter', 'amount#1 > 5 AND region#2 = north AND kind#3 = a AND day#4 = d', [1])] }]);
+    const [pair] = alignStages(base, cand).pairs;
+    expect(pair.quality).toBe('aligned');
+    expect(pair.score).toBeGreaterThanOrEqual(0.6);
+    // Details below the threshold do not pair.
+    const far = snapshotOf([{ id: 1, name: 'save at X.java:0', nodes: [node('Filter', 'other#1 < 9 AND stuff#2 = y', [1])] }]);
+    expect(alignStages(base, far).pairs).toEqual([]);
+  });
+
+  it('pairs stages without attributed plan nodes by position inside their execution, by name', () => {
+    const noNodes = (ids, name) => ids.map((id) => ({ id, name, nodes: [] }));
+    const base = snapshotOfExecutions([{ id: 0, stages: [...noNodes([1, 2], 'save at X.java:0'), { id: 3, name: 'collect at Y.java:0' }] }]);
+    const cand = snapshotOfExecutions([{ id: 0, stages: [...noNodes([5, 6], 'save at X.java:0'), { id: 7, name: 'collect at Y.java:0' }] }]);
+    const result = alignStages(base, cand);
+    expect(pairsOf(result)).toEqual([[1, 5], [2, 6], [3, 7]]);
+    // Same name and the same whole-plan fallback key: exact. A different plan on one side: positional.
+    expect(result.pairs.map((p) => p.quality)).toEqual(['exact', 'exact', 'exact']);
+    cand.sql.get(0).planTree.children.push(node('Extra', 'x', [99]));
+    const positional = alignStages(base, cand).pairs;
+    expect(positional.map((p) => p.quality)).toEqual(['aligned', 'aligned', 'aligned']);
+    expect(positional.every((p) => p.score === 0.5)).toBe(true);
+  });
+
+  it('does not pair a plan-less stage with a different name', () => {
+    const base = snapshotOf([{ id: 1, name: 'save at X.java:0' }]);
+    const cand = snapshotOf([{ id: 1, name: 'collect at Y.java:0' }]);
+    expect(alignStages(base, cand).pairs).toEqual([]);
+  });
+
+  it('separates stages outside any SQL execution by their call-site text', () => {
+    const rdd = (id, details) => ({ id, name: 'map at job.py:1', details, sqlExecutionId: null });
+    const base = snapshotOf([rdd(1, 'job.py:10 in load'), rdd(2, 'job.py:20 in join')]);
+    const cand = snapshotOf([rdd(1, 'job.py:20 in join'), rdd(2, 'job.py:10 in load')]);
+    expect(pairsOf(alignStages(base, cand))).toEqual([[1, 2], [2, 1]]);
   });
 });
 
@@ -199,12 +369,12 @@ describe('alignStages: pairing properties', () => {
 
   it('reports the share of executor run time in paired stages and lists unmatched stages', () => {
     const base = snapshotOf([
-      { id: 1, name: 'Exchange 1', nodes: [node('Filter', 'a', [1])], executorRunTime: 100 },
-      { id: 2, name: 'Heavy 1', nodes: [node('Filter', 'only-base', [2])], executorRunTime: 700 },
+      { id: 1, name: 'Exchange 1', nodes: [node('Filter', 'a', [1]), node('Scan parquet', 'in', [1]), node('Exchange', 'x', [1]), node('Sort', 's', [1])], executorRunTime: 100 },
+      { id: 2, name: 'Heavy 1', nodes: [node('Filter', 'only_base#1 > 3', [2])], executorRunTime: 700 },
     ]);
     const cand = snapshotOf([
-      { id: 1, name: 'Exchange 1', nodes: [node('Filter', 'a', [1])], executorRunTime: 100 },
-      { id: 2, name: 'Heavy 1', nodes: [node('Filter', 'only-cand', [2])], executorRunTime: 100 },
+      { id: 1, name: 'Exchange 1', nodes: [node('Filter', 'a', [1]), node('Scan parquet', 'in', [1]), node('Exchange', 'x', [1]), node('Sort', 's', [1])], executorRunTime: 100 },
+      { id: 2, name: 'Heavy 1', nodes: [node('Project', 'other_col#4', [2])], executorRunTime: 100 },
     ]);
     const result = alignStages(base, cand);
     expect(result.unmatched).toEqual({ baseStageIds: [2], candStageIds: [2] });

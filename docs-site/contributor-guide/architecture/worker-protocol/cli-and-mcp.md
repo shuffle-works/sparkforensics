@@ -117,7 +117,7 @@ JSON and the MCP tools call the same core functions:
   `comparisonOutput()`'s projection: `verdict`, `confidence`, `reason`,
   `matchedCoverage`, `runtimeCoverage`, `metrics`, `findings`, and the
   comparison block `comparisonSchemaVersion`, `stagePairs`, `unmatched`,
-  `replanned`, `bookkeepingStageIds` (built by the aligner, see
+  `replanned`, `bookkeepingStageIds`, `executionAlignment` (built by the aligner, see
   [Run comparison internals](../state-and-history/run-comparison-internals.md)).
   `comparisonOutput()` takes a `view`: `full` (the CLI) carries every field,
   `summary` (MCP's default) leaves out `stagePairs`, which `compare_runs` adds

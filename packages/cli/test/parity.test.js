@@ -20,6 +20,10 @@ import { createMcpServer } from '@sparkforensics/core/mcp-server-factory.ts';
 // reason. Public corpus logs only.
 const CORPUS = join(import.meta.dirname, '..', '..', '..', 'dev', 'log-corpus', 'logs', 'external');
 const BASELINE = join(CORPUS, 'external-app-20161115172038-0000.ndjson');
+// Two runs of one generated workload, with and without a cached table: 5 stages against 4.
+const GENERATED = join(import.meta.dirname, '..', '..', '..', 'dev', 'log-corpus', 'logs');
+const REPLAN_BASELINE = join(GENERATED, 'pairwise-01.ndjson');
+const REPLAN_CANDIDATE = join(GENERATED, 'pairwise-03.ndjson');
 const CANDIDATES = [
   join(CORPUS, 'external-app-20161116163331-0000.ndjson'),
   join(CORPUS, 'external-application_1516285256255_0012.ndjson'),
@@ -157,6 +161,7 @@ const INCLUDE_ALL = ['summary', 'evidenceAvailability', 'detectors'];
 // The fields of the comparison block (stage pairs and the run-time coverage they feed).
 const COMPARISON_BLOCK_FIELDS = [
   'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'runtimeCoverage',
+  'executionAlignment',
 ];
 // compare_runs leaves stagePairs out unless asked (see COMPARISON_ALLOWED).
 const MCP_DEFAULT_FIELDS = COMPARISON_BLOCK_FIELDS.filter((f) => f !== 'stagePairs');
@@ -201,7 +206,11 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
       for (const surface of [line.comparison, viaMcp, dashboard]) {
         expect(Object.keys(surface)).toEqual(expect.arrayContaining(COMPARISON_BLOCK_FIELDS));
         expect(surface.comparisonSchemaVersion).toBe(1);
-        expect(surface.replanned).toEqual([]);
+        expect(Array.isArray(surface.replanned)).toBe(true);
+        expect(surface.executionAlignment).toEqual({
+          baseExecutions: expect.any(Number), candExecutions: expect.any(Number), pairedExecutions: expect.any(Number),
+          bounded: expect.any(Boolean), agreement: expect.toBeOneOf([null, expect.any(Number)]), accepted: expect.any(Boolean),
+        });
         expect(surface.confidence).toMatch(/^(ok|low|insufficient)$/);
       }
       for (const field of COMPARISON_BLOCK_FIELDS) expect(viaMcp[field]).toEqual(line.comparison[field]);
@@ -232,6 +241,20 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
     it('reports the same comparison as the dashboard\'s compareRuns', async () => {
       const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson']);
       expect(line.comparison).toEqual(JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate)))));
+    });
+
+    // A pair whose runs differ in stage count under one execution (a cached and an uncached join): the
+    // stages the aligner leaves over are a replanned group, and every surface carries the same group.
+    it('reports a replanned group the same on the CLI, compare_runs and the dashboard', async () => {
+      const [line] = await cliLines([REPLAN_CANDIDATE, '--baseline', REPLAN_BASELINE, '--format', 'ndjson']);
+      const viaMcp = await mcpCall('compare_runs', { sourceA: { path: REPLAN_BASELINE }, sourceB: { path: REPLAN_CANDIDATE }, include: ['stagePairs'] });
+      const dashboard = JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(REPLAN_BASELINE, REPLAN_CANDIDATE))));
+      expect(line.comparison.replanned).toHaveLength(1);
+      expect(Object.keys(line.comparison.replanned[0])).toEqual([
+        'baseExecutionId', 'candExecutionId', 'baseStageIds', 'candStageIds', 'deltas',
+      ]);
+      expect(diffSurfaces(line.comparison, viaMcp, COMPARISON_ALLOWED.filter((a) => a.path !== 'stagePairs'))).toEqual([]);
+      expect(dashboard).toEqual(line.comparison);
     });
 
     it('reports the candidate block of a comparison as the same run report', async () => {

@@ -735,7 +735,10 @@ describe('compareRuns', () => {
     try {
       const summary = await compareRuns({ source: { path: a.path } }, { source: { path: b.path } });
       expect(summary).not.toHaveProperty('stagePairs');
-      expect(summary).toMatchObject({ comparisonSchemaVersion: 1, replanned: [], runtimeCoverage: null });
+      expect(summary).toMatchObject({
+        comparisonSchemaVersion: 1, replanned: [], runtimeCoverage: null,
+        executionAlignment: { baseExecutions: 0, candExecutions: 0, pairedExecutions: 0, bounded: false, agreement: null, accepted: true },
+      });
       expect(summary.unmatched).toEqual({ baseStageIds: [], candStageIds: [] });
       const full = await compareRuns({ source: { path: a.path } }, { source: { path: b.path } }, { include: ['stagePairs'] });
       expect(full.stagePairs).toEqual([]);
