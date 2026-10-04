@@ -4,6 +4,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { COMPARISON_METRIC_KEYS } from '../run-comparison.ts';
+import { PAIR_DELTA_METRICS } from '../stage-alignment.ts';
+import { NEUTRAL_PAIR_METRICS, STAGE_QUALITIES } from './budgets.ts';
+import type { StagePair } from '../stage-alignment.ts';
 
 export interface RegressionBudget { metric: string; maxPct: number; }
 export interface RegressionBudgetSource { origin: string; budget: RegressionBudget; }
@@ -80,4 +83,36 @@ export function combineRegressionBudgets(sources: RegressionBudgetSource[]): Reg
     seen.set(budget.metric, origin);
   }
   return sources.map((s) => s.budget);
+}
+
+/** Refuses a stage budget metric that is not a paired-stage metric or has no regression direction. */
+export function assertStageBudgetMetric(metric: string, origin: string): void {
+  if (!(PAIR_DELTA_METRICS as readonly string[]).includes(metric)) {
+    throw new Error(`${origin}: unknown paired-stage metric "${metric}" (expected one of: ${PAIR_DELTA_METRICS.filter((m) => !NEUTRAL_PAIR_METRICS.has(m)).join(', ')}).`);
+  }
+  if (NEUTRAL_PAIR_METRICS.has(metric)) {
+    throw new Error(`${origin}: "${metric}" measures workload volume, not performance, so it has no regression direction to budget.`);
+  }
+}
+
+/** One `--stage-regression-budget` value, `<metric>:<pct>`, over the paired-stage metrics. */
+export function parseStageRegressionBudgetFlag(spec: string): RegressionBudget {
+  const origin = `--stage-regression-budget "${spec}"`;
+  const colon = spec.indexOf(':');
+  if (colon === -1) throw new Error(`${origin}: expected <metric>:<pct>.`);
+  const metric = spec.slice(0, colon);
+  const pct = spec.slice(colon + 1);
+  assertStageBudgetMetric(metric, origin);
+  if (!PCT_PATTERN.test(pct)) throw new Error(`${origin}: "${pct}" is not a non-negative percentage.`);
+  return { metric, maxPct: Number(pct) };
+}
+
+/** The pair qualities a stage budget reads, from a comma list such as `exact,structural`. */
+export function parseStageQualities(list: string, origin: string): StagePair['quality'][] {
+  const qualities = list.split(',').map((q) => q.trim()).filter(Boolean);
+  const bad = qualities.find((q) => !(STAGE_QUALITIES as readonly string[]).includes(q));
+  if (qualities.length === 0 || bad !== undefined) {
+    throw new Error(`${origin}: ${bad === undefined ? 'no quality given' : `unknown quality "${bad}"`} (expected a list from: ${STAGE_QUALITIES.join(', ')}).`);
+  }
+  return qualities as StagePair['quality'][];
 }

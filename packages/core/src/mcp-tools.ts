@@ -13,7 +13,7 @@ import { buildComparisonOutput, type ComparisonOutput } from './comparison-outpu
 import { compileNormalizePatterns } from './stage-alignment.ts';
 import { runOutputBlocks } from './run-output.ts';
 import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
-import { combineRegressionBudgets } from './cli/regression-budgets.ts';
+import { assertStageBudgetMetric, combineRegressionBudgets } from './cli/regression-budgets.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
 import { docAnchorForType } from './detector-docs.ts';
 import { DETECTORS, type ThresholdOverrides } from './detectors.ts';
@@ -413,6 +413,15 @@ export async function evaluateBudgetsForRun(
       ...pair.map((budget) => ({ origin: 'maxRegressionPct/regressionMetric', budget })),
       ...(budgets.regressionBudgets ?? []).map((budget) => ({ origin: 'regressionBudgets', budget })),
     ]);
+  } catch (e) {
+    throw mcpError('access-or-upstream-failure', (e as Error).message);
+  }
+  if (budgets.stageQualities !== undefined && budgets.stageRegressionBudgets === undefined) {
+    throw mcpError('access-or-upstream-failure', 'stageQualities requires stageRegressionBudgets.');
+  }
+  try {
+    for (const { metric } of budgets.stageRegressionBudgets ?? []) assertStageBudgetMetric(metric, 'stageRegressionBudgets');
+    combineRegressionBudgets((budgets.stageRegressionBudgets ?? []).map((budget) => ({ origin: 'stageRegressionBudgets', budget })));
   } catch (e) {
     throw mcpError('access-or-upstream-failure', (e as Error).message);
   }

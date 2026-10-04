@@ -119,14 +119,18 @@ export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverride
       maxRegressionPct: z.number().optional(), regressionMetric: z.string().optional(), failOnIntroduced: z.string().optional(),
       regressionBudgets: z.array(z.object({ metric: z.string(), maxPct: z.number().nonnegative() })).optional()
         .describe('Further regression budgets, one per metric (the CLI\'s repeated --regression-budget). A metric can be budgeted once across this list and maxRegressionPct/regressionMetric.'),
+      stageRegressionBudgets: z.array(z.object({ metric: z.string(), maxPct: z.number().nonnegative() })).optional()
+        .describe('Per paired stage (needs sourceB/runIdB): fail when any eligible pair\'s metric (executorRunTime, executorCpuTime, memoryBytesSpilled, diskBytesSpilled, shuffleReadBytes, shuffleWriteBytes) regressed by more than maxPct. One entry per metric. Inconclusive when no stage pairs.'),
+      stageQualities: z.array(z.enum(['exact', 'structural', 'aligned'])).optional()
+        .describe('Pair qualities the stage budgets read. Default exact and structural: an aligned pair may compare different work.'),
     },
   }, ({
     source, runId, runIdB, sourceB,
     maxRuntimeMs, maxSpillGb, maxSkewRatio, maxFailedTaskRatePct, minEfficiencyPct,
-    maxRegressionPct, regressionMetric, failOnIntroduced, regressionBudgets,
+    maxRegressionPct, regressionMetric, failOnIntroduced, regressionBudgets, stageRegressionBudgets, stageQualities,
   }) => toolResult(evaluateBudgetsForRun(
     { source, runId },
-    { maxRuntimeMs, maxSpillGb, maxSkewRatio, maxFailedTaskRatePct, minEfficiencyPct, maxRegressionPct, regressionMetric, failOnIntroduced, regressionBudgets },
+    { maxRuntimeMs, maxSpillGb, maxSkewRatio, maxFailedTaskRatePct, minEfficiencyPct, maxRegressionPct, regressionMetric, failOnIntroduced, regressionBudgets, stageRegressionBudgets, stageQualities },
     (runIdB || sourceB) ? { runId: runIdB, source: sourceB } : undefined,
     { thresholds },
   )));

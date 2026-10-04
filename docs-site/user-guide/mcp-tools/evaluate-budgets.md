@@ -38,6 +38,25 @@ Parameters (all optional):
   be budgeted once across this list and the `maxRegressionPct`/`regressionMetric`
   pair (which counts as one budget); a repeat fails the call. Requires
   `runIdB`/`sourceB`, as `maxRegressionPct` does.
+- `stageRegressionBudgets`: per paired stage budgets, an array of
+  `{ "metric": "<key>", "maxPct": <number> }`, the MCP form of the CLI's
+  repeated `--stage-regression-budget <metric>:<pct>`. `metric` is one of
+  `executorRunTime`, `executorCpuTime`, `memoryBytesSpilled`,
+  `diskBytesSpilled`, `shuffleReadBytes` and `shuffleWriteBytes`. The budget
+  fails when any paired stage's metric grew by more than `maxPct`% against its
+  baseline stage; growth from a zero baseline always exceeds it. The detail
+  names the worst pairs by `pairId` (the same id `compare_runs` returns in
+  `stagePairs`). Each metric gets its own `max-stage-regression` result, and a
+  metric can be budgeted once. Requires `runIdB`/`sourceB`. It reports
+  `inconclusive` when no stage pair is eligible or the metric is missing on
+  every eligible pair. `inputBytes` and `outputBytes` are workload volume
+  with no regression direction, so the call fails if either is named.
+- `stageQualities`: the pair qualities `stageRegressionBudgets` read, from
+  `exact`, `structural` and `aligned` (default `exact` and `structural`). An
+  `aligned` pair was matched on similarity or position and may compare
+  different work, so it is left out unless named. Requires
+  `stageRegressionBudgets`. Stages a re-plan left over are not paired and are
+  not read.
 - `failOnIntroduced`: fail if the second run introduces any finding in the
   given impact band (`"all"` or one of the impact band names). Requires
   `runIdB`/`sourceB`. A band name it doesn't recognize reports `inconclusive`.
@@ -53,8 +72,9 @@ runs, the check applies to the candidate.
 
 Each result's `name` is one of `max-runtime`, `max-spill`, `max-skew`,
 `max-failed-task-rate`, `min-efficiency`, `max-regression`,
-`fail-on-introduced` and `run-complete`. A `max-regression` result also
-carries `metric`, the key it checked. The returned `runId` is the first
+`max-stage-regression`, `fail-on-introduced` and `run-complete`. A
+`max-regression` or `max-stage-regression` result also carries `metric`, the
+key it checked. The returned `runId` is the first
 run's (the baseline, when two runs are given).
 
 Example call:

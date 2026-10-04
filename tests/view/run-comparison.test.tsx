@@ -110,10 +110,12 @@ test('metrics render with their unit and signed deltas in a Table', () => {
     { label: 'cand.log', ...mk([[9, stage({ memoryBytesSpilled: 1_000_000, failedTasks: 1 })]], { name: 'A' }) },
   );
   render(<RunComparison model={model as any} onClose={vi.fn()} />);
-  expect(screen.getByText('2 MB')).toBeInTheDocument();
-  expect(screen.getByText('-1 MB')).toBeInTheDocument();
-  expect(screen.getByText('20.0%')).toBeInTheDocument();
-  expect(screen.getByText('-10.0%')).toBeInTheDocument();
+  // The Stages compared table repeats the paired stage's spill delta, so scope to the Metrics table.
+  const metrics = within(screen.getByRole('heading', { name: 'Metrics' }).closest('[data-slot="card"]') as HTMLElement);
+  expect(metrics.getByText('2 MB')).toBeInTheDocument();
+  expect(metrics.getByText('-1 MB')).toBeInTheDocument();
+  expect(metrics.getByText('20.0%')).toBeInTheDocument();
+  expect(metrics.getByText('-10.0%')).toBeInTheDocument();
 });
 
 test('volume/count metrics render Δ in neutral color, unlike cost metrics', () => {

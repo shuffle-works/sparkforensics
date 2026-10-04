@@ -11,7 +11,7 @@ import { CompareLanding } from '@/view/CompareLanding';
 import { DocsProvider } from '@/view/DocsContext';
 import { DocsSheet } from '@/view/DocsSheet';
 import { RunComparison } from '@/view/RunComparison';
-import { StageDetailProvider } from '@/view/StageDetailContext';
+import { StageDetailProvider, useStageDetail } from '@/view/StageDetailContext';
 import { usePlanGraphRouteProps } from '@/view/usePlanGraphRouteProps';
 
 const PlanGraphRoute = lazy(() =>
@@ -28,6 +28,7 @@ function RunComparisonRoute() {
   const comparison = useStore((s) => s.comparison);
   const close = useStore((s) => s.closeComparison);
   const { prepareComparison, drillIntoRun } = useIngest();
+  const { openStage } = useStageDetail();
   // Memoize on the two run ids: compareRuns walks stage/plan trees and diffs
   // findings, wasted on unrelated re-renders. Resolve and compare are both pure
   // (the active run was snapshotted at openComparison time), so a plain memo is safe.
@@ -53,9 +54,11 @@ function RunComparisonRoute() {
     <RunComparison
       model={model}
       onClose={close}
-      onDrillIn={(which) => {
+      onDrillIn={(which, stageId) => {
         const id = which === 'baseline' ? comparison.baselineId : comparison.candidateId;
-        if (id) drillIntoRun(id);
+        if (!id) return;
+        drillIntoRun(id);
+        if (stageId !== undefined) openStage(stageId);
       }}
     />
   );

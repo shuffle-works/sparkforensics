@@ -32,7 +32,7 @@ const { compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PA
 const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
 const { runPayloadScript } = await loadCore('run-payload');
 const { loadThresholdOverrides } = await loadCore('cli/threshold-config');
-const { parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets } = await loadCore('cli/regression-budgets');
+const { parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets, parseStageRegressionBudgetFlag, parseStageQualities } = await loadCore('cli/regression-budgets');
 const { tunedDetectors } = await loadCore('threshold-overrides');
 const { runOutputBlocks } = await loadCore('run-output');
 const { buildEffectiveConf } = await loadCore('effective-conf');
@@ -77,6 +77,17 @@ Options:
                                     with the same budgets as --regression-budget. Unknown keys and
                                     metrics, and a percentage that is not a non-negative number, are
                                     rejected.
+  --stage-regression-budget <metric>:<pct>
+                                    Requires --baseline. Fail if any paired stage's <metric>
+                                    (executorRunTime, executorCpuTime, memoryBytesSpilled,
+                                    diskBytesSpilled, shuffleReadBytes, shuffleWriteBytes) grew
+                                    by more than <pct> percent against its baseline stage.
+                                    Repeat the flag for several metrics. inputBytes and outputBytes
+                                    are refused (usage error): volume has no regression direction.
+                                    Inconclusive (exit 3) when no stage pairs or the metric is missing.
+  --stage-quality <q[,q]>           Requires --stage-regression-budget. Pair qualities the stage
+                                    budgets read, from exact, structural, aligned (default:
+                                    exact,structural; an aligned pair may compare different work).
   --fail-on-introduced <band|all>   Requires --baseline. Fail if any finding was introduced by
                                     the candidate matching this impact band (or any, with "all").
   --redact                          Pseudonymize the app id and any host/IP tokens in the output
@@ -150,6 +161,8 @@ function parseCliArgs(argv) {
       'regression-metric': { type: 'string' },
       'regression-budget': { type: 'string', multiple: true },
       budgets: { type: 'string' },
+      'stage-regression-budget': { type: 'string', multiple: true },
+      'stage-quality': { type: 'string' },
       'fail-on-introduced': { type: 'string' },
       redact: { type: 'boolean' },
       'export-html': { type: 'string' },
@@ -388,9 +401,9 @@ async function runCli(argv, { fetchImpl } = {}) {
   const usingBaseline = values.baseline !== undefined;
   // Single source of truth for which flags need --baseline: append a future
   // flag here rather than adding its own OR-condition (easy to forget).
-  const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced', 'regression-budget', 'budgets', 'normalize-path'];
+  const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced', 'regression-budget', 'budgets', 'normalize-path', 'stage-regression-budget', 'stage-quality'];
   if (!usingBaseline && BASELINE_DEPENDENT_FLAGS.some((flag) => values[flag] !== undefined)) {
-    return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--fail-on-introduced/--normalize-path require --baseline.\n${USAGE}`, 2);
+    return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--stage-regression-budget/--stage-quality/--fail-on-introduced/--normalize-path require --baseline.\n${USAGE}`, 2);
   }
   if (values['regression-metric'] !== undefined && values['max-regression-pct'] === undefined) {
     return bail(`--regression-metric requires --max-regression-pct.\n${USAGE}`, 2);
@@ -438,6 +451,20 @@ async function runCli(argv, { fetchImpl } = {}) {
       }];
       combineRegressionBudgets([...legacy, ...extra]);
       budgets.regressionBudgets = extra.map((e) => e.budget);
+    } catch (e) {
+      return bail(`${e.message}\n${USAGE}`, 2);
+    }
+  }
+
+  if (values['stage-quality'] !== undefined && values['stage-regression-budget'] === undefined) {
+    return bail(`--stage-quality requires --stage-regression-budget.\n${USAGE}`, 2);
+  }
+  if (values['stage-regression-budget'] !== undefined) {
+    try {
+      const stageBudgets = values['stage-regression-budget'].map(parseStageRegressionBudgetFlag);
+      combineRegressionBudgets(stageBudgets.map((budget) => ({ origin: '--stage-regression-budget', budget })));
+      budgets.stageRegressionBudgets = stageBudgets;
+      if (values['stage-quality'] !== undefined) budgets.stageQualities = parseStageQualities(values['stage-quality'], '--stage-quality');
     } catch (e) {
       return bail(`${e.message}\n${USAGE}`, 2);
     }

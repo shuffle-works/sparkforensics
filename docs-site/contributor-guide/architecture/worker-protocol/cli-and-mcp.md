@@ -25,7 +25,11 @@ Regression budgets beyond the `--max-regression-pct` pair come from repeated
 `--regression-budget <metric>:<pct>` flags and a `--budgets` file, parsed in
 `packages/core/src/cli/regression-budgets.ts` and passed to `evaluateBudgets()`
 as `regressionBudgets`; the legacy pair is one more budget, and a metric
-budgeted twice is a usage error. With two or more positional candidates (or
+budgeted twice is a usage error. Per-stage budgets (`--stage-regression-budget`,
+`--stage-quality`; `stageRegressionBudgets` and `stageQualities` on MCP) read the aligner's
+`stagePairs` through `checkStageRegression` in `cli/budgets.ts` and never match stages
+themselves; `parseStageRegressionBudgetFlag` refuses the neutral `inputBytes` and
+`outputBytes`. With two or more positional candidates (or
 `--format ndjson`), the CLI's `runMultiLog` parses and analyzes the baseline once,
 then evaluates each candidate in turn and writes one NDJSON line per candidate
 (`log`, `status`, `exitCode`, `error`, `budgets`, `candidate`, `comparison`). A

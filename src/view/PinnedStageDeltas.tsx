@@ -49,7 +49,7 @@ function DeltaCell({ base, cand, fmt }: { base: number | null; cand: number | nu
   return <TableCell className={cn('font-medium', color)}>{text}</TableCell>;
 }
 
-function PairTable({ base, cand }: { base: StageSummary; cand: StageSummary }) {
+export function PairTable({ base, cand }: { base: StageSummary; cand: StageSummary }) {
   return (
     <Table>
       <TableHeader>
