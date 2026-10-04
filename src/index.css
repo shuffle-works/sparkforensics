@@ -1,26 +1,43 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./theme/fonts.css";
 
 @custom-variant dark (&:is(.dark *));
 
+/* "Trace" palette. Bare :root is the dark theme (slate, never pure black);
+   :root[data-theme="light"] below overrides it. Naming map for the Trace
+   vocabulary: canvas = --bg, panel = --surface, ink = --text,
+   muted = --text-muted, rule = --border. The Trace aliases (--canvas,
+   --panel, --ink, --rule) point at those so either name works. Status
+   colors (--critical/--warning/--info/--clean) are for analysis status only;
+   their *-dim tokens are the 12% chip tint. */
 :root {
-  --bg: var(--color-bg, #080b0d); --surface: var(--color-bg-elevated, #11171a); --surface-2:#17202c;
-  --border:#233035; --border-soft:#1a232f;
-  --text: var(--color-text, #f4f4f5); --text-muted: var(--color-text-muted, #a9b5b4);
-  --critical:#ff5d57; --warning:#f0b429; --info:#5aa2ff; --clean:#48d17f;
+  --bg: var(--color-bg, #14161b); --surface: var(--color-bg-elevated, #1b1e25); --surface-2:#21252d;
+  --border:#2b2f38; --border-soft:#23262e;
+  --text: var(--color-text, #e6e8ee); --text-muted: var(--color-text-muted, #9097a3);
+  --canvas: var(--bg); --panel: var(--surface); --ink: var(--text); --rule: var(--border);
+  --critical:#ff7b6e; --warning:#f0b450; --info:#7aaaf5; --clean:#5fcc8c;
   --plan-aggregate:#bc8cff;
-  --accent:#ff6b2c; --accent-ink: var(--color-on-accent, #11110f); --accent-dim: color-mix(in srgb, var(--accent) 13%, transparent);
-  --accent-hover: var(--color-accent-hover, #ff8a4f);
+  --accent:#9d97ff; --accent-ink: var(--color-on-accent, #14161b); --accent-soft:#25234a; --accent-dim: var(--accent-soft);
+  --accent-hover: var(--color-accent-hover, #b6b1ff);
   --signal: var(--color-signal, #39d6b5);
-  --crit-dim:rgba(255,93,87,.12); --warn-dim:rgba(240,180,41,.12);
-  --info-dim:rgba(90,162,255,.12); --clean-dim:rgba(72,209,127,.13);
-  --radius:8px; --radius-lg:12px;
-  --font:'Recursive',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  --font-mono:'JetBrains Mono',ui-monospace,'SF Mono','Cascadia Code',Menlo,Consolas,monospace;
-  --shadow-widget:0 1px 0 rgba(0,0,0,.4),0 12px 30px -18px rgba(0,0,0,.7);
-  --shadow-widget-hover:0 1px 0 rgba(0,0,0,.4),0 18px 40px -18px rgba(0,0,0,.8);
-  --overlay-scrim:rgba(0,0,0,.66);
+  --crit-dim:rgba(255,123,110,.12); --warn-dim:rgba(240,180,80,.12);
+  --info-dim:rgba(122,170,245,.12); --clean-dim:rgba(95,204,140,.12);
+  /* Chart series: neutral stage bars, startup, scheduler gaps, idle capacity.
+     Flagged marks use --critical, never a series color. */
+  --chart-stage:#8b86f5; --chart-startup:#4a5160; --chart-gap:#a8814a; --chart-idle:#2b2f38;
+  /* Shape: panels/cards 6px, buttons/inputs 4px, tag chips 3px. */
+  --radius-panel:6px; --radius-button:4px; --radius-tag:3px;
+  --radius: var(--radius-panel); --radius-lg: var(--radius-panel);
+  /* Self-hosted (src/theme/fonts.css); "Instrument Sans" / "JetBrains Mono"
+     are fallbacks for a locally installed copy. Headings use the width axis. */
+  --font:'Instrument Sans Variable','Instrument Sans',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono:'JetBrains Mono Variable','JetBrains Mono',ui-monospace,'SF Mono','Cascadia Code',Menlo,Consolas,monospace;
+  --font-stretch-heading:85%;
+  --shadow-widget:0 1px 2px rgba(0,0,0,.24);
+  --shadow-widget-hover:0 2px 8px -2px rgba(0,0,0,.36);
+  --overlay-scrim:rgba(8,10,14,.6);
   color-scheme: dark;
   /* shadcn semantic tokens (dark palette is the default, matching the app's
      bare-:root-is-dark theme model). --accent and --border are intentionally
@@ -32,8 +49,8 @@
      Dialog/Popover backgrounds and the default Button variant (e.g.
      DropZone's drag-over highlight, "Browse files"/"Fetch" CTAs) render a
      flat neutral gray instead of the app's own themed surface/accent. */
-  --background:oklch(0.145 0 0);
-  --foreground:oklch(0.985 0 0);
+  --background: var(--bg);
+  --foreground: var(--text);
   --card: var(--surface);
   --card-foreground: var(--text);
   --popover: var(--surface);
@@ -58,29 +75,33 @@
   --sidebar-ring:oklch(0.556 0 0);
 }
 :root[data-theme="light"] {
-  --bg: var(--color-bg, #f7f8f4); --surface: var(--color-bg-elevated, #ffffff); --surface-2:#f2f5f9;
-  --border:#dbe2df; --border-soft:#eef1f6;
-  --text: var(--color-text, #151b1e); --text-muted: var(--color-text-muted, #4f5f60);
+  --bg: var(--color-bg, #f3f4f6); --surface: var(--color-bg-elevated, #ffffff); --surface-2:#f7f8fa;
+  --border:#e1e3e8; --border-soft:#eceef1;
+  --text: var(--color-text, #16181d); --text-muted: var(--color-text-muted, #5f6672);
   /* Impact-band base colors double as badge text over their own 10% tint
      (bg-<impact-band>/10): keep each >= 4.5:1 (WCAG AA) against that tint
      composited over every light surface, incl. the darkest (--surface-2).
-     Guarded by tests/view/impact-badge-contrast.test.ts. */
-  --critical:#c0271b; --warning:#9a5200; --info:#175cd3; --clean:#0a7538;
+     Guarded by tests/view/impact-badge-contrast.test.ts. Trace's
+     #c42b1c/#b06d00/#1f8a4c are darkened just enough to pass it on the
+     #f3f4f6 canvas. */
+  --critical:#c12a1c; --warning:#915a00; --info:#2463c7; --clean:#1a7541;
   --plan-aggregate:#8a4fd1;
-  --accent:#bf4413; --accent-ink: var(--color-on-accent, #ffffff); --accent-dim: color-mix(in srgb, var(--accent) 10%, transparent);
-  --accent-hover: var(--color-accent-hover, #aa3510);
+  --accent:#4f46e5; --accent-ink: var(--color-on-accent, #ffffff); --accent-soft:#eceafd;
+  --accent-hover: var(--color-accent-hover, #4338ca);
   --signal: var(--color-signal, #007e6b);
-  --crit-dim:rgba(192,39,27,.09); --warn-dim:rgba(154,82,0,.10);
-  --info-dim:rgba(23,92,211,.09); --clean-dim:rgba(10,117,56,.10);
-  --shadow-widget:0 1px 2px rgba(16,32,54,.04),0 8px 24px -14px rgba(16,32,54,.16);
-  --shadow-widget-hover:0 2px 6px rgba(16,32,54,.06),0 14px 34px -14px rgba(16,32,54,.22);
+  --crit-dim:rgba(193,42,28,.12); --warn-dim:rgba(145,90,0,.12);
+  --info-dim:rgba(36,99,199,.12); --clean-dim:rgba(26,117,65,.12);
+  --chart-stage:#6b72e8; --chart-startup:#b8bfcc; --chart-gap:#e0b26a; --chart-idle:#e1e3e8;
+  --shadow-widget:0 1px 2px rgba(22,24,29,.04);
+  --shadow-widget-hover:0 2px 8px -2px rgba(22,24,29,.10);
+  --overlay-scrim:rgba(22,24,29,.4);
   color-scheme: light;
   /* shadcn semantic tokens: light palette override, mirroring the app's own
      data-theme="light" override above. --accent/--border stay app-owned;
      --card/--popover/--primary/--secondary/--destructive/--input/--ring
      bridge to them the same way as the dark palette above. */
-  --background:oklch(1 0 0);
-  --foreground:oklch(0.145 0 0);
+  --background: var(--bg);
+  --foreground: var(--text);
   --card: var(--surface);
   --card-foreground: var(--text);
   --popover: var(--surface);
@@ -118,8 +139,17 @@
   --color-clean: var(--clean);
   --color-plan-aggregate: var(--plan-aggregate);
   --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-panel: var(--surface);
+  --color-rule: var(--border);
+  --color-chart-stage: var(--chart-stage);
+  --color-chart-startup: var(--chart-startup);
+  --color-chart-gap: var(--chart-gap);
+  --color-chart-idle: var(--chart-idle);
+  /* Radius scale: rounded-sm = tag chip, rounded-md/-lg = buttons and inputs
+     (shadcn controls use rounded-lg), rounded-xl = panels and cards. */
   --radius-DEFAULT: var(--radius);
-  --radius-lg: var(--radius-lg);
+  --radius-lg: var(--radius-button);
   --font-sans: var(--font);
   --font-mono: var(--font-mono);
   --font-heading:var(--font-sans);
@@ -144,18 +174,15 @@
   --color-popover:var(--popover);
   --color-card-foreground:var(--card-foreground);
   --color-card:var(--card);
-  --radius-sm:calc(var(--radius) * 0.6);
-  --radius-md:calc(var(--radius) * 0.8);
-  --radius-xl:calc(var(--radius) * 1.4);
-  --radius-2xl:calc(var(--radius) * 1.8);
-  --radius-3xl:calc(var(--radius) * 2.2);
-  --radius-4xl:calc(var(--radius) * 2.6);
+  --radius-sm: var(--radius-tag);
+  --radius-md: var(--radius-button);
+  --radius-xl: var(--radius-panel);
+  --radius-2xl:calc(var(--radius-panel) + 2px);
+  --radius-3xl:calc(var(--radius-panel) + 4px);
+  --radius-4xl:calc(var(--radius-panel) + 6px);
 }
 
-/* CASL 0.15: matches the hub landing page's casual/rounded Recursive
-   letterform (design-audit parity across the product family); the
-   Recursive @font-face loaded in index.html already ships the CASL axis. */
-body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-variation-settings: "CASL" 0.15; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); }
 
 .landing-shell {
   display: grid;
@@ -526,5 +553,9 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
   }
   html {
     @apply font-sans;
+  }
+  /* Trace headings run Instrument Sans slightly condensed (its wdth axis). */
+  :where(h1, h2, h3) {
+    font-stretch: var(--font-stretch-heading);
   }
 }

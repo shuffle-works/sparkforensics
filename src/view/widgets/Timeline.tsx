@@ -174,7 +174,7 @@ export function Timeline({ appModel, catalog }: TimelineProps) {
                   {rows.map((r) => (
                     <Cell
                       key={r.stageId}
-                      fill={r.flagged ? CHART_COLORS.critical : CHART_COLORS.accent}
+                      fill={r.flagged ? CHART_COLORS.critical : CHART_COLORS.stage}
                       stroke={r.flagged ? CHART_COLORS.critical : 'none'}
                       strokeWidth={r.flagged ? 2 : 0}
                     />
