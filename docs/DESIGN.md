@@ -1,31 +1,70 @@
 ---
 name: SparkForensics
-description: A dark-first diagnostic dashboard for browser-local Spark event-log analysis.
+description: Trace, an instrument panel around the run clock for browser-local Spark event-log analysis.
 colors:
-  midnight-canvas: "#080b0d"
-  surface: "#11171a"
-  raised-surface: "#17202c"
-  border: "#233035"
-  primary-text: "#f4f4f5"
-  muted-text: "#a9b5b4"
-  signal-orange: "#ff6b2c"
-  alert-red: "#ff5d57"
-  warning-amber: "#f0b429"
-  info-blue: "#5aa2ff"
-  healthy-green: "#48d17f"
-  plan-violet: "#bc8cff"
+  canvas: "#f3f4f6"
+  panel: "#ffffff"
+  surface-2: "#f7f8fa"
+  ink: "#16181d"
+  muted: "#5f6672"
+  rule: "#e1e3e8"
+  rule-soft: "#eceef1"
+  accent: "#4f46e5"
+  accent-hover: "#4338ca"
+  accent-soft: "#eceafd"
+  critical: "#c12a1c"
+  warning: "#915a00"
+  info: "#2463c7"
+  clean: "#1a7541"
+  plan-aggregate: "#8a4fd1"
+  chart-stage: "#6b72e8"
+  chart-startup: "#b8bfcc"
+  chart-gap: "#e0b26a"
+  chart-idle: "#e1e3e8"
+  canvas-dark: "#14161b"
+  panel-dark: "#1b1e25"
+  surface-2-dark: "#21252d"
+  ink-dark: "#e6e8ee"
+  muted-dark: "#9097a3"
+  rule-dark: "#2b2f38"
+  rule-soft-dark: "#23262e"
+  accent-dark: "#9d97ff"
+  accent-hover-dark: "#b6b1ff"
+  accent-soft-dark: "#25234a"
+  critical-dark: "#ff7b6e"
+  warning-dark: "#f0b450"
+  info-dark: "#7aaaf5"
+  clean-dark: "#5fcc8c"
+  plan-aggregate-dark: "#bc8cff"
+  chart-stage-dark: "#8b86f5"
+  chart-startup-dark: "#4a5160"
+  chart-gap-dark: "#a8814a"
+  chart-idle-dark: "#2b2f38"
 typography:
   body:
-    fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fontFamily: "'Instrument Sans Variable', 'Instrument Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    axes: "wght,wdth@400..700,75..100"
+  heading:
+    fontFamily: "{typography.body.fontFamily}"
+    fontStretch: "85%"
   label-mono:
-    fontFamily: "ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace"
-  docs-ui:
-    fontFamily: "'Recursive', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-    axes: "wght,CASL@400..700,0..1"
+    fontFamily: "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace"
+    axes: "wght@100..800"
+  eyebrow:
+    fontFamily: "{typography.label-mono.fontFamily}"
+    fontSize: "11px"
+    fontWeight: 500
+    letterSpacing: "0.08em"
+    textTransform: "uppercase"
+  metric:
+    fontFamily: "{typography.label-mono.fontFamily}"
+    fontSize: "30px"
+    fontWeight: 600
+    letterSpacing: "-0.02em"
 rounded:
-  sm: "6px"
-  md: "8px"
-  lg: "12px"
+  tag: "3px"
+  button: "4px"
+  panel: "6px"
   full: "9999px"
 spacing:
   compact: "12px"
@@ -33,186 +72,228 @@ spacing:
   section: "24px"
 components:
   button-primary:
-    backgroundColor: "{colors.signal-orange}"
-    textColor: "#06211e"
-    rounded: "{rounded.md}"
+    backgroundColor: "{colors.accent-soft}"
+    textColor: "{colors.accent}"
+    rounded: "{rounded.button}"
     padding: "0 10px"
     height: "32px"
   button-ghost:
-    textColor: "{colors.primary-text}"
-    rounded: "{rounded.md}"
+    textColor: "{colors.ink}"
+    rounded: "{rounded.button}"
     padding: "0 10px"
     height: "32px"
   widget-card:
-    backgroundColor: "{colors.surface}"
-    textColor: "{colors.primary-text}"
-    rounded: "{rounded.lg}"
+    backgroundColor: "{colors.panel}"
+    textColor: "{colors.ink}"
+    border: "1px solid {colors.rule}"
+    rounded: "{rounded.panel}"
     padding: "16px"
-  impact-chip:
-    rounded: "9999px"
-    padding: "2px 8px"
+  tag-chip:
+    fontFamily: "{typography.label-mono.fontFamily}"
+    fontSize: "11px"
+    rounded: "{rounded.tag}"
+    padding: "0 6px"
+    height: "20px"
+  metric-gauge:
+    height: "6px"
+    backgroundColor: "{colors.chart-idle}"
 ---
 
-# Design System: SparkForensics
+# Design system: SparkForensics
 
 ## Overview
 
-**Creative North Star: "The Diagnostic Instrument"**
+**North Star: "Trace"**
 
-This is an operating dashboard for Spark performance investigation: compact and direct, built for signal rather than decoration. The dark-first canvas keeps charts and tables legible during long analysis sessions, findings included. A matching light theme gives the same hierarchy in brighter environments.
+SparkForensics is an instrument panel built around one run clock. Every stage and every finding sits on the same seconds-from-start axis, so a reader can follow a problem from the verdict to the chart to the table without re-orienting. The look belongs next to Observable and Honeycomb: white panels on a quiet gray canvas, a single indigo accent, numbers and labels in mono, and status color held back for what the analysis actually found.
 
-The UI treats visual emphasis as diagnostic evidence. Orange marks the active control or healthy action path; red, amber, blue, and green stay semantic status signals. Repeated panels form an inspection surface where impact-band borders, compact labels, and collapsible detail make anomalies easy to find without turning every metric into an alert.
+The reader we design for first is a newcomer to Spark tuning. The board is airy rather than dense: one verdict sentence, a few numbered steps, then evidence on demand. Power users get more through Advanced view, never through a busier default.
 
-**Key Characteristics:**
+**Key characteristics:**
 
-- Dense enough for operational analysis, never visually noisy.
-- Dark surfaces separated by tone and fine rules rather than heavy containers.
-- Semantic color is reserved for status, findings, charts, focus, and actions.
-- Card-first composition, so evidence can be scanned and expanded, then compared.
+- Panels on a gray canvas, separated by a 1px rule and a 6px corner, not by shadow.
+- One accent (indigo) for actions and focus; four status colors only for analysis status.
+- Mono for every figure, tag, label and axis tick; Instrument Sans for prose and headings.
+- One run clock shared by the verdict strip, the job timeline and step codes.
+- Light and dark carry the same meaning; dark is slate, never pure black, no neon.
 
 ## Colors
 
-The palette is a dark instrumentation palette with an equivalent light mode. Neutral layers carry structure; status colors carry meaning.
+Tokens live in `src/index.css`. Bare `:root` is the dark theme and `:root[data-theme="light"]` overrides it. The Trace names map onto the older token names: canvas is `--bg`, panel is `--surface`, ink is `--text`, muted is `--text-muted`, rule is `--border`; `--canvas`, `--panel`, `--ink` and `--rule` alias them. The docs site mirrors the same values as `--sf-*` in `docs-site/.vitepress/theme/custom.css`.
 
-### Primary
+### Neutrals
 
-- **Signal Orange:** the application accent for primary actions, selected states, focus treatment, and healthy emphasis. `#ff6b2c` in dark mode, `#bf4413` in light mode.
+| Token | Light | Dark | Role |
+|---|---|---|---|
+| canvas (`--bg`) | `#f3f4f6` | `#14161b` | Page field behind panels |
+| panel (`--surface`) | `#ffffff` | `#1b1e25` | Cards, popovers, the reading surface |
+| surface-2 | `#f7f8fa` | `#21252d` | Muted and secondary fills, code blocks |
+| ink (`--text`) | `#16181d` | `#e6e8ee` | Titles, figures, body copy |
+| muted (`--text-muted`) | `#5f6672` | `#9097a3` | Labels, captions, axis text |
+| rule (`--border`) | `#e1e3e8` | `#2b2f38` | Panel borders, dividers, chart grid |
+| rule-soft | `#eceef1` | `#23262e` | Quieter separators |
 
-### Secondary
+### Accent
 
-- **Plan Violet:** used only for aggregate SQL-plan visualizations, so plan-level data stays distinct from impact-band states. Exception: the plan graph's per-node duration heat bar (`PlanGraphNode.tsx`, banded by `plan-graph-heat.ts`'s `heatBand`) deliberately reuses the impact-band `bg-critical`/`bg-warning`/`bg-info` tokens instead, so a node's duration share reads with the same critical/warning/info visual language as the rest of the dashboard.
+| Token | Light | Dark | Role |
+|---|---|---|---|
+| accent | `#4f46e5` | `#9d97ff` | Primary action text, links, focus ring, selection |
+| accent-hover | `#4338ca` | `#b6b1ff` | Hover on accent text |
+| accent-soft | `#eceafd` | `#25234a` | Primary button fill, icon wells |
 
-### Neutral
-
-- **Midnight Canvas:** the default app background and dark-mode field behind the dashboard.
-- **Surface:** the standard layer for cards and popovers.
-- **Raised Surface:** the layer for hover states and secondary or muted controls.
-- **Fine Divider:** low-contrast structural borders between panels and controls.
-- **Primary Text:** text for metrics and titles, plus body copy.
-- **Muted Text:** supporting context, secondary labels, and chart annotations.
+Text on solid accent uses `--accent-ink` (`#ffffff` light, `#14161b` dark).
 
 ### Status
 
-- **Alert Red:** critical finding state and destructive action treatment.
-- **Warning Amber:** warning state and incomplete or degraded outcomes.
-- **Info Blue:** informational finding state and neutral analysis signal.
-- **Healthy Green:** clean status, successful outcomes, and no-finding confirmation.
+| Token | Light | Dark | Chip tint (`*-dim`) |
+|---|---|---|---|
+| critical | `#c12a1c` | `#ff7b6e` | 12% of the status color |
+| warning | `#915a00` | `#f0b450` | 12% |
+| info | `#2463c7` | `#7aaaf5` | 12% |
+| clean | `#1a7541` | `#5fcc8c` | 12% |
 
-**The Signal-Only Color Rule.** Use Signal Orange for a control or intentionally positive emphasis. Use status colors only when the underlying analysis supplies that status; never use them as arbitrary decoration.
+The light status colors are darkened from the mockup values (`#c42b1c`, `#b06d00`, `#1f8a4c`) so each status color, used as badge text over its own 10% tint, holds at least 4.5:1 against that tint on every light surface including surface-2. `tests/view/impact-badge-contrast.test.ts` guards this; a new light status value must pass it.
 
-**The Magnitude-Encoding Clause.** Encoding a magnitude with color is allowed, under two constraints. Status colors (Alert Red, Warning Amber, Healthy Green) may encode a magnitude only on a dimension a detector already treats as a problem axis, such as duration share or spill; on those dimensions a hot color is an honest claim that more is worse. Neutral magnitudes, such as bytes moved across an exchange or rows produced by an operator, use a single-hue ramp (Signal Orange or a neutral tone), never the status palette, because raw volume is not a defect. Whether an element reads as a finding is still driven by an actual finding, not by size alone.
+**Plan aggregate** (`#8a4fd1` light, `#bc8cff` dark) is reserved for SQL-plan-level data so it never reads as a status. The plan graph's per-node duration heat bar is the one exception: it reuses critical, warning and info, so a node's time share reads in the board's status language.
+
+### Chart series
+
+| Token | Light | Dark | Role |
+|---|---|---|---|
+| chart-stage | `#6b72e8` | `#8b86f5` | Neutral stage and volume bars |
+| chart-startup | `#b8bfcc` | `#4a5160` | Startup before the first job |
+| chart-gap | `#e0b26a` | `#a8814a` | Scheduler gaps, a muted amber |
+| chart-idle | `#e1e3e8` | `#2b2f38` | Idle capacity, gauge tracks |
+
+Charts read colors through `CHART_COLORS` in `src/view/charts/ChartTheme.tsx`, which points at the CSS variables so the theme swap applies live.
+
+**The status-only rule.** Critical, warning, info and clean appear only where the analysis supplies that status: impact dots, tag chips, a flagged card's edge, a flagged stage's bar or row, comparison deltas and load errors. Never use them for decoration, category coding or emphasis. Neutral series use the chart tokens; a flagged mark switches to the status color, never to another series color.
+
+**The magnitude rule.** A status color may encode magnitude only on a dimension a detector already treats as a problem axis, such as duration share or spill. Neutral magnitudes, such as bytes or rows, use chart-stage or a neutral tone, because volume is not a defect. Whether something reads as a finding is still decided by a finding, not by size.
 
 ## Typography
 
-**Display Font:** System UI stack (with platform-native fallbacks)
+**UI and headings:** Instrument Sans Variable (weight 400 to 700, width axis 75% to 100%).
+**Figures and labels:** JetBrains Mono Variable (weight 100 to 800).
 
-**Body Font:** System UI stack
+Both are self-hosted. `src/theme/fonts.css` declares upright latin and latin-ext subsets from `@fontsource-variable`; Vite bundles the woff2 files and the single-file HTML export inlines them. The docs site imports the same packages in `docs-site/.vitepress/theme/index.ts`. The app, an HTML export and the docs make no runtime font request. Do not add a webfont CDN, italics or extra subsets: every subset is inlined into every export.
 
-**Label/Mono Font:** UI monospace stack (with SF Mono, JetBrains Mono, Cascadia Code, Menlo & Consolas fallbacks)
-
-**Character:** Native system typography makes dense performance data quick to read and keeps the dashboard familiar across developer workstations. Monospace labels are a diagnostic cue for compact impact chips and technical values.
+Headings (`h1`, `h2`, `h3`) run Instrument Sans at `font-stretch: 85%` (`--font-stretch-heading`), which gives titles a compact instrument feel without a second family.
 
 ### Hierarchy
 
-- **Section title** (semibold, 18px): dashboard-level regions such as Reference.
-- **Card title** (bold, 16px): every widget's scan anchor.
-- **Control and body text** (medium/regular, 14px): default interaction and explanatory copy.
-- **Supporting text** (regular, 12px): application metadata, chart annotations, and secondary context.
-- **Diagnostic label** (medium, 12px, monospace when it is a compact technical tag): impact chips and terse classifications.
+- **Verdict title:** semibold, 22px, 26px from `sm`.
+- **Landing hero:** semibold, fluid 32px to 52px, `-0.02em` tracking.
+- **Card title (`h3`):** semibold, 14px, owned by `WidgetCard`.
+- **Body and controls:** 14px; supporting text 12px in muted.
+- **Metric figure:** JetBrains Mono 30px semibold, `-0.02em`, tabular figures. A unit beside the figure renders smaller (16px, medium) and muted.
+- **Label:** JetBrains Mono 11px, weight 500, uppercase, `0.06em` to `0.08em` tracking, muted (`.trace-eyebrow`).
+- **Tag chip text:** JetBrains Mono 11px semibold, `0.06em` tracking, all caps.
+- **Step code (F1, F2, F3):** JetBrains Mono 12px semibold, tabular.
 
-**The Scan-First Type Rule.** Titles and key metrics should be readable before supporting explanation. Keep detail text subordinate and never use display-style typography for analytical content.
+**The mono-for-data rule.** If it is a number, a unit, a tag, a step code, a stage id, an axis tick or a label that names a data group, it is mono. Everything else is Instrument Sans.
 
-**Docs Site Addendum.** The published docs site (`docs-site/`) is a separate Read-mode surface: a visitor there is reading to understand, not operating a dashboard. It uses 'Recursive' (variable font, weight+casual axis `wght,CASL@400..700,0..1`) for body text and 'JetBrains Mono' for code, both loaded from Google Fonts, distinct from the dashboard's system-UI/monospace stack. The dashboard's Operate-mode typography stays about density and native familiarity; Read-mode documentation benefits from a more editorial, distinctive typeface instead.
+The mono label names something the reader is looking at: a metric tile, a findings band, a comparison side, a list. It is not a decorative line placed above a headline that already says what the section is.
 
 ## Layout
 
-The dashboard is a single-column application shell with a compact, bordered top bar and a 16px page inset. Major regions use a 24px vertical rhythm. Widget boards are one column on small screens, two columns from the medium breakpoint, and three columns from the extra-large breakpoint; expanded widget cards span the available board width so charts and tables get useful inspection space.
+The board keeps its reading order: verdict, then numbers, then evidence. `RunVerdict` answers "how did this run go and where do I start" in one sentence and lists at most three numbered next steps. The Scorecard follows, then the Findings and Full app report tabs with every finding and widget.
 
-Card interiors use a 16px default rhythm and a 12px compact rhythm. Tables may overflow horizontally rather than sacrificing column legibility. The top bar keeps a flexible current-file area, a small global health chip, and icon actions; long names truncate instead of changing the chrome's height.
+The shell is a single column with a compact bordered top bar and a 16px page inset. Regions sit on a 24px vertical rhythm; card interiors use 16px, or 12px for compact cards. Widget boards are one column on small screens, two from the medium breakpoint and three from extra-large; an expanded card spans the board so charts and tables get room. Tables scroll horizontally rather than squeezing columns.
 
 ### Reading order and disclosure
 
-The run board reads top to bottom as verdict, then numbers, then evidence. `RunVerdict` answers "how did this run go and where do I start" in one sentence, then lists at most three numbered next steps, each in the same order: what the finding measured, what to try, and a route to the evidence. The Scorecard follows, then the Findings and Full app report tabs holding every finding and widget.
+- **One place, one step.** Findings on the same stage fold into one step, because they usually share a cause and their savings overlap.
+- **Plain language leads, Spark terms follow.** A step's first line is the plain explanation; metric names and configuration keys come after.
+- **Action first, evidence on demand.** Each Findings band leads with its rows; in Basic view the detail widgets wait behind one "Show the evidence" disclosure, and any route to a finding opens it.
+- **Basic by default, Advanced on request.** Advanced view adds the finding filter bar, confidence markers, threshold captions, extra columns and doc icons (`AdvancedOnly`). A control that explains current state stays visible in Basic.
 
-- **One place, one step.** Findings on the same stage fold into one step, because they usually share a cause and their savings overlap. Never show one root cause as several equal problems.
-- **Plain language leads, Spark terms follow.** A step's first line is the plain explanation; metric names, ratios and configuration keys come after it.
-- **Action first, evidence on demand.** On the Findings tab each band leads with its rows, which say what to do; in Basic view the band's detail widgets wait behind one "Show the evidence" disclosure, and any route to a finding opens it. Evidence is never hidden from a Basic reader, only deferred until asked.
-- **Basic by default, Advanced on request.** Basic view keeps what a newcomer needs to act. Advanced view adds power controls and meta detail: the finding filter bar, confidence markers, threshold captions, extra columns and doc icons (`AdvancedOnly`). A control that explains current state, such as an active filter, stays visible in Basic view.
+### The run clock
 
-## Elevation & Depth
+Every time-based view uses seconds from application start, with the same domain and ticks (`src/view/charts/run-clock`). The verdict strip, the job timeline and anything new that plots time must share it, so a stage sits in the same place everywhere.
 
-The system is **flat and layered**. Background tone, hairline borders, and a small left impact-band rule create hierarchy. Shadows are subtle, used only to separate widgets from the canvas or to acknowledge hover, so no card competes for attention.
+## Elevation and depth
 
-### Shadow vocabulary
-
-- **Widget resting shadow:** a thin top definition plus a soft, low-spread shadow under cards.
-- **Widget hover shadow:** a slightly deeper version of the resting shadow; it signals interactivity without changing the panel's semantic importance.
-
-**The Evidence-Over-Elevation Rule.** A stronger visual signal must communicate state, impact, or interaction. Do not add decorative lift to ordinary content.
+Trace is flat. Hierarchy comes from panel against canvas and the 1px rule, not from shadow. `--shadow-widget` is a hairline (`0 1px 2px` at 4% ink in light, 24% black in dark) and the hover shadow is only slightly deeper. A stronger visual signal must mean state, impact or interaction; do not lift ordinary content.
 
 ## Shapes
 
-Panels have rounded corners: controls use medium rounding, and cards and dialogs use large rounding. Thin neutral borders define fields and menus. Impact bands use a straight colored left card edge and circular status dots, not ornamental shapes.
+Three radii, each with one job:
+
+- **6px** (`--radius-panel`): panels, cards, the verdict, findings tables, dialogs, chart tooltips.
+- **4px** (`--radius-button`): buttons, inputs, icon wells.
+- **3px** (`--radius-tag`): tag chips and proof chips.
+
+In Tailwind, `rounded-sm` is 3px, `rounded-md` and `rounded-lg` are 4px, and `rounded-xl` is 6px. Gauges and strip bars use 1px to 2px corners. Impact dots are circles; nothing else is round.
 
 ## Components
 
+### Panels and widget cards
+
+Every widget self-wraps in `WidgetCard` (`src/view/WidgetCard.tsx`), which renders the shadcn `Card`: panel background, 1px rule ring, 6px corners. `WidgetCard` owns the card's `<h3>`; widgets never render their own title heading. A flagged card adds a 3px left edge in its impact color. Collapsible cards put a chevron beside the title and keep the body mounted while closed so its text stays findable.
+
+Landing and comparison surfaces use the same panel through `.trace-panel` and `.drop-zone-panel`. The drop zone is a panel, not a dashed box; only drag-over turns its border dashed and accent.
+
 ### Buttons
 
-**Character:** compact, practical controls that stay out of the way until used.
+- **Primary:** accent text on the accent-soft fill, 4px corners, 32px tall; hover deepens the fill by mixing in 12% accent. Quieter than a solid fill and at least 4.5:1 in both themes. The `default` and `soft` variants of `src/components/ui/button.tsx` both render this.
+- **Outline, secondary, ghost:** neutral; ghost is transparent until hover.
+- **Destructive:** critical text on a 10% critical tint (20% in dark).
+- **Focus:** the shared accent ring (3px at 50%); active presses move down 1px.
 
-- **Shape:** rounded control geometry.
-- **Primary:** Signal Orange fill with dark ink; used for the clearest affirmative action.
-- **Ghost:** transparent at rest and lightly surfaced on hover; standard for top-bar icon actions and file selection.
-- **Hover / Focus:** hover uses a small tonal shift. Keyboard focus uses the orange ring; active buttons move down by one pixel as tactile confirmation.
+On touch, `tap-target-comfortable` grows the hit area to 44px without changing the 32px visual size.
 
-### Impact chips
+### Tag chips and impact dots
 
-**Character:** terse diagnostic labels, not decorative badges.
+A finding is flagged with an impact dot plus an ALL-CAPS tag chip (`TagBadge` in `src/view/ImpactBadge.tsx`). The chip has 3px corners, status text on a 10% tint of the same status, 20px height and mono 11px semibold text. The dot is an 8px circle in the status color. Tag text always comes from `typeTag(type)`; never hand-type it. The dot is decorative to assistive tech; the tag text is what is read.
 
-- **Style:** low-opacity status-color background with matching text, optional colored dot, and a fully rounded outline.
-- **Typography:** monospace for compact technical labels; finding tags stay short and all caps.
-- **State:** every impact-band style always follows its matching status token.
+### Verdict and stage strip
 
-### Cards / Containers
+The verdict is a panel with the verdict sentence as its `h2`, a one-line summary, the stage strip, then the numbered next steps. A failed run tints the panel border critical at 40%; a clean run tints it clean.
 
-**Character:** inspection panels with one clear title and expandable evidence.
+`VerdictStrip` draws up to eight of the longest stages as bars on the run clock, plus any stage a step points at. Neutral stages use chart-stage at 85% opacity; a step's stage takes its impact color and carries its step code, inside the bar when the bar is at least 8% of the run, beside it otherwise. Rows are 22px with mono 11px stage labels and a mono 10px tick axis; vertical gridlines use the rule color.
 
-- **Corner Style:** large rounded corners.
-- **Background:** standard surface layer, with fine outline and widget shadow.
-- **Impact band:** affected cards gain a 4px left border in the relevant status color.
-- **Internal Padding:** standard 16px, compact 12px for smaller widgets.
-- **Disclosure:** card headers are clickable when content can collapse; a small chevron reports the state without consuming title space.
+### Step codes
+
+Next steps are coded F1, F2, F3 (`StepCode`, `src/view/StepCode.tsx`). The same code marks the verdict step, its bar on the strip, its Findings row and its Stage Summary row, so one finding can be followed across the board. The code is mono, colored by its impact band on the verdict, muted elsewhere. A step row is a grid of code, title and savings, with the savings stacked on the right and reflowing under the title below 640px.
+
+### Metric tiles
+
+Scorecard tiles have a mono label, a mono 30px figure with a smaller muted unit, a one-line muted caption and a 6px gauge. The gauge track is chart-idle; its fill is the tile's status color when flagged, clean when not. Wall-clock's gauge is neutral (muted ink for active, 35% muted for the rest), because wall-clock is a measurement, not a grade. Only a flagged tile carries a status dot beside its label. Tiles are separated by the grid's dividers, never by a border on the tile itself.
+
+### Findings and stage tables
+
+Findings rows sit in a panel per severity band, with 10px by 12px cells and 16px outer padding. A flagged Stage Summary row carries a 3px inset rule in its impact color on its first cell. Every affected stage is flagged, never only the worst.
+
+### Charts
+
+Charts render through `ChartFrame`, which pins height and turns off series animation under reduced motion. Axis ticks and legends are mono. Tooltips draw on the popover surface with a 1px rule, 6px corners and 12px text, so they read in both themes. Each chart can expose its data as a table and copy it as TSV.
 
 ### Navigation
 
-**Character:** a utilitarian application header, not a marketing navigation bar.
+A single compact top bar with a bottom rule: the current-file switcher at left with app metadata beneath, a global status chip, then icon actions for docs, theme and loading a new run. Metadata truncates; actions never wrap.
 
-- **Style:** a single compact row with a bottom divider.
-- **Contents:** current-file switcher at left, app metadata beneath its name when available, a global status chip, then icon-only actions for documentation and theme, plus loading a new run.
-- **Responsive behavior:** file metadata truncates; fixed-size actions remain visible and do not wrap.
+### Docs site
 
-### Inputs / Fields
+`docs-site/.vitepress/theme/custom.css` maps Trace onto VitePress: panel is the reading surface (`--vp-c-bg`), canvas backs the sidebar and home (`--vp-c-bg-alt`), surface-2 backs code blocks and callouts. Brand buttons are accent text on accent-soft. Callouts share one quiet shape (rule border, 3px status edge, 12% tint) and status colors appear only in status callouts and tuning-reference severity marks.
 
-**Character:** quiet, bordered controls that show interaction through focus rather than permanent accent fills.
+## Do's and don'ts
 
-- **Style:** transparent or surface-backed field with a neutral border and medium rounding.
-- **Focus:** the border and ring use Signal Orange.
-- **Error:** destructive state switches the border and focus ring to Alert Red.
+### Do
 
-## Do's and Don'ts
+- Put panels on the gray canvas with a 1px rule and 6px corners.
+- Flag every affected stage with an impact dot, an ALL-CAPS tag and, where the widget has one, a 3px status edge.
+- Set every figure, unit, tag, step code and axis tick in mono.
+- Plot time on the shared run clock.
+- Keep light and dark equivalent in meaning; a theme switch never changes what is flagged.
+- Keep rendered copy domain-agnostic: no company, industry or dataset references.
 
-### Do:
+### Don't
 
-- **Do** use neutral layers and fine borders to organize dashboard structure.
-- **Do** make a finding's impact band visible through its colored dot, all-caps tag, and affected widget border.
-- **Do** keep compact metadata and technical labels in the system and monospace stacks.
-- **Do** allow dense tables and charts to use the full grid width when expanded.
-- **Do** keep dark and light themes semantically equivalent; theme changes should not change meaning.
-
-### Don't:
-
-- **Don't** use red, amber, blue, or green as generic decoration or unrelated category colors.
-- **Don't** turn status chips into primary calls to action.
-- **Don't** add heavy shadows, gradients, or oversized type that weakens scanability.
-- **Don't** replace concise diagnostic tags with emoji or nonstandard status symbols.
-- **Don't** make a widget title compete with its evidence; title, summary, then detail is the intended reading order.
+- Don't use critical, warning, info or clean for anything the analysis did not flag.
+- Don't fill primary buttons with solid accent; primary is accent-soft with accent text.
+- Don't render a widget title outside `WidgetCard`, or a second heading for the same card.
+- Don't load fonts from a CDN or add a runtime font request to the app, export or docs.
+- Don't use pure black, neon or glow in dark mode.
+- Don't replace tags with emoji, glyph icons or nonstandard status symbols.
+- Don't place a mono label above a heading as a decorative kicker.
