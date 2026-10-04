@@ -7,7 +7,7 @@ categorized findings delta (`findings`), and the share of executor run time in
 paired stages (`runtimeCoverage`). The result
 carries the same `verdict`, `confidence`, `reason`, `matchedCoverage`,
 `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`,
-`unmatched`, `replanned` and `bookkeepingStageIds` as the
+`unmatched`, `replanned`, `bookkeepingStageIds` and `executionAlignment` as the
 `comparison` object of the CLI's `--baseline` JSON output, plus `stagePairs`
 when `include` asks for it (the CLI always carries it), plus
 `runIdA` and `runIdB`. `metricDeltas` and `findingsDelta` repeat `metrics` and
@@ -99,6 +99,7 @@ Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` tr
   "unmatched": { "baseStageIds": [], "candStageIds": [] },
   "replanned": [],
   "bookkeepingStageIds": { "baseStageIds": [], "candStageIds": [] },
+  "executionAlignment": { "baseExecutions": 1, "candExecutions": 1, "pairedExecutions": 1, "bounded": false, "agreement": 1, "accepted": true },
   "metricDeltas": [
     {
       "key": "wallClock",
@@ -133,17 +134,35 @@ The comparison block (`comparisonSchemaVersion` `1`) holds:
   `null`. A stage's own record in the run report keeps the latest attempt's
   figures.
 - `unmatched`: `{ baseStageIds, candStageIds }`, the stages that paired with
-  nothing.
-- `replanned`: groups of stages whose plan changed between the runs. Always an
-  empty array.
+  nothing and sit in no replanned group.
+- `replanned`: one group for each aligned pair of SQL executions whose stage
+  counts differ and that left stages unpaired (a broadcast join that took out an
+  exchange, for example). A group holds `baseExecutionId`, `candExecutionId`,
+  `baseStageIds` and `candStageIds` (the leftover stages per side) and `deltas`,
+  the total of each of the eight delta metrics over the leftover stages of each
+  side, as `{ baseline, candidate, delta }` entries like a pair's. Leftover
+  stages under an execution pair with equal stage counts are `unmatched`.
 - `bookkeepingStageIds`: `{ baseStageIds, candStageIds }`, stages that only read
   the Delta log or its checkpoints. They are in no pair, not in `unmatched` and
   not in the coverage.
 - `runtimeCoverage`: the share of both runs' executor run time (bookkeeping
-  stages excluded) in paired stages, or `null` when neither run recorded any.
-- `matchedCoverage`: the share of stages paired by exact match, by count.
+  stages excluded) in paired and replanned stages, or `null` when neither run
+  recorded any.
+- `executionAlignment`: how the SQL executions of the two runs lined up:
+  `baseExecutions` and `candExecutions` (executions with at least one stage
+  outside the Delta bookkeeping set), `pairedExecutions`, `agreement` (`pairedExecutions
+  / min(baseExecutions, candExecutions)`, `null` when either run has none), `accepted` (false when `agreement` is under 0.5: the runs share too
+  little SQL work to be one job, and no stage pairs) and `bounded` (true when
+  the alignment ran in its band form, which happens above 1,000,000 execution
+  pairs).
+- `matchedCoverage`: the share of stages paired by the exact key alone, by
+  count.
 
-Every pair has the quality `exact`; `structural` and `aligned` are reserved values. See [How stages are matched](../run-comparison/how-stages-are-matched.md).
+A pair's `quality` is `exact` (same normalized name and plan text), `structural`
+(same plan shape and attribute names, different text) or `aligned` (different
+structure with similar text, or no plan to compare and paired by position among
+stages of one name). `score` is 1 for `exact`, the text similarity for the other
+two, and 0.5 for a pair made by position. See [How stages are matched](../run-comparison/how-stages-are-matched.md).
 
 `confidence` is `ok`, `low` or `insufficient`, and `reason` says why when it
 is not `ok`. It is `low` when the two runs' names differ, or when under 90% of
