@@ -3,6 +3,7 @@ import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from '../det
 import { effectiveThresholds } from '../threshold-overrides.ts';
 import { IMPACT_BAND_ORDER } from '../format-utils.ts';
 import type { CompareRunsResult } from '../run-comparison.ts';
+import { PAIR_DELTA_METRICS, type PairDeltaMetric, type StagePair } from '../stage-alignment.ts';
 import type { AppModel, Finding, ImpactBand } from '../types.ts';
 import type { RegressionBudget } from './regression-budgets.ts';
 
@@ -14,13 +15,23 @@ export interface BudgetsConfig {
   maxRegressionPct?: number; regressionMetric?: string; failOnIntroduced?: string;
   /** Further regression budgets, one per metric, checked alongside the maxRegressionPct pair. */
   regressionBudgets?: RegressionBudget[];
+  /** Per paired stage: fail when any eligible pair's `metric` regressed by more than `maxPct`, one entry per metric. */
+  stageRegressionBudgets?: RegressionBudget[];
+  /** Pair qualities the stage budgets read. Defaults to `DEFAULT_STAGE_BUDGET_QUALITIES`: an `aligned` pair
+   * matched on similarity or position, so its delta may compare different work. */
+  stageQualities?: StagePair['quality'][];
 }
+
+export const STAGE_QUALITIES: readonly StagePair['quality'][] = ['exact', 'structural', 'aligned'];
+export const DEFAULT_STAGE_BUDGET_QUALITIES: readonly StagePair['quality'][] = ['exact', 'structural'];
+/** Metrics with a regression direction (higher is worse). Input and output volume are workload, not performance. */
+const NEUTRAL_PAIR_METRICS: ReadonlySet<string> = new Set(['inputBytes', 'outputBytes']);
 export interface BudgetResult {
   name: 'max-runtime' | 'max-spill' | 'max-skew' | 'max-failed-task-rate' | 'min-efficiency'
-    | 'max-regression' | 'fail-on-introduced' | 'run-complete';
+    | 'max-regression' | 'max-stage-regression' | 'fail-on-introduced' | 'run-complete';
   status: 'pass' | 'violation' | 'inconclusive';
   detail: string;
-  /** Set on `max-regression` results: the metric key that budget checks. */
+  /** Set on `max-regression` and `max-stage-regression` results: the metric key that budget checks. */
   metric?: string;
 }
 
@@ -146,6 +157,50 @@ function checkRegression(comparison: CompareRunsResult, maxRegressionPct: number
     : { name: 'max-regression', metric: regressionMetric, status: 'pass', detail: `Metric "${regressionMetric}" ${pctLabel}, within budget ${maxRegressionPct}%.` };
 }
 
+function checkStageRegression(
+  comparison: CompareRunsResult, { metric, maxPct }: RegressionBudget, qualities: readonly StagePair['quality'][],
+): BudgetResult {
+  const name = 'max-stage-regression' as const;
+  if (!(PAIR_DELTA_METRICS as readonly string[]).includes(metric)) {
+    return { name, metric, status: 'inconclusive', detail: `Metric "${metric}" is not a paired-stage metric (expected one of: ${PAIR_DELTA_METRICS.join(', ')}).` };
+  }
+  if (NEUTRAL_PAIR_METRICS.has(metric)) {
+    return { name, metric, status: 'inconclusive', detail: `Metric "${metric}" measures workload volume, not performance: it has no regression direction to check.` };
+  }
+  const eligible = comparison.stagePairs.filter((p) => qualities.includes(p.quality));
+  if (eligible.length === 0) {
+    return { name, metric, status: 'inconclusive', detail: comparison.stagePairs.length === 0
+      ? 'No stages were paired between the two runs.'
+      : `None of the ${comparison.stagePairs.length} paired stage(s) has quality ${qualities.join(' or ')}.` };
+  }
+  const measured = eligible
+    .map((pair) => ({ pair, delta: pair.deltas[metric as PairDeltaMetric] }))
+    .filter(({ delta }) => delta.baseline != null && delta.delta != null);
+  if (measured.length === 0) {
+    return { name, metric, status: 'inconclusive', detail: `Metric "${metric}" is unavailable for every eligible paired stage.` };
+  }
+  const regressions = measured
+    .filter(({ delta }) => delta.delta! > 0)
+    .map(({ pair, delta }) => ({ pair, delta, pct: delta.baseline === 0 ? Infinity : (delta.delta! / delta.baseline!) * 100 }))
+    .sort((a, b) => b.pct - a.pct || a.pair.pairId.localeCompare(b.pair.pairId));
+  const over = regressions.filter((r) => r.pct > maxPct);
+  const scope = `${measured.length} paired stage(s)`;
+  if (over.length === 0) {
+    const worst = regressions[0];
+    return { name, metric, status: 'pass', detail: worst
+      ? `No paired stage regressed "${metric}" beyond ${maxPct}% across ${scope}; the largest was ${formatPct(worst.pct)} (pair ${worst.pair.pairId}).`
+      : `No paired stage regressed "${metric}" across ${scope}.` };
+  }
+  const listed = over.slice(0, 3).map((r) => `pair ${r.pair.pairId} (${r.pair.quality}) ${formatPct(r.pct)}`).join(', ');
+  const more = over.length > 3 ? `, and ${over.length - 3} more` : '';
+  return { name, metric, status: 'violation',
+    detail: `${over.length} of ${scope} regressed "${metric}" beyond ${maxPct}%: ${listed}${more}.` };
+}
+
+function formatPct(pct: number): string {
+  return pct === Infinity ? 'from 0' : `+${pct.toFixed(1)}%`;
+}
+
 function checkFailOnIntroduced(comparison: CompareRunsResult, band: string): BudgetResult {
   if (band !== 'all' && !IMPACT_BANDS.includes(band as ImpactBand)) {
     return { name: 'fail-on-introduced', status: 'inconclusive', detail: `Impact band "${band}" is not recognized (expected "all" or one of ${IMPACT_BANDS.join(', ')}).` };
@@ -197,6 +252,11 @@ export function evaluateBudgets({ appModel, catalog, budgets, comparison, thresh
   }
   for (const { metric, maxPct } of budgets.regressionBudgets ?? []) {
     pushComparisonBudget(results, comparison, 'max-regression', (c) => checkRegression(c, maxPct, metric), metric);
+  }
+  const stageQualities = budgets.stageQualities ?? DEFAULT_STAGE_BUDGET_QUALITIES;
+  for (const budget of budgets.stageRegressionBudgets ?? []) {
+    pushComparisonBudget(results, comparison, 'max-stage-regression',
+      (c) => checkStageRegression(c, budget, stageQualities), budget.metric);
   }
   if (budgets.failOnIntroduced !== undefined) {
     pushComparisonBudget(results, comparison, 'fail-on-introduced',

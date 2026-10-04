@@ -535,6 +535,35 @@ The budgets combine like this:
   metric the baseline or the candidate log can't provide is inconclusive,
   never a pass.
 
+### Per-stage regression budgets
+
+`--max-regression-pct` and `--regression-budget` judge a whole-run metric. To
+gate on the stages themselves, repeat
+`--stage-regression-budget <metric>:<pct>` (with `--baseline`). The budget
+fails when any paired stage's metric grew by more than the percentage against its baseline stage. The metric
+is one of `executorRunTime`, `executorCpuTime`, `memoryBytesSpilled`,
+`diskBytesSpilled`, `shuffleReadBytes` and `shuffleWriteBytes`:
+
+```sh
+sparkforensics-analyze candidate.zstd --baseline baseline.zstd \
+  --stage-regression-budget executorRunTime:25 --stage-regression-budget diskBytesSpilled:0
+```
+
+- The stages come from the comparison's `stagePairs`. By default only `exact`
+  and `structural` pairs count, since an `aligned` pair may compare different
+  work. `--stage-quality exact,structural,aligned` chooses the qualities; each
+  pair's `quality` and `score` are in the comparison output. Stages a re-plan
+  left over are not paired and are not checked.
+- Each metric gives one `max-stage-regression` result carrying `metric`, whose
+  detail names the worst offenders by `pairId`. A violation exits `1`.
+- A stage that grew from a zero baseline exceeds any percentage.
+- It is inconclusive (exit `3`) when no eligible stage pairs or the metric is
+  missing on every one, never a pass. A comparison with `low` or
+  `insufficient` confidence is still judged on the pairs it has.
+- A metric can be budgeted once. `--stage-quality` without
+  `--stage-regression-budget`, an unknown metric or quality, and a metric
+  named twice are usage errors (exit `2`).
+
 ### Several candidates
 
 Pass two or more logs as positional arguments, with `--baseline`, to compare
@@ -555,7 +584,7 @@ Each line is one JSON object:
 | `status` | `pass`, `violation`, `inconclusive` or `error`. |
 | `exitCode` | The exit code this line alone would give: `0` for `pass`, `1` for `violation`, `3` for `inconclusive`, and for `error` `4` (the log can't be read or parsed) or `6` (an internal failure while analyzing it). |
 | `error` | The message when `status` is `error`; otherwise `null`. With `--redact`, a generic message that names no path. |
-| `budgets` | This candidate's budget results, each with `name`, `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric` on `max-regression`. Empty for an `error` line. |
+| `budgets` | This candidate's budget results, each with `name`, `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric` on `max-regression` and `max-stage-regression`. Empty for an `error` line. |
 | `candidate` | The candidate's report with its `metrics` and `effectiveConf` blocks, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
 | `comparison` | `verdict`, `confidence`, `reason`, `matchedCoverage`, `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`, `stagePairs`, `unmatched`, `replanned`, `bookkeepingStageIds` and `executionAlignment`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
 

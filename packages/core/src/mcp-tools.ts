@@ -416,6 +416,14 @@ export async function evaluateBudgetsForRun(
   } catch (e) {
     throw mcpError('access-or-upstream-failure', (e as Error).message);
   }
+  if (budgets.stageQualities !== undefined && budgets.stageRegressionBudgets === undefined) {
+    throw mcpError('access-or-upstream-failure', 'stageQualities requires stageRegressionBudgets.');
+  }
+  try {
+    combineRegressionBudgets((budgets.stageRegressionBudgets ?? []).map((budget) => ({ origin: 'stageRegressionBudgets', budget })));
+  } catch (e) {
+    throw mcpError('access-or-upstream-failure', (e as Error).message);
+  }
   const [first, second] = await Promise.all([
     resolveAndAnalyze(primary, opts?.thresholds),
     secondary ? resolveAndAnalyze(secondary, opts?.thresholds) : Promise.resolve(undefined),

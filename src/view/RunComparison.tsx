@@ -5,12 +5,14 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { TagBadge } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
 import { summarizeComparison, type ComparisonTone, type VerdictJobOutcome } from '@sparkforensics/core/comparison-verdict.ts';
+import { StageComparisonTable, type StageSide } from '@/view/StageComparisonTable';
 import { PinnedStageDeltas, type StageSummary } from '@/view/PinnedStageDeltas';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 import { cn } from '@/lib/utils';
 import { formatBytes, formatDuration, typeTag } from '@sparkforensics/core/format-utils.ts';
 import { NEUTRAL_METRIC_KEYS } from '@sparkforensics/core/run-comparison.ts';
 import type { ImpactBand } from '@sparkforensics/core/types.ts';
+import type { ReplannedGroup, StageAlignment, StagePair } from '@sparkforensics/core/stage-alignment.ts';
 
 interface MetricDelta {
   key: string; label: string;
@@ -29,6 +31,10 @@ interface ComparisonModel {
   reason: string | null;
   /** Share of executor run time in paired stages; null when neither run recorded any. */
   runtimeCoverage: number | null;
+  /** The aligner's result; absent in a hand-built model, which then shows no stage table. */
+  stagePairs?: StagePair[];
+  unmatched?: StageAlignment['unmatched'];
+  replanned?: ReplannedGroup[];
   metrics: MetricDelta[];
   findings: { introduced: CategoryDelta[]; resolved: CategoryDelta[] };
   stageSkew: Array<{ pairId: string; name: string; baseId: number; candId: number; baseline: number | null; candidate: number | null; delta: number | null }>;
@@ -197,7 +203,8 @@ export function RunComparison({
 }: {
   model: ComparisonModel;
   onClose: () => void;
-  onDrillIn?: (which: 'baseline' | 'candidate') => void;
+  /** Opens a run's dashboard, on one stage when `stageId` is given. */
+  onDrillIn?: (which: StageSide, stageId?: number) => void;
 }) {
   // Full-page route (not a dialog), so wire Escape to close as a courtesy.
   useEffect(() => {
@@ -285,6 +292,13 @@ export function RunComparison({
               </div>
             ) : null}
           </WidgetCard>
+        ) : null}
+
+        {model.stagePairs ? (
+          <StageComparisonTable
+            model={{ stagePairs: model.stagePairs, unmatched: model.unmatched ?? { baseStageIds: [], candStageIds: [] }, replanned: model.replanned ?? [], baseStages: model.baseStages, candStages: model.candStages }}
+            onOpenStage={(side, stageId) => onDrillIn?.(side, stageId)}
+          />
         ) : null}
 
         {model.stageSkew.length > 0 ? (

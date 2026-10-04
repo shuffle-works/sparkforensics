@@ -285,6 +285,35 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
     });
   });
 
+  // Stage budgets read `stagePairs` from the shared builder, so both surfaces must give the same
+  // results for the same logs, whatever the pairs and qualities are.
+  it.each([
+    [['--stage-regression-budget', 'executorRunTime:0'], { stageRegressionBudgets: [{ metric: 'executorRunTime', maxPct: 0 }] }],
+    [['--stage-regression-budget', 'executorRunTime:0', '--stage-regression-budget', 'diskBytesSpilled:50', '--stage-quality', 'exact,structural,aligned'],
+      { stageRegressionBudgets: [{ metric: 'executorRunTime', maxPct: 0 }, { metric: 'diskBytesSpilled', maxPct: 50 }], stageQualities: ['exact', 'structural', 'aligned'] }],
+  ])('reports the same stage budget results (%j) through the CLI and evaluate_budgets', async (flags, mcpBudgets) => {
+    const [line] = await cliLines([REPLAN_CANDIDATE, '--baseline', REPLAN_BASELINE, '--format', 'ndjson', ...flags]);
+    const viaMcp = await mcpCall('evaluate_budgets', { source: { path: REPLAN_BASELINE }, sourceB: { path: REPLAN_CANDIDATE }, ...mcpBudgets });
+    expect(line.budgets.every((r) => r.name === 'max-stage-regression')).toBe(true);
+    expect(diffSurfaces(line.budgets, viaMcp.results, BUDGETS_ALLOWED)).toEqual([]);
+    expect(viaMcp.violated).toBe(line.exitCode === 1);
+  });
+
+  it('refuses a malformed stage budget, and one without --baseline, with a usage error', async () => {
+    const unknown = await cliOutput([CANDIDATES[0], '--baseline', BASELINE, '--stage-regression-budget', 'wallClock:10']);
+    expect(unknown.exitCode).toBe(2);
+    expect(unknown.stderr).toMatch(/unknown paired-stage metric "wallClock"/);
+    const quality = await cliOutput([CANDIDATES[0], '--baseline', BASELINE, '--stage-quality', 'exact']);
+    expect(quality.exitCode).toBe(2);
+    expect(quality.stderr).toMatch(/--stage-quality requires --stage-regression-budget/);
+    const withoutBaseline = await cliOutput([CANDIDATES[0], '--stage-regression-budget', 'executorRunTime:10']);
+    expect(withoutBaseline.exitCode).toBe(2);
+    expect(withoutBaseline.stderr).toMatch(/require --baseline/);
+    await expect(mcpCall('evaluate_budgets', {
+      source: { path: BASELINE }, sourceB: { path: CANDIDATES[0] }, stageQualities: ['exact'],
+    })).rejects.toThrow(/stageQualities requires stageRegressionBudgets/);
+  });
+
   it('refuses an invalid --normalize-path, and one without --baseline, with a usage error', async () => {
     const invalid = await cliOutput([CANDIDATES[0], '--baseline', BASELINE, '--normalize-path', '(unclosed']);
     expect(invalid.exitCode).toBe(2);
