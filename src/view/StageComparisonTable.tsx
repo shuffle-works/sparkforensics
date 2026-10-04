@@ -95,7 +95,7 @@ export function StageComparisonTable({ model, baselineLabel, candidateLabel, onO
           <p className="mb-3 text-xs text-muted-foreground">
             Change from baseline to candidate, largest run-time change first. Under each stage, quality says how the pair was matched and score is how alike they are, from 0 to 1. Select a stage to see both runs side by side.
           </p>
-          <Table>
+          <Table className="trace-table">
             <TableHeader>
               <TableRow>
                 <TableHead className="text-left">Stage</TableHead>
@@ -120,7 +120,7 @@ export function StageComparisonTable({ model, baselineLabel, candidateLabel, onO
                       >
                         {name}
                       </button>
-                      <div className="mt-0.5 text-xs font-normal text-muted-foreground" title={QUALITY_HELP[p.quality]}>
+                      <div className="stage-pair-meta mt-0.5" title={QUALITY_HELP[p.quality]}>
                         {p.quality} · {p.score.toFixed(2)}
                       </div>
                     </TableHead>
@@ -140,14 +140,14 @@ export function StageComparisonTable({ model, baselineLabel, candidateLabel, onO
 
       {model.replanned.length > 0 ? (
         <div className="mt-4" data-testid="replanned-stages">
-          <h4 className="mb-1 text-xs font-semibold text-muted-foreground">Re-planned work</h4>
+          <h4 className="trace-eyebrow mb-1">Re-planned work</h4>
           <p className="mb-2 text-xs text-muted-foreground">
             These queries ran a different number of stages, so the leftover stages are compared as a group rather than one by one.
           </p>
           <ul className="flex flex-col gap-2">
             {model.replanned.map((g) => (
               <li key={`${g.baseExecutionId}-${g.candExecutionId}`} className="border-b border-border pb-2 text-sm last:border-0">
-                <div className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
+                <div className="flex flex-wrap gap-x-4 font-mono text-[11px] text-muted-foreground">
                   <span>Query {g.baseExecutionId} → {g.candExecutionId}</span>
                   <SideTotals label="Run time" deltas={g.deltas} />
                 </div>
@@ -170,7 +170,7 @@ export function StageComparisonTable({ model, baselineLabel, candidateLabel, onO
 
       {hasUnmatched ? (
         <div className="mt-4" data-testid="unmatched-stages">
-          <h4 className="mb-1 text-xs font-semibold text-muted-foreground">Unmatched stages</h4>
+          <h4 className="trace-eyebrow mb-1">Unmatched stages</h4>
           <button
             type="button"
             className={linkClass}
@@ -234,7 +234,7 @@ function StagePairDialog({ selection, baseStages, candStages, baselineLabel, can
               {rows.map(({ baseId, candId }, i) => {
                 const base = find(baseStages, baseId), cand = find(candStages, candId);
                 return (
-                  <section key={i} aria-label={`Stage ${baseId ?? 'none'} and stage ${candId ?? 'none'}`} className="rounded border border-border p-3">
+                  <section key={i} aria-label={`Stage ${baseId ?? 'none'} and stage ${candId ?? 'none'}`} className="comparison-subpanel p-3">
                     <div className="mb-2 grid gap-2 text-xs sm:grid-cols-2">
                       <div title={baselineLabel}>
                         <div className="font-semibold">Baseline{baseId === undefined ? '' : ` · stage ${baseId}`}</div>

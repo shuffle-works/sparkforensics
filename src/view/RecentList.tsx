@@ -34,7 +34,7 @@ export function RecentList({ entries, activeId = null, onPick, onRemove }: Recen
             key={entry.id}
             className={cn(
               'flex items-center gap-1 rounded-md',
-              entry.id === activeId && 'bg-accent',
+              entry.id === activeId && 'bg-accent-soft',
             )}
           >
             <button
@@ -43,7 +43,7 @@ export function RecentList({ entries, activeId = null, onPick, onRemove }: Recen
               onClick={() => onPick?.(entry.id)}
             >
               <span className="w-full truncate text-sm font-medium">{label}</span>
-              <span className="w-full truncate text-xs text-muted-foreground">
+              <span className="recent-entry-meta w-full truncate text-muted-foreground">
                 {entry.name} · {formatBytes(entry.size)}
                 {issues}
               </span>

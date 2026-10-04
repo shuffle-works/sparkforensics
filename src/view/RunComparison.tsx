@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { TagBadge } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
-import { summarizeComparison, type ComparisonTone, type VerdictJobOutcome } from '@sparkforensics/core/comparison-verdict.ts';
+import { summarizeComparison, type VerdictJobOutcome } from '@sparkforensics/core/comparison-verdict.ts';
 import { StageComparisonTable, type StageSide } from '@/view/StageComparisonTable';
 import { PinnedStageDeltas, type StageSummary } from '@/view/PinnedStageDeltas';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
@@ -117,7 +117,7 @@ function StageChips({ stages }: { stages: string[] }) {
   return (
     <div className="mt-1 flex flex-wrap gap-1">
       {stages.map((name) => (
-        <span key={name} className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{name}</span>
+        <span key={name} className="comparison-stage-chip">{name}</span>
       ))}
     </div>
   );
@@ -134,7 +134,7 @@ function FindingRows({ items }: { items: CategoryDelta[] }) {
               impactBand={toImpactBand(f.impactBand)}
               className={typeTag(f.type) === 'PLAN' ? PLAN_TAG_CLASS : undefined}
             />
-            <span className="text-sm text-muted-foreground">{f.baseCount} → {f.candCount}</span>
+            <span className="comparison-count text-muted-foreground">{f.baseCount} → {f.candCount}</span>
           </div>
           <StageChips stages={f.stages} />
         </li>
@@ -149,7 +149,7 @@ function LowConfidenceBanner({ reason, confidence }: { reason: string; confidenc
   const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
   return (
-    <div role="alert" data-confidence={confidence} className="mb-4 flex items-start justify-between gap-3 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-warning">
+    <div role="alert" data-confidence={confidence} className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-l-[3px] border-border border-l-warning bg-card px-4 py-3 text-sm text-foreground">
       <span>{reason}</span>
       <button
         type="button"
@@ -163,13 +163,6 @@ function LowConfidenceBanner({ reason, confidence }: { reason: string; confidenc
   );
 }
 
-const VERDICT_TONE_CLASS: Record<ComparisonTone, string> = {
-  better: 'border-clean/40',
-  worse: 'border-critical/40',
-  same: 'border-border',
-  unknown: 'border-border',
-};
-
 /** The comparison's answer first: whether the candidate got faster or slower, which
  * cost metrics moved each way, which finding categories came or went, and
  * where to go next. The tables below stay the evidence for each claim. */
@@ -179,9 +172,12 @@ function ComparisonVerdict({ model, onDrillIn }: { model: ComparisonModel; onDri
     <section
       aria-labelledby="comparison-verdict-title"
       data-testid="comparison-verdict"
-      className={cn('space-y-3 rounded-xl border bg-card p-4 sm:p-5', VERDICT_TONE_CLASS[verdict.tone])}
+      // The tone (better/worse) is analysis status: it colors the panel's
+      // left rule (src/theme/landing.css), never the panel itself.
+      data-tone={verdict.tone}
+      className="comparison-verdict space-y-3 p-4 sm:p-5"
     >
-      <h2 id="comparison-verdict-title" className="font-heading text-lg font-semibold">{verdict.title}</h2>
+      <h2 id="comparison-verdict-title" className="font-heading">{verdict.title}</h2>
       {verdict.sentences.length > 0 ? (
         <p className="max-w-prose text-sm text-muted-foreground">{verdict.sentences.join(' ')}</p>
       ) : null}
@@ -218,9 +214,9 @@ export function RunComparison({
     // ~530px wide on a 390px phone.
     <header className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <h1 className="font-heading text-lg font-semibold">Run comparison</h1>
-        <p className="text-sm text-muted-foreground">
-          Baseline <strong>{model.baselineLabel}</strong> vs candidate <strong>{model.candidateLabel}</strong>
+        <h1 className="comparison-title font-heading">Run comparison</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Baseline <strong className="comparison-run-label">{model.baselineLabel}</strong> vs candidate <strong className="comparison-run-label">{model.candidateLabel}</strong>
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
@@ -244,7 +240,7 @@ export function RunComparison({
       // the other, never both), so without this it would drop the only
       // signal that script has and let the chrome pop back in.
       data-testid="dashboard"
-      className="mx-auto flex max-w-[72rem] flex-col gap-6 p-6"
+      className="mx-auto flex max-w-[72rem] flex-col gap-4 px-4 py-6 sm:px-6"
     >
       {header}
       {/* display:contents keeps these as direct flex/gap-6 children of the
@@ -264,7 +260,7 @@ export function RunComparison({
               ? 'Neither run recorded executor run time, so no stages are paired by run time.'
               : `Per-stage skew below covers only the stages paired between the runs, which hold ${Math.floor(model.runtimeCoverage * 100)}% of executor run time.`}
           </p>
-          <Table>
+          <Table className="trace-table">
             <TableHeader>
               <TableRow>
                 <TableHead className="text-left">Metric</TableHead>
@@ -281,13 +277,13 @@ export function RunComparison({
           <WidgetCard title="Findings by category">
             {model.findings.introduced.length > 0 ? (
               <div className="mb-4">
-                <h3 className="mb-2 text-xs font-semibold text-muted-foreground">More in candidate ({model.candidateLabel})</h3>
+                <h3 className="trace-eyebrow mb-2">More in candidate ({model.candidateLabel})</h3>
                 <FindingRows items={model.findings.introduced} />
               </div>
             ) : null}
             {model.findings.resolved.length > 0 ? (
               <div>
-                <h3 className="mb-2 text-xs font-semibold text-muted-foreground">Fewer in candidate ({model.candidateLabel})</h3>
+                <h3 className="trace-eyebrow mb-2">Fewer in candidate ({model.candidateLabel})</h3>
                 <FindingRows items={model.findings.resolved} />
               </div>
             ) : null}
@@ -305,7 +301,7 @@ export function RunComparison({
 
         {model.stageSkew.length > 0 ? (
           <WidgetCard title="Per-stage task skew (matched stages only)">
-            <Table>
+            <Table className="trace-table">
               <TableHeader>
                 <TableRow>
                   <TableHead className="text-left">Stage</TableHead>

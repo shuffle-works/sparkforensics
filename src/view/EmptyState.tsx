@@ -6,7 +6,7 @@ const TONE_STYLES = {
   /** Nothing to fix, a positive result (e.g. no findings, no spill). */
   clean: { box: 'border-clean/40 bg-clean/10', icon: 'text-clean', title: 'text-clean' },
   /** No data to show, neither good nor bad (e.g. an empty stage list). */
-  neutral: { box: 'border-border/60 bg-muted/40', icon: 'text-muted-foreground', title: 'text-foreground' },
+  neutral: { box: 'border-border bg-background', icon: 'text-muted-foreground', title: 'text-foreground' },
 } as const;
 
 /** The one shared empty-state shell for the dashboard: an icon, a title, an

@@ -32,14 +32,14 @@ export function McpSetupGuide() {
         </p>
         <pre
           data-testid="mcp-config-snippet"
-          className="overflow-x-auto rounded-md bg-muted p-2 text-xs whitespace-pre"
+          className="mcp-snippet overflow-x-auto p-2 text-xs whitespace-pre"
         >
           {MCP_CLI_COMMAND}
         </pre>
         <p className="text-muted-foreground">
           Or, in an MCP client config:
         </p>
-        <pre className="overflow-x-auto rounded-md bg-muted p-2 text-xs whitespace-pre">
+        <pre className="mcp-snippet overflow-x-auto p-2 text-xs whitespace-pre">
           {MCP_CONFIG_JSON}
         </pre>
       </CollapsibleContent>

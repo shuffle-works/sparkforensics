@@ -51,7 +51,7 @@ function DeltaCell({ base, cand, fmt }: { base: number | null; cand: number | nu
 
 export function PairTable({ base, cand }: { base: StageSummary; cand: StageSummary }) {
   return (
-    <Table>
+    <Table className="trace-table">
       <TableHeader>
         <TableRow>
           <TableHead className="text-left">Metric</TableHead>
@@ -99,17 +99,17 @@ export function PinnedStageDeltas({ baseStages, candStages }: { baseStages: Stag
         Pick one stage from each run to compare directly. Pairs are chosen by you: no automatic matching.
       </p>
       <div className="mb-4 flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        <label className="flex max-w-full min-w-0 flex-col gap-1 text-xs text-muted-foreground">
           Baseline stage
-          <select className="rounded border border-border bg-background px-2 py-1 text-sm text-foreground"
+          <select className="comparison-select max-w-full px-2 py-1 text-sm text-foreground"
                   value={baseId} onChange={(e) => setBaseId(e.target.value)}>
             <option value="">Select…</option>
             {baseStages.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        <label className="flex max-w-full min-w-0 flex-col gap-1 text-xs text-muted-foreground">
           Candidate stage
-          <select className="rounded border border-border bg-background px-2 py-1 text-sm text-foreground"
+          <select className="comparison-select max-w-full px-2 py-1 text-sm text-foreground"
                   value={candId} onChange={(e) => setCandId(e.target.value)}>
             <option value="">Select…</option>
             {candStages.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
@@ -123,7 +123,7 @@ export function PinnedStageDeltas({ baseStages, candStages }: { baseStages: Stag
           const base = findBase(pin.baseId), cand = findCand(pin.candId);
           if (!base || !cand) return null;
           return (
-            <div key={i} className="rounded border border-border p-3">
+            <div key={i} className="comparison-subpanel p-3">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <span className="text-sm font-medium">{base.name} → {cand.name}</span>
                 <Button type="button" variant="ghost" size="sm" onClick={() => removePin(i)}>Remove</Button>

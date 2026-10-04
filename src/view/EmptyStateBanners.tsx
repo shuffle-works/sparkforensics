@@ -12,7 +12,7 @@ export function NoMatchBanner() {
       title="No findings match the active filters"
       description="Adjust or clear the filters to see findings."
       action={
-        <button type="button" onClick={clearAll} className="cursor-pointer text-sm underline">
+        <button type="button" onClick={clearAll} className="cursor-pointer text-sm font-medium text-accent underline-offset-4 hover:underline">
           Clear all filters
         </button>
       }
