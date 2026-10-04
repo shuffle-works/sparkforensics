@@ -20,5 +20,4 @@ Skew remediation now fits the stage and the run's effective conf, and every medi
 - `straggler` words its skew advice from the stage as a skew finding does, carries the matching `remediation` and `evidence.origin`.
 - `underBroadcast` and `overBroadcast` compare against the effective `spark.sql.autoBroadcastJoinThreshold` (logged, else 10 MiB, `-1` disabled) and carry `evidence.broadcastThreshold`; a threshold that already admits the smaller side, or is already below the broadcast, is not suggested.
 - A skew finding on Spark before 3.0 suggests no AQE conf.
-- `speculationWaste` carries `evidence.wastedAttempts`.
 - Effective defaults modeled: `spark.sql.shuffle.partitions` (200), `spark.sql.autoBroadcastJoinThreshold` (10 MiB), `spark.sql.adaptive.coalescePartitions.enabled` (on from 3.0), besides the AQE keys above.

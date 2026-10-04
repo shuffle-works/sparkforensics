@@ -191,7 +191,7 @@ const EVIDENCE_KEYS = {
   stageFailed: ['variant', 'numTasks', 'memoryBytesSpilled', 'failedTaskDetails'],
   failures: ['failedTasks', 'dominantReason', 'dominantError', 'failureGroups', 'otherFailedTasks'],
   straggler: ['unit', 'speculativeTasks', 'stragglerCount', 'origin'],
-  speculationWaste: ['wastedAttempts'],
+  speculationWaste: [],
   retryWaste: ['numTasks', 'memoryBytesSpilled', 'retriedTaskDetails'],
   tinyTask: ['reads'],
   incompleteRun: [],

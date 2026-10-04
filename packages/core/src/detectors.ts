@@ -1839,7 +1839,7 @@ export const DETECTORS = [
       if (wasted < thresholds.minWasted || wastedMs < thresholds.minWasteMs) return null;
       return {
         type: 'speculationWaste', stageId: stage.id,
-        impactBand: 'warning', wastedAttempts: wasted,
+        impactBand: 'warning',
         metric: 'speculationWasteMs', value: wastedMs,
         confidence: speculationWasteConfidence(wastedMs, thresholds.minWasteMs),
         recommendation: `Speculative execution discarded ${Math.round(wastedMs / 1000)}s of executor time in this stage: if task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile.`,

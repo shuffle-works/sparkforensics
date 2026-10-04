@@ -182,10 +182,7 @@ export interface StragglerEvidence {
 }
 export interface StragglerFinding extends NumericFinding<'straggler'>, StragglerEvidence {}
 
-export interface SpeculationWasteEvidence {
-  // Speculative attempts discarded in the stage.
-  wastedAttempts?: number;
-}
+export type SpeculationWasteEvidence = Record<never, never>;
 export interface SpeculationWasteFinding extends NumericFinding<'speculationWaste'>, SpeculationWasteEvidence {}
 
 export interface RetryWasteEvidence {

@@ -690,9 +690,5 @@ describe('remediation fits the stage, plan and effective conf across finding typ
       expect(scan.recommendation).not.toMatch(/shuffle\.partitions/);
       expect(coreFindingGenericRecommendation(scan)).not.toMatch(/shuffle\.partitions/);
     });
-    it('records how many speculative attempts speculationWaste discarded', () => {
-      const f = of('speculationWaste', [makeStage({ speculationWastedAttempts: 10, speculationWasteMs: 120_000 })], makeApp());
-      expect(f.wastedAttempts).toBe(10);
-    });
   });
 });

@@ -139,7 +139,6 @@ carry `evidence.dynamicAllocation` (`on` or `off`) and suggest no
 dynamic-allocation property when it is `off`. `underBroadcast` and
 `overBroadcast` carry `evidence.broadcastThreshold` (`limits`, `notLimiting` or
 `disabled`) and suggest changing the threshold only when it limits the join.
-`speculationWaste` carries `evidence.wastedAttempts`.
 
 The CLI also supports fetching a run directly from a reachable Spark History
 Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,
