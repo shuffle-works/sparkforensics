@@ -1,156 +1,585 @@
 /**
- * SparkForensics doc theme.
- * Reuses the tokens defined in ../../../src/index.css so the docs site reads
- * as the same diagnostic instrument as the dashboard, not a separate skin.
- * Keep in sync with that file if the app's palette changes.
+ * SparkForensics doc theme: the "Trace" world.
+ * Token values mirror the app's src/index.css (canvas/panel/ink/muted/rule,
+ * indigo accent, status colors) so the docs read as the same instrument as
+ * the dashboard. Keep in sync with that file if the app's palette changes.
+ *
+ * Mapping onto VitePress: --vp-c-bg = panel (the reading surface),
+ * --vp-c-bg-alt = canvas (sidebar, home backdrop), --vp-c-bg-soft = the
+ * app's --surface-2 (code blocks, table heads, callouts).
+ * Status colors (critical/warning/info/clean) are used only for status
+ * callouts (tip/warning/danger/caution) and tuning-reference severity marks.
  */
 
 :root {
-  /* Light (default) */
-  --vp-c-bg: #f7f8f4;
-  --vp-c-bg-alt: #ffffff;
-  --vp-c-bg-elv: #f2f5f9;
-  --vp-c-bg-soft: #f2f5f9;
+  /* Trace tokens, light */
+  --sf-canvas: #f3f4f6;
+  --sf-panel: #ffffff;
+  --sf-surface-2: #f7f8fa;
+  --sf-ink: #16181d;
+  --sf-muted: #5f6672;
+  --sf-rule: #e1e3e8;
+  --sf-rule-soft: #eceef1;
+  --sf-accent: #4f46e5;
+  --sf-accent-hover: #4338ca;
+  --sf-accent-soft: #eceafd;
+  --sf-critical: #c12a1c;
+  --sf-warning: #915a00;
+  --sf-info: #2463c7;
+  --sf-clean: #1a7541;
 
-  --vp-c-border: #dbe2df;
-  --vp-c-divider: #eef1f6;
-  --vp-c-gutter: #eef1f6;
+  --vp-c-bg: var(--sf-panel);
+  --vp-c-bg-alt: var(--sf-canvas);
+  --vp-c-bg-elv: var(--sf-panel);
+  --vp-c-bg-soft: var(--sf-surface-2);
 
-  --vp-c-text-1: #151b1e;
-  --vp-c-text-2: #4f5f60;
-  --vp-c-text-3: color-mix(in srgb, var(--vp-c-text-2) 55%, var(--vp-c-bg));
+  --vp-c-border: var(--sf-rule);
+  --vp-c-divider: var(--sf-rule);
+  --vp-c-gutter: var(--sf-rule);
 
-  --vp-c-brand-1: #bf4413;
-  --vp-c-brand-2: #aa3510;
-  --vp-c-brand-3: #bf4413;
-  --vp-c-brand-soft: color-mix(in srgb, var(--vp-c-brand-1) 10%, transparent);
-  --vp-button-brand-text: #ffffff;
+  --vp-c-text-1: var(--sf-ink);
+  --vp-c-text-2: var(--sf-muted);
+  --vp-c-text-3: color-mix(in srgb, var(--sf-muted) 75%, var(--sf-panel));
 
-  --vp-c-note-1: #175cd3;
-  --vp-c-note-2: #175cd3;
-  --vp-c-note-3: #175cd3;
-  --vp-c-note-soft: color-mix(in srgb, var(--vp-c-note-1) 9%, transparent);
+  --vp-c-gray-1: #c4c8d0;
+  --vp-c-gray-2: #d6d9df;
+  --vp-c-gray-3: var(--sf-rule);
+  --vp-c-gray-soft: color-mix(in srgb, var(--sf-muted) 10%, transparent);
 
-  --vp-c-important-1: #8a4fd1;
-  --vp-c-important-2: #8a4fd1;
-  --vp-c-important-3: #8a4fd1;
-  --vp-c-important-soft: color-mix(in srgb, var(--vp-c-important-1) 10%, transparent);
-
-  --vp-c-warning-1: #9a5200;
-  --vp-c-warning-2: #9a5200;
-  --vp-c-warning-3: #9a5200;
-  --vp-c-warning-soft: color-mix(in srgb, var(--vp-c-warning-1) 10%, transparent);
-
-  --vp-c-danger-1: #c0271b;
-  --vp-c-danger-2: #c0271b;
-  --vp-c-danger-3: #c0271b;
-  --vp-c-danger-soft: color-mix(in srgb, var(--vp-c-danger-1) 9%, transparent);
-
-  --vp-c-success-1: #0f8a44;
-  --vp-c-success-2: #0f8a44;
-  --vp-c-success-3: #0f8a44;
-  --vp-c-success-soft: color-mix(in srgb, var(--vp-c-success-1) 10%, transparent);
+  --vp-c-brand-1: var(--sf-accent);
+  --vp-c-brand-2: var(--sf-accent-hover);
+  --vp-c-brand-3: var(--sf-accent);
+  --vp-c-brand-soft: var(--sf-accent-soft);
 }
 
 .dark {
-  --vp-c-bg: #080b0d;
-  --vp-c-bg-alt: #11171a;
-  --vp-c-bg-elv: #17202c;
-  --vp-c-bg-soft: #17202c;
+  /* Trace tokens, dark: slate, never pure black */
+  --sf-canvas: #14161b;
+  --sf-panel: #1b1e25;
+  --sf-surface-2: #21252d;
+  --sf-ink: #e6e8ee;
+  --sf-muted: #9097a3;
+  --sf-rule: #2b2f38;
+  --sf-rule-soft: #23262e;
+  --sf-accent: #9d97ff;
+  --sf-accent-hover: #b6b1ff;
+  --sf-accent-soft: #25234a;
+  --sf-critical: #ff7b6e;
+  --sf-warning: #f0b450;
+  --sf-info: #7aaaf5;
+  --sf-clean: #5fcc8c;
 
-  --vp-c-border: #233035;
-  --vp-c-divider: #1a232f;
-  --vp-c-gutter: #1a232f;
+  --vp-c-gray-1: #4a5160;
+  --vp-c-gray-2: #3a404c;
+  --vp-c-gray-3: var(--sf-rule);
+  --vp-c-gray-soft: color-mix(in srgb, var(--sf-muted) 14%, transparent);
+}
 
-  --vp-c-text-1: #f4f4f5;
-  --vp-c-text-2: #a9b5b4;
-  --vp-c-text-3: color-mix(in srgb, var(--vp-c-text-2) 55%, var(--vp-c-bg));
+/* Variables built from the tokens above. Declared on both selectors so the
+   color-mix() results resolve against the active theme's tokens. */
+:root,
+.dark {
+  /* Status callouts only. tip = clean, warning = warning, danger/caution =
+     critical; note/info stay neutral and important takes the accent. */
+  --vp-c-tip-1: var(--sf-clean);
+  --vp-c-tip-2: var(--sf-clean);
+  --vp-c-tip-3: var(--sf-clean);
+  --vp-c-tip-soft: color-mix(in srgb, var(--sf-clean) 12%, transparent);
 
-  --vp-c-brand-1: #ff6b2c;
-  --vp-c-brand-2: #ff8a4f;
-  --vp-c-brand-3: #ff6b2c;
-  --vp-c-brand-soft: color-mix(in srgb, var(--vp-c-brand-1) 13%, transparent);
-  --vp-button-brand-text: #11110f;
+  --vp-c-success-1: var(--sf-clean);
+  --vp-c-success-2: var(--sf-clean);
+  --vp-c-success-3: var(--sf-clean);
+  --vp-c-success-soft: color-mix(in srgb, var(--sf-clean) 12%, transparent);
 
-  --vp-c-note-1: #5aa2ff;
-  --vp-c-note-2: #5aa2ff;
-  --vp-c-note-3: #5aa2ff;
-  --vp-c-note-soft: color-mix(in srgb, var(--vp-c-note-1) 12%, transparent);
+  --vp-c-warning-1: var(--sf-warning);
+  --vp-c-warning-2: var(--sf-warning);
+  --vp-c-warning-3: var(--sf-warning);
+  --vp-c-warning-soft: color-mix(in srgb, var(--sf-warning) 12%, transparent);
 
-  --vp-c-important-1: #bc8cff;
-  --vp-c-important-2: #bc8cff;
-  --vp-c-important-3: #bc8cff;
-  --vp-c-important-soft: color-mix(in srgb, var(--vp-c-important-1) 14%, transparent);
+  --vp-c-danger-1: var(--sf-critical);
+  --vp-c-danger-2: var(--sf-critical);
+  --vp-c-danger-3: var(--sf-critical);
+  --vp-c-danger-soft: color-mix(in srgb, var(--sf-critical) 12%, transparent);
 
-  --vp-c-warning-1: #f0b429;
-  --vp-c-warning-2: #f0b429;
-  --vp-c-warning-3: #f0b429;
-  --vp-c-warning-soft: color-mix(in srgb, var(--vp-c-warning-1) 12%, transparent);
+  --vp-c-caution-1: var(--sf-critical);
+  --vp-c-caution-2: var(--sf-critical);
+  --vp-c-caution-3: var(--sf-critical);
+  --vp-c-caution-soft: color-mix(in srgb, var(--sf-critical) 12%, transparent);
 
-  --vp-c-danger-1: #ff5d57;
-  --vp-c-danger-2: #ff5d57;
-  --vp-c-danger-3: #ff5d57;
-  --vp-c-danger-soft: color-mix(in srgb, var(--vp-c-danger-1) 12%, transparent);
+  --vp-c-important-1: var(--sf-accent);
+  --vp-c-important-2: var(--sf-accent);
+  --vp-c-important-3: var(--sf-accent);
+  --vp-c-important-soft: var(--sf-accent-soft);
 
-  --vp-c-success-1: #48d17f;
-  --vp-c-success-2: #48d17f;
-  --vp-c-success-3: #48d17f;
-  --vp-c-success-soft: color-mix(in srgb, var(--vp-c-success-1) 13%, transparent);
+  --vp-c-note-1: var(--sf-muted);
+  --vp-c-note-2: var(--sf-muted);
+  --vp-c-note-3: var(--sf-muted);
+  --vp-c-note-soft: var(--sf-surface-2);
+
+  /* Primary action = accent-soft background + accent text (Trace buttons). */
+  --vp-button-brand-border: transparent;
+  --vp-button-brand-text: var(--sf-accent);
+  --vp-button-brand-bg: var(--sf-accent-soft);
+  --vp-button-brand-hover-border: transparent;
+  --vp-button-brand-hover-text: var(--sf-accent-hover);
+  --vp-button-brand-hover-bg: color-mix(in srgb, var(--sf-accent) 20%, var(--sf-panel));
+  --vp-button-brand-active-border: transparent;
+  --vp-button-brand-active-text: var(--sf-accent-hover);
+  --vp-button-brand-active-bg: color-mix(in srgb, var(--sf-accent) 26%, var(--sf-panel));
+
+  --vp-button-alt-border: var(--sf-rule);
+  --vp-button-alt-text: var(--sf-ink);
+  --vp-button-alt-bg: var(--sf-panel);
+  --vp-button-alt-hover-border: var(--sf-rule);
+  --vp-button-alt-hover-text: var(--sf-ink);
+  --vp-button-alt-hover-bg: var(--sf-canvas);
+  --vp-button-alt-active-border: var(--sf-rule);
+  --vp-button-alt-active-text: var(--sf-ink);
+  --vp-button-alt-active-bg: var(--sf-canvas);
+
+  /* Code: ink on a soft tint inline; blocks sit on surface-2 with a rule. */
+  --vp-code-color: var(--sf-ink);
+  --vp-code-bg: color-mix(in srgb, var(--sf-muted) 11%, transparent);
+  --vp-code-link-color: var(--sf-accent);
+  --vp-code-link-hover-color: var(--sf-accent-hover);
+  --vp-code-block-bg: var(--sf-surface-2);
+  --vp-code-block-color: var(--sf-ink);
+  --vp-code-lang-color: var(--sf-muted);
+  --vp-code-copy-code-bg: var(--sf-panel);
+  --vp-code-copy-code-hover-bg: var(--sf-canvas);
+  --vp-code-tab-active-bar-color: var(--sf-accent);
+
+  /* Callouts: neutral and status blocks share one quiet shape (rule border,
+     3px status edge); the tint stays at the 12% chip strength. */
+  --vp-custom-block-info-bg: var(--sf-surface-2);
+  --vp-custom-block-note-bg: var(--sf-surface-2);
+  --vp-custom-block-info-code-bg: var(--vp-code-bg);
+  --vp-custom-block-note-code-bg: var(--vp-code-bg);
+
+  --vp-nav-bg-color: var(--sf-panel);
+  --vp-local-nav-bg-color: var(--sf-panel);
+  --vp-sidebar-bg-color: var(--sf-canvas);
+  --vp-input-bg-color: var(--sf-panel);
+
+  --vp-home-hero-name-color: var(--sf-ink);
+  --vp-home-hero-name-background: transparent;
+}
+
+.dark {
+  --vp-c-bg: var(--sf-panel);
+  --vp-c-bg-alt: var(--sf-canvas);
+  --vp-c-bg-elv: var(--sf-surface-2);
+  --vp-c-bg-soft: var(--sf-surface-2);
+
+  --vp-c-border: var(--sf-rule);
+  --vp-c-divider: var(--sf-rule);
+  --vp-c-gutter: var(--sf-rule);
+
+  --vp-c-text-1: var(--sf-ink);
+  --vp-c-text-2: var(--sf-muted);
+  --vp-c-text-3: color-mix(in srgb, var(--sf-muted) 75%, var(--sf-panel));
+
+  --vp-c-brand-1: var(--sf-accent);
+  --vp-c-brand-2: var(--sf-accent-hover);
+  --vp-c-brand-3: var(--sf-accent);
+  --vp-c-brand-soft: var(--sf-accent-soft);
 }
 
 :root {
+  /* Self-hosted through theme/index.ts (@fontsource-variable), so the docs
+     make no font request; the plain names cover a locally installed copy. */
   --vp-font-family-base:
-    'Recursive', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    'Instrument Sans Variable', 'Instrument Sans', system-ui, -apple-system, BlinkMacSystemFont,
+    'Segoe UI', sans-serif;
   --vp-font-family-mono:
-    'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+    'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', Menlo,
+    Consolas, monospace;
 
-  /* App radius scale: buttons/controls at 8px, cards/dialogs at 12px. */
-  --vp-radius: 8px;
-  --vp-radius-lg: 12px;
-
-  --vp-home-hero-name-color: var(--vp-c-brand-1);
+  /* Trace shape scale: panels 6px, buttons/inputs 4px, tag chips 3px. */
+  --sf-radius-panel: 6px;
+  --sf-radius-button: 4px;
+  --sf-radius-tag: 3px;
+  --vp-radius: var(--sf-radius-button);
+  --vp-radius-lg: var(--sf-radius-panel);
 }
 
-/* CASL 0.15: matches the hub landing page's casual/rounded Recursive
-   letterform (design-audit parity across the product family). VitePress's
-   own theme applies --vp-font-family-base to body; the Recursive font link
-   in config.ts already ships the CASL axis. */
-body {
-  font-variation-settings: "CASL" 0.15;
+/* ---------------------------------------------------------------------------
+   Typography
+   ------------------------------------------------------------------------- */
+
+/* Headings use Instrument Sans's width axis, as in the app. */
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3,
+.vp-doc h4,
+.VPHero .name,
+.VPHero .text,
+.VPFeature .title {
+  font-stretch: 85%;
+  letter-spacing: -0.01em;
 }
 
-/* VitePress ships pill-shaped hero/doc buttons by default; the app's own
-   controls are rounded rectangles (shadcn Button), so square that off to
-   read as the same control language rather than a marketing CTA. */
+.vp-doc h1 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.vp-doc h2 {
+  font-weight: 600;
+  border-top-color: var(--sf-rule);
+}
+
+.vp-doc h3,
+.vp-doc h4 {
+  font-weight: 600;
+}
+
+.vp-doc a {
+  text-underline-offset: 3px;
+}
+
+/* ---------------------------------------------------------------------------
+   Nav and sidebar chrome
+   ------------------------------------------------------------------------- */
+
+/* The bar is a panel with a bottom rule (mockup .top), on every layout. */
+.VPNavBar,
+.VPNavBar.has-sidebar .content-body,
+.VPNavBar:not(.home) .content-body {
+  background-color: var(--sf-panel);
+}
+
+.VPNavBar .divider-line,
+.VPNavBar.has-sidebar .divider-line {
+  background-color: var(--sf-rule) !important;
+}
+
+.VPNavBar:not(.top) .divider-line,
+.VPNavBar .divider .divider-line {
+  background-color: var(--sf-rule);
+}
+
+.VPNavBarTitle .title {
+  font-family: var(--vp-font-family-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.VPNavBarMenuLink,
+.VPNavBarMenuGroup .button {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.VPNavBarMenuLink.active {
+  color: var(--sf-accent);
+}
+
+/* Sidebar group titles read as Trace eyebrows: 11px mono uppercase muted. */
+.VPSidebarItem.level-0 > .item > .text,
+.VPSidebarItem.level-0 > .item > .link > .text {
+  font-family: var(--vp-font-family-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sf-muted);
+}
+
+.VPSidebarItem .text {
+  font-size: 13.5px;
+}
+
+/* Active page: accent text with a 2px accent edge (mockup tab underline,
+   turned vertical for a list). */
+.VPSidebarItem.is-active > .item > .indicator {
+  background-color: var(--sf-accent);
+}
+
+.VPSidebarItem.is-active > .item .link > .text {
+  color: var(--sf-accent);
+  font-weight: 500;
+}
+
+.VPSidebar {
+  border-right: 1px solid var(--sf-rule);
+}
+
+.VPLocalNav {
+  border-bottom-color: var(--sf-rule);
+}
+
+/* "On this page" outline title as an eyebrow too. */
+.VPDocAsideOutline .outline-title {
+  font-family: var(--vp-font-family-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sf-muted);
+}
+
+.VPDocAsideOutline .outline-marker {
+  background-color: var(--sf-accent);
+  border-radius: 1px;
+}
+
+/* Prev/next footer links: panels, label as eyebrow. */
+.VPDocFooter .pager-link {
+  border-radius: var(--sf-radius-panel);
+  border-color: var(--sf-rule);
+}
+
+.VPDocFooter .pager-link:hover {
+  border-color: var(--sf-accent);
+}
+
+.VPDocFooter .desc {
+  font-family: var(--vp-font-family-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Local search: a 4px control on the panel. */
+.DocSearch-Button,
+.VPNavBarSearch .DocSearch-Button {
+  border-radius: var(--sf-radius-button);
+}
+
+/* ---------------------------------------------------------------------------
+   Buttons
+   ------------------------------------------------------------------------- */
+
+/* VitePress ships pill buttons; Trace controls are 4px rectangles. */
 .VPButton {
-  border-radius: var(--vp-radius) !important;
+  border-radius: var(--sf-radius-button) !important;
+  border-width: 1px !important;
+  font-weight: 500 !important;
+}
+
+/* ---------------------------------------------------------------------------
+   Code
+   ------------------------------------------------------------------------- */
+
+.vp-doc :not(pre) > code {
+  border-radius: var(--sf-radius-tag);
+  padding: 2px 5px;
+}
+
+.vp-doc a > code {
+  color: var(--vp-code-link-color);
+}
+
+.vp-doc div[class*='language-'] {
+  border: 1px solid var(--sf-rule);
+  border-radius: var(--sf-radius-panel) !important;
+}
+
+/* The language label becomes a mono eyebrow. */
+.vp-doc div[class*='language-'] > span.lang {
+  font-family: var(--vp-font-family-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vp-doc div[class*='language-'] > button.copy {
+  border-radius: var(--sf-radius-button);
+}
+
+@media (max-width: 639px) {
+  /* VitePress bleeds code blocks edge-to-edge on phones; keep the panel
+     border visible without the side rules touching the screen edge. */
+  .vp-doc div[class*='language-'] {
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0 !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Tables: rule-separated rows, mono uppercase heads, no zebra striping.
+   ------------------------------------------------------------------------- */
+
+.vp-doc table {
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.vp-doc tr {
+  border-top: 0;
+  background-color: transparent;
+}
+
+.vp-doc tr:nth-child(2n) {
+  background-color: transparent;
+}
+
+.vp-doc th,
+.vp-doc td {
+  border: 0;
+  border-bottom: 1px solid var(--sf-rule);
+  padding: 8px 12px;
+}
+
+.vp-doc th {
+  background-color: transparent;
+  color: var(--sf-muted);
+  font-family: var(--vp-font-family-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: bottom;
+}
+
+.vp-doc tbody tr:hover td {
+  background-color: color-mix(in srgb, var(--sf-canvas) 70%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+   Callouts
+   ------------------------------------------------------------------------- */
+
+.custom-block {
+  border: 1px solid var(--sf-rule);
+  border-left-width: 3px;
+  border-radius: var(--sf-radius-panel) !important;
+}
+
+.custom-block.info,
+.custom-block.note,
+.custom-block.details {
+  border-left-color: var(--sf-rule);
+}
+
+.custom-block.tip { border-left-color: var(--sf-clean); }
+.custom-block.important { border-left-color: var(--sf-accent); }
+.custom-block.warning { border-left-color: var(--sf-warning); }
+.custom-block.danger,
+.custom-block.caution { border-left-color: var(--sf-critical); }
+
+/* Callout titles: mono eyebrow in the callout's own color. */
+.custom-block .custom-block-title {
+  font-family: var(--vp-font-family-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.custom-block.info .custom-block-title,
+.custom-block.note .custom-block-title,
+.custom-block.details .custom-block-title { color: var(--sf-muted); }
+.custom-block.tip .custom-block-title { color: var(--sf-clean); }
+.custom-block.important .custom-block-title { color: var(--sf-accent); }
+.custom-block.warning .custom-block-title { color: var(--sf-warning); }
+.custom-block.danger .custom-block-title,
+.custom-block.caution .custom-block-title { color: var(--sf-critical); }
+
+/* Code inside a callout stays ink; the status color belongs to the edge
+   and title only. */
+.vp-doc .custom-block code,
+.custom-block code {
+  color: var(--sf-ink);
+}
+
+/* Blockquotes (the tuning reference's "PySpark:" asides) take the mockup's
+   banner shape: 3px accent edge on surface-2, no status color. The text
+   stays ink: these asides run several lines, too long for muted. */
+.vp-doc blockquote {
+  margin: 16px 0;
+  padding: 10px 16px;
+  border-left: 3px solid var(--sf-accent);
+  border-radius: 0 var(--sf-radius-panel) var(--sf-radius-panel) 0;
+  background-color: var(--sf-surface-2);
+  color: var(--sf-ink);
+}
+
+.vp-doc blockquote > p {
+  font-size: 15px;
+  color: var(--sf-ink);
+}
+
+/* ---------------------------------------------------------------------------
+   Home page (layout: home)
+   ------------------------------------------------------------------------- */
+
+/* The home sits on the canvas with its features as panels, like the board. */
+.VPContent.is-home {
+  background-color: var(--sf-canvas);
+}
+
+.VPHome {
+  padding-bottom: 64px;
+}
+
+.VPHero .name {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.VPHero .text {
+  font-weight: 600;
+  color: var(--sf-muted);
+}
+
+.VPHero .tagline {
+  color: var(--sf-muted);
+  font-size: 18px;
+  line-height: 1.55;
+  max-width: 44ch;
+}
+
+@media (min-width: 640px) {
+  .VPHero .tagline {
+    font-size: 20px;
+  }
+}
+
+/* Hero name and "Docs" line: a calmer size than VitePress's 56px. */
+@media (min-width: 960px) {
+  .VPHero .name,
+  .VPHero .text {
+    font-size: 52px;
+    line-height: 1.1;
+  }
 }
 
 .VPFeature {
-  border-radius: var(--vp-radius-lg) !important;
+  border: 1px solid var(--sf-rule) !important;
+  border-radius: var(--sf-radius-panel) !important;
+  background-color: var(--sf-panel) !important;
+  transition: border-color 0.15s;
 }
 
-.custom-block,
-div[class*='language-'] {
-  border-radius: var(--vp-radius) !important;
+.VPFeature.link:hover {
+  border-color: var(--sf-accent) !important;
 }
 
-/* Tuning reference inline elements */
-
-/* info/critical don't match any existing --vp-c-* status color exactly, so
-   they get dedicated vars pinned to the upstream tuning-reference palette;
-   warning reuses --vp-c-brand-1, which already equals upstream's
-   --color-accent in both themes. */
-:root {
-  --tuning-color-info: #007e6b;
-  --tuning-color-critical: #c34235;
+.VPFeature .title {
+  font-size: 17px;
+  font-weight: 600;
 }
 
-.dark {
-  --tuning-color-info: #39d6b5;
-  --tuning-color-critical: #ff8576;
+.VPFeature .details {
+  color: var(--sf-muted);
 }
 
+.VPFeature .link-text-value {
+  font-family: var(--vp-font-family-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--sf-accent);
+}
+
+/* ---------------------------------------------------------------------------
+   Tuning reference inline elements
+   ------------------------------------------------------------------------- */
+
+/* Severity marks are analysis status, so they take the status colors. */
 .severity-dot {
   display: inline-block;
   width: 8px;
@@ -159,21 +588,23 @@ div[class*='language-'] {
   margin-right: 4px;
 }
 
-.severity-dot.info { background: var(--tuning-color-info); }
-.severity-dot.warning { background: var(--vp-c-brand-1); }
-.severity-dot.critical { background: var(--tuning-color-critical); }
+.severity-dot.info { background: var(--sf-info); }
+.severity-dot.warning { background: var(--sf-warning); }
+.severity-dot.critical { background: var(--sf-critical); }
 
+/* Finding tags: 3px-radius tinted chips, ALL-CAPS mono (mockup .tag). */
 .tag {
   display: inline-block;
   font-family: var(--vp-font-family-mono);
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 0.1em 0.5em;
-  border: 1px solid var(--vp-c-border);
-  border-radius: 6px;
-  color: var(--tuning-color-info);
+  letter-spacing: 0.04em;
+  padding: 3px 6px;
+  border-radius: var(--sf-radius-tag);
+  background: color-mix(in srgb, var(--sf-info) 12%, transparent);
+  color: var(--sf-info);
+  line-height: 1.3;
 }
 
 /* VitePress's own VPFlyout ("..." nav overflow menu) positions its closed
@@ -186,7 +617,7 @@ html {
   overflow-x: hidden;
 }
 
-/* Citation chips: footnote markers rendered as small rounded chips.
+/* Citation chips: footnote markers rendered as small 3px chips.
    Hover/focus/click (wired in theme/index.ts + citation-chips.ts) pop up
    the citation's title and link read live from the page's own
    `<section class="footnotes">` list. */
@@ -194,19 +625,20 @@ sup.footnote-ref {
   vertical-align: baseline;
 }
 
-.citation-chip {
+.citation-chip,
+.vp-doc a.citation-chip {
   position: relative;
   top: -0.3em;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.4em;
-  height: 1.4em;
-  padding: 0 0.3em;
+  min-width: 1.5em;
+  height: 1.5em;
+  padding: 0 0.35em;
   margin: 0 1px;
-  border-radius: 999px;
-  background: var(--vp-c-brand-soft);
-  color: var(--vp-c-brand-1);
+  border-radius: var(--sf-radius-tag);
+  background: var(--sf-accent-soft);
+  color: var(--sf-accent);
   font-family: var(--vp-font-family-mono);
   font-size: 10px;
   font-weight: 600;
@@ -215,11 +647,14 @@ sup.footnote-ref {
   cursor: pointer;
 }
 
+.vp-doc a.citation-chip:hover,
+.vp-doc a.citation-chip:focus-visible,
+.vp-doc a.citation-chip[aria-expanded='true'],
 .citation-chip:hover,
 .citation-chip:focus-visible,
 .citation-chip[aria-expanded='true'] {
-  background: var(--vp-c-brand-1);
-  color: var(--vp-button-brand-text);
+  background: var(--sf-accent);
+  color: var(--sf-panel);
   outline: none;
 }
 
@@ -228,18 +663,22 @@ sup.footnote-ref {
   z-index: 100;
   max-width: 320px;
   padding: 0.5em 0.75em;
-  border: 1px solid var(--vp-c-border);
-  border-radius: var(--vp-radius);
-  background: var(--vp-c-bg-elv);
-  color: var(--vp-c-text-1);
+  border: 1px solid var(--sf-rule);
+  border-radius: var(--sf-radius-panel);
+  background: var(--sf-panel);
+  color: var(--sf-ink);
   font-family: var(--vp-font-family-base);
   font-size: 13px;
   line-height: 1.4;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px -2px rgba(22, 24, 29, 0.14);
+}
+
+.dark .citation-popover {
+  box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.36);
 }
 
 .citation-popover a {
-  color: var(--vp-c-brand-1);
+  color: var(--sf-accent);
   text-decoration: underline;
 }
 

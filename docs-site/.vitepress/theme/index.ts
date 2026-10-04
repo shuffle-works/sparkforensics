@@ -1,8 +1,12 @@
-import DefaultTheme from 'vitepress/theme';
+// theme-without-fonts: skip VitePress's bundled Inter; Trace fonts load below.
+import DefaultTheme from 'vitepress/theme-without-fonts';
 import { inBrowser, useData, type Theme } from 'vitepress';
 import { nextTick, watch } from 'vue';
 import TuningLanding from './TuningLanding.vue';
 import { setupCitationChips } from './citation-chips';
+// Trace fonts, self-hosted (bundled woff2): the docs make no font request.
+import '@fontsource-variable/instrument-sans/wdth.css';
+import '@fontsource-variable/jetbrains-mono/wght.css';
 import './custom.css';
 
 // Shared theme contract used by every surface in the product family (the

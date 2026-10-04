@@ -38,15 +38,6 @@ export default defineConfig({
   head: [
     ['script', {}, anchorOffsetScript],
     ['link', { rel: 'icon', type: 'image/svg+xml', href: `${DOCS_BASE}favicon.svg` }],
-    ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
-    ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
-    [
-      'link',
-      {
-        rel: 'stylesheet',
-        href: 'https://fonts.googleapis.com/css2?family=Recursive:wght,CASL@400..700,0..1&family=JetBrains+Mono:wght@400;500;600&display=swap',
-      },
-    ],
   ],
   markdown: {
     config(md) { md.use(footnote); },
