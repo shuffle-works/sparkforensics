@@ -88,7 +88,7 @@ describe.skipIf(LOGS.length === 0)('stage aligner on the public corpus', () => {
   // logs come from different jobs; a log of a single generic stage (a lone `count`) is left out,
   // since it is the same stage in any job.
   describe('negative control: runs of different jobs', () => {
-    const generated = ['pairwise-01.ndjson', 'pairwise-04.ndjson', 'cache-memory-only.ndjson', 'spark-3.5.9-parquet-baseline.ndjson'];
+    const generated = ['pairwise-01.ndjson', 'pairwise-04.ndjson', 'cache-memory-only.ndjson', 'spark-3.5-parquet-baseline.ndjson'];
     const others = [...snapshots.keys()].filter((n) => /^(failure-|external\/)/.test(n));
 
     it('gets no pair, so none is exact, and cannot reach ok', () => {
