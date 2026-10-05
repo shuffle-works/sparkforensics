@@ -89,7 +89,8 @@ build config needs a `.changeset/*.md` (`scripts/check-changeset.sh`,
 - Generated content, never hand-edited:
   `packages/core/src/docs-content/{chapters,tuning,diagrams}` comes from the
   pinned tuning reference (fix upstream, then `npm run docs:bump`), and
-  `docs-content/detection/*.md` from `npm run split-detection-docs`.
+  `docs-content/detection/*.md` (gitignored) is split from the user guide on
+  demand by `ensureDetectionDocs` in `scripts/split-detection-docs.mjs`.
   `vendor-core/` and the CLI's `export-template/` go stale locally
   (`development-setup.md#generated-and-vendored-files`).
 - zstd decodes differently in the browser (fzstd) and in Node (native, frame
