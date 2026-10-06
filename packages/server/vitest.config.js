@@ -6,6 +6,7 @@ export default defineConfig({
     // directory, so parallel workers would race regeneration against cleanup.
     // The suite is small; serialize files to eliminate that race.
     fileParallelism: false,
+    globalSetup: ['../../scripts/vitest-detection-docs-setup.mjs'],
     coverage: {
       provider: 'v8',
       reporter: ['lcov', 'text'],

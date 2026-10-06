@@ -3,7 +3,8 @@
 // published tarball is self-contained (no git access or build at install time).
 // The generated tuning reference under docs-content/ is made to match its pin
 // first (strict: no stale cache, no unpinned override), so a pack can never
-// silently ship without docs or with the wrong ones.
+// silently ship without docs or with the wrong ones. The per-finding detection
+// docs are split from the user guide at the same point.
 //
 // Node refuses to type-strip .ts under node_modules
 // (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING), and a published vendor-core/
@@ -14,6 +15,7 @@ import { rmSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'nod
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DieError, DOCS_CONTENT_DIR, ensureTuningDocs, isLocalOnlyEntry } from './fetch-tuning-docs.mjs';
+import { ensureDetectionDocs } from './split-detection-docs.mjs';
 import { coreSourceHash, SOURCE_HASH_FILE } from '../packages/core/src/load-vendored.js';
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
@@ -71,6 +73,8 @@ try {
   console.error(`vendor-core: fetch-tuning-docs: ${err.message}`);
   process.exit(1);
 }
+
+ensureDetectionDocs();
 
 rmSync(vendorDir, { recursive: true, force: true });
 mkdirSync(vendorDir, { recursive: true });

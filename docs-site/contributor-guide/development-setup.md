@@ -100,10 +100,11 @@ npm run docs:preview   # serves the built docs site locally
 
 ## Generated and vendored files
 
-- `packages/core/src/docs-content/detection/*.md` is generated from
-  `docs-site/user-guide/understanding-findings.md`. After editing that guide,
-  run `npm run split-detection-docs` and commit the output, or
-  `tests/detection-docs-split.test.js` fails.
+- `packages/core/src/docs-content/detection/*.md` (gitignored) is split from
+  `docs-site/user-guide/understanding-findings.md`, one file per finding tag.
+  `docs:dev`, `docs:build`, the vitest globalSetup and `prepack` regenerate it
+  when it differs from the guide, so nothing is committed or run by hand. To
+  regenerate on demand: `npm run split-detection-docs`.
 - `packages/{cli,mcp,server}/vendor-core/` (gitignored) is rebuilt only at
   `prepack`. In the monorepo the bins load `packages/core/src/load-vendored.js`,
   which uses a leftover `vendor-core/` only while its `core-source-hash.txt`
