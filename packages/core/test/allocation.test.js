@@ -64,6 +64,14 @@ describe('computeAllocation executors', () => {
     expect(a.executorCores).toBe(2);
   });
 
+  it('counts a replayed or orphan ExecutorRemoved once so the peak matches the alive intervals', () => {
+    const a = allocate({}, {
+      added: [added('1', 0), added('2', 2000), added('3', 3000)],
+      removed: [removed('1', 1000), removed('1', 1500), removed('9', 1200)],
+    });
+    expect(a.executorsPeak).toBe(2);
+  });
+
   it('counts a replayed ExecutorAdded once', () => {
     const a = allocate({}, { added: [added('1', 0), added('1', 0)], removed: [] });
     expect(a.executorsPeak).toBe(1);

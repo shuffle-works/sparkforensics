@@ -115,12 +115,14 @@ export function computeAllocation(input: AllocationInput): Allocation {
   let coresKnown = true;
   const coreCounts = new Set<number>();
   const unique: ExecutorAddedEvent[] = [];
+  const firstRemovals: Array<{ executorId: string; timestamp: number }> = [];
   const seen = new Set<string>();
   for (const e of added) {
     if (seen.has(e.executorId)) continue; // a replayed ExecutorAdded is the same executor
     seen.add(e.executorId);
     unique.push(e);
     const removal = (removedAt.get(e.executorId) ?? []).filter((t) => t >= e.timestamp).sort((a, b) => a - b)[0];
+    if (removal != null) firstRemovals.push({ executorId: e.executorId, timestamp: removal });
     const aliveMs = Math.max(0, (removal ?? closeAt ?? e.timestamp) - e.timestamp);
     const cores = e.totalCores > 0 ? e.totalCores : Number.isFinite(configuredCores) ? configuredCores : null;
     aliveMsTotal += aliveMs;
@@ -133,7 +135,7 @@ export function computeAllocation(input: AllocationInput): Allocation {
     coreHours: coresKnown ? coreMs / MS_PER_HOUR : null,
     memoryGbHours: memoryMiB != null ? memoryMiBMs / MIB_PER_GIB / MS_PER_HOUR : null,
     dynamicAllocation,
-    executorsPeak: computePeakConcurrentExecutorCount(unique, input.executors.removed),
+    executorsPeak: computePeakConcurrentExecutorCount(unique, firstRemovals),
     executorsMean: windowMs > 0 ? aliveMsTotal / windowMs : null,
     executorCores: coresKnown && coreCounts.size === 1 ? [...coreCounts][0] : null,
     executorSeconds: aliveMsTotal / MS_PER_SECOND,
