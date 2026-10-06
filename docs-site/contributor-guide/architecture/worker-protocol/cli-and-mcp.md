@@ -138,6 +138,10 @@ JSON and the MCP tools call the same core functions:
 - `runOutputBlocks()` in `packages/core/src/run-output.ts` builds the report's
   `metrics` and `effectiveConf` blocks, redacted from the redacted run, for both
   the CLI report and `diagnose_run`, which also returns the report's `writeTargets`.
+  It also returns the `generator` block when the surface passes one. Core does not
+  know its host, so the CLI supplies its package name, version and core build id
+  (`coreBuildId`), and MCP supplies none: the server factory has no real package
+  version to report.
 
 Neither surface wraps the other: MCP handlers hold a run cache and report errors
 by code, while the CLI maps failures to exit codes and owns stdout. Adding a field

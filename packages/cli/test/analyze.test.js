@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
@@ -928,9 +928,21 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
       expect(out.metrics.time.executorRunTimeMs).toBe(2900);
       // One executor, 2 cores, alive from 0 to the 2 s application end.
       expect(out.metrics.allocation.coreHours).toBeCloseTo((2 * 2) / 3600, 10);
+      expect(out.metrics.allocation).toMatchObject({ executorsPeak: 1, executorCores: 2, executorSeconds: 2, dynamicAllocation: null });
       expect(out.metrics.python.shareOfTaskRunTime).toBe(0);
       expect(Object.keys(out.metrics.stages)).toHaveLength(1);
       expect(out.schemaVersion).toBeGreaterThan(0); // evidence report's own version, untouched
+    });
+  });
+
+  it('stamps the report with the CLI package name, version and core build id', () => {
+    withLog(ndjsonWithConf(), (path) => {
+      const { name, version } = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8'));
+      const { generator } = JSON.parse(runCli([path]).stdout);
+      expect(generator).toEqual({ name, version, buildId: expect.any(String) });
+      expect(generator.buildId).not.toBe('');
+      // The stamp holds no run identifiers, so redaction leaves it as is.
+      expect(JSON.parse(runCli([path, '--redact']).stdout).generator).toEqual(generator);
     });
   });
 
@@ -938,7 +950,10 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
     withLog(ndjsonWithSkew(), (path) => {
       const { metrics } = JSON.parse(runCli([path]).stdout);
       expect(metrics.time.executorCpuTimeMs).toBeNull();
-      expect(metrics.allocation).toEqual({ coreHours: null, memoryGbHours: null });
+      expect(metrics.allocation).toEqual({
+        coreHours: null, memoryGbHours: null, dynamicAllocation: null,
+        executorsPeak: null, executorsMean: null, executorCores: null, executorSeconds: null,
+      });
     });
   });
 

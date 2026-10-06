@@ -25,7 +25,8 @@ stage. The fix depends on what the stage reads, which the finding's
 already has it; otherwise salt the key or repartition on a better key. A
 stage that reads files with uneven sizes (`inputScan`) gets compaction of
 small files or a lower `spark.sql.files.maxPartitionBytes`. Any other stage
-(`other`) gets the salting advice and no conf. Flagged when P95 task time
+(`other`) gets the salting advice and no conf, as a `code` entry in
+`remediation`; so does a join stage whose skew-join handling is already on. Flagged when P95 task time
 (the longest task, on a stage with fewer than 20 tasks) exceeds 3x the median
 and the recoverable tail is at least 0.5% of the run. The median is the
 textbook one: on an even task count, the mean of the two middle values.

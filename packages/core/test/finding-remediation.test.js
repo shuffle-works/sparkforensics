@@ -12,6 +12,9 @@ function catalogOf(stages, app = makeApp(), sql = new Map()) {
   return analyze(app, new Map(stages.map((s) => [s.id, s])), [], [], new Map(), sql);
 }
 
+// What a skew finding with no property to set reports: the fix is in the job's code or data.
+const SKEW_CODE_FIX = [{ kind: 'code', hint: 'salt the key or repartition on a better key' }];
+
 // A SQL execution whose plan joins two exchanges: the shape AQE skew-join handling acts on.
 const JOIN_SQL = new Map([[7, { id: 7, planTree: { name: 'SortMergeJoin', detail: '', metrics: [], children: [
   { name: 'Exchange', detail: '', metrics: [], children: [] }, { name: 'Exchange', detail: '', metrics: [], children: [] },
@@ -294,8 +297,8 @@ describe('structured remediation', () => {
 
     it('suggests nothing when the logged conf already has it, compared case-insensitively', () => {
       const { skew, partitionSkew, slowHost } = pick({ 'spark.sql.adaptive.skewJoin.enabled': 'TRUE', 'spark.speculation': 'True' });
-      expect(skew.remediation).toEqual([]);
-      expect(partitionSkew.remediation).toEqual([]);
+      expect(skew.remediation).toEqual(SKEW_CODE_FIX);
+      expect(partitionSkew.remediation).toEqual(SKEW_CODE_FIX);
       expect(slowHost.remediation).toEqual([]);
     });
 
@@ -323,7 +326,7 @@ describe('structured remediation', () => {
       for (const version of ['3.2.0', '3.5.3', '4.0.0']) {
         const { skew, partitionSkew } = pick({}, version);
         for (const f of [skew, partitionSkew]) {
-          expect(f.remediation, `${f.type} ${version}`).toEqual([]);
+          expect(f.remediation, `${f.type} ${version}`).toEqual(SKEW_CODE_FIX);
           expect(f.recommendation).toMatch(/already on/);
         }
       }
@@ -366,7 +369,7 @@ describe('structured remediation', () => {
         }
       }
       const { skew } = pick({ 'spark.sql.adaptive.enabled': 'true', 'spark.sql.adaptive.skewJoin.enabled': 'true' });
-      expect(skew.remediation).toEqual([]);
+      expect(skew.remediation).toEqual(SKEW_CODE_FIX);
       expect(coreFindingGenericRecommendation(skew)).toMatch(/already on/);
     });
 
@@ -464,7 +467,7 @@ describe('skew remediation follows what the stage reads', () => {
     ]) {
       const f = skewOf(stage, sql);
       expect(f.origin).toBe('other');
-      expect(f.remediation).toEqual([]);
+      expect(f.remediation).toEqual(SKEW_CODE_FIX);
       expect(f.recommendation).not.toMatch(/skewJoin|AQE/);
       expect(coreFindingGenericRecommendation(f)).toMatch(/salt the key/);
     }
@@ -477,7 +480,7 @@ describe('skew remediation follows what the stage reads', () => {
     expect(join.origin).toBe('shuffleJoin');
     expect(join.remediation.length).toBeGreaterThan(0);
     expect(agg.origin).toBe('other');
-    expect(agg.remediation).toEqual([]);
+    expect(agg.remediation).toEqual(SKEW_CODE_FIX);
     const fx = {
       app, stages: new Map([[1, makeStage({ ...stage, sqlExecutionId: 8 })]]),
       executors: { added: [], removed: [] }, sql: AGG_SQL, jobs: new Map(), runAggregates: null, evidenceAvailability: null,
@@ -616,13 +619,13 @@ describe('remediation fits the stage, plan and effective conf across finding typ
       expect(coreFindingGenericRecommendation(scan)).not.toMatch(/AQE|skewJoin/);
       const other = of('straggler', [makeStage({ ...straggler })], app);
       expect(other.origin).toBe('other');
-      expect(other.remediation).toEqual([]);
+      expect(other.remediation).toEqual(SKEW_CODE_FIX);
     });
     it('says skew-join handling is already on for a join stage on Spark 3.5, and suggests it where it is off', () => {
       const stage = makeStage({ ...straggler, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB });
       const on = of('straggler', [stage], app, JOIN_SQL);
       expect(on.origin).toBe('shuffleJoin');
-      expect(on.remediation).toEqual([]);
+      expect(on.remediation).toEqual(SKEW_CODE_FIX);
       expect(on.recommendation).toMatch(/already on/);
       const off = of('straggler', [stage], makeApp({ sparkVersion: '3.5.3', config: { 'spark.sql.adaptive.skewJoin.enabled': 'false' } }), JOIN_SQL);
       expect(keys(off)).toEqual(['spark.sql.adaptive.skewJoin.enabled']);
@@ -673,7 +676,7 @@ describe('remediation fits the stage, plan and effective conf across finding typ
     it('does not suggest AQE, which does not exist before Spark 3.0', () => {
       const f = of('skew', [makeStage({ taskDurationP50: 100, taskDurationP95: 600, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB })], makeApp({ sparkVersion: '2.4.8' }), JOIN_SQL);
       expect(f.origin).toBe('other');
-      expect(f.remediation).toEqual([]);
+      expect(f.remediation).toEqual(SKEW_CODE_FIX);
       expect(f.recommendation).not.toMatch(/AQE/);
     });
   });

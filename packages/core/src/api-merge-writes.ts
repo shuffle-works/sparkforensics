@@ -74,6 +74,7 @@ export function apiMergeWrites(sql: Map<number, MergeExecution>): WriteTarget[] 
       kind: resolved?.kind ?? null,
       target: resolved?.target ?? null,
       outputRows: null,
+      mergeRows: null,
       raw: `Delta MERGE operation, executions ${span}${group.unclean ? ` (${group.unclean})` : ''}`,
     };
   });

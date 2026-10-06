@@ -48,9 +48,9 @@ report too.
 Each row of the JSON report's `findings` array carries two fields for a script
 or tuning loop that acts on the output without reading prose.
 
-`remediation` is an array of the property changes the row's `recommendation`
-names, in structured form. It is empty when the recommendation names no Spark
-property.
+`remediation` is an array of the changes the row's `recommendation` names, in
+structured form. It is empty when the recommendation names no Spark property
+and no change to the job.
 
 ```json
 "remediation": [
@@ -58,12 +58,23 @@ property.
 ]
 ```
 
-- `kind` is always `"conf"`: a Spark property.
+- `kind` is `"conf"` (a Spark property) or `"code"` (a change to the job's code
+  or data). A consumer that reads `key` checks `kind` first.
 - `direction` is `"increase"` or `"decrease"` (move the current value that
   way) or `"set"` (take the `suggested` value, for a switch or a class name).
 - `suggested` is the value the detector computed, or `null` when it computes
   none. Counts are numbers, switches are booleans, sizes carry a Spark unit
   suffix (`"1024m"`).
+
+A `code` entry has no `key`, `direction` or `suggested`, only a `hint`:
+
+```json
+"remediation": [{ "kind": "code", "hint": "salt the key or repartition on a better key" }]
+```
+
+Skew and straggler findings carry one when no property can fix them: the
+stage's `evidence.origin` is `other`, or AQE skew-join handling is already on.
+The `hint` is the remedy the `recommendation` gives.
 
 `impactEstimate.coreTimeMs` is the busy core time the fix removes: the
 executor task time, in core-milliseconds, next to the `wallClock` range
@@ -128,7 +139,7 @@ Skew-join handling is only suggested for a stage that reads a shuffle in a SQL
 execution whose plan has a sort-merge or shuffled-hash join. Skew findings
 carry `evidence.origin`: `shuffleJoin` (the conf above applies), `inputScan`
 (a stage reading uneven input files: the remediation lowers
-`spark.sql.files.maxPartitionBytes`) or `other` (no conf is suggested).
+`spark.sql.files.maxPartitionBytes`) or `other` (no conf is suggested; the `remediation` holds a `code` entry).
 `shufflePartitionSkew` carries the same field but is judged on shuffle-read
 sizes, so it is only ever `shuffleJoin` or `other`. A `stageSlowness` finding carries `evidence.reads` (`shuffle`,
 `input` or `other`) and suggests shuffle partitions only for `shuffle`; `spill`
@@ -184,6 +195,7 @@ It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
       "kind": "path",
       "target": "hdfs://nn/sandbox/out/t1",
       "outputRows": 5000000,
+      "mergeRows": null,
       "raw": "Execute InsertIntoHadoopFsRelationCommand hdfs://nn/sandbox/out/t1, false, Parquet, ..."
     }
   ],
@@ -229,6 +241,15 @@ It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
 - `outputRows` is the node's own `number of output rows` SQL metric. It is
   `null` when the log has no such metric for that node, which is the case for
   the DataSource V2 and Delta write nodes that report other metrics.
+- `mergeRows` holds the row counts of a Delta MERGE: `inserted`, `updated`,
+  `deleted` and `copied`, read from the `MergeIntoCommand` node's SQL metrics
+  (`number of inserted rows`, `number of updated rows`, `number of deleted rows`
+  and `number of target rows rewritten unmodified`; older Delta releases name
+  the last one `number of rows copied`). It is `null` for every other command,
+  for a MERGE node that reports none of the four, and for a `DeltaMerge` row
+  (see [Delta writes](#delta-writes)). To check that two runs merged the same
+  rows, compare `inserted + updated + deleted`. `copied` counts target rows
+  Delta rewrote unchanged, which depends on how the table's files are laid out.
 - `recognized` is `true` for the commands below and `false` for a write-like
   node that is not in that list. An unrecognized write always has `target` and
   `kind` `null`, and `raw` is the only information about it.
@@ -338,6 +359,18 @@ Only SQL writes are covered. Writes made outside Spark SQL, such as an RDD
 `saveAsTextFile` or a direct filesystem call from the driver, do not appear in
 the event log and are not in `writeTargets`.
 
+## Generator
+
+The CLI's JSON output carries a `generator` block naming the build that wrote
+it: `name` and `version` of the CLI package, and `buildId`, the build id of the
+analysis core the CLI loaded. Equal build ids mean equal analysis code. With
+`--baseline` the block is inside `candidate`. The MCP `diagnose_run` tool does
+not return it. The block holds no run identifiers, so `--redact` leaves it as is.
+
+```json
+"generator": { "name": "sparkforensics-cli", "version": "0.7.0", "buildId": "9c1f3a7e2b4d" }
+```
+
 ## Metrics block
 
 The CLI's JSON output carries a `metrics` block next to the report, for
@@ -367,6 +400,7 @@ the latest attempt.
 | `shape.failedTasks`, `shape.retriedTasks` | Task-level counts: tasks whose final attempt failed, and task attempts superseded by a retry. |
 | `shape.maxSkew` | The largest stage skew ratio, the figure `--max-skew` checks (P95 over median, or max over median for a stage with few tasks; `skew.minTasksForP95` from `--thresholds` applies). |
 | `allocation.coreHours`, `allocation.memoryGbHours` | See [Allocation](#allocation). |
+| `allocation.dynamicAllocation`, `allocation.executorsPeak`, `allocation.executorsMean`, `allocation.executorCores`, `allocation.executorSeconds` | The executor allocation behind the hours, see [Allocation](#allocation). |
 | `python.shareOfTaskRunTime` | See [Python share](#python-share). |
 | `stages` | The per-stage rows. |
 
@@ -410,6 +444,25 @@ The overhead is `spark.executor.memoryOverhead`, else the legacy
 `spark.executor.memoryOverheadFactor` (default 0.1) times the executor
 memory. Memory GB-hours are null when the log records no Spark properties at
 all, or a memory property cannot be read. Driver resources are not included.
+
+The same alive intervals give the executor figures, each null when the log has
+no executor-added event:
+
+- `allocation.executorSeconds` is the sum of seconds alive over executors.
+- `allocation.executorsPeak` is the largest number of executors alive at once.
+- `allocation.executorsMean` is `executorSeconds` divided by the seconds from
+  application start to close (the end, or the last recorded timestamp in a
+  cut-off log), so the mean times the run's wall clock is `executorSeconds`. It
+  is null when the log has no application start.
+- `allocation.executorCores` is the cores per executor when every executor has
+  the same count, null when a count is unknown or they differ.
+
+`allocation.dynamicAllocation` is `on` or `off` when the log records
+`spark.dynamicAllocation.enabled`, and `null` when it does not. Spark's default
+is off, but a key the log never recorded is not reported as off. It is read
+whether or not the log has executor events. The `coldStart` and
+`autoscalingChurn` findings' `evidence.dynamicAllocation` reports `on` for any
+run not logged as off.
 
 ### Python share
 
