@@ -11,7 +11,7 @@ job's exception).
 `runShape` carries the dashboard's run-shape figures: `wallClockMs`,
 `efficiencyPct` (the share of the run with a stage running, the Scorecard's
 Efficiency), `unusedCoreTimePct` (the share of executor core time that ran no task,
-against peak concurrent cores; `minEfficiencyPct` checks 100 minus this), `etlPhasesMs`
+against the run's allocation, cores times the time each executor was alive; `minEfficiencyPct` checks 100 minus this), `etlPhasesMs`
 (`extract`/`transform`/`load` summed stage time, so a phase can exceed the run)
 and `peakBusyCores` (busy cores at the peak of Core Usage by Locality,
 averaged over one chart bucket, so it can be fractional). Each is `null` where the
