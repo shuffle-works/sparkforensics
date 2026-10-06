@@ -1,7 +1,9 @@
+import { computePeakConcurrentExecutorCount } from './core-count.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
 import type { ExecutorAddedEvent, ExecutorEvent, SparkAppInfo, Stage } from './types.ts';
 
 const MS_PER_HOUR = 3_600_000;
+const MS_PER_SECOND = 1000;
 const MIB_PER_GIB = 1024;
 // Spark's documented floor and factor for the default executor memory overhead
 // (spark.executor.memoryOverhead = max(factor * executor memory, 384 MiB)).
@@ -14,6 +16,18 @@ export interface Allocation {
   /** Σ over executors of container memory in GiB x hours alive; null when the log records no
    * Spark properties or a memory key cannot be read. */
   memoryGbHours: number | null;
+  /** The logged `spark.dynamicAllocation.enabled`: 'on' or 'off' only when the log records the
+   * key, null otherwise (Spark's default is off, but an unlogged key is not a logged one). */
+  dynamicAllocation: 'on' | 'off' | null;
+  /** Peak concurrently-alive executors; null when the log has no executor events. */
+  executorsPeak: number | null;
+  /** `executorSeconds` over the seconds from application start to close, so the mean times the
+   * run's wall clock is `executorSeconds`; null without executor events or an application start. */
+  executorsMean: number | null;
+  /** Cores per executor when every executor has the same count; null when unknown or mixed. */
+  executorCores: number | null;
+  /** Σ over executors of seconds alive; null when the log has no executor events. */
+  executorSeconds: number | null;
 }
 
 export interface AllocationInput {
@@ -63,6 +77,11 @@ function executorMemoryMiB(app: SparkAppInfo | null): number | null {
   return heap + overhead + offHeap + pyspark;
 }
 
+function loggedDynamicAllocation(app: SparkAppInfo | null): 'on' | 'off' | null {
+  const raw = app?.config?.['spark.dynamicAllocation.enabled'];
+  return raw == null ? null : raw.trim().toLowerCase() === 'true' ? 'on' : 'off';
+}
+
 /** Allocated core-hours and memory GiB-hours from the executor lifecycle: each executor counts
  * from its ExecutorAdded timestamp to its first later ExecutorRemoved timestamp. One with no
  * removal closes at the application end when the log has one, else at the last timestamp the log
@@ -72,10 +91,14 @@ function executorMemoryMiB(app: SparkAppInfo | null): number | null {
  * else the larger of 384 MiB and spark.executor.memoryOverheadFactor, default 0.1, times the
  * memory), plus spark.memory.offHeap.size when spark.memory.offHeap.enabled is true, plus
  * spark.executor.pyspark.memory.
+ * The executor counts and seconds come from the same alive intervals.
  * Null, never 0, for a figure whose inputs the log lacks. */
 export function computeAllocation(input: AllocationInput): Allocation {
+  const dynamicAllocation = loggedDynamicAllocation(input.app);
   const added = input.executors.added.filter((e): e is ExecutorAddedEvent => e.kind === 'added');
-  if (added.length === 0) return { coreHours: null, memoryGbHours: null };
+  if (added.length === 0) {
+    return { coreHours: null, memoryGbHours: null, dynamicAllocation, executorsPeak: null, executorsMean: null, executorCores: null, executorSeconds: null };
+  }
   const removedAt = new Map<string, number[]>();
   for (const e of input.executors.removed) {
     if (e.kind !== 'removed') continue;
@@ -88,19 +111,33 @@ export function computeAllocation(input: AllocationInput): Allocation {
 
   let coreMs = 0;
   let memoryMiBMs = 0;
+  let aliveMsTotal = 0;
   let coresKnown = true;
+  const coreCounts = new Set<number>();
+  const unique: ExecutorAddedEvent[] = [];
+  const firstRemovals: Array<{ executorId: string; timestamp: number }> = [];
   const seen = new Set<string>();
   for (const e of added) {
     if (seen.has(e.executorId)) continue; // a replayed ExecutorAdded is the same executor
     seen.add(e.executorId);
+    unique.push(e);
     const removal = (removedAt.get(e.executorId) ?? []).filter((t) => t >= e.timestamp).sort((a, b) => a - b)[0];
+    if (removal != null) firstRemovals.push({ executorId: e.executorId, timestamp: removal });
     const aliveMs = Math.max(0, (removal ?? closeAt ?? e.timestamp) - e.timestamp);
     const cores = e.totalCores > 0 ? e.totalCores : Number.isFinite(configuredCores) ? configuredCores : null;
-    if (cores == null) coresKnown = false; else coreMs += cores * aliveMs;
+    aliveMsTotal += aliveMs;
+    if (cores == null) coresKnown = false; else { coreMs += cores * aliveMs; coreCounts.add(cores); }
     memoryMiBMs += (memoryMiB ?? 0) * aliveMs;
   }
+  const startTime = input.app?.startTime;
+  const windowMs = closeAt != null && startTime != null ? closeAt - startTime : 0;
   return {
     coreHours: coresKnown ? coreMs / MS_PER_HOUR : null,
     memoryGbHours: memoryMiB != null ? memoryMiBMs / MIB_PER_GIB / MS_PER_HOUR : null,
+    dynamicAllocation,
+    executorsPeak: computePeakConcurrentExecutorCount(unique, firstRemovals),
+    executorsMean: windowMs > 0 ? aliveMsTotal / windowMs : null,
+    executorCores: coresKnown && coreCounts.size === 1 ? [...coreCounts][0] : null,
+    executorSeconds: aliveMsTotal / MS_PER_SECOND,
   };
 }

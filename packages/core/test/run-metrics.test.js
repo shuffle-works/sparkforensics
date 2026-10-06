@@ -264,7 +264,10 @@ describe('computeRunMetrics null contract', () => {
     expect(Object.values(m.data).every((v) => v === null)).toBe(true);
     expect(m.shape.taskCount).toBeNull();
     expect(m.shape.maxSkew).toBeNull();
-    expect(m.allocation).toEqual({ coreHours: null, memoryGbHours: null });
+    expect(m.allocation).toEqual({
+      coreHours: null, memoryGbHours: null, dynamicAllocation: null,
+      executorsPeak: null, executorsMean: null, executorCores: null, executorSeconds: null,
+    });
     expect(m.python.shareOfTaskRunTime).toBeNull();
   });
 
@@ -296,7 +299,11 @@ describe('computeRunMetrics null contract', () => {
       stages: new Map(),
       executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, totalCores: 0 }], removed: [] },
     };
-    expect(computeRunMetrics(appModel).allocation).toEqual({ coreHours: null, memoryGbHours: null });
+    // One 1-hour executor with no core count: the executor figures stand, the core figures do not.
+    expect(computeRunMetrics(appModel).allocation).toEqual({
+      coreHours: null, memoryGbHours: null, dynamicAllocation: null,
+      executorsPeak: 1, executorsMean: 1, executorCores: null, executorSeconds: 3600,
+    });
   });
 
   it('resolves cores from spark.executor.cores when the event carries none', () => {

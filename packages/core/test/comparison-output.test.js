@@ -65,4 +65,13 @@ describe('runOutputBlocks', () => {
     expect(Object.keys(blocks)).toEqual(['metrics', 'effectiveConf']);
     expect(blocks.metrics.schemaVersion).toBeTypeOf('number');
   });
+
+  it('carries the generator the surface passes, first, and leaves it out otherwise', () => {
+    const generator = { name: 'sparkforensics-cli', version: '1.2.3', buildId: 'abc123' };
+    const blocks = runOutputBlocks(appModel('App', 'app-1'), { generator });
+    expect(Object.keys(blocks)).toEqual(['generator', 'metrics', 'effectiveConf']);
+    expect(blocks.generator).toEqual(generator);
+    expect(runOutputBlocks(appModel('App', 'app-1'), { redact: true, generator }).generator).toEqual(generator);
+    expect('generator' in runOutputBlocks(appModel('App', 'app-1'))).toBe(false);
+  });
 });

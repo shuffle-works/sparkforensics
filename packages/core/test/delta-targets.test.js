@@ -134,7 +134,7 @@ describe('DeltaTable API merges', () => {
     const writes = writesOf(...apiMerge(10, 't_api'));
     expect(writes).toEqual([{
       sqlExecutionId: 10, nodeId: null, command: 'DeltaMerge', recognized: true, kind: 'path',
-      target: `${BASE}/t_api`, outputRows: null, raw: 'Delta MERGE operation, executions 10-17',
+      target: `${BASE}/t_api`, outputRows: null, mergeRows: null, raw: 'Delta MERGE operation, executions 10-17',
     }]);
   });
 

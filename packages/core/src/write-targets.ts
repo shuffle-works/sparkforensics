@@ -17,6 +17,15 @@ import { indexByRoot, isStagedDeltaWrite, parseDeltaTableV2, resolveDeltaCommand
 import { IDENT_PARTS, isCut, splitArgs, tableName, type Arg } from './write-target-args.ts';
 import type { PlanNode, SqlExecution } from './types.ts';
 
+/** The row counts a MergeIntoCommand node reports in its SQL metrics. */
+export interface MergeRows {
+  inserted: number | null;
+  updated: number | null;
+  deleted: number | null;
+  /** Target rows rewritten unmodified: they depend on file layout, not on the merge's result. */
+  copied: number | null;
+}
+
 export interface WriteTarget {
   sqlExecutionId: number;
   /** PlanNode.id of the write node, null only for a hand-built plan without ids. */
@@ -35,6 +44,10 @@ export interface WriteTarget {
   target: string | null;
   /** The node's "number of output rows" SQL metric, null when the log has none for it. */
   outputRows: number | null;
+  /** The inserted, updated, deleted and copied row counts of a MergeIntoCommand node's SQL
+   * metrics. Null for every other command, for a MERGE whose node carries none of them, and for a
+   * DeltaMerge group, which has no command node. */
+  mergeRows: MergeRows | null;
   /** The node's simpleString (its name when the log has no simpleString). */
   raw: string;
 }
@@ -234,6 +247,24 @@ function outputRowsOf(node: PlanNode): number | null {
   return metric !== undefined && Number.isFinite(metric.value) ? metric.value : null;
 }
 
+// A name in `names` is read when the log has it. 'number of rows copied' is the label older Delta
+// releases give the rewritten-unmodified counter.
+function metricValue(node: PlanNode, ...names: string[]): number | null {
+  const metric = node.metrics?.find((m) => names.includes(m.name));
+  return metric !== undefined && Number.isFinite(metric.value) ? metric.value : null;
+}
+
+function mergeRowsOf(command: string, node: PlanNode): MergeRows | null {
+  if (command !== 'MergeIntoCommand') return null;
+  const rows = {
+    inserted: metricValue(node, 'number of inserted rows'),
+    updated: metricValue(node, 'number of updated rows'),
+    deleted: metricValue(node, 'number of deleted rows'),
+    copied: metricValue(node, 'number of target rows rewritten unmodified', 'number of rows copied'),
+  };
+  return Object.values(rows).every((v) => v === null) ? null : rows;
+}
+
 function collectWrites(exec: SqlExecution, root: PlanNode, byRoot: ExecutionsByRoot, out: WriteTarget[]): void {
   walkPlanTree(root, (node) => {
     const command = commandOf(node.name);
@@ -250,6 +281,7 @@ function collectWrites(exec: SqlExecution, root: PlanNode, byRoot: ExecutionsByR
       kind: parsed?.kind ?? null,
       target: parsed?.target ?? null,
       outputRows: outputRowsOf(node),
+      mergeRows: mergeRowsOf(command, node),
       raw: detail !== '' ? detail : node.name,
     });
   }, { dedupe: true });

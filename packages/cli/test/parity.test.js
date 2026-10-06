@@ -35,6 +35,7 @@ const CANDIDATES = [
 // CLI single-run JSON (`candidate`) against MCP diagnose_run with every `include`.
 const RUN_REPORT_ALLOWED = [
   { path: 'schemaVersion', only: 'cli', reason: 'The CLI stamps its report with the evidence schema version; MCP tool results are not versioned.' },
+  { path: 'generator', only: 'cli', reason: 'The CLI names its own package, version and core build. MCP omits the block: its server factory has no real package version to report.' },
   { path: 'runId', only: 'mcp', reason: 'MCP handle for the cached run, used by follow-up calls. A CLI call has no session.' },
   { path: 'runComplete', only: 'mcp', reason: 'Convenience copy of summary.outcome\'s end-of-run signal that MCP clients read without asking for the summary.' },
 ];

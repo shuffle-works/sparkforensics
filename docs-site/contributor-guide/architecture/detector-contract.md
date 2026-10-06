@@ -11,6 +11,9 @@ finding's `impactBand` and recommendation copy are set inside `detect()`, and so
 properties that copy names (`increaseConf`, `decreaseConf` and `setConf` in
 `packages/core/src/remediation.ts`). A detector adds an entry only for a property its
 recommendation already names, and leaves `suggested` null unless it computes the value itself.
+`Remediation` is a union: `codeFix(hint)` builds the `{kind: 'code', hint}` entry for a fix no
+property makes, which the skew family emits when its origin is `other` or skew-join handling is
+already on. Code that reads `key` checks `kind` first.
 
 Each entry is built by the helper for its scope: `defineStageDetector`,
 `defineSqlDetector`, `defineAppDetector` or `defineConfigDetector`. The

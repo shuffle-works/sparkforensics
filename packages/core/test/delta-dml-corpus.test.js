@@ -64,3 +64,24 @@ describe('Delta DML write targets on public corpus logs', () => {
     expect(writes[1]).toMatchObject({ sqlExecutionId: 3, recognized: true, kind: 'path', target: `file://${TABLE_PATH}` });
   });
 });
+
+// A MERGE's row counts sit on its command node's SQL metrics, not in `outputRows`.
+describe('MERGE row counts on public corpus logs', () => {
+  const MERGE_ROWS = { inserted: 100000, updated: 200000, deleted: 0, copied: 800000 };
+
+  async function mergeWrite(name) {
+    const { appModel } = await collectRun(corpusLog(name));
+    const { writeTargets } = buildEvidenceReport(appModel, { markdown: false }).json;
+    return writeTargets.writes.find((w) => w.command === 'MergeIntoCommand');
+  }
+
+  it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('reads them from a SQL MERGE node', async () => {
+    const write = await mergeWrite('delta-merge-sql');
+    expect(write.mergeRows).toEqual(MERGE_ROWS);
+    expect(write.outputRows).toBeNull();
+  });
+
+  it.skipIf(!existsSync(corpusLog('delta-merge-api')))('reads them from a DeltaTable API merge that has a command node', async () => {
+    expect((await mergeWrite('delta-merge-api')).mergeRows).toEqual(MERGE_ROWS);
+  });
+});

@@ -195,10 +195,16 @@ async function collectWithEvidence(path) {
   return { appModel, skippedLines };
 }
 
-// The export's provenance stamp: this CLI's own name and version, and the build id of the core it
-// loaded (vendor-core/'s stamp or core/src's hash, see coreBuildId).
-function exportProducer() {
+// The provenance stamp: this CLI's own name and version, and the build id of the core it loaded
+// (vendor-core/'s stamp or core/src's hash, see coreBuildId). The JSON report carries it as the
+// `generator` block, the HTML export as one "<name> <version>" producer string.
+function generatorInfo() {
   const { name, version } = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
+  return { name, version, buildId: coreBuildId(pkgDir) };
+}
+
+function exportProducer() {
+  const { name, version } = generatorInfo();
   return `${name} ${version}`;
 }
 
@@ -297,7 +303,7 @@ async function runMultiLog({
         exitCode,
         error: null,
         budgets: results,
-        candidate: { ...json, ...runOutputBlocks(appModel, { redact, thresholds, confKeys, confRedactRegex }) },
+        candidate: { ...json, ...runOutputBlocks(appModel, { redact, thresholds, confKeys, confRedactRegex, generator: generatorInfo() }) },
         comparison: output,
       };
     } catch (e) {
@@ -602,6 +608,7 @@ async function runCli(argv, { fetchImpl } = {}) {
   } else {
     const machineReadable = runOutputBlocks(appModel, {
       redact: values.redact, thresholds, confKeys, confRedactRegex: values['conf-redact-regex'],
+      generator: generatorInfo(),
     });
     const payload = comparison
       ? { candidate: { ...json, ...machineReadable }, comparison: comparisonJson }

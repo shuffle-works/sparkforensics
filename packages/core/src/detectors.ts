@@ -19,7 +19,7 @@ import { totalExecutorCpuMs } from './run-totals.ts';
 import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
-import { decreaseConf, increaseConf, setConf } from './remediation.ts';
+import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure } from './types.ts';
 import type { FindingOf, Remediation, SkewOrigin, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
@@ -742,9 +742,9 @@ function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false
       remediation: [decreaseConf('spark.sql.files.maxPartitionBytes')],
     };
   }
-  if (origin === 'other') return { origin, text: SKEW_KEY_REMEDY, remediation: [] };
+  if (origin === 'other') return { origin, text: SKEW_KEY_REMEDY, remediation: [codeFix(SKEW_KEY_REMEDY)] };
   // Before Spark 3.0 there is no AQE skew-join handling, so the stage gets the generic advice.
-  if (predatesAqeSkewJoin(ctx.app)) return { origin: 'other', text: SKEW_KEY_REMEDY, remediation: [] };
+  if (predatesAqeSkewJoin(ctx.app)) return { origin: 'other', text: SKEW_KEY_REMEDY, remediation: [codeFix(SKEW_KEY_REMEDY)] };
   return { origin, ...skewJoinFix(ctx.app) };
 }
 
@@ -756,9 +756,11 @@ function skewJoinFix(app: DetectorApp | null): { text: string; remediation: Reme
       remediation: [setConf('spark.sql.adaptive.enabled', true), ...setConfUnlessLogged(app, key, true)],
     };
   }
-  return switchFix(loggedAs(app, key, true), key, true,
+  const fix = switchFix(loggedAs(app, key, true), key, true,
     `for join-driven skew, enable AQE skew-join handling (${key}); otherwise ${SKEW_KEY_REMEDY}`,
     `AQE skew-join handling is already on, so ${SKEW_KEY_REMEDY}`);
+  // With the switch already on, only the key is left to fix: a change to the job, not a property.
+  return fix.remediation.length === 0 ? { ...fix, remediation: [codeFix(SKEW_KEY_REMEDY)] } : fix;
 }
 
 // The resources flag is read from the same property as the logged conf.

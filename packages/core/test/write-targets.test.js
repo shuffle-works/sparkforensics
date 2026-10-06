@@ -144,7 +144,7 @@ describe('evidence report writeTargets contract', () => {
     expect(json.writeTargets).toEqual({
       writes: [{
         sqlExecutionId: 1, nodeId: null, command: 'SaveIntoDataSourceCommand', recognized: true,
-        kind: null, target: null, outputRows: null, raw: 'Execute SaveIntoDataSourceCommand',
+        kind: null, target: null, outputRows: null, mergeRows: null, raw: 'Execute SaveIntoDataSourceCommand',
       }],
       executionsWithoutPlan: [{ sqlExecutionId: 2, reason: 'noPlan' }],
       skippedLines: null,
@@ -154,5 +154,33 @@ describe('evidence report writeTargets contract', () => {
   it('is empty for a run with no SQL executions', () => {
     const { json } = buildEvidenceReport(emptyAppModel(), { markdown: false });
     expect(json.writeTargets).toEqual({ writes: [], executionsWithoutPlan: [], skippedLines: null });
+  });
+});
+
+describe('mergeRows', () => {
+  const merge = (metrics) => node('Execute MergeIntoCommand', 'Execute MergeIntoCommand', { id: 'n1', metrics });
+  const metric = (name, value) => ({ name, value });
+
+  it('reads the four counts from a MergeIntoCommand node and leaves outputRows alone', () => {
+    const [write] = writesOf(merge([
+      metric('number of inserted rows', 5), metric('number of updated rows', 6), metric('number of deleted rows', 0),
+      metric('number of target rows rewritten unmodified', 90), metric('number of source rows', 11),
+    ]));
+    expect(write.mergeRows).toEqual({ inserted: 5, updated: 6, deleted: 0, copied: 90 });
+    expect(write.outputRows).toBeNull();
+  });
+
+  it('reads the older "number of rows copied" label as copied', () => {
+    const [write] = writesOf(merge([metric('number of inserted rows', 1), metric('number of rows copied', 7)]));
+    expect(write.mergeRows).toEqual({ inserted: 1, updated: null, deleted: null, copied: 7 });
+  });
+
+  it('is null when the node carries none of the counts', () => {
+    expect(writesOf(merge([metric('number of source rows', 11)]))[0].mergeRows).toBeNull();
+  });
+
+  it('is null for every other command, even one that carries a matching metric name', () => {
+    const update = node('Execute UpdateCommand', 'Execute UpdateCommand', { id: 'n1', metrics: [metric('number of updated rows', 3)] });
+    expect(writesOf(update)[0].mergeRows).toBeNull();
   });
 });

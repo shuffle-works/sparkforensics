@@ -35,7 +35,7 @@ export const shareLabel = (share: number): string => `${Math.round(share * 1e6) 
 // a generic line reads the same decision and never recommends a switch the row says is on.
 // A finding with no remediation (older or hand-built data) keeps the property wording.
 function switchAlreadyOn(finding: { remediation?: Remediation[] }, key: string): boolean {
-  return finding.remediation != null && !finding.remediation.some((r) => r.key === key);
+  return finding.remediation != null && !finding.remediation.some((r) => r.kind === 'conf' && r.key === key);
 }
 
 const SKEW_JOIN_KEY = 'spark.sql.adaptive.skewJoin.enabled';
@@ -46,7 +46,7 @@ const SKEW_JOIN_AQE_OFF = 'AQE is off, so enable it (spark.sql.adaptive.enabled)
 function skewJoinGeneric(f: { remediation?: Remediation[]; origin?: SkewOrigin }, unset: string): string {
   if (f.origin === 'inputScan') return 'Uneven input files: compact small files or split large ones (lower spark.sql.files.maxPartitionBytes).';
   if (f.origin === 'other') return 'Work is uneven across tasks: salt the key or repartition on a better key.';
-  if (f.remediation?.some((r) => r.key === 'spark.sql.adaptive.enabled')) return SKEW_JOIN_AQE_OFF;
+  if (f.remediation?.some((r) => r.kind === 'conf' && r.key === 'spark.sql.adaptive.enabled')) return SKEW_JOIN_AQE_OFF;
   return switchAlreadyOn(f, SKEW_JOIN_KEY) ? SKEW_JOIN_ALREADY_ON : unset;
 }
 const DYNAMIC_ALLOCATION_KEY = 'spark.dynamicAllocation.enabled';

@@ -10,14 +10,23 @@
 import type { ImpactBand, ImpactEstimate, StageId } from './types.ts';
 import type { TaskFailureGroup } from './task-failure.ts';
 
-/** One concrete change a finding's fix makes, alongside its prose `recommendation`. Only a Spark
- * property the detector already names; `suggested` is null when it computes no value. Sizes carry a
- * Spark unit suffix ("384m"), counts are plain numbers, switches are booleans. */
-export interface Remediation {
+/** One concrete change a finding's fix makes, alongside its prose `recommendation`. */
+export type Remediation = ConfRemediation | CodeRemediation;
+
+/** A Spark property the detector already names; `suggested` is null when it computes no value.
+ * Sizes carry a Spark unit suffix ("384m"), counts are plain numbers, switches are booleans. */
+export interface ConfRemediation {
   kind: 'conf';
   key: string;
   direction: 'increase' | 'decrease' | 'set';
   suggested: number | string | boolean | null;
+}
+
+/** A fix no Spark property makes: the job's code or data has to change. `hint` is the same
+ * wording the finding's `recommendation` gives. */
+export interface CodeRemediation {
+  kind: 'code';
+  hint: string;
 }
 
 // The columns every finding carries, whatever its detector.
