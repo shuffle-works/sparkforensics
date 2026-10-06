@@ -79,7 +79,7 @@ export function EfficiencyModel() {
         {totalCores != null && (
           <AdvancedOnly>
             <p className="text-muted-foreground text-xs">
-              Available = {totalCores} cores over the run (cores × the time each executor was alive); used = core-time that actually ran tasks.
+              Available = cores × the time each executor was alive (peak {totalCores} cores); used = core-time that actually ran tasks.
             </p>
           </AdvancedOnly>
         )}

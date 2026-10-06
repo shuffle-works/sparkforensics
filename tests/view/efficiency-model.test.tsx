@@ -90,12 +90,12 @@ describe('EfficiencyModel', () => {
   it('names the core count only in Advanced view', () => {
     store.getState().setWidgetDensity('basic');
     renderEfficiencyModel(buildAppModel());
-    expect(screen.queryByText(/cores over the run \(cores × the time each executor was alive\); used = core-time/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/cores × the time each executor was alive \(peak 2 cores\); used = core-time/i)).not.toBeInTheDocument();
     cleanup();
 
     store.getState().setWidgetDensity('advanced');
     renderEfficiencyModel(buildAppModel());
-    expect(screen.getByText(/2 cores over the run \(cores × the time each executor was alive\); used = core-time/i)).toBeInTheDocument();
+    expect(screen.getByText(/cores × the time each executor was alive \(peak 2 cores\); used = core-time/i)).toBeInTheDocument();
     store.getState().setWidgetDensity('basic');
   });
 
