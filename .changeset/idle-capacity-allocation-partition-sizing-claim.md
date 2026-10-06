@@ -1,0 +1,13 @@
+---
+"sparkforensics-web": patch
+"sparkforensics-cli": minor
+"sparkforensics-mcp": minor
+"sparkforensics-server": minor
+---
+
+Idle-capacity figures and the low-parallelism partition estimate change values, and the report gains one field. The report's schema version is unchanged. Existing numbers move, so a saved baseline, a budget or a ranking built on them needs refreshing.
+
+- Idle capacity is measured against the run's allocation, the cores times the time each executor was alive that `metrics.allocation.coreHours` reports, instead of peak concurrent cores times the whole run. The peak basis counts cores a dynamic-allocation or late-joining run never held, so the idle figure could exceed the allocation. The `utilization` percentage and its `cpuUtilizationPct`, the `utilization` finding's idle `rawWaste`, `memoryUtilization`'s `idleCores` rate, the dashboard's Unused core time and the verdict's idle share all use it. Utilization rises on runs whose executors came and went, so such a run can clear the 60% utilization threshold or fall under the 50% idle-cores one, and its `utilization` and `idleCores` findings disappear. Across the corpus logs, 26 of these findings disappear (10 `utilization`, 16 `idleCores`) and every remaining idle figure is smaller.
+- `impactEstimate.idleCoreTimeMs`, a `{ low, high }` range in core-milliseconds with `low` equal to `high`, gives the `utilization` finding's idle capacity as allocated minus busy core time, never below zero and never above the allocation. It is separate from `coreTimeMs`, which stays null for idle findings because it counts busy task time a fix removes. `idleCores` is the memory view of the same condition and carries none.
+- Idle findings gain remediation. With dynamic allocation off or unset: `decrease spark.executor.instances`, next to the existing `set spark.dynamicAllocation.enabled`. With it on: `decrease spark.dynamicAllocation.maxExecutors`, where `remediation` was empty. The recommendation text names these properties. `spark.dynamicAllocation.executorIdleTimeout` is not suggested, because `autoscalingChurn` recommends raising it.
+- `partitionSizing`'s `lowShuffleParallelism` wall-clock estimate no longer collapses to near zero on a stage whose few long tasks fill its duration. The fix splits those tasks, so the longest task after an even split (`taskDurationMax × taskCount / targetTaskCount`) bounds the claim instead of the current longest task. It is a modeled figure, and `coreTimeMs` stays null: it is stage wall-clock, ranked on `wallClock`. `shufflePartitionSkew` and `maxPartitionTooBig` are unchanged.
