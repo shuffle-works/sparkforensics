@@ -344,6 +344,13 @@ export interface ImpactEstimate {
    * straggler on one stage count its slow tail once: skew carries it and straggler is null. Never
    * 0 for "unknown". */
   coreTimeMs?: { low: number; high: number } | null;
+  /** Allocated core time no task used, in core-milliseconds, as a low..high range with low equal
+   * to high: the run's allocated core-ms minus its busy core-ms, floored at 0 and never above the
+   * allocation (the capacity behind `metrics.allocation.coreHours`). Set on `utilization` only;
+   * the same figure as its `rawWaste` idle figure, kept apart from `coreTimeMs`, which is busy time
+   * a fix removes. `memoryUtilization`'s `idleCores` is the memory view of the same condition and
+   * carries none. Absent when the log lacks the executor cores the allocation needs. */
+  idleCoreTimeMs?: { low: number; high: number };
 }
 
 // `Finding` is a union discriminated on `type`, one member per emitted finding type: see

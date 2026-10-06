@@ -154,13 +154,16 @@ is `off`) no executor-count property applies and `remediation` is empty.
 
 ### `UTIL`: Low utilization {#util}
 
-Allocated executors sit idle for a large share of the application run.
-Consider a smaller cluster, or enable dynamic allocation.
+Allocated executors sit idle for a large share of the application run: under
+60% of the core time the run allocated (cores times the time each executor was
+alive) ran a task. Consider a smaller cluster: lower `spark.executor.instances`
+(and enable dynamic allocation), or, with dynamic allocation on, lower
+`spark.dynamicAllocation.maxExecutors`.
 
 ### `MEM`: Memory utilization {#mem}
 
 Executor memory or core capacity may be over- or under-provisioned: more
-than 50% of available core time ran no task, an executor's heap peaked above
+than 50% of allocated core time ran no task, an executor's heap peaked above
 95% of its allocation, or it stayed below 70%. Some
 detail here needs `spark.eventLog.logStageExecutorMetrics=true` on the run
 being analyzed; without it, per-executor memory usage can't be broken down.

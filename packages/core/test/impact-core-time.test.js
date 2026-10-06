@@ -17,6 +17,12 @@ const soloStage = () => new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000,
 const tiny = () => ({ type: 'tinyTask', stageId: 0, value: 50, impactBand: 'info' });
 const twoCoreStage = (extra = {}) => new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], taskCount: 100, executorRunTime: 10000, ...extra }]]);
 
+// A utilization finding at 25% of 4 allocated core-hours.
+const idleUtilization = () => ({
+  type: 'utilization', stageId: null, value: 25, utilizationFraction: 0.25, appDurationMs: 3_600_000, totalCores: 4,
+  allocatedCoreMs: 4 * 3_600_000, impactBand: 'info',
+});
+
 describe('impact estimate coreTimeMs', () => {
   it('takes a cross-task executor-time figure as measured, whatever the run\'s cores', () => {
     const [est] = estimate([retry()], soloStage(), 8);
@@ -86,8 +92,7 @@ describe('impact estimate coreTimeMs', () => {
   });
 
   it('keeps the idle-capacity raw figure of an idle-core finding and gives it no coreTimeMs', () => {
-    const utilization = { type: 'utilization', stageId: null, value: 25, utilizationFraction: 0.25, appDurationMs: 3_600_000, totalCores: 4, impactBand: 'info' };
-    const [u] = estimate([utilization], new Map(), 4);
+    const [u] = estimate([idleUtilization()], new Map(), 4);
     expect(u.rawWaste).toEqual({ value: 0.75 * 4, unit: 'coreHours', idle: true });
     expect(u.coreTimeMs).toBeNull();
 
@@ -100,10 +105,25 @@ describe('impact estimate coreTimeMs', () => {
     expect(t.rawWaste).toMatchObject({ unit: 'coreMs', idle: true });
     expect(i.rawWaste.unit).toBe('mbSeconds');
     for (const est of [l, t, i]) expect(est.coreTimeMs).toBeNull();
+    for (const est of [l, t, i]) expect(est.idleCoreTimeMs).toBeUndefined();
+  });
+
+  it('carries the utilization finding\'s idle capacity in idleCoreTimeMs, apart from coreTimeMs', () => {
+    const [u] = estimate([idleUtilization()], new Map(), 4);
+    // 4 allocated core-hours, a quarter of it busy: 3 core-hours idle.
+    expect(u.idleCoreTimeMs).toEqual({ low: 3 * 3_600_000, high: 3 * 3_600_000 });
+    expect(u.idleCoreTimeMs.high / 3_600_000).toBe(u.rawWaste.value);
+    expect(u.coreTimeMs).toBeNull();
+  });
+
+  it('carries no idle core time when the finding has no allocation to measure against', () => {
+    const [u] = estimate([{ ...idleUtilization(), allocatedCoreMs: undefined }], new Map(), 4);
+    expect(u.rawWaste).toBeUndefined();
+    expect(u.idleCoreTimeMs).toBeUndefined();
   });
 
   it('labels an idle-core finding\'s figure as idle capacity on the dashboard and in report rows alike', () => {
-    const utilization = { type: 'utilization', stageId: null, value: 25, utilizationFraction: 0.25, appDurationMs: 3_600_000, totalCores: 4, impactBand: 'info' };
+    const utilization = idleUtilization();
     const stages = new Map([[0, makeStage({ id: 0, taskCount: 2, submittedAt: 0, completedAt: 10_000 })]]);
     const lowPar = { type: 'stageShape', rule: 'lowParallelism', stageId: 0, totalCores: 10, impactBand: 'info' };
     estimate([utilization, lowPar], stages, 10);

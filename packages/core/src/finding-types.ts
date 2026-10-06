@@ -227,11 +227,12 @@ export interface UtilizationEvidence {
   cpuUtilizationPct: number | null;
 }
 export interface UtilizationFinding extends NumericFinding<'utilization'>, UtilizationEvidence {
-  // Impact-estimator inputs: the unrounded `value`, and the run's span and peak cores it was
-  // measured against.
+  // Impact-estimator inputs: the unrounded `value`, the run's span, its peak cores, and the
+  // allocated core-milliseconds (cores x time alive) the busy time was measured against.
   utilizationFraction: number;
   appDurationMs: number;
   totalCores: number;
+  allocatedCoreMs: number;
 }
 
 export interface MemoryUtilizationEvidence {

@@ -222,24 +222,35 @@ describe('structured remediation', () => {
       const added = [{ executorId: '1', timestamp: 0, totalCores: 4 }];
       return analyze(app, stages, added, [], new Map(), new Map(), { busyCoreMs: 100 });
     };
+    const key = (f) => f.remediation.map((r) => `${r.direction} ${r.key}`);
     const idleCores = (app) => lowUtil(app).find((f) => f.type === 'memoryUtilization' && f.variant === 'idleCores');
     const utilization = (app) => lowUtil(app).find((f) => f.type === 'utilization');
-    const enable = [{ kind: 'conf', key: 'spark.dynamicAllocation.enabled', direction: 'set', suggested: true }];
+    const enable = { kind: 'conf', key: 'spark.dynamicAllocation.enabled', direction: 'set', suggested: true };
+    const lowerInstances = { kind: 'conf', key: 'spark.executor.instances', direction: 'decrease', suggested: null };
+    const lowerMax = { kind: 'conf', key: 'spark.dynamicAllocation.maxExecutors', direction: 'decrease', suggested: null };
 
-    it('suggests enabling it when the run has it off or unset', () => {
+    it('suggests enabling it and a smaller fixed cluster when the run has it off or unset', () => {
       const off = makeApp({ config: { 'spark.dynamicAllocation.enabled': 'false' }, resources: { dynamicAllocationEnabled: false } });
       for (const app of [off, makeApp()]) {
-        expect(utilization(app).remediation).toEqual(enable);
-        expect(idleCores(app).remediation).toEqual(enable);
+        expect(utilization(app).remediation).toEqual([enable, lowerInstances]);
+        expect(idleCores(app).remediation).toEqual([enable, lowerInstances]);
       }
     });
 
-    it('suggests nothing when the run already has it on', () => {
+    it('suggests a lower executor cap when the run already has it on', () => {
       const viaResources = makeApp({ resources: { dynamicAllocationEnabled: true } });
       const viaConfig = makeApp({ config: { 'spark.dynamicAllocation.enabled': 'true' } });
       for (const app of [viaResources, viaConfig]) {
-        expect(utilization(app).remediation).toEqual([]);
-        expect(idleCores(app).remediation).toEqual([]);
+        expect(utilization(app).remediation).toEqual([lowerMax]);
+        expect(idleCores(app).remediation).toEqual([lowerMax]);
+      }
+    });
+
+    it('never suggests lowering the idle timeout, which autoscalingChurn raises', () => {
+      for (const app of [makeApp(), makeApp({ config: { 'spark.dynamicAllocation.enabled': 'true' } })]) {
+        for (const f of [utilization(app), idleCores(app)]) {
+          expect(key(f).join(), f.type).not.toContain('executorIdleTimeout');
+        }
       }
     });
 
@@ -247,7 +258,7 @@ describe('structured remediation', () => {
       for (const app of [makeApp({ resources: { dynamicAllocationEnabled: true } }), makeApp({ config: { 'spark.dynamicAllocation.enabled': 'true' } })]) {
         for (const f of [utilization(app), idleCores(app)]) {
           expect(f.recommendation, f.type).not.toMatch(/enabl(e|ing) dynamic allocation/);
-          expect(f.recommendation, f.type).toMatch(/dynamic allocation is already on, so .*reduc(e|ing) cluster size/);
+          expect(f.recommendation, f.type).toMatch(/dynamic allocation is already on, so .*reduc(e|ing) cluster size by lowering spark\.dynamicAllocation\.maxExecutors/);
         }
       }
       expect(utilization(makeApp()).recommendation).toMatch(/enabling dynamic allocation/);
@@ -256,8 +267,10 @@ describe('structured remediation', () => {
 
     it('words the grouped generic line for the logged conf the same way as the row', () => {
       for (const app of [makeApp({ resources: { dynamicAllocationEnabled: true } }), makeApp({ config: { 'spark.dynamicAllocation.enabled': 'true' } })]) {
-        expect(coreFindingGenericRecommendation(utilization(app))).toBe('Dynamic allocation is already on, so consider reducing cluster size.');
-        expect(coreFindingGenericRecommendation(idleCores(app))).toBe('Dynamic allocation is already on, so reduce cluster size.');
+        expect(coreFindingGenericRecommendation(utilization(app)))
+          .toBe('Dynamic allocation is already on, so consider reducing cluster size by lowering spark.dynamicAllocation.maxExecutors.');
+        expect(coreFindingGenericRecommendation(idleCores(app)))
+          .toBe('Dynamic allocation is already on, so reduce cluster size by lowering spark.dynamicAllocation.maxExecutors.');
       }
       expect(coreFindingGenericRecommendation(utilization(makeApp()))).toMatch(/enabling dynamic allocation/);
       expect(coreFindingGenericRecommendation(idleCores(makeApp()))).toMatch(/enable dynamic allocation/);

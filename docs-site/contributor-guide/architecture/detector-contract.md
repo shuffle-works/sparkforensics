@@ -168,8 +168,11 @@ Two shared helpers back multiple detectors and reports. `packages/core/src/plan-
 traversal used by `detectors.ts`, `plan-summary.ts`,
 `plan-duration-attribution.ts`, `plan-dot.ts` and `plan-graph-model.ts`. `packages/core/src/core-count.ts` holds the shared core-count logic. Its
 `computePeakConcurrentCores`/`computePeakConcurrentExecutorCount` sweeps back `detectors.ts`'s
-`utilization` and `memoryUtilization` entries, `efficiency-model.ts` and `wasted-core-hours.ts`,
-so the Scorecard's Unused core time and the verdict's idle figure share one capacity.
+`efficiency-model.ts`'s zero-skew floor and the cluster size the `utilization` finding reports. The
+idle capacity the `utilization` and `memoryUtilization` entries, `efficiency-model.ts` and
+`wasted-core-hours.ts` measure against is the allocation (`allocatedCoreMs()` in `allocation.ts`,
+cores × time each executor was alive), so the Scorecard's Unused core time and the verdict's idle
+figure share one capacity that never exceeds what the run held.
 `computeTotalCores(app, executorsAdded)`, used only by `scaling-sim.ts`, sums every
 `ExecutorAdded` event with no regard for overlap, so under executor churn (spot preemption,
 `dynamicAllocation` replacement) it double-counts a churned executor's capacity against its

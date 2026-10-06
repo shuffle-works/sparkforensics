@@ -1,7 +1,8 @@
-import { pathBasename, formatBytes, IMPACT_BAND_ORDER } from './format-utils.ts';
+import { pathBasename, formatBytes, IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { medianOfSorted } from './median.ts';
 import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId } from './plan-summary.ts';
+import { allocatedCoreMs } from './allocation.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
@@ -767,6 +768,18 @@ function skewJoinFix(app: DetectorApp | null): { text: string; remediation: Reme
 function dynamicAllocationFix(app: DetectorApp, recommend: string, alreadyOn: string): { text: string; remediation: Remediation[] } {
   const key = 'spark.dynamicAllocation.enabled';
   return switchFix(app.resources?.dynamicAllocationEnabled === true || loggedAs(app, key, true), key, true, recommend, alreadyOn);
+}
+
+// Idle capacity is cured by a smaller cluster, which the run's dynamic allocation decides how to
+// size: with it on, the cap on how many executors it scales to; with it off or unset, the fixed
+// count (and switching it on, which dynamicAllocationFix already names). Not executorIdleTimeout:
+// autoscalingChurn recommends raising it, so lowering it here would contradict that finding.
+function idleCapacityFix(app: DetectorApp, recommend: string, alreadyOn: string): { text: string; remediation: Remediation[] } {
+  const fix = dynamicAllocationFix(app, recommend, alreadyOn);
+  // dynamicAllocationFix's remediation is empty exactly when dynamic allocation is already on.
+  return fix.remediation.length === 0
+    ? { ...fix, remediation: [decreaseConf('spark.dynamicAllocation.maxExecutors')] }
+    : { ...fix, remediation: [...fix.remediation, decreaseConf('spark.executor.instances')] };
 }
 
 // The run's effective spark.sql.shuffle.partitions (logged, else Spark's 200) as a count, or null
@@ -2017,12 +2030,15 @@ export const DETECTORS = [
       if (!app || executorsAdded.length === 0 || app.startTime == null || app.endTime == null) return null;
       const appDuration = app.endTime - app.startTime;
       if (appDuration <= 0) return null;
-      // computePeakConcurrentCores (not executorsAdded.length/computeTotalCores): real concurrent
-      // capacity, not a cumulative sum that double-counts a churned-through executor against its
-      // replacement's (spot preemption, dynamicAllocation replacement).
+      // Capacity is what the run was allocated (cores x time alive, the figure behind
+      // metrics.allocation.coreHours), not peak concurrent cores x the whole run: under dynamic
+      // allocation or late-joining executors that is more than was ever held, and the idle figure
+      // would exceed the allocation. Null without executor cores.
+      const capacityCoreMs = allocatedCoreMs({ app, stages: ctx.stages, executors: { added: executorsAdded, removed: executorsRemoved } });
+      if (capacityCoreMs == null) return null;
+      // Peak concurrent cores (not computeTotalCores, a cumulative sum that double-counts a
+      // churned-through executor against its replacement): the cluster size the finding reports.
       const totalCores = computePeakConcurrentCores(app, executorsAdded, executorsRemoved);
-      if (totalCores <= 0) return null;
-      const capacityCoreMs = totalCores * appDuration;
       // Busy core-time (from the whole-run core-time-series, same signal memoryUtilization's
       // idleCores variant already uses), not executor lifetime: an executor that exists for the
       // whole run but sits fully idle must not score as 100% used. Missing runAggregates (older
@@ -2033,22 +2049,20 @@ export const DETECTORS = [
       if (utilization >= thresholds.minUtil) return null;
 
       // CPU-time-based utilization (sparkMeasure): metric only, no threshold.
-      let cpuUtilizationPct: number | null = null;
-      if (totalCores > 0) {
-        // Null when no stage recorded CPU time (older Spark), the same rule as the CLI metrics block.
-        const cpuMs = totalExecutorCpuMs(ctx.stages.values());
-        cpuUtilizationPct = cpuMs == null ? null : Math.round((cpuMs / (appDuration * totalCores)) * 100);
-      }
+      // Null when no stage recorded CPU time (older Spark), the same rule as the CLI metrics block.
+      const cpuMs = totalExecutorCpuMs(ctx.stages.values());
+      const cpuUtilizationPct = cpuMs == null ? null : Math.round((cpuMs / capacityCoreMs) * 100);
 
       const value = Math.round(utilization * 100);
-      const fix = dynamicAllocationFix(app, 'consider reducing cluster size or enabling dynamic allocation',
-        'dynamic allocation is already on, so consider reducing cluster size');
+      const fix = idleCapacityFix(app, 'consider reducing cluster size (spark.executor.instances) or enabling dynamic allocation',
+        'dynamic allocation is already on, so consider reducing cluster size by lowering spark.dynamicAllocation.maxExecutors');
       return {
         type: 'utilization', stageId: null, impactBand: 'info',
         metric: 'avgUtilization', value,
         utilizationFraction: utilization,
         appDurationMs: appDuration,
         totalCores,
+        allocatedCoreMs: capacityCoreMs,
         cpuUtilizationPct,
         recommendation: `Average executor utilization was only ${value}%: ${fix.text}.`,
         remediation: fix.remediation,
@@ -2056,13 +2070,17 @@ export const DETECTORS = [
     },
     estimate(finding): ImpactEstimate | null {
       const fraction = finding.utilizationFraction as number | undefined;
-      const appDurationMs = finding.appDurationMs as number | undefined;
-      const totalCores = finding.totalCores as number | undefined;
-      if (fraction == null || appDurationMs == null || totalCores == null) {
+      const allocatedMs = finding.allocatedCoreMs as number | undefined;
+      if (fraction == null || allocatedMs == null) {
         return costOnly('measured');
       }
-      const idleCoreHours = (1 - fraction) * appDurationMs * totalCores / 3.6e6;
-      return costOnly('measured', { value: idleCoreHours, unit: 'coreHours', idle: true });
+      // The same allocated-minus-busy figure as `rawWaste`, in core-milliseconds, next to (never in)
+      // coreTimeMs: that field is busy task time a fix removes, this is capacity no task used.
+      const idleMs = (1 - fraction) * allocatedMs;
+      return {
+        ...costOnly('measured', { value: idleMs / MS_PER_CORE_HOUR, unit: 'coreHours', idle: true }),
+        idleCoreTimeMs: { low: idleMs, high: idleMs },
+      };
     },
   }),
   defineAppDetector({
@@ -2087,20 +2105,20 @@ export const DETECTORS = [
       // cumulative sum or count double-counts a churned-through executor against its replacement's
       // (spot preemption, dynamicAllocation replacement), inflating idle-rate and waste-model figures.
       const peakExecutors = computePeakConcurrentExecutorCount(executorsAdded, executorsRemoved);
-      const totalCores = computePeakConcurrentCores(app, executorsAdded, executorsRemoved);
       // Hoisted above 1a (also 1b/1c's input) so the idle-cores finding carries the allocated
       // memory its MB-seconds estimate needs.
       const allocatedMB = app.resources?.executor?.memoryMB ?? null;
 
       // ── 1a idle-cores rate ────────────────────────────────────────────────
       const busyCoreMs = runAggregates?.busyCoreMs;
-      if (busyCoreMs != null && totalCores > 0) {
-        const capacityCoreMs = totalCores * appDurationMs;
-        const idleRate = capacityCoreMs > 0 ? 1 - (busyCoreMs / capacityCoreMs) : 0;
+      // Allocated core-time, as for `utilization`, so the two findings of one idle condition agree.
+      const capacityCoreMs = allocatedCoreMs({ app, stages, executors: { added: executorsAdded, removed: executorsRemoved } });
+      if (busyCoreMs != null && capacityCoreMs != null) {
+        const idleRate = 1 - (busyCoreMs / capacityCoreMs);
         if (idleRate > thresholds.idleCoreWarn) {
           const value = Math.round(idleRate * 100);
-          const fix = dynamicAllocationFix(app, 'reduce cluster size or enable dynamic allocation',
-            'dynamic allocation is already on, so reduce cluster size');
+          const fix = idleCapacityFix(app, 'reduce cluster size (spark.executor.instances) or enable dynamic allocation',
+            'dynamic allocation is already on, so reduce cluster size by lowering spark.dynamicAllocation.maxExecutors');
           out.push({
             type: 'memoryUtilization', variant: 'idleCores', stageId: null,
             impactBand: 'warning', metric: 'idleCoreRate', value,

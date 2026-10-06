@@ -1,6 +1,6 @@
 import { computePeakConcurrentExecutorCount } from './core-count.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
-import type { ExecutorAddedEvent, ExecutorEvent, SparkAppInfo, Stage } from './types.ts';
+import type { SparkAppInfo, Stage } from './types.ts';
 
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_SECOND = 1000;
@@ -30,10 +30,15 @@ export interface Allocation {
   executorSeconds: number | null;
 }
 
+// The fields the allocation reads from the parsed model's executor events, so a detector's
+// narrower event shapes qualify too.
+interface AddedExecutor { executorId: string; timestamp: number; totalCores?: number }
+interface RemovedExecutor { executorId: string; timestamp: number }
+
 export interface AllocationInput {
-  app: SparkAppInfo | null;
-  stages: Map<number, Stage>;
-  executors: { added: ExecutorEvent[]; removed: ExecutorEvent[] };
+  app: Pick<SparkAppInfo, 'startTime' | 'endTime' | 'config'> | null;
+  stages: Map<number, Pick<Stage, 'submittedAt' | 'completedAt'>>;
+  executors: { added: AddedExecutor[]; removed: RemovedExecutor[] };
 }
 
 /** The latest timestamp the log records: the application start and end and every stage and
@@ -57,7 +62,7 @@ const DEFAULT_EXECUTOR_MEMORY_MIB = 1024;
 // plus overhead, plus off-heap and PySpark worker memory when configured. Null when the log
 // records no Spark properties (nothing to tell a default from a missing config) or a memory key it
 // does record cannot be read.
-function executorMemoryMiB(app: SparkAppInfo | null): number | null {
+function executorMemoryMiB(app: AllocationInput['app']): number | null {
   const config = app?.config;
   if (config == null) return null;
   // undefined: key absent; null: present but unreadable.
@@ -77,7 +82,7 @@ function executorMemoryMiB(app: SparkAppInfo | null): number | null {
   return heap + overhead + offHeap + pyspark;
 }
 
-function loggedDynamicAllocation(app: SparkAppInfo | null): 'on' | 'off' | null {
+function loggedDynamicAllocation(app: AllocationInput['app']): 'on' | 'off' | null {
   const raw = app?.config?.['spark.dynamicAllocation.enabled'];
   return raw == null ? null : raw.trim().toLowerCase() === 'true' ? 'on' : 'off';
 }
@@ -95,13 +100,12 @@ function loggedDynamicAllocation(app: SparkAppInfo | null): 'on' | 'off' | null 
  * Null, never 0, for a figure whose inputs the log lacks. */
 export function computeAllocation(input: AllocationInput): Allocation {
   const dynamicAllocation = loggedDynamicAllocation(input.app);
-  const added = input.executors.added.filter((e): e is ExecutorAddedEvent => e.kind === 'added');
+  const added = input.executors.added;
   if (added.length === 0) {
     return { coreHours: null, memoryGbHours: null, dynamicAllocation, executorsPeak: null, executorsMean: null, executorCores: null, executorSeconds: null };
   }
   const removedAt = new Map<string, number[]>();
   for (const e of input.executors.removed) {
-    if (e.kind !== 'removed') continue;
     const times = removedAt.get(e.executorId);
     if (times) times.push(e.timestamp); else removedAt.set(e.executorId, [e.timestamp]);
   }
@@ -114,7 +118,7 @@ export function computeAllocation(input: AllocationInput): Allocation {
   let aliveMsTotal = 0;
   let coresKnown = true;
   const coreCounts = new Set<number>();
-  const unique: ExecutorAddedEvent[] = [];
+  const unique: AddedExecutor[] = [];
   const firstRemovals: Array<{ executorId: string; timestamp: number }> = [];
   const seen = new Set<string>();
   for (const e of added) {
@@ -124,7 +128,7 @@ export function computeAllocation(input: AllocationInput): Allocation {
     const removal = (removedAt.get(e.executorId) ?? []).filter((t) => t >= e.timestamp).sort((a, b) => a - b)[0];
     if (removal != null) firstRemovals.push({ executorId: e.executorId, timestamp: removal });
     const aliveMs = Math.max(0, (removal ?? closeAt ?? e.timestamp) - e.timestamp);
-    const cores = e.totalCores > 0 ? e.totalCores : Number.isFinite(configuredCores) ? configuredCores : null;
+    const cores = e.totalCores != null && e.totalCores > 0 ? e.totalCores : Number.isFinite(configuredCores) ? configuredCores : null;
     aliveMsTotal += aliveMs;
     if (cores == null) coresKnown = false; else { coreMs += cores * aliveMs; coreCounts.add(cores); }
     memoryMiBMs += (memoryMiB ?? 0) * aliveMs;
@@ -140,4 +144,11 @@ export function computeAllocation(input: AllocationInput): Allocation {
     executorCores: coresKnown && coreCounts.size === 1 ? [...coreCounts][0] : null,
     executorSeconds: aliveMsTotal / MS_PER_SECOND,
   };
+}
+
+/** Allocated core-milliseconds: the figure behind `coreHours`, the capacity idle-core figures are
+ * measured against. Null when the log has no executor events or an executor's cores are unknown. */
+export function allocatedCoreMs(input: AllocationInput): number | null {
+  const { coreHours } = computeAllocation(input);
+  return coreHours != null && coreHours > 0 ? coreHours * MS_PER_HOUR : null;
 }

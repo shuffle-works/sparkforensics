@@ -280,8 +280,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     genericRecommendation(f) {
       switch (f.variant) {
         case 'idleCores': return switchAlreadyOn(f, DYNAMIC_ALLOCATION_KEY)
-          ? 'Dynamic allocation is already on, so reduce cluster size.'
-          : 'Reduce cluster size or enable dynamic allocation.';
+          ? 'Dynamic allocation is already on, so reduce cluster size by lowering spark.dynamicAllocation.maxExecutors.'
+          : 'Reduce cluster size (spark.executor.instances) or enable dynamic allocation.';
         case 'wasteModel': return 'Review spark.executor.memory and executor count.';
         case 'memoryBand':
           if (f.dataUnavailable) return undefined;
@@ -298,8 +298,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     thresholdSummary: (t) => `average executor utilization below ${shareLabel(t.minUtil)}`,
     actionLabel: () => 'Reduce cluster size',
     genericRecommendation: (f) => (switchAlreadyOn(f, DYNAMIC_ALLOCATION_KEY)
-      ? 'Dynamic allocation is already on, so consider reducing cluster size.'
-      : 'Consider reducing cluster size or enabling dynamic allocation.'),
+      ? 'Dynamic allocation is already on, so consider reducing cluster size by lowering spark.dynamicAllocation.maxExecutors.'
+      : 'Consider reducing cluster size (spark.executor.instances) or enabling dynamic allocation.'),
   },
   coreLocality: {
     name: 'core locality',

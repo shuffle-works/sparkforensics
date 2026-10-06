@@ -1,7 +1,7 @@
 # Impact estimation
 
 Every finding covered by this section carries an optional `impactEstimate: {basis,
-wallClock, estimateMethod, rawWaste?, coreTimeMs?}` (`packages/core/src/types.ts`), attached by
+wallClock, estimateMethod, rawWaste?, coreTimeMs?, idleCoreTimeMs?}` (`packages/core/src/types.ts`), attached by
 its `DETECTORS` entry's `estimate()` (`packages/core/src/detectors.ts`), which
 `estimateImpact()` (`packages/core/src/impact-estimator.ts`) runs as a post-pass once detection
 and suppression finish (`packages/core/src/analyzer.ts`). The waste models those methods compose
@@ -65,7 +65,12 @@ no task ran on carries `rawWaste.idle: true`: `utilization` (`coreHours`) and `s
 `lowParallelism` and `taskStageSkew` (`coreMs`). `coreTimeFor()` gives those `null`, and
 `rawWasteMeaning()` in `packages/core/src/impact-format.ts` labels them "of idle core capacity"
 instead of "of core time" on every surface. `memoryUtilization`'s `idleCores` counts `mbSeconds`,
-which has no core time either. A stage's slow tail is also counted once: `skew` and `straggler`
+which has no core time either. `utilization` also reports the idle figure as `idleCoreTimeMs`
+(`{low, high}` core-milliseconds, `low === high`): `allocatedCoreMs - busy core-ms`, which is
+`rawWaste` in core-ms, set by its `estimate()` and never read by `coreTimeFor()`. The capacity is
+`allocatedCoreMs()` in `packages/core/src/allocation.ts`, the figure behind
+`metrics.allocation.coreHours`. `idleCores` is the memory view of the same condition and has none.
+A stage's slow tail is also counted once: `skew` and `straggler`
 both measure the task time removed from it, so on one stage `skew` carries it and `straggler` has
 `null` (`countTailCoreTimeOnce()` in `packages/core/src/impact-estimator.ts`).
 
@@ -147,8 +152,8 @@ task ran 39 s would have skew claiming 90 s where straggler claims 61 s.
 
 `analyzer.ts` feeds this `totalCores` from `packages/core/src/core-count.ts`'s
 `computePeakConcurrentCores(app, executorsAdded, executorsRemoved)` (the same peak concurrent
-capacity `efficiency-model.ts`, `wasted-core-hours.ts` and the `utilization`/`memoryUtilization`
-detectors use), not `computeTotalCores`, which only `scaling-sim.ts` uses. `computeTotalCores` sums every `ExecutorAdded` event's cores
+cores `efficiency-model.ts`'s floor, `wasted-core-hours.ts` and the `utilization` finding report as
+the cluster size), not `computeTotalCores`, which only `scaling-sim.ts` uses. `computeTotalCores` sums every `ExecutorAdded` event's cores
 regardless of overlap, so under dynamic allocation or executor replacement it can far exceed
 the cores ever actually concurrent, which understates `ceiling(S)` and lets churn inflate a
 finding's claimed wall-clock. `computePeakConcurrentCores` instead sweeps add/remove events by

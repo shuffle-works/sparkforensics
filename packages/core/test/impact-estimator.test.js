@@ -828,16 +828,17 @@ describe('estimateImpact: cost-only group A', () => {
   it('utilization: resourceOnly, idle core-hours from the real utilizationFraction, no assumed constant', () => {
     const findings = [{
       type: 'utilization', utilizationFraction: 0.4, impactBand: 'warning',
-      appDurationMs: 3_600_000, totalCores: 10,
+      appDurationMs: 3_600_000, totalCores: 10, allocatedCoreMs: 10 * 3_600_000,
     }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
       rawWaste: { value: 6, unit: 'coreHours', idle: true },
+      idleCoreTimeMs: { low: 6 * 3_600_000, high: 6 * 3_600_000 },
     });
   });
 
-  it('utilization: missing appDurationMs/totalCores falls back to informational', () => {
+  it('utilization: a missing allocatedCoreMs falls back to informational', () => {
     const findings = [{ type: 'utilization', utilizationFraction: 0.4, impactBand: 'warning' }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'measured' });

@@ -69,8 +69,8 @@ The board widgets for caching opportunities, memory utilization and cache storag
   There is no driver-memory band: the worker only
   extracts *allocated* `spark.driver.memory`, never a driver actual-usage
   metric, so there is nothing to band against. The separate `utilization`
-  DETECTORS entry (an `avgUtilization` info finding: active-executor-time
-  fraction below 60%) has its own card, **Executor Utilization** (tag
+  DETECTORS entry (an `avgUtilization` info finding: busy share of
+  allocated core time below 60%) has its own card, **Executor Utilization** (tag
   `UTIL`, `ExecutorUtilization.tsx`): a `reference`-region widget in its own
   right that renders only with an active finding.
 - **Cache Storage** (tag `CSTOR`): app-level card driven by the
