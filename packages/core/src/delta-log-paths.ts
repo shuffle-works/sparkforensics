@@ -9,6 +9,15 @@ import type { SqlExecution } from './types.ts';
 // scans and `DeltaLogFileIndex [<path>/_delta_log/<file>, ...]`.
 const DELTA_LOG_PATH = /((?:[A-Za-z][A-Za-z0-9+.-]*:\/{1,3}|\/)[^\s,[\]()#]+?)\/_delta_log(?=[/[\],\s)]|$)/g;
 
+// Hadoop prints a local path as `file:/p` and a URI as `file:///p`: one table, two spellings.
+// Both read as `file:///p` so a table is not counted twice. A `file://host/p` is left alone.
+const LOCAL_FILE_PREFIX = /^file:(?:\/|\/\/\/)(?=[^/])/;
+
+/** The one spelling of a table path: the two local-file forms agree, other paths pass through. */
+export function normalizeTablePath(path: string): string {
+  return path.replace(LOCAL_FILE_PREFIX, 'file:///').replace(/\/+$/, '');
+}
+
 interface LogPaths { paths: Set<string>; unreliable: boolean }
 
 // Every distinct table path named in the plans; `unreliable` when a plan is missing or a path cut.
@@ -26,7 +35,7 @@ function deltaLogPaths(executions: Pick<SqlExecution, 'planTree'>[]): LogPaths {
         if (matches.length < mentions) unreliable = true;
         for (const m of matches) {
           if (isCut(m[1])) unreliable = true;
-          else paths.add(m[1].replace(/\/+$/, ''));
+          else paths.add(normalizeTablePath(m[1]));
         }
       }
     }, { dedupe: true });

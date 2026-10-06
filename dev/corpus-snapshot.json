@@ -377,6 +377,940 @@
    ]
   },
   {
+   "name": "delta-concurrent-merge.ndjson",
+   "stages": 30,
+   "sqlExecutions": 25,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
+     "type": "cacheUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 6,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "cachingOpportunity||executionReuse||composite||||||||data-delta-table|join",
+     "type": "cachingOpportunity",
+     "band": "info",
+     "confidence": "low",
+     "value": 2,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 48.052968,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "cachingOpportunity||executionReuse||||||||||data-delta-table|",
+     "type": "cachingOpportunity",
+     "band": "info",
+     "confidence": "medium",
+     "value": 3,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 105.309944,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|5|P95/median|||||||||||",
+     "type": "skew",
+     "band": "warning",
+     "confidence": "medium",
+     "value": 6,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 574.9984788046785,
+     "wcHigh": 590,
+     "rawWaste": {
+      "value": 590,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|5|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "warning",
+     "confidence": "medium",
+     "value": 8,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 574.9984788046785,
+     "wcHigh": 590,
+     "rawWaste": {
+      "value": 590,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|18|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 41,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 568.3945893590127,
+     "wcHigh": 1123.9457002188183,
+     "rawWaste": {
+      "value": 1123.9457002188183,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|21|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 47,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 653.7221228987025,
+     "wcHigh": 1211.3994155301975,
+     "rawWaste": {
+      "value": 1211.3994155301975,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|25|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 27,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 704.1644483496569,
+     "wcHigh": 1650.8270396999064,
+     "rawWaste": {
+      "value": 1650.8270396999064,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|29|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 27,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 833.1272636067208,
+     "wcHigh": 1368.5625166543302,
+     "rawWaste": {
+      "value": 1368.5625166543302,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|46|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 23,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 557.5975900600665,
+     "wcHigh": 1113.6070940328839,
+     "rawWaste": {
+      "value": 1113.6070940328839,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|49|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 22,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 584.790062700558,
+     "wcHigh": 1129.2637223974764,
+     "rawWaste": {
+      "value": 1129.2637223974764,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|53|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 42,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 1135.8779594489474,
+     "wcHigh": 1794.5605204460967,
+     "rawWaste": {
+      "value": 1794.5605204460967,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|57|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 36,
+     "basis": "contended",
+     "method": "measured",
+     "wcLow": 2156.550025701855,
+     "wcHigh": 3145.9886158571708,
+     "rawWaste": {
+      "value": 3145.9886158571708,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
+   "name": "delta-delete.ndjson",
+   "stages": 11,
+   "sqlExecutions": 16,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
+     "type": "cacheUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 4,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "cachingOpportunity||executionReuse||||||||||data-delta-table|",
+     "type": "cachingOpportunity",
+     "band": "info",
+     "confidence": "low",
+     "value": 2,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 120.131288,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 54,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|3|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 6.1,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 726,
+     "wcHigh": 726,
+     "rawWaste": {
+      "value": 726,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|3|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 8,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 726,
+     "wcHigh": 726,
+     "rawWaste": {
+      "value": 726,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|11|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 20,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 764.8404805914971,
+     "wcHigh": 764.8404805914971,
+     "rawWaste": {
+      "value": 764.8404805914971,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 46,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.013053055555555556,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "delta-merge-api.ndjson",
+   "stages": 21,
+   "sqlExecutions": 19,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
+     "type": "cacheUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 5,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "cachingOpportunity||executionReuse||||||||||data-delta-table|",
+     "type": "cachingOpportunity",
+     "band": "info",
+     "confidence": "medium",
+     "value": 3,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 306.7254,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|4|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 5.8,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 715.5,
+     "wcHigh": 715.5,
+     "rawWaste": {
+      "value": 715.5,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|4|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 8,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 715.5,
+     "wcHigh": 715.5,
+     "rawWaste": {
+      "value": 715.5,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|14|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "warning",
+     "confidence": null,
+     "value": 58,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 656.1504328018223,
+     "wcHigh": 656.1504328018223,
+     "rawWaste": {
+      "value": 656.1504328018223,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|18|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "warning",
+     "confidence": null,
+     "value": 34,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 620.5059892062657,
+     "wcHigh": 620.5059892062657,
+     "rawWaste": {
+      "value": 620.5059892062657,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|28|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "warning",
+     "confidence": null,
+     "value": 20,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 390.5091305171434,
+     "wcHigh": 390.5091305171434,
+     "rawWaste": {
+      "value": 390.5091305171434,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|32|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 29,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1474.614288214192,
+     "wcHigh": 1474.614288214192,
+     "rawWaste": {
+      "value": 1474.614288214192,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 59,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.014937222222222222,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "delta-merge-sql.ndjson",
+   "stages": 21,
+   "sqlExecutions": 20,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
+     "type": "cacheUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 5,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "cachingOpportunity||executionReuse||||||||||data-delta-table|",
+     "type": "cachingOpportunity",
+     "band": "info",
+     "confidence": "medium",
+     "value": 3,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 306.724896,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|4|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 4.6,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1201,
+     "wcHigh": 1201,
+     "rawWaste": {
+      "value": 1201,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "stageShape|4|taskStageSkew|taskStageSkew||||||||||",
+     "type": "stageShape",
+     "band": "info",
+     "confidence": null,
+     "value": 0.63,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 2301,
+      "unit": "coreMs"
+     }
+    },
+    {
+     "key": "straggler|4|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 8,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1201,
+     "wcHigh": 1201,
+     "rawWaste": {
+      "value": 1201,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|14|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 59,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 682.8867546547255,
+     "wcHigh": 682.8867546547255,
+     "rawWaste": {
+      "value": 682.8867546547255,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|18|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "warning",
+     "confidence": null,
+     "value": 36,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 590.5002717391304,
+     "wcHigh": 590.5002717391304,
+     "rawWaste": {
+      "value": 590.5002717391304,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|28|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "warning",
+     "confidence": null,
+     "value": 23,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 416.06465783263747,
+     "wcHigh": 416.06465783263747,
+     "rawWaste": {
+      "value": 416.06465783263747,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|32|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 30,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1451,
+     "wcHigh": 1451,
+     "rawWaste": {
+      "value": 1453.565164476585,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
+   "name": "delta-update.ndjson",
+   "stages": 14,
+   "sqlExecutions": 18,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "cacheUtilization||persistedRdds||storageUnobserved|||||||||",
+     "type": "cacheUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": 4,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "cachingOpportunity||executionReuse||||||||||data-delta-table|",
+     "type": "cachingOpportunity",
+     "band": "info",
+     "confidence": "medium",
+     "value": 3,
+     "basis": "resourceOnly",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 192.23988,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
+     "type": "memoryUtilization",
+     "band": "warning",
+     "confidence": null,
+     "value": 52,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "skew|3|P95/median|||||||||||",
+     "type": "skew",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 5.2,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1158,
+     "wcHigh": 1158,
+     "rawWaste": {
+      "value": 1158,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "stageShape|12|oiRatio|dataExplosion||||||||||",
+     "type": "stageShape",
+     "band": "info",
+     "confidence": null,
+     "value": 258.8,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 5987164,
+      "unit": "bytes"
+     }
+    },
+    {
+     "key": "stageShape|3|taskStageSkew|taskStageSkew||||||||||",
+     "type": "stageShape",
+     "band": "info",
+     "confidence": null,
+     "value": 0.66,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 2667,
+      "unit": "coreMs"
+     }
+    },
+    {
+     "key": "straggler|3|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 8,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 1158,
+     "wcHigh": 1158,
+     "rawWaste": {
+      "value": 1158,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|11|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 14,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 547.5703424260012,
+     "wcHigh": 547.5703424260012,
+     "rawWaste": {
+      "value": 547.5703424260012,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "utilization||avgUtilization|||||||||||",
+     "type": "utilization",
+     "band": "info",
+     "confidence": null,
+     "value": 48,
+     "basis": "resourceOnly",
+     "method": "measured",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": {
+      "value": 0.013663333333333333,
+      "unit": "coreHours"
+     }
+    }
+   ]
+  },
+  {
+   "name": "eventlog-lz4.lz4",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 39895,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 6370,
+     "wcHigh": 6370,
+     "rawWaste": {
+      "value": 6370,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 48,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 5949.101966797443,
+     "wcHigh": 5949.101966797443,
+     "rawWaste": {
+      "value": 5949.101966797443,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
+   "name": "eventlog-snappy.snappy",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 39894,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 6370,
+     "wcHigh": 6370,
+     "rawWaste": {
+      "value": 6370,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 44,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 5933.022700204426,
+     "wcHigh": 5933.022700204426,
+     "rawWaste": {
+      "value": 5933.022700204426,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
+   "name": "eventlog-zstd.zstd",
+   "stages": 4,
+   "sqlExecutions": 1,
+   "skippedLines": 0,
+   "findings": [
+    {
+     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
+     "type": "memoryUtilization",
+     "band": "info",
+     "confidence": null,
+     "value": null,
+     "basis": "informational",
+     "method": "modeled",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
+     "type": "smallFiles",
+     "band": "critical",
+     "confidence": null,
+     "value": 39893,
+     "basis": "serial",
+     "method": "modeled",
+     "wcLow": 6370,
+     "wcHigh": 6370,
+     "rawWaste": {
+      "value": 6370,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "tinyTask|6|taskDurationP50|||||||||||",
+     "type": "tinyTask",
+     "band": "critical",
+     "confidence": null,
+     "value": 50,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 5858.332504455571,
+     "wcHigh": 5858.332504455571,
+     "rawWaste": {
+      "value": 5858.332504455571,
+      "unit": "ms"
+     }
+    }
+   ]
+  },
+  {
    "name": "failure-job.ndjson",
    "stages": 3,
    "sqlExecutions": 0,
@@ -1329,7 +2263,7 @@
    ]
   },
   {
-   "name": "spark-3.5.9-delta-baseline.ndjson",
+   "name": "spark-3.5-delta-baseline.ndjson",
    "stages": 5,
    "sqlExecutions": 4,
    "skippedLines": 0,
@@ -1433,7 +2367,7 @@
    ]
   },
   {
-   "name": "spark-3.5.9-iceberg-baseline.ndjson",
+   "name": "spark-3.5-iceberg-baseline.ndjson",
    "stages": 4,
    "sqlExecutions": 2,
    "skippedLines": 0,
@@ -1537,7 +2471,7 @@
    ]
   },
   {
-   "name": "spark-3.5.9-parquet-baseline.ndjson",
+   "name": "spark-3.5-parquet-baseline.ndjson",
    "stages": 4,
    "sqlExecutions": 1,
    "skippedLines": 0,
@@ -1644,7 +2578,7 @@
    ]
   },
   {
-   "name": "spark-4.0.4-delta-baseline.ndjson",
+   "name": "spark-4.0-delta-baseline.ndjson",
    "stages": 4,
    "sqlExecutions": 3,
    "skippedLines": 0,
@@ -1748,7 +2682,7 @@
    ]
   },
   {
-   "name": "spark-4.0.4-iceberg-baseline.ndjson",
+   "name": "spark-4.0-iceberg-baseline.ndjson",
    "stages": 4,
    "sqlExecutions": 2,
    "skippedLines": 0,
@@ -1852,7 +2786,7 @@
    ]
   },
   {
-   "name": "spark-4.0.4-parquet-baseline.ndjson",
+   "name": "spark-4.0-parquet-baseline.ndjson",
    "stages": 4,
    "sqlExecutions": 1,
    "skippedLines": 0,
@@ -1971,7 +2905,7 @@
    ]
   },
   {
-   "name": "spark-4.1.3-delta-baseline.ndjson",
+   "name": "spark-4.1-delta-baseline.ndjson",
    "stages": 4,
    "sqlExecutions": 3,
    "skippedLines": 0,
@@ -2033,7 +2967,7 @@
    ]
   },
   {
-   "name": "spark-4.1.3-iceberg-baseline.ndjson",
+   "name": "spark-4.1-iceberg-baseline.ndjson",
    "stages": 4,
    "sqlExecutions": 2,
    "skippedLines": 0,
@@ -2107,7 +3041,7 @@
    ]
   },
   {
-   "name": "spark-4.1.3-parquet-baseline.ndjson",
+   "name": "spark-4.1-parquet-baseline.ndjson",
    "stages": 4,
    "sqlExecutions": 1,
    "skippedLines": 0,
@@ -2211,7 +3145,7 @@
    ]
   },
   {
-   "name": "spark-4.2.0-delta-baseline.ndjson",
+   "name": "spark-4.2-delta-baseline.ndjson",
    "stages": 4,
    "sqlExecutions": 3,
    "skippedLines": 0,
@@ -2273,7 +3207,7 @@
    ]
   },
   {
-   "name": "spark-4.2.0-parquet-baseline.ndjson",
+   "name": "spark-4.2-parquet-baseline.ndjson",
    "stages": 4,
    "sqlExecutions": 1,
    "skippedLines": 0,
