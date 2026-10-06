@@ -10,7 +10,9 @@
 import type { ImpactBand, ImpactEstimate, StageId } from './types.ts';
 import type { TaskFailureGroup } from './task-failure.ts';
 
-/** One concrete change a finding's fix makes, alongside its prose `recommendation`. */
+/** One concrete change a finding's fix makes, alongside its prose `recommendation`. Entries are
+ * applied together unless the recommendation words them as alternatives ("either ... or"), as an
+ * idle-capacity finding does with dynamic allocation off: then a consumer applies one. */
 export type Remediation = ConfRemediation | CodeRemediation;
 
 /** A Spark property the detector already names; `suggested` is null when it computes no value.
@@ -227,11 +229,12 @@ export interface UtilizationEvidence {
   cpuUtilizationPct: number | null;
 }
 export interface UtilizationFinding extends NumericFinding<'utilization'>, UtilizationEvidence {
-  // Impact-estimator inputs: the unrounded `value`, and the run's span and peak cores it was
-  // measured against.
+  // Impact-estimator inputs: the unrounded `value`, the run's span, its peak cores, and the
+  // allocated core-milliseconds (cores x time alive) the busy time was measured against.
   utilizationFraction: number;
   appDurationMs: number;
   totalCores: number;
+  allocatedCoreMs: number;
 }
 
 export interface MemoryUtilizationEvidence {
@@ -245,11 +248,10 @@ export interface MemoryUtilizationEvidence {
   dataUnavailable?: boolean;
 }
 export interface MemoryUtilizationFinding extends NumericFinding<'memoryUtilization'>, MemoryUtilizationEvidence {
-  // Impact-estimator inputs: the unrounded idle rate and the run's sizing (idleCores), and the
-  // allocation and span behind heapOverProvisioned's rounded ratio.
+  // Impact-estimator inputs: the unrounded idle rate and the run's allocated memory-time
+  // (idleCores), and the allocation and span behind heapOverProvisioned's rounded ratio.
   idleRateFraction?: number;
-  allocatedMB?: number | null;
-  peakExecutors?: number;
+  allocatedMBSeconds?: number | null;
   appDurationMs?: number;
   allocatedBytes?: number;
 }

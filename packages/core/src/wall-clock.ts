@@ -1,5 +1,13 @@
 import { mergeIntervals } from './intervals.ts';
 
+/** The union of the stages' [submittedAt, completedAt) windows, sorted: where stages were active. */
+export function stageWindows(stages: Map<number, {submittedAt?: number; completedAt?: number}>): Array<[number, number]> {
+  const intervals = [...stages.values()]
+    .filter((s) => s.submittedAt != null && s.completedAt != null)
+    .map((s): [number, number] => [s.submittedAt as number, s.completedAt as number]);
+  return mergeIntervals(intervals);
+}
+
 export function computeWallClock(app: {startTime?: number | null; endTime?: number | null} | null, stages: Map<number, {submittedAt?: number; completedAt?: number}>): {total: number; startup: number; stagesActive: number; gaps: number; idle: number} {
   const start = app?.startTime ?? 0;
   const stageList = [...stages.values()].filter(s => s.submittedAt != null && s.completedAt != null);

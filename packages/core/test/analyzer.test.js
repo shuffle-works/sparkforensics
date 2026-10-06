@@ -1711,7 +1711,8 @@ describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
 
 describe('analyze: CPU utilization metric (sparkMeasure, metric-only)', () => {
   it('attaches cpuUtilizationPct to the utilization finding', () => {
-    // 8 total cores, app ran 10s. executorCpuTime is nanoseconds: 16000000000ns = 16000ms => 16000/(10000*8) = 20%.
+    // Allocated: executor 1 holds 4 cores for the 10s run, executor 2 for 1s of it: 44000 core-ms.
+    // executorCpuTime is nanoseconds: 16000000000ns = 16000ms => 16000/44000 = 36%.
     const app = makeApp({ startTime: 1000, endTime: 11000, resources: { executor: { cores: 4 } } });
     const stages = new Map([[1, makeStage({ executorRunTime: 100000, executorCpuTime: 16000000000 })]]);
     const added = [
@@ -1722,7 +1723,7 @@ describe('analyze: CPU utilization metric (sparkMeasure, metric-only)', () => {
     const catalog = analyze(app, stages, added, removed);
     const util = catalog.find(b => b.type === 'utilization');
     expect(util).toBeTruthy();
-    expect(util.cpuUtilizationPct).toBe(20);
+    expect(util.cpuUtilizationPct).toBe(36);
     // Sanity bound: CPU utilization should never be wildly above 100% of core-time (some measurement slack).
     expect(util.cpuUtilizationPct).toBeGreaterThanOrEqual(0);
     expect(util.cpuUtilizationPct).toBeLessThanOrEqual(150);
@@ -1814,6 +1815,51 @@ describe('analyze: utilization detector under executor churn (regression)', () =
   });
 });
 
+describe('analyze: idle capacity is measured against the allocation', () => {
+  // Executor a holds 4 cores for the whole 100 s run, b joins at 80 s: 8 cores are concurrent at
+  // the peak, but 4 x 100 s + 4 x 20 s = 480,000 core-ms were allocated. Peak x duration would
+  // be 800,000 core-ms.
+  const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4 } } });
+  const added = [
+    { executorId: 'a', timestamp: 0, totalCores: 4 },
+    { executorId: 'b', timestamp: 80000, totalCores: 4 },
+  ];
+  const ra = { coreHistogram: [], busyCoreMs: 100000, peakConcurrentCores: 8, perStage: {} };
+  const run = () => analyze(app, new Map(), added, [], sampleJobs, new Map(), ra);
+
+  it('computes the utilization percentage over allocated core-time, not peak cores x the whole run', () => {
+    const util = run().find(b => b.type === 'utilization');
+    expect(util.totalCores).toBe(8);
+    expect(util.allocatedCoreMs).toBe(480000);
+    expect(util.utilizationFraction).toBeCloseTo(100000 / 480000, 10);
+    expect(util.value).toBe(21);
+  });
+
+  it('reports the idle figure as allocated minus busy core time, never above the allocation', () => {
+    const util = run().find(b => b.type === 'utilization');
+    const { rawWaste, idleCoreTimeMs } = util.impactEstimate;
+    expect(idleCoreTimeMs).toEqual({ low: 380000, high: 380000 });
+    expect(rawWaste).toEqual({ value: 380000 / 3.6e6, unit: 'coreHours', idle: true });
+    expect(idleCoreTimeMs.high).toBeLessThanOrEqual(util.allocatedCoreMs);
+    // The basis it replaces: 700,000 core-ms idle, more than the 480,000 ever allocated.
+    expect(idleCoreTimeMs.high).toBeLessThan(8 * 100000 - 100000);
+  });
+
+  it('gives the memory view of the same condition the same idle rate, without the idle core time', () => {
+    const catalog = run();
+    const util = catalog.find(b => b.type === 'utilization');
+    const idle = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'idleCores');
+    expect(idle.value).toBe(100 - util.value);
+    expect(idle.impactEstimate.idleCoreTimeMs).toBeUndefined();
+  });
+
+  it('reports no utilization finding when the log gives no executor cores to allocate', () => {
+    const noCores = [{ executorId: 'a', timestamp: 0, totalCores: 0 }];
+    const bare = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: null } } });
+    expect(analyze(bare, new Map(), noCores, [], sampleJobs, new Map(), ra).find(b => b.type === 'utilization')).toBeUndefined();
+  });
+});
+
 describe('analyze: coldStart/utilization do not silently skip on a literal startTime:0 (regression)', () => {
   it('coldStart still fires when app.startTime is exactly 0', () => {
     // makeApp()'s own default startTime is 0 (fixtures/stage-app-fixtures.js); a falsy check on
@@ -1886,9 +1932,8 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     expect(idle.value).toBe(75);
     // Impact-estimate inputs attached at the push site: unrounded rate plus cluster sizing (value above is rounded).
     expect(idle.idleRateFraction).toBeCloseTo(0.75, 10);
-    expect(idle.allocatedMB).toBe(4096);
-    expect(idle.peakExecutors).toBe(2);
-    expect(idle.appDurationMs).toBe(10000);
+    // 2 executors x 10 s x 1408 MiB (default 1g executor memory plus 384 MiB overhead), per computeAllocation.
+    expect(idle.allocatedMBSeconds).toBeCloseTo(2 * 10 * 1408, 3);
   });
 
   it('1b: flags an executor whose peak heap exceeds 95% of allocated (too small)', () => {
@@ -1972,7 +2017,6 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     expect(idle).toBeTruthy();
     expect(idle.value).toBe(94); // round(93.75), not the churn-inflated round(97.5) = 98
     expect(idle.idleRateFraction).toBeCloseTo(0.9375, 10);
-    expect(idle.peakExecutors).toBe(2); // real peak concurrency, not the 5 executors ever added
   });
 });
 

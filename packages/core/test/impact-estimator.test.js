@@ -578,6 +578,62 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
     expect(findings[0].impactEstimate.wallClock.high).toBeGreaterThanOrEqual(0);
   });
 
+  describe('lowShuffleParallelism: the claim shortens the stage\'s longest task', () => {
+    // 4 tasks read 1.5 GiB (target 12 tasks) over a 60 s stage: the serial waste is 40 s.
+    const GiB = 1024 ** 3;
+    function lowParStage(taskDurationMax) {
+      return new Map([[0, {
+        id: 0, submittedAt: 0, completedAt: 60_000, parentIds: [], taskCount: 4, shuffleReadBytes: 1.5 * GiB,
+        taskDurationMax, executorRunTime: 4 * taskDurationMax,
+      }]]);
+    }
+    const lowPar = () => [{ type: 'partitionSizing', rule: 'lowShuffleParallelism', stageId: 0, impactBand: 'warning' }];
+
+    it('keeps the claim when the longest task nearly fills the stage', () => {
+      // Clipped against the longest task itself the room is 30 ms. The split leaves that task at
+      // 4/12 of 59.97 s, so the claim is the 39.98 s it sheds.
+      const findings = lowPar();
+      estimate(findings, lowParStage(59_970), 100);
+      const { rawWaste, wallClock, estimateMethod } = findings[0].impactEstimate;
+      expect(rawWaste.unit).toBe('ms');
+      expect(rawWaste.value).toBeCloseTo(59_970 * (1 - 4 / 12), 6);
+      expect(wallClock.high).toBeCloseTo(59_970 * (1 - 4 / 12), 6);
+      expect(estimateMethod).toBe('modeled');
+    });
+
+    it('claims only what splitting the longest task recovers, however long the stage is', () => {
+      // A 60 s stage whose longest task is 20 s: after the split the stage still takes 40 s plus the
+      // 6.7 s the longest task leaves, a saving of 13.3 s, not the 40 s that scaling the whole
+      // stage by 4/12 would claim.
+      const findings = lowPar();
+      estimate(findings, lowParStage(20_000), 100);
+      const { rawWaste, wallClock } = findings[0].impactEstimate;
+      expect(rawWaste.value).toBeCloseTo(20_000 * (1 - 4 / 12), 6);
+      expect(wallClock.high).toBeCloseTo(20_000 * (1 - 4 / 12), 6);
+      expect(60_000 - wallClock.high).toBeCloseTo(40_000 + 20_000 * 4 / 12, 6);
+    });
+
+    it('is still floored at the stage\'s core work spread over its cores', () => {
+      // 4 x 59.97 s of task time over 8 cores cannot finish in under 29.985 s, split or not.
+      const findings = lowPar();
+      estimate(findings, lowParStage(59_970), 8);
+      expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(60_000 - 4 * 59_970 / 8, 6);
+    });
+
+    it('stays capped by the stage window', () => {
+      // A 1.5 s window cannot give back more than the window minus the longest task the split leaves.
+      const stages = new Map([[0, {
+        id: 0, submittedAt: 0, completedAt: 1_500, parentIds: [], taskCount: 4, shuffleReadBytes: 1.5 * GiB,
+        taskDurationMax: 1_490, executorRunTime: 4 * 1_490,
+      }]]);
+      const findings = lowPar();
+      estimate(findings, stages, 8);
+      const { wallClock, rawWaste } = findings[0].impactEstimate;
+      expect(wallClock.high).toBeLessThanOrEqual(rawWaste.value);
+      expect(wallClock.high).toBeLessThanOrEqual(1_500 - 1_490 * 4 / 12);
+    });
+  });
+
   it('tinyTask: excess task count beyond a coalesce-to-1/10th target, at the assumed overhead when unmeasured', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], taskCount: 1000 }]]);
     const findings = [{ type: 'tinyTask', stageId: 0, impactBand: 'info' }];
@@ -724,10 +780,10 @@ describe('estimateImpact: cost-only group A', () => {
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 
-  it('memoryUtilization idleCores: resourceOnly, idle rate * allocated memory * executors * duration, in MB-seconds', () => {
+  it('memoryUtilization idleCores: resourceOnly, idle rate * allocated memory-seconds, in MB-seconds', () => {
     const findings = [{
       type: 'memoryUtilization', variant: 'idleCores', metric: 'idleCoreRate', value: 75, impactBand: 'warning',
-      idleRateFraction: 0.75, allocatedMB: 4096, peakExecutors: 4, appDurationMs: 600_000,
+      idleRateFraction: 0.75, allocatedMBSeconds: 9_830_400,
     }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
@@ -736,10 +792,10 @@ describe('estimateImpact: cost-only group A', () => {
     });
   });
 
-  it('memoryUtilization idleCores: informational when the sizing inputs are missing', () => {
+  it('memoryUtilization idleCores: informational when the allocated memory-time is missing', () => {
     const findings = [{
       type: 'memoryUtilization', variant: 'idleCores', metric: 'idleCoreRate', value: 75, impactBand: 'warning',
-      idleRateFraction: 0.75, allocatedMB: null, peakExecutors: 4, appDurationMs: 600_000,
+      idleRateFraction: 0.75, allocatedMBSeconds: null,
     }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
@@ -779,16 +835,17 @@ describe('estimateImpact: cost-only group A', () => {
   it('utilization: resourceOnly, idle core-hours from the real utilizationFraction, no assumed constant', () => {
     const findings = [{
       type: 'utilization', utilizationFraction: 0.4, impactBand: 'warning',
-      appDurationMs: 3_600_000, totalCores: 10,
+      appDurationMs: 3_600_000, totalCores: 10, allocatedCoreMs: 10 * 3_600_000,
     }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
       rawWaste: { value: 6, unit: 'coreHours', idle: true },
+      idleCoreTimeMs: { low: 6 * 3_600_000, high: 6 * 3_600_000 },
     });
   });
 
-  it('utilization: missing appDurationMs/totalCores falls back to informational', () => {
+  it('utilization: a missing allocatedCoreMs falls back to informational', () => {
     const findings = [{ type: 'utilization', utilizationFraction: 0.4, impactBand: 'warning' }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'measured' });

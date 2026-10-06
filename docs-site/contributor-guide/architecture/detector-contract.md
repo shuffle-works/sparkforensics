@@ -11,6 +11,11 @@ finding's `impactBand` and recommendation copy are set inside `detect()`, and so
 properties that copy names (`increaseConf`, `decreaseConf` and `setConf` in
 `packages/core/src/remediation.ts`). A detector adds an entry only for a property its
 recommendation already names, and leaves `suggested` null unless it computes the value itself.
+Entries apply together unless the recommendation words them as alternatives ("either ... or"):
+`idleCapacityFix` in `detectors.ts` gives an idle-capacity finding with dynamic allocation off the
+alternatives `set spark.dynamicAllocation.enabled` and `decrease spark.executor.instances`, and with
+it on `decrease spark.dynamicAllocation.maxExecutors` plus `decrease
+spark.dynamicAllocation.minExecutors` when the logged floor is above 0.
 `Remediation` is a union: `codeFix(hint)` builds the `{kind: 'code', hint}` entry for a fix no
 property makes, which the skew family emits when its origin is `other` or skew-join handling is
 already on. Code that reads `key` checks `kind` first.
@@ -168,8 +173,11 @@ Two shared helpers back multiple detectors and reports. `packages/core/src/plan-
 traversal used by `detectors.ts`, `plan-summary.ts`,
 `plan-duration-attribution.ts`, `plan-dot.ts` and `plan-graph-model.ts`. `packages/core/src/core-count.ts` holds the shared core-count logic. Its
 `computePeakConcurrentCores`/`computePeakConcurrentExecutorCount` sweeps back `detectors.ts`'s
-`utilization` and `memoryUtilization` entries, `efficiency-model.ts` and `wasted-core-hours.ts`,
-so the Scorecard's Unused core time and the verdict's idle figure share one capacity.
+`efficiency-model.ts`'s zero-skew floor and the cluster size the `utilization` finding reports. The
+idle capacity the `utilization` and `memoryUtilization` entries, `efficiency-model.ts` and
+`wasted-core-hours.ts` measure against is the allocation (`allocatedCoreMs()` in `allocation.ts`,
+cores × time each executor was alive), so the Scorecard's Unused core time and the verdict's idle
+figure share one capacity that never exceeds what the run held.
 `computeTotalCores(app, executorsAdded)`, used only by `scaling-sim.ts`, sums every
 `ExecutorAdded` event with no regard for overlap, so under executor churn (spot preemption,
 `dynamicAllocation` replacement) it double-counts a churned executor's capacity against its

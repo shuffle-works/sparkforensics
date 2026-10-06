@@ -101,7 +101,7 @@ and is never name-identical to a raw export.
 
 A finding row carries `impactEstimate` when the finding has one, with the full contract
 documented in [Impact estimation](../impact-estimation.md#occupancy-weighted-attribution)
-(basis, wallClock, estimateMethod, rawWaste, coreTimeMs). It appears after the pinned core
+(basis, wallClock, estimateMethod, rawWaste, coreTimeMs, and on `utilization` idleCoreTimeMs). It appears after the pinned core
 columns (`id`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`, `detectorVersion`, plus
 optional but pinned `confidence`, `validationRequired`, `docAnchor`) without displacing any of
 them. The full row shape is `FindingRowColumns` in `evidence-report.ts`, which also carries
@@ -142,7 +142,7 @@ explicit per-type projection. Each type's `<Type>Evidence` interface names its p
 and `EVIDENCE_KEYS` in `evidence-report.ts` lists the same keys, checked both ways at compile
 time, so a field a detector adds only for another core module does not become report contract.
 Rows leave out these fields: `stageShape`'s `totalCores`; `utilization`'s `utilizationFraction`,
-`appDurationMs` and `totalCores`; `memoryUtilization`'s `idleRateFraction`, `allocatedMB`,
+`appDurationMs`, `totalCores` and `allocatedCoreMs`; `memoryUtilization`'s `idleRateFraction`, `allocatedMBSeconds`, `allocatedMB`,
 `peakExecutors`, `appDurationMs` and `allocatedBytes`; `retryWaste`'s `extended` display copy.
 The impact estimator reads them on the finding. `value` is always numeric or `null`: the
 text-valued findings (`stageFailed`'s failure reason, `configAudit`'s current setting,

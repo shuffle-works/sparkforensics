@@ -1,7 +1,7 @@
 # Impact estimation
 
 Every finding covered by this section carries an optional `impactEstimate: {basis,
-wallClock, estimateMethod, rawWaste?, coreTimeMs?}` (`packages/core/src/types.ts`), attached by
+wallClock, estimateMethod, rawWaste?, coreTimeMs?, idleCoreTimeMs?}` (`packages/core/src/types.ts`), attached by
 its `DETECTORS` entry's `estimate()` (`packages/core/src/detectors.ts`), which
 `estimateImpact()` (`packages/core/src/impact-estimator.ts`) runs as a post-pass once detection
 and suppression finish (`packages/core/src/analyzer.ts`). The waste models those methods compose
@@ -51,6 +51,10 @@ only a wall-clock claim gets `null`. A modeled figure, one that rests on an assu
 because it describes the wall-clock figure: gc's is `modeled` while its `jvmGCTime` is read from
 the log. `executorCpuTime` is never read because it leaves out Python worker CPU.
 
+A modeled figure on a serial basis carries no core time either. `partitionSizing`'s
+`lowShuffleParallelism` reports `rawWaste` in `ms`: stage wall-clock that more partitions shorten, not
+task work they remove, so it is ranked on `wallClock`.
+
 Every surface reads `coreTimeMs` and `remediation` from the one `analyze()` result: the dashboard
 stores it, the HTML export ships it in its `catalog`, and the CLI report and MCP tools put it in
 their finding rows through `buildEvidenceReport()`. `surface-parity.test.js` compares the four on the
@@ -61,7 +65,12 @@ no task ran on carries `rawWaste.idle: true`: `utilization` (`coreHours`) and `s
 `lowParallelism` and `taskStageSkew` (`coreMs`). `coreTimeFor()` gives those `null`, and
 `rawWasteMeaning()` in `packages/core/src/impact-format.ts` labels them "of idle core capacity"
 instead of "of core time" on every surface. `memoryUtilization`'s `idleCores` counts `mbSeconds`,
-which has no core time either. A stage's slow tail is also counted once: `skew` and `straggler`
+which has no core time either. `utilization` also reports the idle figure as `idleCoreTimeMs`
+(`{low, high}` core-milliseconds, `low === high`): `allocatedCoreMs - busy core-ms`, which is
+`rawWaste` in core-ms, set by its `estimate()` and never read by `coreTimeFor()`. The capacity is
+`allocatedCoreMs()` in `packages/core/src/allocation.ts`, the figure behind
+`metrics.allocation.coreHours`. `idleCores` is the memory view of the same condition and has none.
+A stage's slow tail is also counted once: `skew` and `straggler`
 both measure the task time removed from it, so on one stage `skew` carries it and `straggler` has
 `null` (`countTailCoreTimeOnce()` in `packages/core/src/impact-estimator.ts`).
 
@@ -95,14 +104,17 @@ that sits above its own unbeatable floor.
 `skew` and `straggler` are the exception (`estimateSingleStage`'s `shortensLongestTask`
 option, passed by `detectors.ts`'s `tailClaimImpact`, which both their `estimate()` and their
 `detect()` runtime-floor gate call on the same tail claim, so firing and display agree; `stageSlowness`'s
-more-partitions estimate passes it too, since splitting partitions splits the longest task). Their claim shortens the
+more-partitions estimate and `partitionSizing`'s `lowShuffleParallelism` pass it too, since splitting partitions
+splits the longest task). Their claim shortens the
 stage's longest task itself, so `taskDurationMax` can't be their floor: clipping against it
 would cap a stage gated by one straggler at `duration(S) − taskDurationMax`, about zero, exactly
 when the fix recovers the most. Their floor is instead the longest task the fix leaves plus
 the core work the fix leaves, `max(taskDurationMax − wasteMs_claimed, longestTaskAfterFixMs,
 (stage.executorRunTime − removed) / totalCores)`, where `removed` (`tailRemovedWorkMs`) is the
 larger of the finding's single-task delta (see below) and `stragglerExcessMs`, and
-`longestTaskAfterFixMs` is the longest task the fix leaves for `skew` and `straggler` (see below). Counting the stragglers' own run time as work
+`longestTaskAfterFixMs` is the longest task the fix leaves for `skew` and `straggler` (see below; for
+`lowShuffleParallelism` it is `taskDurationMax × taskCount / targetTaskCount`, the longest task after an even
+split into the target task count, a modeled figure). Counting the stragglers' own run time as work
 the stage can't shed would floor a stage whose tail is most of its core time near its observed
 duration.
 
@@ -140,8 +152,8 @@ task ran 39 s would have skew claiming 90 s where straggler claims 61 s.
 
 `analyzer.ts` feeds this `totalCores` from `packages/core/src/core-count.ts`'s
 `computePeakConcurrentCores(app, executorsAdded, executorsRemoved)` (the same peak concurrent
-capacity `efficiency-model.ts`, `wasted-core-hours.ts` and the `utilization`/`memoryUtilization`
-detectors use), not `computeTotalCores`, which only `scaling-sim.ts` uses. `computeTotalCores` sums every `ExecutorAdded` event's cores
+cores `efficiency-model.ts`'s floor, `wasted-core-hours.ts` and the `utilization` finding report as
+the cluster size), not `computeTotalCores`, which only `scaling-sim.ts` uses. `computeTotalCores` sums every `ExecutorAdded` event's cores
 regardless of overlap, so under dynamic allocation or executor replacement it can far exceed
 the cores ever actually concurrent, which understates `ceiling(S)` and lets churn inflate a
 finding's claimed wall-clock. `computePeakConcurrentCores` instead sweeps add/remove events by

@@ -62,6 +62,13 @@ and no change to the job.
   or data). A consumer that reads `key` checks `kind` first.
 - `direction` is `"increase"` or `"decrease"` (move the current value that
   way) or `"set"` (take the `suggested` value, for a switch or a class name).
+- Entries apply together unless the `recommendation` words them as
+  alternatives ("either ... or"). An idle-capacity finding (`utilization`,
+  `memoryUtilization` with `variant: "idleCores"`) does this with dynamic
+  allocation off or unset: `set spark.dynamicAllocation.enabled` and `decrease
+  spark.executor.instances` are alternatives, so apply one. With dynamic
+  allocation on, it lowers `spark.dynamicAllocation.maxExecutors`, and also
+  `spark.dynamicAllocation.minExecutors` when the run logs a value above 0.
 - `suggested` is the value the detector computed, or `null` when it computes
   none. Counts are numbers, switches are booleans, sizes carry a Spark unit
   suffix (`"1024m"`).
@@ -99,6 +106,23 @@ task/stage skew rows) has `coreTimeMs: null` and keeps its figure in
 idle core capacity", not "of core time". A stage's slow tail is counted once:
 when `skew` and `straggler` both flag the same stage, `skew` carries the
 removed task time and `straggler` has `null`.
+
+`impactEstimate.idleCoreTimeMs` is the idle capacity as a number a script can
+rank by: the `utilization` finding's allocated core time that ran no task, in
+core-milliseconds, as a `{ "low": ..., "high": ... }` range with `low` equal to
+`high`. It is the run's allocated core-milliseconds (`allocation.coreHours`)
+minus the busy core-milliseconds, never below zero and never above the
+allocation. It is the same quantity as the finding's `rawWaste`, kept apart from
+`coreTimeMs`, which is busy time a fix removes. The field is absent on every
+other finding, and on a `utilization` finding the log gives no executor cores to
+allocate. The `memoryUtilization` finding with `variant: "idleCores"` is the
+memory view of the same condition and carries no `idleCoreTimeMs`.
+
+A finding on a serial basis whose figure is modeled has no core time either.
+`partitionSizing`'s `lowShuffleParallelism` reports `rawWaste` in `ms`: stage
+wall-clock that more partitions shorten, not task work they remove. It has
+`coreTimeMs: null` and is ranked on `wallClock`, which models the stage with its
+longest task split evenly across the partition count the stage needs.
 
 When the effective `spark.sql.shuffle.partitions` (logged, else Spark's 200) is
 already at or above the count a low-parallelism shuffle stage needs, the
@@ -498,11 +522,12 @@ metric equals the matching `metrics` field for the same run, including the
 work of failed and speculative task attempts. Per-stage views in the dashboard
 (the stage table and stage detail) describe the stage's latest attempt and the
 task attempts that won, so a stage's own figures can be smaller than its row in
-`metrics.stages`. The dashboard's Efficiency card reports available capacity
-(peak concurrent cores times run time), which differs from
-`allocation.coreHours` (cores times the hours each executor was alive) under
-dynamic allocation. The utilization finding's `cpuUtilizationPct` is null, as
-`time.executorCpuTimeMs` is, when the log recorded no CPU time.
+`metrics.stages`. The dashboard's Unused core time, the `utilization` finding's percentage and its
+idle figure all measure against available capacity, which is
+`allocation.coreHours` (cores times the hours each executor was alive), so under
+dynamic allocation a run is never idle for cores it did not hold. The
+utilization finding's `cpuUtilizationPct` is a share of that capacity, and is
+null, as `time.executorCpuTimeMs` is, when the log recorded no CPU time.
 
 ## Effective conf
 

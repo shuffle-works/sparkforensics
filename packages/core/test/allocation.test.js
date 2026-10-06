@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeAllocation } from '../src/allocation.ts';
+import { computeAllocation, allocatedCoreMs, allocatedCoreMsWithin } from '../src/allocation.ts';
 import { makeApp } from './fixtures/stage-app-fixtures.js';
 
 const HOUR = 3_600_000;
@@ -102,5 +102,23 @@ describe('computeAllocation executors', () => {
     expect(allocate({ 'spark.dynamicAllocation.enabled': ' FALSE ' }, executors).dynamicAllocation).toBe('off');
     expect(allocate({}, executors).dynamicAllocation).toBeNull();
     expect(allocate(undefined, { added: [], removed: [] }).dynamicAllocation).toBeNull();
+  });
+});
+
+describe('allocatedCoreMsWithin', () => {
+  const added = (executorId, timestamp, totalCores = 2) => ({ kind: 'added', executorId, timestamp, totalCores });
+  const input = (executors) => ({ app: makeApp({ startTime: 0, endTime: 100_000 }), stages: new Map(), executors });
+
+  it('counts each executor only for the time it was alive inside the windows', () => {
+    // e1 alive 0-100 s, e2 joins at 50 s and leaves at 80 s; windows 40-60 s and 70-90 s.
+    const i = input({ added: [added('1', 0), added('2', 50_000)], removed: [{ kind: 'removed', executorId: '2', timestamp: 80_000 }] });
+    // e1: 2 cores x 40 s; e2: 2 cores x (10 s in the first window + 10 s in the second).
+    expect(allocatedCoreMsWithin(i, [[40_000, 60_000], [70_000, 90_000]])).toBe(2 * 40_000 + 2 * 20_000);
+  });
+
+  it('adds up to the allocation over windows that cover the run, and is null when the allocation is', () => {
+    const i = input({ added: [added('1', 0), added('2', 50_000)], removed: [] });
+    expect(allocatedCoreMsWithin(i, [[0, 100_000]])).toBe(allocatedCoreMs(i));
+    expect(allocatedCoreMsWithin(input({ added: [added('1', 0, 0)], removed: [] }), [[0, 100_000]])).toBeNull();
   });
 });
