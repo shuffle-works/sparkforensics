@@ -1387,6 +1387,7 @@ export const DETECTORS = [
       const stage = ctx.stages.get(finding.stageId);
       if (!stage) return null;
       let wasteMs = 0;
+      let longestTaskAfterFixMs = 0;
       if (finding.rule === 'maxPartitionTooBig') {
         wasteMs = ((stage.shuffleReadMax ?? 0) / SHUFFLE_THROUGHPUT_BPS) * 1000;
       } else if (finding.rule === 'shufflePartitionSkew') {
@@ -1402,11 +1403,16 @@ export const DETECTORS = [
           // work, not the scheduling cost of tasks you'd add (adding tasks incurs overhead, recovers
           // nothing). Model the achievable duration at target parallelism by scaling down proportionally.
           wasteMs = stageDurationMs * (1 - taskCount / targetTaskCount);
+          // The fix splits the long tasks, so the longest task is the quantity it shortens: the
+          // occupancy clip must not floor the claim at it (TAIL_CLAIM). An even split leaves the
+          // longest task at taskCount / targetTaskCount of today's: a modeled figure.
+          longestTaskAfterFixMs = (stage.taskDurationMax ?? 0) * taskCount / targetTaskCount;
         }
       } else {
         return null;
       }
-      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: wasteMs, unit: 'ms' });
+      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: wasteMs, unit: 'ms' },
+        finding.rule === 'lowShuffleParallelism' ? { ...TAIL_CLAIM, longestTaskAfterFixMs } : undefined);
     },
   }),
   defineStageDetector({

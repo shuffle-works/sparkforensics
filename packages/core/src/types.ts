@@ -338,8 +338,11 @@ export interface ImpactEstimate {
    * speculative attempts' cross-task executor time, taken as is (low equals high) whether or not
    * the log records executor cores. Null for every finding with only a wall-clock claim, for a
    * modeled figure resting on an assumed constant (coreLocality, autoscalingChurn,
-   * jobFailureRate), and for an idle capacity figure (`rawWaste.idle`). skew and straggler on one stage count its slow tail once:
-   * skew carries it and straggler is null. Never 0 for "unknown". */
+   * jobFailureRate), for an idle capacity figure (`rawWaste.idle`), and for a modeled figure on a
+   * serial basis (partitionSizing's lowShuffleParallelism): it is stage wall-clock that more
+   * partitions shorten, not task work they remove, so consumers rank it on `wallClock`. skew and
+   * straggler on one stage count its slow tail once: skew carries it and straggler is null. Never
+   * 0 for "unknown". */
   coreTimeMs?: { low: number; high: number } | null;
 }
 

@@ -51,6 +51,10 @@ only a wall-clock claim gets `null`. A modeled figure, one that rests on an assu
 because it describes the wall-clock figure: gc's is `modeled` while its `jvmGCTime` is read from
 the log. `executorCpuTime` is never read because it leaves out Python worker CPU.
 
+A modeled figure on a serial basis carries no core time either. `partitionSizing`'s
+`lowShuffleParallelism` reports `rawWaste` in `ms`: stage wall-clock that more partitions shorten, not
+task work they remove, so it is ranked on `wallClock`.
+
 Every surface reads `coreTimeMs` and `remediation` from the one `analyze()` result: the dashboard
 stores it, the HTML export ships it in its `catalog`, and the CLI report and MCP tools put it in
 their finding rows through `buildEvidenceReport()`. `surface-parity.test.js` compares the four on the
@@ -95,14 +99,17 @@ that sits above its own unbeatable floor.
 `skew` and `straggler` are the exception (`estimateSingleStage`'s `shortensLongestTask`
 option, passed by `detectors.ts`'s `tailClaimImpact`, which both their `estimate()` and their
 `detect()` runtime-floor gate call on the same tail claim, so firing and display agree; `stageSlowness`'s
-more-partitions estimate passes it too, since splitting partitions splits the longest task). Their claim shortens the
+more-partitions estimate and `partitionSizing`'s `lowShuffleParallelism` pass it too, since splitting partitions
+splits the longest task). Their claim shortens the
 stage's longest task itself, so `taskDurationMax` can't be their floor: clipping against it
 would cap a stage gated by one straggler at `duration(S) − taskDurationMax`, about zero, exactly
 when the fix recovers the most. Their floor is instead the longest task the fix leaves plus
 the core work the fix leaves, `max(taskDurationMax − wasteMs_claimed, longestTaskAfterFixMs,
 (stage.executorRunTime − removed) / totalCores)`, where `removed` (`tailRemovedWorkMs`) is the
 larger of the finding's single-task delta (see below) and `stragglerExcessMs`, and
-`longestTaskAfterFixMs` is the longest task the fix leaves for `skew` and `straggler` (see below). Counting the stragglers' own run time as work
+`longestTaskAfterFixMs` is the longest task the fix leaves for `skew` and `straggler` (see below; for
+`lowShuffleParallelism` it is `taskDurationMax × taskCount / targetTaskCount`, the longest task after an even
+split into the target task count, a modeled figure). Counting the stragglers' own run time as work
 the stage can't shed would floor a stage whose tail is most of its core time near its observed
 duration.
 

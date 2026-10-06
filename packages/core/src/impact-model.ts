@@ -118,8 +118,8 @@ export function tasksMostlyIdle(stage: Stage, sql: Map<number, SqlExecution> = n
   return cpuMs / runMs < IDLE_CPU_SHARE_MAX;
 }
 
-// skew, straggler and stageSlowness claim time off the stage's longest task itself, so the
-// occupancy clip must not floor them at that same task (see estimateSingleStage).
+// skew, straggler, stageSlowness and lowShuffleParallelism claim time off the stage's longest task
+// itself, so the occupancy clip must not floor them at that same task (see estimateSingleStage).
 export const TAIL_CLAIM: SingleStageEstimateOptions = { shortensLongestTask: true };
 
 // No quantifiable magnitude -> 'informational'; a rawWaste figure with no stage window ->

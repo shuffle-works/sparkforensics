@@ -578,6 +578,55 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
     expect(findings[0].impactEstimate.wallClock.high).toBeGreaterThanOrEqual(0);
   });
 
+  describe('lowShuffleParallelism: the claim shortens the stage\'s longest task', () => {
+    // 4 tasks read 1.5 GiB (target 12 tasks) over a 60 s stage: the serial waste is 40 s.
+    const GiB = 1024 ** 3;
+    function lowParStage(taskDurationMax) {
+      return new Map([[0, {
+        id: 0, submittedAt: 0, completedAt: 60_000, parentIds: [], taskCount: 4, shuffleReadBytes: 1.5 * GiB,
+        taskDurationMax, executorRunTime: 4 * taskDurationMax,
+      }]]);
+    }
+    const lowPar = () => [{ type: 'partitionSizing', rule: 'lowShuffleParallelism', stageId: 0, impactBand: 'warning' }];
+
+    it('keeps the claim when the longest task nearly fills the stage', () => {
+      // Clipped against the longest task itself the room is 30 ms; the fix leaves it at 4/12 of 59.97 s.
+      const findings = lowPar();
+      estimate(findings, lowParStage(59_970), 100);
+      const { rawWaste, wallClock, estimateMethod } = findings[0].impactEstimate;
+      expect(rawWaste.unit).toBe('ms');
+      expect(rawWaste.value).toBeCloseTo(40_000, 6);
+      expect(wallClock.high).toBeCloseTo(40_000, 6);
+      expect(estimateMethod).toBe('modeled');
+    });
+
+    it('gives the same figure however full the stage is', () => {
+      const [full] = estimate(lowPar(), lowParStage(59_970), 100);
+      const [short] = estimate(lowPar(), lowParStage(20_000), 100);
+      expect(full.impactEstimate.wallClock.high).toBeCloseTo(short.impactEstimate.wallClock.high, 6);
+    });
+
+    it('is still floored at the stage\'s core work spread over its cores', () => {
+      // 4 x 59.97 s of task time over 8 cores cannot finish in under 29.985 s, split or not.
+      const findings = lowPar();
+      estimate(findings, lowParStage(59_970), 8);
+      expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(60_000 - 4 * 59_970 / 8, 6);
+    });
+
+    it('stays capped by the stage window', () => {
+      // A 1.5 s window cannot give back more than the window minus the longest task the split leaves.
+      const stages = new Map([[0, {
+        id: 0, submittedAt: 0, completedAt: 1_500, parentIds: [], taskCount: 4, shuffleReadBytes: 1.5 * GiB,
+        taskDurationMax: 1_490, executorRunTime: 4 * 1_490,
+      }]]);
+      const findings = lowPar();
+      estimate(findings, stages, 8);
+      const { wallClock, rawWaste } = findings[0].impactEstimate;
+      expect(wallClock.high).toBeLessThanOrEqual(rawWaste.value);
+      expect(wallClock.high).toBeLessThanOrEqual(1_500 - 1_490 * 4 / 12);
+    });
+  });
+
   it('tinyTask: excess task count beyond a coalesce-to-1/10th target, at the assumed overhead when unmeasured', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], taskCount: 1000 }]]);
     const findings = [{ type: 'tinyTask', stageId: 0, impactBand: 'info' }];
