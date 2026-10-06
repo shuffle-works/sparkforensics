@@ -1268,11 +1268,14 @@
      "band": "warning",
      "confidence": null,
      "value": 87,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 102999.424,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
@@ -1401,11 +1404,14 @@
      "band": "warning",
      "confidence": null,
      "value": 73,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 85585.98399999998,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
@@ -1505,11 +1511,14 @@
      "band": "warning",
      "confidence": null,
      "value": 99,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 33178.816,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
@@ -2968,11 +2977,14 @@
      "band": "warning",
      "confidence": null,
      "value": 100,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 539906.752,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
@@ -3015,11 +3027,14 @@
      "band": "warning",
      "confidence": null,
      "value": 93,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 27214.880000000005,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
@@ -3062,11 +3077,14 @@
      "band": "warning",
      "confidence": null,
      "value": 100,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 1440398.08,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
@@ -3121,11 +3139,14 @@
      "band": "warning",
      "confidence": null,
      "value": 99,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 503333.864,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "utilization||avgUtilization|||||||||||",
@@ -3161,7 +3182,7 @@
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 4823497.246016014,
+      "value": 5509849.216,
       "unit": "mbSeconds"
      }
     },
@@ -3367,11 +3388,14 @@
      "band": "warning",
      "confidence": null,
      "value": 100,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 19910.528000000002,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
@@ -3414,11 +3438,14 @@
      "band": "warning",
      "confidence": null,
      "value": 99,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 45856.096,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
@@ -3478,7 +3505,7 @@
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 10769320.20274125,
+      "value": 7313084.796000001,
       "unit": "mbSeconds"
      }
     },
@@ -3847,11 +3874,14 @@
      "band": "warning",
      "confidence": null,
      "value": 99,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 455847.04,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "skew|0|max/median|||||||||||",
@@ -3912,11 +3942,14 @@
      "band": "warning",
      "confidence": null,
      "value": 99,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 118398.72000000002,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
@@ -4039,11 +4072,14 @@
      "band": "warning",
      "confidence": null,
      "value": 90,
-     "basis": "informational",
+     "basis": "resourceOnly",
      "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 3158.1439999999993,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
