@@ -1,5 +1,24 @@
 # sparkforensics-web
 
+## 0.29.0
+
+### Minor Changes
+
+- df6f96a: The dashboard has a new light and dark palette: a gray canvas with white panels in light, slate instead of near-black in dark, and an indigo accent in place of orange. Status colors now mark analysis status only, and neutral chart series use their own colors. The UI font is now Instrument Sans with JetBrains Mono for numbers and code. Both fonts ship with the app and are embedded in HTML exports, so no page requests a font from a third-party server.
+  
+  The board keeps its layout. The verdict now shows the run's longest stages on a run clock, with the stage to fix first marked by its step code (F1, F2, F3). The same code appears on that finding's row and in the stage table. Tags are small square chips, metric tiles have gauges, and report widgets share one card style. The landing page, the run comparison page and the HTML export use the same look.
+
+### Patch Changes
+
+- 11e116a: `writeTargets` names the table of a Delta `MERGE`, `UPDATE` or `DELETE` when its plans print the same local table as both `file:/path` and `file:///path`. The two spellings are one path, so the write reports `file:///path` instead of a `null` target.
+- b3e3520: The per-finding detection reference files served by the MCP `get_finding_documentation` tool are generated from the user guide at build, test and pack time instead of being committed. Published tarballs contain the same files.
+- 3f1e7bd: Idle-capacity figures and the low-parallelism partition estimate change values, and the report gains one field. The report's schema version is unchanged. Existing numbers move, so a saved baseline, a budget or a ranking built on them needs refreshing.
+  
+  - Idle capacity is measured against the run's allocation, the cores times the time each executor was alive that `metrics.allocation.coreHours` reports, instead of peak concurrent cores times the whole run. The peak basis counts cores a dynamic-allocation or late-joining run never held, so the idle figure could exceed the allocation. The `utilization` percentage and its `cpuUtilizationPct`, the `utilization` finding's idle `rawWaste`, `memoryUtilization`'s `idleCores` rate, the dashboard's Unused core time and the verdict's idle share all use it, and the Scorecard's driver and executor split counts the cores held inside and outside the stages' windows from the same executor alive intervals. Utilization rises on runs whose executors came and went, so such a run can clear the 60% utilization threshold or fall under the 50% idle-cores one, and its `utilization` and `idleCores` findings disappear. Across the corpus logs, 26 of these findings disappear (10 `utilization`, 16 `idleCores`) and every remaining `utilization` idle figure is smaller.
+  - `impactEstimate.idleCoreTimeMs`, a `{ low, high }` range in core-milliseconds with `low` equal to `high`, gives the `utilization` finding's idle capacity as allocated minus busy core time, never below zero and never above the allocation. It is separate from `coreTimeMs`, which stays null for idle findings because it counts busy task time a fix removes. `idleCores` is the memory view of the same condition and carries none, so consumers rank on one idle figure. The `idleCores` memory figure (`mbSeconds`) is the idle rate times the run's allocated memory-seconds, with Spark's default heap and overhead where the memory properties are not logged. The 12 corpus `idleCores` findings that had no figure now report one, and some memory figures are larger.
+  - Idle findings gain remediation. With dynamic allocation off or unset, `set spark.dynamicAllocation.enabled` and `decrease spark.executor.instances` are alternatives, and the recommendation reads "either ... or": apply one. With it on, `decrease spark.dynamicAllocation.maxExecutors`, plus `decrease spark.dynamicAllocation.minExecutors` when the logged floor is above 0, where `remediation` was empty. `remediation` entries apply together unless the recommendation words them as alternatives. The recommendation text names these properties. `spark.dynamicAllocation.executorIdleTimeout` is not suggested, because `autoscalingChurn` recommends raising it.
+  - `partitionSizing`'s `lowShuffleParallelism` wall-clock estimate no longer collapses to near zero on a stage whose few long tasks fill its duration. The fix splits those tasks, so the claim is the longest task's own reduction, `taskDurationMax − taskDurationMax × taskCount / targetTaskCount` (the longest task after an even split), instead of scaling the whole stage duration. It is a modeled figure, and `coreTimeMs` stays null: it is stage wall-clock, ranked on `wallClock`. `shufflePartitionSkew` and `maxPartitionTooBig` are unchanged.
+
 ## 0.28.0
 
 ### Minor Changes

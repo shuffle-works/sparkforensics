@@ -1,5 +1,27 @@
 # sparkforensics-server
 
+## 0.6.0
+
+### Minor Changes
+
+- 3f1e7bd: Idle-capacity figures and the low-parallelism partition estimate change values, and the report gains one field. The report's schema version is unchanged. Existing numbers move, so a saved baseline, a budget or a ranking built on them needs refreshing.
+  
+  - Idle capacity is measured against the run's allocation, the cores times the time each executor was alive that `metrics.allocation.coreHours` reports, instead of peak concurrent cores times the whole run. The peak basis counts cores a dynamic-allocation or late-joining run never held, so the idle figure could exceed the allocation. The `utilization` percentage and its `cpuUtilizationPct`, the `utilization` finding's idle `rawWaste`, `memoryUtilization`'s `idleCores` rate, the dashboard's Unused core time and the verdict's idle share all use it, and the Scorecard's driver and executor split counts the cores held inside and outside the stages' windows from the same executor alive intervals. Utilization rises on runs whose executors came and went, so such a run can clear the 60% utilization threshold or fall under the 50% idle-cores one, and its `utilization` and `idleCores` findings disappear. Across the corpus logs, 26 of these findings disappear (10 `utilization`, 16 `idleCores`) and every remaining `utilization` idle figure is smaller.
+  - `impactEstimate.idleCoreTimeMs`, a `{ low, high }` range in core-milliseconds with `low` equal to `high`, gives the `utilization` finding's idle capacity as allocated minus busy core time, never below zero and never above the allocation. It is separate from `coreTimeMs`, which stays null for idle findings because it counts busy task time a fix removes. `idleCores` is the memory view of the same condition and carries none, so consumers rank on one idle figure. The `idleCores` memory figure (`mbSeconds`) is the idle rate times the run's allocated memory-seconds, with Spark's default heap and overhead where the memory properties are not logged. The 12 corpus `idleCores` findings that had no figure now report one, and some memory figures are larger.
+  - Idle findings gain remediation. With dynamic allocation off or unset, `set spark.dynamicAllocation.enabled` and `decrease spark.executor.instances` are alternatives, and the recommendation reads "either ... or": apply one. With it on, `decrease spark.dynamicAllocation.maxExecutors`, plus `decrease spark.dynamicAllocation.minExecutors` when the logged floor is above 0, where `remediation` was empty. `remediation` entries apply together unless the recommendation words them as alternatives. The recommendation text names these properties. `spark.dynamicAllocation.executorIdleTimeout` is not suggested, because `autoscalingChurn` recommends raising it.
+  - `partitionSizing`'s `lowShuffleParallelism` wall-clock estimate no longer collapses to near zero on a stage whose few long tasks fill its duration. The fix splits those tasks, so the claim is the longest task's own reduction, `taskDurationMax − taskDurationMax × taskCount / targetTaskCount` (the longest task after an even split), instead of scaling the whole stage duration. It is a modeled figure, and `coreTimeMs` stays null: it is stage wall-clock, ranked on `wallClock`. `shufflePartitionSkew` and `maxPartitionTooBig` are unchanged.
+- ccfae9e: Four additive changes to the CLI JSON report and MCP `diagnose_run`. The report's `schemaVersion` is unchanged.
+  
+  - The CLI JSON report carries a `generator` block, `{ name, version, buildId }`, naming the CLI package and the core build that wrote it. MCP `diagnose_run` does not return it, because the MCP server has no real package version to report yet.
+  - `metrics.allocation` adds `dynamicAllocation` (`on` or `off` when the log records `spark.dynamicAllocation.enabled`, else `null`), `executorsPeak`, `executorsMean` (executor seconds over application start to close), `executorCores` (`null` when unknown or mixed) and `executorSeconds`. The executor figures are `null` when the log has no executor events. The `coldStart` and `autoscalingChurn` evidence is unchanged.
+  - `writeTargets.writes[]` adds `mergeRows`, `{ inserted, updated, deleted, copied }`, read from a `MergeIntoCommand` node's SQL metrics. `outputRows` is unchanged. It is `null` for other commands and for `DeltaMerge` rows, the API merges that run no command node, so those still report no row counts.
+  - The `Remediation` union is widened. Besides `{ kind: 'conf', key, direction, suggested }`, an entry can be `{ kind: 'code', hint }`: a fix no Spark property makes. Skew, straggler and partition-skew findings carry one when `evidence.origin` is `other` or AQE skew-join handling is already on, where `remediation` was empty. A consumer that reads `key` on every entry must check `kind` first.
+
+### Patch Changes
+
+- 11e116a: `writeTargets` names the table of a Delta `MERGE`, `UPDATE` or `DELETE` when its plans print the same local table as both `file:/path` and `file:///path`. The two spellings are one path, so the write reports `file:///path` instead of a `null` target.
+- b3e3520: The per-finding detection reference files served by the MCP `get_finding_documentation` tool are generated from the user guide at build, test and pack time instead of being committed. Published tarballs contain the same files.
+
 ## 0.5.2
 
 ### Patch Changes
