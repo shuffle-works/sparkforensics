@@ -100,17 +100,11 @@ function loggedDynamicAllocation(app: AllocationInput['app']): 'on' | 'off' | nu
  * Null, never 0, for a figure whose inputs the log lacks. */
 export function computeAllocation(input: AllocationInput): Allocation {
   const dynamicAllocation = loggedDynamicAllocation(input.app);
-  const added = input.executors.added;
-  if (added.length === 0) {
+  const alive = aliveIntervals(input);
+  if (alive.length === 0) {
     return { coreHours: null, memoryGbHours: null, dynamicAllocation, executorsPeak: null, executorsMean: null, executorCores: null, executorSeconds: null };
   }
-  const removedAt = new Map<string, number[]>();
-  for (const e of input.executors.removed) {
-    const times = removedAt.get(e.executorId);
-    if (times) times.push(e.timestamp); else removedAt.set(e.executorId, [e.timestamp]);
-  }
   const closeAt = input.app?.endTime ?? lastObservedTimestamp(input);
-  const configuredCores = Number.parseInt(input.app?.config?.['spark.executor.cores'] ?? '', 10);
   const memoryMiB = executorMemoryMiB(input.app);
 
   let coreMs = 0;
@@ -118,32 +112,61 @@ export function computeAllocation(input: AllocationInput): Allocation {
   let aliveMsTotal = 0;
   let coresKnown = true;
   const coreCounts = new Set<number>();
-  const unique: AddedExecutor[] = [];
-  const firstRemovals: Array<{ executorId: string; timestamp: number }> = [];
-  const seen = new Set<string>();
-  for (const e of added) {
-    if (seen.has(e.executorId)) continue; // a replayed ExecutorAdded is the same executor
-    seen.add(e.executorId);
-    unique.push(e);
-    const removal = (removedAt.get(e.executorId) ?? []).filter((t) => t >= e.timestamp).sort((a, b) => a - b)[0];
-    if (removal != null) firstRemovals.push({ executorId: e.executorId, timestamp: removal });
-    const aliveMs = Math.max(0, (removal ?? closeAt ?? e.timestamp) - e.timestamp);
-    const cores = e.totalCores != null && e.totalCores > 0 ? e.totalCores : Number.isFinite(configuredCores) ? configuredCores : null;
+  for (const { start, end, cores } of alive) {
+    const aliveMs = end - start;
     aliveMsTotal += aliveMs;
     if (cores == null) coresKnown = false; else { coreMs += cores * aliveMs; coreCounts.add(cores); }
     memoryMiBMs += (memoryMiB ?? 0) * aliveMs;
   }
   const startTime = input.app?.startTime;
   const windowMs = closeAt != null && startTime != null ? closeAt - startTime : 0;
+  const firstRemovals = alive.flatMap((a) => (a.removedAt == null ? [] : [{ executorId: a.executorId, timestamp: a.removedAt }]));
   return {
     coreHours: coresKnown ? coreMs / MS_PER_HOUR : null,
     memoryGbHours: memoryMiB != null ? memoryMiBMs / MIB_PER_GIB / MS_PER_HOUR : null,
     dynamicAllocation,
-    executorsPeak: computePeakConcurrentExecutorCount(unique, firstRemovals),
+    executorsPeak: computePeakConcurrentExecutorCount(alive.map((a) => ({ executorId: a.executorId, timestamp: a.start })), firstRemovals),
     executorsMean: windowMs > 0 ? aliveMsTotal / windowMs : null,
     executorCores: coresKnown && coreCounts.size === 1 ? [...coreCounts][0] : null,
     executorSeconds: aliveMsTotal / MS_PER_SECOND,
   };
+}
+
+interface AliveInterval {
+  executorId: string;
+  start: number;
+  end: number;
+  removedAt: number | null;
+  /** Null when neither the event nor spark.executor.cores gives the executor's cores. */
+  cores: number | null;
+}
+
+// Each executor's alive interval: from its ExecutorAdded timestamp to its first later
+// ExecutorRemoved timestamp, else the application end, else the last timestamp the log records.
+// The one definition computeAllocation and allocatedCoreMsWithin share.
+function aliveIntervals(input: AllocationInput): AliveInterval[] {
+  const removedAt = new Map<string, number[]>();
+  for (const e of input.executors.removed) {
+    const times = removedAt.get(e.executorId);
+    if (times) times.push(e.timestamp); else removedAt.set(e.executorId, [e.timestamp]);
+  }
+  const closeAt = input.app?.endTime ?? lastObservedTimestamp(input);
+  const configuredCores = Number.parseInt(input.app?.config?.['spark.executor.cores'] ?? '', 10);
+  const out: AliveInterval[] = [];
+  const seen = new Set<string>();
+  for (const e of input.executors.added) {
+    if (seen.has(e.executorId)) continue; // a replayed ExecutorAdded is the same executor
+    seen.add(e.executorId);
+    const removal = (removedAt.get(e.executorId) ?? []).filter((t) => t >= e.timestamp).sort((a, b) => a - b)[0] ?? null;
+    out.push({
+      executorId: e.executorId,
+      start: e.timestamp,
+      end: Math.max(e.timestamp, removal ?? closeAt ?? e.timestamp),
+      removedAt: removal,
+      cores: e.totalCores != null && e.totalCores > 0 ? e.totalCores : Number.isFinite(configuredCores) ? configuredCores : null,
+    });
+  }
+  return out;
 }
 
 /** Allocated core-milliseconds: the figure behind `coreHours`, the capacity idle-core figures are
@@ -151,4 +174,18 @@ export function computeAllocation(input: AllocationInput): Allocation {
 export function allocatedCoreMs(input: AllocationInput): number | null {
   const { coreHours } = computeAllocation(input);
   return coreHours != null && coreHours > 0 ? coreHours * MS_PER_HOUR : null;
+}
+
+/** The part of the allocated core-milliseconds held inside `windows` (disjoint, sorted
+ * intervals, such as the union of the stages' windows), counted from the same alive intervals as
+ * `allocatedCoreMs`. Null when `allocatedCoreMs` is. */
+export function allocatedCoreMsWithin(input: AllocationInput, windows: Array<[number, number]>): number | null {
+  if (allocatedCoreMs(input) == null) return null;
+  let coreMs = 0;
+  for (const { start, end, cores } of aliveIntervals(input)) {
+    for (const [from, to] of windows) {
+      coreMs += (cores ?? 0) * Math.max(0, Math.min(end, to) - Math.max(start, from));
+    }
+  }
+  return coreMs;
 }
