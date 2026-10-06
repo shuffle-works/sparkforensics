@@ -771,15 +771,20 @@ function dynamicAllocationFix(app: DetectorApp, recommend: string, alreadyOn: st
 }
 
 // Idle capacity is cured by a smaller cluster, which the run's dynamic allocation decides how to
-// size: with it on, the cap on how many executors it scales to; with it off or unset, the fixed
-// count (and switching it on, which dynamicAllocationFix already names). Not executorIdleTimeout:
+// size. With it on: the cap on how many executors it scales to, and the floor it holds when that
+// is logged above 0 (both lowered together). With it off or unset: the alternatives of a fixed
+// executor count or switching it on, which dynamicAllocationFix already names, so the
+// recommendation reads "either ... or" and a consumer applies one entry. Not executorIdleTimeout:
 // autoscalingChurn recommends raising it, so lowering it here would contradict that finding.
-function idleCapacityFix(app: DetectorApp, recommend: string, alreadyOn: string): { text: string; remediation: Remediation[] } {
-  const fix = dynamicAllocationFix(app, recommend, alreadyOn);
+function idleCapacityFix(app: DetectorApp, recommend: string, alreadyOnLead: string): { text: string; remediation: Remediation[] } {
+  const fix = dynamicAllocationFix(app, recommend, alreadyOnLead);
   // dynamicAllocationFix's remediation is empty exactly when dynamic allocation is already on.
-  return fix.remediation.length === 0
-    ? { ...fix, remediation: [decreaseConf('spark.dynamicAllocation.maxExecutors')] }
-    : { ...fix, remediation: [...fix.remediation, decreaseConf('spark.executor.instances')] };
+  if (fix.remediation.length > 0) return { ...fix, remediation: [...fix.remediation, decreaseConf('spark.executor.instances')] };
+  const holdsFloor = Number.parseInt(app.config?.['spark.dynamicAllocation.minExecutors'] ?? '', 10) > 0;
+  return holdsFloor
+    ? { text: `${alreadyOnLead} by lowering spark.dynamicAllocation.maxExecutors and spark.dynamicAllocation.minExecutors`,
+        remediation: [decreaseConf('spark.dynamicAllocation.maxExecutors'), decreaseConf('spark.dynamicAllocation.minExecutors')] }
+    : { text: `${alreadyOnLead} by lowering spark.dynamicAllocation.maxExecutors`, remediation: [decreaseConf('spark.dynamicAllocation.maxExecutors')] };
 }
 
 // The run's effective spark.sql.shuffle.partitions (logged, else Spark's 200) as a count, or null
@@ -2059,8 +2064,8 @@ export const DETECTORS = [
       const cpuUtilizationPct = cpuMs == null ? null : Math.round((cpuMs / capacityCoreMs) * 100);
 
       const value = Math.round(utilization * 100);
-      const fix = idleCapacityFix(app, 'consider reducing cluster size (spark.executor.instances) or enabling dynamic allocation',
-        'dynamic allocation is already on, so consider reducing cluster size by lowering spark.dynamicAllocation.maxExecutors');
+      const fix = idleCapacityFix(app, 'consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation',
+        'dynamic allocation is already on, so consider reducing cluster size');
       return {
         type: 'utilization', stageId: null, impactBand: 'info',
         metric: 'avgUtilization', value,
@@ -2122,8 +2127,8 @@ export const DETECTORS = [
         if (idleRate > thresholds.idleCoreWarn) {
           const value = Math.round(idleRate * 100);
           const { memoryGbHours } = computeAllocation(allocationInput);
-          const fix = idleCapacityFix(app, 'reduce cluster size (spark.executor.instances) or enable dynamic allocation',
-            'dynamic allocation is already on, so reduce cluster size by lowering spark.dynamicAllocation.maxExecutors');
+          const fix = idleCapacityFix(app, 'either reduce cluster size (spark.executor.instances) or enable dynamic allocation',
+            'dynamic allocation is already on, so reduce cluster size');
           out.push({
             type: 'memoryUtilization', variant: 'idleCores', stageId: null,
             impactBand: 'warning', metric: 'idleCoreRate', value,

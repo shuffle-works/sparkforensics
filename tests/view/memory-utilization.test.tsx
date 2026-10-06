@@ -66,7 +66,7 @@ test('renders the WidgetCard heading, MEM badge, and every affected variant (not
 
   // The card states each variant's fix once, above the rows, without
   // expanding anything and without switching density.
-  expect(screen.getByText('Reduce cluster size (spark.executor.instances) or enable dynamic allocation.')).toBeInTheDocument();
+  expect(screen.getByText('Either reduce cluster size (spark.executor.instances) or enable dynamic allocation.')).toBeInTheDocument();
   expect(screen.getByText('Memory may be too small: raise spark.executor.memory to avoid OOM/spill.')).toBeInTheDocument();
   expect(screen.getByText('Memory may be over-provisioned: consider reducing spark.executor.memory for cost savings.')).toBeInTheDocument();
   expect(screen.getByText('Review spark.executor.memory and executor count.')).toBeInTheDocument();
@@ -198,7 +198,7 @@ test('a memoryUtilization row has no per-row toggle; the card fix is always visi
       recommendation: 'Over half of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
     },
   ];
-  const advice = 'Reduce cluster size (spark.executor.instances) or enable dynamic allocation.';
+  const advice = 'Either reduce cluster size (spark.executor.instances) or enable dynamic allocation.';
 
   const { unmount } = render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
   // Basic tier: the detail line (idle-core rate) and the card's fix are both

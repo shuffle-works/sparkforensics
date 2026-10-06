@@ -246,6 +246,40 @@ describe('structured remediation', () => {
       }
     });
 
+    it('also lowers the executor floor when the logged minExecutors holds one', () => {
+      const lowerMin = { kind: 'conf', key: 'spark.dynamicAllocation.minExecutors', direction: 'decrease', suggested: null };
+      const on = (min) => makeApp({ config: { 'spark.dynamicAllocation.enabled': 'true', ...(min == null ? {} : { 'spark.dynamicAllocation.minExecutors': min }) } });
+      for (const f of [utilization(on('4')), idleCores(on('4'))]) {
+        expect(f.remediation, f.type).toEqual([lowerMax, lowerMin]);
+        expect(f.recommendation, f.type).toMatch(/lowering spark\.dynamicAllocation\.maxExecutors and spark\.dynamicAllocation\.minExecutors/);
+      }
+      // A floor of 0 or an unlogged one has nothing to lower.
+      for (const min of ['0', null]) {
+        for (const f of [utilization(on(min)), idleCores(on(min))]) {
+          expect(f.remediation, `${f.type} ${min}`).toEqual([lowerMax]);
+          expect(f.recommendation, f.type).not.toMatch(/minExecutors/);
+        }
+      }
+      // With dynamic allocation off the floor does not apply.
+      const off = makeApp({ config: { 'spark.dynamicAllocation.enabled': 'false', 'spark.dynamicAllocation.minExecutors': '4' } });
+      expect(key(utilization(off)).join()).not.toContain('minExecutors');
+      expect(coreFindingGenericRecommendation(utilization(on('4'))))
+        .toBe('Dynamic allocation is already on, so consider reducing cluster size by lowering spark.dynamicAllocation.maxExecutors and spark.dynamicAllocation.minExecutors.');
+      expect(coreFindingGenericRecommendation(idleCores(on('4'))))
+        .toBe('Dynamic allocation is already on, so reduce cluster size by lowering spark.dynamicAllocation.maxExecutors and spark.dynamicAllocation.minExecutors.');
+    });
+
+    it('words the entries as alternatives when dynamic allocation is off, so one is applied', () => {
+      for (const app of [makeApp(), makeApp({ config: { 'spark.dynamicAllocation.enabled': 'false' } })]) {
+        expect(utilization(app).recommendation).toMatch(/consider either reducing cluster size \(spark\.executor\.instances\) or enabling dynamic allocation/);
+        expect(idleCores(app).recommendation).toMatch(/either reduce cluster size \(spark\.executor\.instances\) or enable dynamic allocation/);
+        expect(coreFindingGenericRecommendation(utilization(app)))
+          .toBe('Consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation.');
+        expect(coreFindingGenericRecommendation(idleCores(app)))
+          .toBe('Either reduce cluster size (spark.executor.instances) or enable dynamic allocation.');
+      }
+    });
+
     it('never suggests lowering the idle timeout, which autoscalingChurn raises', () => {
       for (const app of [makeApp(), makeApp({ config: { 'spark.dynamicAllocation.enabled': 'true' } })]) {
         for (const f of [utilization(app), idleCores(app)]) {

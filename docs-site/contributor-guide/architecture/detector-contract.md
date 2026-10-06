@@ -11,6 +11,11 @@ finding's `impactBand` and recommendation copy are set inside `detect()`, and so
 properties that copy names (`increaseConf`, `decreaseConf` and `setConf` in
 `packages/core/src/remediation.ts`). A detector adds an entry only for a property its
 recommendation already names, and leaves `suggested` null unless it computes the value itself.
+Entries apply together unless the recommendation words them as alternatives ("either ... or"):
+`idleCapacityFix` in `detectors.ts` gives an idle-capacity finding with dynamic allocation off the
+alternatives `set spark.dynamicAllocation.enabled` and `decrease spark.executor.instances`, and with
+it on `decrease spark.dynamicAllocation.maxExecutors` plus `decrease
+spark.dynamicAllocation.minExecutors` when the logged floor is above 0.
 `Remediation` is a union: `codeFix(hint)` builds the `{kind: 'code', hint}` entry for a fix no
 property makes, which the skew family emits when its origin is `other` or skew-join handling is
 already on. Code that reads `key` checks `kind` first.

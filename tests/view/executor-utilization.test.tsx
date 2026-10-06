@@ -27,7 +27,7 @@ test("the card's fix is visible unconditionally, with no per-row toggle", () => 
     testFinding({ type: 'utilization', stageId: null, impactBand: 'info', metric: 'avgUtilization', value: 42, recommendation: 'Average executor utilization < 60%: consider reducing cluster size or enabling dynamic allocation.', utilizationFraction: 0.42, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 42 }),
   ];
   render(<ExecutorUtilization catalog={catalog} defaultCollapsed={false} />);
-  expect(screen.getByText('Consider reducing cluster size (spark.executor.instances) or enabling dynamic allocation.')).toBeInTheDocument();
+  expect(screen.getByText('Consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation.')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /recommendation for executor utilization/i })).not.toBeInTheDocument();
 });
 

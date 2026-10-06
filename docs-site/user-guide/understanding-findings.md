@@ -156,9 +156,10 @@ is `off`) no executor-count property applies and `remediation` is empty.
 
 Allocated executors sit idle for a large share of the application run: under
 60% of the core time the run allocated (cores times the time each executor was
-alive) ran a task. Consider a smaller cluster: lower `spark.executor.instances`
-(and enable dynamic allocation), or, with dynamic allocation on, lower
-`spark.dynamicAllocation.maxExecutors`.
+alive) ran a task. Consider a smaller cluster. With dynamic allocation off,
+either lower `spark.executor.instances` or enable dynamic allocation; the two are
+alternatives. With it on, lower `spark.dynamicAllocation.maxExecutors`, and
+`spark.dynamicAllocation.minExecutors` too when the run sets it above 0.
 
 ### `MEM`: Memory utilization {#mem}
 

@@ -38,6 +38,13 @@ function switchAlreadyOn(finding: { remediation?: Remediation[] }, key: string):
   return finding.remediation != null && !finding.remediation.some((r) => r.kind === 'conf' && r.key === key);
 }
 
+// The properties an idle-capacity finding lowers once dynamic allocation is on, worded as its row
+// does: the executor cap, and the floor when the row's remediation lowers it too.
+function idleCapacityLowering(f: { remediation?: Remediation[] }): string {
+  const lowersFloor = f.remediation?.some((r) => r.kind === 'conf' && r.key === 'spark.dynamicAllocation.minExecutors');
+  return ` by lowering spark.dynamicAllocation.maxExecutors${lowersFloor ? ' and spark.dynamicAllocation.minExecutors' : ''}`;
+}
+
 const SKEW_JOIN_KEY = 'spark.sql.adaptive.skewJoin.enabled';
 const SKEW_JOIN_ALREADY_ON = 'AQE skew-join handling is already on, so salt the key or repartition on a better key.';
 const SKEW_JOIN_AQE_OFF = 'AQE is off, so enable it (spark.sql.adaptive.enabled) for skew-join handling to apply; otherwise salt the key or repartition on a better key.';
@@ -280,8 +287,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     genericRecommendation(f) {
       switch (f.variant) {
         case 'idleCores': return switchAlreadyOn(f, DYNAMIC_ALLOCATION_KEY)
-          ? 'Dynamic allocation is already on, so reduce cluster size by lowering spark.dynamicAllocation.maxExecutors.'
-          : 'Reduce cluster size (spark.executor.instances) or enable dynamic allocation.';
+          ? `Dynamic allocation is already on, so reduce cluster size${idleCapacityLowering(f)}.`
+          : 'Either reduce cluster size (spark.executor.instances) or enable dynamic allocation.';
         case 'wasteModel': return 'Review spark.executor.memory and executor count.';
         case 'memoryBand':
           if (f.dataUnavailable) return undefined;
@@ -298,8 +305,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     thresholdSummary: (t) => `average executor utilization below ${shareLabel(t.minUtil)}`,
     actionLabel: () => 'Reduce cluster size',
     genericRecommendation: (f) => (switchAlreadyOn(f, DYNAMIC_ALLOCATION_KEY)
-      ? 'Dynamic allocation is already on, so consider reducing cluster size by lowering spark.dynamicAllocation.maxExecutors.'
-      : 'Consider reducing cluster size (spark.executor.instances) or enabling dynamic allocation.'),
+      ? `Dynamic allocation is already on, so consider reducing cluster size${idleCapacityLowering(f)}.`
+      : 'Consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation.'),
   },
   coreLocality: {
     name: 'core locality',

@@ -10,7 +10,9 @@
 import type { ImpactBand, ImpactEstimate, StageId } from './types.ts';
 import type { TaskFailureGroup } from './task-failure.ts';
 
-/** One concrete change a finding's fix makes, alongside its prose `recommendation`. */
+/** One concrete change a finding's fix makes, alongside its prose `recommendation`. Entries are
+ * applied together unless the recommendation words them as alternatives ("either ... or"), as an
+ * idle-capacity finding does with dynamic allocation off: then a consumer applies one. */
 export type Remediation = ConfRemediation | CodeRemediation;
 
 /** A Spark property the detector already names; `suggested` is null when it computes no value.
