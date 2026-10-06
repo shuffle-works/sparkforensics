@@ -773,10 +773,10 @@ describe('estimateImpact: cost-only group A', () => {
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 
-  it('memoryUtilization idleCores: resourceOnly, idle rate * allocated memory * executors * duration, in MB-seconds', () => {
+  it('memoryUtilization idleCores: resourceOnly, idle rate * allocated memory-seconds, in MB-seconds', () => {
     const findings = [{
       type: 'memoryUtilization', variant: 'idleCores', metric: 'idleCoreRate', value: 75, impactBand: 'warning',
-      idleRateFraction: 0.75, allocatedMB: 4096, peakExecutors: 4, appDurationMs: 600_000,
+      idleRateFraction: 0.75, allocatedMBSeconds: 9_830_400,
     }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
@@ -785,10 +785,10 @@ describe('estimateImpact: cost-only group A', () => {
     });
   });
 
-  it('memoryUtilization idleCores: informational when the sizing inputs are missing', () => {
+  it('memoryUtilization idleCores: informational when the allocated memory-time is missing', () => {
     const findings = [{
       type: 'memoryUtilization', variant: 'idleCores', metric: 'idleCoreRate', value: 75, impactBand: 'warning',
-      idleRateFraction: 0.75, allocatedMB: null, peakExecutors: 4, appDurationMs: 600_000,
+      idleRateFraction: 0.75, allocatedMBSeconds: null,
     }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });

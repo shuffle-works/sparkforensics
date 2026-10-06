@@ -99,7 +99,7 @@ describe('impact estimate coreTimeMs', () => {
     const stages = new Map([[0, makeStage({ id: 0, taskCount: 2, submittedAt: 0, completedAt: 10_000, taskDurationP50: 1000, taskDurationMax: 9000 })]]);
     const lowPar = { type: 'stageShape', rule: 'lowParallelism', stageId: 0, totalCores: 10, impactBand: 'info' };
     const tailShape = { type: 'stageShape', rule: 'taskStageSkew', stageId: 0, totalCores: 10, impactBand: 'info' };
-    const idleCores = { type: 'memoryUtilization', variant: 'idleCores', stageId: null, idleRateFraction: 0.5, allocatedMB: 1024, peakExecutors: 2, appDurationMs: 10_000, impactBand: 'warning' };
+    const idleCores = { type: 'memoryUtilization', variant: 'idleCores', stageId: null, idleRateFraction: 0.5, allocatedMBSeconds: 10_240, impactBand: 'warning' };
     const [l, t, i] = estimate([lowPar, tailShape, idleCores], stages, 10);
     expect(l.rawWaste).toEqual({ value: 80_000, unit: 'coreMs', idle: true });
     expect(t.rawWaste).toMatchObject({ unit: 'coreMs', idle: true });

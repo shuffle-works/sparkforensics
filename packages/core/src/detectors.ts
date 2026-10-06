@@ -2,7 +2,7 @@ import { pathBasename, formatBytes, IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from '
 import { medianOfSorted } from './median.ts';
 import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId } from './plan-summary.ts';
-import { allocatedCoreMs } from './allocation.ts';
+import { allocatedCoreMs, computeAllocation } from './allocation.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
@@ -2105,25 +2105,26 @@ export const DETECTORS = [
       // cumulative sum or count double-counts a churned-through executor against its replacement's
       // (spot preemption, dynamicAllocation replacement), inflating idle-rate and waste-model figures.
       const peakExecutors = computePeakConcurrentExecutorCount(executorsAdded, executorsRemoved);
-      // Hoisted above 1a (also 1b/1c's input) so the idle-cores finding carries the allocated
-      // memory its MB-seconds estimate needs.
       const allocatedMB = app.resources?.executor?.memoryMB ?? null;
 
       // ── 1a idle-cores rate ────────────────────────────────────────────────
       const busyCoreMs = runAggregates?.busyCoreMs;
       // Allocated core-time, as for `utilization`, so the two findings of one idle condition agree.
-      const capacityCoreMs = allocatedCoreMs({ app, stages, executors: { added: executorsAdded, removed: executorsRemoved } });
+      const allocationInput = { app, stages, executors: { added: executorsAdded, removed: executorsRemoved } };
+      const capacityCoreMs = allocatedCoreMs(allocationInput);
       if (busyCoreMs != null && capacityCoreMs != null) {
         const idleRate = 1 - (busyCoreMs / capacityCoreMs);
         if (idleRate > thresholds.idleCoreWarn) {
           const value = Math.round(idleRate * 100);
+          const { memoryGbHours } = computeAllocation(allocationInput);
           const fix = idleCapacityFix(app, 'reduce cluster size (spark.executor.instances) or enable dynamic allocation',
             'dynamic allocation is already on, so reduce cluster size by lowering spark.dynamicAllocation.maxExecutors');
           out.push({
             type: 'memoryUtilization', variant: 'idleCores', stageId: null,
             impactBand: 'warning', metric: 'idleCoreRate', value,
-            // Raw (unrounded) rate plus sizing inputs for the impact estimator: `value` is rounded pct.
-            idleRateFraction: idleRate, allocatedMB, peakExecutors, appDurationMs,
+            // Raw (unrounded) rate plus the allocated memory-time for the impact estimator: `value` is rounded pct.
+            idleRateFraction: idleRate,
+            allocatedMBSeconds: memoryGbHours != null ? memoryGbHours * 1024 * 3600 : null,
             recommendation: `${value}% of available core-time ran no task: ${fix.text}.`,
             remediation: fix.remediation,
           });
@@ -2211,11 +2212,9 @@ export const DETECTORS = [
       if (finding.variant === 'idleCores') {
         // Idle core-time priced as memory held but unused: the same MB-seconds unit as wasteModel, so comparable.
         const idleRateFraction = finding.idleRateFraction as number | undefined;
-        const allocatedMB = finding.allocatedMB as number | undefined;
-        const peakExecutors = finding.peakExecutors as number | undefined;
-        const appDurationMs = finding.appDurationMs as number | undefined;
-        if (idleRateFraction != null && allocatedMB != null && peakExecutors != null && appDurationMs != null) {
-          const wastedMBSeconds = idleRateFraction * allocatedMB * peakExecutors * (appDurationMs / 1000);
+        const allocatedMBSeconds = finding.allocatedMBSeconds as number | null | undefined;
+        if (idleRateFraction != null && allocatedMBSeconds != null) {
+          const wastedMBSeconds = idleRateFraction * allocatedMBSeconds;
           return costOnly('modeled', { value: wastedMBSeconds, unit: 'mbSeconds' });
         }
         return costOnly('modeled');

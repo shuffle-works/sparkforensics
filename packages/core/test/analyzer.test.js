@@ -1932,9 +1932,8 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     expect(idle.value).toBe(75);
     // Impact-estimate inputs attached at the push site: unrounded rate plus cluster sizing (value above is rounded).
     expect(idle.idleRateFraction).toBeCloseTo(0.75, 10);
-    expect(idle.allocatedMB).toBe(4096);
-    expect(idle.peakExecutors).toBe(2);
-    expect(idle.appDurationMs).toBe(10000);
+    // 2 executors x 10 s x 1408 MiB (default 1g executor memory plus 384 MiB overhead), per computeAllocation.
+    expect(idle.allocatedMBSeconds).toBeCloseTo(2 * 10 * 1408, 3);
   });
 
   it('1b: flags an executor whose peak heap exceeds 95% of allocated (too small)', () => {
@@ -2018,7 +2017,6 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     expect(idle).toBeTruthy();
     expect(idle.value).toBe(94); // round(93.75), not the churn-inflated round(97.5) = 98
     expect(idle.idleRateFraction).toBeCloseTo(0.9375, 10);
-    expect(idle.peakExecutors).toBe(2); // real peak concurrency, not the 5 executors ever added
   });
 });
 

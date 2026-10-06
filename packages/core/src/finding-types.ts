@@ -246,11 +246,10 @@ export interface MemoryUtilizationEvidence {
   dataUnavailable?: boolean;
 }
 export interface MemoryUtilizationFinding extends NumericFinding<'memoryUtilization'>, MemoryUtilizationEvidence {
-  // Impact-estimator inputs: the unrounded idle rate and the run's sizing (idleCores), and the
-  // allocation and span behind heapOverProvisioned's rounded ratio.
+  // Impact-estimator inputs: the unrounded idle rate and the run's allocated memory-time
+  // (idleCores), and the allocation and span behind heapOverProvisioned's rounded ratio.
   idleRateFraction?: number;
-  allocatedMB?: number | null;
-  peakExecutors?: number;
+  allocatedMBSeconds?: number | null;
   appDurationMs?: number;
   allocatedBytes?: number;
 }
