@@ -590,20 +590,27 @@ describe('estimateImpact: partitionSizing, tinyTask', () => {
     const lowPar = () => [{ type: 'partitionSizing', rule: 'lowShuffleParallelism', stageId: 0, impactBand: 'warning' }];
 
     it('keeps the claim when the longest task nearly fills the stage', () => {
-      // Clipped against the longest task itself the room is 30 ms; the fix leaves it at 4/12 of 59.97 s.
+      // Clipped against the longest task itself the room is 30 ms. The split leaves that task at
+      // 4/12 of 59.97 s, so the claim is the 39.98 s it sheds.
       const findings = lowPar();
       estimate(findings, lowParStage(59_970), 100);
       const { rawWaste, wallClock, estimateMethod } = findings[0].impactEstimate;
       expect(rawWaste.unit).toBe('ms');
-      expect(rawWaste.value).toBeCloseTo(40_000, 6);
-      expect(wallClock.high).toBeCloseTo(40_000, 6);
+      expect(rawWaste.value).toBeCloseTo(59_970 * (1 - 4 / 12), 6);
+      expect(wallClock.high).toBeCloseTo(59_970 * (1 - 4 / 12), 6);
       expect(estimateMethod).toBe('modeled');
     });
 
-    it('gives the same figure however full the stage is', () => {
-      const [full] = estimate(lowPar(), lowParStage(59_970), 100);
-      const [short] = estimate(lowPar(), lowParStage(20_000), 100);
-      expect(full.impactEstimate.wallClock.high).toBeCloseTo(short.impactEstimate.wallClock.high, 6);
+    it('claims only what splitting the longest task recovers, however long the stage is', () => {
+      // A 60 s stage whose longest task is 20 s: after the split the stage still takes 40 s plus the
+      // 6.7 s the longest task leaves, a saving of 13.3 s, not the 40 s that scaling the whole
+      // stage by 4/12 would claim.
+      const findings = lowPar();
+      estimate(findings, lowParStage(20_000), 100);
+      const { rawWaste, wallClock } = findings[0].impactEstimate;
+      expect(rawWaste.value).toBeCloseTo(20_000 * (1 - 4 / 12), 6);
+      expect(wallClock.high).toBeCloseTo(20_000 * (1 - 4 / 12), 6);
+      expect(60_000 - wallClock.high).toBeCloseTo(40_000 + 20_000 * 4 / 12, 6);
     });
 
     it('is still floored at the stage\'s core work spread over its cores', () => {

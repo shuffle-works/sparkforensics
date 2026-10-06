@@ -1419,7 +1419,12 @@ export const DETECTORS = [
           // The fix splits the long tasks, so the longest task is the quantity it shortens: the
           // occupancy clip must not floor the claim at it (TAIL_CLAIM). An even split leaves the
           // longest task at taskCount / targetTaskCount of today's: a modeled figure.
-          longestTaskAfterFixMs = (stage.taskDurationMax ?? 0) * taskCount / targetTaskCount;
+          const longestTaskMs = stage.taskDurationMax ?? 0;
+          longestTaskAfterFixMs = longestTaskMs * taskCount / targetTaskCount;
+          // Splitting only shortens tasks: the stage still takes the time outside its longest task
+          // plus the longest task the split leaves, so the claim is at most the longest task's own
+          // reduction. Without a task-duration max (older snapshots) the stage-wide scaling stands.
+          if (longestTaskMs > 0) wasteMs = Math.min(wasteMs, longestTaskMs - longestTaskAfterFixMs);
         }
       } else {
         return null;
@@ -2210,7 +2215,7 @@ export const DETECTORS = [
         return costOnly('measured', { value: finding.value, unit: 'mbSeconds' });
       }
       if (finding.variant === 'idleCores') {
-        // Idle core-time priced as memory held but unused: the same MB-seconds unit as wasteModel, so comparable.
+        // Idle core-time priced as memory held but unused: the allocated memory-seconds times the idle rate.
         const idleRateFraction = finding.idleRateFraction as number | undefined;
         const allocatedMBSeconds = finding.allocatedMBSeconds as number | null | undefined;
         if (idleRateFraction != null && allocatedMBSeconds != null) {
