@@ -1022,7 +1022,7 @@ function broadcastThresholdKey(app: DetectorApp | null, aqe: boolean): string {
 // The run's effective value of a broadcast threshold property in bytes (logged, else Spark's 10 MiB
 // default for the static one); negative when auto-broadcast is disabled, null when the value is
 // not a size or the property has none.
-function effectiveBroadcastThreshold(app: DetectorApp | null, key: string = BROADCAST_THRESHOLD_KEY): number | null {
+function effectiveBroadcastThreshold(app: DetectorApp | null, key: string): number | null {
   const raw = effectiveConf(app, key);
   if (raw != null && /^-\d+$/.test(raw)) return -1;
   return parseSparkBytes(raw);
@@ -3023,35 +3023,36 @@ export const DETECTORS = [
       if (!sqlExec.planTree) return null;
       const { broadcastTiers, comparisonTiers, overBroadcastBytes, minSmallerSideBytes } = thresholds;
       const fallbackStageIds = stageIdsForSqlExec(sqlExec.id, ctx.stages);
+      const app = queryApp(ctx.app, sqlExec.modifiedConfigs);
+      const key = broadcastThresholdKey(app, sqlExec.planTree.name === 'AdaptiveSparkPlan');
+      const threshold = effectiveBroadcastThreshold(app, key);
       const out: Finding[] = [];
       walkPlanTree(sqlExec.planTree, (node) => {
         const candidate = node.name === 'SortMergeJoin' ? broadcastCandidate(node) : null;
         if (candidate) {
-          const smaller = shuffleBytes(candidate.build);
-          const larger = candidate.stream ? shuffleBytes(candidate.stream) : null;
+          const buildBytes = shuffleBytes(candidate.build);
+          const otherBytes = candidate.stream ? shuffleBytes(candidate.stream) : null;
           // Below the floor a broadcast saves nothing measurable; above the over-broadcast limit it
           // would be flagged there instead.
-          if (smaller >= minSmallerSideBytes && smaller <= overBroadcastBytes) {
-            const app = queryApp(ctx.app, sqlExec.modifiedConfigs);
-            const key = broadcastThresholdKey(app, sqlExec.planTree?.name === 'AdaptiveSparkPlan');
-            const threshold = effectiveBroadcastThreshold(app, key);
+          if (buildBytes >= minSmallerSideBytes && buildBytes <= overBroadcastBytes) {
             const broadcastThreshold: BroadcastThreshold = threshold != null && threshold < 0 ? 'disabled'
-              : threshold != null && threshold >= smaller ? 'notLimiting' : 'limits';
-            const withinTiers = larger != null && (smaller < broadcastTiers[0]
-              || (smaller < broadcastTiers[1] && larger > comparisonTiers[0])
-              || (smaller < broadcastTiers[2] && larger > comparisonTiers[1]));
+              : threshold != null && threshold >= buildBytes ? 'notLimiting' : 'limits';
+            const withinTiers = otherBytes != null && (buildBytes < broadcastTiers[0]
+              || (buildBytes < broadcastTiers[1] && otherBytes > comparisonTiers[0])
+              || (buildBytes < broadcastTiers[2] && otherBytes > comparisonTiers[1]));
             if (broadcastThreshold === 'notLimiting' || withinTiers) {
               const contributors = [candidate.build, ...(candidate.stream ? [candidate.stream] : [])];
               const { joinType, buildSide } = candidate;
-              const subject = `The ${buildSide} input to this ${joinType} Sort Merge Join (${formatBytes(smaller)})`;
-              const otherSide = larger != null ? ` (the other side is ${formatBytes(larger)})` : '';
+              const subject = `The ${buildSide} input to this ${joinType} Sort Merge Join (${formatBytes(buildBytes)})`;
+              const otherSide = otherBytes != null ? ` (the other side is ${formatBytes(otherBytes)})` : '';
               out.push({
                 type: 'underBroadcast', executionId: sqlExec.id, stageIds: unionStageIds(contributors, fallbackStageIds),
                 // resolvePlanTree always sets id; safe downstream of it.
                 planNodeIds: contributors.map((n) => n.id!).filter(Boolean),
-                impactBand: 'info', metric: 'smallerSideBytes', value: smaller,
-                ...(larger != null ? { largerSideBytes: larger } : {}),
-                joinType, buildSide, broadcastThreshold,
+                impactBand: 'info', metric: 'smallerSideBytes',
+                value: otherBytes != null ? Math.min(buildBytes, otherBytes) : buildBytes,
+                ...(otherBytes != null ? { largerSideBytes: Math.max(buildBytes, otherBytes) } : {}),
+                joinType, buildSide, buildSideBytes: buildBytes, broadcastThreshold,
                 recommendation: broadcastThreshold === 'notLimiting'
                   ? `${subject} is under the effective ${key} (${formatBytes(threshold!)}) yet was not broadcast${otherSide}, so the threshold is not what stopped it: a join hint, missing table statistics, or a shuffle that had already run usually is. Consider a broadcast() hint or collecting statistics (ANALYZE TABLE).`
                   : `${subject} is well under the broadcast threshold${otherSide}: this could have been a broadcast join. Consider a broadcast() hint or raising ${key}.`,
@@ -3068,7 +3069,6 @@ export const DETECTORS = [
             // metrics, so only the child unions in.
             const child = (node.children ?? [])[0];
             // A threshold below the broadcast cannot have admitted it, so a hint forced it.
-            const threshold = effectiveBroadcastThreshold(queryApp(ctx.app, sqlExec.modifiedConfigs));
             const autoBroadcastOff = threshold != null && threshold < 0;
             const hintForced = autoBroadcastOff || (threshold != null && m.value > threshold);
             const broadcastThreshold: BroadcastThreshold = autoBroadcastOff ? 'disabled' : hintForced ? 'notLimiting' : 'limits';
@@ -3081,9 +3081,9 @@ export const DETECTORS = [
               recommendation: autoBroadcastOff
                 ? `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: automatic broadcast is already disabled, so remove the broadcast() hint that forced it.`
                 : hintForced
-                  ? `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: spark.sql.autoBroadcastJoinThreshold (${formatBytes(threshold!)}) is below it, so a broadcast() hint forced it: remove the hint.`
-                  : `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.`,
-              remediation: hintForced ? [] : [decreaseConf('spark.sql.autoBroadcastJoinThreshold')],
+                  ? `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: ${key} (${formatBytes(threshold!)}) is below it, so a broadcast() hint forced it: remove the hint.`
+                  : `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: check for a misapplied broadcast hint or a misconfigured ${key}.`,
+              remediation: hintForced ? [] : [decreaseConf(key)],
             });
           }
         }
@@ -3091,9 +3091,10 @@ export const DETECTORS = [
       return out.length ? out : null;
     },
     estimate(finding, ctx): ImpactEstimate | null {
-      // Both finding types carry bytes as `value`: overBroadcast's broadcastBytes, underBroadcast's
-      // smallerSideBytes (the smaller join side), each priced as one broadcast transfer.
-      const wasteMs = (((finding.value as number | undefined) ?? 0) / BROADCAST_BANDWIDTH_BPS) * 1000;
+      // Each is priced as one broadcast transfer of its broadcast side: overBroadcast's broadcastBytes
+      // (`value`), underBroadcast's buildSideBytes.
+      const bytes = finding.type === 'underBroadcast' ? finding.buildSideBytes : finding.value;
+      const wasteMs = (((bytes as number | undefined) ?? 0) / BROADCAST_BANDWIDTH_BPS) * 1000;
       return stageMappableWasteOrCostOnly(wasteMs, finding.stageIds as number[] | undefined, ctx);
     },
   }),

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { analyze } from '../src/analyzer.js';
+import { coreFindingGenericRecommendation } from '../src/finding-generic-recommendation.ts';
 import { makeApp } from './fixtures/stage-app-fixtures.js';
 
 const KiB = 1024;
@@ -21,11 +22,12 @@ const join = (joinType, leftBytes, rightBytes) => ({
 });
 const aqe = (child) => ({ name: 'AdaptiveSparkPlan', detail: '', metrics: [], children: [child] });
 
-function under(planTree, { config, modifiedConfigs, sparkVersion = '3.5.3', thresholds } = {}) {
+function findingsOf(type, planTree, { config, modifiedConfigs, sparkVersion = '3.5.3', thresholds } = {}) {
   const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree, modifiedConfigs }]]);
   return analyze(makeApp({ config, sparkVersion }), new Map(), [], [], new Map(), sql, null, { thresholds })
-    .filter((f) => f.type === 'underBroadcast');
+    .filter((f) => f.type === type);
 }
+const under = (planTree, opts) => findingsOf('underBroadcast', planTree, opts);
 
 describe('underBroadcast: join type decides which side can be broadcast', () => {
   // Spark's canBuildBroadcastLeft / canBuildBroadcastRight (JoinSelectionHelper, apache/spark v3.5.0).
@@ -77,6 +79,16 @@ describe('underBroadcast: join type decides which side can be broadcast', () => 
     const plan = join('Inner', small, large);
     plan.detail = 'SortMergeJoin';
     expect(under(plan)).toHaveLength(0);
+  });
+
+  it('keeps value and largerSideBytes as the smaller and larger side when the build side is the larger', () => {
+    const [f] = under(join('LeftOuter', 2 * MiB, 500 * MiB), { config: { 'spark.sql.autoBroadcastJoinThreshold': '1g' } });
+    expect(f.buildSide).toBe('right');
+    expect(f.buildSideBytes).toBe(500 * MiB);
+    expect(f.value).toBe(2 * MiB);
+    expect(f.largerSideBytes).toBe(500 * MiB);
+    expect(f.broadcastThreshold).toBe('notLimiting');
+    expect(coreFindingGenericRecommendation(f)).toContain('admits the right side');
   });
 
   it('names the join type and side in the recommendation', () => {
@@ -149,6 +161,7 @@ describe('underBroadcast: effective broadcast threshold', () => {
     expect(f.broadcastThreshold).toBe('limits');
     expect(f.remediation[0].key).toBe('spark.sql.adaptive.autoBroadcastJoinThreshold');
     expect(f.recommendation).toContain('spark.sql.adaptive.autoBroadcastJoinThreshold');
+    expect(coreFindingGenericRecommendation(f)).toContain('raising spark.sql.adaptive.autoBroadcastJoinThreshold');
   });
 
   it('ignores the adaptive threshold when the plan is not adaptive', () => {
@@ -218,5 +231,34 @@ describe('underBroadcast: size floor and over-broadcast ceiling', () => {
   it('honors a tuned over-broadcast limit as the ceiling', () => {
     const plan = join('Inner', 900 * MiB, 2048 * GiB);
     expect(under(plan, { thresholds: { broadcastSizing: { overBroadcastBytes: 512 * MiB } } })).toHaveLength(0);
+  });
+});
+
+describe('overBroadcast: effective broadcast threshold', () => {
+  const broadcast = (bytes) => ({
+    name: 'BroadcastHashJoin', detail: 'BroadcastHashJoin [a#1L], [b#2L], Inner, BuildRight', metrics: [],
+    children: [side(20 * GiB, 'L'), { name: 'BroadcastExchange', detail: '', id: 'bx', metrics: [{ name: 'data size', value: bytes, metricType: 'size' }], children: [] }],
+  });
+
+  it('judges an AQE runtime broadcast against the adaptive threshold, not as hint-forced', () => {
+    const config = { 'spark.sql.adaptive.autoBroadcastJoinThreshold': '2g' };
+    const [f] = findingsOf('overBroadcast', aqe(broadcast(1.5 * GiB)), { config });
+    expect(f.broadcastThreshold).toBe('limits');
+    expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.adaptive.autoBroadcastJoinThreshold', direction: 'decrease', suggested: null }]);
+    expect(f.recommendation).toContain('misconfigured spark.sql.adaptive.autoBroadcastJoinThreshold');
+    expect(coreFindingGenericRecommendation(f)).toContain('misconfigured spark.sql.adaptive.autoBroadcastJoinThreshold');
+  });
+
+  it('names the adaptive key when it is the one below the broadcast', () => {
+    const config = { 'spark.sql.autoBroadcastJoinThreshold': '4g', 'spark.sql.adaptive.autoBroadcastJoinThreshold': '10m' };
+    const [f] = findingsOf('overBroadcast', aqe(broadcast(1.5 * GiB)), { config });
+    expect(f.broadcastThreshold).toBe('notLimiting');
+    expect(f.recommendation).toContain('spark.sql.adaptive.autoBroadcastJoinThreshold (10 MB) is below it');
+  });
+
+  it('keeps the static threshold for a plan that is not adaptive', () => {
+    const config = { 'spark.sql.adaptive.autoBroadcastJoinThreshold': '2g' };
+    const [f] = findingsOf('overBroadcast', broadcast(1.5 * GiB), { config });
+    expect(f.broadcastThreshold).toBe('notLimiting');
   });
 });

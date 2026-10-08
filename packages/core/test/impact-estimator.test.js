@@ -711,7 +711,7 @@ describe('estimateImpact: Plan Advisor trio', () => {
       rawWaste: { value: 2000, unit: 'ms' },
     });
 
-    const under = [{ type: 'underBroadcast', stageIds: [], metric: 'smallerSideBytes', value: 125_000_000, impactBand: 'warning' }];
+    const under = [{ type: 'underBroadcast', stageIds: [], metric: 'smallerSideBytes', value: 125_000_000, buildSideBytes: 125_000_000, impactBand: 'warning' }];
     estimate(under, new Map());
     expect(under[0].impactEstimate.rawWaste).toEqual({ value: 1000, unit: 'ms' });
   });
@@ -738,7 +738,7 @@ describe('estimateImpact: Plan Advisor trio', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [] }]]);
     const findings = [{
       type: 'underBroadcast', stageIds: [0],
-      metric: 'smallerSideBytes', value: 700_000_000, largerSideBytes: 900_000_000, impactBand: 'warning',
+      metric: 'smallerSideBytes', value: 700_000_000, largerSideBytes: 900_000_000, buildSideBytes: 700_000_000, impactBand: 'warning',
     }];
     estimate(findings, stages);
     // Raw claim: 700_000_000 / 125_000_000 * 1000 = 5600ms, capped at the stage's own 5000ms.
