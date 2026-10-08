@@ -211,6 +211,7 @@ const EVIDENCE_KEYS = {
     'groupIndex',
   ],
   smallFiles: ['executionId', 'stageIds', 'fileCount', 'direction', 'nodeName'],
+  pythonUdf: ['executionId', 'stageIds', 'dataSentBytes', 'dataReturnedBytes', 'stageDurationMs'],
   underBroadcast: ['executionId', 'stageIds', 'largerSideBytes', 'broadcastThreshold'],
   overBroadcast: ['executionId', 'stageIds', 'broadcastThreshold'],
 } as const satisfies { [T in FindingType]: readonly (keyof FindingEvidenceMap[T])[] };

@@ -95,6 +95,7 @@ formula per `variant`/`rule` on the same finding type; the basis column says whi
 | `utilization` | app | cost-only | `rawWaste` in `coreHours`: `(1 − utilizationFraction) × allocatedCoreMs / 3.6e6`, where `allocatedCoreMs` is cores × time alive over every executor (`allocatedCoreMs()`, the figure behind `metrics.allocation.coreHours`), so it never exceeds the allocation. The same figure in core-milliseconds is `idleCoreTimeMs` |
 | `coreLocality` | app | cost-only | `rawWaste` in `coreMs`: `nonLocalTaskCount × NETWORK_FETCH_PENALTY_MS` |
 | `autoscalingChurn` | app | cost-only | `rawWaste` in `coreHours`: `shortLivedExecutorCount × EXECUTOR_STARTUP_OVERHEAD_MS / 3.6e6` |
+| `pythonUdf` | sql | informational-only | no waste formula: the gain from Arrow-optimized or pandas UDFs depends on how much of the stage is the UDF body, which the log does not record |
 | `configAudit` | config | informational-only | a config-drift check standing alone; no waste formula |
 | `jobFailureRate` | app | cost-only | `rawWaste` in `coreHours`: `failedJobCount × avgJobDurationMs / 3.6e6` |
 | `cachingOpportunity` | app | cost-only | `rawWaste` in `ms`: `totalReadBytes / RE_READ_THROUGHPUT_BPS` |

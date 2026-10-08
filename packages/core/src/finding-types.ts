@@ -344,6 +344,16 @@ export interface SmallFilesEvidence extends PlanFindingEvidence {
 }
 export interface SmallFilesFinding extends NumericFinding<'smallFiles'>, SmallFilesEvidence, PlanNodeOrigin {}
 
+export interface PythonUdfEvidence extends PlanFindingEvidence {
+  // Bytes the executors sent to Python workers: the finding's `value`, repeated for the report.
+  dataSentBytes: number;
+  // Bytes the workers returned; null when the plan reports no such metric.
+  dataReturnedBytes: number | null;
+  // Summed wall-clock of the stages that ran the row-at-a-time UDFs, ms.
+  stageDurationMs: number;
+}
+export interface PythonUdfFinding extends NumericFinding<'pythonUdf'>, PythonUdfEvidence, PlanNodeOrigin {}
+
 /** How the effective spark.sql.autoBroadcastJoinThreshold relates to the finding: 'limits' (the
  * property decided it, or is unknown), 'notLimiting' (already admits, or already below, the
  * broadcast, so something else decided it) or 'disabled' (-1). */
@@ -390,6 +400,7 @@ export interface FindingEvidenceMap {
   configAudit: ConfigAuditEvidence;
   duplicatePlanSubtree: DuplicatePlanSubtreeEvidence;
   smallFiles: SmallFilesEvidence;
+  pythonUdf: PythonUdfEvidence;
   underBroadcast: UnderBroadcastEvidence;
   overBroadcast: OverBroadcastEvidence;
 }
@@ -421,6 +432,7 @@ export type Finding =
   | ConfigAuditFinding
   | DuplicatePlanSubtreeFinding
   | SmallFilesFinding
+  | PythonUdfFinding
   | UnderBroadcastFinding
   | OverBroadcastFinding;
 

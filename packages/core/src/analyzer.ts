@@ -62,7 +62,7 @@ const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & key
   cachingOpportunity: ['variant', 'relation', 'format', 'operator', 'executionIds'],
   jobFailureRate: [], configAudit: [],
   duplicatePlanSubtree: ['rootName', 'subtreeSize', 'groupIndex'], smallFiles: ['direction', 'nodeName'],
-  underBroadcast: ['largerSideBytes'], overBroadcast: [],
+  pythonUdf: [], underBroadcast: ['largerSideBytes'], overBroadcast: [],
 };
 
 // ID_DISCRIMINATORS as Sets, built once: findingId runs once per finding.

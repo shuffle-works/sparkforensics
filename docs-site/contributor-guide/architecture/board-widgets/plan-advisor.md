@@ -4,21 +4,23 @@ The Plan Advisor board widgets, which report SQL-plan-level findings.
 
 - **Plan Advisor** (tag `PLAN`): SQL-plan-level findings computed from
   `appModel.sql`'s resolved `planTree` (DETECTORS entries
-  `duplicatePlanSubtree`, `smallFiles`, `broadcastSizing` in
+  `duplicatePlanSubtree`, `smallFiles`, `broadcastSizing`, `pythonUdf` in
   `packages/core/src/detectors.ts`): repeated plan subtrees (≥3 nodes, ≥2 occurrences; dropped when their
   linked stages take under 0.5% of the run; banded from the recovered
   wall-clock like other findings, with a `warning`/`info` fallback; an
   `Exchange` root only changes the recommendation to a possible missed
   exchange reuse), small-files read/write (>100 files
   averaging <3 MiB), and broadcast-join sizing in both directions (missed-
-  broadcast info finding, over-broadcast warning at >1 GB). Each of the four
+  broadcast info finding, over-broadcast warning at >1 GB), and
+  row-at-a-time Python UDFs (`BatchEvalPython` stages that sent >64 MiB to
+  Python workers over >30 s; an info finding). Each of the five
   emitted types renders as its own card (`DuplicatePlanSubtree.tsx`,
-  `SmallFiles.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`): all four
+  `SmallFiles.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`, `PythonUdf.tsx`): all five
   share the `PLAN` tag and
   the same `--plan-aggregate` badge tint (`src/view/plan-finding-shared.ts`).
   Their `docAnchor`s (`#bottleneck-duplicate-plan-subtree`,
-  `#bottleneck-small-files`, `#bottleneck-broadcast-sizing`) each resolve to
-  their own page in the vendored tuning reference.
+  `#bottleneck-small-files`, `#bottleneck-broadcast-sizing`, `#pyspark`) each
+  resolve to their own page in the vendored tuning reference.
 
 `detector-registry.tsx`'s `REGISTRY` carries `region: 'reference'` on
 four entries, each its own component: `memoryUtilization`
