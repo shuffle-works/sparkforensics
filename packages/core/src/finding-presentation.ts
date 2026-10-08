@@ -456,7 +456,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     thresholdSummary: (t) => `a join side its type can broadcast, between ${t.minSmallerSideBytes / 1048576} MiB and ${t.overBroadcastBytes / 1073741824} GiB, that skipped broadcast`,
     actionLabel: () => 'Use broadcast join',
     genericRecommendation: (f) => (f.broadcastThreshold === 'notLimiting'
-      ? `The threshold already admits the ${f.buildSide} side, so it is not what stopped the broadcast: consider a broadcast() hint or collecting table statistics.`
+      ? 'The threshold already admits the build side, so it is not what stopped the broadcast: consider a broadcast() hint or collecting table statistics.'
       : `This could have been a broadcast join: consider a broadcast() hint or raising ${broadcastThresholdKeyOf(f)}.`),
   },
   overBroadcast: {

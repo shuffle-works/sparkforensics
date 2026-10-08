@@ -683,6 +683,7 @@ describe('remediation fits the stage, plan and effective conf across finding typ
         expect(f.remediation).toEqual([]);
         expect(f.recommendation).toMatch(/statistics/);
         expect(coreFindingGenericRecommendation(f)).toMatch(/already admits/);
+        expect(coreFindingGenericRecommendation({ ...f, buildSide: 'left' })).toBe(coreFindingGenericRecommendation({ ...f, buildSide: 'right' }));
       }
     });
     it('still raises it when the threshold is below the smaller side or auto-broadcast is disabled', () => {

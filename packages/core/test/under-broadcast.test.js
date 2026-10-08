@@ -90,7 +90,7 @@ describe('underBroadcast: join type decides which side can be broadcast', () => 
     expect(f.buildSide).toBe('right');
     expect(f.value).toBe(2 * MiB);
     expect(f.largerSideBytes).toBe(500 * MiB);
-    expect(coreFindingGenericRecommendation(f)).toContain('admits the right side');
+    expect(coreFindingGenericRecommendation(f)).toContain('admits the build side');
   });
 
   it('names the join type and side in the recommendation', () => {
