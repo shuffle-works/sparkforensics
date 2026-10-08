@@ -802,6 +802,14 @@ describe('partition-count advice follows what sized the stage', () => {
       expect(neutral.recommendation).not.toMatch(/lowering the repartition/);
       // A repartition(n) the job wrote in the plan is the stage's own count.
       expect(keys(of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', REPARTITIONED))).toEqual(['code']);
+      // A repartition(n) next to an AQE skew split: the note names the split and never says the plan has no repartition.
+      const repartitionedSkew = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [
+        { name: 'Exchange', detail: 'Exchange hashpartitioning(k#1L, 300), REPARTITION_BY_NUM, [plan_id=4]', metrics: [], children: [] },
+        { name: 'AQEShuffleRead', detail: 'skewed', metrics: [], children: [] }] } }]]);
+      const both = of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', repartitionedSkew);
+      expect(keys(both)).toEqual(['spark.sql.shuffle.partitions']);
+      expect(both.recommendation).toMatch(/ran 212 tasks against 200 configured: AQE skew-join splits add tasks/);
+      expect(both.recommendation).not.toMatch(/plan shows no repartition/);
       const merged = of('tinyTask', { ...tiny, taskCount: 300 }, initial);
       expect(keys(merged)).toEqual([PARALLELISM_FIRST, ADVISORY]);
       const exact = of('tinyTask', { ...tiny, taskCount: 1000 }, initial);
