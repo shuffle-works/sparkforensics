@@ -143,12 +143,11 @@ execution), the logged property, and Spark's default for the run's
 `sparkVersion`. A job that calls `spark.conf.set` is judged against what it set.
 The defaults come from Spark's own configuration sources and cover every
 property a detector reads or suggests: AQE (`spark.sql.adaptive.enabled` is off
-before Spark 3.2 and on from 3.2; skew-join, coalescing and their size
-settings from 3.0), `spark.sql.shuffle.partitions` (200),
+before Spark 3.2 and on from 3.2; skew-join and coalescing from 3.0, and the
+advisory partition size), `spark.sql.shuffle.partitions` (200),
 `spark.sql.autoBroadcastJoinThreshold` (10 MB), speculation (the multiplier is
-1.5 and the quantile 0.75 before Spark 4.0, 3 and 0.9 from 4.0), shuffle
-tracking (on from 3.4) and the dynamic-allocation, serializer and event-log
-switches. A default that depends on the cluster (`spark.executor.instances`,
+1.5 and the quantile 0.75 before Spark 4.0, 3 and 0.9 from 4.0) and the
+dynamic-allocation, serializer and event-log switches. A default that depends on the cluster (`spark.executor.instances`,
 `spark.default.parallelism`) is not modeled. Spark before 3.0 has no AQE
 skew-join handling, so a skew finding on such a run suggests no conf. Booleans compare
 case-insensitively. The recommendation then stops naming that property and
