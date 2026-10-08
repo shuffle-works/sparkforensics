@@ -183,6 +183,26 @@ figure share one capacity that never exceeds what the run held.
 `dynamicAllocation` replacement) it double-counts a churned executor's capacity against its
 replacement's; the peak-concurrent sweeps don't.
 
+## Effective configuration
+
+A detector that reads or suggests a Spark property resolves it through
+`effectiveSparkConf()` (`packages/core/src/spark-conf.ts`), which layers three
+sources: the SQL execution's `modifiedConfigs` (the session settings that differ
+from the SparkContext's, as `spark.conf.set` leaves them), the app's Spark
+Properties, then Spark's default for the run's version. It returns the value and
+the layer it came from (`query`, `app` or `default`). `sparkConfDefault()` is the
+version table alone; its entries are read from Spark's `SQLConf.scala` and
+`config/package.scala` at the release tags, and a property whose default depends on
+the cluster or on another property has no entry. Add a property to the table only
+with the release that introduced each of its defaults, and a per-version test.
+
+A detector scoped to one SQL execution (`skew`, `straggler`, `shuffle`,
+`partitionSizing`, `underBroadcast`, `overBroadcast`) passes that execution's
+`modifiedConfigs`: `detectors.ts`'s `stageApp()` and `queryApp()` return the app with
+them applied, so the helpers that take an app (`effectiveConf`, `loggedAs`,
+`switchFix`) need no second argument. Run-wide detectors use the app as logged.
+The frozen detection thresholds do not follow a per-query setting; only the advice does.
+
 ## Cross-detector suppression
 
 An entry may name another entry's `type` in `suppressedBy`. Once every

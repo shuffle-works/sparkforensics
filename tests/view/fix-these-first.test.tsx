@@ -165,13 +165,13 @@ describe('isEligible exclusions (incompleteRun / memoryUtilization dataUnavailab
   });
 
   it('keeps a memoryUtilization memoryBand finding when the underlying data was actually available', () => {
-    const heapNearCapacity: Finding = {
-      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity', stageId: null, executorId: '1',
-      impactBand: 'warning', metric: 'heapUsedRatio', value: 97,
-      recommendation: 'Executor 1 peaked at 97% of allocated heap: memory may be too small; raise spark.executor.memory to avoid OOM/spill.',
+    const heapOverProvisioned: Finding = {
+      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, executorId: '1',
+      impactBand: 'info', metric: 'heapUsedRatio', value: 20,
+      recommendation: 'The busiest of 4 sampled executors peaked at 20% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.',
     };
-    const { eligible } = boardData([heapNearCapacity]);
-    expect(eligible).toEqual([heapNearCapacity]);
+    const { eligible } = boardData([heapOverProvisioned]);
+    expect(eligible).toEqual([heapOverProvisioned]);
   });
 
   it('keeps a memoryUtilization finding of a different variant (idleCores), which never carries dataUnavailable at all', () => {

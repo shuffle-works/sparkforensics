@@ -106,7 +106,8 @@ describe('structured remediation', () => {
   });
 
   it('lowers shuffle partitions for a tinyTask finding on a shuffle stage with no suggested value, and none off one', () => {
-    const tiny = { taskCount: 150, taskDurationP50: 80, taskDurationP95: 150 };
+    // 200 tasks: the effective spark.sql.shuffle.partitions, so the property sized the stage.
+    const tiny = { taskCount: 200, taskDurationP50: 80, taskDurationP95: 150 };
     const onShuffle = catalogOf([makeStage({ ...tiny, shuffleReadBytes: 10 * MiB })]).find((x) => x.type === 'tinyTask');
     expect(onShuffle.remediation).toEqual([
       { kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'decrease', suggested: null },
@@ -148,9 +149,9 @@ describe('structured remediation', () => {
     const findings = [
       ...catalogOf([
         makeStage({ id: 1, shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0, gcPct: 40, jvmGCTime: 4000, memoryBytesSpilled: 3000 * MiB }),
-        makeStage({ id: 2, taskCount: 150, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 10 * MiB }),
+        makeStage({ id: 2, taskCount: 200, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 10 * MiB }),
         makeStage({ id: 3, taskDurationP50: 100, taskDurationP95: 900, taskDurationMax: 2000 }),
-        makeStage({ id: 4, shuffleReadBytes: 300 * MiB, completedAt: 20 * 60_000 }),
+        makeStage({ id: 4, taskCount: 200, shuffleReadBytes: 300 * MiB, completedAt: 20 * 60_000 }),
         makeStage({ id: 5, speculationWastedAttempts: 10, speculationWasteMs: 120_000 }),
         makeStage({ id: 6, localityStats: [{ locality: 'PROCESS_LOCAL', count: 50 }, { locality: 'ANY', count: 50 }] }),
       ]),
@@ -173,7 +174,7 @@ describe('structured remediation', () => {
     const findings = [
       ...catalogOf([
         makeStage({ id: 1, shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0, gcPct: 40, jvmGCTime: 4000, memoryBytesSpilled: 3000 * MiB }),
-        makeStage({ id: 2, taskCount: 150, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 10 * MiB }),
+        makeStage({ id: 2, taskCount: 200, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 10 * MiB }),
         makeStage({ id: 3, taskDurationP50: 100, taskDurationP95: 900, taskDurationMax: 2000 }),
         makeStage({ id: 4, shuffleReadBytes: 300 * MiB }),
       ]),
@@ -454,13 +455,11 @@ describe('structured remediation', () => {
       const off = caveats({});
       expect(off.storage.recommendation).toMatch(/need spark\.eventLog\.logBlockUpdates\.enabled=true/);
       expect(off.storage.remediation).toEqual(set('spark.eventLog.logBlockUpdates.enabled'));
-      expect(off.memory.recommendation).toMatch(/requires spark\.eventLog\.logStageExecutorMetrics=true/);
-      expect(off.memory.remediation).toEqual(set('spark.eventLog.logStageExecutorMetrics'));
+      expect(off.memory.recommendation).toMatch(/Executor heap peaks are missing from this log/);
+      expect(off.memory.remediation).toEqual([]);
       const on = caveats({ 'spark.eventLog.logBlockUpdates.enabled': 'true', 'spark.eventLog.logStageExecutorMetrics': 'true' });
       expect(on.storage).toBeUndefined();
       expect(on.memory.remediation).toEqual([]);
-      expect(on.memory.recommendation).not.toMatch(/spark\.eventLog/);
-      expect(on.memory.recommendation).toMatch(/executor metrics logging is on for this run/);
     });
 
     it('suggests Kryo unless the logged serializer is already Kryo', () => {
@@ -546,9 +545,10 @@ describe('findings for stages that read no shuffle or that have an even host cou
 
   it('does not suggest shuffle partitions for a slow stage that reads no shuffle', () => {
     const slow = (extra) => catalogOf([makeStage({ submittedAt: 0, completedAt: 20 * 60000, ...extra })], app).find((f) => f.type === 'stageSlowness');
-    const shuffle = slow({ shuffleReadBytes: 10 * MiB });
+    const shuffle = slow({ taskCount: 200, shuffleReadBytes: 10 * MiB });
     expect(shuffle.reads).toBe('shuffle');
-    expect(shuffle.remediation.map((r) => r.key)).toEqual(['spark.sql.shuffle.partitions', 'spark.default.parallelism']);
+    expect(shuffle.remediation.map((r) => r.key)).toEqual(['spark.sql.shuffle.partitions']);
+    expect(shuffle.recommendation).not.toMatch(/default\.parallelism/);
     const scan = slow({ inputBytes: 10 * MiB });
     expect(scan.reads).toBe('input');
     expect(scan.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.files.maxPartitionBytes', direction: 'decrease', suggested: null }]);
@@ -585,7 +585,7 @@ describe('remediation fits the stage, plan and effective conf across finding typ
       expect(coreFindingGenericRecommendation(scan)).not.toMatch(/shuffle\.partitions/);
     });
     it('keeps it for a stage that reads a shuffle', () => {
-      const f = of('spill', [makeStage({ ...spilled, shuffleReadBytes: 10 * GiB })], makeApp());
+      const f = of('spill', [makeStage({ ...spilled, taskCount: 200, shuffleReadBytes: 10 * GiB })], makeApp());
       expect(f.reads).toBe('shuffle');
       expect(keys(f)).toEqual(['spark.sql.shuffle.partitions', 'spark.executor.memory']);
     });
@@ -729,6 +729,87 @@ describe('remediation fits the stage, plan and effective conf across finding typ
       expect(scan.remediation).toEqual([]);
       expect(scan.recommendation).not.toMatch(/shuffle\.partitions/);
       expect(coreFindingGenericRecommendation(scan)).not.toMatch(/shuffle\.partitions/);
+    });
+  });
+});
+
+describe('partition-count advice follows what sized the stage', () => {
+  const GiB = 1024 * MiB;
+  const ADVISORY = 'spark.sql.adaptive.advisoryPartitionSizeInBytes';
+  const PARALLELISM_FIRST = 'spark.sql.adaptive.coalescePartitions.parallelismFirst';
+  const of = (type, stage, config = {}, sparkVersion = '3.5.0') =>
+    catalogOf([makeStage(stage)], makeApp({ config, sparkVersion })).find((f) => f.type === type);
+  const keys = (f) => f.remediation.map((r) => r.key ?? r.kind);
+  const tiny = { taskCount: 400, taskDurationP50: 50, taskDurationP95: 100, shuffleReadBytes: 10 * MiB };
+
+  describe('tinyTask', () => {
+    it('sends a repartition(n) stage to the code, not to spark.sql.shuffle.partitions', () => {
+      const f = of('tinyTask', tiny, { 'spark.sql.shuffle.partitions': '64' });
+      expect(keys(f)).toEqual(['code']);
+      expect(f.recommendation).toMatch(/repartition\(n\)/);
+      expect(f.recommendation).not.toMatch(/spark\.sql\.shuffle\.partitions/);
+      expect(coreFindingGenericRecommendation(f)).not.toMatch(/spark\.sql\.shuffle\.partitions/);
+    });
+
+    it('names the AQE coalescing levers where AQE already merged the shuffle', () => {
+      const f = of('tinyTask', { ...tiny, taskCount: 120 }, { 'spark.sql.shuffle.partitions': '400' });
+      expect(keys(f)).toEqual([PARALLELISM_FIRST, ADVISORY]);
+      expect(f.remediation[0]).toMatchObject({ direction: 'set', suggested: false });
+      expect(f.recommendation).toMatch(/parallelismFirst=false/);
+      expect(f.recommendation).not.toMatch(/spark\.sql\.shuffle\.partitions/);
+      expect(coreFindingGenericRecommendation(f)).toMatch(/parallelismFirst/);
+    });
+
+    it('raises the advisory size once parallelismFirst is already off', () => {
+      const f = of('tinyTask', { ...tiny, taskCount: 120 }, { 'spark.sql.shuffle.partitions': '400', [PARALLELISM_FIRST]: 'false' });
+      expect(f.remediation).toEqual([{ kind: 'conf', key: ADVISORY, direction: 'increase', suggested: null }]);
+    });
+
+    it('lowers the property where the stage ran as many tasks as it sets, and with AQE off', () => {
+      expect(keys(of('tinyTask', tiny, { 'spark.sql.shuffle.partitions': '400' }))).toEqual(['spark.sql.shuffle.partitions']);
+      const aqeOff = of('tinyTask', { ...tiny, taskCount: 120 }, { 'spark.sql.shuffle.partitions': '400', 'spark.sql.adaptive.enabled': 'false' });
+      expect(keys(aqeOff)).toEqual(['code']);
+    });
+  });
+
+  describe('spill', () => {
+    const spilled = { taskCount: 400, memoryBytesSpilled: 5 * GiB, spillClassification: 'volume', shuffleReadBytes: 10 * GiB };
+
+    it('raises the property only where it sized the stage', () => {
+      expect(keys(of('spill', spilled, { 'spark.sql.shuffle.partitions': '400' }))).toEqual(['spark.sql.shuffle.partitions', 'spark.executor.memory']);
+    });
+
+    it('lowers the advisory size where AQE coalesced the shuffle', () => {
+      const f = of('spill', { ...spilled, taskCount: 120 }, { 'spark.sql.shuffle.partitions': '400' });
+      expect(keys(f)).toEqual([ADVISORY, 'spark.executor.memory']);
+      expect(f.recommendation).not.toMatch(/spark\.sql\.shuffle\.partitions/);
+      expect(coreFindingGenericRecommendation(f)).toMatch(/advisoryPartitionSizeInBytes/);
+    });
+
+    it('points at the stage\'s own partition count where a repartition(n) sized it', () => {
+      const f = of('spill', spilled, { 'spark.sql.shuffle.partitions': '64' });
+      expect(keys(f)).toEqual(['code', 'spark.executor.memory']);
+      expect(f.recommendation).toMatch(/repartition\(n\)/);
+      expect(coreFindingGenericRecommendation(f)).toMatch(/own partition count/);
+    });
+  });
+
+  describe('stageSlowness', () => {
+    const slow = { taskCount: 400, submittedAt: 0, completedAt: 20 * 60000, shuffleReadBytes: 10 * MiB };
+
+    it('never offers spark.default.parallelism', () => {
+      for (const [stage, config] of [[slow, { 'spark.sql.shuffle.partitions': '400' }], [{ ...slow, taskCount: 120 }, { 'spark.sql.shuffle.partitions': '400' }], [slow, { 'spark.sql.shuffle.partitions': '64' }]]) {
+        const f = of('stageSlowness', stage, config);
+        expect(f.recommendation).not.toMatch(/default\.parallelism/);
+        expect(keys(f)).not.toContain('spark.default.parallelism');
+        expect(coreFindingGenericRecommendation(f)).not.toMatch(/default\.parallelism/);
+      }
+    });
+
+    it('names the lever that sized the stage', () => {
+      expect(keys(of('stageSlowness', slow, { 'spark.sql.shuffle.partitions': '400' }))).toEqual(['spark.sql.shuffle.partitions']);
+      expect(keys(of('stageSlowness', { ...slow, taskCount: 120 }, { 'spark.sql.shuffle.partitions': '400' }))).toEqual([ADVISORY]);
+      expect(keys(of('stageSlowness', slow, { 'spark.sql.shuffle.partitions': '64' }))).toEqual(['code']);
     });
   });
 });

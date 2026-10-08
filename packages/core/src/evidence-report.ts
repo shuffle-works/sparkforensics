@@ -406,13 +406,13 @@ function verdictJson(model: RunVerdictModel): VerdictJson {
 // A WeakMap needs no invalidation: once mcp-tools.ts evicts the appModel, this entry is collectible.
 // Each cache is split first by the overrides object the report ran under (one fixed, frozen object
 // per CLI invocation or MCP server process; DEFAULT_THRESHOLDS for the specification's).
-type ReportCache<T = EvidenceReportJson> = WeakMap<object, WeakMap<AppModel, T>>;
+export type ReportCache<T = EvidenceReportJson> = WeakMap<object, WeakMap<AppModel, T>>;
 const DEFAULT_THRESHOLDS = {};
 const jsonCache: ReportCache = new WeakMap();
 // The redacted report, keyed by the unredacted appModel it was built from.
 const redactedJsonCache: ReportCache = new WeakMap();
 
-function cacheFor<T>(cache: ReportCache<T>, thresholds: ThresholdOverrides | undefined): WeakMap<AppModel, T> {
+export function cacheFor<T>(cache: ReportCache<T>, thresholds: ThresholdOverrides | undefined): WeakMap<AppModel, T> {
   const key = thresholds ?? DEFAULT_THRESHOLDS;
   let byModel = cache.get(key);
   if (!byModel) {

@@ -164,6 +164,8 @@ export interface SqlExecution {
   rootExecutionId?: number;
   /** `<Command>\nArguments: <line>` of a Delta write command's root node (see stripPlanDescription). */
   commandArguments?: string;
+  /** Session settings this execution ran with that differ from the SparkContext's (`SQLExecutionStart.modifiedConfigs`). */
+  modifiedConfigs?: Record<string, string>;
   [key: string]: unknown;
 }
 export interface PlanGraphNodeData {
@@ -292,6 +294,9 @@ export interface RunAggregates {
   busyCoreMs?: number;
   peakConcurrentCores?: number;
   perStage?: Record<string, { totalTaskDurationSum: number; taskCount: number }>;
+  /** Per executor id, the run peak of each executor metric any TaskEnd reported (lower bounds:
+   * Spark samples at heartbeat). Absent on a log without Spark 3+ task executor metrics. */
+  executorPeakMetrics?: Record<string, Record<string, number>>;
   [key: string]: unknown;
 }
 

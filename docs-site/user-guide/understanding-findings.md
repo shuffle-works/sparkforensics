@@ -49,18 +49,22 @@ Tasks are writing data out of memory, which slows execution. Two spill
 patterns get flagged differently: skew spill, where a few heavy tasks spill
 while most don't (rebalance partitioning), and volume spill, where most
 tasks spill because the data genuinely exceeds available memory (add
-partitions or executor memory). `spark.sql.shuffle.partitions` is suggested
-only for a stage that reads a shuffle; `evidence.reads` says what the stage
-reads (`shuffle`, `input` or `other`). Only flagged on stages that take at
+partitions or executor memory). Partition-count advice is given only for a
+stage that reads a shuffle; `evidence.reads` says what the stage reads
+(`shuffle`, `input` or `other`). It names what sized the stage:
+`spark.sql.shuffle.partitions` when the stage ran that many tasks,
+`spark.sql.adaptive.advisoryPartitionSizeInBytes` when AQE coalesced them, and
+the stage's own `repartition(n)` or RDD parallelism otherwise. Only flagged on stages that take at
 least 0.5% of the run.
 
 ### `GC`: Garbage collection pressure {#gc}
 
 Tasks spend more than 10% of executor run time reclaiming memory. Reduce
 object creation: use primitive types, avoid UDFs, or raise executor memory.
-A stage with GC below 5% gets an informational note that executor memory
-may be over-provisioned, only on stages that take at least 0.5% of the run.
-Both need at least 10 s of executor run time on the stage.
+When the log carries no measured executor heap peaks (see [`MEM`](#mem)), a
+stage with GC below 5% gets an informational note that executor memory may be
+over-provisioned, only on stages that take at least 0.5% of the run. Both need
+at least 10 s of executor run time on the stage.
 
 ### `FAIL`: Failed tasks {#fail}
 
@@ -95,7 +99,12 @@ Speculative task attempts used a lot of executor time without confirming a
 genuine straggler. Self-flags a confidence that scales with how far the
 wasted time sits past the threshold. If task durations are just naturally
 variable rather than genuine stragglers, tune
-`spark.speculation.multiplier`/`spark.speculation.quantile`.
+`spark.speculation.multiplier`/`spark.speculation.quantile`. The
+recommendation names the run's effective values: Spark relaunches a task that
+runs over the multiplier times the median once the quantile of the stage's
+tasks has finished, which is 1.5x and 75% before Spark 4.0 and 3x and 90% from
+4.0 unless the job sets them. A speculative-attempt `straggler` and a
+`slowHost` finding word their speculation advice the same way.
 
 ### `RETRY`: Retry waste {#retry}
 
@@ -105,9 +114,14 @@ completed. Investigate executor loss or fetch failures.
 ### `TINY`: Tiny tasks {#tiny}
 
 Many very short tasks add scheduling overhead out of proportion to the work
-each one does. Repartition to fewer, larger tasks; a stage that reads a shuffle
-(`evidence.reads` is `shuffle`) can also lower `spark.sql.shuffle.partitions`.
-Only flagged on stages that take at least 0.5% of the run.
+each one does. Repartition to fewer, larger tasks. On a stage that reads a
+shuffle (`evidence.reads` is `shuffle`) the advice names what sized it: lower
+`spark.sql.shuffle.partitions` when the stage ran that many tasks; when AQE
+coalesced them and still kept tiny ones, set
+`spark.sql.adaptive.coalescePartitions.parallelismFirst` to `false` (AQE then
+targets `spark.sql.adaptive.advisoryPartitionSizeInBytes` rather than
+`defaultParallelism` tasks) or raise the advisory size; otherwise lower the
+`repartition(n)` or RDD partition count in the code. Only flagged on stages that take at least 0.5% of the run.
 
 ### `PART`: Partition sizing {#part}
 
@@ -119,8 +133,10 @@ repartition to break it up before the stage runs.
 
 A stage ran for 15 minutes or more and no slow host was flagged on it. It
 can appear alongside other findings on the same stage. On a stage that reads a
-shuffle, often a partition-count problem: raise parallelism via
-`spark.sql.shuffle.partitions` or `spark.default.parallelism`, or check for a
+shuffle, often a partition-count problem: raise `spark.sql.shuffle.partitions`
+when the stage ran that many tasks, lower
+`spark.sql.adaptive.advisoryPartitionSizeInBytes` when AQE coalesced them, or
+raise the stage's own `repartition(n)` or RDD parallelism; or check for a
 large per-task data volume driving heavy shuffle and spill. On a stage that
 reads input files and no shuffle, check input file sizes and lower
 `spark.sql.files.maxPartitionBytes`. `evidence.reads` says which case
@@ -164,15 +180,19 @@ alternatives. With it on, lower `spark.dynamicAllocation.maxExecutors`, and
 ### `MEM`: Memory utilization {#mem}
 
 Executor memory or core capacity may be over- or under-provisioned: more
-than 50% of allocated core time ran no task, an executor's heap peaked above
-95% of its allocation, or it stayed below 70%. Some
-detail here needs `spark.eventLog.logStageExecutorMetrics=true` on the run
-being analyzed; without it, per-executor memory usage can't be broken down.
+than 50% of allocated core time ran no task, or the busiest executor's heap
+peak stayed below 70% of `spark.executor.memory`. Heap peaks come from the
+executor metrics Spark 3+ writes on every task end (and from stage executor
+metrics when `spark.eventLog.logStageExecutorMetrics=true`). Spark samples them
+at executor heartbeat, so a peak is a lower bound, and the heap-used metric
+counts uncollected garbage, so a peak near the limit is not reported as a
+memory risk. A log with no peaks (Spark before 3.0, or local mode, which
+reports zeros) gets a note that executor memory sizing was not measured.
 Review `spark.executor.memory` and executor count if allocated memory sat
 largely idle over the run. That idle-memory variant self-flags a confidence
 that scales with how far the estimated waste sits past a 1.5x buffer: it
-estimates waste from allocated memory-time versus task run time (not
-measured heap usage). Check it against
+estimates waste from allocated memory-time versus task run time per
+executor core (not measured heap usage). Check it against
 the Spark UI before resizing anything.
 
 ### `CACHE`: Caching opportunity {#cache}
@@ -281,7 +301,7 @@ this tag:
 - Under-broadcast: the smaller side of a Sort Merge Join looks well under
   the broadcast threshold; consider a `broadcast()` hint or raising
   `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold
-  (logged, else Spark's 10 MiB) already admits the smaller side
+  (the query's own setting, else the logged one, else Spark's 10 MiB) already admits the smaller side
   (`evidence.broadcastThreshold` is `notLimiting`), the threshold is not what
   stopped the broadcast, so `remediation` is empty and the advice is a hint or
   table statistics.

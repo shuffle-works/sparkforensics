@@ -51,8 +51,8 @@ type DiscriminatorSlot = (typeof DISCRIMINATOR_SLOTS)[number];
 //     duplicatePlanSubtree (groupIndex is the real
 //     uniqueness guarantee: rootName+subtreeSize can collide across groups),
 //     underBroadcast (value+largerSideBytes per node/side).
-// memoryUtilization leaves out `rule`: one heap band per executor, so executorId is already
-// unique and folding rule in risks id churn if band logic changes. partitionSizing keeps
+// memoryUtilization leaves out `rule`: the run has one heap band (on its busiest executor), so
+// executorId is already unique and folding rule in risks id churn if band logic changes. partitionSizing keeps
 // `rule`: a stage can emit several rules at once sharing stageId+metric.
 const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & keyof FindingOf<T>)[] } = {
   skew: [], stageShape: ['rule'], shuffle: [], partitionSizing: ['rule'], spill: [], gc: ['direction'],

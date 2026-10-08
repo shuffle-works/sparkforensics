@@ -300,6 +300,10 @@ export const TaskEndEventSchema = z.object({
       ID: z.number(),
     })).max(MAX_ACCUMULABLES_PER_TASK).optional(),
   }).optional(),
+  // Spark 3.0+: the executor's metric peaks as of this task's end, one number per ExecutorMetricType
+  // name (the same names as SparkListenerStageExecutorMetrics). Values are read by name and kept
+  // only when numeric, so a stray value never drops the task.
+  'Task Executor Metrics': z.record(z.string(), z.unknown()).optional(),
   'Task Metrics': z.object({
     'Peak Execution Memory': z.number().optional(),
     'JVM GC Time': z.number().optional(),
@@ -334,6 +338,9 @@ export const SqlExecutionStartEventSchema = z.object({
   physicalPlanDescription: z.string().optional(),
   time: z.number(),
   sparkPlanInfo: SparkPlanInfoFieldSchema,
+  // Session settings of this execution that differ from the SparkContext's (Spark 3.3+; redacted
+  // values are masked by Spark). Anything but a string-to-string map is dropped, not a parse error.
+  modifiedConfigs: z.record(z.string(), z.string()).optional().catch(undefined),
 });
 
 // applyAdaptiveExecutionUpdate: AQE re-plans mid-query and re-emits sparkPlanInfo for the same
