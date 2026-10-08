@@ -55,9 +55,6 @@ const SPARK_DEFAULTS: Readonly<Record<string, readonly DefaultStep[]>> = {
   'spark.dynamicAllocation.minExecutors': [[ALWAYS, '0']],
   'spark.dynamicAllocation.maxExecutors': [[ALWAYS, '2147483647']],
   'spark.dynamicAllocation.executorIdleTimeout': [[ALWAYS, '60s']],
-  // Shuffle tracking, which lets dynamic allocation run without an external shuffle service, is on
-  // from 3.4.0.
-  'spark.dynamicAllocation.shuffleTracking.enabled': [[[3, 0], 'false'], [[3, 4], 'true']],
 
   'spark.sql.shuffle.partitions': [[ALWAYS, '200']],
   'spark.sql.autoBroadcastJoinThreshold': [[ALWAYS, '10MB']],
@@ -65,12 +62,7 @@ const SPARK_DEFAULTS: Readonly<Record<string, readonly DefaultStep[]>> = {
   // Adaptive query execution is on by default from 3.2.0.
   'spark.sql.adaptive.enabled': [[ALWAYS, 'false'], [[3, 2], 'true']],
   'spark.sql.adaptive.skewJoin.enabled': [[[3, 0], 'true']],
-  'spark.sql.adaptive.skewJoin.skewedPartitionFactor': [[[3, 0], '5']],
-  'spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes': [[[3, 0], '256MB']],
-  'spark.sql.adaptive.forceOptimizeSkewedJoin': [[[3, 3], 'false']],
   'spark.sql.adaptive.coalescePartitions.enabled': [[[3, 0], 'true']],
-  'spark.sql.adaptive.coalescePartitions.parallelismFirst': [[[3, 2], 'true']],
-  'spark.sql.adaptive.coalescePartitions.minPartitionSize': [[[3, 2], '1MB']],
   // Falls back to spark.sql.adaptive.shuffle.targetPostShuffleInputSize, itself 64MB.
   'spark.sql.adaptive.advisoryPartitionSizeInBytes': [[[3, 0], '64MB']],
 };

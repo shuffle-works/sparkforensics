@@ -27,7 +27,6 @@ describe('effective conf of a real Spark 4.0 log with runtime settings', () => {
     expect(conf(second.modifiedConfigs, 'spark.sql.autoBroadcastJoinThreshold')).toEqual({ value: '-1', source: 'query' });
     expect(conf(first.modifiedConfigs, 'spark.sql.autoBroadcastJoinThreshold')).toEqual({ value: '10MB', source: 'default' });
     expect(conf(second.modifiedConfigs, 'spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes')).toEqual({ value: '4MB', source: 'query' });
-    expect(conf(first.modifiedConfigs, 'spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes')).toEqual({ value: '256MB', source: 'default' });
     expect(conf(undefined, 'spark.speculation')).toEqual({ value: 'true', source: 'app' });
     expect(conf(undefined, 'spark.speculation.multiplier')).toEqual({ value: '3', source: 'default' });
     expect(conf(undefined, 'spark.speculation.quantile')).toEqual({ value: '0.9', source: 'default' });

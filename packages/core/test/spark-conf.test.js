@@ -19,20 +19,12 @@ describe('sparkConfDefault by Spark version', () => {
     expect(Object.values(at('spark.speculation'))).toEqual(RELEASES.map(() => 'false'));
   });
 
-  it('turns adaptive execution on at 3.2 and shuffle tracking on at 3.4', () => {
+  it('turns adaptive execution on at 3.2', () => {
     expect(Object.values(at('spark.sql.adaptive.enabled'))).toEqual(['false', 'false', ...Array(7).fill('true')]);
-    expect(Object.values(at('spark.dynamicAllocation.shuffleTracking.enabled')))
-      .toEqual(['false', 'false', 'false', 'false', ...Array(5).fill('true')]);
   });
 
   it('introduces each adaptive property at the release that added it', () => {
     expect(Object.values(at('spark.sql.adaptive.skewJoin.enabled'))).toEqual(RELEASES.map(() => 'true'));
-    expect(Object.values(at('spark.sql.adaptive.coalescePartitions.parallelismFirst')))
-      .toEqual([undefined, undefined, ...Array(7).fill('true')]);
-    expect(Object.values(at('spark.sql.adaptive.coalescePartitions.minPartitionSize')))
-      .toEqual([undefined, undefined, ...Array(7).fill('1MB')]);
-    expect(Object.values(at('spark.sql.adaptive.forceOptimizeSkewedJoin')))
-      .toEqual([undefined, undefined, undefined, ...Array(6).fill('false')]);
   });
 
   it('keeps the values that no release from 3.0 to 4.2 changed', () => {
@@ -41,8 +33,6 @@ describe('sparkConfDefault by Spark version', () => {
       'spark.sql.autoBroadcastJoinThreshold': '10MB',
       'spark.sql.files.maxPartitionBytes': '128MB',
       'spark.sql.adaptive.advisoryPartitionSizeInBytes': '64MB',
-      'spark.sql.adaptive.skewJoin.skewedPartitionFactor': '5',
-      'spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes': '256MB',
       'spark.sql.adaptive.coalescePartitions.enabled': 'true',
       'spark.executor.memory': '1g',
       'spark.serializer': 'org.apache.spark.serializer.JavaSerializer',
@@ -86,14 +76,14 @@ describe('effectiveSparkConf layering', () => {
   const layers = {
     sparkVersion: '4.0.4',
     properties: { 'spark.sql.shuffle.partitions': ' 64 ', 'spark.sql.autoBroadcastJoinThreshold': '20MB' },
-    modified: { 'spark.sql.autoBroadcastJoinThreshold': '-1', 'spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes': '4MB' },
+    modified: { 'spark.sql.autoBroadcastJoinThreshold': '-1', 'spark.sql.adaptive.advisoryPartitionSizeInBytes': '4MB' },
   };
 
   it('prefers the per-query value, then the app property, then the version default', () => {
     expect(effectiveSparkConf(layers, 'spark.sql.autoBroadcastJoinThreshold')).toEqual({ value: '-1', source: 'query' });
     expect(effectiveSparkConf(layers, 'spark.sql.shuffle.partitions')).toEqual({ value: '64', source: 'app' });
     expect(effectiveSparkConf(layers, 'spark.speculation.multiplier')).toEqual({ value: '3', source: 'default' });
-    expect(effectiveSparkConf(layers, 'spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes'))
+    expect(effectiveSparkConf(layers, 'spark.sql.adaptive.advisoryPartitionSizeInBytes'))
       .toEqual({ value: '4MB', source: 'query' });
   });
 
