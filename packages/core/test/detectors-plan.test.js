@@ -548,10 +548,12 @@ describe('smallFiles: real-fixture metric-name integration', () => {
   );
 });
 
+const SMJ_INNER = 'SortMergeJoin [a#1L], [b#2L], Inner';
+
 describe('broadcast sizing', () => {
   function sizeNode(name, children = [], value) {
     return {
-      name, detail: '', children,
+      name, detail: name === 'SortMergeJoin' ? SMJ_INNER : '', children,
       metrics: value != null ? [{ name: 'data size', value, metricType: 'size' }] : [],
     };
   }
@@ -634,7 +636,7 @@ describe('broadcast sizing', () => {
 describe('broadcastSizing: narrowed stageIds', () => {
   function sizeNode(name, children = [], value, stageIds) {
     return {
-      name, detail: '', children,
+      name, detail: name === 'SortMergeJoin' ? SMJ_INNER : '', children,
       metrics: value != null ? [{ name: 'data size', value, metricType: 'size' }] : [],
       ...(stageIds ? { stageIds } : {}),
     };
@@ -651,8 +653,8 @@ describe('broadcastSizing: narrowed stageIds', () => {
     expect(findings[0].stageIds).toEqual([20]);
   });
 
-  it('underBroadcast unions stageIds from wherever sumBoundarySize actually found the data-size metric on each side, however deep', () => {
-    const deepLeft = sizeNode('Exchange', [sizeNode('Filter', [], 5 * 1024 * 1024, [30])]); // metric one level down
+  it('underBroadcast unions stageIds from the shuffle exchange on each join side, through pass-through operators', () => {
+    const deepLeft = sizeNode('Sort', [sizeNode('Exchange', [], 5 * 1024 * 1024, [30])]); // exchange one level down
     const shallowRight = sizeNode('Exchange', [], 200 * 1024 * 1024 * 1024, [31]); // metric on the immediate child
     const join = sizeNode('SortMergeJoin', [deepLeft, shallowRight]);
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: join }]]);
@@ -673,12 +675,10 @@ describe('broadcastSizing: narrowed stageIds', () => {
     expect(findings[0].stageIds).toEqual([20]);
   });
 
-  it('underBroadcast still finds the data-size metric two levels down (Exchange -> Filter -> Project), not just depth 1', () => {
-    // No real-log fixture triggers this finding, so this synthetic case is the only
-    // coverage that boundarySizeContributors' recursion matches sumBoundarySize's depth.
-    const deepLeft = sizeNode('Exchange', [
-      sizeNode('Filter', [sizeNode('Project', [], 5 * 1024 * 1024, [30])]),
-    ]); // metric two levels down
+  it('underBroadcast looks through Sort -> InputAdapter -> WholeStageCodegen -> ShuffleQueryStage to the exchange', () => {
+    const deepLeft = sizeNode('WholeStageCodegen (4)', [sizeNode('Sort', [sizeNode('InputAdapter', [
+      sizeNode('ShuffleQueryStage', [sizeNode('Exchange', [], 5 * 1024 * 1024, [30])]),
+    ])])]);
     const shallowRight = sizeNode('Exchange', [], 200 * 1024 * 1024 * 1024, [31]); // metric on the immediate child
     const join = sizeNode('SortMergeJoin', [deepLeft, shallowRight]);
     const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree: join }]]);

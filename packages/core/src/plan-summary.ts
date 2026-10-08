@@ -139,9 +139,17 @@ function visitScan(name: string, detail: string, result: PlanSummary): boolean {
   return true;
 }
 
+// <JoinOp> [leftKeys], [rightKeys], <JoinType>[, BuildSide]; the join type is Spark's JoinType.sql
+// name (Inner, LeftOuter, RightOuter, FullOuter, LeftSemi, LeftAnti, Cross, ExistenceJoin(...)).
+const JOIN_DETAIL = /^(SortMergeJoin|BroadcastHashJoin|ShuffledHashJoin|BroadcastNestedLoopJoin)\s+(\[[^\]]*\]),\s*(\[[^\]]*\]),\s*(\w+)/;
+
+/** The join type a keyed join node's detail names, or null when the detail is not a join line. */
+export function parseJoinType(detail: string): string | null {
+  return JOIN_DETAIL.exec(detail)?.[4] ?? null;
+}
+
 function visitJoin(_name: string, detail: string, result: PlanSummary): boolean {
-  // <JoinOp> [leftKeys], [rightKeys], <JoinType>[, BuildSide]
-  const m = detail.match(/^(SortMergeJoin|BroadcastHashJoin|ShuffledHashJoin|BroadcastNestedLoopJoin)\s+(\[[^\]]*\]),\s*(\[[^\]]*\]),\s*(\w+)/);
+  const m = detail.match(JOIN_DETAIL);
   if (m) {
     result.joins.push({ joinType: m[1], leftKeys: parseColList(m[2]), rightKeys: parseColList(m[3]) });
     if (/^Cross$/i.test(m[4])) pushCrossJoinWarning(result, 'Cross join');

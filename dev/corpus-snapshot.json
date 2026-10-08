@@ -124,36 +124,6 @@
      }
     },
     {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.17604839180415355,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.20086744157248929,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "utilization||avgUtilization|||||||||||",
      "type": "utilization",
      "band": "info",
@@ -290,36 +260,6 @@
      "wcHigh": 2664.9644018792915,
      "rawWaste": {
       "value": 2664.9644018792915,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.18989286679551048,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.2419582041523738,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
       "unit": "ms"
      }
     }
@@ -535,36 +475,6 @@
      "wcHigh": 9.6,
      "rawWaste": {
       "value": 9.6,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|16|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 4200000,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 17.246069458326268,
-     "wcHigh": 33.6,
-     "rawWaste": {
-      "value": 33.6,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|17|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 4200000,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 12.831436509106808,
-     "wcHigh": 33.6,
-     "rawWaste": {
-      "value": 33.6,
       "unit": "ms"
      }
     }
@@ -1084,36 +994,6 @@
       "value": 5949.101966797443,
       "unit": "ms"
      }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.16346306823351459,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.19124905869508235,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
     }
    ]
   },
@@ -1152,36 +1032,6 @@
       "value": 5933.022700204426,
       "unit": "ms"
      }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1670272420375532,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1901956818478397,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
     }
    ]
   },
@@ -1218,36 +1068,6 @@
      "wcHigh": 5858.332504455571,
      "rawWaste": {
       "value": 5858.332504455571,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.15978159215533683,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1926365518146226,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
       "unit": "ms"
      }
     }
@@ -1614,36 +1434,6 @@
       "value": 2277.778149337792,
       "unit": "ms"
      }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.17023823498655438,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.2100108490352495,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
     }
    ]
   },
@@ -1721,36 +1511,6 @@
       "value": 12011.552589590581,
       "unit": "ms"
      }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.17056008566825967,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.21034683325046227,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
     }
    ]
   },
@@ -1802,36 +1562,6 @@
      "wcHigh": 13584.57926283843,
      "rawWaste": {
       "value": 13584.57926283843,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1829022370711047,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.2403494293532738,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
       "unit": "ms"
      }
     }
@@ -1911,36 +1641,6 @@
       "value": 2313.59808806489,
       "unit": "ms"
      }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1872541290208305,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.24557190703153448,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
     }
    ]
   },
@@ -2006,36 +1706,6 @@
       "value": 1882.4074087821539,
       "unit": "ms"
      }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.16777422713755008,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.21152952428688077,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
     }
    ]
   },
@@ -2089,36 +1759,6 @@
       "value": 13938.27349599639,
       "unit": "ms"
      }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1639081754658471,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.18575851470904936,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
     }
    ]
   },
@@ -2167,36 +1807,6 @@
      "wcHigh": 10438.674450057435,
      "rawWaste": {
       "value": 10438.674450057435,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1590771540740949,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.20964385665145419,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
       "unit": "ms"
      }
     }
@@ -2259,36 +1869,6 @@
      "wcHigh": 2104.2663338088446,
      "rawWaste": {
       "value": 2104.2663338088446,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.16328037996034708,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.21408695745246314,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
       "unit": "ms"
      }
     },
@@ -2368,36 +1948,6 @@
       "value": 1113.0374882555589,
       "unit": "ms"
      }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1658500014666895,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.21396077601937669,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
     }
    ]
   },
@@ -2463,36 +2013,6 @@
       "value": 1549.2562990499796,
       "unit": "ms"
      }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1577688794573094,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.201341018681845,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
     }
    ]
   },
@@ -2529,36 +2049,6 @@
      "wcHigh": 3028.7914388955805,
      "rawWaste": {
       "value": 3028.7914388955805,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1664023920385906,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.18006355787830702,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
       "unit": "ms"
      }
     },
@@ -2638,36 +2128,6 @@
       "value": 1158.5482206405693,
       "unit": "ms"
      }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.16308041916608107,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1767150498149243,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
     }
    ]
   },
@@ -2745,36 +2205,6 @@
       "value": 2426.191953470066,
       "unit": "ms"
      }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.16249484160995903,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.2115924322185283,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
     }
    ]
   },
@@ -2796,36 +2226,6 @@
      "wcHigh": 3042.174114616871,
      "rawWaste": {
       "value": 3042.174114616871,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1628409876725579,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1806265638780188,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
       "unit": "ms"
      }
     },
@@ -2888,36 +2288,6 @@
      "wcHigh": 1230.7484335359018,
      "rawWaste": {
       "value": 1230.7484335359018,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.16732364505698316,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.18700913025974875,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
       "unit": "ms"
      }
     },
@@ -3014,36 +2384,6 @@
      }
     },
     {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1650897538883557,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.21127373350837603,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "utilization||avgUtilization|||||||||||",
      "type": "utilization",
      "band": "info",
@@ -3078,36 +2418,6 @@
      "wcHigh": 3153.865515270584,
      "rawWaste": {
       "value": 3153.865515270584,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.16312252260612836,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|1|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.17655914951587193,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
       "unit": "ms"
      }
     },
@@ -3173,36 +2483,6 @@
      "wcHigh": 2344.5142999006953,
      "rawWaste": {
       "value": 2344.5142999006953,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.16563616092487535,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "underBroadcast|0|smallerSideBytes|||||||||||",
-     "type": "underBroadcast",
-     "band": "info",
-     "confidence": null,
-     "value": 39200,
-     "basis": "contended",
-     "method": "modeled",
-     "wcLow": 0.1859587507617707,
-     "wcHigh": 0.3136,
-     "rawWaste": {
-      "value": 0.3136,
       "unit": "ms"
      }
     },

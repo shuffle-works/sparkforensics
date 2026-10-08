@@ -357,16 +357,29 @@ this tag:
   `useArrow=False`) or a pandas UDF. These floors are conservative guesses,
   not tuned against real workloads. A plan that reports no
   `data sent to Python workers` value is skipped.
-- Under-broadcast: the smaller side of a Sort Merge Join looks well under
-  the broadcast threshold; consider a `broadcast()` hint or raising
-  `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold
-  (the query's own setting, else the logged one, else Spark's 10 MiB) already admits the smaller side
-  (`evidence.broadcastThreshold` is `notLimiting`), the threshold is not what
-  stopped the broadcast, so `remediation` is empty and the advice is a hint or
-  table statistics.
+- Under-broadcast: a side of a Sort Merge Join that its join type can
+  broadcast (`evidence.buildSide`, sized by the finding's value) looks well
+  under the broadcast threshold;
+  consider a `broadcast()` hint or raising the threshold property. The size is
+  the shuffle's `data size`, the metric adaptive execution compares at runtime.
+  The threshold is `spark.sql.adaptive.autoBroadcastJoinThreshold` when the
+  plan is adaptive and that property is set, else
+  `spark.sql.autoBroadcastJoinThreshold` (the query's own setting, else the
+  logged one, else Spark's 10 MiB). A full outer join never fires, and a side
+  under 1 MiB or over the over-broadcast limit is skipped. When the effective
+  threshold already admits the side (`evidence.broadcastThreshold` is
+  `notLimiting`), the threshold is not what stopped the broadcast, so
+  `remediation` is empty and the advice is a hint or table statistics. Both
+  sides need a shuffle `data size` of their own, so a join over another join's
+  output is skipped, and so is a join whose only buildable side is larger than
+  the other side, since broadcasting it saves nothing. The build side is
+  always the smaller one and `evidence.largerSideBytes` is the other side.
 - Over-broadcast: a broadcast exceeds the 1 GB threshold; check for a
-  misapplied broadcast hint or a misconfigured
-  `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold is
-  below the broadcast or auto-broadcast is disabled (`evidence.broadcastThreshold`
-  is `notLimiting` or `disabled`), a hint forced it: remove the hint, and
-  `remediation` is empty.
+  misapplied broadcast hint or a misconfigured threshold property. Under
+  adaptive execution a broadcast planned up front is admitted by
+  `spark.sql.autoBroadcastJoinThreshold` and one converted at runtime by
+  `spark.sql.adaptive.autoBroadcastJoinThreshold` (when set), so the finding
+  names whichever of them admits the broadcast. When every applicable
+  threshold is below the broadcast or disabled (`evidence.broadcastThreshold`
+  is `notLimiting`, or `disabled` when all are disabled), a hint forced it:
+  remove the hint, and `remediation` is empty.

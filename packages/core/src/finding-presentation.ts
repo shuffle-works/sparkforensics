@@ -8,7 +8,7 @@
 // detectors.ts is type-only, so it is erased at build time. A detector's scope, order and emits
 // list stay on its DETECTORS entry; renderers get them through detectorInfoByType().
 import type { ThresholdsOf } from './detectors.ts';
-import type { AqeSkewCase, Remediation, SkewOrigin } from './finding-types.ts';
+import type { AqeSkewCase, ConfRemediation, Remediation, SkewOrigin } from './finding-types.ts';
 import type { FindingOf, FindingType } from './types.ts';
 
 export interface FindingPresentation<T extends FindingType> {
@@ -36,6 +36,13 @@ export const shareLabel = (share: number): string => `${Math.round(share * 1e6) 
 // A finding with no remediation (older or hand-built data) keeps the property wording.
 function switchAlreadyOn(finding: { remediation?: Remediation[] }, key: string): boolean {
   return finding.remediation != null && !finding.remediation.some((r) => r.kind === 'conf' && r.key === key);
+}
+
+// The broadcast threshold properties a broadcast-sizing row's remediation names: the adaptive one when
+// it governed the query, else (and for a row with none) spark.sql.autoBroadcastJoinThreshold.
+function broadcastThresholdKeyOf(f: { remediation?: Remediation[] }): string {
+  const keys = (f.remediation ?? []).filter((r): r is ConfRemediation => r.kind === 'conf').map((r) => r.key);
+  return keys.length ? keys.join(' or ') : 'spark.sql.autoBroadcastJoinThreshold';
 }
 
 // The properties an idle-capacity finding lowers once dynamic allocation is on, worded as its row
@@ -446,11 +453,11 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   underBroadcast: {
     name: 'missed broadcast join',
     tag: 'PLAN',
-    thresholdSummary: () => 'a join below the configured size floor that skipped broadcast',
+    thresholdSummary: (t) => `a join side its type can broadcast, between ${t.minSmallerSideBytes / 1048576} MiB and ${t.overBroadcastBytes / 1073741824} GiB, that skipped broadcast`,
     actionLabel: () => 'Use broadcast join',
     genericRecommendation: (f) => (f.broadcastThreshold === 'notLimiting'
-      ? 'The threshold already admits the smaller side, so it is not what stopped the broadcast: consider a broadcast() hint or collecting table statistics.'
-      : 'This could have been a broadcast join: consider a broadcast() hint or raising spark.sql.autoBroadcastJoinThreshold.'),
+      ? 'The threshold already admits the build side, so it is not what stopped the broadcast: consider a broadcast() hint or collecting table statistics.'
+      : `This could have been a broadcast join: consider a broadcast() hint or raising ${broadcastThresholdKeyOf(f)}.`),
   },
   overBroadcast: {
     name: 'oversized broadcast join',
@@ -459,9 +466,9 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     actionLabel: () => 'Fix oversized broadcast',
     genericRecommendation: (f) => (f.broadcastThreshold === 'notLimiting'
       ? 'The configured threshold is below this broadcast, so remove the broadcast() hint that forced it.'
-      : switchAlreadyOn(f, 'spark.sql.autoBroadcastJoinThreshold')
+      : f.broadcastThreshold === 'disabled'
       ? 'Automatic broadcast is already disabled, so remove the broadcast() hint that forced it.'
-      : 'Check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.'),
+      : `Check for a misapplied broadcast hint or a misconfigured ${broadcastThresholdKeyOf(f)}.`),
   },
 };
 

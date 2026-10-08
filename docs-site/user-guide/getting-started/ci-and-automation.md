@@ -162,8 +162,10 @@ already on only when `spark.sql.adaptive.enabled` is not effectively `false`;
 with AQE off (logged, or the default on Spark 3.0 and 3.1), the skew findings
 suggest setting `spark.sql.adaptive.enabled` to `true` instead. When
 `spark.sql.autoBroadcastJoinThreshold` is logged `-1` (auto-broadcast
-disabled), an over-broadcast finding has an empty `remediation` and points at
-removing the `broadcast()` hint.
+disabled), and under adaptive execution
+`spark.sql.adaptive.autoBroadcastJoinThreshold` is unset or `-1` too, an
+over-broadcast finding has an empty `remediation` and points at removing the
+`broadcast()` hint.
 
 Skew-join handling is only suggested for a stage that reads a shuffle in a SQL
 execution whose plan has a sort-merge or shuffled-hash join. Skew findings

@@ -213,7 +213,7 @@ const EVIDENCE_KEYS = {
   smallFiles: ['executionId', 'stageIds', 'fileCount', 'direction', 'nodeName'],
   pythonUdf: ['executionId', 'stageIds', 'dataSentBytes', 'dataReturnedBytes', 'stageDurationMs'],
   nestedLoopJoin: ['executionId', 'stageIds', 'nodeName', 'joinType', 'condition', 'outputRows', 'leftRows', 'rightRows'],
-  underBroadcast: ['executionId', 'stageIds', 'largerSideBytes', 'broadcastThreshold'],
+  underBroadcast: ['executionId', 'stageIds', 'largerSideBytes', 'joinType', 'buildSide', 'broadcastThreshold'],
   overBroadcast: ['executionId', 'stageIds', 'broadcastThreshold'],
 } as const satisfies { [T in FindingType]: readonly (keyof FindingEvidenceMap[T])[] };
 
