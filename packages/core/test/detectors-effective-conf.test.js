@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { analyze } from '../src/analyzer.js';
+import { analyze, auditConfig } from '../src/analyzer.js';
+import { extractResources } from '../src/event-handlers.ts';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
 const MiB = 1024 * 1024;
@@ -90,5 +91,39 @@ describe('speculation wording names the run\'s effective settings', () => {
     const slow = (config) => catalogOf([makeStage({ taskCount: 60, hostStats })], makeApp({ sparkVersion: '4.0.4', config })).find((f) => f.type === 'slowHost');
     expect(slow({}).recommendation).toContain("consider enabling spark.speculation to relaunch a lagging task automatically (with this run's settings, a task running over 3x the median");
     expect(slow({ 'spark.speculation': 'true' }).recommendation).toContain("speculation is already on, so a lagging task there is already relaunched (with this run's settings, a task running over 3x the median");
+  });
+});
+
+describe('config reads that fall back to Spark\'s defaults', () => {
+  const maxExecutorsAudit = (config) => auditConfig(
+    makeApp({ config, sparkVersion: '3.5.1', resources: { executor: {}, driver: {}, dynamicAllocationEnabled: true, shuffleServiceEnabled: false, serializer: null } }),
+  ).find((f) => f.property === 'spark.dynamicAllocation.maxExecutors');
+
+  it('flags dynamic allocation with no upper bound: unset, or set to Spark\'s own unbounded default', () => {
+    expect(maxExecutorsAudit({ 'spark.dynamicAllocation.enabled': 'true' })).toMatchObject({ valueText: '(unset)' });
+    expect(maxExecutorsAudit({ 'spark.dynamicAllocation.maxExecutors': '2147483647' })).toBeDefined();
+    expect(maxExecutorsAudit({ 'spark.dynamicAllocation.maxExecutors': '100' })).toBeUndefined();
+  });
+
+  it('gives the run\'s resources the defaults of the properties its log recorded, and nothing for a log with none', () => {
+    const recorded = extractResources({ 'spark.app.name': 'x' }, '3.5.1');
+    expect(recorded.executor).toMatchObject({ memory: '1g', memoryMB: 1024, memoryOverheadMB: null, cores: null });
+    expect(recorded).toMatchObject({ dynamicAllocationEnabled: false, shuffleServiceEnabled: false, serializer: null });
+    const set = extractResources({ 'spark.executor.memory': '4g', 'spark.dynamicAllocation.enabled': 'true' }, '3.5.1');
+    expect(set.executor.memoryMB).toBe(4096);
+    expect(set.dynamicAllocationEnabled).toBe(true);
+    expect(extractResources({}, '3.5.1')).toMatchObject({ dynamicAllocationEnabled: null, serializer: null, executor: { memory: null, memoryMB: null } });
+    expect(extractResources(undefined)).toMatchObject({ dynamicAllocationEnabled: null });
+  });
+
+  it('reads Spark\'s overhead settings through the effective conf in the memory-overhead audit', () => {
+    const audit = (config, sparkVersion) => auditConfig(makeApp({
+      config, sparkVersion,
+      resources: { executor: { memoryMB: 1024, memoryOverheadMB: 400 }, driver: {}, dynamicAllocationEnabled: false, shuffleServiceEnabled: false, serializer: null },
+    })).find((f) => f.property === 'spark.executor.memoryOverhead');
+    // 400 MiB is under Spark 4's raised minimum only when the run set it.
+    expect(audit({}, '4.0.0')).toBeUndefined();
+    expect(audit({ 'spark.executor.minMemoryOverhead': '512m' }, '4.0.0')).toMatchObject({ valueText: '400 MiB' });
+    expect(audit({ 'spark.executor.minMemoryOverhead': '512m' }, '3.5.1')).toBeUndefined();
   });
 });

@@ -1,14 +1,15 @@
 import { computePeakConcurrentExecutorCount } from './core-count.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
+import { effectiveSparkConf, executorOverheadSettings, type ConfLayers } from './spark-conf.ts';
 import type { SparkAppInfo, Stage } from './types.ts';
 
 const MS_PER_HOUR = 3_600_000;
 const MS_PER_SECOND = 1000;
 const MIB_PER_GIB = 1024;
 // Spark's documented floor and factor for the default executor memory overhead
-// (spark.executor.memoryOverhead = max(factor * executor memory, 384 MiB)).
-const MIN_OVERHEAD_MIB = 384;
-const DEFAULT_OVERHEAD_FACTOR = 0.1;
+// (spark.executor.memoryOverhead = max(factor * executor memory, 384 MiB)), for a run whose
+// Spark version does not read the factor or minimum properties.
+const OVERHEAD_FALLBACK = { floorMB: 384, floorPct: 0.1 };
 
 export interface Allocation {
   /** Σ over executors of cores x hours alive; null when an executor's cores cannot be resolved. */
@@ -36,7 +37,7 @@ interface AddedExecutor { executorId: string; timestamp: number; totalCores?: nu
 interface RemovedExecutor { executorId: string; timestamp: number }
 
 export interface AllocationInput {
-  app: Pick<SparkAppInfo, 'startTime' | 'endTime' | 'config'> | null;
+  app: Pick<SparkAppInfo, 'startTime' | 'endTime' | 'config' | 'sparkVersion'> | null;
   stages: Map<number, Pick<Stage, 'submittedAt' | 'completedAt'>>;
   executors: { added: AddedExecutor[]; removed: RemovedExecutor[] };
 }
@@ -55,36 +56,41 @@ export function lastObservedTimestamp(input: AllocationInput): number | null {
   return last;
 }
 
-// Spark's default executor memory when spark.executor.memory is unset.
-const DEFAULT_EXECUTOR_MEMORY_MIB = 1024;
-
 // One container's memory in MiB, as Spark requests it from the cluster manager: executor heap,
-// plus overhead, plus off-heap and PySpark worker memory when configured. Null when the log
-// records no Spark properties (nothing to tell a default from a missing config) or a memory key it
-// does record cannot be read.
+// plus overhead, plus off-heap and PySpark worker memory when configured. Every setting is read
+// from the run's effective conf (the logged value, else Spark's default for its version). Null when
+// the log records no Spark properties (nothing to tell a default from a missing config) or a memory
+// key it does record cannot be read.
 function executorMemoryMiB(app: AllocationInput['app']): number | null {
   const config = app?.config;
   if (config == null) return null;
+  const layers: ConfLayers = { sparkVersion: app?.sparkVersion, properties: config };
+  const conf = (key: string): string | undefined => effectiveSparkConf(layers, key)?.value;
   // undefined: key absent; null: present but unreadable.
-  const mib = (key: string): number | null | undefined => (config[key] == null ? undefined : parseSparkMemoryMB(config[key]));
-  const heap = mib('spark.executor.memory') ?? (config['spark.executor.memory'] == null ? DEFAULT_EXECUTOR_MEMORY_MIB : null);
+  const mib = (key: string): number | null | undefined => {
+    const value = conf(key);
+    return value === undefined ? undefined : parseSparkMemoryMB(value);
+  };
+  const heap = mib('spark.executor.memory');
   if (heap == null) return null;
 
   let overhead = mib('spark.executor.memoryOverhead');
   if (overhead === undefined) overhead = mib('spark.yarn.executor.memoryOverhead'); // legacy key
   if (overhead === undefined) {
-    const factor = Number.parseFloat(config['spark.executor.memoryOverheadFactor'] ?? '');
-    overhead = Math.max(MIN_OVERHEAD_MIB, Math.round(heap * (Number.isFinite(factor) && factor > 0 ? factor : DEFAULT_OVERHEAD_FACTOR)));
+    const { minMB, factor } = executorOverheadSettings(layers, OVERHEAD_FALLBACK);
+    overhead = Math.max(minMB, Math.round(heap * factor));
   }
-  const offHeap = String(config['spark.memory.offHeap.enabled']).toLowerCase() === 'true' ? mib('spark.memory.offHeap.size') ?? 0 : 0;
+  const offHeap = conf('spark.memory.offHeap.enabled')?.toLowerCase() === 'true' ? mib('spark.memory.offHeap.size') ?? 0 : 0;
   const pyspark = mib('spark.executor.pyspark.memory') ?? 0;
   if (overhead === null || offHeap === null || pyspark === null) return null;
   return heap + overhead + offHeap + pyspark;
 }
 
+// The logged `spark.dynamicAllocation.enabled`: a value the app set. Spark's default (off) is not a
+// logged key, so a run that never set it reads null.
 function loggedDynamicAllocation(app: AllocationInput['app']): 'on' | 'off' | null {
-  const raw = app?.config?.['spark.dynamicAllocation.enabled'];
-  return raw == null ? null : raw.trim().toLowerCase() === 'true' ? 'on' : 'off';
+  const effective = effectiveSparkConf({ sparkVersion: app?.sparkVersion, properties: app?.config }, 'spark.dynamicAllocation.enabled');
+  return effective == null || effective.source === 'default' ? null : effective.value.toLowerCase() === 'true' ? 'on' : 'off';
 }
 
 /** Allocated core-hours and memory GiB-hours from the executor lifecycle: each executor counts
@@ -151,7 +157,7 @@ function aliveIntervals(input: AllocationInput): AliveInterval[] {
     if (times) times.push(e.timestamp); else removedAt.set(e.executorId, [e.timestamp]);
   }
   const closeAt = input.app?.endTime ?? lastObservedTimestamp(input);
-  const configuredCores = Number.parseInt(input.app?.config?.['spark.executor.cores'] ?? '', 10);
+  const configuredCores = Number.parseInt(effectiveSparkConf({ sparkVersion: input.app?.sparkVersion, properties: input.app?.config }, 'spark.executor.cores')?.value ?? '', 10);
   const out: AliveInterval[] = [];
   const seen = new Set<string>();
   for (const e of input.executors.added) {

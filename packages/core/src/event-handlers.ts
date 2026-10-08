@@ -25,6 +25,7 @@ import { finalizeStage } from './stage-quantiles.ts';
 import { MAX_FAILURE_DETAILS_PER_STAGE, extractTaskFailureDetail, taskFailureKey, type TaskFailureDetail } from './task-failure.ts';
 import { computeRunAggregates } from './run-aggregates.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
+import { effectiveSparkConf } from './spark-conf.ts';
 import { DRIVER_EXECUTOR_ID } from './executor-peaks.ts';
 import type {
   Job, ExecutorAddedEvent, ExecutorRemovedEvent, PlanNode, SparkAppInfo, EvidenceInputs, StageAttemptTotals,
@@ -494,35 +495,41 @@ export function normalizeSparkProperties(
 
 export { parseSparkMemoryMB };
 
-// Derive an allocated-resource summary from the Spark config map. Absent keys degrade to null,
-// not guessed defaults.
-export function extractResources(config: Record<string, string> | null | undefined): ResourcesSummary {
+// Derive an allocated-resource summary from the Spark config map, each setting as the run's
+// effective conf has it (the logged value, else Spark's default for `sparkVersion`). A key with no
+// fixed default degrades to null, not a guess, and so does every key of a log that recorded no
+// Spark properties at all: there is nothing to tell a default from a missing config.
+export function extractResources(config: Record<string, string> | null | undefined, sparkVersion?: string | null): ResourcesSummary {
   const cfg = config ?? {};
+  const recorded = Object.keys(cfg).length > 0;
+  const value = (k: string): string | undefined => (recorded ? effectiveSparkConf({ sparkVersion, properties: cfg }, k)?.value : undefined);
   const int = (k: string) => {
-    if (cfg[k] == null) return null;
-    const n = parseInt(cfg[k], 10);
+    const v = value(k);
+    if (v == null) return null;
+    const n = parseInt(v, 10);
     return Number.isFinite(n) ? n : null;
   };
-  const memMB = (k: string) => (cfg[k] != null ? parseSparkMemoryMB(cfg[k]) : null);
-  const bool = (k: string) => (cfg[k] != null ? String(cfg[k]).toLowerCase() === 'true' : null);
+  const memMB = (k: string) => parseSparkMemoryMB(value(k));
+  const bool = (k: string) => { const v = value(k); return v != null ? v.toLowerCase() === 'true' : null; };
   return {
     executor: {
-      memory: cfg['spark.executor.memory'] ?? null,
+      memory: value('spark.executor.memory') ?? null,
       memoryMB: memMB('spark.executor.memory'),
-      memoryOverhead: cfg['spark.executor.memoryOverhead'] ?? null,
+      memoryOverhead: value('spark.executor.memoryOverhead') ?? null,
       memoryOverheadMB: memMB('spark.executor.memoryOverhead'),
       cores: int('spark.executor.cores'),
       instances: int('spark.executor.instances'),
     },
     driver: {
-      memory: cfg['spark.driver.memory'] ?? null,
+      memory: value('spark.driver.memory') ?? null,
       memoryMB: memMB('spark.driver.memory'),
-      memoryOverhead: cfg['spark.driver.memoryOverhead'] ?? null,
+      memoryOverhead: value('spark.driver.memoryOverhead') ?? null,
       memoryOverheadMB: memMB('spark.driver.memoryOverhead'),
       cores: int('spark.driver.cores'),
     },
     dynamicAllocationEnabled: bool('spark.dynamicAllocation.enabled'),
     shuffleServiceEnabled: bool('spark.shuffle.service.enabled'),
+    // The serializer a run set: Spark's default is reported as unset.
     serializer: cfg['spark.serializer'] ?? null,
   };
 }
@@ -885,7 +892,7 @@ export function startApplication(event: z.infer<typeof ApplicationStartEventSche
     endTime: null,
     sparkVersion: state.pendingSparkVersion ?? event['Spark Version'] ?? null,
     config,
-    resources: state.pendingResources ?? extractResources(config),
+    resources: state.pendingResources ?? extractResources(config, state.pendingSparkVersion ?? event['Spark Version']),
     rddInfo: state.rddInfo,
   };
   return appMessage(state);
@@ -894,7 +901,7 @@ export function startApplication(event: z.infer<typeof ApplicationStartEventSche
 export function updateEnvironment(event: z.infer<typeof EnvironmentUpdateEventSchema>, state: ParserState) {
   state.evidenceInputs.environmentUpdates++;
   const config = normalizeSparkProperties(event['Spark Properties']);
-  const resources = extractResources(config);
+  const resources = extractResources(config, state.app?.sparkVersion ?? state.pendingSparkVersion);
   // EnvironmentUpdate normally precedes ApplicationStart: stash the config so ApplicationStart can
   // attach it. If it arrives after (a mid-run update), apply live and re-post the app.
   if (state.app) {

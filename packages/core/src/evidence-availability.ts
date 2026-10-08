@@ -1,3 +1,4 @@
+import { effectiveSparkConf } from './spark-conf.ts';
 import type { AppModel, EvidenceAvailability, EvidenceAvailabilityEntry, EvidenceEventType, EvidenceInputs, EvidenceKey, EvidenceReasonCode, EvidenceState } from './types';
 
 // Not annotated `: number` on purpose: `const X = 1` infers the literal type `1`, assignable to
@@ -6,7 +7,7 @@ export const EVIDENCE_AVAILABILITY_SCHEMA_VERSION = 1;
 
 const SUMMARIES: Record<EvidenceReasonCode, string> = {
   observed: 'Observed in this event log.',
-  explicitlyDisabled: 'Explicitly disabled in this event log.',
+  explicitlyDisabled: 'Disabled in this event log, by its configuration or by Spark\'s default.',
   noObservedExecutorMetrics: 'Not emitted by this event log.',
   noObservedStageSubmission: 'Not emitted by this event log.',
   noRddStorageSnapshot: 'Stages were submitted without RDD storage snapshots.',
@@ -66,6 +67,13 @@ function absent(key: EvidenceKey, reasonCode: EvidenceReasonCode, trustworthy: b
   return trustworthy ? entry(key, reasonCode === 'noSqlExecution' ? 'notApplicable' : 'notEmitted', reasonCode) : entry(key, 'unknown', 'parseIncomplete');
 }
 
+// The run's effective spark.eventLog.logStageExecutorMetrics: the logged value, else Spark's default
+// (off). A log with no environment update recorded no properties, so it cannot say the switch is off.
+function stageExecutorMetricsLogging(app: AppModel['app'] | undefined, environmentUpdates: number): string | undefined {
+  if (environmentUpdates === 0) return app?.config?.['spark.eventLog.logStageExecutorMetrics'];
+  return effectiveSparkConf({ sparkVersion: app?.sparkVersion, properties: app?.config }, 'spark.eventLog.logStageExecutorMetrics')?.value;
+}
+
 export function deriveEvidenceAvailability(appModel: AppModel, { skippedLines = 0 }: { skippedLines?: number } = {}): EvidenceAvailability {
   const app = appModel?.app;
   const inputs: Partial<EvidenceInputs> = app?.evidenceInputs ?? {};
@@ -80,7 +88,7 @@ export function deriveEvidenceAvailability(appModel: AppModel, { skippedLines = 
 
   const executorMetrics = metricRows > 0
     ? observed('executorMetrics', 'executorMetricRows', metricRows)
-    : configIs(app?.config?.['spark.eventLog.logStageExecutorMetrics'], 'false')
+    : configIs(stageExecutorMetricsLogging(app, environments), 'false')
       ? entry('executorMetrics', 'disabled', 'explicitlyDisabled')
       : absent('executorMetrics', 'noObservedExecutorMetrics', trustworthy);
   const rddStorageSnapshots = snapshots > 0

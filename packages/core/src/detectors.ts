@@ -25,9 +25,8 @@ import { totalExecutorCpuMs } from './run-totals.ts';
 import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
-import { parseSparkMemoryMB } from './spark-memory.ts';
 import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
-import { effectiveSparkConf, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
+import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure, TailAttribution } from './types.ts';
 import type { AqeSkewCase, FindingOf, Remediation, SkewOrigin, TailCause, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
@@ -762,20 +761,9 @@ function effectiveConf(app: DetectorApp | null, key: string): string | undefined
 }
 
 // The factor and minimum Spark applies to size the executor overhead when spark.executor.memoryOverhead
-// is unset: max(factor * executor memory, minimum). The run's own settings win, each only on a Spark
-// version that reads it: spark.executor.memoryOverheadFactor from 3.3.0 and spark.executor.minMemoryOverhead
-// from 4.0.0 (EXECUTOR_MIN_MEMORY_OVERHEAD, version("4.0.0") in core/.../internal/config/package.scala at
-// v4.0.0). An unrecorded version is read as current. `fallback` is the detector's default pair.
+// is unset (spark-conf.ts's executorOverheadSettings); `fallback` is the detector's default pair.
 function defaultOverheadSettings(app: DetectorApp | null, fallback: { floorMB: number; floorPct: number }): { minMB: number; factor: number } {
-  const version = /^(\d+)\.(\d+)/.exec(app?.sparkVersion ?? '');
-  const [major, minor] = version == null ? [Infinity, 0] : [Number(version[1]), Number(version[2])];
-  const config = app?.config ?? {};
-  const factor = Number.parseFloat(config['spark.executor.memoryOverheadFactor'] ?? '');
-  const minMB = parseSparkMemoryMB(config['spark.executor.minMemoryOverhead']);
-  return {
-    factor: (major > 3 || (major === 3 && minor >= 3)) && Number.isFinite(factor) && factor > 0 ? factor : fallback.floorPct,
-    minMB: major >= 4 && minMB != null && minMB >= 0 ? minMB : fallback.floorMB,
-  };
+  return executorOverheadSettings({ sparkVersion: app?.sparkVersion, properties: app?.config }, fallback);
 }
 
 const queryAppCache = new WeakMap<object, { base: DetectorApp | null; derived: DetectorApp }>();
@@ -955,7 +943,7 @@ function idleCapacityFix(app: DetectorApp, recommend: string, alreadyOnLead: str
   const fix = dynamicAllocationFix(app, recommend, alreadyOnLead);
   // dynamicAllocationFix's remediation is empty exactly when dynamic allocation is already on.
   if (fix.remediation.length > 0) return { ...fix, remediation: [...fix.remediation, decreaseConf('spark.executor.instances')] };
-  const holdsFloor = Number.parseInt(app.config?.['spark.dynamicAllocation.minExecutors'] ?? '', 10) > 0;
+  const holdsFloor = Number.parseInt(effectiveConf(app, 'spark.dynamicAllocation.minExecutors') ?? '', 10) > 0;
   return holdsFloor
     ? { text: `${alreadyOnLead} by lowering spark.dynamicAllocation.maxExecutors and spark.dynamicAllocation.minExecutors`,
         remediation: [decreaseConf('spark.dynamicAllocation.maxExecutors'), decreaseConf('spark.dynamicAllocation.minExecutors')] }
@@ -1161,6 +1149,9 @@ function slowShuffleFix(stage: DetectorStage, ctx: DetectorCtx): { text: string;
   const note = lever === 'aqeAdjusted' ? aqeAdjustedNote(stage, count) : '';
   return { text: `raise ${key}${note}`, remediation: [increaseConf(key)] };
 }
+
+// Spark's default spark.dynamicAllocation.maxExecutors: no upper bound.
+const UNBOUNDED_EXECUTORS = 2147483647;
 
 const BROADCAST_THRESHOLD_KEY = 'spark.sql.autoBroadcastJoinThreshold';
 const ADAPTIVE_BROADCAST_THRESHOLD_KEY = 'spark.sql.adaptive.autoBroadcastJoinThreshold';
@@ -2691,7 +2682,7 @@ export const DETECTORS = [
       const out: Finding[] = [];
       let persistedRddCount = 0;
       // With block-update logging on, zero rdd_* updates means nothing was ever cached, not a gap.
-      const blockUpdatesLogged = String(ctx.app?.config?.['spark.eventLog.logBlockUpdates.enabled']).toLowerCase() === 'true';
+      const blockUpdatesLogged = loggedAs(ctx.app, 'spark.eventLog.logBlockUpdates.enabled', true);
       // Spark before 2.3 has no block-update logging and writes RDD Info's cache figures only on
       // StageCompleted, which isn't read: the caveat's advice doesn't apply there. A log with no
       // version is pre-1.3 (no SparkListenerLogStart); every 2.3+ log records one.
@@ -3058,12 +3049,13 @@ export const DETECTORS = [
     emits: ['configAudit'],
     docAnchor: '#config-autoscale-bounds', thresholds: {}, property: 'spark.dynamicAllocation.maxExecutors',
     detect(target): Finding | null {
-      const app = target.app; const config = app?.config ?? {}; const res = app?.resources ?? null;
+      const app = target.app; const res = app?.resources ?? null;
       if (res?.dynamicAllocationEnabled !== true) return null;
       // minExecutors > maxExecutors is not audited: ExecutorAllocationManager.validateSettings throws on it
       // at startup (v3.5.0 lines 196-199), so no run that wrote an event log has inverted bounds.
-      const maxN = config['spark.dynamicAllocation.maxExecutors'] != null ? parseInt(config['spark.dynamicAllocation.maxExecutors'], 10) : null;
-      if (maxN == null) {
+      // Unbounded is the effective maxExecutors being Spark's default (Int.MaxValue) or that value set.
+      const maxN = Number.parseInt(effectiveConf(app, 'spark.dynamicAllocation.maxExecutors') ?? '', 10);
+      if (!Number.isFinite(maxN) || maxN >= UNBOUNDED_EXECUTORS) {
         return {
           type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors',
           impactBand: 'info', metric: 'config', valueText: '(unset)',
@@ -3086,7 +3078,9 @@ export const DETECTORS = [
       // cache serializer), so the note only applies to a run that ran stages outside any SQL execution.
       // Without the stages there is no evidence of RDD work and no claim.
       if (!hasStageOutsideSql(target.stages)) return null;
-      const ser = res?.serializer ?? config['spark.serializer'] ?? null;
+      // The serializer the run set; Spark's own default (JavaSerializer) is reported as the default.
+      const effective = effectiveSparkConf({ sparkVersion: app?.sparkVersion, properties: config }, 'spark.serializer');
+      const ser = res?.serializer ?? (effective?.source === 'default' ? null : effective?.value ?? null);
       const isKryo = typeof ser === 'string' && /kryo/i.test(ser);
       if (isKryo) return null;
       return {

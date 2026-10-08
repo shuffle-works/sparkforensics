@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { effectiveSparkConf, overlayModifiedConfigs, parseSparkBytes, sparkConfDefault } from '../src/spark-conf.ts';
+import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes, sparkConfDefault } from '../src/spark-conf.ts';
 
 const RELEASES = ['3.0.0', '3.1.3', '3.2.0', '3.3.0', '3.4.0', '3.5.9', '4.0.4', '4.1.0', '4.2.0'];
 const at = (key) => Object.fromEntries(RELEASES.map((v) => [v, sparkConfDefault(v, key)]));
@@ -131,5 +131,16 @@ describe('parseSparkBytes', () => {
 
   it('is null for anything else', () => {
     for (const bad of [undefined, '', 'abc', '10 parsecs', '1e3']) expect(parseSparkBytes(bad)).toBeNull();
+  });
+});
+
+describe('executorOverheadSettings', () => {
+  const fallback = { floorMB: 384, floorPct: 0.1 };
+  it('takes the defaults the version fixes and the logged values over them, each only where the property exists', () => {
+    expect(executorOverheadSettings({ sparkVersion: '3.2.1', properties: { 'spark.executor.memoryOverheadFactor': '0.4' } }, fallback)).toEqual({ minMB: 384, factor: 0.1 });
+    expect(executorOverheadSettings({ sparkVersion: '3.5.1', properties: { 'spark.executor.memoryOverheadFactor': '0.4', 'spark.executor.minMemoryOverhead': '1g' } }, fallback)).toEqual({ minMB: 384, factor: 0.4 });
+    expect(executorOverheadSettings({ sparkVersion: '4.0.0', properties: { 'spark.executor.minMemoryOverhead': '1g' } }, fallback)).toEqual({ minMB: 1024, factor: 0.1 });
+    expect(executorOverheadSettings({ sparkVersion: '4.1.0', properties: {} }, { floorMB: 1, floorPct: 2 })).toEqual({ minMB: 384, factor: 0.1 });
+    expect(executorOverheadSettings({ properties: { 'spark.executor.minMemoryOverhead': '2g' } }, fallback)).toEqual({ minMB: 2048, factor: 0.1 });
   });
 });
