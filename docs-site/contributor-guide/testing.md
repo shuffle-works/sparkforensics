@@ -157,6 +157,33 @@ runs the CLI over every corpus log plus a zstd copy of one, checks that the
 MCP server answers `initialize`, and starts `sparkforensics-server` to check
 it serves the app and answers `initialize` on `/mcp`.
 
+### Benchmarking and output identity
+
+Two dependency-free tools measure a performance change and prove it left the
+analysis output alone. Run both on a quiet machine (`cat /proc/loadavg`) and
+report the load average next to the numbers.
+
+- `node dev/bench-phases.mjs [--repeat N] [--json out.json] <log>[:<baseline>]...`
+  times each phase in a fresh `node` child per repeat (cold JIT, as in a real
+  CLI run): decompress, collect (parse and model build), findings, evidence
+  report, the report's output blocks and, for a `log:baseline` pair, the
+  comparison. It prints median, minimum and maximum. `--cli` times the CLI end
+  to end, and `--mcp` times the MCP tool functions cold and warm. Prefer the
+  in-process phase timers over wall clock when other work shares the machine.
+- `dev/snapshot-cli-output.sh <out-dir> <log>... [-- <baseline>:<candidate>...]`
+  writes the CLI's JSON report for every log and a comparison for every pair,
+  with the `generator` block removed (its build id hashes the core sources).
+  Run it on the base commit and on the branch, then compare:
+
+  ```bash
+  dev/snapshot-cli-output.sh /tmp/before dev/log-corpus/logs/*.ndjson
+  git switch my-branch
+  dev/snapshot-cli-output.sh /tmp/after dev/log-corpus/logs/*.ndjson
+  diff -r /tmp/before /tmp/after && echo IDENTICAL
+  ```
+
+  State the result and the number of outputs compared in the PR.
+
 ## Test-suite growth discipline
 
 Widget and detector test files collect copy-pasted boilerplate fast.

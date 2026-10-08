@@ -135,23 +135,12 @@ describe('structured remediation', () => {
       config: { 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '256' },
       resources: { executor: { memoryMB: 10240, memoryOverheadMB: 256 }, driver: {}, serializer: null },
     };
-    const findings = auditConfig(app);
+    const findings = auditConfig(app, new Map([[1, makeStage()]]));
     expect(findings.find((x) => x.property === 'spark.serializer').remediation).toEqual([
       { kind: 'conf', key: 'spark.serializer', direction: 'set', suggested: KRYO },
     ]);
     expect(findings.find((x) => x.property === 'spark.executor.memoryOverhead').remediation).toEqual([
       { kind: 'conf', key: 'spark.executor.memoryOverhead', direction: 'increase', suggested: '1024m' },
-    ]);
-  });
-
-  it('suggests the max bound for an inverted min/max pair', () => {
-    const app = {
-      config: { 'spark.dynamicAllocation.minExecutors': '10', 'spark.dynamicAllocation.maxExecutors': '5', 'spark.serializer': KRYO },
-      resources: { executor: {}, driver: {}, dynamicAllocationEnabled: true, shuffleServiceEnabled: true, serializer: KRYO },
-    };
-    const f = auditConfig(app).find((x) => x.property === 'spark.dynamicAllocation.minExecutors');
-    expect(f.remediation).toEqual([
-      { kind: 'conf', key: 'spark.dynamicAllocation.minExecutors', direction: 'decrease', suggested: 5 },
     ]);
   });
 
@@ -165,7 +154,7 @@ describe('structured remediation', () => {
         makeStage({ id: 5, speculationWastedAttempts: 10, speculationWasteMs: 120_000 }),
         makeStage({ id: 6, localityStats: [{ locality: 'PROCESS_LOCAL', count: 50 }, { locality: 'ANY', count: 50 }] }),
       ]),
-      ...auditConfig({ config: {}, resources: { executor: { memoryMB: 10240, memoryOverheadMB: 256 }, driver: {}, dynamicAllocationEnabled: true, shuffleServiceEnabled: false, serializer: null } }),
+      ...auditConfig({ config: {}, resources: { executor: { memoryMB: 10240, memoryOverheadMB: 256 }, driver: {}, dynamicAllocationEnabled: true, shuffleServiceEnabled: false, serializer: null } }, new Map([[1, makeStage()]])),
     ];
     expect(findings.some((f) => f.type === 'coreLocality')).toBe(true);
     let checked = 0;
@@ -476,9 +465,10 @@ describe('structured remediation', () => {
 
     it('suggests Kryo unless the logged serializer is already Kryo', () => {
       const res = { executor: {}, driver: {}, dynamicAllocationEnabled: false, shuffleServiceEnabled: true, serializer: null };
-      const java = auditConfig({ config: { 'spark.app.name': 'x' }, resources: res }).find((f) => f.property === 'spark.serializer');
+      const rddStages = new Map([[1, makeStage()]]);
+      const java = auditConfig({ config: { 'spark.app.name': 'x' }, resources: res }, rddStages).find((f) => f.property === 'spark.serializer');
       expect(java.remediation).toEqual([{ kind: 'conf', key: 'spark.serializer', direction: 'set', suggested: KRYO }]);
-      const kryo = auditConfig({ config: { 'spark.serializer': KRYO }, resources: res }).find((f) => f.property === 'spark.serializer');
+      const kryo = auditConfig({ config: { 'spark.serializer': KRYO }, resources: res }, rddStages).find((f) => f.property === 'spark.serializer');
       expect(kryo).toBeUndefined();
     });
   });

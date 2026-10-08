@@ -435,7 +435,7 @@ export function runFindings(appModel: AppModel, thresholds: ThresholdOverrides |
     jobs ?? new Map(), sql ?? new Map(),
     runAggregates ?? null, { thresholds },
   );
-  const result = { catalog, config: auditConfig(app) };
+  const result = { catalog, config: auditConfig(app, stages) };
   cache.set(appModel, result);
   return result;
 }
