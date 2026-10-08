@@ -40,7 +40,7 @@ median slow task's volume over the median task's). A tail that mostly is not dat
 is reported as `STRAG` with its cause. When the median task read nothing, there is no
 ratio to take (`evidence.dataRatio` is absent): a slow task that read anything counts
 all its extra time as data. When the data share is under 50%, the cause is the largest
-of data, GC, fetch wait, host and what none of them accounts for. With no data volume
+of GC, fetch wait, host and what none of them accounts for. With no data volume
 to compare, what none of them accounts for is labelled `unattributed` (no share is
 reported) instead of `unexplained`; GC, fetch wait or host still win when larger. A
 stage with no tail attribution is `unattributed` too. For `unattributed` both
