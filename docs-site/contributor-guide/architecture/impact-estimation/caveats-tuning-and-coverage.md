@@ -18,8 +18,8 @@ so a tail both would report carries the same recovered time. The skew branch (P9
 over P50) changes only the fallback single-task delta on a stage without the replay field. Which
 of the two reports a tail follows its cause (`tailVerdict` in `detectors.ts`, from the stage's
 `tailAttribution`): `skew` takes a tail whose extra time follows data volume and `straggler` takes
-the rest, so the pair fires together only when the log has no data volume to compare
-(`cause: 'unattributed'`). Each keeps its own independently-computed `wallClock`. Do not sum `wallClock.high` across multiple findings on the same stage: if
+the rest, so the pair fires together only on a tail with no data volume to compare whose
+largest share is what nothing accounts for (`cause: 'unattributed'`). Each keeps its own independently-computed `wallClock`. Do not sum `wallClock.high` across multiple findings on the same stage: if
 both fire together, they describe the same underlying waste, not two separate wastes. Both
 are clipped with the post-fix floor described under
 [Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution), not the plain `ceiling`,
