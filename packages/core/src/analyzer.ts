@@ -1,4 +1,4 @@
-import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
+import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, skewThresholdsFor, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
 import { effectiveThresholds, findingTunedThresholds, overridesFor, tunedThresholdsNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
@@ -17,7 +17,7 @@ const detectors: readonly Detector[] = DETECTORS;
 export interface AnalyzeOptions {
   /** Per-detector overrides merged over each entry's own thresholds (validate user input with
    * parseThresholdOverrides first). Findings from an entry an override moves off its defaults, or
-   * whose `suppressedBy` entry it moves, carry `tunedThresholds` (with an uncalibrated-estimate
+   * whose `suppressedBy` entry (or, for straggler, skew) it moves, carry `tunedThresholds` (with an uncalibrated-estimate
    * caveat when they have an estimate figure), and an entry's tuned floorPctWarn/floorPctCrit
    * grade its findings' impact band. Omitted: the specification. */
   thresholds?: ThresholdOverrides;
@@ -47,7 +47,8 @@ type DiscriminatorSlot = (typeof DISCRIMINATOR_SLOTS)[number];
 //   slowHost (host), memoryUtilization (executorId), partitionSizing (rule);
 //   cacheUtilization (rddId+variant), cachingOpportunity (relation/format for leaf,
 //     operator+relation for composite, executionIds as last resort);
-//   smallFiles (direction/nodeName), duplicatePlanSubtree (groupIndex is the real
+//   smallFiles (direction/nodeName), nestedLoopJoin (nodeName; outputRows is the metric value),
+//     duplicatePlanSubtree (groupIndex is the real
 //     uniqueness guarantee: rootName+subtreeSize can collide across groups),
 //     underBroadcast (value+largerSideBytes per node/side).
 // memoryUtilization leaves out `rule`: the run has one heap band (on its busiest executor), so
@@ -62,6 +63,7 @@ const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & key
   cachingOpportunity: ['variant', 'relation', 'format', 'operator', 'executionIds'],
   jobFailureRate: [], configAudit: [],
   duplicatePlanSubtree: ['rootName', 'subtreeSize', 'groupIndex'], smallFiles: ['direction', 'nodeName'],
+  nestedLoopJoin: ['nodeName'],
   underBroadcast: ['largerSideBytes'], overBroadcast: [],
 };
 
@@ -211,6 +213,7 @@ export function analyze(
     app, jobs, executorsAdded, executorsRemoved, runAggregates, impact,
     stages: stages as unknown as DetectorCtx['stages'],
     sql: sql as unknown as DetectorCtx['sql'],
+    skewThresholds: skewThresholdsFor(thresholds),
   };
   const out: Finding[] = [];
   for (const d of detectors) {

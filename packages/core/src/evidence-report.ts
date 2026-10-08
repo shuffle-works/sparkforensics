@@ -180,7 +180,7 @@ export interface EvidenceReportJson {
 // module (stageShape's totalCores, utilization's unrounded fraction) is left off both, so it never
 // reaches the report; adding, renaming or dropping a key here changes the report contract.
 const EVIDENCE_KEYS = {
-  skew: ['origin', 'aqeSkew'],
+  skew: ['origin', 'aqeSkew', 'cause', 'dataRatio'],
   stageShape: ['rule'],
   shuffle: ['partitions'],
   partitionSizing: ['rule', 'origin', 'aqeSkew', 'partitions'],
@@ -190,7 +190,7 @@ const EVIDENCE_KEYS = {
   stageSlowness: ['reads'],
   stageFailed: ['variant', 'numTasks', 'memoryBytesSpilled', 'failedTaskDetails'],
   failures: ['failedTasks', 'dominantReason', 'dominantError', 'failureGroups', 'otherFailedTasks'],
-  straggler: ['unit', 'speculativeTasks', 'stragglerCount', 'origin', 'aqeSkew'],
+  straggler: ['unit', 'speculativeTasks', 'stragglerCount', 'origin', 'aqeSkew', 'cause', 'causeSharePct', 'host', 'hostTasks', 'cpuPct'],
   speculationWaste: [],
   retryWaste: ['numTasks', 'memoryBytesSpilled', 'retriedTaskDetails'],
   tinyTask: ['reads'],
@@ -211,6 +211,7 @@ const EVIDENCE_KEYS = {
     'groupIndex',
   ],
   smallFiles: ['executionId', 'stageIds', 'fileCount', 'direction', 'nodeName'],
+  nestedLoopJoin: ['executionId', 'stageIds', 'nodeName', 'joinType', 'condition', 'outputRows', 'leftRows', 'rightRows'],
   underBroadcast: ['executionId', 'stageIds', 'largerSideBytes', 'broadcastThreshold'],
   overBroadcast: ['executionId', 'stageIds', 'broadcastThreshold'],
 } as const satisfies { [T in FindingType]: readonly (keyof FindingEvidenceMap[T])[] };

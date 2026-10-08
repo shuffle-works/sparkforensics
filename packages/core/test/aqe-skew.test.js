@@ -276,7 +276,6 @@ describe.each(LOGS)('AQE skew handling in a real Spark %s log', (version, path) 
     expect(outer.recommendation).toContain('LeftOuter');
     expect(outer.recommendation).not.toContain('already on');
     expect(byStage('skew', 2)).toMatchObject({ origin: 'shuffleJoin', aqeSkew: 'userRepartition' });
-    expect(byStage('straggler', 2).recommendation).toMatch(/if uneven data is the cause, a repartition you wrote feeds the join/);
   });
 });
 

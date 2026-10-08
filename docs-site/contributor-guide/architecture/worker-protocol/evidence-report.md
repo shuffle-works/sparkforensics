@@ -159,7 +159,7 @@ with a user's validated overrides (the CLI's and MCP server's `--thresholds`; se
 [Tuning thresholds](../detector-contract.md#tuning-thresholds)). Only a tuned run adds keys:
 `tunedThresholds` (`{ <name>: { value, default } }`) on each finding row and each
 `cleanChecks`/`notRunChecks` entry from a detector an override moved off its defaults (or
-whose `suppressedBy` detector it moved), on that detector's `detectors` row, and as `summary.tunedThresholds` keyed by detector type. The
+whose `suppressedBy` or threshold-source detector it moved), on that detector's `detectors` row, and as `summary.tunedThresholds` keyed by detector type. The
 Markdown adds a `- Tuned thresholds:` header line, a `- tuned thresholds:` line per affected
 finding, and marks tuned catalog rows and clean checks. A default run's report carries none of
 these keys, and every one is optional. The report caches key on the overrides object as well as
