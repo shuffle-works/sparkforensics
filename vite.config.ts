@@ -104,11 +104,18 @@ export default defineConfig({
         // helper). Without that, the entry chunk imports them from
         // charts-vendor or plan-graph-vendor, and both lazy-only chunks are
         // preloaded on the landing page.
+        // recharts and @xyflow also share d3 modules (d3-interpolate and its
+        // dependencies). Left to the lower-priority group that claims the first
+        // importer, one of the two chunks would import them from the other, and
+        // opening a log (which preloads the charts chunk with the Dashboard)
+        // would preload the plan-graph chunk too. d3-vendor owns them instead,
+        // so each of the two imports only this small shared chunk.
         // recharts is what pushes Dashboard over 500kB (eagerly pulled by
         // always-mounted widgets); splitting it out drops Dashboard under it.
         codeSplitting: {
           groups: [
-            { name: 'react-vendor', test: /node_modules\/(react|react-dom|scheduler|use-sync-external-store|clsx)\//, priority: 3 },
+            { name: 'react-vendor', test: /node_modules\/(react|react-dom|scheduler|use-sync-external-store|clsx)\//, priority: 4 },
+            { name: 'd3-vendor', test: /node_modules\/(d3-[a-z-]+|internmap)\//, priority: 3 },
             { name: 'plan-graph-vendor', test: /node_modules\/(@xyflow|@dagrejs)\//, priority: 2 },
             { name: 'charts-vendor', test: /node_modules\/recharts\//, priority: 1 },
           ],
