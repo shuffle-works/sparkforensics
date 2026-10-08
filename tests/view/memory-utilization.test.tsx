@@ -36,14 +36,9 @@ test('renders the WidgetCard heading, MEM badge, and every affected variant (not
       recommendation: 'Over half of available core-time ran no task: reduce cluster size or enable dynamic allocation.',
     },
     {
-      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity', stageId: null, executorId: '3',
-      impactBand: 'warning', metric: 'heapUsedRatio', value: 98,
-      recommendation: 'Executor 3 peaked at 98% of allocated heap: memory may be too small; raise spark.executor.memory to avoid OOM/spill.',
-    },
-    {
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, executorId: '7',
       impactBand: 'info', metric: 'heapUsedRatio', value: 20,
-      recommendation: 'Executor 7 used only 20% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.',
+      recommendation: 'The busiest of 4 sampled executors peaked at 20% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.',
     },
     {
       type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
@@ -67,23 +62,20 @@ test('renders the WidgetCard heading, MEM badge, and every affected variant (not
   // The card states each variant's fix once, above the rows, without
   // expanding anything and without switching density.
   expect(screen.getByText('Either reduce cluster size (spark.executor.instances) or enable dynamic allocation.')).toBeInTheDocument();
-  expect(screen.getByText('Memory may be too small: raise spark.executor.memory to avoid OOM/spill.')).toBeInTheDocument();
   expect(screen.getByText('Memory may be over-provisioned: consider reducing spark.executor.memory for cost savings.')).toBeInTheDocument();
   expect(screen.getByText('Review spark.executor.memory and executor count.')).toBeInTheDocument();
-  // The heapNearCapacity/heapOverProvisioned diagnosis clause is redundant
+  // The heapOverProvisioned diagnosis clause is redundant
   // with memoryDetail() and stays Advanced-only.
-  expect(screen.queryByText(/Executor 3 peaked at 98% of allocated heap\./)).not.toBeInTheDocument();
-  expect(screen.queryByText(/Executor 7 used only 20% of allocated heap\./)).not.toBeInTheDocument();
+  expect(screen.queryByText(/The busiest of 4 sampled executors peaked at 20% of allocated heap\./)).not.toBeInTheDocument();
   unmount();
 
   store.getState().setWidgetDensity('advanced');
   render(<MemoryUtilization catalog={catalog} defaultCollapsed={false} />);
-  // At Advanced tier the diagnosis clause for the two rule-discriminated rows
+  // At Advanced tier the diagnosis clause for the rule-discriminated row
   // becomes visible too, alongside the advice that was already shown at Basic.
-  expect(screen.getAllByText(/Executor 3 peaked at 98% of allocated heap\./).length).toBeGreaterThan(0);
-  expect(screen.getAllByText(/Executor 7 used only 20% of allocated heap\./).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/The busiest of 4 sampled executors peaked at 20% of allocated heap\./).length).toBeGreaterThan(0);
 
-  // Sorted worst-first: idleCores(warning), executor3(warning), executor7(info), wasteModel(info).
+  // Sorted worst-first: idleCores(warning), executor7(info), wasteModel(info).
   // The evidence marker lives on the widget header, once, not per row.
   expect(screen.getByRole('button', { name: /^evidence: executor metrics$/i })).toBeInTheDocument();
   // The wasteModel row is the only one of the four carrying a `confidence`;

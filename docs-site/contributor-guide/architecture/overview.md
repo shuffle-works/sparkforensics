@@ -70,11 +70,14 @@ decodes each decompressed chunk with one streaming `TextDecoder`, splits on
 unclassified`) are computed at `SparkListenerStageCompleted` time, before posting
 the stage's `{ type: 'stage' }` message to main.
 
-When `spark.eventLog.logStageExecutorMetrics=true` (default `false`),
-`SparkListenerStageExecutorMetrics` events populate
+Every `SparkListenerTaskEnd` carries `Task Executor Metrics` (Spark 3.0+); the
+parser folds them into a per-executor maximum posted in
+`runAggregates.executorPeakMetrics`, skipping all-zero rows (local mode). When
+`spark.eventLog.logStageExecutorMetrics=true` (default `false`),
+`SparkListenerStageExecutorMetrics` events also populate
 `stage.executorMetrics: Map<execId, {...}>` with the 23 raw peak-memory/GC
 fields verbatim (camelCased), consumed by the `memoryUtilization` detector's
-per-executor memory bands (see [Memory Utilization](./board-widgets/caching-and-memory.md)).
+heap band, which takes the larger of the two sources (see [Memory Utilization](./board-widgets/caching-and-memory.md)).
 
 These events can arrive *after* `SparkListenerStageCompleted` for the same
 stage, so the per-stage `stage` message posted at completion time

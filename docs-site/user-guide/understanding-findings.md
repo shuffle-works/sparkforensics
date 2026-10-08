@@ -76,9 +76,10 @@ least 0.5% of the run.
 
 Tasks spend more than 10% of executor run time reclaiming memory. Reduce
 object creation: use primitive types, avoid UDFs, or raise executor memory.
-A stage with GC below 5% gets an informational note that executor memory
-may be over-provisioned, only on stages that take at least 0.5% of the run.
-Both need at least 10 s of executor run time on the stage.
+When the log carries no measured executor heap peaks (see [`MEM`](#mem)), a
+stage with GC below 5% gets an informational note that executor memory may be
+over-provisioned, only on stages that take at least 0.5% of the run. Both need
+at least 10 s of executor run time on the stage.
 
 ### `FAIL`: Failed tasks {#fail}
 
@@ -122,7 +123,12 @@ Speculative task attempts used a lot of executor time without confirming a
 genuine straggler. Self-flags a confidence that scales with how far the
 wasted time sits past the threshold. If task durations are just naturally
 variable rather than genuine stragglers, tune
-`spark.speculation.multiplier`/`spark.speculation.quantile`.
+`spark.speculation.multiplier`/`spark.speculation.quantile`. The
+recommendation names the run's effective values: Spark relaunches a task that
+runs over the multiplier times the median once the quantile of the stage's
+tasks has finished, which is 1.5x and 75% before Spark 4.0 and 3x and 90% from
+4.0 unless the job sets them. A speculative-attempt `straggler` and a
+`slowHost` finding word their speculation advice the same way.
 
 ### `RETRY`: Retry waste {#retry}
 
@@ -198,15 +204,19 @@ alternatives. With it on, lower `spark.dynamicAllocation.maxExecutors`, and
 ### `MEM`: Memory utilization {#mem}
 
 Executor memory or core capacity may be over- or under-provisioned: more
-than 50% of allocated core time ran no task, an executor's heap peaked above
-95% of its allocation, or it stayed below 70%. Some
-detail here needs `spark.eventLog.logStageExecutorMetrics=true` on the run
-being analyzed; without it, per-executor memory usage can't be broken down.
+than 50% of allocated core time ran no task, or the busiest executor's heap
+peak stayed below 70% of `spark.executor.memory`. Heap peaks come from the
+executor metrics Spark 3+ writes on every task end (and from stage executor
+metrics when `spark.eventLog.logStageExecutorMetrics=true`). Spark samples them
+at executor heartbeat, so a peak is a lower bound, and the heap-used metric
+counts uncollected garbage, so a peak near the limit is not reported as a
+memory risk. A log with no peaks (Spark before 3.0, or local mode, which
+reports zeros) gets a note that executor memory sizing was not measured.
 Review `spark.executor.memory` and executor count if allocated memory sat
 largely idle over the run. That idle-memory variant self-flags a confidence
 that scales with how far the estimated waste sits past a 1.5x buffer: it
-estimates waste from allocated memory-time versus task run time (not
-measured heap usage). Check it against
+estimates waste from allocated memory-time versus task run time per
+executor core (not measured heap usage). Check it against
 the Spark UI before resizing anything.
 
 ### `CACHE`: Caching opportunity {#cache}
@@ -292,7 +302,7 @@ shuffle storage plugin, and `minExecutors` above `maxExecutors`.
 
 ### `PLAN`: Plan advisor {#plan}
 
-Flags patterns in the SQL execution plan worth reviewing. Four checks share
+Flags patterns in the SQL execution plan worth reviewing. Five checks share
 this tag:
 
 - Duplicate plan subtree: the same subtree recomputed more than once in the
@@ -301,10 +311,21 @@ this tag:
   when the repeat's stages take at least 0.5% of the run.
 - Small files: one plan node reads or writes more than 100 files averaging
   under 3 MB. Compact upstream output, or coalesce before writing.
+- Nested loop join: a `BroadcastNestedLoopJoin` or `CartesianProduct` whose
+  output has at least 1,000,000 rows. A `BroadcastNestedLoopJoin` must also
+  produce at least 10 times the rows of its larger input; a `CartesianProduct`
+  is judged on its output alone, because it re-reads each input once per
+  partition of the other side, so the input row counts the executors report
+  are not row counts. Spark plans these when a join has no equi-join key. The
+  finding carries the join condition and is graded by the time of the stages
+  that run the join. The advice is to add an equi-join key, to bucket the range
+  of a range join and join on the bucket, or to confirm that a cross join is
+  intended. It needs the executors' `number of output rows` metrics, so a join
+  with no reported row counts is not flagged.
 - Under-broadcast: the smaller side of a Sort Merge Join looks well under
   the broadcast threshold; consider a `broadcast()` hint or raising
   `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold
-  (logged, else Spark's 10 MiB) already admits the smaller side
+  (the query's own setting, else the logged one, else Spark's 10 MiB) already admits the smaller side
   (`evidence.broadcastThreshold` is `notLimiting`), the threshold is not what
   stopped the broadcast, so `remediation` is empty and the advice is a hint or
   table statistics.

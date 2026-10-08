@@ -55,7 +55,8 @@ describe('analyze: finding identity + detector version', () => {
     const findings = analyze(app, stages, added, removed, jobs);
     for (const f of findings) {
       if (f.impactEstimate) {
-        const { impactEstimate, ...withoutEstimate } = f;
+        const withoutEstimate = { ...f };
+        delete withoutEstimate.impactEstimate;
         const idWithout = findingId(withoutEstimate);
         expect(f.id).toBe(idWithout);
       }
@@ -79,7 +80,7 @@ function collisionFixture() {
     { host: 'ip-10-1-5', taskCount: 20, totalDuration: 600000 },
     { host: 'ip-10-1-6', taskCount: 20, totalDuration: 600000 },
   ];
-  // Two executors well under allocated heap => two per-executor memoryBand findings.
+  // Two executors well under allocated heap => one memoryBand finding, for the busiest.
   const executorMetrics = new Map([
     ['1', { jvmHeapMemory: Math.round(0.5 * ALLOC_BYTES) }],
     ['2', { jvmHeapMemory: Math.round(0.4 * ALLOC_BYTES) }],
@@ -93,13 +94,13 @@ function collisionFixture() {
 }
 
 describe('analyze: finding id uniqueness across multi-emit detectors', () => {
-  it('emits >=2 slowHost (per host) and >=2 memoryUtilization (per executor) findings', () => {
+  it('emits >=2 slowHost (per host) findings and one memoryUtilization heap band', () => {
     const { app, stages, added, removed, jobs } = collisionFixture();
     const findings = analyze(app, stages, added, removed, jobs);
     const slowHosts = findings.filter((f) => f.type === 'slowHost' && f.metric === 'hostMeanRatio');
     const memBands = findings.filter((f) => f.type === 'memoryUtilization' && f.metric === 'heapUsedRatio');
     expect(slowHosts.length).toBeGreaterThanOrEqual(2);
-    expect(memBands.length).toBeGreaterThanOrEqual(2);
+    expect(memBands).toHaveLength(1);
   });
 
   it('assigns a unique id to every finding (no discriminator collisions)', () => {

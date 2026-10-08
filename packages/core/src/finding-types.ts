@@ -260,21 +260,24 @@ export interface UtilizationFinding extends NumericFinding<'utilization'>, Utili
 
 export interface MemoryUtilizationEvidence {
   variant: 'idleCores' | 'memoryBand' | 'wasteModel';
-  // memoryBand only: which band a measured executor fell in.
-  rule?: 'heapNearCapacity' | 'heapOverProvisioned';
+  // memoryBand only: the measured band the executors fell in.
+  rule?: 'heapOverProvisioned';
+  // heapOverProvisioned: the executor with the highest sampled heap peak.
   executorId?: string;
-  // heapOverProvisioned only: the executor's peak heap, bytes.
+  // heapOverProvisioned only: that peak heap, bytes (a lower bound: Spark samples at heartbeat).
   heap?: number;
   // The memoryBand caveat for a log with no executor metrics.
   dataUnavailable?: boolean;
 }
 export interface MemoryUtilizationFinding extends NumericFinding<'memoryUtilization'>, MemoryUtilizationEvidence {
   // Impact-estimator inputs: the unrounded idle rate and the run's allocated memory-time
-  // (idleCores), and the allocation and span behind heapOverProvisioned's rounded ratio.
+  // (idleCores), and the allocation and executor-time behind heapOverProvisioned's rounded ratio.
   idleRateFraction?: number;
   allocatedMBSeconds?: number | null;
-  appDurationMs?: number;
   allocatedBytes?: number;
+  // heapOverProvisioned: executors with a measured peak, and the seconds the run's executors were alive.
+  executorCount?: number;
+  executorSeconds?: number;
 }
 
 export interface CacheUtilizationEvidence {
@@ -365,6 +368,21 @@ export interface SmallFilesEvidence extends PlanFindingEvidence {
 }
 export interface SmallFilesFinding extends NumericFinding<'smallFiles'>, SmallFilesEvidence, PlanNodeOrigin {}
 
+/** A BroadcastNestedLoopJoin or CartesianProduct whose output is far larger than both inputs.
+ * `nodeName` is the operator, `joinType` the Spark join type (null when the plan line has none)
+ * and `condition` the join condition with expression ids removed (null for a join without one).
+ * `leftRows` and `rightRows` are the input row counts the executors reported, null for a
+ * CartesianProduct, which re-reads its inputs so their counts are not row counts. */
+export interface NestedLoopJoinEvidence extends PlanFindingEvidence {
+  nodeName: 'BroadcastNestedLoopJoin' | 'CartesianProduct';
+  joinType: string | null;
+  condition: string | null;
+  outputRows: number;
+  leftRows: number | null;
+  rightRows: number | null;
+}
+export interface NestedLoopJoinFinding extends NumericFinding<'nestedLoopJoin'>, NestedLoopJoinEvidence, PlanNodeOrigin {}
+
 /** How the effective spark.sql.autoBroadcastJoinThreshold relates to the finding: 'limits' (the
  * property decided it, or is unknown), 'notLimiting' (already admits, or already below, the
  * broadcast, so something else decided it) or 'disabled' (-1). */
@@ -411,6 +429,7 @@ export interface FindingEvidenceMap {
   configAudit: ConfigAuditEvidence;
   duplicatePlanSubtree: DuplicatePlanSubtreeEvidence;
   smallFiles: SmallFilesEvidence;
+  nestedLoopJoin: NestedLoopJoinEvidence;
   underBroadcast: UnderBroadcastEvidence;
   overBroadcast: OverBroadcastEvidence;
 }
@@ -442,6 +461,7 @@ export type Finding =
   | ConfigAuditFinding
   | DuplicatePlanSubtreeFinding
   | SmallFilesFinding
+  | NestedLoopJoinFinding
   | UnderBroadcastFinding
   | OverBroadcastFinding;
 

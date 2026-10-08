@@ -47,11 +47,12 @@ type DiscriminatorSlot = (typeof DISCRIMINATOR_SLOTS)[number];
 //   slowHost (host), memoryUtilization (executorId), partitionSizing (rule);
 //   cacheUtilization (rddId+variant), cachingOpportunity (relation/format for leaf,
 //     operator+relation for composite, executionIds as last resort);
-//   smallFiles (direction/nodeName), duplicatePlanSubtree (groupIndex is the real
+//   smallFiles (direction/nodeName), nestedLoopJoin (nodeName; outputRows is the metric value),
+//     duplicatePlanSubtree (groupIndex is the real
 //     uniqueness guarantee: rootName+subtreeSize can collide across groups),
 //     underBroadcast (value+largerSideBytes per node/side).
-// memoryUtilization leaves out `rule`: one heap band per executor, so executorId is already
-// unique and folding rule in risks id churn if band logic changes. partitionSizing keeps
+// memoryUtilization leaves out `rule`: the run has one heap band (on its busiest executor), so
+// executorId is already unique and folding rule in risks id churn if band logic changes. partitionSizing keeps
 // `rule`: a stage can emit several rules at once sharing stageId+metric.
 const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & keyof FindingOf<T>)[] } = {
   skew: [], stageShape: ['rule'], shuffle: [], partitionSizing: ['rule'], spill: [], gc: ['direction'],
@@ -62,6 +63,7 @@ const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & key
   cachingOpportunity: ['variant', 'relation', 'format', 'operator', 'executionIds'],
   jobFailureRate: [], configAudit: [],
   duplicatePlanSubtree: ['rootName', 'subtreeSize', 'groupIndex'], smallFiles: ['direction', 'nodeName'],
+  nestedLoopJoin: ['nodeName'],
   underBroadcast: ['largerSideBytes'], overBroadcast: [],
 };
 

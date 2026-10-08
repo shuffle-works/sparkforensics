@@ -319,8 +319,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
         case 'idleCores': return 'Reduce idle cores';
         case 'wasteModel': return 'Right-size executor memory';
         case 'memoryBand':
-          if (f.dataUnavailable) return 'Enable memory metrics';
-          return f.rule === 'heapNearCapacity' ? 'Increase executor memory' : 'Reduce executor memory';
+          if (f.dataUnavailable) return 'Executor heap peaks unavailable';
+          return 'Reduce executor memory';
       }
       return undefined;
     },
@@ -332,9 +332,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
         case 'wasteModel': return 'Review spark.executor.memory and executor count.';
         case 'memoryBand':
           if (f.dataUnavailable) return undefined;
-          return f.rule === 'heapNearCapacity'
-            ? 'Memory may be too small: raise spark.executor.memory to avoid OOM/spill.'
-            : 'Memory may be over-provisioned: consider reducing spark.executor.memory for cost savings.';
+          return 'Memory may be over-provisioned: consider reducing spark.executor.memory for cost savings.';
       }
       return undefined;
     },
@@ -412,6 +410,15 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     genericRecommendation: (f) => (f.direction === 'write'
       ? 'Repartition or coalesce before writing to raise the average file size.'
       : 'Compact the upstream output so fewer, larger files are produced.'),
+  },
+  nestedLoopJoin: {
+    name: 'nested loop join',
+    tag: 'PLAN',
+    thresholdSummary: (t) => `a nested-loop or cartesian join with over ${t.minOutputRows.toLocaleString('en-US')} output rows, at least ${t.minExpansion}x its larger input`,
+    actionLabel: (f) => (f.condition == null ? 'Confirm cross join' : 'Add an equi-join key'),
+    genericRecommendation: (f) => (f.condition == null
+      ? 'Confirm the cross join is intended, or add a join key so the rows are matched instead of multiplied.'
+      : 'Add an equi-join key so Spark can use a hash or sort-merge join; for a range condition, bucket the range and join on the bucket as well.'),
   },
   underBroadcast: {
     name: 'missed broadcast join',

@@ -161,7 +161,7 @@ export function rollupGroupStat(group: RollupGroup): { stat: string; statTitle: 
  * else that decides whether a REGISTRY type has "something to show" (an
  * active widget card vs. a Clean-checks line): memoryUtilization's
  * memoryBand/dataUnavailable variant reports a missing-evidence caveat
- * (spark.eventLog.logStageExecutorMetrics=true not on for this run), not an
+ * (the log carries no executor heap peaks: Spark before 3.0 or local mode), not an
  * optimization or a clean bill of health; the exact same fact already lives
  * in the Evidence availability ledger's own `executorMetrics` entry
  * (src/evidence-availability.ts), so it belongs there, not as its own card. */
