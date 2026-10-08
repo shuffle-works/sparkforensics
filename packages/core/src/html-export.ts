@@ -25,7 +25,7 @@ export function buildHtmlExportData(
   skippedLines: number,
   { redact, buildId, producer }: { redact: boolean; buildId: string; producer: string },
 ): ExportRunData {
-  const raw = { appModel, catalog, configFindings: auditConfig(appModel.app) };
+  const raw = { appModel, catalog, configFindings: auditConfig(appModel.app, appModel.stages) };
   const run = redact ? redactRunModel(raw.appModel, raw.catalog, raw.configFindings) : raw;
   const interpretation = interpretRun(run.appModel, run.catalog, run.configFindings);
   const provenance: ExportProvenance = { coreVersion: CORE_VERSION, buildId, producer };

@@ -111,7 +111,7 @@ Both consumers are thin loops over that array:
 
 - `packages/core/src/analyzer.ts`: `analyze()` runs every entry regardless of scope, skipping
   only `inScorecard:false` ones, then applies `suppressedBy` (below);
-  `auditConfig()` separately runs the `scope:'config'` entries. The four `configAudit` entries stay out of the
+  `auditConfig()` separately runs the `scope:'config'` entries. The three `configAudit` entries stay out of the
   bottleneck catalog because each sets `inScorecard:false`, not because of
   `scope:'config'`: a config-scope detector without that flag would run
   through `analyze()` too. Each finding is stamped with its entry's `docAnchor`.

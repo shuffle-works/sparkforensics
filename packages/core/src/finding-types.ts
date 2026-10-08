@@ -310,7 +310,7 @@ export interface JobFailureRateFinding extends NumericFinding<'jobFailureRate'>,
 export interface ConfigAuditEvidence {
   property: string;
 }
-// valueText is the audited property's current value, or a note that it is unset or inverted.
+// valueText is the audited property's current value, or a note that it is unset.
 export interface ConfigAuditFinding extends TextFinding<'configAudit'>, ConfigAuditEvidence {}
 
 // ── SQL-scope (Plan Advisor) detectors ──────────────────────────────────────

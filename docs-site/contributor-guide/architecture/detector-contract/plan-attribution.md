@@ -81,6 +81,21 @@ except the one `Arguments:` line of a Delta write command, which
 decodes each decompressed chunk in slices of at most 512 KiB, and drops the bytes of a
 value that crosses a slice boundary without decoding them.
 
+A plan node's metric values come from two sources. Driver-side values (file counts, broadcast
+`data size`) arrive in `SparkListenerDriverAccumUpdates` and are summed per execution in
+`accumState`. Executor-side values (Exchange `data size`, `peak memory`, `spill size`, operator
+row counts, `data sent to Python workers`, timings) come from the `Accumulables` of each
+`SparkListenerStageCompleted` event, kept per execution by `recordStageSqlAccumulables` in
+`executorAccumState`. Only entries whose `Metadata` is `sql` are kept, and `Value` is a decimal
+string. A stage's value is the accumulator's running total across every stage
+(`DAGScheduler.updateAccumulators` merges each task's update into the driver-side accumulator and
+records its value), so a later stage replaces an earlier one's entry instead of adding to it.
+`resolvePlanTree` uses the driver-side value when there is one and the executor-side one
+otherwise, and marks the latter `executorSide: true`. `average` metrics get no executor-side value:
+their accumulator holds a sum of per-task averages, not the average the SQL tab shows. Plan-shape
+fingerprints (`computePlanShapes`, `findCompositeCandidates`) skip `executorSide` metrics, so
+`duplicatePlanSubtree` and `cachingOpportunity` ids do not depend on which tasks reported a value.
+
 No eviction/pruning is added to `taskAccumStages`, a deliberate choice, not an
 oversight: measured on real logs, it holds roughly 1,050 keys per compressed MB
 (9,850 keys on an 11.6 MB fixture, about 29,000 keys on a 28.1 MB fixture).
