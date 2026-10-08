@@ -158,7 +158,8 @@ export interface TailAttribution {
   // The tail's tasks on that host; 0 when there is none.
   hostTasks: number;
   // Median over the tail's tasks of how many times the stage's median task's data volume each read;
-  // null when the stage has no data volume to compare (the median task read nothing).
+  // null when the stage has no data volume to compare (the median task read nothing): the tail's
+  // tasks that read anything then count all their extra time as data.
   dataRatio: number | null;
   // Tail tasks' summed CPU time over their summed run time, 0-100; null when the log has no CPU time.
   cpuPct: number | null;

@@ -77,6 +77,13 @@ describe('attributeTail', () => {
     expect(t.dataMs).toBe(0);
   });
 
+  it('counts a tail that read data as data when the median task read nothing, ahead of GC and fetch wait', () => {
+    const none = { inputBytes: 0, inputRecords: 0, shuffleRead: 0, shuffleReadRecords: 0 };
+    const slow = task({ ...none, duration: 30000, gcTime: 18000, fetchWaitTime: 2000, shuffleRead: 5e8, shuffleReadRecords: 1e6 });
+    const t = attributeTail([...many(99, none), slow], 1000);
+    expect(t).toMatchObject({ tasks: 1, excessMs: 29000, dataMs: 29000, gcMs: 0, fetchWaitMs: 0, dataRatio: null });
+  });
+
   it('ignores failed attempts, whose metrics stop where they died', () => {
     expect(attributeTail([...many(19), task({ duration: 9000, failed: true })], 1000)).toBeNull();
   });

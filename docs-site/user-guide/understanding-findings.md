@@ -37,8 +37,10 @@ plus shuffle-read bytes and records. If run time scaled with that volume, the
 share of the slow tasks' extra time it accounts for is the data share; at 50% or
 more the tail is skew (`evidence.cause` is `data`, `evidence.dataRatio` is the
 median slow task's volume over the median task's). A tail that mostly is not data
-is reported as `STRAG` with its cause. A log whose median task read nothing has no
-volume to compare: the tail is `unattributed` and both findings keep the duration test.
+is reported as `STRAG` with its cause. When the median task read nothing, there is no
+ratio to take (`evidence.dataRatio` is absent): a slow task that read anything counts
+all its extra time as data, and a stage where no task read data is `unattributed`, so
+both findings keep the duration test.
 
 ### `SHFL`: Shuffle I/O {#shfl}
 

@@ -267,12 +267,16 @@ export function attributeTail(tasks: Iterable<TailTask>, p50: number): TailAttri
   const medianRecords = medianOf(all, recordsOf);
   const medianGc = medianOf(all, (t) => t.gcTime);
   const medianFetch = medianOf(all, (t) => t.fetchWaitTime);
-  // Volume is only a measure when the median task read something.
+  // With a median task that read nothing there is no ratio to take: a task that read anything is
+  // infinitely above it, so all its excess is data (the typical skew with mostly empty partitions).
   const hasVolume = medianBytes > 0 || medianRecords > 0;
-  const volumeRatio = (t: TailTask): number => Math.max(
-    medianBytes > 0 ? bytesOf(t) / medianBytes : 0,
-    medianRecords > 0 ? recordsOf(t) / medianRecords : 0,
-  );
+  const volumeRatio = (t: TailTask): number => {
+    if (!hasVolume) return bytesOf(t) > 0 || recordsOf(t) > 0 ? Infinity : 0;
+    return Math.max(
+      medianBytes > 0 ? bytesOf(t) / medianBytes : 0,
+      medianRecords > 0 ? recordsOf(t) / medianRecords : 0,
+    );
+  };
 
   const tailHosts = new Map<string, number>();
   const allHosts = new Map<string, number>();
@@ -291,12 +295,10 @@ export function attributeTail(tasks: Iterable<TailTask>, p50: number): TailAttri
     const excess = t.duration - p50;
     excessMs += excess;
     let left = excess;
-    if (hasVolume) {
-      const ratio = volumeRatio(t);
-      ratios.push(ratio);
-      const data = Math.min(left, Math.max(0, p50 * (ratio - 1)));
-      dataMs += data; left -= data;
-    }
+    const ratio = volumeRatio(t);
+    if (hasVolume) ratios.push(ratio);
+    const data = Math.min(left, Math.max(0, p50 * (ratio - 1)));
+    dataMs += data; left -= data;
     const gc = Math.min(left, Math.max(0, t.gcTime - medianGc));
     gcMs += gc; left -= gc;
     const fetch = Math.min(left, Math.max(0, t.fetchWaitTime - medianFetch));
