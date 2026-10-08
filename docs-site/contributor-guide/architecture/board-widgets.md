@@ -8,9 +8,9 @@ e.g. `JobFailures.tsx`, `MemoryUtilization.tsx`.)
 Beyond the stage-level cards, ten app- and plan-level cards render in the
 Findings tab, all `region: 'action'` in `detector-registry.tsx`: Incomplete
 Run, Job Failures, Caching Opportunities, Autoscaling Churn, Config Audit, and
-the five Plan Advisor cards (Redundant Plan Subtree, Excessive Small Files,
-Row-at-a-time Python UDFs, Missed Broadcast Join, Oversized Broadcast Join).
-`REGISTRY` maps every finding type to its own component: 25 `action` and 4
+the six Plan Advisor cards (Redundant Plan Subtree, Excessive Small Files,
+Nested Loop Join, Row-at-a-time Python UDFs, Missed Broadcast Join, Oversized Broadcast Join).
+`REGISTRY` maps every finding type to its own component: 26 `action` and 4
 `reference` entries.
 
 The Plan Advisor cards are described in [Plan Advisor](./board-widgets/plan-advisor.md); Caching Opportunities, Memory Utilization and Cache Storage in [Caching and memory](./board-widgets/caching-and-memory.md); the visual system and templating rules in [Visual system and templating](./board-widgets/visual-system-and-templating.md).

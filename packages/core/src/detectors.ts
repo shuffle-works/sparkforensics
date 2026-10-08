@@ -3,6 +3,7 @@ import { medianOfSorted } from './median.ts';
 import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId } from './plan-summary.ts';
 import { allocatedCoreMs, computeAllocation } from './allocation.ts';
+import { executorHeapPeaks } from './executor-peaks.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { isBatchEvalPythonNode } from './python-stage.ts';
@@ -17,6 +18,7 @@ import {
   type EstimateCtx,
 } from './impact-model.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
+import { outputRowsOf, ownOutputRows, parseNestedLoopJoin } from './nested-loop-join.ts';
 import { totalExecutorCpuMs } from './run-totals.ts';
 import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
@@ -162,7 +164,7 @@ export interface DetectorCtx {
   executorsRemoved: DetectorExecutorRemovedEvent[];
   jobs: Map<number, DetectorJob>;
   sql: Map<number, DetectorSqlExec>;
-  runAggregates?: { busyCoreMs?: number } | null;
+  runAggregates?: { busyCoreMs?: number; executorPeakMetrics?: Record<string, Record<string, number>> } | null;
   // The one EstimateCtx analyze() also hands every estimate(): a detector's runtime floor clips
   // its claim against the same occupancy sweep the displayed savings come from.
   impact: EstimateCtx;
@@ -1666,8 +1668,11 @@ export const DETECTORS = [
           remediation: [increaseConf('spark.executor.memory')],
         };
       }
-      // Low-GC (cost) branch: only for stages that ran long enough to be meaningful.
+      // Low-GC (cost) branch: only for stages that ran long enough to be meaningful, and only as
+      // the fallback sizing signal: a log with measured executor heap peaks gets memoryUtilization's
+      // heapOverProvisioned judgement instead (low GC time just means a low allocation rate).
       if ((stage.executorRunTime ?? 0) >= thresholds.minRunTimeMs
+          && executorHeapPeaks(ctx).size === 0
           && pct < thresholds.lowInfoPct100
           && !stageBelowRuntimeFloor(stage, ctx, thresholds.lowInfoFloorPct)) {
         const value = Math.round(pct * 10) / 10;
@@ -2254,7 +2259,6 @@ export const DETECTORS = [
     docAnchor: '#bottleneck-memory-utilization',
     thresholds: {
       idleCoreWarn: 0.50,          // WastedCoresAlertsReducer
-      bandTooSmall: 0.95,          // MemoryAlertsReducer: used/allocated
       bandTooHigh: 0.70,           // below this => over-provisioned (cost signal)
       wasteBufferMultiplier: 1.5,  // UNVERIFIED
     },
@@ -2296,63 +2300,56 @@ export const DETECTORS = [
         }
       }
 
-      // ── 1b memory bands (executor only; driver half dropped since there is no driver metric) ─
-      // Peak heap per executor = max jvmHeapMemory across all stages' executorMetrics.
-      const peakHeapByExec = new Map<string, number>();
-      for (const s of stages.values()) {
-        const em = s.executorMetrics;
-        if (!(em instanceof Map)) continue;
-        for (const [execId, m] of em) {
-          const heap = m?.jvmHeapMemory ?? 0;
-          if (heap > (peakHeapByExec.get(execId) ?? 0)) peakHeapByExec.set(execId, heap);
-        }
-      }
+      // ── 1b memory band (executor only; driver half dropped since there is no driver metric) ─
+      // spark.executor.memory is one setting for every executor, so the judgement is made once, on
+      // the executor with the highest sampled heap peak. A near-capacity peak is not reported:
+      // JVMHeapMemory counts uncollected garbage, so a peak near -Xmx is normal JVM behaviour.
+      const peakHeapByExec = executorHeapPeaks(ctx);
       if (peakHeapByExec.size === 0) {
-        const key = 'spark.eventLog.logStageExecutorMetrics';
-        const fix = switchFix(loggedAs(app, key, true), key, true,
-          `Per-executor memory usage requires ${key}=true: not enabled for this run.`,
-          'Per-executor memory usage is missing from this log even though executor metrics logging is on for this run.');
+        // Spark 3.0+ writes the executor's metric peaks on every TaskEnd, so a log without them is
+        // pre-3.0 or from local mode (which reports zeros): no logging switch recovers them.
         out.push({
           type: 'memoryUtilization', variant: 'memoryBand', stageId: null,
           impactBand: 'info', metric: 'memoryBand', dataUnavailable: true,
-          recommendation: fix.text,
-          remediation: fix.remediation,
+          recommendation: 'Executor heap peaks are missing from this log (Spark records them on every task end from 3.0, and local mode reports zeros): executor memory sizing was not measured.',
+          remediation: [],
         });
       } else if (allocatedMB != null && allocatedMB > 0) {
         const allocatedBytes = allocatedMB * 1024 * 1024;
-        for (const [execId, heap] of peakHeapByExec) {
-          const ratio = heap / allocatedBytes;
-          // The two bands are opposite signals: an explicit `rule` discriminator lets consumers
-          // tell OOM-risk from over-provisioning without re-deriving the ratio.
-          if (ratio > thresholds.bandTooSmall) {
-            out.push({
-              type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity',
-              stageId: null, executorId: execId,
-              impactBand: 'warning', metric: 'heapUsedRatio', value: Math.round(ratio * 100),
-              recommendation: `Executor ${execId} peaked at ${Math.round(ratio * 100)}% of allocated heap: memory may be too small; raise spark.executor.memory to avoid OOM/spill.`,
-              remediation: [increaseConf('spark.executor.memory')],
-            });
-          } else if (ratio < thresholds.bandTooHigh) {
-            out.push({
-              type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned',
-              stageId: null, executorId: execId,
-              impactBand: 'info', metric: 'heapUsedRatio', value: Math.round(ratio * 100),
-              // Absolute figures behind the rounded ratio, for the estimator's
-              // unused-memory-over-time model.
-              allocatedBytes, heap, appDurationMs,
-              recommendation: `Executor ${execId} used only ${Math.round(ratio * 100)}% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.`,
-              remediation: [decreaseConf('spark.executor.memory')],
-            });
-          }
+        let execId = '';
+        let heap = 0;
+        for (const [id, peak] of peakHeapByExec) {
+          if (peak > heap) { heap = peak; execId = id; }
+        }
+        const ratio = heap / allocatedBytes;
+        if (ratio < thresholds.bandTooHigh) {
+          const pct = Math.round(ratio * 100);
+          const executorCount = peakHeapByExec.size;
+          out.push({
+            type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned',
+            stageId: null, executorId: execId,
+            impactBand: 'info', metric: 'heapUsedRatio', value: pct,
+            // Absolute figures behind the rounded ratio, for the estimator's unused-memory model:
+            // the unused heap is held by every executor for as long as it is alive.
+            allocatedBytes, heap, executorCount,
+            executorSeconds: computeAllocation({ app, stages, executors: { added: executorsAdded, removed: executorsRemoved } }).executorSeconds
+              ?? executorCount * (appDurationMs / 1000),
+            recommendation: `The busiest of ${executorCount} sampled executors peaked at ${pct}% of allocated heap (a lower bound: Spark samples at executor heartbeat): memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.`,
+            remediation: [decreaseConf('spark.executor.memory')],
+          });
         }
       }
 
       // ── 1c Spark Memory Limit waste model (UNVERIFIED buffer) ─
-      if (allocatedMB != null && peakExecutors > 0) {
+      // executorRunTime sums task time across cores, so dividing by the cores per executor gives
+      // executor-seconds: the same unit as peakExecutors x run seconds it is compared with.
+      const executorCores = app.resources?.executor?.cores
+        ?? computeAllocation(allocationInput).executorCores;
+      if (allocatedMB != null && peakExecutors > 0 && executorCores != null && executorCores > 0) {
         const allocatedMBSeconds = peakExecutors * allocatedMB * (appDurationMs / 1000);
         let usedRunTimeMs = 0;
         for (const s of stages.values()) usedRunTimeMs += s.executorRunTime ?? 0;
-        const usedMBSeconds = allocatedMB * (usedRunTimeMs / 1000);
+        const usedMBSeconds = allocatedMB * (usedRunTimeMs / 1000 / executorCores);
         const wastedMBSeconds = allocatedMBSeconds - usedMBSeconds;
         if (wastedMBSeconds > thresholds.wasteBufferMultiplier * usedMBSeconds) {
           const value = Math.round(wastedMBSeconds);
@@ -2384,15 +2381,15 @@ export const DETECTORS = [
         }
         return costOnly('modeled');
       }
-      // Only the over-provisioned band is a waste; the near-capacity band is an OOM-risk signal with
-      // no magnitude, and the dataUnavailable shape has no inputs: both stay informational.
+      // Only the over-provisioned band is a waste; the dataUnavailable shape has no inputs and
+      // stays informational.
       if (finding.variant === 'memoryBand' && finding.rule === 'heapOverProvisioned') {
         const allocatedBytes = finding.allocatedBytes as number | undefined;
         const heap = finding.heap as number | undefined;
-        const appDurationMs = finding.appDurationMs as number | undefined;
-        if (allocatedBytes != null && heap != null && appDurationMs != null) {
+        const executorSeconds = finding.executorSeconds as number | undefined;
+        if (allocatedBytes != null && heap != null && executorSeconds != null) {
           const unusedMB = (allocatedBytes - heap) / (1024 * 1024);
-          const wastedMBSeconds = unusedMB * (appDurationMs / 1000);
+          const wastedMBSeconds = unusedMB * executorSeconds;
           return costOnly('modeled', { value: wastedMBSeconds, unit: 'mbSeconds' });
         }
       }
@@ -3082,7 +3079,7 @@ export const DETECTORS = [
     },
   }),
   defineSqlDetector({
-    type: 'pythonUdf', order: 133, fixEffort: 'code', version: 1,
+    type: 'pythonUdf', order: 134, fixEffort: 'code', version: 1,
     emits: ['pythonUdf'],
     docAnchor: '#pyspark',
     // Unvalidated against a real workload (no corpus or private log runs a Python UDF): set high so
@@ -3127,6 +3124,81 @@ export const DETECTORS = [
       }];
     },
     estimate: noWasteModel,
+  }),
+  defineSqlDetector({
+    type: 'nestedLoopJoin', order: 133, fixEffort: 'code', version: 1,
+    emits: ['nestedLoopJoin'],
+    docAnchor: '#joins',
+    // minOutputRows: below it the join is cheap whatever its shape. minExpansion: a
+    // BroadcastNestedLoopJoin's output must be this many times its larger input, so a join that
+    // keeps its rows, or a cross join against a one-row side, is not an explosion. NOT SOURCED: the 1M and 10x floors are our own noise
+    // floors; the stage time the finding is graded on decides how much it matters.
+    thresholds: { minOutputRows: 1_000_000, minExpansion: 10 },
+    detect(sqlExec, _ctx, thresholds): Finding[] | null {
+      if (!sqlExec.planTree) return null;
+      const out: Finding[] = [];
+      walkPlanTree(sqlExec.planTree, (node) => {
+        const shape = parseNestedLoopJoin(node);
+        if (!shape || node.children.length !== 2) return;
+        const outputRows = ownOutputRows(node);
+        if (outputRows == null || outputRows < thresholds.minOutputRows) return;
+        // A CartesianProduct re-reads its inputs (UnsafeCartesianRDD in joins/CartesianProductExec
+        // computes every left and right partition pair, so each input partition is read once per
+        // partition of the other side), so the executors' input counts exceed the real row counts and cannot be compared with the output. It runs only when neither side can
+        // be broadcast, and its output is the product of the inputs, so size alone qualifies it.
+        const counted = shape.operator === 'CartesianProduct';
+        const leftRows = counted ? null : outputRowsOf(node.children[0]);
+        const rightRows = counted ? null : outputRowsOf(node.children[1]);
+        let expansion: number | null = null;
+        if (!counted) {
+          // Without both input counts "far above both inputs" cannot be shown.
+          if (leftRows == null || rightRows == null) return;
+          expansion = outputRows / Math.max(leftRows, rightRows, 1);
+          if (expansion < thresholds.minExpansion) return;
+        }
+        // Only the stages that run the join: the whole execution's stages would claim time the
+        // join never spent.
+        const stageIds = unionStageIds([node], []);
+        const advice = shape.condition == null
+          ? 'Confirm the cross join is intended, or add a join key so the rows are matched instead of multiplied.'
+          : 'Add an equi-join key so Spark can use a hash or sort-merge join; for a range condition, bucket the range and join on the bucket as well.';
+        const on = shape.condition == null ? '' : ` on ${shape.condition}`;
+        out.push({
+          type: 'nestedLoopJoin', executionId: sqlExec.id, stageIds,
+          // resolvePlanTree always sets id; safe downstream of it.
+          planNodeIds: [node.id!].filter(Boolean),
+          // Fixed fallback: overwritten by deriveImpactBand when this finding gets a wall-clock estimate.
+          impactBand: 'info',
+          metric: 'outputRows', value: outputRows,
+          nodeName: shape.operator, joinType: shape.joinType, condition: shape.condition,
+          outputRows, leftRows, rightRows,
+          confidence: 'medium',
+          validationRequired: 'Row counts are the executors\' measured values; the time graded is the whole stage that runs the join, which also covers its other operators.',
+          recommendation: `${shape.operator}${on} produced ${outputRows.toLocaleString('en-US')} rows${expansion == null
+            ? ', every left row paired with every right row.'
+            : ` from ${leftRows!.toLocaleString('en-US')} and ${rightRows!.toLocaleString('en-US')} input rows (${Math.round(expansion).toLocaleString('en-US')}x the larger side).`} ${advice}`,
+          remediation: [codeFix(advice)],
+        });
+      });
+      return out.length > 0 ? out : null;
+    },
+    estimate(finding, ctx): ImpactEstimate | null {
+      const stageIds = finding.stageIds as number[] | undefined;
+      if (!stageIds || stageIds.length === 0) return costOnly('none');
+      // The join's cost is the time of the stages that run it: a nested-loop join is O(n x m)
+      // inside them. Time with tasks running, not submit-to-complete (a stage waiting for cores
+      // is not looping).
+      const wasteMsByStage = new Map<number, number>();
+      for (const id of stageIds) {
+        const s = ctx.stages.get(id);
+        if (s) wasteMsByStage.set(id, s.taskActiveMs ?? Math.max(0, (s.completedAt ?? 0) - (s.submittedAt ?? 0)));
+      }
+      if (wasteMsByStage.size === 0) return costOnly('none');
+      const totalMs = [...wasteMsByStage.values()].reduce((sum, ms) => sum + ms, 0);
+      const rawWaste: RawWasteFigure = { value: totalMs, unit: 'ms' };
+      return multiStageImpact([...wasteMsByStage.keys()], wasteMsByStage, ctx, 'modeled', rawWaste)
+        ?? costOnly('modeled', rawWaste);
+    },
   }),
 ] as const satisfies readonly Detector[];
 

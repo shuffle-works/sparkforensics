@@ -300,6 +300,10 @@ export const TaskEndEventSchema = z.object({
       ID: z.number(),
     })).max(MAX_ACCUMULABLES_PER_TASK).optional(),
   }).optional(),
+  // Spark 3.0+: the executor's metric peaks as of this task's end, one number per ExecutorMetricType
+  // name (the same names as SparkListenerStageExecutorMetrics). Values are read by name and kept
+  // only when numeric, so a stray value never drops the task.
+  'Task Executor Metrics': z.record(z.string(), z.unknown()).optional(),
   'Task Metrics': z.object({
     'Peak Execution Memory': z.number().optional(),
     'JVM GC Time': z.number().optional(),

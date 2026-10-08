@@ -30,7 +30,7 @@ do not build hard thresholds or findings on top of them.
 
 ## Stage-ID attribution for Plan Advisor findings
 
-The Plan Advisor detectors (`duplicatePlanSubtree`, `smallFiles`, `broadcastSizing`, `pythonUdf`
+The Plan Advisor detectors (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `pythonUdf`, `broadcastSizing`
 in `packages/core/src/detectors.ts`) each attribute their finding to a narrowed `stageIds` set
 rather than the whole SQL execution: `PlanNode.stageIds` is resolved once per plan
 tree at parse time by unioning, per node, every metric's accumulator ID against a
@@ -41,6 +41,9 @@ computed once and reused verbatim, and the clip prevents misattributing that oth
 execution's work. Each detector unions its implicated node(s)' `stageIds` and falls
 back to the execution-wide set only when no implicated node has any coverage;
 a finding never partially blends a narrowed set with the execution-wide one.
+`nestedLoopJoin` is the exception to the fallback: it claims the time of the stages that run
+the join, so a join node with no stage coverage gets an empty `stageIds` and no time claim
+rather than the whole execution's stages.
 When an execution has no stage universe at all (no jobs ever recorded against it,
 which is true for 42% of real-log SQL executions with a plan tree, typically
 job-less/driver-only executions), the clip drops every candidate stage ID instead

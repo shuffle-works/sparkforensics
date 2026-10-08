@@ -78,8 +78,8 @@ the evidence key doesn't vary per row; also the control shown in the
 widget's empty-findings/no-data states), `MemoryUtilization.tsx`'s widget
 header (confidence + evidence, one marker, since `executorMetrics` is
 widget-wide; `ExecutorUtilization.tsx`'s rows carry neither), each of the
-five Plan Advisor widgets' (`DuplicatePlanSubtree.tsx`, `SmallFiles.tsx`,
-`PythonUdf.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`) widget header (confidence +
+six Plan Advisor widgets' (`DuplicatePlanSubtree.tsx`, `SmallFiles.tsx`,
+`NestedLoopJoin.tsx`, `PythonUdf.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`) widget header (confidence +
 `sqlPlan` evidence, one marker per widget since each is its own finding
 type; no per-row control), `ScalingSim.tsx`
 (two call sites, evidence only), `CoreUsageArea.tsx`, `EfficiencyModel.tsx`

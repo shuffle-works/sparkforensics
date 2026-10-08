@@ -4,23 +4,26 @@ The Plan Advisor board widgets, which report SQL-plan-level findings.
 
 - **Plan Advisor** (tag `PLAN`): SQL-plan-level findings computed from
   `appModel.sql`'s resolved `planTree` (DETECTORS entries
-  `duplicatePlanSubtree`, `smallFiles`, `broadcastSizing`, `pythonUdf` in
+  `duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `broadcastSizing`, `pythonUdf` in
   `packages/core/src/detectors.ts`): repeated plan subtrees (≥3 nodes, ≥2 occurrences; dropped when their
   linked stages take under 0.5% of the run; banded from the recovered
   wall-clock like other findings, with a `warning`/`info` fallback; an
   `Exchange` root only changes the recommendation to a possible missed
   exchange reuse), small-files read/write (>100 files
-  averaging <3 MiB), and broadcast-join sizing in both directions (missed-
+  averaging <3 MiB), nested-loop and cartesian joins whose output dwarfs
+  their inputs (`nestedLoopJoin`, graded by the time of the stages that run the
+  join), and broadcast-join sizing in both directions (missed-
   broadcast info finding, over-broadcast warning at >1 GB), and
   row-at-a-time Python UDFs (`BatchEvalPython` stages that sent >64 MiB to
-  Python workers over >30 s; an info finding). Each of the five
+  Python workers over >30 s; an info finding). Each of the six
   emitted types renders as its own card (`DuplicatePlanSubtree.tsx`,
-  `SmallFiles.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`, `PythonUdf.tsx`): all five
+  `SmallFiles.tsx`, `NestedLoopJoin.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`, `PythonUdf.tsx`): all six
   share the `PLAN` tag and
   the same `--plan-aggregate` badge tint (`src/view/plan-finding-shared.ts`).
   Their `docAnchor`s (`#bottleneck-duplicate-plan-subtree`,
   `#bottleneck-small-files`, `#bottleneck-broadcast-sizing`, `#pyspark`) each
-  resolve to their own page in the vendored tuning reference.
+  resolve to their own page in the vendored tuning reference; `nestedLoopJoin`
+  links to the reference's `#joins` chapter.
 
 `detector-registry.tsx`'s `REGISTRY` carries `region: 'reference'` on
 four entries, each its own component: `memoryUtilization`
