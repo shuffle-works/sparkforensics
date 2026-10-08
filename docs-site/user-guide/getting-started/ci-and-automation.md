@@ -166,9 +166,12 @@ carry `evidence.origin`: `shuffleJoin` (the conf above applies), `inputScan`
 `spark.sql.files.maxPartitionBytes`) or `other` (no conf is suggested; the `remediation` holds a `code` entry).
 `shufflePartitionSkew` carries the same field but is judged on shuffle-read
 sizes, so it is only ever `shuffleJoin` or `other`. A `stageSlowness` finding carries `evidence.reads` (`shuffle`,
-`input` or `other`) and suggests shuffle partitions only for `shuffle`; `spill`
-and `tinyTask` carry the same `reads` key and gate their shuffle-partition
-advice the same way. `straggler` carries `evidence.origin` and the same skew
+`input` or `other`) and suggests partition-count changes only for `shuffle`; `spill`
+and `tinyTask` carry the same `reads` key and gate their partition-count
+advice the same way. On a `shuffle` stage the remediation names the lever that
+sized it: `spark.sql.shuffle.partitions`, AQE's advisory size or
+`parallelismFirst` where AQE coalesced the stage, or a `code` entry where the
+stage's own `repartition(n)` or RDD parallelism did. `straggler` carries `evidence.origin` and the same skew
 advice as a skew finding on that stage. `coldStart` and `autoscalingChurn`
 carry `evidence.dynamicAllocation` (`on` or `off`) and suggest no
 dynamic-allocation property when it is `off`. `underBroadcast` and

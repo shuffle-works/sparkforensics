@@ -794,6 +794,13 @@ function effectiveShufflePartitions(app: DetectorApp | null): number | null {
   return value != null && /^\d+$/.test(value) ? Number(value) : null;
 }
 
+// Whether AQE coalescing is on and the stage ran fewer tasks than the property's partitions: AQE
+// merged them.
+function aqeCoalescedBelow(stage: DetectorStage, app: DetectorApp | null, count: number): boolean {
+  return stage.taskCount < count
+    && loggedAs(app, 'spark.sql.adaptive.enabled', true) && loggedAs(app, 'spark.sql.adaptive.coalescePartitions.enabled', true);
+}
+
 // Whether partition-count advice fits a shuffle-reading stage, from the effective conf and the
 // stage's own task sizes. The partition count that brings each shuffle partition down to the ideal
 // size is per stage; the property is job-wide. 'sufficient': the stage's tasks are already at or
@@ -807,13 +814,37 @@ function shufflePartitionCase(stage: DetectorStage, app: DetectorApp | null): { 
   const tasks = Math.max(1, stage.taskCount);
   let partitions: ShufflePartitions = 'raise';
   if (stage.shuffleReadBytes / tasks <= IDEAL_BYTES_PER_PARTITION_TASK) partitions = 'sufficient';
-  else if (count != null && stage.taskCount < count
-    && loggedAs(app, 'spark.sql.adaptive.enabled', true) && loggedAs(app, 'spark.sql.adaptive.coalescePartitions.enabled', true)) partitions = 'aqeCoalesced';
+  else if (count != null && aqeCoalescedBelow(stage, app, count)) partitions = 'aqeCoalesced';
   else if (count != null && count >= needed) partitions = 'ownPartitioning';
   return { partitions, count, needed };
 }
 
 const ADVISORY_PARTITION_SIZE_KEY = 'spark.sql.adaptive.advisoryPartitionSizeInBytes';
+const PARALLELISM_FIRST_KEY = 'spark.sql.adaptive.coalescePartitions.parallelismFirst';
+
+// What sized a shuffle-reading stage's tasks, for advice that moves the partition count. 'property':
+// the stage ran spark.sql.shuffle.partitions tasks (or the count is unknown), so the property is
+// the lever. 'aqeCoalesced': AQE merged them, so the property no longer sets the count: AQE sizes
+// the merged tasks from the advisory size and, with parallelismFirst (Spark's default), from
+// defaultParallelism too (ShufflePartitionsUtil.coalescePartitions and CoalesceShufflePartitions
+// at v3.5.0). 'ownPartitioning': a task count other than the property's, with no AQE coalescing to
+// explain it, is a repartition(n) or RDD operation that fixed its own count.
+type PartitionLever = 'property' | 'aqeCoalesced' | 'ownPartitioning';
+
+function partitionLever(stage: DetectorStage, app: DetectorApp | null): { lever: PartitionLever; count: number | null } {
+  const count = effectiveShufflePartitions(app);
+  if (count == null || stage.taskCount === count) return { lever: 'property', count };
+  return { lever: aqeCoalescedBelow(stage, app, count) ? 'aqeCoalesced' : 'ownPartitioning', count };
+}
+
+// The conf that makes AQE's merged tasks larger: parallelismFirst stops it targeting defaultParallelism
+// tasks and falls back to the advisory size, so it comes first until the run has it off, and then the
+// advisory size itself.
+function aqeCoalesceLargerFix(app: DetectorApp | null): { keys: string; remediation: Remediation[] } {
+  return loggedAs(app, PARALLELISM_FIRST_KEY, false)
+    ? { keys: ADVISORY_PARTITION_SIZE_KEY, remediation: [increaseConf(ADVISORY_PARTITION_SIZE_KEY)] }
+    : { keys: `${PARALLELISM_FIRST_KEY}=false (so AQE targets the advisory size, not defaultParallelism tasks) or a higher ${ADVISORY_PARTITION_SIZE_KEY}`, remediation: [setConf(PARALLELISM_FIRST_KEY, false), increaseConf(ADVISORY_PARTITION_SIZE_KEY)] };
+}
 
 // lowShuffleParallelism's fix. Unlike the shuffle finding it fires on stages whose tasks are larger
 // than the ideal size, so its cases are 'raise', 'aqeCoalesced' and 'ownPartitioning'.
@@ -838,6 +869,60 @@ function lowShuffleParallelismFix(stage: DetectorStage, app: DetectorApp | null)
     text: 'raise spark.sql.shuffle.partitions so each partition is smaller',
     remediation: [increaseConf('spark.sql.shuffle.partitions', count == null ? null : needed)],
   };
+}
+
+// tinyTask's fix on a stage that reads a shuffle: fewer, larger tasks, through whatever sized this
+// stage. Lowering spark.sql.shuffle.partitions merges nothing AQE kept for parallelism, and does
+// not touch a repartition(n).
+function tinyShuffleFix(stage: DetectorStage, app: DetectorApp | null, coalesceTo: number): { text: string; remediation: Remediation[] } {
+  const { lever, count } = partitionLever(stage, app);
+  if (lever === 'aqeCoalesced') {
+    const larger = aqeCoalesceLargerFix(app);
+    return {
+      text: `${larger.keys}, or .coalesce(${coalesceTo}): AQE already coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks, so lowering the shuffle partition count will not merge them`,
+      remediation: larger.remediation,
+    };
+  }
+  if (lever === 'ownPartitioning') {
+    const hint = `lower the repartition(n) or RDD partition count that sized this stage, or .coalesce(${coalesceTo})`;
+    return { text: `${hint} (the configured shuffle partition count is ${count} but this stage ran ${stage.taskCount} tasks)`, remediation: [codeFix(hint)] };
+  }
+  return { text: `lower spark.sql.shuffle.partitions or .coalesce(${coalesceTo})`, remediation: [decreaseConf('spark.sql.shuffle.partitions')] };
+}
+
+// spill's fix on a stage that reads a shuffle and spills for volume: smaller partitions or more
+// memory. Raising spark.sql.shuffle.partitions only helps while the property sized the stage.
+function spillShuffleFix(stage: DetectorStage, app: DetectorApp | null): { text: string; remediation: Remediation[] } {
+  const memory = increaseConf('spark.executor.memory');
+  const { lever, count } = partitionLever(stage, app);
+  if (lever === 'aqeCoalesced') {
+    return {
+      text: `AQE coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks: lower ${ADVISORY_PARTITION_SIZE_KEY} so each partition is smaller, or increase executor memory`,
+      remediation: [decreaseConf(ADVISORY_PARTITION_SIZE_KEY), memory],
+    };
+  }
+  if (lever === 'ownPartitioning') {
+    const hint = "raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller";
+    return { text: `the configured shuffle partition count is ${count} but this stage ran ${stage.taskCount} tasks, so ${hint}, or increase executor memory`, remediation: [codeFix(hint), memory] };
+  }
+  return { text: 'raise spark.sql.shuffle.partitions or increase executor memory', remediation: [increaseConf('spark.sql.shuffle.partitions'), memory] };
+}
+
+// stageSlowness's fix on a stage that reads a shuffle: more tasks. spark.default.parallelism sizes
+// RDD shuffles only (the DataFrame shuffle reads spark.sql.shuffle.partitions), so it is not offered.
+function slowShuffleFix(stage: DetectorStage, app: DetectorApp | null): { text: string; remediation: Remediation[] } {
+  const { lever, count } = partitionLever(stage, app);
+  if (lever === 'aqeCoalesced') {
+    return {
+      text: `AQE coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks, so lower ${ADVISORY_PARTITION_SIZE_KEY} to get more of them`,
+      remediation: [decreaseConf(ADVISORY_PARTITION_SIZE_KEY)],
+    };
+  }
+  if (lever === 'ownPartitioning') {
+    const hint = "raise this stage's own partition count (its repartition(n) or RDD parallelism)";
+    return { text: `the configured shuffle partition count is ${count} but this stage ran ${stage.taskCount} tasks, so ${hint}`, remediation: [codeFix(hint)] };
+  }
+  return { text: 'raise spark.sql.shuffle.partitions', remediation: [increaseConf('spark.sql.shuffle.partitions')] };
 }
 
 // A Spark byte-size property as bytes (a plain number, or with a k/m/g/t suffix, optionally 'b'), or
@@ -1454,7 +1539,7 @@ export const DETECTORS = [
       const impactBand = 'warning';
       // shuffle.partitions sizes a shuffle's reduce side: a stage that reads no shuffle gets memory only.
       const reads = stageReads(stage);
-      const partitionAdvice = reads === 'shuffle';
+      const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, ctx.app) : null;
       return {
         type: 'spill', stageId: stage.id, impactBand, reads,
         spillMagnitude: mag?.magnitude,
@@ -1465,10 +1550,10 @@ export const DETECTORS = [
           : 'Spill cause could not be classified: inspect per-task spill metrics in the Spark UI before acting.',
         recommendation: cls === 'skew'
           ? `${formatBytes(stage.memoryBytesSpilled)} spilled, skew-driven: fix task skew first; adding memory will not help.`
-          : partitionAdvice
-            ? `${formatBytes(stage.memoryBytesSpilled)} spilled: raise spark.sql.shuffle.partitions or increase executor memory.`
+          : shuffleFix
+            ? `${formatBytes(stage.memoryBytesSpilled)} spilled: ${shuffleFix.text}.`
             : `${formatBytes(stage.memoryBytesSpilled)} spilled: this stage reads no shuffle, so increase executor memory or process less data per task.`,
-        remediation: cls === 'skew' ? [] : [...(partitionAdvice ? [increaseConf('spark.sql.shuffle.partitions')] : []), increaseConf('spark.executor.memory')],
+        remediation: cls === 'skew' ? [] : shuffleFix?.remediation ?? [increaseConf('spark.executor.memory')],
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
@@ -1683,7 +1768,7 @@ export const DETECTORS = [
     thresholds: { infoMin: 15 },
     // A stage slowHost already explains needs no generic "this stage is slow" finding on top.
     suppressedBy: 'slowHost',
-    detect(stage, _ctx, thresholds): Finding | null {
+    detect(stage, ctx, thresholds): Finding | null {
       // Basis is real wall-clock stage duration, not per-executor average; the impact-estimator
       // formula reuses this exact stageDurationMs computation.
       const stageDurationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
@@ -1693,11 +1778,12 @@ export const DETECTORS = [
       const impactBand = durationMinutes >= t.infoMin ? 'info' : null;
       if (!impactBand) return null;
       const value = Math.round(durationMinutes * 10) / 10;
-      // shuffle.partitions and default.parallelism size a shuffle's reduce side: a stage that reads
-      // no shuffle gets the input-partitioning remedy instead.
+      // A shuffle's reduce-side partition count is the remedy on a stage that reads a shuffle; a stage
+      // that reads input files gets the input-partitioning remedy instead.
       const reads = stageReads(stage);
-      const recommendation = reads === 'shuffle'
-        ? `This stage ran ${value} minutes with no more specific cause flagged: often a partition-count problem, raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.`
+      const shuffleFix = reads === 'shuffle' ? slowShuffleFix(stage, ctx.app) : null;
+      const recommendation = shuffleFix
+        ? `This stage ran ${value} minutes with no more specific cause flagged: often a partition-count problem, ${shuffleFix.text}, or check for a large per-task data volume driving heavy shuffle and spill.`
         : reads === 'input'
           ? `This stage ran ${value} minutes with no more specific cause flagged and reads mostly input files: often too few or too uneven input partitions, so check input file sizes and lower spark.sql.files.maxPartitionBytes, or look for a large per-task data volume driving heavy spill.`
           : `This stage ran ${value} minutes with no more specific cause flagged and reads neither shuffle nor input files: check what it computes and for a large per-task data volume driving heavy spill.`;
@@ -1705,8 +1791,8 @@ export const DETECTORS = [
         type: 'stageSlowness', stageId: stage.id, impactBand,
         metric: 'stageDurationMinutes', value, reads,
         recommendation,
-        remediation: reads === 'shuffle'
-          ? [increaseConf('spark.sql.shuffle.partitions'), increaseConf('spark.default.parallelism')]
+        remediation: shuffleFix
+          ? shuffleFix.remediation
           : reads === 'input' ? [decreaseConf('spark.sql.files.maxPartitionBytes')] : [],
       };
     },
@@ -1930,14 +2016,12 @@ export const DETECTORS = [
       if (stage.taskDurationP50 > thresholds.maxP50 || stage.taskDurationP95 > thresholds.maxP95) return null;
       const coalesceTo = Math.max(1, Math.round(stage.taskCount / 10));
       const reads = stageReads(stage);
-      const fix = reads === 'shuffle'
-        ? `lower spark.sql.shuffle.partitions or .coalesce(${coalesceTo})`
-        : `.coalesce(${coalesceTo})`;
+      const fix = reads === 'shuffle' ? tinyShuffleFix(stage, ctx.app, coalesceTo) : { text: `.coalesce(${coalesceTo})`, remediation: [] };
       return {
         type: 'tinyTask', stageId: stage.id, impactBand: 'info', reads,
         metric: 'taskDurationP50', value: Math.round(stage.taskDurationP50),
-        recommendation: `Many small tasks (${stage.taskCount}, P50 ${Math.round(stage.taskDurationP50)}ms): scheduler overhead may dominate. Try ${fix}.`,
-        remediation: reads === 'shuffle' ? [decreaseConf('spark.sql.shuffle.partitions')] : [],
+        recommendation: `Many small tasks (${stage.taskCount}, P50 ${Math.round(stage.taskDurationP50)}ms): scheduler overhead may dominate. Try ${fix.text}.`,
+        remediation: fix.remediation,
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {
