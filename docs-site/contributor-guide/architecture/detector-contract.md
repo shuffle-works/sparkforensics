@@ -250,7 +250,10 @@ equal to the default labels nothing. Tuning a
 `suppressedBy` target changes which of the suppressed entry's findings
 survive, so those findings carry the suppressor's tuned thresholds too,
 named `<suppressor>.<name>` (e.g. `slowHost.minHosts` on `stageSlowness`).
-Only that one link is followed. The
+`straggler` has no `suppressedBy` but judges a tail with `skew`'s resolved
+thresholds (`DetectorCtx.skewThresholds`), so its findings carry `skew`'s
+tuned thresholds the same way (`THRESHOLD_DEPENDENCY` in
+`threshold-overrides.ts`). Only that one link is followed. The
 evidence report repeats the label on the finding row, the clean check, the
 `detectors` catalog row (whose `thresholds` are then the effective ones)
 and in `summary.tunedThresholds`; see

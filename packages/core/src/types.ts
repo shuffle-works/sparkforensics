@@ -131,9 +131,38 @@ export interface Stage {
   tailReplayRecoveryMs?: number;
   // Most of the stage's tasks running at once (finalizeStage's computePeakConcurrentTasks).
   peakConcurrentTasks?: number;
+  // What the stage's slow tail was made of (finalizeStage's attributeTail); absent when no task
+  // ran over 3x P50.
+  tailAttribution?: TailAttribution;
   localityStats?: { locality: string; count: number }[];
   details?: string;
   [key: string]: unknown;
+}
+
+// The tail of a stage: its non-failed tasks over TAIL_FACTOR x P50. Each cause is the summed time
+// (ms) of the tail's excess over P50 that the cause accounts for, taken in the order data, GC, fetch
+// wait, host so that no millisecond counts twice; what none of them accounts for is
+// excessMs - dataMs - gcMs - fetchWaitMs - hostMs.
+export interface TailAttribution {
+  tasks: number;
+  excessMs: number;
+  // Excess a run time proportional to the task's data volume (input plus shuffle-read, bytes or
+  // records, whichever is further above the stage's median task) accounts for.
+  dataMs: number;
+  gcMs: number;
+  fetchWaitMs: number;
+  // Excess left after the other causes on tail tasks that concentrate on one host; 0 unless one
+  // host holds a clear majority of the tail out of proportion to its share of the stage's tasks.
+  hostMs: number;
+  host: string | null;
+  // The tail's tasks on that host; 0 when there is none.
+  hostTasks: number;
+  // Median over the tail's tasks of how many times the stage's median task's data volume each read;
+  // null when the stage has no data volume to compare (the median task read nothing): the tail's
+  // tasks that read anything then count all their extra time as data.
+  dataRatio: number | null;
+  // Tail tasks' summed CPU time over their summed run time, 0-100; null when the log has no CPU time.
+  cpuPct: number | null;
 }
 
 export interface PlanNode {

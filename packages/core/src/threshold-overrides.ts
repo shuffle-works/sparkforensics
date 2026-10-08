@@ -88,11 +88,17 @@ export function tunedThresholdsOf(entry: Detector, overrides: ThresholdOverrides
   return Object.keys(tuned).length > 0 ? tuned : null;
 }
 
-/** The tuned thresholds an entry's findings carry: its own, plus its `suppressedBy` entry's
- * (named `<suppressor>.<threshold>`), since tuning the suppressor changes which of them survive. */
+// straggler judges a tail with skew's resolved thresholds (DetectorCtx.skewThresholds), so tuning skew
+// changes which tails it reports without any `suppressedBy` link.
+const THRESHOLD_DEPENDENCY: Readonly<Record<string, string>> = { straggler: 'skew' };
+
+/** The tuned thresholds an entry's findings carry: its own, plus its `suppressedBy` entry's or the
+ * entry it reads thresholds from (named `<entry>.<threshold>`), since tuning either changes which
+ * of them survive. */
 export function findingTunedThresholds(entry: Detector, overrides: ThresholdOverrides | undefined): TunedThresholds | null {
   const own = tunedThresholdsOf(entry, overrides);
-  const suppressor = entry.suppressedBy ? entries.find((d) => d.type === entry.suppressedBy) : undefined;
+  const suppressorType = entry.suppressedBy ?? THRESHOLD_DEPENDENCY[entry.type];
+  const suppressor = suppressorType ? entries.find((d) => d.type === suppressorType) : undefined;
   const bySuppressor = suppressor ? tunedThresholdsOf(suppressor, overrides) : null;
   if (!suppressor || !bySuppressor) return own;
   const prefixed = Object.fromEntries(Object.entries(bySuppressor).map(([name, t]) => [`${suppressor.type}.${name}`, t]));

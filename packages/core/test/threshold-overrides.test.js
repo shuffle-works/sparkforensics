@@ -26,7 +26,7 @@ describe('parseThresholdOverrides', () => {
     [{ configAudit: { floorMB: 1 } }, '"configAudit" is not tunable'],
     [{ stageFailed: {} }, '"stageFailed" has no thresholds to tune'],
     [{ skew: 5 }, '"skew" must be an object of threshold values'],
-    [{ skew: { ratioWarm: 5 } }, 'unknown threshold "skew.ratioWarm" (skew thresholds: ratioWarn, minTasksForP95, floorPctWarn)'],
+    [{ skew: { ratioWarm: 5 } }, 'unknown threshold "skew.ratioWarm" (skew thresholds: ratioWarn, minTasksForP95, dataShareMin, floorPctWarn)'],
     [{ skew: { constructor: 1 } }, 'unknown threshold "skew.constructor"'],
     [{ skew: { toString: 1 } }, 'unknown threshold "skew.toString"'],
     [JSON.parse('{"skew":{"__proto__":1}}'), 'unknown threshold "skew.__proto__"'],

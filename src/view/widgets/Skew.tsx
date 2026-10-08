@@ -6,7 +6,8 @@ import { formatMetricValue, numericValue } from '@sparkforensics/core/format-uti
 import { StageFindingGroupWidget } from './StageFindingGroup';
 
 function findingLabel(f: Finding): string {
-  return `${f.metric}: ${formatMetricValue('ratio', numericValue(f))}`;
+  const dataRatio = f.type === 'skew' ? f.dataRatio : undefined;
+  return `${f.metric}: ${formatMetricValue('ratio', numericValue(f))}${dataRatio != null ? `, data ${formatMetricValue('ratio', dataRatio)}` : ''}`;
 }
 
 export type SkewProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'getTaskData' | 'defaultCollapsed'>;
