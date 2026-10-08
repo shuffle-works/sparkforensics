@@ -258,7 +258,7 @@ shuffle storage plugin, and `minExecutors` above `maxExecutors`.
 
 ### `PLAN`: Plan advisor {#plan}
 
-Flags patterns in the SQL execution plan worth reviewing. Four checks share
+Flags patterns in the SQL execution plan worth reviewing. Five checks share
 this tag:
 
 - Duplicate plan subtree: the same subtree recomputed more than once in the
@@ -267,6 +267,17 @@ this tag:
   when the repeat's stages take at least 0.5% of the run.
 - Small files: one plan node reads or writes more than 100 files averaging
   under 3 MB. Compact upstream output, or coalesce before writing.
+- Nested loop join: a `BroadcastNestedLoopJoin` or `CartesianProduct` whose
+  output has at least 1,000,000 rows. A `BroadcastNestedLoopJoin` must also
+  produce at least 10 times the rows of its larger input; a `CartesianProduct`
+  is judged on its output alone, because it re-reads each input once per
+  partition of the other side, so the input row counts the executors report
+  are not row counts. Spark plans these when a join has no equi-join key. The
+  finding carries the join condition and is graded by the time of the stages
+  that run the join. The advice is to add an equi-join key, to bucket the range
+  of a range join and join on the bucket, or to confirm that a cross join is
+  intended. It needs the executors' `number of output rows` metrics, so a join
+  with no reported row counts is not flagged.
 - Under-broadcast: the smaller side of a Sort Merge Join looks well under
   the broadcast threshold; consider a `broadcast()` hint or raising
   `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold

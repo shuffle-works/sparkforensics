@@ -60,12 +60,12 @@ the toggle, still correctly labeled "Back to segment view" per `model?.scope`,
 renders `disabled` rather than silently no-opping on click. Only the
 explicit-expand path (`requestedScope === 'full'`) leaves it enabled.
 
-The four Plan Advisor finding types (`duplicatePlanSubtree`, `smallFiles`, and
-`broadcastSizing`'s `overBroadcast`/`underBroadcast`, in
+The five Plan Advisor finding types (`duplicatePlanSubtree`, `smallFiles`,
+`nestedLoopJoin`, and `broadcastSizing`'s `overBroadcast`/`underBroadcast`, in
 `packages/core/src/detectors.ts`) set `Finding.planNodeIds`, an unambiguous
 pointer to the specific plan-tree node(s) each finding is about (every node of
 each repeated subtree occurrence for `duplicatePlanSubtree`, the flagged
-scan/write node for `smallFiles`, the `data size`-carrying nodes under both
+scan/write node for `smallFiles`, the join node for `nestedLoopJoin`, the `data size`-carrying nodes under both
 join inputs for `underBroadcast`, and the BroadcastExchange node for
 `overBroadcast`). `buildPlanGraphModel`
 indexes `findings` by `planNodeIds` and attaches each node's matches to its

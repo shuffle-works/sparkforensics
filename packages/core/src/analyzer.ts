@@ -47,7 +47,8 @@ type DiscriminatorSlot = (typeof DISCRIMINATOR_SLOTS)[number];
 //   slowHost (host), memoryUtilization (executorId), partitionSizing (rule);
 //   cacheUtilization (rddId+variant), cachingOpportunity (relation/format for leaf,
 //     operator+relation for composite, executionIds as last resort);
-//   smallFiles (direction/nodeName), duplicatePlanSubtree (groupIndex is the real
+//   smallFiles (direction/nodeName), nestedLoopJoin (nodeName; outputRows is the metric value),
+//     duplicatePlanSubtree (groupIndex is the real
 //     uniqueness guarantee: rootName+subtreeSize can collide across groups),
 //     underBroadcast (value+largerSideBytes per node/side).
 // memoryUtilization leaves out `rule`: one heap band per executor, so executorId is already
@@ -62,6 +63,7 @@ const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & key
   cachingOpportunity: ['variant', 'relation', 'format', 'operator', 'executionIds'],
   jobFailureRate: [], configAudit: [],
   duplicatePlanSubtree: ['rootName', 'subtreeSize', 'groupIndex'], smallFiles: ['direction', 'nodeName'],
+  nestedLoopJoin: ['nodeName'],
   underBroadcast: ['largerSideBytes'], overBroadcast: [],
 };
 

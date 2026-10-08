@@ -369,6 +369,15 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
       ? 'Repartition or coalesce before writing to raise the average file size.'
       : 'Compact the upstream output so fewer, larger files are produced.'),
   },
+  nestedLoopJoin: {
+    name: 'nested loop join',
+    tag: 'PLAN',
+    thresholdSummary: (t) => `a nested-loop or cartesian join with over ${t.minOutputRows.toLocaleString('en-US')} output rows, at least ${t.minExpansion}x its larger input`,
+    actionLabel: (f) => (f.condition == null ? 'Confirm cross join' : 'Add an equi-join key'),
+    genericRecommendation: (f) => (f.condition == null
+      ? 'Confirm the cross join is intended, or add a join key so the rows are matched instead of multiplied.'
+      : 'Add an equi-join key so Spark can use a hash or sort-merge join; for a range condition, bucket the range and join on the bucket as well.'),
+  },
   underBroadcast: {
     name: 'missed broadcast join',
     tag: 'PLAN',

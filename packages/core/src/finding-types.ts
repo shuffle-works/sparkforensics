@@ -344,6 +344,21 @@ export interface SmallFilesEvidence extends PlanFindingEvidence {
 }
 export interface SmallFilesFinding extends NumericFinding<'smallFiles'>, SmallFilesEvidence, PlanNodeOrigin {}
 
+/** A BroadcastNestedLoopJoin or CartesianProduct whose output is far larger than both inputs.
+ * `nodeName` is the operator, `joinType` the Spark join type (null when the plan line has none)
+ * and `condition` the join condition with expression ids removed (null for a join without one).
+ * `leftRows` and `rightRows` are the input row counts the executors reported, null for a
+ * CartesianProduct, which re-reads its inputs so their counts are not row counts. */
+export interface NestedLoopJoinEvidence extends PlanFindingEvidence {
+  nodeName: 'BroadcastNestedLoopJoin' | 'CartesianProduct';
+  joinType: string | null;
+  condition: string | null;
+  outputRows: number;
+  leftRows: number | null;
+  rightRows: number | null;
+}
+export interface NestedLoopJoinFinding extends NumericFinding<'nestedLoopJoin'>, NestedLoopJoinEvidence, PlanNodeOrigin {}
+
 /** How the effective spark.sql.autoBroadcastJoinThreshold relates to the finding: 'limits' (the
  * property decided it, or is unknown), 'notLimiting' (already admits, or already below, the
  * broadcast, so something else decided it) or 'disabled' (-1). */
@@ -390,6 +405,7 @@ export interface FindingEvidenceMap {
   configAudit: ConfigAuditEvidence;
   duplicatePlanSubtree: DuplicatePlanSubtreeEvidence;
   smallFiles: SmallFilesEvidence;
+  nestedLoopJoin: NestedLoopJoinEvidence;
   underBroadcast: UnderBroadcastEvidence;
   overBroadcast: OverBroadcastEvidence;
 }
@@ -421,6 +437,7 @@ export type Finding =
   | ConfigAuditFinding
   | DuplicatePlanSubtreeFinding
   | SmallFilesFinding
+  | NestedLoopJoinFinding
   | UnderBroadcastFinding
   | OverBroadcastFinding;
 
