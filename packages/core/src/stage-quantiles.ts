@@ -1,6 +1,7 @@
 import type { FailedTaskSample } from './event-handlers.ts';
 import { medianOfSorted } from './median.ts';
 import type { TaskFailureDetail, TaskFailureGroup } from './task-failure.ts';
+import type { TailAttribution } from './types.ts';
 
 // Single source of truth for the packed per-task numeric array: FIELDS (offset
 // constants), TASK_FIELD_NAMES (display labels), and the finalizeStage hot-loop
@@ -82,7 +83,8 @@ export function finalizeStage(
   const localityStats = new Map();
   let peakExecutionMemoryMax = 0;
 
-  for (const t of stage.taskAttempts.values()) {
+  const attempts = stage.taskAttempts;
+  for (const t of attempts.values()) {
     taskCount++;
     if (t.failed) {
       failedTasks++;
@@ -160,6 +162,7 @@ export function finalizeStage(
     }
   }
 
+  const tailAttribution = p50 > 0 ? attributeTail(attempts.values() as unknown as Iterable<TailTask>, p50) : null;
   const peakConcurrentTasks = computePeakConcurrentTasks(arr);
   const tailReplayRecoveryMs = stragglerCount > 0
     ? computeTailReplayRecoveryMs(arr, p50, peakConcurrentTasks)
@@ -191,6 +194,7 @@ export function finalizeStage(
     peakExecutionMemoryMax,
     taskActiveMs: computeTaskActiveMs(arr),
     peakConcurrentTasks,
+    ...(tailAttribution ? { tailAttribution } : {}),
     taskDurationP50: p50,
     taskDurationP95: p95,
     taskDurationMax: max,
@@ -208,6 +212,113 @@ export function finalizeStage(
   delete data.stageAttemptId;
 
   return { type: 'stage', data };
+}
+
+// A task is in the tail when it runs over this many times the stage's median task: skew's own
+// P95/median ratio threshold, so every stage either detector flags on duration has a tail here.
+export const TAIL_FACTOR = 3;
+
+// The per-task fields attributeTail reads; a TaskRecord in event-handlers.ts has all of them.
+interface TailTask {
+  failed: boolean;
+  duration: number;
+  host: string;
+  gcTime: number;
+  fetchWaitTime: number;
+  executorRunTime: number;
+  executorCpuTime: number;
+  inputBytes: number;
+  inputRecords: number;
+  shuffleRead: number;
+  shuffleReadRecords: number;
+}
+
+// A hosts-concentration reading needs this many tail tasks on the host, at least this share of the
+// tail, and at least this multiple of the host's share of all tasks, before the host explains the
+// excess the other causes leave. One slow task on a host that ran a tenth of the stage is chance.
+const TAIL_HOST_MIN_TASKS = 3;
+const TAIL_HOST_MIN_TAIL_SHARE = 0.5;
+const TAIL_HOST_MIN_OVERREPRESENTATION = 2;
+
+// Why the stage's slow tasks (non-failed, over TAIL_FACTOR x P50) were slow, from what each task
+// logged. A task's excess is its duration over P50. Four causes claim it, in this order so no
+// millisecond counts twice:
+//   1. Data: had run time scaled with data volume, the task would have taken P50 x (volume ratio)
+//      against the median task, with volume the task's input plus shuffle-read, in bytes or in
+//      records, whichever is further above the median. This is the definition Spark's UI and AQE
+//      use for skew (a partition far larger than the median one), applied to run time.
+//   2. GC time over the median task's.
+//   3. Shuffle fetch wait over the median task's.
+//   4. Host: what is left of the tail tasks on the one host that holds most of the tail.
+// Null when the stage has no tail. `tasks` is consumed once.
+export function attributeTail(tasks: Iterable<TailTask>, p50: number): TailAttribution | null {
+  const all: TailTask[] = [];
+  const tail: TailTask[] = [];
+  for (const t of tasks) {
+    if (t.failed) continue; // a failed attempt's metrics stop where it died
+    all.push(t);
+    if (t.duration > TAIL_FACTOR * p50) tail.push(t);
+  }
+  if (tail.length === 0) return null;
+
+  const bytesOf = (t: TailTask) => t.inputBytes + t.shuffleRead;
+  const recordsOf = (t: TailTask) => t.inputRecords + t.shuffleReadRecords;
+  const medianBytes = medianOf(all, bytesOf);
+  const medianRecords = medianOf(all, recordsOf);
+  const medianGc = medianOf(all, (t) => t.gcTime);
+  const medianFetch = medianOf(all, (t) => t.fetchWaitTime);
+  // With a median task that read nothing there is no ratio to take: a task that read anything is
+  // infinitely above it, so all its excess is data (the typical skew with mostly empty partitions).
+  const hasVolume = medianBytes > 0 || medianRecords > 0;
+  const volumeRatio = (t: TailTask): number => {
+    if (!hasVolume) return bytesOf(t) > 0 || recordsOf(t) > 0 ? Infinity : 0;
+    return Math.max(
+      medianBytes > 0 ? bytesOf(t) / medianBytes : 0,
+      medianRecords > 0 ? recordsOf(t) / medianRecords : 0,
+    );
+  };
+
+  const tailHosts = new Map<string, number>();
+  const allHosts = new Map<string, number>();
+  for (const t of all) if (t.host) allHosts.set(t.host, (allHosts.get(t.host) ?? 0) + 1);
+  for (const t of tail) if (t.host) tailHosts.set(t.host, (tailHosts.get(t.host) ?? 0) + 1);
+  let topHost: string | null = null;
+  for (const [host, n] of tailHosts) if (topHost === null || n > tailHosts.get(topHost)!) topHost = host;
+  const hostConcentrated = topHost !== null
+    && tailHosts.get(topHost)! >= TAIL_HOST_MIN_TASKS
+    && tailHosts.get(topHost)! / tail.length >= TAIL_HOST_MIN_TAIL_SHARE
+    && (tailHosts.get(topHost)! / tail.length) / (allHosts.get(topHost)! / all.length) >= TAIL_HOST_MIN_OVERREPRESENTATION;
+
+  let excessMs = 0, dataMs = 0, gcMs = 0, fetchWaitMs = 0, hostMs = 0, cpuNs = 0, runMs = 0;
+  const ratios: number[] = [];
+  for (const t of tail) {
+    const excess = t.duration - p50;
+    excessMs += excess;
+    let left = excess;
+    const ratio = volumeRatio(t);
+    if (hasVolume) ratios.push(ratio);
+    const data = Math.min(left, Math.max(0, p50 * (ratio - 1)));
+    dataMs += data; left -= data;
+    const gc = Math.min(left, Math.max(0, t.gcTime - medianGc));
+    gcMs += gc; left -= gc;
+    const fetch = Math.min(left, Math.max(0, t.fetchWaitTime - medianFetch));
+    fetchWaitMs += fetch; left -= fetch;
+    if (hostConcentrated && t.host === topHost) { hostMs += left; }
+    cpuNs += t.executorCpuTime;
+    runMs += t.executorRunTime;
+  }
+  ratios.sort((a, b) => a - b);
+  return {
+    tasks: tail.length, excessMs, dataMs, gcMs, fetchWaitMs, hostMs,
+    host: hostConcentrated ? topHost : null,
+    hostTasks: hostConcentrated ? tailHosts.get(topHost!)! : 0,
+    dataRatio: hasVolume ? medianOfSorted(Float64Array.from(ratios)) : null,
+    cpuPct: cpuNs > 0 && runMs > 0 ? Math.min(100, (cpuNs / 1e6 / runMs) * 100) : null,
+  };
+}
+
+function medianOf(tasks: TailTask[], valueOf: (t: TailTask) => number): number {
+  return medianOfSorted(Float64Array.from(tasks, valueOf).sort());
 }
 
 // Wall-clock time during which at least one of the stage's tasks was running: the union of its

@@ -1,4 +1,4 @@
-import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
+import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, skewThresholdsFor, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
 import { effectiveThresholds, findingTunedThresholds, overridesFor, tunedThresholdsNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
@@ -17,7 +17,7 @@ const detectors: readonly Detector[] = DETECTORS;
 export interface AnalyzeOptions {
   /** Per-detector overrides merged over each entry's own thresholds (validate user input with
    * parseThresholdOverrides first). Findings from an entry an override moves off its defaults, or
-   * whose `suppressedBy` entry it moves, carry `tunedThresholds` (with an uncalibrated-estimate
+   * whose `suppressedBy` entry (or, for straggler, skew) it moves, carry `tunedThresholds` (with an uncalibrated-estimate
    * caveat when they have an estimate figure), and an entry's tuned floorPctWarn/floorPctCrit
    * grade its findings' impact band. Omitted: the specification. */
   thresholds?: ThresholdOverrides;
@@ -213,6 +213,7 @@ export function analyze(
     app, jobs, executorsAdded, executorsRemoved, runAggregates, impact,
     stages: stages as unknown as DetectorCtx['stages'],
     sql: sql as unknown as DetectorCtx['sql'],
+    skewThresholds: skewThresholdsFor(thresholds),
   };
   const out: Finding[] = [];
   for (const d of detectors) {

@@ -31,6 +31,21 @@ small files or a lower `spark.sql.files.maxPartitionBytes`. Any other stage
 and the recoverable tail is at least 0.5% of the run. The median is the
 textbook one: on an even task count, the mean of the two middle values.
 
+Skew is a statement about data volume, as in Spark's UI and AQE. Each stage's
+slow tasks (over 3x the median task) are compared with the median task's input
+plus shuffle-read bytes and records. If run time scaled with that volume, the
+share of the slow tasks' extra time it accounts for is the data share; at 50% or
+more the tail is skew (`evidence.cause` is `data`, `evidence.dataRatio` is the
+median slow task's volume over the median task's). A tail that mostly is not data
+is reported as `STRAG` with its cause. When the median task read nothing, there is no
+ratio to take (`evidence.dataRatio` is absent): a slow task that read anything counts
+all its extra time as data. When the data share is under 50%, the cause is the largest
+of GC, fetch wait, host and what none of them accounts for. With no data volume
+to compare, what none of them accounts for is labelled `unattributed` (no share is
+reported) instead of `unexplained`; GC, fetch wait or host still win when larger. A
+stage with no tail attribution is `unattributed` too. For `unattributed` both
+findings keep the duration test.
+
 ### `SHFL`: Shuffle I/O {#shfl}
 
 Tasks move a large amount of intermediate data between stages. Raise
@@ -86,12 +101,21 @@ carry file paths and data values.
 
 ### `STRAG`: Straggler tasks {#strag}
 
-A few tasks run much slower than the rest of their stage. Rule out a GC
-pause or a slow shuffle fetch before assuming a hardware issue. If uneven
-data is the cause, the advice is the one a skew finding gives for the same
-stage (`evidence.origin`, see `SKEW`): AQE skew-join handling for a shuffle
-feeding a join, file sizes for a scan, salting otherwise. Only flagged on
-stages that take at least 0.5% of the run.
+A few tasks run much slower than the rest of their stage for a reason other
+than reading more data (a data-driven tail is `SKEW`). `evidence.cause` names
+what the slow tasks' extra time went to, taken in this order so no millisecond
+counts twice: data volume, then GC time over the median task's, then shuffle
+fetch wait over the median task's, then one host that holds most of the slow
+tasks out of proportion to its share of the stage (`evidence.host`). What none of
+them accounts for is `unexplained` (`unattributed` with no data volume to compare); `evidence.cpuPct` (the slow tasks' CPU time
+over their run time) says whether those tasks mostly waited or were busy. With
+no data volume to compare, what is left is `unattributed` when it is the largest share, and the advice is the one a
+skew finding gives for the same stage (`evidence.origin`, see `SKEW`).
+A stage is flagged when more than 5% of its tasks run over 4x the median (2.5%
+when the tail clears 0.5% of the run), a speculative task ran, or the `SKEW`
+duration test holds on a tail that is not data. A stage whose tail is data but
+which `SKEW` does not flag by duration keeps a `STRAG` finding with cause `data`.
+Stages under 0.5% of the run are skipped unless the `SKEW` duration test holds.
 
 ### `SPEC`: Speculation waste {#spec}
 

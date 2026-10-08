@@ -103,8 +103,19 @@ export type StageReads = 'shuffle' | 'input' | 'other';
  * enough, so the stage's own repartition(n) or RDD parallelism is). */
 export type ShufflePartitions = 'raise' | 'sufficient' | 'aqeCoalesced' | 'ownPartitioning';
 
+/** Why a stage's slow tail is slow, from what its tasks logged. 'data': the slow tasks read far
+ * more than the median task, so run time follows data volume (skew by Spark's own definition).
+ * 'gc', 'fetchWait' and 'host': the tail's extra time is GC, shuffle fetch wait, or tasks piled on
+ * one host. 'unexplained': the slow tasks read no more than the median and none of those accounts
+ * for their time. 'unattributed': the stage has no data volume to compare and what data, GC, fetch wait and host do not explain is the largest share (or the stage has no tail attribution), so only the duration is known. */
+export type TailCause = 'data' | 'gc' | 'fetchWait' | 'host' | 'unexplained' | 'unattributed';
+
 export interface SkewEvidence {
   origin?: SkewOrigin;
+  // 'data' or 'unattributed'; a stage whose tail is not data does not get a skew finding.
+  cause?: TailCause;
+  // Median over the slow tasks of how many times the median task's data each read.
+  dataRatio?: number;
 }
 export interface SkewFinding extends NumericFinding<'skew'>, SkewEvidence {}
 
@@ -188,8 +199,18 @@ export interface StragglerEvidence {
   unit: 'count' | 'pct';
   speculativeTasks: number;
   stragglerCount: number;
-  // The case the skew advice in the recommendation was written for (see SkewOrigin).
+  // The case the skew advice in the recommendation was written for (see SkewOrigin); set only
+  // when the cause is 'data' or 'unattributed'.
   origin?: SkewOrigin;
+  // 'data' only on a tail skew's own gate does not admit: skew reports every other data-driven tail.
+  cause?: TailCause;
+  // Share (0-100) of the slow tasks' extra time that the cause accounts for.
+  causeSharePct?: number;
+  // Set when the cause is 'host': the host most of the slow tasks ran on, and how many did.
+  host?: string;
+  hostTasks?: number;
+  // The slow tasks' CPU time as a share (0-100) of their run time, when the log has CPU time.
+  cpuPct?: number;
 }
 export interface StragglerFinding extends NumericFinding<'straggler'>, StragglerEvidence {}
 
