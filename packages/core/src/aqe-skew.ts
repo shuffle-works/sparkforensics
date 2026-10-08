@@ -51,6 +51,8 @@ const SHUFFLE_READ_NAME = /^(AQEShuffleRead|CustomShuffleReader)$/;
 const SPLITTABLE_LEFT = new Set(['Inner', 'Cross', 'LeftSemi', 'LeftAnti', 'LeftOuter']);
 const SPLITTABLE_RIGHT = new Set(['Inner', 'Cross', 'RightOuter']);
 const JOIN_TYPE = /\]\s*,\s*(Inner|Cross|LeftOuter|RightOuter|FullOuter|LeftSemi|LeftAnti|ExistenceJoin)\b/;
+// A partition is only clearly skewed when the largest task read is at least this many times the median.
+const SKEWED_READ_RATIO = 2;
 const SHUFFLE_ORIGIN = /\b(ENSURE_REQUIREMENTS|REPARTITION_BY_COL|REPARTITION_BY_NUM|REBALANCE_PARTITIONS_BY_NONE|REBALANCE_PARTITIONS_BY_COL)\b/;
 
 /** What one join input reads: a shuffle Spark added for the join, a shuffle the job asked for, or
@@ -152,6 +154,18 @@ function diagnoseJoin(join: JoinInfo, input: JoinSkewInput): JoinSkewDiagnosis |
     };
   }
 
+  // Even reads: with the largest task read close to the median, no partition stands out for AQE to
+  // split. A coalesced read is a sum of partitions, so its ratio says nothing about one partition.
+  const coalesced = (left.side.kind !== 'operator' && left.side.coalesced) || (right.side.kind !== 'operator' && right.side.coalesced);
+  const ratio = input.readP50 > 0 ? Math.round(input.readMax / input.readP50 * 10) / 10 : null;
+  if (!coalesced && input.readP50 > 0 && input.readMax < SKEWED_READ_RATIO * input.readP50) {
+    return {
+      case: 'evenReads',
+      text: `its shuffle reads are even (the largest task reads ${formatBytes(input.readMax)}, ${ratio}× the median), so AQE has no skewed partition to split and the slow tail is not partition-size skew: look for a GC pause, a slow host or an expensive key instead`,
+      remediation: [],
+    };
+  }
+
   // Plan shape: both inputs must be shuffles Spark added for this join.
   const blocked = [left.side, right.side].map((s, i) => ({ s, i: i as 0 | 1 })).find((x) => x.s.kind === 'operator');
   if (blocked?.s.kind === 'operator') {
@@ -187,12 +201,10 @@ function diagnoseJoin(join: JoinInfo, input: JoinSkewInput): JoinSkewDiagnosis |
   // task's read is an upper bound on any one partition: a task under the threshold proves no
   // partition is over it. The factor and a coalesced stage's reads are only comparable when the
   // read is not a sum of coalesced partitions.
-  const coalesced = (left.side.kind !== 'operator' && left.side.coalesced) || (right.side.kind !== 'operator' && right.side.coalesced);
   const threshold = parseSparkBytes(input.conf(SKEW_THRESHOLD_KEY));
   const factor = Number.parseFloat(input.conf(SKEW_FACTOR_KEY) ?? '');
   const underThreshold = threshold != null && input.readMax <= threshold;
   const underFactor = !coalesced && Number.isFinite(factor) && input.readP50 > 0 && input.readMax <= factor * input.readP50;
-  const ratio = input.readP50 > 0 ? Math.round(input.readMax / input.readP50 * 10) / 10 : null;
   const biggest = `its largest shuffle partition (${formatBytes(input.readMax)})`;
   if (underThreshold && underFactor) {
     return {
@@ -221,23 +233,26 @@ function diagnoseJoin(join: JoinInfo, input: JoinSkewInput): JoinSkewDiagnosis |
   if (coalesced && advisory != null && input.readMax <= 2 * advisory) return null;
 
   const needing = needsJoinPartitioning(join.ancestors);
-  const forced = input.conf(FORCE_SKEW_JOIN_KEY)?.toLowerCase() === 'true';
+  const force = input.conf(FORCE_SKEW_JOIN_KEY);
+  const forced = force?.toLowerCase() === 'true';
+  // forceOptimizeSkewedJoin exists from Spark 3.3 (no default before), so earlier runs get the key remedy.
+  const canForce = force != null;
   const extraShuffleText = needing == null || forced ? null
-    : `AQE skipped splitting it because ${needing} above the join needs the join's partitioning and a split would add a shuffle: set ${FORCE_SKEW_JOIN_KEY}=true if that shuffle costs less than the tail, or ${input.keyRemedy}`;
+    : `AQE skipped splitting it because ${needing} above the join needs the join's partitioning and a split would add a shuffle: ${canForce ? `set ${FORCE_SKEW_JOIN_KEY}=true if that shuffle costs less than the tail, or ` : ''}${input.keyRemedy}`;
 
   if (joinType != null && canLeft !== canRight) {
     const only = canLeft ? 'left' : 'right';
     const other = canLeft ? 'right' : 'left';
     const tail = needing == null || forced ? ''
-      : `; if the skew is on the ${only} side, AQE skipped it because ${needing} above the join needs the join's partitioning and a split would add a shuffle (${FORCE_SKEW_JOIN_KEY}=true accepts that)`;
+      : `; if the skew is on the ${only} side, AQE skipped it because ${needing} above the join needs the join's partitioning and a split would add a shuffle${canForce ? ` (${FORCE_SKEW_JOIN_KEY}=true accepts that)` : ''}`;
     return {
       case: 'joinType',
       text: `AQE can split only the ${only} side of a ${joinType} join, so a skewed partition on the ${other} side stays whole: if that is where the skew is, rewrite the join so the skewed table is on the ${only} side, or ${input.keyRemedy}${tail}`,
-      remediation: [codeFix(`put the skewed table on the ${only} side of the join, or ${input.keyRemedy}`), ...(tail ? [setConf(FORCE_SKEW_JOIN_KEY, true)] : [])],
+      remediation: [codeFix(`put the skewed table on the ${only} side of the join, or ${input.keyRemedy}`), ...(tail && canForce ? [setConf(FORCE_SKEW_JOIN_KEY, true)] : [])],
     };
   }
   if (extraShuffleText != null) {
-    return { case: 'extraShuffle', text: extraShuffleText, remediation: [setConf(FORCE_SKEW_JOIN_KEY, true)] };
+    return { case: 'extraShuffle', text: extraShuffleText, remediation: [canForce ? setConf(FORCE_SKEW_JOIN_KEY, true) : codeFix(input.keyRemedy)] };
   }
   return {
     case: 'notSplit',
@@ -258,18 +273,4 @@ export function diagnoseJoinSkew(input: JoinSkewInput): JoinSkewDiagnosis | null
   if (chosen.length === 0 && joins.length === 1 && !joins[0].node.stageIds?.length) chosen = joins;
   const diagnoses = chosen.map((j) => diagnoseJoin(j, input)).filter((d): d is JoinSkewDiagnosis => d != null);
   return diagnoses.find((d) => d.case === 'split') ?? diagnoses[0] ?? null;
-}
-
-/** Whether the plan has a join whose stage ids exclude `stageId` while others carry stage ids: the
- * stage runs no join, so a skewed shuffle there is an aggregate's or window's, not a join's. */
-export function stageRunsNoJoin(plan: PlanNode | null | undefined, stageId: number): boolean {
-  if (plan == null) return false;
-  let anyTied = false;
-  let thisStage = false;
-  walkPlanTree(plan, (node) => {
-    if (!JOIN_NAME.test(node.name) || !node.stageIds?.length) return;
-    anyTied = true;
-    if (node.stageIds.includes(stageId)) thisStage = true;
-  });
-  return anyTied && !thisStage;
 }

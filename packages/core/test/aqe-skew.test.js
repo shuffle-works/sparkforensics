@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { collectRun } from '../src/cli/collect-run.ts';
 import { analyze } from '../src/analyzer.ts';
 import { effectiveSparkConf, overlayModifiedConfigs } from '../src/spark-conf.ts';
-import { diagnoseJoinSkew, isSkewJoinNode, stageRunsNoJoin } from '../src/aqe-skew.ts';
+import { diagnoseJoinSkew, isSkewJoinNode } from '../src/aqe-skew.ts';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
 const MiB = 1024 * 1024;
@@ -21,9 +21,9 @@ const join = (type, left, right, { name = 'SortMergeJoin', stageIds = [4] } = {}
   name, [node('InputAdapter', [left]), node('InputAdapter', [right])], { detail: `${name} [k#1L], [k#4L], ${type}`, stageIds });
 const finalPlan = (root) => node('AdaptiveSparkPlan', [node('WholeStageCodegen (5)', [root], { stageIds: [4] })], { detail: 'AdaptiveSparkPlan isFinalPlan=true' });
 
-const confOf = (config = {}) => (key) => effectiveSparkConf({ sparkVersion: '3.5.9', properties: config }, key)?.value;
-const diagnose = (plan, { readMax = 120 * MiB, readP50 = 2 * MiB, config = {}, stageId = 4 } = {}) => diagnoseJoinSkew({
-  plan, stageId, readMax, readP50, conf: confOf(config), keyRemedy: KEY_REMEDY,
+const confOf = (config = {}, sparkVersion = '3.5.9') => (key) => effectiveSparkConf({ sparkVersion, properties: config }, key)?.value;
+const diagnose = (plan, { readMax = 120 * MiB, readP50 = 2 * MiB, config = {}, stageId = 4, sparkVersion } = {}) => diagnoseJoinSkew({
+  plan, stageId, readMax, readP50, conf: confOf(config, sparkVersion), keyRemedy: KEY_REMEDY,
 });
 const plain = () => side('ENSURE_REQUIREMENTS');
 
@@ -69,6 +69,18 @@ describe('diagnoseJoinSkew on hand-built final plans', () => {
     expect(d.case).toBe('belowThreshold');
     expect(d.text).toMatch(/only 3\.3× the median.*5×.*skewedPartitionFactor/);
     expect(d.remediation[0].key).toBe('spark.sql.adaptive.skewJoin.skewedPartitionFactor');
+  });
+
+  it('says the tail is not partition-size skew when the reads are even, with no threshold or factor advice', () => {
+    const plan = finalPlan(join('Inner', plain(), plain()));
+    for (const [readMax, readP50] of [[11 * MiB, 10 * MiB], [300 * MiB, 250 * MiB]]) {
+      const d = diagnose(plan, { readMax, readP50 });
+      expect(d.case).toBe('evenReads');
+      expect(d.text).toMatch(/shuffle reads are even.*not partition-size skew/);
+      expect(d.text).not.toMatch(/threshold|factor/);
+      expect(d.remediation).toEqual([]);
+    }
+    expect(diagnose(plan, { readMax: 11 * MiB, readP50: 10 * MiB }).text).toContain('1.1× the median');
   });
 
   it('cannot tell when a coalesced read may be many small partitions', () => {
@@ -137,6 +149,20 @@ describe('diagnoseJoinSkew on hand-built final plans', () => {
     }
   });
 
+  it('gives the key remedy instead of forceOptimizeSkewedJoin before Spark 3.3, which has no such property', () => {
+    const aggregateOver = (j) => finalPlan(node('SortAggregate', [node('WholeStageCodegen (5)', [j])], { detail: 'SortAggregate(key=[k#1L], functions=[max(pad#5)])' }));
+    const extra = diagnose(aggregateOver(join('Inner', plain(), plain())), { config: low, sparkVersion: '3.2.1' });
+    expect(extra.case).toBe('extraShuffle');
+    expect(extra.text).toContain('an aggregate above the join needs the join\'s partitioning');
+    expect(extra.text).not.toContain('forceOptimizeSkewedJoin');
+    expect(extra.remediation).toEqual([{ kind: 'code', hint: KEY_REMEDY }]);
+    const outer = diagnose(aggregateOver(join('LeftOuter', plain(), plain())), { config: low, sparkVersion: '3.2.1' });
+    expect(outer.case).toBe('joinType');
+    expect(outer.text).toMatch(/if the skew is on the left side, AQE skipped it because an aggregate above the join/);
+    expect(outer.text).not.toContain('forceOptimizeSkewedJoin');
+    expect(outer.remediation.map((x) => x.kind)).toEqual(['code']);
+  });
+
   it('does not blame the extra shuffle for a partial aggregate, an exchange above, or a forced run', () => {
     const j = join('Inner', plain(), plain());
     const partial = finalPlan(node('SortAggregate', [node('WholeStageCodegen (5)', [j])], { detail: 'SortAggregate(key=[k#1L], functions=[partial_max(pad#5)])' }));
@@ -184,14 +210,6 @@ describe('join recognition', () => {
   it('matches the join names Spark prints, with and without the skew marker', () => {
     expect(['SortMergeJoin', 'SortMergeJoin(skew=true)', 'ShuffledHashJoin', 'ShuffledHashJoin(skew=true)'].every(isSkewJoinNode)).toBe(true);
     expect(['BroadcastHashJoin', 'BroadcastNestedLoopJoin', 'HashAggregate'].some(isSkewJoinNode)).toBe(false);
-  });
-
-  it('knows a stage runs no join only when the plan ties joins to stages', () => {
-    const tied = finalPlan(join('Inner', plain(), plain(), { stageIds: [4] }));
-    expect(stageRunsNoJoin(tied, 9)).toBe(true);
-    expect(stageRunsNoJoin(tied, 4)).toBe(false);
-    expect(stageRunsNoJoin(finalPlan(join('Inner', plain(), plain(), { stageIds: null })), 9)).toBe(false);
-    expect(stageRunsNoJoin(null, 9)).toBe(false);
   });
 });
 
@@ -276,14 +294,15 @@ describe('skew findings on a hand-built final plan', () => {
     const stage = makeStage({ ...skewStage, shuffleReadMax: 300 * MiB, stragglerCount: 8, speculativeTasks: 0 });
     const findings = analyze(app, new Map([[4, stage]]), [], [], new Map(), sqlOf(plan));
     expect(findings.find((f) => f.rule === 'shufflePartitionSkew')).toMatchObject({ origin: 'shuffleJoin', aqeSkew: 'notSplit' });
-    const straggler = findings.find((f) => f.type === 'straggler');
-    if (straggler) expect(straggler.aqeSkew).toBe('notSplit');
+    expect(findings.find((f) => f.type === 'straggler')).toMatchObject({ origin: 'shuffleJoin', aqeSkew: 'notSplit' });
   });
 
-  it('ties a stage the plan gives no join to the generic salting advice', () => {
-    const other = makeStage({ ...skewStage, id: 9 });
-    const f = analyze(makeApp({ config: {}, sparkVersion: '3.5.9' }), new Map([[9, other]]), [], [], new Map(), sqlOf(plan)).find((x) => x.type === 'skew');
-    expect(f.origin).toBe('other');
-    expect(f.aqeSkew).toBeUndefined();
+  it('gives a duration tail over even shuffle reads no threshold or factor advice', () => {
+    const app = makeApp({ config: {}, sparkVersion: '3.5.9' });
+    const even = makeStage({ ...skewStage, shuffleReadP50: 10 * MiB, shuffleReadMax: 11 * MiB });
+    const f = analyze(app, new Map([[4, even]]), [], [], new Map(), sqlOf(plan)).find((x) => x.type === 'skew');
+    expect(f).toMatchObject({ origin: 'shuffleJoin', aqeSkew: 'evenReads', value: 6, remediation: [] });
+    expect(f.recommendation).toMatch(/shuffle reads are even.*not partition-size skew/);
+    expect(f.recommendation).not.toMatch(/threshold|factor/);
   });
 });

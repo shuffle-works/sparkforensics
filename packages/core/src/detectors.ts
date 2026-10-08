@@ -6,7 +6,7 @@ import { allocatedCoreMs, computeAllocation } from './allocation.ts';
 import { executorHeapPeaks } from './executor-peaks.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
-import { diagnoseJoinSkew, isSkewJoinNode, stageRunsNoJoin } from './aqe-skew.ts';
+import { diagnoseJoinSkew, isSkewJoinNode } from './aqe-skew.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
 import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type TailStage } from './occupancy.ts';
 import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
@@ -788,9 +788,7 @@ function skewOrigin(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence: boo
     let hasJoin = false;
     const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
     walkPlanTree(plan, (node) => { if (isSkewJoinNode(node.name)) hasJoin = true; });
-    // When the plan ties its joins to stages, a stage none of them runs reads an aggregate's or
-    // window's shuffle, which AQE skew-join handling never splits.
-    return hasJoin && !stageRunsNoJoin(plan, stage.id) ? 'shuffleJoin' : 'other';
+    return hasJoin ? 'shuffleJoin' : 'other';
   }
   return stage.inputBytes > 0 ? 'inputScan' : 'other';
 }

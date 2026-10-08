@@ -172,11 +172,11 @@ carry `evidence.origin`: `shuffleJoin` (the conf above applies), `inputScan`
 `spark.sql.files.maxPartitionBytes`) or `other` (no conf is suggested; the `remediation` holds a `code` entry).
 A `shuffleJoin` finding on a run with AQE skew-join handling on also carries
 `evidence.aqeSkew`, the reason handling did or did not act on the stage's join:
-`split`, `belowThreshold`, `planShape`, `userRepartition`, `joinType`,
+`split`, `evenReads`, `belowThreshold`, `planShape`, `userRepartition`, `joinType`,
 `extraShuffle` or `notSplit` (see `SKEW`). The remediation matches the case: a
 `decrease` of the skew threshold or factor for `belowThreshold`, a `set` of
-`spark.sql.adaptive.forceOptimizeSkewedJoin` for `extraShuffle`, none for
-`split`, and a `code` entry otherwise.
+`spark.sql.adaptive.forceOptimizeSkewedJoin` for `extraShuffle` from Spark 3.3,
+none for `split` and `evenReads`, and a `code` entry otherwise.
 `shufflePartitionSkew` carries the same fields but is judged on shuffle-read
 sizes, so it is only ever `shuffleJoin` or `other`. A `stageSlowness` finding carries `evidence.reads` (`shuffle`,
 `input` or `other`) and suggests partition-count changes only for `shuffle`; `spill`

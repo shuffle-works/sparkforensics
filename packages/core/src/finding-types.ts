@@ -96,12 +96,13 @@ export type SkewOrigin = 'shuffleJoin' | 'inputScan' | 'other';
 
 /** What AQE skew-join handling did for a 'shuffleJoin' stage, read from the final plan and the
  * effective conf: 'split' (it split the skewed partition, so the rest is not join skew),
+ * 'evenReads' (the shuffle reads are even, so no partition is skewed for AQE to split),
  * 'belowThreshold' (the partition is under the effective skew threshold or factor), 'planShape' (an
  * operator sits between the join and its shuffle), 'userRepartition' (the shuffle is an explicit
  * repartition), 'joinType' (the join type does not let AQE split the skewed side),
  * 'extraShuffle' (splitting would add a shuffle for the operator above the join) or 'notSplit'
  * (nothing in the log explains it). */
-export type AqeSkewCase = 'split' | 'belowThreshold' | 'planShape' | 'userRepartition' | 'joinType' | 'extraShuffle' | 'notSplit';
+export type AqeSkewCase = 'split' | 'evenReads' | 'belowThreshold' | 'planShape' | 'userRepartition' | 'joinType' | 'extraShuffle' | 'notSplit';
 
 /** What a stage reads, by the dominant side: a shuffle, input files, or neither. */
 export type StageReads = 'shuffle' | 'input' | 'other';

@@ -38,20 +38,20 @@ final plan and its effective conf. `evidence.aqeSkew` records the case:
 | `aqeSkew` | What the final plan and conf show | Advice |
 |---|---|---|
 | `split` | The join is marked `skew=true` and a shuffle read says `skewed` | AQE already split the skewed partitions, so what remains is not join skew: look at GC, a slow host or an expensive key. |
-| `belowThreshold` | The largest partition is under `spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes` (256 MB by default), or not far enough over the median for `spark.sql.adaptive.skewJoin.skewedPartitionFactor` (5) | Lower the threshold or the factor for the query. |
+| `evenReads` | The largest task read is under twice the median, so no partition stands out | The slow tail is not partition-size skew: look at GC, a slow host or an expensive key. |
+| `belowThreshold` | The largest partition is at least twice the median but under `spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes` (256 MB by default), or not far enough over the median for `spark.sql.adaptive.skewJoin.skewedPartitionFactor` (5) | Lower the threshold or the factor for the query. |
 | `planShape` | An aggregate, window or other operator sits between the join and its shuffle | AQE splits only a shuffle that feeds the join directly: salt the key. |
 | `userRepartition` | The shuffle under the join is a `repartition` or `rebalance` in the job's code | AQE leaves a shuffle you asked for alone: drop it, or salt the key. |
 | `joinType` | The join type does not let AQE split the skewed side: neither side of a full outer join, only the left side of a left outer, left semi or left anti join, only the right side of a right outer join | Put the skewed table on a splittable side, or salt the key. |
-| `extraShuffle` | An aggregate, window or join above this join needs its partitioning, so a split would add a shuffle | Set `spark.sql.adaptive.forceOptimizeSkewedJoin` to `true` when that shuffle costs less than the tail. |
+| `extraShuffle` | An aggregate, window or join above this join needs its partitioning, so a split would add a shuffle | Set `spark.sql.adaptive.forceOptimizeSkewedJoin` to `true` when that shuffle costs less than the tail (Spark 3.3 and later; before that, salt the key). |
 | `notSplit` | Nothing above explains it | Salt the key. |
 
 The stage's join is the one whose plan node ran in that stage. The partition
 size is the stage's largest task read, which covers both sides of the join,
 so the finding does not say which side is skewed; for a join type that splits
-only one side it names both possibilities. A stage whose plan lists joins for
-other stages only reads an aggregate's or window's shuffle (`origin` is
-`other`). A run whose final plan is missing, or whose coalesced read could be
-many small partitions, keeps the general advice.
+only one side it names both possibilities. A run whose final plan is missing
+or ties no join to the stage, or whose coalesced read could be many small
+partitions, keeps the general advice.
 
 ### `SHFL`: Shuffle I/O {#shfl}
 
