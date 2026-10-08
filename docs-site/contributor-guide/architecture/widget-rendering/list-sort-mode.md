@@ -22,7 +22,7 @@ fires), `ShuffleIO.tsx` (narrowed to `shuffle`), `PartitionSizing.tsx`, `Spill.t
 but `stageFailed`/`failures` are `estimateMethod: 'none'`, so it never fires there either),
 `SlowHost.tsx`, `StageSlowness.tsx`, `Straggler.tsx`, `SpeculationWaste.tsx`,
 `ColdStart.tsx` (one widget per type, each sorting only its own flat issue list), and `DuplicatePlanSubtree.tsx`/
-`SmallFiles.tsx`/`NestedLoopJoin.tsx`/`UnderBroadcast.tsx`/`OverBroadcast.tsx` (each reorders its own list by
+`SmallFiles.tsx`/`NestedLoopJoin.tsx`/`PythonUdf.tsx`/`UnderBroadcast.tsx`/`OverBroadcast.tsx` (each reorders its own list by
 `stageIdOf`, the lowest stage id its finding touches).
 It is a two-segment `ToggleGroup` (Impact / Stage; optional `stageLabel`, default "Stage",
 which no caller overrides), wrapped in `AdvancedOnly`: stage number is the one axis every one of these widgets' items
