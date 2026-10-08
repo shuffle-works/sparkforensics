@@ -239,8 +239,10 @@ export function TypeGroupRow({
   // A type-level sentence, not the best member's own recommendationText: that's one specific
   // instance's numbers/stage next to a trailing stat summing every member, which misrepresents
   // the group. undefined (an uncovered type/discriminant) omits the line rather than fall back
-  // to instance text, which would reintroduce the same problem.
-  const title = coreFindingGenericRecommendation(best);
+  // to instance text, which would reintroduce the same problem. Members whose sentences differ
+  // (a skew group mixing AQE skew-join cases) also omit it: no one sentence fits them all.
+  const titles = new Set(sorted.map(coreFindingGenericRecommendation));
+  const title = titles.size === 1 ? coreFindingGenericRecommendation(best) : undefined;
   const label = findingActionLabel(best);
   const codes = useStepCodes().byFinding;
   const stepCode = group.findings.map((finding) => codes.get(finding)).find((code) => code != null) ?? null;

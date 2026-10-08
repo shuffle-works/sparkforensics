@@ -17,3 +17,5 @@ Skew, straggler and partition-skew findings on a stage that runs a sort-merge or
 - `notSplit`: the thresholds and plan allow it and the log does not say why it did not happen.
 
 `SortMergeJoin(skew=true)` and `ShuffledHashJoin(skew=true)` nodes now count as joins.
+
+In the dashboard's Findings table, a grouped row no longer shows a one-line fix when its findings have different ones, such as skew findings with different AQE cases.

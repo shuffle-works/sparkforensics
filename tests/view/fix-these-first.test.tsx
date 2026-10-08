@@ -239,6 +239,27 @@ describe('TypeGroupRow generic description', () => {
     expect(screen.queryByText('Fix notARealDetector in Stage 1.')).not.toBeInTheDocument();
     expect(screen.queryByText('Fix notARealDetector in Stage 2.')).not.toBeInTheDocument();
   });
+
+  it("omits the muted line when members' generic sentences differ, so one AQE skew case does not speak for the group", () => {
+    const skew = (stageId: number, lowMs: number, aqeSkew: string) =>
+      ({ ...findingWithMagnitude('skew', stageId, lowMs), origin: 'shuffleJoin', aqeSkew }) as Finding;
+    const findings = [skew(9, 9000, 'joinType'), skew(14, 5000, 'userRepartition')];
+    const group = groupOf(findings);
+
+    render(
+      <StageDetailProvider>
+        <Table>
+          <TableBody>
+            <TypeGroupRow group={group} allFindings={findings} expanded={false} onToggle={() => {}} onRoute={() => {}} />
+          </TableBody>
+        </Table>
+      </StageDetailProvider>,
+    );
+
+    const row = screen.getByTestId('fix-these-first-group-row');
+    expect(within(row).queryByText(/join type does not let AQE/)).not.toBeInTheDocument();
+    expect(within(row).queryByText(/explicit repartition feeds the join/)).not.toBeInTheDocument();
+  });
 });
 
 describe('TypeGroupRow docs link', () => {
