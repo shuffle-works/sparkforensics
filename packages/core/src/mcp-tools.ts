@@ -1,5 +1,5 @@
 import { resolve as resolvePath, join, dirname } from 'node:path';
-import { existsSync, statSync, readFileSync } from 'node:fs';
+import { existsSync, statSync, readFileSync, readdirSync, type Stats } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { collectRun } from './cli/collect-run.ts';
@@ -96,12 +96,45 @@ const pendingByCacheKey = new Map<string, Promise<{ runId: string; appModel: App
 export function pathCacheKey(path: string): string {
   const resolved = resolvePath(path);
   if (!existsSync(resolved)) throw mcpError('invalid-event-log', `No such file: ${resolved}`);
+  const stat = statSync(resolved);
+  // A rolling event-log directory grows by appending to its live events_N file, which leaves the
+  // directory's own mtime and size alone: the key covers the files inside it.
+  if (stat.isDirectory()) return `path:${resolved}:${directoryStatKey(resolved)}`;
   // Size narrows a same-millisecond mtime collision; ctime narrows the case where a copy tool
   // (rsync --preserve-times, tar) restores an identical mtime+size for different content: ctime
   // can't be set by the copying tool, so it still reflects when the file landed on disk.
-  const { mtimeMs, ctimeMs, size } = statSync(resolved);
-  return `path:${resolved}:${mtimeMs}:${ctimeMs}:${size}`;
+  return `path:${resolved}:${fileStatKey(stat)}`;
 }
+
+function fileStatKey({ mtimeMs, ctimeMs, size }: Stats): string {
+  return `${mtimeMs}:${ctimeMs}:${size}`;
+}
+
+// The file count, newest mtime and ctime, and total size of the files under a directory (the
+// parts of a rolling log, which Spark appends to in place): any part growing, arriving or going
+// changes it.
+function directoryStatKey(dir: string): string {
+  let files = 0, mtimeMs = 0, ctimeMs = 0, size = 0;
+  const walk = (path: string, depth: number): void => {
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      const child = join(path, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < ROLLING_LOG_DEPTH) walk(child, depth + 1);
+        continue;
+      }
+      const stat = statSync(child);
+      files++;
+      mtimeMs = Math.max(mtimeMs, stat.mtimeMs);
+      ctimeMs = Math.max(ctimeMs, stat.ctimeMs);
+      size += stat.size;
+    }
+  };
+  walk(dir, 0);
+  return `dir:${files}:${mtimeMs}:${ctimeMs}:${size}`;
+}
+// A rolling log's parts sit in the directory the path names, or one level down in its
+// eventlog_v2_* subdirectory.
+const ROLLING_LOG_DEPTH = 1;
 
 function shsCacheKey({ shsBaseUrl, appId, attemptId }: { shsBaseUrl: string; appId: string; attemptId?: string }): string {
   return `shs:${shsBaseUrl}:${appId}:${attemptId ?? ''}`;
@@ -142,6 +175,11 @@ function evictOverflow(): void {
     const entry = byRunId.get(oldestId);
     if (entry) deleteRunEntry(oldestId, entry);
   }
+}
+
+/** How many built comparisons the cache holds: the occupancy the cap and eviction rules bound. */
+export function comparisonCacheSize(): number {
+  return comparisonCache.size;
 }
 
 export function getCachedAppModel(runId: string): AppModel {
@@ -404,10 +442,17 @@ export async function compareRuns(
       { label: runIdB, appModel: appModelB, catalog: catalogB },
       { redact: opts?.redact, normalizePath: opts?.normalizePath, view },
     );
-    comparisonCache.set(cacheKey, { runIdA, runIdB, built });
-    while (comparisonCache.size > COMPARISON_CACHE_CAP) comparisonCache.delete(comparisonCache.keys().next().value!);
+    // Either run can be evicted while the other one is still being read or parsed (the awaits
+    // above): an entry for a run that is gone would outlive its eviction, so it is only kept
+    // while both are cached.
+    if (byRunId.has(runIdA) && byRunId.has(runIdB)) {
+      comparisonCache.set(cacheKey, { runIdA, runIdB, built });
+      while (comparisonCache.size > COMPARISON_CACHE_CAP) comparisonCache.delete(comparisonCache.keys().next().value!);
+    }
   }
-  const { comparison, output } = built;
+  const { comparison } = built;
+  // A copy, so a caller that changes the result cannot change what the next caller is served.
+  const output = structuredClone(built.output);
 
   return {
     runIdA,
