@@ -236,9 +236,11 @@ function diagnoseJoin(join: JoinInfo, input: JoinSkewInput): JoinSkewDiagnosis |
 
   const needing = needsJoinPartitioning(join.ancestors);
   // forceOptimizeSkewedJoin exists from Spark 3.3 (no default before), so earlier runs get the key
-  // remedy even when they log the property.
-  const canForce = sparkConfDefault(input.sparkVersion, FORCE_SKEW_JOIN_KEY) != null;
-  const forced = canForce && input.conf(FORCE_SKEW_JOIN_KEY)?.toLowerCase() === 'true';
+  // remedy even when they log the property. A run with no recorded version can force when it logs it.
+  const force = input.conf(FORCE_SKEW_JOIN_KEY);
+  const versionKnown = /^\d+\.\d+/.test(input.sparkVersion ?? '');
+  const canForce = versionKnown ? sparkConfDefault(input.sparkVersion, FORCE_SKEW_JOIN_KEY) != null : force != null;
+  const forced = canForce && force?.toLowerCase() === 'true';
   const extraShuffleText = needing == null || forced ? null
     : `AQE skipped splitting it because ${needing} above the join needs the join's partitioning and a split would add a shuffle: ${canForce ? `set ${FORCE_SKEW_JOIN_KEY}=true if that shuffle costs less than the tail, or ` : ''}${input.keyRemedy}`;
 

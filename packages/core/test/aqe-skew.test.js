@@ -168,6 +168,20 @@ describe('diagnoseJoinSkew on hand-built final plans', () => {
     }
   });
 
+  it('reads a logged forceOptimizeSkewedJoin on a run with no recorded Spark version', () => {
+    const above = finalPlan(node('SortAggregate', [node('WholeStageCodegen (5)', [join('Inner', plain(), plain())])], { detail: 'SortAggregate(key=[k#1L], functions=[max(pad#5)])' }));
+    const unversioned = (config) => diagnoseJoinSkew({
+      plan: above, stageId: 4, readMax: 120 * MiB, readP50: 2 * MiB, conf: (key) => config[key], sparkVersion: null, keyRemedy: KEY_REMEDY,
+    });
+    expect(unversioned({ 'spark.sql.adaptive.forceOptimizeSkewedJoin': 'true' }).case).toBe('notSplit');
+    const notForced = unversioned({ 'spark.sql.adaptive.forceOptimizeSkewedJoin': 'false' });
+    expect(notForced.case).toBe('extraShuffle');
+    expect(notForced.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.adaptive.forceOptimizeSkewedJoin', direction: 'set', suggested: true }]);
+    const unlogged = unversioned({});
+    expect(unlogged.case).toBe('extraShuffle');
+    expect(unlogged.remediation).toEqual([{ kind: 'code', hint: KEY_REMEDY }]);
+  });
+
   it('does not blame the extra shuffle for a partial aggregate, an exchange above, or a forced run', () => {
     const j = join('Inner', plain(), plain());
     const partial = finalPlan(node('SortAggregate', [node('WholeStageCodegen (5)', [j])], { detail: 'SortAggregate(key=[k#1L], functions=[partial_max(pad#5)])' }));
