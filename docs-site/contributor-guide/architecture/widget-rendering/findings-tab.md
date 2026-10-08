@@ -42,7 +42,9 @@ by worst impact band, never by their incomparable raw magnitudes.
 A summary row's tag badge and action label come from the group's own
 highest-impact member (via the same three-tier comparator, core
 `rankFindings`); its sentence is the type-level
-`coreFindingGenericRecommendation`, not one member's own numbers. The
+`coreFindingGenericRecommendation`, not one member's own numbers, and is
+omitted when the members' sentences differ (for example, skew findings with
+different AQE skew-join cases). The
 trailing stat depends on the group's
 kind (`×N · <time> recoverable`, `×N · <total>` with the summed resource
 waste the CLI report also prints, or `×N` alone, adding a per-impact-band

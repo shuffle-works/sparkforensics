@@ -180,17 +180,17 @@ export interface EvidenceReportJson {
 // module (stageShape's totalCores, utilization's unrounded fraction) is left off both, so it never
 // reaches the report; adding, renaming or dropping a key here changes the report contract.
 const EVIDENCE_KEYS = {
-  skew: ['origin', 'cause', 'dataRatio'],
+  skew: ['origin', 'aqeSkew', 'cause', 'dataRatio'],
   stageShape: ['rule'],
   shuffle: ['partitions'],
-  partitionSizing: ['rule', 'origin', 'partitions'],
+  partitionSizing: ['rule', 'origin', 'aqeSkew', 'partitions'],
   spill: ['spillMagnitude', 'reads'],
   gc: ['direction'],
   slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue'],
   stageSlowness: ['reads'],
   stageFailed: ['variant', 'numTasks', 'memoryBytesSpilled', 'failedTaskDetails'],
   failures: ['failedTasks', 'dominantReason', 'dominantError', 'failureGroups', 'otherFailedTasks'],
-  straggler: ['unit', 'speculativeTasks', 'stragglerCount', 'origin', 'cause', 'causeSharePct', 'host', 'hostTasks', 'cpuPct'],
+  straggler: ['unit', 'speculativeTasks', 'stragglerCount', 'origin', 'aqeSkew', 'cause', 'causeSharePct', 'host', 'hostTasks', 'cpuPct'],
   speculationWaste: [],
   retryWaste: ['numTasks', 'memoryBytesSpilled', 'retriedTaskDetails'],
   tinyTask: ['reads'],

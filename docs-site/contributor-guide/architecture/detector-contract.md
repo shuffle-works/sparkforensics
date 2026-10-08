@@ -18,7 +18,7 @@ it on `decrease spark.dynamicAllocation.maxExecutors` plus `decrease
 spark.dynamicAllocation.minExecutors` when the logged floor is above 0.
 `Remediation` is a union: `codeFix(hint)` builds the `{kind: 'code', hint}` entry for a fix no
 property makes, which the skew family emits when its origin is `other` or skew-join handling is
-already on. Code that reads `key` checks `kind` first.
+on and `aqe-skew.ts` finds the job's code is what has to change. Code that reads `key` checks `kind` first.
 
 Each entry is built by the helper for its scope: `defineStageDetector`,
 `defineSqlDetector`, `defineAppDetector` or `defineConfigDetector`. The
@@ -202,6 +202,13 @@ A detector scoped to one SQL execution (`skew`, `straggler`, `shuffle`,
 them applied, so the helpers that take an app (`effectiveConf`, `loggedAs`,
 `switchFix`) need no second argument. Run-wide detectors use the app as logged.
 The frozen detection thresholds do not follow a per-query setting; only the advice does.
+
+The skew family's advice for a stage that reads a shuffle feeding a join comes from
+`diagnoseJoinSkew` in `aqe-skew.ts`, which walks the execution's final plan against the
+conditions Spark's `OptimizeSkewedJoin` checks (join shape, join type, thresholds, extra shuffle)
+and reads the thresholds through the same effective conf. It returns `null` when the plan cannot
+say, and the detector then keeps the general advice. A new case is a new `AqeSkewCase`, a row in
+`finding-presentation.ts`'s generic lines and a row in the user guide's `SKEW` table.
 
 ## Cross-detector suppression
 
