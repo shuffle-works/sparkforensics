@@ -355,6 +355,15 @@ describe('redactRunModel', () => {
     expect(JSON.stringify(out)).not.toContain('application_1690000000000_0001');
   });
 
+  it('pseudonymizes a host value set per query (SQL execution modifiedConfigs)', () => {
+    const data = sampleExportData();
+    data.sql = [{ id: 0, modifiedConfigs: { 'spark.myco.gateway.host': 'zebra-etl-node7', 'spark.sql.shuffle.partitions': '8' } }];
+    const out = redactRun(data);
+    expect(JSON.stringify(out)).not.toContain('zebra-etl-node7');
+    expect(out.appModel.sql.get(0).modifiedConfigs['spark.myco.gateway.host']).toMatch(/^host-\d+$/);
+    expect(out.appModel.sql.get(0).modifiedConfigs['spark.sql.shuffle.partitions']).toBe('8');
+  });
+
   // The app name identifies the job as much as its id does, so it takes the id's pseudonym, as
   // list_runs does. The structured fields are replaced, never substrings: a short name like "t"
   // would otherwise corrupt every string in the run.

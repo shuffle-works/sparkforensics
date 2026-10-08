@@ -92,13 +92,10 @@ describe('effectiveSparkConf layering', () => {
     expect(effectiveSparkConf({}, 'spark.sql.shuffle.partitions')).toEqual({ value: '200', source: 'default' });
   });
 
-  it('ignores a per-query value Spark redacted, including a custom redaction string', () => {
+  it('ignores a per-query value Spark redacted', () => {
     const redacted = { 'spark.sql.shuffle.partitions': '*********(redacted)' };
     expect(effectiveSparkConf({ properties: { 'spark.sql.shuffle.partitions': '8' }, modified: redacted }, 'spark.sql.shuffle.partitions'))
       .toEqual({ value: '8', source: 'app' });
-    const custom = { properties: { 'spark.redaction.string': '<hidden>' }, modified: { 'spark.x': '<hidden>', 'spark.y': '1' } };
-    expect(effectiveSparkConf(custom, 'spark.x')).toBeUndefined();
-    expect(effectiveSparkConf(custom, 'spark.y')).toEqual({ value: '1', source: 'query' });
   });
 });
 

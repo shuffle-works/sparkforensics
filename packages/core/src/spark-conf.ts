@@ -75,7 +75,8 @@ const SPARK_DEFAULTS: Readonly<Record<string, readonly DefaultStep[]>> = {
   'spark.sql.execution.pythonUDF.arrow.enabled': [[[3, 4], 'false'], [[4, 2], 'true']],
 };
 
-// Spark's spark.redaction.string default, which replaces a sensitive value in modifiedConfigs.
+// The text Spark substitutes for a sensitive value in modifiedConfigs (a fixed constant; only the
+// pattern that selects values is configurable).
 const DEFAULT_REDACTION = '*********(redacted)';
 
 function parseVersion(sparkVersion: string | null | undefined): Since | null {
@@ -98,8 +99,8 @@ export function sparkConfDefault(sparkVersion: string | null | undefined, key: s
 }
 
 /** A per-query setting that can override: not Spark's redaction placeholder for a hidden value. */
-function isUsableModified(value: string, properties: Readonly<Record<string, string>> | null | undefined): boolean {
-  return value !== (properties?.['spark.redaction.string'] ?? DEFAULT_REDACTION);
+function isUsableModified(value: string): boolean {
+  return value !== DEFAULT_REDACTION;
 }
 
 /** The Spark Properties with one execution's modifiedConfigs applied over them. Returns
@@ -109,14 +110,14 @@ export function overlayModifiedConfigs(
   modified: Readonly<Record<string, string>> | null | undefined,
 ): Record<string, string> | undefined {
   if (modified == null) return properties;
-  const usable = Object.entries(modified).filter(([, value]) => isUsableModified(value, properties));
+  const usable = Object.entries(modified).filter(([, value]) => isUsableModified(value));
   return usable.length === 0 ? properties : { ...properties, ...Object.fromEntries(usable) };
 }
 
 /** The run's effective value of `key` and the layer it came from, or undefined when no layer has it. */
 export function effectiveSparkConf(layers: ConfLayers, key: string): ConfValue | undefined {
   const modified = layers.modified?.[key];
-  if (modified !== undefined && isUsableModified(modified, layers.properties)) return { value: modified.trim(), source: 'query' };
+  if (modified !== undefined && isUsableModified(modified)) return { value: modified.trim(), source: 'query' };
   const logged = layers.properties?.[key];
   if (logged !== undefined) return { value: logged.trim(), source: 'app' };
   const fallback = sparkConfDefault(layers.sparkVersion, key);
