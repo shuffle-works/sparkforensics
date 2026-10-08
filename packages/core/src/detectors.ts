@@ -6,6 +6,7 @@ import { allocatedCoreMs, computeAllocation } from './allocation.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
+import { TAIL_FACTOR } from './stage-quantiles.ts';
 import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type TailStage } from './occupancy.ts';
 import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
 import {
@@ -23,8 +24,8 @@ import { cyrb53 } from './string-hash.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
 import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
-import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure } from './types.ts';
-import type { FindingOf, Remediation, SkewOrigin, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
+import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure, TailAttribution } from './types.ts';
+import type { FindingOf, Remediation, SkewOrigin, TailCause, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -94,6 +95,7 @@ export interface DetectorStage {
   stragglerExcessMs?: number;
   longestNonStragglerMs?: number;
   peakConcurrentTasks?: number;
+  tailAttribution?: TailAttribution;
   speculativeTasks: number;
   speculationWastedAttempts: number;
   speculationWasteMs: number;
@@ -673,6 +675,44 @@ function tailClaimImpact(claim: TailClaim, stageId: number, ctx: EstimateCtx): I
 // floor leaves unrecoverable. Falls back to the raw claim when occupancy data is unavailable.
 function tailClaimFloorMs(claim: TailClaim, stageId: number, ctx: DetectorCtx): number {
   return tailClaimImpact(claim, stageId, ctx.impact).wallClock?.high ?? claim.wasteMs;
+}
+
+// skew's duration gate: the task-time ratio over `ratioWarn` whose occupancy-clipped tail claim
+// (the claim estimate() reports as savings, so the gate agrees with it) is at least `floorPctWarn`
+// of the run. Null when it does not hold. straggler runs it too, to report the tails skew's gate
+// admits whose cause is not data.
+function skewGate(
+  stage: DetectorStage, ctx: DetectorCtx, ratioWarn: number, minTasksForP95: number, floorPctWarn: number,
+): { ratio: number; metric: 'P95/median' | 'max/median' } | null {
+  const result = computeSkewRatio(stage, minTasksForP95);
+  if (result === null || result.ratio <= ratioWarn) return null;
+  const floorWasteMs = tailClaimFloorMs(skewTailClaim(stage, result.metric === 'P95/median'), stage.id, ctx);
+  return meetsRuntimeFloor(floorWasteMs, appDurationMs(ctx.app), floorPctWarn) ? result : null;
+}
+
+// Why a stage's slow tail is slow. 'data' when run time proportional to the slow tasks' data volume
+// accounts for at least `dataShareMin` of their extra time (Spark's UI and AQE define skew by data
+// volume, not by duration). Otherwise the largest of GC, shuffle fetch wait, tasks piled on one
+// host, and what none of them accounts for ('unexplained'). A log with no data volume to compare
+// and no other cause is 'unattributed': only the duration is known, which both skew and straggler
+// then judge as they did before the evidence existed, as does a stage with no tail attribution.
+interface TailVerdict {
+  cause: TailCause;
+  // Share (0-100) of the tail's extra time the cause accounts for; 0 for 'unattributed'.
+  sharePct: number;
+  attribution: TailAttribution | null;
+}
+
+function tailVerdict(stage: Pick<DetectorStage, 'tailAttribution'>, dataShareMin: number): TailVerdict {
+  const a = stage.tailAttribution ?? null;
+  if (a === null || !(a.excessMs > 0)) return { cause: 'unattributed', sharePct: 0, attribution: a };
+  const pct = (ms: number) => Math.round((ms / a.excessMs) * 100);
+  if (a.dataMs / a.excessMs >= dataShareMin) return { cause: 'data', sharePct: pct(a.dataMs), attribution: a };
+  const rest = Math.max(0, a.excessMs - a.dataMs - a.gcMs - a.fetchWaitMs - a.hostMs);
+  const causes: [TailCause, number][] = [['gc', a.gcMs], ['fetchWait', a.fetchWaitMs], ['host', a.hostMs],
+    [a.dataRatio === null ? 'unattributed' : 'unexplained', rest]];
+  const [cause, ms] = causes.reduce((best, c) => (c[1] > best[1] ? c : best));
+  return { cause, sharePct: cause === 'unattributed' ? 0 : pct(ms), attribution: a };
 }
 
 // Spark's default for the properties a detector's fix reads or suggests, for a run that did not log
@@ -1302,29 +1342,140 @@ function gcValidation(minRunTimeMs: number): string {
 
 const INCOMPLETE_RUN_RECOMMENDATION = 'This event log never recorded an ApplicationEnd event: the capture stopped before the run finished (a job still running, a rotated log, or a cut-short capture), so every figure on this board covers only what was captured.';
 
+// straggler's own gate: tasks over 4x P50 are more than `shareWarn` of the stage (`shareWarnAtFloor`
+// when the occupancy-clipped tail clears the runtime floor), or a speculative task ran. Null when it
+// does not hold, else what the finding reports.
+function stragglerGate(stage: DetectorStage, ctx: DetectorCtx, thresholds: {
+  minTasks: number; shareWarn: number; shareWarnAtFloor: number; warnPct: number; critPct: number;
+  floorPctWarn: number; floorPctCrit: number;
+}): { useSpeculativeMetric: boolean; value: number; detail: string; confidence: 'low' | 'medium' | 'high' } | null {
+  if (stage.taskCount < thresholds.minTasks) return null;
+  const runMs = appDurationMs(ctx.app);
+  if (stageBelowRuntimeFloor(stage, ctx, thresholds.floorPctWarn)) return null;
+  const stragglerShare = (stage.stragglerCount ?? 0) / stage.taskCount;
+  const useSpeculative = (stage.speculativeTasks ?? 0) > 0;
+  if (!useSpeculative && stragglerShare <= thresholds.shareWarnAtFloor) return null;
+  const speculativeShare = useSpeculative ? stage.speculativeTasks / stage.taskCount : 0;
+  // The claim estimate() reports as savings: a high straggler/speculative share on a stage
+  // whose tasks barely vary models near-zero savings, so it must not outrank 'info'.
+  const floorWasteMs = tailClaimFloorMs(stragglerTailClaim(stage), stage.id, ctx);
+  const meetsWarnFloor = meetsRuntimeFloor(floorWasteMs, runMs, thresholds.floorPctWarn);
+  const meetsCritFloor = meetsRuntimeFloor(floorWasteMs, runMs, thresholds.floorPctCrit);
+  // The lower gate needs positive evidence the tail matters: meetsRuntimeFloor passes by
+  // default when the app's duration is unknown (an incomplete run), which isn't that.
+  const stragglerShareFires = stragglerShare > thresholds.shareWarn
+    || (stragglerShare > thresholds.shareWarnAtFloor && runMs != null && meetsWarnFloor);
+  if (!useSpeculative && !stragglerShareFires) return null;
+  const speculativeTier = speculativeShare >= thresholds.critPct && meetsCritFloor ? 'critical'
+                         : speculativeShare >= thresholds.warnPct && meetsWarnFloor ? 'warning' : 'info';
+  // Straggler share has no dedicated critical tier per detector-contract.md; only warning.
+  const stragglerTier = stragglerShareFires && meetsWarnFloor ? 'warning' : 'info';
+  // Report whichever signal actually drove the finding, not just whether speculation was on:
+  // a high stragglerShare with few speculative retries must not be reported as a low-value
+  // speculativeTasks count. Ties keep the speculative-driven default.
+  const useSpeculativeMetric = useSpeculative && !(IMPACT_BAND_ORDER[stragglerTier] < IMPACT_BAND_ORDER[speculativeTier]);
+  const value = useSpeculativeMetric ? stage.speculativeTasks : Math.round(stragglerShare * 100);
+  return {
+    useSpeculativeMetric, value,
+    detail: useSpeculativeMetric
+      ? `${value} speculative attempt${value === 1 ? '' : 's'} discarded`
+      : `${value}% of tasks straggled`,
+    confidence: useSpeculativeMetric
+      ? stragglerConfidence(speculativeShare, thresholds.warnPct, thresholds.critPct)
+      : stragglerConfidence(stragglerShare, thresholds.shareWarn, thresholds.critPct),
+  };
+}
+
+// The straggler finding's evidence, recommendation and fix for the tail's cause. Without a measured
+// cause the stage gets the skew advice for its origin (skewFix), the only case it still fits.
+function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdict, detail: string): {
+  evidence: Pick<FindingOf<'straggler'>, 'origin' | 'cause' | 'causeSharePct' | 'host' | 'hostTasks' | 'cpuPct'>;
+  recommendation: string;
+  remediation: Remediation[] | undefined;
+} {
+  const a = tail.attribution;
+  const cpuPct = a?.cpuPct != null ? Math.round(a.cpuPct) : undefined;
+  const evidence = { cause: tail.cause, ...(tail.cause === 'unattributed' ? {} : { causeSharePct: tail.sharePct }), ...(cpuPct !== undefined ? { cpuPct } : {}) };
+  const share = `${tail.sharePct}% of the slow tasks' extra time`;
+  switch (tail.cause) {
+    case 'data': {
+      // skew reports a tail its gate admits; this is one only the straggler gate does.
+      const fix = skewFix(stage, ctx);
+      const ratio = a?.dataRatio != null ? Math.round(a.dataRatio * 10) / 10 : null;
+      return {
+        evidence: { ...evidence, origin: fix.origin }, remediation: fix.remediation,
+        recommendation: `${detail}: data volume accounts for ${share}${ratio !== null ? ` (the slow tasks read a median ${ratio}× the data of the median task)` : ''}: ${fix.text}.`,
+      };
+    }
+    case 'gc':
+      return {
+        evidence, remediation: [increaseConf('spark.executor.memory')],
+        recommendation: `${detail}: GC accounts for ${share}: reduce object creation, use primitive types, avoid UDFs, increase executor memory.`,
+      };
+    case 'fetchWait':
+      return {
+        evidence, remediation: undefined,
+        recommendation: `${detail}: waiting on shuffle fetches accounts for ${share}: look for a slow or overloaded node serving shuffle blocks, executors lost mid-stage, or reducers fetching many small blocks.`,
+      };
+    case 'host': {
+      const speculation = switchFix(loggedAs(ctx.app, 'spark.speculation', true), 'spark.speculation', true,
+        'check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically',
+        'check what it was running; speculation is already on, so a lagging task there is already relaunched');
+      return {
+        evidence: { ...evidence, host: a!.host!, hostTasks: a!.hostTasks }, remediation: speculation.remediation,
+        recommendation: `${detail}: ${a!.hostTasks} of the ${a!.tasks} slow tasks ran on ${a!.host}, which accounts for ${share}: ${speculation.text}.`,
+      };
+    }
+    case 'unexplained': {
+      const cpu = cpuPct === undefined ? '' : cpuPct < 50
+        ? ` They used ${cpuPct}% of their run time on CPU, so they mostly waited (on storage, a remote service or a lock).`
+        : ` They used ${cpuPct}% of their run time on CPU, so the work itself is slow.`;
+      return {
+        evidence, remediation: undefined,
+        recommendation: `${detail}: the slow tasks read no more data than the median task, and GC, shuffle fetch wait and one slow host do not account for their time.${cpu} Look at per-record cost (UDFs, regular expressions, a call out per row).`,
+      };
+    }
+    default: {
+      // The skew advice fits only a stage that reads a shuffle feeding a join (skewFix).
+      const fix = skewFix(stage, ctx);
+      return {
+        evidence: { ...evidence, origin: fix.origin }, remediation: fix.remediation,
+        recommendation: `${detail}: rule out a GC pause or a slow shuffle fetch before assuming a hardware issue; if uneven data is the cause, ${fix.text}.`,
+      };
+    }
+  }
+}
+
 export const DETECTORS = [
   defineStageDetector({
     type: 'skew', order: 30, fixEffort: 'code', version: 1,
     emits: ['skew'],
     docAnchor: '#bottleneck-skew',
-    thresholds: { ratioWarn: 3, minTasksForP95: 20, floorPctWarn: IMPACT_FLOOR_PCT_WARN },
+    // dataShareMin: the share of the slow tasks' extra time that run time proportional to their data
+    // volume must account for before the tail is data skew (straggler's threshold of the same name
+    // is its complement). NOT SOURCED: our own majority cut.
+    thresholds: { ratioWarn: 3, minTasksForP95: 20, dataShareMin: 0.5, floorPctWarn: IMPACT_FLOOR_PCT_WARN },
     detect(stage, ctx, thresholds): Finding | null {
-      const result = computeSkewRatio(stage, thresholds.minTasksForP95);
-      if (result === null) return null;
-      const { ratio, metric } = result;
-      if (ratio <= thresholds.ratioWarn) return null;
-      // The claim estimate() reports as savings, clipped the same way, so the gate agrees with it.
-      const floorWasteMs = tailClaimFloorMs(skewTailClaim(stage, metric === 'P95/median'), stage.id, ctx);
-      if (!meetsRuntimeFloor(floorWasteMs, appDurationMs(ctx.app), thresholds.floorPctWarn)) return null;
+      const gate = skewGate(stage, ctx, thresholds.ratioWarn, thresholds.minTasksForP95, thresholds.floorPctWarn);
+      if (gate === null) return null;
+      const { ratio, metric } = gate;
+      // A tail GC, fetch wait or a host explains is not skew: straggler reports it, with the cause
+      // (it re-runs this same gate, see skewGate).
+      const tail = tailVerdict(stage, thresholds.dataShareMin);
+      if (tail.cause !== 'data' && tail.cause !== 'unattributed') return null;
       const value = Math.round(ratio * 10) / 10;
       const fix = skewFix(stage, ctx);
+      const dataRatio = tail.cause === 'data' && tail.attribution?.dataRatio != null
+        ? Math.round(tail.attribution.dataRatio * 10) / 10 : undefined;
       return {
         type: 'skew', stageId: stage.id, origin: fix.origin,
+        cause: tail.cause,
+        ...(dataRatio !== undefined ? { dataRatio } : {}),
         impactBand: 'warning',
         metric, value,
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
         validationRequired: `Flagged only when it costs at least ${shareLabel(thresholds.floorPctWarn)} of run time.`,
-        recommendation: `Task duration ratio (${metric}) is ${value}×: ${fix.text}.`,
+        recommendation: `Task duration ratio (${metric}) is ${value}×${dataRatio !== undefined ? `, and the slow tasks read a median ${dataRatio}× the data of the median task` : ''}: ${fix.text}.`,
         remediation: fix.remediation,
       };
     },
@@ -1922,55 +2073,39 @@ export const DETECTORS = [
     // than the stage's own duration, so every finding there graded info. On the 14 real logs that
     // was 671 of 753 straggler findings, none above info; the slow tail is still real on those
     // stages, the floor is why they're dropped.
-    thresholds: { minTasks: 10, shareWarn: 0.05, shareWarnAtFloor: 0.025, warnPct: 0.10, critPct: 0.20, floorPctWarn: IMPACT_FLOOR_PCT_WARN, floorPctCrit: IMPACT_FLOOR_PCT_CRIT },
+    // dataShareMin and skewRatioWarn/skewMinTasksForP95 are skew's thresholds of the same names (a tail
+    // that much data-driven is skew's finding; a tail skew's duration gate admits whose cause is not
+    // data is this one's). Override them with skew's.
+    thresholds: { minTasks: 10, shareWarn: 0.05, shareWarnAtFloor: 0.025, warnPct: 0.10, critPct: 0.20, dataShareMin: 0.5, skewRatioWarn: 3, skewMinTasksForP95: 20, floorPctWarn: IMPACT_FLOOR_PCT_WARN, floorPctCrit: IMPACT_FLOOR_PCT_CRIT },
     detect(stage, ctx, thresholds): Finding | null {
-      if (stage.taskCount < thresholds.minTasks) return null;
-      const runMs = appDurationMs(ctx.app);
-      if (stageBelowRuntimeFloor(stage, ctx, thresholds.floorPctWarn)) return null;
-      const stragglerShare = (stage.stragglerCount ?? 0) / stage.taskCount;
-      const useSpeculative = (stage.speculativeTasks ?? 0) > 0;
-      if (!useSpeculative && stragglerShare <= thresholds.shareWarnAtFloor) return null;
-      const speculativeShare = useSpeculative ? stage.speculativeTasks / stage.taskCount : 0;
-      // The claim estimate() reports as savings: a high straggler/speculative share on a stage
-      // whose tasks barely vary models near-zero savings, so it must not outrank 'info'.
-      const floorWasteMs = tailClaimFloorMs(stragglerTailClaim(stage), stage.id, ctx);
-      const meetsWarnFloor = meetsRuntimeFloor(floorWasteMs, runMs, thresholds.floorPctWarn);
-      const meetsCritFloor = meetsRuntimeFloor(floorWasteMs, runMs, thresholds.floorPctCrit);
-      // The lower gate needs positive evidence the tail matters: meetsRuntimeFloor passes by
-      // default when the app's duration is unknown (an incomplete run), which isn't that.
-      const stragglerShareFires = stragglerShare > thresholds.shareWarn
-        || (stragglerShare > thresholds.shareWarnAtFloor && runMs != null && meetsWarnFloor);
-      if (!useSpeculative && !stragglerShareFires) return null;
-      const speculativeTier = speculativeShare >= thresholds.critPct && meetsCritFloor ? 'critical'
-                             : speculativeShare >= thresholds.warnPct && meetsWarnFloor ? 'warning' : 'info';
-      // Straggler share has no dedicated critical tier per detector-contract.md; only warning.
-      const stragglerTier = stragglerShareFires && meetsWarnFloor ? 'warning' : 'info';
-      // Fixed fallback: overwritten by deriveImpactBand when this finding gets a real wallClock
-      // estimate (the common case). Only surfaces on the rare occupancy-sweep miss.
-      const impactBand = 'info';
-      // Report whichever signal actually drove the finding, not just whether speculation was on:
-      // a high stragglerShare with few speculative retries must not be reported as a low-value
-      // speculativeTasks count. Ties keep the speculative-driven default.
-      const useSpeculativeMetric = useSpeculative && !(IMPACT_BAND_ORDER[stragglerTier] < IMPACT_BAND_ORDER[speculativeTier]);
-      const value = useSpeculativeMetric ? stage.speculativeTasks : Math.round(stragglerShare * 100);
-      const detail = useSpeculativeMetric
-        ? `${value} speculative attempt${value === 1 ? '' : 's'} discarded`
-        : `${value}% of tasks straggled`;
-      // The skew advice fits only a stage that reads a shuffle feeding a join (skewFix).
-      const fix = skewFix(stage, ctx);
+      const tail = tailVerdict(stage, thresholds.dataShareMin);
+      // With no measured cause skew's gate is not consulted: both findings stand, flagged as overlapping.
+      const skewTail = tail.cause === 'unattributed'
+        ? null : skewGate(stage, ctx, thresholds.skewRatioWarn, thresholds.skewMinTasksForP95, thresholds.floorPctWarn);
+      if (tail.cause === 'data' && skewTail !== null) return null; // skew reports it
+      // A tail skew's duration gate admits but data does not explain is this finding's.
+      const fromSkewGate = skewTail !== null && tail.cause !== 'data';
+      const own = stragglerGate(stage, ctx, thresholds);
+      if (own === null && !fromSkewGate) return null;
+      const tailTasks = tail.attribution?.tasks ?? 0;
+      const useSpeculativeMetric = own?.useSpeculativeMetric ?? false;
+      const value = own?.value ?? Math.round((tailTasks / stage.taskCount) * 100);
+      const detail = own?.detail ?? `${value}% of tasks ran over ${TAIL_FACTOR}× the median`;
+      const advice = stragglerAdvice(stage, ctx, tail, detail);
       return {
-        type: 'straggler', stageId: stage.id, impactBand, origin: fix.origin,
+        type: 'straggler', stageId: stage.id,
+        // Fixed fallback: overwritten by deriveImpactBand when this finding gets a real wallClock
+        // estimate (the common case). Only surfaces on the rare occupancy-sweep miss.
+        impactBand: 'info', ...advice.evidence,
         metric: useSpeculativeMetric ? 'speculativeTasks' : 'stragglerShare',
         value,
         unit: useSpeculativeMetric ? 'count' : 'pct',
         speculativeTasks: stage.speculativeTasks ?? 0,
         stragglerCount: stage.stragglerCount ?? 0,
-        confidence: useSpeculativeMetric
-          ? stragglerConfidence(speculativeShare, thresholds.warnPct, thresholds.critPct)
-          : stragglerConfidence(stragglerShare, thresholds.shareWarn, thresholds.critPct),
+        confidence: own?.confidence ?? skewConfidence(skewTail!.ratio, thresholds.skewRatioWarn),
         validationRequired: `Warning needs at least ${shareLabel(thresholds.floorPctWarn)} of run time at stake, critical ${shareLabel(thresholds.floorPctCrit)}.`,
-        recommendation: `${detail}: rule out a GC pause or a slow shuffle fetch before assuming a hardware issue; if uneven data is the cause, ${fix.text}.`,
-        remediation: fix.remediation,
+        recommendation: advice.recommendation,
+        remediation: advice.remediation,
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {

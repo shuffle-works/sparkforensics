@@ -115,3 +115,11 @@ test('paginates the issue list 6-at-a-time', async () => {
   await user.click(screen.getByRole('button', { name: 'Next' }));
   expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
 });
+
+test('names the measured cause of the slow tail', () => {
+  const catalog: Finding[] = [
+    { type: 'straggler', stageId: 9, impactBand: 'warning', metric: 'stragglerShare', value: 12, unit: 'pct', cause: 'host', causeSharePct: 80, host: 'worker-7', hostTasks: 9, recommendation: 'r' } as Finding,
+  ];
+  renderStraggler(appModelWithStage(9), catalog, false);
+  expect(screen.getByText('Tasks piled on worker-7 (80% of their extra time)')).toBeInTheDocument();
+});

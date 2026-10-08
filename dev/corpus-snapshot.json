@@ -46,36 +46,6 @@
      "rawWaste": null
     },
     {
-     "key": "skew|0|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "medium",
-     "value": 14.7,
-     "basis": "contended",
-     "method": "measured",
-     "wcLow": 611.2346683216023,
-     "wcHigh": 1048,
-     "rawWaste": {
-      "value": 1048,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "skew|1|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "high",
-     "value": 26.2,
-     "basis": "contended",
-     "method": "measured",
-     "wcLow": 408.8270026591919,
-     "wcHigh": 1262,
-     "rawWaste": {
-      "value": 1262,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
      "type": "smallFiles",
      "band": "critical",
@@ -273,36 +243,6 @@
      }
     },
     {
-     "key": "skew|2|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "high",
-     "value": 21.6,
-     "basis": "contended",
-     "method": "measured",
-     "wcLow": 668.6448055719953,
-     "wcHigh": 1511,
-     "rawWaste": {
-      "value": 1511,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "skew|3|P95/median|||||||||||",
-     "type": "skew",
-     "band": "warning",
-     "confidence": "low",
-     "value": 4.3,
-     "basis": "contended",
-     "method": "measured",
-     "wcLow": 283.44326285910796,
-     "wcHigh": 325,
-     "rawWaste": {
-      "value": 325,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
      "type": "smallFiles",
      "band": "critical",
@@ -314,21 +254,6 @@
      "wcHigh": 1990,
      "rawWaste": {
       "value": 1990,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "straggler|0|stragglerShare|||||||||||",
-     "type": "straggler",
-     "band": "critical",
-     "confidence": "medium",
-     "value": 10,
-     "basis": "contended",
-     "method": "measured",
-     "wcLow": 341.68492424120893,
-     "wcHigh": 850.5,
-     "rawWaste": {
-      "value": 850.5,
       "unit": "ms"
      }
     },
@@ -1847,21 +1772,6 @@
      "rawWaste": null
     },
     {
-     "key": "skew|7|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "medium",
-     "value": 4.6,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 2421,
-     "wcHigh": 2421,
-     "rawWaste": {
-      "value": 2421,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
      "type": "smallFiles",
      "band": "critical",
@@ -2076,21 +1986,6 @@
      "rawWaste": null
     },
     {
-     "key": "skew|6|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "medium",
-     "value": 7.6,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 7406,
-     "wcHigh": 7406,
-     "rawWaste": {
-      "value": 7406,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
      "type": "smallFiles",
      "band": "critical",
@@ -2106,7 +2001,7 @@
      }
     },
     {
-     "key": "straggler|6|stragglerShare|||||||||||",
+     "key": "straggler|6|stragglerShare|||172.19.0.4||||||||",
      "type": "straggler",
      "band": "critical",
      "confidence": "low",
@@ -2323,21 +2218,6 @@
      }
     },
     {
-     "key": "straggler|3|stragglerShare|||||||||||",
-     "type": "straggler",
-     "band": "critical",
-     "confidence": "low",
-     "value": 6,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 1081.5,
-     "wcHigh": 1081.5,
-     "rawWaste": {
-      "value": 1081.5,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "tinyTask|3|taskDurationP50|||||||||||",
      "type": "tinyTask",
      "band": "critical",
@@ -2403,21 +2283,6 @@
      "rawWaste": null
     },
     {
-     "key": "skew|3|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "medium",
-     "value": 8,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 7258,
-     "wcHigh": 7258,
-     "rawWaste": {
-      "value": 7258,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
      "type": "smallFiles",
      "band": "critical",
@@ -2433,7 +2298,7 @@
      }
     },
     {
-     "key": "straggler|3|stragglerShare|||||||||||",
+     "key": "straggler|3|stragglerShare|||172.19.0.3||||||||",
      "type": "straggler",
      "band": "critical",
      "confidence": "medium",
@@ -2617,21 +2482,6 @@
      "rawWaste": null
     },
     {
-     "key": "skew|6|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "low",
-     "value": 3.9,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 2665,
-     "wcHigh": 2665,
-     "rawWaste": {
-      "value": 2665,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "straggler|6|stragglerShare|||||||||||",
      "type": "straggler",
      "band": "critical",
@@ -2739,21 +2589,6 @@
      "rawWaste": null
     },
     {
-     "key": "skew|6|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "low",
-     "value": 3.8,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 1702,
-     "wcHigh": 1702,
-     "rawWaste": {
-      "value": 1702,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "straggler|6|stragglerShare|||||||||||",
      "type": "straggler",
      "band": "critical",
@@ -2832,21 +2667,6 @@
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": null
-    },
-    {
-     "key": "skew|6|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "low",
-     "value": 3.4,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 1563.5,
-     "wcHigh": 1563.5,
-     "rawWaste": {
-      "value": 1563.5,
-      "unit": "ms"
-     }
     },
     {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
@@ -2956,21 +2776,6 @@
      "rawWaste": null
     },
     {
-     "key": "skew|6|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "low",
-     "value": 3.2,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 2202,
-     "wcHigh": 2202,
-     "rawWaste": {
-      "value": 2202,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "straggler|6|stragglerShare|||||||||||",
      "type": "straggler",
      "band": "critical",
@@ -3078,21 +2883,6 @@
      "rawWaste": null
     },
     {
-     "key": "skew|6|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "low",
-     "value": 3.8,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 1216,
-     "wcHigh": 1216,
-     "rawWaste": {
-      "value": 1216,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "straggler|6|stragglerShare|||||||||||",
      "type": "straggler",
      "band": "critical",
@@ -3183,21 +2973,6 @@
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": null
-    },
-    {
-     "key": "skew|6|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "low",
-     "value": 3.6,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 1091,
-     "wcHigh": 1091,
-     "rawWaste": {
-      "value": 1091,
-      "unit": "ms"
-     }
     },
     {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
@@ -4556,21 +4331,6 @@
      "rawWaste": null
     },
     {
-     "key": "skew|0|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "medium",
-     "value": 10.5,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 254,
-     "wcHigh": 254,
-     "rawWaste": {
-      "value": 254,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "straggler|0|stragglerShare|||||||||||",
      "type": "straggler",
      "band": "critical",
@@ -4664,21 +4424,6 @@
      }
     },
     {
-     "key": "skew|0|max/median|||||||||||",
-     "type": "skew",
-     "band": "warning",
-     "confidence": "high",
-     "value": 18.9,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 2615,
-     "wcHigh": 2615,
-     "rawWaste": {
-      "value": 2615,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "stageShape|0|taskStageSkew|taskStageSkew||||||||||",
      "type": "stageShape",
      "band": "info",
@@ -4691,6 +4436,21 @@
      "rawWaste": {
       "value": 0,
       "unit": "coreMs"
+     }
+    },
+    {
+     "key": "straggler|0|stragglerShare|||||||||||",
+     "type": "straggler",
+     "band": "warning",
+     "confidence": "high",
+     "value": 33,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 2615,
+     "wcHigh": 2615,
+     "rawWaste": {
+      "value": 2615,
+      "unit": "ms"
      }
     },
     {
@@ -4874,11 +4634,11 @@
      "rawWaste": null
     },
     {
-     "key": "skew|0|max/median|||||||||||",
-     "type": "skew",
+     "key": "straggler|0|stragglerShare|||||||||||",
+     "type": "straggler",
      "band": "critical",
      "confidence": "medium",
-     "value": 5.8,
+     "value": 25,
      "basis": "serial",
      "method": "measured",
      "wcLow": 64,

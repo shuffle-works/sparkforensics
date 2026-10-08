@@ -131,6 +131,8 @@ interface TaskRecord {
   executorRunTime: number;
   executorCpuTime: number;
   inputBytes: number;
+  inputRecords: number;
+  shuffleReadRecords: number;
   outputBytes: number;
   // Null when the task's metrics carry no Records Written (older Spark, or a non-writing task).
   outputRecords: number | null;
@@ -605,6 +607,8 @@ function taskRecordOf(event: z.infer<typeof TaskEndEventSchema>, failure: TaskFa
     executorRunTime: m['Executor Run Time'] ?? 0,
     executorCpuTime: m['Executor CPU Time'] ?? 0,
     inputBytes: inp['Bytes Read'] ?? 0,
+    inputRecords: inp['Records Read'] ?? 0,
+    shuffleReadRecords: sr['Total Records Read'] ?? 0,
     outputBytes: out['Bytes Written'] ?? 0,
     outputRecords: out['Records Written'] ?? null,
   };

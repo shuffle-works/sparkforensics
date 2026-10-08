@@ -14,10 +14,12 @@ Spot-checks for each estimate formula, the overlap caveat, the effect of tuned t
 
 `skew` and `straggler` both claim the stage's `tailReplayRecoveryMs` (see
 [Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution)), whichever skew branch fired,
-so when both fire on one stage they report the same recovered tail. The skew branch (P95 or max
-over P50) changes only the fallback single-task delta on a stage without the replay field. This
-phase does not dedupe or suppress either: each keeps its own independently-computed
-`wallClock`. Do not sum `wallClock.high` across multiple findings on the same stage: if
+so a tail both would report carries the same recovered time. The skew branch (P95 or max
+over P50) changes only the fallback single-task delta on a stage without the replay field. Which
+of the two reports a tail follows its cause (`tailVerdict` in `detectors.ts`, from the stage's
+`tailAttribution`): `skew` takes a tail whose extra time follows data volume and `straggler` takes
+the rest, so the pair fires together only when the log has no data volume to compare
+(`cause: 'unattributed'`). Each keeps its own independently-computed `wallClock`. Do not sum `wallClock.high` across multiple findings on the same stage: if
 both fire together, they describe the same underlying waste, not two separate wastes. Both
 are clipped with the post-fix floor described under
 [Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution), not the plain `ceiling`,
