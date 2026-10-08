@@ -310,13 +310,16 @@ this tag:
   under 1 MiB or over the over-broadcast limit is skipped. When the effective
   threshold already admits the side (`evidence.broadcastThreshold` is
   `notLimiting`), the threshold is not what stopped the broadcast, so
-  `remediation` is empty and the advice is a hint or table statistics. The
-  finding's value and `evidence.largerSideBytes` are the smaller and larger of
-  the two sides, so the build side can be the larger one when the join type
-  cannot build from the other.
+  `remediation` is empty and the advice is a hint or table statistics. A join
+  whose only buildable side is larger than the other side is skipped, since
+  broadcasting it saves nothing, so the build side is always the smaller one
+  and `evidence.largerSideBytes` is the other side.
 - Over-broadcast: a broadcast exceeds the 1 GB threshold; check for a
-  misapplied broadcast hint or a misconfigured threshold property, chosen as
-  for under-broadcast. When the effective threshold is
-  below the broadcast or auto-broadcast is disabled (`evidence.broadcastThreshold`
-  is `notLimiting` or `disabled`), a hint forced it: remove the hint, and
-  `remediation` is empty.
+  misapplied broadcast hint or a misconfigured threshold property. Under
+  adaptive execution a broadcast planned up front is admitted by
+  `spark.sql.autoBroadcastJoinThreshold` and one converted at runtime by
+  `spark.sql.adaptive.autoBroadcastJoinThreshold` (when set), so the finding
+  names whichever of them admits the broadcast. When every applicable
+  threshold is below the broadcast or disabled (`evidence.broadcastThreshold`
+  is `notLimiting`, or `disabled` when all are disabled), a hint forced it:
+  remove the hint, and `remediation` is empty.

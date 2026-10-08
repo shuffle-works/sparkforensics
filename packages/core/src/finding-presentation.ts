@@ -38,10 +38,11 @@ function switchAlreadyOn(finding: { remediation?: Remediation[] }, key: string):
   return finding.remediation != null && !finding.remediation.some((r) => r.kind === 'conf' && r.key === key);
 }
 
-// The broadcast threshold property a broadcast-sizing row's remediation names: the adaptive one when
+// The broadcast threshold properties a broadcast-sizing row's remediation names: the adaptive one when
 // it governed the query, else (and for a row with none) spark.sql.autoBroadcastJoinThreshold.
 function broadcastThresholdKeyOf(f: { remediation?: Remediation[] }): string {
-  return f.remediation?.find((r): r is ConfRemediation => r.kind === 'conf')?.key ?? 'spark.sql.autoBroadcastJoinThreshold';
+  const keys = (f.remediation ?? []).filter((r): r is ConfRemediation => r.kind === 'conf').map((r) => r.key);
+  return keys.length ? keys.join(' or ') : 'spark.sql.autoBroadcastJoinThreshold';
 }
 
 // The properties an idle-capacity finding lowers once dynamic allocation is on, worded as its row

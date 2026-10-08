@@ -3026,15 +3026,19 @@ export const DETECTORS = [
       const app = queryApp(ctx.app, sqlExec.modifiedConfigs);
       const key = broadcastThresholdKey(app, sqlExec.planTree.name === 'AdaptiveSparkPlan');
       const threshold = effectiveBroadcastThreshold(app, key);
+      // A broadcast planned up front is admitted by the static threshold, one AQE converted at runtime
+      // by the adaptive one, so an existing broadcast is judged against each that applied.
+      const admittingKeys = key === BROADCAST_THRESHOLD_KEY ? [key] : [BROADCAST_THRESHOLD_KEY, key];
+      const admittingThresholds = admittingKeys.map((k) => ({ key: k, threshold: effectiveBroadcastThreshold(app, k) }));
       const out: Finding[] = [];
       walkPlanTree(sqlExec.planTree, (node) => {
         const candidate = node.name === 'SortMergeJoin' ? broadcastCandidate(node) : null;
         if (candidate) {
           const buildBytes = shuffleBytes(candidate.build);
           const otherBytes = candidate.stream ? shuffleBytes(candidate.stream) : null;
-          // Below the floor a broadcast saves nothing measurable; above the over-broadcast limit it
-          // would be flagged there instead.
-          if (buildBytes >= minSmallerSideBytes && buildBytes <= overBroadcastBytes) {
+          // Below the floor a broadcast saves nothing measurable, nor does broadcasting the larger side;
+          // above the over-broadcast limit it would be flagged there instead.
+          if (buildBytes >= minSmallerSideBytes && buildBytes <= overBroadcastBytes && (otherBytes == null || buildBytes <= otherBytes)) {
             const broadcastThreshold: BroadcastThreshold = threshold != null && threshold < 0 ? 'disabled'
               : threshold != null && threshold >= buildBytes ? 'notLimiting' : 'limits';
             const withinTiers = otherBytes != null && (buildBytes < broadcastTiers[0]
@@ -3050,8 +3054,8 @@ export const DETECTORS = [
                 // resolvePlanTree always sets id; safe downstream of it.
                 planNodeIds: contributors.map((n) => n.id!).filter(Boolean),
                 impactBand: 'info', metric: 'smallerSideBytes',
-                value: otherBytes != null ? Math.min(buildBytes, otherBytes) : buildBytes,
-                ...(otherBytes != null ? { largerSideBytes: Math.max(buildBytes, otherBytes) } : {}),
+                value: buildBytes,
+                ...(otherBytes != null ? { largerSideBytes: otherBytes } : {}),
                 joinType, buildSide, buildSideBytes: buildBytes, broadcastThreshold,
                 recommendation: broadcastThreshold === 'notLimiting'
                   ? `${subject} is under the effective ${key} (${formatBytes(threshold!)}) yet was not broadcast${otherSide}, so the threshold is not what stopped it: a join hint, missing table statistics, or a shuffle that had already run usually is. Consider a broadcast() hint or collecting statistics (ANALYZE TABLE).`
@@ -3068,10 +3072,13 @@ export const DETECTORS = [
             // (node.stageIds always empty in real data); its child carries the executor-side
             // metrics, so only the child unions in.
             const child = (node.children ?? [])[0];
-            // A threshold below the broadcast cannot have admitted it, so a hint forced it.
-            const autoBroadcastOff = threshold != null && threshold < 0;
-            const hintForced = autoBroadcastOff || (threshold != null && m.value > threshold);
+            // A threshold below the broadcast cannot have admitted it: with none admitting it, a hint forced it.
+            const admitted = admittingThresholds.filter((t) => t.threshold == null || t.threshold >= m.value);
+            const autoBroadcastOff = admittingThresholds.every((t) => t.threshold != null && t.threshold < 0);
+            const hintForced = admitted.length === 0;
             const broadcastThreshold: BroadcastThreshold = autoBroadcastOff ? 'disabled' : hintForced ? 'notLimiting' : 'limits';
+            const below = admittingThresholds.map((t) => `${t.key} (${t.threshold! < 0 ? 'disabled' : formatBytes(t.threshold!)})`).join(' and ');
+            const admittedKeys = admitted.map((t) => t.key);
             out.push({
               type: 'overBroadcast', executionId: sqlExec.id,
               stageIds: unionStageIds(child ? [child] : [], fallbackStageIds),
@@ -3081,9 +3088,9 @@ export const DETECTORS = [
               recommendation: autoBroadcastOff
                 ? `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: automatic broadcast is already disabled, so remove the broadcast() hint that forced it.`
                 : hintForced
-                  ? `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: ${key} (${formatBytes(threshold!)}) is below it, so a broadcast() hint forced it: remove the hint.`
-                  : `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: check for a misapplied broadcast hint or a misconfigured ${key}.`,
-              remediation: hintForced ? [] : [decreaseConf(key)],
+                  ? `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: ${below} ${admittingThresholds.length > 1 ? 'are' : 'is'} below it, so a broadcast() hint forced it: remove the hint.`
+                  : `This broadcast (${formatBytes(m.value)}) exceeds the ${binaryThresholdLabel(overBroadcastBytes)} threshold: check for a misapplied broadcast hint or a misconfigured ${admittedKeys.join(' or ')}.`,
+              remediation: admittedKeys.map((k) => decreaseConf(k)),
             });
           }
         }

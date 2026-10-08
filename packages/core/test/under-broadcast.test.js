@@ -81,13 +81,16 @@ describe('underBroadcast: join type decides which side can be broadcast', () => 
     expect(under(plan)).toHaveLength(0);
   });
 
-  it('keeps value and largerSideBytes as the smaller and larger side when the build side is the larger', () => {
-    const [f] = under(join('LeftOuter', 2 * MiB, 500 * MiB), { config: { 'spark.sql.autoBroadcastJoinThreshold': '1g' } });
+  it('skips a join whose only buildable side is the larger one, since broadcasting it saves nothing', () => {
+    expect(under(join('LeftOuter', 2 * MiB, 500 * MiB), { config: { 'spark.sql.autoBroadcastJoinThreshold': '1g' } })).toHaveLength(0);
+  });
+
+  it('reports the build side as the smaller side and the other as the larger', () => {
+    const [f] = under(join('LeftOuter', 500 * MiB, 2 * MiB), { config: { 'spark.sql.autoBroadcastJoinThreshold': '1g' } });
     expect(f.buildSide).toBe('right');
-    expect(f.buildSideBytes).toBe(500 * MiB);
+    expect(f.buildSideBytes).toBe(2 * MiB);
     expect(f.value).toBe(2 * MiB);
     expect(f.largerSideBytes).toBe(500 * MiB);
-    expect(f.broadcastThreshold).toBe('notLimiting');
     expect(coreFindingGenericRecommendation(f)).toContain('admits the right side');
   });
 
@@ -249,11 +252,41 @@ describe('overBroadcast: effective broadcast threshold', () => {
     expect(coreFindingGenericRecommendation(f)).toContain('misconfigured spark.sql.adaptive.autoBroadcastJoinThreshold');
   });
 
-  it('names the adaptive key when it is the one below the broadcast', () => {
+  it('names the static key when it admitted a broadcast planned up front under AQE', () => {
     const config = { 'spark.sql.autoBroadcastJoinThreshold': '4g', 'spark.sql.adaptive.autoBroadcastJoinThreshold': '10m' };
     const [f] = findingsOf('overBroadcast', aqe(broadcast(1.5 * GiB)), { config });
+    expect(f.broadcastThreshold).toBe('limits');
+    expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.autoBroadcastJoinThreshold', direction: 'decrease', suggested: null }]);
+    expect(f.recommendation).toContain('misconfigured spark.sql.autoBroadcastJoinThreshold.');
+  });
+
+  it('does not call auto-broadcast disabled under AQE while the static threshold admits the broadcast', () => {
+    const config = { 'spark.sql.autoBroadcastJoinThreshold': '4g', 'spark.sql.adaptive.autoBroadcastJoinThreshold': '-1' };
+    const [f] = findingsOf('overBroadcast', aqe(broadcast(1.5 * GiB)), { config });
+    expect(f.broadcastThreshold).toBe('limits');
+    expect(f.remediation.map((r) => r.key)).toEqual(['spark.sql.autoBroadcastJoinThreshold']);
+  });
+
+  it('calls it hint-forced under AQE only when both thresholds are below the broadcast', () => {
+    const config = { 'spark.sql.autoBroadcastJoinThreshold': '20m', 'spark.sql.adaptive.autoBroadcastJoinThreshold': '10m' };
+    const [f] = findingsOf('overBroadcast', aqe(broadcast(1.5 * GiB)), { config });
     expect(f.broadcastThreshold).toBe('notLimiting');
-    expect(f.recommendation).toContain('spark.sql.adaptive.autoBroadcastJoinThreshold (10 MB) is below it');
+    expect(f.remediation).toEqual([]);
+    expect(f.recommendation).toContain('spark.sql.autoBroadcastJoinThreshold (21 MB) and spark.sql.adaptive.autoBroadcastJoinThreshold (10 MB) are below it');
+  });
+
+  it('calls auto-broadcast disabled under AQE only when both thresholds are disabled', () => {
+    const config = { 'spark.sql.autoBroadcastJoinThreshold': '-1', 'spark.sql.adaptive.autoBroadcastJoinThreshold': '-1' };
+    const [f] = findingsOf('overBroadcast', aqe(broadcast(1.5 * GiB)), { config });
+    expect(f.broadcastThreshold).toBe('disabled');
+    expect(f.remediation).toEqual([]);
+  });
+
+  it('names both keys when both admitted the broadcast', () => {
+    const config = { 'spark.sql.autoBroadcastJoinThreshold': '4g', 'spark.sql.adaptive.autoBroadcastJoinThreshold': '2g' };
+    const [f] = findingsOf('overBroadcast', aqe(broadcast(1.5 * GiB)), { config });
+    expect(f.remediation.map((r) => r.key)).toEqual(['spark.sql.autoBroadcastJoinThreshold', 'spark.sql.adaptive.autoBroadcastJoinThreshold']);
+    expect(coreFindingGenericRecommendation(f)).toContain('misconfigured spark.sql.autoBroadcastJoinThreshold or spark.sql.adaptive.autoBroadcastJoinThreshold');
   });
 
   it('keeps the static threshold for a plan that is not adaptive', () => {
