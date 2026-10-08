@@ -208,25 +208,19 @@ describe('skew and straggler by tail cause', () => {
     expect(busy.recommendation).toContain('the work itself is slow');
   });
 
-  it('keeps the duration-only behaviour, with the overlap note, when the log has no data volume to compare', () => {
+  it('reports a tail with no data volume to compare as straggler alone, with no key advice', () => {
     const findings = analyze(app, stage(tail({ dataRatio: null })), [], []);
-    expect(types(findings)).toEqual(['skew', 'straggler']);
-    expect(findings.find((f) => f.type === 'skew').cause).toBe('unattributed');
-    expect(findings.find((f) => f.type === 'straggler').cause).toBe('unattributed');
-    expect(findings.find((f) => f.type === 'straggler').validationRequired).toContain('overlaps');
-  });
-
-  it('words an unattributed skew finding without claiming a data cause, and rolls the overlapping pair up once', () => {
-    const findings = analyze(app, stage(tail({ dataRatio: null })), [], []);
-    const skew = findings.find((f) => f.type === 'skew');
-    expect(skew.recommendation).toMatch(/nothing in the log attributes the slow tasks to data volume/);
-    expect(skew.recommendation).toMatch(/rule out a GC pause/);
-    expect(skew.recommendation).not.toMatch(/read a median/);
+    expect(types(findings)).toEqual(['straggler']);
+    const straggler = findings.find((f) => f.type === 'straggler');
+    expect(straggler.cause).toBe('unattributed');
+    expect(straggler.remediation).toBeUndefined();
+    expect(straggler.recommendation).toMatch(/nothing in the log attributes them to data volume/);
+    expect(straggler.recommendation).not.toMatch(/salt the key|repartition on a better key/);
     const rollup = buildRecommendationRollup(findings.filter(isEligible), new Map([[1, { submittedAt: 0, completedAt: 50000 }]]));
     expect(rollup.filter((g) => g.type === 'skew' || g.type === 'straggler')).toHaveLength(1);
   });
 
-  it('leaves a stage with no attribution unattributed when a tuned warn ratio below the tail factor admits it', () => {
+  it('leaves a stage with no attribution to straggler when a tuned warn ratio below the tail factor admits it', () => {
     // P95/median 2.5x: under the 3x tail factor, so no task is in the tail and attributeTail has nothing to say.
     const quiet = new Map([[1, makeStage({
       taskCount: 100, completedAt: 50000, taskDurationP50: 1000, taskDurationP95: 2500, taskDurationMax: 3000,
@@ -234,14 +228,12 @@ describe('skew and straggler by tail cause', () => {
     })]]);
     expect(types(analyze(app, quiet, [], []))).toEqual(['straggler']);
     const tuned = analyze(app, quiet, [], [], new Map(), new Map(), null, { thresholds: { skew: { ratioWarn: 2 } } });
-    expect(types(tuned)).toEqual(['skew', 'straggler']);
-    expect(tuned.find((f) => f.type === 'skew').cause).toBe('unattributed');
+    expect(types(tuned)).toEqual(['straggler']);
     expect(tuned.find((f) => f.type === 'straggler').cause).toBe('unattributed');
-    expect(tuned.find((f) => f.type === 'skew').recommendation).toMatch(/nothing in the log attributes/);
   });
 
-  it('keeps the duration-only behaviour on a stage with no tail attribution', () => {
-    expect(types(analyze(app, stage(null), [], []))).toEqual(['skew', 'straggler']);
+  it('reports a stage with no tail attribution as straggler alone', () => {
+    expect(types(analyze(app, stage(null), [], []))).toEqual(['straggler']);
   });
 
   it('lets data-share thresholds move the cut', () => {

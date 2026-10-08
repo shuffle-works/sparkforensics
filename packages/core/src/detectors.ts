@@ -731,9 +731,8 @@ function skewGate(
 // accounts for at least `dataShareMin` of their extra time (Spark's UI and AQE define skew by data
 // volume, not by duration). Otherwise the largest of GC, shuffle fetch wait, tasks piled on one
 // host, and what none of them accounts for ('unexplained'). A log with no data volume to compare
-// where what is left is the largest share is 'unattributed': only the duration is known, which both
-// skew and straggler then judge as they did before the evidence existed, as does a stage with no
-// tail attribution.
+// where what is left is the largest share is 'unattributed', as is a stage with no tail
+// attribution: only the duration is known, so straggler reports it and skew does not.
 interface TailVerdict {
   cause: TailCause;
   // Share (0-100) of the tail's extra time the cause accounts for; 0 for 'unattributed'.
@@ -1548,7 +1547,7 @@ function stragglerGate(stage: DetectorStage, ctx: DetectorCtx, thresholds: {
 }
 
 // The straggler finding's evidence, recommendation and fix for the tail's cause. Without a measured
-// cause the stage gets the skew advice for its origin (skewFix), the only case it still fits.
+// cause there is nothing to fix yet, only the causes to check.
 function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdict, detail: string): {
   evidence: Pick<FindingOf<'straggler'>, 'origin' | 'aqeSkew' | 'cause' | 'causeSharePct' | 'host' | 'hostTasks' | 'cpuPct'>;
   recommendation: string;
@@ -1596,14 +1595,11 @@ function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdi
         recommendation: `${detail}: the slow tasks read no more data than the median task, and GC, shuffle fetch wait and one slow host do not account for their time.${cpu} Look at per-record cost (UDFs, regular expressions, a call out per row).`,
       };
     }
-    default: {
-      // The skew advice fits only a stage that reads a shuffle feeding a join (skewFix).
-      const fix = skewFix(stage, ctx);
+    default:
       return {
-        evidence: { ...evidence, origin: fix.origin, aqeSkew: fix.aqeSkew }, remediation: fix.remediation,
-        recommendation: `${detail}: rule out a GC pause or a slow shuffle fetch before assuming a hardware issue; if uneven data is the cause, ${fix.text}.`,
+        evidence, remediation: undefined,
+        recommendation: `${detail}, and nothing in the log attributes them to data volume, GC, shuffle fetch wait or one host: check the slow tasks' input sizes, GC time and hosts before choosing a fix.`,
       };
-    }
   }
 }
 
@@ -1620,13 +1616,13 @@ export const DETECTORS = [
       const gate = skewGate(stage, ctx, thresholds.ratioWarn, thresholds.minTasksForP95, thresholds.floorPctWarn);
       if (gate === null) return null;
       const { ratio, metric } = gate;
-      // A tail GC, fetch wait or a host explains is not skew: straggler reports it, with the cause
-      // (it re-runs this same gate, see skewGate).
+      // A tail data does not explain, or one with no measured cause, is not skew: straggler reports
+      // it, with the cause (it re-runs this same gate, see skewGate).
       const tail = tailVerdict(stage, thresholds.dataShareMin);
-      if (tail.cause !== 'data' && tail.cause !== 'unattributed') return null;
+      if (tail.cause !== 'data') return null;
       const value = Math.round(ratio * 10) / 10;
       const fix = skewFix(stage, ctx, false, tail);
-      const dataRatio = tail.cause === 'data' && tail.attribution?.dataRatio != null
+      const dataRatio = tail.attribution?.dataRatio != null
         ? Math.round(tail.attribution.dataRatio * 10) / 10 : undefined;
       return {
         type: 'skew', stageId: stage.id, origin: fix.origin, aqeSkew: fix.aqeSkew,
@@ -1636,10 +1632,7 @@ export const DETECTORS = [
         metric, value,
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
         validationRequired: `Flagged only when it costs at least ${shareLabel(thresholds.floorPctWarn)} of run time.`,
-        recommendation: tail.cause === 'unattributed'
-          // Nothing in the log showed a data cause, so the key advice is a possibility, not a finding.
-          ? `Task duration ratio (${metric}) is ${value}×, and nothing in the log attributes the slow tasks to data volume, GC, shuffle fetch wait or one host, so rule out a GC pause or a slow fetch first: ${fix.text}.`
-          : `Task duration ratio (${metric}) is ${value}×${dataRatio !== undefined ? `, and the slow tasks read a median ${dataRatio}× the data of the median task` : ''}: ${fix.text}.`,
+        recommendation: `Task duration ratio (${metric}) is ${value}×${dataRatio !== undefined ? `, and the slow tasks read a median ${dataRatio}× the data of the median task` : ''}: ${fix.text}.`,
         remediation: fix.remediation,
       };
     },
@@ -2248,11 +2241,9 @@ export const DETECTORS = [
     detect(stage, ctx, thresholds): Finding | null {
       const skew = ctx.skewThresholds;
       const tail = tailVerdict(stage, skew.dataShareMin);
-      // With no measured cause skew's gate is not consulted: both findings stand, flagged as overlapping.
-      const skewTail = tail.cause === 'unattributed'
-        ? null : skewGate(stage, ctx, skew.ratioWarn, skew.minTasksForP95, skew.floorPctWarn);
+      const skewTail = skewGate(stage, ctx, skew.ratioWarn, skew.minTasksForP95, skew.floorPctWarn);
       if (tail.cause === 'data' && skewTail !== null) return null; // skew reports it
-      // A tail skew's duration gate admits but data does not explain is this finding's.
+      // A tail skew's duration gate admits but data does not explain (or nothing attributes) is this finding's.
       const fromSkewGate = skewTail !== null && tail.cause !== 'data';
       const own = stragglerGate(stage, ctx, thresholds);
       if (own === null && !fromSkewGate) return null;
@@ -2570,12 +2561,12 @@ export const DETECTORS = [
         // finishes between two heartbeats reports zeros, as does every task in local mode.
         // spark.eventLog.logStageExecutorMetrics logs the per-stage peaks the driver gathers.
         const stageMetrics = switchFix(loggedAs(app, LOG_STAGE_EXECUTOR_METRICS_KEY, true), LOG_STAGE_EXECUTOR_METRICS_KEY, true,
-          `set ${LOG_STAGE_EXECUTOR_METRICS_KEY}=true to record the peaks per stage`,
-          `${LOG_STAGE_EXECUTOR_METRICS_KEY} is already on, so no executor ran long enough to be sampled`);
+          ` To measure it, set ${LOG_STAGE_EXECUTOR_METRICS_KEY}=true to record the peaks per stage.`,
+          ` ${LOG_STAGE_EXECUTOR_METRICS_KEY} is already on, so no executor ran long enough to be sampled.`);
         out.push({
           type: 'memoryUtilization', variant: 'memoryBand', stageId: null,
           impactBand: 'info', metric: 'memoryBand', dataUnavailable: true,
-          recommendation: `Executor heap peaks are missing from this log: Spark samples them at the executor heartbeat, so tasks shorter than the heartbeat interval report zeros (and local mode reports zeros throughout), and executor memory sizing was not measured. To measure it, ${stageMetrics.text}.`,
+          recommendation: `Executor heap peaks are missing from this log: Spark samples them at the executor heartbeat, so tasks shorter than the heartbeat interval report zeros (and local mode reports zeros throughout), and executor memory sizing was not measured.${stageMetrics.text}`,
           remediation: stageMetrics.remediation,
         });
       } else if (allocatedMB != null && allocatedMB > 0) {

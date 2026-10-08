@@ -46,10 +46,8 @@ records) owns what is left. When the data share is under 50%, the cause is the l
 of GC, fetch wait, host and what none of them accounts for. With no data volume
 to compare, what none of them accounts for is labelled `unattributed` (no share is
 reported) instead of `unexplained`; GC, fetch wait or host still win when larger. A
-stage with no tail attribution is `unattributed` too. For `unattributed` both
-findings keep the duration test, the `SKEW` advice says nothing in the log attributes
-the tail to data, and the Findings board lists the pair on one stage once, under the
-finding with the larger recoverable time.
+stage with no tail attribution is `unattributed` too. An `unattributed` tail is
+reported as `STRAG` only, never as `SKEW`.
 
 With AQE skew-join handling on, a `shuffleJoin` stage's advice says why
 handling did or did not act on that stage's join, read from the execution's
@@ -149,8 +147,8 @@ fetch wait over the median task's, then one host that holds most of the slow
 tasks out of proportion to its share of the stage (`evidence.host`). What none of
 them accounts for is `unexplained` (`unattributed` with no data volume to compare); `evidence.cpuPct` (the slow tasks' CPU time
 over their run time) says whether those tasks mostly waited or were busy. With
-no data volume to compare, what is left is `unattributed` when it is the largest share, and the advice is the one a
-skew finding gives for the same stage (`evidence.origin` and `evidence.aqeSkew`, see `SKEW`).
+no data volume to compare, what is left is `unattributed` when it is the largest share, as is a stage
+with no tail attribution: the advice names no fix, only the slow tasks' input sizes, GC time and hosts to check.
 A stage is flagged when more than 5% of its tasks run over 4x the median (2.5%
 when the tail clears 0.5% of the run; a finding reached through `SKEW`'s
 duration test reports the share over 3x the median instead), a speculative task ran, or the `SKEW`

@@ -314,7 +314,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
       : f.cause === 'fetchWait' ? 'Waiting on shuffle fetches accounts for most of the slow tasks\' extra time: look for a slow or overloaded node serving shuffle blocks, executors lost mid-stage, or reducers fetching many small blocks.'
       : f.cause === 'host' ? 'Most slow tasks ran on one host: check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically.'
       : f.cause === 'unexplained' ? 'The slow tasks read no more data than the median task, and GC, shuffle fetch wait and one slow host do not account for their time: look at per-record cost (UDFs, regular expressions, a call out per row).'
-      : `Rule out a GC pause or a slow shuffle fetch before assuming a hardware issue. If uneven data is the cause: ${skewJoinGeneric(f, 'for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.')}`,
+      : 'Nothing in the log attributes the slow tasks to data volume, GC, shuffle fetch wait or one host: check their input sizes, GC time and hosts before choosing a fix.',
   },
   speculationWaste: {
     name: 'speculation waste',

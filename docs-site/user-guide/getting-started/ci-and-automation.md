@@ -79,7 +79,7 @@ A `code` entry has no `key`, `direction` or `suggested`, only a `hint`:
 "remediation": [{ "kind": "code", "hint": "salt the key or repartition on a better key" }]
 ```
 
-Skew findings, and straggler findings whose cause is `data` or `unattributed`, carry one when no property can fix them: the
+Skew findings, and straggler findings whose cause is `data`, carry one when no property can fix them: the
 stage's `evidence.origin` is `other`, or AQE skew-join handling is on and its
 `evidence.aqeSkew` case calls for a change to the job. The `hint` is the remedy
 the `recommendation` gives.
@@ -195,7 +195,7 @@ sized it: `spark.sql.shuffle.partitions`, AQE's advisory size or
 `parallelismFirst` where AQE coalesced the stage (`parallelismFirst=false` comes
 first while it is on, the advisory size after it), or a `code` entry where the
 stage's own `repartition(n)` or RDD parallelism did. `straggler` carries `evidence.origin` and the same skew
-advice as a skew finding on that stage when its `evidence.cause` is `data` or `unattributed`; other causes get advice for that cause. `coldStart` and `autoscalingChurn`
+advice as a skew finding on that stage when its `evidence.cause` is `data`; `unattributed` gets no fix, and other causes get advice for that cause. `coldStart` and `autoscalingChurn`
 carry `evidence.dynamicAllocation` (`on` or `off`) and suggest no
 dynamic-allocation property when it is `off`. `underBroadcast` and
 `overBroadcast` carry `evidence.broadcastThreshold` (`limits`, `notLimiting` or

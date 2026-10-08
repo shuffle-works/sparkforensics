@@ -3,7 +3,7 @@ import { analyze, auditConfig } from '../src/analyzer.js';
 import { DETECTORS, detectorCatalog } from '../src/detectors.js';
 import { detectorInfoByType } from '../src/detector-docs.js';
 import { formatBytes } from '../src/format-utils.js';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 
 // Shared fixture for tests needing no bespoke overrides.
 const sampleApp = makeApp();
@@ -21,7 +21,7 @@ describe('analyze: task skew', () => {
 
   it('emits a skew finding above the 3× P95/median ratio', () => {
     // Detector grades 'warning'; deriveImpactBand promotes to 'critical' (250ms delta = 5% of the 5s default, over the 2% floor).
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     const skew = catalog.filter(b => b.type === 'skew');
     expect(skew).toHaveLength(1);
@@ -30,13 +30,13 @@ describe('analyze: task skew', () => {
   });
 
   it('emits critical when P95/median > 5×', () => {
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     expect(catalog.find(b => b.type === 'skew').impactBand).toBe('critical');
   });
 
   it('uses max/median fallback for stages with < 20 tasks', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 10, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 400 })]]);
+    const stages = new Map([[1, makeStage({ taskCount: 10, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 400, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     expect(catalog.find(b => b.type === 'skew').impactBand).toBe('critical');
   });
@@ -50,14 +50,14 @@ describe('analyze: task skew', () => {
 
   it('caps a skew finding at warning when the waste clears the warn floor but not the critical floor', () => {
     // ratio 7× clears warn (3×); 60ms clears the 0.5% warn floor (50ms) but not the 2% crit floor (200ms) of a 10,000ms app.
-    const stages = new Map([[1, makeStage({ taskDurationP50: 10, taskDurationP95: 70 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 10, taskDurationP95: 70, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp({ startTime: 0, endTime: 10000 }), stages, [], []);
     expect(catalog.find(b => b.type === 'skew').impactBand).toBe('warning');
   });
 
   it('falls back to the fixed impactBand when total app runtime is unavailable', () => {
     // With no total duration, deriveImpactBand leaves the detector's fixed fallback ('warning') untouched regardless of ratio.
-    const stages = new Map([[1, makeStage({ taskDurationP50: 1, taskDurationP95: 6 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 1, taskDurationP95: 6, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp({ startTime: undefined, endTime: undefined }), stages, [], []);
     expect(catalog.find(b => b.type === 'skew').impactBand).toBe('warning');
   });
@@ -66,7 +66,7 @@ describe('analyze: task skew', () => {
     // The 5,000ms max task fills nearly the whole 5,005ms window. Fixing the skew brings the tail
     // down to ~P50, so the recoverable time is the 4,990ms delta, not the 5ms left above that task.
     const stages = new Map([[1, makeStage({
-      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000,
+      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000, tailAttribution: dataTail(),
     })]]);
     const catalog = analyze(makeApp({ startTime: 0, endTime: 100000 }), stages, [], []);
     const skew = catalog.filter(b => b.type === 'skew');
@@ -629,71 +629,32 @@ describe('analyze: speculative / straggler', () => {
   });
 });
 
-describe('analyze: skew/straggler same-stage overlap disclosure (§4)', () => {
-  it('flags both findings when skew (max/median branch) and straggler fire on the same stage', () => {
-    // taskCount below minTasksForP95 (20): skew uses its max/median branch.
-    const stages = new Map([[1, makeStage({
-      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
-      speculativeTasks: 0, stragglerCount: 2,
-    })]]);
-    const catalog = analyze(makeApp(), stages, [], []);
-    const skew = catalog.find(b => b.type === 'skew');
+describe('analyze: one finding per slow-task tail (§4)', () => {
+  const tailStage = (over = {}) => new Map([[1, makeStage({
+    taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
+    speculativeTasks: 0, stragglerCount: 2, ...over,
+  })]]);
+
+  it('reports a tail with no measured cause as straggler alone, with no key advice or fix', () => {
+    const catalog = analyze(makeApp(), tailStage(), [], []);
+    expect(catalog.find(b => b.type === 'skew')).toBeUndefined();
     const straggler = catalog.find(b => b.type === 'straggler');
-    expect(skew).toBeTruthy();
-    expect(skew.metric).toBe('max/median');
-    expect(straggler).toBeTruthy();
-    expect(skew.validationRequired).toMatch(/overlaps with the straggler finding/);
-    expect(straggler.validationRequired).toMatch(/overlaps with the skew finding/);
+    expect(straggler.cause).toBe('unattributed');
+    expect(straggler.origin).toBeUndefined();
+    expect(straggler.remediation).toBeUndefined();
+    expect(straggler.recommendation).toMatch(/nothing in the log attributes them/);
+    expect(straggler.recommendation).not.toMatch(/salt the key|repartition on a better key|skew-join/);
   });
 
-  it('flags both findings when skew uses its P95/median branch (both claim the same replayed tail)', () => {
-    const stages = new Map([[1, makeStage({
-      taskCount: 25, taskDurationP50: 100, taskDurationP95: 600, taskDurationMax: 900,
-      tailReplayRecoveryMs: 800, speculativeTasks: 0, stragglerCount: 2,
-    })]]);
-    const catalog = analyze(makeApp(), stages, [], []);
+  it('keeps the tail straggler\'s alone when only a tuned skew ratio admits it', () => {
+    const catalog = analyze(makeApp(), tailStage(), [], [], new Map(), new Map(), null, { thresholds: { skew: { ratioWarn: 2 } } });
+    expect(catalog.filter(b => b.type === 'skew' || b.type === 'straggler').map(b => b.type)).toEqual(['straggler']);
+  });
+
+  it('reports a data-driven tail as skew alone, with no overlap caveat on either side', () => {
+    const catalog = analyze(makeApp(), tailStage({ tailAttribution: dataTail() }), [], []);
     const skew = catalog.find(b => b.type === 'skew');
-    const straggler = catalog.find(b => b.type === 'straggler');
-    expect(skew).toBeTruthy();
-    expect(skew.metric).toBe('P95/median');
-    expect(straggler).toBeTruthy();
-    expect(skew.wallClock).toEqual(straggler.wallClock);
-    expect(skew.validationRequired).toMatch(/overlaps with the straggler finding/);
-    expect(straggler.validationRequired).toMatch(/overlaps with the skew finding/);
-  });
-
-  it('leaves other finding types on the overlap stage unflagged', () => {
-    const stages = new Map([[1, makeStage({
-      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
-      speculativeTasks: 0, stragglerCount: 2,
-      memoryBytesSpilled: 1024, spillClassification: 'volume',
-    })]]);
-    const catalog = analyze(makeApp(), stages, [], []);
-    const spill = catalog.find(b => b.type === 'spill' && b.stageId === 1);
-    expect(catalog.find(b => b.type === 'skew').validationRequired).toMatch(/overlaps with/);
-    expect(spill).toBeTruthy();
-    expect(spill.validationRequired ?? '').not.toMatch(/overlaps with/);
-  });
-
-  it('appends the overlap note to a caveat the finding already carries', () => {
-    const stages = new Map([[1, makeStage({
-      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
-      speculativeTasks: 0, stragglerCount: 2,
-    })]]);
-    const catalog = analyze(makeApp(), stages, [], [], new Map(), new Map(), null, { thresholds: { skew: { ratioWarn: 2 } } });
-    const skew = catalog.find(b => b.type === 'skew');
-    expect(skew.validationRequired).toContain('Produced with tuned thresholds: ratioWarn 2 (default 3).');
-    expect(skew.validationRequired).toMatch(/overlaps with the straggler finding/);
-  });
-
-  it('does not flag skew when no straggler fires on the same stage', () => {
-    const stages = new Map([[1, makeStage({
-      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
-      speculativeTasks: 0, stragglerCount: 0,
-    })]]);
-    const catalog = analyze(makeApp(), stages, [], []);
-    const skew = catalog.find(b => b.type === 'skew');
-    expect(skew).toBeTruthy();
+    expect(skew.cause).toBe('data');
     expect(catalog.find(b => b.type === 'straggler')).toBeUndefined();
     expect(skew.validationRequired ?? '').not.toMatch(/overlaps with/);
   });
@@ -1311,18 +1272,18 @@ describe('analyze: spill confidence metadata', () => {
   });
 
   it('marks skew confidence low just past ratioWarn (3.1x), medium a bit further out (6x)', () => {
-    const borderline = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 310 })]]);
+    const borderline = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 310, tailAttribution: dataTail() })]]);
     const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'skew');
     expect(b1.confidence).toBe('low');
     expect(b1.validationRequired).toMatch(/costs at least 0\.5% of run time/);
 
-    const mid = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600 })]]);
+    const mid = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })]]);
     const b2 = analyze(makeApp(), mid, [], []).find(x => x.type === 'skew');
     expect(b2.confidence).toBe('medium');
   });
 
   it('marks skew confidence high many multiples past ratioWarn (a 50x P95/median ratio)', () => {
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 5000 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 5000, tailAttribution: dataTail() })]]);
     const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'skew');
     expect(b.confidence).toBe('high');
   });
@@ -2790,7 +2751,7 @@ describe('analyze, impact estimator: executor-churn ceiling regression', () => {
 
 describe("analyze: recommendation text interpolates the finding's own numbers", () => {
   it('skew: includes the measured ratio', () => {
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
     const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'skew');
     expect(b.recommendation).toContain(`${b.value}×`);
   });
@@ -2967,7 +2928,7 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
 
 describe('analyze: threshold overrides', () => {
   // 3.5x P95/median: over skew's default 3x ratioWarn.
-  const skewStages = () => new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350 })]]);
+  const skewStages = () => new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
   const run = (thresholds) => analyze(makeApp(), skewStages(), [], [], new Map(), new Map(), null, { thresholds });
 
   it('runs every detector on its own thresholds when no override is passed, labeling nothing', () => {

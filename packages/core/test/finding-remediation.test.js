@@ -3,7 +3,7 @@ import { analyze, auditConfig } from '../src/analyzer.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { recommendationParts } from '../src/finding-names.js';
 import { coreFindingGenericRecommendation } from '../src/finding-generic-recommendation.ts';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 
 const MiB = 1024 * 1024;
 const KRYO = 'org.apache.spark.serializer.KryoSerializer';
@@ -306,7 +306,7 @@ describe('structured remediation', () => {
   });
 
   describe('a set-to-value remediation follows the logged conf', () => {
-    const skewStage = makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB });
+    const skewStage = makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail(), sqlExecutionId: 7, shuffleReadBytes: 400 * MiB });
     const partitionSkewStage = makeStage({ id: 2, shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50, sqlExecutionId: 7 });
     const slowHostStage = makeStage({
       id: 3, taskCount: 60,
@@ -464,6 +464,9 @@ describe('structured remediation', () => {
       const on = caveats({ 'spark.eventLog.logBlockUpdates.enabled': 'true', 'spark.eventLog.logStageExecutorMetrics': 'true' });
       expect(on.storage).toBeUndefined();
       expect(on.memory.remediation).toEqual([]);
+      expect(off.memory.recommendation).toMatch(/was not measured\. To measure it, set spark\.eventLog\.logStageExecutorMetrics=true/);
+      expect(on.memory.recommendation).toMatch(/was not measured\. spark\.eventLog\.logStageExecutorMetrics is already on, so no executor ran long enough/);
+      expect(on.memory.recommendation).not.toMatch(/To measure it/);
     });
 
     it('suggests Kryo unless the logged serializer is already Kryo', () => {
@@ -481,7 +484,7 @@ describe('skew remediation follows what the stage reads', () => {
   const app = makeApp({ sparkVersion: '3.1.2', config: {} });
   const AGG_SQL = new Map([[8, { id: 8, planTree: { name: 'HashAggregate', detail: '', metrics: [], children: [] } }]]);
   const skewOf = (stage, sql) => catalogOf([stage], app, sql).find((f) => f.type === 'skew');
-  const skewed = { taskDurationP50: 100, taskDurationP95: 600 };
+  const skewed = { taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() };
 
   it('flags a shuffle read feeding a join as shuffleJoin and suggests skew-join handling', () => {
     const f = skewOf(makeStage({ ...skewed, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB }), JOIN_SQL);
@@ -650,7 +653,8 @@ describe('remediation fits the stage, plan and effective conf across finding typ
   });
 
   describe('straggler prose follows the stage', () => {
-    const straggler = { taskCount: 100, stragglerCount: 20, taskDurationP50: 100, taskDurationP95: 900, taskDurationMax: 5000 };
+    // A P95 at the median keeps skew's duration gate shut, so the data-driven tail is straggler's.
+    const straggler = { taskCount: 100, stragglerCount: 20, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 5000, tailAttribution: dataTail() };
     const app = makeApp({ sparkVersion: '3.5.3' });
     it('names no AQE skew-join sentence for a scan stage, and no conf for an unrelated one', () => {
       const scan = of('straggler', [makeStage({ ...straggler, inputBytes: 10 * GiB })], app);
@@ -716,7 +720,7 @@ describe('remediation fits the stage, plan and effective conf across finding typ
 
   describe('skew advice on Spark 2.x', () => {
     it('does not suggest AQE, which does not exist before Spark 3.0', () => {
-      const f = of('skew', [makeStage({ taskDurationP50: 100, taskDurationP95: 600, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB })], makeApp({ sparkVersion: '2.4.8' }), JOIN_SQL);
+      const f = of('skew', [makeStage({ taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail(), sqlExecutionId: 7, shuffleReadBytes: 400 * MiB })], makeApp({ sparkVersion: '2.4.8' }), JOIN_SQL);
       expect(f.origin).toBe('other');
       expect(f.remediation).toEqual(SKEW_CODE_FIX);
       expect(f.recommendation).not.toMatch(/AQE/);

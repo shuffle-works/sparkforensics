@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { analyze, auditConfig } from '../src/analyzer.js';
 import { extractResources } from '../src/event-handlers.ts';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 
 const MiB = 1024 * 1024;
 
@@ -36,7 +36,7 @@ describe('detectors judge a SQL execution against the settings it ran with', () 
   });
 
   it('recommends AQE skew-join handling for an execution that turned it off, though it defaults on', () => {
-    const skewStage = makeStage({ sqlExecutionId: 7, taskDurationP50: 100, taskDurationP95: 600, shuffleReadBytes: 400 * MiB });
+    const skewStage = makeStage({ sqlExecutionId: 7, taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail(), shuffleReadBytes: 400 * MiB });
     const skew = (modifiedConfigs, config = {}) => catalogOf([skewStage], makeApp({ config, sparkVersion: '3.5.9' }), sqlWith(modifiedConfigs)).find((f) => f.type === 'skew');
     expect(skew(undefined).remediation).toEqual([{ kind: 'code', hint: 'salt the key or repartition on a better key' }]);
     const off = skew({ 'spark.sql.adaptive.skewJoin.enabled': 'false' });

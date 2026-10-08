@@ -445,9 +445,9 @@ describe('diagnoseRun / getFindingEvidence', () => {
       try {
         const { runId } = await resolveOrCreateRun({ source: { path } });
         const { findings } = diagnoseRun(runId, { stageId: 1 });
-        // The fixture's one 2000ms task gates its whole 2000ms stage: skew, straggler and
-        // stageShape's taskStageSkew rule all fire.
-        expect(findings.map((f) => f.type).sort()).toEqual(['skew', 'stageShape', 'straggler']);
+        // The fixture's one 2000ms task gates its whole 2000ms stage: straggler (the log carries no
+        // data volume, so skew leaves the tail to it) and stageShape's taskStageSkew rule both fire.
+        expect(findings.map((f) => f.type).sort()).toEqual(['stageShape', 'straggler']);
         expect(findings.every((f) => f.stageId === 1)).toBe(true);
       } finally {
         rmSync(dir, { recursive: true, force: true });

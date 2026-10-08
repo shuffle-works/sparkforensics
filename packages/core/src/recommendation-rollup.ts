@@ -83,27 +83,12 @@ function buildCountGroup(type: string, findings: Finding[]): RollupGroup {
 
 const KIND_ORDER: Record<RollupGroup['kind'], number> = { time: 0, resource: 1, count: 2 };
 
-// skew and straggler on one stage both claim that stage's slow-task tail (the analyzer flags the
-// pair as overlapping, since no per-task cause separated them). A rollup that listed both would
-// count the recoverable time twice, so only the one with the larger claim stays.
-function withoutOverlappingTails(findings: Finding[]): Finding[] {
-  const claim = (f: Finding) => f.impactEstimate?.wallClock?.high ?? 0;
-  const skewByStage = new Map<number, Finding>();
-  for (const f of findings) if (f.type === 'skew' && f.stageId != null) skewByStage.set(f.stageId, f);
-  const dropped = new Set<Finding>();
-  for (const f of findings) {
-    const skew = f.type === 'straggler' && f.stageId != null ? skewByStage.get(f.stageId) : undefined;
-    if (skew) dropped.add(claim(f) > claim(skew) ? skew : f);
-  }
-  return dropped.size === 0 ? findings : findings.filter((f) => !dropped.has(f));
-}
-
 export function buildRecommendationRollup(
   findings: Finding[],
   stages: Map<number, { submittedAt?: number; completedAt?: number }>,
 ): RollupGroup[] {
   const groups: RollupGroup[] = [];
-  for (const [type, typeFindings] of groupByType(withoutOverlappingTails(findings))) {
+  for (const [type, typeFindings] of groupByType(findings)) {
     const timeFindings = typeFindings.filter((f) => f.impactEstimate?.wallClock != null);
     const resourceFindings = typeFindings.filter(
       (f) => f.impactEstimate?.wallClock == null && f.impactEstimate?.rawWaste != null,

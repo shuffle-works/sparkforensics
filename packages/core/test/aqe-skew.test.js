@@ -4,7 +4,7 @@ import { collectRun } from '../src/cli/collect-run.ts';
 import { analyze } from '../src/analyzer.ts';
 import { effectiveSparkConf, overlayModifiedConfigs } from '../src/spark-conf.ts';
 import { diagnoseJoinSkew, isSkewJoinNode } from '../src/aqe-skew.ts';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 
 const MiB = 1024 * 1024;
 const KEY_REMEDY = 'salt the key or repartition on a better key';
@@ -344,7 +344,7 @@ describe.each(LOGS)('AQE skew handling in a real Spark %s log', (version, path) 
 describe('skew findings on a hand-built final plan', () => {
   const sqlOf = (planTree, modifiedConfigs) => new Map([[7, { id: 7, planTree, ...(modifiedConfigs ? { modifiedConfigs } : {}) }]]);
   const skewStage = makeStage({
-    sqlExecutionId: 7, id: 4, taskDurationP50: 100, taskDurationP95: 600, taskCount: 40,
+    sqlExecutionId: 7, id: 4, taskDurationP50: 100, taskDurationP95: 600, taskCount: 40, tailAttribution: dataTail(),
     shuffleReadBytes: 400 * MiB, shuffleReadP50: 2 * MiB, shuffleReadMax: 120 * MiB,
   });
   const run = (app, sql) => analyze(app, new Map([[4, skewStage]]), [], [], new Map(), sql);
@@ -371,7 +371,8 @@ describe('skew findings on a hand-built final plan', () => {
 
   it('puts the case on partitionSizing and straggler, and in the evidence report', () => {
     const app = makeApp({ config: {}, sparkVersion: '3.5.9' });
-    const stage = makeStage({ ...skewStage, shuffleReadMax: 300 * MiB, stragglerCount: 8, speculativeTasks: 0 });
+    // A P95 near the median keeps skew's gate shut, so the data-driven tail is straggler's.
+    const stage = makeStage({ ...skewStage, taskDurationP95: 100, taskDurationMax: 300, shuffleReadMax: 300 * MiB, stragglerCount: 8, speculativeTasks: 0 });
     const findings = analyze(app, new Map([[4, stage]]), [], [], new Map(), sqlOf(plan));
     expect(findings.find((f) => f.rule === 'shufflePartitionSkew')).toMatchObject({ origin: 'shuffleJoin', aqeSkew: 'notSplit' });
     expect(findings.find((f) => f.type === 'straggler')).toMatchObject({ origin: 'shuffleJoin', aqeSkew: 'notSplit' });
@@ -401,12 +402,15 @@ describe('skew findings on a hand-built final plan', () => {
     expect(analyze(app, new Map([[5, reading]]), [], [], new Map(), sqlOf(unlinked)).find((x) => x.type === 'skew').aqeSkew).toBeDefined();
   });
 
-  it('gives a duration tail over even shuffle reads no threshold or factor advice', () => {
+  it('leaves a duration tail over even shuffle reads with no data cause to straggler, with no skew-join advice', () => {
     const app = makeApp({ config: {}, sparkVersion: '3.5.9' });
-    const even = makeStage({ ...skewStage, shuffleReadP50: 10 * MiB, shuffleReadMax: 11 * MiB });
-    const f = analyze(app, new Map([[4, even]]), [], [], new Map(), sqlOf(plan)).find((x) => x.type === 'skew');
-    expect(f).toMatchObject({ origin: 'shuffleJoin', aqeSkew: 'evenReads', value: 6, remediation: [] });
-    expect(f.recommendation).toMatch(/shuffle reads are even.*not partition-size skew/);
-    expect(f.recommendation).not.toMatch(/threshold|factor/);
+    const { tailAttribution: _data, ...duration } = skewStage;
+    const even = makeStage({ ...duration, shuffleReadP50: 10 * MiB, shuffleReadMax: 11 * MiB });
+    const findings = analyze(app, new Map([[4, even]]), [], [], new Map(), sqlOf(plan));
+    expect(findings.find((x) => x.type === 'skew')).toBeUndefined();
+    const f = findings.find((x) => x.type === 'straggler');
+    expect(f).toMatchObject({ cause: 'unattributed', remediation: undefined });
+    expect(f.aqeSkew).toBeUndefined();
+    expect(f.recommendation).not.toMatch(/skew-join|salt the key/);
   });
 });

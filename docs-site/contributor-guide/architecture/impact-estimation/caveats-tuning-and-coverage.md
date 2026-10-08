@@ -1,6 +1,6 @@
 # Caveats, tuning and coverage
 
-Spot-checks for each estimate formula, the overlap caveat, the effect of tuned thresholds and which finding types have an estimate.
+Spot-checks for each estimate formula, how skew and straggler split a tail, the effect of tuned thresholds and which finding types have an estimate.
 
 ## Per-formula spot-checks
 
@@ -10,33 +10,23 @@ Spot-checks for each estimate formula, the overlap caveat, the effect of tuned t
 | shuffle | `shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS × executors that ran the stage)` | `private-log-02.zstd`, stage 99 (`SHFL` finding): `shuffleReadBytes`=204,172,518,504 over 8 executors → `wasteMs` = 204172518504 / (8 × 125,000,000) × 1000 ≈ 204,173ms, against the stage's 763,776ms duration. The tasks' own measured shuffle fetch wait on this stage is 25.2s of wall-clock (`fetchWaitTime` / average concurrency), so even the per-link model runs well above the network stall actually observed, and the claim is capped there: 25.2s, `measured`. |
 | spill | `diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS × executors that ran the stage)` | Same run and stage (99): `diskBytesSpilled`=145,978,433,675 (note: the `SPILL` finding's own `value`/`metric` report `memoryBytesSpilled`=913,686,966,448, ~6x larger; the formula correctly uses the smaller disk figure, not that one) over 8 executors → `wasteMs` = 145978433675 / (8 × 200,000,000) × 1000 ≈ 91,237ms (91236.521046875 exactly, matching `wallClock`, below the clip). |
 
-## Overlap caveat: skew / straggler
+## One tail, one finding: skew / straggler
 
 `skew` and `straggler` both claim the stage's `tailReplayRecoveryMs` (see
-[Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution)), whichever skew branch fired,
-so a tail both would report carries the same recovered time. The skew branch (P95 or max
-over P50) changes only the fallback single-task delta on a stage without the replay field. Which
-of the two reports a tail follows its cause (`tailVerdict` in `detectors.ts`, from the stage's
-`tailAttribution`): `skew` takes a tail whose extra time follows data volume and `straggler` takes
-the rest, so the pair fires together only on a tail with no data volume to compare whose
-largest share is what nothing accounts for (`cause: 'unattributed'`). Each keeps its own independently-computed `wallClock`. Do not sum `wallClock.high` across multiple findings on the same stage: if
-both fire together, they describe the same underlying waste, not two separate wastes. Both
-are clipped with the post-fix floor described under
+[Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution)), whichever skew branch fired.
+The skew branch (P95 or max over P50) changes only the fallback single-task delta on a stage
+without the replay field. Which of the two reports a tail follows its cause (`tailVerdict` in
+`detectors.ts`, from the stage's `tailAttribution`): `skew` takes a tail whose extra time follows
+data volume, and `straggler` takes the rest, including a tail with no measured cause
+(`cause: 'unattributed'`) or a stage with no tail attribution. Both judge a tail with skew's
+resolved thresholds, so the two never fire on the same stage and their recoverable time is never
+counted twice. Both are clipped with the post-fix floor described under
 [Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution), not the plain `ceiling`,
 so a stage gated by one dominant outlier task reports that task's excess as recoverable
-instead of the near-zero room `ceiling >= taskDurationMax` would leave.
-
-`analyzer.ts`'s `flagSkewStragglerOverlap` (run after `deriveImpactBand`, once per `analyze()`
-call) states this caveat on the findings themselves:
-whenever `skew` (either branch) and `straggler` both fire on the same `stageId`, it
-appends a "this overlaps with the X finding on this stage" sentence to both findings'
-`validationRequired` text (rather than suppressing either, so neither finding's own diagnostic
-value is lost). The note rides the
-same confidence-caveat UI (`RowStatusCluster`) a reader already sees before trusting either
-finding's magnitude, since both detectors also carry a `confidence` field that scales
-`low`/`medium`/`high` off how far the finding's own ratio (skew: `ratioWarn`) or task share
-(straggler: `shareWarn`/`warnPct`, `critPct`) sits past its detector threshold
-(unvalidated; see the confidence-disclosure note in detector-contract.md).
+instead of the near-zero room `ceiling >= taskDurationMax` would leave. Both detectors also carry
+a `confidence` field that scales `low`/`medium`/`high` off how far the finding's own ratio
+(skew: `ratioWarn`) or task share (straggler: `shareWarn`/`warnPct`, `critPct`) sits past its
+detector threshold (unvalidated; see the confidence-disclosure note in detector-contract.md).
 
 `stageShape`'s `taskStageSkew` rule doesn't participate in this caveat: it reports a
 `resourceOnly` idle-core-ms figure (see the coverage table below) instead of a wall-clock
