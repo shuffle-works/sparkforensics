@@ -63,6 +63,7 @@ const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & key
   cachingOpportunity: ['variant', 'relation', 'format', 'operator', 'executionIds'],
   jobFailureRate: [], configAudit: [],
   duplicatePlanSubtree: ['rootName', 'subtreeSize', 'groupIndex'], smallFiles: ['direction', 'nodeName'],
+  pythonUdf: [],
   nestedLoopJoin: ['nodeName'],
   underBroadcast: ['largerSideBytes'], overBroadcast: [],
 };

@@ -1,4 +1,4 @@
-import { pathBasename, formatBytes, IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
+import { pathBasename, formatBytes, formatDuration, IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { medianOfSorted } from './median.ts';
 import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId } from './plan-summary.ts';
@@ -7,6 +7,7 @@ import { executorHeapPeaks } from './executor-peaks.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { diagnoseJoinSkew, isSkewJoinNode } from './aqe-skew.ts';
+import { isBatchEvalPythonNode } from './python-stage.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
 import { TAIL_FACTOR } from './stage-quantiles.ts';
 import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type TailStage } from './occupancy.ts';
@@ -808,6 +809,23 @@ function setConfUnlessLogged(app: DetectorApp | null, key: string, suggested: st
 // doesn't have it, `alreadyOn` points at the remedy left once it does, with no remediation.
 function switchFix(on: boolean, key: string, suggested: string | boolean, recommend: string, alreadyOn: string): { text: string; remediation: Remediation[] } {
   return on ? { text: alreadyOn, remediation: [] } : { text: recommend, remediation: [setConf(key, suggested)] };
+}
+
+const PYTHON_UDF_ARROW_KEY = 'spark.sql.execution.pythonUDF.arrow.enabled';
+// The executor-side metrics of the Python evaluator operators. Spark's PythonSQLMetrics trait adds
+// them in 3.4.0, the release that also adds the Arrow-optimized UDF property, so an older log never
+// reports them and the detector skips it.
+const PYTHON_DATA_SENT = 'data sent to Python workers';
+const PYTHON_DATA_RETURNED = 'data returned from Python workers';
+
+// How to cut the cost of a row-at-a-time Python UDF: the Arrow-optimized UDF property while the
+// session lacks it, else what is left once it is on (a UDF that opted out with useArrow=False).
+function pythonUdfArrowFix(app: DetectorApp | null): { text: string; remediation: Remediation[] } {
+  return switchFix(
+    loggedAs(app, PYTHON_UDF_ARROW_KEY, true), PYTHON_UDF_ARROW_KEY, true,
+    `set ${PYTHON_UDF_ARROW_KEY}=true to ship rows in Arrow batches, or rewrite the UDF as a pandas UDF.`,
+    `Arrow-optimized Python UDFs are already on for the session, so a UDF opted out with useArrow=False: remove that, or rewrite it as a pandas UDF.`,
+  );
 }
 
 const SKEW_KEY_REMEDY = 'salt the key or repartition on a better key';
@@ -3213,6 +3231,53 @@ export const DETECTORS = [
       const wasteMs = (((finding.value as number | undefined) ?? 0) / BROADCAST_BANDWIDTH_BPS) * 1000;
       return stageMappableWasteOrCostOnly(wasteMs, finding.stageIds as number[] | undefined, ctx);
     },
+  }),
+  defineSqlDetector({
+    type: 'pythonUdf', order: 134, fixEffort: 'code', version: 1,
+    emits: ['pythonUdf'],
+    docAnchor: '#pyspark',
+    // Unvalidated against a real workload (no corpus or private log runs a Python UDF): set high so
+    // only a stage that moved a lot of data for a long time is flagged.
+    thresholds: { minBytesSent: 64 * MB, minStageMs: 30_000 },
+    detect(sqlExec, ctx, thresholds): Finding[] | null {
+      if (!sqlExec.planTree) return null;
+      const { minBytesSent, minStageMs } = thresholds;
+      // BatchEvalPython runs a row-at-a-time UDF; ArrowEvalPython (an Arrow-optimized or pandas UDF)
+      // is already the fix. Both Python byte metrics are executor-side; a plan that reports no sent
+      // bytes is skipped.
+      const nodes: PlanNode[] = [];
+      let sentBytes = 0;
+      let returnedBytes = 0;
+      let reportsReturned = false;
+      walkPlanTree(sqlExec.planTree, (node) => {
+        if (!isBatchEvalPythonNode(node)) return;
+        const sent = node.metrics?.find((m) => m.name === PYTHON_DATA_SENT)?.value;
+        if (sent == null || !(node.stageIds?.length)) return;
+        nodes.push(node);
+        sentBytes += sent;
+        const returned = node.metrics?.find((m) => m.name === PYTHON_DATA_RETURNED)?.value;
+        if (returned != null) { returnedBytes += returned; reportsReturned = true; }
+      });
+      if (nodes.length === 0 || !(sentBytes >= minBytesSent)) return null;
+      const stageIds = unionStageIds(nodes, []);
+      const stageDurationMs = stageIds.reduce((sum, id) => {
+        const stage = ctx.stages.get(id);
+        return sum + Math.max(0, (stage?.completedAt ?? 0) - (stage?.submittedAt ?? 0));
+      }, 0);
+      if (!(stageDurationMs >= minStageMs)) return null;
+
+      const arrowFix = pythonUdfArrowFix(queryApp(ctx.app, sqlExec.modifiedConfigs));
+      const traffic = `sent ${formatBytes(sentBytes)} to Python workers${reportsReturned ? ` and received ${formatBytes(returnedBytes)} back` : ''}`;
+      return [{
+        type: 'pythonUdf', executionId: sqlExec.id, stageIds, planNodeIds: nodes.flatMap(n => (n.id ? [n.id] : [])),
+        impactBand: 'info',
+        metric: 'dataSentBytes', value: sentBytes,
+        dataSentBytes: sentBytes, dataReturnedBytes: reportsReturned ? returnedBytes : null, stageDurationMs,
+        recommendation: `Row-at-a-time Python UDFs (BatchEvalPython) ${traffic} over ${formatDuration(stageDurationMs)} of stage time: ${arrowFix.text}`,
+        remediation: arrowFix.remediation,
+      }];
+    },
+    estimate: noWasteModel,
   }),
   defineSqlDetector({
     type: 'nestedLoopJoin', order: 133, fixEffort: 'code', version: 1,
