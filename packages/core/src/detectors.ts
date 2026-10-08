@@ -556,6 +556,7 @@ const FILES_WRITTEN_BYTES = 'written output';
 const SHUFFLE_PASS_THROUGH = /^(Sort|InputAdapter|WholeStageCodegen|ShuffleQueryStage|AQEShuffleRead|CustomShuffleReader)\b/;
 
 function joinSideShuffle(node: PlanNode): PlanNode | null {
+  if (node.name === 'ReusedExchange') return null;
   const dataSize = (node.metrics ?? []).some((m) => m.name === 'data size');
   if (isExchangeNode(node) && !isBroadcastExchangeNode(node.name) && dataSize) return node;
   const children = node.children ?? [];
@@ -3186,14 +3187,24 @@ export const DETECTORS = [
       const { broadcastTiers, comparisonTiers, overBroadcastBytes, minSmallerSideBytes } = thresholds;
       const fallbackStageIds = stageIdsForSqlExec(sqlExec.id, ctx.stages);
       const app = queryApp(ctx.app, sqlExec.modifiedConfigs);
-      const key = broadcastThresholdKey(app, sqlExec.planTree.name === 'AdaptiveSparkPlan');
-      const threshold = effectiveBroadcastThreshold(app, key);
-      // A broadcast planned up front is admitted by the static threshold, one AQE converted at runtime
-      // by the adaptive one, so an existing broadcast is judged against each that applied.
-      const admittingKeys = key === BROADCAST_THRESHOLD_KEY ? [key] : [BROADCAST_THRESHOLD_KEY, key];
-      const admittingThresholds = admittingKeys.map((k) => ({ key: k, threshold: effectiveBroadcastThreshold(app, k) }));
+      const thresholdsFor = (adaptive: boolean) => {
+        const key = broadcastThresholdKey(app, adaptive);
+        // A broadcast planned up front is admitted by the static threshold, one AQE converted at runtime
+        // by the adaptive one, so an existing broadcast is judged against each that applied.
+        const admittingKeys = key === BROADCAST_THRESHOLD_KEY ? [key] : [BROADCAST_THRESHOLD_KEY, key];
+        return {
+          key, threshold: effectiveBroadcastThreshold(app, key),
+          admittingThresholds: admittingKeys.map((k) => ({ key: k, threshold: effectiveBroadcastThreshold(app, k) })),
+        };
+      };
+      const staticThresholds = thresholdsFor(false);
+      const adaptiveThresholds = thresholdsFor(true);
+      // AdaptiveSparkPlan need not be the root: Spark 3.2-3.3 wraps only a write command's child.
+      const underAdaptive = new Set<PlanNode>();
       const out: Finding[] = [];
-      walkPlanTree(sqlExec.planTree, (node) => {
+      walkPlanTree(sqlExec.planTree, (node, parent) => {
+        if (node.name === 'AdaptiveSparkPlan' || (parent != null && underAdaptive.has(parent))) underAdaptive.add(node);
+        const { key, threshold, admittingThresholds } = underAdaptive.has(node) ? adaptiveThresholds : staticThresholds;
         const candidate = node.name === 'SortMergeJoin' ? broadcastCandidate(node) : null;
         if (candidate) {
           const buildBytes = shuffleBytes(candidate.build);

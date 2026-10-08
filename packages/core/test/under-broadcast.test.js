@@ -121,6 +121,12 @@ describe('underBroadcast: sides without a size of their own', () => {
     expect(under(plan)).toHaveLength(0);
   });
 
+  it('skips a reused exchange side even when the exchange it reuses is logged beneath it', () => {
+    const reused = (bytes, id) => ({ name: 'Sort', detail: '', metrics: [], children: [{ name: 'ReusedExchange', detail: '', metrics: [], children: [shuffle(bytes, id)] }] });
+    expect(under(join('Inner', 5 * MiB, 20 * GiB))).toHaveLength(1);
+    expect(under({ ...join('Inner', 0, 0), children: [reused(5 * MiB, 'L'), side(20 * GiB, 'R')] })).toHaveLength(0);
+  });
+
   it('does not take a BroadcastExchange for a shuffle side', () => {
     const bx = { name: 'BroadcastExchange', detail: '', metrics: [{ name: 'data size', value: 5 * MiB, metricType: 'size' }], children: [] };
     const plan = { ...join('Inner', 0, 0), children: [{ name: 'Sort', detail: '', metrics: [], children: [bx] }, side(20 * GiB, 'R')] };
@@ -164,6 +170,12 @@ describe('underBroadcast: effective broadcast threshold', () => {
     expect(f.remediation[0].key).toBe('spark.sql.adaptive.autoBroadcastJoinThreshold');
     expect(f.recommendation).toContain('spark.sql.adaptive.autoBroadcastJoinThreshold');
     expect(coreFindingGenericRecommendation(f)).toContain('raising spark.sql.adaptive.autoBroadcastJoinThreshold');
+  });
+
+  it('uses the adaptive threshold when AdaptiveSparkPlan sits below a write command root', () => {
+    const config = { 'spark.sql.autoBroadcastJoinThreshold': '1m', 'spark.sql.adaptive.autoBroadcastJoinThreshold': '64m' };
+    const write = { name: 'Execute InsertIntoHadoopFsRelationCommand', detail: '', metrics: [], children: [plan()] };
+    expect(under(write, { config })[0].broadcastThreshold).toBe('notLimiting');
   });
 
   it('ignores the adaptive threshold when the plan is not adaptive', () => {
@@ -286,6 +298,14 @@ describe('overBroadcast: effective broadcast threshold', () => {
     const [f] = findingsOf('overBroadcast', aqe(broadcast(1.5 * GiB)), { config });
     expect(f.remediation.map((r) => r.key)).toEqual(['spark.sql.autoBroadcastJoinThreshold', 'spark.sql.adaptive.autoBroadcastJoinThreshold']);
     expect(coreFindingGenericRecommendation(f)).toContain('misconfigured spark.sql.autoBroadcastJoinThreshold or spark.sql.adaptive.autoBroadcastJoinThreshold');
+  });
+
+  it('judges a runtime broadcast against the adaptive threshold when AdaptiveSparkPlan sits below a write command root', () => {
+    const config = { 'spark.sql.adaptive.autoBroadcastJoinThreshold': '2g' };
+    const write = { name: 'Execute InsertIntoHadoopFsRelationCommand', detail: '', metrics: [], children: [aqe(broadcast(1.5 * GiB))] };
+    const [f] = findingsOf('overBroadcast', write, { config });
+    expect(f.broadcastThreshold).toBe('limits');
+    expect(f.remediation.map((r) => r.key)).toEqual(['spark.sql.adaptive.autoBroadcastJoinThreshold']);
   });
 
   it('keeps the static threshold for a plan that is not adaptive', () => {
