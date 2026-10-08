@@ -232,6 +232,21 @@ describe('skew and straggler by tail cause', () => {
     expect(tuned.find((f) => f.type === 'straggler').cause).toBe('unattributed');
   });
 
+  it('describes a tail only skew\'s gate admits by its ratio, never as a 0% share', () => {
+    // 1 of 400 tasks over 4x P50: under straggler's own share gate, so only skew's duration gate admits it.
+    const few = new Map([[1, makeStage({
+      taskCount: 400, completedAt: 50000, taskDurationP50: 1000, taskDurationP95: 9000, taskDurationMax: 40000,
+      stragglerCount: 1, stragglerExcessMs: 39000, longestNonStragglerMs: 9000, peakConcurrentTasks: 10,
+    })]]);
+    for (const tailAttribution of [null, tail({ tasks: 1, dataRatio: null })]) {
+      const stages = new Map([[1, { ...few.get(1), ...(tailAttribution ? { tailAttribution } : {}) }]]);
+      const straggler = analyze(app, stages, [], []).find((f) => f.type === 'straggler');
+      expect(straggler).toMatchObject({ metric: 'P95/median', value: 9, unit: 'ratio' });
+      expect(straggler.recommendation).toMatch(/^Task duration ratio \(P95\/median\) is 9×/);
+      expect(straggler.recommendation).not.toMatch(/0% of tasks/);
+    }
+  });
+
   it('reports a stage with no tail attribution as straggler alone', () => {
     expect(types(analyze(app, stage(null), [], []))).toEqual(['straggler']);
   });
@@ -278,7 +293,7 @@ describe('skew and straggler by tail cause', () => {
     })]]);
     const findings = analyze(app, redirected, [], []);
     expect(types(findings)).toEqual(['straggler']);
-    expect(findings.find((f) => f.type === 'straggler')).toMatchObject({ cause: 'gc', metric: 'stragglerShare', value: 8 });
-    expect(findings.find((f) => f.type === 'straggler').recommendation).toContain('8% of tasks ran over 3× the median');
+    expect(findings.find((f) => f.type === 'straggler')).toMatchObject({ cause: 'gc', metric: 'P95/median', value: 5, unit: 'ratio' });
+    expect(findings.find((f) => f.type === 'straggler').recommendation).toContain('Task duration ratio (P95/median) is 5×: GC accounts for');
   });
 });

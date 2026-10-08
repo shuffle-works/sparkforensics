@@ -9,7 +9,7 @@ import { walkPlanTree } from './plan-tree-walk.ts';
 import { diagnoseJoinSkew, isSkewJoinNode, planShowsSkewSplit } from './aqe-skew.ts';
 import { isBatchEvalPythonNode } from './python-stage.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
-import { STRAGGLER_FACTOR, TAIL_FACTOR } from './stage-quantiles.ts';
+import { STRAGGLER_FACTOR } from './stage-quantiles.ts';
 import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type TailStage } from './occupancy.ts';
 import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
 import {
@@ -2247,19 +2247,20 @@ export const DETECTORS = [
       const fromSkewGate = skewTail !== null && tail.cause !== 'data';
       const own = stragglerGate(stage, ctx, thresholds);
       if (own === null && !fromSkewGate) return null;
-      const tailTasks = tail.attribution?.tasks ?? 0;
-      const useSpeculativeMetric = own?.useSpeculativeMetric ?? false;
-      const value = own?.value ?? Math.round((tailTasks / stage.taskCount) * 100);
-      const detail = own?.detail ?? `${value}% of tasks ran over ${TAIL_FACTOR}× the median`;
-      const advice = stragglerAdvice(stage, ctx, tail, detail);
+      // Through skew's gate alone the tail can be a share too small to state, so skew's ratio describes it.
+      const reported = own !== null
+        ? { metric: own.useSpeculativeMetric ? 'speculativeTasks' : 'stragglerShare', value: own.value, unit: own.useSpeculativeMetric ? 'count' as const : 'pct' as const, detail: own.detail }
+        : { metric: skewTail!.metric, value: Math.round(skewTail!.ratio * 10) / 10, unit: 'ratio' as const,
+          detail: `Task duration ratio (${skewTail!.metric}) is ${Math.round(skewTail!.ratio * 10) / 10}×` };
+      const advice = stragglerAdvice(stage, ctx, tail, reported.detail);
       return {
         type: 'straggler', stageId: stage.id,
         // Fixed fallback: overwritten by deriveImpactBand when this finding gets a real wallClock
         // estimate (the common case). Only surfaces on the rare occupancy-sweep miss.
         impactBand: 'info', ...advice.evidence,
-        metric: useSpeculativeMetric ? 'speculativeTasks' : 'stragglerShare',
-        value,
-        unit: useSpeculativeMetric ? 'count' : 'pct',
+        metric: reported.metric,
+        value: reported.value,
+        unit: reported.unit,
         speculativeTasks: stage.speculativeTasks ?? 0,
         stragglerCount: stage.stragglerCount ?? 0,
         confidence: own?.confidence ?? skewConfidence(skewTail!.ratio, skew.ratioWarn),

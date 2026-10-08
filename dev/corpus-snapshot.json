@@ -2991,11 +2991,11 @@
      }
     },
     {
-     "key": "straggler|0|stragglerShare|||||||||||",
+     "key": "straggler|0|max/median|||||||||||",
      "type": "straggler",
      "band": "critical",
      "confidence": "high",
-     "value": 25,
+     "value": 16.4,
      "basis": "serial",
      "method": "measured",
      "wcLow": 58649,
@@ -3323,11 +3323,11 @@
      }
     },
     {
-     "key": "straggler|0|stragglerShare|||||||||||",
+     "key": "straggler|0|max/median|||||||||||",
      "type": "straggler",
      "band": "warning",
      "confidence": "high",
-     "value": 33,
+     "value": 18.9,
      "basis": "serial",
      "method": "measured",
      "wcLow": 2615,
@@ -3518,11 +3518,11 @@
      "rawWaste": null
     },
     {
-     "key": "straggler|0|stragglerShare|||||||||||",
+     "key": "straggler|0|max/median|||||||||||",
      "type": "straggler",
      "band": "critical",
      "confidence": "medium",
-     "value": 25,
+     "value": 5.8,
      "basis": "serial",
      "method": "measured",
      "wcLow": 64,

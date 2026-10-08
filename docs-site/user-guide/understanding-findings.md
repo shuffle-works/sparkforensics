@@ -150,10 +150,11 @@ over their run time) says whether those tasks mostly waited or were busy. With
 no data volume to compare, what is left is `unattributed` when it is the largest share, as is a stage
 with no tail attribution: the advice names no fix, only the slow tasks' input sizes, GC time and hosts to check.
 A stage is flagged when more than 5% of its tasks run over 4x the median (2.5%
-when the tail clears 0.5% of the run; a finding reached through `SKEW`'s
-duration test reports the share over 3x the median instead), a speculative task ran, or the `SKEW`
+when the tail clears 0.5% of the run), a speculative task ran, or the `SKEW`
 duration test holds on a tail that is not data. A stage whose tail is data but
-which `SKEW` does not flag by duration keeps a `STRAG` finding with cause `data`.
+which `SKEW` does not flag by duration keeps a `STRAG` finding with cause `data`. A finding only the `SKEW` duration
+test admits reports that test's ratio (`metric` `P95/median` or `max/median`, `unit` `ratio`)
+instead of a share.
 Stages under 0.5% of the run are skipped unless the `SKEW` duration test holds.
 
 ### `SPEC`: Speculation waste {#spec}

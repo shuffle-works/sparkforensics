@@ -209,7 +209,8 @@ export interface FailuresEvidence {
 export interface FailuresFinding extends NumericFinding<'failures'>, FailuresEvidence {}
 
 export interface StragglerEvidence {
-  unit: 'count' | 'pct';
+  // 'ratio' when only skew's duration gate admits the tail: value is its ratio, metric its name.
+  unit: 'count' | 'pct' | 'ratio';
   speculativeTasks: number;
   stragglerCount: number;
   // The case the skew advice in the recommendation was written for (see SkewOrigin); set only

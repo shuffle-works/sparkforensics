@@ -123,3 +123,12 @@ test('names the measured cause of the slow tail', () => {
   renderStraggler(appModelWithStage(9), catalog, false);
   expect(screen.getByText('Tasks piled on worker-7 (80% of their extra time)')).toBeInTheDocument();
 });
+
+test('surfaces skew\'s duration ratio for a tail only skew\'s gate admits', () => {
+  const catalog: Finding[] = [
+    { type: 'straggler', stageId: 9, impactBand: 'warning', metric: 'P95/median', value: 9, unit: 'ratio', recommendation: 'Task duration ratio (P95/median) is 9×.' } as Finding,
+  ];
+  renderStraggler(appModelWithStage(9), catalog, false);
+  expect(screen.getByText(/task duration P95\/median 9×/)).toBeInTheDocument();
+  expect(screen.queryByText(/of tasks straggled/)).toBeNull();
+});
