@@ -842,8 +842,8 @@ function partitionLever(stage: DetectorStage, app: DetectorApp | null): { lever:
 // advisory size itself.
 function aqeCoalesceLargerFix(app: DetectorApp | null): { keys: string; remediation: Remediation[] } {
   return loggedAs(app, PARALLELISM_FIRST_KEY, false)
-    ? { keys: ADVISORY_PARTITION_SIZE_KEY, remediation: [increaseConf(ADVISORY_PARTITION_SIZE_KEY)] }
-    : { keys: `${PARALLELISM_FIRST_KEY}=false (so AQE targets the advisory size, not defaultParallelism tasks) or a higher ${ADVISORY_PARTITION_SIZE_KEY}`, remediation: [setConf(PARALLELISM_FIRST_KEY, false), increaseConf(ADVISORY_PARTITION_SIZE_KEY)] };
+    ? { keys: `raising ${ADVISORY_PARTITION_SIZE_KEY}`, remediation: [increaseConf(ADVISORY_PARTITION_SIZE_KEY)] }
+    : { keys: `setting ${PARALLELISM_FIRST_KEY}=false (so AQE targets the advisory size, not defaultParallelism tasks) or raising ${ADVISORY_PARTITION_SIZE_KEY}`, remediation: [setConf(PARALLELISM_FIRST_KEY, false), increaseConf(ADVISORY_PARTITION_SIZE_KEY)] };
 }
 
 // lowShuffleParallelism's fix. Unlike the shuffle finding it fires on stages whose tasks are larger
@@ -879,15 +879,15 @@ function tinyShuffleFix(stage: DetectorStage, app: DetectorApp | null, coalesceT
   if (lever === 'aqeCoalesced') {
     const larger = aqeCoalesceLargerFix(app);
     return {
-      text: `${larger.keys}, or .coalesce(${coalesceTo}): AQE already coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks, so lowering the shuffle partition count will not merge them`,
+      text: `${larger.keys}, or using .coalesce(${coalesceTo}): AQE already coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks, so lowering the shuffle partition count will not merge them`,
       remediation: larger.remediation,
     };
   }
   if (lever === 'ownPartitioning') {
-    const hint = `lower the repartition(n) or RDD partition count that sized this stage, or .coalesce(${coalesceTo})`;
+    const hint = `lowering the repartition(n) or RDD partition count that sized this stage, or using .coalesce(${coalesceTo})`;
     return { text: `${hint} (the configured shuffle partition count is ${count} but this stage ran ${stage.taskCount} tasks)`, remediation: [codeFix(hint)] };
   }
-  return { text: `lower spark.sql.shuffle.partitions or .coalesce(${coalesceTo})`, remediation: [decreaseConf('spark.sql.shuffle.partitions')] };
+  return { text: `lowering spark.sql.shuffle.partitions or using .coalesce(${coalesceTo})`, remediation: [decreaseConf('spark.sql.shuffle.partitions')] };
 }
 
 // spill's fix on a stage that reads a shuffle and spills for volume: smaller partitions or more
