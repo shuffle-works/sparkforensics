@@ -98,7 +98,12 @@ Speculative task attempts used a lot of executor time without confirming a
 genuine straggler. Self-flags a confidence that scales with how far the
 wasted time sits past the threshold. If task durations are just naturally
 variable rather than genuine stragglers, tune
-`spark.speculation.multiplier`/`spark.speculation.quantile`.
+`spark.speculation.multiplier`/`spark.speculation.quantile`. The
+recommendation names the run's effective values: Spark relaunches a task that
+runs over the multiplier times the median once the quantile of the stage's
+tasks has finished, which is 1.5x and 75% before Spark 4.0 and 3x and 90% from
+4.0 unless the job sets them. A speculative-attempt `straggler` and a
+`slowHost` finding word their speculation advice the same way.
 
 ### `RETRY`: Retry waste {#retry}
 
