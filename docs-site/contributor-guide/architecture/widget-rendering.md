@@ -81,7 +81,7 @@ naming the stage adds context (`SlowHost.tsx`, `StageSlowness.tsx`,
 `StageShape.tsx`, `TinyTask.tsx`, `PartitionSizing.tsx`), while bare
 `StagePill`/`StagePillGroup` is for compact, multi-row lists where many
 stages appear per widget (`StageFailed.tsx`, `TaskFailures.tsx`,
-`RetryWaste.tsx`, the four Plan Advisor widgets, `Spill.tsx`, and
+`RetryWaste.tsx`, the five Plan Advisor widgets, `Spill.tsx`, and
 `StageTable.tsx`). `ShuffleIO.tsx` uses both in different parts of its own
 row, which is fine: it isn't a violation of the convention above.
 
