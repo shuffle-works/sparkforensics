@@ -362,13 +362,17 @@ export interface NestedLoopJoinEvidence extends PlanFindingEvidence {
 }
 export interface NestedLoopJoinFinding extends NumericFinding<'nestedLoopJoin'>, NestedLoopJoinEvidence, PlanNodeOrigin {}
 
-/** How the effective spark.sql.autoBroadcastJoinThreshold relates to the finding: 'limits' (the
+/** How the effective broadcast threshold (spark.sql.autoBroadcastJoinThreshold, or its adaptive counterpart under AQE) relates to the finding: 'limits' (the
  * property decided it, or is unknown), 'notLimiting' (already admits, or already below, the
  * broadcast, so something else decided it) or 'disabled' (-1). */
 export type BroadcastThreshold = 'limits' | 'notLimiting' | 'disabled';
 
 export interface UnderBroadcastEvidence extends PlanFindingEvidence {
-  largerSideBytes: number;
+  /** The join's other side; absent when that side is not a shuffle of its own (a join's output). */
+  largerSideBytes?: number;
+  /** The join type and the side a broadcast would build from, the smaller of those the type allows. */
+  joinType: string;
+  buildSide: 'left' | 'right';
   broadcastThreshold?: BroadcastThreshold;
 }
 export interface UnderBroadcastFinding extends NumericFinding<'underBroadcast'>, UnderBroadcastEvidence, PlanNodeOrigin {}

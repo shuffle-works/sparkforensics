@@ -65,8 +65,8 @@ The five Plan Advisor finding types (`duplicatePlanSubtree`, `smallFiles`,
 `packages/core/src/detectors.ts`) set `Finding.planNodeIds`, an unambiguous
 pointer to the specific plan-tree node(s) each finding is about (every node of
 each repeated subtree occurrence for `duplicatePlanSubtree`, the flagged
-scan/write node for `smallFiles`, the join node for `nestedLoopJoin`, the `data size`-carrying nodes under both
-join inputs for `underBroadcast`, and the BroadcastExchange node for
+scan/write node for `smallFiles`, the join node for `nestedLoopJoin`, the shuffle `data size`
+Exchange node under each measurable join input for `underBroadcast`, and the BroadcastExchange node for
 `overBroadcast`). `buildPlanGraphModel`
 indexes `findings` by `planNodeIds` and attaches each node's matches to its
 `PlanGraphNodeData.findings`, scoped to the current SQL execution (see

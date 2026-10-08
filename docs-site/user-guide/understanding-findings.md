@@ -298,13 +298,18 @@ this tag:
   of a range join and join on the bucket, or to confirm that a cross join is
   intended. It needs the executors' `number of output rows` metrics, so a join
   with no reported row counts is not flagged.
-- Under-broadcast: the smaller side of a Sort Merge Join looks well under
-  the broadcast threshold; consider a `broadcast()` hint or raising
-  `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold
-  (the query's own setting, else the logged one, else Spark's 10 MiB) already admits the smaller side
-  (`evidence.broadcastThreshold` is `notLimiting`), the threshold is not what
-  stopped the broadcast, so `remediation` is empty and the advice is a hint or
-  table statistics.
+- Under-broadcast: a side of a Sort Merge Join that its join type can
+  broadcast (`evidence.buildSide`) looks well under the broadcast threshold;
+  consider a `broadcast()` hint or raising the threshold property. The size is
+  the shuffle's `data size`, the metric adaptive execution compares at runtime.
+  The threshold is `spark.sql.adaptive.autoBroadcastJoinThreshold` when the
+  plan is adaptive and that property is set, else
+  `spark.sql.autoBroadcastJoinThreshold` (the query's own setting, else the
+  logged one, else Spark's 10 MiB). A full outer join never fires, and a side
+  under 1 MiB or over the over-broadcast limit is skipped. When the effective
+  threshold already admits the side (`evidence.broadcastThreshold` is
+  `notLimiting`), the threshold is not what stopped the broadcast, so
+  `remediation` is empty and the advice is a hint or table statistics.
 - Over-broadcast: a broadcast exceeds the 1 GB threshold; check for a
   misapplied broadcast hint or a misconfigured
   `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold is

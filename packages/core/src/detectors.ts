@@ -1,7 +1,7 @@
 import { pathBasename, formatBytes, IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { medianOfSorted } from './median.ts';
 import { shareLabel } from './finding-presentation.ts';
-import { scanRelationId } from './plan-summary.ts';
+import { scanRelationId, parseJoinType } from './plan-summary.ts';
 import { allocatedCoreMs, computeAllocation } from './allocation.ts';
 import { executorHeapPeaks } from './executor-peaks.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
@@ -31,7 +31,6 @@ import type { FindingOf, Remediation, SkewOrigin, StageReads, ShufflePartitions,
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
-const TB = 1024 * GB;
 
 // Labels a byte threshold in this file's binary units, so a 1 GiB default reads '1 GB'.
 function binaryThresholdLabel(bytes: number): string {
@@ -540,25 +539,48 @@ const FILES_READ_BYTES = 'size of files read';
 const FILES_WRITTEN_COUNT = 'number of written files';
 const FILES_WRITTEN_BYTES = 'written output';
 
-// Byte size of a join-side subtree for broadcast sizing. Stops
-// descending at a node with a "data size" metric: that value already aggregates everything
-// beneath it, so summing further would double-count. Only recurses when no such metric.
-function sumBoundarySize(node: PlanNode): number {
-  const m = (node.metrics ?? []).find(x => x.name === 'data size');
-  if (m) return m.value;
-  let sum = 0;
-  for (const c of (node.children ?? [])) sum += sumBoundarySize(c);
-  return sum;
+// A join side's shuffle: the Exchange node whose "data size" is that side's runtime size. AQE
+// decides broadcast from the same metric (ShuffleExchangeExec.runtimeStatistics, apache/spark
+// v3.5.0). Only operators that pass rows through unchanged are looked through, so a side that is
+// another join's output, an aggregate, or a reused exchange has no size of its own and yields null.
+const SHUFFLE_PASS_THROUGH = /^(Sort|InputAdapter|WholeStageCodegen|ShuffleQueryStage|AQEShuffleRead|CustomShuffleReader)\b/;
+
+function joinSideShuffle(node: PlanNode): PlanNode | null {
+  const dataSize = (node.metrics ?? []).some((m) => m.name === 'data size');
+  if (isExchangeNode(node) && !isBroadcastExchangeNode(node.name) && dataSize) return node;
+  const children = node.children ?? [];
+  if (children.length !== 1 || !(isExchangeNode(node) || SHUFFLE_PASS_THROUGH.test(node.name))) return null;
+  return joinSideShuffle(children[0]);
 }
 
-// Nodes that fed sumBoundarySize's total: mirrors its recursion exactly so implicated stageIds
-// line up with the size actually compared.
-function boundarySizeContributors(node: PlanNode): PlanNode[] {
-  const m = (node.metrics ?? []).find((x) => x.name === 'data size');
-  if (m) return [node];
-  const out: PlanNode[] = [];
-  for (const c of (node.children ?? [])) out.push(...boundarySizeContributors(c));
-  return out;
+function shuffleBytes(exchange: PlanNode): number {
+  return (exchange.metrics ?? []).find((m) => m.name === 'data size')?.value ?? 0;
+}
+
+// The join types a side can be the broadcast build side of, per canBuildBroadcastLeft/Right in
+// JoinSelectionHelper (apache/spark v3.5.0, v4.0.0 adds LeftSingle on the right). A full outer
+// join builds from neither side, and an unrecognized type is not guessed at.
+const BROADCAST_BUILD_LEFT: ReadonlySet<string> = new Set(['Inner', 'Cross', 'RightOuter']);
+const BROADCAST_BUILD_RIGHT: ReadonlySet<string> = new Set(['Inner', 'Cross', 'LeftOuter', 'LeftSingle', 'LeftSemi', 'LeftAnti', 'ExistenceJoin']);
+
+interface BroadcastCandidate {
+  joinType: string;
+  buildSide: 'left' | 'right';
+  build: PlanNode;
+  /** The stream side's shuffle, null when that side has no measurable size of its own. */
+  stream: PlanNode | null;
+}
+
+// The smaller of the sides this join's type can broadcast, among those with a measurable size.
+function broadcastCandidate(join: PlanNode): BroadcastCandidate | null {
+  const joinType = parseJoinType(join.detail ?? '');
+  if (joinType == null || (join.children ?? []).length !== 2) return null;
+  const left = joinSideShuffle(join.children[0]);
+  const right = joinSideShuffle(join.children[1]);
+  const options: BroadcastCandidate[] = [];
+  if (left && BROADCAST_BUILD_LEFT.has(joinType)) options.push({ joinType, buildSide: 'left', build: left, stream: right });
+  if (right && BROADCAST_BUILD_RIGHT.has(joinType)) options.push({ joinType, buildSide: 'right', build: right, stream: left });
+  return options.reduce<BroadcastCandidate | null>((best, o) => (best == null || shuffleBytes(o.build) < shuffleBytes(best.build) ? o : best), null);
 }
 
 // Max/median deviation ratio over a list of {key, value}; returns the
@@ -987,10 +1009,21 @@ function slowShuffleFix(stage: DetectorStage, app: DetectorApp | null): { text: 
   return { text: 'raise spark.sql.shuffle.partitions', remediation: [increaseConf('spark.sql.shuffle.partitions')] };
 }
 
-// The run's effective spark.sql.autoBroadcastJoinThreshold in bytes (logged, else Spark's 10 MiB default);
-// negative when auto-broadcast is disabled, null when the logged value is not a size.
-function effectiveBroadcastThreshold(app: DetectorApp | null): number | null {
-  const raw = effectiveConf(app, 'spark.sql.autoBroadcastJoinThreshold');
+const BROADCAST_THRESHOLD_KEY = 'spark.sql.autoBroadcastJoinThreshold';
+const ADAPTIVE_BROADCAST_THRESHOLD_KEY = 'spark.sql.adaptive.autoBroadcastJoinThreshold';
+
+// The property that bounds a broadcast: with AQE, runtime sizes are judged against the adaptive
+// threshold when it is set (JoinSelectionHelper.canBroadcastBySize, apache/spark v3.5.0), and
+// against spark.sql.autoBroadcastJoinThreshold otherwise.
+function broadcastThresholdKey(app: DetectorApp | null, aqe: boolean): string {
+  return aqe && effectiveConf(app, ADAPTIVE_BROADCAST_THRESHOLD_KEY) !== undefined ? ADAPTIVE_BROADCAST_THRESHOLD_KEY : BROADCAST_THRESHOLD_KEY;
+}
+
+// The run's effective value of a broadcast threshold property in bytes (logged, else Spark's 10 MiB
+// default for the static one); negative when auto-broadcast is disabled, null when the value is
+// not a size or the property has none.
+function effectiveBroadcastThreshold(app: DetectorApp | null, key: string = BROADCAST_THRESHOLD_KEY): number | null {
+  const raw = effectiveConf(app, key);
   if (raw != null && /^-\d+$/.test(raw)) return -1;
   return parseSparkBytes(raw);
 }
@@ -2976,49 +3009,53 @@ export const DETECTORS = [
     // Entry-level type is an identifier only; it never appears on an emitted finding. Findings
     // carry 'underBroadcast'/'overBroadcast' since one shared plan-walk covers both
     // opposite-direction rules (JoinToBroadcastAlert / BroadcastTooLargeAlert).
-    type: 'broadcastSizing', order: 132, fixEffort: 'config', version: 2,
+    type: 'broadcastSizing', order: 132, fixEffort: 'config', version: 3,
     // Listed over-first: the two share order 132, and this list order is their display tie-break.
     emits: ['overBroadcast', 'underBroadcast'],
     docAnchor: '#bottleneck-broadcast-sizing',
     thresholds: {
-      broadcastTiers: [10 * MB, 100 * MB, GB, 5 * GB],
-      comparisonTiers: [10 * GB, 300 * GB, TB],
+      broadcastTiers: [10 * MB, 100 * MB, GB],
+      comparisonTiers: [10 * GB, 300 * GB],
       overBroadcastBytes: GB,
+      minSmallerSideBytes: MB,
     },
     detect(sqlExec, ctx, thresholds): Finding[] | null {
       if (!sqlExec.planTree) return null;
-      const { broadcastTiers, comparisonTiers, overBroadcastBytes } = thresholds;
+      const { broadcastTiers, comparisonTiers, overBroadcastBytes, minSmallerSideBytes } = thresholds;
       const fallbackStageIds = stageIdsForSqlExec(sqlExec.id, ctx.stages);
       const out: Finding[] = [];
       walkPlanTree(sqlExec.planTree, (node) => {
-        if (node.name === 'SortMergeJoin' && (node.children ?? []).length === 2) {
-          const [childA, childB] = node.children;
-          const a = sumBoundarySize(childA);
-          const b = sumBoundarySize(childB);
-          const smaller = Math.min(a, b);
-          const larger = Math.max(a, b);
-          if (smaller > 0) {
-            const fires = smaller < broadcastTiers[0]
+        const candidate = node.name === 'SortMergeJoin' ? broadcastCandidate(node) : null;
+        if (candidate) {
+          const smaller = shuffleBytes(candidate.build);
+          const larger = candidate.stream ? shuffleBytes(candidate.stream) : null;
+          // Below the floor a broadcast saves nothing measurable; above the over-broadcast limit it
+          // would be flagged there instead.
+          if (smaller >= minSmallerSideBytes && smaller <= overBroadcastBytes) {
+            const app = queryApp(ctx.app, sqlExec.modifiedConfigs);
+            const key = broadcastThresholdKey(app, sqlExec.planTree?.name === 'AdaptiveSparkPlan');
+            const threshold = effectiveBroadcastThreshold(app, key);
+            const broadcastThreshold: BroadcastThreshold = threshold != null && threshold < 0 ? 'disabled'
+              : threshold != null && threshold >= smaller ? 'notLimiting' : 'limits';
+            const withinTiers = larger != null && (smaller < broadcastTiers[0]
               || (smaller < broadcastTiers[1] && larger > comparisonTiers[0])
-              || (smaller < broadcastTiers[2] && larger > comparisonTiers[1])
-              || (smaller < broadcastTiers[3] && larger > comparisonTiers[2]);
-            if (fires) {
-              const contributors = [...boundarySizeContributors(childA), ...boundarySizeContributors(childB)];
-              // A threshold that already admits the smaller side cannot be what stopped the broadcast.
-              const threshold = effectiveBroadcastThreshold(queryApp(ctx.app, sqlExec.modifiedConfigs));
-              const broadcastThreshold: BroadcastThreshold = threshold != null && threshold < 0 ? 'disabled'
-                : threshold != null && threshold > smaller ? 'notLimiting' : 'limits';
-              const raiseAdvice = 'Consider a broadcast() hint or raising spark.sql.autoBroadcastJoinThreshold.';
+              || (smaller < broadcastTiers[2] && larger > comparisonTiers[1]));
+            if (broadcastThreshold === 'notLimiting' || withinTiers) {
+              const contributors = [candidate.build, ...(candidate.stream ? [candidate.stream] : [])];
+              const { joinType, buildSide } = candidate;
+              const subject = `The ${buildSide} input to this ${joinType} Sort Merge Join (${formatBytes(smaller)})`;
+              const otherSide = larger != null ? ` (the other side is ${formatBytes(larger)})` : '';
               out.push({
                 type: 'underBroadcast', executionId: sqlExec.id, stageIds: unionStageIds(contributors, fallbackStageIds),
                 // resolvePlanTree always sets id; safe downstream of it.
                 planNodeIds: contributors.map((n) => n.id!).filter(Boolean),
                 impactBand: 'info', metric: 'smallerSideBytes', value: smaller,
-                largerSideBytes: larger, broadcastThreshold,
+                ...(larger != null ? { largerSideBytes: larger } : {}),
+                joinType, buildSide, broadcastThreshold,
                 recommendation: broadcastThreshold === 'notLimiting'
-                  ? `The smaller input to this Sort Merge Join (${formatBytes(smaller)}) is under the effective spark.sql.autoBroadcastJoinThreshold (${formatBytes(threshold!)}) yet was not broadcast (the larger side is ${formatBytes(larger)}), so the threshold is not what stopped it: missing table statistics or a join type that cannot broadcast usually is. Consider a broadcast() hint or collecting statistics (ANALYZE TABLE).`
-                  : `The smaller input to this Sort Merge Join (${formatBytes(smaller)}) is well under the broadcast threshold relative to the larger side (${formatBytes(larger)}): this could have been a broadcast join. ${raiseAdvice}`,
-                remediation: broadcastThreshold === 'notLimiting' ? [] : [increaseConf('spark.sql.autoBroadcastJoinThreshold')],
+                  ? `${subject} is under the effective ${key} (${formatBytes(threshold!)}) yet was not broadcast${otherSide}, so the threshold is not what stopped it: a join hint, missing table statistics, or a shuffle that had already run usually is. Consider a broadcast() hint or collecting statistics (ANALYZE TABLE).`
+                  : `${subject} is well under the broadcast threshold${otherSide}: this could have been a broadcast join. Consider a broadcast() hint or raising ${key}.`,
+                remediation: broadcastThreshold === 'notLimiting' ? [] : [increaseConf(key)],
               });
             }
           }

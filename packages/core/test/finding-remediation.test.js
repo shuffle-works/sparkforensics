@@ -671,7 +671,7 @@ describe('remediation fits the stage, plan and effective conf across finding typ
 
   describe('broadcast thresholds', () => {
     const exchange = (bytes) => ({ name: 'Exchange', detail: '', id: 'x', metrics: [{ name: 'data size', value: bytes, metricType: 'size' }], children: [] });
-    const joinPlan = (small, large) => new Map([[1, { id: 1, planTree: { name: 'SortMergeJoin', detail: '', metrics: [], children: [exchange(small), exchange(large)] } }]]);
+    const joinPlan = (small, large) => new Map([[1, { id: 1, planTree: { name: 'SortMergeJoin', detail: 'SortMergeJoin [a#1L], [b#2L], Inner', metrics: [], children: [exchange(small), exchange(large)] } }]]);
     const broadcastPlan = (bytes) => new Map([[1, { id: 1, planTree: { name: 'BroadcastExchange', detail: '', id: 'b', metrics: [{ name: 'data size', value: bytes, metricType: 'size' }], children: [] } }]]);
     const run = (type, sql, config) => catalogOf([], makeApp({ config, sparkVersion: null }), sql).find((f) => f.type === type);
 
