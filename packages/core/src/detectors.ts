@@ -1061,7 +1061,7 @@ function partitionLever(stage: DetectorStage, ctx: DetectorCtx): { lever: Partit
 // What follows advice on the property when the stage ran more tasks than configured under AQE.
 function aqeAdjustedNote(stage: DetectorStage, count: number | null, explicitRepartition: boolean): string {
   return explicitRepartition
-    ? ` (this stage ran ${stage.taskCount} tasks against ${count} configured: AQE skew-join splits add tasks, so that is not necessarily its own repartition(n))`
+    ? ` (this stage ran ${stage.taskCount} tasks against ${count} configured, and AQE skew-join splits add tasks, so that is not necessarily its own repartition(n))`
     : ` (this stage ran ${stage.taskCount} tasks against ${count} configured, and the plan shows no repartition behind the difference)`;
 }
 

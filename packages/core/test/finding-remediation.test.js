@@ -808,8 +808,11 @@ describe('partition-count advice follows what sized the stage', () => {
         { name: 'AQEShuffleRead', detail: 'skewed', metrics: [], children: [] }] } }]]);
       const both = of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', repartitionedSkew);
       expect(keys(both)).toEqual(['spark.sql.shuffle.partitions']);
-      expect(both.recommendation).toMatch(/ran 212 tasks against 200 configured: AQE skew-join splits add tasks/);
+      expect(both.recommendation).toMatch(/ran 212 tasks against 200 configured, and AQE skew-join splits add tasks/);
       expect(both.recommendation).not.toMatch(/plan shows no repartition/);
+      // The note adds no ": ", so the verdict card's split still puts the advice under the fix.
+      expect(recommendationParts(both.recommendation).fix).toMatch(/Try lowering spark\.sql\.shuffle\.partitions/);
+      expect(recommendationParts(neutral.recommendation).fix).toMatch(/Try lowering spark\.sql\.shuffle\.partitions/);
       const merged = of('tinyTask', { ...tiny, taskCount: 300 }, initial);
       expect(keys(merged)).toEqual([PARALLELISM_FIRST, ADVISORY]);
       const exact = of('tinyTask', { ...tiny, taskCount: 1000 }, initial);
