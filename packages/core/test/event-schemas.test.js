@@ -525,3 +525,21 @@ describe('parseSparkPlanInfoTree', () => {
     expect(() => parseSparkPlanInfoTree(node)).toThrow(/exceeds max depth/);
   });
 });
+
+describe('SqlExecutionStartEventSchema modifiedConfigs', () => {
+  const base = { Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: 1, time: 1 };
+
+  it('parses a string-to-string map', () => {
+    const result = SqlExecutionStartEventSchema.safeParse({ ...base, modifiedConfigs: { 'spark.sql.shuffle.partitions': '8' } });
+    expect(result.success).toBe(true);
+    expect(result.data.modifiedConfigs).toEqual({ 'spark.sql.shuffle.partitions': '8' });
+  });
+
+  it('drops a malformed map without rejecting the event', () => {
+    for (const modifiedConfigs of [{ 'spark.a': 1 }, 'x', null]) {
+      const result = SqlExecutionStartEventSchema.safeParse({ ...base, modifiedConfigs });
+      expect(result.success).toBe(true);
+      expect(result.data.modifiedConfigs).toBeUndefined();
+    }
+  });
+});

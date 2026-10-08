@@ -334,6 +334,9 @@ export const SqlExecutionStartEventSchema = z.object({
   physicalPlanDescription: z.string().optional(),
   time: z.number(),
   sparkPlanInfo: SparkPlanInfoFieldSchema,
+  // Session settings of this execution that differ from the SparkContext's (Spark 3.3+; redacted
+  // values are masked by Spark). Anything but a string-to-string map is dropped, not a parse error.
+  modifiedConfigs: z.record(z.string(), z.string()).optional().catch(undefined),
 });
 
 // applyAdaptiveExecutionUpdate: AQE re-plans mid-query and re-emits sparkPlanInfo for the same

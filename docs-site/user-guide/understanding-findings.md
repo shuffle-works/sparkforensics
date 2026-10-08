@@ -98,7 +98,12 @@ Speculative task attempts used a lot of executor time without confirming a
 genuine straggler. Self-flags a confidence that scales with how far the
 wasted time sits past the threshold. If task durations are just naturally
 variable rather than genuine stragglers, tune
-`spark.speculation.multiplier`/`spark.speculation.quantile`.
+`spark.speculation.multiplier`/`spark.speculation.quantile`. The
+recommendation names the run's effective values: Spark relaunches a task that
+runs over the multiplier times the median once the quantile of the stage's
+tasks has finished, which is 1.5x and 75% before Spark 4.0 and 3x and 90% from
+4.0 unless the job sets them. A speculative-attempt `straggler` and a
+`slowHost` finding word their speculation advice the same way.
 
 ### `RETRY`: Retry waste {#retry}
 
@@ -280,7 +285,7 @@ this tag:
 - Under-broadcast: the smaller side of a Sort Merge Join looks well under
   the broadcast threshold; consider a `broadcast()` hint or raising
   `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold
-  (logged, else Spark's 10 MiB) already admits the smaller side
+  (the query's own setting, else the logged one, else Spark's 10 MiB) already admits the smaller side
   (`evidence.broadcastThreshold` is `notLimiting`), the threshold is not what
   stopped the broadcast, so `remediation` is empty and the advice is a hint or
   table statistics.

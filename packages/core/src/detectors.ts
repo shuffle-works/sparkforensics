@@ -22,6 +22,7 @@ import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
 import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
+import { effectiveSparkConf, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure } from './types.ts';
 import type { FindingOf, Remediation, SkewOrigin, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
@@ -107,6 +108,8 @@ export interface DetectorStage {
 export interface DetectorSqlExec {
   id: number;
   planTree?: PlanNode | null;
+  // The session settings this execution ran with that differ from the SparkContext's.
+  modifiedConfigs?: Record<string, string>;
 }
 
 interface DetectorRddInfo {
@@ -675,21 +678,11 @@ function tailClaimFloorMs(claim: TailClaim, stageId: number, ctx: DetectorCtx): 
   return tailClaimImpact(claim, stageId, ctx.impact).wallClock?.high ?? claim.wasteMs;
 }
 
-// Spark's default for the properties a detector's fix reads or suggests, for a run that did not log
-// them. Undefined when the property is not modeled or its default depends on a version the log did
-// not record. A property is modeled only where its default has made a suggestion a no-op; every
-// other property a detector suggests defaults off, or to a value other than the suggested one.
-function versionDefault(app: DetectorApp | null, key: string): string | undefined {
-  if (key === 'spark.sql.shuffle.partitions') return '200';
-  if (key === 'spark.sql.autoBroadcastJoinThreshold') return String(10 * MB);
-  const version = /^(\d+)\.(\d+)/.exec(app?.sparkVersion ?? '');
-  if (version == null) return undefined;
-  const [major, minor] = [Number(version[1]), Number(version[2])];
-  if (key === 'spark.sql.adaptive.enabled') return major > 3 || (major === 3 && minor >= 2) ? 'true' : 'false';
-  if (key === 'spark.sql.adaptive.skewJoin.enabled' || key === 'spark.sql.adaptive.coalescePartitions.enabled') {
-    return major >= 3 ? 'true' : undefined;
-  }
-  return undefined;
+// The run's effective value of a property: the logged one, else Spark's default for the run's
+// version (spark-conf.ts). A detector scoped to one SQL execution passes that execution's app (see
+// queryApp) so the settings it ran with count.
+function effectiveConf(app: DetectorApp | null, key: string): string | undefined {
+  return effectiveSparkConf({ sparkVersion: app?.sparkVersion, properties: app?.config }, key)?.value;
 }
 
 // The factor and minimum Spark applies to size the executor overhead when spark.executor.memoryOverhead
@@ -709,9 +702,41 @@ function defaultOverheadSettings(app: DetectorApp | null, fallback: { floorMB: n
   };
 }
 
-// The run's effective value of a property: the logged one, else versionDefault's.
-function effectiveConf(app: DetectorApp | null, key: string): string | undefined {
-  return (app?.config?.[key] ?? versionDefault(app, key))?.trim();
+const queryAppCache = new WeakMap<object, { base: DetectorApp | null; derived: DetectorApp }>();
+
+// The app as one SQL execution saw it: its modifiedConfigs applied over the logged properties, so
+// effectiveConf reads what `spark.conf.set` changed. The app itself when the execution modified
+// nothing.
+function queryApp(app: DetectorApp | null, modified: Record<string, string> | undefined): DetectorApp | null {
+  if (modified == null) return app;
+  const cached = queryAppCache.get(modified);
+  if (cached?.base === app) return cached.derived;
+  const config = overlayModifiedConfigs(app?.config, modified);
+  if (config === app?.config) return app;
+  const derived: DetectorApp = { ...app, config };
+  queryAppCache.set(modified, { base: app, derived });
+  return derived;
+}
+
+// The app as the stage's SQL execution saw it; the run's app for a stage outside any SQL execution.
+function stageApp(ctx: DetectorCtx, stage: Pick<DetectorStage, 'sqlExecutionId'>): DetectorApp | null {
+  return queryApp(ctx.app, stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.modifiedConfigs : undefined);
+}
+
+// When Spark relaunches a slow task under the run's effective speculation settings: once the
+// quantile of the stage's tasks has finished, a task running over the multiplier times the median
+// of the finished ones gets a copy (TaskSetManager.checkSpeculatableTasks). Null when either
+// setting is neither logged nor a default the run's Spark version fixes.
+function speculationRule(app: DetectorApp | null): string | null {
+  const multiplier = Number.parseFloat(effectiveConf(app, 'spark.speculation.multiplier') ?? '');
+  const quantile = Number.parseFloat(effectiveConf(app, 'spark.speculation.quantile') ?? '');
+  if (!Number.isFinite(multiplier) || !Number.isFinite(quantile)) return null;
+  return `a task running over ${multiplier}x the median is relaunched once ${Math.round(quantile * 100)}% of the stage's tasks have finished`;
+}
+
+function speculationRuleNote(app: DetectorApp | null): string {
+  const rule = speculationRule(app);
+  return rule == null ? '' : ` (with this run's settings, ${rule})`;
 }
 
 // A setting is only a fix when the run's effective conf doesn't already have it: a run that set it,
@@ -781,7 +806,7 @@ function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false
   if (origin === 'other') return { origin, text: SKEW_KEY_REMEDY, remediation: [codeFix(SKEW_KEY_REMEDY)] };
   // Before Spark 3.0 there is no AQE skew-join handling, so the stage gets the generic advice.
   if (predatesAqeSkewJoin(ctx.app)) return { origin: 'other', text: SKEW_KEY_REMEDY, remediation: [codeFix(SKEW_KEY_REMEDY)] };
-  return { origin, ...skewJoinFix(ctx.app) };
+  return { origin, ...skewJoinFix(stageApp(ctx, stage)) };
 }
 
 function skewJoinFix(app: DetectorApp | null): { text: string; remediation: Remediation[] } {
@@ -960,15 +985,7 @@ function slowShuffleFix(stage: DetectorStage, app: DetectorApp | null): { text: 
   return { text: 'raise spark.sql.shuffle.partitions', remediation: [increaseConf('spark.sql.shuffle.partitions')] };
 }
 
-// A Spark byte-size property as bytes (a plain number, or with a k/m/g/t suffix, optionally 'b'), or
-// null when it is not one. Negative numbers pass through: -1 turns auto-broadcast off.
-function parseSparkBytes(value: string | undefined): number | null {
-  const m = /^(-?\d+(?:\.\d+)?)\s*([kmgt]?)b?$/i.exec(value?.trim() ?? '');
-  if (m == null) return null;
-  return m[2] === '' ? Number(m[1]) : Number(m[1]) * 1024 ** ('kmgt'.indexOf(m[2].toLowerCase()) + 1);
-}
-
-// The run's effective spark.sql.autoBroadcastJoinThreshold in bytes (logged, else Spark's 10 MiB);
+// The run's effective spark.sql.autoBroadcastJoinThreshold in bytes (logged, else Spark's 10 MiB default);
 // negative when auto-broadcast is disabled, null when the logged value is not a size.
 function effectiveBroadcastThreshold(app: DetectorApp | null): number | null {
   const raw = effectiveConf(app, 'spark.sql.autoBroadcastJoinThreshold');
@@ -1444,7 +1461,7 @@ export const DETECTORS = [
       const bytes = stage.shuffleReadBytes;
       if (bytes <= thresholds.minBytes) return null;
       if (stageBelowRuntimeFloor(stage, ctx, thresholds.stageFloorPct)) return null;
-      const { partitions, count } = shufflePartitionCase(stage, ctx.app);
+      const { partitions, count } = shufflePartitionCase(stage, stageApp(ctx, stage));
       const perTask = formatBytes(bytes / Math.max(1, stage.taskCount));
       const fix = partitions === 'sufficient'
         ? { text: `its ${stage.taskCount} tasks already read about ${perTask} each, so more partitions will not help: consider a broadcast join for the smaller side`, remediation: [] }
@@ -1499,7 +1516,7 @@ export const DETECTORS = [
         });
       }
       if (total >= thresholds.lowParTotalBytes && taskCount <= thresholds.lowParMaxTasks) {
-        const fix = lowShuffleParallelismFix(stage, ctx.app);
+        const fix = lowShuffleParallelismFix(stage, stageApp(ctx, stage));
         out.push({
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'lowShuffleParallelism', partitions: fix.partitions, metric: 'taskCount', value: taskCount,
@@ -1574,7 +1591,7 @@ export const DETECTORS = [
       const impactBand = 'warning';
       // shuffle.partitions sizes a shuffle's reduce side: a stage that reads no shuffle gets memory only.
       const reads = stageReads(stage);
-      const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, ctx.app) : null;
+      const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, stageApp(ctx, stage)) : null;
       return {
         type: 'spill', stageId: stage.id, impactBand, reads,
         spillMagnitude: mag?.magnitude,
@@ -1694,9 +1711,10 @@ export const DETECTORS = [
       if ((hosts.length < thresholds.minHosts && execs0.length < thresholds.minHosts) || stage.taskCount < thresholds.minTasks) return null;
       if (stageBelowRuntimeFloor(stage, ctx, thresholds.stageFloorPct)) return null;
       const out: Finding[] = [];
+      const rule = speculationRule(ctx.app);
       const speculation = switchFix(loggedAs(ctx.app, 'spark.speculation', true), 'spark.speculation', true,
-        'check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically',
-        'check what it was running; speculation is already on, so a lagging task there is already relaunched');
+        `check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically${rule ? ` (with this run's settings, ${rule})` : ''}`,
+        `check what it was running; speculation is already on, so a lagging task there is already relaunched${rule ? ` (with this run's settings, ${rule})` : ''}`);
       if (hosts.length >= thresholds.minHosts) {
         const means = hosts.map(h => ({ host: h.host, taskCount: h.taskCount, mean: h.totalDuration / h.taskCount }));
         const sorted = [...means].map(h => h.mean).sort((a, b) => a - b);
@@ -1816,7 +1834,7 @@ export const DETECTORS = [
       // A shuffle's reduce-side partition count is the remedy on a stage that reads a shuffle; a stage
       // that reads input files gets the input-partitioning remedy instead.
       const reads = stageReads(stage);
-      const shuffleFix = reads === 'shuffle' ? slowShuffleFix(stage, ctx.app) : null;
+      const shuffleFix = reads === 'shuffle' ? slowShuffleFix(stage, stageApp(ctx, stage)) : null;
       const recommendation = shuffleFix
         ? `This stage ran ${value} minutes with no more specific cause flagged: often a partition-count problem, ${shuffleFix.text}, or check for a large per-task data volume driving heavy shuffle and spill.`
         : reads === 'input'
@@ -1954,7 +1972,7 @@ export const DETECTORS = [
       const useSpeculativeMetric = useSpeculative && !(IMPACT_BAND_ORDER[stragglerTier] < IMPACT_BAND_ORDER[speculativeTier]);
       const value = useSpeculativeMetric ? stage.speculativeTasks : Math.round(stragglerShare * 100);
       const detail = useSpeculativeMetric
-        ? `${value} speculative attempt${value === 1 ? '' : 's'} discarded`
+        ? `${value} speculative attempt${value === 1 ? '' : 's'} discarded${speculationRuleNote(ctx.app)}`
         : `${value}% of tasks straggled`;
       // The skew advice fits only a stage that reads a shuffle feeding a join (skewFix).
       const fix = skewFix(stage, ctx);
@@ -1985,7 +2003,7 @@ export const DETECTORS = [
     emits: ['speculationWaste'],
     docAnchor: '#bottleneck-speculation-waste',
     thresholds: { minWasted: 5, minWasteMs: 60000 },
-    detect(stage, _ctx, thresholds): Finding | null {
+    detect(stage, ctx, thresholds): Finding | null {
       const wasted = stage.speculationWastedAttempts ?? 0;
       const wastedMs = stage.speculationWasteMs ?? 0;
       if (wasted < thresholds.minWasted || wastedMs < thresholds.minWasteMs) return null;
@@ -1994,7 +2012,7 @@ export const DETECTORS = [
         impactBand: 'warning',
         metric: 'speculationWasteMs', value: wastedMs,
         confidence: speculationWasteConfidence(wastedMs, thresholds.minWasteMs),
-        recommendation: `Speculative execution discarded ${Math.round(wastedMs / 1000)}s of executor time in this stage: if task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile.`,
+        recommendation: `Speculative execution discarded ${Math.round(wastedMs / 1000)}s of executor time in this stage: if task durations are naturally variable rather than genuine stragglers, consider tuning spark.speculation.multiplier/quantile${speculationRuleNote(ctx.app)}.`,
         remediation: [increaseConf('spark.speculation.multiplier'), increaseConf('spark.speculation.quantile')],
       };
     },
@@ -2051,7 +2069,7 @@ export const DETECTORS = [
       if (stage.taskDurationP50 > thresholds.maxP50 || stage.taskDurationP95 > thresholds.maxP95) return null;
       const coalesceTo = Math.max(1, Math.round(stage.taskCount / 10));
       const reads = stageReads(stage);
-      const fix = reads === 'shuffle' ? tinyShuffleFix(stage, ctx.app, coalesceTo) : { text: `.coalesce(${coalesceTo})`, remediation: [] };
+      const fix = reads === 'shuffle' ? tinyShuffleFix(stage, stageApp(ctx, stage), coalesceTo) : { text: `.coalesce(${coalesceTo})`, remediation: [] };
       return {
         type: 'tinyTask', stageId: stage.id, impactBand: 'info', reads,
         metric: 'taskDurationP50', value: Math.round(stage.taskDurationP50),
@@ -2990,7 +3008,7 @@ export const DETECTORS = [
             if (fires) {
               const contributors = [...boundarySizeContributors(childA), ...boundarySizeContributors(childB)];
               // A threshold that already admits the smaller side cannot be what stopped the broadcast.
-              const threshold = effectiveBroadcastThreshold(ctx.app);
+              const threshold = effectiveBroadcastThreshold(queryApp(ctx.app, sqlExec.modifiedConfigs));
               const broadcastThreshold: BroadcastThreshold = threshold != null && threshold < 0 ? 'disabled'
                 : threshold != null && threshold > smaller ? 'notLimiting' : 'limits';
               const raiseAdvice = 'Consider a broadcast() hint or raising spark.sql.autoBroadcastJoinThreshold.';
@@ -3016,7 +3034,7 @@ export const DETECTORS = [
             // metrics, so only the child unions in.
             const child = (node.children ?? [])[0];
             // A threshold below the broadcast cannot have admitted it, so a hint forced it.
-            const threshold = effectiveBroadcastThreshold(ctx.app);
+            const threshold = effectiveBroadcastThreshold(queryApp(ctx.app, sqlExec.modifiedConfigs));
             const autoBroadcastOff = threshold != null && threshold < 0;
             const hintForced = autoBroadcastOff || (threshold != null && m.value > threshold);
             const broadcastThreshold: BroadcastThreshold = autoBroadcastOff ? 'disabled' : hintForced ? 'notLimiting' : 'limits';

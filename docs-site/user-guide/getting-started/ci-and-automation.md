@@ -137,13 +137,18 @@ than the property, AQE merged the partitions and the recommendation points at
 A `remediation` that sets a property to a fixed value (for example
 `spark.sql.adaptive.skewJoin.enabled`, `spark.speculation` or
 `spark.dynamicAllocation.enabled`) is left out when the run's effective conf
-already has that value. The effective value is the logged property, else
-Spark's default for the run's `sparkVersion`; the defaults modeled are
-`spark.sql.adaptive.enabled` (off before Spark 3.2, on from 3.2),
-`spark.sql.adaptive.skewJoin.enabled` and
-`spark.sql.adaptive.coalescePartitions.enabled` (both on from 3.0), and, for
-every version, `spark.sql.shuffle.partitions` (200) and
-`spark.sql.autoBroadcastJoinThreshold` (10 MiB). Spark before 3.0 has no AQE
+already has that value. The effective value is, in order, the setting the SQL
+execution ran with (its `modifiedConfigs`, for a finding scoped to one
+execution), the logged property, and Spark's default for the run's
+`sparkVersion`. A job that calls `spark.conf.set` is judged against what it set.
+The defaults come from Spark's own configuration sources and cover every
+property a detector reads or suggests: AQE (`spark.sql.adaptive.enabled` is off
+before Spark 3.2 and on from 3.2; skew-join and coalescing from 3.0, and the
+advisory partition size), `spark.sql.shuffle.partitions` (200),
+`spark.sql.autoBroadcastJoinThreshold` (10 MB), speculation (the multiplier is
+1.5 and the quantile 0.75 before Spark 4.0, 3 and 0.9 from 4.0) and the
+dynamic-allocation, serializer and event-log switches. A default that depends on the cluster (`spark.executor.instances`,
+`spark.default.parallelism`) is not modeled. Spark before 3.0 has no AQE
 skew-join handling, so a skew finding on such a run suggests no conf. Booleans compare
 case-insensitively. The recommendation then stops naming that property and
 points at the remedy left (for example "AQE skew-join handling is already on,

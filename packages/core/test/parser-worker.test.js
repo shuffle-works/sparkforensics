@@ -474,6 +474,23 @@ describe('processEvent: SQLExecutionStart', () => {
   });
 });
 
+describe('processEvent: SQLExecutionStart modifiedConfigs', () => {
+  const start = (extra) => ({
+    Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
+    executionId: 7, description: 'q', time: 1, physicalPlanDescription: '', ...extra,
+  });
+
+  it('keeps the execution\'s session settings on the sql message', () => {
+    const msg = processEvent(start({ modifiedConfigs: { 'spark.sql.autoBroadcastJoinThreshold': '-1' } }), createState());
+    expect(msg.data.modifiedConfigs).toEqual({ 'spark.sql.autoBroadcastJoinThreshold': '-1' });
+  });
+
+  it('leaves the field off when the execution modified nothing, or the event has none', () => {
+    expect(processEvent(start({ modifiedConfigs: {} }), createState()).data.modifiedConfigs).toBeUndefined();
+    expect(processEvent(start({}), createState()).data.modifiedConfigs).toBeUndefined();
+  });
+});
+
 describe('processEvent: JobStart links stage to SQL execution', () => {
   it('sets sqlExecutionId on stage submitted after JobStart', () => {
     const s = createState();
