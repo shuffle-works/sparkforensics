@@ -55,7 +55,8 @@ describe('analyze: finding identity + detector version', () => {
     const findings = analyze(app, stages, added, removed, jobs);
     for (const f of findings) {
       if (f.impactEstimate) {
-        const { impactEstimate, ...withoutEstimate } = f;
+        const withoutEstimate = { ...f };
+        delete withoutEstimate.impactEstimate;
         const idWithout = findingId(withoutEstimate);
         expect(f.id).toBe(idWithout);
       }

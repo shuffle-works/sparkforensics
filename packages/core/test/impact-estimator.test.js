@@ -21,10 +21,6 @@ describe('estimateImpact: skeleton', () => {
   });
 });
 
-function stage(id, opts) {
-  return { id, parentIds: [], submittedAt: 0, completedAt: 0, ...opts };
-}
-
 describe('estimateImpact: measured group A', () => {
   it('retryWaste: a solo stage (gate 1) gets a serial point estimate at its own retryWasteMs', () => {
     const stages = new Map([[0, { id: 0, submittedAt: 0, completedAt: 5000, parentIds: [], retryWasteMs: 1200 }]]);
