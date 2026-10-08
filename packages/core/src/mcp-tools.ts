@@ -72,6 +72,25 @@ interface CacheEntry { appModel: AppModel; cacheKey: string; lastAccess: number 
 
 const byRunId = new Map<string, CacheEntry>();   // runId -> { appModel, cacheKey, lastAccess }
 const byCacheKey = new Map<string, string>(); // cacheKey -> runId
+// Built comparisons, keyed by both runs and every option that changes the output. Each entry follows
+// its runs' TTL and eviction (deleteRunEntry), and the map is capped on its own: a comparison holds
+// a row per paired stage, and 8 runs allow 56 ordered pairs.
+const COMPARISON_CACHE_CAP = 16;
+interface ComparisonCacheEntry { runIdA: string; runIdB: string; built: ReturnType<typeof buildComparisonOutput> }
+const comparisonCache = new Map<string, ComparisonCacheEntry>();
+// Threshold overrides are one fixed object per server process (or DEFAULT for none): identity keys them.
+const thresholdsIds = new WeakMap<object, number>();
+let nextThresholdsId = 1;
+function thresholdsKey(thresholds: ThresholdOverrides | undefined): number {
+  if (!thresholds) return 0;
+  let id = thresholdsIds.get(thresholds);
+  if (id === undefined) {
+    id = nextThresholdsId++;
+    thresholdsIds.set(thresholds, id);
+  }
+  return id;
+}
+
 const pendingByCacheKey = new Map<string, Promise<{ runId: string; appModel: AppModel }>>(); // cacheKey -> in-flight Promise<{runId, appModel}>
 
 export function pathCacheKey(path: string): string {
@@ -99,6 +118,10 @@ function touch(runId: string): void {
 
 function deleteRunEntry(id: string, entry: CacheEntry): void {
   byRunId.delete(id);
+  // A comparison outlives neither of its runs: its entry goes with the first one evicted.
+  for (const [key, cached] of comparisonCache) {
+    if (cached.runIdA === id || cached.runIdB === id) comparisonCache.delete(key);
+  }
   if (byCacheKey.get(entry.cacheKey) === id) byCacheKey.delete(entry.cacheKey);
 }
 
@@ -368,11 +391,23 @@ export async function compareRuns(
   // interactive stage-detail drill-down, which none of compare/matchStages/metricDeltas/findingsDelta
   // read. Findings/metrics come from `catalog` and appModel.stages/sql, both fully populated. Produces
   // identical output to the dashboard; the MCP tool just never exposes per-task drill-down.
-  const { comparison, output } = buildComparisonOutput(
-    { label: runIdA, appModel: appModelA, catalog: catalogA },
-    { label: runIdB, appModel: appModelB, catalog: catalogB },
-    { redact: opts?.redact, normalizePath: opts?.normalizePath, view: opts?.include?.includes('stagePairs') ? 'full' : 'summary' },
-  );
+  const view = opts?.include?.includes('stagePairs') ? 'full' : 'summary';
+  const cacheKey = JSON.stringify([runIdA, runIdB, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? []]);
+  let built = comparisonCache.get(cacheKey)?.built;
+  if (built) {
+    // Re-insert so the oldest entry is the least recently used.
+    comparisonCache.delete(cacheKey);
+    comparisonCache.set(cacheKey, { runIdA, runIdB, built });
+  } else {
+    built = buildComparisonOutput(
+      { label: runIdA, appModel: appModelA, catalog: catalogA },
+      { label: runIdB, appModel: appModelB, catalog: catalogB },
+      { redact: opts?.redact, normalizePath: opts?.normalizePath, view },
+    );
+    comparisonCache.set(cacheKey, { runIdA, runIdB, built });
+    while (comparisonCache.size > COMPARISON_CACHE_CAP) comparisonCache.delete(comparisonCache.keys().next().value!);
+  }
+  const { comparison, output } = built;
 
   return {
     runIdA,

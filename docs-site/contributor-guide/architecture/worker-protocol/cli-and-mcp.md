@@ -109,6 +109,11 @@ and `SPARKFORENSICS_MCP_CACHE_TTL_MS`, lazily swept on access) keyed by resolved
 via `resolveOrCreateRun` and reuses it across subsequent tool calls instead of
 re-parsing.
 
+`compare_runs` also caches each built comparison (cap 16, LRU) in `mcp-tools.ts`, keyed by both
+`runId`s, thresholds, `redact`, `normalizePath` and the `stagePairs` view. An entry is dropped
+with either of its runs. `runOutputBlocks()` memoizes the `metrics` block per run model,
+thresholds and `redact`, so a repeated `diagnose_run` skips `computeRunMetrics`.
+
 ### One output builder for the CLI and MCP
 
 Neither surface lists the fields of a run or a comparison by hand. The CLI's
