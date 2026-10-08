@@ -39,9 +39,10 @@ more the tail is skew (`evidence.cause` is `data`, `evidence.dataRatio` is the
 median slow task's volume over the median task's). A tail that mostly is not data
 is reported as `STRAG` with its cause. When the median task read nothing, there is no
 ratio to take (`evidence.dataRatio` is absent): a slow task that read anything counts
-all its extra time as data, and on a stage where no task read data the cause is the
-largest of GC, fetch wait and host, or `unattributed` when none of them accounts for
-the tail, in which case both findings keep the duration test.
+all its extra time as data. On a stage where no task read data there is no data share,
+so the cause is the largest of GC, fetch wait, host and what is left, and what is
+left is labelled `unattributed`. A stage with no tail attribution is `unattributed`
+too. For `unattributed` both findings keep the duration test.
 
 ### `SHFL`: Shuffle I/O {#shfl}
 
@@ -105,7 +106,7 @@ fetch wait over the median task's, then one host that holds most of the slow
 tasks out of proportion to its share of the stage (`evidence.host`). What none of
 them accounts for is `unexplained`; `evidence.cpuPct` (the slow tasks' CPU time
 over their run time) says whether those tasks mostly waited or were busy. When
-no data volume is available and GC, fetch wait and host account for none of the tail, the cause is `unattributed` and the advice is the one a
+there is no data volume to compare and what is left is the largest share, the cause is `unattributed` and the advice is the one a
 skew finding gives for the same stage (`evidence.origin`, see `SKEW`).
 A stage is flagged when more than 5% of its tasks run over 4x the median (2.5%
 when the tail clears 0.5% of the run), a speculative task ran, or the `SKEW`

@@ -107,7 +107,7 @@ export type ShufflePartitions = 'raise' | 'sufficient' | 'aqeCoalesced' | 'ownPa
  * more than the median task, so run time follows data volume (skew by Spark's own definition).
  * 'gc', 'fetchWait' and 'host': the tail's extra time is GC, shuffle fetch wait, or tasks piled on
  * one host. 'unexplained': the slow tasks read no more than the median and none of those accounts
- * for their time. 'unattributed': the log has no data volume to compare and GC, fetch wait and host explain none of the tail, so only the duration is known. */
+ * for their time. 'unattributed': the log has no data volume to compare and what GC, fetch wait and host leave is the largest share (or the stage has no tail attribution), so only the duration is known. */
 export type TailCause = 'data' | 'gc' | 'fetchWait' | 'host' | 'unexplained' | 'unattributed';
 
 export interface SkewEvidence {

@@ -701,8 +701,9 @@ function skewGate(
 // accounts for at least `dataShareMin` of their extra time (Spark's UI and AQE define skew by data
 // volume, not by duration). Otherwise the largest of GC, shuffle fetch wait, tasks piled on one
 // host, and what none of them accounts for ('unexplained'). A log with no data volume to compare
-// and no other cause is 'unattributed': only the duration is known, which both skew and straggler
-// then judge as they did before the evidence existed, as does a stage with no tail attribution.
+// where what is left is the largest share is 'unattributed': only the duration is known, which both
+// skew and straggler then judge as they did before the evidence existed, as does a stage with no
+// tail attribution.
 interface TailVerdict {
   cause: TailCause;
   // Share (0-100) of the tail's extra time the cause accounts for; 0 for 'unattributed'.
