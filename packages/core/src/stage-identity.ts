@@ -32,13 +32,28 @@ export function normalizeStageName(name: string): string {
 // instead of embedding full child identity strings, which would re-escape
 // every level below and blow identity size up to ~2^depth on the 20-60+
 // operator-deep plans real Spark produces.
+//
+// Memoized per resolved tree (a tree is never mutated after the parser posts it), because every
+// stage of an execution that has no attributed node falls back to the same whole-tree identity.
+// The aligner builds a fresh normalizer closure per call, so each tree keeps at most
+// MAX_NORMALIZERS_PER_TREE entries and drops the oldest first.
+const MAX_NORMALIZERS_PER_TREE = 4;
+const planTreeIdentityCache = new WeakMap<PlanNode, Map<DetailNormalizer, string>>();
+
 function planTreeIdentity(root: PlanNode | null | undefined, normalizeDetail: DetailNormalizer): string | null {
   if (!root) return null;
+  const byNormalizer = planTreeIdentityCache.get(root) ?? new Map<DetailNormalizer, string>();
+  const cached = byNormalizer.get(normalizeDetail);
+  if (cached !== undefined) return cached;
   function visit(node: PlanNode): string {
     const childDigests = (node.children ?? []).map(visit).sort();
     return cyrb53(JSON.stringify([normalizeStageName(node.name ?? ''), normalizeDetail(node.detail ?? ''), childDigests]));
   }
-  return visit(root);
+  const identity = visit(root);
+  if (byNormalizer.size >= MAX_NORMALIZERS_PER_TREE) byNormalizer.delete(byNormalizer.keys().next().value!);
+  byNormalizer.set(normalizeDetail, identity);
+  planTreeIdentityCache.set(root, byNormalizer);
+  return identity;
 }
 
 // Plan identity for the stage's SQL execution, scoped to only the plan nodes

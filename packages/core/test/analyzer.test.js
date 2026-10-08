@@ -1219,7 +1219,7 @@ describe('analyze: tiny tasks', () => {
   });
 
   it('mentions spark.sql.shuffle.partitions when the stage is shuffle-fed', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 150, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 1024 })]]);
+    const stages = new Map([[1, makeStage({ taskCount: 200, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 1024 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     const found = catalog.filter(b => b.type === 'tinyTask');
     expect(found).toHaveLength(1);
@@ -1435,6 +1435,7 @@ describe('analyze: incomplete run', () => {
 });
 
 describe('auditConfig: static config sanity', () => {
+  const rddStages = new Map([[1, makeStage()]]); // sqlExecutionId null: a stage outside any SQL execution
   function appWith(config, resourceOverrides = {}) {
     const res = {
       executor: { memoryMB: null, memoryOverheadMB: null, cores: null, instances: null },
@@ -1483,24 +1484,22 @@ describe('auditConfig: static config sanity', () => {
     expect(first).toEqual([]);
   });
 
-  it('flags dynamic-allocation + disabled shuffle service (warning)', () => {
+  it('does not flag dynamic allocation with the shuffle service off: Spark refuses to start in that state unless shuffle tracking, decommissioning or reliable storage is on', () => {
+    // ExecutorAllocationManager.validateSettings throws otherwise (v3.5.0 lines 207-221), and
+    // spark.dynamicAllocation.shuffleTracking.enabled defaults to true from 3.4.
     const app = appWith(
-      { 'spark.dynamicAllocation.enabled': 'true', 'spark.shuffle.service.enabled': 'false', 'spark.serializer': 'kryo' },
+      { 'spark.dynamicAllocation.enabled': 'true', 'spark.dynamicAllocation.maxExecutors': '10', 'spark.shuffle.service.enabled': 'false', 'spark.serializer': 'kryo' },
       { dynamicAllocationEnabled: true, shuffleServiceEnabled: false, serializer: 'org.apache.spark.serializer.KryoSerializer' },
     );
-    const f = auditConfig(app).find(x => x.property === 'spark.shuffle.service.enabled');
-    expect(f).toBeTruthy();
-    expect(f.impactBand).toBe('warning');
+    expect(auditConfig(app, rddStages)).toEqual([]);
   });
 
-  it('flags inverted autoscaling bounds (critical) and every offending property', () => {
+  it('does not flag inverted autoscaling bounds: Spark rejects minExecutors > maxExecutors at startup, so no logged run has them', () => {
     const app = appWith(
       { 'spark.dynamicAllocation.enabled': 'true', 'spark.dynamicAllocation.minExecutors': '10', 'spark.dynamicAllocation.maxExecutors': '5', 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
       { dynamicAllocationEnabled: true, shuffleServiceEnabled: true, serializer: 'org.apache.spark.serializer.KryoSerializer' },
     );
-    const findings = auditConfig(app);
-    const inv = findings.find(x => x.property === 'spark.dynamicAllocation.minExecutors');
-    expect(inv.impactBand).toBe('critical');
+    expect(auditConfig(app, rddStages)).toEqual([]);
   });
 
   it('flags a missing max bound when dynamic allocation is on (info)', () => {
@@ -1512,13 +1511,38 @@ describe('auditConfig: static config sanity', () => {
     expect(f.impactBand).toBe('info');
   });
 
-  it('flags a non-Kryo / missing serializer (info)', () => {
+  it('flags a non-Kryo / missing serializer on a run with RDD stages (info)', () => {
     const app = appWith(
       { 'spark.executor.memory': '4g' },
       { serializer: null },
     );
-    const f = auditConfig(app).find(x => x.property === 'spark.serializer');
+    const f = auditConfig(app, rddStages).find(x => x.property === 'spark.serializer');
     expect(f.impactBand).toBe('info');
+  });
+
+  it('does not flag the serializer when every stage ran under a SQL execution', () => {
+    const app = appWith({ 'spark.executor.memory': '4g' }, { serializer: null });
+    const sqlOnly = new Map([[1, makeStage({ id: 1, sqlExecutionId: 0 })], [2, makeStage({ id: 2, sqlExecutionId: 1 })]]);
+    expect(auditConfig(app, sqlOnly).find(x => x.property === 'spark.serializer')).toBeUndefined();
+  });
+
+  it('flags the serializer when any one stage ran outside a SQL execution', () => {
+    const app = appWith({ 'spark.executor.memory': '4g' }, { serializer: null });
+    const mixed = new Map([[1, makeStage({ id: 1, sqlExecutionId: 0 })], [2, makeStage({ id: 2, sqlExecutionId: null })]]);
+    expect(auditConfig(app, mixed).find(x => x.property === 'spark.serializer')).toBeDefined();
+  });
+
+  it('stays silent about the serializer when the caller gives no stages or the run has none', () => {
+    const app = appWith({ 'spark.executor.memory': '4g' }, { serializer: null });
+    expect(auditConfig(app).find(x => x.property === 'spark.serializer')).toBeUndefined();
+    expect(auditConfig(app, new Map()).find(x => x.property === 'spark.serializer')).toBeUndefined();
+  });
+
+  it('recomputes a memoized audit when the same app is audited with stages of the other kind', () => {
+    const app = appWith({ 'spark.executor.memory': '4g' }, { serializer: null });
+    const sqlOnly = new Map([[1, makeStage({ sqlExecutionId: 0 })]]);
+    expect(auditConfig(app, sqlOnly).find(x => x.property === 'spark.serializer')).toBeUndefined();
+    expect(auditConfig(app, rddStages).find(x => x.property === 'spark.serializer')).toBeDefined();
   });
 
   it('does not flag serializer when Kryo is set', () => {
@@ -1526,25 +1550,64 @@ describe('auditConfig: static config sanity', () => {
       { 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
       { serializer: 'org.apache.spark.serializer.KryoSerializer' },
     );
-    expect(auditConfig(app).find(x => x.property === 'spark.serializer')).toBeUndefined();
+    expect(auditConfig(app, rddStages).find(x => x.property === 'spark.serializer')).toBeUndefined();
   });
 
-  it('flags memoryOverhead below Spark default floor (info)', () => {
-    // 10 GiB executor → floor = max(384, 1024) = 1024 MiB; overhead 256 is below.
-    const app = appWith(
-      { 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '256', 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
-      { executor: { memoryMB: 10240, memoryOverheadMB: 256 }, serializer: 'org.apache.spark.serializer.KryoSerializer' },
-    );
-    const f = auditConfig(app).find(x => x.property === 'spark.executor.memoryOverhead');
-    expect(f.impactBand).toBe('info');
-  });
+  describe('memoryOverhead against the overhead Spark would default to', () => {
+    const overheadFinding = (config, executor, sparkVersion) =>
+      auditConfig({ ...appWith({ 'spark.serializer': 'kryo', ...config }, { executor, serializer: 'kryo' }), sparkVersion }, rddStages)
+        .find(x => x.property === 'spark.executor.memoryOverhead');
 
-  it('does not flag memoryOverhead when at/above the floor', () => {
-    const app = appWith(
-      { 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '2048', 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
-      { executor: { memoryMB: 10240, memoryOverheadMB: 2048 }, serializer: 'org.apache.spark.serializer.KryoSerializer' },
-    );
-    expect(auditConfig(app).find(x => x.property === 'spark.executor.memoryOverhead')).toBeUndefined();
+    it('flags memoryOverhead below the default of max(384 MiB, 10%) (info)', () => {
+      // 10 GiB executor → default = max(384, 1024) = 1024 MiB; overhead 256 is below.
+      const f = overheadFinding({ 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '256' }, { memoryMB: 10240, memoryOverheadMB: 256 }, '3.5.3');
+      expect(f.impactBand).toBe('info');
+      expect(f.recommendation).toContain('1024 MiB');
+      expect(f.recommendation).toContain('10% of executor memory');
+    });
+
+    it('does not flag memoryOverhead at or above the default', () => {
+      expect(overheadFinding({ 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '2048' }, { memoryMB: 10240, memoryOverheadMB: 2048 }, '3.5.3')).toBeUndefined();
+    });
+
+    it('reads spark.executor.memoryOverheadFactor on Spark 3.3 and later', () => {
+      // factor 0.25 → 2560 MiB default; 2048 is below it, though above the 10% default of 1024.
+      const config = { 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '2048', 'spark.executor.memoryOverheadFactor': '0.25' };
+      const executor = { memoryMB: 10240, memoryOverheadMB: 2048 };
+      const f = overheadFinding(config, executor, '3.5.3');
+      expect(f.recommendation).toContain('2560 MiB');
+      expect(f.recommendation).toContain('25% of executor memory');
+      expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.executor.memoryOverhead', direction: 'increase', suggested: '2560m' }]);
+    });
+
+    it('ignores spark.executor.memoryOverheadFactor on a Spark version that predates it', () => {
+      const config = { 'spark.executor.memory': '10g', 'spark.executor.memoryOverhead': '2048', 'spark.executor.memoryOverheadFactor': '0.25' };
+      expect(overheadFinding(config, { memoryMB: 10240, memoryOverheadMB: 2048 }, '3.2.1')).toBeUndefined();
+    });
+
+    it('reads spark.executor.minMemoryOverhead on Spark 4 and later', () => {
+      // 1 GiB executor: 10% is 102 MiB, so the minimum decides. A 1 GiB minimum makes 512 MiB too low.
+      const config = { 'spark.executor.memory': '1g', 'spark.executor.memoryOverhead': '512', 'spark.executor.minMemoryOverhead': '1g' };
+      const executor = { memoryMB: 1024, memoryOverheadMB: 512 };
+      const f = overheadFinding(config, executor, '4.0.0');
+      expect(f.recommendation).toContain('1024 MiB');
+      expect(f.recommendation).toContain('max of 1024 MiB');
+    });
+
+    it('lowers the floor when spark.executor.minMemoryOverhead is below the 384 MiB default', () => {
+      const config = { 'spark.executor.memory': '1g', 'spark.executor.memoryOverhead': '256', 'spark.executor.minMemoryOverhead': '128m' };
+      expect(overheadFinding(config, { memoryMB: 1024, memoryOverheadMB: 256 }, '4.0.0')).toBeUndefined();
+    });
+
+    it('ignores spark.executor.minMemoryOverhead before Spark 4, where the 384 MiB minimum is fixed', () => {
+      const config = { 'spark.executor.memory': '1g', 'spark.executor.memoryOverhead': '256', 'spark.executor.minMemoryOverhead': '128m' };
+      expect(overheadFinding(config, { memoryMB: 1024, memoryOverheadMB: 256 }, '3.5.3').recommendation).toContain('384 MiB');
+    });
+
+    it('reads both settings when the log records no Spark version', () => {
+      const config = { 'spark.executor.memory': '1g', 'spark.executor.memoryOverhead': '256', 'spark.executor.minMemoryOverhead': '128m' };
+      expect(overheadFinding(config, { memoryMB: 1024, memoryOverheadMB: 256 }, undefined)).toBeUndefined();
+    });
   });
 });
 
@@ -2836,7 +2899,7 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
 
   it('configAudit (serializer): includes the current serializer', () => {
     const app = { config: { 'spark.executor.memory': '4g' }, resources: { executor: {}, driver: {}, dynamicAllocationEnabled: null, shuffleServiceEnabled: null, serializer: null } };
-    const f = auditConfig(app).find(x => x.property === 'spark.serializer');
+    const f = auditConfig(app, new Map([[1, makeStage()]])).find(x => x.property === 'spark.serializer');
     expect(f.recommendation).toContain('the default JavaSerializer');
   });
 });

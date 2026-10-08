@@ -1,4 +1,4 @@
-import { DETECTORS, ENTRY_BY_TYPE, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
+import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
 import { effectiveThresholds, findingTunedThresholds, overridesFor, tunedThresholdsNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
@@ -250,14 +250,17 @@ export function analyze(
 }
 
 // Memoizes auditConfig by `app` identity (like evidence-report.ts's jsonCache) so config detectors
-// don't re-run when both the export and the report path audit the same app. WeakMap can't key on
-// `null`, so that case skips the cache. Returns a fresh copy each call so a caller's in-place
-// mutation (e.g. `.sort()`) can't corrupt the cached array.
-const auditConfigCache = new WeakMap<SparkAppInfo, Finding[]>();
+// don't re-run when both the export and the report path audit the same app. The one stage-dependent
+// check reads only whether any stage ran outside SQL, so that flag is part of the cache entry: a
+// hit with a different flag recomputes. WeakMap can't key on `null`, so that case skips the cache.
+// Returns a fresh copy each call so a caller's in-place mutation (e.g. `.sort()`) can't corrupt the
+// cached array.
+const auditConfigCache = new WeakMap<SparkAppInfo, { rddWork: boolean; findings: Finding[] }>();
 
-function computeAuditConfig(app: SparkAppInfo | null): Finding[] {
+function computeAuditConfig(app: SparkAppInfo | null, stages: Map<number, Stage> | undefined): Finding[] {
   const out: Finding[] = [];
-  for (const d of detectors) if (d.scope === 'config') push(out, d, d.withThresholds()({ app }));
+  const target = { app, stages: stages as unknown as DetectorConfigTarget['stages'] };
+  for (const d of detectors) if (d.scope === 'config') push(out, d, d.withThresholds()(target));
   // configAudit's estimate is unconditionally costOnly('none'): needs no stages/totalCores, so an
   // empty context gives parity with analyze().
   estimateImpact(out, { stages: new Map(), occupancy: new Map(), totalCores: 0 });
@@ -265,11 +268,14 @@ function computeAuditConfig(app: SparkAppInfo | null): Finding[] {
   return out.map((f) => ({ ...f, stageId: f.stageId ?? null }));
 }
 
-export function auditConfig(app: SparkAppInfo | null): Finding[] {
-  if (app === null) return computeAuditConfig(app);
+/** The configuration findings for a run. `stages` lets checks that apply only to some kinds of
+ * work (the serializer note needs RDD stages) see the run's work; without it they stay silent. */
+export function auditConfig(app: SparkAppInfo | null, stages?: Map<number, Stage>): Finding[] {
+  if (app === null) return computeAuditConfig(app, stages);
+  const rddWork = hasStageOutsideSql(stages as unknown as DetectorConfigTarget['stages']);
   const cached = auditConfigCache.get(app);
-  if (cached) return cached.slice();
-  const result = computeAuditConfig(app);
-  auditConfigCache.set(app, result);
-  return result.slice();
+  if (cached?.rddWork === rddWork) return cached.findings.slice();
+  const findings = computeAuditConfig(app, stages);
+  auditConfigCache.set(app, { rddWork, findings });
+  return findings.slice();
 }

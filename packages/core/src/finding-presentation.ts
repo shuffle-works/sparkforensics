@@ -45,6 +45,15 @@ function idleCapacityLowering(f: { remediation?: Remediation[] }): string {
   return ` by lowering spark.dynamicAllocation.maxExecutors${lowersFloor ? ' and spark.dynamicAllocation.minExecutors' : ''}`;
 }
 
+// What a shuffle-reading stage's partition-count advice names, read from the row's remediation: the
+// property ('property', also for a finding with no remediation), AQE's coalescing settings ('aqe',
+// which leave spark.sql.shuffle.partitions out), or the stage's own repartition(n) ('code').
+function partitionAdviceKind(f: { remediation?: Remediation[] }): 'property' | 'aqe' | 'code' {
+  if (f.remediation == null || f.remediation.some((r) => r.kind === 'conf' && r.key === 'spark.sql.shuffle.partitions')) return 'property';
+  if (f.remediation.some((r) => r.kind === 'conf' && r.key.startsWith('spark.sql.adaptive.'))) return 'aqe';
+  return f.remediation.some((r) => r.kind === 'code') ? 'code' : 'property';
+}
+
 const SKEW_JOIN_KEY = 'spark.sql.adaptive.skewJoin.enabled';
 const SKEW_JOIN_ALREADY_ON = 'AQE skew-join handling is already on, so salt the key or repartition on a better key.';
 const SKEW_JOIN_AQE_OFF = 'AQE is off, so enable it (spark.sql.adaptive.enabled) for skew-join handling to apply; otherwise salt the key or repartition on a better key.';
@@ -58,15 +67,13 @@ function skewJoinGeneric(f: { remediation?: Remediation[]; origin?: SkewOrigin }
 }
 const DYNAMIC_ALLOCATION_KEY = 'spark.dynamicAllocation.enabled';
 
-// The four configAudit DETECTORS entries share this row, one per audited property.
+// The three configAudit DETECTORS entries share this row, one per audited property.
 const CONFIG_AUDIT_PRESENTATION: FindingPresentation<'configAudit'> = {
   name: 'config audit',
   tag: 'CFG',
   thresholdSummary: () => 'a Spark conf value outside the recommended range',
   actionLabel(f) {
     switch (f.property) {
-      case 'spark.shuffle.service.enabled': return 'Enable shuffle service';
-      case 'spark.dynamicAllocation.minExecutors': return 'Fix autoscaling bounds';
       case 'spark.dynamicAllocation.maxExecutors': return 'Set max executors';
       case 'spark.serializer': return 'Switch to Kryo';
       case 'spark.executor.memoryOverhead': return 'Raise memory overhead';
@@ -75,11 +82,9 @@ const CONFIG_AUDIT_PRESENTATION: FindingPresentation<'configAudit'> = {
   },
   genericRecommendation(f) {
     switch (f.property) {
-      case 'spark.shuffle.service.enabled': return 'Set spark.shuffle.service.enabled=true so shuffle data survives executor removal.';
-      case 'spark.dynamicAllocation.minExecutors': return 'Set the minimum executor bound at or below the maximum.';
       case 'spark.dynamicAllocation.maxExecutors': return 'Set spark.dynamicAllocation.maxExecutors to cap cluster growth.';
       case 'spark.serializer': return 'Consider spark.serializer=org.apache.spark.serializer.KryoSerializer for faster, smaller buffers.';
-      case 'spark.executor.memoryOverhead': return 'Raise executor memoryOverhead above Spark\'s default floor to avoid off-heap OOM-kills.';
+      case 'spark.executor.memoryOverhead': return 'Raise executor memoryOverhead above the default Spark would have computed to avoid off-heap OOM-kills.';
     }
     return undefined;
   },
@@ -129,9 +134,14 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'TINY',
     thresholdSummary: (t) => `${t.minTasks}+ tasks with a median of ${t.maxP50}ms or less and a P95 of ${t.maxP95}ms or less`,
     actionLabel: () => 'Coalesce small tasks',
-    genericRecommendation: (f) => (f.reads != null && f.reads !== 'shuffle'
-      ? 'Scheduler overhead may dominate: coalesce down to fewer, larger tasks.'
-      : 'Scheduler overhead may dominate: lower spark.sql.shuffle.partitions, or coalesce down to fewer, larger tasks.'),
+    genericRecommendation(f) {
+      if (f.reads != null && f.reads !== 'shuffle') return 'Scheduler overhead may dominate: coalesce down to fewer, larger tasks.';
+      switch (partitionAdviceKind(f)) {
+        case 'aqe': return 'Scheduler overhead may dominate: AQE already coalesced the shuffle, so set spark.sql.adaptive.coalescePartitions.parallelismFirst to false or raise spark.sql.adaptive.advisoryPartitionSizeInBytes, or coalesce down to fewer, larger tasks.';
+        case 'code': return "Scheduler overhead may dominate: this stage's own repartition(n) or RDD parallelism sized it, so lower that count or coalesce down to fewer, larger tasks.";
+        default: return 'Scheduler overhead may dominate: lower spark.sql.shuffle.partitions, or coalesce down to fewer, larger tasks.';
+      }
+    },
   },
 
   shuffle: {
@@ -180,9 +190,15 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     thresholdSummary: (t) => `single-task disk spill above ${t.singleTaskDiskGiB} GiB`,
     actionLabel: () => 'Reduce spill',
     // The skew/volume classification isn't a Finding field, so one sentence covers both.
-    genericRecommendation: (f) => (f.reads != null && f.reads !== 'shuffle'
-      ? 'If the spill is skew-driven, fix task skew first: adding memory will not help. Otherwise increase executor memory or process less data per task.'
-      : 'If the spill is skew-driven, fix task skew first: adding memory will not help. Otherwise raise spark.sql.shuffle.partitions or increase executor memory.'),
+    genericRecommendation(f) {
+      const skewFirst = 'If the spill is skew-driven, fix task skew first: adding memory will not help. Otherwise';
+      if (f.reads != null && f.reads !== 'shuffle') return `${skewFirst} increase executor memory or process less data per task.`;
+      switch (partitionAdviceKind(f)) {
+        case 'aqe': return `${skewFirst} lower spark.sql.adaptive.advisoryPartitionSizeInBytes so AQE's merged partitions are smaller, or increase executor memory.`;
+        case 'code': return `${skewFirst} raise this stage's own partition count (its repartition(n) or RDD parallelism), or increase executor memory.`;
+        default: return `${skewFirst} raise spark.sql.shuffle.partitions or increase executor memory.`;
+      }
+    },
   },
 
   gc: {
@@ -240,11 +256,16 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'SLOW',
     thresholdSummary: () => 'a stage running far longer than its peers, not attributable to a single slow host',
     actionLabel: () => 'Profile slow stage',
-    genericRecommendation: (f) => f.reads === 'input'
-      ? 'Often too few or too uneven input partitions: check input file sizes and lower spark.sql.files.maxPartitionBytes, or look for a large per-task data volume driving heavy spill.'
-      : f.reads === 'other'
-        ? 'Check what the stage computes and for a large per-task data volume driving heavy spill.'
-        : 'Often a partition-count problem: raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.',
+    genericRecommendation(f) {
+      if (f.reads === 'input') return 'Often too few or too uneven input partitions: check input file sizes and lower spark.sql.files.maxPartitionBytes, or look for a large per-task data volume driving heavy spill.';
+      if (f.reads === 'other') return 'Check what the stage computes and for a large per-task data volume driving heavy spill.';
+      const spill = 'or check for a large per-task data volume driving heavy shuffle and spill.';
+      switch (partitionAdviceKind(f)) {
+        case 'aqe': return `Often a partition-count problem: AQE coalesced the shuffle, so lower spark.sql.adaptive.advisoryPartitionSizeInBytes to get more tasks, ${spill}`;
+        case 'code': return `Often a partition-count problem: raise this stage's own partition count (its repartition(n) or RDD parallelism), ${spill}`;
+        default: return `Often a partition-count problem: raise spark.sql.shuffle.partitions, ${spill}`;
+      }
+    },
   },
   straggler: {
     name: 'straggling task',

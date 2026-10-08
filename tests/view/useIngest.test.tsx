@@ -141,7 +141,7 @@ test('runDone derives configFindings from the app config, once, alongside catalo
   client.startParse = (_f: File, h: any) => {
     h.onApp({
       name: 'demo', id: 'app-1',
-      resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+      resources: { dynamicAllocationEnabled: true },
     });
     h.onDone({});
   };
@@ -150,7 +150,7 @@ test('runDone derives configFindings from the app config, once, alongside catalo
   act(() => result.current.startLoad(new File(['x'], 'log')));
 
   expect(store.getState().configFindings).toContainEqual(
-    expect.objectContaining({ type: 'configAudit', property: 'spark.shuffle.service.enabled' }),
+    expect.objectContaining({ type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors' }),
   );
 });
 

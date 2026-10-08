@@ -203,6 +203,8 @@ interface SqlExecutionRecord {
   rootExecutionId?: number;
   // The one line of the plan description that is kept (see stripPlanDescription).
   commandArguments?: string;
+  // The session settings this execution ran with that differ from the SparkContext's (see spark-conf.ts).
+  modifiedConfigs?: Record<string, string>;
   // Released (set to null) by endSqlExecution once the plan tree is resolved and posted.
   sparkPlanInfo: SparkPlanInfo | null;
   // Set by applyAdaptiveExecutionUpdate when AQE re-plans this execution mid-run; a per-execution
@@ -1174,6 +1176,7 @@ export function startSqlExecution(event: z.infer<typeof SqlExecutionStartEventSc
     hadAdaptiveUpdate: false,
   };
   if (event.rootExecutionId !== undefined) exec.rootExecutionId = event.rootExecutionId;
+  if (event.modifiedConfigs !== undefined && Object.keys(event.modifiedConfigs).length > 0) exec.modifiedConfigs = event.modifiedConfigs;
   if (event.physicalPlanDescription && KEPT_ARGUMENTS.test(event.physicalPlanDescription)) {
     exec.commandArguments = event.physicalPlanDescription;
   }

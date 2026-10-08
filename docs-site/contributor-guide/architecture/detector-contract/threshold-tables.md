@@ -99,7 +99,7 @@ thresholds sit well above their disk counterparts at every tier.
 | Cache utilization: disk spillover | `diskSize / (memorySize + diskSize) > 0.15` (info), `MEMORY_AND_DISK*` only | `> 0.40` (warning) |
 | Cache utilization: storage unobserved | persisted RDDs, but no `SparkListenerBlockUpdated` for any `rdd_*` block and every RDD Info figure 0 (`spark.eventLog.logBlockUpdates.enabled` off on Spark 2.3+): a missing-evidence caveat, not a threshold | none (single tier, info) |
 | Core locality | non-local task ratio ≥ `warnRatio` = 15% (min `minTasks` = 50 tasks) | ≥ `critRatio` = 35% |
-| Config: memory overhead | `spark.executor.memoryOverhead` below max(`floorMB` = 384 MiB, `floorPct` = 10% of executor memory) (info) | none |
+| Config: memory overhead | `spark.executor.memoryOverhead` below max(minimum, factor × executor memory) (info). The minimum is `spark.executor.minMemoryOverhead` on Spark 4+, else `floorMB` = 384 MiB; the factor is `spark.executor.memoryOverheadFactor` on Spark 3.3+, else `floorPct` = 10%. An unrecorded Spark version reads both settings | none |
 
 The RDD Info cache figures on stage events (`Number of Cached Partitions`,
 `Memory Size`, `Disk Size`) are always 0 since Spark 2.3; Spark 1.x fills them

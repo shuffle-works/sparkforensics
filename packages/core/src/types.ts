@@ -164,6 +164,8 @@ export interface SqlExecution {
   rootExecutionId?: number;
   /** `<Command>\nArguments: <line>` of a Delta write command's root node (see stripPlanDescription). */
   commandArguments?: string;
+  /** Session settings this execution ran with that differ from the SparkContext's (`SQLExecutionStart.modifiedConfigs`). */
+  modifiedConfigs?: Record<string, string>;
   [key: string]: unknown;
 }
 export interface PlanGraphNodeData {
