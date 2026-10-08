@@ -96,16 +96,22 @@ export default defineConfig({
     target: 'es2022',
     rollupOptions: {
       output: {
-        // @xyflow/@dagrejs already isolate into the lazy PlanGraphRoute chunk;
-        // naming them keeps that true if a non-lazy import ever creeps in.
+        // Each group names a vendor chunk. A group also captures the
+        // dependencies of its modules that no higher-priority group claims, so
+        // react-vendor (highest priority) must own everything the landing
+        // page shares with recharts and @xyflow: react and react-dom (CJS
+        // dependencies of both), and clsx (used by the app's own class
+        // helper). Without that, the entry chunk imports them from
+        // charts-vendor or plan-graph-vendor, and both lazy-only chunks are
+        // preloaded on the landing page.
         // recharts is what pushes Dashboard over 500kB (eagerly pulled by
         // always-mounted widgets); splitting it out drops Dashboard under it.
-        manualChunks(id: string) {
-          if (!id.includes('node_modules')) return undefined;
-          if (id.includes('@xyflow') || id.includes('@dagrejs')) return 'plan-graph-vendor';
-          if (id.includes('recharts')) return 'charts-vendor';
-          if (id.includes('/react/') || id.includes('/react-dom/') || id.includes('/scheduler/')) return 'react-vendor';
-          return undefined;
+        codeSplitting: {
+          groups: [
+            { name: 'react-vendor', test: /node_modules\/(react|react-dom|scheduler|use-sync-external-store|clsx)\//, priority: 3 },
+            { name: 'plan-graph-vendor', test: /node_modules\/(@xyflow|@dagrejs)\//, priority: 2 },
+            { name: 'charts-vendor', test: /node_modules\/recharts\//, priority: 1 },
+          ],
         },
       },
     },
