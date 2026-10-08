@@ -114,7 +114,7 @@ test('mounting with URL filter params filters the board on load', async () => {
 test('an active stage filter drops the configAudit row from All recommendations', async () => {
   const user = userEvent.setup();
   const appModel = readyAppModel() as any;
-  appModel.app = { ...appModel.app, config: { 'spark.dynamicAllocation.maxExecutors': '10' }, resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false } };
+  appModel.app = { ...appModel.app, config: { 'spark.app.name': 'demo' }, resources: { dynamicAllocationEnabled: true } };
   const catalog: Finding[] = [{ type: 'spill', stageId: 1, impactBand: 'warning' }];
   store.setState({ status: 'ready', appModel, catalog, configFindings: auditConfig(appModel.app) });
   render(<App />);
@@ -129,7 +129,7 @@ test('an active stage filter drops the configAudit row from All recommendations'
 test('filtering to a CFG-only type keeps config matches and does not show the no-match banner', async () => {
   const user = userEvent.setup();
   const appModel = readyAppModel() as any;
-  appModel.app = { ...appModel.app, config: { 'spark.dynamicAllocation.maxExecutors': '10' }, resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false } };
+  appModel.app = { ...appModel.app, config: { 'spark.app.name': 'demo' }, resources: { dynamicAllocationEnabled: true } };
   const catalog: Finding[] = [{ type: 'spill', stageId: 1, impactBand: 'warning' }];
   store.setState({ status: 'ready', appModel, catalog, configFindings: auditConfig(appModel.app) });
   render(<App />);

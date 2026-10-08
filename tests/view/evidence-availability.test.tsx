@@ -159,8 +159,8 @@ test('Config Audit finding switches to the Full app report tab before focusing i
   const app = {
     startTime: 0,
     endTime: 60_000,
-    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.app.name': 'demo' },
+    resources: { dynamicAllocationEnabled: true },
   };
   store.setState({
     ...store.getState(),
@@ -237,8 +237,8 @@ test('Config Audit finding opens Spark-configuration evidence', async () => {
   const app = {
     startTime: 0,
     endTime: 60_000,
-    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.app.name': 'demo' },
+    resources: { dynamicAllocationEnabled: true },
   };
   store.setState({
     ...store.getState(),

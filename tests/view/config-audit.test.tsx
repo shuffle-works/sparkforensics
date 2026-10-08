@@ -7,7 +7,10 @@ import { DocsProvider } from '@/view/DocsContext';
 import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext';
 import { ConfigAudit } from '@/view/widgets/ConfigAudit';
 import { auditConfig } from '@sparkforensics/core/analyzer.ts';
-import type { AppModel } from '@sparkforensics/core/types.ts';
+import type { AppModel, Stage } from '@sparkforensics/core/types.ts';
+
+// One stage outside any SQL execution, so the serializer check applies.
+const RDD_STAGES = new Map([[1, { id: 1 } as Stage]]);
 
 function buildAppModel(app: AppModel['app'], ledger?: AppModel['evidenceAvailability']): AppModel {
   return { ...emptyAppModel(), app, evidenceAvailability: ledger ?? null };
@@ -20,7 +23,7 @@ function renderWidget(app: AppModel['app'], ledger?: AppModel['evidenceAvailabil
         <ConfigAudit
           appModel={buildAppModel(app, ledger)}
           catalog={[]}
-          configFindings={auditConfig(app)}
+          configFindings={auditConfig(app, RDD_STAGES)}
           getTaskData={async () => ({ metrics: [], fieldNames: [] })}
         />
       </EvidenceAvailabilityProvider>
@@ -29,13 +32,12 @@ function renderWidget(app: AppModel['app'], ledger?: AppModel['evidenceAvailabil
 }
 
 test('renders the WidgetCard heading and every triggered config warning, not just one', async () => {
-  // Two triggered findings: shuffle-service-off (warning) and missing-serializer
-  // (info); maxExecutors is pinned so that detector stays quiet, keeping the fixture at 2.
+  // Two triggered findings: unbounded maxExecutors and missing-serializer (both info).
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
   renderWidget({
-    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.app.name': 'demo' },
+    resources: { dynamicAllocationEnabled: true },
   });
 
   expect(screen.getByRole('heading', { name: /config audit/i })).toBeInTheDocument();
@@ -44,7 +46,7 @@ test('renders the WidgetCard heading and every triggered config warning, not jus
   const collapseButton = screen.getByRole('button', { name: /config audit/i });
   await user.click(collapseButton);
 
-  expect(screen.getByText('spark.shuffle.service.enabled')).toBeInTheDocument();
+  expect(screen.getByText('spark.dynamicAllocation.maxExecutors')).toBeInTheDocument();
   expect(screen.getByText('spark.serializer')).toBeInTheDocument();
   // CFG tag and the evidence marker each appear once on the header badge;
   // per-row findings get their own impact dot instead.
@@ -145,14 +147,14 @@ test('shows the parse-incomplete summary when the ledger cannot trust an incompl
 });
 
 test('renders a doc link naming the property it explains, for every triggered property', async () => {
-  // Same fixture as the first test: shuffle-service-off (warning) and
-  // missing-serializer (info), each carrying its own docAnchor. The
+  // Same fixture as the first test: unbounded maxExecutors and
+  // missing-serializer (both info), each carrying its own docAnchor. The
   // recommendation (and its doc link) sit behind a per-row toggle that
   // defaults to expanded, so both are visible without any click.
   const user = userEvent.setup();
   renderWidget({
-    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.app.name': 'demo' },
+    resources: { dynamicAllocationEnabled: true },
   });
 
   // Expand the card to see the findings
@@ -162,39 +164,39 @@ test('renders a doc link naming the property it explains, for every triggered pr
   const links = screen.getAllByRole('link', { name: /^why .* matters$/i });
   expect(links).toHaveLength(2);
   expect(links.map((l) => l.textContent)).toEqual(
-    expect.arrayContaining([expect.stringContaining('spark.shuffle.service.enabled'), expect.stringContaining('spark.serializer')]),
+    expect.arrayContaining([expect.stringContaining('spark.dynamicAllocation.maxExecutors'), expect.stringContaining('spark.serializer')]),
   );
   expect(links.map((l) => l.getAttribute('href'))).toEqual(
-    expect.arrayContaining([expect.stringContaining('#config-shuffle-service'), expect.stringContaining('#config-serializer')]),
+    expect.arrayContaining([expect.stringContaining('#config-autoscale-bounds'), expect.stringContaining('#config-serializer')]),
   );
   // Recommendation text is visible by default, with no click needed.
-  expect(screen.getByText(/external shuffle service is off/i)).toBeInTheDocument();
+  expect(screen.getByText(/no upper bound/i)).toBeInTheDocument();
 });
 
 test('each row shows what it measured and the card states its fix once, with no toggle', async () => {
   const user = userEvent.setup();
   renderWidget({
-    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.app.name': 'demo' },
+    resources: { dynamicAllocationEnabled: true },
   });
 
   // Expand the card to see the findings
   const collapseButton = screen.getByRole('button', { name: /config audit/i });
   await user.click(collapseButton);
 
-  expect(screen.getByText(/external shuffle service is off/i)).toBeInTheDocument();
-  expect(screen.getByText('Set spark.shuffle.service.enabled=true so shuffle data survives executor removal.')).toBeInTheDocument();
-  expect(screen.getAllByText(/spark\.shuffle\.service\.enabled=true/)).toHaveLength(1);
-  expect(screen.getByRole('link', { name: /why spark\.shuffle\.service\.enabled matters/i })).toBeInTheDocument();
+  expect(screen.getByText(/no upper bound/i)).toBeInTheDocument();
+  expect(screen.getByText('Set spark.dynamicAllocation.maxExecutors to cap cluster growth.')).toBeInTheDocument();
+  expect(screen.getAllByText(/spark\.dynamicAllocation\.maxExecutors to cap/)).toHaveLength(1);
+  expect(screen.getByRole('link', { name: /why spark\.dynamicAllocation\.maxExecutors matters/i })).toBeInTheDocument();
 
   // No per-row expand/collapse toggle.
-  expect(screen.queryByRole('button', { name: /recommendation for spark\.shuffle\.service\.enabled/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /recommendation for spark\.dynamicAllocation\.maxExecutors/i })).not.toBeInTheDocument();
 });
 
 test('renders no impact-estimate element for its informational-only findings', async () => {
   renderWidget({
-    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.app.name': 'demo' },
+    resources: { dynamicAllocationEnabled: true },
   });
 
   expect(screen.queryByText(/Est\./)).not.toBeInTheDocument();
@@ -203,8 +205,8 @@ test('renders no impact-estimate element for its informational-only findings', a
 
 test('does not leak domain-specific copy', () => {
   renderWidget({
-    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.app.name': 'demo' },
+    resources: { dynamicAllocationEnabled: true },
   });
 
   const text = document.body.textContent ?? '';
@@ -212,10 +214,10 @@ test('does not leak domain-specific copy', () => {
 });
 
 test('card defaults collapsed with summary; the current-value chip renders unconditionally', () => {
-  // Two findings: shuffle-service-off (warning) and missing-serializer (info)
+  // Two findings: unbounded maxExecutors and missing-serializer (both info)
   renderWidget({
-    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.app.name': 'demo' },
+    resources: { dynamicAllocationEnabled: true },
   });
 
   // Card should default collapsed with summary showing count
@@ -223,16 +225,16 @@ test('card defaults collapsed with summary; the current-value chip renders uncon
   expect(screen.getByText('misconfigurations flagged')).toBeInTheDocument();
 
   // The current-value chip next to the property name is visible unconditionally.
-  expect(screen.getByText('spark.shuffle.service.enabled')).toBeInTheDocument();
-  expect(screen.getByText('false')).toBeInTheDocument();
+  expect(screen.getByText('spark.dynamicAllocation.maxExecutors')).toBeInTheDocument();
+  expect(screen.getByText('(unset)')).toBeInTheDocument();
 });
 
 test('the evidence marker stays out of the summary view until the card is expanded', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
   renderWidget({
-    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.app.name': 'demo' },
+    resources: { dynamicAllocationEnabled: true },
   });
 
   expect(screen.queryByRole('button', { name: /evidence:/i })).not.toBeInTheDocument();
@@ -243,18 +245,18 @@ test('the evidence marker stays out of the summary view until the card is expand
 });
 
 test('the header CFG pill links to the sub-check section when every finding shares one', () => {
-  // Kryo set, so only the shuffle-service check fires.
+  // Kryo set, so only the unbounded-maxExecutors check fires.
   renderWidget({
-    config: { 'spark.dynamicAllocation.maxExecutors': '10', 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.serializer': 'org.apache.spark.serializer.KryoSerializer' },
+    resources: { dynamicAllocationEnabled: true },
   });
-  expect(screen.getByRole('link', { name: 'CFG' })).toHaveAttribute('href', 'docs/tuning-reference/config.html#config-shuffle-service');
+  expect(screen.getByRole('link', { name: 'CFG' })).toHaveAttribute('href', 'docs/tuning-reference/config.html#config-autoscale-bounds');
 });
 
 test('the header CFG pill falls back to the guide entry when findings span several sub-checks', () => {
   renderWidget({
-    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.app.name': 'demo' },
+    resources: { dynamicAllocationEnabled: true },
   });
   expect(screen.getByRole('link', { name: 'CFG' })).toHaveAttribute('href', 'docs/user-guide/understanding-findings.html#cfg');
 });

@@ -226,8 +226,8 @@ test('shows real Config Audit findings as a row in All recommendations without a
   const appModel = readyAppModel() as any;
   appModel.app = {
     ...appModel.app,
-    config: { 'spark.dynamicAllocation.maxExecutors': '10' },
-    resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false },
+    config: { 'spark.app.name': 'demo' },
+    resources: { dynamicAllocationEnabled: true },
   };
   // configFindings is computed at ingest, not by Dashboard; seed it as runDone would.
   store.setState({ status: 'ready', appModel: appModel as any, catalog: [], configFindings: auditConfig(appModel.app) });
@@ -250,7 +250,7 @@ test('Config Audit ranks by its real impact band inside Suggested Improvements, 
     resources: { dynamicAllocationEnabled: false, shuffleServiceEnabled: false },
   };
   const configFindings: Finding[] = [
-    testFinding({ type: 'configAudit', property: 'spark.shuffle.service.enabled', valueText: 'false', stageId: null, impactBand: 'critical', recommendation: 'Enable the shuffle service.' }),
+    testFinding({ type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors', valueText: '(unset)', stageId: null, impactBand: 'critical', recommendation: 'Cap the executor count.' }),
   ];
   store.setState({ status: 'ready', appModel, catalog: [], configFindings });
 

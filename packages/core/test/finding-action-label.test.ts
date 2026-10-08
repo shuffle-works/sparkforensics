@@ -95,12 +95,6 @@ test('returns a plain per-type label for every remaining single-branch detector 
 });
 
 test('branches on the property field for the remaining configAudit properties', () => {
-  expect(findingActionLabel(finding({ type: 'configAudit', property: 'spark.shuffle.service.enabled' }))).toBe(
-    'Enable shuffle service',
-  );
-  expect(
-    findingActionLabel(finding({ type: 'configAudit', property: 'spark.dynamicAllocation.minExecutors' })),
-  ).toBe('Fix autoscaling bounds');
   expect(
     findingActionLabel(finding({ type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors' })),
   ).toBe('Set max executors');
