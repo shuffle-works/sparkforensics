@@ -1,4 +1,3 @@
-import { effectiveSparkConf } from './spark-conf.ts';
 import type { AppModel, EvidenceAvailability, EvidenceAvailabilityEntry, EvidenceEventType, EvidenceInputs, EvidenceKey, EvidenceReasonCode, EvidenceState } from './types';
 
 // Not annotated `: number` on purpose: `const X = 1` infers the literal type `1`, assignable to
@@ -67,11 +66,11 @@ function absent(key: EvidenceKey, reasonCode: EvidenceReasonCode, trustworthy: b
   return trustworthy ? entry(key, reasonCode === 'noSqlExecution' ? 'notApplicable' : 'notEmitted', reasonCode) : entry(key, 'unknown', 'parseIncomplete');
 }
 
-// The run's effective spark.eventLog.logStageExecutorMetrics: the logged value, else Spark's default
-// (off). A log with no environment update recorded no properties, so it cannot say the switch is off.
-function stageExecutorMetricsLogging(app: AppModel['app'] | undefined, environmentUpdates: number): string | undefined {
-  if (environmentUpdates === 0) return app?.config?.['spark.eventLog.logStageExecutorMetrics'];
-  return effectiveSparkConf({ sparkVersion: app?.sparkVersion, properties: app?.config }, 'spark.eventLog.logStageExecutorMetrics')?.value;
+// The run's effective spark.eventLog.logStageExecutorMetrics: the parser's resolution of it (the
+// logged value, else Spark's default of off) when it recorded one, else the logged value alone.
+function stageExecutorMetricsLogging(app: AppModel['app'] | undefined): unknown {
+  const resolved = app?.resources?.stageExecutorMetricsLogging;
+  return resolved != null ? resolved : app?.config?.['spark.eventLog.logStageExecutorMetrics'];
 }
 
 export function deriveEvidenceAvailability(appModel: AppModel, { skippedLines = 0 }: { skippedLines?: number } = {}): EvidenceAvailability {
@@ -88,7 +87,7 @@ export function deriveEvidenceAvailability(appModel: AppModel, { skippedLines = 
 
   const executorMetrics = metricRows > 0
     ? observed('executorMetrics', 'executorMetricRows', metricRows)
-    : configIs(stageExecutorMetricsLogging(app, environments), 'false')
+    : configIs(stageExecutorMetricsLogging(app), 'false')
       ? entry('executorMetrics', 'disabled', 'explicitlyDisabled')
       : absent('executorMetrics', 'noObservedExecutorMetrics', trustworthy);
   const rddStorageSnapshots = snapshots > 0

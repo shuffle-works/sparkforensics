@@ -92,14 +92,14 @@ describe('deriveEvidenceAvailability', () => {
   it('reads an unset logging switch as Spark does: off, so the stage metrics are disabled, not merely absent', () => {
     const disabled = deriveEvidenceAvailability(model({ app: { config: { 'spark.eventLog.logStageExecutorMetrics': 'false' } } }), complete);
     expect(entry(disabled, 'executorMetrics')).toMatchObject({ state: 'disabled', reasonCode: 'explicitlyDisabled' });
-    // Properties were logged and this one is not among them: Spark's default is off.
-    const unset = deriveEvidenceAvailability(model({ app: { config: { 'spark.app.name': 'x' }, sparkVersion: '3.5.1' } }), complete);
+    // The parser resolved the unset property to Spark's default of off.
+    const unset = deriveEvidenceAvailability(model({ app: { config: { 'spark.app.name': 'x' }, resources: { stageExecutorMetricsLogging: false } } }), complete);
     expect(entry(unset, 'executorMetrics')).toMatchObject({ state: 'disabled', reasonCode: 'explicitlyDisabled' });
     // Switched on and still nothing observed: the log just did not emit them.
-    const on = deriveEvidenceAvailability(model({ app: { config: { 'spark.eventLog.logStageExecutorMetrics': 'true' } } }), complete);
+    const on = deriveEvidenceAvailability(model({ app: { config: { 'spark.eventLog.logStageExecutorMetrics': 'true' }, resources: { stageExecutorMetricsLogging: true } } }), complete);
     expect(entry(on, 'executorMetrics')).toMatchObject({ state: 'notEmitted', reasonCode: 'noObservedExecutorMetrics' });
-    // No environment update at all: the log recorded no properties, so it cannot say the switch is off.
-    const noProperties = deriveEvidenceAvailability(model({ app: { evidenceInputs: { ...evidenceInputs, environmentUpdates: 0 } } }), complete);
+    // A log that recorded no properties cannot say the switch is off.
+    const noProperties = deriveEvidenceAvailability(model({ app: { resources: { stageExecutorMetricsLogging: null } } }), complete);
     expect(entry(noProperties, 'executorMetrics')).toMatchObject({ state: 'notEmitted', reasonCode: 'noObservedExecutorMetrics' });
   });
 

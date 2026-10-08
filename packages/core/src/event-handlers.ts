@@ -54,6 +54,9 @@ interface ResourcesSummary {
   dynamicAllocationEnabled: boolean | null;
   shuffleServiceEnabled: boolean | null;
   serializer: string | null;
+  // The run's effective spark.eventLog.logStageExecutorMetrics (off unless set); null for a log with
+  // no recorded properties. The evidence ledger reads it without importing the defaults table.
+  stageExecutorMetricsLogging: boolean | null;
   // SparkAppInfo.resources is Record<string, unknown>: an index signature keeps this assignable
   // there without a cast.
   [key: string]: unknown;
@@ -531,6 +534,7 @@ export function extractResources(config: Record<string, string> | null | undefin
     shuffleServiceEnabled: bool('spark.shuffle.service.enabled'),
     // The serializer a run set: Spark's default is reported as unset.
     serializer: cfg['spark.serializer'] ?? null,
+    stageExecutorMetricsLogging: bool('spark.eventLog.logStageExecutorMetrics'),
   };
 }
 
