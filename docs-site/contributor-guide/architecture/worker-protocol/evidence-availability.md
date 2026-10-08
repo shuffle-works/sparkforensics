@@ -62,7 +62,7 @@ task records, raw-event identifiers, or other event payloads.
 
 | Key | Proven `present` evidence | Trustworthy absence / boundary result |
 | --- | --- | --- |
-| `executorMetrics` | `executorMetricRows > 0`, counting stage executor metrics rows and task ends with a non-zero executor metric | Explicit observed `spark.eventLog.logStageExecutorMetrics=false` is `disabled` / `explicitlyDisabled`; otherwise `notEmitted` / `noObservedExecutorMetrics`. Observed metrics win over the explicit setting. |
+| `executorMetrics` | `executorMetricRows > 0`, counting stage executor metrics rows and task ends with a non-zero executor metric, never the driver's own rows (the heap-peak finding leaves them out too) | An effective `spark.eventLog.logStageExecutorMetrics` of `false` is `disabled` / `explicitlyDisabled`: the logged value, or Spark's default of off when the log recorded properties (the parser resolves it into `resources.stageExecutorMetricsLogging`); otherwise `notEmitted` / `noObservedExecutorMetrics`. Observed metrics win over the setting. |
 | `rddStorageSnapshots` | `rddStorageSnapshots > 0` from `SparkListenerStageSubmitted` | No stage submissions is `notEmitted` / `noObservedStageSubmission`; stages submitted without any `RDD Info` rows is `notEmitted` / `noRddStorageSnapshot`. This is RDD snapshot evidence, not block-update telemetry. |
 | `sqlPlan` | `resolvedSqlPlans > 0` | A SQL execution without a resolved plan is `notEmitted` / `noResolvedSqlPlan`; no SQL execution is `notApplicable` / `noSqlExecution`. |
 | `sparkConfiguration` | `environmentUpdates > 0` | `notEmitted` / `noEnvironmentUpdate`; a normalized empty config object alone is not evidence. |

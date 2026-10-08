@@ -516,8 +516,10 @@ export function extractResources(config: Record<string, string> | null | undefin
   const bool = (k: string) => { const v = value(k); return v != null ? v.toLowerCase() === 'true' : null; };
   return {
     executor: {
-      memory: value('spark.executor.memory') ?? null,
-      memoryMB: memMB('spark.executor.memory'),
+      // The executor size stays the logged one: Spark's 1g default does not apply to a local-mode run,
+      // which has no separate executor JVM, and the log does not say which master it ran under.
+      memory: cfg['spark.executor.memory'] ?? null,
+      memoryMB: cfg['spark.executor.memory'] != null ? parseSparkMemoryMB(cfg['spark.executor.memory']) : null,
       memoryOverhead: value('spark.executor.memoryOverhead') ?? null,
       memoryOverheadMB: memMB('spark.executor.memoryOverhead'),
       cores: int('spark.executor.cores'),

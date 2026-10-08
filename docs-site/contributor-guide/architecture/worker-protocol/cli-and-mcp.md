@@ -105,13 +105,17 @@ local MCP clients) and `packages/server/index.js`'s `/mcp` route (streamable HTT
 the local server). The run cache (`packages/core/src/mcp-tools.ts`) is a module-level LRU
 (cap 8 and 15-minute idle TTL by default, overridable via `SPARKFORENSICS_MCP_CACHE_CAP`
 and `SPARKFORENSICS_MCP_CACHE_TTL_MS`, lazily swept on access) keyed by resolved source
-(path plus mtime, ctime and size, or SHS baseUrl+appId+attemptId), so a client mints a `runId` once
+(path plus mtime, ctime and size, or for a rolling-log directory the file count, newest mtime and
+ctime and total size of the files inside it, since Spark appends to the live part in place and leaves the
+directory's own stat alone; or SHS baseUrl+appId+attemptId), so a client mints a `runId` once
 via `resolveOrCreateRun` and reuses it across subsequent tool calls instead of
 re-parsing.
 
 `compare_runs` also caches each built comparison (cap 16, LRU) in `mcp-tools.ts`, keyed by both
 `runId`s, thresholds, `redact`, `normalizePath` and the `stagePairs` view. An entry is dropped
-with either of its runs. `runOutputBlocks()` memoizes the `metrics` block per run model,
+with either of its runs, and is only stored while both runs are still cached when the build finishes.
+Each call gets a copy of the cached output, so a caller cannot change what the next one is served.
+`runOutputBlocks()` memoizes the `metrics` block per run model,
 thresholds and `redact`, so a repeated `diagnose_run` skips `computeRunMetrics`.
 
 ### One output builder for the CLI and MCP

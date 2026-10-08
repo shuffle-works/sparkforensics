@@ -37,14 +37,19 @@ plus shuffle-read bytes and records. If run time scaled with that volume, the
 share of the slow tasks' extra time it accounts for is the data share; at 50% or
 more the tail is skew (`evidence.cause` is `data`, `evidence.dataRatio` is the
 median slow task's volume over the median task's). A tail that mostly is not data
-is reported as `STRAG` with its cause. When the median task read nothing, there is no
-ratio to take (`evidence.dataRatio` is absent): a slow task that read anything counts
-all its extra time as data. When the data share is under 50%, the cause is the largest
+is reported as `STRAG` with its cause. Ratios take the median task's volume or a floor
+of 1 MiB and 1,000 records, whichever is larger, so a median of a few bytes never prints
+a huge multiple. When the median task read nothing, there is no ratio to take
+(`evidence.dataRatio` is absent): GC and fetch wait claim their share of the slow
+tasks' extra time first, and a slow task that read data (at least 1 MiB or 1,000
+records) owns what is left. When the data share is under 50%, the cause is the largest
 of GC, fetch wait, host and what none of them accounts for. With no data volume
 to compare, what none of them accounts for is labelled `unattributed` (no share is
 reported) instead of `unexplained`; GC, fetch wait or host still win when larger. A
 stage with no tail attribution is `unattributed` too. For `unattributed` both
-findings keep the duration test.
+findings keep the duration test, the `SKEW` advice says nothing in the log attributes
+the tail to data, and the Findings board lists the pair on one stage once, under the
+finding with the larger recoverable time.
 
 With AQE skew-join handling on, a `shuffleJoin` stage's advice says why
 handling did or did not act on that stage's join, read from the execution's
@@ -52,21 +57,27 @@ final plan and its effective conf. `evidence.aqeSkew` records the case:
 
 | `aqeSkew` | What the final plan and conf show | Advice |
 |---|---|---|
-| `split` | The join is marked `skew=true` and a shuffle read says `skewed` | AQE already split the skewed partitions, so what remains is not join skew: look at GC, a slow host or an expensive key. |
-| `evenReads` | The largest task read is under twice the median, so no partition stands out | The slow tail is not partition-size skew: look at GC, a slow host or an expensive key. |
-| `belowThreshold` | The largest partition is at least twice the median but under `spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes` (256 MB by default), or not far enough over the median for `spark.sql.adaptive.skewJoin.skewedPartitionFactor` (5) | Lower the threshold or the factor for the query. |
+| `split` | The join is marked `skew=true` and a shuffle read says `skewed` | AQE already split the skewed partitions, so what remains is not join skew: look at GC, a slow host or an expensive key. When the tail is data (`evidence.cause` is `data`), the slow tasks still read far more data than the median task, and the advice is the key remedy. |
+| `evenReads` | One join side shuffles next to nothing, so the task read is the other side's, and the largest task read is under twice the median | The slow tail is not partition-size skew: look at GC, a slow host or an expensive key. Never given when `evidence.cause` is `data`, which counts input and records as well as shuffle-read bytes. |
+| `belowThreshold` | The largest task read is under `spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes` (256 MB by default), which bounds every partition of both sides; or one side's read is at least twice the median but not far enough over it for `spark.sql.adaptive.skewJoin.skewedPartitionFactor` (5) | Lower the threshold or the factor for the query. |
 | `planShape` | An aggregate, window or other operator sits between the join and its shuffle | AQE splits only a shuffle that feeds the join directly: salt the key. |
 | `userRepartition` | The shuffle under the join is a `repartition` or `rebalance` in the job's code | AQE leaves a shuffle you asked for alone: drop it, or salt the key. |
-| `joinType` | The join type does not let AQE split the skewed side: neither side of a full outer join, only the left side of a left outer, left semi or left anti join, only the right side of a right outer join | Put the skewed table on a splittable side, or salt the key. |
+| `joinType` | The join type does not let AQE split the skewed side: neither side of a full outer join, only the left side of a left outer, left semi or left anti join, only the right side of a right outer join | Join the hot key on its own and union the results, or salt the key. Swapping the sides does not help: the null-supplying or filtering table stays unsplittable. |
 | `extraShuffle` | An aggregate, window or join above this join needs its partitioning, so a split would add a shuffle | Set `spark.sql.adaptive.forceOptimizeSkewedJoin` to `true` when that shuffle costs less than the tail (Spark 3.3 and later; before that, salt the key). |
 | `notSplit` | Nothing above explains it | Salt the key. |
 
-The stage's join is the one whose plan node ran in that stage. The partition
-size is the stage's largest task read, which covers both sides of the join,
-so the finding does not say which side is skewed; for a join type that splits
-only one side it names both possibilities. A run whose final plan is missing
-or ties no join to the stage, or whose coalesced read could be many small
-partitions, keeps the general advice.
+The stage's join is the one whose plan node ran in that stage; a plan whose
+nodes carry no stage ids is read as one join only when the stage's shuffle read
+matches what the join's two shuffles wrote. A task reads one partition of each
+join side, so the stage's largest task read covers both sides. Spark judges each
+side's partitions against that side's own median, which the log does not give, so
+the finding calls the reads even or under the factor only when one side shuffles
+at most 5% of the join's bytes; otherwise it can only show a partition is under
+the absolute threshold (a task's read bounds every partition in it). The finding
+does not say which side is skewed; for a join type that splits only one side it
+names both possibilities. A run whose final plan is missing or ties no join to
+the stage, or whose coalesced read could be many small partitions, keeps the
+general advice.
 
 ### `SHFL`: Shuffle I/O {#shfl}
 
@@ -74,11 +85,16 @@ Tasks move a large amount of intermediate data between stages. Raise
 `spark.sql.shuffle.partitions`, or add a broadcast join. The partition-count
 advice follows the effective conf (`evidence.partitions`): `raise` when the
 property limits the stage, `sufficient` when the tasks already read a good
-size each, `aqeCoalesced` when AQE merged the partitions (lower
-`spark.sql.adaptive.advisoryPartitionSizeInBytes`), and `ownPartitioning` when
-the property is already high enough (the stage's own `repartition(n)` or RDD
-parallelism limits it). Only flagged on stages that take at least 0.5% of the
-run.
+size each, `aqeCoalesced` when AQE merged the partitions of a stage in a SQL
+execution (lower `spark.sql.adaptive.advisoryPartitionSizeInBytes`), and
+`ownPartitioning` when the property is already high enough (the stage's own
+`repartition(n)` or RDD parallelism limits it, as for any stage outside a SQL
+execution). With AQE coalescing on,
+`spark.sql.adaptive.coalescePartitions.initialPartitionNum` replaces the
+property as the starting count when it is set, and a stage that ran more tasks
+than that, with a skew split in the final plan or no final plan to rule one
+out, is not blamed on its own `repartition(n)`. Only flagged on stages that
+take at least 0.5% of the run.
 
 ### `SPILL`: Memory and disk spill {#spill}
 
@@ -98,10 +114,12 @@ least 0.5% of the run.
 
 Tasks spend more than 10% of executor run time reclaiming memory. Reduce
 object creation: use primitive types, avoid UDFs, or raise executor memory.
-When the log carries no measured executor heap peaks (see [`MEM`](#mem)), a
-stage with GC below 5% gets an informational note that executor memory may be
-over-provisioned, only on stages that take at least 0.5% of the run. Both need
-at least 10 s of executor run time on the stage.
+When the log carries no measured executor heap peaks, or the executor memory
+is unknown, so [`MEM`](#mem) cannot judge the heap, a stage with GC below 5%
+gets an informational note that executor memory may be over-provisioned, only
+on stages that take at least 0.5% of the run. Both need at least 10 s of
+executor run time on the stage. A run with any advice to raise executor memory
+(high GC, volume spill, a GC-bound straggler tail) gets no advice to lower it.
 
 ### `FAIL`: Failed tasks {#fail}
 
@@ -134,7 +152,8 @@ over their run time) says whether those tasks mostly waited or were busy. With
 no data volume to compare, what is left is `unattributed` when it is the largest share, and the advice is the one a
 skew finding gives for the same stage (`evidence.origin` and `evidence.aqeSkew`, see `SKEW`).
 A stage is flagged when more than 5% of its tasks run over 4x the median (2.5%
-when the tail clears 0.5% of the run), a speculative task ran, or the `SKEW`
+when the tail clears 0.5% of the run; a finding reached through `SKEW`'s
+duration test reports the share over 3x the median instead), a speculative task ran, or the `SKEW`
 duration test holds on a tail that is not data. A stage whose tail is data but
 which `SKEW` does not flag by duration keeps a `STRAG` finding with cause `data`.
 Stages under 0.5% of the run are skipped unless the `SKEW` duration test holds.
@@ -166,7 +185,8 @@ shuffle (`evidence.reads` is `shuffle`) the advice names what sized it: lower
 coalesced them and still kept tiny ones, set
 `spark.sql.adaptive.coalescePartitions.parallelismFirst` to `false` (AQE then
 targets `spark.sql.adaptive.advisoryPartitionSizeInBytes` rather than
-`defaultParallelism` tasks) or raise the advisory size; otherwise lower the
+`defaultParallelism` tasks) and then raise the advisory size, which alone changes
+nothing while `parallelismFirst` is on; otherwise lower the
 `repartition(n)` or RDD partition count in the code. Only flagged on stages that take at least 0.5% of the run.
 
 ### `PART`: Partition sizing {#part}
@@ -214,7 +234,8 @@ The first stage waited more than 30 s for an executor. Keep a warm pool of
 executors, or, with dynamic allocation, raise
 `spark.dynamicAllocation.minExecutors`/`initialExecutors` so the app doesn't
 scale up from zero. With dynamic allocation off (`evidence.dynamicAllocation`
-is `off`) no executor-count property applies and `remediation` is empty.
+is `off`, which includes a run that never set it, as Spark defaults it off) no
+executor-count property applies and `remediation` is empty.
 
 ### `UTIL`: Low utilization {#util}
 
@@ -234,8 +255,13 @@ executor metrics Spark 3+ writes on every task end (and from stage executor
 metrics when `spark.eventLog.logStageExecutorMetrics=true`). Spark samples them
 at executor heartbeat, so a peak is a lower bound, and the heap-used metric
 counts uncollected garbage, so a peak near the limit is not reported as a
-memory risk. A log with no peaks (Spark before 3.0, or local mode, which
-reports zeros) gets a note that executor memory sizing was not measured.
+memory risk. A log with no peaks (every task ended between two heartbeats, so
+each reports zeros, as in local mode) gets a note that executor memory sizing was
+not measured; it suggests `spark.eventLog.logStageExecutorMetrics=true` while that
+is off. The advice to lower executor memory (a heap under 70%, idle allocated
+memory-time, or low GC) is dropped when anything in the run asks for more. The
+idle-memory figure counts the executors' alive time, not the peak executor count
+over the whole run.
 Review `spark.executor.memory` and executor count if allocated memory sat
 largely idle over the run. That idle-memory variant self-flags a confidence
 that scales with how far the estimated waste sits past a 1.5x buffer: it
@@ -304,7 +330,8 @@ Flags configuration settings that may cause reliability or efficiency
 problems, independent of any one stage's behavior. Three checks run:
 
 - `spark.dynamicAllocation.maxExecutors`: with dynamic allocation on,
-  flagged when no max is set, so the cluster can grow without a cap.
+  flagged when the effective max is Spark's unbounded default, so the cluster
+  can grow without a cap.
 - `spark.serializer`: flagged when not set to Kryo (the default is the Java
   serializer), and only on a run with stages outside any SQL execution.
   DataFrame and SQL shuffles and caches use Spark's own row format, so the
@@ -336,7 +363,8 @@ this tag:
 - Small files: one plan node reads or writes more than 100 files averaging
   under 3 MB. Compact upstream output, or coalesce before writing.
 - Nested loop join: a `BroadcastNestedLoopJoin` or `CartesianProduct` whose
-  output has at least 1,000,000 rows. A `BroadcastNestedLoopJoin` must also
+  output has at least 1,000,000 rows (the rows a `CartesianProduct`'s condition
+  kept, when it has one). A `BroadcastNestedLoopJoin` must also
   produce at least 10 times the rows of its larger input; a `CartesianProduct`
   is judged on its output alone, because it re-reads each input once per
   partition of the other side, so the input row counts the executors report
@@ -353,14 +381,17 @@ this tag:
   and the stage time, and is informational. `ArrowEvalPython` (Arrow-optimized
   and pandas UDFs) is never flagged. The advice is
   `spark.sql.execution.pythonUDF.arrow.enabled=true` (Spark 3.4 and later;
-  already the default from 4.2, where the remedy is a UDF that opted out with
-  `useArrow=False`) or a pandas UDF. These floors are conservative guesses,
+  already the default from 4.2, where the UDF may have opted out with
+  `useArrow=False`, take no arguments, or have been created before the property
+  was set) or a pandas UDF. These floors are conservative guesses,
   not tuned against real workloads. A plan that reports no
   `data sent to Python workers` value is skipped.
 - Under-broadcast: a side of a Sort Merge Join that its join type can
-  broadcast (`evidence.buildSide`, sized by the finding's value) looks well
-  under the broadcast threshold;
-  consider a `broadcast()` hint or raising the threshold property. The size is
+  broadcast (`evidence.buildSide`, sized by the finding's value) was not
+  broadcast although it is small enough: it is over a small effective
+  threshold (`evidence.broadcastThreshold` is `limits`), or automatic
+  broadcast is disabled with `-1` (`disabled`); consider a `broadcast()` hint
+  or setting the threshold property. The size is
   the shuffle's `data size`, the metric adaptive execution compares at runtime.
   The threshold is `spark.sql.adaptive.autoBroadcastJoinThreshold` when the
   plan is adaptive and that property is set, else
@@ -369,7 +400,10 @@ this tag:
   under 1 MiB or over the over-broadcast limit is skipped. When the effective
   threshold already admits the side (`evidence.broadcastThreshold` is
   `notLimiting`), the threshold is not what stopped the broadcast, so
-  `remediation` is empty and the advice is a hint or table statistics. Both
+  `remediation` is empty and the advice is a hint or table statistics (for an
+  adaptive plan, `spark.sql.adaptive.nonEmptyPartitionRatioForBroadcastJoin`:
+  AQE keeps a side with a low share of non-empty partitions out of a broadcast
+  whatever its size). Both
   sides need a shuffle `data size` of their own, so a join over another join's
   output is skipped, and so is a join whose only buildable side is larger than
   the other side, since broadcasting it saves nothing. The build side is

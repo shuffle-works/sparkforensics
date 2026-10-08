@@ -189,6 +189,18 @@ describe('skew and straggler by tail cause', () => {
     expect(host.remediation).toEqual([{ kind: 'conf', key: 'spark.speculation', direction: 'set', suggested: true }]);
   });
 
+  it('gives a run with a GC-bound tail no advice to lower executor memory', () => {
+    const stages = stage(tail({ gcMs: 60000 }));
+    stages.set(2, makeStage({ id: 2, gcPct: 3, executorRunTime: 60000, completedAt: 50000 }));
+    const findings = analyze(app, stages, [], []);
+    const straggler = findings.find((f) => f.type === 'straggler' && f.stageId === 1);
+    expect(straggler.cause).toBe('gc');
+    expect(findings.find((f) => f.type === 'gc' && f.direction === 'low')).toBeUndefined();
+    // Without the GC-bound tail the low-GC note stands.
+    const quiet = analyze(app, new Map([[2, stages.get(2)]]), [], []);
+    expect(quiet.find((f) => f.type === 'gc' && f.direction === 'low')).toBeTruthy();
+  });
+
   it('says whether the unexplained tail waited or computed', () => {
     const waiting = analyze(app, stage(tail({ cpuPct: 20 })), [], []).find((f) => f.type === 'straggler');
     expect(waiting.recommendation).toContain('mostly waited');

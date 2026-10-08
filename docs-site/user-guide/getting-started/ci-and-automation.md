@@ -129,9 +129,12 @@ When the effective `spark.sql.shuffle.partitions` (logged, else Spark's 200) is
 already at or above the count a low-parallelism shuffle stage needs, the
 property is not what limits that stage: the recommendation points at the
 stage's own partitioning (`repartition(n)` or RDD parallelism) and
-`remediation` is empty. When AQE coalescing is on and the stage ran fewer tasks
-than the property, AQE merged the partitions and the recommendation points at
-`spark.sql.adaptive.advisoryPartitionSizeInBytes` instead. `shuffle` and
+`remediation` is empty. When AQE coalescing is on and a stage in a SQL execution
+ran fewer tasks than the property (or than
+`spark.sql.adaptive.coalescePartitions.initialPartitionNum`, which replaces it
+as the starting count when set), AQE merged the partitions and the
+recommendation points at `spark.sql.adaptive.advisoryPartitionSizeInBytes`
+instead. A stage outside any SQL execution is never read as coalesced. `shuffle` and
 `partitionSizing` (`lowShuffleParallelism`) findings carry `evidence.partitions`
 (`raise`, `sufficient`, `aqeCoalesced` or `ownPartitioning`) for the case.
 
@@ -145,10 +148,12 @@ execution), the logged property, and Spark's default for the run's
 The defaults come from Spark's own configuration sources and cover every
 property a detector reads or suggests: AQE (`spark.sql.adaptive.enabled` is off
 before Spark 3.2 and on from 3.2; skew-join and coalescing from 3.0, and the
-advisory partition size), `spark.sql.shuffle.partitions` (200),
+advisory partition size and `coalescePartitions.parallelismFirst`, on from 3.2),
+`spark.sql.shuffle.partitions` (200),
 `spark.sql.autoBroadcastJoinThreshold` (10 MB), speculation (the multiplier is
 1.5 and the quantile 0.75 before Spark 4.0, 3 and 0.9 from 4.0) and the
-dynamic-allocation, serializer and event-log switches. A default that depends on the cluster (`spark.executor.instances`,
+dynamic-allocation, serializer and event-log switches, and the executor memory
+overhead factor (from 3.3) and minimum (from 4.0). A default that depends on the cluster (`spark.executor.instances`,
 `spark.default.parallelism`) is not modeled. Spark before 3.0 has no AQE
 skew-join handling, so a skew finding on such a run suggests no conf. Booleans compare
 case-insensitively. The recommendation then stops naming that property and
@@ -187,7 +192,8 @@ sizes, so it is only ever `shuffleJoin` or `other`. A `stageSlowness` finding ca
 and `tinyTask` carry the same `reads` key and gate their partition-count
 advice the same way. On a `shuffle` stage the remediation names the lever that
 sized it: `spark.sql.shuffle.partitions`, AQE's advisory size or
-`parallelismFirst` where AQE coalesced the stage, or a `code` entry where the
+`parallelismFirst` where AQE coalesced the stage (`parallelismFirst=false` comes
+first while it is on, the advisory size after it), or a `code` entry where the
 stage's own `repartition(n)` or RDD parallelism did. `straggler` carries `evidence.origin` and the same skew
 advice as a skew finding on that stage when its `evidence.cause` is `data` or `unattributed`; other causes get advice for that cause. `coldStart` and `autoscalingChurn`
 carry `evidence.dynamicAllocation` (`on` or `off`) and suggest no

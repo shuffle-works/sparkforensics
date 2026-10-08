@@ -107,7 +107,8 @@ describe('config reads that fall back to Spark\'s defaults', () => {
 
   it('gives the run\'s resources the defaults of the properties its log recorded, and nothing for a log with none', () => {
     const recorded = extractResources({ 'spark.app.name': 'x' }, '3.5.1');
-    expect(recorded.executor).toMatchObject({ memory: '1g', memoryMB: 1024, memoryOverheadMB: null, cores: null });
+    // The executor size stays the logged one: a local-mode run has no executor JVM for Spark's 1g default to size.
+    expect(recorded.executor).toMatchObject({ memory: null, memoryMB: null, memoryOverheadMB: null, cores: null });
     expect(recorded).toMatchObject({ dynamicAllocationEnabled: false, shuffleServiceEnabled: false, serializer: null, stageExecutorMetricsLogging: false });
     const set = extractResources({ 'spark.executor.memory': '4g', 'spark.dynamicAllocation.enabled': 'true' }, '3.5.1');
     expect(set.executor.memoryMB).toBe(4096);
