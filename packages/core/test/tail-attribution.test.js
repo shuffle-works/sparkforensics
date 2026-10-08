@@ -183,8 +183,18 @@ describe('skew and straggler by tail cause', () => {
   it('lets data-share thresholds move the cut', () => {
     const mixed = tail({ dataMs: 40000, gcMs: 50000 });
     expect(types(analyze(app, stage(mixed), [], []))).toEqual(['straggler']);
-    const tuned = analyze(app, stage(mixed), [], [], new Map(), new Map(), null, { thresholds: { skew: { dataShareMin: 0.3 }, straggler: { dataShareMin: 0.3 } } });
+    const tuned = analyze(app, stage(mixed), [], [], new Map(), new Map(), null, { thresholds: { skew: { dataShareMin: 0.3 } } });
     expect(types(tuned)).toEqual(['skew']);
+  });
+
+  it('reports a data tail once, as straggler, when tuning skew alone makes skew refuse it', () => {
+    // 90% data share and P95/median 9: skew's defaults admit it as data.
+    const data = tail({ dataMs: 90000, gcMs: 5000 });
+    expect(types(analyze(app, stage(data), [], []))).toEqual(['skew']);
+    for (const skew of [{ ratioWarn: 10 }, { dataShareMin: 0.95 }]) {
+      const findings = analyze(app, stage(data), [], [], new Map(), new Map(), null, { thresholds: { skew } });
+      expect(types(findings)).toEqual(['straggler']);
+    }
   });
 
   it("keeps a data-driven tail only straggler's gate admits as a straggler finding, with the data volume", () => {

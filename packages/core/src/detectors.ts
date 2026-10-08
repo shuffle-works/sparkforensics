@@ -164,6 +164,9 @@ export interface DetectorCtx {
   // The one EstimateCtx analyze() also hands every estimate(): a detector's runtime floor clips
   // its claim against the same occupancy sweep the displayed savings come from.
   impact: EstimateCtx;
+  // skew's thresholds as resolved for this run (see skewThresholdsFor): straggler defers to skew's
+  // gate and data cut, so it must judge a tail with the values skew itself uses.
+  skewThresholds: SkewThresholds;
 }
 
 // auditConfig(app) calls every config-scope detect({ app }) with whatever appModel.app is
@@ -180,6 +183,10 @@ export function hasStageOutsideSql(stages: DetectorConfigTarget['stages']): bool
   if (stages == null) return false;
   for (const stage of stages.values()) if (stage.sqlExecutionId == null) return true;
   return false;
+}
+
+export interface SkewThresholds {
+  ratioWarn: number; minTasksForP95: number; dataShareMin: number; floorPctWarn: number;
 }
 
 interface SpillThresholds {
@@ -1452,8 +1459,8 @@ export const DETECTORS = [
     emits: ['skew'],
     docAnchor: '#bottleneck-skew',
     // dataShareMin: the share of the slow tasks' extra time that run time proportional to their data
-    // volume must account for before the tail is data skew (straggler's threshold of the same name
-    // is its complement). NOT SOURCED: our own majority cut.
+    // volume must account for before the tail is data skew; straggler judges a tail with it too.
+    // NOT SOURCED: our own majority cut.
     thresholds: { ratioWarn: 3, minTasksForP95: 20, dataShareMin: 0.5, floorPctWarn: IMPACT_FLOOR_PCT_WARN },
     detect(stage, ctx, thresholds): Finding | null {
       const gate = skewGate(stage, ctx, thresholds.ratioWarn, thresholds.minTasksForP95, thresholds.floorPctWarn);
@@ -2073,15 +2080,15 @@ export const DETECTORS = [
     // than the stage's own duration, so every finding there graded info. On the 14 real logs that
     // was 671 of 753 straggler findings, none above info; the slow tail is still real on those
     // stages, the floor is why they're dropped.
-    // dataShareMin and skewRatioWarn/skewMinTasksForP95 are skew's thresholds of the same names (a tail
-    // that much data-driven is skew's finding; a tail skew's duration gate admits whose cause is not
-    // data is this one's). Override them with skew's.
-    thresholds: { minTasks: 10, shareWarn: 0.05, shareWarnAtFloor: 0.025, warnPct: 0.10, critPct: 0.20, dataShareMin: 0.5, skewRatioWarn: 3, skewMinTasksForP95: 20, floorPctWarn: IMPACT_FLOOR_PCT_WARN, floorPctCrit: IMPACT_FLOOR_PCT_CRIT },
+    // A tail skew's gate admits and data explains is skew's finding; one it admits whose cause is not
+    // data is this one's. Both use skew's thresholds (ctx.skewThresholds), so tuning skew moves both.
+    thresholds: { minTasks: 10, shareWarn: 0.05, shareWarnAtFloor: 0.025, warnPct: 0.10, critPct: 0.20, floorPctWarn: IMPACT_FLOOR_PCT_WARN, floorPctCrit: IMPACT_FLOOR_PCT_CRIT },
     detect(stage, ctx, thresholds): Finding | null {
-      const tail = tailVerdict(stage, thresholds.dataShareMin);
+      const skew = ctx.skewThresholds;
+      const tail = tailVerdict(stage, skew.dataShareMin);
       // With no measured cause skew's gate is not consulted: both findings stand, flagged as overlapping.
       const skewTail = tail.cause === 'unattributed'
-        ? null : skewGate(stage, ctx, thresholds.skewRatioWarn, thresholds.skewMinTasksForP95, thresholds.floorPctWarn);
+        ? null : skewGate(stage, ctx, skew.ratioWarn, skew.minTasksForP95, skew.floorPctWarn);
       if (tail.cause === 'data' && skewTail !== null) return null; // skew reports it
       // A tail skew's duration gate admits but data does not explain is this finding's.
       const fromSkewGate = skewTail !== null && tail.cause !== 'data';
@@ -2102,7 +2109,7 @@ export const DETECTORS = [
         unit: useSpeculativeMetric ? 'count' : 'pct',
         speculativeTasks: stage.speculativeTasks ?? 0,
         stragglerCount: stage.stragglerCount ?? 0,
-        confidence: own?.confidence ?? skewConfidence(skewTail!.ratio, thresholds.skewRatioWarn),
+        confidence: own?.confidence ?? skewConfidence(skewTail!.ratio, skew.ratioWarn),
         validationRequired: `Warning needs at least ${shareLabel(thresholds.floorPctWarn)} of run time at stake, critical ${shareLabel(thresholds.floorPctCrit)}.`,
         recommendation: advice.recommendation,
         remediation: advice.remediation,
@@ -3223,3 +3230,9 @@ export type SuppressorsAreDetectors = AssertTrue<[SuppressorType] extends [Detec
 export type ThresholdOverrides = {
   readonly [D in DetectorEntry as D['type']]?: Partial<D['thresholds']>;
 };
+
+/** skew's thresholds for a run: its defaults with the user's `skew` overrides merged in. The one
+ * resolution analyze() hands to both skew (through withThresholds) and straggler (DetectorCtx). */
+export function skewThresholdsFor(overrides: ThresholdOverrides | undefined): SkewThresholds {
+  return mergeThresholds('skew', ENTRY_BY_TYPE.get('skew')!.thresholds, overrides?.skew ?? {}) as unknown as SkewThresholds;
+}

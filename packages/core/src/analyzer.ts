@@ -1,4 +1,4 @@
-import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
+import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, skewThresholdsFor, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
 import { effectiveThresholds, findingTunedThresholds, overridesFor, tunedThresholdsNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
@@ -211,6 +211,7 @@ export function analyze(
     app, jobs, executorsAdded, executorsRemoved, runAggregates, impact,
     stages: stages as unknown as DetectorCtx['stages'],
     sql: sql as unknown as DetectorCtx['sql'],
+    skewThresholds: skewThresholdsFor(thresholds),
   };
   const out: Finding[] = [];
   for (const d of detectors) {
