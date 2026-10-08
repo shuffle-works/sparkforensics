@@ -30,7 +30,7 @@ do not build hard thresholds or findings on top of them.
 
 ## Stage-ID attribution for Plan Advisor findings
 
-The Plan Advisor detectors (`duplicatePlanSubtree`, `smallFiles`, `broadcastSizing`
+The Plan Advisor detectors (`duplicatePlanSubtree`, `smallFiles`, `broadcastSizing`, `pythonUdf`
 in `packages/core/src/detectors.ts`) each attribute their finding to a narrowed `stageIds` set
 rather than the whole SQL execution: `PlanNode.stageIds` is resolved once per plan
 tree at parse time by unioning, per node, every metric's accumulator ID against a
