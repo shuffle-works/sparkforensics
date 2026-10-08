@@ -89,7 +89,7 @@ describe('html-export (shared by the CLI --export-html and the dashboard downloa
     const appModel = makeAppModel({ app: makeApp({ id: 'application_42', config: { 'spark.executor.memory': '1g' } }) });
     const stamp = { buildId: 'abc123', producer: 'test-producer 1.0.0' };
     const raw = buildHtmlExportData(appModel, [], 3, { redact: false, ...stamp });
-    expect(raw).toEqual(exportData(appModel, [], auditConfig(appModel.app), 3));
+    expect(raw).toEqual(exportData(appModel, [], auditConfig(appModel.app, appModel.stages), 3));
 
     const redacted = buildHtmlExportData(appModel, [], 3, { redact: true, ...stamp });
     expect(redacted.app.id).toBe('app-1');

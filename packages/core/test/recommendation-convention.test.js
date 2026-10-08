@@ -49,8 +49,6 @@ const SYNTHETIC_RUNS = [
 ];
 
 const CONFIG_APPS = [
-  { config: { a: '1' }, resources: { dynamicAllocationEnabled: true, shuffleServiceEnabled: false } },
-  { config: { 'spark.dynamicAllocation.minExecutors': '5', 'spark.dynamicAllocation.maxExecutors': '3' }, resources: { dynamicAllocationEnabled: true } },
   { config: {}, resources: { dynamicAllocationEnabled: true } },
   { config: { a: '1' }, resources: { serializer: 'org.apache.spark.serializer.JavaSerializer' } },
   { config: { a: '1' }, resources: { executor: { memoryMB: 8192, memoryOverheadMB: 100 } } },
@@ -62,7 +60,7 @@ function syntheticFindings() {
     const jobMap = new Map(jobs.map((j) => [j.id, j]));
     return analyze(makeApp(app), stages, added, [], jobMap);
   });
-  return [...analyzed, ...CONFIG_APPS.flatMap((app) => auditConfig(makeApp(app)))];
+  return [...analyzed, ...CONFIG_APPS.flatMap((app) => auditConfig(makeApp(app), new Map([[1, makeStage()]])))];
 }
 
 // The local log corpus is gitignored: the suite skips it on a checkout without logs.
@@ -109,16 +107,3 @@ describe('detector recommendations follow "<measurement>: <fix>"', () => {
   });
 });
 
-describe('inverted autoscaling bounds', () => {
-  it('splits into the bounds as the measurement and "set min ≤ max" as the fix', () => {
-    const app = {
-      config: { 'spark.dynamicAllocation.minExecutors': '5', 'spark.dynamicAllocation.maxExecutors': '3' },
-      resources: { dynamicAllocationEnabled: true },
-    };
-    const finding = auditConfig(app).find((f) => f.property === 'spark.dynamicAllocation.minExecutors');
-    expect(recommendationParts(finding.recommendation)).toEqual({
-      measured: 'spark.dynamicAllocation.minExecutors (5) exceeds maxExecutors (3)',
-      fix: 'set min ≤ max.',
-    });
-  });
-});

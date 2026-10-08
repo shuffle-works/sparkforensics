@@ -39,7 +39,7 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
         appModel.app, appModel.stages, appModel.executors.added, appModel.executors.removed,
         appModel.jobs, appModel.sql, appModel.runAggregates,
       );
-      const config = auditConfig(appModel.app);
+      const config = auditConfig(appModel.app, appModel.stages);
       const dashboard = new Map([...catalog, ...config].map((f) => [f.id, shared(f)]));
 
       // HTML export: the findings it ships for the dashboard bundle to render.

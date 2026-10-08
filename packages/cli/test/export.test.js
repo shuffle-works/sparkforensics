@@ -290,7 +290,7 @@ describe('--export-html (published bin)', () => {
       expect(exportedConfigFindings.length).toBeGreaterThan(0);
 
       const { appModel } = await collectRun(logPath);
-      const directConfigFindings = auditConfig(appModel.app);
+      const directConfigFindings = auditConfig(appModel.app, appModel.stages);
       expect(exportedConfigFindings).toEqual(directConfigFindings);
     } finally {
       rmSync(logDir, { recursive: true, force: true });

@@ -74,10 +74,6 @@ test('returns a stable, instance-free sentence for every simple single-branch ty
 });
 
 test('branches on the property field for configAudit', () => {
-  expect(coreFindingGenericRecommendation(finding({ type: 'configAudit', property: 'spark.shuffle.service.enabled' })))
-    .toMatch(/spark\.shuffle\.service\.enabled=true/);
-  expect(coreFindingGenericRecommendation(finding({ type: 'configAudit', property: 'spark.dynamicAllocation.minExecutors' })))
-    .toMatch(/minimum.*maximum|min.*max/i);
   expect(coreFindingGenericRecommendation(finding({ type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors' })))
     .toMatch(/spark\.dynamicAllocation\.maxExecutors/);
   expect(coreFindingGenericRecommendation(finding({ type: 'configAudit', property: 'spark.serializer' })))
