@@ -1,12 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { analyze } from '../src/analyzer.js';
+import { buildRecommendationRollup, isEligible } from '../src/recommendation-rollup.ts';
 import { attributeTail, TAIL_FACTOR } from '../src/stage-quantiles.js';
 import { createState, processEvent } from '../src/parser-worker.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
+// Volumes at a scale above the floors a median is taken against (1 MiB, 1000 records).
+const BYTES = 1e6;
+const RECS = 1000;
 const task = (over = {}) => ({
   failed: false, duration: 1000, host: 'h1', gcTime: 0, fetchWaitTime: 0, executorRunTime: 1000, executorCpuTime: 0,
-  inputBytes: 100, inputRecords: 10, shuffleRead: 0, shuffleReadRecords: 0, ...over,
+  inputBytes: 100 * BYTES, inputRecords: 10 * RECS, shuffleRead: 0, shuffleReadRecords: 0, ...over,
 });
 const many = (n, over) => Array.from({ length: n }, () => task(over));
 
@@ -18,20 +22,20 @@ describe('attributeTail', () => {
   });
 
   it('attributes a tail that reads proportionally more data to data', () => {
-    const t = attributeTail([...many(19), task({ duration: 10000, inputBytes: 1000, inputRecords: 100 })], 1000);
+    const t = attributeTail([...many(19), task({ duration: 10000, inputBytes: 1000 * BYTES, inputRecords: 100 * RECS })], 1000);
     // 10x the median task's bytes and records: run time scaled with it, so all 9000ms of excess is data.
     expect(t).toMatchObject({ tasks: 1, excessMs: 9000, dataMs: 9000, gcMs: 0, fetchWaitMs: 0, hostMs: 0, dataRatio: 10 });
   });
 
   it('counts shuffle-read bytes and records as data volume', () => {
-    const base = { inputBytes: 0, inputRecords: 0, shuffleRead: 100, shuffleReadRecords: 10 };
-    const t = attributeTail([...many(19, base), task({ ...base, duration: 5000, shuffleRead: 400, shuffleReadRecords: 40 })], 1000);
+    const base = { inputBytes: 0, inputRecords: 0, shuffleRead: 100 * BYTES, shuffleReadRecords: 10 * RECS };
+    const t = attributeTail([...many(19, base), task({ ...base, duration: 5000, shuffleRead: 400 * BYTES, shuffleReadRecords: 40 * RECS })], 1000);
     expect(t.dataRatio).toBe(4);
     expect(t.dataMs).toBe(3000);
   });
 
   it('takes the further of the bytes and records ratios', () => {
-    const t = attributeTail([...many(19), task({ duration: 4000, inputBytes: 100, inputRecords: 40 })], 1000);
+    const t = attributeTail([...many(19), task({ duration: 4000, inputBytes: 100 * BYTES, inputRecords: 40 * RECS })], 1000);
     expect(t.dataRatio).toBe(4);
     expect(t.dataMs).toBe(3000);
   });
@@ -77,11 +81,28 @@ describe('attributeTail', () => {
     expect(t.dataMs).toBe(0);
   });
 
-  it('counts a tail that read data as data when the median task read nothing, ahead of GC and fetch wait', () => {
+  it('gives GC and fetch wait their excess first when the median task read nothing, and data what they leave', () => {
     const none = { inputBytes: 0, inputRecords: 0, shuffleRead: 0, shuffleReadRecords: 0 };
     const slow = task({ ...none, duration: 30000, gcTime: 18000, fetchWaitTime: 2000, shuffleRead: 5e8, shuffleReadRecords: 1e6 });
     const t = attributeTail([...many(99, none), slow], 1000);
-    expect(t).toMatchObject({ tasks: 1, excessMs: 29000, dataMs: 29000, gcMs: 0, fetchWaitMs: 0, dataRatio: null });
+    expect(t).toMatchObject({ tasks: 1, excessMs: 29000, dataMs: 9000, gcMs: 18000, fetchWaitMs: 2000, dataRatio: null });
+  });
+
+  it('does not call a tail that is almost all GC data because it read a few bytes when the median read nothing', () => {
+    const none = { inputBytes: 0, inputRecords: 0, shuffleRead: 0, shuffleReadRecords: 0 };
+    const slow = task({ ...none, duration: 5900, gcTime: 4800, inputBytes: 10, inputRecords: 1 });
+    const t = attributeTail([...many(99, none), slow], 1000);
+    expect(t).toMatchObject({ excessMs: 4900, dataMs: 0, gcMs: 4800 });
+  });
+
+  it('takes ratios against the median or the volume floors, so a near-zero median prints no absurd multiple', () => {
+    // A median task that read 4 bytes, a tail task 1 MB: 250000x unfloored, about 1x against the 1 MiB floor.
+    const tiny = { inputBytes: 4, inputRecords: 1, shuffleRead: 0, shuffleReadRecords: 0 };
+    const t = attributeTail([...many(19, tiny), task({ ...tiny, duration: 9000, inputBytes: 1e6, inputRecords: 900 })], 1000);
+    expect(t.dataRatio).toBeLessThan(1);
+    expect(t.dataMs).toBe(0);
+    const big = attributeTail([...many(19, tiny), task({ ...tiny, duration: 9000, inputBytes: 50 * 1048576, inputRecords: 900 })], 1000);
+    expect(big.dataRatio).toBe(50);
   });
 
   it('ignores failed attempts, whose metrics stop where they died', () => {
@@ -112,8 +133,8 @@ describe('finalizeStage tail attribution', () => {
   }
 
   it('reads records from the TaskEnd metrics and attributes the tail', () => {
-    const tasks = Array.from({ length: 19 }, () => ({ duration: 1000, shuffleBytes: 100, shuffleRecords: 10 }));
-    tasks.push({ duration: 8000, shuffleBytes: 800, shuffleRecords: 80 });
+    const tasks = Array.from({ length: 19 }, () => ({ duration: 1000, shuffleBytes: 100 * BYTES, shuffleRecords: 10 * RECS }));
+    tasks.push({ duration: 8000, shuffleBytes: 800 * BYTES, shuffleRecords: 80 * RECS });
     const data = runStage(tasks);
     expect(data.tailAttribution).toMatchObject({ tasks: 1, excessMs: 7000, dataMs: 7000, dataRatio: 8 });
   });
@@ -181,6 +202,30 @@ describe('skew and straggler by tail cause', () => {
     expect(findings.find((f) => f.type === 'skew').cause).toBe('unattributed');
     expect(findings.find((f) => f.type === 'straggler').cause).toBe('unattributed');
     expect(findings.find((f) => f.type === 'straggler').validationRequired).toContain('overlaps');
+  });
+
+  it('words an unattributed skew finding without claiming a data cause, and rolls the overlapping pair up once', () => {
+    const findings = analyze(app, stage(tail({ dataRatio: null })), [], []);
+    const skew = findings.find((f) => f.type === 'skew');
+    expect(skew.recommendation).toMatch(/nothing in the log attributes the slow tasks to data volume/);
+    expect(skew.recommendation).toMatch(/rule out a GC pause/);
+    expect(skew.recommendation).not.toMatch(/read a median/);
+    const rollup = buildRecommendationRollup(findings.filter(isEligible), new Map([[1, { submittedAt: 0, completedAt: 50000 }]]));
+    expect(rollup.filter((g) => g.type === 'skew' || g.type === 'straggler')).toHaveLength(1);
+  });
+
+  it('leaves a stage with no attribution unattributed when a tuned warn ratio below the tail factor admits it', () => {
+    // P95/median 2.5x: under the 3x tail factor, so no task is in the tail and attributeTail has nothing to say.
+    const quiet = new Map([[1, makeStage({
+      taskCount: 100, completedAt: 50000, taskDurationP50: 1000, taskDurationP95: 2500, taskDurationMax: 3000,
+      stragglerCount: 12, stragglerExcessMs: 300000, longestNonStragglerMs: 3000, peakConcurrentTasks: 10,
+    })]]);
+    expect(types(analyze(app, quiet, [], []))).toEqual(['straggler']);
+    const tuned = analyze(app, quiet, [], [], new Map(), new Map(), null, { thresholds: { skew: { ratioWarn: 2 } } });
+    expect(types(tuned)).toEqual(['skew', 'straggler']);
+    expect(tuned.find((f) => f.type === 'skew').cause).toBe('unattributed');
+    expect(tuned.find((f) => f.type === 'straggler').cause).toBe('unattributed');
+    expect(tuned.find((f) => f.type === 'skew').recommendation).toMatch(/nothing in the log attributes/);
   });
 
   it('keeps the duration-only behaviour on a stage with no tail attribution', () => {

@@ -9,7 +9,7 @@ import { walkPlanTree } from './plan-tree-walk.ts';
 import { diagnoseJoinSkew, isSkewJoinNode, planShowsSkewSplit } from './aqe-skew.ts';
 import { isBatchEvalPythonNode } from './python-stage.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
-import { TAIL_FACTOR } from './stage-quantiles.ts';
+import { STRAGGLER_FACTOR, TAIL_FACTOR } from './stage-quantiles.ts';
 import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type TailStage } from './occupancy.ts';
 import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
 import {
@@ -850,12 +850,13 @@ const PYTHON_DATA_SENT = 'data sent to Python workers';
 const PYTHON_DATA_RETURNED = 'data returned from Python workers';
 
 // How to cut the cost of a row-at-a-time Python UDF: the Arrow-optimized UDF property while the
-// session lacks it, else what is left once it is on (a UDF that opted out with useArrow=False).
+// session lacks it, else what is left once it is on (a UDF that opted out with useArrow=False, takes no
+// arguments, or was created before the property was set: all of them still run as BatchEvalPython).
 function pythonUdfArrowFix(app: DetectorApp | null): { text: string; remediation: Remediation[] } {
   return switchFix(
     loggedAs(app, PYTHON_UDF_ARROW_KEY, true), PYTHON_UDF_ARROW_KEY, true,
     `set ${PYTHON_UDF_ARROW_KEY}=true to ship rows in Arrow batches, or rewrite the UDF as a pandas UDF.`,
-    `Arrow-optimized Python UDFs are already on for the session, so a UDF opted out with useArrow=False: remove that, or rewrite it as a pandas UDF.`,
+    `Arrow-optimized Python UDFs are already on for the session, so this UDF may have opted out with useArrow=False, take no arguments, or have been created before the property was set: check which, or rewrite it as a pandas UDF.`,
   );
 }
 
@@ -893,7 +894,7 @@ function skewOrigin(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence: boo
 
 // The skew finding's fix for the stage's origin. Join-driven skew gets AQE skew-join handling,
 // unless the run's effective conf already has it; uneven input gets the file-size remedy.
-function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false): { origin: SkewOrigin; aqeSkew?: AqeSkewCase; text: string; remediation: Remediation[] } {
+function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false, tail?: TailVerdict): { origin: SkewOrigin; aqeSkew?: AqeSkewCase; text: string; remediation: Remediation[] } {
   const origin = skewOrigin(stage, ctx, shuffleEvidence);
   if (origin === 'inputScan') {
     return {
@@ -907,12 +908,16 @@ function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false
   if (predatesAqeSkewJoin(ctx.app)) return { origin: 'other', text: SKEW_KEY_REMEDY, remediation: [codeFix(SKEW_KEY_REMEDY)] };
   const app = stageApp(ctx, stage);
   const fix = skewJoinFix(app);
+  // A tail the data volume explains (input plus shuffle read, in bytes or records) is data the
+  // diagnosis must not call even or cured from shuffle-read bytes alone.
+  const tailData = tail?.cause === 'data' ? { ratio: tail.attribution?.dataRatio ?? null } : undefined;
   // With skew-join handling on, the final plan and conf say why it did or did not act on this stage.
   const handlingOn = !loggedAs(app, 'spark.sql.adaptive.enabled', false) && loggedAs(app, 'spark.sql.adaptive.skewJoin.enabled', true);
   const diagnosis = handlingOn && stage.sqlExecutionId != null
     ? diagnoseJoinSkew({
       plan: ctx.sql.get(stage.sqlExecutionId)?.planTree, stageId: stage.id,
-      readMax: stage.shuffleReadMax, readP50: stage.shuffleReadP50,
+      readMax: stage.shuffleReadMax, readP50: stage.shuffleReadP50, stageShuffleReadBytes: stage.shuffleReadBytes,
+      ...(tailData ? { tailData } : {}),
       conf: (key) => effectiveConf(app, key), sparkVersion: app?.sparkVersion, keyRemedy: SKEW_KEY_REMEDY,
     })
     : null;
@@ -1544,7 +1549,7 @@ function stragglerGate(stage: DetectorStage, ctx: DetectorCtx, thresholds: {
     useSpeculativeMetric, value,
     detail: useSpeculativeMetric
       ? `${value} speculative attempt${value === 1 ? '' : 's'} discarded${speculationRuleNote(ctx.app)}`
-      : `${value}% of tasks straggled`,
+      : `${value}% of tasks ran over ${STRAGGLER_FACTOR}× the median`,
     confidence: useSpeculativeMetric
       ? stragglerConfidence(speculativeShare, thresholds.warnPct, thresholds.critPct)
       : stragglerConfidence(stragglerShare, thresholds.shareWarn, thresholds.critPct),
@@ -1565,7 +1570,7 @@ function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdi
   switch (tail.cause) {
     case 'data': {
       // skew reports a tail its gate admits; this is one only the straggler gate does.
-      const fix = skewFix(stage, ctx);
+      const fix = skewFix(stage, ctx, false, tail);
       const ratio = a?.dataRatio != null ? Math.round(a.dataRatio * 10) / 10 : null;
       return {
         evidence: { ...evidence, origin: fix.origin, aqeSkew: fix.aqeSkew }, remediation: fix.remediation,
@@ -1629,7 +1634,7 @@ export const DETECTORS = [
       const tail = tailVerdict(stage, thresholds.dataShareMin);
       if (tail.cause !== 'data' && tail.cause !== 'unattributed') return null;
       const value = Math.round(ratio * 10) / 10;
-      const fix = skewFix(stage, ctx);
+      const fix = skewFix(stage, ctx, false, tail);
       const dataRatio = tail.cause === 'data' && tail.attribution?.dataRatio != null
         ? Math.round(tail.attribution.dataRatio * 10) / 10 : undefined;
       return {
@@ -1640,7 +1645,10 @@ export const DETECTORS = [
         metric, value,
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
         validationRequired: `Flagged only when it costs at least ${shareLabel(thresholds.floorPctWarn)} of run time.`,
-        recommendation: `Task duration ratio (${metric}) is ${value}×${dataRatio !== undefined ? `, and the slow tasks read a median ${dataRatio}× the data of the median task` : ''}: ${fix.text}.`,
+        recommendation: tail.cause === 'unattributed'
+          // Nothing in the log showed a data cause, so the key advice is a possibility, not a finding.
+          ? `Task duration ratio (${metric}) is ${value}×, and nothing in the log attributes the slow tasks to data volume, GC, shuffle fetch wait or one host, so rule out a GC pause or a slow fetch first: ${fix.text}.`
+          : `Task duration ratio (${metric}) is ${value}×${dataRatio !== undefined ? `, and the slow tasks read a median ${dataRatio}× the data of the median task` : ''}: ${fix.text}.`,
         remediation: fix.remediation,
       };
     },
@@ -3467,7 +3475,10 @@ export const DETECTORS = [
           confidence: 'medium',
           validationRequired: 'Row counts are the executors\' measured values; the time graded is the whole stage that runs the join, which also covers its other operators.',
           recommendation: `${shape.operator}${on} produced ${outputRows.toLocaleString('en-US')} rows${expansion == null
-            ? ', every left row paired with every right row.'
+            ? shape.condition == null
+              ? ', every left row paired with every right row.'
+              // The condition filtered the pairings: the output is the rows it kept, not the product.
+              : ', the pairs of left and right rows its condition kept out of every pairing it compared.'
             : ` from ${leftRows!.toLocaleString('en-US')} and ${rightRows!.toLocaleString('en-US')} input rows (${Math.round(expansion).toLocaleString('en-US')}x the larger side).`} ${advice}`,
           remediation: [codeFix(advice)],
         });

@@ -147,9 +147,9 @@ export function finalizeStage(
   const { p50: spillMemP50, p95: spillMemP95, max: spillMemMax } = computeFieldQuantiles(arr, FIELDS.MEM_SPILLED);
   const { p50: spillDiskP50, p95: spillDiskP95, max: spillDiskMax } = computeFieldQuantiles(arr, FIELDS.DISK_SPILLED);
 
-  // Straggler count: tasks with duration > 4 * P50, their summed excess over P50, and the longest
-  // task that isn't one.
-  const stragglerThreshold = 4 * p50;
+  // Straggler count: tasks with duration > STRAGGLER_FACTOR * P50, their summed excess over P50, and
+  // the longest task that isn't one.
+  const stragglerThreshold = STRAGGLER_FACTOR * p50;
   let stragglerCount = 0;
   let stragglerExcessMs = 0;
   let longestNonStragglerMs = 0;
@@ -218,6 +218,9 @@ export function finalizeStage(
 // P95/median ratio threshold, so every stage either detector flags on duration has a tail here.
 export const TAIL_FACTOR = 3;
 
+// A task is a straggler when it runs over this many times the stage's median task.
+export const STRAGGLER_FACTOR = 4;
+
 // The per-task fields attributeTail reads; a TaskRecord in event-handlers.ts has all of them.
 interface TailTask {
   failed: boolean;
@@ -240,6 +243,12 @@ const TAIL_HOST_MIN_TASKS = 3;
 const TAIL_HOST_MIN_TAIL_SHARE = 0.5;
 const TAIL_HOST_MIN_OVERREPRESENTATION = 2;
 
+// A median task that read next to nothing makes every ratio against it huge (a median of 4 bytes
+// against a 1 MB task reads as 250000x). Ratios are taken against the median or these floors,
+// whichever is larger, and a task counts as having read data only from the floors up.
+const MIN_VOLUME_BYTES = 1024 * 1024;
+const MIN_VOLUME_RECORDS = 1000;
+
 // Why the stage's slow tasks (non-failed, over TAIL_FACTOR x P50) were slow, from what each task
 // logged. A task's excess is its duration over P50. Four causes claim it, in this order so no
 // millisecond counts twice:
@@ -250,6 +259,9 @@ const TAIL_HOST_MIN_OVERREPRESENTATION = 2;
 //   2. GC time over the median task's.
 //   3. Shuffle fetch wait over the median task's.
 //   4. Host: what is left of the tail tasks on the one host that holds most of the tail.
+// With a median task that read nothing there is no ratio to take, so GC and fetch wait claim their
+// excess first and a task that read data owns what they leave: the time was GC or waiting unless
+// the data is all that is left to explain it.
 // Null when the stage has no tail. `tasks` is consumed once.
 export function attributeTail(tasks: Iterable<TailTask>, p50: number): TailAttribution | null {
   const all: TailTask[] = [];
@@ -267,16 +279,12 @@ export function attributeTail(tasks: Iterable<TailTask>, p50: number): TailAttri
   const medianRecords = medianOf(all, recordsOf);
   const medianGc = medianOf(all, (t) => t.gcTime);
   const medianFetch = medianOf(all, (t) => t.fetchWaitTime);
-  // With a median task that read nothing there is no ratio to take: a task that read anything is
-  // infinitely above it, so all its excess is data (the typical skew with mostly empty partitions).
   const hasVolume = medianBytes > 0 || medianRecords > 0;
-  const volumeRatio = (t: TailTask): number => {
-    if (!hasVolume) return bytesOf(t) > 0 || recordsOf(t) > 0 ? Infinity : 0;
-    return Math.max(
-      medianBytes > 0 ? bytesOf(t) / medianBytes : 0,
-      medianRecords > 0 ? recordsOf(t) / medianRecords : 0,
-    );
-  };
+  const volumeRatio = (t: TailTask): number => Math.max(
+    medianBytes > 0 ? bytesOf(t) / Math.max(medianBytes, MIN_VOLUME_BYTES) : 0,
+    medianRecords > 0 ? recordsOf(t) / Math.max(medianRecords, MIN_VOLUME_RECORDS) : 0,
+  );
+  const readsData = (t: TailTask) => bytesOf(t) >= MIN_VOLUME_BYTES || recordsOf(t) >= MIN_VOLUME_RECORDS;
 
   const tailHosts = new Map<string, number>();
   const allHosts = new Map<string, number>();
@@ -295,14 +303,17 @@ export function attributeTail(tasks: Iterable<TailTask>, p50: number): TailAttri
     const excess = t.duration - p50;
     excessMs += excess;
     let left = excess;
-    const ratio = volumeRatio(t);
-    if (hasVolume) ratios.push(ratio);
-    const data = Math.min(left, Math.max(0, p50 * (ratio - 1)));
-    dataMs += data; left -= data;
+    if (hasVolume) {
+      const ratio = volumeRatio(t);
+      ratios.push(ratio);
+      const data = Math.min(left, Math.max(0, p50 * (ratio - 1)));
+      dataMs += data; left -= data;
+    }
     const gc = Math.min(left, Math.max(0, t.gcTime - medianGc));
     gcMs += gc; left -= gc;
     const fetch = Math.min(left, Math.max(0, t.fetchWaitTime - medianFetch));
     fetchWaitMs += fetch; left -= fetch;
+    if (!hasVolume && readsData(t)) { dataMs += left; left = 0; }
     if (hostConcentrated && t.host === topHost) { hostMs += left; }
     cpuNs += t.executorCpuTime;
     runMs += t.executorRunTime;
