@@ -144,7 +144,10 @@ export interface PlanNode {
   id?: string;
   name: string;
   detail?: string;
-  metrics?: { name: string; value: number; metricType?: string }[];
+  // `executorSide` marks a value read from the stage accumulables (the executors' task updates)
+  // rather than from the driver's own accumulator updates. Plan-shape fingerprints skip those
+  // so that fingerprints, and the finding ids derived from them, do not depend on them.
+  metrics?: { name: string; value: number; metricType?: string; executorSide?: true }[];
   children: PlanNode[];
   stageIds?: number[];
   // Present only on the two synthesized halves of a split Exchange/

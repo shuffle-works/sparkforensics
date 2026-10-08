@@ -236,6 +236,13 @@ export function unionStageIds(nodes: PlanNode[], fallback: number[]): number[] {
 // without descendant scan detail entering the comparison.
 interface PlanShape { size: number; fingerprint: string; }
 
+// The metric names a node's fingerprint is built from. Executor-side values are left out: whether
+// one resolves depends on which tasks reported it, and a fingerprint (and the duplicatePlanSubtree
+// and cachingOpportunity ids derived from it) must not shift when a run reports more of them.
+function fingerprintMetricNames(metrics: PlanNode['metrics']): string {
+  return (metrics ?? []).filter((m) => !m.executorSide).map((m) => m.name).sort().join(',');
+}
+
 export function computePlanShapes(
   root: PlanNode,
   opts: { includeDetail?: boolean; normalizeDetail?: (d: string) => string } = {},
@@ -260,7 +267,7 @@ export function computePlanShapes(
     const realMetrics = writeHalf ? writeHalf.metrics : node.metrics;
     const childShapes = realChildren.map((c) => visit(c, false));
     const size = 1 + childShapes.reduce((sum, c) => sum + c.size, 0);
-    const metricNames = (realMetrics ?? []).map((m) => m.name).sort().join(',');
+    const metricNames = fingerprintMetricNames(realMetrics);
     const childFingerprints = childShapes.map((c) => cyrb53(c.fingerprint)).join(',');
     const fingerprint = isRoot && includeDetail
       ? `${node.name}[${metricNames}]<${normalize(node.detail ?? '')}>{${childFingerprints}}`
@@ -342,7 +349,7 @@ export function findCompositeCandidates(root: PlanNode): CompositeCandidate[] {
     const childResults = (node.children ?? []).map(visit);
     path.pop();
 
-    const metricNames = (node.metrics ?? []).map((m) => m.name).sort().join(',');
+    const metricNames = fingerprintMetricNames(node.metrics);
     // Child digests, as in computePlanShapes: deterministic, so still comparable across executions.
     const childFingerprints = childResults.map((r) => cyrb53(r.fingerprint)).join(',');
     const fingerprint = `${node.name}[${metricNames}]{${childFingerprints}}`;

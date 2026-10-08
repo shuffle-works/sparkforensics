@@ -239,6 +239,14 @@ export const StageCompletedEventSchema = z.object({
     'Submission Time': z.number().optional(),
     'Completion Time': z.number().optional(),
     'Failure Reason': z.string().optional(),
+    // The stage's accumulators, read only for SQL metrics (Metadata "sql"): their Value is the
+    // accumulator's running total, which Spark writes as a decimal string. Value stays unknown
+    // because internal accumulators write arrays and other shapes there.
+    Accumulables: z.array(z.object({
+      ID: z.number(),
+      Value: z.unknown().optional(),
+      Metadata: z.string().optional(),
+    })).optional(),
   }),
 });
 

@@ -7,6 +7,7 @@ import {
   JobEndEventSchema,
   StageSubmittedEventSchema,
   StageExecutorMetricsEventSchema,
+  StageCompletedEventSchema,
   TaskEndEventSchema,
   SqlExecutionStartEventSchema,
   SqlAdaptiveExecutionUpdateEventSchema,
@@ -226,6 +227,9 @@ export interface ParserState {
   // never reaches the model, so a write made there would otherwise go unreported.
   unreadableSqlStarts: Set<number>;
   accumState: Map<number, Map<number, number>>;
+  // Per open SQL execution: the latest total of each SQL metric accumulator that its stages'
+  // StageCompleted events reported (the executor-side counterpart of accumState).
+  executorAccumState: Map<number, Map<number, number>>;
   rddInfo: Map<number, RddInfoRecord>;
   rddBlocks: Map<number, RddBlockState>;
   // SparkListenerBlockUpdated events for rdd_* blocks. Zero means the log carries no block-level
@@ -438,6 +442,7 @@ export function createState(): ParserState {
     skippedLines: 0,
     unreadableSqlStarts: new Set(),
     accumState: new Map(),
+    executorAccumState: new Map(),
     rddInfo: new Map(),
     rddBlocks: new Map(),
     rddBlockUpdates: 0,
@@ -695,12 +700,18 @@ function accountLateSpeculativeLoser(event: z.infer<typeof TaskEndEventSchema>, 
   return true;
 }
 
+type PlanMetric = NonNullable<PlanNode['metrics']>[number];
+
+// Driver-side values (DriverAccumUpdates) win over executor-side ones (StageCompleted
+// accumulables); a metric has one of the two sources, so the order only matters for a log that
+// carries both.
 export function resolvePlanTree(
   rootInfo: SparkPlanInfo,
   accumMap: Map<number, number>,
   taskAccumStages: Map<number, Set<number>>,
   executionStageIds: Set<number> | undefined,
   executionId?: number,
+  executorAccumMap?: Map<number, number>,
 ): PlanNode {
   const seen = new WeakSet<SparkPlanInfo>();
   const nodeMap = new WeakMap<SparkPlanInfo, PlanNode>();
@@ -715,12 +726,17 @@ export function resolvePlanTree(
   const idPrefix = executionId != null ? `e${executionId}:` : '';
 
   function computeMetricsAndStageIds(info: SparkPlanInfo): {
-    metrics: { name: string; value: number; metricType?: string }[];
+    metrics: PlanMetric[];
     stageIds?: number[];
   } {
-    const metrics = (info.metrics ?? []).reduce<{ name: string; value: number; metricType?: string }[]>((acc, m) => {
-      if (m.accumulatorId !== undefined && accumMap.has(m.accumulatorId)) {
+    const metrics = (info.metrics ?? []).reduce<PlanMetric[]>((acc, m) => {
+      if (m.accumulatorId === undefined) return acc;
+      if (accumMap.has(m.accumulatorId)) {
         acc.push({ name: m.name, value: accumMap.get(m.accumulatorId)!, metricType: m.metricType });
+      } else if (executorAccumMap?.has(m.accumulatorId) && m.metricType !== 'average') {
+        // An 'average' metric's accumulator holds a sum of per-task averages (scaled by 10), so
+        // its total is not the average the SQL tab shows; that needs the per-task values.
+        acc.push({ name: m.name, value: executorAccumMap.get(m.accumulatorId)!, metricType: m.metricType, executorSide: true });
       }
       return acc;
     }, []);
@@ -1140,6 +1156,7 @@ export function startSqlExecution(event: z.infer<typeof SqlExecutionStartEventSc
   state.resolvedPlanExecutions.delete(exec.id);
   if (sparkPlanInfo !== null) {
     state.accumState.set(exec.id, new Map());
+    state.executorAccumState.set(exec.id, new Map());
   }
   return { type: 'sql', data: exec };
 }
@@ -1157,14 +1174,17 @@ export function endSqlExecution(
   const planInfo = exec?.sparkPlanInfo ?? null;
   if (!planInfo || !planInfo.nodeName) {
     state.accumState.delete(event.executionId);
+    state.executorAccumState.delete(event.executionId);
     return exec ? { type: 'sql', data: { ...exec } } : null;
   }
 
   const accumMap = state.accumState.get(event.executionId) ?? new Map<number, number>();
   const planTree = resolvePlanTree(
     planInfo, accumMap, state.taskAccumStages, state.sqlExecStages.get(event.executionId), event.executionId,
+    state.executorAccumState.get(event.executionId),
   );
   state.accumState.delete(event.executionId);
+  state.executorAccumState.delete(event.executionId);
   // The resolved tree is all anything downstream reads; the raw plan (often megabytes per
   // execution under AQE) would otherwise stay live for the rest of the parse.
   exec!.sparkPlanInfo = null;
@@ -1172,6 +1192,24 @@ export function endSqlExecution(
 
   state.evidenceInputs.resolvedSqlPlans++;
   return { type: 'sqlPlan', data: { executionId: event.executionId, planTree } };
+}
+
+// Keeps the latest total of every SQL metric accumulator a stage reports, for the execution that
+// ran the stage. A stage's accumulables hold each accumulator's running total across all stages
+// and attempts, so a later stage overwrites an earlier one rather than adding to it (Spark's
+// DAGScheduler.updateAccumulators merges into the driver-side accumulator and records its value;
+// the SQL tab sums the same task updates). Spark writes the value as a decimal string.
+export function recordStageSqlAccumulables(info: z.infer<typeof StageCompletedEventSchema>['Stage Info'], state: ParserState): void {
+  const accumulables = info.Accumulables;
+  if (!accumulables || accumulables.length === 0) return;
+  const executionId = state.stageToSqlExec.get(info['Stage ID']);
+  const totals = executionId === undefined ? undefined : state.executorAccumState.get(executionId);
+  if (!totals) return;
+  for (const acc of accumulables) {
+    if (acc.Metadata !== 'sql') continue;
+    const value = typeof acc.Value === 'string' ? Number(acc.Value) : acc.Value;
+    if (typeof value === 'number' && Number.isFinite(value)) totals.set(acc.ID, value);
+  }
 }
 
 export function applyDriverAccumUpdates(event: z.infer<typeof DriverAccumUpdatesEventSchema>, state: ParserState): null {
@@ -1266,6 +1304,7 @@ export function processEvent(event: SparkEvent, state: ParserState): unknown {
       const id = info['Stage ID'];
       const stage = state.stages.get(id);
       if (!stage) return null;
+      recordStageSqlAccumulables(info, state);
       stage.completedAt = info['Completion Time'] ?? 0;
       // Older Spark (seen on 1.x-2.0 logs) posts StageSubmitted before the stage's submission
       // time is set; StageCompleted carries it. Without this backfill submittedAt stays 0 and
@@ -1637,4 +1676,5 @@ export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => 
     ...(state.unreadableSqlStarts.size > 0 ? { unreadableSqlExecutions: [...state.unreadableSqlStarts].sort((a, b) => a - b) } : {}),
   });
   state.accumState.clear();
+  state.executorAccumState.clear();
 }
