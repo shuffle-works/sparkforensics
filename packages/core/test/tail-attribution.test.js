@@ -194,7 +194,10 @@ describe('skew and straggler by tail cause', () => {
     for (const skew of [{ ratioWarn: 10 }, { dataShareMin: 0.95 }]) {
       const findings = analyze(app, stage(data), [], [], new Map(), new Map(), null, { thresholds: { skew } });
       expect(types(findings)).toEqual(['straggler']);
+      const [[name, value]] = Object.entries(skew);
+      expect(findings.find((f) => f.type === 'straggler').tunedThresholds).toEqual({ [`skew.${name}`]: { value, default: expect.any(Number) } });
     }
+    expect(analyze(app, stage(data), [], []).find((f) => f.type === 'skew').tunedThresholds).toBeUndefined();
   });
 
   it("keeps a data-driven tail only straggler's gate admits as a straggler finding, with the data volume", () => {

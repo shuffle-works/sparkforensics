@@ -17,7 +17,7 @@ const detectors: readonly Detector[] = DETECTORS;
 export interface AnalyzeOptions {
   /** Per-detector overrides merged over each entry's own thresholds (validate user input with
    * parseThresholdOverrides first). Findings from an entry an override moves off its defaults, or
-   * whose `suppressedBy` entry it moves, carry `tunedThresholds` (with an uncalibrated-estimate
+   * whose `suppressedBy` entry (or, for straggler, skew) it moves, carry `tunedThresholds` (with an uncalibrated-estimate
    * caveat when they have an estimate figure), and an entry's tuned floorPctWarn/floorPctCrit
    * grade its findings' impact band. Omitted: the specification. */
   thresholds?: ThresholdOverrides;
