@@ -302,7 +302,7 @@ shuffle storage plugin, and `minExecutors` above `maxExecutors`.
 
 ### `PLAN`: Plan advisor {#plan}
 
-Flags patterns in the SQL execution plan worth reviewing. Five checks share
+Flags patterns in the SQL execution plan worth reviewing. Six checks share
 this tag:
 
 - Duplicate plan subtree: the same subtree recomputed more than once in the
@@ -322,6 +322,17 @@ this tag:
   of a range join and join on the bucket, or to confirm that a cross join is
   intended. It needs the executors' `number of output rows` metrics, so a join
   with no reported row counts is not flagged.
+- Row-at-a-time Python UDF: a plan runs `BatchEvalPython`, which pickles
+  every row to a Python worker and back. Flagged when its stages sent at
+  least 64 MiB to the workers (`data sent to Python workers`) and ran for at
+  least 30 seconds together; the finding reports the bytes sent and returned
+  and the stage time, and is informational. `ArrowEvalPython` (Arrow-optimized
+  and pandas UDFs) is never flagged. The advice is
+  `spark.sql.execution.pythonUDF.arrow.enabled=true` (Spark 3.4 and later;
+  already the default from 4.2, where the remedy is a UDF that opted out with
+  `useArrow=False`) or a pandas UDF. These floors are conservative guesses,
+  not tuned against real workloads. A plan that reports no
+  `data sent to Python workers` value is skipped.
 - Under-broadcast: the smaller side of a Sort Merge Join looks well under
   the broadcast threshold; consider a `broadcast()` hint or raising
   `spark.sql.autoBroadcastJoinThreshold`. When the effective threshold

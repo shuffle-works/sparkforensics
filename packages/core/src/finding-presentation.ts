@@ -411,6 +411,13 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
       ? 'Repartition or coalesce before writing to raise the average file size.'
       : 'Compact the upstream output so fewer, larger files are produced.'),
   },
+  pythonUdf: {
+    name: 'row-at-a-time Python UDF',
+    tag: 'PLAN',
+    thresholdSummary: (t) => `over ${t.minBytesSent / 1048576} MiB sent to Python workers by stages running over ${t.minStageMs / 1000} s`,
+    actionLabel: () => 'Vectorize Python UDF',
+    genericRecommendation: () => 'Use Arrow-optimized Python UDFs (spark.sql.execution.pythonUDF.arrow.enabled, Spark 3.4 and later) or a pandas UDF instead of a row-at-a-time Python UDF.',
+  },
   nestedLoopJoin: {
     name: 'nested loop join',
     tag: 'PLAN',

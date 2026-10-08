@@ -65,6 +65,8 @@ const SPARK_DEFAULTS: Readonly<Record<string, readonly DefaultStep[]>> = {
   'spark.sql.adaptive.coalescePartitions.enabled': [[[3, 0], 'true']],
   // Falls back to spark.sql.adaptive.shuffle.targetPostShuffleInputSize, itself 64MB.
   'spark.sql.adaptive.advisoryPartitionSizeInBytes': [[[3, 0], '64MB']],
+  // Arrow-optimized Python UDFs: added in 3.4.0 (off), on by default from 4.2.0.
+  'spark.sql.execution.pythonUDF.arrow.enabled': [[[3, 4], 'false'], [[4, 2], 'true']],
 };
 
 // Spark's spark.redaction.string default, which replaces a sensitive value in modifiedConfigs.

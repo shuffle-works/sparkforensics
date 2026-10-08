@@ -197,7 +197,7 @@ the cluster or on another property has no entry. Add a property to the table onl
 with the release that introduced each of its defaults, and a per-version test.
 
 A detector scoped to one SQL execution (`skew`, `straggler`, `shuffle`,
-`partitionSizing`, `underBroadcast`, `overBroadcast`) passes that execution's
+`partitionSizing`, `underBroadcast`, `overBroadcast`, `pythonUdf`) passes that execution's
 `modifiedConfigs`: `detectors.ts`'s `stageApp()` and `queryApp()` return the app with
 them applied, so the helpers that take an app (`effectiveConf`, `loggedAs`,
 `switchFix`) need no second argument. Run-wide detectors use the app as logged.

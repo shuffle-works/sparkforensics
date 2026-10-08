@@ -368,6 +368,15 @@ export interface SmallFilesEvidence extends PlanFindingEvidence {
 }
 export interface SmallFilesFinding extends NumericFinding<'smallFiles'>, SmallFilesEvidence, PlanNodeOrigin {}
 
+export interface PythonUdfEvidence extends PlanFindingEvidence {
+  // Bytes the executors sent to Python workers: the finding's `value`, repeated for the report.
+  dataSentBytes: number;
+  // Bytes the workers returned; null when the plan reports no such metric.
+  dataReturnedBytes: number | null;
+  // Summed wall-clock of the stages that ran the row-at-a-time UDFs, ms.
+  stageDurationMs: number;
+}
+export interface PythonUdfFinding extends NumericFinding<'pythonUdf'>, PythonUdfEvidence, PlanNodeOrigin {}
 /** A BroadcastNestedLoopJoin or CartesianProduct whose output is far larger than both inputs.
  * `nodeName` is the operator, `joinType` the Spark join type (null when the plan line has none)
  * and `condition` the join condition with expression ids removed (null for a join without one).
@@ -429,6 +438,7 @@ export interface FindingEvidenceMap {
   configAudit: ConfigAuditEvidence;
   duplicatePlanSubtree: DuplicatePlanSubtreeEvidence;
   smallFiles: SmallFilesEvidence;
+  pythonUdf: PythonUdfEvidence;
   nestedLoopJoin: NestedLoopJoinEvidence;
   underBroadcast: UnderBroadcastEvidence;
   overBroadcast: OverBroadcastEvidence;
@@ -461,6 +471,7 @@ export type Finding =
   | ConfigAuditFinding
   | DuplicatePlanSubtreeFinding
   | SmallFilesFinding
+  | PythonUdfFinding
   | NestedLoopJoinFinding
   | UnderBroadcastFinding
   | OverBroadcastFinding;

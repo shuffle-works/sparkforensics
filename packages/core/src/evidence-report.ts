@@ -211,6 +211,7 @@ const EVIDENCE_KEYS = {
     'groupIndex',
   ],
   smallFiles: ['executionId', 'stageIds', 'fileCount', 'direction', 'nodeName'],
+  pythonUdf: ['executionId', 'stageIds', 'dataSentBytes', 'dataReturnedBytes', 'stageDurationMs'],
   nestedLoopJoin: ['executionId', 'stageIds', 'nodeName', 'joinType', 'condition', 'outputRows', 'leftRows', 'rightRows'],
   underBroadcast: ['executionId', 'stageIds', 'largerSideBytes', 'broadcastThreshold'],
   overBroadcast: ['executionId', 'stageIds', 'broadcastThreshold'],
