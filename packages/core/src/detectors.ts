@@ -20,6 +20,7 @@ import { totalExecutorCpuMs } from './run-totals.ts';
 import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
+import { parseSparkMemoryMB } from './spark-memory.ts';
 import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure } from './types.ts';
@@ -167,6 +168,16 @@ export interface DetectorCtx {
 // (SparkAppInfo | null), independent of DetectorCtx.
 export interface DetectorConfigTarget {
   app: DetectorApp | null;
+  // The run's stages, for config checks that apply only to some kinds of work. Absent when the caller
+  // has none, in which case those checks stay silent.
+  stages?: Map<number, DetectorStage>;
+}
+
+// True when any stage ran outside a SQL execution: RDD API work, which spark.serializer governs.
+export function hasStageOutsideSql(stages: DetectorConfigTarget['stages']): boolean {
+  if (stages == null) return false;
+  for (const stage of stages.values()) if (stage.sqlExecutionId == null) return true;
+  return false;
 }
 
 interface SpillThresholds {
@@ -225,6 +236,13 @@ export function unionStageIds(nodes: PlanNode[], fallback: number[]): number[] {
 // without descendant scan detail entering the comparison.
 interface PlanShape { size: number; fingerprint: string; }
 
+// The metric names a node's fingerprint is built from. Executor-side values are left out: whether
+// one resolves depends on which tasks reported it, and a fingerprint (and the duplicatePlanSubtree
+// and cachingOpportunity ids derived from it) must not shift when a run reports more of them.
+function fingerprintMetricNames(metrics: PlanNode['metrics']): string {
+  return (metrics ?? []).filter((m) => !m.executorSide).map((m) => m.name).sort().join(',');
+}
+
 export function computePlanShapes(
   root: PlanNode,
   opts: { includeDetail?: boolean; normalizeDetail?: (d: string) => string } = {},
@@ -249,7 +267,7 @@ export function computePlanShapes(
     const realMetrics = writeHalf ? writeHalf.metrics : node.metrics;
     const childShapes = realChildren.map((c) => visit(c, false));
     const size = 1 + childShapes.reduce((sum, c) => sum + c.size, 0);
-    const metricNames = (realMetrics ?? []).map((m) => m.name).sort().join(',');
+    const metricNames = fingerprintMetricNames(realMetrics);
     const childFingerprints = childShapes.map((c) => cyrb53(c.fingerprint)).join(',');
     const fingerprint = isRoot && includeDetail
       ? `${node.name}[${metricNames}]<${normalize(node.detail ?? '')}>{${childFingerprints}}`
@@ -331,7 +349,7 @@ export function findCompositeCandidates(root: PlanNode): CompositeCandidate[] {
     const childResults = (node.children ?? []).map(visit);
     path.pop();
 
-    const metricNames = (node.metrics ?? []).map((m) => m.name).sort().join(',');
+    const metricNames = fingerprintMetricNames(node.metrics);
     // Child digests, as in computePlanShapes: deterministic, so still comparable across executions.
     const childFingerprints = childResults.map((r) => cyrb53(r.fingerprint)).join(',');
     const fingerprint = `${node.name}[${metricNames}]{${childFingerprints}}`;
@@ -672,6 +690,23 @@ function versionDefault(app: DetectorApp | null, key: string): string | undefine
     return major >= 3 ? 'true' : undefined;
   }
   return undefined;
+}
+
+// The factor and minimum Spark applies to size the executor overhead when spark.executor.memoryOverhead
+// is unset: max(factor * executor memory, minimum). The run's own settings win, each only on a Spark
+// version that reads it: spark.executor.memoryOverheadFactor from 3.3.0 and spark.executor.minMemoryOverhead
+// from 4.0.0 (EXECUTOR_MIN_MEMORY_OVERHEAD, version("4.0.0") in core/.../internal/config/package.scala at
+// v4.0.0). An unrecorded version is read as current. `fallback` is the detector's default pair.
+function defaultOverheadSettings(app: DetectorApp | null, fallback: { floorMB: number; floorPct: number }): { minMB: number; factor: number } {
+  const version = /^(\d+)\.(\d+)/.exec(app?.sparkVersion ?? '');
+  const [major, minor] = version == null ? [Infinity, 0] : [Number(version[1]), Number(version[2])];
+  const config = app?.config ?? {};
+  const factor = Number.parseFloat(config['spark.executor.memoryOverheadFactor'] ?? '');
+  const minMB = parseSparkMemoryMB(config['spark.executor.minMemoryOverhead']);
+  return {
+    factor: (major > 3 || (major === 3 && minor >= 3)) && Number.isFinite(factor) && factor > 0 ? factor : fallback.floorPct,
+    minMB: major >= 4 && minMB != null && minMB >= 0 ? minMB : fallback.floorMB,
+  };
 }
 
 // The run's effective value of a property: the logged one, else versionDefault's.
@@ -2711,40 +2746,15 @@ export const DETECTORS = [
   }),
   // ── Config-sanity entries (scope:'config', inScorecard:false) ────────────────
   defineConfigDetector({
-    type: 'configAudit', order: 120, fixEffort: 'config', version: 1, inScorecard: false,
-    emits: ['configAudit'],
-    docAnchor: '#config-shuffle-service', thresholds: {}, property: 'spark.shuffle.service.enabled',
-    detect(target): Finding | null {
-      const res = target.app?.resources ?? null;
-      if (res?.dynamicAllocationEnabled === true && res?.shuffleServiceEnabled === false) {
-        return {
-          type: 'configAudit', property: 'spark.shuffle.service.enabled',
-          impactBand: 'warning', metric: 'config', valueText: 'false',
-          recommendation: 'Dynamic allocation is on but the external shuffle service is off: set spark.shuffle.service.enabled=true so shuffle data survives executor removal.',
-          remediation: setConfUnlessLogged(target.app, 'spark.shuffle.service.enabled', true),
-        };
-      }
-      return null;
-    },
-    estimate: noWasteModel,
-  }),
-  defineConfigDetector({
     type: 'configAudit', order: 121, fixEffort: 'config', version: 1, inScorecard: false,
     emits: ['configAudit'],
     docAnchor: '#config-autoscale-bounds', thresholds: {}, property: 'spark.dynamicAllocation.maxExecutors',
     detect(target): Finding | null {
       const app = target.app; const config = app?.config ?? {}; const res = app?.resources ?? null;
       if (res?.dynamicAllocationEnabled !== true) return null;
-      const minN = config['spark.dynamicAllocation.minExecutors'] != null ? parseInt(config['spark.dynamicAllocation.minExecutors'], 10) : null;
+      // minExecutors > maxExecutors is not audited: ExecutorAllocationManager.validateSettings throws on it
+      // at startup (v3.5.0 lines 196-199), so no run that wrote an event log has inverted bounds.
       const maxN = config['spark.dynamicAllocation.maxExecutors'] != null ? parseInt(config['spark.dynamicAllocation.maxExecutors'], 10) : null;
-      if (minN != null && maxN != null && minN > maxN) {
-        return {
-          type: 'configAudit', property: 'spark.dynamicAllocation.minExecutors',
-          impactBand: 'critical', metric: 'config', valueText: `${minN} > ${maxN}`,
-          recommendation: `spark.dynamicAllocation.minExecutors (${minN}) exceeds maxExecutors (${maxN}): set min ≤ max.`,
-          remediation: [decreaseConf('spark.dynamicAllocation.minExecutors', maxN)],
-        };
-      }
       if (maxN == null) {
         return {
           type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors',
@@ -2764,6 +2774,10 @@ export const DETECTORS = [
     detect(target): Finding | null {
       const app = target.app; const config = app?.config ?? {}; const res = app?.resources ?? null;
       if (Object.keys(config).length === 0) return null;
+      // spark.serializer does not serialize SQL rows (shuffles and caches use UnsafeRow and the columnar
+      // cache serializer), so the note only applies to a run that ran stages outside any SQL execution.
+      // Without the stages there is no evidence of RDD work and no claim.
+      if (!hasStageOutsideSql(target.stages)) return null;
       const ser = res?.serializer ?? config['spark.serializer'] ?? null;
       const isKryo = typeof ser === 'string' && /kryo/i.test(ser);
       if (isKryo) return null;
@@ -2785,12 +2799,13 @@ export const DETECTORS = [
       const memMB = res?.executor?.memoryMB ?? null;
       const ovMB = res?.executor?.memoryOverheadMB ?? null;
       if (memMB == null || ovMB == null) return null;
-      const floor = Math.max(thresholds.floorMB, Math.round(memMB * thresholds.floorPct));
+      const { minMB, factor } = defaultOverheadSettings(target.app, thresholds);
+      const floor = Math.max(minMB, Math.round(memMB * factor));
       if (ovMB >= floor) return null;
       return {
         type: 'configAudit', property: 'spark.executor.memoryOverhead',
         impactBand: 'info', metric: 'config', valueText: `${ovMB} MiB`,
-        recommendation: `Executor memoryOverhead (${ovMB} MiB) is below Spark's default floor of ${floor} MiB (max of 384 MiB or 10% of executor memory): raise it to avoid off-heap OOM-kills.`,
+        recommendation: `Executor memoryOverhead (${ovMB} MiB) is below the ${floor} MiB Spark would have defaulted to (max of ${minMB} MiB or ${Math.round(factor * 1000) / 10}% of executor memory): raise it to avoid off-heap OOM-kills.`,
         remediation: [increaseConf('spark.executor.memoryOverhead', `${floor}m`)],
       };
     },
@@ -3033,7 +3048,7 @@ export const DETECTORS = [
 ] as const satisfies readonly Detector[];
 
 /** The entry that emits each finding type: the one whose estimate prices it and whose thresholds
- * and order describe it. Several entries can emit one type (the four configAudit audits), and the
+ * and order describe it. Several entries can emit one type (the three configAudit audits), and the
  * first declared wins. */
 export const ENTRY_BY_TYPE: ReadonlyMap<string, Detector> = (() => {
   const byType = new Map<string, Detector>();

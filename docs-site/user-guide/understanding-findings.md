@@ -243,19 +243,26 @@ only what was captured up to that point, not the full run.
 ### `CFG`: Configuration audit {#cfg}
 
 Flags configuration settings that may cause reliability or efficiency
-problems, independent of any one stage's behavior. Four checks run:
+problems, independent of any one stage's behavior. Three checks run:
 
-- `spark.shuffle.service.enabled`: flagged when dynamic allocation is on
-  but the external shuffle service is off, since shuffle data won't survive
-  executor removal.
-- `spark.dynamicAllocation.minExecutors`/`maxExecutors`: with dynamic
-  allocation on, flagged when min exceeds max (reported on `minExecutors`)
-  or when no max is set.
+- `spark.dynamicAllocation.maxExecutors`: with dynamic allocation on,
+  flagged when no max is set, so the cluster can grow without a cap.
 - `spark.serializer`: flagged when not set to Kryo (the default is the Java
-  serializer); `org.apache.spark.serializer.KryoSerializer` is faster and
-  produces smaller buffers.
-- `spark.executor.memoryOverhead`: flagged when set below max(384 MiB, 10%
-  of executor memory).
+  serializer), and only on a run with stages outside any SQL execution.
+  DataFrame and SQL shuffles and caches use Spark's own row format, so the
+  serializer only matters for RDD work.
+  `org.apache.spark.serializer.KryoSerializer` is faster and produces smaller
+  buffers.
+- `spark.executor.memoryOverhead`: flagged when set below the overhead Spark
+  computes by default, max(`spark.executor.minMemoryOverhead`, executor memory
+  times `spark.executor.memoryOverheadFactor`). The minimum is 384 MiB and the
+  factor 10% unless the run sets them; each setting counts only on a Spark
+  version that reads it (the factor from 3.3, the minimum from 4.0).
+
+Two settings are never flagged because Spark rejects them at startup, so no
+event log carries them: dynamic allocation with neither the external shuffle
+service, shuffle tracking, shuffle-block decommissioning nor a reliable
+shuffle storage plugin, and `minExecutors` above `maxExecutors`.
 
 ## SQL scope
 

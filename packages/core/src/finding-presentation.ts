@@ -67,15 +67,13 @@ function skewJoinGeneric(f: { remediation?: Remediation[]; origin?: SkewOrigin }
 }
 const DYNAMIC_ALLOCATION_KEY = 'spark.dynamicAllocation.enabled';
 
-// The four configAudit DETECTORS entries share this row, one per audited property.
+// The three configAudit DETECTORS entries share this row, one per audited property.
 const CONFIG_AUDIT_PRESENTATION: FindingPresentation<'configAudit'> = {
   name: 'config audit',
   tag: 'CFG',
   thresholdSummary: () => 'a Spark conf value outside the recommended range',
   actionLabel(f) {
     switch (f.property) {
-      case 'spark.shuffle.service.enabled': return 'Enable shuffle service';
-      case 'spark.dynamicAllocation.minExecutors': return 'Fix autoscaling bounds';
       case 'spark.dynamicAllocation.maxExecutors': return 'Set max executors';
       case 'spark.serializer': return 'Switch to Kryo';
       case 'spark.executor.memoryOverhead': return 'Raise memory overhead';
@@ -84,11 +82,9 @@ const CONFIG_AUDIT_PRESENTATION: FindingPresentation<'configAudit'> = {
   },
   genericRecommendation(f) {
     switch (f.property) {
-      case 'spark.shuffle.service.enabled': return 'Set spark.shuffle.service.enabled=true so shuffle data survives executor removal.';
-      case 'spark.dynamicAllocation.minExecutors': return 'Set the minimum executor bound at or below the maximum.';
       case 'spark.dynamicAllocation.maxExecutors': return 'Set spark.dynamicAllocation.maxExecutors to cap cluster growth.';
       case 'spark.serializer': return 'Consider spark.serializer=org.apache.spark.serializer.KryoSerializer for faster, smaller buffers.';
-      case 'spark.executor.memoryOverhead': return 'Raise executor memoryOverhead above Spark\'s default floor to avoid off-heap OOM-kills.';
+      case 'spark.executor.memoryOverhead': return 'Raise executor memoryOverhead above the default Spark would have computed to avoid off-heap OOM-kills.';
     }
     return undefined;
   },
