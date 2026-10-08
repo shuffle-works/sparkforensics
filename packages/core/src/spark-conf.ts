@@ -71,6 +71,9 @@ const SPARK_DEFAULTS: Readonly<Record<string, readonly DefaultStep[]>> = {
   'spark.sql.adaptive.forceOptimizeSkewedJoin': [[[3, 3], 'false']],
   // Falls back to spark.sql.adaptive.shuffle.targetPostShuffleInputSize, itself 64MB.
   'spark.sql.adaptive.advisoryPartitionSizeInBytes': [[[3, 0], '64MB']],
+  // With it on, AQE sizes merged tasks from defaultParallelism too, so a larger advisory size alone
+  // does not merge more (CoalesceShufflePartitions.apply, added in 3.2.0).
+  'spark.sql.adaptive.coalescePartitions.parallelismFirst': [[[3, 2], 'true']],
   // Arrow-optimized Python UDFs: added in 3.4.0 (off), on by default from 4.2.0.
   'spark.sql.execution.pythonUDF.arrow.enabled': [[[3, 4], 'false'], [[4, 2], 'true']],
 };

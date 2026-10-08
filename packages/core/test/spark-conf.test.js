@@ -27,6 +27,11 @@ describe('sparkConfDefault by Spark version', () => {
     expect(Object.values(at('spark.sql.adaptive.skewJoin.enabled'))).toEqual(RELEASES.map(() => 'true'));
   });
 
+  it('adds parallelismFirst, on by default, at 3.2 and the Arrow Python UDF default at 3.4, on from 4.2', () => {
+    expect(Object.values(at('spark.sql.adaptive.coalescePartitions.parallelismFirst'))).toEqual([undefined, undefined, ...Array(7).fill('true')]);
+    expect(Object.values(at('spark.sql.execution.pythonUDF.arrow.enabled'))).toEqual([undefined, undefined, undefined, undefined, 'false', 'false', 'false', 'false', 'true']);
+  });
+
   it('keeps the values that no release from 3.0 to 4.2 changed', () => {
     const constant = {
       'spark.sql.shuffle.partitions': '200',

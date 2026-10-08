@@ -133,6 +133,16 @@ function collectJoins(root: PlanNode): JoinInfo[] {
   });
 }
 
+/** Whether the execution's final plan shows AQE splitting a skewed partition (an `AQEShuffleRead
+ * skewed` node), which adds tasks beyond the configured partition count. Null when the plan is not a
+ * final adaptive plan, so the log cannot say. */
+export function planShowsSkewSplit(plan: PlanNode | null | undefined): boolean | null {
+  if (plan == null || plan.name !== 'AdaptiveSparkPlan' || !/isFinalPlan=true/.test(plan.detail ?? '')) return null;
+  let split = false;
+  walkPlanTree(plan, (node) => { if (SHUFFLE_READ_NAME.test(node.name) && /\bskewed\b/.test(node.detail ?? '')) split = true; });
+  return split;
+}
+
 function sideNoun(index: 0 | 1): 'left' | 'right' { return index === 0 ? 'left' : 'right'; }
 
 function diagnoseJoin(join: JoinInfo, input: JoinSkewInput): JoinSkewDiagnosis | null {
