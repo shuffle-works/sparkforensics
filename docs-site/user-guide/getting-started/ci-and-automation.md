@@ -175,8 +175,10 @@ A `shuffleJoin` finding on a run with AQE skew-join handling on also carries
 `split`, `evenReads`, `belowThreshold`, `planShape`, `userRepartition`, `joinType`,
 `extraShuffle` or `notSplit` (see `SKEW`). The remediation matches the case: a
 `decrease` of the skew threshold or factor for `belowThreshold`, a `set` of
-`spark.sql.adaptive.forceOptimizeSkewedJoin` for `extraShuffle` from Spark 3.3,
-none for `split` and `evenReads`, and a `code` entry otherwise.
+`spark.sql.adaptive.forceOptimizeSkewedJoin` for `extraShuffle` from Spark 3.3
+(or on a run with no recorded version that logs the property), next to the `code`
+entry when a one-sided `joinType` is also blocked by an extra shuffle, none for
+`split` and `evenReads`, and a `code` entry otherwise.
 `shufflePartitionSkew` carries the same fields but is judged on shuffle-read
 sizes, so it is only ever `shuffleJoin` or `other`. A `stageSlowness` finding carries `evidence.reads` (`shuffle`,
 `input` or `other`) and suggests partition-count changes only for `shuffle`; `spill`
