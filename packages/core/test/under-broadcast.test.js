@@ -101,18 +101,18 @@ describe('underBroadcast: join type decides which side can be broadcast', () => 
 });
 
 describe('underBroadcast: sides without a size of their own', () => {
-  it('uses the build side alone when the other side is another join\'s output', () => {
-    const nested = { name: 'SortMergeJoin', detail: 'SortMergeJoin [a#1L], [c#3L], Inner', metrics: [], children: [side(GiB, 'A'), side(GiB, 'B')] };
+  it('skips a join whose other side is another join\'s output, so the build side has no partner to compare with', () => {
+    const nested = { name: 'SortMergeJoin', detail: 'SortMergeJoin [a#1L], [c#3L], Inner', metrics: [], children: [side(2 * GiB, 'A'), side(2 * GiB, 'B')] };
     const plan = { ...join('Inner', 0, 5 * MiB), children: [nested, side(5 * MiB, 'R')] };
-    const [f] = under(plan);
-    expect(f.buildSide).toBe('right');
-    expect(f.largerSideBytes).toBeUndefined();
+    expect(under(plan)).toHaveLength(0);
+    const leftOuter = { ...join('LeftOuter', 0, 500 * MiB), children: [nested, side(500 * MiB, 'R')] };
+    expect(under(leftOuter, { config: { 'spark.sql.autoBroadcastJoinThreshold': '1g' } })).toHaveLength(0);
   });
 
   it('does not sum the shuffles below a nested join into that side\'s size', () => {
     const nested = { name: 'SortMergeJoin', detail: 'SortMergeJoin [a#1L], [c#3L], Inner', metrics: [], children: [side(40 * GiB, 'A'), side(40 * GiB, 'B')] };
     const plan = { ...join('Inner', 0, 0), children: [nested, side(50 * MiB, 'R')] };
-    // 50 MiB is over the 10 MiB threshold and has no measured partner to justify a higher one.
+    // Summed, the nested side would be an 80 GiB partner that justifies broadcasting 50 MiB.
     expect(under(plan)).toHaveLength(0);
   });
 

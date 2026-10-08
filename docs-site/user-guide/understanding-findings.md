@@ -310,10 +310,11 @@ this tag:
   under 1 MiB or over the over-broadcast limit is skipped. When the effective
   threshold already admits the side (`evidence.broadcastThreshold` is
   `notLimiting`), the threshold is not what stopped the broadcast, so
-  `remediation` is empty and the advice is a hint or table statistics. A join
-  whose only buildable side is larger than the other side is skipped, since
-  broadcasting it saves nothing, so the build side is always the smaller one
-  and `evidence.largerSideBytes` is the other side.
+  `remediation` is empty and the advice is a hint or table statistics. Both
+  sides need a shuffle `data size` of their own, so a join over another join's
+  output is skipped, and so is a join whose only buildable side is larger than
+  the other side, since broadcasting it saves nothing. The build side is
+  always the smaller one and `evidence.largerSideBytes` is the other side.
 - Over-broadcast: a broadcast exceeds the 1 GB threshold; check for a
   misapplied broadcast hint or a misconfigured threshold property. Under
   adaptive execution a broadcast planned up front is admitted by

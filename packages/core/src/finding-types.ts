@@ -368,11 +368,9 @@ export interface NestedLoopJoinFinding extends NumericFinding<'nestedLoopJoin'>,
 export type BroadcastThreshold = 'limits' | 'notLimiting' | 'disabled';
 
 export interface UnderBroadcastEvidence extends PlanFindingEvidence {
-  /** The larger of the join's two sides (`value` is the smaller); absent when the other side is not
-   * a shuffle of its own (a join's output). */
-  largerSideBytes?: number;
-  /** The join type and the side a broadcast would build from, the smaller of those the type allows;
-   * it can be the join's larger side when the type cannot build from the other. */
+  /** The join's other, larger side (`value` and `buildSideBytes` are the smaller, build side). */
+  largerSideBytes: number;
+  /** The join type and the side a broadcast would build from, the smaller of those the type allows. */
   joinType: string;
   buildSide: 'left' | 'right';
   buildSideBytes: number;

@@ -567,19 +567,20 @@ interface BroadcastCandidate {
   joinType: string;
   buildSide: 'left' | 'right';
   build: PlanNode;
-  /** The stream side's shuffle, null when that side has no measurable size of its own. */
-  stream: PlanNode | null;
+  stream: PlanNode;
 }
 
-// The smaller of the sides this join's type can broadcast, among those with a measurable size.
+// The smaller of the sides this join's type can broadcast. Both sides need a measurable size of
+// their own, so the candidate is never compared with an unknown partner.
 function broadcastCandidate(join: PlanNode): BroadcastCandidate | null {
   const joinType = parseJoinType(join.detail ?? '');
   if (joinType == null || (join.children ?? []).length !== 2) return null;
   const left = joinSideShuffle(join.children[0]);
   const right = joinSideShuffle(join.children[1]);
+  if (!left || !right) return null;
   const options: BroadcastCandidate[] = [];
-  if (left && BROADCAST_BUILD_LEFT.has(joinType)) options.push({ joinType, buildSide: 'left', build: left, stream: right });
-  if (right && BROADCAST_BUILD_RIGHT.has(joinType)) options.push({ joinType, buildSide: 'right', build: right, stream: left });
+  if (BROADCAST_BUILD_LEFT.has(joinType)) options.push({ joinType, buildSide: 'left', build: left, stream: right });
+  if (BROADCAST_BUILD_RIGHT.has(joinType)) options.push({ joinType, buildSide: 'right', build: right, stream: left });
   return options.reduce<BroadcastCandidate | null>((best, o) => (best == null || shuffleBytes(o.build) < shuffleBytes(best.build) ? o : best), null);
 }
 
@@ -3035,27 +3036,26 @@ export const DETECTORS = [
         const candidate = node.name === 'SortMergeJoin' ? broadcastCandidate(node) : null;
         if (candidate) {
           const buildBytes = shuffleBytes(candidate.build);
-          const otherBytes = candidate.stream ? shuffleBytes(candidate.stream) : null;
+          const otherBytes = shuffleBytes(candidate.stream);
           // Below the floor a broadcast saves nothing measurable, nor does broadcasting the larger side;
           // above the over-broadcast limit it would be flagged there instead.
-          if (buildBytes >= minSmallerSideBytes && buildBytes <= overBroadcastBytes && (otherBytes == null || buildBytes <= otherBytes)) {
+          if (buildBytes >= minSmallerSideBytes && buildBytes <= overBroadcastBytes && buildBytes <= otherBytes) {
             const broadcastThreshold: BroadcastThreshold = threshold != null && threshold < 0 ? 'disabled'
               : threshold != null && threshold >= buildBytes ? 'notLimiting' : 'limits';
-            const withinTiers = otherBytes != null && (buildBytes < broadcastTiers[0]
+            const withinTiers = buildBytes < broadcastTiers[0]
               || (buildBytes < broadcastTiers[1] && otherBytes > comparisonTiers[0])
-              || (buildBytes < broadcastTiers[2] && otherBytes > comparisonTiers[1]));
+              || (buildBytes < broadcastTiers[2] && otherBytes > comparisonTiers[1]);
             if (broadcastThreshold === 'notLimiting' || withinTiers) {
-              const contributors = [candidate.build, ...(candidate.stream ? [candidate.stream] : [])];
+              const contributors = [candidate.build, candidate.stream];
               const { joinType, buildSide } = candidate;
               const subject = `The ${buildSide} input to this ${joinType} Sort Merge Join (${formatBytes(buildBytes)})`;
-              const otherSide = otherBytes != null ? ` (the other side is ${formatBytes(otherBytes)})` : '';
+              const otherSide = ` (the other side is ${formatBytes(otherBytes)})`;
               out.push({
                 type: 'underBroadcast', executionId: sqlExec.id, stageIds: unionStageIds(contributors, fallbackStageIds),
                 // resolvePlanTree always sets id; safe downstream of it.
                 planNodeIds: contributors.map((n) => n.id!).filter(Boolean),
                 impactBand: 'info', metric: 'smallerSideBytes',
-                value: buildBytes,
-                ...(otherBytes != null ? { largerSideBytes: otherBytes } : {}),
+                value: buildBytes, largerSideBytes: otherBytes,
                 joinType, buildSide, buildSideBytes: buildBytes, broadcastThreshold,
                 recommendation: broadcastThreshold === 'notLimiting'
                   ? `${subject} is under the effective ${key} (${formatBytes(threshold!)}) yet was not broadcast${otherSide}, so the threshold is not what stopped it: a join hint, missing table statistics, or a shuffle that had already run usually is. Consider a broadcast() hint or collecting statistics (ANALYZE TABLE).`
