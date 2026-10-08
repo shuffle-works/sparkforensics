@@ -22,8 +22,8 @@ const join = (type, left, right, { name = 'SortMergeJoin', stageIds = [4] } = {}
 const finalPlan = (root) => node('AdaptiveSparkPlan', [node('WholeStageCodegen (5)', [root], { stageIds: [4] })], { detail: 'AdaptiveSparkPlan isFinalPlan=true' });
 
 const confOf = (config = {}, sparkVersion = '3.5.9') => (key) => effectiveSparkConf({ sparkVersion, properties: config }, key)?.value;
-const diagnose = (plan, { readMax = 120 * MiB, readP50 = 2 * MiB, config = {}, stageId = 4, sparkVersion } = {}) => diagnoseJoinSkew({
-  plan, stageId, readMax, readP50, conf: confOf(config, sparkVersion), keyRemedy: KEY_REMEDY,
+const diagnose = (plan, { readMax = 120 * MiB, readP50 = 2 * MiB, config = {}, stageId = 4, sparkVersion = '3.5.9' } = {}) => diagnoseJoinSkew({
+  plan, stageId, readMax, readP50, conf: confOf(config, sparkVersion), sparkVersion, keyRemedy: KEY_REMEDY,
 });
 const plain = () => side('ENSURE_REQUIREMENTS');
 
@@ -161,6 +161,11 @@ describe('diagnoseJoinSkew on hand-built final plans', () => {
     expect(outer.text).toMatch(/if the skew is on the left side, AQE skipped it because an aggregate above the join/);
     expect(outer.text).not.toContain('forceOptimizeSkewedJoin');
     expect(outer.remediation.map((x) => x.kind)).toEqual(['code']);
+    for (const value of ['false', 'true']) {
+      const logged = diagnose(aggregateOver(join('Inner', plain(), plain())), { config: { ...low, 'spark.sql.adaptive.forceOptimizeSkewedJoin': value }, sparkVersion: '3.2.1' });
+      expect(logged.case).toBe('extraShuffle');
+      expect(logged.remediation).toEqual([{ kind: 'code', hint: KEY_REMEDY }]);
+    }
   });
 
   it('does not blame the extra shuffle for a partial aggregate, an exchange above, or a forced run', () => {
@@ -238,7 +243,7 @@ describe.each(LOGS)('AQE skew handling in a real Spark %s log', (version, path) 
       const config = overlayModifiedConfigs(appModel.app.config, sql.modifiedConfigs);
       return diagnoseJoinSkew({
         plan: sql.planTree, stageId: stage.id, readMax: stage.shuffleReadMax, readP50: stage.shuffleReadP50,
-        conf: (key) => effectiveSparkConf({ sparkVersion: version, properties: config }, key)?.value, keyRemedy: KEY_REMEDY,
+        conf: (key) => effectiveSparkConf({ sparkVersion: version, properties: config }, key)?.value, sparkVersion: version, keyRemedy: KEY_REMEDY,
       });
     };
     expect(diagnoseExecution(0).case).toBe('split');

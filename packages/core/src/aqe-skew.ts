@@ -15,7 +15,7 @@ import type { AqeSkewCase, Remediation } from './finding-types.ts';
 import { formatBytes } from './format-utils.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { codeFix, decreaseConf, setConf } from './remediation.ts';
-import { parseSparkBytes } from './spark-conf.ts';
+import { parseSparkBytes, sparkConfDefault } from './spark-conf.ts';
 
 export const SKEW_THRESHOLD_KEY = 'spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes';
 export const SKEW_FACTOR_KEY = 'spark.sql.adaptive.skewJoin.skewedPartitionFactor';
@@ -38,6 +38,8 @@ export interface JoinSkewInput {
   readP50: number;
   /** The effective value of a property for this execution (null when not logged and no default). */
   conf(key: string): string | undefined;
+  /** The run's Spark version, which decides whether forceOptimizeSkewedJoin exists. */
+  sparkVersion: string | null | undefined;
   /** The advice for a skew nothing but the job's code can fix. */
   keyRemedy: string;
 }
@@ -233,10 +235,10 @@ function diagnoseJoin(join: JoinInfo, input: JoinSkewInput): JoinSkewDiagnosis |
   if (coalesced && advisory != null && input.readMax <= 2 * advisory) return null;
 
   const needing = needsJoinPartitioning(join.ancestors);
-  const force = input.conf(FORCE_SKEW_JOIN_KEY);
-  const forced = force?.toLowerCase() === 'true';
-  // forceOptimizeSkewedJoin exists from Spark 3.3 (no default before), so earlier runs get the key remedy.
-  const canForce = force != null;
+  // forceOptimizeSkewedJoin exists from Spark 3.3 (no default before), so earlier runs get the key
+  // remedy even when they log the property.
+  const canForce = sparkConfDefault(input.sparkVersion, FORCE_SKEW_JOIN_KEY) != null;
+  const forced = canForce && input.conf(FORCE_SKEW_JOIN_KEY)?.toLowerCase() === 'true';
   const extraShuffleText = needing == null || forced ? null
     : `AQE skipped splitting it because ${needing} above the join needs the join's partitioning and a split would add a shuffle: ${canForce ? `set ${FORCE_SKEW_JOIN_KEY}=true if that shuffle costs less than the tail, or ` : ''}${input.keyRemedy}`;
 

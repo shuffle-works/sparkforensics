@@ -815,7 +815,7 @@ function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false
     ? diagnoseJoinSkew({
       plan: ctx.sql.get(stage.sqlExecutionId)?.planTree, stageId: stage.id,
       readMax: stage.shuffleReadMax, readP50: stage.shuffleReadP50,
-      conf: (key) => effectiveConf(app, key), keyRemedy: SKEW_KEY_REMEDY,
+      conf: (key) => effectiveConf(app, key), sparkVersion: app?.sparkVersion, keyRemedy: SKEW_KEY_REMEDY,
     })
     : null;
   return diagnosis == null ? { origin, ...fix } : { origin, aqeSkew: diagnosis.case, text: diagnosis.text, remediation: diagnosis.remediation };
