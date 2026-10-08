@@ -404,6 +404,7 @@ describe('skew findings on a hand-built final plan', () => {
 
   it('leaves a duration tail over even shuffle reads with no data cause to straggler, with no skew-join advice', () => {
     const app = makeApp({ config: {}, sparkVersion: '3.5.9' });
+    // eslint-disable-next-line no-unused-vars
     const { tailAttribution: _data, ...duration } = skewStage;
     const even = makeStage({ ...duration, shuffleReadP50: 10 * MiB, shuffleReadMax: 11 * MiB });
     const findings = analyze(app, new Map([[4, even]]), [], [], new Map(), sqlOf(plan));
