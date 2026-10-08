@@ -1219,7 +1219,7 @@ describe('analyze: tiny tasks', () => {
   });
 
   it('mentions spark.sql.shuffle.partitions when the stage is shuffle-fed', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 150, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 1024 })]]);
+    const stages = new Map([[1, makeStage({ taskCount: 200, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 1024 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     const found = catalog.filter(b => b.type === 'tinyTask');
     expect(found).toHaveLength(1);

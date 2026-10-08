@@ -49,9 +49,12 @@ Tasks are writing data out of memory, which slows execution. Two spill
 patterns get flagged differently: skew spill, where a few heavy tasks spill
 while most don't (rebalance partitioning), and volume spill, where most
 tasks spill because the data genuinely exceeds available memory (add
-partitions or executor memory). `spark.sql.shuffle.partitions` is suggested
-only for a stage that reads a shuffle; `evidence.reads` says what the stage
-reads (`shuffle`, `input` or `other`). Only flagged on stages that take at
+partitions or executor memory). Partition-count advice is given only for a
+stage that reads a shuffle; `evidence.reads` says what the stage reads
+(`shuffle`, `input` or `other`). It names what sized the stage:
+`spark.sql.shuffle.partitions` when the stage ran that many tasks,
+`spark.sql.adaptive.advisoryPartitionSizeInBytes` when AQE coalesced them, and
+the stage's own `repartition(n)` or RDD parallelism otherwise. Only flagged on stages that take at
 least 0.5% of the run.
 
 ### `GC`: Garbage collection pressure {#gc}
@@ -105,9 +108,14 @@ completed. Investigate executor loss or fetch failures.
 ### `TINY`: Tiny tasks {#tiny}
 
 Many very short tasks add scheduling overhead out of proportion to the work
-each one does. Repartition to fewer, larger tasks; a stage that reads a shuffle
-(`evidence.reads` is `shuffle`) can also lower `spark.sql.shuffle.partitions`.
-Only flagged on stages that take at least 0.5% of the run.
+each one does. Repartition to fewer, larger tasks. On a stage that reads a
+shuffle (`evidence.reads` is `shuffle`) the advice names what sized it: lower
+`spark.sql.shuffle.partitions` when the stage ran that many tasks; when AQE
+coalesced them and still kept tiny ones, set
+`spark.sql.adaptive.coalescePartitions.parallelismFirst` to `false` (AQE then
+targets `spark.sql.adaptive.advisoryPartitionSizeInBytes` rather than
+`defaultParallelism` tasks) or raise the advisory size; otherwise lower the
+`repartition(n)` or RDD partition count in the code. Only flagged on stages that take at least 0.5% of the run.
 
 ### `PART`: Partition sizing {#part}
 
@@ -119,8 +127,10 @@ repartition to break it up before the stage runs.
 
 A stage ran for 15 minutes or more and no slow host was flagged on it. It
 can appear alongside other findings on the same stage. On a stage that reads a
-shuffle, often a partition-count problem: raise parallelism via
-`spark.sql.shuffle.partitions` or `spark.default.parallelism`, or check for a
+shuffle, often a partition-count problem: raise `spark.sql.shuffle.partitions`
+when the stage ran that many tasks, lower
+`spark.sql.adaptive.advisoryPartitionSizeInBytes` when AQE coalesced them, or
+raise the stage's own `repartition(n)` or RDD parallelism; or check for a
 large per-task data volume driving heavy shuffle and spill. On a stage that
 reads input files and no shuffle, check input file sizes and lower
 `spark.sql.files.maxPartitionBytes`. `evidence.reads` says which case
