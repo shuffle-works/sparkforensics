@@ -72,6 +72,20 @@ function skewJoinGeneric(f: { remediation?: Remediation[]; origin?: SkewOrigin }
   if (f.remediation?.some((r) => r.kind === 'conf' && r.key === 'spark.sql.adaptive.enabled')) return SKEW_JOIN_AQE_OFF;
   return switchAlreadyOn(f, SKEW_JOIN_KEY) ? SKEW_JOIN_ALREADY_ON : unset;
 }
+/** One line on what a straggler finding's slow tasks lost their time to, for the widget row; null
+ * when the log gave no cause (the finding then only knows their duration). */
+export function stragglerCauseSummary(f: { cause?: string; causeSharePct?: number; host?: string; hostTasks?: number }): string | null {
+  const share = f.causeSharePct != null ? ` (${f.causeSharePct}% of their extra time)` : '';
+  switch (f.cause) {
+    case 'data': return `The slow tasks read more data${share}`;
+    case 'gc': return `GC${share}`;
+    case 'fetchWait': return `Waiting on shuffle fetches${share}`;
+    case 'host': return `Tasks piled on ${f.host ?? 'one host'}${share}`;
+    case 'unexplained': return 'Not data volume, GC, fetch wait or one host';
+    default: return null;
+  }
+}
+
 const DYNAMIC_ALLOCATION_KEY = 'spark.dynamicAllocation.enabled';
 
 // The three configAudit DETECTORS entries share this row, one per audited property.
@@ -110,7 +124,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   skew: {
     name: 'task skew',
     tag: 'SKEW',
-    thresholdSummary: (t) => `P95 task time over ${t.ratioWarn}× the median (the longest task on stages under ${t.minTasksForP95} tasks)`,
+    thresholdSummary: (t) => `P95 task time over ${t.ratioWarn}× the median (the longest task on stages under ${t.minTasksForP95} tasks), and the slow tasks read correspondingly more data`,
     actionLabel: () => 'Fix task skew',
     genericRecommendation: (f) => skewJoinGeneric(f,
       'For join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.'),
@@ -277,9 +291,14 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   straggler: {
     name: 'straggling task',
     tag: 'STRAG',
-    thresholdSummary: () => 'one or more tasks finishing far after the rest of their stage',
+    thresholdSummary: () => 'one or more tasks finishing far after the rest of their stage, for a reason other than reading more data',
     actionLabel: () => 'Fix stragglers',
-    genericRecommendation: (f) => `Rule out a GC pause or a slow shuffle fetch before assuming a hardware issue. If uneven data is the cause: ${skewJoinGeneric(f, 'for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.')}`,
+    genericRecommendation: (f) => f.cause === 'data' ? `Uneven data volume drives the slow tasks: ${skewJoinGeneric(f, 'for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.')}`
+      : f.cause === 'gc' ? 'GC accounts for most of the slow tasks\' extra time: reduce object creation, use primitive types, avoid UDFs, increase executor memory.'
+      : f.cause === 'fetchWait' ? 'Waiting on shuffle fetches accounts for most of the slow tasks\' extra time: look for a slow or overloaded node serving shuffle blocks, executors lost mid-stage, or reducers fetching many small blocks.'
+      : f.cause === 'host' ? 'Most slow tasks ran on one host: check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically.'
+      : f.cause === 'unexplained' ? 'The slow tasks read no more data than the median task, and GC, shuffle fetch wait and one slow host do not account for their time: look at per-record cost (UDFs, regular expressions, a call out per row).'
+      : `Rule out a GC pause or a slow shuffle fetch before assuming a hardware issue. If uneven data is the cause: ${skewJoinGeneric(f, 'for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.')}`,
   },
   speculationWaste: {
     name: 'speculation waste',
@@ -398,6 +417,13 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     genericRecommendation: (f) => (f.direction === 'write'
       ? 'Repartition or coalesce before writing to raise the average file size.'
       : 'Compact the upstream output so fewer, larger files are produced.'),
+  },
+  pythonUdf: {
+    name: 'row-at-a-time Python UDF',
+    tag: 'PLAN',
+    thresholdSummary: (t) => `over ${t.minBytesSent / 1048576} MiB sent to Python workers by stages running over ${t.minStageMs / 1000} s`,
+    actionLabel: () => 'Vectorize Python UDF',
+    genericRecommendation: () => 'Use Arrow-optimized Python UDFs (spark.sql.execution.pythonUDF.arrow.enabled, Spark 3.4 and later) or a pandas UDF instead of a row-at-a-time Python UDF.',
   },
   nestedLoopJoin: {
     name: 'nested loop join',

@@ -10,6 +10,7 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import { useAnchoredRow } from '@/view/finding-anchor';
+import { stragglerCauseSummary } from '@sparkforensics/core/finding-presentation.ts';
 import type { StragglerFinding } from '@sparkforensics/core/finding-types.ts';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { canToggleSort } from '@/view/impact-sort';
@@ -49,6 +50,7 @@ function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appMod
         </AdvancedOnly>
       </div>
       <p className="text-xs text-muted-foreground">{stragglerDetail(finding)}</p>
+      {stragglerCauseSummary(finding) ? <p className="text-xs text-muted-foreground">{stragglerCauseSummary(finding)}</p> : null}
       <ImpactEstimate finding={finding} />
     </li>
   );

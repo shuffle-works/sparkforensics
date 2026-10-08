@@ -14,10 +14,12 @@ Spot-checks for each estimate formula, the overlap caveat, the effect of tuned t
 
 `skew` and `straggler` both claim the stage's `tailReplayRecoveryMs` (see
 [Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution)), whichever skew branch fired,
-so when both fire on one stage they report the same recovered tail. The skew branch (P95 or max
-over P50) changes only the fallback single-task delta on a stage without the replay field. This
-phase does not dedupe or suppress either: each keeps its own independently-computed
-`wallClock`. Do not sum `wallClock.high` across multiple findings on the same stage: if
+so a tail both would report carries the same recovered time. The skew branch (P95 or max
+over P50) changes only the fallback single-task delta on a stage without the replay field. Which
+of the two reports a tail follows its cause (`tailVerdict` in `detectors.ts`, from the stage's
+`tailAttribution`): `skew` takes a tail whose extra time follows data volume and `straggler` takes
+the rest, so the pair fires together only on a tail with no data volume to compare whose
+largest share is what nothing accounts for (`cause: 'unattributed'`). Each keeps its own independently-computed `wallClock`. Do not sum `wallClock.high` across multiple findings on the same stage: if
 both fire together, they describe the same underlying waste, not two separate wastes. Both
 are clipped with the post-fix floor described under
 [Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution), not the plain `ceiling`,
@@ -95,6 +97,7 @@ formula per `variant`/`rule` on the same finding type; the basis column says whi
 | `utilization` | app | cost-only | `rawWaste` in `coreHours`: `(1 − utilizationFraction) × allocatedCoreMs / 3.6e6`, where `allocatedCoreMs` is cores × time alive over every executor (`allocatedCoreMs()`, the figure behind `metrics.allocation.coreHours`), so it never exceeds the allocation. The same figure in core-milliseconds is `idleCoreTimeMs` |
 | `coreLocality` | app | cost-only | `rawWaste` in `coreMs`: `nonLocalTaskCount × NETWORK_FETCH_PENALTY_MS` |
 | `autoscalingChurn` | app | cost-only | `rawWaste` in `coreHours`: `shortLivedExecutorCount × EXECUTOR_STARTUP_OVERHEAD_MS / 3.6e6` |
+| `pythonUdf` | sql | informational-only | no waste formula: the gain from Arrow-optimized or pandas UDFs depends on how much of the stage is the UDF body, which the log does not record |
 | `configAudit` | config | informational-only | a config-drift check standing alone; no waste formula |
 | `jobFailureRate` | app | cost-only | `rawWaste` in `coreHours`: `failedJobCount × avgJobDurationMs / 3.6e6` |
 | `cachingOpportunity` | app | cost-only | `rawWaste` in `ms`: `totalReadBytes / RE_READ_THROUGHPUT_BPS` |

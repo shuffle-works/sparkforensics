@@ -315,12 +315,14 @@ export const TaskEndEventSchema = z.object({
       'Remote Bytes Read': z.number().optional(),
       'Local Bytes Read': z.number().optional(),
       'Fetch Wait Time': z.number().optional(),
+      'Total Records Read': z.number().optional(),
     }).optional(),
     'Shuffle Write Metrics': z.object({
       'Shuffle Bytes Written': z.number().optional(),
     }).optional(),
     'Input Metrics': z.object({
       'Bytes Read': z.number().optional(),
+      'Records Read': z.number().optional(),
     }).optional(),
     'Output Metrics': z.object({
       'Bytes Written': z.number().optional(),
