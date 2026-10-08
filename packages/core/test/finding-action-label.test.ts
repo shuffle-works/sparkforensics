@@ -40,7 +40,7 @@ test('branches on the variant (and rule/dataUnavailable) fields for memoryUtiliz
   expect(findingActionLabel(finding({ type: 'memoryUtilization', variant: 'notARealVariant' }))).toBe('memory utilization');
   expect(
     findingActionLabel(finding({ type: 'memoryUtilization', variant: 'memoryBand', dataUnavailable: true })),
-  ).toBe('Enable memory metrics');
+  ).toBe('Executor heap peaks unavailable');
   expect(
     findingActionLabel(finding({ type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned' })),
   ).toBe('Reduce executor memory');

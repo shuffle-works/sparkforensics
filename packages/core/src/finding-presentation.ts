@@ -279,7 +279,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
         case 'idleCores': return 'Reduce idle cores';
         case 'wasteModel': return 'Right-size executor memory';
         case 'memoryBand':
-          if (f.dataUnavailable) return 'Enable memory metrics';
+          if (f.dataUnavailable) return 'Executor heap peaks unavailable';
           return 'Reduce executor memory';
       }
       return undefined;
