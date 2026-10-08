@@ -94,6 +94,15 @@ export interface TaskAttemptSample {
  * AQE skew-join handling applies), 'inputScan' (uneven input files) or 'other'. */
 export type SkewOrigin = 'shuffleJoin' | 'inputScan' | 'other';
 
+/** What AQE skew-join handling did for a 'shuffleJoin' stage, read from the final plan and the
+ * effective conf: 'split' (it split the skewed partition, so the rest is not join skew),
+ * 'belowThreshold' (the partition is under the effective skew threshold or factor), 'planShape' (an
+ * operator sits between the join and its shuffle), 'userRepartition' (the shuffle is an explicit
+ * repartition), 'joinType' (the join type does not let AQE split the skewed side),
+ * 'extraShuffle' (splitting would add a shuffle for the operator above the join) or 'notSplit'
+ * (nothing in the log explains it). */
+export type AqeSkewCase = 'split' | 'belowThreshold' | 'planShape' | 'userRepartition' | 'joinType' | 'extraShuffle' | 'notSplit';
+
 /** What a stage reads, by the dominant side: a shuffle, input files, or neither. */
 export type StageReads = 'shuffle' | 'input' | 'other';
 
@@ -105,6 +114,8 @@ export type ShufflePartitions = 'raise' | 'sufficient' | 'aqeCoalesced' | 'ownPa
 
 export interface SkewEvidence {
   origin?: SkewOrigin;
+  // Only on origin 'shuffleJoin' with AQE skew-join handling on and the join resolved from the plan.
+  aqeSkew?: AqeSkewCase;
 }
 export interface SkewFinding extends NumericFinding<'skew'>, SkewEvidence {}
 
@@ -123,8 +134,9 @@ export interface ShuffleFinding extends NumericFinding<'shuffle'>, ShuffleEviden
 
 export interface PartitionSizingEvidence {
   rule: 'shufflePartitionSkew' | 'lowShuffleParallelism' | 'maxPartitionTooBig';
-  // Only on 'shufflePartitionSkew': see SkewOrigin.
+  // Only on 'shufflePartitionSkew': see SkewOrigin and AqeSkewCase.
   origin?: SkewOrigin;
+  aqeSkew?: AqeSkewCase;
   // Only on 'lowShuffleParallelism': see ShufflePartitions ('raise', 'aqeCoalesced' or 'ownPartitioning').
   partitions?: ShufflePartitions;
 }
@@ -188,8 +200,9 @@ export interface StragglerEvidence {
   unit: 'count' | 'pct';
   speculativeTasks: number;
   stragglerCount: number;
-  // The case the skew advice in the recommendation was written for (see SkewOrigin).
+  // The case the skew advice in the recommendation was written for (see SkewOrigin and AqeSkewCase).
   origin?: SkewOrigin;
+  aqeSkew?: AqeSkewCase;
 }
 export interface StragglerFinding extends NumericFinding<'straggler'>, StragglerEvidence {}
 

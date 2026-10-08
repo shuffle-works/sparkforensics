@@ -26,10 +26,32 @@ already has it; otherwise salt the key or repartition on a better key. A
 stage that reads files with uneven sizes (`inputScan`) gets compaction of
 small files or a lower `spark.sql.files.maxPartitionBytes`. Any other stage
 (`other`) gets the salting advice and no conf, as a `code` entry in
-`remediation`; so does a join stage whose skew-join handling is already on. Flagged when P95 task time
+`remediation`. Flagged when P95 task time
 (the longest task, on a stage with fewer than 20 tasks) exceeds 3x the median
 and the recoverable tail is at least 0.5% of the run. The median is the
 textbook one: on an even task count, the mean of the two middle values.
+
+With AQE skew-join handling on, a `shuffleJoin` stage's advice says why
+handling did or did not act on that stage's join, read from the execution's
+final plan and its effective conf. `evidence.aqeSkew` records the case:
+
+| `aqeSkew` | What the final plan and conf show | Advice |
+|---|---|---|
+| `split` | The join is marked `skew=true` and a shuffle read says `skewed` | AQE already split the skewed partitions, so what remains is not join skew: look at GC, a slow host or an expensive key. |
+| `belowThreshold` | The largest partition is under `spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes` (256 MB by default), or not far enough over the median for `spark.sql.adaptive.skewJoin.skewedPartitionFactor` (5) | Lower the threshold or the factor for the query. |
+| `planShape` | An aggregate, window or other operator sits between the join and its shuffle | AQE splits only a shuffle that feeds the join directly: salt the key. |
+| `userRepartition` | The shuffle under the join is a `repartition` or `rebalance` in the job's code | AQE leaves a shuffle you asked for alone: drop it, or salt the key. |
+| `joinType` | The join type does not let AQE split the skewed side: neither side of a full outer join, only the left side of a left outer, left semi or left anti join, only the right side of a right outer join | Put the skewed table on a splittable side, or salt the key. |
+| `extraShuffle` | An aggregate, window or join above this join needs its partitioning, so a split would add a shuffle | Set `spark.sql.adaptive.forceOptimizeSkewedJoin` to `true` when that shuffle costs less than the tail. |
+| `notSplit` | Nothing above explains it | Salt the key. |
+
+The stage's join is the one whose plan node ran in that stage. The partition
+size is the stage's largest task read, which covers both sides of the join,
+so the finding does not say which side is skewed; for a join type that splits
+only one side it names both possibilities. A stage whose plan lists joins for
+other stages only reads an aggregate's or window's shuffle (`origin` is
+`other`). A run whose final plan is missing, or whose coalesced read could be
+many small partitions, keeps the general advice.
 
 ### `SHFL`: Shuffle I/O {#shfl}
 
@@ -89,8 +111,9 @@ carry file paths and data values.
 A few tasks run much slower than the rest of their stage. Rule out a GC
 pause or a slow shuffle fetch before assuming a hardware issue. If uneven
 data is the cause, the advice is the one a skew finding gives for the same
-stage (`evidence.origin`, see `SKEW`): AQE skew-join handling for a shuffle
-feeding a join, file sizes for a scan, salting otherwise. Only flagged on
+stage (`evidence.origin` and `evidence.aqeSkew`, see `SKEW`): the reason AQE
+skew-join handling did or did not act for a shuffle feeding a join, file sizes
+for a scan, salting otherwise. Only flagged on
 stages that take at least 0.5% of the run.
 
 ### `SPEC`: Speculation waste {#spec}
@@ -127,7 +150,9 @@ targets `spark.sql.adaptive.advisoryPartitionSizeInBytes` rather than
 
 Shuffle partitions are too large, too uneven, or too few for the work. A
 single shuffle partition over 5 GB, for example, will OOM or spill heavily:
-repartition to break it up before the stage runs.
+repartition to break it up before the stage runs. The partition-skew rule
+words its advice the same way a `SKEW` finding does, including
+`evidence.aqeSkew`.
 
 ### `SLOW`: Stage slowness {#slow}
 

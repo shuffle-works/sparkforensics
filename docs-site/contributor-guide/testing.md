@@ -107,6 +107,17 @@ tests skip and the snapshot check has no logs (see
 [Development setup](./development-setup.md)). CI's `core`, `server` and
 `node18` jobs check it out.
 
+`packages/core/test/fixtures/aqe-skew-spark-3.5.ndjson` and `aqe-skew-spark-4.0.ndjson` are
+real local-mode runs (Spark 3.5.9 and 4.0.4) of three queries over 1M rows with 60% on one key,
+joined to a 2,000-row table with auto-broadcast off, 16 shuffle partitions, a 2 MB skew
+threshold and a 1 MB advisory size set with `spark.conf.set`: an inner join AQE split, a left
+outer join with the skew on the right side, and an inner join over `repartition("k")`.
+`aqe-skew.test.js` reads them. They were cut down for the repo: `TaskStart` events, the
+accumulables of every task but the first of each stage, stage-info details, environment
+properties and host names were removed, and the tasks of stages that read no shuffle were dropped.
+Regenerate one the same way: run the job with `apache/spark:<version>` in `local[4]` with an
+uncompressed, non-rolling event log, and trim it with the same removals.
+
 ### Corpus regression snapshot
 
 `dev/corpus-snapshot.json` records every finding (type, location, band,

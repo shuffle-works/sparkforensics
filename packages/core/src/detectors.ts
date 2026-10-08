@@ -6,6 +6,7 @@ import { allocatedCoreMs, computeAllocation } from './allocation.ts';
 import { executorHeapPeaks } from './executor-peaks.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
+import { diagnoseJoinSkew, isSkewJoinNode, stageRunsNoJoin } from './aqe-skew.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
 import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type TailStage } from './occupancy.ts';
 import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
@@ -26,7 +27,7 @@ import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { effectiveSparkConf, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure } from './types.ts';
-import type { FindingOf, Remediation, SkewOrigin, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
+import type { AqeSkewCase, FindingOf, Remediation, SkewOrigin, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
 
 const MB = 1024 * 1024;
 const GB = 1024 * MB;
@@ -786,16 +787,17 @@ function skewOrigin(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence: boo
   if (shuffleEvidence || (stage.shuffleReadBytes > 0 && stage.shuffleReadBytes >= stage.inputBytes)) {
     let hasJoin = false;
     const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
-    walkPlanTree(plan, (node) => { if (SKEW_JOIN_NODES.has(node.name)) hasJoin = true; });
-    return hasJoin ? 'shuffleJoin' : 'other';
+    walkPlanTree(plan, (node) => { if (isSkewJoinNode(node.name)) hasJoin = true; });
+    // When the plan ties its joins to stages, a stage none of them runs reads an aggregate's or
+    // window's shuffle, which AQE skew-join handling never splits.
+    return hasJoin && !stageRunsNoJoin(plan, stage.id) ? 'shuffleJoin' : 'other';
   }
   return stage.inputBytes > 0 ? 'inputScan' : 'other';
 }
-const SKEW_JOIN_NODES = new Set(['SortMergeJoin', 'ShuffledHashJoin']);
 
 // The skew finding's fix for the stage's origin. Join-driven skew gets AQE skew-join handling,
 // unless the run's effective conf already has it; uneven input gets the file-size remedy.
-function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false): { origin: SkewOrigin; text: string; remediation: Remediation[] } {
+function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false): { origin: SkewOrigin; aqeSkew?: AqeSkewCase; text: string; remediation: Remediation[] } {
   const origin = skewOrigin(stage, ctx, shuffleEvidence);
   if (origin === 'inputScan') {
     return {
@@ -807,7 +809,18 @@ function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false
   if (origin === 'other') return { origin, text: SKEW_KEY_REMEDY, remediation: [codeFix(SKEW_KEY_REMEDY)] };
   // Before Spark 3.0 there is no AQE skew-join handling, so the stage gets the generic advice.
   if (predatesAqeSkewJoin(ctx.app)) return { origin: 'other', text: SKEW_KEY_REMEDY, remediation: [codeFix(SKEW_KEY_REMEDY)] };
-  return { origin, ...skewJoinFix(stageApp(ctx, stage)) };
+  const app = stageApp(ctx, stage);
+  const fix = skewJoinFix(app);
+  // With skew-join handling on, the final plan and conf say why it did or did not act on this stage.
+  const handlingOn = !loggedAs(app, 'spark.sql.adaptive.enabled', false) && loggedAs(app, 'spark.sql.adaptive.skewJoin.enabled', true);
+  const diagnosis = handlingOn && stage.sqlExecutionId != null
+    ? diagnoseJoinSkew({
+      plan: ctx.sql.get(stage.sqlExecutionId)?.planTree, stageId: stage.id,
+      readMax: stage.shuffleReadMax, readP50: stage.shuffleReadP50,
+      conf: (key) => effectiveConf(app, key), keyRemedy: SKEW_KEY_REMEDY,
+    })
+    : null;
+  return diagnosis == null ? { origin, ...fix } : { origin, aqeSkew: diagnosis.case, text: diagnosis.text, remediation: diagnosis.remediation };
 }
 
 function skewJoinFix(app: DetectorApp | null): { text: string; remediation: Remediation[] } {
@@ -1337,7 +1350,7 @@ export const DETECTORS = [
       const value = Math.round(ratio * 10) / 10;
       const fix = skewFix(stage, ctx);
       return {
-        type: 'skew', stageId: stage.id, origin: fix.origin,
+        type: 'skew', stageId: stage.id, origin: fix.origin, aqeSkew: fix.aqeSkew,
         impactBand: 'warning',
         metric, value,
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
@@ -1511,7 +1524,7 @@ export const DETECTORS = [
         const fix = skewFix(stage, ctx, true);
         out.push({
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
-          rule: 'shufflePartitionSkew', origin: fix.origin, metric: 'shuffleReadMax', value: max,
+          rule: 'shufflePartitionSkew', origin: fix.origin, aqeSkew: fix.aqeSkew, metric: 'shuffleReadMax', value: max,
           recommendation: `The largest shuffle partition (${formatBytes(max)}) is ${ratioText}: ${fix.text}.`,
           remediation: fix.remediation,
         });
@@ -1981,7 +1994,7 @@ export const DETECTORS = [
       // The skew advice fits only a stage that reads a shuffle feeding a join (skewFix).
       const fix = skewFix(stage, ctx);
       return {
-        type: 'straggler', stageId: stage.id, impactBand, origin: fix.origin,
+        type: 'straggler', stageId: stage.id, impactBand, origin: fix.origin, aqeSkew: fix.aqeSkew,
         metric: useSpeculativeMetric ? 'speculativeTasks' : 'stragglerShare',
         value,
         unit: useSpeculativeMetric ? 'count' : 'pct',

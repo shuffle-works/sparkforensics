@@ -63,6 +63,12 @@ const SPARK_DEFAULTS: Readonly<Record<string, readonly DefaultStep[]>> = {
   'spark.sql.adaptive.enabled': [[ALWAYS, 'false'], [[3, 2], 'true']],
   'spark.sql.adaptive.skewJoin.enabled': [[[3, 0], 'true']],
   'spark.sql.adaptive.coalescePartitions.enabled': [[[3, 0], 'true']],
+  // A partition is skewed above both the factor times the median partition and the threshold
+  // (OptimizeSkewedJoin.getSkewThreshold); forceOptimizeSkewedJoin (3.3.0) accepts the extra shuffle
+  // a split can cost.
+  'spark.sql.adaptive.skewJoin.skewedPartitionFactor': [[[3, 0], '5']],
+  'spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes': [[[3, 0], '256MB']],
+  'spark.sql.adaptive.forceOptimizeSkewedJoin': [[[3, 3], 'false']],
   // Falls back to spark.sql.adaptive.shuffle.targetPostShuffleInputSize, itself 64MB.
   'spark.sql.adaptive.advisoryPartitionSizeInBytes': [[[3, 0], '64MB']],
 };
