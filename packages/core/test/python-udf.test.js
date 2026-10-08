@@ -70,12 +70,6 @@ describe('pythonUdf', () => {
   describe('fix by Spark version and conf', () => {
     const fixOf = (config, sparkVersion) => run({ app: makeApp({ endTime: 120_000, config, sparkVersion }) })[0];
 
-    it('names no property on a Spark that predates Arrow-optimized UDFs', () => {
-      const finding = fixOf({}, '3.3.2');
-      expect(finding.remediation).toEqual([{ kind: 'code', hint: expect.stringContaining('pandas UDF') }]);
-      expect(finding.recommendation).not.toContain(ARROW_KEY);
-    });
-
     it('leaves the property out when the run already enabled it', () => {
       const finding = fixOf({ [ARROW_KEY]: 'TRUE' }, '3.5.9');
       expect(finding.remediation).toEqual([]);

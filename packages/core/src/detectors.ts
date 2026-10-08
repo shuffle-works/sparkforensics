@@ -761,17 +761,15 @@ function switchFix(on: boolean, key: string, suggested: string | boolean, recomm
 }
 
 const PYTHON_UDF_ARROW_KEY = 'spark.sql.execution.pythonUDF.arrow.enabled';
-// The executor-side metrics of the Python evaluator operators, as a Spark 3.5 log names them.
+// The executor-side metrics of the Python evaluator operators. Spark's PythonSQLMetrics trait adds
+// them in 3.4.0, the release that also adds the Arrow-optimized UDF property, so an older log never
+// reports them and the detector skips it.
 const PYTHON_DATA_SENT = 'data sent to Python workers';
 const PYTHON_DATA_RETURNED = 'data returned from Python workers';
 
-// How to cut the cost of a row-at-a-time Python UDF for the run's Spark: the Arrow-optimized UDF
-// property (3.4.0 and later) while the session lacks it, else what is left once it is on (a UDF
-// that opted out with useArrow=False), else a pandas UDF alone on a Spark with no such property.
+// How to cut the cost of a row-at-a-time Python UDF: the Arrow-optimized UDF property while the
+// session lacks it, else what is left once it is on (a UDF that opted out with useArrow=False).
 function pythonUdfArrowFix(app: DetectorApp | null): { text: string; remediation: Remediation[] } {
-  const version = /^(\d+)\.(\d+)/.exec(app?.sparkVersion ?? '');
-  const predates34 = version != null && (Number(version[1]) < 3 || (Number(version[1]) === 3 && Number(version[2]) < 4));
-  if (predates34) return { text: 'rewrite the UDF as a pandas UDF or with built-in functions, since this Spark has no Arrow-optimized Python UDF.', remediation: [codeFix('Rewrite the Python UDF as a pandas UDF or with built-in functions.')] };
   return switchFix(
     loggedAs(app, PYTHON_UDF_ARROW_KEY, true), PYTHON_UDF_ARROW_KEY, true,
     `set ${PYTHON_UDF_ARROW_KEY}=true to ship rows in Arrow batches, or rewrite the UDF as a pandas UDF.`,
