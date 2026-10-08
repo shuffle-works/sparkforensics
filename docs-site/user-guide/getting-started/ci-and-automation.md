@@ -80,8 +80,9 @@ A `code` entry has no `key`, `direction` or `suggested`, only a `hint`:
 ```
 
 Skew findings, and straggler findings whose cause is `data` or `unattributed`, carry one when no property can fix them: the
-stage's `evidence.origin` is `other`, or AQE skew-join handling is already on.
-The `hint` is the remedy the `recommendation` gives.
+stage's `evidence.origin` is `other`, or AQE skew-join handling is on and its
+`evidence.aqeSkew` case calls for a change to the job. The `hint` is the remedy
+the `recommendation` gives.
 
 `impactEstimate.coreTimeMs` is the busy core time the fix removes: the
 executor task time, in core-milliseconds, next to the `wallClock` range
@@ -169,7 +170,16 @@ execution whose plan has a sort-merge or shuffled-hash join. Skew findings
 carry `evidence.origin`: `shuffleJoin` (the conf above applies), `inputScan`
 (a stage reading uneven input files: the remediation lowers
 `spark.sql.files.maxPartitionBytes`) or `other` (no conf is suggested; the `remediation` holds a `code` entry).
-`shufflePartitionSkew` carries the same field but is judged on shuffle-read
+A `shuffleJoin` finding on a run with AQE skew-join handling on also carries
+`evidence.aqeSkew`, the reason handling did or did not act on the stage's join:
+`split`, `evenReads`, `belowThreshold`, `planShape`, `userRepartition`, `joinType`,
+`extraShuffle` or `notSplit` (see `SKEW`). The remediation matches the case: a
+`decrease` of the skew threshold or factor for `belowThreshold`, a `set` of
+`spark.sql.adaptive.forceOptimizeSkewedJoin` for `extraShuffle` from Spark 3.3
+(or on a run with no recorded version that logs the property), next to the `code`
+entry when a one-sided `joinType` is also blocked by an extra shuffle, none for
+`split` and `evenReads`, and a `code` entry otherwise.
+`shufflePartitionSkew` carries the same fields but is judged on shuffle-read
 sizes, so it is only ever `shuffleJoin` or `other`. A `stageSlowness` finding carries `evidence.reads` (`shuffle`,
 `input` or `other`) and suggests partition-count changes only for `shuffle`; `spill`
 and `tinyTask` carry the same `reads` key and gate their partition-count

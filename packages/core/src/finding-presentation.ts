@@ -8,7 +8,7 @@
 // detectors.ts is type-only, so it is erased at build time. A detector's scope, order and emits
 // list stay on its DETECTORS entry; renderers get them through detectorInfoByType().
 import type { ThresholdsOf } from './detectors.ts';
-import type { Remediation, SkewOrigin } from './finding-types.ts';
+import type { AqeSkewCase, Remediation, SkewOrigin } from './finding-types.ts';
 import type { FindingOf, FindingType } from './types.ts';
 
 export interface FindingPresentation<T extends FindingType> {
@@ -54,14 +54,30 @@ function partitionAdviceKind(f: { remediation?: Remediation[] }): 'property' | '
   return f.remediation.some((r) => r.kind === 'code') ? 'code' : 'property';
 }
 
+// The skew-join line per AQE case, with no instance data (numbers, config values).
+const AQE_SKEW_GENERIC: Readonly<Record<AqeSkewCase, string>> = {
+  split: 'AQE skew-join handling already split the skewed partitions, so the imbalance that remains is not join skew: look for a GC pause, a slow host or an expensive key.',
+  evenReads: 'The shuffle reads are even, so the slow tail is not partition-size skew and AQE has nothing to split: look for a GC pause, a slow host or an expensive key.',
+  belowThreshold: 'The largest partition is under what AQE treats as skewed: lower the skew threshold or factor for this query.',
+  planShape: 'An operator sits between the join and its shuffle, so AQE skew-join handling cannot apply: salt the key or repartition on a better key.',
+  userRepartition: 'An explicit repartition feeds the join, so AQE leaves its shuffle alone: drop the repartition, or salt the key.',
+  joinType: 'The join type does not let AQE split the skewed side: put the skewed table on a splittable side, or salt the key.',
+  extraShuffle: 'AQE skipped the split because it would add a shuffle: set spark.sql.adaptive.forceOptimizeSkewedJoin to true if that shuffle is cheaper than the tail, or salt the key.',
+  notSplit: 'AQE did not split the skewed partition and the log does not say why: salt the key or repartition on a better key.',
+};
+// Before Spark 3.3 there is no forceOptimizeSkewedJoin, so an extraShuffle row carries a code fix.
+const AQE_SKEW_EXTRA_SHUFFLE_NO_FORCE = 'AQE skipped the split because it would add a shuffle: salt the key or repartition on a better key.';
+
 const SKEW_JOIN_KEY = 'spark.sql.adaptive.skewJoin.enabled';
 const SKEW_JOIN_ALREADY_ON = 'AQE skew-join handling is already on, so salt the key or repartition on a better key.';
 const SKEW_JOIN_AQE_OFF = 'AQE is off, so enable it (spark.sql.adaptive.enabled) for skew-join handling to apply; otherwise salt the key or repartition on a better key.';
 
 // The skew-join generic line, worded per the row's remediation: AQE logged off, switch already on, or neither.
-function skewJoinGeneric(f: { remediation?: Remediation[]; origin?: SkewOrigin }, unset: string): string {
+function skewJoinGeneric(f: { remediation?: Remediation[]; origin?: SkewOrigin; aqeSkew?: AqeSkewCase }, unset: string): string {
   if (f.origin === 'inputScan') return 'Uneven input files: compact small files or split large ones (lower spark.sql.files.maxPartitionBytes).';
   if (f.origin === 'other') return 'Work is uneven across tasks: salt the key or repartition on a better key.';
+  if (f.aqeSkew === 'extraShuffle' && !f.remediation?.some((r) => r.kind === 'conf')) return AQE_SKEW_EXTRA_SHUFFLE_NO_FORCE;
+  if (f.aqeSkew != null) return AQE_SKEW_GENERIC[f.aqeSkew];
   if (f.remediation?.some((r) => r.kind === 'conf' && r.key === 'spark.sql.adaptive.enabled')) return SKEW_JOIN_AQE_OFF;
   return switchAlreadyOn(f, SKEW_JOIN_KEY) ? SKEW_JOIN_ALREADY_ON : unset;
 }
