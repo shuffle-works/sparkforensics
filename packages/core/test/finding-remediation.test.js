@@ -460,7 +460,7 @@ describe('structured remediation', () => {
       expect(off.storage.recommendation).toMatch(/need spark\.eventLog\.logBlockUpdates\.enabled=true/);
       expect(off.storage.remediation).toEqual(set('spark.eventLog.logBlockUpdates.enabled'));
       expect(off.memory.recommendation).toMatch(/Executor heap peaks are missing from this log/);
-      expect(off.memory.remediation).toEqual([]);
+      expect(off.memory.remediation).toEqual(set('spark.eventLog.logStageExecutorMetrics'));
       const on = caveats({ 'spark.eventLog.logBlockUpdates.enabled': 'true', 'spark.eventLog.logStageExecutorMetrics': 'true' });
       expect(on.storage).toBeUndefined();
       expect(on.memory.remediation).toEqual([]);

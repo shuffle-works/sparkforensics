@@ -4,7 +4,7 @@ import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId, parseJoinType } from './plan-summary.ts';
 import { allocatedCoreMs, computeAllocation } from './allocation.ts';
 import { executorHeapPeaks } from './executor-peaks.ts';
-import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
+import { computePeakConcurrentCores } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { diagnoseJoinSkew, isSkewJoinNode, planShowsSkewSplit } from './aqe-skew.ts';
 import { isBatchEvalPythonNode } from './python-stage.ts';
@@ -835,6 +835,13 @@ function switchFix(on: boolean, key: string, suggested: string | boolean, recomm
   return on ? { text: alreadyOn, remediation: [] } : { text: recommend, remediation: [setConf(key, suggested)] };
 }
 
+// Whether memoryUtilization can judge the executor heap: a measured peak and a known executor size.
+// Without both, the stage-level low-GC note is the only memory-sizing signal there is.
+function heapJudgementAvailable(ctx: Pick<DetectorCtx, 'stages' | 'runAggregates' | 'app'>): boolean {
+  return executorHeapPeaks(ctx).size > 0 && (ctx.app?.resources?.executor?.memoryMB ?? 0) > 0;
+}
+
+const LOG_STAGE_EXECUTOR_METRICS_KEY = 'spark.eventLog.logStageExecutorMetrics';
 const PYTHON_UDF_ARROW_KEY = 'spark.sql.execution.pythonUDF.arrow.enabled';
 // The executor-side metrics of the Python evaluator operators. Spark's PythonSQLMetrics trait adds
 // them in 3.4.0, the release that also adds the Arrow-optimized UDF property, so an older log never
@@ -1941,10 +1948,11 @@ export const DETECTORS = [
         };
       }
       // Low-GC (cost) branch: only for stages that ran long enough to be meaningful, and only as
-      // the fallback sizing signal: a log with measured executor heap peaks gets memoryUtilization's
-      // heapOverProvisioned judgement instead (low GC time just means a low allocation rate).
+      // the fallback sizing signal: a log with measured executor heap peaks and a known executor
+      // memory gets memoryUtilization's heapOverProvisioned judgement instead (low GC time just
+      // means a low allocation rate).
       if ((stage.executorRunTime ?? 0) >= thresholds.minRunTimeMs
-          && executorHeapPeaks(ctx).size === 0
+          && !heapJudgementAvailable(ctx)
           && pct < thresholds.lowInfoPct100
           && !stageBelowRuntimeFloor(stage, ctx, thresholds.lowInfoFloorPct)) {
         const value = Math.round(pct * 10) / 10;
@@ -2526,10 +2534,6 @@ export const DETECTORS = [
       const appDurationMs = app.endTime - app.startTime;
       if (appDurationMs <= 0) return out;
 
-      // Peak concurrent executors/cores (not executorsAdded.length/computeTotalCores): a
-      // cumulative sum or count double-counts a churned-through executor against its replacement's
-      // (spot preemption, dynamicAllocation replacement), inflating idle-rate and waste-model figures.
-      const peakExecutors = computePeakConcurrentExecutorCount(executorsAdded, executorsRemoved);
       const allocatedMB = app.resources?.executor?.memoryMB ?? null;
 
       // ── 1a idle-cores rate ────────────────────────────────────────────────
@@ -2562,13 +2566,18 @@ export const DETECTORS = [
       // JVMHeapMemory counts uncollected garbage, so a peak near -Xmx is normal JVM behaviour.
       const peakHeapByExec = executorHeapPeaks(ctx);
       if (peakHeapByExec.size === 0) {
-        // Spark 3.0+ writes the executor's metric peaks on every TaskEnd, so a log without them is
-        // pre-3.0 or from local mode (which reports zeros): no logging switch recovers them.
+        // Spark 3.0+ writes the executor's metric peaks on every TaskEnd, but it samples them at the
+        // executor heartbeat (spark.executor.metrics.pollingInterval defaults to 0), so a task that
+        // finishes between two heartbeats reports zeros, as does every task in local mode.
+        // spark.eventLog.logStageExecutorMetrics logs the per-stage peaks the driver gathers.
+        const stageMetrics = switchFix(loggedAs(app, LOG_STAGE_EXECUTOR_METRICS_KEY, true), LOG_STAGE_EXECUTOR_METRICS_KEY, true,
+          `set ${LOG_STAGE_EXECUTOR_METRICS_KEY}=true to record the peaks per stage`,
+          `${LOG_STAGE_EXECUTOR_METRICS_KEY} is already on, so no executor ran long enough to be sampled`);
         out.push({
           type: 'memoryUtilization', variant: 'memoryBand', stageId: null,
           impactBand: 'info', metric: 'memoryBand', dataUnavailable: true,
-          recommendation: 'Executor heap peaks are missing from this log (Spark records them on every task end from 3.0, and local mode reports zeros): executor memory sizing was not measured.',
-          remediation: [],
+          recommendation: `Executor heap peaks are missing from this log: Spark samples them at the executor heartbeat, so tasks shorter than the heartbeat interval report zeros (and local mode reports zeros throughout), and executor memory sizing was not measured. To measure it, ${stageMetrics.text}.`,
+          remediation: stageMetrics.remediation,
         });
       } else if (allocatedMB != null && allocatedMB > 0) {
         const allocatedBytes = allocatedMB * 1024 * 1024;
@@ -2598,11 +2607,13 @@ export const DETECTORS = [
 
       // ── 1c Spark Memory Limit waste model (UNVERIFIED buffer) ─
       // executorRunTime sums task time across cores, so dividing by the cores per executor gives
-      // executor-seconds: the same unit as peakExecutors x run seconds it is compared with.
-      const executorCores = app.resources?.executor?.cores
-        ?? computeAllocation(allocationInput).executorCores;
-      if (allocatedMB != null && peakExecutors > 0 && executorCores != null && executorCores > 0) {
-        const allocatedMBSeconds = peakExecutors * allocatedMB * (appDurationMs / 1000);
+      // executor-seconds: the same unit as the allocated executor-seconds it is compared with.
+      // The allocated side is the executors' alive time (computeAllocation), not the peak executor
+      // count held for the whole run: under dynamic allocation the two differ by peak over mean.
+      const allocation = computeAllocation(allocationInput);
+      const executorCores = app.resources?.executor?.cores ?? allocation.executorCores;
+      if (allocatedMB != null && allocation.executorSeconds != null && allocation.executorSeconds > 0 && executorCores != null && executorCores > 0) {
+        const allocatedMBSeconds = allocatedMB * allocation.executorSeconds;
         let usedRunTimeMs = 0;
         for (const s of stages.values()) usedRunTimeMs += s.executorRunTime ?? 0;
         const usedMBSeconds = allocatedMB * (usedRunTimeMs / 1000 / executorCores);

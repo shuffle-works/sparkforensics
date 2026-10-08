@@ -1709,6 +1709,33 @@ describe('detector extended-field whitelist', () => {
   });
 });
 
+describe('analyze: memory advice that raises and lowers executor memory in one run', () => {
+  const MB = 1024 * 1024;
+  const sized = makeApp({ startTime: 0, endTime: 120000, resources: { executor: { cores: 4, memoryMB: 1000 } } });
+  const executors = [{ executorId: '3', timestamp: 0, totalCores: 4 }];
+  const ra = { coreHistogram: [], busyCoreMs: 0, peakConcurrentCores: 0, perStage: {}, executorPeakMetrics: { 3: { jvmHeapMemory: 250 * MB } } };
+  const lowering = (catalog) => catalog.filter((f) => f.remediation?.some((r) => r.key === 'spark.executor.memory' && r.direction === 'decrease'));
+
+  it('keeps the over-provisioned heap advice while nothing asks for more memory', () => {
+    const catalog = analyze(sized, new Map([[1, makeStage()]]), executors, [], sampleJobs, new Map(), ra);
+    expect(lowering(catalog).map((f) => f.rule)).toContain('heapOverProvisioned');
+  });
+
+  it('drops the lowering advice when a stage has high GC', () => {
+    const stages = new Map([[1, makeStage({ gcPct: 15, executorRunTime: 60000 })], [2, makeStage({ id: 2, gcPct: 3, executorRunTime: 60000 })]]);
+    const catalog = analyze(sized, stages, executors, [], sampleJobs, new Map(), ra);
+    expect(catalog.find((f) => f.type === 'gc' && f.direction !== 'low')).toBeTruthy();
+    expect(lowering(catalog)).toEqual([]);
+  });
+
+  it('drops the lowering advice when a stage spills for volume', () => {
+    const stage = makeStage({ memoryBytesSpilled: 5 * 1024 * MB, spillClassification: 'volume' });
+    const catalog = analyze(sized, new Map([[1, stage]]), executors, [], sampleJobs, new Map(), ra);
+    expect(catalog.find((f) => f.type === 'spill')?.remediation.some((r) => r.key === 'spark.executor.memory' && r.direction === 'increase')).toBe(true);
+    expect(lowering(catalog)).toEqual([]);
+  });
+});
+
 describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
   it('emits an info low-GC finding when gcPct is under 5% and stage ran long enough', () => {
     const stages = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000 })]]);
@@ -1722,11 +1749,19 @@ describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
 
   it('is retired once the log carries a measured executor heap peak (heapOverProvisioned judges sizing instead)', () => {
     const stages = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000 })]]);
+    const sized = makeApp({ resources: { executor: { cores: 4, memoryMB: 1000 } } });
+    const ra = { executorPeakMetrics: { 1: { jvmHeapMemory: 512 * 1024 * 1024 } } };
+    const catalog = analyze(sized, stages, [], [], sampleJobs, new Map(), ra);
+    expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
+    const zeros = analyze(sized, stages, [], [], sampleJobs, new Map(), { executorPeakMetrics: { 1: { jvmHeapMemory: 0 } } });
+    expect(zeros.find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+  });
+
+  it('keeps the low-GC note when a heap peak exists but the executor memory is unknown, since nothing else judges sizing', () => {
+    const stages = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000 })]]);
     const ra = { executorPeakMetrics: { 1: { jvmHeapMemory: 512 * 1024 * 1024 } } };
     const catalog = analyze(makeApp(), stages, [], [], sampleJobs, new Map(), ra);
-    expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
-    const zeros = analyze(makeApp(), stages, [], [], sampleJobs, new Map(), { executorPeakMetrics: { 1: { jvmHeapMemory: 0 } } });
-    expect(zeros.find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+    expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
   });
 
   it('does not fire on a short stage even when gcPct is 0 (noise floor)', () => {
@@ -2062,8 +2097,18 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     it('reports the data as unavailable when every executor peak is zero or absent (local mode)', () => {
       const [band] = bands(run({ 1: { jvmHeapMemory: 0 }, 2: {} }));
       expect(band?.dataUnavailable).toBe(true);
-      expect(band.remediation).toEqual([]);
+      // The cause is a task shorter than the heartbeat, and the fix is the stage-level metrics log.
+      expect(band.recommendation).toMatch(/tasks shorter than the heartbeat interval report zeros/);
+      expect(band.remediation).toEqual([{ kind: 'conf', key: 'spark.eventLog.logStageExecutorMetrics', direction: 'set', suggested: true }]);
       expect(bands(run(undefined))[0]?.dataUnavailable).toBe(true);
+    });
+
+    it('does not suggest logStageExecutorMetrics when it is already on', () => {
+      const logged = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4, memoryMB: 1000 } }, config: { 'spark.eventLog.logStageExecutorMetrics': 'true' } });
+      const [band] = bands(analyze(logged, new Map([[1, makeStage()]]), added, [], sampleJobs, new Map(), { ...raBusy(0, 0), executorPeakMetrics: { 1: { jvmHeapMemory: 0 } } }));
+      expect(band.dataUnavailable).toBe(true);
+      expect(band.remediation).toEqual([]);
+      expect(band.recommendation).toMatch(/already on/);
     });
 
     it('leaves the driver out: its heap is sized by spark.driver.memory', () => {
@@ -2103,6 +2148,22 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     const catalog = analyze(app, new Map([[1, stage]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
     const waste = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
     expect(waste?.confidence).toBe('low');
+  });
+
+  it('1c: allocated memory-time follows when executors were alive, not the peak executor count over the whole run', () => {
+    // 4 single-core executors at the peak, but three live for 10 s of the 100 s run: 130 executor-s, not 400.
+    const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 1, memoryMB: 1000 } } });
+    const added = ['0', '1', '2', '3'].map((executorId) => ({ executorId, timestamp: 0, totalCores: 1 }));
+    const removed = ['1', '2', '3'].map((executorId) => ({ executorId, timestamp: 10000 }));
+    // 100 executor-s used: the old peak x run model (400 executor-s) calls 300 of them waste, past 1.5 x 100.
+    const stages = new Map([[1, makeStage({ executorRunTime: 100000 })]]);
+    const waste = analyze(app, stages, added, removed, sampleJobs, new Map(), raBusy(0, 0))
+      .find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
+    expect(waste).toBeUndefined();
+    // Held for the whole run, the same use is waste: 4 x 100 executor-s allocated, 100 used.
+    const held = analyze(app, stages, added, [], sampleJobs, new Map(), raBusy(0, 0))
+      .find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
+    expect(held?.value).toBe(300000);
   });
 
   it('1c: divides summed task run time by executor cores, so a fully busy 4-core executor is not waste', () => {

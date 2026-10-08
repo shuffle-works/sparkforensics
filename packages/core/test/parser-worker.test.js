@@ -3949,6 +3949,16 @@ describe('accumulateTask: executor metric peaks from TaskEnd', () => {
     expect(completion(s)).toEqual({ 7: { jvmHeapMemory: 123 } });
   });
 
+  it('does not count a driver row as an executor metric observation, as the heap-peak finding leaves it out', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
+    processEvent(taskEnd('driver', { JVMHeapMemory: 500 }), s);
+    processEvent({ Event: 'SparkListenerStageExecutorMetrics', 'Stage ID': 1, 'Executor ID': 'driver', 'Executor Metrics': { JVMHeapMemory: 700 } }, s);
+    expect(s.evidenceInputs.executorMetricRows).toBe(0);
+    processEvent({ Event: 'SparkListenerStageExecutorMetrics', 'Stage ID': 1, 'Executor ID': '1', 'Executor Metrics': { JVMHeapMemory: 700 } }, s);
+    expect(s.evidenceInputs.executorMetricRows).toBe(1);
+  });
+
   it('skips all-zero rows (local mode), non-numeric values and tasks without metrics', () => {
     const s = createState();
     processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);

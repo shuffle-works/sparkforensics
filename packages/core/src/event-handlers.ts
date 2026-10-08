@@ -25,6 +25,7 @@ import { finalizeStage } from './stage-quantiles.ts';
 import { MAX_FAILURE_DETAILS_PER_STAGE, extractTaskFailureDetail, taskFailureKey, type TaskFailureDetail } from './task-failure.ts';
 import { computeRunAggregates } from './run-aggregates.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
+import { DRIVER_EXECUTOR_ID } from './executor-peaks.ts';
 import type {
   Job, ExecutorAddedEvent, ExecutorRemovedEvent, PlanNode, SparkAppInfo, EvidenceInputs, StageAttemptTotals,
 } from './types';
@@ -638,7 +639,7 @@ function foldTaskExecutorMetrics(event: z.infer<typeof TaskEndEventSchema>, stat
   }
   if (!measured || !peaks) return;
   state.executorPeakMetrics.set(executorId, peaks);
-  state.evidenceInputs.executorMetricRows++;
+  if (executorId !== DRIVER_EXECUTOR_ID) state.evidenceInputs.executorMetricRows++;
 }
 
 export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state: ParserState): null {
@@ -1163,7 +1164,8 @@ export function recordStageExecutorMetrics(event: z.infer<typeof StageExecutorMe
   for (const [sparkName, ourName] of Object.entries(EXECUTOR_METRIC_FIELD_MAP)) {
     if (raw[sparkName] != null) metrics[ourName] = raw[sparkName];
   }
-  if (Object.keys(metrics).length > 0) {
+  // A row for the driver's own heap is no executor measurement: the heap-peak finding leaves it out too.
+  if (Object.keys(metrics).length > 0 && event['Executor ID'] !== DRIVER_EXECUTOR_ID) {
     state.evidenceInputs.executorMetricRows++;
   }
   stage.executorMetrics.set(event['Executor ID'], metrics);

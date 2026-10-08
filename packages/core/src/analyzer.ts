@@ -179,6 +179,20 @@ function applySuppression(out: Finding[]): Finding[] {
   return out.filter((f) => f.stageId == null || !dropped.get(f.type)?.has(f.stageId));
 }
 
+// Advice to lower spark.executor.memory (heap over-provisioned, low GC, idle memory-time) contradicts
+// advice to raise it (high GC, spill, a GC-bound straggler tail) in the same run: the run does not
+// have memory to spare where a stage is short of it. The raising advice stays, the lowering drops.
+const EXECUTOR_MEMORY_KEY = 'spark.executor.memory';
+
+function changesExecutorMemory(f: Finding, direction: 'increase' | 'decrease'): boolean {
+  return (f.remediation ?? []).some((r) => r.kind === 'conf' && r.key === EXECUTOR_MEMORY_KEY && r.direction === direction);
+}
+
+function reconcileExecutorMemoryAdvice(out: Finding[]): Finding[] {
+  if (!out.some((f) => changesExecutorMemory(f, 'increase'))) return out;
+  return out.filter((f) => !changesExecutorMemory(f, 'decrease'));
+}
+
 // `app` widened to `SparkAppInfo | null` to match real callers (AppModel.app is
 // nullable at the type level); every detector below tolerates a null app.
 export function analyze(
@@ -242,7 +256,7 @@ export function analyze(
         assertNever(d);
     }
   }
-  const findings = applySuppression(out);
+  const findings = reconcileExecutorMemoryAdvice(applySuppression(out));
   estimateImpact(findings, impact);
   noteTunedThresholds(findings);
   deriveImpactBand(findings, app, thresholds ? (type) => bandFloors(type, thresholds) : undefined);
