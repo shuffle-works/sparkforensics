@@ -3913,3 +3913,49 @@ describe('task-level evidence for stageFailed/retryWaste (real ExecutorLostFailu
     ]);
   });
 });
+
+describe('accumulateTask: executor metric peaks from TaskEnd', () => {
+  const taskEnd = (executorId, metrics, stageId = 1) => ({
+    Event: 'SparkListenerTaskEnd', 'Stage ID': stageId,
+    'Task Info': { 'Launch Time': 0, 'Finish Time': 10, 'Executor ID': executorId },
+    'Task Metrics': {},
+    ...(metrics ? { 'Task Executor Metrics': metrics } : {}),
+  });
+  const completion = (s) => {
+    processEvent({ Event: 'SparkListenerApplicationStart', 'App ID': 'app-1', 'App Name': 't', Timestamp: 0 }, s);
+    const sent = [];
+    emitParseCompletion(s, (m) => sent.push(m), 0);
+    return sent.find((m) => m.type === 'runAggregates').data.executorPeakMetrics;
+  };
+
+  it('keeps the largest value of each metric per executor, in camelCase names', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
+    processEvent(taskEnd('1', { JVMHeapMemory: 300, OnHeapExecutionMemory: 50, MinorGCCount: 4 }), s);
+    processEvent(taskEnd('1', { JVMHeapMemory: 900, OnHeapExecutionMemory: 10, MinorGCCount: 0 }), s);
+    processEvent(taskEnd('2', { JVMHeapMemory: 100 }), s);
+    expect(completion(s)).toEqual({
+      1: { jvmHeapMemory: 900, onHeapExecutionMemory: 50, minorGCCount: 4 },
+      2: { jvmHeapMemory: 100 },
+    });
+    expect(s.evidenceInputs.executorMetricRows).toBe(3);
+  });
+
+  it('folds a TaskEnd that arrives after its stage finished', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
+    processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 5 } }, s);
+    processEvent(taskEnd('7', { JVMHeapMemory: 123 }), s);
+    expect(completion(s)).toEqual({ 7: { jvmHeapMemory: 123 } });
+  });
+
+  it('skips all-zero rows (local mode), non-numeric values and tasks without metrics', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
+    processEvent(taskEnd('driver', { JVMHeapMemory: 0, OnHeapExecutionMemory: 0 }), s);
+    processEvent(taskEnd('1', { JVMHeapMemory: 'n/a' }), s);
+    processEvent(taskEnd('2', undefined), s);
+    expect(completion(s)).toEqual({});
+    expect(s.evidenceInputs.executorMetricRows).toBe(0);
+  });
+});

@@ -1720,6 +1720,15 @@ describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
     expect(low.recommendation).toMatch(/over-provisioned/i);
   });
 
+  it('is retired once the log carries a measured executor heap peak (heapOverProvisioned judges sizing instead)', () => {
+    const stages = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000 })]]);
+    const ra = { executorPeakMetrics: { 1: { jvmHeapMemory: 512 * 1024 * 1024 } } };
+    const catalog = analyze(makeApp(), stages, [], [], sampleJobs, new Map(), ra);
+    expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
+    const zeros = analyze(makeApp(), stages, [], [], sampleJobs, new Map(), { executorPeakMetrics: { 1: { jvmHeapMemory: 0 } } });
+    expect(zeros.find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+  });
+
   it('does not fire on a short stage even when gcPct is 0 (noise floor)', () => {
     const stages = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 5000 })]]);
     const catalog = analyze(makeApp(), stages, [], []);
@@ -1999,17 +2008,12 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     expect(idle.allocatedMBSeconds).toBeCloseTo(2 * 10 * 1408, 3);
   });
 
-  it('1b: flags an executor whose peak heap exceeds 95% of allocated (too small)', () => {
+  it('1b: reports no OOM-risk band for a peak near the allocated heap (heap used counts uncollected garbage)', () => {
     const app = makeApp({ resources: { executor: { cores: 4, memoryMB: 1000 } } });
     // 1000 MB allocated; jvmHeapMemory is in bytes => 0.98 * 1000 * 1024 * 1024.
     const stage = makeStage({ executorMetrics: new Map([['3', { jvmHeapMemory: Math.round(0.98 * 1000 * 1024 * 1024) }]]) });
     const catalog = analyze(app, new Map([[1, stage]]), [{ executorId: '3', timestamp: 0, totalCores: 4 }], [], sampleJobs, new Map(), raBusy(0, 0));
-    const band = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'memoryBand' && b.executorId === '3');
-    expect(band).toBeTruthy();
-    expect(band.impactBand).toBe('warning'); // too small
-    // Discriminates the OOM-risk band from over-provisioned; no waste figures since near-capacity heap is a risk signal, not waste.
-    expect(band.rule).toBe('heapNearCapacity');
-    expect(band.allocatedBytes).toBeUndefined();
+    expect(catalog.filter(b => b.type === 'memoryUtilization' && b.variant === 'memoryBand')).toEqual([]);
   });
 
   it('1b: flags an executor well under the allocated heap as over-provisioned, with the impact-estimate inputs', () => {
@@ -2024,7 +2028,53 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     expect(band.rule).toBe('heapOverProvisioned');
     expect(band.allocatedBytes).toBe(1000 * 1024 * 1024);
     expect(band.heap).toBe(heapBytes);
-    expect(band.appDurationMs).toBe(120000);
+    expect(band.executorCount).toBe(1);
+    expect(band.executorSeconds).toBe(120);
+    expect(band.recommendation).toMatch(/lower bound/);
+  });
+
+  describe('1b: heap peaks folded from TaskEnd executor metrics', () => {
+    const MB = 1024 * 1024;
+    const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4, memoryMB: 1000 } } });
+    const added = ['1', '2', '3'].map((executorId) => ({ executorId, timestamp: 0, totalCores: 4 }));
+    const run = (executorPeakMetrics, stages = new Map([[1, makeStage()]])) =>
+      analyze(app, stages, added, [], sampleJobs, new Map(), { ...raBusy(0, 0), executorPeakMetrics });
+    const bands = (catalog) => catalog.filter(b => b.type === 'memoryUtilization' && b.variant === 'memoryBand');
+
+    it('judges once, on the executor with the highest peak, with no stage executor metrics logged', () => {
+      const [band, ...rest] = bands(run({
+        1: { jvmHeapMemory: 200 * MB }, 2: { jvmHeapMemory: 400 * MB }, 3: { jvmHeapMemory: 300 * MB },
+      }));
+      expect(rest).toEqual([]);
+      expect(band).toMatchObject({ rule: 'heapOverProvisioned', executorId: '2', value: 40, heap: 400 * MB, executorCount: 3 });
+      expect(band.dataUnavailable).toBeUndefined();
+    });
+
+    it('stays quiet when the busiest executor used most of the heap', () => {
+      expect(bands(run({ 1: { jvmHeapMemory: 200 * MB }, 2: { jvmHeapMemory: 800 * MB } }))).toEqual([]);
+    });
+
+    it('takes the larger of a TaskEnd peak and a stage executor metrics peak', () => {
+      const stage = makeStage({ executorMetrics: new Map([['1', { jvmHeapMemory: 900 * MB }]]) });
+      expect(bands(run({ 1: { jvmHeapMemory: 100 * MB }, 2: { jvmHeapMemory: 200 * MB } }, new Map([[1, stage]])))).toEqual([]);
+    });
+
+    it('reports the data as unavailable when every executor peak is zero or absent (local mode)', () => {
+      const [band] = bands(run({ 1: { jvmHeapMemory: 0 }, 2: {} }));
+      expect(band?.dataUnavailable).toBe(true);
+      expect(band.remediation).toEqual([]);
+      expect(bands(run(undefined))[0]?.dataUnavailable).toBe(true);
+    });
+
+    it('leaves the driver out: its heap is sized by spark.driver.memory', () => {
+      const stage = makeStage({ executorMetrics: new Map([['driver', { jvmHeapMemory: 100 * MB }]]) });
+      expect(bands(run({}, new Map([[1, stage]])))[0]?.dataUnavailable).toBe(true);
+    });
+
+    it('prices the unused heap across the executors alive time', () => {
+      const [band] = bands(run({ 1: { jvmHeapMemory: 250 * MB } }));
+      expect(band.executorSeconds).toBe(300); // 3 executors x 100 s
+    });
   });
 
   it('1b: emits a dataUnavailable memoryBand finding when no executorMetrics present', () => {
@@ -2053,6 +2103,17 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     const catalog = analyze(app, new Map([[1, stage]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
     const waste = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
     expect(waste?.confidence).toBe('low');
+  });
+
+  it('1c: divides summed task run time by executor cores, so a fully busy 4-core executor is not waste', () => {
+    // 1 executor x 4 cores for 100 s, tasks kept every core busy: 400 core-s of run time = 100 executor-s.
+    const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4, memoryMB: 1000 } } });
+    const added = [{ executorId: '0', timestamp: 0, totalCores: 4 }];
+    const busy = analyze(app, new Map([[1, makeStage({ executorRunTime: 400000 })]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
+    expect(busy.find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel')).toBeUndefined();
+    // A quarter of that run time leaves 75% of the executor-seconds unused: 75,000 MB-s, past 1.5 x 25,000.
+    const idle = analyze(app, new Map([[1, makeStage({ executorRunTime: 100000 })]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
+    expect(idle.find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel')?.value).toBe(75000);
   });
 
   it('1a (regression): executor churn does not inflate idleCores past the real peak concurrent capacity', () => {

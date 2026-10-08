@@ -34,18 +34,6 @@
      "rawWaste": null
     },
     {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "skew|0|P95/median|||||||||||",
      "type": "skew",
      "band": "critical",
@@ -241,18 +229,6 @@
      "value": 2,
      "basis": "informational",
      "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": null
@@ -471,18 +447,6 @@
       "value": 105.309944,
       "unit": "ms"
      }
-    },
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
     },
     {
      "key": "skew|5|P95/median|||||||||||",
@@ -822,18 +786,6 @@
      }
     },
     {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "skew|4|P95/median|||||||||||",
      "type": "skew",
      "band": "critical",
@@ -972,18 +924,6 @@
       "value": 306.724896,
       "unit": "ms"
      }
-    },
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
     },
     {
      "key": "skew|4|P95/median|||||||||||",
@@ -1139,18 +1079,6 @@
       "value": 192.23988,
       "unit": "ms"
      }
-    },
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
     },
     {
      "key": "skew|3|P95/median|||||||||||",
@@ -1316,18 +1244,6 @@
    "skippedLines": 0,
    "findings": [
     {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
      "type": "smallFiles",
      "band": "critical",
@@ -1395,18 +1311,6 @@
    "sqlExecutions": 1,
    "skippedLines": 0,
    "findings": [
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
     {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
      "type": "smallFiles",
@@ -1476,18 +1380,6 @@
    "skippedLines": 0,
    "findings": [
     {
-     "key": "gc|1|gcPct||||||low|||||",
-     "type": "gc",
-     "band": "info",
-     "confidence": "high",
-     "value": 0,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "jobFailureRate||jobFailureRate|||||||||||",
      "type": "jobFailureRate",
      "band": "warning",
@@ -1516,18 +1408,6 @@
       "value": 102999.424,
       "unit": "mbSeconds"
      }
-    },
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
     },
     {
      "key": "retryWaste|1|retryWasteMs|||||||||||",
@@ -1612,18 +1492,6 @@
      "rawWaste": null
     },
     {
-     "key": "gc|0|gcPct||||||low|||||",
-     "type": "gc",
-     "band": "info",
-     "confidence": "high",
-     "value": 0,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "jobFailureRate||jobFailureRate|||||||||||",
      "type": "jobFailureRate",
      "band": "critical",
@@ -1652,18 +1520,6 @@
       "value": 85585.98399999998,
       "unit": "mbSeconds"
      }
-    },
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
     },
     {
      "key": "retryWaste|0|retryWasteMs|||||||||||",
@@ -1759,18 +1615,6 @@
       "value": 33178.816,
       "unit": "mbSeconds"
      }
-    },
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
     },
     {
      "key": "retryWaste|0|retryWasteMs|||||||||||",
@@ -1984,18 +1828,6 @@
      }
     },
     {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
      "type": "smallFiles",
      "band": "critical",
@@ -2063,18 +1895,6 @@
    "sqlExecutions": 1,
    "skippedLines": 0,
    "findings": [
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
     {
      "key": "skew|6|P95/median|||||||||||",
      "type": "skew",
@@ -2391,18 +2211,6 @@
    "skippedLines": 0,
    "findings": [
     {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "skew|3|P95/median|||||||||||",
      "type": "skew",
      "band": "critical",
@@ -2508,18 +2316,6 @@
      "value": 1,
      "basis": "informational",
      "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": null
@@ -2932,30 +2728,6 @@
    "skippedLines": 0,
    "findings": [
     {
-     "key": "gc|6|gcPct||||||low|||||",
-     "type": "gc",
-     "band": "info",
-     "confidence": "medium",
-     "value": 2.7,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "skew|6|P95/median|||||||||||",
      "type": "skew",
      "band": "critical",
@@ -3283,18 +3055,6 @@
    "skippedLines": 0,
    "findings": [
     {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "tinyTask|6|taskDurationP50|||||||||||",
      "type": "tinyTask",
      "band": "critical",
@@ -3576,18 +3336,6 @@
    "sqlExecutions": 3,
    "skippedLines": 0,
    "findings": [
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
     {
      "key": "tinyTask|6|taskDurationP50|||||||||||",
      "type": "tinyTask",
@@ -3902,18 +3650,6 @@
    "skippedLines": 0,
    "findings": [
     {
-     "key": "gc|2|gcPct||||||low|||||",
-     "type": "gc",
-     "band": "info",
-     "confidence": "low",
-     "value": 3.9,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
      "type": "memoryUtilization",
      "band": "warning",
@@ -4059,42 +3795,6 @@
      "rawWaste": null
     },
     {
-     "key": "gc|0|gcPct||||||low|||||",
-     "type": "gc",
-     "band": "info",
-     "confidence": "high",
-     "value": 0.8,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
-     "key": "gc|1|gcPct||||||low|||||",
-     "type": "gc",
-     "band": "info",
-     "confidence": "high",
-     "value": 0.1,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
-     "key": "gc|2|gcPct||||||low|||||",
-     "type": "gc",
-     "band": "info",
-     "confidence": "high",
-     "value": 0.3,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "memoryUtilization||heapUsedRatio|heapOverProvisioned|memoryBand||1|||||||",
      "type": "memoryUtilization",
      "band": "info",
@@ -4105,52 +3805,7 @@
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 387237.13830847165,
-      "unit": "mbSeconds"
-     }
-    },
-    {
-     "key": "memoryUtilization||heapUsedRatio|heapOverProvisioned|memoryBand||2|||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": 6,
-     "basis": "resourceOnly",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": {
-      "value": 418221.11229589843,
-      "unit": "mbSeconds"
-     }
-    },
-    {
-     "key": "memoryUtilization||heapUsedRatio|heapOverProvisioned|memoryBand||3|||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": 10,
-     "basis": "resourceOnly",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": {
-      "value": 400592.1856769409,
-      "unit": "mbSeconds"
-     }
-    },
-    {
-     "key": "memoryUtilization||heapUsedRatio|heapOverProvisioned|memoryBand||driver|||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": 3,
-     "basis": "resourceOnly",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": {
-      "value": 433176.61665570067,
+      "value": 959951.6969523468,
       "unit": "mbSeconds"
      }
     }
@@ -4263,16 +3918,19 @@
    "skippedLines": 0,
    "findings": [
     {
-     "key": "gc|0|gcPct||||||low|||||",
-     "type": "gc",
+     "key": "memoryUtilization||heapUsedRatio|heapOverProvisioned|memoryBand||7|||||||",
+     "type": "memoryUtilization",
      "band": "info",
-     "confidence": "high",
-     "value": 0,
-     "basis": "informational",
-     "method": "none",
+     "confidence": null,
+     "value": 7,
+     "basis": "resourceOnly",
+     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
-     "rawWaste": null
+     "rawWaste": {
+      "value": 6429483.63026886,
+      "unit": "mbSeconds"
+     }
     },
     {
      "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
@@ -4288,18 +3946,6 @@
       "value": 7313084.796000001,
       "unit": "mbSeconds"
      }
-    },
-    {
-     "key": "memoryUtilization||memoryBand||memoryBand|||||||||",
-     "type": "memoryUtilization",
-     "band": "info",
-     "confidence": null,
-     "value": null,
-     "basis": "informational",
-     "method": "modeled",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
     },
     {
      "key": "memoryUtilization||wastedMBSeconds||wasteModel|||||||||",

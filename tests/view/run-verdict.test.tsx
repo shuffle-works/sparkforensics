@@ -148,10 +148,10 @@ describe('RunVerdict', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Start here: switch to Kryo' })).toBeInTheDocument();
   });
 
-  it('titles a heap-pressure lead by its own fix, not by cluster size', () => {
+  it('titles a heap-sizing lead by its own fix, not by cluster size', () => {
     renderVerdict([{
-      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity', stageId: null, impactBand: 'warning',
-      recommendation: 'Raise spark.executor.memory to avoid OOM.',
+      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, impactBand: 'warning',
+      recommendation: 'Executors peaked at 20% of allocated heap: reduce spark.executor.memory.',
     }]);
     expect(screen.getByRole('heading', { level: 2 })).not.toHaveTextContent(/cluster size/i);
     expect(screen.getByTestId('run-verdict')).not.toHaveTextContent('idle cores');

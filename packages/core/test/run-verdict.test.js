@@ -98,12 +98,12 @@ describe('idle capacity in the next steps', () => {
     expect(steps().map((step) => step.lead.type)).toEqual(['skew', 'memoryUtilization']);
   });
 
-  it('keeps a heap-pressure memoryUtilization finding and idleCores as separate steps', () => {
-    const heapNearCapacity = {
-      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity', stageId: null, impactBand: 'warning',
-      recommendation: 'Raise spark.executor.memory to avoid OOM.',
+  it('keeps a heap-sizing memoryUtilization finding and idleCores as separate steps', () => {
+    const heapOverProvisioned = {
+      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, impactBand: 'warning',
+      recommendation: 'Executors peaked at 20% of allocated heap: reduce spark.executor.memory.',
     };
-    const both = buildNextSteps([timedMs('skew', 0, 64), heapNearCapacity, { ...idleCores, impactBand: 'info' }]);
+    const both = buildNextSteps([timedMs('skew', 0, 64), heapOverProvisioned, { ...idleCores, impactBand: 'info' }]);
     expect(both.map((step) => step.key)).toContain('app:memoryUtilization:idleCores');
     expect(both[0].lead.type).toBe('skew');
   });

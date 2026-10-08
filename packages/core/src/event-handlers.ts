@@ -238,6 +238,9 @@ export interface ParserState {
   // cache evidence (logBlockUpdates off, or nothing was ever cached).
   rddBlockUpdates: number;
   taskAccumStages: Map<number, Set<number>>;
+  // Per-executor peak of every ExecutorMetricType value any TaskEnd reported (Spark's own
+  // AppStatusListener folds them the same way); only the metrics in EXECUTOR_METRIC_FIELD_MAP.
+  executorPeakMetrics: Map<string, Record<string, number>>;
   evidenceInputs: EvidenceInputs;
   // An open SQL execution's latest AQE update, as raw line text, not yet parsed (see
   // deferAdaptiveUpdate). Applied when the execution ends, or at parse completion.
@@ -449,6 +452,7 @@ export function createState(): ParserState {
     rddBlocks: new Map(),
     rddBlockUpdates: 0,
     taskAccumStages: new Map(),
+    executorPeakMetrics: new Map(),
     pendingAdaptiveUpdates: new Map(),
     resolvedPlanExecutions: new Set(),
     evidenceInputs: {
@@ -612,7 +616,29 @@ function taskRecordOf(event: z.infer<typeof TaskEndEventSchema>, failure: TaskFa
   };
 }
 
+// Max-folds the TaskEnd's executor metrics into the executor's run peak. Spark polls them at
+// executor heartbeat (spark.executor.metrics.pollingInterval defaults to 0), so a peak is a lower
+// bound. All-zero rows (local mode) carry no measurement and are skipped.
+function foldTaskExecutorMetrics(event: z.infer<typeof TaskEndEventSchema>, state: ParserState): void {
+  const raw = event['Task Executor Metrics'];
+  const executorId = event['Task Info']?.['Executor ID'];
+  if (!raw || executorId == null) return;
+  let peaks: Record<string, number> | undefined;
+  let measured = false;
+  for (const [sparkName, ourName] of Object.entries(EXECUTOR_METRIC_FIELD_MAP)) {
+    const value = raw[sparkName];
+    if (typeof value !== 'number' || !(value > 0)) continue;
+    measured = true;
+    peaks ??= state.executorPeakMetrics.get(executorId) ?? {};
+    if (value > (peaks[ourName] ?? 0)) peaks[ourName] = value;
+  }
+  if (!measured || !peaks) return;
+  state.executorPeakMetrics.set(executorId, peaks);
+  state.evidenceInputs.executorMetricRows++;
+}
+
 export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state: ParserState): null {
+  foldTaskExecutorMetrics(event, state);
   const stageId = event['Stage ID'];
   const stage = state.stages.get(stageId);
   if (!stage) return null;
@@ -1669,7 +1695,10 @@ export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => 
   for (const executionId of [...state.pendingAdaptiveUpdates.keys()]) flushAdaptiveUpdate(executionId, state, emit);
   emit({ type: 'progress', pct: 1, linesProcessed });
   emit({ type: 'stageLateAttemptWork', data: collectLateAttemptWork(state) });
-  emit({ type: 'runAggregates', data: computeRunAggregates(state.taskStore) });
+  emit({
+    type: 'runAggregates',
+    data: { ...computeRunAggregates(state.taskStore), executorPeakMetrics: Object.fromEntries(state.executorPeakMetrics) },
+  });
   emit({ type: 'stageSpeculationWaste', data: collectLateSpeculationWaste(state) });
   emit({ type: 'stageExecutorMetrics', data: collectStageExecutorMetrics(state) });
   emit(appMessage(state));

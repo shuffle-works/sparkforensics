@@ -3,6 +3,7 @@ import { medianOfSorted } from './median.ts';
 import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId } from './plan-summary.ts';
 import { allocatedCoreMs, computeAllocation } from './allocation.ts';
+import { executorHeapPeaks } from './executor-peaks.ts';
 import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
@@ -161,7 +162,7 @@ export interface DetectorCtx {
   executorsRemoved: DetectorExecutorRemovedEvent[];
   jobs: Map<number, DetectorJob>;
   sql: Map<number, DetectorSqlExec>;
-  runAggregates?: { busyCoreMs?: number } | null;
+  runAggregates?: { busyCoreMs?: number; executorPeakMetrics?: Record<string, Record<string, number>> } | null;
   // The one EstimateCtx analyze() also hands every estimate(): a detector's runtime floor clips
   // its claim against the same occupancy sweep the displayed savings come from.
   impact: EstimateCtx;
@@ -1648,8 +1649,11 @@ export const DETECTORS = [
           remediation: [increaseConf('spark.executor.memory')],
         };
       }
-      // Low-GC (cost) branch: only for stages that ran long enough to be meaningful.
+      // Low-GC (cost) branch: only for stages that ran long enough to be meaningful, and only as
+      // the fallback sizing signal: a log with measured executor heap peaks gets memoryUtilization's
+      // heapOverProvisioned judgement instead (low GC time just means a low allocation rate).
       if ((stage.executorRunTime ?? 0) >= thresholds.minRunTimeMs
+          && executorHeapPeaks(ctx).size === 0
           && pct < thresholds.lowInfoPct100
           && !stageBelowRuntimeFloor(stage, ctx, thresholds.lowInfoFloorPct)) {
         const value = Math.round(pct * 10) / 10;
@@ -2236,7 +2240,6 @@ export const DETECTORS = [
     docAnchor: '#bottleneck-memory-utilization',
     thresholds: {
       idleCoreWarn: 0.50,          // WastedCoresAlertsReducer
-      bandTooSmall: 0.95,          // MemoryAlertsReducer: used/allocated
       bandTooHigh: 0.70,           // below this => over-provisioned (cost signal)
       wasteBufferMultiplier: 1.5,  // UNVERIFIED
     },
@@ -2278,63 +2281,56 @@ export const DETECTORS = [
         }
       }
 
-      // ── 1b memory bands (executor only; driver half dropped since there is no driver metric) ─
-      // Peak heap per executor = max jvmHeapMemory across all stages' executorMetrics.
-      const peakHeapByExec = new Map<string, number>();
-      for (const s of stages.values()) {
-        const em = s.executorMetrics;
-        if (!(em instanceof Map)) continue;
-        for (const [execId, m] of em) {
-          const heap = m?.jvmHeapMemory ?? 0;
-          if (heap > (peakHeapByExec.get(execId) ?? 0)) peakHeapByExec.set(execId, heap);
-        }
-      }
+      // ── 1b memory band (executor only; driver half dropped since there is no driver metric) ─
+      // spark.executor.memory is one setting for every executor, so the judgement is made once, on
+      // the executor with the highest sampled heap peak. A near-capacity peak is not reported:
+      // JVMHeapMemory counts uncollected garbage, so a peak near -Xmx is normal JVM behaviour.
+      const peakHeapByExec = executorHeapPeaks(ctx);
       if (peakHeapByExec.size === 0) {
-        const key = 'spark.eventLog.logStageExecutorMetrics';
-        const fix = switchFix(loggedAs(app, key, true), key, true,
-          `Per-executor memory usage requires ${key}=true: not enabled for this run.`,
-          'Per-executor memory usage is missing from this log even though executor metrics logging is on for this run.');
+        // Spark 3.0+ writes the executor's metric peaks on every TaskEnd, so a log without them is
+        // pre-3.0 or from local mode (which reports zeros): no logging switch recovers them.
         out.push({
           type: 'memoryUtilization', variant: 'memoryBand', stageId: null,
           impactBand: 'info', metric: 'memoryBand', dataUnavailable: true,
-          recommendation: fix.text,
-          remediation: fix.remediation,
+          recommendation: 'Executor heap peaks are missing from this log (Spark records them on every task end from 3.0, and local mode reports zeros): executor memory sizing was not measured.',
+          remediation: [],
         });
       } else if (allocatedMB != null && allocatedMB > 0) {
         const allocatedBytes = allocatedMB * 1024 * 1024;
-        for (const [execId, heap] of peakHeapByExec) {
-          const ratio = heap / allocatedBytes;
-          // The two bands are opposite signals: an explicit `rule` discriminator lets consumers
-          // tell OOM-risk from over-provisioning without re-deriving the ratio.
-          if (ratio > thresholds.bandTooSmall) {
-            out.push({
-              type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity',
-              stageId: null, executorId: execId,
-              impactBand: 'warning', metric: 'heapUsedRatio', value: Math.round(ratio * 100),
-              recommendation: `Executor ${execId} peaked at ${Math.round(ratio * 100)}% of allocated heap: memory may be too small; raise spark.executor.memory to avoid OOM/spill.`,
-              remediation: [increaseConf('spark.executor.memory')],
-            });
-          } else if (ratio < thresholds.bandTooHigh) {
-            out.push({
-              type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned',
-              stageId: null, executorId: execId,
-              impactBand: 'info', metric: 'heapUsedRatio', value: Math.round(ratio * 100),
-              // Absolute figures behind the rounded ratio, for the estimator's
-              // unused-memory-over-time model.
-              allocatedBytes, heap, appDurationMs,
-              recommendation: `Executor ${execId} used only ${Math.round(ratio * 100)}% of allocated heap: memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.`,
-              remediation: [decreaseConf('spark.executor.memory')],
-            });
-          }
+        let execId = '';
+        let heap = 0;
+        for (const [id, peak] of peakHeapByExec) {
+          if (peak > heap) { heap = peak; execId = id; }
+        }
+        const ratio = heap / allocatedBytes;
+        if (ratio < thresholds.bandTooHigh) {
+          const pct = Math.round(ratio * 100);
+          const executorCount = peakHeapByExec.size;
+          out.push({
+            type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned',
+            stageId: null, executorId: execId,
+            impactBand: 'info', metric: 'heapUsedRatio', value: pct,
+            // Absolute figures behind the rounded ratio, for the estimator's unused-memory model:
+            // the unused heap is held by every executor for as long as it is alive.
+            allocatedBytes, heap, executorCount,
+            executorSeconds: computeAllocation({ app, stages, executors: { added: executorsAdded, removed: executorsRemoved } }).executorSeconds
+              ?? executorCount * (appDurationMs / 1000),
+            recommendation: `The busiest of ${executorCount} sampled executors peaked at ${pct}% of allocated heap (a lower bound: Spark samples at executor heartbeat): memory may be over-provisioned; consider reducing spark.executor.memory for cost savings.`,
+            remediation: [decreaseConf('spark.executor.memory')],
+          });
         }
       }
 
       // ── 1c Spark Memory Limit waste model (UNVERIFIED buffer) ─
-      if (allocatedMB != null && peakExecutors > 0) {
+      // executorRunTime sums task time across cores, so dividing by the cores per executor gives
+      // executor-seconds: the same unit as peakExecutors x run seconds it is compared with.
+      const executorCores = app.resources?.executor?.cores
+        ?? computeAllocation(allocationInput).executorCores;
+      if (allocatedMB != null && peakExecutors > 0 && executorCores != null && executorCores > 0) {
         const allocatedMBSeconds = peakExecutors * allocatedMB * (appDurationMs / 1000);
         let usedRunTimeMs = 0;
         for (const s of stages.values()) usedRunTimeMs += s.executorRunTime ?? 0;
-        const usedMBSeconds = allocatedMB * (usedRunTimeMs / 1000);
+        const usedMBSeconds = allocatedMB * (usedRunTimeMs / 1000 / executorCores);
         const wastedMBSeconds = allocatedMBSeconds - usedMBSeconds;
         if (wastedMBSeconds > thresholds.wasteBufferMultiplier * usedMBSeconds) {
           const value = Math.round(wastedMBSeconds);
@@ -2366,15 +2362,15 @@ export const DETECTORS = [
         }
         return costOnly('modeled');
       }
-      // Only the over-provisioned band is a waste; the near-capacity band is an OOM-risk signal with
-      // no magnitude, and the dataUnavailable shape has no inputs: both stay informational.
+      // Only the over-provisioned band is a waste; the dataUnavailable shape has no inputs and
+      // stays informational.
       if (finding.variant === 'memoryBand' && finding.rule === 'heapOverProvisioned') {
         const allocatedBytes = finding.allocatedBytes as number | undefined;
         const heap = finding.heap as number | undefined;
-        const appDurationMs = finding.appDurationMs as number | undefined;
-        if (allocatedBytes != null && heap != null && appDurationMs != null) {
+        const executorSeconds = finding.executorSeconds as number | undefined;
+        if (allocatedBytes != null && heap != null && executorSeconds != null) {
           const unusedMB = (allocatedBytes - heap) / (1024 * 1024);
-          const wastedMBSeconds = unusedMB * (appDurationMs / 1000);
+          const wastedMBSeconds = unusedMB * executorSeconds;
           return costOnly('modeled', { value: wastedMBSeconds, unit: 'mbSeconds' });
         }
       }

@@ -40,7 +40,7 @@ A run is called clean only when the log had everything its checks need.
 When something was missing, the run is never called clean: the Findings
 tab's **Clean checks** list says which checks could not run and, where Spark
 has one, the setting to turn on for the next run (for example
-`spark.eventLog.logStageExecutorMetrics=true` for per-executor memory). If
+`spark.eventLog.logBlockUpdates.enabled=true` for cache storage). If
 nothing else was found, the verdict title says so too.
 
 A run scorecard sits under the verdict: **Wall-clock** (total run time),
