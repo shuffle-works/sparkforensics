@@ -292,6 +292,9 @@ export interface RunAggregates {
   busyCoreMs?: number;
   peakConcurrentCores?: number;
   perStage?: Record<string, { totalTaskDurationSum: number; taskCount: number }>;
+  /** Per executor id, the run peak of each executor metric any TaskEnd reported (lower bounds:
+   * Spark samples at heartbeat). Absent on a log without Spark 3+ task executor metrics. */
+  executorPeakMetrics?: Record<string, Record<string, number>>;
   [key: string]: unknown;
 }
 

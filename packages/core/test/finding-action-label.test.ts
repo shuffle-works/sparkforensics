@@ -42,9 +42,6 @@ test('branches on the variant (and rule/dataUnavailable) fields for memoryUtiliz
     findingActionLabel(finding({ type: 'memoryUtilization', variant: 'memoryBand', dataUnavailable: true })),
   ).toBe('Enable memory metrics');
   expect(
-    findingActionLabel(finding({ type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity' })),
-  ).toBe('Increase executor memory');
-  expect(
     findingActionLabel(finding({ type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned' })),
   ).toBe('Reduce executor memory');
 });

@@ -239,21 +239,24 @@ export interface UtilizationFinding extends NumericFinding<'utilization'>, Utili
 
 export interface MemoryUtilizationEvidence {
   variant: 'idleCores' | 'memoryBand' | 'wasteModel';
-  // memoryBand only: which band a measured executor fell in.
-  rule?: 'heapNearCapacity' | 'heapOverProvisioned';
+  // memoryBand only: the measured band the executors fell in.
+  rule?: 'heapOverProvisioned';
+  // heapOverProvisioned: the executor with the highest sampled heap peak.
   executorId?: string;
-  // heapOverProvisioned only: the executor's peak heap, bytes.
+  // heapOverProvisioned only: that peak heap, bytes (a lower bound: Spark samples at heartbeat).
   heap?: number;
   // The memoryBand caveat for a log with no executor metrics.
   dataUnavailable?: boolean;
 }
 export interface MemoryUtilizationFinding extends NumericFinding<'memoryUtilization'>, MemoryUtilizationEvidence {
   // Impact-estimator inputs: the unrounded idle rate and the run's allocated memory-time
-  // (idleCores), and the allocation and span behind heapOverProvisioned's rounded ratio.
+  // (idleCores), and the allocation and executor-time behind heapOverProvisioned's rounded ratio.
   idleRateFraction?: number;
   allocatedMBSeconds?: number | null;
-  appDurationMs?: number;
   allocatedBytes?: number;
+  // heapOverProvisioned: executors with a measured peak, and the seconds the run's executors were alive.
+  executorCount?: number;
+  executorSeconds?: number;
 }
 
 export interface CacheUtilizationEvidence {

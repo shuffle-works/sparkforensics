@@ -465,13 +465,11 @@ describe('structured remediation', () => {
       const off = caveats({});
       expect(off.storage.recommendation).toMatch(/need spark\.eventLog\.logBlockUpdates\.enabled=true/);
       expect(off.storage.remediation).toEqual(set('spark.eventLog.logBlockUpdates.enabled'));
-      expect(off.memory.recommendation).toMatch(/requires spark\.eventLog\.logStageExecutorMetrics=true/);
-      expect(off.memory.remediation).toEqual(set('spark.eventLog.logStageExecutorMetrics'));
+      expect(off.memory.recommendation).toMatch(/Executor heap peaks are missing from this log/);
+      expect(off.memory.remediation).toEqual([]);
       const on = caveats({ 'spark.eventLog.logBlockUpdates.enabled': 'true', 'spark.eventLog.logStageExecutorMetrics': 'true' });
       expect(on.storage).toBeUndefined();
       expect(on.memory.remediation).toEqual([]);
-      expect(on.memory.recommendation).not.toMatch(/spark\.eventLog/);
-      expect(on.memory.recommendation).toMatch(/executor metrics logging is on for this run/);
     });
 
     it('suggests Kryo unless the logged serializer is already Kryo', () => {

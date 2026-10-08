@@ -280,7 +280,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
         case 'wasteModel': return 'Right-size executor memory';
         case 'memoryBand':
           if (f.dataUnavailable) return 'Enable memory metrics';
-          return f.rule === 'heapNearCapacity' ? 'Increase executor memory' : 'Reduce executor memory';
+          return 'Reduce executor memory';
       }
       return undefined;
     },
@@ -292,9 +292,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
         case 'wasteModel': return 'Review spark.executor.memory and executor count.';
         case 'memoryBand':
           if (f.dataUnavailable) return undefined;
-          return f.rule === 'heapNearCapacity'
-            ? 'Memory may be too small: raise spark.executor.memory to avoid OOM/spill.'
-            : 'Memory may be over-provisioned: consider reducing spark.executor.memory for cost savings.';
+          return 'Memory may be over-provisioned: consider reducing spark.executor.memory for cost savings.';
       }
       return undefined;
     },

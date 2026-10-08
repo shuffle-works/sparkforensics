@@ -19,7 +19,7 @@ import type { MemoryUtilizationFinding } from '@sparkforensics/core/finding-type
 export type MemoryUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
 /** Each `memoryUtilization` variant reports a different metric under `value`:
- * idle core-time rate, per-executor heap ratio (with a `rule` sub-discriminator
+ * idle core-time rate, highest-executor heap ratio (with a `rule` sub-discriminator
  * for direction), or the app-wide MB-seconds waste model. Keep it always
  * visible, not buried in the expanded recommendation. */
 function memoryDetail(f: MemoryUtilizationFinding): string {
@@ -27,15 +27,13 @@ function memoryDetail(f: MemoryUtilizationFinding): string {
   const pct = formatMetricValue('pct', value);
   if (f.variant === 'idleCores') return `${pct} of available core-time idle`;
   if (f.variant === 'memoryBand') {
-    return f.rule === 'heapNearCapacity'
-      ? `${pct} of allocated heap used: near capacity`
-      : `${pct} of allocated heap used: over-provisioned`;
+    return `${pct} of allocated heap used: over-provisioned`;
   }
   // Same units as the step's savings figure, so the two never disagree in form.
   return `~${formatRawWaste({ value, unit: 'mbSeconds' })} wasted`;
 }
 
-// Only the `rule`-discriminated variants (heapNearCapacity/heapOverProvisioned)
+// Only the `rule`-discriminated variant (heapOverProvisioned)
 // have a diagnosis clause worth keeping as deeper Advanced-tier context: it's
 // the same figure memoryDetail() already shows, in the detector's own words.
 // idleCores/wasteModel have no such restatement to gate.

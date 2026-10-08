@@ -801,26 +801,17 @@ describe('estimateImpact: cost-only group A', () => {
     expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 
-  it('memoryUtilization memoryBand heapOverProvisioned: resourceOnly, unused heap held for the run, in MB-seconds', () => {
+  it('memoryUtilization memoryBand heapOverProvisioned: resourceOnly, unused heap held by every executor while alive, in MB-seconds', () => {
     const findings = [{
       type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned',
       executorId: '3', metric: 'heapUsedRatio', value: 25, impactBand: 'info',
-      allocatedBytes: 1000 * 1024 * 1024, heap: 250 * 1024 * 1024, appDurationMs: 120_000,
+      allocatedBytes: 1000 * 1024 * 1024, heap: 250 * 1024 * 1024, executorCount: 2, executorSeconds: 240,
     }];
     estimate(findings, new Map());
     expect(findings[0].impactEstimate).toEqual({
       basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled',
-      rawWaste: { value: 90_000, unit: 'mbSeconds' },
+      rawWaste: { value: 180_000, unit: 'mbSeconds' },
     });
-  });
-
-  it('memoryUtilization memoryBand heapNearCapacity: an OOM-risk signal, not a waste: informational', () => {
-    const findings = [{
-      type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity',
-      executorId: '3', metric: 'heapUsedRatio', value: 98, impactBand: 'warning',
-    }];
-    estimate(findings, new Map());
-    expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'modeled' });
   });
 
   it('memoryUtilization memoryBand dataUnavailable: no rule, no inputs, informational', () => {
