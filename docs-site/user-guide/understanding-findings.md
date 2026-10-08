@@ -299,8 +299,8 @@ this tag:
   intended. It needs the executors' `number of output rows` metrics, so a join
   with no reported row counts is not flagged.
 - Under-broadcast: a side of a Sort Merge Join that its join type can
-  broadcast (`evidence.buildSide`, sized by `evidence.buildSideBytes`) looks
-  well under the broadcast threshold;
+  broadcast (`evidence.buildSide`, sized by the finding's value) looks well
+  under the broadcast threshold;
   consider a `broadcast()` hint or raising the threshold property. The size is
   the shuffle's `data size`, the metric adaptive execution compares at runtime.
   The threshold is `spark.sql.adaptive.autoBroadcastJoinThreshold` when the

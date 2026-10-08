@@ -88,7 +88,6 @@ describe('underBroadcast: join type decides which side can be broadcast', () => 
   it('reports the build side as the smaller side and the other as the larger', () => {
     const [f] = under(join('LeftOuter', 500 * MiB, 2 * MiB), { config: { 'spark.sql.autoBroadcastJoinThreshold': '1g' } });
     expect(f.buildSide).toBe('right');
-    expect(f.buildSideBytes).toBe(2 * MiB);
     expect(f.value).toBe(2 * MiB);
     expect(f.largerSideBytes).toBe(500 * MiB);
     expect(coreFindingGenericRecommendation(f)).toContain('admits the right side');

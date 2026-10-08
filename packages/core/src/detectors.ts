@@ -3056,7 +3056,7 @@ export const DETECTORS = [
                 planNodeIds: contributors.map((n) => n.id!).filter(Boolean),
                 impactBand: 'info', metric: 'smallerSideBytes',
                 value: buildBytes, largerSideBytes: otherBytes,
-                joinType, buildSide, buildSideBytes: buildBytes, broadcastThreshold,
+                joinType, buildSide, broadcastThreshold,
                 recommendation: broadcastThreshold === 'notLimiting'
                   ? `${subject} is under the effective ${key} (${formatBytes(threshold!)}) yet was not broadcast${otherSide}, so the threshold is not what stopped it: a join hint, missing table statistics, or a shuffle that had already run usually is. Consider a broadcast() hint or collecting statistics (ANALYZE TABLE).`
                   : `${subject} is well under the broadcast threshold${otherSide}: this could have been a broadcast join. Consider a broadcast() hint or raising ${key}.`,
@@ -3098,10 +3098,9 @@ export const DETECTORS = [
       return out.length ? out : null;
     },
     estimate(finding, ctx): ImpactEstimate | null {
-      // Each is priced as one broadcast transfer of its broadcast side: overBroadcast's broadcastBytes
-      // (`value`), underBroadcast's buildSideBytes.
-      const bytes = finding.type === 'underBroadcast' ? finding.buildSideBytes : finding.value;
-      const wasteMs = (((bytes as number | undefined) ?? 0) / BROADCAST_BANDWIDTH_BPS) * 1000;
+      // Both finding types carry bytes as `value`: overBroadcast's broadcastBytes, underBroadcast's
+      // smallerSideBytes (its build side), each priced as one broadcast transfer.
+      const wasteMs = (((finding.value as number | undefined) ?? 0) / BROADCAST_BANDWIDTH_BPS) * 1000;
       return stageMappableWasteOrCostOnly(wasteMs, finding.stageIds as number[] | undefined, ctx);
     },
   }),
