@@ -37,10 +37,10 @@ plus shuffle-read bytes and records. If run time scaled with that volume, the
 share of the slow tasks' extra time it accounts for is the data share; at 50% or
 more the tail is skew (`evidence.cause` is `data`, `evidence.dataRatio` is the
 median slow task's volume over the median task's). A tail that mostly is not data
-is reported as `STRAG` with its cause. Ratios take the median task's volume or a floor
-of 1 MiB and 1,000 records, whichever is larger, so a median of a few bytes never prints
-a huge multiple. When the median task read nothing, there is no ratio to take
-(`evidence.dataRatio` is absent): GC and fetch wait claim their share of the slow
+is reported as `STRAG` with its cause. Ratios are taken only against a median task that read at least
+1 MiB or 1,000 records, so a median of a few bytes never prints a huge multiple. When the median task read less than that floor (almost nothing),
+there is no ratio to take (`evidence.dataRatio` is absent, and the advice says the
+median task read almost nothing): GC and fetch wait claim their share of the slow
 tasks' extra time first, and a slow task that read data (at least 1 MiB or 1,000
 records) owns what is left. When the data share is under 50%, the cause is the largest
 of GC, fetch wait, host and what none of them accounts for. With no data volume
@@ -91,8 +91,9 @@ execution). With AQE coalescing on,
 `spark.sql.adaptive.coalescePartitions.initialPartitionNum` replaces the
 property as the starting count when it is set, and a stage that ran more tasks
 than that, with a skew split in the final plan or no final plan to rule one
-out, is not blamed on its own `repartition(n)`. Only flagged on stages that
-take at least 0.5% of the run.
+out, is not blamed on its own `repartition(n)`: the advice states the task and
+configured counts and names `repartition(n)` only when the plan holds one the
+job wrote. Only flagged on stages that take at least 0.5% of the run.
 
 ### `SPILL`: Memory and disk spill {#spill}
 
@@ -115,9 +116,10 @@ object creation: use primitive types, avoid UDFs, or raise executor memory.
 When the log carries no measured executor heap peaks, or the executor memory
 is unknown, so [`MEM`](#mem) cannot judge the heap, a stage with GC below 5%
 gets an informational note that executor memory may be over-provisioned, only
-on stages that take at least 0.5% of the run. Both need at least 10 s of
-executor run time on the stage. A run with any advice to raise executor memory
-(high GC, volume spill, a GC-bound straggler tail) gets no advice to lower it.
+on stages that take at least 0.5% of the run, and never on a stage that failed
+or lost tasks. Both need at least 10 s of executor run time on the stage. A
+stage with advice to raise executor memory (high GC, volume spill, a GC-bound
+straggler tail) gets no advice to lower it.
 
 ### `FAIL`: Failed tasks {#fail}
 
@@ -145,7 +147,9 @@ what the slow tasks' extra time went to, taken in this order so no millisecond
 counts twice: data volume, then GC time over the median task's, then shuffle
 fetch wait over the median task's, then one host that holds most of the slow
 tasks out of proportion to its share of the stage (`evidence.host`). What none of
-them accounts for is `unexplained` (`unattributed` with no data volume to compare); `evidence.cpuPct` (the slow tasks' CPU time
+them accounts for is `unexplained` (`unattributed` with no data volume to compare); an
+`unexplained` tail whose slow tasks read at least twice the median task's data says so
+rather than "no more data", and keeps the `SKEW` data advice when data is its largest share; `evidence.cpuPct` (the slow tasks' CPU time
 over their run time) says whether those tasks mostly waited or were busy. With
 no data volume to compare, what is left is `unattributed` when it is the largest share, as is a stage
 with no tail attribution: the advice names no fix, only the slow tasks' input sizes, GC time and hosts to check.
@@ -257,8 +261,10 @@ counts uncollected garbage, so a peak near the limit is not reported as a
 memory risk. A log with no peaks (every task ended between two heartbeats, so
 each reports zeros, as in local mode) gets a note that executor memory sizing was
 not measured; it suggests `spark.eventLog.logStageExecutorMetrics=true` while that
-is off. The advice to lower executor memory (a heap under 70%, idle allocated
-memory-time, or low GC) is dropped when anything in the run asks for more. The
+is off. A run-level finding that advises lowering executor memory (a heap under
+70%, idle allocated memory-time) keeps its figures but not that advice when any
+stage asks for more memory, and names those stages; a stage's low-GC note is
+dropped on a stage that asks for more. The
 idle-memory figure counts the executors' alive time, not the peak executor count
 over the whole run.
 Review `spark.executor.memory` and executor count if allocated memory sat

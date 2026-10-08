@@ -847,6 +847,9 @@ function pythonUdfArrowFix(app: DetectorApp | null): { text: string; remediation
   );
 }
 
+// A tail reading at least this many times the median task's data is not described as reading no more.
+const MORE_DATA_RATIO = 2;
+
 const SKEW_KEY_REMEDY = 'salt the key or repartition on a better key';
 
 // What a stage reads, by the dominant side: a stage that reads a shuffle and mostly input files is
@@ -973,6 +976,8 @@ interface PartitionBasis {
   coalesce: boolean;
   /** Whether the execution's final plan shows AQE splitting skewed partitions; null when it cannot say. */
   skewSplit: boolean | null;
+  /** Whether the execution's plan holds a `repartition` or `rebalance` the job asked for. */
+  explicitRepartition: boolean;
 }
 
 function partitionBasis(stage: DetectorStage, ctx: DetectorCtx): PartitionBasis {
@@ -980,23 +985,33 @@ function partitionBasis(stage: DetectorStage, ctx: DetectorCtx): PartitionBasis 
   const aqe = stage.sqlExecutionId != null && loggedAs(app, 'spark.sql.adaptive.enabled', true);
   const coalesce = aqe && loggedAs(app, 'spark.sql.adaptive.coalescePartitions.enabled', true);
   const initial = coalesce ? effectiveConf(app, INITIAL_PARTITION_NUM_KEY) : undefined;
-  const skewSplit = aqe ? planShowsSkewSplit(ctx.sql.get(stage.sqlExecutionId!)?.planTree) : null;
-  if (initial != null && /^\d+$/.test(initial)) return { count: Number(initial), key: INITIAL_PARTITION_NUM_KEY, aqe, coalesce, skewSplit };
-  return { count: effectiveShufflePartitions(app), key: 'spark.sql.shuffle.partitions', aqe, coalesce, skewSplit };
+  const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
+  const skewSplit = aqe ? planShowsSkewSplit(plan) : null;
+  const explicitRepartition = planHasExplicitRepartition(plan);
+  if (initial != null && /^\d+$/.test(initial)) return { count: Number(initial), key: INITIAL_PARTITION_NUM_KEY, aqe, coalesce, skewSplit, explicitRepartition };
+  return { count: effectiveShufflePartitions(app), key: 'spark.sql.shuffle.partitions', aqe, coalesce, skewSplit, explicitRepartition };
+}
+
+// Whether a plan holds an exchange the job asked for (`repartition(n)`, `repartition(col)` or a
+// rebalance hint), which is what makes a task count different from the configured one the stage's own.
+function planHasExplicitRepartition(plan: PlanNode | null | undefined): boolean {
+  let found = false;
+  walkPlanTree(plan, (node) => { if (/\b(REPARTITION_BY_NUM|REPARTITION_BY_COL|REBALANCE_PARTITIONS_BY_NONE|REBALANCE_PARTITIONS_BY_COL)\b/.test(node.detail ?? '')) found = true; });
+  return found;
 }
 
 // How the stage's task count relates to the configured one. 'matches': the configured count sized it
 // (or the count is unknown). 'coalesced': AQE merged the partitions into fewer tasks. 'adjusted': more
-// tasks than configured under AQE, which a skew-join split produces: the final plan shows one, or
-// there is no final plan to rule it out, so the stage's own repartition(n) cannot be blamed. 'own': a
-// different count that nothing in AQE explains, which is a repartition(n) or an RDD operation that
-// fixed its own count.
+// tasks than configured under AQE, which a skew-join split can produce and several shuffle reads in
+// one execution can obscure: the stage's own repartition(n) is blamed only when the plan holds one.
+// 'own': a different count with no AQE to rewrite it, or with a repartition(n) in the plan, which is
+// a repartition(n) or an RDD operation that fixed its own count.
 type CountRelation = 'matches' | 'coalesced' | 'adjusted' | 'own';
 
 function countRelation(stage: DetectorStage, basis: PartitionBasis): CountRelation {
   if (basis.count == null || stage.taskCount === basis.count) return 'matches';
   if (basis.coalesce && stage.taskCount < basis.count) return 'coalesced';
-  if (basis.aqe && stage.taskCount > basis.count && basis.skewSplit !== false) return 'adjusted';
+  if (basis.aqe && stage.taskCount > basis.count && (basis.skewSplit !== false || !basis.explicitRepartition)) return 'adjusted';
   return 'own';
 }
 
@@ -1045,7 +1060,7 @@ function partitionLever(stage: DetectorStage, ctx: DetectorCtx): { lever: Partit
 
 // What follows advice on the property when the stage ran more tasks than configured under AQE.
 function aqeAdjustedNote(stage: DetectorStage, count: number | null): string {
-  return ` (this stage ran ${stage.taskCount} tasks against ${count} configured: AQE skew-join splits add tasks, so that is not necessarily its own repartition(n))`;
+  return ` (this stage ran ${stage.taskCount} tasks against ${count} configured, and the plan shows no repartition behind the difference)`;
 }
 
 // Whether parallelismFirst is on for the run: logged, else Spark's default from 3.2.0, where it
@@ -1564,7 +1579,7 @@ function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdi
       const ratio = a?.dataRatio != null ? Math.round(a.dataRatio * 10) / 10 : null;
       return {
         evidence: { ...evidence, origin: fix.origin, aqeSkew: fix.aqeSkew }, remediation: fix.remediation,
-        recommendation: `${detail}: data volume accounts for ${share}${ratio !== null ? ` (the slow tasks read a median ${ratio}× the data of the median task)` : ''}: ${fix.text}.`,
+        recommendation: `${detail}: data volume accounts for ${share} (${ratio !== null ? `the slow tasks read a median ${ratio}× the data of the median task` : 'the median task read almost nothing'}): ${fix.text}.`,
       };
     }
     case 'gc':
@@ -1590,6 +1605,26 @@ function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdi
       const cpu = cpuPct === undefined ? '' : cpuPct < 50
         ? ` They used ${cpuPct}% of their run time on CPU, so they mostly waited (on storage, a remote service or a lock).`
         : ` They used ${cpuPct}% of their run time on CPU, so the work itself is slow.`;
+      // A tail that read clearly more data is not "no more data" even when run time did not scale
+      // with it; where data is the largest share anyway, the data advice stays.
+      const dataRatio = a?.dataRatio ?? 0;
+      if (a != null && dataRatio >= MORE_DATA_RATIO) {
+        const rounded = Math.round(dataRatio * 10) / 10;
+        const dataShare = Math.round((a.dataMs / a.excessMs) * 100);
+        const dataLargest = a.dataMs >= a.excessMs - a.dataMs - a.gcMs - a.fetchWaitMs - a.hostMs;
+        const lead = `${detail}: the slow tasks read a median ${rounded}× the data of the median task, and data volume accounts for ${dataShare}% of their extra time`;
+        if (dataLargest) {
+          const fix = skewFix(stage, ctx, false, tail);
+          return {
+            evidence: { ...evidence, origin: fix.origin, aqeSkew: fix.aqeSkew }, remediation: fix.remediation,
+            recommendation: `${lead}, more than anything else the log attributes (not a majority): ${fix.text}.`,
+          };
+        }
+        return {
+          evidence, remediation: undefined,
+          recommendation: `${lead}, so run time did not scale with it, and GC, shuffle fetch wait and one slow host do not account for the rest.${cpu} Look at per-record cost (UDFs, regular expressions, a call out per row) as well as the data they read.`,
+        };
+      }
       return {
         evidence, remediation: undefined,
         recommendation: `${detail}: the slow tasks read no more data than the median task, and GC, shuffle fetch wait and one slow host do not account for their time.${cpu} Look at per-record cost (UDFs, regular expressions, a call out per row).`,
@@ -1632,7 +1667,7 @@ export const DETECTORS = [
         metric, value,
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
         validationRequired: `Flagged only when it costs at least ${shareLabel(thresholds.floorPctWarn)} of run time.`,
-        recommendation: `Task duration ratio (${metric}) is ${value}×${dataRatio !== undefined ? `, and the slow tasks read a median ${dataRatio}× the data of the median task` : ''}: ${fix.text}.`,
+        recommendation: `Task duration ratio (${metric}) is ${value}×${dataRatio !== undefined ? `, and the slow tasks read a median ${dataRatio}× the data of the median task` : ', and the median task read almost nothing'}: ${fix.text}.`,
         remediation: fix.remediation,
       };
     },
@@ -1945,6 +1980,8 @@ export const DETECTORS = [
       // means a low allocation rate).
       if ((stage.executorRunTime ?? 0) >= thresholds.minRunTimeMs
           && !heapJudgementAvailable(ctx)
+          // A stage that failed, or lost tasks, ran too little work to call its GC low.
+          && stage.stageFailureReason == null && stage.failedTasks === 0
           && pct < thresholds.lowInfoPct100
           && !stageBelowRuntimeFloor(stage, ctx, thresholds.lowInfoFloorPct)) {
         const value = Math.round(pct * 10) / 10;
@@ -3464,7 +3501,7 @@ export const DETECTORS = [
             ? shape.condition == null
               ? ', every left row paired with every right row.'
               // The condition filtered the pairings: the output is the rows it kept, not the product.
-              : ', the pairs of left and right rows its condition kept out of every pairing it compared.'
+              : ': the pairs its condition kept from every left and right pairing it compared.'
             : ` from ${leftRows!.toLocaleString('en-US')} and ${rightRows!.toLocaleString('en-US')} input rows (${Math.round(expansion).toLocaleString('en-US')}x the larger side).`} ${advice}`,
           remediation: [codeFix(advice)],
         });

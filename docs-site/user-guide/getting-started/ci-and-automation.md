@@ -41,7 +41,9 @@ run into `<dir>` (which must not already exist or must be empty). Open
 `<dir>/index.html` directly in a browser over `file://`, with no server, to
 get the same interactive dashboard offline, without the docs links. This
 makes it easy to archive or share a run. `--redact` applies to the exported
-report too.
+report too. A SQL execution's per-query settings keep their values only for the Spark SQL
+tuning keys the findings read; every other value the job set with `spark.conf.set` (a path,
+a bucket, a host) is replaced by Spark's `*********(redacted)` placeholder.
 
 ## Machine-readable fixes and costs
 

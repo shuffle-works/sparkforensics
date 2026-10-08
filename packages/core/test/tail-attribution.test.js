@@ -95,13 +95,17 @@ describe('attributeTail', () => {
     expect(t).toMatchObject({ excessMs: 4900, dataMs: 0, gcMs: 4800 });
   });
 
-  it('takes ratios against the median or the volume floors, so a near-zero median prints no absurd multiple', () => {
-    // A median task that read 4 bytes, a tail task 1 MB: 250000x unfloored, about 1x against the 1 MiB floor.
+  it('reads a median task under the volume floors as having read almost nothing: no ratio, however large the tail read', () => {
+    // A median task that read 4 bytes against a tail task that read 28 GB would print about 28,000x.
     const tiny = { inputBytes: 4, inputRecords: 1, shuffleRead: 0, shuffleReadRecords: 0 };
-    const t = attributeTail([...many(19, tiny), task({ ...tiny, duration: 9000, inputBytes: 1e6, inputRecords: 900 })], 1000);
-    expect(t.dataRatio).toBeLessThan(1);
-    expect(t.dataMs).toBe(0);
-    const big = attributeTail([...many(19, tiny), task({ ...tiny, duration: 9000, inputBytes: 50 * 1048576, inputRecords: 900 })], 1000);
+    const slow = task({ ...tiny, duration: 9000, gcTime: 2000, inputBytes: 28 * 1024 ** 3, inputRecords: 900 });
+    const t = attributeTail([...many(19, tiny), slow], 1000);
+    expect(t.dataRatio).toBeNull();
+    // GC claims its time first; the tail task read data, so the rest is data.
+    expect(t).toMatchObject({ gcMs: 2000, dataMs: 6000 });
+    // At the floors the ratio is real again.
+    const floor = { inputBytes: 1024 * 1024, inputRecords: 1, shuffleRead: 0, shuffleReadRecords: 0 };
+    const big = attributeTail([...many(19, floor), task({ ...floor, duration: 9000, inputBytes: 50 * 1024 * 1024 })], 1000);
     expect(big.dataRatio).toBe(50);
   });
 
@@ -189,16 +193,14 @@ describe('skew and straggler by tail cause', () => {
     expect(host.remediation).toEqual([{ kind: 'conf', key: 'spark.speculation', direction: 'set', suggested: true }]);
   });
 
-  it('gives a run with a GC-bound tail no advice to lower executor memory', () => {
-    const stages = stage(tail({ gcMs: 60000 }));
+  it('gives a stage with a GC-bound tail no low-GC advice, and leaves other stages theirs', () => {
+    // Stage 1's GC share of run time is low, which alone would earn the low-GC note; its tail is GC-bound.
+    const stages = new Map([[1, { ...stage(tail({ gcMs: 60000 })).get(1), gcPct: 3, executorRunTime: 60000 }]]);
     stages.set(2, makeStage({ id: 2, gcPct: 3, executorRunTime: 60000, completedAt: 50000 }));
     const findings = analyze(app, stages, [], []);
-    const straggler = findings.find((f) => f.type === 'straggler' && f.stageId === 1);
-    expect(straggler.cause).toBe('gc');
-    expect(findings.find((f) => f.type === 'gc' && f.direction === 'low')).toBeUndefined();
-    // Without the GC-bound tail the low-GC note stands.
-    const quiet = analyze(app, new Map([[2, stages.get(2)]]), [], []);
-    expect(quiet.find((f) => f.type === 'gc' && f.direction === 'low')).toBeTruthy();
+    expect(findings.find((f) => f.type === 'straggler' && f.stageId === 1).cause).toBe('gc');
+    const low = findings.filter((f) => f.type === 'gc' && f.direction === 'low');
+    expect(low.map((f) => f.stageId)).toEqual([2]);
   });
 
   it('says whether the unexplained tail waited or computed', () => {

@@ -96,6 +96,14 @@ describe('nestedLoopJoin detector on a hand-built plan', () => {
     expect(f).toMatchObject({ nodeName: 'CartesianProduct', value: 9_000_000, leftRows: null, rightRows: null, condition: null });
   });
 
+  it('words a CartesianProduct with and without a condition as a sentence of its own', () => {
+    const bare = findingsFor(plan('CartesianProduct', 'CartesianProduct', rows(9_000_000), [range(12_000), range(12_000)]))[0];
+    expect(bare.recommendation).toContain('CartesianProduct produced 9,000,000 rows, every left row paired with every right row. Confirm the cross join');
+    const conditioned = findingsFor(plan('CartesianProduct', 'CartesianProduct ((a#2L < b#6L))', rows(9_000_000), [range(12_000), range(12_000)]))[0];
+    expect(conditioned.condition).toBe('((a < b))');
+    expect(conditioned.recommendation).toContain('CartesianProduct on ((a < b)) produced 9,000,000 rows: the pairs its condition kept from every left and right pairing it compared. Add an equi-join key');
+  });
+
   it('does not flag a join whose output stays near its inputs', () => {
     expect(findingsFor(bnlj({ out: 3_000_000, left: 2_500_000, right: 3000, detail: 'BroadcastNestedLoopJoin BuildRight, LeftOuter, (a#2L < b#6L)' }))).toEqual([]);
   });

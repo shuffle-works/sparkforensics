@@ -1050,18 +1050,6 @@
    "skippedLines": 0,
    "findings": [
     {
-     "key": "gc|1|gcPct||||||low|||||",
-     "type": "gc",
-     "band": "info",
-     "confidence": "high",
-     "value": 0,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
      "key": "jobFailureRate||jobFailureRate|||||||||||",
      "type": "jobFailureRate",
      "band": "warning",
@@ -1167,18 +1155,6 @@
      "band": "warning",
      "confidence": null,
      "value": 20,
-     "basis": "informational",
-     "method": "none",
-     "wcLow": null,
-     "wcHigh": null,
-     "rawWaste": null
-    },
-    {
-     "key": "gc|0|gcPct||||||low|||||",
-     "type": "gc",
-     "band": "info",
-     "confidence": "high",
-     "value": 0,
      "basis": "informational",
      "method": "none",
      "wcLow": null,

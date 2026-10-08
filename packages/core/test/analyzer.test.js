@@ -1687,6 +1687,10 @@ describe('analyze: memory advice that raises and lowers executor memory in one r
     const catalog = analyze(sized, stages, executors, [], sampleJobs, new Map(), ra);
     expect(catalog.find((f) => f.type === 'gc' && f.direction !== 'low')).toBeTruthy();
     expect(lowering(catalog)).toEqual([]);
+    // The run-level heap finding stays, without its advice to lower memory, and names the stage that asks for more.
+    const heap = catalog.find((f) => f.rule === 'heapOverProvisioned');
+    expect(heap.remediation).toEqual([]);
+    expect(heap.recommendation).toMatch(/Stage 1 asks for more executor memory, so confirm before lowering it\./);
   });
 
   it('drops the lowering advice when a stage spills for volume', () => {
@@ -1723,6 +1727,15 @@ describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
     const ra = { executorPeakMetrics: { 1: { jvmHeapMemory: 512 * 1024 * 1024 } } };
     const catalog = analyze(makeApp(), stages, [], [], sampleJobs, new Map(), ra);
     expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+  });
+
+  it('does not call GC low on a stage that failed or lost tasks', () => {
+    const failed = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 60000, stageFailureReason: 'Job aborted' })]]);
+    expect(analyze(makeApp(), failed, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
+    const lost = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 60000, failedTasks: 3 })]]);
+    expect(analyze(makeApp(), lost, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
+    const clean = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 60000 })]]);
+    expect(analyze(makeApp(), clean, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
   });
 
   it('does not fire on a short stage even when gcPct is 0 (noise floor)', () => {

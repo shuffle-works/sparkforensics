@@ -355,13 +355,27 @@ describe('redactRunModel', () => {
     expect(JSON.stringify(out)).not.toContain('application_1690000000000_0001');
   });
 
-  it('pseudonymizes a host value set per query (SQL execution modifiedConfigs)', () => {
+  it('keeps no host value set per query (SQL execution modifiedConfigs)', () => {
     const data = sampleExportData();
     data.sql = [{ id: 0, modifiedConfigs: { 'spark.myco.gateway.host': 'zebra-etl-node7', 'spark.sql.shuffle.partitions': '8' } }];
     const out = redactRun(data);
     expect(JSON.stringify(out)).not.toContain('zebra-etl-node7');
-    expect(out.appModel.sql.get(0).modifiedConfigs['spark.myco.gateway.host']).toMatch(/^host-\d+$/);
+    expect(out.appModel.sql.get(0).modifiedConfigs['spark.myco.gateway.host']).toBe('*********(redacted)');
     expect(out.appModel.sql.get(0).modifiedConfigs['spark.sql.shuffle.partitions']).toBe('8');
+  });
+
+  it('keeps no job-written text in per-query values: a bucket path under a key no detector reads is replaced', () => {
+    const data = sampleExportData();
+    data.sql = [{ id: 0, modifiedConfigs: {
+      'spark.myco.output.bucket': 's3://acme-prod-ledger/2026/q3', 'spark.sql.shuffle.partitions': '8',
+      'spark.sql.adaptive.autoBroadcastJoinThreshold': '-1',
+    } }];
+    const out = redactRun(data);
+    expect(JSON.stringify(out)).not.toContain('acme-prod-ledger');
+    const kept = out.appModel.sql.get(0).modifiedConfigs;
+    expect(kept['spark.myco.output.bucket']).toBe('*********(redacted)');
+    expect(kept['spark.sql.shuffle.partitions']).toBe('8');
+    expect(kept['spark.sql.adaptive.autoBroadcastJoinThreshold']).toBe('-1');
   });
 
   // The app name identifies the job as much as its id does, so it takes the id's pseudonym, as

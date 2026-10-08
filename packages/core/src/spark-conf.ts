@@ -36,6 +36,21 @@ type DefaultStep = readonly [since: Since | 'always', value: string];
 
 const ALWAYS = 'always';
 
+// The per-query (`modifiedConfigs`) keys a detector reads: every key with a default above, and the
+// two SQL settings it reads with none. A per-query value under any other key is the job's own text
+// (a path, a bucket, a host) that no detector needs.
+const PER_QUERY_KEYS_WITHOUT_DEFAULT = [
+  'spark.sql.adaptive.autoBroadcastJoinThreshold',
+  'spark.sql.adaptive.coalescePartitions.initialPartitionNum',
+] as const;
+export function isDetectorConfKey(key: string): boolean {
+  return key in SPARK_DEFAULTS || (PER_QUERY_KEYS_WITHOUT_DEFAULT as readonly string[]).includes(key);
+}
+
+/** The text a per-query value is replaced with once it leaves the run: Spark's own placeholder for a
+ * hidden value, which the effective-conf lookup already ignores. */
+export const REDACTED_CONF_VALUE = '*********(redacted)';
+
 // Defaults by the Spark release that introduced them, each key's steps in ascending order. A key
 // whose first step is 'always' has that default on every release, including a run whose version the
 // log did not record; any other key is only answered for a known version at or after its first
@@ -88,7 +103,7 @@ const SPARK_DEFAULTS: Readonly<Record<string, readonly DefaultStep[]>> = {
 
 // The text Spark substitutes for a sensitive value in modifiedConfigs (a fixed constant; only the
 // pattern that selects values is configurable).
-const DEFAULT_REDACTION = '*********(redacted)';
+const DEFAULT_REDACTION = REDACTED_CONF_VALUE;
 
 function parseVersion(sparkVersion: string | null | undefined): Since | null {
   const m = /^(\d+)\.(\d+)/.exec(sparkVersion ?? '');

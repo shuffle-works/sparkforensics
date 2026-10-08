@@ -150,9 +150,11 @@ function applySuppression(out: Finding[]): Finding[] {
   return out.filter((f) => f.stageId == null || !dropped.get(f.type)?.has(f.stageId));
 }
 
-// Advice to lower spark.executor.memory (heap over-provisioned, low GC, idle memory-time) contradicts
-// advice to raise it (high GC, spill, a GC-bound straggler tail) in the same run: the run does not
-// have memory to spare where a stage is short of it. The raising advice stays, the lowering drops.
+// Advice to lower spark.executor.memory (over-provisioned heap, low GC, idle memory-time) contradicts
+// advice to raise it (high GC, spill, a GC-bound straggler tail) where a stage is short of memory.
+// A stage-level lowering finding on the same stage as raising advice is dropped. A run-level one
+// (heap, idle memory-time) stays, since other stages may well have memory to spare, but its advice
+// to lower memory is replaced by a note naming the stages that ask for more.
 const EXECUTOR_MEMORY_KEY = 'spark.executor.memory';
 
 function changesExecutorMemory(f: Finding, direction: 'increase' | 'decrease'): boolean {
@@ -160,8 +162,27 @@ function changesExecutorMemory(f: Finding, direction: 'increase' | 'decrease'): 
 }
 
 function reconcileExecutorMemoryAdvice(out: Finding[]): Finding[] {
-  if (!out.some((f) => changesExecutorMemory(f, 'increase'))) return out;
-  return out.filter((f) => !changesExecutorMemory(f, 'decrease'));
+  const raising = out.filter((f) => changesExecutorMemory(f, 'increase'));
+  if (raising.length === 0) return out;
+  const raisingStages = new Set(raising.flatMap((f) => (f.stageId != null ? [f.stageId] : [])));
+  const stageList = [...raisingStages].sort((a, b) => a - b).join(', ');
+  const conflict = raisingStages.size > 0
+    ? `Stage${raisingStages.size === 1 ? '' : 's'} ${stageList} ask${raisingStages.size === 1 ? 's' : ''} for more executor memory, so confirm before lowering it.`
+    : 'Other findings ask for more executor memory, so confirm before lowering it.';
+  const reconciled: Finding[] = [];
+  for (const f of out) {
+    if (!changesExecutorMemory(f, 'decrease') || changesExecutorMemory(f, 'increase')) { reconciled.push(f); continue; }
+    if (f.stageId != null) {
+      if (!raisingStages.has(f.stageId)) reconciled.push(f);
+      continue;
+    }
+    reconciled.push({
+      ...f,
+      recommendation: `${f.recommendation ?? ''} ${conflict}`.trim(),
+      remediation: (f.remediation ?? []).filter((r) => !(r.kind === 'conf' && r.key === EXECUTOR_MEMORY_KEY && r.direction === 'decrease')),
+    });
+  }
+  return reconciled;
 }
 
 // `app` widened to `SparkAppInfo | null` to match real callers (AppModel.app is

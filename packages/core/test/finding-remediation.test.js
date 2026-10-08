@@ -749,6 +749,9 @@ describe('partition-count advice follows what sized the stage', () => {
   // A stage in a SQL execution, the only place AQE reshapes a stage's task count.
   // The final plan of the execution: no AQE skew-join split, so a count above the configured one is the stage's own.
   const FINAL_PLAN = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [] } }]]);
+  // The same plan with a repartition(n) the job wrote: the only plan that makes the stage's own count the cause.
+  const REPARTITIONED = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [
+    { name: 'Exchange', detail: 'Exchange hashpartitioning(k#1L, 64), REPARTITION_BY_NUM, [plan_id=4]', metrics: [], children: [] }] } }]]);
   const of = (type, stage, config = {}, sparkVersion = '3.5.0', sql = FINAL_PLAN) =>
     catalogOf([makeStage({ sqlExecutionId: 3, ...stage })], makeApp({ config, sparkVersion }), sql).find((f) => f.type === type);
   const keys = (f) => f.remediation.map((r) => r.key ?? r.kind);
@@ -756,7 +759,7 @@ describe('partition-count advice follows what sized the stage', () => {
 
   describe('tinyTask', () => {
     it('sends a repartition(n) stage to the code, not to spark.sql.shuffle.partitions', () => {
-      const f = of('tinyTask', tiny, { 'spark.sql.shuffle.partitions': '64' });
+      const f = of('tinyTask', tiny, { 'spark.sql.shuffle.partitions': '64' }, '3.5.0', REPARTITIONED);
       expect(keys(f)).toEqual(['code']);
       expect(f.recommendation).toMatch(/repartition\(n\)/);
       expect(f.recommendation).not.toMatch(/spark\.sql\.shuffle\.partitions/);
@@ -787,13 +790,18 @@ describe('partition-count advice follows what sized the stage', () => {
       const split = of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', new Map());
       expect(keys(split)).toEqual(['spark.sql.shuffle.partitions']);
       expect(split.recommendation).not.toMatch(/lowering the repartition/);
-      expect(split.recommendation).toMatch(/AQE skew-join splits add tasks/);
+      expect(split.recommendation).toMatch(/ran 212 tasks against 200 configured/);
       const initial = { 'spark.sql.shuffle.partitions': '200', 'spark.sql.adaptive.coalescePartitions.initialPartitionNum': '1000' };
       const skewedPlan = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [
         { name: 'AQEShuffleRead', detail: 'skewed', metrics: [], children: [] }] } }]]);
       expect(keys(of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', skewedPlan))).toEqual(['spark.sql.shuffle.partitions']);
-      // No skew split in the final plan: the extra tasks are the stage's own repartition(n).
-      expect(keys(of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' }))).toEqual(['code']);
+      // A plan with no repartition behind the difference states the counts neutrally and keeps the property.
+      const neutral = of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' });
+      expect(keys(neutral)).toEqual(['spark.sql.shuffle.partitions']);
+      expect(neutral.recommendation).toMatch(/ran 212 tasks against 200 configured, and the plan shows no repartition/);
+      expect(neutral.recommendation).not.toMatch(/lowering the repartition/);
+      // A repartition(n) the job wrote in the plan is the stage's own count.
+      expect(keys(of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', REPARTITIONED))).toEqual(['code']);
       const merged = of('tinyTask', { ...tiny, taskCount: 300 }, initial);
       expect(keys(merged)).toEqual([PARALLELISM_FIRST, ADVISORY]);
       const exact = of('tinyTask', { ...tiny, taskCount: 1000 }, initial);
@@ -828,7 +836,7 @@ describe('partition-count advice follows what sized the stage', () => {
     });
 
     it('points at the stage\'s own partition count where a repartition(n) sized it', () => {
-      const f = of('spill', spilled, { 'spark.sql.shuffle.partitions': '64' });
+      const f = of('spill', spilled, { 'spark.sql.shuffle.partitions': '64' }, '3.5.0', REPARTITIONED);
       expect(keys(f)).toEqual(['code', 'spark.executor.memory']);
       expect(f.recommendation).toMatch(/repartition\(n\)/);
       expect(coreFindingGenericRecommendation(f)).toMatch(/own partition count/);
@@ -854,7 +862,7 @@ describe('partition-count advice follows what sized the stage', () => {
     it('names the lever that sized the stage', () => {
       expect(keys(of('stageSlowness', slow, { 'spark.sql.shuffle.partitions': '400' }))).toEqual(['spark.sql.shuffle.partitions']);
       expect(keys(of('stageSlowness', { ...slow, taskCount: 120 }, { 'spark.sql.shuffle.partitions': '400' }))).toEqual([ADVISORY]);
-      expect(keys(of('stageSlowness', slow, { 'spark.sql.shuffle.partitions': '64' }))).toEqual(['code']);
+      expect(keys(of('stageSlowness', slow, { 'spark.sql.shuffle.partitions': '64' }, '3.5.0', REPARTITIONED))).toEqual(['code']);
     });
   });
 });

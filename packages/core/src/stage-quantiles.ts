@@ -244,8 +244,9 @@ const TAIL_HOST_MIN_TAIL_SHARE = 0.5;
 const TAIL_HOST_MIN_OVERREPRESENTATION = 2;
 
 // A median task that read next to nothing makes every ratio against it huge (a median of 4 bytes
-// against a 1 MB task reads as 250000x). Ratios are taken against the median or these floors,
-// whichever is larger, and a task counts as having read data only from the floors up.
+// against a 1 MB task reads as 250000x). Below these floors the median task is read as having
+// read almost nothing: there is no ratio to take, and a task counts as having read data only from
+// the floors up.
 const MIN_VOLUME_BYTES = 1024 * 1024;
 const MIN_VOLUME_RECORDS = 1000;
 
@@ -259,7 +260,7 @@ const MIN_VOLUME_RECORDS = 1000;
 //   2. GC time over the median task's.
 //   3. Shuffle fetch wait over the median task's.
 //   4. Host: what is left of the tail tasks on the one host that holds most of the tail.
-// With a median task that read nothing there is no ratio to take, so GC and fetch wait claim their
+// With a median task that read almost nothing there is no ratio to take, so GC and fetch wait claim their
 // excess first and a task that read data owns what they leave: the time was GC or waiting unless
 // the data is all that is left to explain it.
 // Null when the stage has no tail. `tasks` is consumed once.
@@ -279,10 +280,12 @@ export function attributeTail(tasks: Iterable<TailTask>, p50: number): TailAttri
   const medianRecords = medianOf(all, recordsOf);
   const medianGc = medianOf(all, (t) => t.gcTime);
   const medianFetch = medianOf(all, (t) => t.fetchWaitTime);
-  const hasVolume = medianBytes > 0 || medianRecords > 0;
+  const bytesComparable = medianBytes >= MIN_VOLUME_BYTES;
+  const recordsComparable = medianRecords >= MIN_VOLUME_RECORDS;
+  const hasVolume = bytesComparable || recordsComparable;
   const volumeRatio = (t: TailTask): number => Math.max(
-    medianBytes > 0 ? bytesOf(t) / Math.max(medianBytes, MIN_VOLUME_BYTES) : 0,
-    medianRecords > 0 ? recordsOf(t) / Math.max(medianRecords, MIN_VOLUME_RECORDS) : 0,
+    bytesComparable ? bytesOf(t) / medianBytes : 0,
+    recordsComparable ? recordsOf(t) / medianRecords : 0,
   );
   const readsData = (t: TailTask) => bytesOf(t) >= MIN_VOLUME_BYTES || recordsOf(t) >= MIN_VOLUME_RECORDS;
 
