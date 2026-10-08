@@ -1152,6 +1152,9 @@ function slowShuffleFix(stage: DetectorStage, ctx: DetectorCtx): { text: string;
 
 const BROADCAST_THRESHOLD_KEY = 'spark.sql.autoBroadcastJoinThreshold';
 const ADAPTIVE_BROADCAST_THRESHOLD_KEY = 'spark.sql.adaptive.autoBroadcastJoinThreshold';
+// AQE keeps a join side out of a broadcast when too few of its shuffle partitions are non-empty,
+// whatever its size (DynamicJoinSelection at v3.5.0).
+const NON_EMPTY_PARTITION_RATIO_KEY = 'spark.sql.adaptive.nonEmptyPartitionRatioForBroadcastJoin';
 
 // The property that bounds a broadcast: with AQE, runtime sizes are judged against the adaptive
 // threshold when it is set (JoinSelectionHelper.canBroadcastBySize, apache/spark v3.5.0), and
@@ -3279,7 +3282,8 @@ export const DETECTORS = [
       const out: Finding[] = [];
       walkPlanTree(sqlExec.planTree, (node, parent) => {
         if (node.name === 'AdaptiveSparkPlan' || (parent != null && underAdaptive.has(parent))) underAdaptive.add(node);
-        const { key, threshold, admittingThresholds } = underAdaptive.has(node) ? adaptiveThresholds : staticThresholds;
+        const adaptive = underAdaptive.has(node);
+        const { key, threshold, admittingThresholds } = adaptive ? adaptiveThresholds : staticThresholds;
         const candidate = node.name === 'SortMergeJoin' ? broadcastCandidate(node) : null;
         if (candidate) {
           const buildBytes = shuffleBytes(candidate.build);
@@ -3305,8 +3309,12 @@ export const DETECTORS = [
                 value: buildBytes, largerSideBytes: otherBytes,
                 joinType, buildSide, broadcastThreshold,
                 recommendation: broadcastThreshold === 'notLimiting'
-                  ? `${subject} is under the effective ${key} (${formatBytes(threshold!)}) yet was not broadcast${otherSide}, so the threshold is not what stopped it: a join hint, missing table statistics, or a shuffle that had already run usually is. Consider a broadcast() hint or collecting statistics (ANALYZE TABLE).`
-                  : `${subject} is well under the broadcast threshold${otherSide}: this could have been a broadcast join. Consider a broadcast() hint or raising ${key}.`,
+                  ? `${subject} is under the effective ${key} (${formatBytes(threshold!)}) yet was not broadcast${otherSide}, so the threshold is not what stopped it: ${adaptive
+                    ? `a join hint, a shuffle that had already run, or a low share of non-empty partitions (below ${NON_EMPTY_PARTITION_RATIO_KEY}) usually is. Consider a broadcast() hint or lowering ${NON_EMPTY_PARTITION_RATIO_KEY}.`
+                    : 'a join hint, missing table statistics, or a shuffle that had already run usually is. Consider a broadcast() hint or collecting statistics (ANALYZE TABLE).'}`
+                  : broadcastThreshold === 'disabled'
+                    ? `${subject} was not broadcast${otherSide} because automatic broadcast is disabled (${key}=-1): this could have been a broadcast join. Set ${key} to a positive size or add a broadcast() hint.`
+                    : `${subject} is over the effective ${key} (${threshold == null ? 'not a size' : formatBytes(threshold)}) but small enough to broadcast${otherSide}: this could have been a broadcast join. Consider a broadcast() hint or raising ${key}.`,
                 remediation: broadcastThreshold === 'notLimiting' ? [] : [increaseConf(key)],
               });
             }

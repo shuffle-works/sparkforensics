@@ -206,6 +206,30 @@ describe('underBroadcast: effective broadcast threshold', () => {
     expect(f.remediation).toHaveLength(1);
   });
 
+  it('words the disabled case around the -1 value, not as a side well under the threshold', () => {
+    const [f] = under(plan(), { config: { 'spark.sql.autoBroadcastJoinThreshold': '-1' } });
+    expect(f.recommendation).toMatch(/automatic broadcast is disabled \(spark\.sql\.autoBroadcastJoinThreshold=-1\)/);
+    expect(f.recommendation).toMatch(/positive size or add a broadcast\(\) hint/);
+    expect(f.recommendation).not.toMatch(/well under/);
+  });
+
+  it('words the limiting case around the effective threshold the side is over', () => {
+    const [f] = under(plan(), { config: { 'spark.sql.autoBroadcastJoinThreshold': '1m' } });
+    expect(f.broadcastThreshold).toBe('limits');
+    expect(f.recommendation).toMatch(/is over the effective spark\.sql\.autoBroadcastJoinThreshold \(1 MB\) but small enough to broadcast/);
+    expect(f.recommendation).not.toMatch(/well under/);
+  });
+
+  it('names the non-empty partition ratio, not table statistics, for an adaptive run that has a threshold admitting the side', () => {
+    const config = { 'spark.sql.autoBroadcastJoinThreshold': '100m' };
+    const [adaptive] = under(aqe(join('Inner', small, large)), { config });
+    expect(adaptive.broadcastThreshold).toBe('notLimiting');
+    expect(adaptive.recommendation).toMatch(/spark\.sql\.adaptive\.nonEmptyPartitionRatioForBroadcastJoin/);
+    expect(adaptive.recommendation).not.toMatch(/ANALYZE TABLE/);
+    const [staticPlan] = under(join('Inner', small, large), { config });
+    expect(staticPlan.recommendation).toMatch(/ANALYZE TABLE/);
+  });
+
   it('fires on a side the threshold admits even when the other side is not far larger', () => {
     const config = { 'spark.sql.autoBroadcastJoinThreshold': '200m' };
     const [f] = under(aqe(join('Inner', 150 * MiB, 300 * MiB)), { config });
