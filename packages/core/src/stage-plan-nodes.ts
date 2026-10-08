@@ -9,10 +9,24 @@ export function planNodesOfStage(stage: Pick<Stage, 'id' | 'sqlExecutionId'>, sq
   if (execId == null) return [];
   const root = sql.get(execId)?.planTree ?? null;
   if (!root) return [];
-  const nodes: PlanNode[] = [];
+  return [...(nodesByStage(root).get(stage.id) ?? [])];
+}
+
+// One preorder walk per resolved plan tree serves every stage of its execution. A resolved tree is
+// never mutated after the parser posts it, so keying by root identity is safe.
+const nodesByStageCache = new WeakMap<PlanNode, Map<number, PlanNode[]>>();
+
+function nodesByStage(root: PlanNode): Map<number, PlanNode[]> {
+  const cached = nodesByStageCache.get(root);
+  if (cached) return cached;
+  const index = new Map<number, PlanNode[]>();
   (function collect(node: PlanNode): void {
-    if (node.stageIds?.includes(stage.id)) nodes.push(node);
+    for (const id of new Set(node.stageIds ?? [])) {
+      const list = index.get(id);
+      if (list) list.push(node); else index.set(id, [node]);
+    }
     for (const child of node.children ?? []) collect(child);
   })(root);
-  return nodes;
+  nodesByStageCache.set(root, index);
+  return index;
 }

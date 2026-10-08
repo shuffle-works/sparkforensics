@@ -59,9 +59,8 @@ The Plan Advisor cards are described in [Plan Advisor](./board-widgets/plan-advi
   pill opens `cluster-config.html#bottleneck-autoscaling-churn`.
 - **Config Audit** (tag `CFG`): static Spark-config sanity findings derived from
   `app.config`/`app.resources` (parsed from `SparkListenerEnvironmentUpdate`):
-  dynamic-allocation vs.
-  shuffle-service mismatch, inverted/missing autoscaling bounds, non-Kryo
-  serializer, low executor `memoryOverhead`. Computed outside the runtime
+  a missing autoscaling upper bound, a non-Kryo serializer on a run with RDD
+  stages, a low executor `memoryOverhead`. Computed outside the runtime
   bottleneck catalog: its findings live in the separate `configFindings`
   stream, not `catalog`. But `FixTheseFirst`/`Alerts` both merge `catalog`
   and `configFindings` (neither reads `region`), so a Config Audit
