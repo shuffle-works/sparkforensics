@@ -214,7 +214,7 @@ describe('skew and straggler by tail cause', () => {
     const straggler = findings.find((f) => f.type === 'straggler');
     expect(straggler.cause).toBe('unattributed');
     expect(straggler.remediation).toBeUndefined();
-    expect(straggler.recommendation).toMatch(/nothing in the log attributes them to data volume/);
+    expect(straggler.recommendation).toMatch(/: nothing in the log attributes the slow tasks to data volume/);
     expect(straggler.recommendation).not.toMatch(/salt the key|repartition on a better key/);
     const rollup = buildRecommendationRollup(findings.filter(isEligible), new Map([[1, { submittedAt: 0, completedAt: 50000 }]]));
     expect(rollup.filter((g) => g.type === 'skew' || g.type === 'straggler')).toHaveLength(1);
@@ -242,7 +242,7 @@ describe('skew and straggler by tail cause', () => {
       const stages = new Map([[1, { ...few.get(1), ...(tailAttribution ? { tailAttribution } : {}) }]]);
       const straggler = analyze(app, stages, [], []).find((f) => f.type === 'straggler');
       expect(straggler).toMatchObject({ metric: 'P95/median', value: 9, unit: 'ratio' });
-      expect(straggler.recommendation).toMatch(/^Task duration ratio \(P95\/median\) is 9×/);
+      expect(straggler.recommendation).toMatch(/^Task duration ratio \(P95\/median\) is 9×: nothing in the log attributes the slow tasks to data volume/);
       expect(straggler.recommendation).not.toMatch(/0% of tasks/);
     }
   });

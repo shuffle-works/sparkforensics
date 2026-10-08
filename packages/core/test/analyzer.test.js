@@ -642,7 +642,7 @@ describe('analyze: one finding per slow-task tail (§4)', () => {
     expect(straggler.cause).toBe('unattributed');
     expect(straggler.origin).toBeUndefined();
     expect(straggler.remediation).toBeUndefined();
-    expect(straggler.recommendation).toMatch(/nothing in the log attributes them/);
+    expect(straggler.recommendation).toMatch(/: nothing in the log attributes the slow tasks to/);
     expect(straggler.recommendation).not.toMatch(/salt the key|repartition on a better key|skew-join/);
   });
 

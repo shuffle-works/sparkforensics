@@ -1598,7 +1598,7 @@ function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdi
     default:
       return {
         evidence, remediation: undefined,
-        recommendation: `${detail}, and nothing in the log attributes them to data volume, GC, shuffle fetch wait or one host: check the slow tasks' input sizes, GC time and hosts before choosing a fix.`,
+        recommendation: `${detail}: nothing in the log attributes the slow tasks to data volume, GC, shuffle fetch wait or one host, so check their input sizes, GC time and hosts before choosing a fix.`,
       };
   }
 }
