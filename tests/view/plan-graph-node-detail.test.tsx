@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlanGraphNodeDetail, type PlanGraphNodeDetailData } from '@/view/plan-graph/PlanGraphNodeDetail';
 import type { Finding } from '@sparkforensics/core/types.ts';
@@ -131,5 +131,51 @@ describe('PlanGraphNodeDetail', () => {
     expect(screen.queryByText('Plan detail')).not.toBeInTheDocument();
     expect(screen.queryByText('Findings')).not.toBeInTheDocument();
     expect(screen.queryByText(/of plan stage time/)).not.toBeInTheDocument();
+  });
+  describe('bottom sheet (phone width)', () => {
+    const drag = (grabber: HTMLElement, dy: number) => {
+      fireEvent.pointerDown(grabber, { pointerId: 1, clientY: 100 });
+      fireEvent.pointerMove(grabber, { pointerId: 1, clientY: 100 + dy });
+      fireEvent.pointerUp(grabber, { pointerId: 1, clientY: 100 + dy });
+    };
+
+    it('docks beside the graph by default, with no grabber', () => {
+      render(<PlanGraphNodeDetail node={node()} onClose={vi.fn()} />);
+      expect(screen.getByTestId('plan-node-detail')).toHaveAttribute('data-variant', 'dock');
+      expect(screen.getByTestId('plan-node-detail').className).toContain('w-80');
+      expect(screen.queryByTestId('plan-node-detail-grabber')).not.toBeInTheDocument();
+    });
+
+    it('is a partial-height sheet with a grabber, not a full-height side panel', () => {
+      render(<PlanGraphNodeDetail node={node()} sheet onClose={vi.fn()} />);
+      const dialog = screen.getByTestId('plan-node-detail');
+      expect(dialog).toHaveAttribute('data-variant', 'sheet');
+      expect(dialog.className).toContain('h-2/5');
+      expect(dialog.className).not.toContain('w-80');
+      expect(screen.getByTestId('plan-node-detail-grabber')).toBeInTheDocument();
+    });
+
+    it('closes when the grabber is dragged down far enough', () => {
+      const onClose = vi.fn();
+      render(<PlanGraphNodeDetail node={node()} sheet onClose={onClose} />);
+      drag(screen.getByTestId('plan-node-detail-grabber'), 120);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays open on a short drag or an upward drag', () => {
+      const onClose = vi.fn();
+      render(<PlanGraphNodeDetail node={node()} sheet onClose={onClose} />);
+      const grabber = screen.getByTestId('plan-node-detail-grabber');
+      drag(grabber, 20);
+      drag(grabber, -120);
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('still closes from the close button', async () => {
+      const onClose = vi.fn();
+      render(<PlanGraphNodeDetail node={node()} sheet onClose={onClose} />);
+      await userEvent.click(screen.getByRole('button', { name: /close node detail/i }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
   });
 });
