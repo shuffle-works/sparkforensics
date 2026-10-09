@@ -58,7 +58,7 @@ export function layoutWithDagre(
   // ('longest-path' is faster still but produces degenerate placements here.)
   //
   // 'BT' is the same arrangement turned on its side (reads/scans on top, the
-  // root write at the bottom), used to stack a long chain of stages. The box
+  // root write at the bottom), used only on a phone-width canvas. The box
   // clearance moves with the axes: stacked stage boxes now sit one rank apart,
   // so ranksep takes the 2×STAGE_GROUP_PADDING_Y floor, and side-by-side boxes
   // need 2×STAGE_GROUP_PADDING_X plus a gap for nodesep.
