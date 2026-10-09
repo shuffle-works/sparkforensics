@@ -5,7 +5,6 @@ import userEvent from '@testing-library/user-event';
 import { WallClock } from '../../src/view/widgets/WallClock';
 import type { AppModel } from '@sparkforensics/core/types.ts';
 import { store } from '../../src/store/store';
-import { CHART_COLORS } from '../../src/view/charts/ChartTheme';
 import { installInterpretation } from './_shared/interpretation';
 
 // The widget renders the store's interpretation of the run, as the dashboard installs it.
@@ -44,15 +43,14 @@ test('renders a segment for each non-zero wall-clock component', () => {
   expect(screen.getAllByText('Idle').length).toBeGreaterThan(0);
 });
 
-test('the Idle legend label text stays full-strength color, even though its icon fades to match the bar', () => {
+test('every legend label sits in .recharts-legend-item-text, the hook the stylesheet uses for the label color', () => {
   renderWallClock(makeAppModel());
-  // Recharts' legend icon and label text otherwise share one `entry.color`;
-  // idle's icon is deliberately remapped to a faded color-mix to match its
-  // 60%-opacity bar segment, but that same fade on 12px label text fails
-  // WCAG AA contrast, so the label must keep the full-strength color.
-  const label = screen.getAllByText('Idle').find((el) => el.tagName === 'SPAN' && el.closest('.recharts-legend-item-text'));
-  expect(label).toBeDefined();
-  expect(label?.style.color).toBe(CHART_COLORS.muted);
+  // Recharts colors each label with its series fill inline; index.css overrides that on this class
+  // (tests/view/text-contrast-guard.test.ts), because pale series colors fail WCAG AA as text.
+  for (const name of ['Startup', 'Stages active', 'Scheduler gaps', 'Idle']) {
+    const label = screen.getAllByText(name).find((el) => el.closest('.recharts-legend-item-text'));
+    expect(label, name).toBeDefined();
+  }
 });
 
 test('omits a segment entirely when its value is zero (no startup gap here)', () => {

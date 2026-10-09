@@ -108,15 +108,10 @@ export const WallClock = memo(function WallClock() {
             // computed payload's color also just echoes each <Bar fill>,
             // ignoring fillOpacity, so remap it to `legendColor` (idle's
             // baked-opacity color) for the icon before delegating to the
-            // default legend renderer. DefaultLegendContent also uses that
-            // same color for the label text, so a `formatter` restores the
-            // text to full-strength color: a faded icon is fine, faded 12px
-            // text fails WCAG AA contrast.
+            // default legend renderer. The label text keeps the normal text
+            // color (`.recharts-legend-item-text` in index.css), since a
+            // series-colored label fails WCAG AA contrast.
             itemSorter={(item) => segments.findIndex((s) => s.key === item.dataKey)}
-            formatter={(value, entry) => {
-              const seg = segments.find((s) => s.key === entry.dataKey);
-              return <span style={{ color: seg?.color }}>{value}</span>;
-            }}
             content={(props) => (
               <DefaultLegendContent
                 {...props}
