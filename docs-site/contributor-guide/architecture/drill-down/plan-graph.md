@@ -18,32 +18,15 @@ node's React Flow `Handle`s follow the same horizontal routing: `type="target"`
 on `Position.Right` (its parent sits to the right) and `type="source"` on
 `Position.Left` (its children sit to the left).
 
-A plan too wide to fit the canvas at a readable zoom gets two more candidate
-layouts. `wrapIntoRows` (`dagre-layout.ts`) wraps the `RL` layout into rows no
-wider than the canvas at that zoom, read like text: reads/scans on the top-left,
-later operators on the rows below. It cuts between blocks whose segment and
-stage boxes do not overlap along x. A block too wide for a row (the default
-view's single segment, or one long stage) is cut too, between its segments and
-finally between its columns of operators, and takes rows of its own, so its
-box spans those rows and covers no other block. A too-wide block of several
-groups stacked over the same x range (two wide stages feeding one join) is
-never cut, since each group's box would then stretch over the others; its row
-overflows and scrolls. Rows sit `WRAP_ROW_GAP` apart
-so stacked stage boxes clear each other. A plan of at most 150 operators is
-also laid out `BT`, the same arrangement stacked vertically with reads/scans on
-top. `pickLayout` (`readable-fit.ts`) keeps the candidate that shows the most
-of the plan at a readable zoom, then the one that fits larger. On a landscape
-canvas a long chain wraps; on a phone-sized one it stacks `BT`. A `BT` node's
-handles move to `Position.Bottom` (target) and `Position.Top` (source) through
-the `sourcePosition`/`targetPosition` the canvas sets on it. A wrapped layout
-keeps the `RL` handles, and an edge between two rows is drawn as a stepped
-path along the gap below the upper row (`planEdgePath`,
-`PlanGraphWrappedEdge.tsx`) rather than a curve across the rows.
-
-The layout is made for the canvas size `useCanvasSize` tracks: a guess from
-the window until the first `ResizeObserver` measurement, then the measured size
-whenever it changes by more than 10% on either axis or flips orientation. A
-smaller resize re-fits the viewport but does not re-lay the graph.
+The desktop layout is always this one right-to-left flow, at every canvas size:
+an ancestor is always to the right of its descendant, in reading order, and a
+long chain scrolls sideways at the readable zoom rather than wrapping into rows.
+Only a phone-width viewport (below Tailwind's `sm` breakpoint, 640px,
+`useNarrowViewport.ts`) lays a plan of at most 150 operators out `BT`, the same
+arrangement stacked vertically with reads/scans on top, so it scrolls down
+instead. A `BT` node's handles move to `Position.Bottom` (target) and
+`Position.Top` (source) through the `sourcePosition`/`targetPosition` the canvas
+sets on it.
 
 The mount-time fit and every automatic re-fit (a scope switch, a resize) go
 through `useReadableFit`, which clamps the zoom to at least

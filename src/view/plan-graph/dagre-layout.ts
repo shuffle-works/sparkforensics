@@ -3,8 +3,6 @@ import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/type
 
 export interface LaidOutNode extends PlanGraphNodeData {
   position: { x: number; y: number };
-  /** Set by `wrapIntoRows`: the node's row and the y of the gap below it. */
-  row?: { index: number; gapBelowY: number };
 }
 
 export interface LaidOutGroup {
@@ -94,123 +92,6 @@ export function layoutWithDagre(
   return nodes.map((node) => {
     const pos = g.node(node.id);
     return { ...node, position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 } };
-  });
-}
-
-// Gap between the members of two wrapped rows. A row's stage boxes reserve
-// STAGE_GROUP_PADDING_Y above and below their members, so the members of
-// adjacent rows need twice that for the boxes not to overlap, plus a gap that
-// reads as a break between rows.
-export const WRAP_ROW_GAP = STAGE_GROUP_PADDING_Y * 3;
-
-interface WrapUnit {
-  start: number;
-  end: number;
-  /** Ids of the enclosing blocks that had to be split; units share a row only when it matches. */
-  path: string;
-}
-
-/** Cuts `items` into x-ranges: blocks of nodes whose groups (any of `groupOfs`)
- * overlap along x, or one column of nodes when no grouping is left. A block
- * wider than `maxRowWidth` that is one group (or no group) of the coarsest grouping is
- * cut again with that grouping dropped, down to columns, and its pieces carry
- * its id in `path`. A wide block of several groups stacked over the same x
- * range stays whole (its row overflows and scrolls): cutting it would put each
- * group's nodes on several rows and stretch its box over the other groups. */
-function wrapUnits(
-  items: { node: LaidOutNode; index: number }[],
-  groupOfs: ((node: PlanGraphNodeData) => string | null)[],
-  maxRowWidth: number,
-  path: string,
-): WrapUnit[] {
-  const extents = new Map<string, { start: number; end: number }>();
-  for (const { node, index } of items) {
-    const start = node.position.x;
-    const end = start + NODE_WIDTH;
-    const keys = groupOfs.flatMap((groupOf, i) => {
-      const group = groupOf(node);
-      return group == null ? [] : [`${i}:${group}`];
-    });
-    if (keys.length === 0) keys.push(`node:${index}`);
-    for (const key of keys) {
-      const extent = extents.get(key);
-      if (!extent) extents.set(key, { start, end });
-      else {
-        extent.start = Math.min(extent.start, start);
-        extent.end = Math.max(extent.end, end);
-      }
-    }
-  }
-
-  const blocks: { start: number; end: number }[] = [];
-  for (const extent of [...extents.values()].sort((a, b) => a.start - b.start)) {
-    const last = blocks[blocks.length - 1];
-    if (last && extent.start < last.end) last.end = Math.max(last.end, extent.end);
-    else blocks.push({ ...extent });
-  }
-
-  return blocks.flatMap((block) => {
-    if (block.end - block.start <= maxRowWidth || groupOfs.length === 0) return [{ ...block, path }];
-    const members = items.filter(({ node }) => node.position.x >= block.start && node.position.x < block.end);
-    const coarsest = groupOfs[groupOfs.length - 1];
-    const groups = new Set(members.map(({ node }) => coarsest(node)));
-    if (groups.size !== 1) return [{ ...block, path }];
-    return wrapUnits(members, groupOfs.slice(0, -1), maxRowWidth, `${path}/${block.start}`);
-  });
-}
-
-/**
- * Wraps a right-to-left layout into rows no wider than `maxRowWidth`, read like
- * text: the start of the plan (reads/scans) on the top-left, later operators
- * continuing on the rows below. `groupOfs` lists the box groupings from finest
- * to coarsest (e.g. segment, then stage). Cuts fall between blocks whose boxes
- * do not overlap along x; a block too wide for a row that is a single group is
- * itself cut, between its finer groups and finally between its columns of
- * operators, and takes rows of its own so its box (which then spans those rows)
- * covers no other block. A too-wide block of several stacked groups stays whole.
- * Within a row, nodes keep their laid-out spacing. Each moved node records its
- * row and the y of the gap below that row, for routing edges between rows.
- */
-export function wrapIntoRows(
-  laidOutNodes: LaidOutNode[],
-  groupOfs: ((node: PlanGraphNodeData) => string | null)[],
-  maxRowWidth: number,
-): LaidOutNode[] {
-  const units = wrapUnits(laidOutNodes.map((node, index) => ({ node, index })), groupOfs, maxRowWidth, '');
-
-  const rows: WrapUnit[] = [];
-  for (const unit of units) {
-    const row = rows[rows.length - 1];
-    if (row && row.path === unit.path && unit.end - row.start <= maxRowWidth) row.end = unit.end;
-    else rows.push({ ...unit });
-  }
-  if (rows.length <= 1) return laidOutNodes;
-  const rowOf = (node: LaidOutNode) => {
-    let r = 0;
-    while (r + 1 < rows.length && node.position.x >= rows[r + 1].start) r++;
-    return r;
-  };
-  const rowY = rows.map(() => ({ min: Infinity, max: -Infinity }));
-  for (const node of laidOutNodes) {
-    const y = rowY[rowOf(node)];
-    y.min = Math.min(y.min, node.position.y);
-    y.max = Math.max(y.max, node.position.y + NODE_HEIGHT);
-  }
-  const rowTop: number[] = [];
-  rowY.forEach((y, i) => {
-    rowTop.push(i === 0 ? y.min : rowTop[i - 1] + (rowY[i - 1].max - rowY[i - 1].min) + WRAP_ROW_GAP);
-  });
-
-  return laidOutNodes.map((node) => {
-    const r = rowOf(node);
-    return {
-      ...node,
-      position: {
-        x: node.position.x - rows[r].start + rows[0].start,
-        y: node.position.y - rowY[r].min + rowTop[r],
-      },
-      row: { index: r, gapBelowY: rowTop[r] + (rowY[r].max - rowY[r].min) + WRAP_ROW_GAP / 2 },
-    };
   });
 }
 

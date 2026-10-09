@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { layoutWithDagre, wrapIntoRows, computeGroupBounds, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT, STAGE_GROUP_PADDING_X, STAGE_GROUP_PADDING_Y, STAGE_GROUP_HEADER_HEIGHT } from '../../src/view/plan-graph/dagre-layout';
+import { layoutWithDagre, computeGroupBounds, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT } from '../../src/view/plan-graph/dagre-layout';
 import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/types.ts';
 
 function graphNode(id: string, overrides: Partial<PlanGraphNodeData> = {}): PlanGraphNodeData {
@@ -35,128 +35,44 @@ describe('layoutWithDagre direction', () => {
   });
 });
 
-describe('wrapIntoRows', () => {
-  // A chain of 8 single-node stages, two segments per stage: s0 (the root,
-  // consumes s1) ... s7 (the scan). Laid out right-to-left it is one wide band.
-  const ids = ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7'];
-  const chain = ids.map((id, i) => graphNode(id, { segmentIndex: i }));
-  const edges: PlanGraphEdge[] = ids.slice(0, -1).map((id, i) => ({ id: `${id}->${ids[i + 1]}`, source: id, target: ids[i + 1] }));
+describe('desktop layout never wraps', () => {
+  // The default (right-to-left) layout keeps the plan's tree flow at every size:
+  // an ancestor (an edge's source) always sits to the right of its descendant.
+  const sourcesRightOfTargets = (nodes: { id: string; position: { x: number } }[], edges: PlanGraphEdge[]) => {
+    const x = (id: string) => nodes.find((n) => n.id === id)!.position.x;
+    return edges.every((e) => x(e.source) >= x(e.target) + NODE_WIDTH);
+  };
+  const chainOf = (length: number) => {
+    const ids = Array.from({ length }, (_, i) => `s${i}`);
+    return {
+      nodes: ids.map((id, i) => graphNode(id, { segmentIndex: i })),
+      edges: ids.slice(0, -1).map((id, i): PlanGraphEdge => ({ id: `${id}->${ids[i + 1]}`, source: id, target: ids[i + 1] })),
+    };
+  };
   const segmentOf = (n: PlanGraphNodeData) => `segment-${n.segmentIndex}`;
-  const stageOf = (n: PlanGraphNodeData) => `stage-${Math.floor(n.segmentIndex / 2)}`;
-  const rowWidth = 1100;
-  const laidOut = () => layoutWithDagre(chain, edges, { groupOf: segmentOf });
-  const at = (nodes: { id: string; position: { x: number; y: number } }[], id: string) => nodes.find((n) => n.id === id)!.position;
 
-  it('leaves a layout that already fits one row untouched', () => {
-    const band = laidOut();
-    expect(wrapIntoRows(band, [segmentOf, stageOf], 100_000)).toBe(band);
+  it.each([3, 8, 40])('lays a %i-stage chain out on one row, every ancestor right of its descendant', (length) => {
+    const { nodes, edges } = chainOf(length);
+    const laidOut = layoutWithDagre(nodes, edges, { groupOf: segmentOf });
+    expect(new Set(laidOut.map((n) => n.position.y)).size).toBe(1);
+    expect(sourcesRightOfTargets(laidOut, edges)).toBe(true);
   });
 
-  it('wraps a long chain into rows no wider than the limit, starting with the scans on the top-left', () => {
-    const wrapped = wrapIntoRows(laidOut(), [segmentOf, stageOf], rowWidth);
-    const rows = [...new Set(wrapped.map((n) => n.position.y))].sort((a, b) => a - b);
-    expect(rows.length).toBeGreaterThan(1);
-    for (const y of rows) {
-      const xs = wrapped.filter((n) => n.position.y === y).map((n) => n.position.x);
-      expect(Math.max(...xs) + NODE_WIDTH - Math.min(...xs)).toBeLessThanOrEqual(rowWidth);
-    }
-    expect(at(wrapped, 's7').y).toBe(rows[0]);
-    expect(at(wrapped, 's0').y).toBe(rows[rows.length - 1]);
-    const firstRowXs = wrapped.filter((n) => n.position.y === rows[0]).map((n) => n.position.x);
-    expect(at(wrapped, 's7').x).toBe(Math.min(...firstRowXs));
-  });
-
-  it('never splits a stage across rows, and keeps stacked stage boxes from overlapping', () => {
-    const wrapped = wrapIntoRows(laidOut(), [segmentOf, stageOf], rowWidth);
-    for (let stage = 0; stage < 4; stage++) {
-      expect(at(wrapped, ids[stage * 2]).y).toBe(at(wrapped, ids[stage * 2 + 1]).y);
-    }
-    const boxes = computeGroupBounds(wrapped, stageOf, {
-      paddingX: STAGE_GROUP_PADDING_X, paddingY: STAGE_GROUP_PADDING_Y, headerHeight: STAGE_GROUP_HEADER_HEIGHT,
-    });
-    for (const a of boxes) {
-      for (const b of boxes) {
-        if (a === b) continue;
-        const overlapX = a.position.x < b.position.x + b.width && b.position.x < a.position.x + a.width;
-        const overlapY = a.position.y < b.position.y + b.height && b.position.y < a.position.y + a.height;
-        expect(overlapX && overlapY).toBe(false);
-      }
-    }
-  });
-
-  it('cuts a single group wider than the limit between its columns, its box containing every row', () => {
-    const oneSegment = () => 'segment-0';
-    const wrapped = wrapIntoRows(layoutWithDagre(chain, edges, { groupOf: oneSegment }), [oneSegment], rowWidth);
-    const rows = [...new Set(wrapped.map((n) => n.position.y))].sort((a, b) => a - b);
-    expect(rows.length).toBeGreaterThan(1);
-    for (const y of rows) {
-      const xs = wrapped.filter((n) => n.position.y === y).map((n) => n.position.x);
-      expect(Math.max(...xs) + NODE_WIDTH - Math.min(...xs)).toBeLessThanOrEqual(rowWidth);
-    }
-    const [box] = computeGroupBounds(wrapped, oneSegment);
-    for (const n of wrapped) {
-      expect(n.position.x).toBeGreaterThanOrEqual(box.position.x);
-      expect(n.position.y).toBeGreaterThanOrEqual(box.position.y);
-      expect(n.position.x + NODE_WIDTH).toBeLessThanOrEqual(box.position.x + box.width);
-      expect(n.position.y + NODE_HEIGHT).toBeLessThanOrEqual(box.position.y + box.height);
-    }
-  });
-
-  it('records each row and the gap below it, between that row and the next', () => {
-    const oneSegment = () => 'segment-0';
-    const wrapped = wrapIntoRows(layoutWithDagre(chain, edges, { groupOf: oneSegment }), [oneSegment], rowWidth);
-    const first = wrapped.filter((n) => n.row!.index === 0);
-    const second = wrapped.filter((n) => n.row!.index === 1);
-    const gapY = first[0].row!.gapBelowY;
-    expect(Math.max(...first.map((n) => n.position.y + NODE_HEIGHT))).toBeLessThan(gapY);
-    expect(Math.min(...second.map((n) => n.position.y))).toBeGreaterThan(gapY);
-  });
-
-  it('still cuts a wide segment whose stage grouping is unmapped (null)', () => {
-    const oneSegment = () => 'segment-0';
-    const unmappedStage = () => null;
-    const wrapped = wrapIntoRows(layoutWithDagre(chain, edges, { groupOf: oneSegment }), [oneSegment, unmappedStage], rowWidth);
-    expect(new Set(wrapped.map((n) => n.position.y)).size).toBeGreaterThan(1);
-  });
-
-  it('keeps two wide stages stacked over one join whole, so no box contains another group\'s node', () => {
-    // Stage A (a1..a6) and stage B (b1..b6) both feed the join c, so dagre
-    // stacks them over the same x range: one block wider than a row.
-    const a = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'];
-    const b = ['b1', 'b2', 'b3', 'b4', 'b5', 'b6'];
-    const nodes = [
-      graphNode('c', { segmentIndex: 2 }),
-      ...a.map((id) => graphNode(id, { segmentIndex: 0 })),
-      ...b.map((id) => graphNode(id, { segmentIndex: 1 })),
+  it('keeps a join of two long branches flowing right-to-left across the full plan width', () => {
+    const left = chainOf(10).nodes.map((n) => ({ ...n, id: `l${n.id}`, segmentIndex: n.segmentIndex }));
+    const right = chainOf(10).nodes.map((n) => ({ ...n, id: `r${n.id}`, segmentIndex: 100 + n.segmentIndex }));
+    const join = graphNode('join', { segmentIndex: 999 });
+    const edges: PlanGraphEdge[] = [
+      ...left.slice(0, -1).map((n, i): PlanGraphEdge => ({ id: `${n.id}->${left[i + 1].id}`, source: n.id, target: left[i + 1].id })),
+      ...right.slice(0, -1).map((n, i): PlanGraphEdge => ({ id: `${n.id}->${right[i + 1].id}`, source: n.id, target: right[i + 1].id })),
+      { id: 'join->l', source: 'join', target: left[0].id },
+      { id: 'join->r', source: 'join', target: right[0].id },
     ];
-    const chainEdges = (ids: string[]) => ids.slice(0, -1).map((id, i) => ({ id: `${id}->${ids[i + 1]}`, source: id, target: ids[i + 1] }));
-    const joinEdges: PlanGraphEdge[] = [
-      { id: 'c->a1', source: 'c', target: 'a1' },
-      { id: 'c->b1', source: 'c', target: 'b1' },
-      ...chainEdges(a),
-      ...chainEdges(b),
-    ];
-    const stageOfSegment = (n: PlanGraphNodeData) => `stage-${n.segmentIndex}`;
-    const wrapped = wrapIntoRows(layoutWithDagre(nodes, joinEdges, { groupOf: segmentOf }), [segmentOf, stageOfSegment], rowWidth);
-    const containsForeignNode = (groupOf: (n: PlanGraphNodeData) => string, opts?: Parameters<typeof computeGroupBounds>[2]) =>
-      computeGroupBounds(wrapped, groupOf, opts).some((box) =>
-        wrapped.some((n) => groupOf(n) !== box.id
-          && n.position.x < box.position.x + box.width && n.position.x + NODE_WIDTH > box.position.x
-          && n.position.y < box.position.y + box.height && n.position.y + NODE_HEIGHT > box.position.y));
-    expect(containsForeignNode(segmentOf)).toBe(false);
-    expect(containsForeignNode(stageOfSegment, {
-      paddingX: STAGE_GROUP_PADDING_X, paddingY: STAGE_GROUP_PADDING_Y, headerHeight: STAGE_GROUP_HEADER_HEIGHT,
-    })).toBe(false);
-  });
-
-  it('gives a stage cut across rows rows of its own, so its box covers no other stage', () => {
-    // Stage 0 holds s0..s5 (wider than a row); stage 1 holds s6 and s7.
-    const bigStageOf = (n: PlanGraphNodeData) => `stage-${n.segmentIndex < 6 ? 0 : 1}`;
-    const wrapped = wrapIntoRows(laidOut(), [segmentOf, bigStageOf], rowWidth);
-    const rowsOfStage = (stage: string) => new Set(wrapped.filter((n) => bigStageOf(n) === stage).map((n) => n.row!.index));
-    const big = rowsOfStage('stage-0');
-    expect(big.size).toBeGreaterThan(1);
-    for (const r of rowsOfStage('stage-1')) expect(big.has(r)).toBe(false);
+    const laidOut = layoutWithDagre([join, ...left, ...right], edges, { groupOf: segmentOf });
+    expect(sourcesRightOfTargets(laidOut, edges)).toBe(true);
+    // The branches may stack in y, but the plan is never cut into rows: it spans the whole chain length.
+    const xs = laidOut.map((n) => n.position.x);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThanOrEqual(10 * NODE_WIDTH);
   });
 });
 

@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, within, fireEvent, act } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlanGraphCanvas } from '../../src/view/plan-graph/PlanGraphCanvas';
 import { layoutWithDagre } from '../../src/view/plan-graph/dagre-layout';
 import * as dagreLayout from '../../src/view/plan-graph/dagre-layout';
-import { MIN_READABLE_ZOOM } from '../../src/view/plan-graph/readable-fit';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import { docsUrl } from '@sparkforensics/core/docs-config.ts';
 import { ThemeProvider } from '../../src/theme/ThemeProvider';
@@ -514,134 +513,70 @@ describe('node detail panel', () => {
 });
 
 describe('layout direction', () => {
-  const chainModel = () => {
-    const ids = ['n0', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6'];
-    return model({
-      nodes: ids.map((id) => ({ id, sourceNodeId: id, label: id, category: 'transform', operatorDetail: '', primaryMetric: '', segmentIndex: 0, splitRole: null, durationShare: 10 })),
-      edges: ids.slice(0, -1).map((id, i) => ({ id: `${id}->${ids[i + 1]}`, source: id, target: ids[i + 1] })),
+  const chainIds = ['n0', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7'];
+  const chainModel = (overrides: Partial<PlanGraphModel> = {}) =>
+    model({
+      nodes: chainIds.map((id, i) => ({ id, sourceNodeId: id, label: id, category: 'transform', operatorDetail: '', primaryMetric: '', segmentIndex: overrides.scope === 'full' ? i : 0, splitRole: null, durationShare: 10 })),
+      edges: chainIds.slice(0, -1).map((id, i) => ({ id: `${id}->${chainIds[i + 1]}`, source: id, target: chainIds[i + 1] })),
+      ...overrides,
     });
-  };
   const translate = (testId: string) => {
     const match = screen.getByTestId(testId).getAttribute('style')?.match(/translate\((-?\d+(?:\.\d+)?)px,\s*(-?\d+(?:\.\d+)?)px\)/);
     if (!match) throw new Error(`no transform found on ${testId}`);
     return { x: Number(match[1]), y: Number(match[2]) };
   };
-  const spread = (axis: 'x' | 'y') => {
-    const values = ['n0', 'n6'].map((id) => translate(`rf__node-${id}`)[axis]);
-    return Math.abs(values[0] - values[1]);
-  };
-  const original = { width: window.innerWidth, height: window.innerHeight };
+  const original = { width: window.innerWidth, height: window.innerHeight, matchMedia: window.matchMedia };
   afterEach(() => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: original.width });
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: original.height });
+    window.matchMedia = original.matchMedia;
   });
   const setWindow = (width: number, height: number) => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
   };
-
-  it('wraps a long chain of stages into rows on a landscape canvas instead of one wide band', () => {
-    setWindow(1440, 900);
-    const ids = ['n0', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7'];
-    const stages = model({
-      nodes: ids.map((id, i) => ({ id, sourceNodeId: id, label: id, category: 'transform', operatorDetail: '', primaryMetric: '', segmentIndex: i, splitRole: null, durationShare: 10 })),
-      edges: ids.slice(0, -1).map((id, i) => ({ id: `${id}->${ids[i + 1]}`, source: id, target: ids[i + 1] })),
-      scope: 'full',
-    });
-    const segmentStageIds = new Map(ids.map((_, i) => [i, i + 1]));
-    render(<PlanGraphCanvas model={stages} showMiniMap={false} stageId={1} segmentStageIds={segmentStageIds} />);
-    const positions = ids.map((id) => translate(`rf__node-${id}`));
-    const rows = new Set(positions.map((p) => p.y));
-    expect(rows.size).toBeGreaterThan(1);
-    // Every row fits the canvas width at the readable zoom, so no row scrolls sideways.
-    const xs = positions.map((p) => p.x);
-    expect((Math.max(...xs) - Math.min(...xs) + 220) * MIN_READABLE_ZOOM).toBeLessThanOrEqual(1440 - 48);
-    // The scan (n7, the chain's producer end) starts the first row.
-    expect(translate('rf__node-n7').y).toBe(Math.min(...positions.map((p) => p.y)));
-  });
-
-  const rowsOf = (ids: string[]) => {
-    const positions = ids.map((id) => translate(`rf__node-${id}`));
-    const ys = [...new Set(positions.map((p) => p.y))].sort((a, b) => a - b);
-    const widest = Math.max(...ys.map((y) => {
-      const xs = positions.filter((p) => p.y === y).map((p) => p.x);
-      return Math.max(...xs) - Math.min(...xs) + 220;
-    }));
-    return { count: ys.length, widest, top: ys[0] };
+  const usePhoneViewport = () => {
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('max-width'),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
   };
-  const chainIds = ['n0', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6'];
 
-  it('wraps the default view\'s single-segment operator chain into rows on a landscape canvas', () => {
+  // Desktop keeps one right-to-left flow at every size: an ancestor (the edge's
+  // source) is always to the right of its descendant, and the plan is never cut
+  // into rows.
+  const expectOneRightToLeftRow = () => {
+    const positions = chainIds.map((id) => translate(`rf__node-${id}`));
+    expect(new Set(positions.map((p) => p.y)).size).toBe(1);
+    chainIds.slice(0, -1).forEach((id, i) => {
+      expect(translate(`rf__node-${id}`).x).toBeGreaterThan(translate(`rf__node-${chainIds[i + 1]}`).x);
+    });
+  };
+
+  it.each([[1440, 900], [1024, 768], [700, 900]])('never wraps a long operator chain on a %ix%i desktop window', (width, height) => {
+    setWindow(width, height);
+    render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
+    expectOneRightToLeftRow();
+  });
+
+  it('never wraps a long chain of stages in the full plan either', () => {
     setWindow(1440, 900);
-    render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
-    const rows = rowsOf(chainIds);
-    expect(rows.count).toBeGreaterThan(1);
-    // Each row fits the canvas width at the readable zoom.
-    expect(rows.widest * MIN_READABLE_ZOOM).toBeLessThanOrEqual(1440 - 48 - 48);
-    // The scan (n6, the chain's producer end) starts the first row, reading left to right.
-    expect(translate('rf__node-n6').y).toBe(rows.top);
-    expect(translate('rf__node-n5').x).toBeGreaterThan(translate('rf__node-n6').x);
+    const segmentStageIds = new Map(chainIds.map((_, i) => [i, i + 1]));
+    render(<PlanGraphCanvas model={chainModel({ scope: 'full' })} showMiniMap={false} stageId={1} segmentStageIds={segmentStageIds} />);
+    expectOneRightToLeftRow();
   });
 
-  describe('when the canvas is measured', () => {
-    const observers: { callback: ResizeObserverCallback; elements: Element[] }[] = [];
-    const RealResizeObserver = window.ResizeObserver;
-    afterEach(() => {
-      window.ResizeObserver = RealResizeObserver;
-      observers.length = 0;
-    });
-    const captureResizeObservers = () => {
-      window.ResizeObserver = class {
-        entry: { callback: ResizeObserverCallback; elements: Element[] };
-        constructor(callback: ResizeObserverCallback) {
-          this.entry = { callback, elements: [] };
-          observers.push(this.entry);
-        }
-        observe(el: Element) { this.entry.elements.push(el); }
-        unobserve() {}
-        disconnect() {}
-      } as unknown as typeof ResizeObserver;
-    };
-    const measureRow = (width: number, height: number) => {
-      act(() => {
-        for (const { callback, elements } of observers) {
-          for (const target of elements) {
-            if (target.querySelector('.react-flow')) {
-              callback([{ target, contentRect: { width, height } } as unknown as ResizeObserverEntry], {} as ResizeObserver);
-            }
-          }
-        }
-      });
-    };
-
-    it('re-wraps for the measured canvas when it is much narrower than the window guess', () => {
-      setWindow(1440, 900);
-      captureResizeObservers();
-      render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
-      const guessed = rowsOf(chainIds);
-      // A docs panel takes part of the window: the canvas is 700 px wide, not 1392.
-      measureRow(700 + 48, 800);
-      const measured = rowsOf(chainIds);
-      expect(measured.count).toBeGreaterThan(guessed.count);
-      expect(measured.widest * MIN_READABLE_ZOOM).toBeLessThanOrEqual(700 - 48);
-    });
-
-    it('does not re-lay the graph for a small resize', () => {
-      setWindow(1440, 900);
-      captureResizeObservers();
-      render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
-      measureRow(1400, 820);
-      const spy = vi.spyOn(dagreLayout, 'layoutWithDagre');
-      measureRow(1380, 810);
-      expect(spy).not.toHaveBeenCalled();
-      spy.mockRestore();
-    });
-  });
-
-  it('stacks a long chain vertically on a phone-sized canvas so it can be read at full size', () => {
+  it('stacks a long chain vertically on a phone-width viewport so it can be read at full size', () => {
     setWindow(390, 844);
+    usePhoneViewport();
     render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
-    expect(spread('y')).toBeGreaterThan(spread('x'));
+    const first = translate('rf__node-n0');
+    const last = translate('rf__node-n7');
+    expect(Math.abs(first.y - last.y)).toBeGreaterThan(Math.abs(first.x - last.x));
+    // The consumer (n0, an edge source) sits below its producer.
+    expect(first.y).toBeGreaterThan(last.y);
   });
 });
 

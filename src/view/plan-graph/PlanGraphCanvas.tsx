@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ReactFlow, MiniMap, Background, Panel, useReactFlow, useNodesInitialized, useStore, ReactFlowProvider, Position, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { layoutWithDagre, wrapIntoRows, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT, STAGE_GROUP_PADDING_X, STAGE_GROUP_PADDING_Y, STAGE_GROUP_HEADER_HEIGHT, type LaidOutNode, type PlanLayoutDirection } from './dagre-layout';
-import { boundsOf, fitZoom, MIN_READABLE_ZOOM, pickLayout, readableWidth, viewportShowsAll, type Rect, type Size } from './readable-fit';
+import { layoutWithDagre, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT, STAGE_GROUP_PADDING_X, STAGE_GROUP_PADDING_Y, STAGE_GROUP_HEADER_HEIGHT, type PlanLayoutDirection } from './dagre-layout';
+import { boundsOf, viewportShowsAll, type Rect } from './readable-fit';
 import { useReadableFit } from './useReadableFit';
 import { PlanGraphNode } from './PlanGraphNode';
 import { PlanGraphNodeDetail } from './PlanGraphNodeDetail';
@@ -13,7 +13,6 @@ import { planGraphMiniMapNodeColor } from './plan-graph-minimap';
 import { PlanGraphSegmentGroupNode } from './PlanGraphSegmentGroupNode';
 import { PlanGraphStageGroupNode } from './PlanGraphStageGroupNode';
 import { PlanGraphExchangeEdge } from './PlanGraphExchangeEdge';
-import { PlanGraphWrappedEdge } from './PlanGraphWrappedEdge';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -28,7 +27,6 @@ const nodeTypes = {
 
 const edgeTypes = {
   exchange: PlanGraphExchangeEdge,
-  wrapped: PlanGraphWrappedEdge,
 };
 
 // Paint order, all above React Flow's edge layer (z 0): outer stage box, then
@@ -113,9 +111,8 @@ function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: 
   // above never fires for it; resizeTick (a ResizeObserver on the outer row)
   // covers that. It sits on the outer row, not the canvas wrapper, so opening
   // the docked inspector (which shrinks the canvas but not the row) does not
-  // fire it and reset the user's pan/zoom. It also fires when the first
-  // measurement re-lays the graph for the real canvas size. tick 0 is the
-  // initial value, already handled by the initial fit above.
+  // fire it and reset the user's pan/zoom. tick 0 is the initial measurement,
+  // already handled by the initial fit above.
   useEffect(() => {
     if (resizeTick === 0) return;
     fitReadable(200);
@@ -144,71 +141,29 @@ function OverflowReporter({ bounds, onChange }: { bounds: Rect | null; onChange:
   return null;
 }
 
-// Width of the control rail, and a guess at the page chrome above the canvas,
-// for sizing the canvas before it has been measured.
-const CONTROL_RAIL_WIDTH_PX = 48;
-const PAGE_CHROME_HEIGHT_PX = 64;
-// Past this many plan nodes the plan overflows the canvas in either direction,
-// so the second dagre pass that tries a bottom-to-top layout is not worth its
-// cost.
-const DIRECTION_SEARCH_MAX_NODES = 150;
+// Past this many plan nodes a phone-width plan overflows the canvas either way,
+// so the second dagre pass that stacks it is not worth its cost.
+const STACK_MAX_NODES = 150;
 
-// A measured canvas size re-runs the layout only when it differs from the size
-// the layout was made for by more than this share on either axis (or flips
-// orientation), so dragging a window edge does not re-lay the graph every tick.
-const RELAYOUT_SIZE_CHANGE = 0.1;
-
-function sizeChangedMaterially(next: Size, current: Size): boolean {
-  return next.height > next.width !== current.height > current.width
-    || Math.abs(next.width - current.width) > current.width * RELAYOUT_SIZE_CHANGE
-    || Math.abs(next.height - current.height) > current.height * RELAYOUT_SIZE_CHANGE;
-}
-
-/** Tracks the canvas size (the row minus the control rail) the layout is made
- * for: a guess from the window until the first measurement, then the measured
- * size whenever it changes materially (`sizeChangedMaterially`). `tick` fires
- * on every container resize after the first measurement, and on the first one
- * too when it changes the layout size, so the graph is re-fitted to the new
- * layout. */
-function useCanvasSize() {
+/** Fires on every container resize after the first (initial) measurement. */
+function useResizeTick() {
   const ref = useRef<HTMLDivElement>(null);
   const [tick, setTick] = useState(0);
-  const [layoutSize, setLayoutSize] = useState<Size>(() => ({
-    width: window.innerWidth - CONTROL_RAIL_WIDTH_PX,
-    height: window.innerHeight - PAGE_CHROME_HEIGHT_PX,
-  }));
-  const layoutSizeRef = useRef(layoutSize);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     let isInitialMeasurement = true;
-    const observer = new ResizeObserver((entries) => {
-      const box = entries[entries.length - 1]?.contentRect;
-      let relayout = false;
-      if (box) {
-        const size = { width: box.width - CONTROL_RAIL_WIDTH_PX, height: box.height };
-        if (size.width > 0 && size.height > 0 && sizeChangedMaterially(size, layoutSizeRef.current)) {
-          layoutSizeRef.current = size;
-          setLayoutSize(size);
-          relayout = true;
-        }
+    const observer = new ResizeObserver(() => {
+      if (isInitialMeasurement) {
+        isInitialMeasurement = false;
+        return;
       }
-      if (!isInitialMeasurement || relayout) setTick((t) => t + 1);
-      isInitialMeasurement = false;
+      setTick((t) => t + 1);
     });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  return { ref, tick, layoutSize };
-}
-
-/** Size of a laid-out plan including the stage-box padding, for comparing layouts. */
-function laidOutSize(nodes: LaidOutNode[]): Size {
-  const bounds = boundsOf(nodes.map((n) => ({ x: n.position.x, y: n.position.y, width: NODE_WIDTH, height: NODE_HEIGHT })));
-  return {
-    width: (bounds?.width ?? 0) + STAGE_GROUP_PADDING_X * 2,
-    height: (bounds?.height ?? 0) + STAGE_GROUP_PADDING_Y * 2,
-  };
+  return { ref, tick };
 }
 
 const NO_FINDINGS: Finding[] = [];
@@ -257,7 +212,8 @@ export function PlanGraphCanvas({
   durationMode?: PlanGraphDurationMode;
   onDurationModeChange?: (mode: PlanGraphDurationMode) => void;
 }) {
-  const { ref: containerRef, tick: resizeTick, layoutSize: canvas } = useCanvasSize();
+  const { ref: containerRef, tick: resizeTick } = useResizeTick();
+  const narrow = useNarrowViewport();
   const { flowNodes, flowEdges, graphBounds } = useMemo(() => {
     // Sum `exclusiveDurationShare` (a true, non-overlapping partition of each
     // stage's wall time), not `durationShare` (the mode-selected value shown
@@ -282,35 +238,12 @@ export function PlanGraphCanvas({
     // whole model, so it doubles as the fallback layout below (single pass).
     const layoutNodes = visibleNodeIds ? model.nodes.filter((n) => visibleNodeIds.has(n.id)) : model.nodes;
     const layoutEdges = visibleNodeIds ? visibleEdges ?? model.edges : model.edges;
-    const blockGroupings = showStageGroup ? [groupOf, stageGroupOf] : [groupOf];
-    let direction: PlanLayoutDirection = 'RL';
-    let wrapWidth: number | null = null;
-    let laidOutVisible = layoutWithDagre(layoutNodes, layoutEdges, { groupOf, direction });
-    // A plan too wide for the canvas at a readable zoom is also tried wrapped
-    // into rows (a long chain of stages read like text) and, up to
-    // DIRECTION_SEARCH_MAX_NODES, laid out bottom-to-top; the layout that shows
-    // the most of the plan at a readable zoom wins (`pickLayout`). A wide canvas
-    // wraps the chain, a tall one (a phone) stacks it. `canvas` changes only on
-    // a material resize (see useCanvasSize), so a resize tick alone does not
-    // re-run the layout.
-    const rlSize = laidOutSize(laidOutVisible);
-    if (fitZoom(rlSize, canvas) < MIN_READABLE_ZOOM) {
-      const rowWidth = readableWidth(canvas) - STAGE_GROUP_PADDING_X * 2;
-      const wrapped = wrapIntoRows(laidOutVisible, blockGroupings, rowWidth);
-      type Candidate = { size: Size; nodes: LaidOutNode[]; direction: PlanLayoutDirection; wrapWidth: number | null };
-      const candidates: [Candidate, ...Candidate[]] = [
-        { size: rlSize, nodes: laidOutVisible, direction: 'RL', wrapWidth: null },
-        { size: laidOutSize(wrapped), nodes: wrapped, direction: 'RL', wrapWidth: rowWidth },
-      ];
-      if (layoutNodes.length <= DIRECTION_SEARCH_MAX_NODES) {
-        const stacked = layoutWithDagre(layoutNodes, layoutEdges, { groupOf, direction: 'BT' });
-        candidates.push({ size: laidOutSize(stacked), nodes: stacked, direction: 'BT', wrapWidth: null });
-      }
-      const picked = pickLayout(candidates, canvas);
-      direction = picked.direction;
-      wrapWidth = picked.wrapWidth;
-      laidOutVisible = picked.nodes;
-    }
+    // Desktop keeps one right-to-left flow at every size (ancestors always to
+    // the right, in reading order): a long chain scrolls sideways at the
+    // readable zoom. Only a phone-width canvas stacks the plan bottom-to-top, so
+    // it scrolls down instead.
+    const direction: PlanLayoutDirection = narrow && layoutNodes.length <= STACK_MAX_NODES ? 'BT' : 'RL';
+    const laidOutVisible = layoutWithDagre(layoutNodes, layoutEdges, { groupOf, direction });
 
     // A fully-filtered segment/stage (every member hidden) still gets a box,
     // positioned from a full-model layout fallback. That compound Dagre pass
@@ -330,11 +263,9 @@ export function PlanGraphCanvas({
           const id = stageGroupOf(n);
           return id != null && !coveredStages.has(id);
         }));
-    const laidOutFull = !needsFullFallback
-      ? laidOutVisible
-      : wrapWidth != null
-        ? wrapIntoRows(layoutWithDagre(model.nodes, model.edges, { groupOf, direction }), blockGroupings, wrapWidth)
-        : layoutWithDagre(model.nodes, model.edges, { groupOf, direction });
+    const laidOutFull = needsFullFallback
+      ? layoutWithDagre(model.nodes, model.edges, { groupOf, direction })
+      : laidOutVisible;
 
     const planNodes: Node[] = laidOutVisible.map((n) => {
       const durationSharePct = n.durationShare != null && totalDuration > 0
@@ -479,26 +410,14 @@ export function PlanGraphCanvas({
     // Weighted exchange edges scale relative to the heaviest exchange on screen,
     // so thickness reads as "which shuffle moved the most data" rather than an
     // absolute byte count. Unweighted edges (plain parent-child links, broadcast
-    // exchanges) fall through to the default edge renderer. In a wrapped
-    // layout an edge between two rows runs along the gap below the upper row.
+    // exchanges) fall through to the default edge renderer.
     const renderedEdges = visibleEdges ?? model.edges;
     const maxShuffleBytes = renderedEdges.reduce((max, e) => Math.max(max, e.shuffleBytes ?? 0), 0);
-    const rowOfNode = new Map(laidOutVisible.map((n) => [n.id, n.row]));
-    const rowGapYOf = (e: PlanGraphEdge) => {
-      const a = rowOfNode.get(e.source);
-      const b = rowOfNode.get(e.target);
-      if (!a || !b || a.index === b.index) return undefined;
-      return a.index < b.index ? a.gapBelowY : b.gapBelowY;
-    };
-    const flowEdges: Edge[] = renderedEdges.map((e) => {
-      const rowGapY = rowGapYOf(e);
-      if (e.shuffleBytes) {
-        return { id: e.id, source: e.source, target: e.target, type: 'exchange', data: { shuffleBytes: e.shuffleBytes, maxShuffleBytes, rowGapY } };
-      }
-      return rowGapY != null
-        ? { id: e.id, source: e.source, target: e.target, type: 'wrapped', data: { rowGapY } }
-        : { id: e.id, source: e.source, target: e.target };
-    });
+    const flowEdges: Edge[] = renderedEdges.map((e) =>
+      e.shuffleBytes
+        ? { id: e.id, source: e.source, target: e.target, type: 'exchange', data: { shuffleBytes: e.shuffleBytes, maxShuffleBytes } }
+        : { id: e.id, source: e.source, target: e.target },
+    );
 
     // Render order = paint order: stage boxes back, then segment boxes, then plan
     // nodes (React Flow renders last on top).
@@ -507,7 +426,7 @@ export function PlanGraphCanvas({
       flowNodes.map((n) => ({ x: n.position.x, y: n.position.y, width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 })),
     );
     return { flowNodes, flowEdges, graphBounds };
-  }, [model, findings, stageId, segmentStageIds, visibleNodeIds, visibleEdges, onSelectStage, canvas]);
+  }, [model, findings, stageId, segmentStageIds, visibleNodeIds, visibleEdges, onSelectStage, narrow]);
 
   // Collapsed by default: the key is about 450x190 px and would cover a corner
   // of the graph on first open. The rail's Legend button opens it.
@@ -520,7 +439,6 @@ export function PlanGraphCanvas({
   const [miniMapChoice, setMiniMapChoice] = useState<boolean | null>(null);
   const miniMapOpen = showMiniMap && (miniMapChoice ?? graphOverflows);
 
-  const narrow = useNarrowViewport();
   const selectedNode = selectedNodeId
     ? flowNodes.find((n) => n.id === selectedNodeId && n.type === 'planNode')
     : undefined;
