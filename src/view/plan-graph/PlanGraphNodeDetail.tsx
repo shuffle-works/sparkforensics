@@ -172,7 +172,7 @@ export function PlanGraphNodeDetail({
         <Section title="Plan detail">
           <pre
             data-testid="plan-node-detail-text"
-            className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono text-[11px] leading-snug"
+            className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2 font-mono text-xs leading-snug"
           >
             {node.detailText}
           </pre>

@@ -487,7 +487,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
       </div>
 
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <Button type="button" className="tap-target-comfortable" onClick={() => void openFilePicker()}>
+        <Button type="button" className="tap-target-comfortable max-sm:h-11" onClick={() => void openFilePicker()}>
           Choose file
         </Button>
         {/* No log of your own yet? A real, populated run so the board isn't
@@ -498,7 +498,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
           <Button
             type="button"
             variant="outline"
-            className="tap-target-comfortable"
+            className="tap-target-comfortable max-sm:h-11"
             onClick={() => void loadSampleRun()}
             disabled={sampleLoading}
           >
@@ -514,7 +514,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
         <section className="w-full max-w-2xl text-left">
           <button
             type="button"
-            className="tap-target-comfortable mx-auto flex cursor-pointer items-center gap-1 rounded-sm text-sm font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="tap-target-comfortable mx-auto flex min-h-8 w-full cursor-pointer items-center justify-center gap-1 rounded-sm text-sm font-medium max-sm:min-h-11 text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-expanded={findLogOpen}
             aria-controls="find-event-log-panel"
             onClick={() => setFindLogOpen((open) => !open)}
