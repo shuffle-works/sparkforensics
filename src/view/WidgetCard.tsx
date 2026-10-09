@@ -176,6 +176,7 @@ export function WidgetCard({
         impactBand ? cn('border-l-[3px]', IMPACT_BORDER_CLASS[impactBand]) : 'border-l-0',
         // Uniform collapsed height for reference-grid tiles so header-only and
         // header+summary cards line up; drops once the tile is expanded.
+        collapsedTile && 'h-full',
         collapsedTile && !open && 'min-h-[6.5rem]',
       )}
     >

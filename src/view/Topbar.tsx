@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Chip, severityBadgeVariants } from '@/view/ImpactBadge';
+import { formatShareOfRun, shareOfRun } from '@/view/impact-presentation';
 import { EvidenceExport, EvidenceExportMenuItems, useEvidenceExport } from '@/view/EvidenceExport';
 import { FileSwitcher } from '@/view/FileSwitcher';
 import { GraphViewPickerDialog, type GraphViewPickerEntry } from '@/view/GraphViewPickerDialog';
@@ -32,9 +33,20 @@ import type { AppModel, Finding, ImpactBand, StageId } from '@sparkforensics/cor
 // Mirrors CompareLanding.tsx's DOCS_SITE_ROOT.
 const DOCS_SITE_ROOT = 'docs/';
 
-function verdictLabel(worst: ImpactBand, count: number): string {
-  if (worst === 'warning') return `${count} warning${count === 1 ? '' : 's'}`;
-  return `${count} ${worst}`;
+function verdictLabel(worst: ImpactBand, count: number, share: number | null = null): string {
+  const label = worst === 'warning' ? `${count} warning${count === 1 ? '' : 's'}` : `${count} ${worst}`;
+  if (share == null) return label;
+  return `${label}, ${count > 1 ? 'up to ' : ''}${formatShareOfRun(share)}`;
+}
+
+/** The share of the run the count chip names: the largest wall-clock share
+ * among the critical findings, or null when the band isn't critical or any of
+ * its findings has no estimate. */
+function chipShare(worst: ImpactBand | undefined, inBand: Finding[], app: AppModel['app']): number | null {
+  if (worst !== 'critical') return null;
+  const shares = inBand.map((finding) => shareOfRun(finding, app));
+  if (shares.some((share) => share == null)) return null;
+  return Math.max(...(shares as number[]));
 }
 
 function findingMatchesExecutionStage(finding: Finding, stageIds: readonly StageId[]): boolean {
@@ -181,7 +193,10 @@ export function Topbar({
   const interpretation = useInterpretation();
   const eligible = useMemo(() => eligibleFindings(interpretation), [interpretation]);
   const worst = worstImpactBand(eligible);
-  const count = worst ? eligible.filter((f) => f.impactBand === worst).length : 0;
+  const inBand = worst ? eligible.filter((f) => f.impactBand === worst) : [];
+  const count = inBand.length;
+  const share = chipShare(worst, inBand, app);
+  const chipLabel = worst ? verdictLabel(worst, count, share) : '';
   const verdict = interpretation?.data.verdict;
   const clean = verdict?.clean ?? false;
   const failed = verdict?.failed ?? false;
@@ -241,7 +256,7 @@ export function Topbar({
           // A way in, not just a count: jumps to that band of the Findings list.
           <button
             type="button"
-            aria-label={`${verdictLabel(worst, count)}: show them in Findings`}
+            aria-label={`${chipLabel}: show them in Findings`}
             title="Show them in Findings"
             onClick={() => onJumpToFindings(worst)}
             className={cn(
@@ -250,10 +265,10 @@ export function Topbar({
               'tap-target-comfortable cursor-pointer overflow-visible font-mono text-xs font-semibold hover:underline focus-visible:outline-none',
             )}
           >
-            {verdictLabel(worst, count)}
+            {chipLabel}
           </button>
         ) : (
-          <Chip label={verdictLabel(worst, count)} impactBand={worst} className="shrink-0" />
+          <Chip label={chipLabel} impactBand={worst} className="shrink-0" />
         )
       ) : failed ? (
         <Chip label="Run failed" impactBand="critical" className="shrink-0" />

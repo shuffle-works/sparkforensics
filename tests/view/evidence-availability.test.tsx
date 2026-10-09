@@ -48,11 +48,23 @@ function renderDashboard() {
   );
 }
 
+/** The verdict owns the top findings and expands a finding's evidence card in
+ * place: click its step's "Show evidence" first. */
+async function openVerdictEvidence(user: ReturnType<typeof userEvent.setup>, cardName: RegExp) {
+  await user.click(within(screen.getByTestId('run-verdict')).getByRole('button', { name: 'Show evidence' }));
+  // Evidence cards are code-split (React.lazy); the chunk resolves async.
+  await screen.findByRole('heading', { name: cardName });
+  // The card opens collapsed; expand it to reach the evidence link in its body.
+  await user.click(within(screen.getByTestId('run-verdict')).getByRole('button', { name: cardName }));
+}
+
 beforeEach(() => {
   store.setState({
     ...store.getState(),
     appModel: readyModel(),
     catalog: [],
+    // A leftover Config Audit finding from an earlier test would add a second verdict step.
+    configFindings: [],
     status: 'ready',
     errorMessage: null,
     parse: { pct: 0, lines: 0, etaMs: null },
@@ -118,11 +130,7 @@ test('Memory Utilization finding opens executor-metrics evidence', async () => {
   });
   renderDashboard();
 
-  // Memory Utilization is code-split (React.lazy); its chunk resolves async.
-  await screen.findByRole('heading', { name: /^memory utilization$/i });
-  // The widget card starts collapsed; open it before reaching the evidence
-  // link in its body.
-  await user.click(screen.getByRole('button', { name: 'Memory Utilization' }));
+  await openVerdictEvidence(user, /^memory utilization$/i);
   await user.click(screen.getByRole('button', { name: /evidence: executor metrics/i }));
 
   expect(document.activeElement).toBe(document.getElementById('evidence-availability-executorMetrics'));
@@ -141,11 +149,7 @@ test('Redundant Plan Subtree finding opens SQL-plan evidence with keyboard activ
   });
   renderDashboard();
 
-  // Redundant Plan Subtree is code-split (React.lazy); its chunk resolves async.
-  await screen.findByRole('heading', { name: /^redundant plan subtree$/i });
-  // The widget card starts collapsed; the evidence control (RowStatusCluster)
-  // lives in the card body, so open it first.
-  await user.click(screen.getByRole('button', { name: 'Redundant Plan Subtree' }));
+  await openVerdictEvidence(user, /^redundant plan subtree$/i);
   const link = screen.getByRole('button', { name: /^evidence: sql plan$/i });
   link.focus();
   await user.keyboard('{Enter}');
@@ -170,13 +174,10 @@ test('Config Audit finding switches to the Full app report tab before focusing i
   renderDashboard();
 
   // A clean widget renders only a plain CleanCheckRow, so a real finding is
-  // needed to reach the evidence link. Config Audit is code-split (React.lazy).
-  await screen.findByRole('heading', { name: /^config audit$/i });
-  // The widget card starts collapsed; the evidence control (RowStatusCluster)
-  // lives in the card body, so open it before clicking it. Clicking the
-  // evidence link then switches to the Full app report tab (where the
-  // ledger lives) and focuses the entry in one step.
-  await user.click(screen.getByRole('button', { name: 'Config Audit' }));
+  // needed to reach the evidence link. Clicking the evidence link switches to
+  // the Full app report tab (where the ledger lives) and focuses the entry in
+  // one step.
+  await openVerdictEvidence(user, /^config audit$/i);
   await user.click(screen.getAllByRole('button', { name: /^evidence: spark configuration$/i })[0]);
 
   expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
@@ -195,11 +196,7 @@ test('Redundant Plan Subtree finding opens SQL-plan evidence', async () => {
   });
   renderDashboard();
 
-  // Redundant Plan Subtree is code-split (React.lazy); its chunk resolves async.
-  await screen.findByRole('heading', { name: /^redundant plan subtree$/i });
-  // The widget card starts collapsed; the evidence control (RowStatusCluster)
-  // lives in the card body, so open it first.
-  await user.click(screen.getByRole('button', { name: 'Redundant Plan Subtree' }));
+  await openVerdictEvidence(user, /^redundant plan subtree$/i);
   await user.click(screen.getByRole('button', { name: /^evidence: sql plan$/i }));
 
   expect(document.activeElement).toBe(document.getElementById('evidence-availability-sqlPlan'));
@@ -217,8 +214,7 @@ test('a second evidence click after returning to Findings switches tabs again', 
   });
   renderDashboard();
 
-  await screen.findByRole('heading', { name: /^redundant plan subtree$/i });
-  await user.click(screen.getByRole('button', { name: 'Redundant Plan Subtree' }));
+  await openVerdictEvidence(user, /^redundant plan subtree$/i);
   const evidence = screen.getByRole('button', { name: /^evidence: sql plan$/i });
   await user.click(evidence);
   expect(screen.getByRole('tab', { name: 'Full app report' })).toHaveAttribute('aria-selected', 'true');
@@ -248,11 +244,8 @@ test('Config Audit finding opens Spark-configuration evidence', async () => {
   renderDashboard();
 
   // A clean widget renders only a plain CleanCheckRow, so a real finding is
-  // needed to reach the evidence link. Config Audit is code-split (React.lazy).
-  await screen.findByRole('heading', { name: /^config audit$/i });
-  // The widget card starts collapsed; the evidence control (RowStatusCluster)
-  // lives in the card body, so open it first.
-  await user.click(screen.getByRole('button', { name: 'Config Audit' }));
+  // needed to reach the evidence link.
+  await openVerdictEvidence(user, /^config audit$/i);
   await user.click(screen.getAllByRole('button', { name: /^evidence: spark configuration$/i })[0]);
 
   expect(document.activeElement).toBe(document.getElementById('evidence-availability-sparkConfiguration'));

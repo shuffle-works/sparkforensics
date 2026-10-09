@@ -89,7 +89,18 @@ export function StageComparisonTable({ model, baselineLabel, candidateLabel, onO
   return (
     <WidgetCard title="Stages compared">
       {pairs.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No stages are paired between the two runs.</p>
+        <>
+          <p className="text-sm text-muted-foreground">{noPairsReason(model.replanned.length > 0, hasUnmatched)}</p>
+          <StagePicker
+            baseStages={model.baseStages ?? []}
+            candStages={model.candStages ?? []}
+            onPick={(baseId, candId) => setSelection({
+              title: `${stageLabel(model.baseStages, baseId)} → ${stageLabel(model.candStages, candId)}`,
+              note: 'Stages you picked yourself; the two runs did not pair them.',
+              baseStageIds: [baseId], candStageIds: [candId],
+            })}
+          />
+        </>
       ) : (
         <>
           <p className="mb-3 text-xs text-muted-foreground">
@@ -160,7 +171,7 @@ export function StageComparisonTable({ model, baselineLabel, candidateLabel, onO
                     baseStageIds: g.baseStageIds, candStageIds: g.candStageIds,
                   })}
                 >
-                  Baseline {stageList(g.baseStageIds)} · Candidate {stageList(g.candStageIds)}
+                  Baseline {stageList(g.baseStageIds, model.baseStages)} · Candidate {stageList(g.candStageIds, model.candStages)}
                 </button>
               </li>
             ))}
@@ -179,7 +190,7 @@ export function StageComparisonTable({ model, baselineLabel, candidateLabel, onO
               baseStageIds: unmatched.baseStageIds, candStageIds: unmatched.candStageIds,
             })}
           >
-            Baseline {stageList(unmatched.baseStageIds)} · Candidate {stageList(unmatched.candStageIds)}
+            Baseline {stageList(unmatched.baseStageIds, model.baseStages)} · Candidate {stageList(unmatched.candStageIds, model.candStages)}
           </button>
         </div>
       ) : null}
@@ -197,7 +208,52 @@ export function StageComparisonTable({ model, baselineLabel, candidateLabel, onO
   );
 }
 
-const stageList = (ids: number[]) => (ids.length === 0 ? 'none' : ids.join(', '));
+const stageLabel = (stages: StageSummary[] | undefined, id: number) => {
+  const name = stages?.find((s) => s.id === id)?.name;
+  return name ? `${name} (${id})` : `Stage ${id}`;
+};
+const stageList = (ids: number[], stages: StageSummary[] | undefined) =>
+  (ids.length === 0 ? 'none' : ids.map((id) => stageLabel(stages, id)).join(', '));
+
+/** One sentence on why nothing paired, naming each cause the aligner reported: re-planned queries,
+ * stages that matched nothing, or both. */
+const noPairsReason = (replanned: boolean, unmatched: boolean) => {
+  if (replanned && unmatched) return 'No stages are paired: some queries ran a different number of stages in each run, and the other stages match nothing in the other run.';
+  if (replanned) return 'No stages are paired: the queries ran a different number of stages in each run, and none of their stages match.';
+  return 'No stages are paired: no stage in one run matches a stage in the other.';
+};
+
+/** Chooses one stage per run to open side by side, for a comparison where the aligner paired nothing. */
+function StagePicker({ baseStages, candStages, onPick }: {
+  baseStages: StageSummary[];
+  candStages: StageSummary[];
+  onPick: (baseId: number, candId: number) => void;
+}) {
+  const [baseId, setBaseId] = useState('');
+  const [candId, setCandId] = useState('');
+  if (baseStages.length === 0 || candStages.length === 0) return null;
+  const select = (label: string, value: string, set: (v: string) => void, stages: StageSummary[]) => (
+    <label className="flex max-w-full min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+      {label}
+      <select className="comparison-select max-w-full px-2 py-1 text-sm text-foreground" value={value} onChange={(e) => set(e.target.value)}>
+        <option value="">Select…</option>
+        {stages.map((s) => <option key={s.id} value={String(s.id)}>{`Stage ${s.id} · ${s.name}`}</option>)}
+      </select>
+    </label>
+  );
+  return (
+    <div className="mt-3" role="group" aria-label="Pick a stage pair" data-testid="stage-picker">
+      <h4 className="trace-eyebrow mb-2">Pick a stage pair</h4>
+      <div className="flex flex-wrap items-end gap-3">
+        {select('Baseline stage', baseId, setBaseId, baseStages)}
+        {select('Candidate stage', candId, setCandId, candStages)}
+        <Button type="button" size="sm" disabled={baseId === '' || candId === ''} onClick={() => onPick(Number(baseId), Number(candId))}>
+          Compare pair
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 const MISSING: StageSummary = {
   id: -1, name: '—',

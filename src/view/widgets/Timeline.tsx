@@ -6,6 +6,7 @@ import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import type { AppModel, Finding, Stage } from '@sparkforensics/core/types.ts';
 import { CHART_COLORS, ChartFrame } from '@/view/charts/ChartTheme';
 import { downsample } from '@/view/charts/downsample';
+import { formatRunClock, runClockTicks } from '@/view/charts/run-clock';
 import { EmptyState } from '@/view/EmptyState';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useWidgetDensity } from '@/store/store';
@@ -23,6 +24,7 @@ const ROW_HEIGHT = 24;
 const AXIS_CHROME = 40;
 const MIN_CHART_HEIGHT = 200;
 const MAX_CHART_HEIGHT = 640;
+const X_AXIS_MAX_TICKS = 10;
 
 interface SelectedTimelineStages {
   stages: Stage[];
@@ -97,6 +99,10 @@ export function Timeline({ appModel, catalog }: TimelineProps) {
     Math.max(MIN_CHART_HEIGHT, rows.length * ROW_HEIGHT + AXIS_CHROME),
   );
   const plotHeight = height - AXIS_CHROME;
+  // Explicit clock ticks at distinct, sub-second-aware steps: rounding Recharts'
+  // automatic ticks to whole seconds repeats labels ("0s 0s 1s 1s") on short runs.
+  const axisEndMs = rows.reduce((m, r) => Math.max(m, r.wait + r.duration), 0);
+  const xTicks = runClockTicks(axisEndMs / 1000, X_AXIS_MAX_TICKS).map((sec) => sec * 1000);
   const maxVisibleYLabels = Math.max(1, Math.floor(plotHeight / ROW_HEIGHT));
   const yAxisLabelStride = Math.max(1, Math.ceil(rows.length / maxVisibleYLabels));
 
@@ -149,9 +155,10 @@ export function Timeline({ appModel, catalog }: TimelineProps) {
                 <CartesianGrid stroke={CHART_COLORS.muted} strokeOpacity={0.2} horizontal={false} />
                 <XAxis
                   type="number"
-                  tickFormatter={(v: number) => `${Math.round(v / 1000)}s`}
+                  domain={[0, axisEndMs]}
+                  ticks={xTicks}
+                  tickFormatter={(v: number) => formatRunClock(v / 1000)}
                   tick={{ fontSize: 10 }}
-                  tickCount={10}
                 />
                 <YAxis
                   type="category"

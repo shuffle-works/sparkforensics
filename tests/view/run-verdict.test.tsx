@@ -29,10 +29,10 @@ function appModel(): AppModel {
 }
 
 // The verdict renders the run's interpretation, computed as the live app computes it.
-function renderVerdict(catalog: Finding[], onRoute = vi.fn(), model: AppModel = appModel()) {
+function renderVerdict(catalog: Finding[], onRoute = vi.fn(), model: AppModel = appModel(), moreFindingsCount?: number) {
   render(
     <StageDetailProvider>
-      <RunVerdict interpretation={installInterpretation(catalog, model)} onRoute={onRoute} />
+      <RunVerdict interpretation={installInterpretation(catalog, model)} onRoute={onRoute} onShowMoreFindings={vi.fn()} moreFindingsCount={moreFindingsCount} />
     </StageDetailProvider>,
   );
   return onRoute;
@@ -76,25 +76,25 @@ describe('RunVerdict', () => {
     expect(onRoute).toHaveBeenCalledTimes(1);
     expect(onRoute.mock.calls[0][0]).toMatchObject({ finding: skew, widgetId: 'skew' });
 
-    await user.click(screen.getByRole('button', { name: 'Stage 7 details' }));
+    await user.click(screen.getByRole('button', { name: 'Stage 7' }));
     expect(onRoute).toHaveBeenCalledTimes(1);
   });
 
-  it('lists at most three places and counts the rest', () => {
-    renderVerdict([1, 2, 3, 4, 5].map((stageId) => timed('spill', stageId, stageId * 100, 'warning')));
+  it('lists at most three places and points to the findings the Findings tab lists', () => {
+    renderVerdict([1, 2, 3, 4, 5].map((stageId) => timed('spill', stageId, stageId * 100, 'warning')), vi.fn(), appModel(), 2);
     expect(screen.getAllByTestId('next-step')).toHaveLength(3);
-    expect(screen.getByText('2 more places under Findings.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'More findings (2)' })).toBeInTheDocument();
   });
 
-  it('copies a step summary and confirms it', async () => {
+  it('copies the next steps and confirms it', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     renderVerdict([timed('spill', 4, 12_000)]);
 
-    const copyButton = screen.getByTestId('copy-finding-button');
+    const copyButton = screen.getByRole('button', { name: 'Copy next steps' });
     await user.click(copyButton);
-    expect(writeText).toHaveBeenCalledWith('Reduce spill: Fix spill in Stage 4. Potential savings: 12.0s of run time');
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('1. Reduce spill in Stage 4: Fix spill in Stage 4. Potential savings: 12.0s of run time'));
     expect(copyButton).toHaveTextContent('Copied');
     await waitFor(() => expect(copyButton).toHaveTextContent('Copy'), { timeout: 3000 });
   });
@@ -264,9 +264,9 @@ describe('RunVerdict on a failed run', () => {
     const pointer = "Spark's recorded reason is quoted above. Open the driver log only if you need the full stack trace.";
     expect(step).toHaveTextContent(`What to try: ${pointer}`);
     expect(step).not.toHaveTextContent('Inspect the driver log for the failure reason.');
-    await user.click(within(step).getByTestId('copy-finding-button'));
+    await user.click(screen.getByRole('button', { name: 'Copy next steps' }));
     expect(writeText).toHaveBeenCalledWith(
-      "Inspect stage failure: Spark's recorded reason: Fetch failed: executor lost. Open the driver log only if you need the full stack trace.",
+      expect.stringContaining("Inspect stage failure in Stage 13: Spark's recorded reason: Fetch failed: executor lost. Open the driver log only if you need the full stack trace."),
     );
   });
 
@@ -291,8 +291,10 @@ describe('RunVerdict on a failed run', () => {
     expect(stage3).toHaveTextContent("What to try: Spark's recorded reason is quoted above.");
     expect(stage9).toHaveTextContent(`What to try: ${advice}`);
     expect(stage9).not.toHaveTextContent('quoted above');
-    await user.click(within(stage9).getByTestId('copy-finding-button'));
-    expect(writeText).toHaveBeenCalledWith(`Inspect stage failure: ${advice}`);
+    await user.click(screen.getByRole('button', { name: 'Copy next steps' }));
+    const copied = writeText.mock.calls[0][0] as string;
+    expect(copied).toContain(`Inspect stage failure in Stage 9: ${advice}`);
+    expect(copied).not.toContain(`Stage 3: ${advice}`);
   });
 
   it('points the job-failure step at the quoted reason only when exactly one job failed', () => {
@@ -305,6 +307,7 @@ describe('RunVerdict on a failed run', () => {
         <RunVerdict
           interpretation={installInterpretation([jobFailures], withJobs([failedJob(1, [], 'Job aborted: out of memory')]))}
           onRoute={vi.fn()}
+          onShowMoreFindings={vi.fn()}
         />
       </StageDetailProvider>,
     );
@@ -381,7 +384,7 @@ describe('savingsMeaning', () => {
 
     const step = screen.getByTestId('next-step');
     expect(step).toHaveTextContent('Potential savings 3.0 GB-h of unused executor memory');
-    await user.click(within(step).getByTestId('copy-finding-button'));
+    await user.click(screen.getByRole('button', { name: 'Copy next steps' }));
     expect(writeText.mock.calls[0][0]).toMatch(/Potential savings: 3\.0 GB-h of unused executor memory$/);
   });
 });
