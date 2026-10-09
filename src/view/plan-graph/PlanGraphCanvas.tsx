@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ReactFlow, MiniMap, Background, Panel, useReactFlow, ReactFlowProvider, type Node, type Edge } from '@xyflow/react';
+import { ReactFlow, MiniMap, Background, Panel, useReactFlow, useStore as useFlowStore, ReactFlowProvider, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { layoutWithDagre, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT, STAGE_GROUP_PADDING_X, STAGE_GROUP_PADDING_Y, STAGE_GROUP_HEADER_HEIGHT } from './dagre-layout';
 import { PlanGraphNode } from './PlanGraphNode';
 import { PlanGraphNodeDetail } from './PlanGraphNodeDetail';
+import { useNarrowViewport } from './useNarrowViewport';
 import { PlanGraphLegend } from './PlanGraphLegend';
 import { PlanGraphControlRail } from './PlanGraphControlRail';
 import { planGraphMiniMapNodeColor } from './plan-graph-minimap';
@@ -53,19 +54,41 @@ export type CenterRequest = { nodeId: string | null; token: number };
 // still capping a one-node plan short of a grotesque blow-up.
 const FIT_OPTIONS = { padding: 0.06, maxZoom: 1.75 } as const;
 
-function ViewportAutoFit({ resizeTick, fitSignal, centerRequest }: { resizeTick: number; fitSignal: number; centerRequest?: CenterRequest }) {
-  const { fitView, setCenter, getNode } = useReactFlow();
+const nodeMiddle = (node: Node) => ({
+  x: node.position.x + (node.measured?.width ?? NODE_WIDTH) / 2,
+  y: node.position.y + (node.measured?.height ?? NODE_HEIGHT) / 2,
+});
+
+function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: { resizeTick: number; fitSignal: number; centerRequest?: CenterRequest; sheetNodeId: string | null }) {
+  const { fitView, setCenter, getNode, getZoom } = useReactFlow();
+  const paneHeight = useFlowStore((s) => s.height);
+
+  // On a phone the node detail is a bottom sheet that shrinks the canvas, so
+  // the selected node can end up under it or off-screen. Pan it to the middle
+  // of the canvas that remains, keeping the user's zoom. Re-runs when the pane
+  // height settles after the sheet opens; `sheetNodeId` is null on desktop and
+  // while nothing is selected.
+  useEffect(() => {
+    if (!sheetNodeId) return;
+    const target = getNode(sheetNodeId);
+    if (!target) return;
+    const { x, y } = nodeMiddle(target);
+    setCenter(x, y, { zoom: getZoom(), duration: 200 });
+  }, [sheetNodeId, paneHeight, getNode, setCenter, getZoom]);
 
   // Recenter on a paired-node jump (the detail card's "Jump to write/read
-  // half"). Token 0 is the initial value, so the mount never pans. Uses the
-  // node's laid-out position like the control rail's jump; falls back to a
+  // half"). Token 0 is the initial value, so the mount never pans. Centers the
+  // node's middle, as the phone sheet pan does, so the two agree when a jump
+  // also changes the selection; falls back to a
   // by-id fitView when the node isn't in the store yet (e.g. the tick right
   // after a scope expand brought the partner into view).
   useEffect(() => {
     if (!centerRequest || centerRequest.token === 0 || !centerRequest.nodeId) return;
     const target = getNode(centerRequest.nodeId);
-    if (target) setCenter(target.position.x, target.position.y, { zoom: 1, duration: 300 });
-    else fitView({ nodes: [{ id: centerRequest.nodeId }], duration: 300, maxZoom: 1 });
+    if (target) {
+      const { x, y } = nodeMiddle(target);
+      setCenter(x, y, { zoom: 1, duration: 300 });
+    } else fitView({ nodes: [{ id: centerRequest.nodeId }], duration: 300, maxZoom: 1 });
   }, [centerRequest, setCenter, getNode, fitView]);
 
   useEffect(() => {
@@ -375,9 +398,14 @@ export function PlanGraphCanvas({
   // is the rail toggle on top of it. Both must hold for the minimap to render.
   const [miniMapOpen, setMiniMapOpen] = useState(true);
 
+  const narrow = useNarrowViewport();
   const selectedNode = selectedNodeId
     ? flowNodes.find((n) => n.id === selectedNodeId && n.type === 'planNode')
     : undefined;
+
+  // The legend and minimap float over the canvas and would cover the node the
+  // sheet just centered, so they stay hidden while the sheet is up.
+  const sheetOpen = narrow && selectedNode != null;
 
   const planNodes = flowNodes.filter((n) => n.type === 'planNode');
   // Biggest recoverable-time win first: cycle problem stages by descending
@@ -420,7 +448,10 @@ export function PlanGraphCanvas({
           sibling) but leaves this row's width unchanged, so a genuine layout
           resize (docs panel, window) still triggers a re-fit while opening a
           node no longer resets the user's pan/zoom. */}
-      <div ref={containerRef} className="flex min-h-0 flex-1">
+      <div ref={containerRef} className="flex min-h-0 flex-1 flex-col sm:flex-row">
+        {/* Rail and canvas share a row so that on a phone the node detail can
+            sit below them as a bottom sheet instead of beside them. */}
+        <div className="flex min-h-0 min-w-0 flex-1">
         <PlanGraphControlRail
           planNodes={planNodes}
           problemNodes={problemNodes}
@@ -452,7 +483,7 @@ export function PlanGraphCanvas({
             onPaneClick={() => onSelectNode?.(null)}
           >
             <Background />
-            <ViewportAutoFit resizeTick={resizeTick} fitSignal={fitSignal} centerRequest={centerRequest} />
+            <ViewportAutoFit resizeTick={resizeTick} fitSignal={fitSignal} centerRequest={centerRequest} sheetNodeId={sheetOpen ? selectedNode.id : null} />
             {allNodesFiltered ? (
               <Panel position="top-center">
                 <p role="status" className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-sm">
@@ -460,12 +491,12 @@ export function PlanGraphCanvas({
                 </p>
               </Panel>
             ) : null}
-            {legendOpen ? (
+            {legendOpen && !sheetOpen ? (
               <Panel position="bottom-left">
                 <PlanGraphLegend />
               </Panel>
             ) : null}
-            {showMiniMap && miniMapOpen ? (
+            {showMiniMap && miniMapOpen && !sheetOpen ? (
               <MiniMap
                 nodeColor={planGraphMiniMapNodeColor}
                 pannable
@@ -475,8 +506,9 @@ export function PlanGraphCanvas({
             ) : null}
           </ReactFlow>
         </div>
+        </div>
         {selectedNode ? (
-          <PlanGraphNodeDetail node={flowData(selectedNode)} onClose={() => onSelectNode?.(null)} onJumpToPaired={onJumpToPaired} />
+          <PlanGraphNodeDetail node={flowData(selectedNode)} sheet={narrow} onClose={() => onSelectNode?.(null)} onJumpToPaired={onJumpToPaired} />
         ) : null}
       </div>
       </TooltipProvider>

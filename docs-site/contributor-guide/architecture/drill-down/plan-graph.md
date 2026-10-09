@@ -158,7 +158,11 @@ its `useReactFlow` zoom/center calls drive the same instance.
 
 Clicking a node opens the **detail inspector** (`PlanGraphNodeDetail.tsx`), a
 right-docked panel (not a floating card) that reflows the graph rather than
-covering it. Each node box is a fixed size and truncates every field to one
+covering it. Below Tailwind's `sm` breakpoint (640px, `useNarrowViewport.ts`)
+it is a bottom sheet about 40 percent tall instead, with a grabber that
+dismisses it on a downward swipe; while it is open the canvas pans the
+selected node to the middle of the remaining pane and hides the legend and
+minimap. Each node box is a fixed size and truncates every field to one
 line, showing a single `primaryMetric`; the inspector is where the whole
 operator is legible: category and segment, duration share, the node's findings
 (dot + tag + `findingActionLabel`), the operator's **full metric set**
