@@ -48,6 +48,12 @@ export default defineConfig({
       { text: 'User Guide', link: '/user-guide/getting-started' },
       { text: 'Contributor Guide', link: '/contributor-guide/development-setup' },
       { text: 'Tuning Reference', link: '/tuning-reference/' },
+      // The app root is the parent of the docs base. VitePress prefixes every
+      // root-relative nav link with the base, so '/..' renders as
+      // `${DOCS_BASE}..` and the browser resolves it to the app root. The
+      // target attribute keeps VitePress's router from handling the click
+      // as an in-docs page, so it is a full navigation out of the docs.
+      { text: 'Open app', link: '/..', target: '_self' },
     ],
     sidebar: {
       '/tuning-reference/': tuningSidebar,
