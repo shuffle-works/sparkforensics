@@ -5,7 +5,7 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
-import { formatBytes, numericValue, IMPACT_BAND_ORDER, VISIBLE_LIMIT } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, numericValue, IMPACT_BAND_ORDER, VISIBLE_LIMIT, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { FindingOf, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
@@ -14,7 +14,6 @@ import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { useWidgetDensity } from '@/store/store';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { canToggleSort } from '@/view/impact-sort';
-import { useWorstPresentedTone } from '@/view/impact-presentation';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -104,8 +103,6 @@ export const PartitionSizing = memo(function PartitionSizing({ appModel, catalog
     : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedEntries, page, setPage, routeIndex);
 
-  const combinedTone = useWorstPresentedTone(partitionFindings);
-
   if (partitionFindings.length === 0) {
     const stageCount = appModel.stages.size;
     return (
@@ -125,13 +122,14 @@ export const PartitionSizing = memo(function PartitionSizing({ appModel, catalog
     );
   }
 
+  const combinedImpactBand = worstImpactBand(partitionFindings);
   const canSortByImpact = canToggleSort(partitionFindings, sorted.length, cardOpen);
 
   return (
     <WidgetCard
       title="Partition Sizing"
       fixFor={partitionFindings}
-      impactBand={combinedTone}
+      impactBand={combinedImpactBand}
       open={cardOpen}
       onOpenChange={setCardOpen}
       summary={
@@ -142,7 +140,7 @@ export const PartitionSizing = memo(function PartitionSizing({ appModel, catalog
       }
       badges={
         <>
-          <TagBadge type="partitionSizing" impactBand={combinedTone ?? 'info'} />
+          <TagBadge type="partitionSizing" impactBand={combinedImpactBand ?? 'info'} />
           {canSortByImpact ? (
             <SortModeToggle
               mode={sortMode}

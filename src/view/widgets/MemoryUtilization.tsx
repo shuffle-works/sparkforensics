@@ -10,12 +10,11 @@ import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import { formatMetricValue, formatRawWaste, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
+import { formatMetricValue, formatRawWaste, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { MemoryUtilizationFinding } from '@sparkforensics/core/finding-types.ts';
-import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 
 export type MemoryUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
@@ -59,7 +58,6 @@ function rowLabel(f: MemoryUtilizationFinding): string {
  * widget-wide constant, so repeating it on every row would just be noise. */
 function MemoryRow({ finding }: { finding: MemoryUtilizationFinding }) {
   const anchor = useAnchoredRow([finding]);
-  const tone = usePresentedTone(finding);
 
   if (finding.dataUnavailable) {
     return (
@@ -84,7 +82,7 @@ function MemoryRow({ finding }: { finding: MemoryUtilizationFinding }) {
       className={`transition-colors ${anchor.flashClassName}`}
     >
       <p className="flex flex-wrap items-start gap-2">
-        <ImpactDot impactBand={tone} className="mt-1.5" />
+        <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
         <strong>{rowLabel(finding)}</strong>
       </p>
       <p className="text-xs text-muted-foreground">
@@ -122,8 +120,6 @@ export const MemoryUtilization = memo(function MemoryUtilization({ catalog, defa
   const routeIndex = activeRouteTarget ? findings.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(findings, page, setPage, routeIndex);
 
-  const worstTone = useWorstPresentedTone(findings);
-
   // A dataUnavailable-only caveat isn't real evidence of an issue (see
   // `isRealFinding`'s own doc comment): treat it the same as no findings at all.
   if (!findings.some(isRealFinding)) return null;
@@ -134,8 +130,8 @@ export const MemoryUtilization = memo(function MemoryUtilization({ catalog, defa
     <WidgetCard
       title="Memory Utilization"
       fixFor={findings}
-      impactBand={worstTone}
-      badges={<TagBadge type="memoryUtilization" impactBand={worstTone ?? 'info'} />}
+      impactBand={worstImpactBand(findings)}
+      badges={<TagBadge type="memoryUtilization" impactBand={worstImpactBand(findings) ?? 'info'} />}
       statusBadge={
         // `executorMetrics` is a widget-wide evidence constant, so it sits on
         // the header once, not per row.

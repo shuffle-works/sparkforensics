@@ -1,12 +1,12 @@
 import { cn } from '@/lib/utils';
+import type { ImpactBand } from '@sparkforensics/core/types.ts';
 import { IMPACT_TEXT_CLASS } from '@/view/ImpactBadge';
-import type { ImpactTone } from '@/view/impact-presentation';
 
 export interface StepCodeProps {
   /** The verdict step code, such as "F1" (see `stepCodes`). */
   code: string;
   /** Colors the code by this status (the verdict's first step); otherwise muted. */
-  impactBand?: ImpactTone;
+  impactBand?: ImpactBand;
   className?: string;
 }
 

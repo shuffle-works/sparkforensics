@@ -11,7 +11,6 @@ import { findingName, recommendationParts } from '@sparkforensics/core/finding-n
 import { useOptionalDocs } from '@/view/DocsContext';
 import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TagBadge } from '@/view/ImpactBadge';
-import { usePresentedTone } from '@/view/impact-presentation';
 import { findingAt, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useEvidenceOpen } from '@/view/InlineEvidence';
@@ -83,7 +82,6 @@ function NextStepItem({
   const { openStage } = useStageDetail();
   const evidenceState = useEvidenceOpen(evidence?.widgetId ?? null);
   const evidenceId = `next-step-${index}-evidence`;
-  const tone = usePresentedTone(finding);
   const { measured, fix } = recommendationParts(step.recommendation);
   const savings = savingsOf(interpretation, finding);
   const impact = savings?.figure ?? null;
@@ -97,9 +95,9 @@ function NextStepItem({
     <li className="verdict-step" data-testid="next-step" aria-labelledby={titleId}>
       {/* The step code (F1, F2, ...) also marks this step's Findings row, its
           bar on the stage strip and its Stage Summary row. */}
-      <StepCode code={`F${index + 1}`} impactBand={index === 0 ? tone : undefined} className="pt-0.5" />
+      <StepCode code={`F${index + 1}`} impactBand={index === 0 ? finding.impactBand : undefined} className="pt-0.5" />
       <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 [overflow-wrap:anywhere]">
-        <TagBadge type={finding.type} impactBand={tone} docAnchor={finding.docAnchor} />
+        <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
         <h3 id={titleId} className="text-[0.9375rem] font-semibold">
           {findingActionLabel(finding)}
           {step.stageId != null ? (

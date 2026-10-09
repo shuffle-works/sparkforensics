@@ -10,7 +10,6 @@ import { WidgetCard } from '../WidgetCard';
 import { WidgetLeadSummary } from '../WidgetLeadSummary';
 import { CHART_COLORS, ChartFrame } from '../charts/ChartTheme';
 import { downsample } from '../charts/downsample';
-import { usePresentedTone, usePresentedToneOf } from '@/view/impact-presentation';
 
 const TARGET_BUCKETS = 60;
 const MIN_BUCKET_MS = 60_000; // 1 minute floor
@@ -95,7 +94,6 @@ type ChurnModel =
  * `ImpactEstimate` and the tuning link; the card states the fix (there's only
  * ever one active churn finding, so no per-row location is needed). */
 function AutoscalingChurnRow({ finding }: { finding: Finding }) {
-  const tone = usePresentedTone(finding);
   return (
     <div className="flex flex-col gap-1 transition-colors">
       <p className="text-xs text-muted-foreground">
@@ -103,7 +101,7 @@ function AutoscalingChurnRow({ finding }: { finding: Finding }) {
       </p>
       <ImpactEstimate finding={finding} />
       <p className="flex flex-wrap items-start gap-2 text-sm">
-        <ImpactDot impactBand={tone} className="mt-1.5" />
+        <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
         <span>
           <DocsLink anchor="#config-autoscale-bounds">Tuning executorIdleTimeout and the min/max bounds</DocsLink>
         </span>
@@ -141,8 +139,6 @@ export const AutoscalingChurn = memo(function AutoscalingChurn({ appModel, activ
     return { hasEvents: true, added, removed, rows, yAxisScale };
   }, [appModel, activeFileId]);
 
-  const toneOf = usePresentedToneOf();
-
   if (!churn.hasEvents) {
     return (
       <WidgetCard
@@ -157,14 +153,13 @@ export const AutoscalingChurn = memo(function AutoscalingChurn({ appModel, activ
   }
   const { added, removed, rows, yAxisScale } = churn;
   const finding = catalog.find((f) => f.type === 'autoscalingChurn');
-  const findingTone = finding ? toneOf(finding) : undefined;
 
   return (
     <WidgetCard
       title="Autoscaling Churn"
-      impactBand={findingTone}
+      impactBand={finding?.impactBand}
       fixFor={finding ? [finding] : []}
-      badges={finding && <TagBadge type="autoscalingChurn" impactBand={toneOf(finding)} />}
+      badges={finding && <TagBadge type="autoscalingChurn" impactBand={finding.impactBand} />}
       defaultCollapsed={defaultCollapsed}
       summary={
         <WidgetLeadSummary

@@ -12,7 +12,6 @@ import { useAnchoredRow } from '@/view/finding-anchor';
 import type { SlowHostFinding } from '@sparkforensics/core/finding-types.ts';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { canToggleSort } from '@/view/impact-sort';
-import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -39,7 +38,6 @@ function slowHostDetail(f: SlowHostFinding): string {
 
 function SlowHostRow({ finding, appModel }: { finding: SlowHostFinding; appModel: WidgetProps['appModel'] }) {
   const anchor = useAnchoredRow([finding]);
-  const tone = usePresentedTone(finding);
   return (
     <li
       ref={anchor.ref}
@@ -48,7 +46,7 @@ function SlowHostRow({ finding, appModel }: { finding: SlowHostFinding; appModel
       className={`space-y-1 text-sm transition-colors ${anchor.flashClassName}`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <ImpactDot impactBand={tone} />
+        <ImpactDot impactBand={finding.impactBand} />
         {finding.stageId != null ? <StageHeader stageId={finding.stageId} appModel={appModel} /> : null}
       </div>
       <p className="text-xs text-muted-foreground">{slowHostDetail(finding)}</p>
@@ -77,18 +75,16 @@ export const SlowHost = memo(function SlowHost({ appModel, catalog, defaultColla
   const routeIndex = activeRouteTarget ? orderedIssues.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedIssues, page, setPage, routeIndex);
 
-  const issuesTone = useWorstPresentedTone(issues);
-
   if (issues.length === 0) return null;
 
   return (
     <WidgetCard
       title="Slow Executor Host"
-      impactBand={issuesTone}
+      impactBand={issues[0].impactBand}
       fixFor={issues}
       badges={
         <>
-          <TagBadge type="slowHost" impactBand={issuesTone ?? 'info'} />
+          <TagBadge type="slowHost" impactBand={issues[0].impactBand} />
           {canToggleSort(issues, issues.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}

@@ -8,7 +8,6 @@ import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { canToggleSort } from '@/view/impact-sort';
-import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
@@ -25,7 +24,6 @@ function metricLabel(f: Finding): string {
 
 function IssueRow({ finding }: { finding: Finding }) {
   const anchor = useAnchoredRow([finding]);
-  const tone = usePresentedTone(finding);
   return (
     <li
       ref={anchor.ref}
@@ -34,7 +32,7 @@ function IssueRow({ finding }: { finding: Finding }) {
       className={`space-y-1 text-sm transition-colors ${anchor.flashClassName}`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <ImpactDot impactBand={tone} />
+        <ImpactDot impactBand={finding.impactBand} />
         <strong>{metricLabel(finding)}</strong>
       </div>
       <ImpactEstimate finding={finding} />
@@ -62,18 +60,16 @@ export const ColdStart = memo(function ColdStart({ catalog, defaultCollapsed = t
   const routeIndex = activeRouteTarget ? orderedIssues.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedIssues, page, setPage, routeIndex);
 
-  const issuesTone = useWorstPresentedTone(issues);
-
   if (issues.length === 0) return null;
 
   return (
     <WidgetCard
       title="Cold Start"
       fixFor={issues}
-      impactBand={issuesTone}
+      impactBand={issues[0].impactBand}
       badges={
         <>
-          <TagBadge type="coldStart" impactBand={issuesTone ?? 'info'} />
+          <TagBadge type="coldStart" impactBand={issues[0].impactBand} />
           {canToggleSort(issues, issues.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}

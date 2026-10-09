@@ -2,11 +2,10 @@ import { useMemo } from 'react';
 
 import { cn } from '@/lib/utils';
 import { useStore, type InterpretationState } from '@/store/store';
-import type { Stage } from '@sparkforensics/core/types.ts';
+import type { ImpactBand, Stage } from '@sparkforensics/core/types.ts';
 import { computeRunEndSec, formatRunClock, runClockTicks, runStartMs } from '@/view/charts/run-clock';
 import { IMPACT_BG_CLASS, IMPACT_TEXT_CLASS } from '@/view/ImpactBadge';
 import { findingAt, stepCodes } from '@/view/interpretation';
-import { presentedTone, type ImpactTone } from '@/view/impact-presentation';
 import { selectTimelineStages } from '@/view/widgets/Timeline';
 
 /** Rows the strip shows before capping to the longest stages (step stages always stay). */
@@ -17,7 +16,7 @@ const INSIDE_LABEL_MIN_PCT = 8;
 
 interface StripStep {
   code: string;
-  impactBand: ImpactTone;
+  impactBand: ImpactBand;
 }
 
 interface StripRow {
@@ -46,7 +45,7 @@ export function VerdictStrip({ interpretation }: { interpretation: Interpretatio
     steps.forEach((step, i) => {
       const lead = findingAt(interpretation, step.leadIndex);
       if (step.stageId == null || !lead || byStage.get(step.stageId) !== `F${i + 1}`) return;
-      stepByStage.set(step.stageId, { code: byStage.get(step.stageId)!, impactBand: presentedTone(lead, appModel.app) });
+      stepByStage.set(step.stageId, { code: byStage.get(step.stageId)!, impactBand: lead.impactBand });
     });
 
     const timed = [...appModel.stages.values()].filter((s) => s.submittedAt && s.completedAt);

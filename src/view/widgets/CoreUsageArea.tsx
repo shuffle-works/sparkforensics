@@ -19,7 +19,6 @@ import { RowPagination } from '@/view/RowPagination';
 import { usePagedRows } from '@/view/usePagedRows';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import { usePresentedToneOf } from '@/view/impact-presentation';
 
 // Stacked-area cluster shape by locality tier over time (approximate).
 const HEIGHT = 240;
@@ -85,7 +84,6 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
   const nonLocalStages = topStages.filter((s) => s.nonLocalTasks > 0);
   const { totalPages: nonLocalTotalPages, effectivePage: nonLocalEffectivePage, visible: visibleNonLocalStages } =
     usePagedRows(nonLocalStages, nonLocalPage, setNonLocalPage);
-  const toneOf = usePresentedToneOf();
 
   if (!chartModel.hasActivity) {
     return (
@@ -95,13 +93,12 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
     );
   }
   const { order, points, sampled, peakCores } = chartModel;
-  const coreLocalityTone = coreLocalityFinding ? toneOf(coreLocalityFinding) : undefined;
 
   return (
     <WidgetCard
       title={TITLE}
-      impactBand={coreLocalityTone}
-      badges={coreLocalityFinding ? <TagBadge type="coreLocality" impactBand={toneOf(coreLocalityFinding)} /> : null}
+      impactBand={coreLocalityFinding?.impactBand}
+      badges={coreLocalityFinding ? <TagBadge type="coreLocality" impactBand={coreLocalityFinding.impactBand} /> : null}
       defaultCollapsed={defaultCollapsed}
       summary={<WidgetLeadSummary value={`${formatCores(peakCores)} cores`} context="busy at the peak" />}
     >
@@ -118,7 +115,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
         </AdvancedOnly>
         {coreLocalityFinding ? (
           <p className="flex flex-wrap items-start gap-2 text-sm">
-            <ImpactDot impactBand={toneOf(coreLocalityFinding)} className="mt-1.5" />
+            <ImpactDot impactBand={coreLocalityFinding.impactBand} className="mt-1.5" />
             <span>
               <strong>{coreLocalityFinding.value}% non-local</strong>. {coreFindingGenericRecommendation(coreLocalityFinding)}
             </span>

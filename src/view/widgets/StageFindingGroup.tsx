@@ -26,7 +26,6 @@ import { useLiveTaskData } from '@/view/useLiveTaskData';
 import { useWidgetDensity } from '@/store/store';
 import { PlanExplorer } from './PlanExplorer';
 import { resolvePlanTree } from './PlanView';
-import { usePresentedToneOf, useWorstPresentedTone } from '@/view/impact-presentation';
 
 interface StageGroup {
   stageId: StageId;
@@ -66,7 +65,6 @@ function StageFindingGroupRow({ group, appModel, getTaskData, idPrefix, findingL
     liveGetTaskData ? () => liveGetTaskData(group.stageId) : undefined,
   );
   const anchor = useAnchoredRow(group.findings);
-  const toneOf = usePresentedToneOf();
   const stage = appModel.stages.get(group.stageId);
   const density = useWidgetDensity();
   const showPlanExplorer = density === 'advanced' && resolvePlanTree(group.stageId, appModel);
@@ -83,7 +81,7 @@ function StageFindingGroupRow({ group, appModel, getTaskData, idPrefix, findingL
       <ul className="flex flex-col gap-1.5">
         {group.findings.map((f, i) => (
           <li key={i} className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <ImpactDot impactBand={toneOf(f)} />
+            <ImpactDot impactBand={f.impactBand} />
             <span>{findingLabel(f)}</span>
             <ImpactEstimate finding={f} />
             <AdvancedOnly>
@@ -100,7 +98,7 @@ function StageFindingGroupRow({ group, appModel, getTaskData, idPrefix, findingL
       ) : null}
       {group.slowHost ? (
         <p className="flex items-start gap-2 text-xs">
-          <ImpactDot impactBand={toneOf(group.slowHost)} className="mt-1" />
+          <ImpactDot impactBand={group.slowHost.impactBand} className="mt-1" />
           <span>
             <strong>Slow host:</strong> {group.slowHost.host} ({group.slowHost.value}&times; median,{' '}
             {Math.round((group.slowHost.hostTaskShare ?? 0) * 100)}% of tasks)
@@ -109,7 +107,7 @@ function StageFindingGroupRow({ group, appModel, getTaskData, idPrefix, findingL
       ) : null}
       {group.straggler ? (
         <p className="flex items-start gap-2 text-xs">
-          <ImpactDot impactBand={toneOf(group.straggler)} className="mt-1" />
+          <ImpactDot impactBand={group.straggler.impactBand} className="mt-1" />
           <span>
             <strong>Stragglers:</strong>{' '}
             {(group.straggler.speculativeTasks ?? 0) > 0
@@ -207,17 +205,18 @@ export const StageFindingGroupWidget = memo(function StageFindingGroupWidget({
   // hooks (usePagedRows uses useLayoutEffect internally).
   const { totalPages, effectivePage, visible } = usePagedRows(orderedGroups, page, setPage, routeIndex);
 
-  const worstTone = useWorstPresentedTone(relevant);
   if (relevant.length === 0) return null;
+
+  const widgetImpactBand = worstImpactBand(relevant);
 
   return (
     <WidgetCard
       title={title}
-      impactBand={worstTone}
+      impactBand={widgetImpactBand}
       fixFor={relevant}
       badges={
         <>
-          <TagBadge type={type} impactBand={worstTone ?? 'info'} />
+          <TagBadge type={type} impactBand={widgetImpactBand ?? 'info'} />
           {canToggleSort(relevant, stageGroups.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}

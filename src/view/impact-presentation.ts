@@ -1,13 +1,4 @@
-import { useStore } from '@/store/store';
-import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
-
-/** The color a finding is drawn in: its impact band, or `neutral` for a
- * critical finding whose recoverable time is a small share of the run. */
-export type ImpactTone = ImpactBand | 'neutral';
-
-/** Red claims the run's attention, so a critical finding keeps it only when
- * its potential saving is at least this share of the run. */
-export const MEANINGFUL_SHARE_OF_RUN = 0.1;
+import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 
 /** The share of the run a finding's wall-clock saving could recover (the same
  * optimistic figure the impact band grades), or null when the finding has no
@@ -21,49 +12,8 @@ export function shareOfRun(finding: Finding, app: AppModel['app']): number | nul
   return recoverableMs / durationMs;
 }
 
-/** The tone to draw a finding in. The finding's band and its figures stay as
- * computed; only critical findings with a known, small share go neutral. */
-export function presentedTone(finding: Finding, app: AppModel['app']): ImpactTone {
-  if (finding.impactBand !== 'critical') return finding.impactBand;
-  const share = shareOfRun(finding, app);
-  return share != null && share < MEANINGFUL_SHARE_OF_RUN ? 'neutral' : 'critical';
-}
-
 /** A share of the run as "2% of run" ("<1% of run" when it rounds to nothing). */
 export function formatShareOfRun(share: number): string {
   const percent = share * 100;
   return percent > 0 && percent < 1 ? '<1% of run' : `${Math.round(percent)}% of run`;
-}
-
-/** `presentedTone` for the open run. */
-export function usePresentedTone(finding: Finding): ImpactTone {
-  const app = useStore((s) => s.appModel.app);
-  return presentedTone(finding, app);
-}
-
-/** `presentedTone` bound to the open run, for a widget that draws many findings. */
-export function usePresentedToneOf(): (finding: Finding) => ImpactTone {
-  const app = useStore((s) => s.appModel.app);
-  return (finding) => presentedTone(finding, app);
-}
-
-/** Tones from most to least attention-claiming: a small-share critical reads
- * below a warning and above info. */
-const TONE_RANK: Record<ImpactTone, number> = { critical: 0, warning: 1, neutral: 2, info: 3 };
-
-/** The tone for several findings drawn as one (a widget card, its tag, a
- * stage row): the worst of their presented tones. */
-export function worstPresentedTone(findings: readonly Finding[], app: AppModel['app']): ImpactTone | undefined {
-  let worst: ImpactTone | undefined;
-  for (const finding of findings) {
-    const tone = presentedTone(finding, app);
-    if (worst === undefined || TONE_RANK[tone] < TONE_RANK[worst]) worst = tone;
-  }
-  return worst;
-}
-
-/** `worstPresentedTone` for the open run. */
-export function useWorstPresentedTone(findings: readonly Finding[]): ImpactTone | undefined {
-  const app = useStore((s) => s.appModel.app);
-  return worstPresentedTone(findings, app);
 }

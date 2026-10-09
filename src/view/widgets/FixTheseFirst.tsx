@@ -13,7 +13,6 @@ import { StagePill, StagePillGroup } from '@/view/StagePill';
 import { recommendationText } from '@sparkforensics/core/finding-names.ts';
 import { boardRollup, useFindingSavings, useStepCodes, type BoardGroup } from '@/view/interpretation';
 import { StepCode } from '@/view/StepCode';
-import { usePresentedTone } from '@/view/impact-presentation';
 import type { InterpretationState } from '@/store/store';
 import { RowPagination } from '@/view/RowPagination';
 import { InlineEvidence, useEvidenceOpen } from '@/view/InlineEvidence';
@@ -184,14 +183,13 @@ export function FindingRow({
   const text = recommendationText(finding);
   const label = findingActionLabel(finding);
   const stepCode = useStepCodes().byFinding.get(finding) ?? null;
-  const tone = usePresentedTone(finding);
   const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null);
   const panelId = `finding-evidence-${finding.id}`;
   return (
     <>
     <TableRow data-testid="fix-these-first-row" data-finding-type={finding.type} className={STACKED_ROW}>
       <TableCell className={cn('w-px', STACKED_TAG_CELL)}>
-        <TagBadge type={finding.type} impactBand={tone} docAnchor={finding.docAnchor} />
+        <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
       </TableCell>
       <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
         <span className="block text-sm font-semibold">{label}</span>
@@ -207,7 +205,7 @@ export function FindingRow({
         title={[location, impact].filter(Boolean).join(' · ')}
       >
         <span className="flex items-center justify-end gap-2 max-sm:justify-start">
-          {stepCode ? <StepCode code={stepCode} impactBand={stepCode === 'F1' ? tone : undefined} /> : null}
+          {stepCode ? <StepCode code={stepCode} impactBand={stepCode === 'F1' ? finding.impactBand : undefined} /> : null}
           <LocationBadge finding={finding} />
           {impact ? <span className="shrink-0 font-semibold text-foreground">{impact}</span> : null}
         </span>
@@ -312,7 +310,6 @@ export function TypeGroupRow({
   const label = findingActionLabel(best);
   const codes = useStepCodes().byFinding;
   const stepCode = group.findings.map((finding) => codes.get(finding)).find((code) => code != null) ?? null;
-  const tone = usePresentedTone(best);
   const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null);
   const evidenceTarget = selectTriageTargetForFinding(best, allFindings);
   const panelId = `group-evidence-${group.key}`;
@@ -331,7 +328,7 @@ export function TypeGroupRow({
     <>
       <TableRow data-testid="fix-these-first-group-row" data-finding-type={group.type} className={STACKED_ROW}>
         <TableCell className={cn('w-px', STACKED_TAG_CELL)}>
-          <TagBadge type={group.type} impactBand={tone} docAnchor={sharedDocAnchor(group.findings)} />
+          <TagBadge type={group.type} impactBand={best.impactBand} docAnchor={sharedDocAnchor(group.findings)} />
         </TableCell>
         <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
           <button

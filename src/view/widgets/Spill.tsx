@@ -25,7 +25,6 @@ import { MemoryPressure } from './MemoryPressure';
 import { PartitionHint } from './PartitionHint';
 import { PlanExplorer } from './PlanExplorer';
 import { resolvePlanTree } from './PlanView';
-import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 
 type SpillClass = 'skew' | 'volume' | 'unclassified';
 
@@ -46,7 +45,6 @@ function SpillRow({
   const anchor = useAnchoredRow([finding]);
   const density = useWidgetDensity();
   const stage = appModel.stages.get(finding.stageId);
-  const tone = usePresentedTone(finding);
   const cls = classificationOf(appModel, finding.stageId);
   const partitionHint = cls === 'volume' && stage ? recommendPartitions(stage) : null;
   const showPlanExplorer = density === 'advanced' && resolvePlanTree(finding.stageId, appModel);
@@ -60,8 +58,8 @@ function SpillRow({
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <ImpactDot impactBand={tone} />
-          <Chip label={SPILL_CLASS_SHORT[cls]} impactBand={tone} title={SPILL_CLASS_TITLE[cls]} />
+          <ImpactDot impactBand={finding.impactBand} />
+          <Chip label={SPILL_CLASS_SHORT[cls]} impactBand={finding.impactBand} title={SPILL_CLASS_TITLE[cls]} />
           <StagePill stageId={finding.stageId} />
         </div>
         <AdvancedOnly>
@@ -112,8 +110,6 @@ export const Spill = memo(function Spill({ appModel, catalog, defaultCollapsed =
   const routeIndex = activeRouteTarget ? orderedFindings.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedFindings, page, setPage, routeIndex);
 
-  const impactTone = useWorstPresentedTone(findings);
-
   if (findings.length === 0) {
     let maxSpill = 0;
     for (const stage of appModel.stages.values()) {
@@ -126,14 +122,16 @@ export const Spill = memo(function Spill({ appModel, catalog, defaultCollapsed =
     );
   }
 
+  const impactBand = sorted[0].impactBand;
+
   return (
     <WidgetCard
       title="Spill"
       fixFor={sorted}
-      impactBand={impactTone}
+      impactBand={impactBand}
       badges={
         <>
-          <TagBadge type="spill" impactBand={impactTone ?? 'info'} />
+          <TagBadge type="spill" impactBand={impactBand} />
           {canToggleSort(findings, sorted.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}

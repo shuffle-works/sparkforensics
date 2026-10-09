@@ -8,10 +8,9 @@ import { useAnchoredRow } from '@/view/finding-anchor';
 import { usePagedRows } from '@/view/usePagedRows';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import { formatMetricValue, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
+import { formatMetricValue, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 
 export type ExecutorUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
@@ -19,7 +18,6 @@ export type ExecutorUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultCol
  * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
 function UtilizationRow({ finding }: { finding: Finding }) {
   const anchor = useAnchoredRow([finding]);
-  const tone = usePresentedTone(finding);
 
   return (
     <div
@@ -29,7 +27,7 @@ function UtilizationRow({ finding }: { finding: Finding }) {
       className={`transition-colors ${anchor.flashClassName}`}
     >
       <p className="flex flex-wrap items-start gap-2">
-        <ImpactDot impactBand={tone} className="mt-1.5" />
+        <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
         <strong>{formatMetricValue('pct', numericValue(finding))}</strong> average executor utilization
       </p>
       <ImpactEstimate finding={finding} />
@@ -59,15 +57,14 @@ export const ExecutorUtilization = memo(function ExecutorUtilization({ catalog, 
   const routeIndex = activeRouteTarget ? findings.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(findings, page, setPage, routeIndex);
 
-  const worstTone = useWorstPresentedTone(findings);
   if (findings.length === 0) return null;
 
   return (
     <WidgetCard
       title="Executor Utilization"
       fixFor={findings}
-      impactBand={worstTone}
-      badges={<TagBadge type="utilization" impactBand={worstTone ?? 'info'} />}
+      impactBand={worstImpactBand(findings)}
+      badges={<TagBadge type="utilization" impactBand={worstImpactBand(findings) ?? 'info'} />}
       defaultCollapsed={defaultCollapsed}
       summary={
         <WidgetLeadSummary

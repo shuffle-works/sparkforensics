@@ -6,7 +6,7 @@ import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePillGroup } from '@/view/StagePill';
 import { StageHeader } from '@/view/StageHeader';
-import { formatBytes, recommendPartitions, IMPACT_BAND_ORDER, numericValue, VISIBLE_LIMIT } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, recommendPartitions, IMPACT_BAND_ORDER, numericValue, VISIBLE_LIMIT, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
 import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
@@ -14,7 +14,6 @@ import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { useWidgetDensity } from '@/store/store';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { canToggleSort } from '@/view/impact-sort';
-import { useWorstPresentedTone } from '@/view/impact-presentation';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -89,8 +88,6 @@ export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCol
     : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedEntries, page, setPage, routeIndex);
 
-  const combinedTone = useWorstPresentedTone(shuffleFindings);
-
   if (shuffleFindings.length === 0) {
     let maxRead = 0;
     for (const stage of appModel.stages.values()) {
@@ -110,13 +107,14 @@ export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCol
     );
   }
 
+  const combinedImpactBand = worstImpactBand(shuffleFindings);
   const pills = orderedEntries.map((e) => ({ id: e.stageId }));
   const canSortByImpact = canToggleSort(shuffleFindings, sorted.length, cardOpen);
 
   return (
     <WidgetCard
       title="Shuffle I/O"
-      impactBand={combinedTone}
+      impactBand={combinedImpactBand}
       fixFor={shuffleFindings}
       open={cardOpen}
       onOpenChange={setCardOpen}
@@ -128,7 +126,7 @@ export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCol
       }
       badges={
         <>
-          <TagBadge type="shuffle" impactBand={combinedTone ?? 'info'} />
+          <TagBadge type="shuffle" impactBand={combinedImpactBand ?? 'info'} />
           {canSortByImpact ? (
             <SortModeToggle
               mode={sortMode}

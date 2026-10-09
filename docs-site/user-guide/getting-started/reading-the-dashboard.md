@@ -11,10 +11,8 @@ affected stage, not just the worst one. For a finding with a run-time
 estimate, the dot's color tracks how much run time it could save rather than
 how unusual the metric looks, so a small-looking anomaly with a big payoff can
 outrank a dramatic one that would barely move your run time. A finding with
-only a resource estimate, or none, keeps the level its check assigned. Red is
-kept for findings worth your attention: a critical finding whose potential
-saving is under 10% of the run is drawn in a neutral grey instead, with its
-tag and level unchanged.
+only a resource estimate, or none, keeps the level its check assigned. A
+critical finding is drawn in red whatever share of the run its saving is.
 
 The board opens with a verdict: one line saying where to start, a short
 summary of what was found, and up to three numbered next steps. Each step
@@ -114,8 +112,7 @@ name opens a menu of recent files, to switch to another run or load a new
 file. When the parser skipped malformed lines, a warning beside the name
 says how many. The count chip ("4 critical") counts the same findings the
 verdict ranks. For critical findings with a run-time estimate, it adds the largest one's share of the
-run ("1 critical, 2% of run"), and it is grey rather than red when that share
-is under 10%. Click
+run ("1 critical, 2% of run"), drawn in the band's color. Click
 it to jump to that band of the Findings list (a board filter hiding the band
 is cleared, with a notice saying so), or to the verdict when its steps hold
 every finding in the band. It reads **Run failed** when a job

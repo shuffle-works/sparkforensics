@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { docsUrl, isKnownDocAnchor } from '@sparkforensics/core/docs-config.ts';
 import { findingGuideUrl } from '@sparkforensics/core/docs-site-config.ts';
 import { cn } from '@/lib/utils';
-import type { ImpactTone } from '@/view/impact-presentation';
+import type { ImpactBand } from '@sparkforensics/core/types.ts';
 import { typeTag } from '@sparkforensics/core/format-utils.ts';
 import { useOptionalDocs } from '@/view/DocsContext';
 import { TAG_HELP } from '@/view/finding-tag-help';
@@ -18,34 +18,28 @@ import { useStore, useWidgetDensity } from '@/store/store';
  * fill bars) outside the dot+badge vocabulary (e.g. Scorecard's KPI tiles)
  * should index these instead of keeping a second, locally-duplicated class
  * map for the same critical/warning/info palette. */
-export const IMPACT_BG_CLASS: Record<ImpactTone, string> = {
+export const IMPACT_BG_CLASS: Record<ImpactBand, string> = {
   critical: 'bg-critical',
   warning: 'bg-warning',
   info: 'bg-info',
-  neutral: 'bg-foreground',
 };
 
-export const IMPACT_TEXT_CLASS: Record<ImpactTone, string> = {
+export const IMPACT_TEXT_CLASS: Record<ImpactBand, string> = {
   critical: 'text-critical',
   warning: 'text-warning',
   info: 'text-info',
-  neutral: 'text-foreground',
 };
 
-export const IMPACT_BORDER_CLASS: Record<ImpactTone, string> = {
+export const IMPACT_BORDER_CLASS: Record<ImpactBand, string> = {
   critical: 'border-critical',
   warning: 'border-warning',
   info: 'border-info',
-  neutral: 'border-muted-foreground',
 };
 
 const dotVariants = cva('inline-block size-2 shrink-0 rounded-full', {
   variants: {
     impactBand: {
-      critical: 'bg-critical',
-      warning: 'bg-warning',
-      info: 'bg-info',
-      neutral: 'bg-muted-foreground',
+      ...IMPACT_BG_CLASS,
       // Additive 4th tier for a component-local "inert/not applicable" case
       // (e.g. EvidenceAvailability's three inert evidence states): the core
       // `ImpactBand` type stays 3-valued everywhere else in the codebase.
@@ -62,7 +56,6 @@ export const severityBadgeVariants = cva('gap-1.5 border-transparent', {
       critical: 'bg-critical/10 text-critical',
       warning: 'bg-warning/10 text-warning',
       info: 'bg-info/10 text-info',
-      neutral: 'bg-muted text-foreground',
     },
   },
   defaultVariants: { impactBand: 'info' },
@@ -72,7 +65,7 @@ export interface ImpactDotProps {
   /** Accepts the shared 3-value `ImpactBand` plus a component-local `'muted'`
    * tier for callers (e.g. EvidenceAvailability) that need an inert/not-applicable
    * dot color with no equivalent in the core `Finding['impactBand']` vocabulary. */
-  impactBand: ImpactTone | 'muted';
+  impactBand: ImpactBand | 'muted';
   className?: string;
 }
 
@@ -85,7 +78,7 @@ export function ImpactDot({ impactBand, className }: ImpactDotProps) {
 
 export interface TagBadgeProps {
   type: string;
-  impactBand: ImpactTone;
+  impactBand: ImpactBand;
   className?: string;
   /** FixTheseFirst's row buttons (`FindingRow`/`TypeGroupRow`) and
    * StageTable's stage-tag pill each nest TagBadge inside a <button> that
@@ -237,7 +230,7 @@ export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }:
 
 export interface ChipProps {
   label: string;
-  impactBand: ImpactTone;
+  impactBand: ImpactBand;
   title?: string;
   className?: string;
 }

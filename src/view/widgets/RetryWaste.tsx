@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { IMPACT_BAND_ORDER, formatDuration, numericValue } from '@sparkforensics/core/format-utils.ts';
+import { IMPACT_BAND_ORDER, formatDuration, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { StagePill } from '@/view/StagePill';
@@ -17,7 +17,6 @@ import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
 import { usePagedRows } from '@/view/usePagedRows';
-import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 
 export type RetryWasteProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
 
@@ -35,7 +34,6 @@ function retryWasteAdvancedExtension(f: FindingOf<'retryWaste'>): string {
 
 function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stageId: number } }) {
   const anchor = useAnchoredRow([finding]);
-  const tone = usePresentedTone(finding);
   return (
     <li
       ref={anchor.ref}
@@ -45,7 +43,7 @@ function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stage
     >
       <div className="flex items-center gap-2">
         <StagePill stageId={finding.stageId} />
-        <ImpactDot impactBand={tone} />
+        <ImpactDot impactBand={finding.impactBand} />
       </div>
       <p className="text-xs text-muted-foreground">
         Wasted <strong>{formatDuration(numericValue(finding))}</strong> of executor time.
@@ -85,17 +83,16 @@ export function RetryWaste({ appModel, catalog, defaultCollapsed = true }: Retry
   const routeIndex = activeRouteTarget ? ordered.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(ordered, page, setPage, routeIndex);
 
-  const worstTone = useWorstPresentedTone(findings);
   if (findings.length === 0) return null;
 
   return (
     <WidgetCard
       title="Retry Waste"
       fixFor={findings}
-      impactBand={worstTone}
+      impactBand={worstImpactBand(findings)}
       badges={
         <>
-          <TagBadge type="retryWaste" impactBand={worstTone!} />
+          <TagBadge type="retryWaste" impactBand={worstImpactBand(findings)!} />
           {canToggleSort(findings, findings.length, cardOpen) ? (
             <SortModeToggle
               mode={sortMode}

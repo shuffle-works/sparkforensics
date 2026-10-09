@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 
-import { IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
+import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { FindingOf } from '@sparkforensics/core/types.ts';
@@ -20,7 +20,6 @@ import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
 import { RowPagination } from '@/view/RowPagination';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
-import { useWorstPresentedTone } from '@/view/impact-presentation';
 
 export type PythonUdfProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
@@ -67,19 +66,18 @@ export const PythonUdf = memo(function PythonUdf({ catalog, defaultCollapsed = t
   const routeIndex = activeRouteTarget ? orderedFindings.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedFindings, page, setPage, routeIndex);
 
-  const worstTone = useWorstPresentedTone(findings);
   if (findings.length === 0) return null;
 
   return (
     <WidgetCard
       title="Row-at-a-time Python UDFs"
       fixFor={findings}
-      impactBand={worstTone}
+      impactBand={worstImpactBand(findings)}
       open={cardOpen}
       onOpenChange={setCardOpen}
       badges={
         <>
-          <TagBadge type="pythonUdf" impactBand={worstTone ?? 'info'} className={PLAN_TAG_CLASS} />
+          <TagBadge type="pythonUdf" impactBand={worstImpactBand(findings) ?? 'info'} className={PLAN_TAG_CLASS} />
           {canToggleSort(findings, findings.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}

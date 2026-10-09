@@ -1,7 +1,7 @@
 import { memo, useMemo, useState } from 'react';
 
 import { sharedDocAnchor } from '@sparkforensics/core/docs-config.ts';
-import { IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
+import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { DocsLink } from '@/view/DocsContext';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
@@ -18,7 +18,6 @@ import type { ReactNode } from 'react';
 import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { EvidenceAvailabilityEntry, FindingOf } from '@sparkforensics/core/types.ts';
-import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 
 export type ConfigAuditProps = WidgetProps;
 
@@ -27,7 +26,6 @@ export type ConfigAuditProps = WidgetProps;
  * order. */
 function ConfigAuditRow({ finding }: { finding: FindingOf<'configAudit'> }) {
   const anchor = useAnchoredRow([finding]);
-  const tone = usePresentedTone(finding);
 
   return (
     <li
@@ -37,7 +35,7 @@ function ConfigAuditRow({ finding }: { finding: FindingOf<'configAudit'> }) {
       className={`space-y-1 transition-colors ${anchor.flashClassName}`}
     >
       <div className="flex items-center gap-2">
-        <ImpactDot impactBand={tone} />
+        <ImpactDot impactBand={finding.impactBand} />
         <code className="text-xs">{finding.property}</code>
         <span className="text-xs text-muted-foreground">=</span>
         <code className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-xs text-accent">
@@ -83,8 +81,6 @@ export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings,
   // Called unconditionally, before the empty-findings early return, per rules of
   // hooks (usePagedRows uses useLayoutEffect internally).
   const { totalPages, effectivePage, visible } = usePagedRows(findings, page, setPage, routeIndex);
-
-  const worstTone = useWorstPresentedTone(findings);
 
   if (findings.length === 0) {
     const sparkConfiguration = appModel.evidenceAvailability?.entries.find(
@@ -141,12 +137,14 @@ export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings,
     );
   }
 
+  const impactBand = worstImpactBand(findings);
+
   return (
     <WidgetCard
       title="Config Audit"
       fixFor={findings}
-      impactBand={worstTone}
-      badges={<TagBadge type="configAudit" impactBand={worstTone ?? 'info'} docAnchor={sharedDocAnchor(findings)} />}
+      impactBand={impactBand}
+      badges={<TagBadge type="configAudit" impactBand={impactBand ?? 'info'} docAnchor={sharedDocAnchor(findings)} />}
       statusBadge={
         <AdvancedOnly>
           <RowStatusCluster evidenceKey="sparkConfiguration" />

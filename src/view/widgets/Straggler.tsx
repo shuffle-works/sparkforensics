@@ -14,7 +14,6 @@ import { stragglerCauseSummary } from '@sparkforensics/core/finding-presentation
 import type { StragglerFinding } from '@sparkforensics/core/finding-types.ts';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { canToggleSort } from '@/view/impact-sort';
-import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -35,7 +34,6 @@ function stragglerDetail(f: StragglerFinding): string {
 
 function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appModel: WidgetProps['appModel'] }) {
   const anchor = useAnchoredRow([finding]);
-  const tone = usePresentedTone(finding);
   return (
     <li
       ref={anchor.ref}
@@ -45,7 +43,7 @@ function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appMod
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <ImpactDot impactBand={tone} />
+          <ImpactDot impactBand={finding.impactBand} />
           {finding.stageId != null ? <StageHeader stageId={finding.stageId} appModel={appModel} /> : null}
         </div>
         <AdvancedOnly>
@@ -78,18 +76,16 @@ export const Straggler = memo(function Straggler({ appModel, catalog, defaultCol
   const routeIndex = activeRouteTarget ? orderedIssues.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedIssues, page, setPage, routeIndex);
 
-  const issuesTone = useWorstPresentedTone(issues);
-
   if (issues.length === 0) return null;
 
   return (
     <WidgetCard
       title="Stragglers"
-      impactBand={issuesTone}
+      impactBand={issues[0].impactBand}
       fixFor={issues}
       badges={
         <>
-          <TagBadge type="straggler" impactBand={issuesTone ?? 'info'} />
+          <TagBadge type="straggler" impactBand={issues[0].impactBand} />
           {canToggleSort(issues, issues.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}
