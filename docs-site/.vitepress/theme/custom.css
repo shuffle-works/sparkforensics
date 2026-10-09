@@ -522,8 +522,8 @@
 }
 
 .VPHero .text {
-  font-weight: 600;
-  color: var(--sf-muted);
+  font-weight: 400;
+  color: var(--sf-ink);
 }
 
 .VPHero .tagline {
