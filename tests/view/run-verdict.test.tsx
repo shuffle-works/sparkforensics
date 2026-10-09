@@ -76,7 +76,7 @@ describe('RunVerdict', () => {
     expect(onRoute).toHaveBeenCalledTimes(1);
     expect(onRoute.mock.calls[0][0]).toMatchObject({ finding: skew, widgetId: 'skew' });
 
-    await user.click(screen.getByRole('button', { name: 'Stage 7 details' }));
+    await user.click(screen.getByRole('button', { name: 'Stage 7' }));
     expect(onRoute).toHaveBeenCalledTimes(1);
   });
 
@@ -86,15 +86,15 @@ describe('RunVerdict', () => {
     expect(screen.getByText('2 more places under Findings.')).toBeInTheDocument();
   });
 
-  it('copies a step summary and confirms it', async () => {
+  it('copies the next steps and confirms it', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     renderVerdict([timed('spill', 4, 12_000)]);
 
-    const copyButton = screen.getByTestId('copy-finding-button');
+    const copyButton = screen.getByRole('button', { name: 'Copy next steps' });
     await user.click(copyButton);
-    expect(writeText).toHaveBeenCalledWith('Reduce spill: Fix spill in Stage 4. Potential savings: 12.0s of run time');
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('1. Reduce spill in Stage 4: Fix spill in Stage 4. Potential savings: 12.0s of run time'));
     expect(copyButton).toHaveTextContent('Copied');
     await waitFor(() => expect(copyButton).toHaveTextContent('Copy'), { timeout: 3000 });
   });
@@ -264,9 +264,9 @@ describe('RunVerdict on a failed run', () => {
     const pointer = "Spark's recorded reason is quoted above. Open the driver log only if you need the full stack trace.";
     expect(step).toHaveTextContent(`What to try: ${pointer}`);
     expect(step).not.toHaveTextContent('Inspect the driver log for the failure reason.');
-    await user.click(within(step).getByTestId('copy-finding-button'));
+    await user.click(screen.getByRole('button', { name: 'Copy next steps' }));
     expect(writeText).toHaveBeenCalledWith(
-      "Inspect stage failure: Spark's recorded reason: Fetch failed: executor lost. Open the driver log only if you need the full stack trace.",
+      expect.stringContaining("Inspect stage failure in Stage 13: Spark's recorded reason: Fetch failed: executor lost. Open the driver log only if you need the full stack trace."),
     );
   });
 
@@ -291,8 +291,10 @@ describe('RunVerdict on a failed run', () => {
     expect(stage3).toHaveTextContent("What to try: Spark's recorded reason is quoted above.");
     expect(stage9).toHaveTextContent(`What to try: ${advice}`);
     expect(stage9).not.toHaveTextContent('quoted above');
-    await user.click(within(stage9).getByTestId('copy-finding-button'));
-    expect(writeText).toHaveBeenCalledWith(`Inspect stage failure: ${advice}`);
+    await user.click(screen.getByRole('button', { name: 'Copy next steps' }));
+    const copied = writeText.mock.calls[0][0] as string;
+    expect(copied).toContain(`Inspect stage failure in Stage 9: ${advice}`);
+    expect(copied).not.toContain(`Stage 3: ${advice}`);
   });
 
   it('points the job-failure step at the quoted reason only when exactly one job failed', () => {
@@ -381,7 +383,7 @@ describe('savingsMeaning', () => {
 
     const step = screen.getByTestId('next-step');
     expect(step).toHaveTextContent('Potential savings 3.0 GB-h of unused executor memory');
-    await user.click(within(step).getByTestId('copy-finding-button'));
+    await user.click(screen.getByRole('button', { name: 'Copy next steps' }));
     expect(writeText.mock.calls[0][0]).toMatch(/Potential savings: 3\.0 GB-h of unused executor memory$/);
   });
 });

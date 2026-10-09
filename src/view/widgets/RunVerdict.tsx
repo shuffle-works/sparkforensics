@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ArrowRight, CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleCheck, CircleX, CopyIcon } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -11,8 +11,10 @@ import { findingName, recommendationParts } from '@sparkforensics/core/finding-n
 import { useOptionalDocs } from '@/view/DocsContext';
 import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TagBadge } from '@/view/ImpactBadge';
+import { usePresentedTone } from '@/view/impact-presentation';
 import { findingAt, savingsOf } from '@/view/interpretation';
 import { useStageDetail } from '@/view/StageDetailContext';
+import { useEvidenceOpen } from '@/view/InlineEvidence';
 import { StepCode } from '@/view/StepCode';
 import { VerdictStrip } from '@/view/widgets/VerdictStrip';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
@@ -22,6 +24,13 @@ export interface RunVerdictProps {
    * current filter, and is rendered as computed (see run-interpretation.ts). */
   interpretation: InterpretationState;
   onRoute: (target: TriageTarget) => void;
+  /** Shows the Findings tab, which lists the findings the steps do not. */
+  onShowMoreFindings?: () => void;
+  /** The evidence card for a widget the verdict owns, or null when another
+   * surface owns it. */
+  renderEvidence?: (widgetId: string) => ReactNode;
+  /** Step index to the widget whose evidence renders inside that step. */
+  evidenceOwners?: ReadonlyMap<number, string>;
 }
 
 function plural(count: number, noun: string): string {
@@ -53,26 +62,6 @@ function CopyTextButton({ text, label, testId }: { text: string; label: string; 
   );
 }
 
-function CopyStepButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = async () => {
-    try {
-      await copyText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard access can fail (permissions, embed context); the step text
-      // stays selectable, so no error state is needed.
-    }
-  };
-  return (
-    <Button variant="outline" size="sm" className={STEP_ACTION} data-testid="copy-finding-button" onClick={() => void handleCopy()}>
-      {copied ? <CheckIcon aria-hidden="true" /> : <CopyIcon aria-hidden="true" />}
-      {copied ? 'Copied' : 'Copy'}
-    </Button>
-  );
-}
-
 /** The verdict step's small bordered actions; the first step's evidence button is the soft primary. */
 const STEP_ACTION = 'h-6 border-border bg-transparent px-2 text-xs font-medium dark:bg-transparent';
 
@@ -82,6 +71,7 @@ function NextStepItem({
   interpretation,
   index,
   onRoute,
+  evidence,
 }: {
   step: InterpretedStep;
   /** The step's lead finding, resolved from `step.leadIndex`. */
@@ -89,8 +79,13 @@ function NextStepItem({
   interpretation: InterpretationState;
   index: number;
   onRoute: (target: TriageTarget) => void;
+  /** The card this step shows in place, when it owns one. */
+  evidence: { widgetId: string; card: ReactNode } | null;
 }) {
   const { openStage } = useStageDetail();
+  const evidenceState = useEvidenceOpen(evidence?.widgetId ?? null);
+  const evidenceId = `next-step-${index}-evidence`;
+  const tone = usePresentedTone(finding);
   const { measured, fix } = recommendationParts(step.recommendation);
   const savings = savingsOf(interpretation, finding);
   const impact = savings?.figure ?? null;
@@ -104,12 +99,24 @@ function NextStepItem({
     <li className="verdict-step" data-testid="next-step" aria-labelledby={titleId}>
       {/* The step code (F1, F2, ...) also marks this step's Findings row, its
           bar on the stage strip and its Stage Summary row. */}
-      <StepCode code={`F${index + 1}`} impactBand={index === 0 ? finding.impactBand : undefined} className="pt-0.5" />
+      <StepCode code={`F${index + 1}`} impactBand={index === 0 ? tone : undefined} className="pt-0.5" />
       <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 [overflow-wrap:anywhere]">
-        <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
+        <TagBadge type={finding.type} impactBand={tone} docAnchor={finding.docAnchor} />
         <h3 id={titleId} className="text-[0.9375rem] font-semibold">
           {findingActionLabel(finding)}
-          {step.stageId != null ? <span className="font-normal text-muted-foreground"> in Stage {step.stageId}</span> : null}
+          {step.stageId != null ? (
+            <>
+              <span className="font-normal text-muted-foreground"> in </span>
+              <button
+                type="button"
+                className="cursor-pointer rounded-sm font-normal text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                title={`Open Stage ${step.stageId} details`}
+                onClick={() => openStage(step.stageId!)}
+              >
+                Stage {step.stageId}
+              </button>
+            </>
+          ) : null}
         </h3>
       </div>
       {impact ? (
@@ -158,22 +165,27 @@ function NextStepItem({
             variant={index === 0 ? 'soft' : 'outline'}
             className={cn(STEP_ACTION, index === 0 && 'border-transparent bg-accent-soft dark:bg-accent-soft')}
             data-shortcut-target
+            aria-expanded={evidence ? evidenceState.open : undefined}
+            aria-controls={evidence ? evidenceId : undefined}
             onClick={() => {
+              if (evidence) {
+                evidenceState.toggle();
+                return;
+              }
               // Every step lead passed the same routeable check, so the target is never null.
               const target = triageTargetFor(finding);
               if (target) onRoute(target);
             }}
           >
-            Show evidence
-            <ArrowRight aria-hidden="true" />
+            {evidence && evidenceState.open ? 'Hide evidence' : 'Show evidence'}
+            {evidence ? (
+              evidenceState.open ? <ChevronUpIcon aria-hidden="true" /> : <ChevronDownIcon aria-hidden="true" />
+            ) : (
+              <ArrowRight aria-hidden="true" />
+            )}
           </Button>
-          {step.stageId != null ? (
-            <Button size="sm" variant="outline" className={STEP_ACTION} onClick={() => openStage(step.stageId!)}>
-              Stage {step.stageId} details
-            </Button>
-          ) : null}
-          <CopyStepButton text={step.copyText} />
         </div>
+        {evidence && evidenceState.open ? <div id={evidenceId} className="pt-2">{evidence.card}</div> : null}
       </div>
     </li>
   );
@@ -253,12 +265,17 @@ function NewcomerPrimer() {
  * start, a short summary, and the top places to look as ordered next steps,
  * each with a plain-language explanation, the concrete fix, and a route to its
  * evidence. The full, band-grouped finding list stays in the Findings tab. */
-export function RunVerdict({ interpretation, onRoute }: RunVerdictProps) {
+export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, renderEvidence, evidenceOwners }: RunVerdictProps) {
   const { title, summary, failed, clean, failureReason, remaining, copyText } = interpretation.data.verdict;
   const shown = interpretation.data.verdict.steps
     .map((step) => ({ step, finding: findingAt(interpretation, step.leadIndex) }))
     .filter((entry): entry is { step: InterpretedStep; finding: Finding } => entry.finding != null);
   const density = useWidgetDensity();
+  const evidenceFor = (index: number) => {
+    const widgetId = evidenceOwners?.get(index);
+    const card = widgetId ? renderEvidence?.(widgetId) : null;
+    return widgetId && card ? { widgetId, card } : null;
+  };
 
   return (
     <section
@@ -302,6 +319,7 @@ export function RunVerdict({ interpretation, onRoute }: RunVerdictProps) {
               interpretation={interpretation}
               index={index}
               onRoute={onRoute}
+              evidence={evidenceFor(index)}
             />
           ))}
         </ol>
@@ -309,9 +327,14 @@ export function RunVerdict({ interpretation, onRoute }: RunVerdictProps) {
       {shown.length > 0 ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           {remaining > 0 ? (
-            <p className="text-xs text-muted-foreground">
-              {plural(remaining, 'more place')} under Findings.
-            </p>
+            onShowMoreFindings ? (
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={onShowMoreFindings}>
+                {plural(remaining, 'more place')} in Findings
+                <ArrowRight aria-hidden="true" />
+              </Button>
+            ) : (
+              <p className="text-xs text-muted-foreground">{plural(remaining, 'more place')} under Findings.</p>
+            )
           ) : (
             <span />
           )}

@@ -9,6 +9,9 @@ import { EvidenceAvailabilityProvider, useEvidenceAvailabilityDisclosure } from 
 import { FindingFilterBar } from '@/view/FindingFilterBar';
 import { FindingFilterProvider, useFindingFilter } from '@/view/FindingFilterContext';
 import { eligibleFindings, useInterpretation } from '@/view/interpretation';
+import { InlineEvidence } from '@/view/InlineEvidence';
+import { verdictEvidenceOwners, verdictLeadFindings } from '@/view/verdict-evidence';
+import { computeActiveWidgets, SUGGESTED_IMPROVEMENTS_ANCHOR_ID } from '@/view/widgets/Alerts';
 import {
   deriveOptions,
   emptySelection,
@@ -138,6 +141,34 @@ function FilteredBoard({
   const { selection, replaceSelection } = useFindingFilter();
   const density = useWidgetDensity();
   const interpretation = useInterpretation();
+  // The verdict owns the steps' findings and their evidence; the Findings tab
+  // lists the rest. Cards come from the unfiltered catalog, like the verdict.
+  const detectors = interpretation?.data.detectors;
+  const evidenceWidgets = useMemo(
+    () => (detectors ? computeActiveWidgets(catalog, configFindings ?? [], detectors) : []),
+    [catalog, configFindings, detectors],
+  );
+  const verdictLeads = useMemo(
+    () => new Set<Finding>(interpretation ? verdictLeadFindings(interpretation) : []),
+    [interpretation],
+  );
+  const evidenceOwners = useMemo(
+    () => (interpretation ? verdictEvidenceOwners(interpretation, new Set(evidenceWidgets.map((widget) => widget.widgetId))) : new Map<number, string>()),
+    [interpretation, evidenceWidgets],
+  );
+  const verdictWidgetIds = useMemo(() => new Set(evidenceOwners.values()), [evidenceOwners]);
+  const renderVerdictEvidence = useCallback((widgetId: string) => {
+    const widget = evidenceWidgets.find((candidate) => candidate.widgetId === widgetId);
+    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} /> : null;
+  }, [evidenceWidgets, appModel, catalog, configFindings, getTaskData, activeFileId]);
+  const showMoreFindings = useCallback(() => {
+    onActiveTabChange('findings');
+    requestAnimationFrame(() => {
+      const board = document.getElementById(SUGGESTED_IMPROVEMENTS_ANCHOR_ID);
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+      board?.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
+    });
+  }, [onActiveTabChange]);
   // Tied to the selection the route produced, so any later filter change hides it.
   const [filterNotice, setFilterNotice] = useState<{ text: string; selection: FilterSelection } | null>(null);
 
@@ -159,11 +190,19 @@ function FilteredBoard({
   // the fewest cleared dimensions), show Findings, then land on the band once
   // the tab panel is visible.
   const jumpToFindings = useCallback((impactBand: Finding['impactBand']) => {
-    const counted = eligibleFindings(interpretation).filter((f) => f.impactBand === impactBand);
+    const counted = eligibleFindings(interpretation).filter((f) => f.impactBand === impactBand && !verdictLeads.has(f));
     const closest = counted.reduce<Finding | null>((best, finding) => (
       !best || excludingDimensions(finding, selection).length < excludingDimensions(best, selection).length ? finding : best
     ), null);
     if (closest) revealFinding(closest, `the ${impactBand} findings`);
+    // A band the verdict's steps already hold has no row in the Findings tab:
+    // land on the verdict, which lists it.
+    if (!closest) {
+      const verdict = document.getElementById('run-verdict');
+      verdict?.scrollIntoView?.({ block: 'start' });
+      verdict?.focus({ preventScroll: true });
+      return;
+    }
     onActiveTabChange('findings');
     requestAnimationFrame(() => {
       const heading = document.getElementById(`impact-band-${impactBand}-heading`);
@@ -172,14 +211,14 @@ function FilteredBoard({
       heading.scrollIntoView?.({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
       heading.focus({ preventScroll: true });
     });
-  }, [interpretation, selection, revealFinding, onActiveTabChange]);
+  }, [interpretation, selection, revealFinding, onActiveTabChange, verdictLeads]);
   const filteredCatalog = useMemo(() => filterFindings(catalog, selection), [catalog, selection]);
   const filteredConfig = useMemo(() => filterFindings(configFindings ?? [], selection), [configFindings, selection]);
   // The Findings tab's count: what the board lists (eligible findings) under the active filter.
   const listedCount = useMemo(() => {
     const shown = new Set([...filteredCatalog, ...filteredConfig]);
-    return eligibleFindings(interpretation).filter((finding) => shown.has(finding)).length;
-  }, [interpretation, filteredCatalog, filteredConfig]);
+    return eligibleFindings(interpretation).filter((finding) => shown.has(finding) && !verdictLeads.has(finding)).length;
+  }, [interpretation, filteredCatalog, filteredConfig, verdictLeads]);
 
   // The board renders two filtered streams (catalog + config), so the count and
   // the no-match state must consider both: filtering to a CFG-only type (e.g.
@@ -196,7 +235,13 @@ function FilteredBoard({
       <SampleRunNotice />
       {/* Verdict first, from the unfiltered catalog: it answers "how did this
           run go and where do I start", which a board filter must not change. */}
-      {interpretation ? <RunVerdict interpretation={interpretation} onRoute={routeToVisible} /> : null}
+      {interpretation ? <RunVerdict
+          interpretation={interpretation}
+          onRoute={routeToVisible}
+          onShowMoreFindings={showMoreFindings}
+          evidenceOwners={evidenceOwners}
+          renderEvidence={renderVerdictEvidence}
+        /> : null}
       {interpretation ? <Scorecard interpretation={interpretation.data} catalog={filteredCatalog} /> : null}
       {/* Filtering is a power control: Advanced mode shows it, and so does an
           active selection (e.g. from a shared URL), so a filtered board never
@@ -234,6 +279,8 @@ function FilteredBoard({
           <TabsContent value="findings" keepMounted>
             <h2 className="sr-only">Findings</h2>
             <ImpactBoard
+              verdictLeads={verdictLeads}
+              verdictWidgetIds={verdictWidgetIds}
               appModel={appModel}
               catalog={filteredCatalog}
               configFindings={filteredConfig}

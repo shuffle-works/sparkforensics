@@ -166,3 +166,14 @@ test('the hover text reads as one line on the theme popover surface, not Rechart
   expect(CHART_TOOLTIP_PROPS.labelStyle.color).toBe('var(--color-popover-foreground)');
   expect(CHART_TOOLTIP_PROPS.itemStyle.color).toBe('var(--color-popover-foreground)');
 });
+
+test('a run with one executor throughout shows a sentence instead of a plot', () => {
+  const model = buildAppModel();
+  model.executors = {
+    added: [{ executorId: '1', timestamp: 0 }] as unknown as AppModel['executors']['added'],
+    removed: [],
+  };
+  render(<ExecutorCountChart appModel={model} />);
+  expect(screen.getAllByText(/One executor for the whole run/).length).toBeGreaterThan(0);
+  expect(screen.queryByRole('img', { name: /executor count over time/i })).not.toBeInTheDocument();
+});

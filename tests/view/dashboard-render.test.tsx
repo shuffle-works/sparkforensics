@@ -86,6 +86,13 @@ function hasFixTheseFirstRow(type: string) {
     || screen.queryAllByTestId('fix-these-first-group-row').some((row) => row.dataset.findingType === type);
 }
 
+// The verdict owns the top three findings; a Config Audit finding that ranks
+// among them is a next step there, otherwise a row in the Findings tab.
+function hasConfigAuditStepOrRow() {
+  return hasFixTheseFirstRow('configAudit')
+    || screen.queryAllByTestId('next-step').some((step) => step.textContent?.includes('CFG'));
+}
+
 beforeEach(() => {
   store.setState({
     appModel: emptyAppModel(),
@@ -98,9 +105,8 @@ beforeEach(() => {
   });
 });
 
-/** Card-placement tests need every band's evidence cards mounted: Advanced
- * view shows them, Basic view folds them per band (triage-navigation.test.tsx
- * covers the fold). */
+/** Card-placement tests run in Advanced view; the verdict's per-step evidence
+ * (triage-navigation.test.tsx) is covered separately. */
 function showAllEvidence() {
   store.setState({ widgetDensity: 'advanced' });
 }
@@ -235,9 +241,10 @@ test('shows real Config Audit findings as a row in All recommendations without a
   render(<App />);
   await waitForDashboard();
 
-  // configAudit is action-region: it renders a row in All recommendations, not the empty state.
+  // configAudit is action-region: it shows up as a verdict step (or a board row once
+  // the verdict's three steps are taken), not the empty state.
   expect(screen.queryByText(/no findings to fix/i)).not.toBeInTheDocument();
-  expect(hasFixTheseFirstRow('configAudit')).toBe(true);
+  expect(hasConfigAuditStepOrRow()).toBe(true);
 });
 
 test('Config Audit ranks by its real impact band inside Suggested Improvements, not Clean checks', async () => {
@@ -257,9 +264,12 @@ test('Config Audit ranks by its real impact band inside Suggested Improvements, 
   render(<App />);
   await waitForDashboard();
 
-  const findingsPanel = screen.getByRole('tabpanel', { name: 'Findings' });
+  // The critical finding leads the verdict, which shows its Config Audit card in place.
+  const verdict = screen.getByTestId('run-verdict');
+  await user.click(within(verdict).getByRole('button', { name: 'Show evidence' }));
   // Config Audit is code-split (React.lazy); its chunk resolves asynchronously.
-  expect(await within(findingsPanel).findByRole('heading', { name: 'Config Audit' })).toBeInTheDocument();
+  expect(await within(verdict).findByRole('heading', { name: 'Config Audit' })).toBeInTheDocument();
+  const findingsPanel = screen.getByRole('tabpanel', { name: 'Findings' });
   await user.click(screen.getByRole('button', { name: /clean checks/i }));
   expect(within(findingsPanel).queryByText('Config Audit', { selector: '[data-testid^="clean-alert"] h3' })).not.toBeInTheDocument();
 });
@@ -276,7 +286,7 @@ test('reads configFindings from the store rather than recomputing it from appMod
   render(<App />);
   await waitForDashboard();
 
-  expect(hasFixTheseFirstRow('configAudit')).toBe(true);
+  expect(hasConfigAuditStepOrRow()).toBe(true);
 });
 
 test('the dashboard heading outline nests correctly: one h1, h2 sections (including impact bands), h3 widget titles', async () => {
@@ -399,13 +409,29 @@ test('the first Tab stop skips past the top bar to the verdict', async () => {
 
 test('the top bar count chip opens Findings on the band it counts', async () => {
   const user = userEvent.setup();
+  // Four warnings: the verdict owns the first three, so the band's row is in Findings.
+  const catalog: Finding[] = [1, 2, 3, 4].map((stageId) => (
+    { type: 'skew', stageId, impactBand: 'warning', recommendation: `Rebalance Stage ${stageId}.` } as Finding
+  ));
+  const appModel = readyAppModel() as any;
+  appModel.stages = new Map([1, 2, 3, 4].map((id) => [id, { id, submittedAt: 0, completedAt: 1000 }]));
+  store.setState({ status: 'ready', appModel, catalog, configFindings: [] });
+  render(<App />);
+  await waitForDashboard();
+
+  await user.click(screen.getByRole('tab', { name: 'Full app report' }));
+  await user.click(screen.getByRole('button', { name: '4 warnings: show them in Findings' }));
+  expect(screen.getByRole('tab', { name: 'Findings' })).toHaveAttribute('aria-selected', 'true');
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Warning' })));
+});
+
+test('the top bar count chip lands on the verdict when the verdict holds every finding of its band', async () => {
+  const user = userEvent.setup();
   const skew: Finding = { type: 'skew', stageId: 1, impactBand: 'warning', recommendation: 'Rebalance Stage 1.' };
   store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog: [skew], configFindings: [] });
   render(<App />);
   await waitForDashboard();
 
-  await user.click(screen.getByRole('tab', { name: 'Full app report' }));
   await user.click(screen.getByRole('button', { name: '1 warning: show them in Findings' }));
-  expect(screen.getByRole('tab', { name: 'Findings' })).toHaveAttribute('aria-selected', 'true');
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Warning' })));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('run-verdict')));
 });
