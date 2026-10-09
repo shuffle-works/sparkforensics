@@ -90,7 +90,7 @@ export function StageComparisonTable({ model, baselineLabel, candidateLabel, onO
     <WidgetCard title="Stages compared">
       {pairs.length === 0 ? (
         <>
-          <p className="text-sm text-muted-foreground">{noPairsReason(model.replanned.length > 0)}</p>
+          <p className="text-sm text-muted-foreground">{noPairsReason(model.replanned.length > 0, hasUnmatched)}</p>
           <StagePicker
             baseStages={model.baseStages ?? []}
             candStages={model.candStages ?? []}
@@ -215,10 +215,13 @@ const stageLabel = (stages: StageSummary[] | undefined, id: number) => {
 const stageList = (ids: number[], stages: StageSummary[] | undefined) =>
   (ids.length === 0 ? 'none' : ids.map((id) => stageLabel(stages, id)).join(', '));
 
-/** One sentence on why nothing paired: re-planned queries leave stages that cannot line up one to one. */
-const noPairsReason = (replanned: boolean) => (replanned
-  ? 'No stages are paired: the two runs planned these queries into a different number of stages, so none line up one to one.'
-  : 'No stages are paired: no stage in one run is similar enough to a stage in the other.');
+/** One sentence on why nothing paired, naming each cause the aligner reported: re-planned queries,
+ * stages that matched nothing, or both. */
+const noPairsReason = (replanned: boolean, unmatched: boolean) => {
+  if (replanned && unmatched) return 'No stages are paired: some queries ran a different number of stages in each run, and the other stages match nothing in the other run.';
+  if (replanned) return 'No stages are paired: the queries ran a different number of stages in each run, and none of their stages match.';
+  return 'No stages are paired: no stage in one run matches a stage in the other.';
+};
 
 /** Chooses one stage per run to open side by side, for a comparison where the aligner paired nothing. */
 function StagePicker({ baseStages, candStages, onPick }: {

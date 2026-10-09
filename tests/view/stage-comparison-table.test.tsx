@@ -100,7 +100,7 @@ describe('StageComparisonTable', () => {
     const none = { ...model, stagePairs: [], replanned: [], unmatched: { baseStageIds: [1], candStageIds: [2] }, confidence: 'insufficient', reason: 'Too little run time.' };
     const { unmount } = render(<RunComparison model={none as any} onClose={vi.fn()} />);
     expect(screen.getByRole('alert')).toHaveAttribute('data-confidence', 'insufficient');
-    expect(screen.getByText(/No stages are paired: no stage in one run is similar enough/)).toBeInTheDocument();
+    expect(screen.getByText('No stages are paired: no stage in one run matches a stage in the other.')).toBeInTheDocument();
     unmount();
     const { stagePairs: _omit, ...legacy } = model;
     render(<RunComparison model={legacy as any} onClose={vi.fn()} />);
@@ -111,7 +111,7 @@ describe('StageComparisonTable', () => {
     const user = userEvent.setup();
     const none = { ...model, stagePairs: [], replanned: [model.replanned[0]], unmatched: { baseStageIds: [7], candStageIds: [] } };
     render(<RunComparison model={none as any} onClose={vi.fn()} onDrillIn={vi.fn()} />);
-    expect(screen.getByText(/planned these queries into a different number of stages/)).toBeInTheDocument();
+    expect(screen.getByText('No stages are paired: some queries ran a different number of stages in each run, and the other stages match nothing in the other run.')).toBeInTheDocument();
     const picker = screen.getByTestId('stage-picker');
     const compare = within(picker).getByRole('button', { name: 'Compare pair' });
     expect(compare).toBeDisabled();
@@ -123,6 +123,12 @@ describe('StageComparisonTable', () => {
     const dialog = await screen.findByTestId('stage-pair-dialog');
     expect(within(dialog).getByText('Baseline · stage 2')).toBeInTheDocument();
     expect(within(dialog).getByText('Candidate · stage 12')).toBeInTheDocument();
+  });
+
+  it('names re-planning alone as the cause when no stage is left unmatched', () => {
+    const none = { ...model, stagePairs: [], replanned: [model.replanned[0]], unmatched: { baseStageIds: [], candStageIds: [] } };
+    render(<RunComparison model={none as any} onClose={vi.fn()} />);
+    expect(screen.getByText('No stages are paired: the queries ran a different number of stages in each run, and none of their stages match.')).toBeInTheDocument();
   });
 
   it('shows no picker when pairs exist', () => {
