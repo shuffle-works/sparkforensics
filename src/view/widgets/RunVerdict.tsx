@@ -24,7 +24,7 @@ export interface RunVerdictProps {
   interpretation: InterpretationState;
   onRoute: (target: TriageTarget) => void;
   /** Shows the Findings tab, which lists the findings the steps do not. */
-  onShowMoreFindings?: () => void;
+  onShowMoreFindings: () => void;
   /** How many findings the Findings tab lists under "More findings". */
   moreFindingsCount?: number;
   /** The evidence card for a widget the verdict owns, or null when another
@@ -323,14 +323,10 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
       {shown.length > 0 ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           {moreFindingsCount > 0 ? (
-            onShowMoreFindings ? (
-              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={onShowMoreFindings}>
-                More findings ({moreFindingsCount})
-                <ArrowRight aria-hidden="true" />
-              </Button>
-            ) : (
-              <p className="text-xs text-muted-foreground">More findings ({moreFindingsCount}) under Findings.</p>
-            )
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={onShowMoreFindings}>
+              More findings ({moreFindingsCount})
+              <ArrowRight aria-hidden="true" />
+            </Button>
           ) : (
             <span />
           )}

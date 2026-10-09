@@ -182,7 +182,7 @@ export function ImpactBoard({
   // With the verdict's steps taken out, "More findings" is what is left; a
   // board with nothing left says so instead of showing an empty list.
   const hasVerdictLeads = (verdictLeads?.size ?? 0) > 0;
-  const nothingLeft = groups.length === 0 && activeWidgets.length === 0;
+  const nothingLeft = eligible.length === 0;
   return (
     <div id={SUGGESTED_IMPROVEMENTS_ANCHOR_ID} className="space-y-6 scroll-mt-20">
       {hasVerdictLeads ? (

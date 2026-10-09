@@ -32,7 +32,7 @@ function appModel(): AppModel {
 function renderVerdict(catalog: Finding[], onRoute = vi.fn(), model: AppModel = appModel(), moreFindingsCount?: number) {
   render(
     <StageDetailProvider>
-      <RunVerdict interpretation={installInterpretation(catalog, model)} onRoute={onRoute} moreFindingsCount={moreFindingsCount} />
+      <RunVerdict interpretation={installInterpretation(catalog, model)} onRoute={onRoute} onShowMoreFindings={vi.fn()} moreFindingsCount={moreFindingsCount} />
     </StageDetailProvider>,
   );
   return onRoute;
@@ -83,7 +83,7 @@ describe('RunVerdict', () => {
   it('lists at most three places and points to the findings the Findings tab lists', () => {
     renderVerdict([1, 2, 3, 4, 5].map((stageId) => timed('spill', stageId, stageId * 100, 'warning')), vi.fn(), appModel(), 2);
     expect(screen.getAllByTestId('next-step')).toHaveLength(3);
-    expect(screen.getByText('More findings (2) under Findings.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'More findings (2)' })).toBeInTheDocument();
   });
 
   it('copies the next steps and confirms it', async () => {
@@ -307,6 +307,7 @@ describe('RunVerdict on a failed run', () => {
         <RunVerdict
           interpretation={installInterpretation([jobFailures], withJobs([failedJob(1, [], 'Job aborted: out of memory')]))}
           onRoute={vi.fn()}
+          onShowMoreFindings={vi.fn()}
         />
       </StageDetailProvider>,
     );

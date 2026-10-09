@@ -24,8 +24,9 @@ active widget's own `worstImpactBand`. The verdict's step leads
 (`verdictLeads`) are dropped before the rollup and the cards the verdict
 shows in place (`verdictWidgetIds`) before `computeActiveWidgets`'s list is
 bucketed, so with any step lead the board opens with a "More findings (N)"
-`<h2>` (N is the remaining eligible count) or, when nothing is left,
-"No more findings to show."
+`<h2>` (N is the remaining eligible count) or, when N is 0,
+"No more findings to show." Caveat cards such as `IncompleteRun` never
+count toward N and still render under their own titles below it.
 
 Eligible findings for the rollup are `catalog` ∪ `configFindings` that pass
 core `isEligible` (`packages/core/src/recommendation-rollup.ts`) and have a

@@ -407,3 +407,22 @@ test('the verdict links to the rest with the Findings tab\'s count when each pla
   expect(within(verdict).getByRole('button', { name: 'More findings (3)' })).toBeInTheDocument();
   expect(screen.getByTestId('more-findings-heading')).toHaveTextContent('More findings (3)');
 });
+
+test('a caveat card left after the verdict is not counted as a finding and the verdict shows no link', async () => {
+  const model = readyAppModel();
+  model.stages.set(7, { id: 7, submittedAt: 0, completedAt: 15_000 });
+  store.setState({
+    status: 'ready', appModel: model as any,
+    catalog: [
+      { type: 'skew', stageId: 7, impactBand: 'critical', recommendation: 'Fix skew.', impactEstimate: { basis: 'serial', wallClock: { low: 2_400, high: 2_400 }, estimateMethod: 'modeled' } },
+      { type: 'incompleteRun', stageId: null, impactBand: 'warning', valueText: 'missing', recommendation: 'No ApplicationEnd.' },
+    ] as Finding[],
+  });
+  render(<App />);
+  await waitForDashboard();
+
+  expect(screen.getByTestId('no-more-findings')).toHaveTextContent('No more findings to show.');
+  expect(screen.queryByTestId('more-findings-heading')).not.toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Incomplete Run' })).toBeInTheDocument();
+  expect(within(screen.getByTestId('run-verdict')).queryByRole('button', { name: /More findings/ })).not.toBeInTheDocument();
+});
