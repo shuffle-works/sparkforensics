@@ -42,7 +42,7 @@
 }
 .drop-zone-formats {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
 }
 /* Rule-separated disclosure rows inside the drop zone panel. */
@@ -70,7 +70,7 @@
   border-top: 1px solid var(--rule);
   padding-top: 1rem;
 }
-.recent-entry-meta { font-family: var(--font-mono); font-size: 11px; }
+.recent-entry-meta { font-family: var(--font-mono); font-size: 12px; }
 
 /* MCP guide snippets: mono on the canvas inside a panel. */
 .mcp-snippet {
@@ -90,7 +90,7 @@
 
 /* ---- Run comparison: tables follow the board's Trace table ---- */
 .trace-table thead th {
-  font: 500 11px/1.4 var(--font-mono);
+  font: 500 12px/1.4 var(--font-mono);
   letter-spacing: .06em;
   text-transform: uppercase;
   color: var(--text-muted);
@@ -124,7 +124,7 @@
 .trace-table tr { border-color: var(--rule); }
 .trace-table tbody tr:hover { background: color-mix(in srgb, var(--canvas) 70%, transparent); }
 .trace-table .stage-pair-meta {
-  font: 400 11px/1.4 var(--font-mono);
+  font: 400 12px/1.4 var(--font-mono);
   color: var(--text-muted);
 }
 
@@ -161,7 +161,7 @@
 
 .comparison-stage-chip {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   padding: 2px 6px;
   border: 1px solid var(--rule);
   border-radius: var(--radius-tag);

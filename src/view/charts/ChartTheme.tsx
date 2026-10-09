@@ -83,13 +83,13 @@ export function ChartCopyBar({ caption, columns, rows, align }: ChartTableSpec) 
       <div className="flex items-center gap-3">
         <button
           type="button"
-          className="cursor-pointer text-muted-foreground text-xs underline"
+          className="tap-target-comfortable cursor-pointer text-muted-foreground text-xs underline"
           aria-expanded={showTable}
           onClick={() => setShowTable((s) => !s)}
         >
           ▤ Table
         </button>
-        <button type="button" className="cursor-pointer text-muted-foreground text-xs underline" onClick={handleCopy}>
+        <button type="button" className="tap-target-comfortable cursor-pointer text-muted-foreground text-xs underline" onClick={handleCopy}>
           ⧉ Copy
         </button>
         <span aria-live="polite" className="text-xs text-muted-foreground">

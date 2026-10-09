@@ -147,7 +147,7 @@ export function StageComparisonTable({ model, baselineLabel, candidateLabel, onO
           <ul className="flex flex-col gap-2">
             {model.replanned.map((g) => (
               <li key={`${g.baseExecutionId}-${g.candExecutionId}`} className="border-b border-border pb-2 text-sm last:border-0">
-                <div className="flex flex-wrap gap-x-4 font-mono text-[11px] text-muted-foreground">
+                <div className="flex flex-wrap gap-x-4 font-mono text-xs text-muted-foreground">
                   <span>Query {g.baseExecutionId} → {g.candExecutionId}</span>
                   <SideTotals label="Run time" deltas={g.deltas} />
                 </div>

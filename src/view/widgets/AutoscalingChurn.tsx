@@ -191,7 +191,7 @@ export const AutoscalingChurn = memo(function AutoscalingChurn({ appModel, activ
                 ticks={yAxisScale.ticks}
               />
               <Tooltip formatter={(value, name) => [Math.abs(Number(value)), name]} />
-              <Legend wrapperStyle={{ fontSize: 10 }} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar dataKey="added" name="Added" stackId="churn" fill={CHART_COLORS.stage} shape={skipSubPixelBars} />
               {/* Scale-down is normal autoscaling, not a problem: use the muted
                   token, not the critical impact-band color. */}

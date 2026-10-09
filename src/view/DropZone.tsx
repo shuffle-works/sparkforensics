@@ -448,7 +448,7 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
               <Button type="submit" className="tap-target-comfortable" disabled={!isShsRequestValid(shsValidation) || shsParsing}>
                 Fetch
               </Button>
-              <span className="font-mono text-[11px] text-muted-foreground">Application IDs: application_…, local-…, app-…, spark-…, or driver-…</span>
+              <span className="font-mono text-xs text-muted-foreground">Application IDs: application_…, local-…, app-…, spark-…, or driver-…</span>
             </div>
           </form>
         </div>

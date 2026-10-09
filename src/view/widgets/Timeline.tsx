@@ -130,7 +130,7 @@ export function Timeline({ appModel, catalog }: TimelineProps) {
                 if (!Number.isFinite(v)) v = topN;
                 setTopN(Math.max(1, Math.min(total, v)));
               }}
-              className="w-16 rounded border border-input bg-transparent px-1 py-0.5"
+              className="h-6 w-16 rounded border border-input bg-transparent px-1 py-0.5"
               aria-label="Number of stages to show"
             />
             <span>of {total} by duration · flagged in red</span>
@@ -156,7 +156,7 @@ export function Timeline({ appModel, catalog }: TimelineProps) {
                 <YAxis
                   type="category"
                   dataKey="label"
-                  tick={{ fontSize: 10 }}
+                  tick={{ fontSize: 12 }}
                   width={64}
                   interval={0}
                   tickFormatter={(value: string, index: number) => (index % yAxisLabelStride === 0 ? value : '')}

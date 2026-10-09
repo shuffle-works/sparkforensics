@@ -247,7 +247,7 @@ export function Topbar({
             className={cn(
               badgeVariants(),
               severityBadgeVariants({ impactBand: worst }),
-              'tap-target-comfortable cursor-pointer font-mono text-[11px] font-semibold hover:underline focus-visible:outline-none',
+              'tap-target-comfortable cursor-pointer overflow-visible font-mono text-xs font-semibold hover:underline focus-visible:outline-none',
             )}
           >
             {verdictLabel(worst, count)}
@@ -260,7 +260,7 @@ export function Topbar({
       ) : clean ? (
         <span
           className={cn(
-            'inline-flex shrink-0 items-center gap-1.5 rounded-sm bg-clean/10 px-2 py-0.5 font-mono text-[11px] font-semibold text-clean',
+            'inline-flex shrink-0 items-center gap-1.5 rounded-sm bg-clean/10 px-2 py-0.5 font-mono text-xs font-semibold text-clean',
           )}
         >
           <span aria-hidden="true" className="inline-block size-2 shrink-0 rounded-full bg-clean" />
@@ -268,7 +268,7 @@ export function Topbar({
         </span>
       ) : (
         // Nothing to fix, but the verdict lists checks this log could not run.
-        <span className="inline-flex shrink-0 items-center rounded-sm border border-border px-2 py-0.5 font-mono text-[11px] font-medium text-muted-foreground">
+        <span className="inline-flex shrink-0 items-center rounded-sm border border-border px-2 py-0.5 font-mono text-xs font-medium text-muted-foreground">
           Not fully checked
         </span>
       )}
