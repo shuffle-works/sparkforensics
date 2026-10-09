@@ -1,14 +1,14 @@
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@xyflow/react';
+import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from '@xyflow/react';
 import { formatBytes } from '@sparkforensics/core/format-utils.ts';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { exchangeEdgeStrokeWidth, exchangeEdgeOpacity } from './plan-graph-edge';
+import { planEdgePath, type WrappedEdgeData } from './PlanGraphWrappedEdge';
 
 /** Data carried on a weighted exchange edge (set in PlanGraphCanvas). */
-export interface ExchangeEdgeData {
+export interface ExchangeEdgeData extends WrappedEdgeData {
   shuffleBytes: number;
   /** The heaviest exchange in the current graph, for relative scaling. */
   maxShuffleBytes: number;
-  [key: string]: unknown;
 }
 
 /** A read->write exchange edge weighted by shuffle bytes: thicker and more
@@ -18,10 +18,11 @@ export interface ExchangeEdgeData {
 export function PlanGraphExchangeEdge({
   sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, data,
 }: EdgeProps) {
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition,
-  });
-  const { shuffleBytes = 0, maxShuffleBytes = 0 } = (data ?? {}) as Partial<ExchangeEdgeData>;
+  const { shuffleBytes = 0, maxShuffleBytes = 0, rowGapY } = (data ?? {}) as Partial<ExchangeEdgeData>;
+  const [edgePath, labelX, labelY] = planEdgePath(
+    { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition },
+    rowGapY,
+  );
   const strokeWidth = exchangeEdgeStrokeWidth(shuffleBytes, maxShuffleBytes);
   const strokeOpacity = exchangeEdgeOpacity(shuffleBytes, maxShuffleBytes);
   // formatBytes has no sub-KB tier (a guarded decision, see partition-sizing

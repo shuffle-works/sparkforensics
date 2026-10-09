@@ -84,9 +84,42 @@ describe('wrapIntoRows', () => {
     }
   });
 
-  it('keeps a single group wider than the limit on one row instead of splitting it', () => {
-    const wrapped = wrapIntoRows(laidOut(), [() => 'one-stage'], rowWidth);
-    expect(new Set(wrapped.map((n) => n.position.y)).size).toBe(1);
+  it('cuts a single group wider than the limit between its columns, its box containing every row', () => {
+    const oneSegment = () => 'segment-0';
+    const wrapped = wrapIntoRows(layoutWithDagre(chain, edges, { groupOf: oneSegment }), [oneSegment], rowWidth);
+    const rows = [...new Set(wrapped.map((n) => n.position.y))].sort((a, b) => a - b);
+    expect(rows.length).toBeGreaterThan(1);
+    for (const y of rows) {
+      const xs = wrapped.filter((n) => n.position.y === y).map((n) => n.position.x);
+      expect(Math.max(...xs) + NODE_WIDTH - Math.min(...xs)).toBeLessThanOrEqual(rowWidth);
+    }
+    const [box] = computeGroupBounds(wrapped, oneSegment);
+    for (const n of wrapped) {
+      expect(n.position.x).toBeGreaterThanOrEqual(box.position.x);
+      expect(n.position.y).toBeGreaterThanOrEqual(box.position.y);
+      expect(n.position.x + NODE_WIDTH).toBeLessThanOrEqual(box.position.x + box.width);
+      expect(n.position.y + NODE_HEIGHT).toBeLessThanOrEqual(box.position.y + box.height);
+    }
+  });
+
+  it('records each row and the gap below it, between that row and the next', () => {
+    const oneSegment = () => 'segment-0';
+    const wrapped = wrapIntoRows(layoutWithDagre(chain, edges, { groupOf: oneSegment }), [oneSegment], rowWidth);
+    const first = wrapped.filter((n) => n.row!.index === 0);
+    const second = wrapped.filter((n) => n.row!.index === 1);
+    const gapY = first[0].row!.gapBelowY;
+    expect(Math.max(...first.map((n) => n.position.y + NODE_HEIGHT))).toBeLessThan(gapY);
+    expect(Math.min(...second.map((n) => n.position.y))).toBeGreaterThan(gapY);
+  });
+
+  it('gives a stage cut across rows rows of its own, so its box covers no other stage', () => {
+    // Stage 0 holds s0..s5 (wider than a row); stage 1 holds s6 and s7.
+    const bigStageOf = (n: PlanGraphNodeData) => `stage-${n.segmentIndex < 6 ? 0 : 1}`;
+    const wrapped = wrapIntoRows(laidOut(), [segmentOf, bigStageOf], rowWidth);
+    const rowsOfStage = (stage: string) => new Set(wrapped.filter((n) => bigStageOf(n) === stage).map((n) => n.row!.index));
+    const big = rowsOfStage('stage-0');
+    expect(big.size).toBeGreaterThan(1);
+    for (const r of rowsOfStage('stage-1')) expect(big.has(r)).toBe(false);
   });
 });
 

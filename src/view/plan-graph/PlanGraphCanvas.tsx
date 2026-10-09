@@ -13,6 +13,7 @@ import { planGraphMiniMapNodeColor } from './plan-graph-minimap';
 import { PlanGraphSegmentGroupNode } from './PlanGraphSegmentGroupNode';
 import { PlanGraphStageGroupNode } from './PlanGraphStageGroupNode';
 import { PlanGraphExchangeEdge } from './PlanGraphExchangeEdge';
+import { PlanGraphWrappedEdge } from './PlanGraphWrappedEdge';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -27,6 +28,7 @@ const nodeTypes = {
 
 const edgeTypes = {
   exchange: PlanGraphExchangeEdge,
+  wrapped: PlanGraphWrappedEdge,
 };
 
 // Paint order, all above React Flow's edge layer (z 0): outer stage box, then
@@ -111,8 +113,9 @@ function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: 
   // above never fires for it; resizeTick (a ResizeObserver on the outer row)
   // covers that. It sits on the outer row, not the canvas wrapper, so opening
   // the docked inspector (which shrinks the canvas but not the row) does not
-  // fire it and reset the user's pan/zoom. tick 0 is the initial measurement,
-  // already handled by the initial fit above.
+  // fire it and reset the user's pan/zoom. It also fires when the first
+  // measurement re-lays the graph for the real canvas size. tick 0 is the
+  // initial value, already handled by the initial fit above.
   useEffect(() => {
     if (resizeTick === 0) return;
     fitReadable(200);
@@ -150,36 +153,53 @@ const PAGE_CHROME_HEIGHT_PX = 64;
 // cost.
 const DIRECTION_SEARCH_MAX_NODES = 150;
 
-/** Fires on every container resize after the first (initial) measurement, and
- * tracks the canvas size (the row minus the control rail). `portrait` flips only
- * when the canvas turns taller than wide, so the layout direction is not
- * re-chosen on every resize tick. */
-function useResizeTick() {
+// A measured canvas size re-runs the layout only when it differs from the size
+// the layout was made for by more than this share on either axis (or flips
+// orientation), so dragging a window edge does not re-lay the graph every tick.
+const RELAYOUT_SIZE_CHANGE = 0.1;
+
+function sizeChangedMaterially(next: Size, current: Size): boolean {
+  return next.height > next.width !== current.height > current.width
+    || Math.abs(next.width - current.width) > current.width * RELAYOUT_SIZE_CHANGE
+    || Math.abs(next.height - current.height) > current.height * RELAYOUT_SIZE_CHANGE;
+}
+
+/** Tracks the canvas size (the row minus the control rail) the layout is made
+ * for: a guess from the window until the first measurement, then the measured
+ * size whenever it changes materially (`sizeChangedMaterially`). `tick` fires
+ * on every container resize after the first measurement, and on the first one
+ * too when it changes the layout size, so the graph is re-fitted to the new
+ * layout. */
+function useCanvasSize() {
   const ref = useRef<HTMLDivElement>(null);
-  const sizeRef = useRef<Size | null>(null);
   const [tick, setTick] = useState(0);
-  const [portrait, setPortrait] = useState(() => window.innerHeight - PAGE_CHROME_HEIGHT_PX > window.innerWidth - CONTROL_RAIL_WIDTH_PX);
+  const [layoutSize, setLayoutSize] = useState<Size>(() => ({
+    width: window.innerWidth - CONTROL_RAIL_WIDTH_PX,
+    height: window.innerHeight - PAGE_CHROME_HEIGHT_PX,
+  }));
+  const layoutSizeRef = useRef(layoutSize);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     let isInitialMeasurement = true;
     const observer = new ResizeObserver((entries) => {
       const box = entries[entries.length - 1]?.contentRect;
+      let relayout = false;
       if (box) {
         const size = { width: box.width - CONTROL_RAIL_WIDTH_PX, height: box.height };
-        sizeRef.current = size;
-        setPortrait(size.height > size.width);
+        if (size.width > 0 && size.height > 0 && sizeChangedMaterially(size, layoutSizeRef.current)) {
+          layoutSizeRef.current = size;
+          setLayoutSize(size);
+          relayout = true;
+        }
       }
-      if (isInitialMeasurement) {
-        isInitialMeasurement = false;
-        return;
-      }
-      setTick((t) => t + 1);
+      if (!isInitialMeasurement || relayout) setTick((t) => t + 1);
+      isInitialMeasurement = false;
     });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  return { ref, tick, sizeRef, portrait };
+  return { ref, tick, layoutSize };
 }
 
 /** Size of a laid-out plan including the stage-box padding, for comparing layouts. */
@@ -191,12 +211,14 @@ function laidOutSize(nodes: LaidOutNode[]): Size {
   };
 }
 
+const NO_FINDINGS: Finding[] = [];
+
 function findingsForStage(findings: Finding[], stageId: StageId): Finding[] {
   return findings.filter((finding) => finding.stageId === stageId || findingStageIds(finding)?.includes(stageId));
 }
 
 export function PlanGraphCanvas({
-  model, showMiniMap, findings = [], stageId, segmentStageIds, visibleNodeIds, visibleEdges, onSelectStage,
+  model, showMiniMap, findings = NO_FINDINGS, stageId, segmentStageIds, visibleNodeIds, visibleEdges, onSelectStage,
   selectedNodeId = null, onSelectNode,
   onJumpToPaired,
   centerRequest,
@@ -235,7 +257,7 @@ export function PlanGraphCanvas({
   durationMode?: PlanGraphDurationMode;
   onDurationModeChange?: (mode: PlanGraphDurationMode) => void;
 }) {
-  const { ref: containerRef, tick: resizeTick, sizeRef: canvasSizeRef, portrait } = useResizeTick();
+  const { ref: containerRef, tick: resizeTick, layoutSize: canvas } = useCanvasSize();
   const { flowNodes, flowEdges, graphBounds } = useMemo(() => {
     // Sum `exclusiveDurationShare` (a true, non-overlapping partition of each
     // stage's wall time), not `durationShare` (the mode-selected value shown
@@ -268,13 +290,9 @@ export function PlanGraphCanvas({
     // into rows (a long chain of stages read like text) and, up to
     // DIRECTION_SEARCH_MAX_NODES, laid out bottom-to-top; the layout that shows
     // the most of the plan at a readable zoom wins (`pickLayout`). A wide canvas
-    // wraps the chain, a tall one (a phone) stacks it. The canvas size is read
-    // here rather than being a dependency, so only a change of orientation
-    // (`portrait`) or of the plan re-runs the layout.
-    const canvas = canvasSizeRef.current ?? {
-      width: window.innerWidth - CONTROL_RAIL_WIDTH_PX,
-      height: window.innerHeight - PAGE_CHROME_HEIGHT_PX,
-    };
+    // wraps the chain, a tall one (a phone) stacks it. `canvas` changes only on
+    // a material resize (see useCanvasSize), so a resize tick alone does not
+    // re-run the layout.
     const rlSize = laidOutSize(laidOutVisible);
     if (fitZoom(rlSize, canvas) < MIN_READABLE_ZOOM) {
       const rowWidth = readableWidth(canvas) - STAGE_GROUP_PADDING_X * 2;
@@ -461,14 +479,26 @@ export function PlanGraphCanvas({
     // Weighted exchange edges scale relative to the heaviest exchange on screen,
     // so thickness reads as "which shuffle moved the most data" rather than an
     // absolute byte count. Unweighted edges (plain parent-child links, broadcast
-    // exchanges) fall through to the default edge renderer.
+    // exchanges) fall through to the default edge renderer. In a wrapped
+    // layout an edge between two rows runs along the gap below the upper row.
     const renderedEdges = visibleEdges ?? model.edges;
     const maxShuffleBytes = renderedEdges.reduce((max, e) => Math.max(max, e.shuffleBytes ?? 0), 0);
-    const flowEdges: Edge[] = renderedEdges.map((e) =>
-      e.shuffleBytes
-        ? { id: e.id, source: e.source, target: e.target, type: 'exchange', data: { shuffleBytes: e.shuffleBytes, maxShuffleBytes } }
-        : { id: e.id, source: e.source, target: e.target },
-    );
+    const rowOfNode = new Map(laidOutVisible.map((n) => [n.id, n.row]));
+    const rowGapYOf = (e: PlanGraphEdge) => {
+      const a = rowOfNode.get(e.source);
+      const b = rowOfNode.get(e.target);
+      if (!a || !b || a.index === b.index) return undefined;
+      return a.index < b.index ? a.gapBelowY : b.gapBelowY;
+    };
+    const flowEdges: Edge[] = renderedEdges.map((e) => {
+      const rowGapY = rowGapYOf(e);
+      if (e.shuffleBytes) {
+        return { id: e.id, source: e.source, target: e.target, type: 'exchange', data: { shuffleBytes: e.shuffleBytes, maxShuffleBytes, rowGapY } };
+      }
+      return rowGapY != null
+        ? { id: e.id, source: e.source, target: e.target, type: 'wrapped', data: { rowGapY } }
+        : { id: e.id, source: e.source, target: e.target };
+    });
 
     // Render order = paint order: stage boxes back, then segment boxes, then plan
     // nodes (React Flow renders last on top).
@@ -477,8 +507,7 @@ export function PlanGraphCanvas({
       flowNodes.map((n) => ({ x: n.position.x, y: n.position.y, width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 })),
     );
     return { flowNodes, flowEdges, graphBounds };
-    // canvasSizeRef is read, not depended on: see the layout search above.
-  }, [model, findings, stageId, segmentStageIds, visibleNodeIds, visibleEdges, onSelectStage, portrait, canvasSizeRef]);
+  }, [model, findings, stageId, segmentStageIds, visibleNodeIds, visibleEdges, onSelectStage, canvas]);
 
   // Collapsed by default: the key is about 450x190 px and would cover a corner
   // of the graph on first open. The rail's Legend button opens it.

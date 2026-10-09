@@ -21,17 +21,26 @@ on `Position.Right` (its parent sits to the right) and `type="source"` on
 A plan too wide to fit the canvas at a readable zoom gets two more candidate
 layouts. `wrapIntoRows` (`dagre-layout.ts`) wraps the `RL` layout into rows no
 wider than the canvas at that zoom, read like text: reads/scans on the top-left,
-later stages on the rows below. It cuts only between blocks whose segment and
-stage boxes do not overlap along x, so no box is split, and spaces rows
-`WRAP_ROW_GAP` apart so stacked stage boxes clear each other. A plan of at most
-150 operators is also laid out `BT`, the same arrangement stacked vertically
-with reads/scans on top. `pickLayout` (`readable-fit.ts`) keeps the candidate
-that shows the most of the plan at a readable zoom, then the one that fits
-larger. On a landscape canvas a long chain of stages wraps; on a phone-sized
-one it stacks `BT`. A `BT` node's handles move to `Position.Bottom` (target)
-and `Position.Top` (source) through the `sourcePosition`/`targetPosition` the
-canvas sets on it; a wrapped layout keeps the `RL` handles, so an edge between
-rows runs from the end of one row to the start of the next.
+later operators on the rows below. It cuts between blocks whose segment and
+stage boxes do not overlap along x. A block too wide for a row (the default
+view's single segment, or one long stage) is cut too, between its segments and
+finally between its columns of operators, and takes rows of its own, so its
+box spans those rows and covers no other block. Rows sit `WRAP_ROW_GAP` apart
+so stacked stage boxes clear each other. A plan of at most 150 operators is
+also laid out `BT`, the same arrangement stacked vertically with reads/scans on
+top. `pickLayout` (`readable-fit.ts`) keeps the candidate that shows the most
+of the plan at a readable zoom, then the one that fits larger. On a landscape
+canvas a long chain wraps; on a phone-sized one it stacks `BT`. A `BT` node's
+handles move to `Position.Bottom` (target) and `Position.Top` (source) through
+the `sourcePosition`/`targetPosition` the canvas sets on it. A wrapped layout
+keeps the `RL` handles, and an edge between two rows is drawn as a stepped
+path along the gap below the upper row (`planEdgePath`,
+`PlanGraphWrappedEdge.tsx`) rather than a curve across the rows.
+
+The layout is made for the canvas size `useCanvasSize` tracks: a guess from
+the window until the first `ResizeObserver` measurement, then the measured size
+whenever it changes by more than 10% on either axis or flips orientation. A
+smaller resize re-fits the viewport but does not re-lay the graph.
 
 The mount-time fit and every automatic re-fit (a scope switch, a resize) go
 through `useReadableFit`, which clamps the zoom to at least

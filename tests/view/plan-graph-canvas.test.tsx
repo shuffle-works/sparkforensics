@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { render, screen, within, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlanGraphCanvas } from '../../src/view/plan-graph/PlanGraphCanvas';
 import { layoutWithDagre } from '../../src/view/plan-graph/dagre-layout';
@@ -560,10 +560,82 @@ describe('layout direction', () => {
     expect(translate('rf__node-n7').y).toBe(Math.min(...positions.map((p) => p.y)));
   });
 
-  it('lays a long chain out as a left-to-right band on a landscape canvas', () => {
+  const rowsOf = (ids: string[]) => {
+    const positions = ids.map((id) => translate(`rf__node-${id}`));
+    const ys = [...new Set(positions.map((p) => p.y))].sort((a, b) => a - b);
+    const widest = Math.max(...ys.map((y) => {
+      const xs = positions.filter((p) => p.y === y).map((p) => p.x);
+      return Math.max(...xs) - Math.min(...xs) + 220;
+    }));
+    return { count: ys.length, widest, top: ys[0] };
+  };
+  const chainIds = ['n0', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6'];
+
+  it('wraps the default view\'s single-segment operator chain into rows on a landscape canvas', () => {
     setWindow(1440, 900);
     render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
-    expect(spread('x')).toBeGreaterThan(spread('y'));
+    const rows = rowsOf(chainIds);
+    expect(rows.count).toBeGreaterThan(1);
+    // Each row fits the canvas width at the readable zoom.
+    expect(rows.widest * MIN_READABLE_ZOOM).toBeLessThanOrEqual(1440 - 48 - 48);
+    // The scan (n6, the chain's producer end) starts the first row, reading left to right.
+    expect(translate('rf__node-n6').y).toBe(rows.top);
+    expect(translate('rf__node-n5').x).toBeGreaterThan(translate('rf__node-n6').x);
+  });
+
+  describe('when the canvas is measured', () => {
+    const observers: { callback: ResizeObserverCallback; elements: Element[] }[] = [];
+    const RealResizeObserver = window.ResizeObserver;
+    afterEach(() => {
+      window.ResizeObserver = RealResizeObserver;
+      observers.length = 0;
+    });
+    const captureResizeObservers = () => {
+      window.ResizeObserver = class {
+        entry: { callback: ResizeObserverCallback; elements: Element[] };
+        constructor(callback: ResizeObserverCallback) {
+          this.entry = { callback, elements: [] };
+          observers.push(this.entry);
+        }
+        observe(el: Element) { this.entry.elements.push(el); }
+        unobserve() {}
+        disconnect() {}
+      } as unknown as typeof ResizeObserver;
+    };
+    const measureRow = (width: number, height: number) => {
+      act(() => {
+        for (const { callback, elements } of observers) {
+          for (const target of elements) {
+            if (target.querySelector('.react-flow')) {
+              callback([{ target, contentRect: { width, height } } as unknown as ResizeObserverEntry], {} as ResizeObserver);
+            }
+          }
+        }
+      });
+    };
+
+    it('re-wraps for the measured canvas when it is much narrower than the window guess', () => {
+      setWindow(1440, 900);
+      captureResizeObservers();
+      render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
+      const guessed = rowsOf(chainIds);
+      // A docs panel takes part of the window: the canvas is 700 px wide, not 1392.
+      measureRow(700 + 48, 800);
+      const measured = rowsOf(chainIds);
+      expect(measured.count).toBeGreaterThan(guessed.count);
+      expect(measured.widest * MIN_READABLE_ZOOM).toBeLessThanOrEqual(700 - 48);
+    });
+
+    it('does not re-lay the graph for a small resize', () => {
+      setWindow(1440, 900);
+      captureResizeObservers();
+      render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
+      measureRow(1400, 820);
+      const spy = vi.spyOn(dagreLayout, 'layoutWithDagre');
+      measureRow(1380, 810);
+      expect(spy).not.toHaveBeenCalled();
+      spy.mockRestore();
+    });
   });
 
   it('stacks a long chain vertically on a phone-sized canvas so it can be read at full size', () => {
