@@ -113,9 +113,14 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    measurement) and "What to try:" (the fix), split from the recommendation
    by core `recommendationParts`; a step that merged other types at its
    location adds "Also flagged here, likely the same cause: ...", and the
-   summary says once that same-stage findings are grouped. Each step has
-   **Show evidence**, **Stage N details** (when it has one stage) and
-   **Copy**; "N more places under Findings" counts the places past the step limit.
+   summary says once that same-stage findings are grouped. A step's stage
+   label opens its stage details, and its one **Show evidence** expands the
+   evidence card the step owns in place (`verdictEvidenceOwners` in
+   `src/view/verdict-evidence.ts`, rendered through `InlineEvidence`) or
+   routes to the card that holds it. The steps' lead findings
+   (`verdictLeadFindings`) and owned cards are left out of the Findings tab,
+   and a **More findings (n)** link shows that tab, with `n` the tab's own
+   listed count (`listedCount` in `Dashboard.tsx`).
    Basic view adds a collapsed "New to Spark tuning?" primer. An idle-capacity step (`utilization`, or
    `memoryUtilization`'s `idleCores` variant only, never its heap variants)
    titles the verdict only when it ranks first; otherwise an idle share of

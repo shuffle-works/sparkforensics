@@ -167,7 +167,7 @@ The light status colors are darkened from the mockup values (`#c42b1c`, `#b06d00
 
 Charts read colors through `CHART_COLORS` in `src/view/charts/ChartTheme.tsx`, which points at the CSS variables so the theme swap applies live.
 
-**The status-only rule.** Critical, warning, info and clean appear only where the analysis supplies that status: impact dots, tag chips, a flagged card's edge, a flagged stage's bar or row, comparison deltas and load errors. Never use them for decoration, category coding or emphasis. Neutral series use the chart tokens; a flagged mark switches to the status color, never to another series color.
+**The status-only rule.** Critical, warning, info and clean appear only where the analysis supplies that status: impact dots, tag chips, a flagged card's edge, a flagged stage's bar or row, comparison deltas and load errors. Never use them for decoration, category coding or emphasis. Red also has to be earned: a critical finding whose potential saving is under 10% of the run draws in a neutral muted tone (`presentedTone` in `src/view/impact-presentation.ts`), except in the plan graph. Neutral series use the chart tokens; a flagged mark switches to the status color, never to another series color.
 
 **The magnitude rule.** A status color may encode magnitude only on a dimension a detector already treats as a problem axis, such as duration share or spill. Neutral magnitudes, such as bytes or rows, use chart-stage or a neutral tone, because volume is not a defect. Whether something reads as a finding is still decided by a finding, not by size.
 
@@ -197,7 +197,7 @@ The mono label names something the reader is looking at: a metric tile, a findin
 
 ## Layout
 
-The board keeps its reading order: verdict, then numbers, then evidence. `RunVerdict` answers "how did this run go and where do I start" in one sentence and lists at most three numbered next steps. The Scorecard follows, then the Findings and Full app report tabs with every finding and widget.
+The board keeps its reading order: verdict, then numbers, then evidence. `RunVerdict` answers "how did this run go and where do I start" in one sentence and lists at most three numbered next steps. The Scorecard follows, then the Findings tab with the findings past those steps, and the Full app report.
 
 The shell is a single column with a compact bordered top bar and a 16px page inset. Regions sit on a 24px vertical rhythm; card interiors use 16px, or 12px for compact cards. Widget boards are one column on small screens, two from the medium breakpoint and three from extra-large; an expanded card spans the board so charts and tables get room. Tables scroll horizontally rather than squeezing columns.
 
@@ -205,7 +205,7 @@ The shell is a single column with a compact bordered top bar and a 16px page ins
 
 - **One place, one step.** Findings on the same stage fold into one step, because they usually share a cause and their savings overlap.
 - **Plain language leads, Spark terms follow.** A step's first line is the plain explanation; metric names and configuration keys come after.
-- **Action first, evidence on demand.** Each Findings band leads with its rows; in Basic view the detail widgets wait behind one "Show the evidence" disclosure, and any route to a finding opens it.
+- **Action first, evidence on demand.** The verdict owns the top steps and the Findings tab lists the rest as "More findings (n)". Every finding has one "Show evidence" that expands its card in place, and any route to the card opens it.
 - **Basic by default, Advanced on request.** Advanced view adds the finding filter bar, confidence markers, threshold captions, extra columns and doc icons (`AdvancedOnly`). A control that explains current state stays visible in Basic.
 
 ### The run clock
@@ -255,7 +255,7 @@ The verdict is a panel with the verdict sentence as its `h2`, a one-line summary
 
 ### Step codes
 
-Next steps are coded F1, F2, F3 (`StepCode`, `src/view/StepCode.tsx`). The same code marks the verdict step, its bar on the strip, its Findings row and its Stage Summary row, so one finding can be followed across the board. The code is mono, colored by its impact band on the verdict, muted elsewhere. A step row is a grid of code, title and savings, with the savings stacked on the right and reflowing under the title below 640px.
+Next steps are coded F1, F2, F3 (`StepCode`, `src/view/StepCode.tsx`). The same code marks the verdict step, its bar on the strip, its Findings row and its Stage Summary row, so one finding can be followed across the board. The code is mono, colored by its presented tone on the verdict, muted elsewhere. A step row is a grid of code, title and savings, with the savings stacked on the right and reflowing under the title below 640px.
 
 ### Metric tiles
 
