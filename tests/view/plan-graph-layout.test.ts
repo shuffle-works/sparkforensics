@@ -112,6 +112,13 @@ describe('wrapIntoRows', () => {
     expect(Math.min(...second.map((n) => n.position.y))).toBeGreaterThan(gapY);
   });
 
+  it('still cuts a wide segment whose stage grouping is unmapped (null)', () => {
+    const oneSegment = () => 'segment-0';
+    const unmappedStage = () => null;
+    const wrapped = wrapIntoRows(layoutWithDagre(chain, edges, { groupOf: oneSegment }), [oneSegment, unmappedStage], rowWidth);
+    expect(new Set(wrapped.map((n) => n.position.y)).size).toBeGreaterThan(1);
+  });
+
   it('keeps two wide stages stacked over one join whole, so no box contains another group\'s node', () => {
     // Stage A (a1..a6) and stage B (b1..b6) both feed the join c, so dagre
     // stacks them over the same x range: one block wider than a row.

@@ -112,7 +112,7 @@ interface WrapUnit {
 
 /** Cuts `items` into x-ranges: blocks of nodes whose groups (any of `groupOfs`)
  * overlap along x, or one column of nodes when no grouping is left. A block
- * wider than `maxRowWidth` that is a single group of the coarsest grouping is
+ * wider than `maxRowWidth` that is one group (or no group) of the coarsest grouping is
  * cut again with that grouping dropped, down to columns, and its pieces carry
  * its id in `path`. A wide block of several groups stacked over the same x
  * range stays whole (its row overflows and scrolls): cutting it would put each
@@ -154,7 +154,7 @@ function wrapUnits(
     const members = items.filter(({ node }) => node.position.x >= block.start && node.position.x < block.end);
     const coarsest = groupOfs[groupOfs.length - 1];
     const groups = new Set(members.map(({ node }) => coarsest(node)));
-    if (groups.size !== 1 || groups.has(null)) return [{ ...block, path }];
+    if (groups.size !== 1) return [{ ...block, path }];
     return wrapUnits(members, groupOfs.slice(0, -1), maxRowWidth, `${path}/${block.start}`);
   });
 }
