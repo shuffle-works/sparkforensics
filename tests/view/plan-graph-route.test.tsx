@@ -29,14 +29,15 @@ vi.mock('@/view/plan-graph/dagre-layout', async () => {
 // Real ReactFlow still renders (…actual), but ViewportAutoFit's programmatic
 // viewport calls are captured so a test can assert a scope switch re-fits.
 const fitViewMock = vi.hoisted(() => vi.fn());
+vi.mock('../../src/view/plan-graph/useReadableFit', () => ({ useReadableFit: () => fitViewMock }));
 vi.mock('@xyflow/react', async () => {
   const actual = await vi.importActual<typeof import('@xyflow/react')>('@xyflow/react');
   return {
     ...actual,
     useReactFlow: () => ({
-      fitView: fitViewMock,
       setCenter: vi.fn(),
       getNode: vi.fn(),
+      fitView: vi.fn(),
       zoomIn: vi.fn(),
       zoomOut: vi.fn(),
     }),
@@ -190,7 +191,7 @@ test('jumping to another stage from the full plan re-fits the viewport', () => {
   fitViewMock.mockClear();
 
   // Clicking a stage box collapses the full plan to that stage's segment view.
-  // The canvas stays mounted, so the mount-time fitView never re-fires; the
+  // The canvas stays mounted, so the mount-time fit never re-fires; the
   // route must bump fitSignal to re-fit, or the user lands on a stale viewport.
   fireEvent.click(screen.getByRole('button', { name: /focus stage 2/i }));
   expect(screen.getByRole('button', { name: /expand to full plan/i })).toBeInTheDocument();

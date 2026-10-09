@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlanGraphCanvas } from '../../src/view/plan-graph/PlanGraphCanvas';
@@ -26,7 +26,7 @@ vi.mock('@xyflow/react', async () => {
   const actual = await vi.importActual<typeof import('@xyflow/react')>('@xyflow/react');
   return {
     ...actual,
-    useReactFlow: () => ({ setCenter: setCenterMock, getNode: getNodeMock, getZoom: () => 1, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: vi.fn() }),
+    useReactFlow: () => ({ setCenter: setCenterMock, getNode: getNodeMock, getZoom: () => 1, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: vi.fn(), getNodes: () => [], setViewport: vi.fn() }),
     MiniMap: (props: Record<string, unknown>) => {
       miniMapSpy(props);
       return <div data-testid="rf__minimap" />;
@@ -40,6 +40,15 @@ if (!window.ResizeObserver) {
     unobserve() {}
     disconnect() {}
   } as unknown as typeof ResizeObserver;
+}
+
+// xyflow reads the viewport zoom off a DOMMatrixReadOnly when a node's handle
+// bounds change, which happens when a layout stacks the graph (handles move to
+// the top and bottom edges). jsdom has none; a unit matrix is enough here.
+if (!('DOMMatrixReadOnly' in window)) {
+  (window as unknown as { DOMMatrixReadOnly: unknown }).DOMMatrixReadOnly = class {
+    m22 = 1;
+  };
 }
 
 function model(overrides: Partial<PlanGraphModel> = {}): PlanGraphModel {
@@ -497,11 +506,53 @@ describe('node detail panel', () => {
   });
 });
 
+describe('layout direction', () => {
+  const chainModel = () => {
+    const ids = ['n0', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6'];
+    return model({
+      nodes: ids.map((id) => ({ id, sourceNodeId: id, label: id, category: 'transform', operatorDetail: '', primaryMetric: '', segmentIndex: 0, splitRole: null, durationShare: 10 })),
+      edges: ids.slice(0, -1).map((id, i) => ({ id: `${id}->${ids[i + 1]}`, source: id, target: ids[i + 1] })),
+    });
+  };
+  const translate = (testId: string) => {
+    const match = screen.getByTestId(testId).getAttribute('style')?.match(/translate\((-?\d+(?:\.\d+)?)px,\s*(-?\d+(?:\.\d+)?)px\)/);
+    if (!match) throw new Error(`no transform found on ${testId}`);
+    return { x: Number(match[1]), y: Number(match[2]) };
+  };
+  const spread = (axis: 'x' | 'y') => {
+    const values = ['n0', 'n6'].map((id) => translate(`rf__node-${id}`)[axis]);
+    return Math.abs(values[0] - values[1]);
+  };
+  const original = { width: window.innerWidth, height: window.innerHeight };
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: original.width });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: original.height });
+  });
+  const setWindow = (width: number, height: number) => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
+  };
+
+  it('lays a long chain out as a left-to-right band on a landscape canvas', () => {
+    setWindow(1440, 900);
+    render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
+    expect(spread('x')).toBeGreaterThan(spread('y'));
+  });
+
+  it('stacks a long chain vertically on a phone-sized canvas so it can be read at full size', () => {
+    setWindow(390, 844);
+    render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
+    expect(spread('y')).toBeGreaterThan(spread('x'));
+  });
+});
+
 describe('legend', () => {
-  it('is open by default and collapses on click', async () => {
+  it('is collapsed by default and opens on click', async () => {
     const user = userEvent.setup();
     render(<PlanGraphCanvas model={model()} showMiniMap={false} stageId={1} />);
-    // Open by default so the color heat key is visible without a hunt for it.
+    // Collapsed so the ~450x190 px key does not cover a corner of the graph.
+    expect(screen.queryByTestId('plan-graph-legend')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^legend$/i }));
     const legend = screen.getByTestId('plan-graph-legend');
     expect(within(legend).getByText('Operators')).toBeInTheDocument();
     expect(within(legend).getByText(/shuffle bytes/i)).toBeInTheDocument();

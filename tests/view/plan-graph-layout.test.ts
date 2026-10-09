@@ -9,6 +9,32 @@ function graphNode(id: string, overrides: Partial<PlanGraphNodeData> = {}): Plan
   };
 }
 
+describe('layoutWithDagre direction', () => {
+  const chain = ['a', 'b', 'c', 'd'].map((id) => graphNode(id));
+  const edges: PlanGraphEdge[] = [
+    { id: 'a->b', source: 'a', target: 'b' },
+    { id: 'b->c', source: 'b', target: 'c' },
+    { id: 'c->d', source: 'c', target: 'd' },
+  ];
+  const extent = (nodes: { position: { x: number; y: number } }[], axis: 'x' | 'y') => {
+    const values = nodes.map((n) => n.position[axis]);
+    return Math.max(...values) - Math.min(...values);
+  };
+
+  it('lays a chain out as a wide band right-to-left by default', () => {
+    const laidOut = layoutWithDagre(chain, edges);
+    expect(extent(laidOut, 'x')).toBeGreaterThan(extent(laidOut, 'y'));
+  });
+
+  it('stacks the same chain vertically when asked for bottom-to-top, consumer below its producer', () => {
+    const laidOut = layoutWithDagre(chain, edges, { direction: 'BT' });
+    expect(extent(laidOut, 'y')).toBeGreaterThan(extent(laidOut, 'x'));
+    const y = (id: string) => laidOut.find((n) => n.id === id)!.position.y;
+    // edge source = consumer (parent), target = producer (child): producer on top.
+    expect(y('d')).toBeLessThan(y('a'));
+  });
+});
+
 describe('layoutWithDagre', () => {
   it('assigns every node a numeric position', () => {
     const nodes = [graphNode('a'), graphNode('b')];

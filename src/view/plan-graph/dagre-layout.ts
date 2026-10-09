@@ -27,11 +27,14 @@ export const STAGE_GROUP_PADDING_X = 32;
 export const STAGE_GROUP_PADDING_Y = 64;
 export const STAGE_GROUP_HEADER_HEIGHT = 0;
 
+export type PlanLayoutDirection = 'RL' | 'BT';
+
 export function layoutWithDagre(
   nodes: PlanGraphNodeData[],
   edges: PlanGraphEdge[],
-  opts: { groupOf?: (node: PlanGraphNodeData) => string | null } = {},
+  opts: { groupOf?: (node: PlanGraphNodeData) => string | null; direction?: PlanLayoutDirection } = {},
 ): LaidOutNode[] {
+  const direction = opts.direction ?? 'RL';
   const g = new dagre.graphlib.Graph({ compound: Boolean(opts.groupOf) });
   // RL: PlanGraphEdge.source is the parent/consumer, .target its child/producer.
   // Dagre places an edge's source at the higher-rank end, so 'RL' puts
@@ -53,7 +56,17 @@ export function layoutWithDagre(
   // read/write split, and tight-tree assigns the same ranks a tree wants, so
   // the arrangement and grouping are preserved while the cost drops sharply.
   // ('longest-path' is faster still but produces degenerate placements here.)
-  g.setGraph({ rankdir: 'RL', nodesep: STAGE_GROUP_PADDING_Y * 2, ranksep: 60, ranker: 'tight-tree' });
+  //
+  // 'BT' is the same arrangement turned on its side (reads/scans on top, the
+  // root write at the bottom), used to stack a long chain of stages. The box
+  // clearance moves with the axes: stacked stage boxes now sit one rank apart,
+  // so ranksep takes the 2×STAGE_GROUP_PADDING_Y floor, and side-by-side boxes
+  // need 2×STAGE_GROUP_PADDING_X plus a gap for nodesep.
+  g.setGraph(
+    direction === 'BT'
+      ? { rankdir: 'BT', nodesep: STAGE_GROUP_PADDING_X * 2 + 24, ranksep: STAGE_GROUP_PADDING_Y * 2, ranker: 'tight-tree' }
+      : { rankdir: 'RL', nodesep: STAGE_GROUP_PADDING_Y * 2, ranksep: 60, ranker: 'tight-tree' },
+  );
   g.setDefaultEdgeLabel(() => ({}));
 
   const groups = new Set<string>();
