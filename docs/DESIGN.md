@@ -52,7 +52,7 @@ typography:
     axes: "wght@100..800"
   eyebrow:
     fontFamily: "{typography.label-mono.fontFamily}"
-    fontSize: "11px"
+    fontSize: "12px"
     fontWeight: 500
     letterSpacing: "0.08em"
     textTransform: "uppercase"
@@ -90,7 +90,7 @@ components:
     padding: "16px"
   tag-chip:
     fontFamily: "{typography.label-mono.fontFamily}"
-    fontSize: "11px"
+    fontSize: "12px"
     rounded: "{rounded.tag}"
     padding: "0 6px"
     height: "20px"
@@ -187,8 +187,8 @@ Headings (`h1`, `h2`, `h3`) run Instrument Sans at `font-stretch: 85%` (`--font-
 - **Card title (`h3`):** semibold, 14px, owned by `WidgetCard`.
 - **Body and controls:** 14px; supporting text 12px in muted.
 - **Metric figure:** JetBrains Mono 30px semibold, `-0.02em`, tabular figures. A unit beside the figure renders smaller (16px, medium) and muted.
-- **Label:** JetBrains Mono 11px, weight 500, uppercase, `0.06em` to `0.08em` tracking, muted (`.trace-eyebrow`).
-- **Tag chip text:** JetBrains Mono 11px semibold, `0.06em` tracking, all caps.
+- **Label:** JetBrains Mono 12px, weight 500, uppercase, `0.06em` to `0.08em` tracking, muted (`.trace-eyebrow`).
+- **Tag chip text:** JetBrains Mono 12px semibold, `0.06em` tracking, all caps.
 - **Step code (F1, F2, F3):** JetBrains Mono 12px semibold, tabular.
 
 **The mono-for-data rule.** If it is a number, a unit, a tag, a step code, a stage id, an axis tick or a label that names a data group, it is mono. Everything else is Instrument Sans.
@@ -241,17 +241,17 @@ Landing and comparison surfaces use the same panel through `.trace-panel` and `.
 - **Destructive:** critical text on a 10% critical tint (20% in dark).
 - **Focus:** the shared accent ring (3px at 50%); active presses move down 1px.
 
-On touch, `tap-target-comfortable` grows the hit area to 44px without changing the 32px visual size.
+`tap-target-comfortable` gives a control a hit area of at least 24px for any pointer, and 44px on touch, without changing its visual size. Short links and badges use it too.
 
 ### Tag chips and impact dots
 
-A finding is flagged with an impact dot plus an ALL-CAPS tag chip (`TagBadge` in `src/view/ImpactBadge.tsx`). The chip has 3px corners, status text on a 10% tint of the same status, 20px height and mono 11px semibold text. The dot is an 8px circle in the status color. Tag text always comes from `typeTag(type)`; never hand-type it. The dot is decorative to assistive tech; the tag text is what is read.
+A finding is flagged with an impact dot plus an ALL-CAPS tag chip (`TagBadge` in `src/view/ImpactBadge.tsx`). The chip has 3px corners, status text on a 10% tint of the same status, 20px height and mono 12px semibold text. A linked chip keeps its 20px height and gets the 24px hit area. The dot is an 8px circle in the status color. Tag text always comes from `typeTag(type)`; never hand-type it. The dot is decorative to assistive tech; the tag text is what is read.
 
 ### Verdict and stage strip
 
 The verdict is a panel with the verdict sentence as its `h2`, a one-line summary, the stage strip, then the numbered next steps. A failed run tints the panel border critical at 40%; a clean run tints it clean.
 
-`VerdictStrip` draws up to eight of the longest stages as bars on the run clock, plus any stage a step points at. Neutral stages use chart-stage at 85% opacity; a step's stage takes its impact color and carries its step code, inside the bar when the bar is at least 8% of the run, beside it otherwise. Rows are 22px with mono 11px stage labels and a mono 10px tick axis; vertical gridlines use the rule color.
+`VerdictStrip` draws up to eight of the longest stages as bars on the run clock, plus any stage a step points at. Neutral stages use chart-stage at 85% opacity; a step's stage takes its impact color and carries its step code, inside the bar when the bar is at least 8% of the run, beside it otherwise. Rows are 22px with mono 12px stage labels and a mono 10px tick axis; vertical gridlines use the rule color.
 
 ### Step codes
 
@@ -267,7 +267,7 @@ Findings rows sit in a panel per severity band, with 10px by 12px cells and 16px
 
 ### Charts
 
-Charts render through `ChartFrame`, which pins height and turns off series animation under reduced motion. Axis ticks and legends are mono. Tooltips draw on the popover surface with a 1px rule, 6px corners and 12px text, so they read in both themes. Each chart can expose its data as a table and copy it as TSV.
+Charts render through `ChartFrame`, which pins height and turns off series animation under reduced motion. Axis ticks and legends are mono. Text a reader needs is at least 12px; only numeric tick labels stay at 10px. Tooltips draw on the popover surface with a 1px rule, 6px corners and 12px text, so they read in both themes. Each chart can expose its data as a table and copy it as TSV.
 
 ### Navigation
 
