@@ -16,6 +16,7 @@ import {
   ExecutorAddedEventSchema,
   ExecutorRemovedEventSchema,
   BlockUpdatedEventSchema,
+  MAX_ACCUMULABLES_PER_TASK,
   type SparkEvent,
   type SparkPlanInfo,
 } from './event-schemas.ts';
@@ -245,6 +246,9 @@ export interface ParserState {
   // cache evidence (logBlockUpdates off, or nothing was ever cached).
   rddBlockUpdates: number;
   taskAccumStages: Map<number, Set<number>>;
+  // Each stage's latest TaskEnd accumulator IDs: a task of the same stage with the same IDs adds
+  // nothing to taskAccumStages (Spark gives a stage's tasks one accumulator set).
+  lastTaskAccumIds: Map<number, readonly number[]>;
   // Per-executor peak of every ExecutorMetricType value any TaskEnd reported (Spark's own
   // AppStatusListener folds them the same way); only the metrics in EXECUTOR_METRIC_FIELD_MAP.
   executorPeakMetrics: Map<string, Record<string, number>>;
@@ -459,6 +463,7 @@ export function createState(): ParserState {
     rddBlocks: new Map(),
     rddBlockUpdates: 0,
     taskAccumStages: new Map(),
+    lastTaskAccumIds: new Map(),
     executorPeakMetrics: new Map(),
     pendingAdaptiveUpdates: new Map(),
     resolvedPlanExecutions: new Set(),
@@ -643,7 +648,7 @@ function foldTaskExecutorMetrics(event: z.infer<typeof TaskEndEventSchema>, stat
   if (!raw || executorId == null) return;
   let peaks: Record<string, number> | undefined;
   let measured = false;
-  for (const [sparkName, ourName] of Object.entries(EXECUTOR_METRIC_FIELD_MAP)) {
+  for (const [sparkName, ourName] of EXECUTOR_METRIC_FIELDS) {
     const value = raw[sparkName];
     if (typeof value !== 'number' || !(value > 0)) continue;
     measured = true;
@@ -655,7 +660,16 @@ function foldTaskExecutorMetrics(event: z.infer<typeof TaskEndEventSchema>, stat
   if (executorId !== DRIVER_EXECUTOR_ID) state.evidenceInputs.executorMetricRows++;
 }
 
-export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state: ParserState): null {
+function sameIds(a: readonly number[], b: readonly number[] | undefined): boolean {
+  if (b === undefined || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+// `accumulableIds`, when given, are the event's accumulator IDs, which then are not in the event.
+export function accumulateTask(
+  event: z.infer<typeof TaskEndEventSchema>, state: ParserState, accumulableIds?: readonly number[],
+): null {
   foldTaskExecutorMetrics(event, state);
   const stageId = event['Stage ID'];
   const stage = state.stages.get(stageId);
@@ -674,10 +688,13 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
 
   state.evidenceInputs.taskRecords++;
 
-  const accumulables = event['Task Info']?.Accumulables ?? [];
-  for (const acc of accumulables) {
-    if (!state.taskAccumStages.has(acc.ID)) state.taskAccumStages.set(acc.ID, new Set());
-    state.taskAccumStages.get(acc.ID)!.add(stageId);
+  const ids = accumulableIds ?? (event['Task Info']?.Accumulables ?? []).map((acc) => acc.ID);
+  if (!sameIds(ids, state.lastTaskAccumIds.get(stageId))) {
+    state.lastTaskAccumIds.set(stageId, ids);
+    for (const id of ids) {
+      if (!state.taskAccumStages.has(id)) state.taskAccumStages.set(id, new Set());
+      state.taskAccumStages.get(id)!.add(stageId);
+    }
   }
 
   const info: TaskInfoRaw = event['Task Info'] ?? {};
@@ -888,6 +905,7 @@ const EXECUTOR_METRIC_FIELD_MAP: Record<string, string> = {
   MajorGCCount: 'majorGCCount', MajorGCTime: 'majorGCTime', TotalGCTime: 'totalGCTime',
   ConcurrentGCCount: 'concurrentGCCount', ConcurrentGCTime: 'concurrentGCTime',
 };
+const EXECUTOR_METRIC_FIELDS = Object.entries(EXECUTOR_METRIC_FIELD_MAP);
 
 export function startApplication(event: z.infer<typeof ApplicationStartEventSchema>, state: ParserState) {
   const config = state.pendingConfig ?? {};
@@ -1174,7 +1192,7 @@ export function recordStageExecutorMetrics(event: z.infer<typeof StageExecutorMe
   if (!stage) return null;
   const raw = event['Executor Metrics'] ?? {};
   const metrics: Record<string, number> = {};
-  for (const [sparkName, ourName] of Object.entries(EXECUTOR_METRIC_FIELD_MAP)) {
+  for (const [sparkName, ourName] of EXECUTOR_METRIC_FIELDS) {
     if (raw[sparkName] != null) metrics[ourName] = raw[sparkName];
   }
   // A row for the driver's own heap is no executor measurement: the heap-peak finding leaves it out too.
@@ -1529,6 +1547,18 @@ const MAX_ACCUMULABLE_ID_DIGITS = 15;
 // doesn't open `{"ID":n` or any `[` in the array (updatedBlockStatuses) falls back. A `]` inside a
 // Name string cuts the array short and leaves invalid JSON, which falls back too.
 export function parseTaskEnd(line: string): unknown {
+  const split = splitTaskEnd(line);
+  if (!split) return null;
+  split.parsed['Task Info']!.Accumulables = split.ids.map((ID) => ({ ID }));
+  return split.parsed;
+}
+
+type SplitTaskEnd = { parsed: { 'Task Info'?: { Accumulables?: unknown } }; ids: number[] };
+
+// parseTaskEnd's work with the IDs left apart from the parsed event, whose Accumulables is empty:
+// validating `{ID}` entries the scan just read as digits cost 0.2s on the largest real log, so
+// parseAndDispatch hands the IDs straight to accumulateTask.
+function splitTaskEnd(line: string): SplitTaskEnd | null {
   if (!line.startsWith(TASK_END_PREFIX)) return null;
   const keyAt = line.indexOf(ACCUMULABLES_KEY);
   if (keyAt === -1) return null;
@@ -1548,6 +1578,7 @@ export function parseTaskEnd(line: string): unknown {
     if (after !== 0x2c && after !== 0x7d) return null; // `,` or `}`
     ids.push(id);
   }
+  if (ids.length > MAX_ACCUMULABLES_PER_TASK) return null; // the schema rejects it: parse whole
   let parsed: { 'Task Info'?: { Accumulables?: unknown } } | null;
   try {
     parsed = JSON.parse(line.slice(0, from) + line.slice(close));
@@ -1556,8 +1587,7 @@ export function parseTaskEnd(line: string): unknown {
   }
   const info = parsed?.['Task Info'];
   if (!info || !Array.isArray(info.Accumulables) || info.Accumulables.length !== 0) return null;
-  info.Accumulables = ids.map((ID) => ({ ID }));
-  return parsed;
+  return { parsed: parsed!, ids };
 }
 
 const ADAPTIVE_UPDATE_PREFIX =
@@ -1635,8 +1665,11 @@ function noteUnreadableSqlStart(line: string, state: ParserState): void {
 function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown) => void): void {
   if (line.startsWith(BLOCK_UPDATED_PREFIX) && !line.includes(RDD_BLOCK_ID_FRAGMENT)) return;
   let parsed: unknown;
+  let taskEndIds: number[] | undefined;
   try {
-    parsed = parseTaskEnd(line) ?? JSON.parse(stripPlanDescription(line));
+    const split = splitTaskEnd(line);
+    if (split) ({ parsed, ids: taskEndIds } = split);
+    else parsed = JSON.parse(stripPlanDescription(line));
   } catch {
     state.skippedLines++;
     noteUnreadableSqlStart(line, state);
@@ -1660,7 +1693,9 @@ function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown)
   }
   let msg: unknown;
   try {
-    msg = processEvent(result.data, state);
+    msg = taskEndIds && result.data.Event === 'SparkListenerTaskEnd'
+      ? accumulateTask(result.data, state, taskEndIds)
+      : processEvent(result.data, state);
   } catch (err) {
     // processEvent's switch is exhaustive over the schema-validated union (assertNever default), so
     // this is unreachable for any event that got this far. If it fires it's a handler bug, not

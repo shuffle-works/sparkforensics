@@ -125,3 +125,7 @@ unread, and Spark writes some as JSON arrays (`internal.metrics.updatedBlockStat
 which a stricter check would reject along with the whole task. When every entry has
 Spark's flat `{"ID":n,...}` form, `parseTaskEnd` (`event-handlers.ts`) reads the IDs with a
 string scan and cuts the array out before `JSON.parse`; any other shape is parsed whole.
+On that path the IDs skip schema validation: `parseAndDispatch` passes them straight to
+`accumulateTask`, and a list of more than `MAX_ACCUMULABLES_PER_TASK` IDs is parsed whole so the
+schema still rejects it. `accumulateTask` also records a stage's ID list only when it differs from
+that stage's previous TaskEnd, since Spark gives a stage's tasks one accumulator set.

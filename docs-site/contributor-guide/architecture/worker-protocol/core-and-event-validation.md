@@ -40,6 +40,8 @@ applies it one layer earlier, to the raw JSON before it becomes a tree at all.
 There are two external-data boundaries, the two places this codebase parses
 data it does not control. Both run that data through a schema, and both
 treat a validation failure the same way: a silent skip, not a distinct error.
+The one exception is a `TaskEnd`'s accumulator IDs, read by a string scan without
+schema validation; see [plan attribution](../detector-contract/plan-attribution.md#stage-id-attribution-for-plan-advisor-findings).
 
 - `dispatchLine` (`event-handlers.ts`): after `JSON.parse` succeeds, a line
   whose `Event` value is one of the 17 modeled types but fails that type's own

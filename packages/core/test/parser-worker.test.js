@@ -1700,6 +1700,32 @@ describe('parseTaskEnd', () => {
     dispatchLine(taskEnd(FLAT).slice(0, -1), malformed, () => {});
     expect(malformed.skippedLines).toBe(1);
   });
+
+  it('records each stage\'s accumulator IDs whether or not they repeat from the previous task', () => {
+    const entry = (id) => `{"ID":${id},"Name":"m","Update":1,"Value":1}`;
+    const lines = [
+      SUBMIT,
+      taskEnd([entry(1), entry(2)].join(',')),
+      taskEnd([entry(1), entry(2)].join(',')),
+      taskEnd([entry(1), entry(3)].join(',')),
+      taskEnd([entry(2)].join(',')),
+    ];
+    const viaLine = createState();
+    for (const line of lines) dispatchLine(line, viaLine, () => {});
+    const viaEvent = createState();
+    for (const line of lines) processEvent(JSON.parse(line), viaEvent);
+    expect(viaLine.skippedLines).toBe(0);
+    expect([...viaLine.taskAccumStages.keys()].sort()).toEqual([1, 2, 3]);
+    expect(viaLine.taskAccumStages).toEqual(viaEvent.taskAccumStages);
+  });
+
+  it('skips a TaskEnd with more accumulators than the schema allows, as a whole-line parse does', () => {
+    const many = Array.from({ length: 10_001 }, (_, i) => `{"ID":${i}}`).join(',');
+    const state = createState();
+    for (const line of [SUBMIT, taskEnd(many)]) dispatchLine(line, state, () => {});
+    expect(state.skippedLines).toBe(1);
+    expect(state.evidenceInputs.taskRecords).toBe(0);
+  });
 });
 
 // An open execution's AQE updates are held as text and only the last is parsed (deferAdaptiveUpdate).
