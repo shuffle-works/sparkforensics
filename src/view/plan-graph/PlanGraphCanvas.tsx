@@ -54,6 +54,11 @@ export type CenterRequest = { nodeId: string | null; token: number };
 // still capping a one-node plan short of a grotesque blow-up.
 const FIT_OPTIONS = { padding: 0.06, maxZoom: 1.75 } as const;
 
+const nodeMiddle = (node: Node) => ({
+  x: node.position.x + (node.measured?.width ?? NODE_WIDTH) / 2,
+  y: node.position.y + (node.measured?.height ?? NODE_HEIGHT) / 2,
+});
+
 function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: { resizeTick: number; fitSignal: number; centerRequest?: CenterRequest; sheetNodeId: string | null }) {
   const { fitView, setCenter, getNode, getZoom } = useReactFlow();
   const paneHeight = useFlowStore((s) => s.height);
@@ -67,20 +72,23 @@ function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: 
     if (!sheetNodeId) return;
     const target = getNode(sheetNodeId);
     if (!target) return;
-    const { x, y } = target.position;
-    setCenter(x + (target.measured?.width ?? NODE_WIDTH) / 2, y + (target.measured?.height ?? NODE_HEIGHT) / 2, { zoom: getZoom(), duration: 200 });
+    const { x, y } = nodeMiddle(target);
+    setCenter(x, y, { zoom: getZoom(), duration: 200 });
   }, [sheetNodeId, paneHeight, getNode, setCenter, getZoom]);
 
   // Recenter on a paired-node jump (the detail card's "Jump to write/read
-  // half"). Token 0 is the initial value, so the mount never pans. Uses the
-  // node's laid-out position like the control rail's jump; falls back to a
+  // half"). Token 0 is the initial value, so the mount never pans. Centers the
+  // node's middle, as the phone sheet pan does, so the two agree when a jump
+  // also changes the selection; falls back to a
   // by-id fitView when the node isn't in the store yet (e.g. the tick right
   // after a scope expand brought the partner into view).
   useEffect(() => {
     if (!centerRequest || centerRequest.token === 0 || !centerRequest.nodeId) return;
     const target = getNode(centerRequest.nodeId);
-    if (target) setCenter(target.position.x, target.position.y, { zoom: 1, duration: 300 });
-    else fitView({ nodes: [{ id: centerRequest.nodeId }], duration: 300, maxZoom: 1 });
+    if (target) {
+      const { x, y } = nodeMiddle(target);
+      setCenter(x, y, { zoom: 1, duration: 300 });
+    } else fitView({ nodes: [{ id: centerRequest.nodeId }], duration: 300, maxZoom: 1 });
   }, [centerRequest, setCenter, getNode, fitView]);
 
   useEffect(() => {

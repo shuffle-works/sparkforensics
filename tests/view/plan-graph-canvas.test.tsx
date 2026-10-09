@@ -20,12 +20,13 @@ function transformX(testId: string): number {
 }
 
 const setCenterMock = vi.fn();
+const getNodeMock = vi.fn();
 const miniMapSpy = vi.hoisted(() => vi.fn());
 vi.mock('@xyflow/react', async () => {
   const actual = await vi.importActual<typeof import('@xyflow/react')>('@xyflow/react');
   return {
     ...actual,
-    useReactFlow: () => ({ setCenter: setCenterMock, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: vi.fn() }),
+    useReactFlow: () => ({ setCenter: setCenterMock, getNode: getNodeMock, getZoom: () => 1, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: vi.fn() }),
     MiniMap: (props: Record<string, unknown>) => {
       miniMapSpy(props);
       return <div data-testid="rf__minimap" />;
@@ -114,6 +115,13 @@ describe('focus nav', () => {
   it('hides "Next problem" in expanded (full) scope when the focal stage has no findings', () => {
     render(<PlanGraphCanvas model={model({ scope: 'full' })} showMiniMap={false} stageId={1} findings={[]} />);
     expect(screen.queryByRole('button', { name: /next problem/i })).not.toBeInTheDocument();
+  });
+
+  it('centers a paired-node jump on the middle of the target node', () => {
+    setCenterMock.mockClear();
+    getNodeMock.mockImplementation((id: string) => (id === 'b' ? { id: 'b', position: { x: 100, y: 50 }, measured: { width: 220, height: 60 }, data: {} } : undefined));
+    render(<PlanGraphCanvas model={model()} showMiniMap={false} stageId={1} centerRequest={{ nodeId: 'b', token: 1 }} />);
+    expect(setCenterMock).toHaveBeenCalledWith(210, 80, expect.objectContaining({ zoom: 1 }));
   });
 
   it('shows "Next problem" in expanded scope when the focal stage has findings, and it jumps to the stage box', async () => {
