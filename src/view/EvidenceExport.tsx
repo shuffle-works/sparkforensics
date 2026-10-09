@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download } from 'lucide-react';
+import { Download, FileJson, FileText, LayoutDashboard } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
@@ -114,16 +114,26 @@ export function EvidenceExportMenuItems({
   return (
     <>
       <DropdownMenuCheckboxItem
+        indicatorPosition="start"
         checked={redact}
         onClick={(event) => event.preventDefault()}
         onCheckedChange={(value) => setRedact(Boolean(value))}
       >
-        Redact identifiers
+        <span className="whitespace-nowrap">Redact identifiers</span>
       </DropdownMenuCheckboxItem>
-      <DropdownMenuSeparator />
-      <DropdownMenuItem onClick={() => download('markdown')}>Download Markdown</DropdownMenuItem>
-      <DropdownMenuItem onClick={() => download('json')}>Download JSON</DropdownMenuItem>
-      <DropdownMenuItem onClick={() => download('html')}>Download HTML dashboard</DropdownMenuItem>
+      <DropdownMenuSeparator className="my-1.5 bg-foreground/25" />
+      <DropdownMenuItem className="whitespace-nowrap" onClick={() => download('markdown')}>
+        <FileText aria-hidden="true" />
+        Download Markdown
+      </DropdownMenuItem>
+      <DropdownMenuItem className="whitespace-nowrap" onClick={() => download('json')}>
+        <FileJson aria-hidden="true" />
+        Download JSON
+      </DropdownMenuItem>
+      <DropdownMenuItem className="whitespace-nowrap" onClick={() => download('html')}>
+        <LayoutDashboard aria-hidden="true" />
+        Download HTML dashboard
+      </DropdownMenuItem>
     </>
   );
 }
@@ -140,7 +150,7 @@ export function EvidenceExport() {
         <Download aria-hidden="true" />
         Export evidence
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="end" className="min-w-56">
         <EvidenceExportMenuItems {...evidence} />
       </DropdownMenuContent>
     </DropdownMenu>

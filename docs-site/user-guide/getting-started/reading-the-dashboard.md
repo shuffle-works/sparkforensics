@@ -11,12 +11,14 @@ affected stage, not just the worst one. For a finding with a run-time
 estimate, the dot's color tracks how much run time it could save rather than
 how unusual the metric looks, so a small-looking anomaly with a big payoff can
 outrank a dramatic one that would barely move your run time. A finding with
-only a resource estimate, or none, keeps the level its check assigned.
+only a resource estimate, or none, keeps the level its check assigned. A
+critical finding is drawn in red whatever share of the run its saving is.
 
 The board opens with a verdict: one line saying where to start, a short
 summary of what was found, and up to three numbered next steps. Each step
 says what the finding measured and what to try, and has a
-**Show evidence** button that jumps to the finding's detail widget. Findings
+**Show evidence** button that opens the finding's detail widget in place,
+under the step. Findings
 on the same stage are folded into one step, because they usually share a
 cause and their savings overlap rather than add up. Each savings figure says
 what it counts: a time such as "58.6s of run time" is how much sooner the run
@@ -28,7 +30,8 @@ copies the whole plan as a plain checklist (run, verdict, and numbered steps
 with their stage and savings) to paste into a ticket or a message. Steps
 follow the same savings ranking as the rest of the board. When much of the
 run's executor capacity sat idle, the summary says so, without moving
-cluster size ahead of a bigger fix.
+cluster size ahead of a bigger fix. When the Findings tab lists more
+findings, a **More findings (n)** link under the steps takes you there.
 
 The verdict also says how the run ended. When every job succeeded it says
 so. When a job failed, the title says the run failed (or how many of its
@@ -57,15 +60,15 @@ overview, task, locality, I/O, spill, GC and plan sections (spill and GC only
 when the stage had them).
 Below it, two tabs split the rest of the board:
 
-1. **Findings**: every flagged finding and its detail widget, grouped by
-   impact band (Critical, Warning, Info). Within a band, a recommendation row
-   for a bottleneck type collapses into a summary row when it fires more than
-   once; clicking the summary row expands its full list, and clicking any
-   single row or widget jumps straight to that finding. Each band leads with
-   its recommendation rows; its detail widgets (the charts and per-stage
-   numbers behind them) sit under **Show the evidence**, and **Show
-   evidence** on any finding opens them for you. Advanced view shows the
-   widgets without that step. Widgets that found nothing fold away into a "Clean checks"
+1. **Findings**: the flagged findings the verdict's steps do not already
+   lead with, under **More findings (n)** and grouped by impact band
+   (Critical, Warning, Info), or a line saying there are no more. Within a
+   band, a recommendation row for a bottleneck type collapses into a summary
+   row when it fires more than once; clicking the summary row expands its
+   full list. Each row has one **Show evidence** button that opens its
+   detail widget (the chart and per-stage numbers behind it) in place, or
+   takes you to that widget when another row or the verdict already shows
+   it. Widgets that found nothing fold away into a "Clean checks"
    disclosure. A check the log lacked the data for is listed there under
    **Not checked on this log**, not as a pass, with the reason and the
    setting to turn on: for example every per-stage check when no stage
@@ -108,9 +111,11 @@ Once a run is loaded, the topbar also carries a few more controls. The run
 name opens a menu of recent files, to switch to another run or load a new
 file. When the parser skipped malformed lines, a warning beside the name
 says how many. The count chip ("4 critical") counts the same findings the
-verdict ranks; click
+verdict ranks. For critical findings with a run-time estimate, it adds the largest one's share of the
+run ("1 critical, 2% of run"), drawn in the band's color. Click
 it to jump to that band of the Findings list (a board filter hiding the band
-is cleared, with a notice saying so). It reads **Run failed** when a job
+is cleared, with a notice saying so), or to the verdict when its steps hold
+every finding in the band. It reads **Run failed** when a job
 failed and there is no finding to count, **No findings** only when the
 verdict calls the run clean, and **Not fully checked** otherwise. For
 keyboard users, the first Tab stop is **Skip to the verdict**.
