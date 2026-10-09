@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlanGraphCanvas } from '../../src/view/plan-graph/PlanGraphCanvas';
@@ -20,12 +20,19 @@ function transformX(testId: string): number {
 }
 
 const setCenterMock = vi.fn();
+const getNodeMock = vi.fn();
+const fitViewMock = vi.hoisted(() => vi.fn());
 const miniMapSpy = vi.hoisted(() => vi.fn());
+// When set, the canvas reads this React Flow store state (canvas size and
+// viewport transform) instead of jsdom's unmeasured zero-size canvas.
+const storeOverride = vi.hoisted(() => ({ current: null as null | { width: number; height: number; transform: [number, number, number] } }));
 vi.mock('@xyflow/react', async () => {
   const actual = await vi.importActual<typeof import('@xyflow/react')>('@xyflow/react');
   return {
     ...actual,
-    useReactFlow: () => ({ setCenter: setCenterMock, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: vi.fn() }),
+    useReactFlow: () => ({ setCenter: setCenterMock, getNode: getNodeMock, getZoom: () => 1, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: fitViewMock, getNodes: () => [], setViewport: vi.fn() }),
+    useStore: ((selector: (s: unknown) => unknown, equalityFn?: (a: unknown, b: unknown) => boolean) =>
+      storeOverride.current ? selector(storeOverride.current) : actual.useStore(selector as never, equalityFn)) as typeof actual.useStore,
     MiniMap: (props: Record<string, unknown>) => {
       miniMapSpy(props);
       return <div data-testid="rf__minimap" />;
@@ -39,6 +46,15 @@ if (!window.ResizeObserver) {
     unobserve() {}
     disconnect() {}
   } as unknown as typeof ResizeObserver;
+}
+
+// xyflow reads the viewport zoom off a DOMMatrixReadOnly when a node's handle
+// bounds change, which happens when a layout stacks the graph (handles move to
+// the top and bottom edges). jsdom has none; a unit matrix is enough here.
+if (!('DOMMatrixReadOnly' in window)) {
+  (window as unknown as { DOMMatrixReadOnly: unknown }).DOMMatrixReadOnly = class {
+    m22 = 1;
+  };
 }
 
 function model(overrides: Partial<PlanGraphModel> = {}): PlanGraphModel {
@@ -114,6 +130,13 @@ describe('focus nav', () => {
   it('hides "Next problem" in expanded (full) scope when the focal stage has no findings', () => {
     render(<PlanGraphCanvas model={model({ scope: 'full' })} showMiniMap={false} stageId={1} findings={[]} />);
     expect(screen.queryByRole('button', { name: /next problem/i })).not.toBeInTheDocument();
+  });
+
+  it('centers a paired-node jump on the middle of the target node', () => {
+    setCenterMock.mockClear();
+    getNodeMock.mockImplementation((id: string) => (id === 'b' ? { id: 'b', position: { x: 100, y: 50 }, measured: { width: 220, height: 60 }, data: {} } : undefined));
+    render(<PlanGraphCanvas model={model()} showMiniMap={false} stageId={1} centerRequest={{ nodeId: 'b', token: 1 }} />);
+    expect(setCenterMock).toHaveBeenCalledWith(210, 80, expect.objectContaining({ zoom: 1 }));
   });
 
   it('shows "Next problem" in expanded scope when the focal stage has findings, and it jumps to the stage box', async () => {
@@ -489,11 +512,81 @@ describe('node detail panel', () => {
   });
 });
 
+describe('layout direction', () => {
+  const chainIds = ['n0', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7'];
+  const chainModel = (overrides: Partial<PlanGraphModel> = {}) =>
+    model({
+      nodes: chainIds.map((id, i) => ({ id, sourceNodeId: id, label: id, category: 'transform', operatorDetail: '', primaryMetric: '', segmentIndex: overrides.scope === 'full' ? i : 0, splitRole: null, durationShare: 10 })),
+      edges: chainIds.slice(0, -1).map((id, i) => ({ id: `${id}->${chainIds[i + 1]}`, source: id, target: chainIds[i + 1] })),
+      ...overrides,
+    });
+  const translate = (testId: string) => {
+    const match = screen.getByTestId(testId).getAttribute('style')?.match(/translate\((-?\d+(?:\.\d+)?)px,\s*(-?\d+(?:\.\d+)?)px\)/);
+    if (!match) throw new Error(`no transform found on ${testId}`);
+    return { x: Number(match[1]), y: Number(match[2]) };
+  };
+  const original = { width: window.innerWidth, height: window.innerHeight, matchMedia: window.matchMedia };
+  afterEach(() => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: original.width });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: original.height });
+    window.matchMedia = original.matchMedia;
+  });
+  const setWindow = (width: number, height: number) => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
+  };
+  const usePhoneViewport = () => {
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('max-width'),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+  };
+
+  // Desktop keeps one right-to-left flow at every size: an ancestor (the edge's
+  // source) is always to the right of its descendant, and the plan is never cut
+  // into rows.
+  const expectOneRightToLeftRow = () => {
+    const positions = chainIds.map((id) => translate(`rf__node-${id}`));
+    expect(new Set(positions.map((p) => p.y)).size).toBe(1);
+    chainIds.slice(0, -1).forEach((id, i) => {
+      expect(translate(`rf__node-${id}`).x).toBeGreaterThan(translate(`rf__node-${chainIds[i + 1]}`).x);
+    });
+  };
+
+  it.each([[1440, 900], [1024, 768], [700, 900]])('never wraps a long operator chain on a %ix%i desktop window', (width, height) => {
+    setWindow(width, height);
+    render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
+    expectOneRightToLeftRow();
+  });
+
+  it('never wraps a long chain of stages in the full plan either', () => {
+    setWindow(1440, 900);
+    const segmentStageIds = new Map(chainIds.map((_, i) => [i, i + 1]));
+    render(<PlanGraphCanvas model={chainModel({ scope: 'full' })} showMiniMap={false} stageId={1} segmentStageIds={segmentStageIds} />);
+    expectOneRightToLeftRow();
+  });
+
+  it('stacks a long chain vertically on a phone-width viewport so it can be read at full size', () => {
+    setWindow(390, 844);
+    usePhoneViewport();
+    render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
+    const first = translate('rf__node-n0');
+    const last = translate('rf__node-n7');
+    expect(Math.abs(first.y - last.y)).toBeGreaterThan(Math.abs(first.x - last.x));
+    // The consumer (n0, an edge source) sits below its producer.
+    expect(first.y).toBeGreaterThan(last.y);
+  });
+});
+
 describe('legend', () => {
-  it('is open by default and collapses on click', async () => {
+  it('is collapsed by default and opens on click', async () => {
     const user = userEvent.setup();
     render(<PlanGraphCanvas model={model()} showMiniMap={false} stageId={1} />);
-    // Open by default so the color heat key is visible without a hunt for it.
+    // Collapsed so the ~450x190 px key does not cover a corner of the graph.
+    expect(screen.queryByTestId('plan-graph-legend')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^legend$/i }));
     const legend = screen.getByTestId('plan-graph-legend');
     expect(within(legend).getByText('Operators')).toBeInTheDocument();
     expect(within(legend).getByText(/shuffle bytes/i)).toBeInTheDocument();
@@ -512,6 +605,15 @@ describe('control rail', () => {
     expect(screen.getByRole('button', { name: /^settings$/i })).toBeInTheDocument();
   });
 
+  it('fits to a full overview with no zoom floor from the rail', async () => {
+    const user = userEvent.setup();
+    render(<PlanGraphCanvas model={model()} showMiniMap={false} stageId={1} />);
+    fitViewMock.mockClear();
+    await user.click(screen.getByRole('button', { name: /fit to view/i }));
+    expect(fitViewMock).toHaveBeenCalledTimes(1);
+    expect(fitViewMock.mock.lastCall![0]).not.toHaveProperty('minZoom');
+  });
+
   it('toggles the minimap from the rail', async () => {
     const user = userEvent.setup();
     render(<PlanGraphCanvas model={model()} showMiniMap stageId={1} />);
@@ -520,6 +622,33 @@ describe('control rail', () => {
     expect(screen.queryByTestId('rf__minimap')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /show minimap/i }));
     expect(screen.getByTestId('rf__minimap')).toBeInTheDocument();
+  });
+});
+
+describe('minimap visibility', () => {
+  afterEach(() => {
+    storeOverride.current = null;
+  });
+
+  it('hides the minimap while the graph fits, with the toggle unpressed, and shows it on an explicit click', async () => {
+    // The two-node graph, shrunk to half size near the top-left of a large canvas, fits.
+    storeOverride.current = { width: 1400, height: 900, transform: [200, 200, 0.5] };
+    const user = userEvent.setup();
+    render(<PlanGraphCanvas model={model()} showMiniMap stageId={1} />);
+    expect(screen.queryByTestId('rf__minimap')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /show minimap/i })).toHaveAttribute('aria-pressed', 'false');
+    await user.click(screen.getByRole('button', { name: /show minimap/i }));
+    expect(screen.getByTestId('rf__minimap')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /hide minimap/i })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: /hide minimap/i }));
+    expect(screen.queryByTestId('rf__minimap')).not.toBeInTheDocument();
+  });
+
+  it('shows the minimap while part of the graph is off screen, with the toggle pressed', () => {
+    storeOverride.current = { width: 300, height: 200, transform: [0, 0, 2] };
+    render(<PlanGraphCanvas model={model()} showMiniMap stageId={1} />);
+    expect(screen.getByTestId('rf__minimap')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /hide minimap/i })).toHaveAttribute('aria-pressed', 'true');
   });
 });
 

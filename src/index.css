@@ -582,3 +582,10 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
     font-stretch: var(--font-stretch-heading);
   }
 }
+
+/* Recharts colors each legend label with its series fill through an inline
+   style, which fails 4.5:1 for the pale series (startup, gap) in either theme.
+   The swatch keeps the series color; the label uses the text color. */
+.recharts-legend-item-text {
+  color: var(--text) !important;
+}

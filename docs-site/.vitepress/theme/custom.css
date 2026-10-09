@@ -709,3 +709,12 @@ html {
   visibility: hidden;
   pointer-events: none;
 }
+
+/* Shiki's github themes render comments as #6A737D in both themes: 3.19:1 on
+   the dark code surface and 4.53:1 on the light one. The muted token clears
+   5:1 on both. Shiki sets the token color through inline --shiki-* variables,
+   so the override matches on that value. */
+.vp-doc div[class*='language-'] span[style*='--shiki-light:#6A737D'] {
+  --shiki-light: var(--sf-muted) !important;
+  --shiki-dark: var(--sf-muted) !important;
+}

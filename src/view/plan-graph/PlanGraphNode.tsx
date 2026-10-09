@@ -28,7 +28,7 @@ export type PlanGraphNodeProps = NodeProps & {
   data: PlanGraphNodeData & { durationSharePct: number | null };
 };
 
-export function PlanGraphNode({ data }: PlanGraphNodeProps) {
+export function PlanGraphNode({ data, sourcePosition = Position.Left, targetPosition = Position.Right }: PlanGraphNodeProps) {
   const { label, operatorDetail, primaryMetric, category, splitRole, durationSharePct, findings } = data;
   const icon = CATEGORY_ICON[category] ?? CATEGORY_ICON.transform;
   const band = heatBand(durationSharePct);
@@ -45,8 +45,8 @@ export function PlanGraphNode({ data }: PlanGraphNodeProps) {
           small dark circle on every node's left/right edge. Keep the
           pre-existing "handles are invisible" look explicitly instead of
           inheriting that as an accidental side effect. */}
-      <Handle type="target" position={Position.Right} className="opacity-0!" />
-      <Handle type="source" position={Position.Left} className="opacity-0!" />
+      <Handle type="target" position={targetPosition} className="opacity-0!" />
+      <Handle type="source" position={sourcePosition} className="opacity-0!" />
       {findings && findings.length > 0 ? (() => {
         const worst = worstFinding(findings);
         return (
