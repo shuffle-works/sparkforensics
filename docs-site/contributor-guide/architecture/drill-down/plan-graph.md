@@ -18,20 +18,28 @@ node's React Flow `Handle`s follow the same horizontal routing: `type="target"`
 on `Position.Right` (its parent sits to the right) and `type="source"` on
 `Position.Left` (its children sit to the left).
 
-A plan too long to fit the canvas at a readable zoom (and of at most 150
-operators) is also laid out `BT`, the same arrangement stacked vertically with
-reads/scans on top, and the direction that fits larger wins
-(`pickDirection`, `readable-fit.ts`). On a landscape canvas that is almost
-always `RL`; on a phone-sized one it is `BT`. A `BT` node's handles move to
-`Position.Bottom` (target) and `Position.Top` (source) through the
-`sourcePosition`/`targetPosition` the canvas sets on it.
+A plan too wide to fit the canvas at a readable zoom gets two more candidate
+layouts. `wrapIntoRows` (`dagre-layout.ts`) wraps the `RL` layout into rows no
+wider than the canvas at that zoom, read like text: reads/scans on the top-left,
+later stages on the rows below. It cuts only between blocks whose segment and
+stage boxes do not overlap along x, so no box is split, and spaces rows
+`WRAP_ROW_GAP` apart so stacked stage boxes clear each other. A plan of at most
+150 operators is also laid out `BT`, the same arrangement stacked vertically
+with reads/scans on top. `pickLayout` (`readable-fit.ts`) keeps the candidate
+that shows the most of the plan at a readable zoom, then the one that fits
+larger. On a landscape canvas a long chain of stages wraps; on a phone-sized
+one it stacks `BT`. A `BT` node's handles move to `Position.Bottom` (target)
+and `Position.Top` (source) through the `sourcePosition`/`targetPosition` the
+canvas sets on it; a wrapped layout keeps the `RL` handles, so an edge between
+rows runs from the end of one row to the start of the next.
 
-Every fit (the mount-time one, a scope switch, a resize, the rail's "Fit to
-view") goes through `useReadableFit`, which clamps the zoom to at least
+The mount-time fit and every automatic re-fit (a scope switch, a resize) go
+through `useReadableFit`, which clamps the zoom to at least
 `MIN_READABLE_ZOOM` (1.1, so the smallest node text, 10px, renders at 11px on
 screen). A graph too large to fit at that zoom overflows the canvas and is
 panned instead of shrunk: centered on an axis that fits, anchored to the start
-(left/top) on an axis that overflows.
+(left/top) on an axis that overflows. The rail's "Fit to view" is the one-click
+full overview: a plain `fitView` with no zoom floor.
 
 `PlanGraphNode.tsx` renders every node at a fixed `NODE_WIDTH × NODE_HEIGHT`
 (220×90, also what dagre lays the graph out around) with `truncate`/`title` on
@@ -200,8 +208,10 @@ don't move.
 
 The remaining legibility aids sit on the canvas itself:
 
-- The **MiniMap** (bottom-right, toggled from the rail, and shown only while part
-  of the graph is off screen) colors each node by the
+- The **MiniMap** (bottom-right) shows by default only while part of the graph
+  is off screen; a click on the rail's toggle forces it on or off from then on,
+  and the toggle's pressed state always matches whether it is on screen. It
+  colors each node by the
   worst finding band on it (`planGraphMiniMapNodeColor`, `plan-graph-minimap.ts`),
   so the overview shows where the problems are; a node with no finding keeps the
   neutral plan color and the large group boxes recede into a muted fill.

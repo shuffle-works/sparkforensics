@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ReactFlow, MiniMap, Background, Panel, useReactFlow, useNodesInitialized, useStore, ReactFlowProvider, Position, type Node, type Edge, type MiniMapProps } from '@xyflow/react';
+import { ReactFlow, MiniMap, Background, Panel, useReactFlow, useNodesInitialized, useStore, ReactFlowProvider, Position, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { layoutWithDagre, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT, STAGE_GROUP_PADDING_X, STAGE_GROUP_PADDING_Y, STAGE_GROUP_HEADER_HEIGHT, type LaidOutNode, type PlanLayoutDirection } from './dagre-layout';
-import { boundsOf, fitZoom, MIN_READABLE_ZOOM, pickDirection, viewportShowsAll, type Rect, type Size } from './readable-fit';
+import { layoutWithDagre, wrapIntoRows, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT, STAGE_GROUP_PADDING_X, STAGE_GROUP_PADDING_Y, STAGE_GROUP_HEADER_HEIGHT, type LaidOutNode, type PlanLayoutDirection } from './dagre-layout';
+import { boundsOf, fitZoom, MIN_READABLE_ZOOM, pickLayout, readableWidth, viewportShowsAll, type Rect, type Size } from './readable-fit';
 import { useReadableFit } from './useReadableFit';
 import { PlanGraphNode } from './PlanGraphNode';
 import { PlanGraphNodeDetail } from './PlanGraphNodeDetail';
@@ -56,8 +56,9 @@ const nodeMiddle = (node: Node) => ({
 
 // A fit lands on a readable zoom, never below MIN_READABLE_ZOOM, so a graph too
 // large for the canvas overflows and scrolls instead of shrinking its text to
-// nothing (see readable-fit.ts). The mount-time fit, every re-fit and the
-// control rail's "Fit to view" share it.
+// nothing (see readable-fit.ts). The mount-time fit and every automatic re-fit
+// share it; the control rail's "Fit to view" is the one-click full overview
+// with no zoom floor.
 function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: { resizeTick: number; fitSignal: number; centerRequest?: CenterRequest; sheetNodeId: string | null }) {
   const { fitView, setCenter, getNode, getZoom } = useReactFlow();
   const fitReadable = useReadableFit();
@@ -129,14 +130,15 @@ function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: 
   return null;
 }
 
-/** The minimap earns its corner only when part of the graph is off screen. */
-function OverflowMiniMap({ bounds, ...miniMapProps }: { bounds: Rect | null } & MiniMapProps) {
+/** Reports whether part of the graph is off screen at the current viewport. */
+function OverflowReporter({ bounds, onChange }: { bounds: Rect | null; onChange: (overflows: boolean) => void }) {
   const overflows = useStore((s) => {
     if (!bounds || !s.width || !s.height) return true;
     const [x, y, zoom] = s.transform;
     return !viewportShowsAll(bounds, { x, y, zoom }, { width: s.width, height: s.height });
   });
-  return overflows ? <MiniMap {...miniMapProps} /> : null;
+  useEffect(() => onChange(overflows), [overflows, onChange]);
+  return null;
 }
 
 // Width of the control rail, and a guess at the page chrome above the canvas,
@@ -144,7 +146,7 @@ function OverflowMiniMap({ bounds, ...miniMapProps }: { bounds: Rect | null } & 
 const CONTROL_RAIL_WIDTH_PX = 48;
 const PAGE_CHROME_HEIGHT_PX = 64;
 // Past this many plan nodes the plan overflows the canvas in either direction,
-// so the second layout pass that looks for a better direction is not worth its
+// so the second dagre pass that tries a bottom-to-top layout is not worth its
 // cost.
 const DIRECTION_SEARCH_MAX_NODES = 150;
 
@@ -258,26 +260,38 @@ export function PlanGraphCanvas({
     // whole model, so it doubles as the fallback layout below (single pass).
     const layoutNodes = visibleNodeIds ? model.nodes.filter((n) => visibleNodeIds.has(n.id)) : model.nodes;
     const layoutEdges = visibleNodeIds ? visibleEdges ?? model.edges : model.edges;
+    const blockGroupings = showStageGroup ? [groupOf, stageGroupOf] : [groupOf];
     let direction: PlanLayoutDirection = 'RL';
+    let wrapWidth: number | null = null;
     let laidOutVisible = layoutWithDagre(layoutNodes, layoutEdges, { groupOf, direction });
-    // A plan too long to fit the canvas at a readable zoom is also laid out
-    // bottom-to-top, and the direction that fits larger wins: a wide canvas keeps
-    // the left-to-right band, a tall one (a phone) stacks the stages. The canvas
-    // size is read here rather than being a dependency, so only a change of
-    // orientation (`portrait`) or of the plan re-runs the layout.
-    if (layoutNodes.length <= DIRECTION_SEARCH_MAX_NODES) {
-      const canvas = canvasSizeRef.current ?? {
-        width: window.innerWidth - CONTROL_RAIL_WIDTH_PX,
-        height: window.innerHeight - PAGE_CHROME_HEIGHT_PX,
-      };
-      const rlSize = laidOutSize(laidOutVisible);
-      if (fitZoom(rlSize, canvas) < MIN_READABLE_ZOOM) {
+    // A plan too wide for the canvas at a readable zoom is also tried wrapped
+    // into rows (a long chain of stages read like text) and, up to
+    // DIRECTION_SEARCH_MAX_NODES, laid out bottom-to-top; the layout that shows
+    // the most of the plan at a readable zoom wins (`pickLayout`). A wide canvas
+    // wraps the chain, a tall one (a phone) stacks it. The canvas size is read
+    // here rather than being a dependency, so only a change of orientation
+    // (`portrait`) or of the plan re-runs the layout.
+    const canvas = canvasSizeRef.current ?? {
+      width: window.innerWidth - CONTROL_RAIL_WIDTH_PX,
+      height: window.innerHeight - PAGE_CHROME_HEIGHT_PX,
+    };
+    const rlSize = laidOutSize(laidOutVisible);
+    if (fitZoom(rlSize, canvas) < MIN_READABLE_ZOOM) {
+      const rowWidth = readableWidth(canvas) - STAGE_GROUP_PADDING_X * 2;
+      const wrapped = wrapIntoRows(laidOutVisible, blockGroupings, rowWidth);
+      type Candidate = { size: Size; nodes: LaidOutNode[]; direction: PlanLayoutDirection; wrapWidth: number | null };
+      const candidates: [Candidate, ...Candidate[]] = [
+        { size: rlSize, nodes: laidOutVisible, direction: 'RL', wrapWidth: null },
+        { size: laidOutSize(wrapped), nodes: wrapped, direction: 'RL', wrapWidth: rowWidth },
+      ];
+      if (layoutNodes.length <= DIRECTION_SEARCH_MAX_NODES) {
         const stacked = layoutWithDagre(layoutNodes, layoutEdges, { groupOf, direction: 'BT' });
-        if (pickDirection(rlSize, laidOutSize(stacked), canvas) === 'BT') {
-          direction = 'BT';
-          laidOutVisible = stacked;
-        }
+        candidates.push({ size: laidOutSize(stacked), nodes: stacked, direction: 'BT', wrapWidth: null });
       }
+      const picked = pickLayout(candidates, canvas);
+      direction = picked.direction;
+      wrapWidth = picked.wrapWidth;
+      laidOutVisible = picked.nodes;
     }
 
     // A fully-filtered segment/stage (every member hidden) still gets a box,
@@ -298,9 +312,11 @@ export function PlanGraphCanvas({
           const id = stageGroupOf(n);
           return id != null && !coveredStages.has(id);
         }));
-    const laidOutFull = needsFullFallback
-      ? layoutWithDagre(model.nodes, model.edges, { groupOf, direction })
-      : laidOutVisible;
+    const laidOutFull = !needsFullFallback
+      ? laidOutVisible
+      : wrapWidth != null
+        ? wrapIntoRows(layoutWithDagre(model.nodes, model.edges, { groupOf, direction }), blockGroupings, wrapWidth)
+        : layoutWithDagre(model.nodes, model.edges, { groupOf, direction });
 
     const planNodes: Node[] = laidOutVisible.map((n) => {
       const durationSharePct = n.durationShare != null && totalDuration > 0
@@ -461,15 +477,19 @@ export function PlanGraphCanvas({
       flowNodes.map((n) => ({ x: n.position.x, y: n.position.y, width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 })),
     );
     return { flowNodes, flowEdges, graphBounds };
-    // canvasSizeRef is read, not depended on: see the direction search above.
+    // canvasSizeRef is read, not depended on: see the layout search above.
   }, [model, findings, stageId, segmentStageIds, visibleNodeIds, visibleEdges, onSelectStage, portrait, canvasSizeRef]);
 
   // Collapsed by default: the key is about 450x190 px and would cover a corner
   // of the graph on first open. The rail's Legend button opens it.
   const [legendOpen, setLegendOpen] = useState(false);
-  // `showMiniMap` gates whether the minimap is available at all; `miniMapOpen`
-  // is the rail toggle on top of it. Both must hold for the minimap to render.
-  const [miniMapOpen, setMiniMapOpen] = useState(true);
+  // `showMiniMap` gates whether the minimap is available at all. Within that it
+  // shows while part of the graph is off screen, unless a click on the rail
+  // toggle chose to force it on or off (`miniMapChoice`, null until then). The
+  // rail's pressed state reads the same `miniMapOpen`, so it matches the screen.
+  const [graphOverflows, setGraphOverflows] = useState(true);
+  const [miniMapChoice, setMiniMapChoice] = useState<boolean | null>(null);
+  const miniMapOpen = showMiniMap && (miniMapChoice ?? graphOverflows);
 
   const narrow = useNarrowViewport();
   const selectedNode = selectedNodeId
@@ -535,8 +555,8 @@ export function PlanGraphCanvas({
           onDurationModeChange={onDurationModeChange}
           legendOpen={legendOpen}
           onToggleLegend={() => setLegendOpen((o) => !o)}
-          miniMapOpen={showMiniMap && miniMapOpen}
-          onToggleMiniMap={() => setMiniMapOpen((o) => !o)}
+          miniMapOpen={miniMapOpen}
+          onToggleMiniMap={() => setMiniMapChoice(!miniMapOpen)}
         />
         <div className="relative min-w-0 flex-1" onKeyDown={onCanvasKeyDown}>
           <ReactFlow
@@ -567,9 +587,9 @@ export function PlanGraphCanvas({
                 <PlanGraphLegend />
               </Panel>
             ) : null}
-            {showMiniMap && miniMapOpen && !sheetOpen ? (
-              <OverflowMiniMap
-                bounds={graphBounds}
+            <OverflowReporter bounds={graphBounds} onChange={setGraphOverflows} />
+            {miniMapOpen && !sheetOpen ? (
+              <MiniMap
                 nodeColor={planGraphMiniMapNodeColor}
                 pannable
                 zoomable

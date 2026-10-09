@@ -95,6 +95,87 @@ export function layoutWithDagre(
   });
 }
 
+// Gap between the members of two wrapped rows. A row's stage boxes reserve
+// STAGE_GROUP_PADDING_Y above and below their members, so the members of
+// adjacent rows need twice that for the boxes not to overlap, plus a gap that
+// reads as a break between rows.
+export const WRAP_ROW_GAP = STAGE_GROUP_PADDING_Y * 3;
+
+/**
+ * Wraps a right-to-left layout into rows no wider than `maxRowWidth`, read like
+ * text: the start of the plan (reads/scans) on the top-left, later stages
+ * continuing on the rows below. Cuts fall only between blocks of nodes whose
+ * groups (every `groupOfs` grouping, e.g. segment and stage) do not overlap
+ * along x, so no group box is split across rows. Within a row, nodes keep their
+ * laid-out spacing; a block wider than `maxRowWidth` takes a row of its own.
+ */
+export function wrapIntoRows(
+  laidOutNodes: LaidOutNode[],
+  groupOfs: ((node: PlanGraphNodeData) => string | null)[],
+  maxRowWidth: number,
+): LaidOutNode[] {
+  const extents = new Map<string, { start: number; end: number }>();
+  laidOutNodes.forEach((node, index) => {
+    const start = node.position.x;
+    const end = start + NODE_WIDTH;
+    const keys = groupOfs.flatMap((groupOf, i) => {
+      const group = groupOf(node);
+      return group == null ? [] : [`${i}:${group}`];
+    });
+    if (keys.length === 0) keys.push(`node:${index}`);
+    for (const key of keys) {
+      const extent = extents.get(key);
+      if (!extent) extents.set(key, { start, end });
+      else {
+        extent.start = Math.min(extent.start, start);
+        extent.end = Math.max(extent.end, end);
+      }
+    }
+  });
+
+  const blocks: { start: number; end: number }[] = [];
+  for (const extent of [...extents.values()].sort((a, b) => a.start - b.start)) {
+    const last = blocks[blocks.length - 1];
+    if (last && extent.start < last.end) last.end = Math.max(last.end, extent.end);
+    else blocks.push({ ...extent });
+  }
+
+  const rows: { start: number; end: number }[] = [];
+  for (const block of blocks) {
+    const row = rows[rows.length - 1];
+    if (row && block.end - row.start <= maxRowWidth) row.end = block.end;
+    else rows.push({ ...block });
+  }
+  if (rows.length <= 1) return laidOutNodes;
+
+  const rowOf = (node: LaidOutNode) => {
+    let r = 0;
+    while (r + 1 < rows.length && node.position.x >= rows[r + 1].start) r++;
+    return r;
+  };
+  const rowY = rows.map(() => ({ min: Infinity, max: -Infinity }));
+  for (const node of laidOutNodes) {
+    const y = rowY[rowOf(node)];
+    y.min = Math.min(y.min, node.position.y);
+    y.max = Math.max(y.max, node.position.y + NODE_HEIGHT);
+  }
+  const rowTop: number[] = [];
+  rowY.forEach((y, i) => {
+    rowTop.push(i === 0 ? y.min : rowTop[i - 1] + (rowY[i - 1].max - rowY[i - 1].min) + WRAP_ROW_GAP);
+  });
+
+  return laidOutNodes.map((node) => {
+    const r = rowOf(node);
+    return {
+      ...node,
+      position: {
+        x: node.position.x - rows[r].start + rows[0].start,
+        y: node.position.y - rowY[r].min + rowTop[r],
+      },
+    };
+  });
+}
+
 // Derives each group's box from its members' own laid-out rectangles rather than
 // dagre's internal cluster bookkeeping, keeping this independent of
 // layoutWithDagre's internals.

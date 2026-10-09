@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  boundsOf, fitZoom, readableViewport, viewportShowsAll, pickDirection,
+  boundsOf, fitZoom, readableViewport, viewportShowsAll, pickLayout, visibleShare, readableWidth,
   MIN_READABLE_ZOOM, MIN_TEXT_PX, SMALLEST_NODE_TEXT_PX, MAX_FIT_ZOOM,
 } from '../../src/view/plan-graph/readable-fit';
 
@@ -69,20 +69,54 @@ describe('viewportShowsAll', () => {
   });
 });
 
-describe('pickDirection', () => {
-  // A 7-stage chain: about 2020 x 230 laid out right-to-left, about 300 x 1700 stacked.
-  const rl = { width: 2020, height: 230 };
-  const bt = { width: 300, height: 1700 };
+describe('visibleShare', () => {
+  it('is 1 for a plan that fits the canvas at a readable zoom', () => {
+    expect(visibleShare({ width: 900, height: 400 }, DESKTOP)).toBe(1);
+  });
 
-  it('keeps the left-to-right band on a landscape canvas', () => {
-    expect(pickDirection(rl, bt, DESKTOP)).toBe('RL');
+  it('drops with the share of the plan that overflows at the readable zoom', () => {
+    const share = visibleShare({ width: 2020, height: 230 }, DESKTOP);
+    expect(share).toBeCloseTo((DESKTOP.width - 48) / (2020 * MIN_READABLE_ZOOM), 5);
+  });
+});
+
+describe('readableWidth', () => {
+  it('is the widest content that fits at the readable zoom', () => {
+    const width = readableWidth(DESKTOP);
+    expect(fitZoom({ width, height: 1 }, DESKTOP)).toBeCloseTo(MIN_READABLE_ZOOM, 5);
+  });
+});
+
+describe('pickLayout', () => {
+  // A 7-stage chain: about 2020 x 230 laid out right-to-left, about 1150 x 600
+  // wrapped into two rows, about 300 x 1700 stacked.
+  const rl = { name: 'RL', size: { width: 2020, height: 230 } };
+  const wrapped = { name: 'wrapped', size: { width: 1150, height: 600 } };
+  const bt = { name: 'BT', size: { width: 300, height: 1700 } };
+
+  it('wraps the chain into rows on a landscape canvas, so it fits at a readable zoom', () => {
+    const picked = pickLayout([rl, wrapped, bt], DESKTOP);
+    expect(picked).toBe(wrapped);
+    expect(readableViewport({ x: 0, y: 0, ...picked.size }, DESKTOP).zoom).toBeGreaterThanOrEqual(MIN_READABLE_ZOOM);
+    expect(viewportShowsAll({ x: 0, y: 0, ...picked.size }, readableViewport({ x: 0, y: 0, ...picked.size }, DESKTOP), DESKTOP)).toBe(true);
+  });
+
+  it('prefers the band to a stack on a landscape canvas when it cannot wrap', () => {
+    expect(pickLayout([rl, bt], DESKTOP)).toBe(rl);
   });
 
   it('stacks the chain on a phone-shaped canvas', () => {
-    expect(pickDirection(rl, bt, PHONE)).toBe('BT');
+    expect(pickLayout([rl, wrapped, bt], PHONE)).toBe(bt);
   });
 
-  it('keeps the default on a tie', () => {
-    expect(pickDirection(rl, rl, DESKTOP)).toBe('RL');
+  it('among layouts that all fit, picks the one that fits larger', () => {
+    const small = { name: 'small', size: { width: 600, height: 300 } };
+    const filling = { name: 'filling', size: { width: 1000, height: 600 } };
+    expect(pickLayout([filling, small], DESKTOP)).toBe(small);
+  });
+
+  it('keeps the earlier candidate on a tie', () => {
+    const same = { name: 'same', size: rl.size };
+    expect(pickLayout([rl, same], DESKTOP)).toBe(rl);
   });
 });

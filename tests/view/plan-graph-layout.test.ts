@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { layoutWithDagre, computeGroupBounds, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT } from '../../src/view/plan-graph/dagre-layout';
+import { layoutWithDagre, wrapIntoRows, computeGroupBounds, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT, STAGE_GROUP_PADDING_X, STAGE_GROUP_PADDING_Y, STAGE_GROUP_HEADER_HEIGHT } from '../../src/view/plan-graph/dagre-layout';
 import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/types.ts';
 
 function graphNode(id: string, overrides: Partial<PlanGraphNodeData> = {}): PlanGraphNodeData {
@@ -32,6 +32,61 @@ describe('layoutWithDagre direction', () => {
     const y = (id: string) => laidOut.find((n) => n.id === id)!.position.y;
     // edge source = consumer (parent), target = producer (child): producer on top.
     expect(y('d')).toBeLessThan(y('a'));
+  });
+});
+
+describe('wrapIntoRows', () => {
+  // A chain of 8 single-node stages, two segments per stage: s0 (the root,
+  // consumes s1) ... s7 (the scan). Laid out right-to-left it is one wide band.
+  const ids = ['s0', 's1', 's2', 's3', 's4', 's5', 's6', 's7'];
+  const chain = ids.map((id, i) => graphNode(id, { segmentIndex: i }));
+  const edges: PlanGraphEdge[] = ids.slice(0, -1).map((id, i) => ({ id: `${id}->${ids[i + 1]}`, source: id, target: ids[i + 1] }));
+  const segmentOf = (n: PlanGraphNodeData) => `segment-${n.segmentIndex}`;
+  const stageOf = (n: PlanGraphNodeData) => `stage-${Math.floor(n.segmentIndex / 2)}`;
+  const rowWidth = 1100;
+  const laidOut = () => layoutWithDagre(chain, edges, { groupOf: segmentOf });
+  const at = (nodes: { id: string; position: { x: number; y: number } }[], id: string) => nodes.find((n) => n.id === id)!.position;
+
+  it('leaves a layout that already fits one row untouched', () => {
+    const band = laidOut();
+    expect(wrapIntoRows(band, [segmentOf, stageOf], 100_000)).toBe(band);
+  });
+
+  it('wraps a long chain into rows no wider than the limit, starting with the scans on the top-left', () => {
+    const wrapped = wrapIntoRows(laidOut(), [segmentOf, stageOf], rowWidth);
+    const rows = [...new Set(wrapped.map((n) => n.position.y))].sort((a, b) => a - b);
+    expect(rows.length).toBeGreaterThan(1);
+    for (const y of rows) {
+      const xs = wrapped.filter((n) => n.position.y === y).map((n) => n.position.x);
+      expect(Math.max(...xs) + NODE_WIDTH - Math.min(...xs)).toBeLessThanOrEqual(rowWidth);
+    }
+    expect(at(wrapped, 's7').y).toBe(rows[0]);
+    expect(at(wrapped, 's0').y).toBe(rows[rows.length - 1]);
+    const firstRowXs = wrapped.filter((n) => n.position.y === rows[0]).map((n) => n.position.x);
+    expect(at(wrapped, 's7').x).toBe(Math.min(...firstRowXs));
+  });
+
+  it('never splits a stage across rows, and keeps stacked stage boxes from overlapping', () => {
+    const wrapped = wrapIntoRows(laidOut(), [segmentOf, stageOf], rowWidth);
+    for (let stage = 0; stage < 4; stage++) {
+      expect(at(wrapped, ids[stage * 2]).y).toBe(at(wrapped, ids[stage * 2 + 1]).y);
+    }
+    const boxes = computeGroupBounds(wrapped, stageOf, {
+      paddingX: STAGE_GROUP_PADDING_X, paddingY: STAGE_GROUP_PADDING_Y, headerHeight: STAGE_GROUP_HEADER_HEIGHT,
+    });
+    for (const a of boxes) {
+      for (const b of boxes) {
+        if (a === b) continue;
+        const overlapX = a.position.x < b.position.x + b.width && b.position.x < a.position.x + a.width;
+        const overlapY = a.position.y < b.position.y + b.height && b.position.y < a.position.y + a.height;
+        expect(overlapX && overlapY).toBe(false);
+      }
+    }
+  });
+
+  it('keeps a single group wider than the limit on one row instead of splitting it', () => {
+    const wrapped = wrapIntoRows(laidOut(), [() => 'one-stage'], rowWidth);
+    expect(new Set(wrapped.map((n) => n.position.y)).size).toBe(1);
   });
 });
 

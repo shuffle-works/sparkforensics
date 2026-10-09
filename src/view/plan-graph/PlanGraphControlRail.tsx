@@ -4,7 +4,6 @@ import { useReactFlow, type Node } from '@xyflow/react';
 import { ZoomIn, ZoomOut, Maximize2, Timer, Flag, Info, Map } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PlanGraphSettingsControl } from '@/view/plan-graph/PlanGraphSettingsControl';
-import { useReadableFit } from '@/view/plan-graph/useReadableFit';
 import type { PlanGraphDurationMode, PlanGraphFilterMode } from '@sparkforensics/core/types.ts';
 
 type FlowData = { durationSharePct: number | null };
@@ -45,8 +44,7 @@ export function PlanGraphControlRail({
   miniMapOpen,
   onToggleMiniMap,
 }: PlanGraphControlRailProps) {
-  const { zoomIn, zoomOut, setCenter } = useReactFlow();
-  const fitReadable = useReadableFit();
+  const { zoomIn, zoomOut, fitView, setCenter } = useReactFlow();
 
   // Cycle state tracked by node id, not index, so it survives a filter/scope
   // change: if the last-visited node dropped out of the list, the next click
@@ -80,7 +78,7 @@ export function PlanGraphControlRail({
         <RailButton label="Zoom out" onClick={() => zoomOut({ duration: 200 })}>
           <ZoomOut aria-hidden="true" />
         </RailButton>
-        <RailButton label="Fit to view" onClick={() => fitReadable(200)}>
+        <RailButton label="Fit to view" onClick={() => fitView({ duration: 200 })}>
           <Maximize2 aria-hidden="true" />
         </RailButton>
       </RailGroup>

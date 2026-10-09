@@ -1,7 +1,6 @@
 // Fit-to-view for the plan graph, with a floor on the zoom so node text stays
 // legible. Kept as pure functions, separate from React Flow, so the arithmetic
 // is unit-tested without rendering a canvas.
-import type { PlanLayoutDirection } from '@/view/plan-graph/dagre-layout';
 
 /** Smallest text a reader should have to squint at, in on-screen pixels. */
 export const MIN_TEXT_PX = 11;
@@ -85,10 +84,31 @@ export function viewportShowsAll(bounds: Rect, viewport: Viewport, canvas: Size)
   return left >= 0 && top >= 0 && right <= canvas.width && bottom <= canvas.height;
 }
 
-/** The plan graph is laid out right-to-left by default (a wide band). Switch to
- * bottom-to-top, which stacks a long chain of stages vertically, only when that
- * lands on a larger zoom, so a tall narrow canvas reads a long plan without
- * shrinking it. Ties keep the default. */
-export function pickDirection(rl: Size, bt: Size, canvas: Size): PlanLayoutDirection {
-  return fitZoom(bt, canvas) > fitZoom(rl, canvas) ? 'BT' : 'RL';
+/** The widest content, in graph units, that fits `canvas` at MIN_READABLE_ZOOM. */
+export function readableWidth(canvas: Size, padding = FIT_PADDING_PX): number {
+  return Math.max(canvas.width - padding * 2, 1) / MIN_READABLE_ZOOM;
+}
+
+/** Share of `content` on screen at the zoom `readableViewport` lands on: 1 when
+ * it all fits, less the more of it overflows and has to be scrolled to. */
+export function visibleShare(content: Size, canvas: Size, padding = FIT_PADDING_PX): number {
+  const zoom = Math.min(MAX_FIT_ZOOM, Math.max(MIN_READABLE_ZOOM, fitZoom(content, canvas, padding)));
+  const share = (extent: number, available: number) =>
+    Math.min(1, Math.max(available - padding * 2, 1) / Math.max(extent * zoom, 1));
+  return share(content.width, canvas.width) * share(content.height, canvas.height);
+}
+
+/** Picks the candidate layout that shows the most of the plan at a readable zoom
+ * (`visibleShare`), then the one that fits larger, so it fills the canvas. Ties
+ * keep the earlier candidate. */
+export function pickLayout<T extends { size: Size }>(candidates: [T, ...T[]], canvas: Size): T {
+  let best = candidates[0];
+  for (const candidate of candidates.slice(1)) {
+    const share = visibleShare(candidate.size, canvas);
+    const bestShare = visibleShare(best.size, canvas);
+    if (share > bestShare || (share === bestShare && fitZoom(candidate.size, canvas) > fitZoom(best.size, canvas))) {
+      best = candidate;
+    }
+  }
+  return best;
 }

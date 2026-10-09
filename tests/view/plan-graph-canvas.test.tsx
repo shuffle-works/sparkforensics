@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { PlanGraphCanvas } from '../../src/view/plan-graph/PlanGraphCanvas';
 import { layoutWithDagre } from '../../src/view/plan-graph/dagre-layout';
 import * as dagreLayout from '../../src/view/plan-graph/dagre-layout';
+import { MIN_READABLE_ZOOM } from '../../src/view/plan-graph/readable-fit';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import { docsUrl } from '@sparkforensics/core/docs-config.ts';
 import { ThemeProvider } from '../../src/theme/ThemeProvider';
@@ -21,12 +22,18 @@ function transformX(testId: string): number {
 
 const setCenterMock = vi.fn();
 const getNodeMock = vi.fn();
+const fitViewMock = vi.hoisted(() => vi.fn());
 const miniMapSpy = vi.hoisted(() => vi.fn());
+// When set, the canvas reads this React Flow store state (canvas size and
+// viewport transform) instead of jsdom's unmeasured zero-size canvas.
+const storeOverride = vi.hoisted(() => ({ current: null as null | { width: number; height: number; transform: [number, number, number] } }));
 vi.mock('@xyflow/react', async () => {
   const actual = await vi.importActual<typeof import('@xyflow/react')>('@xyflow/react');
   return {
     ...actual,
-    useReactFlow: () => ({ setCenter: setCenterMock, getNode: getNodeMock, getZoom: () => 1, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: vi.fn(), getNodes: () => [], setViewport: vi.fn() }),
+    useReactFlow: () => ({ setCenter: setCenterMock, getNode: getNodeMock, getZoom: () => 1, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: fitViewMock, getNodes: () => [], setViewport: vi.fn() }),
+    useStore: ((selector: (s: unknown) => unknown, equalityFn?: (a: unknown, b: unknown) => boolean) =>
+      storeOverride.current ? selector(storeOverride.current) : actual.useStore(selector as never, equalityFn)) as typeof actual.useStore,
     MiniMap: (props: Record<string, unknown>) => {
       miniMapSpy(props);
       return <div data-testid="rf__minimap" />;
@@ -533,6 +540,26 @@ describe('layout direction', () => {
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
   };
 
+  it('wraps a long chain of stages into rows on a landscape canvas instead of one wide band', () => {
+    setWindow(1440, 900);
+    const ids = ['n0', 'n1', 'n2', 'n3', 'n4', 'n5', 'n6', 'n7'];
+    const stages = model({
+      nodes: ids.map((id, i) => ({ id, sourceNodeId: id, label: id, category: 'transform', operatorDetail: '', primaryMetric: '', segmentIndex: i, splitRole: null, durationShare: 10 })),
+      edges: ids.slice(0, -1).map((id, i) => ({ id: `${id}->${ids[i + 1]}`, source: id, target: ids[i + 1] })),
+      scope: 'full',
+    });
+    const segmentStageIds = new Map(ids.map((_, i) => [i, i + 1]));
+    render(<PlanGraphCanvas model={stages} showMiniMap={false} stageId={1} segmentStageIds={segmentStageIds} />);
+    const positions = ids.map((id) => translate(`rf__node-${id}`));
+    const rows = new Set(positions.map((p) => p.y));
+    expect(rows.size).toBeGreaterThan(1);
+    // Every row fits the canvas width at the readable zoom, so no row scrolls sideways.
+    const xs = positions.map((p) => p.x);
+    expect((Math.max(...xs) - Math.min(...xs) + 220) * MIN_READABLE_ZOOM).toBeLessThanOrEqual(1440 - 48);
+    // The scan (n7, the chain's producer end) starts the first row.
+    expect(translate('rf__node-n7').y).toBe(Math.min(...positions.map((p) => p.y)));
+  });
+
   it('lays a long chain out as a left-to-right band on a landscape canvas', () => {
     setWindow(1440, 900);
     render(<PlanGraphCanvas model={chainModel()} showMiniMap={false} stageId={1} />);
@@ -571,6 +598,15 @@ describe('control rail', () => {
     expect(screen.getByRole('button', { name: /^settings$/i })).toBeInTheDocument();
   });
 
+  it('fits to a full overview with no zoom floor from the rail', async () => {
+    const user = userEvent.setup();
+    render(<PlanGraphCanvas model={model()} showMiniMap={false} stageId={1} />);
+    fitViewMock.mockClear();
+    await user.click(screen.getByRole('button', { name: /fit to view/i }));
+    expect(fitViewMock).toHaveBeenCalledTimes(1);
+    expect(fitViewMock.mock.lastCall![0]).not.toHaveProperty('minZoom');
+  });
+
   it('toggles the minimap from the rail', async () => {
     const user = userEvent.setup();
     render(<PlanGraphCanvas model={model()} showMiniMap stageId={1} />);
@@ -579,6 +615,33 @@ describe('control rail', () => {
     expect(screen.queryByTestId('rf__minimap')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /show minimap/i }));
     expect(screen.getByTestId('rf__minimap')).toBeInTheDocument();
+  });
+});
+
+describe('minimap visibility', () => {
+  afterEach(() => {
+    storeOverride.current = null;
+  });
+
+  it('hides the minimap while the graph fits, with the toggle unpressed, and shows it on an explicit click', async () => {
+    // The two-node graph, shrunk to half size near the top-left of a large canvas, fits.
+    storeOverride.current = { width: 1400, height: 900, transform: [200, 200, 0.5] };
+    const user = userEvent.setup();
+    render(<PlanGraphCanvas model={model()} showMiniMap stageId={1} />);
+    expect(screen.queryByTestId('rf__minimap')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /show minimap/i })).toHaveAttribute('aria-pressed', 'false');
+    await user.click(screen.getByRole('button', { name: /show minimap/i }));
+    expect(screen.getByTestId('rf__minimap')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /hide minimap/i })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: /hide minimap/i }));
+    expect(screen.queryByTestId('rf__minimap')).not.toBeInTheDocument();
+  });
+
+  it('shows the minimap while part of the graph is off screen, with the toggle pressed', () => {
+    storeOverride.current = { width: 300, height: 200, transform: [0, 0, 2] };
+    render(<PlanGraphCanvas model={model()} showMiniMap stageId={1} />);
+    expect(screen.getByTestId('rf__minimap')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /hide minimap/i })).toHaveAttribute('aria-pressed', 'true');
   });
 });
 
