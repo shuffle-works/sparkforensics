@@ -258,7 +258,7 @@ export const StageExecutorMetricsEventSchema = z.object({
   'Executor Metrics': z.record(z.string(), z.number()).optional(),
 });
 
-const MAX_ACCUMULABLES_PER_TASK = 10_000;
+export const MAX_ACCUMULABLES_PER_TASK = 10_000;
 
 // accumulateTask.
 export const TaskEndEventSchema = z.object({
