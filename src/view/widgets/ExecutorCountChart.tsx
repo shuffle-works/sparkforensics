@@ -9,6 +9,20 @@ import type { AppModel } from '@sparkforensics/core/types.ts';
 
 const HEIGHT = 220;
 
+/** The sentence that stands in for the plot when the count never changes
+ * ("One executor for the whole run"), or null when there is a curve to draw.
+ * Samples taken before the first executor registered are startup, not a
+ * change in count. */
+export function constantCountSentence(counts: readonly number[], executorCount: number): string | null {
+  if (counts.length === 0) return null;
+  if (executorCount === 0) return 'No executors recorded in this run';
+  const firstActive = counts.findIndex((c) => c > 0);
+  const settled = firstActive === -1 ? [] : counts.slice(firstActive);
+  if (settled.some((c) => c !== settled[0])) return null;
+  const n = settled[0] ?? executorCount;
+  return n === 1 ? 'One executor for the whole run' : `${n} executors for the whole run`;
+}
+
 export type ExecutorCountChartProps = {
   appModel: AppModel;
   // Switching to a cached recent file mutates appModel's fields in place
@@ -65,13 +79,13 @@ export function ExecutorCountTooltip({ active, payload, label }: { active?: bool
 }
 
 export const ExecutorCountChart = memo(function ExecutorCountChart({ appModel, activeFileId }: ExecutorCountChartProps) {
-  const { chartData, sampled, hasSeries, peak } = useMemo(() => {
+  const { chartData, sampled, hasSeries, peak, constantSentence } = useMemo(() => {
     const { times, counts } = computeExecutorSeries(appModel);
     const chartData = times.map((label, i) => ({ label, count: counts[i] }));
     const sampled = downsample(chartData);
     const hasSeries = counts.length > 0;
     const peak = hasSeries ? Math.max(...counts) : 0;
-    return { chartData, sampled, hasSeries, peak };
+    return { chartData, sampled, hasSeries, peak, constantSentence: constantCountSentence(counts, appModel.executors.added.length) };
   }, [appModel, activeFileId]);
 
   if (!hasSeries) {
@@ -83,6 +97,19 @@ export const ExecutorCountChart = memo(function ExecutorCountChart({ appModel, a
         <p className="text-muted-foreground text-xs">
           This run has no ApplicationEnd event, so the executor timeline can&apos;t be plotted without fabricating an
           end time. See the Incomplete Run finding for what&apos;s still reliable.
+        </p>
+      </WidgetCard>
+    );
+  }
+
+  if (constantSentence) {
+    return (
+      <WidgetCard
+        title="Executor Count Over Time"
+        summary={<span className="text-muted-foreground text-xs">{constantSentence}</span>}
+      >
+        <p className="text-muted-foreground text-sm" data-testid="executor-count-constant">
+          {constantSentence}.
         </p>
       </WidgetCard>
     );

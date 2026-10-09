@@ -166,3 +166,29 @@ test('the hover text reads as one line on the theme popover surface, not Rechart
   expect(CHART_TOOLTIP_PROPS.labelStyle.color).toBe('var(--color-popover-foreground)');
   expect(CHART_TOOLTIP_PROPS.itemStyle.color).toBe('var(--color-popover-foreground)');
 });
+
+test('a run with one executor throughout shows a sentence instead of a plot', () => {
+  const model = buildAppModel();
+  model.executors = {
+    added: [{ executorId: '1', timestamp: 0 }] as unknown as AppModel['executors']['added'],
+    removed: [],
+  };
+  render(<ExecutorCountChart appModel={model} />);
+  expect(screen.getAllByText(/One executor for the whole run/).length).toBeGreaterThan(0);
+  expect(screen.queryByRole('img', { name: /executor count over time/i })).not.toBeInTheDocument();
+});
+
+test.each([
+  ['a short run sampled once before it arrived', 3_100, 1_500],
+  ['a longer run whose first samples precede it', 100_000, 6_500],
+])('one executor registered after app start still reads as one executor for %s', (_label, endTime, addedAt) => {
+  const model = buildAppModel();
+  model.app = { startTime: 0, endTime } as AppModel['app'];
+  model.executors = {
+    added: [{ executorId: '1', timestamp: addedAt }] as unknown as AppModel['executors']['added'],
+    removed: [],
+  };
+  render(<ExecutorCountChart appModel={model} />);
+  expect(screen.getByTestId('executor-count-constant')).toHaveTextContent('One executor for the whole run.');
+  expect(screen.queryByText(/No executors recorded/)).not.toBeInTheDocument();
+});

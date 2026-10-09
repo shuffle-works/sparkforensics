@@ -52,20 +52,24 @@ function renderBoard(catalog: Finding[]) {
 }
 
 describe('ImpactBoard', () => {
-  // Card placement is the same in both views; Advanced view mounts every
-  // band's cards, where Basic view folds them (see the Basic view describe).
+  // Each row expands its own evidence card in place, in both views.
   beforeEach(() => store.setState({ widgetDensity: 'advanced' }));
   afterEach(() => store.setState({ widgetDensity: 'basic' }));
 
   it('renders a Warning heading with the warning row and a matching active widget card, and an Info heading separately', async () => {
+    const user = userEvent.setup();
     renderBoard([skewFinding(1, 'warning'), gcFinding(2, 'info')]);
 
     const warningSection = screen.getByRole('heading', { name: 'Warning' }).closest('section') as HTMLElement;
     expect(within(within(warningSection).getByRole('table')).getByText('Rebalance Stage 1.')).toBeInTheDocument();
+    // The row owns its card: it opens in place under the row, not as a separate grid card.
+    expect(within(warningSection).queryByRole('heading', { name: 'Task Skew' })).not.toBeInTheDocument();
+    await user.click(within(warningSection).getByRole('button', { name: 'Show evidence' }));
     expect(await within(warningSection).findByRole('heading', { name: 'Task Skew' })).toBeInTheDocument();
 
     const infoSection = screen.getByRole('heading', { name: 'Info' }).closest('section') as HTMLElement;
     expect(within(within(infoSection).getByRole('table')).getByText('Investigate GC in Stage 2.')).toBeInTheDocument();
+    await user.click(within(infoSection).getByRole('button', { name: 'Show evidence' }));
     expect(await within(infoSection).findByRole('heading', { name: 'GC Pressure' })).toBeInTheDocument();
   });
 
@@ -84,12 +88,14 @@ describe('ImpactBoard', () => {
   });
 
   it('keeps a row in its own impact band even when it shares a widget card with a worse-band finding of another type', async () => {
+    const user = userEvent.setup();
     // Both render through one ShuffleIO card, but each row stays in its own finding's real band.
     renderBoard([shuffleFinding(1, 'critical'), partitionSizingFinding(2, 'info')]);
 
     const criticalSection = screen.getByRole('heading', { name: 'Critical' }).closest('section') as HTMLElement;
     const criticalTable = within(criticalSection).getByRole('table');
     expect(within(criticalTable).getByText('Reduce shuffle in Stage 1.')).toBeInTheDocument();
+    await user.click(within(criticalSection).getByRole('button', { name: 'Show evidence' }));
     expect(await within(criticalSection).findByRole('heading', { name: 'Shuffle I/O' })).toBeInTheDocument();
 
     const infoSection = screen.getByRole('heading', { name: 'Info' }).closest('section') as HTMLElement;
@@ -104,7 +110,7 @@ describe('ImpactBoard', () => {
 });
 
 describe('ImpactBoard in Basic view', () => {
-  it('leads each band with its rows and folds that band\'s evidence cards until asked', async () => {
+  it('leads each band with its rows and folds each row\'s evidence card until asked', async () => {
     const user = userEvent.setup();
     renderBoard([skewFinding(1, 'warning'), gcFinding(2, 'info')]);
 
@@ -112,11 +118,15 @@ describe('ImpactBoard in Basic view', () => {
     expect(within(warningSection).getByText('Rebalance Stage 1.')).toBeInTheDocument();
     expect(within(warningSection).queryByRole('heading', { name: 'Task Skew' })).not.toBeInTheDocument();
 
-    await user.click(within(warningSection).getByRole('button', { name: 'Show the evidence (1 card)' }));
+    const showSkew = within(warningSection).getByRole('button', { name: 'Show evidence' });
+    expect(showSkew).toHaveAttribute('aria-expanded', 'false');
+    await user.click(showSkew);
     expect(await within(warningSection).findByRole('heading', { name: 'Task Skew' })).toBeInTheDocument();
-    // Opening one band leaves the others folded.
+    expect(within(warningSection).getByRole('button', { name: 'Hide evidence' })).toHaveAttribute('aria-expanded', 'true');
+    // Opening one row leaves the others folded.
     const infoSection = screen.getByRole('heading', { name: 'Info' }).closest('section') as HTMLElement;
-    expect(within(infoSection).getByRole('button', { name: 'Show the evidence (1 card)' })).toHaveAttribute('aria-expanded', 'false');
+    expect(within(infoSection).getByRole('button', { name: 'Show evidence' })).toHaveAttribute('aria-expanded', 'false');
+    expect(within(infoSection).queryByRole('heading', { name: 'GC Pressure' })).not.toBeInTheDocument();
   });
 });
 

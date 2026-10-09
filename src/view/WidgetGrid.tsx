@@ -32,7 +32,7 @@ export function WidgetGrid({ children, className }: { children: ReactNode; class
   return (
     <div
       className={cn(
-        'grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] items-start gap-4',
+        'grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4',
         className,
       )}
     >

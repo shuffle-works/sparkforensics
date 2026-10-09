@@ -15,6 +15,8 @@ function readyAppModel() {
     stages: new Map([
       [1, { id: 1, submittedAt: 0, completedAt: 1000 }],
       [2, { id: 2, submittedAt: 0, completedAt: 1000 }],
+      [3, { id: 3, submittedAt: 0, completedAt: 1000 }],
+      [4, { id: 4, submittedAt: 0, completedAt: 1000 }],
     ]),
   };
 }
@@ -22,6 +24,9 @@ function readyAppModel() {
 const catalog: Finding[] = [
   { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Reduce spill in Stage 1.' },
   { type: 'skew', stageId: 2, impactBand: 'warning', recommendation: 'Rebalance Stage 2.' },
+  // The verdict owns the first three places; this one is the first row under Findings.
+  { type: 'skew', stageId: 3, impactBand: 'warning', recommendation: 'Rebalance Stage 3.' },
+  { type: 'skew', stageId: 4, impactBand: 'warning', recommendation: 'Rebalance Stage 4.' },
 ];
 
 function load(density: 'basic' | 'advanced') {
@@ -60,9 +65,15 @@ test('in Advanced view, j and k walk the verdict steps then the finding rows, in
   };
   await press('j', /Show evidence/);
   const firstStep = document.activeElement;
+  expect(firstStep?.closest('[data-testid="next-step"]')).not.toBeNull();
   await press('j', /Show evidence/);
-  // Two verdict steps, then the first recommendation row.
-  await press('j', /Reduce spill in Stage 1\./);
+  await press('j', /Show evidence/);
+  expect(document.activeElement?.closest('[data-testid="next-step"]')).not.toBeNull();
+  // Three verdict steps, then the first recommendation row under Findings.
+  await press('j', /Show evidence/);
+  expect(document.activeElement?.closest('[data-testid="fix-these-first-row"], [data-testid="fix-these-first-group-row"]')).not.toBeNull();
+  await press('k', /Show evidence/);
+  expect(document.activeElement?.closest('[data-testid="next-step"]')).not.toBeNull();
   await press('k', /Show evidence/);
   await press('k', /Show evidence/);
   expect(document.activeElement).toBe(firstStep);

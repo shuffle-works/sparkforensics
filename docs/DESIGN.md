@@ -197,7 +197,7 @@ The mono label names something the reader is looking at: a metric tile, a findin
 
 ## Layout
 
-The board keeps its reading order: verdict, then numbers, then evidence. `RunVerdict` answers "how did this run go and where do I start" in one sentence and lists at most three numbered next steps. The Scorecard follows, then the Findings and Full app report tabs with every finding and widget.
+The board keeps its reading order: verdict, then numbers, then evidence. `RunVerdict` answers "how did this run go and where do I start" in one sentence and lists at most three numbered next steps. The Scorecard follows, then the Findings tab with the findings past those steps, and the Full app report.
 
 The shell is a single column with a compact bordered top bar and a 16px page inset. Regions sit on a 24px vertical rhythm; card interiors use 16px, or 12px for compact cards. Widget boards are one column on small screens, two from the medium breakpoint and three from extra-large; an expanded card spans the board so charts and tables get room. Tables scroll horizontally rather than squeezing columns.
 
@@ -205,7 +205,7 @@ The shell is a single column with a compact bordered top bar and a 16px page ins
 
 - **One place, one step.** Findings on the same stage fold into one step, because they usually share a cause and their savings overlap.
 - **Plain language leads, Spark terms follow.** A step's first line is the plain explanation; metric names and configuration keys come after.
-- **Action first, evidence on demand.** Each Findings band leads with its rows; in Basic view the detail widgets wait behind one "Show the evidence" disclosure, and any route to a finding opens it.
+- **Action first, evidence on demand.** The verdict owns the top steps and the Findings tab lists the rest as "More findings (n)". Every finding has one "Show evidence" that expands its card in place, and any route to the card opens it.
 - **Basic by default, Advanced on request.** Advanced view adds the finding filter bar, confidence markers, threshold captions, extra columns and doc icons (`AdvancedOnly`). A control that explains current state stays visible in Basic.
 
 ### The run clock
