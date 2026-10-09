@@ -227,7 +227,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
               // two controls stay distinguishable (and uniquely queryable)
               // when both render on the same dashboard.
               aria-label={`Open Stage ${id} details`}
-              className="inline-flex cursor-pointer items-center rounded-sm hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="tap-target-comfortable inline-flex cursor-pointer items-center rounded-sm hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               onClick={(event) => {
                 event.stopPropagation();
                 openStage(id);
@@ -260,7 +260,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
                         type="button"
                         aria-label={`Investigate ${route.target.findingLabel} in Stage ${stageId}`}
                         title={`Investigate ${route.target.findingLabel} in Stage ${stageId}`}
-                        className="inline-flex cursor-pointer items-center rounded-sm hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="tap-target-comfortable inline-flex cursor-pointer items-center rounded-sm hover:underline underline-offset-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                         onClick={(event) => {
                           event.stopPropagation();
                           route.onRoute(route.target);

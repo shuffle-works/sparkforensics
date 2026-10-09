@@ -164,7 +164,7 @@ export function MemoryPressure({ appModel }: MemoryPressureProps) {
         >
             <ComposedChart data={twinData}>
               <CartesianGrid stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
-              <XAxis dataKey="stage" tick={{ fontSize: 10 }} />
+              <XAxis dataKey="stage" tick={{ fontSize: 12 }} />
               <YAxis yAxisId="left" tick={{ fontSize: 10 }} width={36} />
               <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} width={36} />
               <Tooltip />

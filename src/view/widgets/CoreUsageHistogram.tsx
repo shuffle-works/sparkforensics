@@ -94,7 +94,7 @@ export function CoreUsageHistogram({ appModel, getTaskData }: CoreUsageHistogram
               <XAxis
                 dataKey="cores"
                 tick={{ fontSize: 10 }}
-                label={{ value: 'Concurrent busy cores', position: 'insideBottom', offset: -5, fontSize: 10 }}
+                label={{ value: 'Concurrent busy cores', position: 'insideBottom', offset: -5, fontSize: 12 }}
               />
               <YAxis
                 tick={{ fontSize: 10 }}
