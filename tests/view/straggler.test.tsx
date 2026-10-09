@@ -132,3 +132,18 @@ test('surfaces skew\'s duration ratio for a tail only skew\'s gate admits', () =
   expect(screen.getByText(/task duration P95\/median 9×/)).toBeInTheDocument();
   expect(screen.queryByText(/of tasks straggled/)).toBeNull();
 });
+
+test('a critical straggler worth a small share of the run draws its card and tag without red', () => {
+  const appModel = { ...appModelWithStage(9), app: { startTime: 0, endTime: 3_100 } } as AppModel;
+  store.setState({ appModel });
+  const catalog: Finding[] = [
+    {
+      type: 'straggler', stageId: 9, impactBand: 'critical', metric: 'stragglerShare', value: 35, unit: 'pct',
+      recommendation: 'Investigate stragglers.',
+      impactEstimate: { basis: 'serial', wallClock: { low: 64, high: 64 }, estimateMethod: 'modeled' },
+    } as Finding,
+  ];
+  const { container } = renderStraggler(appModel, catalog, false);
+  expect(container.querySelector('.border-critical, .bg-critical, .text-critical')).toBeNull();
+  expect(container.querySelector('.border-muted-foreground')).not.toBeNull();
+});

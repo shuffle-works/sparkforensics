@@ -20,6 +20,8 @@ import { PlanView, resolvePlanTree } from '@/view/widgets/PlanView';
 import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { formatBytes, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import type { AppModel, Finding, ImpactBand, Stage, TaskData } from '@sparkforensics/core/types.ts';
+import { worstPresentedTone } from '@/view/impact-presentation';
+import { useStore } from '@/store/store';
 
 export interface StageDetailDialogProps {
   appModel: AppModel;
@@ -191,6 +193,7 @@ function StageVerdict({
   onShowEvidence?: (target: TriageTarget) => void;
 }) {
   const interpretation = useInterpretation();
+  const app = useStore((s) => s.appModel.app);
   const groups = groupFindingsByType(findings, typeOrder);
 
   return (
@@ -198,7 +201,8 @@ function StageVerdict({
       <p className="text-sm text-muted-foreground">{stageSummary(stage, runMs, groups.length)}</p>
       {groups.length > 0 ? (
         <ol className="space-y-4 rounded-md border p-3">
-          {groups.map(([type, { impactBand, finding, recs }]) => {
+          {groups.map(([type, { finding, recs }]) => {
+            const groupTone = worstPresentedTone(findings.filter((f) => f.type === type), app) ?? finding.impactBand;
             // Gate on the compact formatter, not the mere presence of `impactEstimate`:
             // an informational estimate has the field but `<ImpactEstimate>` renders
             // nothing for it, which would leave an empty gap below the recommendation.
@@ -207,7 +211,7 @@ function StageVerdict({
             return (
               <li key={type} className="space-y-1.5" data-testid="stage-finding">
                 <div className="flex flex-wrap items-center gap-2">
-                  <TagBadge type={type} impactBand={impactBand} />
+                  <TagBadge type={type} impactBand={groupTone} />
                   <h3 className="text-sm font-semibold">{findingActionLabel(finding)}</h3>
                 </div>
                 {[...recs.entries()].map(([rec, { extended }], i) => (

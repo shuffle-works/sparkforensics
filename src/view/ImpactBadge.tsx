@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { docsUrl, isKnownDocAnchor } from '@sparkforensics/core/docs-config.ts';
 import { findingGuideUrl } from '@sparkforensics/core/docs-site-config.ts';
 import { cn } from '@/lib/utils';
-import type { ImpactBand } from '@sparkforensics/core/types.ts';
 import type { ImpactTone } from '@/view/impact-presentation';
 import { typeTag } from '@sparkforensics/core/format-utils.ts';
 import { useOptionalDocs } from '@/view/DocsContext';
@@ -33,10 +32,11 @@ export const IMPACT_TEXT_CLASS: Record<ImpactTone, string> = {
   neutral: 'text-foreground',
 };
 
-export const IMPACT_BORDER_CLASS: Record<ImpactBand, string> = {
+export const IMPACT_BORDER_CLASS: Record<ImpactTone, string> = {
   critical: 'border-critical',
   warning: 'border-warning',
   info: 'border-info',
+  neutral: 'border-muted-foreground',
 };
 
 const dotVariants = cva('inline-block size-2 shrink-0 rounded-full', {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { StagePill } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
@@ -16,6 +16,7 @@ import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
 import { usePagedRows } from '@/view/usePagedRows';
+import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 
 export type StageFailedProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
 
@@ -26,6 +27,7 @@ function hasStage<F extends Finding>(f: F): f is F & { stageId: number } {
 
 function StageFailedRow({ finding }: { finding: FindingOf<'stageFailed'> & { stageId: number } }) {
   const anchor = useAnchoredRow([finding]);
+  const tone = usePresentedTone(finding);
   return (
     <li
       ref={anchor.ref}
@@ -35,7 +37,7 @@ function StageFailedRow({ finding }: { finding: FindingOf<'stageFailed'> & { sta
     >
       <div className="flex items-center gap-2">
         <StagePill stageId={finding.stageId} />
-        <ImpactDot impactBand={finding.impactBand} />
+        <ImpactDot impactBand={tone} />
       </div>
       <p className="text-xs text-muted-foreground">
         Stage attempt failed outright. Reason: <strong>{finding.valueText}</strong>
@@ -73,16 +75,17 @@ export function StageFailed({ appModel, catalog, defaultCollapsed = true }: Stag
   const routeIndex = activeRouteTarget ? ordered.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(ordered, page, setPage, routeIndex);
 
+  const worstTone = useWorstPresentedTone(findings);
   if (findings.length === 0) return null;
 
   return (
     <WidgetCard
       title="Failed Stages"
       fixFor={findings}
-      impactBand={worstImpactBand(findings)}
+      impactBand={worstTone}
       badges={
         <>
-          <TagBadge type="stageFailed" impactBand={worstImpactBand(findings)!} />
+          <TagBadge type="stageFailed" impactBand={worstTone!} />
           {canToggleSort(findings, findings.length, cardOpen) ? (
             <SortModeToggle
               mode={sortMode}

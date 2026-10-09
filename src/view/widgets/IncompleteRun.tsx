@@ -3,6 +3,7 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { usePresentedToneOf } from '@/view/impact-presentation';
 
 /** Single-row body for the `incompleteRun` finding. App-scoped (no StagePill),
  * always one row (no pagination). */
@@ -25,15 +26,14 @@ function IncompleteRunRow({ finding }: { finding: Finding }) {
  * off. Renders nothing when the run completed normally. */
 export function IncompleteRun({ catalog, defaultCollapsed = true }: WidgetProps) {
   const finding = catalog.find((f) => f.type === 'incompleteRun');
+  const toneOf = usePresentedToneOf();
   if (!finding) return null;
-
-  const { impactBand } = finding;
 
   return (
     <WidgetCard
       title="Incomplete Run"
-      impactBand={impactBand}
-      badges={<TagBadge type="incompleteRun" impactBand={impactBand} />}
+      impactBand={toneOf(finding)}
+      badges={<TagBadge type="incompleteRun" impactBand={toneOf(finding)} />}
       defaultCollapsed={defaultCollapsed}
     >
       <IncompleteRunRow finding={finding} />

@@ -239,6 +239,7 @@ function FilteredBoard({
           interpretation={interpretation}
           onRoute={routeToVisible}
           onShowMoreFindings={showMoreFindings}
+          moreFindingsCount={listedCount}
           evidenceOwners={evidenceOwners}
           renderEvidence={renderVerdictEvidence}
         /> : null}

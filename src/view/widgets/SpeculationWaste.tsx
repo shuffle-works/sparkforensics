@@ -9,6 +9,7 @@ import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { canToggleSort } from '@/view/impact-sort';
+import { usePresentedTone, usePresentedToneOf } from '@/view/impact-presentation';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
@@ -24,6 +25,7 @@ function metricLabel(f: Finding): string {
 
 function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetProps['appModel'] }) {
   const anchor = useAnchoredRow([finding]);
+  const tone = usePresentedTone(finding);
   return (
     <li
       ref={anchor.ref}
@@ -32,7 +34,7 @@ function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetPro
       className={`space-y-1 text-sm transition-colors ${anchor.flashClassName}`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <ImpactDot impactBand={finding.impactBand} />
+        <ImpactDot impactBand={tone} />
         {finding.stageId != null ? <StageHeader stageId={finding.stageId} appModel={appModel} /> : null}
         <strong>{metricLabel(finding)}</strong>
       </div>
@@ -61,16 +63,18 @@ export const SpeculationWaste = memo(function SpeculationWaste({ appModel, catal
   const routeIndex = activeRouteTarget ? orderedIssues.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedIssues, page, setPage, routeIndex);
 
+  const toneOf = usePresentedToneOf();
+
   if (issues.length === 0) return null;
 
   return (
     <WidgetCard
       title="Speculation Waste"
       fixFor={issues}
-      impactBand={issues[0].impactBand}
+      impactBand={toneOf(issues[0])}
       badges={
         <>
-          <TagBadge type="speculationWaste" impactBand={issues[0].impactBand} />
+          <TagBadge type="speculationWaste" impactBand={toneOf(issues[0])} />
           {canToggleSort(issues, issues.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}

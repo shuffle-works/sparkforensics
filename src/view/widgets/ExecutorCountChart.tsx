@@ -10,11 +10,16 @@ import type { AppModel } from '@sparkforensics/core/types.ts';
 const HEIGHT = 220;
 
 /** The sentence that stands in for the plot when the count never changes
- * ("One executor for the whole run"), or null when there is a curve to draw. */
-export function constantCountSentence(counts: readonly number[]): string | null {
-  if (counts.length === 0 || counts.some((c) => c !== counts[0])) return null;
-  const n = counts[0];
-  if (n === 0) return 'No executors recorded in this run';
+ * ("One executor for the whole run"), or null when there is a curve to draw.
+ * Samples taken before the first executor registered are startup, not a
+ * change in count. */
+export function constantCountSentence(counts: readonly number[], executorCount: number): string | null {
+  if (counts.length === 0) return null;
+  if (executorCount === 0) return 'No executors recorded in this run';
+  const firstActive = counts.findIndex((c) => c > 0);
+  const settled = firstActive === -1 ? [] : counts.slice(firstActive);
+  if (settled.some((c) => c !== settled[0])) return null;
+  const n = settled[0] ?? executorCount;
   return n === 1 ? 'One executor for the whole run' : `${n} executors for the whole run`;
 }
 
@@ -80,7 +85,7 @@ export const ExecutorCountChart = memo(function ExecutorCountChart({ appModel, a
     const sampled = downsample(chartData);
     const hasSeries = counts.length > 0;
     const peak = hasSeries ? Math.max(...counts) : 0;
-    return { chartData, sampled, hasSeries, peak, constantSentence: constantCountSentence(counts) };
+    return { chartData, sampled, hasSeries, peak, constantSentence: constantCountSentence(counts, appModel.executors.added.length) };
   }, [appModel, activeFileId]);
 
   if (!hasSeries) {

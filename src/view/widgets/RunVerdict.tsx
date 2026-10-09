@@ -26,15 +26,13 @@ export interface RunVerdictProps {
   onRoute: (target: TriageTarget) => void;
   /** Shows the Findings tab, which lists the findings the steps do not. */
   onShowMoreFindings?: () => void;
+  /** How many findings the Findings tab lists under "More findings". */
+  moreFindingsCount?: number;
   /** The evidence card for a widget the verdict owns, or null when another
    * surface owns it. */
   renderEvidence?: (widgetId: string) => ReactNode;
   /** Step index to the widget whose evidence renders inside that step. */
   evidenceOwners?: ReadonlyMap<number, string>;
-}
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`;
 }
 
 function CopyTextButton({ text, label, testId }: { text: string; label: string; testId: string }) {
@@ -265,8 +263,8 @@ function NewcomerPrimer() {
  * start, a short summary, and the top places to look as ordered next steps,
  * each with a plain-language explanation, the concrete fix, and a route to its
  * evidence. The full, band-grouped finding list stays in the Findings tab. */
-export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, renderEvidence, evidenceOwners }: RunVerdictProps) {
-  const { title, summary, failed, clean, failureReason, remaining, copyText } = interpretation.data.verdict;
+export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFindingsCount = 0, renderEvidence, evidenceOwners }: RunVerdictProps) {
+  const { title, summary, failed, clean, failureReason, copyText } = interpretation.data.verdict;
   const shown = interpretation.data.verdict.steps
     .map((step) => ({ step, finding: findingAt(interpretation, step.leadIndex) }))
     .filter((entry): entry is { step: InterpretedStep; finding: Finding } => entry.finding != null);
@@ -326,14 +324,14 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, render
       ) : null}
       {shown.length > 0 ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          {remaining > 0 ? (
+          {moreFindingsCount > 0 ? (
             onShowMoreFindings ? (
               <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={onShowMoreFindings}>
-                {plural(remaining, 'more place')} in Findings
+                More findings ({moreFindingsCount})
                 <ArrowRight aria-hidden="true" />
               </Button>
             ) : (
-              <p className="text-xs text-muted-foreground">{plural(remaining, 'more place')} under Findings.</p>
+              <p className="text-xs text-muted-foreground">More findings ({moreFindingsCount}) under Findings.</p>
             )
           ) : (
             <span />

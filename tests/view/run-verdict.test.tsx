@@ -29,10 +29,10 @@ function appModel(): AppModel {
 }
 
 // The verdict renders the run's interpretation, computed as the live app computes it.
-function renderVerdict(catalog: Finding[], onRoute = vi.fn(), model: AppModel = appModel()) {
+function renderVerdict(catalog: Finding[], onRoute = vi.fn(), model: AppModel = appModel(), moreFindingsCount?: number) {
   render(
     <StageDetailProvider>
-      <RunVerdict interpretation={installInterpretation(catalog, model)} onRoute={onRoute} />
+      <RunVerdict interpretation={installInterpretation(catalog, model)} onRoute={onRoute} moreFindingsCount={moreFindingsCount} />
     </StageDetailProvider>,
   );
   return onRoute;
@@ -80,10 +80,10 @@ describe('RunVerdict', () => {
     expect(onRoute).toHaveBeenCalledTimes(1);
   });
 
-  it('lists at most three places and counts the rest', () => {
-    renderVerdict([1, 2, 3, 4, 5].map((stageId) => timed('spill', stageId, stageId * 100, 'warning')));
+  it('lists at most three places and points to the findings the Findings tab lists', () => {
+    renderVerdict([1, 2, 3, 4, 5].map((stageId) => timed('spill', stageId, stageId * 100, 'warning')), vi.fn(), appModel(), 2);
     expect(screen.getAllByTestId('next-step')).toHaveLength(3);
-    expect(screen.getByText('2 more places under Findings.')).toBeInTheDocument();
+    expect(screen.getByText('More findings (2) under Findings.')).toBeInTheDocument();
   });
 
   it('copies the next steps and confirms it', async () => {

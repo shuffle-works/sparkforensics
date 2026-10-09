@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 
-import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { FindingOf } from '@sparkforensics/core/types.ts';
@@ -20,6 +20,7 @@ import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
 import { RowPagination } from '@/view/RowPagination';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
+import { useWorstPresentedTone } from '@/view/impact-presentation';
 
 export type DuplicatePlanSubtreeProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
@@ -71,18 +72,19 @@ export const DuplicatePlanSubtree = memo(function DuplicatePlanSubtree({ catalog
   const routeIndex = activeRouteTarget ? orderedFindings.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedFindings, page, setPage, routeIndex);
 
+  const worstTone = useWorstPresentedTone(findings);
   if (findings.length === 0) return null;
 
   return (
     <WidgetCard
       title="Redundant Plan Subtree"
       fixFor={findings}
-      impactBand={worstImpactBand(findings)}
+      impactBand={worstTone}
       open={cardOpen}
       onOpenChange={setCardOpen}
       badges={
         <>
-          <TagBadge type="duplicatePlanSubtree" impactBand={worstImpactBand(findings) ?? 'info'} className={PLAN_TAG_CLASS} />
+          <TagBadge type="duplicatePlanSubtree" impactBand={worstTone ?? 'info'} className={PLAN_TAG_CLASS} />
           {canToggleSort(findings, findings.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}

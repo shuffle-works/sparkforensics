@@ -390,3 +390,20 @@ test('in Basic view, a route that clears the last active filter hides the bar an
   // @ts-expect-error -- restore jsdom's default (no scrollIntoView)
   delete Element.prototype.scrollIntoView;
 });
+
+test('the verdict links to the rest with the Findings tab\'s count when each place has a second finding', async () => {
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      ...verdictLeads(),
+      ...[3, 4, 5].map((stageId) => ({ type: 'spill', stageId, impactBand: 'warning', recommendation: 'Fix spill.' }) as Finding),
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+
+  const verdict = screen.getByTestId('run-verdict');
+  expect(within(verdict).getAllByTestId('next-step')).toHaveLength(3);
+  expect(within(verdict).getByRole('button', { name: 'More findings (3)' })).toBeInTheDocument();
+  expect(screen.getByTestId('more-findings-heading')).toHaveTextContent('More findings (3)');
+});

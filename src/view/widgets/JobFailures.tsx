@@ -6,6 +6,7 @@ import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { FindingOf } from '@sparkforensics/core/types.ts';
+import { usePresentedToneOf } from '@/view/impact-presentation';
 
 /** Single-row body for an active `jobFailureRate` finding. App-scoped (no
  * StagePill), always one row (no pagination). */
@@ -33,17 +34,18 @@ function JobFailuresRow({ finding }: { finding: FindingOf<'jobFailureRate'> }) {
  * component and the type shows as a Clean Checks row instead. */
 export function JobFailures({ catalog, defaultCollapsed = true }: WidgetProps) {
   const [finding] = findingsOfType(catalog, 'jobFailureRate');
+  const toneOf = usePresentedToneOf();
 
   if (!finding) return null;
 
-  const { impactBand, value, failedJobs, totalJobs } = finding;
+  const { value, failedJobs, totalJobs } = finding;
 
   return (
     <WidgetCard
       title="Job Failures"
       fixFor={[finding]}
-      impactBand={impactBand}
-      badges={<TagBadge type="jobFailureRate" impactBand={impactBand} />}
+      impactBand={toneOf(finding)}
+      badges={<TagBadge type="jobFailureRate" impactBand={toneOf(finding)} />}
       defaultCollapsed={defaultCollapsed}
       summary={
         <WidgetLeadSummary

@@ -7,7 +7,7 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { StageHeader } from '@/view/StageHeader';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { formatDuration, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import { RowPagination } from '@/view/RowPagination';
 import { usePagedRows } from '@/view/usePagedRows';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -16,6 +16,7 @@ import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import type { TriageTarget } from '@/view/triage-target';
 import { canToggleSort } from '@/view/impact-sort';
+import { useWorstPresentedTone } from '@/view/impact-presentation';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode, type UseSortModeResult } from '@/view/useSortMode';
 
@@ -132,11 +133,11 @@ export function GcPressure({ catalog, appModel, defaultCollapsed = true }: GcPre
   }, [appModel]);
 
   const findings = catalog.filter((f) => f.type === 'gc');
+  const worstTone = useWorstPresentedTone(findings);
   if (findings.length === 0) return null;
 
   const highFindings = findings.filter((f) => f.direction !== 'low');
   const lowFindings = findings.filter((f) => f.direction === 'low');
-  const impactBand = worstImpactBand(findings);
 
   // Compute worst value for the collapsed summary.
   const worst = [...findings].sort((a, b) => (typeof b.value === 'number' ? b.value : 0) - (typeof a.value === 'number' ? a.value : 0))[0];
@@ -144,11 +145,11 @@ export function GcPressure({ catalog, appModel, defaultCollapsed = true }: GcPre
   return (
     <WidgetCard
       title="GC Pressure"
-      impactBand={impactBand}
+      impactBand={worstTone}
       fixFor={findings}
       badges={
         <>
-          <TagBadge type="gc" impactBand={impactBand ?? 'info'} />
+          <TagBadge type="gc" impactBand={worstTone ?? 'info'} />
           {canToggleSort(findings, findings.length, cardOpen) ? (
             <SortModeToggle
               mode={sortMode}

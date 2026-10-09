@@ -9,8 +9,9 @@ import {
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
-import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
+import type { Finding } from '@sparkforensics/core/types.ts';
 import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
+import type { ImpactTone } from '@/view/impact-presentation';
 import { DisclosureOpenContext } from '@/view/DisclosureContext';
 import { useWidgetGridCard, WidgetGridCardBoundary } from '@/view/WidgetGrid';
 
@@ -18,7 +19,7 @@ export interface WidgetCardProps {
   title: string;
   /** A short mono line under the title (scope, totals), such as "17.2s total". */
   subtitle?: ReactNode;
-  impactBand?: ImpactBand;
+  impactBand?: ImpactTone;
   badges?: ReactNode;
   /** Like `badges`, but rendered next to the title only while the card is
    * expanded, kept separate so tag/impact badges stay visible in the

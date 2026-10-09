@@ -43,6 +43,7 @@ import { StepCode } from '@/view/StepCode';
 import { WidgetCard } from '@/view/WidgetCard';
 import type { AppModel, Finding, Stage, TaskData } from '@sparkforensics/core/types.ts';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
+import { presentedTone } from '@/view/impact-presentation';
 
 const PAGE_SIZE = 10;
 const TOP_N = 10;
@@ -269,10 +270,10 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
                           if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
                         }}
                       >
-                        <TagBadge type={t.type} impactBand={t.impactBand} plainBadge />
+                        <TagBadge type={t.type} impactBand={presentedTone(t, appModel.app)} plainBadge />
                       </button>
                     ) : (
-                      <TagBadge type={t.type} impactBand={t.impactBand} />
+                      <TagBadge type={t.type} impactBand={presentedTone(t, appModel.app)} />
                     )}
                     {compact ? <span className="text-xs text-muted-foreground">{compact}</span> : null}
                   </span>
@@ -371,7 +372,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
         },
       },
     ],
-    [catalog, onRoute, triageTargets, openStage, density, interpretation],
+    [catalog, onRoute, triageTargets, openStage, density, interpretation, appModel.app],
   );
 
   const table = useTable({

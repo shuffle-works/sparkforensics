@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { pathBasename, formatBytes, formatMetricValue, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { pathBasename, formatBytes, formatMetricValue, IMPACT_BAND_ORDER, numericValue } from '@sparkforensics/core/format-utils.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { CacheUtilizationFinding } from '@sparkforensics/core/finding-types.ts';
 import { DocsLink } from '@/view/DocsContext';
@@ -21,6 +21,7 @@ import { usePagedRows } from '@/view/usePagedRows';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
+import { usePresentedTone, useWorstPresentedTone, worstPresentedTone } from '@/view/impact-presentation';
 
 // App-wide RDD cache/persist surfacing, backed by the `cacheUtilization`
 // detector for per-RDD partial-cache / disk-spillover impact band. Per-executor
@@ -91,6 +92,7 @@ function cacheFindingDetail(f: CacheUtilizationFinding): string {
  * storageUnobserved caveat has no shared fix, so its row keeps its own text. */
 function CacheFindingRow({ finding }: { finding: CacheUtilizationFinding }) {
   const anchor = useAnchoredRow([finding]);
+  const tone = usePresentedTone(finding);
   const label = finding.dataUnavailable ? 'Cache storage not logged' : finding.rddName ?? `RDD ${finding.rddId}`;
 
   return (
@@ -101,7 +103,7 @@ function CacheFindingRow({ finding }: { finding: CacheUtilizationFinding }) {
       className={`space-y-1 transition-colors ${anchor.flashClassName}`}
     >
       <p className="flex flex-wrap items-start gap-2">
-        <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
+        <ImpactDot impactBand={tone} className="mt-1.5" />
         <span>{label}</span>
       </p>
       <p className="text-xs text-muted-foreground">{finding.dataUnavailable ? finding.recommendation : cacheFindingDetail(finding)}</p>
@@ -139,6 +141,7 @@ export const CacheUtilization = memo(function CacheUtilization({ appModel, catal
 
   // Persisted RDDs with no storage evidence still mount the card, so the run
   // reads as "not checked" instead of a clean Cache Storage result.
+  const worstTone = useWorstPresentedTone(allFindings);
   const unobserved = allFindings.find((f) => f.dataUnavailable);
   if (rows.length === 0 && !unobserved) return null;
 
@@ -150,11 +153,11 @@ export const CacheUtilization = memo(function CacheUtilization({ appModel, catal
       <WidgetCard
         title="Cache Storage"
         fixFor={allFindings}
-        impactBand={worstImpactBand(allFindings)}
+        impactBand={worstTone}
         badges={
           <>
             {allFindings.length > 0 ? (
-              <TagBadge type="cacheUtilization" impactBand={worstImpactBand(allFindings) ?? 'info'} />
+              <TagBadge type="cacheUtilization" impactBand={worstTone ?? 'info'} />
             ) : null}
             <span className="text-xs text-muted-foreground">
               {rows.length > 0 ? `${rows.length} cached RDD${rows.length === 1 ? '' : 's'}` : 'cache storage not logged'}, see{' '}
@@ -189,7 +192,7 @@ export const CacheUtilization = memo(function CacheUtilization({ appModel, catal
                     <TableCell className="max-w-80 truncate" title={name !== shortName ? name : undefined}>
                       {shortName}
                       {rowFindings.length > 0 && (
-                        <ImpactDot impactBand={worstImpactBand(rowFindings) ?? 'info'} className="ml-1.5" />
+                        <ImpactDot impactBand={worstPresentedTone(rowFindings, appModel.app) ?? 'info'} className="ml-1.5" />
                       )}
                     </TableCell>
                     <TableCell>{storageLevelLabel(r.storageLevel)}</TableCell>
