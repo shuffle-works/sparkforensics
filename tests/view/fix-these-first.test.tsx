@@ -393,3 +393,29 @@ describe('impactFigure', () => {
     expect(impactFigure(withRawWaste(0.04))).toBeNull();
   });
 });
+
+describe('TypeGroupRow hit area', () => {
+  it('gives the group toggle the 24px overlay even when it has no description line', () => {
+    // An uncovered type has no generic sentence, so the button holds only the
+    // one-line label and renders 20px tall without the overlay.
+    const findings: Finding[] = [
+      unknownTypeFinding({
+        type: 'notARealDetector', impactBand: 'warning', stageId: 1,
+        recommendation: 'Fix notARealDetector in Stage 1.',
+        impactEstimate: { basis: 'serial', wallClock: { low: 1000, high: 1000 }, estimateMethod: 'modeled' },
+      }),
+    ];
+    render(
+      <StageDetailProvider>
+        <Table>
+          <TableBody>
+            <TypeGroupRow group={groupOf(findings)} allFindings={findings} expanded={false} onToggle={() => {}} onRoute={() => {}} />
+          </TableBody>
+        </Table>
+      </StageDetailProvider>,
+    );
+
+    const toggle = within(screen.getByTestId('fix-these-first-group-row')).getByRole('button', { expanded: false });
+    expect(toggle.className).toContain('tap-target-comfortable');
+  });
+});

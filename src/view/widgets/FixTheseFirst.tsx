@@ -269,7 +269,7 @@ export function TypeGroupRow({
             aria-expanded={expanded}
             aria-controls={contentId}
             data-shortcut-target
-            className="cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="tap-target-comfortable cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             onClick={onToggle}
           >
             <span className="block text-sm font-semibold">{label}</span>
