@@ -16,8 +16,25 @@ child/producer), and dagre places an edge's source at the higher-rank end. So
 right, matching the left-to-right reading order of the plan's data flow. Each
 node's React Flow `Handle`s follow the same horizontal routing: `type="target"`
 on `Position.Right` (its parent sits to the right) and `type="source"` on
-`Position.Left` (its children sit to the left), rather than the top/bottom
-anchors a vertical `TB`/`BT` layout would use.
+`Position.Left` (its children sit to the left).
+
+The desktop layout is always this one right-to-left flow, at every canvas size:
+an ancestor is always to the right of its descendant, in reading order, and a
+long chain scrolls sideways at the readable zoom rather than wrapping into rows.
+Only a phone-width viewport (below Tailwind's `sm` breakpoint, 640px,
+`useNarrowViewport.ts`) lays a plan of at most 150 operators out `BT`, the same
+arrangement stacked vertically with reads/scans on top, so it scrolls down
+instead. A `BT` node's handles move to `Position.Bottom` (target) and
+`Position.Top` (source) through the `sourcePosition`/`targetPosition` the canvas
+sets on it.
+
+The mount-time fit and every automatic re-fit (a scope switch, a resize) go
+through `useReadableFit`, which clamps the zoom to at least
+`MIN_READABLE_ZOOM` (1.1, so the smallest node text, 10px, renders at 11px on
+screen). A graph too large to fit at that zoom overflows the canvas and is
+panned instead of shrunk: centered on an axis that fits, anchored to the start
+(left/top) on an axis that overflows. The rail's "Fit to view" is the one-click
+full overview: a plain `fitView` with no zoom floor.
 
 `PlanGraphNode.tsx` renders every node at a fixed `NODE_WIDTH × NODE_HEIGHT`
 (220×90, also what dagre lays the graph out around) with `truncate`/`title` on
@@ -186,11 +203,14 @@ don't move.
 
 The remaining legibility aids sit on the canvas itself:
 
-- The **MiniMap** (bottom-right, toggled from the rail) colors each node by the
+- The **MiniMap** (bottom-right) shows by default only while part of the graph
+  is off screen; a click on the rail's toggle forces it on or off from then on,
+  and the toggle's pressed state always matches whether it is on screen. It
+  colors each node by the
   worst finding band on it (`planGraphMiniMapNodeColor`, `plan-graph-minimap.ts`),
   so the overview shows where the problems are; a node with no finding keeps the
   neutral plan color and the large group boxes recede into a muted fill.
-- A **legend** panel (`PlanGraphLegend.tsx`, open by default, toggled from the
+- A **legend** panel (`PlanGraphLegend.tsx`, collapsed by default, toggled from the
   rail) keys the operator icons, the heat-bar colors, the shuffle-weighted edge
   thickness, and the segment-vs-stage box layers.
 - When the category filter hides every operator in view, a **status hint**

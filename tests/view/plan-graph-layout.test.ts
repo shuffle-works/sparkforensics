@@ -9,6 +9,73 @@ function graphNode(id: string, overrides: Partial<PlanGraphNodeData> = {}): Plan
   };
 }
 
+describe('layoutWithDagre direction', () => {
+  const chain = ['a', 'b', 'c', 'd'].map((id) => graphNode(id));
+  const edges: PlanGraphEdge[] = [
+    { id: 'a->b', source: 'a', target: 'b' },
+    { id: 'b->c', source: 'b', target: 'c' },
+    { id: 'c->d', source: 'c', target: 'd' },
+  ];
+  const extent = (nodes: { position: { x: number; y: number } }[], axis: 'x' | 'y') => {
+    const values = nodes.map((n) => n.position[axis]);
+    return Math.max(...values) - Math.min(...values);
+  };
+
+  it('lays a chain out as a wide band right-to-left by default', () => {
+    const laidOut = layoutWithDagre(chain, edges);
+    expect(extent(laidOut, 'x')).toBeGreaterThan(extent(laidOut, 'y'));
+  });
+
+  it('stacks the same chain vertically when asked for bottom-to-top, consumer below its producer', () => {
+    const laidOut = layoutWithDagre(chain, edges, { direction: 'BT' });
+    expect(extent(laidOut, 'y')).toBeGreaterThan(extent(laidOut, 'x'));
+    const y = (id: string) => laidOut.find((n) => n.id === id)!.position.y;
+    // edge source = consumer (parent), target = producer (child): producer on top.
+    expect(y('d')).toBeLessThan(y('a'));
+  });
+});
+
+describe('desktop layout never wraps', () => {
+  // The default (right-to-left) layout keeps the plan's tree flow at every size:
+  // an ancestor (an edge's source) always sits to the right of its descendant.
+  const sourcesRightOfTargets = (nodes: { id: string; position: { x: number } }[], edges: PlanGraphEdge[]) => {
+    const x = (id: string) => nodes.find((n) => n.id === id)!.position.x;
+    return edges.every((e) => x(e.source) >= x(e.target) + NODE_WIDTH);
+  };
+  const chainOf = (length: number) => {
+    const ids = Array.from({ length }, (_, i) => `s${i}`);
+    return {
+      nodes: ids.map((id, i) => graphNode(id, { segmentIndex: i })),
+      edges: ids.slice(0, -1).map((id, i): PlanGraphEdge => ({ id: `${id}->${ids[i + 1]}`, source: id, target: ids[i + 1] })),
+    };
+  };
+  const segmentOf = (n: PlanGraphNodeData) => `segment-${n.segmentIndex}`;
+
+  it.each([3, 8, 40])('lays a %i-stage chain out on one row, every ancestor right of its descendant', (length) => {
+    const { nodes, edges } = chainOf(length);
+    const laidOut = layoutWithDagre(nodes, edges, { groupOf: segmentOf });
+    expect(new Set(laidOut.map((n) => n.position.y)).size).toBe(1);
+    expect(sourcesRightOfTargets(laidOut, edges)).toBe(true);
+  });
+
+  it('keeps a join of two long branches flowing right-to-left across the full plan width', () => {
+    const left = chainOf(10).nodes.map((n) => ({ ...n, id: `l${n.id}`, segmentIndex: n.segmentIndex }));
+    const right = chainOf(10).nodes.map((n) => ({ ...n, id: `r${n.id}`, segmentIndex: 100 + n.segmentIndex }));
+    const join = graphNode('join', { segmentIndex: 999 });
+    const edges: PlanGraphEdge[] = [
+      ...left.slice(0, -1).map((n, i): PlanGraphEdge => ({ id: `${n.id}->${left[i + 1].id}`, source: n.id, target: left[i + 1].id })),
+      ...right.slice(0, -1).map((n, i): PlanGraphEdge => ({ id: `${n.id}->${right[i + 1].id}`, source: n.id, target: right[i + 1].id })),
+      { id: 'join->l', source: 'join', target: left[0].id },
+      { id: 'join->r', source: 'join', target: right[0].id },
+    ];
+    const laidOut = layoutWithDagre([join, ...left, ...right], edges, { groupOf: segmentOf });
+    expect(sourcesRightOfTargets(laidOut, edges)).toBe(true);
+    // The branches may stack in y, but the plan is never cut into rows: it spans the whole chain length.
+    const xs = laidOut.map((n) => n.position.x);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThanOrEqual(10 * NODE_WIDTH);
+  });
+});
+
 describe('layoutWithDagre', () => {
   it('assigns every node a numeric position', () => {
     const nodes = [graphNode('a'), graphNode('b')];
