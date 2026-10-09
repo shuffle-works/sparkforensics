@@ -168,7 +168,7 @@ function FullDetailToggle({ rows }: { rows: Row[] }) {
       className="pt-1 pl-4"
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
     >
-      <summary className="cursor-pointer text-xs text-muted-foreground">full detail</summary>
+      <summary className="tap-target-comfortable cursor-pointer text-xs text-muted-foreground">full detail</summary>
       {open ? (
         <div className="pt-1">
           <Section rows={rows} />

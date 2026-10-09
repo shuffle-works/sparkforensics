@@ -8,6 +8,26 @@ import { render, screen } from '@testing-library/react';
 import { Table, TableHead, TableHeader, TableRow } from '../../src/components/ui/table';
 import { ChartCopyBar } from '../../src/view/charts/ChartTheme';
 import { Chip, TagBadge } from '../../src/view/ImpactBadge';
+import { PlanExplorer } from '../../src/view/widgets/PlanExplorer';
+import { PlanView } from '../../src/view/widgets/PlanView';
+import type { AppModel, PlanNode } from '@sparkforensics/core/types.ts';
+
+const scanPlan: PlanNode = {
+  name: 'Scan parquet',
+  detail: 'FileScan parquet [id#1] Location: InMemoryFileIndex(1 paths)[hdfs://cluster/warehouse/events], PushedFilters: []',
+  metrics: [],
+  children: [],
+};
+
+const planAppModel: AppModel = {
+  app: null,
+  stages: new Map([[1, { id: 1, sqlExecutionId: 1 }]]),
+  executors: { added: [], removed: [] },
+  sql: new Map([[1, { id: 1, planTree: scanPlan }]]),
+  jobs: new Map(),
+  runAggregates: null,
+  evidenceAvailability: null,
+};
 
 describe('text size floor', () => {
   test('table headers render at 12px', () => {
@@ -53,5 +73,18 @@ describe('hit-area floor', () => {
     expect(pill).not.toBeNull();
     expect(pill!.className).toContain('tap-target-comfortable');
     expect(pill!.className).toContain('overflow-visible');
+  });
+
+  test('the plan view "Plan context" and "full detail" disclosures carry the overlay', () => {
+    render(
+      <>
+        <PlanExplorer stageId={1} appModel={planAppModel} />
+        <PlanView stageId={1} appModel={planAppModel} />
+      </>,
+    );
+    expect(screen.getByRole('button', { name: /plan context/i }).className).toContain('tap-target-comfortable');
+    for (const summary of screen.getAllByText('full detail')) {
+      expect(summary.className).toContain('tap-target-comfortable');
+    }
   });
 });
