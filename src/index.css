@@ -531,24 +531,25 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
     min-width: 24px;
     min-height: 24px;
     transform: translate(-50%, -50%);
+    /* Above later positioned siblings (a chart directly under a widget
+       header) that would otherwise cover the overlay's overflow. */
+    z-index: 1;
   }
   @media (pointer: coarse) {
+    /* Grow the centered overlay, keeping the 24px minimum for narrow controls. */
     .tap-target-comfortable::after {
-      inset: -6px; /* 32px control + 6px each side = 44px */
-      width: auto;
-      height: auto;
-      min-width: 0;
-      min-height: 0;
-      transform: none;
+      width: calc(100% + 12px); /* 32px control + 6px each side = 44px */
+      height: calc(100% + 12px);
     }
     /* Modifier for controls shorter than the 32px baseline (e.g. the widget-header
-       disclosure trigger, ~22px tall): -6px only reaches 34px there, so widen the
-       overlay to the inset this specific control needs. Same specificity as the
-       base rule above and declared after it, so it overrides `inset` only on
+       disclosure trigger, ~22px tall): +6px each side only reaches 34px there, so
+       widen the overlay to what this specific control needs. Same specificity as
+       the base rule above and declared after it, so it overrides the size only on
        elements that opt in with this second class; every other
-       `tap-target-comfortable` consumer keeps the 32px-calibrated -6px. */
+       `tap-target-comfortable` consumer keeps the 32px-calibrated +6px. */
     .tap-target-comfortable--sm::after {
-      inset: -11px; /* 22px control + 11px each side = 44px */
+      width: calc(100% + 22px); /* 22px control + 11px each side = 44px */
+      height: calc(100% + 22px);
     }
     .tap-target-input { min-height: 44px; }
   }
