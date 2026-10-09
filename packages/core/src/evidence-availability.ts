@@ -6,7 +6,7 @@ export const EVIDENCE_AVAILABILITY_SCHEMA_VERSION = 1;
 
 const SUMMARIES: Record<EvidenceReasonCode, string> = {
   observed: 'Observed in this event log.',
-  explicitlyDisabled: 'Explicitly disabled in this event log.',
+  explicitlyDisabled: 'Disabled in this event log, by its configuration or by Spark\'s default.',
   noObservedExecutorMetrics: 'Not emitted by this event log.',
   noObservedStageSubmission: 'Not emitted by this event log.',
   noRddStorageSnapshot: 'Stages were submitted without RDD storage snapshots.',
@@ -66,6 +66,13 @@ function absent(key: EvidenceKey, reasonCode: EvidenceReasonCode, trustworthy: b
   return trustworthy ? entry(key, reasonCode === 'noSqlExecution' ? 'notApplicable' : 'notEmitted', reasonCode) : entry(key, 'unknown', 'parseIncomplete');
 }
 
+// The run's effective spark.eventLog.logStageExecutorMetrics: the parser's resolution of it (the
+// logged value, else Spark's default of off) when it recorded one, else the logged value alone.
+function stageExecutorMetricsLogging(app: AppModel['app'] | undefined): unknown {
+  const resolved = app?.resources?.stageExecutorMetricsLogging;
+  return resolved != null ? resolved : app?.config?.['spark.eventLog.logStageExecutorMetrics'];
+}
+
 export function deriveEvidenceAvailability(appModel: AppModel, { skippedLines = 0 }: { skippedLines?: number } = {}): EvidenceAvailability {
   const app = appModel?.app;
   const inputs: Partial<EvidenceInputs> = app?.evidenceInputs ?? {};
@@ -80,7 +87,7 @@ export function deriveEvidenceAvailability(appModel: AppModel, { skippedLines = 
 
   const executorMetrics = metricRows > 0
     ? observed('executorMetrics', 'executorMetricRows', metricRows)
-    : configIs(app?.config?.['spark.eventLog.logStageExecutorMetrics'], 'false')
+    : configIs(stageExecutorMetricsLogging(app), 'false')
       ? entry('executorMetrics', 'disabled', 'explicitlyDisabled')
       : absent('executorMetrics', 'noObservedExecutorMetrics', trustworthy);
   const rddStorageSnapshots = snapshots > 0

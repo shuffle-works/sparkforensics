@@ -4,9 +4,9 @@ import { makeApp } from './fixtures/stage-app-fixtures.js';
 
 const HOUR = 3_600_000;
 // One 1-core executor alive for one hour, so memoryGbHours is the container size in GiB.
-function gbHours(config) {
+function gbHours(config, sparkVersion) {
   const input = {
-    app: makeApp({ endTime: HOUR, config }),
+    app: makeApp({ endTime: HOUR, config, ...(sparkVersion !== undefined ? { sparkVersion } : {}) }),
     stages: new Map(),
     executors: { added: [{ kind: 'added', executorId: '1', timestamp: 0, totalCores: 1 }], removed: [] },
   };
@@ -24,6 +24,20 @@ describe('computeAllocation memory', () => {
 
   it('honors spark.executor.memoryOverheadFactor', () => {
     expect(gbHours({ 'spark.executor.memory': '10g', 'spark.executor.memoryOverheadFactor': '0.4' })).toBeCloseTo((10240 + 4096) / 1024, 10);
+  });
+
+  it('honors Spark 4\'s spark.executor.minMemoryOverhead, and only on a version that reads it', () => {
+    const config = { 'spark.executor.memory': '1g', 'spark.executor.minMemoryOverhead': '512m' };
+    expect(gbHours(config, '4.0.0')).toBeCloseTo((1024 + 512) / 1024, 10);
+    expect(gbHours(config, '3.5.1')).toBeCloseTo((1024 + 384) / 1024, 10);
+    // A run that records no version is read as current.
+    expect(gbHours(config, null)).toBeCloseTo((1024 + 512) / 1024, 10);
+  });
+
+  it('reads the factor only from Spark 3.3, where the property exists', () => {
+    const config = { 'spark.executor.memory': '10g', 'spark.executor.memoryOverheadFactor': '0.4' };
+    expect(gbHours(config, '3.2.4')).toBeCloseTo((10240 + 1024) / 1024, 10);
+    expect(gbHours(config, '3.3.0')).toBeCloseTo((10240 + 4096) / 1024, 10);
   });
 
   it('prefers spark.executor.memoryOverhead over the legacy yarn key, and reads the legacy key alone', () => {

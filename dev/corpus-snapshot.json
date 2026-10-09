@@ -314,11 +314,11 @@
      }
     },
     {
-     "key": "skew|5|P95/median|||||||||||",
-     "type": "skew",
+     "key": "straggler|5|stragglerShare|||||||||||",
+     "type": "straggler",
      "band": "warning",
      "confidence": "medium",
-     "value": 6,
+     "value": 8,
      "basis": "contended",
      "method": "measured",
      "wcLow": 574.9984788046785,
@@ -526,11 +526,11 @@
      "rawWaste": null
     },
     {
-     "key": "skew|3|P95/median|||||||||||",
-     "type": "skew",
+     "key": "straggler|3|stragglerShare|||||||||||",
+     "type": "straggler",
      "band": "critical",
      "confidence": "medium",
-     "value": 6.1,
+     "value": 8,
      "basis": "serial",
      "method": "measured",
      "wcLow": 726,
@@ -591,11 +591,11 @@
      }
     },
     {
-     "key": "skew|4|P95/median|||||||||||",
-     "type": "skew",
+     "key": "straggler|4|stragglerShare|||||||||||",
+     "type": "straggler",
      "band": "critical",
      "confidence": "medium",
-     "value": 5.8,
+     "value": 8,
      "basis": "serial",
      "method": "measured",
      "wcLow": 715.5,
@@ -712,21 +712,6 @@
      "wcHigh": null,
      "rawWaste": {
       "value": 306.724896,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "skew|4|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "medium",
-     "value": 4.6,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 1201,
-     "wcHigh": 1201,
-     "rawWaste": {
-      "value": 1201,
       "unit": "ms"
      }
     },
@@ -867,21 +852,6 @@
      "wcHigh": null,
      "rawWaste": {
       "value": 192.23988,
-      "unit": "ms"
-     }
-    },
-    {
-     "key": "skew|3|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "medium",
-     "value": 5.2,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 1158,
-     "wcHigh": 1158,
-     "rawWaste": {
-      "value": 1158,
       "unit": "ms"
      }
     },
@@ -1237,21 +1207,6 @@
      }
     },
     {
-     "key": "skew|0|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "high",
-     "value": 133.2,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 10849,
-     "wcHigh": 10849,
-     "rawWaste": {
-      "value": 10849,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "stageFailed|0|stageFailureReason||stageFailure|||||||||",
      "type": "stageFailed",
      "band": "critical",
@@ -1521,21 +1476,6 @@
    "skippedLines": 0,
    "findings": [
     {
-     "key": "skew|6|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "medium",
-     "value": 7.6,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 7406,
-     "wcHigh": 7406,
-     "rawWaste": {
-      "value": 7406,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
      "type": "smallFiles",
      "band": "critical",
@@ -1547,6 +1487,21 @@
      "wcHigh": 8070,
      "rawWaste": {
       "value": 8070,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|6|stragglerShare|||172.19.0.4||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "low",
+     "value": 7,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 7406,
+     "wcHigh": 7406,
+     "rawWaste": {
+      "value": 7406,
       "unit": "ms"
      }
     },
@@ -1716,21 +1671,6 @@
    "skippedLines": 0,
    "findings": [
     {
-     "key": "skew|3|P95/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "medium",
-     "value": 8,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 7258,
-     "wcHigh": 7258,
-     "rawWaste": {
-      "value": 7258,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "smallFiles|0|avgFileSizeBytes||||||write|Execute InsertIntoHadoopFsRelationCommand||||",
      "type": "smallFiles",
      "band": "critical",
@@ -1742,6 +1682,21 @@
      "wcHigh": 8070,
      "rawWaste": {
       "value": 8070,
+      "unit": "ms"
+     }
+    },
+    {
+     "key": "straggler|3|stragglerShare|||172.19.0.3||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "medium",
+     "value": 10,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 7258,
+     "wcHigh": 7258,
+     "rawWaste": {
+      "value": 7258,
       "unit": "ms"
      }
     },
@@ -2022,6 +1977,18 @@
    "sqlExecutions": 3,
    "skippedLines": 0,
    "findings": [
+    {
+     "key": "gc|6|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "medium",
+     "value": 2.7,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
     {
      "key": "straggler|6|stragglerShare|||||||||||",
      "type": "straggler",
@@ -2660,6 +2627,18 @@
    "skippedLines": 0,
    "findings": [
     {
+     "key": "gc|2|gcPct||||||low|||||",
+     "type": "gc",
+     "band": "info",
+     "confidence": "low",
+     "value": 3.9,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
      "key": "memoryUtilization||idleCoreRate||idleCores|||||||||",
      "type": "memoryUtilization",
      "band": "warning",
@@ -2729,13 +2708,13 @@
      "type": "memoryUtilization",
      "band": "info",
      "confidence": "high",
-     "value": 4834241,
+     "value": 4649925,
      "basis": "resourceOnly",
      "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 4834241,
+      "value": 4649925,
       "unit": "mbSeconds"
      }
     },
@@ -2962,29 +2941,14 @@
      "type": "memoryUtilization",
      "band": "info",
      "confidence": "high",
-     "value": 11011195,
+     "value": 6702178,
      "basis": "resourceOnly",
      "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 11011195,
+      "value": 6702178,
       "unit": "mbSeconds"
-     }
-    },
-    {
-     "key": "skew|0|max/median|||||||||||",
-     "type": "skew",
-     "band": "critical",
-     "confidence": "high",
-     "value": 16.4,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 58649,
-     "wcHigh": 58649,
-     "rawWaste": {
-      "value": 58649,
-      "unit": "ms"
      }
     },
     {
@@ -3000,6 +2964,21 @@
      "rawWaste": {
       "value": 179662.5,
       "unit": "coreMs"
+     }
+    },
+    {
+     "key": "straggler|0|max/median|||||||||||",
+     "type": "straggler",
+     "band": "critical",
+     "confidence": "high",
+     "value": 16.4,
+     "basis": "serial",
+     "method": "measured",
+     "wcLow": 58649,
+     "wcHigh": 58649,
+     "rawWaste": {
+      "value": 58649,
+      "unit": "ms"
      }
     },
     {
@@ -3320,11 +3299,11 @@
      }
     },
     {
-     "key": "straggler|0|stragglerShare|||||||||||",
+     "key": "straggler|0|max/median|||||||||||",
      "type": "straggler",
      "band": "warning",
      "confidence": "high",
-     "value": 33,
+     "value": 18.9,
      "basis": "serial",
      "method": "measured",
      "wcLow": 2615,
@@ -3515,11 +3494,11 @@
      "rawWaste": null
     },
     {
-     "key": "straggler|0|stragglerShare|||||||||||",
+     "key": "straggler|0|max/median|||||||||||",
      "type": "straggler",
      "band": "critical",
      "confidence": "medium",
-     "value": 25,
+     "value": 5.8,
      "basis": "serial",
      "method": "measured",
      "wcLow": 64,

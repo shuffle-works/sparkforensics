@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { analyze, auditConfig } from '../src/analyzer.js';
 import { collectRun } from '../src/cli/collect-run.js';
 import { recommendationParts } from '../src/finding-names.js';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 
 // Every detector recommendation reads "<measurement>: <fix>". recommendationParts splits it at
 // the last ": " and the UI shows the two halves in different places, so a recommendation that
@@ -26,8 +26,8 @@ const failedJob = (id) => ({ id, result: 'JobFailed', succeeded: false, stageIds
 // One analyze() call per case: detectors gate on each other and on runtime floors, so a case
 // carries only the stage that should trip its detector.
 const SYNTHETIC_RUNS = [
-  { stage: { taskDurationP50: 100, taskDurationP95: 600 } },
-  { stage: { taskCount: 10, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 400 } },
+  { stage: { taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() } },
+  { stage: { taskCount: 10, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 400, tailAttribution: dataTail() } },
   { stage: { shuffleReadBytes: 2 * GB, fetchWaitTime: 100000 } },
   { stage: { taskCount: 4, shuffleReadBytes: 8 * GB } },
   { stage: { inputBytes: GB, outputBytes: 50 * GB } },

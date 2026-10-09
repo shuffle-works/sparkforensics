@@ -3,7 +3,7 @@ import { analyze, auditConfig } from '../src/analyzer.js';
 import { DETECTORS, detectorCatalog } from '../src/detectors.js';
 import { detectorInfoByType } from '../src/detector-docs.js';
 import { formatBytes } from '../src/format-utils.js';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 
 // Shared fixture for tests needing no bespoke overrides.
 const sampleApp = makeApp();
@@ -21,7 +21,7 @@ describe('analyze: task skew', () => {
 
   it('emits a skew finding above the 3× P95/median ratio', () => {
     // Detector grades 'warning'; deriveImpactBand promotes to 'critical' (250ms delta = 5% of the 5s default, over the 2% floor).
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     const skew = catalog.filter(b => b.type === 'skew');
     expect(skew).toHaveLength(1);
@@ -30,13 +30,13 @@ describe('analyze: task skew', () => {
   });
 
   it('emits critical when P95/median > 5×', () => {
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     expect(catalog.find(b => b.type === 'skew').impactBand).toBe('critical');
   });
 
   it('uses max/median fallback for stages with < 20 tasks', () => {
-    const stages = new Map([[1, makeStage({ taskCount: 10, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 400 })]]);
+    const stages = new Map([[1, makeStage({ taskCount: 10, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 400, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp(), stages, [], []);
     expect(catalog.find(b => b.type === 'skew').impactBand).toBe('critical');
   });
@@ -50,14 +50,14 @@ describe('analyze: task skew', () => {
 
   it('caps a skew finding at warning when the waste clears the warn floor but not the critical floor', () => {
     // ratio 7× clears warn (3×); 60ms clears the 0.5% warn floor (50ms) but not the 2% crit floor (200ms) of a 10,000ms app.
-    const stages = new Map([[1, makeStage({ taskDurationP50: 10, taskDurationP95: 70 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 10, taskDurationP95: 70, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp({ startTime: 0, endTime: 10000 }), stages, [], []);
     expect(catalog.find(b => b.type === 'skew').impactBand).toBe('warning');
   });
 
   it('falls back to the fixed impactBand when total app runtime is unavailable', () => {
     // With no total duration, deriveImpactBand leaves the detector's fixed fallback ('warning') untouched regardless of ratio.
-    const stages = new Map([[1, makeStage({ taskDurationP50: 1, taskDurationP95: 6 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 1, taskDurationP95: 6, tailAttribution: dataTail() })]]);
     const catalog = analyze(makeApp({ startTime: undefined, endTime: undefined }), stages, [], []);
     expect(catalog.find(b => b.type === 'skew').impactBand).toBe('warning');
   });
@@ -66,7 +66,7 @@ describe('analyze: task skew', () => {
     // The 5,000ms max task fills nearly the whole 5,005ms window. Fixing the skew brings the tail
     // down to ~P50, so the recoverable time is the 4,990ms delta, not the 5ms left above that task.
     const stages = new Map([[1, makeStage({
-      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000,
+      submittedAt: 0, completedAt: 5005, taskDurationP50: 10, taskDurationP95: 5000, taskDurationMax: 5000, tailAttribution: dataTail(),
     })]]);
     const catalog = analyze(makeApp({ startTime: 0, endTime: 100000 }), stages, [], []);
     const skew = catalog.filter(b => b.type === 'skew');
@@ -629,71 +629,32 @@ describe('analyze: speculative / straggler', () => {
   });
 });
 
-describe('analyze: skew/straggler same-stage overlap disclosure (§4)', () => {
-  it('flags both findings when skew (max/median branch) and straggler fire on the same stage', () => {
-    // taskCount below minTasksForP95 (20): skew uses its max/median branch.
-    const stages = new Map([[1, makeStage({
-      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
-      speculativeTasks: 0, stragglerCount: 2,
-    })]]);
-    const catalog = analyze(makeApp(), stages, [], []);
-    const skew = catalog.find(b => b.type === 'skew');
+describe('analyze: one finding per slow-task tail (§4)', () => {
+  const tailStage = (over = {}) => new Map([[1, makeStage({
+    taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
+    speculativeTasks: 0, stragglerCount: 2, ...over,
+  })]]);
+
+  it('reports a tail with no measured cause as straggler alone, with no key advice or fix', () => {
+    const catalog = analyze(makeApp(), tailStage(), [], []);
+    expect(catalog.find(b => b.type === 'skew')).toBeUndefined();
     const straggler = catalog.find(b => b.type === 'straggler');
-    expect(skew).toBeTruthy();
-    expect(skew.metric).toBe('max/median');
-    expect(straggler).toBeTruthy();
-    expect(skew.validationRequired).toMatch(/overlaps with the straggler finding/);
-    expect(straggler.validationRequired).toMatch(/overlaps with the skew finding/);
+    expect(straggler.cause).toBe('unattributed');
+    expect(straggler.origin).toBeUndefined();
+    expect(straggler.remediation).toBeUndefined();
+    expect(straggler.recommendation).toMatch(/: nothing in the log attributes the slow tasks to/);
+    expect(straggler.recommendation).not.toMatch(/salt the key|repartition on a better key|skew-join/);
   });
 
-  it('flags both findings when skew uses its P95/median branch (both claim the same replayed tail)', () => {
-    const stages = new Map([[1, makeStage({
-      taskCount: 25, taskDurationP50: 100, taskDurationP95: 600, taskDurationMax: 900,
-      tailReplayRecoveryMs: 800, speculativeTasks: 0, stragglerCount: 2,
-    })]]);
-    const catalog = analyze(makeApp(), stages, [], []);
+  it('keeps the tail straggler\'s alone when only a tuned skew ratio admits it', () => {
+    const catalog = analyze(makeApp(), tailStage(), [], [], new Map(), new Map(), null, { thresholds: { skew: { ratioWarn: 2 } } });
+    expect(catalog.filter(b => b.type === 'skew' || b.type === 'straggler').map(b => b.type)).toEqual(['straggler']);
+  });
+
+  it('reports a data-driven tail as skew alone, with no overlap caveat on either side', () => {
+    const catalog = analyze(makeApp(), tailStage({ tailAttribution: dataTail() }), [], []);
     const skew = catalog.find(b => b.type === 'skew');
-    const straggler = catalog.find(b => b.type === 'straggler');
-    expect(skew).toBeTruthy();
-    expect(skew.metric).toBe('P95/median');
-    expect(straggler).toBeTruthy();
-    expect(skew.wallClock).toEqual(straggler.wallClock);
-    expect(skew.validationRequired).toMatch(/overlaps with the straggler finding/);
-    expect(straggler.validationRequired).toMatch(/overlaps with the skew finding/);
-  });
-
-  it('leaves other finding types on the overlap stage unflagged', () => {
-    const stages = new Map([[1, makeStage({
-      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
-      speculativeTasks: 0, stragglerCount: 2,
-      memoryBytesSpilled: 1024, spillClassification: 'volume',
-    })]]);
-    const catalog = analyze(makeApp(), stages, [], []);
-    const spill = catalog.find(b => b.type === 'spill' && b.stageId === 1);
-    expect(catalog.find(b => b.type === 'skew').validationRequired).toMatch(/overlaps with/);
-    expect(spill).toBeTruthy();
-    expect(spill.validationRequired ?? '').not.toMatch(/overlaps with/);
-  });
-
-  it('appends the overlap note to a caveat the finding already carries', () => {
-    const stages = new Map([[1, makeStage({
-      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
-      speculativeTasks: 0, stragglerCount: 2,
-    })]]);
-    const catalog = analyze(makeApp(), stages, [], [], new Map(), new Map(), null, { thresholds: { skew: { ratioWarn: 2 } } });
-    const skew = catalog.find(b => b.type === 'skew');
-    expect(skew.validationRequired).toContain('Produced with tuned thresholds: ratioWarn 2 (default 3).');
-    expect(skew.validationRequired).toMatch(/overlaps with the straggler finding/);
-  });
-
-  it('does not flag skew when no straggler fires on the same stage', () => {
-    const stages = new Map([[1, makeStage({
-      taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
-      speculativeTasks: 0, stragglerCount: 0,
-    })]]);
-    const catalog = analyze(makeApp(), stages, [], []);
-    const skew = catalog.find(b => b.type === 'skew');
-    expect(skew).toBeTruthy();
+    expect(skew.cause).toBe('data');
     expect(catalog.find(b => b.type === 'straggler')).toBeUndefined();
     expect(skew.validationRequired ?? '').not.toMatch(/overlaps with/);
   });
@@ -1311,18 +1272,18 @@ describe('analyze: spill confidence metadata', () => {
   });
 
   it('marks skew confidence low just past ratioWarn (3.1x), medium a bit further out (6x)', () => {
-    const borderline = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 310 })]]);
+    const borderline = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 310, tailAttribution: dataTail() })]]);
     const b1 = analyze(makeApp(), borderline, [], []).find(x => x.type === 'skew');
     expect(b1.confidence).toBe('low');
     expect(b1.validationRequired).toMatch(/costs at least 0\.5% of run time/);
 
-    const mid = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600 })]]);
+    const mid = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })]]);
     const b2 = analyze(makeApp(), mid, [], []).find(x => x.type === 'skew');
     expect(b2.confidence).toBe('medium');
   });
 
   it('marks skew confidence high many multiples past ratioWarn (a 50x P95/median ratio)', () => {
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 5000 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 5000, tailAttribution: dataTail() })]]);
     const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'skew');
     expect(b.confidence).toBe('high');
   });
@@ -1709,6 +1670,37 @@ describe('detector extended-field whitelist', () => {
   });
 });
 
+describe('analyze: memory advice that raises and lowers executor memory in one run', () => {
+  const MB = 1024 * 1024;
+  const sized = makeApp({ startTime: 0, endTime: 120000, resources: { executor: { cores: 4, memoryMB: 1000 } } });
+  const executors = [{ executorId: '3', timestamp: 0, totalCores: 4 }];
+  const ra = { coreHistogram: [], busyCoreMs: 0, peakConcurrentCores: 0, perStage: {}, executorPeakMetrics: { 3: { jvmHeapMemory: 250 * MB } } };
+  const lowering = (catalog) => catalog.filter((f) => f.remediation?.some((r) => r.key === 'spark.executor.memory' && r.direction === 'decrease'));
+
+  it('keeps the over-provisioned heap advice while nothing asks for more memory', () => {
+    const catalog = analyze(sized, new Map([[1, makeStage()]]), executors, [], sampleJobs, new Map(), ra);
+    expect(lowering(catalog).map((f) => f.rule)).toContain('heapOverProvisioned');
+  });
+
+  it('drops the lowering advice when a stage has high GC', () => {
+    const stages = new Map([[1, makeStage({ gcPct: 15, executorRunTime: 60000 })], [2, makeStage({ id: 2, gcPct: 3, executorRunTime: 60000 })]]);
+    const catalog = analyze(sized, stages, executors, [], sampleJobs, new Map(), ra);
+    expect(catalog.find((f) => f.type === 'gc' && f.direction !== 'low')).toBeTruthy();
+    expect(lowering(catalog)).toEqual([]);
+    // The run-level heap finding stays, without its advice to lower memory, and names the stage that asks for more.
+    const heap = catalog.find((f) => f.rule === 'heapOverProvisioned');
+    expect(heap.remediation).toEqual([]);
+    expect(heap.recommendation).toMatch(/Stage 1 asks for more executor memory, so confirm before lowering it\./);
+  });
+
+  it('drops the lowering advice when a stage spills for volume', () => {
+    const stage = makeStage({ memoryBytesSpilled: 5 * 1024 * MB, spillClassification: 'volume' });
+    const catalog = analyze(sized, new Map([[1, stage]]), executors, [], sampleJobs, new Map(), ra);
+    expect(catalog.find((f) => f.type === 'spill')?.remediation.some((r) => r.key === 'spark.executor.memory' && r.direction === 'increase')).toBe(true);
+    expect(lowering(catalog)).toEqual([]);
+  });
+});
+
 describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
   it('emits an info low-GC finding when gcPct is under 5% and stage ran long enough', () => {
     const stages = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000 })]]);
@@ -1722,11 +1714,28 @@ describe('analyze: GC low direction (ExecutorGcHeuristic inverted)', () => {
 
   it('is retired once the log carries a measured executor heap peak (heapOverProvisioned judges sizing instead)', () => {
     const stages = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000 })]]);
+    const sized = makeApp({ resources: { executor: { cores: 4, memoryMB: 1000 } } });
+    const ra = { executorPeakMetrics: { 1: { jvmHeapMemory: 512 * 1024 * 1024 } } };
+    const catalog = analyze(sized, stages, [], [], sampleJobs, new Map(), ra);
+    expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
+    const zeros = analyze(sized, stages, [], [], sampleJobs, new Map(), { executorPeakMetrics: { 1: { jvmHeapMemory: 0 } } });
+    expect(zeros.find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+  });
+
+  it('keeps the low-GC note when a heap peak exists but the executor memory is unknown, since nothing else judges sizing', () => {
+    const stages = new Map([[1, makeStage({ gcPct: 3, executorRunTime: 60000 })]]);
     const ra = { executorPeakMetrics: { 1: { jvmHeapMemory: 512 * 1024 * 1024 } } };
     const catalog = analyze(makeApp(), stages, [], [], sampleJobs, new Map(), ra);
-    expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
-    const zeros = analyze(makeApp(), stages, [], [], sampleJobs, new Map(), { executorPeakMetrics: { 1: { jvmHeapMemory: 0 } } });
-    expect(zeros.find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+    expect(catalog.find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
+  });
+
+  it('does not call GC low on a stage that failed or lost tasks', () => {
+    const failed = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 60000, stageFailureReason: 'Job aborted' })]]);
+    expect(analyze(makeApp(), failed, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
+    const lost = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 60000, failedTasks: 3 })]]);
+    expect(analyze(makeApp(), lost, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeUndefined();
+    const clean = new Map([[1, makeStage({ gcPct: 0, executorRunTime: 60000 })]]);
+    expect(analyze(makeApp(), clean, [], []).find(b => b.type === 'gc' && b.direction === 'low')).toBeTruthy();
   });
 
   it('does not fire on a short stage even when gcPct is 0 (noise floor)', () => {
@@ -2062,8 +2071,18 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     it('reports the data as unavailable when every executor peak is zero or absent (local mode)', () => {
       const [band] = bands(run({ 1: { jvmHeapMemory: 0 }, 2: {} }));
       expect(band?.dataUnavailable).toBe(true);
-      expect(band.remediation).toEqual([]);
+      // The cause is a task shorter than the heartbeat, and the fix is the stage-level metrics log.
+      expect(band.recommendation).toMatch(/tasks shorter than the heartbeat interval report zeros/);
+      expect(band.remediation).toEqual([{ kind: 'conf', key: 'spark.eventLog.logStageExecutorMetrics', direction: 'set', suggested: true }]);
       expect(bands(run(undefined))[0]?.dataUnavailable).toBe(true);
+    });
+
+    it('does not suggest logStageExecutorMetrics when it is already on', () => {
+      const logged = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4, memoryMB: 1000 } }, config: { 'spark.eventLog.logStageExecutorMetrics': 'true' } });
+      const [band] = bands(analyze(logged, new Map([[1, makeStage()]]), added, [], sampleJobs, new Map(), { ...raBusy(0, 0), executorPeakMetrics: { 1: { jvmHeapMemory: 0 } } }));
+      expect(band.dataUnavailable).toBe(true);
+      expect(band.remediation).toEqual([]);
+      expect(band.recommendation).toMatch(/already on/);
     });
 
     it('leaves the driver out: its heap is sized by spark.driver.memory', () => {
@@ -2103,6 +2122,22 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     const catalog = analyze(app, new Map([[1, stage]]), added, [], sampleJobs, new Map(), raBusy(0, 0));
     const waste = catalog.find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
     expect(waste?.confidence).toBe('low');
+  });
+
+  it('1c: allocated memory-time follows when executors were alive, not the peak executor count over the whole run', () => {
+    // 4 single-core executors at the peak, but three live for 10 s of the 100 s run: 130 executor-s, not 400.
+    const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 1, memoryMB: 1000 } } });
+    const added = ['0', '1', '2', '3'].map((executorId) => ({ executorId, timestamp: 0, totalCores: 1 }));
+    const removed = ['1', '2', '3'].map((executorId) => ({ executorId, timestamp: 10000 }));
+    // 100 executor-s used: the old peak x run model (400 executor-s) calls 300 of them waste, past 1.5 x 100.
+    const stages = new Map([[1, makeStage({ executorRunTime: 100000 })]]);
+    const waste = analyze(app, stages, added, removed, sampleJobs, new Map(), raBusy(0, 0))
+      .find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
+    expect(waste).toBeUndefined();
+    // Held for the whole run, the same use is waste: 4 x 100 executor-s allocated, 100 used.
+    const held = analyze(app, stages, added, [], sampleJobs, new Map(), raBusy(0, 0))
+      .find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
+    expect(held?.value).toBe(300000);
   });
 
   it('1c: divides summed task run time by executor cores, so a fully busy 4-core executor is not waste', () => {
@@ -2729,7 +2764,7 @@ describe('analyze, impact estimator: executor-churn ceiling regression', () => {
 
 describe("analyze: recommendation text interpolates the finding's own numbers", () => {
   it('skew: includes the measured ratio', () => {
-    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350 })]]);
+    const stages = new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
     const b = analyze(makeApp(), stages, [], []).find(x => x.type === 'skew');
     expect(b.recommendation).toContain(`${b.value}×`);
   });
@@ -2906,7 +2941,7 @@ describe("analyze: recommendation text interpolates the finding's own numbers", 
 
 describe('analyze: threshold overrides', () => {
   // 3.5x P95/median: over skew's default 3x ratioWarn.
-  const skewStages = () => new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350 })]]);
+  const skewStages = () => new Map([[1, makeStage({ taskDurationP50: 100, taskDurationP95: 350, tailAttribution: dataTail() })]]);
   const run = (thresholds) => analyze(makeApp(), skewStages(), [], [], new Map(), new Map(), null, { thresholds });
 
   it('runs every detector on its own thresholds when no override is passed, labeling nothing', () => {

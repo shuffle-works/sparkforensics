@@ -23,9 +23,10 @@ import { usePagedRows } from '@/view/usePagedRows';
 export type StragglerProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
 
 // straggler reports whichever signal drove the finding: a speculative-retry
-// count or a straggler-task percentage, distinguished by its `unit` field.
+// count, a straggler-task percentage, or skew's duration ratio, distinguished by its `unit` field.
 function stragglerDetail(f: StragglerFinding): string {
   const value = numericValue(f);
+  if (f.unit === 'ratio') return `task duration ${f.metric} ${value}×`;
   return f.unit === 'count'
     ? `${value} speculative attempt${value === 1 ? '' : 's'} discarded`
     : `${formatMetricValue('pct', value)} of tasks straggled`;

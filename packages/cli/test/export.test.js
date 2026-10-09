@@ -299,14 +299,17 @@ describe('--export-html (published bin)', () => {
   });
 
   it('keeps the default thresholds in the export of a --thresholds run, and says so', () => {
-    // Ten tasks, one 20x slower than the rest: a P95/median skew finding at the default 3x.
+    // Ten tasks, one 20x slower than the rest and reading 20x the data: a P95/median skew finding at the default 3x.
     const lines = [
       '{"Event":"SparkListenerApplicationStart","App ID":"app-export-tuned","App Name":"t","Timestamp":0}',
       '{"Event":"SparkListenerStageSubmitted","Stage Info":{"Stage ID":1,"Stage Name":"s1","Number of Tasks":10}}',
       ...Array.from({ length: 10 }, (_, i) => JSON.stringify({
         Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
         'Task Info': { 'Task ID': i, 'Launch Time': 0, 'Finish Time': i === 9 ? 2000 : 100, Failed: false, Killed: false, Speculative: false },
-        'Task Metrics': { 'Executor Run Time': i === 9 ? 2000 : 100, 'JVM GC Time': 0, 'Memory Bytes Spilled': 0, 'Disk Bytes Spilled': 0 },
+        'Task Metrics': {
+          'Executor Run Time': i === 9 ? 2000 : 100, 'JVM GC Time': 0, 'Memory Bytes Spilled': 0, 'Disk Bytes Spilled': 0,
+          'Input Metrics': { 'Bytes Read': (i === 9 ? 20 : 1) * 1048576, 'Records Read': (i === 9 ? 20 : 1) * 1000 },
+        },
       })),
       '{"Event":"SparkListenerStageCompleted","Stage Info":{"Stage ID":1,"Stage Name":"s1","Number of Tasks":10,"Completion Time":2000}}',
       '{"Event":"SparkListenerApplicationEnd","Timestamp":2000}',

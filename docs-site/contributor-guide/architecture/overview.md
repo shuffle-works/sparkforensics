@@ -72,7 +72,8 @@ the stage's `{ type: 'stage' }` message to main.
 
 Every `SparkListenerTaskEnd` carries `Task Executor Metrics` (Spark 3.0+); the
 parser folds them into a per-executor maximum posted in
-`runAggregates.executorPeakMetrics`, skipping all-zero rows (local mode). When
+`runAggregates.executorPeakMetrics`, skipping all-zero rows (local mode, and any task that ended between two
+heartbeats, since Spark samples the metrics at the executor heartbeat). When
 `spark.eventLog.logStageExecutorMetrics=true` (default `false`),
 `SparkListenerStageExecutorMetrics` events also populate
 `stage.executorMetrics: Map<execId, {...}>` with the 23 raw peak-memory/GC

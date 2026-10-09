@@ -4,12 +4,12 @@ import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId, parseJoinType } from './plan-summary.ts';
 import { allocatedCoreMs, computeAllocation } from './allocation.ts';
 import { executorHeapPeaks } from './executor-peaks.ts';
-import { computePeakConcurrentCores, computePeakConcurrentExecutorCount } from './core-count.ts';
+import { computePeakConcurrentCores } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
-import { diagnoseJoinSkew, isSkewJoinNode } from './aqe-skew.ts';
+import { diagnoseJoinSkew, isSkewJoinNode, planShowsSkewSplit } from './aqe-skew.ts';
 import { isBatchEvalPythonNode } from './python-stage.ts';
 import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
-import { TAIL_FACTOR } from './stage-quantiles.ts';
+import { STRAGGLER_FACTOR } from './stage-quantiles.ts';
 import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type TailStage } from './occupancy.ts';
 import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
 import {
@@ -25,9 +25,8 @@ import { totalExecutorCpuMs } from './run-totals.ts';
 import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
-import { parseSparkMemoryMB } from './spark-memory.ts';
 import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
-import { effectiveSparkConf, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
+import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure, TailAttribution } from './types.ts';
 import type { AqeSkewCase, FindingOf, Remediation, SkewOrigin, TailCause, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
@@ -732,9 +731,8 @@ function skewGate(
 // accounts for at least `dataShareMin` of their extra time (Spark's UI and AQE define skew by data
 // volume, not by duration). Otherwise the largest of GC, shuffle fetch wait, tasks piled on one
 // host, and what none of them accounts for ('unexplained'). A log with no data volume to compare
-// where what is left is the largest share is 'unattributed': only the duration is known, which both
-// skew and straggler then judge as they did before the evidence existed, as does a stage with no
-// tail attribution.
+// where what is left is the largest share is 'unattributed', as is a stage with no tail
+// attribution: only the duration is known, so straggler reports it and skew does not.
 interface TailVerdict {
   cause: TailCause;
   // Share (0-100) of the tail's extra time the cause accounts for; 0 for 'unattributed'.
@@ -762,20 +760,9 @@ function effectiveConf(app: DetectorApp | null, key: string): string | undefined
 }
 
 // The factor and minimum Spark applies to size the executor overhead when spark.executor.memoryOverhead
-// is unset: max(factor * executor memory, minimum). The run's own settings win, each only on a Spark
-// version that reads it: spark.executor.memoryOverheadFactor from 3.3.0 and spark.executor.minMemoryOverhead
-// from 4.0.0 (EXECUTOR_MIN_MEMORY_OVERHEAD, version("4.0.0") in core/.../internal/config/package.scala at
-// v4.0.0). An unrecorded version is read as current. `fallback` is the detector's default pair.
+// is unset (spark-conf.ts's executorOverheadSettings); `fallback` is the detector's default pair.
 function defaultOverheadSettings(app: DetectorApp | null, fallback: { floorMB: number; floorPct: number }): { minMB: number; factor: number } {
-  const version = /^(\d+)\.(\d+)/.exec(app?.sparkVersion ?? '');
-  const [major, minor] = version == null ? [Infinity, 0] : [Number(version[1]), Number(version[2])];
-  const config = app?.config ?? {};
-  const factor = Number.parseFloat(config['spark.executor.memoryOverheadFactor'] ?? '');
-  const minMB = parseSparkMemoryMB(config['spark.executor.minMemoryOverhead']);
-  return {
-    factor: (major > 3 || (major === 3 && minor >= 3)) && Number.isFinite(factor) && factor > 0 ? factor : fallback.floorPct,
-    minMB: major >= 4 && minMB != null && minMB >= 0 ? minMB : fallback.floorMB,
-  };
+  return executorOverheadSettings({ sparkVersion: app?.sparkVersion, properties: app?.config }, fallback);
 }
 
 const queryAppCache = new WeakMap<object, { base: DetectorApp | null; derived: DetectorApp }>();
@@ -835,6 +822,13 @@ function switchFix(on: boolean, key: string, suggested: string | boolean, recomm
   return on ? { text: alreadyOn, remediation: [] } : { text: recommend, remediation: [setConf(key, suggested)] };
 }
 
+// Whether memoryUtilization can judge the executor heap: a measured peak and a known executor size.
+// Without both, the stage-level low-GC note is the only memory-sizing signal there is.
+function heapJudgementAvailable(ctx: Pick<DetectorCtx, 'stages' | 'runAggregates' | 'app'>): boolean {
+  return executorHeapPeaks(ctx).size > 0 && (ctx.app?.resources?.executor?.memoryMB ?? 0) > 0;
+}
+
+const LOG_STAGE_EXECUTOR_METRICS_KEY = 'spark.eventLog.logStageExecutorMetrics';
 const PYTHON_UDF_ARROW_KEY = 'spark.sql.execution.pythonUDF.arrow.enabled';
 // The executor-side metrics of the Python evaluator operators. Spark's PythonSQLMetrics trait adds
 // them in 3.4.0, the release that also adds the Arrow-optimized UDF property, so an older log never
@@ -843,14 +837,18 @@ const PYTHON_DATA_SENT = 'data sent to Python workers';
 const PYTHON_DATA_RETURNED = 'data returned from Python workers';
 
 // How to cut the cost of a row-at-a-time Python UDF: the Arrow-optimized UDF property while the
-// session lacks it, else what is left once it is on (a UDF that opted out with useArrow=False).
+// session lacks it, else what is left once it is on (a UDF that opted out with useArrow=False, takes no
+// arguments, or was created before the property was set: all of them still run as BatchEvalPython).
 function pythonUdfArrowFix(app: DetectorApp | null): { text: string; remediation: Remediation[] } {
   return switchFix(
     loggedAs(app, PYTHON_UDF_ARROW_KEY, true), PYTHON_UDF_ARROW_KEY, true,
     `set ${PYTHON_UDF_ARROW_KEY}=true to ship rows in Arrow batches, or rewrite the UDF as a pandas UDF.`,
-    `Arrow-optimized Python UDFs are already on for the session, so a UDF opted out with useArrow=False: remove that, or rewrite it as a pandas UDF.`,
+    `Arrow-optimized Python UDFs are already on for the session, so this UDF may have opted out with useArrow=False, take no arguments, or have been created before the property was set: check which, or rewrite it as a pandas UDF.`,
   );
 }
+
+// A tail reading at least this many times the median task's data is not described as reading no more.
+const MORE_DATA_RATIO = 2;
 
 const SKEW_KEY_REMEDY = 'salt the key or repartition on a better key';
 
@@ -886,7 +884,7 @@ function skewOrigin(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence: boo
 
 // The skew finding's fix for the stage's origin. Join-driven skew gets AQE skew-join handling,
 // unless the run's effective conf already has it; uneven input gets the file-size remedy.
-function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false): { origin: SkewOrigin; aqeSkew?: AqeSkewCase; text: string; remediation: Remediation[] } {
+function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false, tail?: TailVerdict): { origin: SkewOrigin; aqeSkew?: AqeSkewCase; text: string; remediation: Remediation[] } {
   const origin = skewOrigin(stage, ctx, shuffleEvidence);
   if (origin === 'inputScan') {
     return {
@@ -900,12 +898,16 @@ function skewFix(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence = false
   if (predatesAqeSkewJoin(ctx.app)) return { origin: 'other', text: SKEW_KEY_REMEDY, remediation: [codeFix(SKEW_KEY_REMEDY)] };
   const app = stageApp(ctx, stage);
   const fix = skewJoinFix(app);
+  // A tail the data volume explains (input plus shuffle read, in bytes or records) is data the
+  // diagnosis must not call even or cured from shuffle-read bytes alone.
+  const tailData = tail?.cause === 'data' ? { ratio: tail.attribution?.dataRatio ?? null } : undefined;
   // With skew-join handling on, the final plan and conf say why it did or did not act on this stage.
   const handlingOn = !loggedAs(app, 'spark.sql.adaptive.enabled', false) && loggedAs(app, 'spark.sql.adaptive.skewJoin.enabled', true);
   const diagnosis = handlingOn && stage.sqlExecutionId != null
     ? diagnoseJoinSkew({
       plan: ctx.sql.get(stage.sqlExecutionId)?.planTree, stageId: stage.id,
-      readMax: stage.shuffleReadMax, readP50: stage.shuffleReadP50,
+      readMax: stage.shuffleReadMax, readP50: stage.shuffleReadP50, stageShuffleReadBytes: stage.shuffleReadBytes,
+      ...(tailData ? { tailData } : {}),
       conf: (key) => effectiveConf(app, key), sparkVersion: app?.sparkVersion, keyRemedy: SKEW_KEY_REMEDY,
     })
     : null;
@@ -943,7 +945,7 @@ function idleCapacityFix(app: DetectorApp, recommend: string, alreadyOnLead: str
   const fix = dynamicAllocationFix(app, recommend, alreadyOnLead);
   // dynamicAllocationFix's remediation is empty exactly when dynamic allocation is already on.
   if (fix.remediation.length > 0) return { ...fix, remediation: [...fix.remediation, decreaseConf('spark.executor.instances')] };
-  const holdsFloor = Number.parseInt(app.config?.['spark.dynamicAllocation.minExecutors'] ?? '', 10) > 0;
+  const holdsFloor = Number.parseInt(effectiveConf(app, 'spark.dynamicAllocation.minExecutors') ?? '', 10) > 0;
   return holdsFloor
     ? { text: `${alreadyOnLead} by lowering spark.dynamicAllocation.maxExecutors and spark.dynamicAllocation.minExecutors`,
         remediation: [decreaseConf('spark.dynamicAllocation.maxExecutors'), decreaseConf('spark.dynamicAllocation.minExecutors')] }
@@ -957,11 +959,60 @@ function effectiveShufflePartitions(app: DetectorApp | null): number | null {
   return value != null && /^\d+$/.test(value) ? Number(value) : null;
 }
 
-// Whether AQE coalescing is on and the stage ran fewer tasks than the property's partitions: AQE
-// merged them.
-function aqeCoalescedBelow(stage: DetectorStage, app: DetectorApp | null, count: number): boolean {
-  return stage.taskCount < count
-    && loggedAs(app, 'spark.sql.adaptive.enabled', true) && loggedAs(app, 'spark.sql.adaptive.coalescePartitions.enabled', true);
+// The partition count and property that sized a shuffle-reading stage's tasks. AQE only rewrites the
+// count of a stage inside a SQL execution. With coalescing on, `initialPartitionNum` replaces
+// spark.sql.shuffle.partitions as the starting count when it is set
+// (CoalesceShufflePartitions.coalesceShufflePartitions at v3.5.0), so it is the lever then.
+const INITIAL_PARTITION_NUM_KEY = 'spark.sql.adaptive.coalescePartitions.initialPartitionNum';
+
+interface PartitionBasis {
+  /** The partition count the run's configuration starts the stage from, null when it is not a count. */
+  count: number | null;
+  /** The property holding it, the one to move to change the stage's partition count. */
+  key: string;
+  /** Whether AQE can rewrite this stage's task count: it is on and the stage is in a SQL execution. */
+  aqe: boolean;
+  /** Whether AQE coalescing can merge this stage's partitions. */
+  coalesce: boolean;
+  /** Whether the execution's final plan shows AQE splitting skewed partitions; null when it cannot say. */
+  skewSplit: boolean | null;
+  /** Whether the execution's plan holds a `repartition` or `rebalance` the job asked for. */
+  explicitRepartition: boolean;
+}
+
+function partitionBasis(stage: DetectorStage, ctx: DetectorCtx): PartitionBasis {
+  const app = stageApp(ctx, stage);
+  const aqe = stage.sqlExecutionId != null && loggedAs(app, 'spark.sql.adaptive.enabled', true);
+  const coalesce = aqe && loggedAs(app, 'spark.sql.adaptive.coalescePartitions.enabled', true);
+  const initial = coalesce ? effectiveConf(app, INITIAL_PARTITION_NUM_KEY) : undefined;
+  const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
+  const skewSplit = aqe ? planShowsSkewSplit(plan) : null;
+  const explicitRepartition = planHasExplicitRepartition(plan);
+  if (initial != null && /^\d+$/.test(initial)) return { count: Number(initial), key: INITIAL_PARTITION_NUM_KEY, aqe, coalesce, skewSplit, explicitRepartition };
+  return { count: effectiveShufflePartitions(app), key: 'spark.sql.shuffle.partitions', aqe, coalesce, skewSplit, explicitRepartition };
+}
+
+// Whether a plan holds an exchange the job asked for (`repartition(n)`, `repartition(col)` or a
+// rebalance hint), which is what makes a task count different from the configured one the stage's own.
+function planHasExplicitRepartition(plan: PlanNode | null | undefined): boolean {
+  let found = false;
+  walkPlanTree(plan, (node) => { if (/\b(REPARTITION_BY_NUM|REPARTITION_BY_COL|REBALANCE_PARTITIONS_BY_NONE|REBALANCE_PARTITIONS_BY_COL)\b/.test(node.detail ?? '')) found = true; });
+  return found;
+}
+
+// How the stage's task count relates to the configured one. 'matches': the configured count sized it
+// (or the count is unknown). 'coalesced': AQE merged the partitions into fewer tasks. 'adjusted': more
+// tasks than configured under AQE, which a skew-join split can produce and several shuffle reads in
+// one execution can obscure: the stage's own repartition(n) is blamed only when the plan holds one.
+// 'own': a different count with no AQE to rewrite it, or with a repartition(n) in the plan, which is
+// a repartition(n) or an RDD operation that fixed its own count.
+type CountRelation = 'matches' | 'coalesced' | 'adjusted' | 'own';
+
+function countRelation(stage: DetectorStage, basis: PartitionBasis): CountRelation {
+  if (basis.count == null || stage.taskCount === basis.count) return 'matches';
+  if (basis.coalesce && stage.taskCount < basis.count) return 'coalesced';
+  if (basis.aqe && stage.taskCount > basis.count && (basis.skewSplit !== false || !basis.explicitRepartition)) return 'adjusted';
+  return 'own';
 }
 
 // Whether partition-count advice fits a shuffle-reading stage, from the effective conf and the
@@ -971,48 +1022,72 @@ function aqeCoalescedBelow(stage: DetectorStage, app: DetectorApp | null, count:
 // the advisory partition size is the lever. 'ownPartitioning': the property already gives at least
 // the count needed, so the stage's own repartition(n) or RDD parallelism limits it. Otherwise the
 // property limits the stage: 'raise'.
-function shufflePartitionCase(stage: DetectorStage, app: DetectorApp | null): { partitions: ShufflePartitions; count: number | null; needed: number } {
-  const count = effectiveShufflePartitions(app);
+function shufflePartitionCase(stage: DetectorStage, ctx: DetectorCtx): { partitions: ShufflePartitions; count: number | null; key: string; needed: number } {
+  const basis = partitionBasis(stage, ctx);
+  const { count, key } = basis;
   const needed = Math.ceil(stage.shuffleReadBytes / IDEAL_BYTES_PER_PARTITION_TASK);
   const tasks = Math.max(1, stage.taskCount);
+  const relation = countRelation(stage, basis);
   let partitions: ShufflePartitions = 'raise';
   if (stage.shuffleReadBytes / tasks <= IDEAL_BYTES_PER_PARTITION_TASK) partitions = 'sufficient';
-  else if (count != null && aqeCoalescedBelow(stage, app, count)) partitions = 'aqeCoalesced';
-  else if (count != null && count >= needed) partitions = 'ownPartitioning';
-  return { partitions, count, needed };
+  else if (relation === 'coalesced') partitions = 'aqeCoalesced';
+  else if (count != null && count >= needed && relation !== 'adjusted') partitions = 'ownPartitioning';
+  return { partitions, count, key, needed };
 }
 
 const ADVISORY_PARTITION_SIZE_KEY = 'spark.sql.adaptive.advisoryPartitionSizeInBytes';
 const PARALLELISM_FIRST_KEY = 'spark.sql.adaptive.coalescePartitions.parallelismFirst';
 
 // What sized a shuffle-reading stage's tasks, for advice that moves the partition count. 'property':
-// the stage ran spark.sql.shuffle.partitions tasks (or the count is unknown), so the property is
+// the stage ran the configured count of tasks (or the count is unknown), so the property is
 // the lever. 'aqeCoalesced': AQE merged them, so the property no longer sets the count: AQE sizes
 // the merged tasks from the advisory size and, with parallelismFirst (Spark's default), from
 // defaultParallelism too (ShufflePartitionsUtil.coalescePartitions and CoalesceShufflePartitions
-// at v3.5.0). 'ownPartitioning': a task count other than the property's, with no AQE coalescing to
-// explain it, is a repartition(n) or RDD operation that fixed its own count.
-type PartitionLever = 'property' | 'aqeCoalesced' | 'ownPartitioning';
+// at v3.5.0). 'aqeAdjusted': AQE ran more tasks than configured (a skew-join split), so the count
+// is not the stage's own doing and the advice stays on the property. 'ownPartitioning': a task count
+// other than the configured one, with no AQE to explain it, is a repartition(n) or RDD operation
+// that fixed its own count.
+type PartitionLever = 'property' | 'aqeCoalesced' | 'aqeAdjusted' | 'ownPartitioning';
 
-function partitionLever(stage: DetectorStage, app: DetectorApp | null): { lever: PartitionLever; count: number | null } {
-  const count = effectiveShufflePartitions(app);
-  if (count == null || stage.taskCount === count) return { lever: 'property', count };
-  return { lever: aqeCoalescedBelow(stage, app, count) ? 'aqeCoalesced' : 'ownPartitioning', count };
+function partitionLever(stage: DetectorStage, ctx: DetectorCtx): { lever: PartitionLever; count: number | null; key: string; explicitRepartition: boolean } {
+  const basis = partitionBasis(stage, ctx);
+  const relation = countRelation(stage, basis);
+  const lever: PartitionLever = relation === 'matches' ? 'property'
+    : relation === 'coalesced' ? 'aqeCoalesced'
+    : relation === 'adjusted' ? 'aqeAdjusted' : 'ownPartitioning';
+  return { lever, count: basis.count, key: basis.key, explicitRepartition: basis.explicitRepartition };
 }
 
-// The conf that makes AQE's merged tasks larger: parallelismFirst stops it targeting defaultParallelism
-// tasks and falls back to the advisory size, so it comes first until the run has it off, and then the
-// advisory size itself.
+// What follows advice on the property when the stage ran more tasks than configured under AQE.
+function aqeAdjustedNote(stage: DetectorStage, count: number | null, explicitRepartition: boolean): string {
+  return explicitRepartition
+    ? ` (this stage ran ${stage.taskCount} tasks against ${count} configured, and AQE skew-join splits add tasks, so that is not necessarily its own repartition(n))`
+    : ` (this stage ran ${stage.taskCount} tasks against ${count} configured, and the plan shows no repartition behind the difference)`;
+}
+
+// Whether parallelismFirst is on for the run: logged, else Spark's default from 3.2.0, where it
+// exists. A log that records no Spark version is read as current.
+function parallelismFirstOn(app: DetectorApp | null): boolean {
+  const effective = effectiveConf(app, PARALLELISM_FIRST_KEY);
+  if (effective != null) return effective.toLowerCase() === 'true';
+  const version = /^(\d+)\.(\d+)/.exec(app?.sparkVersion ?? '');
+  return version == null || Number(version[1]) > 3 || Number(version[2]) >= 2;
+}
+
+// The conf that makes AQE's merged tasks larger. With parallelismFirst on (Spark's default) AQE
+// targets min(total / defaultParallelism, advisory size), so raising the advisory size alone merges
+// nothing for small tasks: turning parallelismFirst off is the required step and the advisory size a
+// follow-up. With it off, the advisory size is the lever.
 function aqeCoalesceLargerFix(app: DetectorApp | null): { keys: string; remediation: Remediation[] } {
-  return loggedAs(app, PARALLELISM_FIRST_KEY, false)
-    ? { keys: `raising ${ADVISORY_PARTITION_SIZE_KEY}`, remediation: [increaseConf(ADVISORY_PARTITION_SIZE_KEY)] }
-    : { keys: `setting ${PARALLELISM_FIRST_KEY}=false (so AQE targets the advisory size, not defaultParallelism tasks) or raising ${ADVISORY_PARTITION_SIZE_KEY}`, remediation: [setConf(PARALLELISM_FIRST_KEY, false), increaseConf(ADVISORY_PARTITION_SIZE_KEY)] };
+  return parallelismFirstOn(app)
+    ? { keys: `setting ${PARALLELISM_FIRST_KEY}=false (so AQE targets the advisory size, not defaultParallelism tasks) and then raising ${ADVISORY_PARTITION_SIZE_KEY}`, remediation: [setConf(PARALLELISM_FIRST_KEY, false), increaseConf(ADVISORY_PARTITION_SIZE_KEY)] }
+    : { keys: `raising ${ADVISORY_PARTITION_SIZE_KEY}`, remediation: [increaseConf(ADVISORY_PARTITION_SIZE_KEY)] };
 }
 
 // lowShuffleParallelism's fix. Unlike the shuffle finding it fires on stages whose tasks are larger
 // than the ideal size, so its cases are 'raise', 'aqeCoalesced' and 'ownPartitioning'.
-function lowShuffleParallelismFix(stage: DetectorStage, app: DetectorApp | null): { partitions: ShufflePartitions; text: string; remediation: Remediation[] } {
-  const { partitions, count, needed } = shufflePartitionCase(stage, app);
+function lowShuffleParallelismFix(stage: DetectorStage, ctx: DetectorCtx): { partitions: ShufflePartitions; text: string; remediation: Remediation[] } {
+  const { partitions, count, key, needed } = shufflePartitionCase(stage, ctx);
   if (partitions === 'aqeCoalesced') {
     return {
       partitions,
@@ -1023,24 +1098,24 @@ function lowShuffleParallelismFix(stage: DetectorStage, app: DetectorApp | null)
   if (partitions === 'ownPartitioning') {
     return {
       partitions,
-      text: `spark.sql.shuffle.partitions is already ${count}, so raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller`,
+      text: `${key} is already ${count}, so raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller`,
       remediation: [],
     };
   }
   return {
     partitions,
-    text: 'raise spark.sql.shuffle.partitions so each partition is smaller',
-    remediation: [increaseConf('spark.sql.shuffle.partitions', count == null ? null : needed)],
+    text: `raise ${key} so each partition is smaller`,
+    remediation: [increaseConf(key, count == null ? null : needed)],
   };
 }
 
 // tinyTask's fix on a stage that reads a shuffle: fewer, larger tasks, through whatever sized this
 // stage. Lowering spark.sql.shuffle.partitions merges nothing AQE kept for parallelism, and does
 // not touch a repartition(n).
-function tinyShuffleFix(stage: DetectorStage, app: DetectorApp | null, coalesceTo: number): { text: string; remediation: Remediation[] } {
-  const { lever, count } = partitionLever(stage, app);
+function tinyShuffleFix(stage: DetectorStage, ctx: DetectorCtx, coalesceTo: number): { text: string; remediation: Remediation[] } {
+  const { lever, count, key, explicitRepartition } = partitionLever(stage, ctx);
   if (lever === 'aqeCoalesced') {
-    const larger = aqeCoalesceLargerFix(app);
+    const larger = aqeCoalesceLargerFix(stageApp(ctx, stage));
     return {
       text: `${larger.keys}, or using .coalesce(${coalesceTo}): AQE already coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks, so lowering the shuffle partition count will not merge them`,
       remediation: larger.remediation,
@@ -1050,14 +1125,15 @@ function tinyShuffleFix(stage: DetectorStage, app: DetectorApp | null, coalesceT
     const hint = `lowering the repartition(n) or RDD partition count that sized this stage, or using .coalesce(${coalesceTo})`;
     return { text: `${hint} (the configured shuffle partition count is ${count} but this stage ran ${stage.taskCount} tasks)`, remediation: [codeFix(hint)] };
   }
-  return { text: `lowering spark.sql.shuffle.partitions or using .coalesce(${coalesceTo})`, remediation: [decreaseConf('spark.sql.shuffle.partitions')] };
+  const note = lever === 'aqeAdjusted' ? aqeAdjustedNote(stage, count, explicitRepartition) : '';
+  return { text: `lowering ${key} or using .coalesce(${coalesceTo})${note}`, remediation: [decreaseConf(key)] };
 }
 
 // spill's fix on a stage that reads a shuffle and spills for volume: smaller partitions or more
 // memory. Raising spark.sql.shuffle.partitions only helps while the property sized the stage.
-function spillShuffleFix(stage: DetectorStage, app: DetectorApp | null): { text: string; remediation: Remediation[] } {
+function spillShuffleFix(stage: DetectorStage, ctx: DetectorCtx): { text: string; remediation: Remediation[] } {
   const memory = increaseConf('spark.executor.memory');
-  const { lever, count } = partitionLever(stage, app);
+  const { lever, count, key, explicitRepartition } = partitionLever(stage, ctx);
   if (lever === 'aqeCoalesced') {
     return {
       text: `AQE coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks: lower ${ADVISORY_PARTITION_SIZE_KEY} so each partition is smaller, or increase executor memory`,
@@ -1068,13 +1144,14 @@ function spillShuffleFix(stage: DetectorStage, app: DetectorApp | null): { text:
     const hint = "raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller";
     return { text: `the configured shuffle partition count is ${count} but this stage ran ${stage.taskCount} tasks, so ${hint}, or increase executor memory`, remediation: [codeFix(hint), memory] };
   }
-  return { text: 'raise spark.sql.shuffle.partitions or increase executor memory', remediation: [increaseConf('spark.sql.shuffle.partitions'), memory] };
+  const note = lever === 'aqeAdjusted' ? aqeAdjustedNote(stage, count, explicitRepartition) : '';
+  return { text: `raise ${key} or increase executor memory${note}`, remediation: [increaseConf(key), memory] };
 }
 
 // stageSlowness's fix on a stage that reads a shuffle: more tasks. spark.default.parallelism sizes
 // RDD shuffles only (the DataFrame shuffle reads spark.sql.shuffle.partitions), so it is not offered.
-function slowShuffleFix(stage: DetectorStage, app: DetectorApp | null): { text: string; remediation: Remediation[] } {
-  const { lever, count } = partitionLever(stage, app);
+function slowShuffleFix(stage: DetectorStage, ctx: DetectorCtx): { text: string; remediation: Remediation[] } {
+  const { lever, count, key, explicitRepartition } = partitionLever(stage, ctx);
   if (lever === 'aqeCoalesced') {
     return {
       text: `AQE coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks, so lower ${ADVISORY_PARTITION_SIZE_KEY} to get more of them`,
@@ -1085,11 +1162,18 @@ function slowShuffleFix(stage: DetectorStage, app: DetectorApp | null): { text: 
     const hint = "raise this stage's own partition count (its repartition(n) or RDD parallelism)";
     return { text: `the configured shuffle partition count is ${count} but this stage ran ${stage.taskCount} tasks, so ${hint}`, remediation: [codeFix(hint)] };
   }
-  return { text: 'raise spark.sql.shuffle.partitions', remediation: [increaseConf('spark.sql.shuffle.partitions')] };
+  const note = lever === 'aqeAdjusted' ? aqeAdjustedNote(stage, count, explicitRepartition) : '';
+  return { text: `raise ${key}${note}`, remediation: [increaseConf(key)] };
 }
+
+// Spark's default spark.dynamicAllocation.maxExecutors: no upper bound.
+const UNBOUNDED_EXECUTORS = 2147483647;
 
 const BROADCAST_THRESHOLD_KEY = 'spark.sql.autoBroadcastJoinThreshold';
 const ADAPTIVE_BROADCAST_THRESHOLD_KEY = 'spark.sql.adaptive.autoBroadcastJoinThreshold';
+// AQE keeps a join side out of a broadcast when too few of its shuffle partitions are non-empty,
+// whatever its size (DynamicJoinSelection at v3.5.0).
+const NON_EMPTY_PARTITION_RATIO_KEY = 'spark.sql.adaptive.nonEmptyPartitionRatioForBroadcastJoin';
 
 // The property that bounds a broadcast: with AQE, runtime sizes are judged against the adaptive
 // threshold when it is set (JoinSelectionHelper.canBroadcastBySize, apache/spark v3.5.0), and
@@ -1107,9 +1191,11 @@ function effectiveBroadcastThreshold(app: DetectorApp | null, key: string): numb
   return parseSparkBytes(raw);
 }
 
-// No dynamic-allocation property has an effect on a run whose logged conf turns it off.
+// No dynamic-allocation property has an effect on a run that has it off: Spark's default is off, so
+// an unset property counts as off, as it does for idleCapacityFix.
 function dynamicAllocationOff(app: DetectorApp | null): boolean {
-  return app?.resources?.dynamicAllocationEnabled === false || app?.config?.['spark.dynamicAllocation.enabled']?.trim().toLowerCase() === 'false';
+  if (app?.resources?.dynamicAllocationEnabled != null) return !app.resources.dynamicAllocationEnabled;
+  return !loggedAs(app, 'spark.dynamicAllocation.enabled', true);
 }
 
 // Shared by cacheUtilization's two variants, worded per storage source: neither is a runtime
@@ -1470,7 +1556,7 @@ function stragglerGate(stage: DetectorStage, ctx: DetectorCtx, thresholds: {
     useSpeculativeMetric, value,
     detail: useSpeculativeMetric
       ? `${value} speculative attempt${value === 1 ? '' : 's'} discarded${speculationRuleNote(ctx.app)}`
-      : `${value}% of tasks straggled`,
+      : `${value}% of tasks ran over ${STRAGGLER_FACTOR}× the median`,
     confidence: useSpeculativeMetric
       ? stragglerConfidence(speculativeShare, thresholds.warnPct, thresholds.critPct)
       : stragglerConfidence(stragglerShare, thresholds.shareWarn, thresholds.critPct),
@@ -1478,7 +1564,7 @@ function stragglerGate(stage: DetectorStage, ctx: DetectorCtx, thresholds: {
 }
 
 // The straggler finding's evidence, recommendation and fix for the tail's cause. Without a measured
-// cause the stage gets the skew advice for its origin (skewFix), the only case it still fits.
+// cause there is nothing to fix yet, only the causes to check.
 function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdict, detail: string): {
   evidence: Pick<FindingOf<'straggler'>, 'origin' | 'aqeSkew' | 'cause' | 'causeSharePct' | 'host' | 'hostTasks' | 'cpuPct'>;
   recommendation: string;
@@ -1491,11 +1577,11 @@ function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdi
   switch (tail.cause) {
     case 'data': {
       // skew reports a tail its gate admits; this is one only the straggler gate does.
-      const fix = skewFix(stage, ctx);
+      const fix = skewFix(stage, ctx, false, tail);
       const ratio = a?.dataRatio != null ? Math.round(a.dataRatio * 10) / 10 : null;
       return {
         evidence: { ...evidence, origin: fix.origin, aqeSkew: fix.aqeSkew }, remediation: fix.remediation,
-        recommendation: `${detail}: data volume accounts for ${share}${ratio !== null ? ` (the slow tasks read a median ${ratio}× the data of the median task)` : ''}: ${fix.text}.`,
+        recommendation: `${detail}: data volume accounts for ${share} (${ratio !== null ? `the slow tasks read a median ${ratio}× the data of the median task` : 'the median task read almost nothing'}): ${fix.text}.`,
       };
     }
     case 'gc':
@@ -1521,19 +1607,36 @@ function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdi
       const cpu = cpuPct === undefined ? '' : cpuPct < 50
         ? ` They used ${cpuPct}% of their run time on CPU, so they mostly waited (on storage, a remote service or a lock).`
         : ` They used ${cpuPct}% of their run time on CPU, so the work itself is slow.`;
+      // A tail that read clearly more data is not "no more data" even when run time did not scale
+      // with it; where data is the largest share anyway, the data advice stays.
+      const dataRatio = a?.dataRatio ?? 0;
+      if (a != null && dataRatio >= MORE_DATA_RATIO) {
+        const rounded = Math.round(dataRatio * 10) / 10;
+        const dataShare = Math.round((a.dataMs / a.excessMs) * 100);
+        const dataLargest = a.dataMs >= a.excessMs - a.dataMs - a.gcMs - a.fetchWaitMs - a.hostMs;
+        const lead = `${detail}: the slow tasks read a median ${rounded}× the data of the median task, and data volume accounts for ${dataShare}% of their extra time`;
+        if (dataLargest) {
+          const fix = skewFix(stage, ctx, false, tail);
+          return {
+            evidence: { ...evidence, origin: fix.origin, aqeSkew: fix.aqeSkew }, remediation: fix.remediation,
+            recommendation: `${lead}, more than anything else the log attributes (not a majority): ${fix.text}.`,
+          };
+        }
+        return {
+          evidence, remediation: undefined,
+          recommendation: `${lead}, so run time did not scale with it, and GC, shuffle fetch wait and one slow host do not account for the rest.${cpu} Look at per-record cost (UDFs, regular expressions, a call out per row) as well as the data they read.`,
+        };
+      }
       return {
         evidence, remediation: undefined,
         recommendation: `${detail}: the slow tasks read no more data than the median task, and GC, shuffle fetch wait and one slow host do not account for their time.${cpu} Look at per-record cost (UDFs, regular expressions, a call out per row).`,
       };
     }
-    default: {
-      // The skew advice fits only a stage that reads a shuffle feeding a join (skewFix).
-      const fix = skewFix(stage, ctx);
+    default:
       return {
-        evidence: { ...evidence, origin: fix.origin, aqeSkew: fix.aqeSkew }, remediation: fix.remediation,
-        recommendation: `${detail}: rule out a GC pause or a slow shuffle fetch before assuming a hardware issue; if uneven data is the cause, ${fix.text}.`,
+        evidence, remediation: undefined,
+        recommendation: `${detail}: nothing in the log attributes the slow tasks to data volume, GC, shuffle fetch wait or one host, so check their input sizes, GC time and hosts before choosing a fix.`,
       };
-    }
   }
 }
 
@@ -1550,13 +1653,13 @@ export const DETECTORS = [
       const gate = skewGate(stage, ctx, thresholds.ratioWarn, thresholds.minTasksForP95, thresholds.floorPctWarn);
       if (gate === null) return null;
       const { ratio, metric } = gate;
-      // A tail GC, fetch wait or a host explains is not skew: straggler reports it, with the cause
-      // (it re-runs this same gate, see skewGate).
+      // A tail data does not explain, or one with no measured cause, is not skew: straggler reports
+      // it, with the cause (it re-runs this same gate, see skewGate).
       const tail = tailVerdict(stage, thresholds.dataShareMin);
-      if (tail.cause !== 'data' && tail.cause !== 'unattributed') return null;
+      if (tail.cause !== 'data') return null;
       const value = Math.round(ratio * 10) / 10;
-      const fix = skewFix(stage, ctx);
-      const dataRatio = tail.cause === 'data' && tail.attribution?.dataRatio != null
+      const fix = skewFix(stage, ctx, false, tail);
+      const dataRatio = tail.attribution?.dataRatio != null
         ? Math.round(tail.attribution.dataRatio * 10) / 10 : undefined;
       return {
         type: 'skew', stageId: stage.id, origin: fix.origin, aqeSkew: fix.aqeSkew,
@@ -1566,7 +1669,7 @@ export const DETECTORS = [
         metric, value,
         confidence: skewConfidence(ratio, thresholds.ratioWarn),
         validationRequired: `Flagged only when it costs at least ${shareLabel(thresholds.floorPctWarn)} of run time.`,
-        recommendation: `Task duration ratio (${metric}) is ${value}×${dataRatio !== undefined ? `, and the slow tasks read a median ${dataRatio}× the data of the median task` : ''}: ${fix.text}.`,
+        recommendation: `Task duration ratio (${metric}) is ${value}×${dataRatio !== undefined ? `, and the slow tasks read a median ${dataRatio}× the data of the median task` : ', and the median task read almost nothing'}: ${fix.text}.`,
         remediation: fix.remediation,
       };
     },
@@ -1686,15 +1789,15 @@ export const DETECTORS = [
       const bytes = stage.shuffleReadBytes;
       if (bytes <= thresholds.minBytes) return null;
       if (stageBelowRuntimeFloor(stage, ctx, thresholds.stageFloorPct)) return null;
-      const { partitions, count } = shufflePartitionCase(stage, stageApp(ctx, stage));
+      const { partitions, count, key } = shufflePartitionCase(stage, ctx);
       const perTask = formatBytes(bytes / Math.max(1, stage.taskCount));
       const fix = partitions === 'sufficient'
         ? { text: `its ${stage.taskCount} tasks already read about ${perTask} each, so more partitions will not help: consider a broadcast join for the smaller side`, remediation: [] }
         : partitions === 'aqeCoalesced'
           ? { text: `AQE coalesced it into ${stage.taskCount} tasks (from ${count} configured partitions): consider lowering ${ADVISORY_PARTITION_SIZE_KEY} or adding a broadcast join`, remediation: [decreaseConf(ADVISORY_PARTITION_SIZE_KEY)] }
           : partitions === 'ownPartitioning'
-            ? { text: `spark.sql.shuffle.partitions is already ${count}, so consider raising this stage's own partition count (its repartition(n) or RDD parallelism) or adding a broadcast join`, remediation: [] }
-            : { text: 'consider increasing spark.sql.shuffle.partitions or adding a broadcast join', remediation: [increaseConf('spark.sql.shuffle.partitions')] };
+            ? { text: `${key} is already ${count}, so consider raising this stage's own partition count (its repartition(n) or RDD parallelism) or adding a broadcast join`, remediation: [] }
+            : { text: `consider increasing ${key} or adding a broadcast join`, remediation: [increaseConf(key)] };
       return {
         type: 'shuffle', stageId: stage.id,
         impactBand: 'info', partitions,
@@ -1741,7 +1844,7 @@ export const DETECTORS = [
         });
       }
       if (total >= thresholds.lowParTotalBytes && taskCount <= thresholds.lowParMaxTasks) {
-        const fix = lowShuffleParallelismFix(stage, stageApp(ctx, stage));
+        const fix = lowShuffleParallelismFix(stage, ctx);
         out.push({
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'lowShuffleParallelism', partitions: fix.partitions, metric: 'taskCount', value: taskCount,
@@ -1816,7 +1919,7 @@ export const DETECTORS = [
       const impactBand = 'warning';
       // shuffle.partitions sizes a shuffle's reduce side: a stage that reads no shuffle gets memory only.
       const reads = stageReads(stage);
-      const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, stageApp(ctx, stage)) : null;
+      const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, ctx) : null;
       return {
         type: 'spill', stageId: stage.id, impactBand, reads,
         spillMagnitude: mag?.magnitude,
@@ -1874,10 +1977,13 @@ export const DETECTORS = [
         };
       }
       // Low-GC (cost) branch: only for stages that ran long enough to be meaningful, and only as
-      // the fallback sizing signal: a log with measured executor heap peaks gets memoryUtilization's
-      // heapOverProvisioned judgement instead (low GC time just means a low allocation rate).
+      // the fallback sizing signal: a log with measured executor heap peaks and a known executor
+      // memory gets memoryUtilization's heapOverProvisioned judgement instead (low GC time just
+      // means a low allocation rate).
       if ((stage.executorRunTime ?? 0) >= thresholds.minRunTimeMs
-          && executorHeapPeaks(ctx).size === 0
+          && !heapJudgementAvailable(ctx)
+          // A stage that failed, or lost tasks, ran too little work to call its GC low.
+          && stage.stageFailureReason == null && stage.failedTasks === 0
           && pct < thresholds.lowInfoPct100
           && !stageBelowRuntimeFloor(stage, ctx, thresholds.lowInfoFloorPct)) {
         const value = Math.round(pct * 10) / 10;
@@ -2062,7 +2168,7 @@ export const DETECTORS = [
       // A shuffle's reduce-side partition count is the remedy on a stage that reads a shuffle; a stage
       // that reads input files gets the input-partitioning remedy instead.
       const reads = stageReads(stage);
-      const shuffleFix = reads === 'shuffle' ? slowShuffleFix(stage, stageApp(ctx, stage)) : null;
+      const shuffleFix = reads === 'shuffle' ? slowShuffleFix(stage, ctx) : null;
       const recommendation = shuffleFix
         ? `This stage ran ${value} minutes with no more specific cause flagged: often a partition-count problem, ${shuffleFix.text}, or check for a large per-task data volume driving heavy shuffle and spill.`
         : reads === 'input'
@@ -2174,27 +2280,26 @@ export const DETECTORS = [
     detect(stage, ctx, thresholds): Finding | null {
       const skew = ctx.skewThresholds;
       const tail = tailVerdict(stage, skew.dataShareMin);
-      // With no measured cause skew's gate is not consulted: both findings stand, flagged as overlapping.
-      const skewTail = tail.cause === 'unattributed'
-        ? null : skewGate(stage, ctx, skew.ratioWarn, skew.minTasksForP95, skew.floorPctWarn);
+      const skewTail = skewGate(stage, ctx, skew.ratioWarn, skew.minTasksForP95, skew.floorPctWarn);
       if (tail.cause === 'data' && skewTail !== null) return null; // skew reports it
-      // A tail skew's duration gate admits but data does not explain is this finding's.
+      // A tail skew's duration gate admits but data does not explain (or nothing attributes) is this finding's.
       const fromSkewGate = skewTail !== null && tail.cause !== 'data';
       const own = stragglerGate(stage, ctx, thresholds);
       if (own === null && !fromSkewGate) return null;
-      const tailTasks = tail.attribution?.tasks ?? 0;
-      const useSpeculativeMetric = own?.useSpeculativeMetric ?? false;
-      const value = own?.value ?? Math.round((tailTasks / stage.taskCount) * 100);
-      const detail = own?.detail ?? `${value}% of tasks ran over ${TAIL_FACTOR}× the median`;
-      const advice = stragglerAdvice(stage, ctx, tail, detail);
+      // Through skew's gate alone the tail can be a share too small to state, so skew's ratio describes it.
+      const reported = own !== null
+        ? { metric: own.useSpeculativeMetric ? 'speculativeTasks' : 'stragglerShare', value: own.value, unit: own.useSpeculativeMetric ? 'count' as const : 'pct' as const, detail: own.detail }
+        : { metric: skewTail!.metric, value: Math.round(skewTail!.ratio * 10) / 10, unit: 'ratio' as const,
+          detail: `Task duration ratio (${skewTail!.metric}) is ${Math.round(skewTail!.ratio * 10) / 10}×` };
+      const advice = stragglerAdvice(stage, ctx, tail, reported.detail);
       return {
         type: 'straggler', stageId: stage.id,
         // Fixed fallback: overwritten by deriveImpactBand when this finding gets a real wallClock
         // estimate (the common case). Only surfaces on the rare occupancy-sweep miss.
         impactBand: 'info', ...advice.evidence,
-        metric: useSpeculativeMetric ? 'speculativeTasks' : 'stragglerShare',
-        value,
-        unit: useSpeculativeMetric ? 'count' : 'pct',
+        metric: reported.metric,
+        value: reported.value,
+        unit: reported.unit,
         speculativeTasks: stage.speculativeTasks ?? 0,
         stragglerCount: stage.stragglerCount ?? 0,
         confidence: own?.confidence ?? skewConfidence(skewTail!.ratio, skew.ratioWarn),
@@ -2281,7 +2386,7 @@ export const DETECTORS = [
       if (stage.taskDurationP50 > thresholds.maxP50 || stage.taskDurationP95 > thresholds.maxP95) return null;
       const coalesceTo = Math.max(1, Math.round(stage.taskCount / 10));
       const reads = stageReads(stage);
-      const fix = reads === 'shuffle' ? tinyShuffleFix(stage, stageApp(ctx, stage), coalesceTo) : { text: `.coalesce(${coalesceTo})`, remediation: [] };
+      const fix = reads === 'shuffle' ? tinyShuffleFix(stage, ctx, coalesceTo) : { text: `.coalesce(${coalesceTo})`, remediation: [] };
       return {
         type: 'tinyTask', stageId: stage.id, impactBand: 'info', reads,
         metric: 'taskDurationP50', value: Math.round(stage.taskDurationP50),
@@ -2459,10 +2564,6 @@ export const DETECTORS = [
       const appDurationMs = app.endTime - app.startTime;
       if (appDurationMs <= 0) return out;
 
-      // Peak concurrent executors/cores (not executorsAdded.length/computeTotalCores): a
-      // cumulative sum or count double-counts a churned-through executor against its replacement's
-      // (spot preemption, dynamicAllocation replacement), inflating idle-rate and waste-model figures.
-      const peakExecutors = computePeakConcurrentExecutorCount(executorsAdded, executorsRemoved);
       const allocatedMB = app.resources?.executor?.memoryMB ?? null;
 
       // ── 1a idle-cores rate ────────────────────────────────────────────────
@@ -2495,13 +2596,18 @@ export const DETECTORS = [
       // JVMHeapMemory counts uncollected garbage, so a peak near -Xmx is normal JVM behaviour.
       const peakHeapByExec = executorHeapPeaks(ctx);
       if (peakHeapByExec.size === 0) {
-        // Spark 3.0+ writes the executor's metric peaks on every TaskEnd, so a log without them is
-        // pre-3.0 or from local mode (which reports zeros): no logging switch recovers them.
+        // Spark 3.0+ writes the executor's metric peaks on every TaskEnd, but it samples them at the
+        // executor heartbeat (spark.executor.metrics.pollingInterval defaults to 0), so a task that
+        // finishes between two heartbeats reports zeros, as does every task in local mode.
+        // spark.eventLog.logStageExecutorMetrics logs the per-stage peaks the driver gathers.
+        const stageMetrics = switchFix(loggedAs(app, LOG_STAGE_EXECUTOR_METRICS_KEY, true), LOG_STAGE_EXECUTOR_METRICS_KEY, true,
+          ` To measure it, set ${LOG_STAGE_EXECUTOR_METRICS_KEY}=true to record the peaks per stage.`,
+          ` ${LOG_STAGE_EXECUTOR_METRICS_KEY} is already on, so no executor ran long enough to be sampled.`);
         out.push({
           type: 'memoryUtilization', variant: 'memoryBand', stageId: null,
           impactBand: 'info', metric: 'memoryBand', dataUnavailable: true,
-          recommendation: 'Executor heap peaks are missing from this log (Spark records them on every task end from 3.0, and local mode reports zeros): executor memory sizing was not measured.',
-          remediation: [],
+          recommendation: `Executor heap peaks are missing from this log: Spark samples them at the executor heartbeat, so tasks shorter than the heartbeat interval report zeros (and local mode reports zeros throughout), and executor memory sizing was not measured.${stageMetrics.text}`,
+          remediation: stageMetrics.remediation,
         });
       } else if (allocatedMB != null && allocatedMB > 0) {
         const allocatedBytes = allocatedMB * 1024 * 1024;
@@ -2531,11 +2637,13 @@ export const DETECTORS = [
 
       // ── 1c Spark Memory Limit waste model (UNVERIFIED buffer) ─
       // executorRunTime sums task time across cores, so dividing by the cores per executor gives
-      // executor-seconds: the same unit as peakExecutors x run seconds it is compared with.
-      const executorCores = app.resources?.executor?.cores
-        ?? computeAllocation(allocationInput).executorCores;
-      if (allocatedMB != null && peakExecutors > 0 && executorCores != null && executorCores > 0) {
-        const allocatedMBSeconds = peakExecutors * allocatedMB * (appDurationMs / 1000);
+      // executor-seconds: the same unit as the allocated executor-seconds it is compared with.
+      // The allocated side is the executors' alive time (computeAllocation), not the peak executor
+      // count held for the whole run: under dynamic allocation the two differ by peak over mean.
+      const allocation = computeAllocation(allocationInput);
+      const executorCores = app.resources?.executor?.cores ?? allocation.executorCores;
+      if (allocatedMB != null && allocation.executorSeconds != null && allocation.executorSeconds > 0 && executorCores != null && executorCores > 0) {
+        const allocatedMBSeconds = allocatedMB * allocation.executorSeconds;
         let usedRunTimeMs = 0;
         for (const s of stages.values()) usedRunTimeMs += s.executorRunTime ?? 0;
         const usedMBSeconds = allocatedMB * (usedRunTimeMs / 1000 / executorCores);
@@ -2605,7 +2713,7 @@ export const DETECTORS = [
       const out: Finding[] = [];
       let persistedRddCount = 0;
       // With block-update logging on, zero rdd_* updates means nothing was ever cached, not a gap.
-      const blockUpdatesLogged = String(ctx.app?.config?.['spark.eventLog.logBlockUpdates.enabled']).toLowerCase() === 'true';
+      const blockUpdatesLogged = loggedAs(ctx.app, 'spark.eventLog.logBlockUpdates.enabled', true);
       // Spark before 2.3 has no block-update logging and writes RDD Info's cache figures only on
       // StageCompleted, which isn't read: the caveat's advice doesn't apply there. A log with no
       // version is pre-1.3 (no SparkListenerLogStart); every 2.3+ log records one.
@@ -2972,12 +3080,13 @@ export const DETECTORS = [
     emits: ['configAudit'],
     docAnchor: '#config-autoscale-bounds', thresholds: {}, property: 'spark.dynamicAllocation.maxExecutors',
     detect(target): Finding | null {
-      const app = target.app; const config = app?.config ?? {}; const res = app?.resources ?? null;
+      const app = target.app; const res = app?.resources ?? null;
       if (res?.dynamicAllocationEnabled !== true) return null;
       // minExecutors > maxExecutors is not audited: ExecutorAllocationManager.validateSettings throws on it
       // at startup (v3.5.0 lines 196-199), so no run that wrote an event log has inverted bounds.
-      const maxN = config['spark.dynamicAllocation.maxExecutors'] != null ? parseInt(config['spark.dynamicAllocation.maxExecutors'], 10) : null;
-      if (maxN == null) {
+      // Unbounded is the effective maxExecutors being Spark's default (Int.MaxValue) or that value set.
+      const maxN = Number.parseInt(effectiveConf(app, 'spark.dynamicAllocation.maxExecutors') ?? '', 10);
+      if (!Number.isFinite(maxN) || maxN >= UNBOUNDED_EXECUTORS) {
         return {
           type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors',
           impactBand: 'info', metric: 'config', valueText: '(unset)',
@@ -3000,7 +3109,9 @@ export const DETECTORS = [
       // cache serializer), so the note only applies to a run that ran stages outside any SQL execution.
       // Without the stages there is no evidence of RDD work and no claim.
       if (!hasStageOutsideSql(target.stages)) return null;
-      const ser = res?.serializer ?? config['spark.serializer'] ?? null;
+      // The serializer the run set; Spark's own default (JavaSerializer) is reported as the default.
+      const effective = effectiveSparkConf({ sparkVersion: app?.sparkVersion, properties: config }, 'spark.serializer');
+      const ser = res?.serializer ?? (effective?.source === 'default' ? null : effective?.value ?? null);
       const isKryo = typeof ser === 'string' && /kryo/i.test(ser);
       if (isKryo) return null;
       return {
@@ -3215,7 +3326,8 @@ export const DETECTORS = [
       const out: Finding[] = [];
       walkPlanTree(sqlExec.planTree, (node, parent) => {
         if (node.name === 'AdaptiveSparkPlan' || (parent != null && underAdaptive.has(parent))) underAdaptive.add(node);
-        const { key, threshold, admittingThresholds } = underAdaptive.has(node) ? adaptiveThresholds : staticThresholds;
+        const adaptive = underAdaptive.has(node);
+        const { key, threshold, admittingThresholds } = adaptive ? adaptiveThresholds : staticThresholds;
         const candidate = node.name === 'SortMergeJoin' ? broadcastCandidate(node) : null;
         if (candidate) {
           const buildBytes = shuffleBytes(candidate.build);
@@ -3241,8 +3353,12 @@ export const DETECTORS = [
                 value: buildBytes, largerSideBytes: otherBytes,
                 joinType, buildSide, broadcastThreshold,
                 recommendation: broadcastThreshold === 'notLimiting'
-                  ? `${subject} is under the effective ${key} (${formatBytes(threshold!)}) yet was not broadcast${otherSide}, so the threshold is not what stopped it: a join hint, missing table statistics, or a shuffle that had already run usually is. Consider a broadcast() hint or collecting statistics (ANALYZE TABLE).`
-                  : `${subject} is well under the broadcast threshold${otherSide}: this could have been a broadcast join. Consider a broadcast() hint or raising ${key}.`,
+                  ? `${subject} is under the effective ${key} (${formatBytes(threshold!)}) yet was not broadcast${otherSide}, so the threshold is not what stopped it: ${adaptive
+                    ? `a join hint, a shuffle that had already run, or a low share of non-empty partitions (below ${NON_EMPTY_PARTITION_RATIO_KEY}) usually is. Consider a broadcast() hint or lowering ${NON_EMPTY_PARTITION_RATIO_KEY}.`
+                    : 'a join hint, missing table statistics, or a shuffle that had already run usually is. Consider a broadcast() hint or collecting statistics (ANALYZE TABLE).'}`
+                  : broadcastThreshold === 'disabled'
+                    ? `${subject} was not broadcast${otherSide} because automatic broadcast is disabled (${key}=-1): this could have been a broadcast join. Set ${key} to a positive size or add a broadcast() hint.`
+                    : `${subject} is over the effective ${key} (${threshold == null ? 'not a size' : formatBytes(threshold)}) but small enough to broadcast${otherSide}: this could have been a broadcast join. Consider a broadcast() hint or raising ${key}.`,
                 remediation: broadcastThreshold === 'notLimiting' ? [] : [increaseConf(key)],
               });
             }
@@ -3384,7 +3500,10 @@ export const DETECTORS = [
           confidence: 'medium',
           validationRequired: 'Row counts are the executors\' measured values; the time graded is the whole stage that runs the join, which also covers its other operators.',
           recommendation: `${shape.operator}${on} produced ${outputRows.toLocaleString('en-US')} rows${expansion == null
-            ? ', every left row paired with every right row.'
+            ? shape.condition == null
+              ? ', every left row paired with every right row.'
+              // The condition filtered the pairings: the output is the rows it kept, not the product.
+              : ': the pairs its condition kept from every left and right pairing it compared.'
             : ` from ${leftRows!.toLocaleString('en-US')} and ${rightRows!.toLocaleString('en-US')} input rows (${Math.round(expansion).toLocaleString('en-US')}x the larger side).`} ${advice}`,
           remediation: [codeFix(advice)],
         });

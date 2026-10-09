@@ -91,35 +91,6 @@ export function findingId(f: Finding): string {
   return fnv1a(`${f.type}|${locationKey(f)}|${f.metric ?? ''}|${f.value ?? f.valueText ?? ''}|${disc}`);
 }
 
-// skew (either branch) and straggler both claim the stage's replayed tail recovery
-// (tailReplayRecoveryMs via tailRecoveryMs): the same slow-task tail reported by two detectors
-// (see "Overlap caveat: skew / straggler" in impact-estimation/caveats-tuning-and-coverage.md). skew's branch only changes
-// the fallback single-task delta on a stage without the replay, so every skew + straggler pair
-// on a stage is flagged. Flags both sides via validationRequired (rather than suppressing
-// either) so neither finding's own diagnostic value is lost; the flag rides the same
-// confidence-caveat UI a reader already sees before trusting either finding's magnitude.
-function overlapNote(otherType: 'skew' | 'straggler'): string {
-  return `This overlaps with the ${otherType} finding on this stage: both measure the same slow-task tail, so don't add their recoverable-time figures together.`;
-}
-
-function flagSkewStragglerOverlap(findings: Finding[]): void {
-  const skewStages = new Set(
-    findings.filter((f) => f.type === 'skew' && f.stageId != null).map((f) => f.stageId),
-  );
-  if (skewStages.size === 0) return;
-  const stragglerStages = new Set(
-    findings.filter((f) => f.type === 'straggler' && f.stageId != null).map((f) => f.stageId),
-  );
-  const overlapStages = new Set([...skewStages].filter((id) => stragglerStages.has(id)));
-  if (overlapStages.size === 0) return;
-  for (const f of findings) {
-    if (f.stageId == null || !overlapStages.has(f.stageId)) continue;
-    const note = f.type === 'skew' ? overlapNote('straggler') : f.type === 'straggler' ? overlapNote('skew') : null;
-    if (!note) continue;
-    f.validationRequired = [f.validationRequired, note].filter(Boolean).join(' ');
-  }
-}
-
 function push(out: Finding[], entry: Detector, result: Finding | Finding[] | null, tuned: TunedThresholds | null = null): void {
   if (!result) return;
   const detectorVersion = entry.version ?? 1;
@@ -177,6 +148,41 @@ function applySuppression(out: Finding[]): Finding[] {
   }
   if (dropped.size === 0) return out;
   return out.filter((f) => f.stageId == null || !dropped.get(f.type)?.has(f.stageId));
+}
+
+// Advice to lower spark.executor.memory (over-provisioned heap, low GC, idle memory-time) contradicts
+// advice to raise it (high GC, spill, a GC-bound straggler tail) where a stage is short of memory.
+// A stage-level lowering finding on the same stage as raising advice is dropped. A run-level one
+// (heap, idle memory-time) stays, since other stages may well have memory to spare, but its advice
+// to lower memory is replaced by a note naming the stages that ask for more.
+const EXECUTOR_MEMORY_KEY = 'spark.executor.memory';
+
+function changesExecutorMemory(f: Finding, direction: 'increase' | 'decrease'): boolean {
+  return (f.remediation ?? []).some((r) => r.kind === 'conf' && r.key === EXECUTOR_MEMORY_KEY && r.direction === direction);
+}
+
+function reconcileExecutorMemoryAdvice(out: Finding[]): Finding[] {
+  const raising = out.filter((f) => changesExecutorMemory(f, 'increase'));
+  if (raising.length === 0) return out;
+  const raisingStages = new Set(raising.flatMap((f) => (f.stageId != null ? [f.stageId] : [])));
+  const stageList = [...raisingStages].sort((a, b) => a - b).join(', ');
+  const conflict = raisingStages.size > 0
+    ? `Stage${raisingStages.size === 1 ? '' : 's'} ${stageList} ask${raisingStages.size === 1 ? 's' : ''} for more executor memory, so confirm before lowering it.`
+    : 'Other findings ask for more executor memory, so confirm before lowering it.';
+  const reconciled: Finding[] = [];
+  for (const f of out) {
+    if (!changesExecutorMemory(f, 'decrease') || changesExecutorMemory(f, 'increase')) { reconciled.push(f); continue; }
+    if (f.stageId != null) {
+      if (!raisingStages.has(f.stageId)) reconciled.push(f);
+      continue;
+    }
+    reconciled.push({
+      ...f,
+      recommendation: `${f.recommendation ?? ''} ${conflict}`.trim(),
+      remediation: (f.remediation ?? []).filter((r) => !(r.kind === 'conf' && r.key === EXECUTOR_MEMORY_KEY && r.direction === 'decrease')),
+    });
+  }
+  return reconciled;
 }
 
 // `app` widened to `SparkAppInfo | null` to match real callers (AppModel.app is
@@ -242,11 +248,10 @@ export function analyze(
         assertNever(d);
     }
   }
-  const findings = applySuppression(out);
+  const findings = reconcileExecutorMemoryAdvice(applySuppression(out));
   estimateImpact(findings, impact);
   noteTunedThresholds(findings);
   deriveImpactBand(findings, app, thresholds ? (type) => bandFloors(type, thresholds) : undefined);
-  flagSkewStragglerOverlap(findings);
   // Ascending IMPACT_BAND_ORDER (critical 0 -> info 2) puts the worst band first;
   // stable sort keeps DETECTORS declaration order within a band.
   findings.sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]);

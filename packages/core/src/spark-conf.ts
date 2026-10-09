@@ -8,9 +8,12 @@
 //
 // Properties with no entry in SPARK_DEFAULTS have no fixed default: spark.executor.instances and
 // spark.default.parallelism depend on the cluster manager and the cluster, spark.executor.memoryOverhead
-// is derived from spark.executor.memory, spark.dynamicAllocation.initialExecutors from minExecutors,
+// is derived from spark.executor.memory (executorOverheadSettings gives the pair it is derived from),
+// spark.dynamicAllocation.initialExecutors from minExecutors,
 // and spark.sql.adaptive.autoBroadcastJoinThreshold falls back to spark.sql.autoBroadcastJoinThreshold
 // when unset. The lookup returns undefined for them rather than guess.
+
+import { parseSparkMemoryMB } from './spark-memory.ts';
 
 export type ConfSource = 'query' | 'app' | 'default';
 
@@ -32,6 +35,21 @@ type Since = readonly [major: number, minor: number];
 type DefaultStep = readonly [since: Since | 'always', value: string];
 
 const ALWAYS = 'always';
+
+// The per-query (`modifiedConfigs`) keys a detector reads: every key with a default above, and the
+// two SQL settings it reads with none. A per-query value under any other key is the job's own text
+// (a path, a bucket, a host) that no detector needs.
+const PER_QUERY_KEYS_WITHOUT_DEFAULT = [
+  'spark.sql.adaptive.autoBroadcastJoinThreshold',
+  'spark.sql.adaptive.coalescePartitions.initialPartitionNum',
+] as const;
+export function isDetectorConfKey(key: string): boolean {
+  return key in SPARK_DEFAULTS || (PER_QUERY_KEYS_WITHOUT_DEFAULT as readonly string[]).includes(key);
+}
+
+/** The text a per-query value is replaced with once it leaves the run: Spark's own placeholder for a
+ * hidden value, which the effective-conf lookup already ignores. */
+export const REDACTED_CONF_VALUE = '*********(redacted)';
 
 // Defaults by the Spark release that introduced them, each key's steps in ascending order. A key
 // whose first step is 'always' has that default on every release, including a run whose version the
@@ -71,12 +89,21 @@ const SPARK_DEFAULTS: Readonly<Record<string, readonly DefaultStep[]>> = {
   'spark.sql.adaptive.forceOptimizeSkewedJoin': [[[3, 3], 'false']],
   // Falls back to spark.sql.adaptive.shuffle.targetPostShuffleInputSize, itself 64MB.
   'spark.sql.adaptive.advisoryPartitionSizeInBytes': [[[3, 0], '64MB']],
+  // With it on, AQE sizes merged tasks from defaultParallelism too, so a larger advisory size alone
+  // does not merge more (CoalesceShufflePartitions.apply, added in 3.2.0).
+  'spark.sql.adaptive.coalescePartitions.parallelismFirst': [[[3, 2], 'true']],
+  // The executor memory overhead is max(factor x executor memory, minimum) when spark.executor.memoryOverhead
+  // is unset: the factor from 3.3.0 (0.4 instead for Kubernetes non-JVM jobs, which the log does not
+  // tell apart), the minimum from 4.0.0.
+  'spark.executor.memoryOverheadFactor': [[[3, 3], '0.1']],
+  'spark.executor.minMemoryOverhead': [[[4, 0], '384m']],
   // Arrow-optimized Python UDFs: added in 3.4.0 (off), on by default from 4.2.0.
   'spark.sql.execution.pythonUDF.arrow.enabled': [[[3, 4], 'false'], [[4, 2], 'true']],
 };
 
-// Spark's spark.redaction.string default, which replaces a sensitive value in modifiedConfigs.
-const DEFAULT_REDACTION = '*********(redacted)';
+// The text Spark substitutes for a sensitive value in modifiedConfigs (a fixed constant; only the
+// pattern that selects values is configurable).
+const DEFAULT_REDACTION = REDACTED_CONF_VALUE;
 
 function parseVersion(sparkVersion: string | null | undefined): Since | null {
   const m = /^(\d+)\.(\d+)/.exec(sparkVersion ?? '');
@@ -98,8 +125,8 @@ export function sparkConfDefault(sparkVersion: string | null | undefined, key: s
 }
 
 /** A per-query setting that can override: not Spark's redaction placeholder for a hidden value. */
-function isUsableModified(value: string, properties: Readonly<Record<string, string>> | null | undefined): boolean {
-  return value !== (properties?.['spark.redaction.string'] ?? DEFAULT_REDACTION);
+function isUsableModified(value: string): boolean {
+  return value !== DEFAULT_REDACTION;
 }
 
 /** The Spark Properties with one execution's modifiedConfigs applied over them. Returns
@@ -109,16 +136,17 @@ export function overlayModifiedConfigs(
   modified: Readonly<Record<string, string>> | null | undefined,
 ): Record<string, string> | undefined {
   if (modified == null) return properties;
-  const usable = Object.entries(modified).filter(([, value]) => isUsableModified(value, properties));
+  const usable = Object.entries(modified).filter(([, value]) => isUsableModified(value));
   return usable.length === 0 ? properties : { ...properties, ...Object.fromEntries(usable) };
 }
 
 /** The run's effective value of `key` and the layer it came from, or undefined when no layer has it. */
 export function effectiveSparkConf(layers: ConfLayers, key: string): ConfValue | undefined {
   const modified = layers.modified?.[key];
-  if (modified !== undefined && isUsableModified(modified, layers.properties)) return { value: modified.trim(), source: 'query' };
+  if (modified !== undefined && isUsableModified(modified)) return { value: modified.trim(), source: 'query' };
   const logged = layers.properties?.[key];
-  if (logged !== undefined) return { value: logged.trim(), source: 'app' };
+  // A log can carry a real boolean or number where Spark wrote a string.
+  if (logged !== undefined) return { value: String(logged).trim(), source: 'app' };
   const fallback = sparkConfDefault(layers.sparkVersion, key);
   return fallback === undefined ? undefined : { value: fallback, source: 'default' };
 }
@@ -129,4 +157,22 @@ export function parseSparkBytes(value: string | undefined): number | null {
   const m = /^(-?\d+(?:\.\d+)?)\s*([kmgt]?)b?$/i.exec(value?.trim() ?? '');
   if (m == null) return null;
   return m[2] === '' ? Number(m[1]) : Number(m[1]) * 1024 ** ('kmgt'.indexOf(m[2].toLowerCase()) + 1);
+}
+
+/** The factor and minimum (MiB) Spark sizes the executor overhead from when
+ * spark.executor.memoryOverhead is unset: max(factor x executor memory, minimum). The effective
+ * settings win, each only on a Spark version that reads it (the factor from 3.3.0, the minimum from
+ * 4.0.0); an unrecorded version is read as current. `fallback` is the pair used where the effective
+ * conf has none (a version before the key, or an unreadable value). */
+export function executorOverheadSettings(
+  layers: ConfLayers, fallback: { floorMB: number; floorPct: number },
+): { minMB: number; factor: number } {
+  const version = parseVersion(layers.sparkVersion);
+  const [major, minor] = version ?? [Infinity, 0];
+  const factor = Number.parseFloat(effectiveSparkConf(layers, 'spark.executor.memoryOverheadFactor')?.value ?? '');
+  const minMB = parseSparkMemoryMB(effectiveSparkConf(layers, 'spark.executor.minMemoryOverhead')?.value);
+  return {
+    factor: (major > 3 || (major === 3 && minor >= 3)) && Number.isFinite(factor) && factor > 0 ? factor : fallback.floorPct,
+    minMB: major >= 4 && minMB != null && minMB >= 0 ? minMB : fallback.floorMB,
+  };
 }

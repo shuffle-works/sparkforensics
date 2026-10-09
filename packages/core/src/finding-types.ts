@@ -124,7 +124,7 @@ export interface SkewEvidence {
   origin?: SkewOrigin;
   // Only on origin 'shuffleJoin' with AQE skew-join handling on and the join resolved from the plan.
   aqeSkew?: AqeSkewCase;
-  // 'data' or 'unattributed'; a stage whose tail is not data does not get a skew finding.
+  // Always 'data'; a stage whose tail is not data, or has no measured cause, does not get a skew finding.
   cause?: TailCause;
   // Median over the slow tasks of how many times the median task's data each read.
   dataRatio?: number;
@@ -209,11 +209,12 @@ export interface FailuresEvidence {
 export interface FailuresFinding extends NumericFinding<'failures'>, FailuresEvidence {}
 
 export interface StragglerEvidence {
-  unit: 'count' | 'pct';
+  // 'ratio' when only skew's duration gate admits the tail: value is its ratio, metric its name.
+  unit: 'count' | 'pct' | 'ratio';
   speculativeTasks: number;
   stragglerCount: number;
   // The case the skew advice in the recommendation was written for (see SkewOrigin); set only
-  // when the cause is 'data' or 'unattributed'.
+  // when the cause is 'data'.
   origin?: SkewOrigin;
   // See AqeSkewCase.
   aqeSkew?: AqeSkewCase;

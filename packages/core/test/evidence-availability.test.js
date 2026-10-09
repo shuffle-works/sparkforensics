@@ -89,11 +89,18 @@ describe('deriveEvidenceAvailability', () => {
     });
   });
 
-  it('distinguishes an explicit metric disablement from an omitted setting', () => {
+  it('reads an unset logging switch as Spark does: off, so the stage metrics are disabled, not merely absent', () => {
     const disabled = deriveEvidenceAvailability(model({ app: { config: { 'spark.eventLog.logStageExecutorMetrics': 'false' } } }), complete);
-    const omitted = deriveEvidenceAvailability(model(), complete);
     expect(entry(disabled, 'executorMetrics')).toMatchObject({ state: 'disabled', reasonCode: 'explicitlyDisabled' });
-    expect(entry(omitted, 'executorMetrics')).toMatchObject({ state: 'notEmitted', reasonCode: 'noObservedExecutorMetrics' });
+    // The parser resolved the unset property to Spark's default of off.
+    const unset = deriveEvidenceAvailability(model({ app: { config: { 'spark.app.name': 'x' }, resources: { stageExecutorMetricsLogging: false } } }), complete);
+    expect(entry(unset, 'executorMetrics')).toMatchObject({ state: 'disabled', reasonCode: 'explicitlyDisabled' });
+    // Switched on and still nothing observed: the log just did not emit them.
+    const on = deriveEvidenceAvailability(model({ app: { config: { 'spark.eventLog.logStageExecutorMetrics': 'true' }, resources: { stageExecutorMetricsLogging: true } } }), complete);
+    expect(entry(on, 'executorMetrics')).toMatchObject({ state: 'notEmitted', reasonCode: 'noObservedExecutorMetrics' });
+    // A log that recorded no properties cannot say the switch is off.
+    const noProperties = deriveEvidenceAvailability(model({ app: { resources: { stageExecutorMetricsLogging: null } } }), complete);
+    expect(entry(noProperties, 'executorMetrics')).toMatchObject({ state: 'notEmitted', reasonCode: 'noObservedExecutorMetrics' });
   });
 
   it.each([

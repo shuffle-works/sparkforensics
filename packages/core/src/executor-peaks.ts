@@ -4,6 +4,9 @@
 // folds the TaskEnd values into executor peak memory
 // (https://github.com/apache/spark/blob/v4.0.0/core/src/main/scala/org/apache/spark/status/AppStatusListener.scala).
 
+/** The id Spark gives the driver's own metrics row; the driver's heap is sized by spark.driver.memory. */
+export const DRIVER_EXECUTOR_ID = 'driver';
+
 interface PeakSources {
   stages: Map<number, { executorMetrics?: Map<string, { jvmHeapMemory?: number }> | unknown }>;
   runAggregates?: { executorPeakMetrics?: Record<string, Record<string, number>> } | null;
@@ -22,7 +25,7 @@ export function executorHeapPeaks(source: PeakSources): Map<string, number> {
   const peaks = new Map<string, number>();
   const take = (executorId: string, heap: unknown): void => {
     // The driver's heap is sized by spark.driver.memory, not the executor setting.
-    if (executorId === 'driver') return;
+    if (executorId === DRIVER_EXECUTOR_ID) return;
     if (typeof heap === 'number' && heap > (peaks.get(executorId) ?? 0)) peaks.set(executorId, heap);
   };
   for (const [executorId, metrics] of Object.entries(source.runAggregates?.executorPeakMetrics ?? {})) {

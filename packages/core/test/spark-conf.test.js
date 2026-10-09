@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { effectiveSparkConf, overlayModifiedConfigs, parseSparkBytes, sparkConfDefault } from '../src/spark-conf.ts';
+import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes, sparkConfDefault } from '../src/spark-conf.ts';
 
 const RELEASES = ['3.0.0', '3.1.3', '3.2.0', '3.3.0', '3.4.0', '3.5.9', '4.0.4', '4.1.0', '4.2.0'];
 const at = (key) => Object.fromEntries(RELEASES.map((v) => [v, sparkConfDefault(v, key)]));
@@ -25,6 +25,11 @@ describe('sparkConfDefault by Spark version', () => {
 
   it('introduces each adaptive property at the release that added it', () => {
     expect(Object.values(at('spark.sql.adaptive.skewJoin.enabled'))).toEqual(RELEASES.map(() => 'true'));
+  });
+
+  it('adds parallelismFirst, on by default, at 3.2 and the Arrow Python UDF default at 3.4, on from 4.2', () => {
+    expect(Object.values(at('spark.sql.adaptive.coalescePartitions.parallelismFirst'))).toEqual([undefined, undefined, ...Array(7).fill('true')]);
+    expect(Object.values(at('spark.sql.execution.pythonUDF.arrow.enabled'))).toEqual([undefined, undefined, undefined, undefined, 'false', 'false', 'false', 'false', 'true']);
   });
 
   it('keeps the values that no release from 3.0 to 4.2 changed', () => {
@@ -92,13 +97,10 @@ describe('effectiveSparkConf layering', () => {
     expect(effectiveSparkConf({}, 'spark.sql.shuffle.partitions')).toEqual({ value: '200', source: 'default' });
   });
 
-  it('ignores a per-query value Spark redacted, including a custom redaction string', () => {
+  it('ignores a per-query value Spark redacted', () => {
     const redacted = { 'spark.sql.shuffle.partitions': '*********(redacted)' };
     expect(effectiveSparkConf({ properties: { 'spark.sql.shuffle.partitions': '8' }, modified: redacted }, 'spark.sql.shuffle.partitions'))
       .toEqual({ value: '8', source: 'app' });
-    const custom = { properties: { 'spark.redaction.string': '<hidden>' }, modified: { 'spark.x': '<hidden>', 'spark.y': '1' } };
-    expect(effectiveSparkConf(custom, 'spark.x')).toBeUndefined();
-    expect(effectiveSparkConf(custom, 'spark.y')).toEqual({ value: '1', source: 'query' });
   });
 });
 
@@ -129,5 +131,16 @@ describe('parseSparkBytes', () => {
 
   it('is null for anything else', () => {
     for (const bad of [undefined, '', 'abc', '10 parsecs', '1e3']) expect(parseSparkBytes(bad)).toBeNull();
+  });
+});
+
+describe('executorOverheadSettings', () => {
+  const fallback = { floorMB: 384, floorPct: 0.1 };
+  it('takes the defaults the version fixes and the logged values over them, each only where the property exists', () => {
+    expect(executorOverheadSettings({ sparkVersion: '3.2.1', properties: { 'spark.executor.memoryOverheadFactor': '0.4' } }, fallback)).toEqual({ minMB: 384, factor: 0.1 });
+    expect(executorOverheadSettings({ sparkVersion: '3.5.1', properties: { 'spark.executor.memoryOverheadFactor': '0.4', 'spark.executor.minMemoryOverhead': '1g' } }, fallback)).toEqual({ minMB: 384, factor: 0.4 });
+    expect(executorOverheadSettings({ sparkVersion: '4.0.0', properties: { 'spark.executor.minMemoryOverhead': '1g' } }, fallback)).toEqual({ minMB: 1024, factor: 0.1 });
+    expect(executorOverheadSettings({ sparkVersion: '4.1.0', properties: {} }, { floorMB: 1, floorPct: 2 })).toEqual({ minMB: 384, factor: 0.1 });
+    expect(executorOverheadSettings({ properties: { 'spark.executor.minMemoryOverhead': '2g' } }, fallback)).toEqual({ minMB: 2048, factor: 0.1 });
   });
 });

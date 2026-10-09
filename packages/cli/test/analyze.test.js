@@ -36,8 +36,10 @@ function runCli(args) {
   return { stdout, stderr, status };
 }
 
-function ndjsonWithSkew() {
-  // One stage with 10 tasks: 9 fast (100ms) + 1 slow (2000ms) => P95/median skew.
+function ndjsonWithSkew({ dataTail = false } = {}) {
+  // One stage with 10 tasks: 9 fast (100ms) + 1 slow (2000ms). No task reads data, so the tail has
+  // no measured cause and is a straggler; with dataTail the slow task reads 20x the data => skew.
+  const input = (mib) => (dataTail ? { 'Input Metrics': { 'Bytes Read': mib * 1048576, 'Records Read': mib * 1000 } } : {});
   const lines = [
     '{"Event":"SparkListenerApplicationStart","App ID":"app-parity","App Name":"t","Timestamp":0}',
     '{"Event":"SparkListenerStageSubmitted","Stage Info":{"Stage ID":1,"Stage Name":"s1","Number of Tasks":10}}',
@@ -48,13 +50,13 @@ function ndjsonWithSkew() {
       // Real Spark TaskInfo JSON always serializes Failed and Killed together,
       // so include both to validate against SparkEventSchema like a real log.
       'Task Info': { 'Task ID': i, 'Launch Time': 0, 'Finish Time': 100, Failed: false, Killed: false, Speculative: false },
-      'Task Metrics': { 'Executor Run Time': 100, 'JVM GC Time': 0, 'Memory Bytes Spilled': 0, 'Disk Bytes Spilled': 0 },
+      'Task Metrics': { 'Executor Run Time': 100, 'JVM GC Time': 0, 'Memory Bytes Spilled': 0, 'Disk Bytes Spilled': 0, ...input(1) },
     }));
   }
   lines.push(JSON.stringify({
     Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
     'Task Info': { 'Task ID': 9, 'Launch Time': 0, 'Finish Time': 2000, Failed: false, Killed: false, Speculative: false },
-    'Task Metrics': { 'Executor Run Time': 2000, 'JVM GC Time': 0, 'Memory Bytes Spilled': 0, 'Disk Bytes Spilled': 0 },
+    'Task Metrics': { 'Executor Run Time': 2000, 'JVM GC Time': 0, 'Memory Bytes Spilled': 0, 'Disk Bytes Spilled': 0, ...input(20) },
   }));
   lines.push('{"Event":"SparkListenerStageCompleted","Stage Info":{"Stage ID":1,"Stage Name":"s1","Number of Tasks":10,"Completion Time":2000}}');
   lines.push('{"Event":"SparkListenerApplicationEnd","Timestamp":2000}');
@@ -379,7 +381,7 @@ describe('sparkforensics-analyze CLI', () => {
   it('--thresholds runs the tuned detectors and labels what they changed, in JSON and Markdown', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-'));
     const path = join(dir, 'eventlog');
-    writeFileSync(path, ndjsonWithSkew());
+    writeFileSync(path, ndjsonWithSkew({ dataTail: true }));
     const loose = join(dir, 'loose.json');
     writeFileSync(loose, JSON.stringify({ skew: { ratioWarn: 2 } }));
     const strict = join(dir, 'strict.json');
@@ -798,7 +800,8 @@ describe('sparkforensics-analyze CLI', () => {
         expect(status).toBe(0);
         const { findings } = JSON.parse(stdout);
         // The one 2000ms task gates the whole 2000ms stage, so stageShape's taskStageSkew fires too.
-        expect(findings.map((f) => f.type).sort()).toEqual(['skew', 'stageShape', 'straggler']);
+        // The tail has no measured cause, so it is straggler's alone.
+        expect(findings.map((f) => f.type).sort()).toEqual(['stageShape', 'straggler']);
         expect(findings.every((f) => f.stageId === 1)).toBe(true);
       } finally {
         rmSync(dir, { recursive: true, force: true });

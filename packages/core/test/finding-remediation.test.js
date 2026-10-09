@@ -3,7 +3,7 @@ import { analyze, auditConfig } from '../src/analyzer.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { recommendationParts } from '../src/finding-names.js';
 import { coreFindingGenericRecommendation } from '../src/finding-generic-recommendation.ts';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 
 const MiB = 1024 * 1024;
 const KRYO = 'org.apache.spark.serializer.KryoSerializer';
@@ -23,8 +23,8 @@ const JOIN_SQL = new Map([[7, { id: 7, planTree: { name: 'SortMergeJoin', detail
 describe('structured remediation', () => {
   describe('lowShuffleParallelism against the effective shuffle partition count', () => {
     // An unknown Spark version has no AQE default, so the stage's own tasks are not read as coalesced.
-    const finding = (config, sparkVersion = null) => catalogOf(
-      [makeStage({ shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0 })],
+    const finding = (config, sparkVersion = null, sqlExecutionId = 1) => catalogOf(
+      [makeStage({ shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0, sqlExecutionId })],
       makeApp({ config, sparkVersion }),
     ).find((x) => x.rule === 'lowShuffleParallelism');
     const run = (config, sparkVersion) => finding(config, sparkVersion).remediation;
@@ -65,6 +65,8 @@ describe('structured remediation', () => {
       expect(f.partitions).toBe('aqeCoalesced');
       expect(f.remediation).toEqual([{ kind: 'conf', key: 'spark.sql.adaptive.advisoryPartitionSizeInBytes', direction: 'decrease', suggested: null }]);
       expect(coreFindingGenericRecommendation(f)).toMatch(/advisoryPartitionSizeInBytes/);
+      // A stage outside any SQL execution is never coalesced by AQE.
+      expect(finding({}, '3.5.3', null).partitions).toBe('ownPartitioning');
       // AQE off or coalescing off: the property is again the question.
       expect(finding({ 'spark.sql.adaptive.enabled': 'false' }, '3.5.3').partitions).toBe('ownPartitioning');
       expect(finding({ 'spark.sql.adaptive.coalescePartitions.enabled': 'false' }, '3.5.3').partitions).toBe('ownPartitioning');
@@ -74,7 +76,7 @@ describe('structured remediation', () => {
   it('gives autoscalingChurn a remediation for the idle timeout and each bound its text names', () => {
     const added = Array.from({ length: 10 }, (_, i) => ({ executorId: String(i + 1), timestamp: 0, totalCores: 1 }));
     const removed = added.map((e) => ({ executorId: e.executorId, timestamp: 60_000 }));
-    const churn = analyze(makeApp({ startTime: 0, endTime: 600_000 }), new Map(), added, removed)
+    const churn = analyze(makeApp({ startTime: 0, endTime: 600_000, config: { 'spark.dynamicAllocation.enabled': 'true' } }), new Map(), added, removed)
       .find((f) => f.type === 'autoscalingChurn');
     expect(churn.recommendation).toMatch(/executorIdleTimeout or widening the minExecutors\/maxExecutors bounds/);
     expect(churn.remediation).toEqual([
@@ -91,8 +93,8 @@ describe('structured remediation', () => {
     ).find((f) => f.type === 'coldStart');
     const app = (config, resources) => makeApp({ endTime: 200_000, config, resources });
 
-    it('suggests raising min and initial executors unless dynamic allocation is explicitly off', () => {
-      for (const a of [app({}), app({ 'spark.dynamicAllocation.enabled': 'true' }, { dynamicAllocationEnabled: true })]) {
+    it('suggests raising min and initial executors only when dynamic allocation is on', () => {
+      for (const a of [app({ 'spark.dynamicAllocation.enabled': 'true' }), app({ 'spark.dynamicAllocation.enabled': 'true' }, { dynamicAllocationEnabled: true })]) {
         expect(coldStart(a).remediation.map((r) => r.key)).toEqual([
           'spark.dynamicAllocation.minExecutors', 'spark.dynamicAllocation.initialExecutors',
         ]);
@@ -102,6 +104,8 @@ describe('structured remediation', () => {
     it('suggests nothing when the logged conf has dynamic allocation off', () => {
       expect(coldStart(app({ 'spark.dynamicAllocation.enabled': 'false' }, { dynamicAllocationEnabled: false })).remediation).toEqual([]);
       expect(coldStart(app({ 'spark.dynamicAllocation.enabled': 'FALSE' })).remediation).toEqual([]);
+      // Unset is off, as Spark defaults it, so cold start agrees with the idle-capacity finding.
+      expect(coldStart(app({})).remediation).toEqual([]);
     });
   });
 
@@ -148,7 +152,7 @@ describe('structured remediation', () => {
   it('carries a remediation entry for every property a recommendation names', () => {
     const findings = [
       ...catalogOf([
-        makeStage({ id: 1, shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0, gcPct: 40, jvmGCTime: 4000, memoryBytesSpilled: 3000 * MiB }),
+        makeStage({ id: 1, sqlExecutionId: 1, shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0, gcPct: 40, jvmGCTime: 4000, memoryBytesSpilled: 3000 * MiB }),
         makeStage({ id: 2, taskCount: 200, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 10 * MiB }),
         makeStage({ id: 3, taskDurationP50: 100, taskDurationP95: 900, taskDurationMax: 2000 }),
         makeStage({ id: 4, taskCount: 200, shuffleReadBytes: 300 * MiB, completedAt: 20 * 60_000 }),
@@ -173,10 +177,10 @@ describe('structured remediation', () => {
   it('emits only well-formed entries', () => {
     const findings = [
       ...catalogOf([
-        makeStage({ id: 1, shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0, gcPct: 40, jvmGCTime: 4000, memoryBytesSpilled: 3000 * MiB }),
+        makeStage({ id: 1, sqlExecutionId: 1, shuffleReadBytes: 2 * 1024 * MiB, taskCount: 5, shuffleReadP50: 0, shuffleReadMax: 0, gcPct: 40, jvmGCTime: 4000, memoryBytesSpilled: 3000 * MiB }),
         makeStage({ id: 2, taskCount: 200, taskDurationP50: 80, taskDurationP95: 150, shuffleReadBytes: 10 * MiB }),
         makeStage({ id: 3, taskDurationP50: 100, taskDurationP95: 900, taskDurationMax: 2000 }),
-        makeStage({ id: 4, shuffleReadBytes: 300 * MiB }),
+        makeStage({ id: 4, sqlExecutionId: 1, shuffleReadBytes: 300 * MiB }),
       ]),
       ...auditConfig({ config: {}, resources: { executor: {}, driver: {}, dynamicAllocationEnabled: true, shuffleServiceEnabled: false, serializer: null } }),
     ];
@@ -302,7 +306,7 @@ describe('structured remediation', () => {
   });
 
   describe('a set-to-value remediation follows the logged conf', () => {
-    const skewStage = makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB });
+    const skewStage = makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail(), sqlExecutionId: 7, shuffleReadBytes: 400 * MiB });
     const partitionSkewStage = makeStage({ id: 2, shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50, sqlExecutionId: 7 });
     const slowHostStage = makeStage({
       id: 3, taskCount: 60,
@@ -456,10 +460,13 @@ describe('structured remediation', () => {
       expect(off.storage.recommendation).toMatch(/need spark\.eventLog\.logBlockUpdates\.enabled=true/);
       expect(off.storage.remediation).toEqual(set('spark.eventLog.logBlockUpdates.enabled'));
       expect(off.memory.recommendation).toMatch(/Executor heap peaks are missing from this log/);
-      expect(off.memory.remediation).toEqual([]);
+      expect(off.memory.remediation).toEqual(set('spark.eventLog.logStageExecutorMetrics'));
       const on = caveats({ 'spark.eventLog.logBlockUpdates.enabled': 'true', 'spark.eventLog.logStageExecutorMetrics': 'true' });
       expect(on.storage).toBeUndefined();
       expect(on.memory.remediation).toEqual([]);
+      expect(off.memory.recommendation).toMatch(/was not measured\. To measure it, set spark\.eventLog\.logStageExecutorMetrics=true/);
+      expect(on.memory.recommendation).toMatch(/was not measured\. spark\.eventLog\.logStageExecutorMetrics is already on, so no executor ran long enough/);
+      expect(on.memory.recommendation).not.toMatch(/To measure it/);
     });
 
     it('suggests Kryo unless the logged serializer is already Kryo', () => {
@@ -477,7 +484,7 @@ describe('skew remediation follows what the stage reads', () => {
   const app = makeApp({ sparkVersion: '3.1.2', config: {} });
   const AGG_SQL = new Map([[8, { id: 8, planTree: { name: 'HashAggregate', detail: '', metrics: [], children: [] } }]]);
   const skewOf = (stage, sql) => catalogOf([stage], app, sql).find((f) => f.type === 'skew');
-  const skewed = { taskDurationP50: 100, taskDurationP95: 600 };
+  const skewed = { taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() };
 
   it('flags a shuffle read feeding a join as shuffleJoin and suggests skew-join handling', () => {
     const f = skewOf(makeStage({ ...skewed, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB }), JOIN_SQL);
@@ -602,7 +609,7 @@ describe('remediation fits the stage, plan and effective conf across finding typ
       expect(f.recommendation).not.toMatch(/increasing spark\.sql\.shuffle\.partitions/);
     });
     it('points at the advisory partition size when AQE coalesced a shuffle that is still large', () => {
-      const f = of('shuffle', [makeStage({ shuffleReadBytes: 600 * MiB, taskCount: 2 })], app({}, '3.5.3'));
+      const f = of('shuffle', [makeStage({ shuffleReadBytes: 600 * MiB, taskCount: 2, sqlExecutionId: 1 })], app({}, '3.5.3'));
       expect(f.partitions).toBe('aqeCoalesced');
       expect(f.remediation).toEqual([key('spark.sql.adaptive.advisoryPartitionSizeInBytes', 'decrease')]);
     });
@@ -646,7 +653,8 @@ describe('remediation fits the stage, plan and effective conf across finding typ
   });
 
   describe('straggler prose follows the stage', () => {
-    const straggler = { taskCount: 100, stragglerCount: 20, taskDurationP50: 100, taskDurationP95: 900, taskDurationMax: 5000 };
+    // A P95 at the median keeps skew's duration gate shut, so the data-driven tail is straggler's.
+    const straggler = { taskCount: 100, stragglerCount: 20, taskDurationP50: 100, taskDurationP95: 100, taskDurationMax: 5000, tailAttribution: dataTail() };
     const app = makeApp({ sparkVersion: '3.5.3' });
     it('names no AQE skew-join sentence for a scan stage, and no conf for an unrelated one', () => {
       const scan = of('straggler', [makeStage({ ...straggler, inputBytes: 10 * GiB })], app);
@@ -712,7 +720,7 @@ describe('remediation fits the stage, plan and effective conf across finding typ
 
   describe('skew advice on Spark 2.x', () => {
     it('does not suggest AQE, which does not exist before Spark 3.0', () => {
-      const f = of('skew', [makeStage({ taskDurationP50: 100, taskDurationP95: 600, sqlExecutionId: 7, shuffleReadBytes: 400 * MiB })], makeApp({ sparkVersion: '2.4.8' }), JOIN_SQL);
+      const f = of('skew', [makeStage({ taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail(), sqlExecutionId: 7, shuffleReadBytes: 400 * MiB })], makeApp({ sparkVersion: '2.4.8' }), JOIN_SQL);
       expect(f.origin).toBe('other');
       expect(f.remediation).toEqual(SKEW_CODE_FIX);
       expect(f.recommendation).not.toMatch(/AQE/);
@@ -738,14 +746,20 @@ describe('partition-count advice follows what sized the stage', () => {
   const GiB = 1024 * MiB;
   const ADVISORY = 'spark.sql.adaptive.advisoryPartitionSizeInBytes';
   const PARALLELISM_FIRST = 'spark.sql.adaptive.coalescePartitions.parallelismFirst';
-  const of = (type, stage, config = {}, sparkVersion = '3.5.0') =>
-    catalogOf([makeStage(stage)], makeApp({ config, sparkVersion })).find((f) => f.type === type);
+  // A stage in a SQL execution, the only place AQE reshapes a stage's task count.
+  // The final plan of the execution: no AQE skew-join split, so a count above the configured one is the stage's own.
+  const FINAL_PLAN = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [] } }]]);
+  // The same plan with a repartition(n) the job wrote: the only plan that makes the stage's own count the cause.
+  const REPARTITIONED = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [
+    { name: 'Exchange', detail: 'Exchange hashpartitioning(k#1L, 64), REPARTITION_BY_NUM, [plan_id=4]', metrics: [], children: [] }] } }]]);
+  const of = (type, stage, config = {}, sparkVersion = '3.5.0', sql = FINAL_PLAN) =>
+    catalogOf([makeStage({ sqlExecutionId: 3, ...stage })], makeApp({ config, sparkVersion }), sql).find((f) => f.type === type);
   const keys = (f) => f.remediation.map((r) => r.key ?? r.kind);
   const tiny = { taskCount: 400, taskDurationP50: 50, taskDurationP95: 100, shuffleReadBytes: 10 * MiB };
 
   describe('tinyTask', () => {
     it('sends a repartition(n) stage to the code, not to spark.sql.shuffle.partitions', () => {
-      const f = of('tinyTask', tiny, { 'spark.sql.shuffle.partitions': '64' });
+      const f = of('tinyTask', tiny, { 'spark.sql.shuffle.partitions': '64' }, '3.5.0', REPARTITIONED);
       expect(keys(f)).toEqual(['code']);
       expect(f.recommendation).toMatch(/repartition\(n\)/);
       expect(f.recommendation).not.toMatch(/spark\.sql\.shuffle\.partitions/);
@@ -764,6 +778,51 @@ describe('partition-count advice follows what sized the stage', () => {
     it('raises the advisory size once parallelismFirst is already off', () => {
       const f = of('tinyTask', { ...tiny, taskCount: 120 }, { 'spark.sql.shuffle.partitions': '400', [PARALLELISM_FIRST]: 'false' });
       expect(f.remediation).toEqual([{ kind: 'conf', key: ADVISORY, direction: 'increase', suggested: null }]);
+    });
+
+    it('treats a stage outside any SQL execution as its own partitioning, never as AQE coalescing', () => {
+      const f = of('tinyTask', { ...tiny, taskCount: 120, sqlExecutionId: null }, { 'spark.sql.shuffle.partitions': '200' });
+      expect(keys(f)).toEqual(['code']);
+      expect(f.recommendation).not.toMatch(/AQE|advisoryPartitionSize/);
+    });
+
+    it('does not blame repartition(n) for tasks AQE added or for a changed initialPartitionNum', () => {
+      const split = of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', new Map());
+      expect(keys(split)).toEqual(['spark.sql.shuffle.partitions']);
+      expect(split.recommendation).not.toMatch(/lowering the repartition/);
+      expect(split.recommendation).toMatch(/ran 212 tasks against 200 configured/);
+      const initial = { 'spark.sql.shuffle.partitions': '200', 'spark.sql.adaptive.coalescePartitions.initialPartitionNum': '1000' };
+      const skewedPlan = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [
+        { name: 'AQEShuffleRead', detail: 'skewed', metrics: [], children: [] }] } }]]);
+      expect(keys(of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', skewedPlan))).toEqual(['spark.sql.shuffle.partitions']);
+      // A plan with no repartition behind the difference states the counts neutrally and keeps the property.
+      const neutral = of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' });
+      expect(keys(neutral)).toEqual(['spark.sql.shuffle.partitions']);
+      expect(neutral.recommendation).toMatch(/ran 212 tasks against 200 configured, and the plan shows no repartition/);
+      expect(neutral.recommendation).not.toMatch(/lowering the repartition/);
+      // A repartition(n) the job wrote in the plan is the stage's own count.
+      expect(keys(of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', REPARTITIONED))).toEqual(['code']);
+      // A repartition(n) next to an AQE skew split: the note names the split and never says the plan has no repartition.
+      const repartitionedSkew = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [
+        { name: 'Exchange', detail: 'Exchange hashpartitioning(k#1L, 300), REPARTITION_BY_NUM, [plan_id=4]', metrics: [], children: [] },
+        { name: 'AQEShuffleRead', detail: 'skewed', metrics: [], children: [] }] } }]]);
+      const both = of('tinyTask', { ...tiny, taskCount: 212 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', repartitionedSkew);
+      expect(keys(both)).toEqual(['spark.sql.shuffle.partitions']);
+      expect(both.recommendation).toMatch(/ran 212 tasks against 200 configured, and AQE skew-join splits add tasks/);
+      expect(both.recommendation).not.toMatch(/plan shows no repartition/);
+      // The note adds no ": ", so the verdict card's split still puts the advice under the fix.
+      expect(recommendationParts(both.recommendation).fix).toMatch(/Try lowering spark\.sql\.shuffle\.partitions/);
+      expect(recommendationParts(neutral.recommendation).fix).toMatch(/Try lowering spark\.sql\.shuffle\.partitions/);
+      const merged = of('tinyTask', { ...tiny, taskCount: 300 }, initial);
+      expect(keys(merged)).toEqual([PARALLELISM_FIRST, ADVISORY]);
+      const exact = of('tinyTask', { ...tiny, taskCount: 1000 }, initial);
+      expect(keys(exact)).toEqual(['spark.sql.adaptive.coalescePartitions.initialPartitionNum']);
+    });
+
+    it('puts parallelismFirst=false first while it is on, because the advisory size alone merges nothing', () => {
+      const f = of('tinyTask', { ...tiny, taskCount: 120 }, { 'spark.sql.shuffle.partitions': '400' });
+      expect(f.recommendation).toMatch(/parallelismFirst=false.*and then raising/);
+      expect(f.recommendation).not.toMatch(/ or raising/);
     });
 
     it('lowers the property where the stage ran as many tasks as it sets, and with AQE off', () => {
@@ -788,7 +847,7 @@ describe('partition-count advice follows what sized the stage', () => {
     });
 
     it('points at the stage\'s own partition count where a repartition(n) sized it', () => {
-      const f = of('spill', spilled, { 'spark.sql.shuffle.partitions': '64' });
+      const f = of('spill', spilled, { 'spark.sql.shuffle.partitions': '64' }, '3.5.0', REPARTITIONED);
       expect(keys(f)).toEqual(['code', 'spark.executor.memory']);
       expect(f.recommendation).toMatch(/repartition\(n\)/);
       expect(coreFindingGenericRecommendation(f)).toMatch(/own partition count/);
@@ -807,10 +866,14 @@ describe('partition-count advice follows what sized the stage', () => {
       }
     });
 
+    it('sends a stage outside any SQL execution to its own partition count', () => {
+      expect(keys(of('stageSlowness', { ...slow, taskCount: 50, sqlExecutionId: null }, { 'spark.sql.shuffle.partitions': '200' }))).toEqual(['code']);
+    });
+
     it('names the lever that sized the stage', () => {
       expect(keys(of('stageSlowness', slow, { 'spark.sql.shuffle.partitions': '400' }))).toEqual(['spark.sql.shuffle.partitions']);
       expect(keys(of('stageSlowness', { ...slow, taskCount: 120 }, { 'spark.sql.shuffle.partitions': '400' }))).toEqual([ADVISORY]);
-      expect(keys(of('stageSlowness', slow, { 'spark.sql.shuffle.partitions': '64' }))).toEqual(['code']);
+      expect(keys(of('stageSlowness', slow, { 'spark.sql.shuffle.partitions': '64' }, '3.5.0', REPARTITIONED))).toEqual(['code']);
     });
   });
 });

@@ -25,3 +25,12 @@ export function makeStage(overrides = {}) {
 export function makeApp(overrides = {}) {
   return { id: 'app_1', name: 'test', startTime: 0, endTime: 5000, sparkVersion: '3.4.0', config: {}, ...overrides };
 }
+
+// A slow tail whose extra time data volume explains: skew reports a stage only with one, since a tail
+// with no measured cause is straggler's alone.
+export function dataTail(overrides = {}) {
+  return {
+    tasks: 5, excessMs: 10000, dataMs: 9000, gcMs: 0, fetchWaitMs: 0, hostMs: 0, host: null, hostTasks: 0,
+    dataRatio: 8, cpuPct: null, ...overrides,
+  };
+}

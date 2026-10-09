@@ -33,9 +33,16 @@ export interface JoinSkewInput {
   /** The SQL execution's resolved plan. */
   plan: PlanNode | null | undefined;
   stageId: number;
-  /** The stage's task-level shuffle read: the largest task and the median task, in bytes. */
+  /** The stage's task-level shuffle read: the largest task and the median task, in bytes. A task
+   * reads one partition of each join input, so these sum the two sides. */
   readMax: number;
   readP50: number;
+  /** The stage's total shuffle read in bytes, which ties a stage to a join when the plan carries no stage ids. */
+  stageShuffleReadBytes?: number;
+  /** Set when the stage's slow tail was attributed to data volume (input plus shuffle read, in bytes
+   * or records, so a measure the shuffle-read bytes above do not see). `ratio` is how many times the
+   * median task's data the slow tasks read. */
+  tailData?: { ratio: number | null };
   /** The effective value of a property for this execution (null when not logged and no default). */
   conf(key: string): string | undefined;
   /** The run's Spark version, which decides whether forceOptimizeSkewedJoin exists. */
@@ -55,6 +62,10 @@ const SPLITTABLE_RIGHT = new Set(['Inner', 'Cross', 'RightOuter']);
 const JOIN_TYPE = /\]\s*,\s*(Inner|Cross|LeftOuter|RightOuter|FullOuter|LeftSemi|LeftAnti|ExistenceJoin)\b/;
 // A partition is only clearly skewed when the largest task read is at least this many times the median.
 const SKEWED_READ_RATIO = 2;
+// Spark judges each join side's partitions against that side's own median. A task's read sums both
+// sides, so it stands for one side only when the other contributes at most this share of the bytes.
+const ISOLATED_SIDE_SHARE = 0.05;
+const EXCHANGE_NAME = /Exchange$/;
 const SHUFFLE_ORIGIN = /\b(ENSURE_REQUIREMENTS|REPARTITION_BY_COL|REPARTITION_BY_NUM|REBALANCE_PARTITIONS_BY_NONE|REBALANCE_PARTITIONS_BY_COL)\b/;
 
 /** What one join input reads: a shuffle Spark added for the join, a shuffle the job asked for, or
@@ -133,6 +144,44 @@ function collectJoins(root: PlanNode): JoinInfo[] {
   });
 }
 
+/** Whether the execution's final plan shows AQE splitting a skewed partition (an `AQEShuffleRead
+ * skewed` node), which adds tasks beyond the configured partition count. Null when the plan is not a
+ * final adaptive plan, so the log cannot say. */
+export function planShowsSkewSplit(plan: PlanNode | null | undefined): boolean | null {
+  if (plan == null || plan.name !== 'AdaptiveSparkPlan' || !/isFinalPlan=true/.test(plan.detail ?? '')) return null;
+  let split = false;
+  walkPlanTree(plan, (node) => { if (SHUFFLE_READ_NAME.test(node.name) && /\bskewed\b/.test(node.detail ?? '')) split = true; });
+  return split;
+}
+
+// The bytes one join input shuffled, from its exchange's metrics (null when the plan has none).
+function sideShuffleBytes(input: PlanNode | undefined, metrics: readonly string[] = ['shuffle bytes written', 'data size']): number | null {
+  let bytes: number | null = null;
+  walkPlanTree(input, (n) => {
+    if (bytes != null || !EXCHANGE_NAME.test(n.name)) return;
+    for (const name of metrics) {
+      const value = metricValue(n, name);
+      if (value != null) { bytes = value; return; }
+    }
+  });
+  return bytes;
+}
+
+// Whether the stage reads this join's shuffles: an exchange of the join lists the stage, else the
+// stage's shuffle read matches the bytes the join's two exchanges wrote (a stage reads exactly what
+// the shuffles feeding it wrote). False when the plan gives neither, which no join can be assumed from.
+function stageReadsJoin(join: JoinInfo, input: JoinSkewInput): boolean {
+  const exchanges: PlanNode[] = [];
+  walkPlanTree(join.node, (n) => { if (EXCHANGE_NAME.test(n.name)) exchanges.push(n); });
+  const withStages = exchanges.filter((n) => (n.stageIds?.length ?? 0) > 0);
+  if (withStages.length > 0) return withStages.some((n) => n.stageIds!.includes(input.stageId));
+  const left = sideShuffleBytes(join.node.children[0], ['shuffle bytes written']);
+  const right = sideShuffleBytes(join.node.children[1], ['shuffle bytes written']);
+  const read = input.stageShuffleReadBytes ?? 0;
+  if (left == null || right == null || !(read > 0) || !(left + right > 0)) return false;
+  return Math.abs(read - (left + right)) <= 0.1 * (left + right);
+}
+
 function sideNoun(index: 0 | 1): 'left' | 'right' { return index === 0 ? 'left' : 'right'; }
 
 function diagnoseJoin(join: JoinInfo, input: JoinSkewInput): JoinSkewDiagnosis | null {
@@ -149,6 +198,15 @@ function diagnoseJoin(join: JoinInfo, input: JoinSkewInput): JoinSkewDiagnosis |
     const what = partitions > 0 && splits > 0
       ? `AQE already split ${partitions} skewed partition${partitions === 1 ? '' : 's'} into ${splits} tasks`
       : 'AQE already split the skewed partitions';
+    // A tail the data volume explains is not a GC pause or a slow host, so the split did not cure it.
+    if (input.tailData != null) {
+      const ratio = input.tailData.ratio != null ? ` (a median ${Math.round(input.tailData.ratio * 100) / 100}× the data of the median task)` : '';
+      return {
+        case: 'split',
+        text: `${what}, yet the slow tasks still read far more data than the median task${ratio}, so skew remains that the split did not remove: ${input.keyRemedy}`,
+        remediation: [codeFix(input.keyRemedy)],
+      };
+    }
     return {
       case: 'split',
       text: `${what}, so the imbalance that remains is not join skew: look for a GC pause, a slow host or an expensive key instead`,
@@ -159,8 +217,16 @@ function diagnoseJoin(join: JoinInfo, input: JoinSkewInput): JoinSkewDiagnosis |
   // Even reads: with the largest task read close to the median, no partition stands out for AQE to
   // split. A coalesced read is a sum of partitions, so its ratio says nothing about one partition.
   const coalesced = (left.side.kind !== 'operator' && left.side.coalesced) || (right.side.kind !== 'operator' && right.side.coalesced);
-  const ratio = input.readP50 > 0 ? Math.round(input.readMax / input.readP50 * 10) / 10 : null;
-  if (!coalesced && input.readP50 > 0 && input.readMax < SKEWED_READ_RATIO * input.readP50) {
+  const ratio = input.readP50 > 0 ? Math.round(input.readMax / input.readP50 * 100) / 100 : null;
+  // Spark compares a partition with its own side's median, so a ratio of summed reads only speaks
+  // for a side when the other side adds next to nothing. It also would not see the data skew a tail
+  // attributed to data volume reports.
+  const leftBytes = sideShuffleBytes(node.children[0]);
+  const rightBytes = sideShuffleBytes(node.children[1]);
+  const sideTotal = (leftBytes ?? 0) + (rightBytes ?? 0);
+  const isolatedSide = leftBytes != null && rightBytes != null && sideTotal > 0
+    && Math.min(leftBytes, rightBytes) <= ISOLATED_SIDE_SHARE * sideTotal;
+  if (!coalesced && isolatedSide && input.tailData == null && input.readP50 > 0 && input.readMax < SKEWED_READ_RATIO * input.readP50) {
     return {
       case: 'evenReads',
       text: `its shuffle reads are even (the largest task reads ${formatBytes(input.readMax)}, ${ratio}× the median), so AQE has no skewed partition to split and the slow tail is not partition-size skew: look for a GC pause, a slow host or an expensive key instead`,
@@ -206,7 +272,7 @@ function diagnoseJoin(join: JoinInfo, input: JoinSkewInput): JoinSkewDiagnosis |
   const threshold = parseSparkBytes(input.conf(SKEW_THRESHOLD_KEY));
   const factor = Number.parseFloat(input.conf(SKEW_FACTOR_KEY) ?? '');
   const underThreshold = threshold != null && input.readMax <= threshold;
-  const underFactor = !coalesced && Number.isFinite(factor) && input.readP50 > 0 && input.readMax <= factor * input.readP50;
+  const underFactor = !coalesced && isolatedSide && Number.isFinite(factor) && input.readP50 > 0 && input.readMax <= factor * input.readP50;
   const biggest = `its largest shuffle partition (${formatBytes(input.readMax)})`;
   if (underThreshold && underFactor) {
     return {
@@ -249,10 +315,13 @@ function diagnoseJoin(join: JoinInfo, input: JoinSkewInput): JoinSkewDiagnosis |
     const other = canLeft ? 'right' : 'left';
     const tail = needing == null || forced ? ''
       : `; if the skew is on the ${only} side, AQE skipped it because ${needing} above the join needs the join's partitioning and a split would add a shuffle${canForce ? ` (${FORCE_SKEW_JOIN_KEY}=true accepts that)` : ''}`;
+    // The other side supplies the nulls or only filters, and writing the join the other way round
+    // keeps it that side's table (or changes the join's meaning), so swapping sides cannot help.
+    const hotKey = `join the hot key on its own and union the results, or ${input.keyRemedy}`;
     return {
       case: 'joinType',
-      text: `AQE can split only the ${only} side of a ${joinType} join, so a skewed partition on the ${other} side stays whole: if that is where the skew is, rewrite the join so the skewed table is on the ${only} side, or ${input.keyRemedy}${tail}`,
-      remediation: [codeFix(`put the skewed table on the ${only} side of the join, or ${input.keyRemedy}`), ...(tail && canForce ? [setConf(FORCE_SKEW_JOIN_KEY, true)] : [])],
+      text: `AQE can split only the ${only} side of a ${joinType} join, so a skewed partition on the ${other} side stays whole: if that is where the skew is, ${hotKey}${tail}`,
+      remediation: [codeFix(hotKey), ...(tail && canForce ? [setConf(FORCE_SKEW_JOIN_KEY, true)] : [])],
     };
   }
   if (extraShuffleText != null) {
@@ -274,7 +343,8 @@ export function diagnoseJoinSkew(input: JoinSkewInput): JoinSkewDiagnosis | null
   const joins = collectJoins(plan);
   let chosen = joins.filter((j) => j.node.stageIds?.includes(input.stageId));
   // A plan whose joins carry no stage ids at all can still be read when it has a single join.
-  if (chosen.length === 0 && joins.length === 1 && !joins[0].node.stageIds?.length) chosen = joins;
+  // A join with no stage ids stands for the stage only when the stage reads its shuffles.
+  if (chosen.length === 0 && joins.length === 1 && !joins[0].node.stageIds?.length && stageReadsJoin(joins[0], input)) chosen = joins;
   const diagnoses = chosen.map((j) => diagnoseJoin(j, input)).filter((d): d is JoinSkewDiagnosis => d != null);
   return diagnoses.find((d) => d.case === 'split') ?? diagnoses[0] ?? null;
 }

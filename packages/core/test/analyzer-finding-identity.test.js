@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { analyze, findingId } from '../src/analyzer.js';
-import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
+import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 
 // Fixture with two flagging stages + a GB shuffle so we get >1 finding.
 function fixture() {
   const stages = new Map([
-    [1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600 })],       // skew critical
+    [1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })],       // skew critical
     [2, makeStage({ id: 2, shuffleReadBytes: 2 * 1024 * 1024 * 1024 })],         // shuffle critical
   ]);
   return { app: makeApp(), stages, added: [], removed: [], jobs: new Map() };
