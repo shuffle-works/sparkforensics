@@ -74,6 +74,8 @@ export function PairTable({ base, cand }: { base: StageSummary; cand: StageSumma
   );
 }
 
+const PIN_HINT_ID = 'pin-pair-hint';
+
 interface Pin { baseId: number; candId: number; }
 
 export function PinnedStageDeltas({ baseStages, candStages }: { baseStages: StageSummary[]; candStages: StageSummary[] }) {
@@ -91,6 +93,7 @@ export function PinnedStageDeltas({ baseStages, candStages }: { baseStages: Stag
     if (baseId === '' || candId === '') return;
     setPins((p) => [...p, { baseId: Number(baseId), candId: Number(candId) }]);
   };
+  const pairIncomplete = baseId === '' || candId === '';
   const removePin = (i: number) => setPins((p) => p.filter((_, idx) => idx !== i));
 
   return (
@@ -115,7 +118,8 @@ export function PinnedStageDeltas({ baseStages, candStages }: { baseStages: Stag
             {candStages.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
           </select>
         </label>
-        <Button type="button" size="sm" disabled={baseId === '' || candId === ''} onClick={addPin}>Pin pair</Button>
+        <Button type="button" size="sm" disabled={pairIncomplete} aria-describedby={pairIncomplete ? PIN_HINT_ID : undefined} onClick={addPin}>Pin pair</Button>
+        {pairIncomplete ? <span id={PIN_HINT_ID} className="pb-1 text-xs text-muted-foreground">Pick one stage from each run</span> : null}
       </div>
 
       <div className="flex flex-col gap-4">
