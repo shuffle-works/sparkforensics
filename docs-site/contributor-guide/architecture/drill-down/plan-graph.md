@@ -25,7 +25,10 @@ later operators on the rows below. It cuts between blocks whose segment and
 stage boxes do not overlap along x. A block too wide for a row (the default
 view's single segment, or one long stage) is cut too, between its segments and
 finally between its columns of operators, and takes rows of its own, so its
-box spans those rows and covers no other block. Rows sit `WRAP_ROW_GAP` apart
+box spans those rows and covers no other block. A too-wide block of several
+groups stacked over the same x range (two wide stages feeding one join) is
+never cut, since each group's box would then stretch over the others; its row
+overflows and scrolls. Rows sit `WRAP_ROW_GAP` apart
 so stacked stage boxes clear each other. A plan of at most 150 operators is
 also laid out `BT`, the same arrangement stacked vertically with reads/scans on
 top. `pickLayout` (`readable-fit.ts`) keeps the candidate that shows the most

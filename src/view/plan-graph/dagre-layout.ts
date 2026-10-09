@@ -112,8 +112,11 @@ interface WrapUnit {
 
 /** Cuts `items` into x-ranges: blocks of nodes whose groups (any of `groupOfs`)
  * overlap along x, or one column of nodes when no grouping is left. A block
- * wider than `maxRowWidth` is cut again with the coarsest grouping dropped, down
- * to columns, and its pieces carry its id in `path`. */
+ * wider than `maxRowWidth` that is a single group of the coarsest grouping is
+ * cut again with that grouping dropped, down to columns, and its pieces carry
+ * its id in `path`. A wide block of several groups stacked over the same x
+ * range stays whole (its row overflows and scrolls): cutting it would put each
+ * group's nodes on several rows and stretch its box over the other groups. */
 function wrapUnits(
   items: { node: LaidOutNode; index: number }[],
   groupOfs: ((node: PlanGraphNodeData) => string | null)[],
@@ -149,6 +152,9 @@ function wrapUnits(
   return blocks.flatMap((block) => {
     if (block.end - block.start <= maxRowWidth || groupOfs.length === 0) return [{ ...block, path }];
     const members = items.filter(({ node }) => node.position.x >= block.start && node.position.x < block.end);
+    const coarsest = groupOfs[groupOfs.length - 1];
+    const groups = new Set(members.map(({ node }) => coarsest(node)));
+    if (groups.size !== 1 || groups.has(null)) return [{ ...block, path }];
     return wrapUnits(members, groupOfs.slice(0, -1), maxRowWidth, `${path}/${block.start}`);
   });
 }
@@ -158,9 +164,10 @@ function wrapUnits(
  * text: the start of the plan (reads/scans) on the top-left, later operators
  * continuing on the rows below. `groupOfs` lists the box groupings from finest
  * to coarsest (e.g. segment, then stage). Cuts fall between blocks whose boxes
- * do not overlap along x; a block too wide for a row is itself cut, between its
- * finer groups and finally between its columns of operators, and takes rows of
- * its own so its box (which then spans those rows) covers no other block.
+ * do not overlap along x; a block too wide for a row that is a single group is
+ * itself cut, between its finer groups and finally between its columns of
+ * operators, and takes rows of its own so its box (which then spans those rows)
+ * covers no other block. A too-wide block of several stacked groups stays whole.
  * Within a row, nodes keep their laid-out spacing. Each moved node records its
  * row and the y of the gap below that row, for routing edges between rows.
  */

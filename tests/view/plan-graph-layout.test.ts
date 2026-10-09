@@ -112,6 +112,36 @@ describe('wrapIntoRows', () => {
     expect(Math.min(...second.map((n) => n.position.y))).toBeGreaterThan(gapY);
   });
 
+  it('keeps two wide stages stacked over one join whole, so no box contains another group\'s node', () => {
+    // Stage A (a1..a6) and stage B (b1..b6) both feed the join c, so dagre
+    // stacks them over the same x range: one block wider than a row.
+    const a = ['a1', 'a2', 'a3', 'a4', 'a5', 'a6'];
+    const b = ['b1', 'b2', 'b3', 'b4', 'b5', 'b6'];
+    const nodes = [
+      graphNode('c', { segmentIndex: 2 }),
+      ...a.map((id) => graphNode(id, { segmentIndex: 0 })),
+      ...b.map((id) => graphNode(id, { segmentIndex: 1 })),
+    ];
+    const chainEdges = (ids: string[]) => ids.slice(0, -1).map((id, i) => ({ id: `${id}->${ids[i + 1]}`, source: id, target: ids[i + 1] }));
+    const joinEdges: PlanGraphEdge[] = [
+      { id: 'c->a1', source: 'c', target: 'a1' },
+      { id: 'c->b1', source: 'c', target: 'b1' },
+      ...chainEdges(a),
+      ...chainEdges(b),
+    ];
+    const stageOfSegment = (n: PlanGraphNodeData) => `stage-${n.segmentIndex}`;
+    const wrapped = wrapIntoRows(layoutWithDagre(nodes, joinEdges, { groupOf: segmentOf }), [segmentOf, stageOfSegment], rowWidth);
+    const containsForeignNode = (groupOf: (n: PlanGraphNodeData) => string, opts?: Parameters<typeof computeGroupBounds>[2]) =>
+      computeGroupBounds(wrapped, groupOf, opts).some((box) =>
+        wrapped.some((n) => groupOf(n) !== box.id
+          && n.position.x < box.position.x + box.width && n.position.x + NODE_WIDTH > box.position.x
+          && n.position.y < box.position.y + box.height && n.position.y + NODE_HEIGHT > box.position.y));
+    expect(containsForeignNode(segmentOf)).toBe(false);
+    expect(containsForeignNode(stageOfSegment, {
+      paddingX: STAGE_GROUP_PADDING_X, paddingY: STAGE_GROUP_PADDING_Y, headerHeight: STAGE_GROUP_HEADER_HEIGHT,
+    })).toBe(false);
+  });
+
   it('gives a stage cut across rows rows of its own, so its box covers no other stage', () => {
     // Stage 0 holds s0..s5 (wider than a row); stage 1 holds s6 and s7.
     const bigStageOf = (n: PlanGraphNodeData) => `stage-${n.segmentIndex < 6 ? 0 : 1}`;
