@@ -147,3 +147,25 @@ test('a critical straggler worth a small share of the run draws its card and tag
   expect(container.querySelector('.border-critical, .bg-critical, .text-critical')).toBeNull();
   expect(container.querySelector('.border-muted-foreground')).not.toBeNull();
 });
+
+test.each([
+  ['a warning', 'warning', 3_000, 'border-warning'],
+  ['a critical worth a meaningful share', 'critical', 1_000, 'border-critical'],
+] as const)('the card takes the worst presented tone when a small-share critical sits beside %s', (_label, band, savedMs, borderClass) => {
+  const appModel = {
+    ...emptyAppModel(),
+    stages: new Map([[9, { id: 9, name: 'stage-9' }], [10, { id: 10, name: 'stage-10' }]]) as unknown as AppModel['stages'],
+    app: { startTime: 0, endTime: 3_100 },
+  } as AppModel;
+  store.setState({ appModel });
+  const straggler = (stageId: number, impactBand: Finding['impactBand'], high: number) => ({
+    type: 'straggler', stageId, impactBand, metric: 'stragglerShare', value: 35, unit: 'pct',
+    recommendation: 'Investigate stragglers.',
+    impactEstimate: { basis: 'serial', wallClock: { low: high, high }, estimateMethod: 'modeled' },
+  }) as Finding;
+  const catalog: Finding[] = [straggler(9, 'critical', 64), straggler(10, band, savedMs)];
+  const { container } = renderStraggler(appModel, catalog, false);
+  const card = container.querySelector('.border-l-\\[3px\\]');
+  expect(card).toHaveClass(borderClass);
+  expect(card).not.toHaveClass('border-muted-foreground');
+});

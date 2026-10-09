@@ -14,7 +14,7 @@ import { stragglerCauseSummary } from '@sparkforensics/core/finding-presentation
 import type { StragglerFinding } from '@sparkforensics/core/finding-types.ts';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { canToggleSort } from '@/view/impact-sort';
-import { usePresentedTone, usePresentedToneOf } from '@/view/impact-presentation';
+import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -78,18 +78,18 @@ export const Straggler = memo(function Straggler({ appModel, catalog, defaultCol
   const routeIndex = activeRouteTarget ? orderedIssues.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedIssues, page, setPage, routeIndex);
 
-  const toneOf = usePresentedToneOf();
+  const issuesTone = useWorstPresentedTone(issues);
 
   if (issues.length === 0) return null;
 
   return (
     <WidgetCard
       title="Stragglers"
-      impactBand={toneOf(issues[0])}
+      impactBand={issuesTone}
       fixFor={issues}
       badges={
         <>
-          <TagBadge type="straggler" impactBand={toneOf(issues[0])} />
+          <TagBadge type="straggler" impactBand={issuesTone ?? 'info'} />
           {canToggleSort(issues, issues.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}

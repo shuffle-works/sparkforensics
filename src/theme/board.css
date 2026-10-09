@@ -96,3 +96,4 @@
 tr[data-flag="critical"] > td:first-child { box-shadow: inset 3px 0 var(--critical); }
 tr[data-flag="warning"] > td:first-child { box-shadow: inset 3px 0 var(--warning); }
 tr[data-flag="info"] > td:first-child { box-shadow: inset 3px 0 var(--info); }
+tr[data-flag="neutral"] > td:first-child { box-shadow: inset 3px 0 var(--muted-foreground); }

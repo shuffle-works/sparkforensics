@@ -34,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { formatBytes, formatDuration, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, formatDuration, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE } from '@sparkforensics/core/format-utils.ts';
 import { Chip, TagBadge } from '@/view/ImpactBadge';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { useWidgetDensity } from '@/store/store';
@@ -43,7 +43,7 @@ import { StepCode } from '@/view/StepCode';
 import { WidgetCard } from '@/view/WidgetCard';
 import type { AppModel, Finding, Stage, TaskData } from '@sparkforensics/core/types.ts';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
-import { presentedTone } from '@/view/impact-presentation';
+import { presentedTone, worstPresentedTone } from '@/view/impact-presentation';
 
 const PAGE_SIZE = 10;
 const TOP_N = 10;
@@ -132,19 +132,19 @@ function ratioValue(p50: number | undefined, p95: number | undefined): number {
   return (p95 ?? 0) / p50;
 }
 
-/** Dedup a stage's findings by `type`, keeping the worst-impact-band instance of
- * each: detectors like `stageShape`/`partitionSizing`/`slowHost` can push
+/** Dedup a stage's findings by `type`, keeping the instance with the worst
+ * presented tone: detectors like `stageShape`/`partitionSizing`/`slowHost` can push
  * several same-type findings per stage, which would otherwise render as repeated
  * identical chips (e.g. "SHAPE SHAPE SHAPE"). */
-function dedupTagsByType(tags: Finding[]): Finding[] {
+function dedupTagsByType(tags: Finding[], app: AppModel['app']): Finding[] {
   const byType = new Map<string, Finding[]>();
   for (const t of tags) {
     if (!byType.has(t.type)) byType.set(t.type, []);
     byType.get(t.type)!.push(t);
   }
   return [...byType.values()].map((group) => {
-    const worst = worstImpactBand(group);
-    return group.find((f) => f.impactBand === worst) ?? group[0];
+    const worst = worstPresentedTone(group, app);
+    return group.find((f) => presentedTone(f, app) === worst) ?? group[0];
   });
 }
 
@@ -188,9 +188,9 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
       : selected;
     return filtered.map((stage) => ({
       stage,
-      tags: dedupTagsByType(catalogByStage.get(stage.id) ?? []),
+      tags: dedupTagsByType(catalogByStage.get(stage.id) ?? [], appModel.app),
     }));
-  }, [appModel.stages, showProblems, flaggedStageIds, catalogByStage, nameFilter]);
+  }, [appModel.stages, appModel.app, showProblems, flaggedStageIds, catalogByStage, nameFilter]);
 
   // Resolve triage targets once per catalog change instead of on every
   // rendered tag (each resolution is several linear scans over `catalog`, and
@@ -487,7 +487,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
                 <TableRow
                   key={row.id}
                   // Flagged rows carry a 3px status rule on their first cell (see theme/board.css).
-                  data-flag={worstImpactBand(row.original.tags) ?? undefined}
+                  data-flag={worstPresentedTone(row.original.tags, appModel.app) ?? undefined}
                   // Pointer-only convenience: the accessible primary action is
                   // the real "Open details" button in the Stage cell.
                   className="cursor-pointer"

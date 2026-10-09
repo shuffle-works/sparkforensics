@@ -9,7 +9,7 @@ import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { canToggleSort } from '@/view/impact-sort';
-import { usePresentedTone, usePresentedToneOf } from '@/view/impact-presentation';
+import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
@@ -64,7 +64,7 @@ export const StageSlowness = memo(function StageSlowness({ appModel, catalog, de
   const routeIndex = activeRouteTarget ? orderedIssues.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedIssues, page, setPage, routeIndex);
 
-  const toneOf = usePresentedToneOf();
+  const issuesTone = useWorstPresentedTone(issues);
 
   if (issues.length === 0) return null;
 
@@ -72,10 +72,10 @@ export const StageSlowness = memo(function StageSlowness({ appModel, catalog, de
     <WidgetCard
       title="Slow Stage"
       fixFor={issues}
-      impactBand={toneOf(issues[0])}
+      impactBand={issuesTone}
       badges={
         <>
-          <TagBadge type="stageSlowness" impactBand={toneOf(issues[0])} />
+          <TagBadge type="stageSlowness" impactBand={issuesTone ?? 'info'} />
           {canToggleSort(issues, issues.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}

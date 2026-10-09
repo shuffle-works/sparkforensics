@@ -1,5 +1,4 @@
 import { useStore } from '@/store/store';
-import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { AppModel, Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 
 /** The color a finding is drawn in: its impact band, or `neutral` for a
@@ -48,12 +47,19 @@ export function usePresentedToneOf(): (finding: Finding) => ImpactTone {
   return (finding) => presentedTone(finding, app);
 }
 
-/** The tone for several findings drawn as one (a widget card, its tag): their
- * worst band, neutral when none of its critical findings is a meaningful share. */
+/** Tones from most to least attention-claiming: a small-share critical reads
+ * below a warning and above info. */
+const TONE_RANK: Record<ImpactTone, number> = { critical: 0, warning: 1, neutral: 2, info: 3 };
+
+/** The tone for several findings drawn as one (a widget card, its tag, a
+ * stage row): the worst of their presented tones. */
 export function worstPresentedTone(findings: readonly Finding[], app: AppModel['app']): ImpactTone | undefined {
-  const worst = worstImpactBand([...findings]);
-  if (worst !== 'critical') return worst;
-  return findings.some((finding) => presentedTone(finding, app) === 'critical') ? 'critical' : 'neutral';
+  let worst: ImpactTone | undefined;
+  for (const finding of findings) {
+    const tone = presentedTone(finding, app);
+    if (worst === undefined || TONE_RANK[tone] < TONE_RANK[worst]) worst = tone;
+  }
+  return worst;
 }
 
 /** `worstPresentedTone` for the open run. */

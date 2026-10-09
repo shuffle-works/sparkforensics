@@ -25,7 +25,7 @@ import { MemoryPressure } from './MemoryPressure';
 import { PartitionHint } from './PartitionHint';
 import { PlanExplorer } from './PlanExplorer';
 import { resolvePlanTree } from './PlanView';
-import { usePresentedTone, usePresentedToneOf } from '@/view/impact-presentation';
+import { usePresentedTone, useWorstPresentedTone } from '@/view/impact-presentation';
 
 type SpillClass = 'skew' | 'volume' | 'unclassified';
 
@@ -112,7 +112,7 @@ export const Spill = memo(function Spill({ appModel, catalog, defaultCollapsed =
   const routeIndex = activeRouteTarget ? orderedFindings.findIndex((f) => f === activeRouteTarget.finding) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedFindings, page, setPage, routeIndex);
 
-  const toneOf = usePresentedToneOf();
+  const impactTone = useWorstPresentedTone(findings);
 
   if (findings.length === 0) {
     let maxSpill = 0;
@@ -126,8 +126,6 @@ export const Spill = memo(function Spill({ appModel, catalog, defaultCollapsed =
     );
   }
 
-  const impactTone = toneOf(sorted[0]);
-
   return (
     <WidgetCard
       title="Spill"
@@ -135,7 +133,7 @@ export const Spill = memo(function Spill({ appModel, catalog, defaultCollapsed =
       impactBand={impactTone}
       badges={
         <>
-          <TagBadge type="spill" impactBand={impactTone} />
+          <TagBadge type="spill" impactBand={impactTone ?? 'info'} />
           {canToggleSort(findings, sorted.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}
