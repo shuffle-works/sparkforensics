@@ -30,6 +30,12 @@ export interface FindingPresentation<T extends FindingType> {
 /** A share threshold as captions and caveats state it: 0.005 -> "0.5%", never float noise like 7.000000000000001%. */
 export const shareLabel = (share: number): string => `${Math.round(share * 1e6) / 1e4}%`;
 
+/** `n.toLocaleString('en-US')` for a whole number, without loading ICU (about 10 ms the first time it is
+ * used), which keeps the CLI's startup off that cost. Other values take the locale path. */
+function groupThousands(n: number): string {
+  return Number.isSafeInteger(n) ? String(n).replace(/\B(?=(\d{3})+$)/g, ',') : n.toLocaleString('en-US');
+}
+
 // Whether the detector found `key` already logged on for this run. Its switchFix (detectors.ts)
 // then worded the row's own text for that case and left the property out of the remediation, so
 // a generic line reads the same decision and never recommends a switch the row says is on.
@@ -444,7 +450,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   nestedLoopJoin: {
     name: 'nested loop join',
     tag: 'PLAN',
-    thresholdSummary: (t) => `a nested-loop or cartesian join with over ${t.minOutputRows.toLocaleString('en-US')} output rows, at least ${t.minExpansion}x its larger input`,
+    thresholdSummary: (t) => `a nested-loop or cartesian join with over ${groupThousands(t.minOutputRows)} output rows, at least ${t.minExpansion}x its larger input`,
     actionLabel: (f) => (f.condition == null ? 'Confirm cross join' : 'Add an equi-join key'),
     genericRecommendation: (f) => (f.condition == null
       ? 'Confirm the cross join is intended, or add a join key so the rows are matched instead of multiplied.'
