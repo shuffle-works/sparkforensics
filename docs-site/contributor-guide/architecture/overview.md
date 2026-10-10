@@ -27,7 +27,10 @@ flagged-stage task data.
 route and the run comparison take precedence; otherwise idle/error →
 `CompareLanding` (one or two `DropZone`s), parsing → a live progress readout
 (an SHS parse keeps its intake form instead), ready → the lazy-loaded
-`Dashboard`. `src/view/Dashboard.tsx` renders widgets from
+`Dashboard`. While a log parses, `App.tsx` starts loading the `Dashboard`
+chunk and every `REGISTRY` widget chunk (`src/lib/warm-lazy.ts`), so no
+Suspense fallback shows once parsing finishes: a fallback keeps its content off
+screen for at least 300 ms. `src/view/Dashboard.tsx` renders widgets from
 `src/view/detector-registry.tsx`'s `REGISTRY` (see
 [Widget rendering](./widget-rendering.md)).
 

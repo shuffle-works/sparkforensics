@@ -170,8 +170,8 @@ it serves the app and answers `initialize` on `/mcp`.
 
 ### Benchmarking and output identity
 
-Two dependency-free tools measure a performance change and prove it left the
-analysis output alone. Run both on a quiet machine (`cat /proc/loadavg`) and
+Dependency-free tools measure a performance change and prove it left the
+analysis output alone. Run them on a quiet machine (`cat /proc/loadavg`) and
 report the load average next to the numbers.
 
 - `node dev/bench-phases.mjs [--repeat N] [--json out.json] <log>[:<baseline>]...`
@@ -181,6 +181,15 @@ report the load average next to the numbers.
   comparison. It prints median, minimum and maximum. `--cli` times the CLI end
   to end, and `--mcp` times the MCP tool functions cold and warm. Prefer the
   in-process phase timers over wall clock when other work shares the machine.
+- `node dev/bench-dashboard.mjs [--repeat N] [--json out.json] [--dist dir] [--no-tabs] <log>...`
+  drives the production build (`npx vite build` first) in a real browser, one
+  fresh context per repeat, and reports the median time from dropping the log
+  to the first rendered dashboard, to the point no lazy-widget skeleton is
+  left, the main-thread long tasks in between, the JS heap, and the long tasks
+  of each report-tab switch. `--dist` serves another build output, so a
+  baseline build copied aside can be interleaved with the branch build.
+  `BENCH_BROWSER_CHANNEL=chrome` uses the system Chrome when Playwright's own
+  browser is not installed. It starts and stops its own `vite preview`.
 - `dev/snapshot-cli-output.sh <out-dir> <log>... [-- <baseline>:<candidate>...]`
   writes the CLI's JSON report for every log and a comparison for every pair,
   with the `generator` block removed (its build id hashes the core sources).

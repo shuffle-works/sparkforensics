@@ -13,6 +13,9 @@ vi.mock('@/view/Dashboard', async () => {
   return { Dashboard: () => <main>Dashboard</main> };
 });
 
+const warmWidgetChunks = vi.hoisted(() => vi.fn());
+vi.mock('@/view/detector-registry', () => ({ warmWidgetChunks }));
+
 vi.mock('@/store/useIngest', () => ({
   useIngest: () => ({
     startLoad: vi.fn(),
@@ -53,6 +56,15 @@ test('idle landing does not load the dashboard implementation', () => {
 
   expect(screen.getByTestId('drop-zone')).toBeInTheDocument();
   expect(dashboardModule.evaluated).toBe(false);
+});
+
+test('parsing loads the dashboard implementation and warms the widget chunks', async () => {
+  store.setState({ status: 'parsing' });
+
+  render(<App />);
+
+  await vi.waitFor(() => expect(dashboardModule.evaluated).toBe(true));
+  await vi.waitFor(() => expect(warmWidgetChunks).toHaveBeenCalledTimes(1));
 });
 
 test('ready dashboard route announces loading while its chunk is pending', () => {
