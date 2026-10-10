@@ -35,7 +35,14 @@ export function estimatedParseBytes(path: string): number {
 export function collectRunInWorker(path: string): Promise<CollectedRun> {
   return new Promise((resolve, reject) => {
     let done = false;
-    const worker = new Worker(new URL('./collect-run-worker.js', import.meta.url), { workerData: { path } });
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL('./collect-run-worker.js', import.meta.url), { workerData: { path } });
+    } catch {
+      // The thread could not be created at all (Node's permission mode without worker access).
+      collectRun(path).then(resolve, reject);
+      return;
+    }
     const finish = (settle: () => void): void => {
       if (done) return;
       done = true;
