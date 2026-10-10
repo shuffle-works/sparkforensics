@@ -16,7 +16,7 @@ import { withEarlierAttempts, totalExecutorCpuMs } from './run-totals.ts';
 import { planNodesOfStage } from './stage-plan-nodes.ts';
 import { normalizeStageName, stageIdentityWith, type DetailNormalizer } from './stage-identity.ts';
 import { alignSequences } from './sequence-alignment.ts';
-import { attributeNames, detailTokens, jaccard, structuralKey } from './stage-structure.ts';
+import { attributeNamesOf, detailTokens, jaccard, structuralKey } from './stage-structure.ts';
 import type { SessionSnapshot } from './session-snapshot.ts';
 import type { Stage, PlanNode } from './types.ts';
 
@@ -325,7 +325,7 @@ function planStructure(root: PlanNode): string[] {
   (function walk(node: PlanNode): void {
     if (!/^(WholeStageCodegen|InputAdapter|ColumnarToRow)\b/.test(node.name ?? '')) {
       tokens.push(normalizeStageName(node.name ?? ''));
-      for (const name of attributeNames(node.detail ?? '')) attributes.add(`@${name}`);
+      for (const name of attributeNamesOf(node)) attributes.add(`@${name}`);
     }
     for (const child of node.children ?? []) walk(child);
   })(root);

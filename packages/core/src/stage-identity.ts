@@ -13,12 +13,52 @@ export type DetailNormalizer = (detail: string) => string;
 // Replace run-varying tokens (digit runs, long hex ids) with a stable marker so
 // the same logical stage across two runs normalizes to one identity.
 export function normalizeStageName(name: string): string {
+  if (name.length > STAGE_NAME_CACHE_MAX_LENGTH) return computeStageName(name);
+  let normalized = stageNameCache.get(name);
+  if (normalized === undefined) {
+    if (stageNameCache.size >= STAGE_NAME_CACHE_MAX_ENTRIES) stageNameCache.clear();
+    normalized = computeStageName(name);
+    stageNameCache.set(name, normalized);
+  }
+  return normalized;
+}
+
+// A comparison normalizes the same few operator and stage names once per stage, identity and key.
+// Only short names are kept (long inputs are call-site text, rarely repeated), and the whole table
+// resets when full, so it stays small however many runs a long-lived process analyzes.
+const STAGE_NAME_CACHE_MAX_LENGTH = 256;
+const STAGE_NAME_CACHE_MAX_ENTRIES = 4096;
+const stageNameCache = new Map<string, string>();
+
+function computeStageName(name: string): string {
   return String(name)
     .toLowerCase()
     .replace(/\b[0-9a-f]{8,}\b/g, '#') // hex ids/uuids first (they contain digits)
     .replace(/\d+/g, '#')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+// A plan node belongs to every stage that ran part of it, and each of those stages reads its
+// normalized detail again (exact key, structural key, similarity tokens), on both runs of a
+// comparison. The normalizer is a pure function of the detail and a node is never mutated after the
+// parser posts it, so the result is memoized per node. Like the per-tree identity below, each node
+// keeps at most MAX_NORMALIZERS_PER_TREE normalizers and drops the oldest first.
+const nodeDetailCache = new WeakMap<PlanNode, Map<DetailNormalizer, string>>();
+
+export function normalizedDetailOf(node: PlanNode, normalizeDetail: DetailNormalizer): string {
+  let byNormalizer = nodeDetailCache.get(node);
+  if (!byNormalizer) {
+    byNormalizer = new Map();
+    nodeDetailCache.set(node, byNormalizer);
+  }
+  let normalized = byNormalizer.get(normalizeDetail);
+  if (normalized === undefined) {
+    normalized = normalizeDetail(node.detail ?? '');
+    if (byNormalizer.size >= MAX_NORMALIZERS_PER_TREE) byNormalizer.delete(byNormalizer.keys().next().value!);
+    byNormalizer.set(normalizeDetail, normalized);
+  }
+  return normalized;
 }
 
 // Bottom-up, order-independent structural identity of a resolved plan tree:
@@ -47,7 +87,7 @@ function planTreeIdentity(root: PlanNode | null | undefined, normalizeDetail: De
   if (cached !== undefined) return cached;
   function visit(node: PlanNode): string {
     const childDigests = (node.children ?? []).map(visit).sort();
-    return cyrb53(JSON.stringify([normalizeStageName(node.name ?? ''), normalizeDetail(node.detail ?? ''), childDigests]));
+    return cyrb53(JSON.stringify([normalizeStageName(node.name ?? ''), normalizedDetailOf(node, normalizeDetail), childDigests]));
   }
   const identity = visit(root);
   if (byNormalizer.size >= MAX_NORMALIZERS_PER_TREE) byNormalizer.delete(byNormalizer.keys().next().value!);
@@ -71,7 +111,7 @@ function sqlNodeIdentity(
   const root = snapshot.sql.get(execId)?.planTree ?? null;
   if (!root) return '';
   const fingerprints = (nodes ?? planNodesOfStage(stage, snapshot.sql))
-    .map((node) => JSON.stringify([normalizeStageName(node.name ?? ''), normalizeDetail(node.detail ?? '')]));
+    .map((node) => JSON.stringify([normalizeStageName(node.name ?? ''), normalizedDetailOf(node, normalizeDetail)]));
   if (fingerprints.length === 0) return planTreeIdentity(root, normalizeDetail) ?? '';
   return cyrb53(JSON.stringify(fingerprints.sort()));
 }

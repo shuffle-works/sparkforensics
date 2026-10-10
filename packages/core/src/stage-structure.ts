@@ -3,7 +3,7 @@
 // removed) and the token sets its similarity scores read. Pure.
 
 import { cyrb53 } from './string-hash.ts';
-import { normalizeStageName, type DetailNormalizer } from './stage-identity.ts';
+import { normalizeStageName, normalizedDetailOf, type DetailNormalizer } from './stage-identity.ts';
 import type { PlanNode } from './types.ts';
 
 // Plumbing nodes: codegen boundaries and input adapters change with how Spark fuses a stage, not with
@@ -43,7 +43,7 @@ export function structuralKey(nodes: readonly PlanNode[]): string | null {
   const digestOf = (node: PlanNode): string => {
     let d = digests.get(node);
     if (d === undefined) {
-      d = cyrb53(JSON.stringify([normalizeStageName(node.name ?? ''), attributeNames(node.detail ?? ''), below(node).sort()]));
+      d = cyrb53(JSON.stringify([normalizeStageName(node.name ?? ''), attributeNamesOf(node), below(node).sort()]));
       digests.set(node, d);
     }
     return d;
@@ -51,6 +51,20 @@ export function structuralKey(nodes: readonly PlanNode[]): string | null {
   for (const node of attributed) digestOf(node);
   const roots = [...attributed].filter((n) => !nested.has(n)).map(digestOf).sort();
   return cyrb53(JSON.stringify(roots));
+}
+
+// A node's attribute names are read by the structural key of every stage it ran in and by the
+// execution's plan structure; a node is never mutated after the parser posts it.
+const attributeNamesCache = new WeakMap<PlanNode, string[]>();
+
+/** `attributeNames` of a plan node's detail, memoized per node. The array is shared: do not change it. */
+export function attributeNamesOf(node: PlanNode): readonly string[] {
+  let names = attributeNamesCache.get(node);
+  if (names === undefined) {
+    names = attributeNames(node.detail ?? '');
+    attributeNamesCache.set(node, names);
+  }
+  return names;
 }
 
 const TOKEN_SPLIT = /[^A-Za-z0-9_.$]+/;
@@ -64,7 +78,7 @@ export function detailTokens(stageName: string | undefined, nodes: readonly Plan
   for (const node of nodes) {
     if (isPlumbing(node)) continue;
     add(normalizeStageName(node.name ?? ''));
-    add(normalize(node.detail ?? ''));
+    add(normalizedDetailOf(node, normalize));
   }
   return [...tokens].sort();
 }
