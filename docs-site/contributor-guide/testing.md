@@ -185,7 +185,7 @@ report the load average next to the numbers.
   drives the production build (`npx vite build` first) in a real browser, one
   fresh context per repeat, and reports the median time from dropping the log
   to the first rendered dashboard, to the point no lazy-widget skeleton is
-  left, the main-thread long tasks in between, the JS heap, and the long tasks
+  left, the main-thread long tasks in between, the JS heap, the peak resident memory of the whole browser, and the long tasks
   of each report-tab switch. `--dist` serves another build output, so a
   baseline build copied aside can be interleaved with the branch build.
   `BENCH_BROWSER_CHANNEL=chrome` uses the system Chrome when Playwright's own

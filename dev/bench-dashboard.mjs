@@ -2,17 +2,18 @@
 // Manual dev tool: browser dashboard load timing against a production build (`vite build` +
 // `vite preview`). Each repeat opens a fresh browser context, drops the log into the file input
 // and records, in-page: time to the first rendered dashboard and to the point no lazy-widget skeleton is left, main-thread long tasks (>50 ms)
-// between the drop and the dashboard, and the JS heap once the dashboard is up. Then it
+// between the drop and the dashboard, and the JS heap once the dashboard is up and the peak resident memory of the whole browser. Then it
 // switches the dashboard's report tabs and records the long tasks of each switch.
 //
 // Usage: node dev/bench-dashboard.mjs [--repeat N] [--json out.json] [--dist dir] [--no-tabs] <log>...
 //   Run `npx vite build` first. One browser at a time; the preview server is stopped at exit.
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
+const MARKER = String(process.pid);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function parseArgs(argv) {
@@ -67,7 +68,24 @@ const INIT_SCRIPT = () => {
   document.addEventListener('DOMContentLoaded', () => mo.observe(document.documentElement, { childList: true, subtree: true }));
 };
 
+// Resident memory (MB) of the browser process and all its descendants: renderer, worker and GPU
+// processes together, which is the tab's real footprint (the JS heap alone misses the workers).
+function browserRssMB(marker) {
+  try {
+    const rootPid = Number(execFileSync('pgrep', ['-f', '--', `--bench-marker=${marker}`], { encoding: 'utf8' }).trim().split('\n')[0]);
+    const rows = execFileSync('ps', ['-eo', 'pid=,ppid=,rss='], { encoding: 'utf8' }).trim().split('\n').map((l) => l.trim().split(/\s+/).map(Number));
+    const live = new Set([rootPid]);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const [pid, ppid] of rows) if (live.has(ppid) && !live.has(pid)) { live.add(pid); grew = true; }
+    }
+    return rows.filter(([pid]) => live.has(pid)).reduce((sum, [, , rss]) => sum + rss, 0) / 1024;
+  } catch { return 0; }
+}
+
 async function runOnce(browser, baseUrl, logPath, withTabs) {
+  let peakRssMB = 0;
+  const sampler = setInterval(() => { peakRssMB = Math.max(peakRssMB, browserRssMB(MARKER)); }, 100);
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
   await page.addInitScript(INIT_SCRIPT);
@@ -110,8 +128,10 @@ async function runOnce(browser, baseUrl, logPath, withTabs) {
       tabs.push({ name, ...t });
     }
   }
+  clearInterval(sampler);
+  peakRssMB = Math.max(peakRssMB, browserRssMB(MARKER));
   await context.close();
-  return { ...load, tabs };
+  return { ...load, peakRssMB, tabs };
 }
 
 async function main() {
@@ -127,7 +147,7 @@ async function main() {
   const report = [];
   try {
     await waitForServer(baseUrl);
-    browser = await chromium.launch({ channel: process.env.BENCH_BROWSER_CHANNEL || undefined, args: ['--enable-precise-memory-info'] });
+    browser = await chromium.launch({ channel: process.env.BENCH_BROWSER_CHANNEL || undefined, args: ['--enable-precise-memory-info', `--bench-marker=${MARKER}`] });
     for (const logPath of args.logs) {
       const runs = [];
       for (let i = 0; i < args.repeat; i += 1) runs.push(await runOnce(browser, baseUrl, logPath, args.tabs));
@@ -141,6 +161,7 @@ async function main() {
         longTaskMaxMs: median(runs.map((r) => r.longTaskMaxMs)),
         longTaskCount: median(runs.map((r) => r.longTaskCount)),
         heapMB: median(runs.map((r) => r.heapMB ?? 0)),
+        peakRssMB: median(runs.map((r) => r.peakRssMB)),
         spreadMs: [Math.min(...runs.map((r) => r.toDashboardMs)), Math.max(...runs.map((r) => r.toDashboardMs))],
         tabs: runs[0].tabs.map((t, ti) => ({
           name: t.name,
@@ -149,7 +170,7 @@ async function main() {
         })),
       };
       report.push(row);
-      console.log(`${row.log}  ${(row.bytes / 1e6).toFixed(1)} MB  dashboard ${row.toDashboardMs.toFixed(0)} ms, settled ${row.toSettledMs.toFixed(0)} ms [${row.spreadMs.map((x) => x.toFixed(0)).join('..')}]  long tasks ${row.longTaskCount} (${row.longTaskTotalMs.toFixed(0)} ms total, ${row.longTaskMaxMs.toFixed(0)} ms max)  heap ${row.heapMB.toFixed(0)} MB`);
+      console.log(`${row.log}  ${(row.bytes / 1e6).toFixed(1)} MB  dashboard ${row.toDashboardMs.toFixed(0)} ms, settled ${row.toSettledMs.toFixed(0)} ms [${row.spreadMs.map((x) => x.toFixed(0)).join('..')}]  long tasks ${row.longTaskCount} (${row.longTaskTotalMs.toFixed(0)} ms total, ${row.longTaskMaxMs.toFixed(0)} ms max)  heap ${row.heapMB.toFixed(0)} MB  peak browser RSS ${row.peakRssMB.toFixed(0)} MB`);
       for (const t of row.tabs) console.log(`    tab ${t.name}: ${t.totalMs.toFixed(0)} ms long-task total, ${t.maxMs.toFixed(0)} ms max`);
     }
   } finally {
