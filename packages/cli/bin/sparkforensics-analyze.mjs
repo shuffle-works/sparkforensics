@@ -6,6 +6,11 @@ import {
 } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import nodeModule from 'node:module';
+
+// Reuse V8's compiled code for the ~100 core modules across runs (Node 22.1+; a no-op on older
+// Node, and by NODE_DISABLE_COMPILE_CACHE). It only covers modules loaded after this call.
+nodeModule.enableCompileCache?.();
 
 const binDir = dirname(fileURLToPath(import.meta.url));
 const pkgDir = dirname(binDir);
