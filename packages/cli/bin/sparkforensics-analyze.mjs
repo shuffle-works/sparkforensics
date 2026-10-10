@@ -26,6 +26,7 @@ const { coreBuildId, loadVendored } = await import(pathToFileURL(helperPath).hre
 const loadCore = (moduleName, opts) => loadVendored(pkgDir, moduleName, opts);
 
 const { collectRun } = await loadCore('cli/collect-run');
+const { collectRunPair } = await loadCore('cli/collect-run-pair');
 const { resolveFromShs } = await loadCore('shs-load');
 const { validateShsRequest } = await loadCore('shs-request', { srcExt: 'js' });
 const { deriveEvidenceAvailability } = await loadCore('evidence-availability');
@@ -194,10 +195,13 @@ function splitCsv(value) {
   return value.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-async function collectWithEvidence(path) {
-  const { appModel, skippedLines } = await collectRun(path);
+function withEvidence({ appModel, skippedLines }) {
   appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
   return { appModel, skippedLines };
+}
+
+async function collectWithEvidence(path) {
+  return withEvidence(await collectRun(path));
 }
 
 // The provenance stamp: this CLI's own name and version, and the build id of the core it loaded
@@ -544,8 +548,8 @@ async function runCli(argv, { fetchImpl } = {}) {
         fetchImpl !== undefined ? { fetchImpl } : {},
       ), EXIT.CANDIDATE_UNREADABLE);
       // SHS fetch (network) and local --baseline parse (disk) are independent,
-      // so run them concurrently. Not done for local+local below: both are CPU
-      // work, so parallelizing wouldn't help.
+      // so run them concurrently. Local+local below is CPU work on both sides, so
+      // collectRunPair uses a worker thread for it.
       if (usingBaseline) {
         const [shsResult, baselineResult] = await Promise.allSettled([
           shsPromise, unreadable(collectWithEvidence(values.baseline), EXIT.BASELINE_UNREADABLE),
@@ -559,12 +563,19 @@ async function runCli(argv, { fetchImpl } = {}) {
         ({ appModel, skippedLines } = await shsPromise);
       }
     } else {
-      // Baseline first, so a batch with both logs unreadable reports the worse exit code (5).
       if (usingBaseline) {
-        const baselineResult = await unreadable(collectWithEvidence(values.baseline), EXIT.BASELINE_UNREADABLE);
-        baselineAppModel = baselineResult.appModel;
+        // Two big logs parse in parallel (the smaller on a worker thread). The baseline is settled
+        // first, so a batch with both logs unreadable reports the worse exit code (5).
+        const { baseline, candidate } = await collectRunPair(values.baseline, positionals[0]);
+        const settled = (result, exitCode) => unreadable(
+          result.status === 'fulfilled' ? Promise.resolve().then(() => withEvidence(result.value)) : Promise.reject(result.reason),
+          exitCode,
+        );
+        baselineAppModel = (await settled(baseline, EXIT.BASELINE_UNREADABLE)).appModel;
+        ({ appModel, skippedLines } = await settled(candidate, EXIT.CANDIDATE_UNREADABLE));
+      } else {
+        ({ appModel, skippedLines } = await unreadable(collectWithEvidence(positionals[0]), EXIT.CANDIDATE_UNREADABLE));
       }
-      ({ appModel, skippedLines } = await unreadable(collectWithEvidence(positionals[0]), EXIT.CANDIDATE_UNREADABLE));
     }
   } catch (e) {
     const exitCode = e.exitCode ?? EXIT.INTERNAL;
