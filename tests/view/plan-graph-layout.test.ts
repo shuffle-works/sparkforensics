@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { layoutWithDagre, computeGroupBounds, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT } from '../../src/view/plan-graph/dagre-layout';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import dagre from '@dagrejs/dagre';
+import { layoutWithDagre, clearLayoutCache, computeGroupBounds, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT } from '../../src/view/plan-graph/dagre-layout';
 import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/types.ts';
 
 function graphNode(id: string, overrides: Partial<PlanGraphNodeData> = {}): PlanGraphNodeData {
@@ -214,5 +215,45 @@ describe('computeGroupBoundsWithFallback', () => {
     const groups = computeGroupBoundsWithFallback(groupOf, [primary]);
 
     expect(groups).toHaveLength(0);
+  });
+});
+
+describe('layout cache', () => {
+  const edges: PlanGraphEdge[] = [
+    { id: 'a->b', source: 'a', target: 'b' },
+    { id: 'a->c', source: 'a', target: 'c' },
+  ];
+  const nodes = (overrides: Partial<PlanGraphNodeData> = {}) =>
+    ['a', 'b', 'c'].map((id, i) => graphNode(id, { segmentIndex: i % 2, ...overrides }));
+  const groupOf = (n: PlanGraphNodeData) => `segment-${n.segmentIndex}`;
+
+  beforeEach(() => clearLayoutCache());
+
+  it('reuses positions when only node data changes, and carries the new data through', () => {
+    const spy = vi.spyOn(dagre, 'layout');
+    const first = layoutWithDagre(nodes({ durationShare: 0.2 }), edges, { groupOf });
+    const second = layoutWithDagre(nodes({ durationShare: 0.9 }), edges, { groupOf });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(second.map((n) => n.position)).toEqual(first.map((n) => n.position));
+    expect(second.every((n) => n.durationShare === 0.9)).toBe(true);
+    spy.mockRestore();
+  });
+
+  it('hands out independent position objects on a cache hit', () => {
+    const first = layoutWithDagre(nodes(), edges, { groupOf });
+    first[0].position.x = 12345;
+    const second = layoutWithDagre(nodes(), edges, { groupOf });
+    expect(second[0].position.x).not.toBe(12345);
+  });
+
+  it('lays out again when the topology, grouping or direction changes', () => {
+    const spy = vi.spyOn(dagre, 'layout');
+    layoutWithDagre(nodes(), edges, { groupOf });
+    layoutWithDagre(nodes(), edges.slice(0, 1), { groupOf });
+    layoutWithDagre(nodes(), edges, { groupOf: () => 'segment-0' });
+    layoutWithDagre(nodes(), edges, { groupOf, direction: 'BT' });
+    layoutWithDagre(nodes(), edges);
+    expect(spy).toHaveBeenCalledTimes(5);
+    spy.mockRestore();
   });
 });

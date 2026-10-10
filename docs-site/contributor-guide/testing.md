@@ -192,6 +192,11 @@ load average next to the numbers.
   baseline build copied aside can be interleaved with the branch build.
   `BENCH_BROWSER_CHANNEL=chrome` uses the system Chrome when Playwright's own
   browser is not installed. It starts and stops its own `vite preview`.
+- `node dev/bench-graph-layout.mjs [--repeat N] [--top K] [--scope full|segment] <log>...`
+  builds each stage's plan graph and times the dagre layout the graph view runs
+  for the heaviest ones: a cold layout, then the layout after a duration-mode
+  flip (same topology, new node data). A plan whose layout throws is reported as
+  such. Logs are labelled by position, not by name.
 - `dev/snapshot-cli-output.sh <out-dir> <log>... [-- <baseline>:<candidate>...]`
   writes the CLI's JSON report for every log and a comparison for every pair,
   with the `generator` block removed (its build id hashes the core sources).
