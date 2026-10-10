@@ -152,10 +152,9 @@ const STACK_MAX_NODES = 150;
 
 /** Fires on every container resize after the first (initial) measurement. */
 function useResizeTick() {
-  const ref = useRef<HTMLDivElement>(null);
+  const [el, ref] = useState<HTMLDivElement | null>(null);
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const el = ref.current;
     if (!el) return;
     let isInitialMeasurement = true;
     const observer = new ResizeObserver(() => {
@@ -167,7 +166,7 @@ function useResizeTick() {
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [el]);
   return { ref, tick };
 }
 

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, within, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlanGraphCanvas } from '../../src/view/plan-graph/PlanGraphCanvas';
@@ -729,23 +729,29 @@ describe('large graph laid out in the layout worker', () => {
     return model({ nodes, edges, scope: 'full' });
   }
 
+  // The client keeps one worker for the module's lifetime, so a single fake that runs
+  // the real layout serves every test here; each reply is held until the test flushes it.
+  const replies: Array<() => void> = [];
+  overrideLayoutWorkerFactory(() => {
+    const fake = {
+      onmessage: null as null | ((e: { data: unknown }) => void),
+      onerror: null,
+      onmessageerror: null,
+      terminate() {},
+      postMessage(message: { id: number; job: Parameters<typeof runDagre>[0] }) {
+        const positions = [...runDagre(message.job)].map(([id, p]) => [id, p.x, p.y]);
+        replies.push(() => fake.onmessage?.({ data: { id: message.id, positions } }));
+      },
+    };
+    return fake as unknown as Worker;
+  });
+  beforeEach(() => {
+    replies.length = 0;
+    clearLayoutCache();
+  });
+
   it('shows a loading line while the worker lays the graph out, then the graph', async () => {
     vi.stubGlobal('Worker', class {});
-    const replies: Array<() => void> = [];
-    overrideLayoutWorkerFactory(() => {
-      const fake = {
-        onmessage: null as null | ((e: { data: unknown }) => void),
-        onerror: null,
-        onmessageerror: null,
-        terminate() {},
-        postMessage(message: { id: number; job: Parameters<typeof runDagre>[0] }) {
-          const positions = [...runDagre(message.job)].map(([id, p]) => [id, p.x, p.y]);
-          replies.push(() => fake.onmessage?.({ data: { id: message.id, positions } }));
-        },
-      };
-      return fake as unknown as Worker;
-    });
-    clearLayoutCache();
 
     render(<PlanGraphCanvas model={largeModel()} showMiniMap={false} stageId={1} />);
     expect(screen.getByRole('status', { name: 'Laying out plan graph' })).toBeInTheDocument();
@@ -754,5 +760,21 @@ describe('large graph laid out in the layout worker', () => {
     await act(async () => { replies.splice(0).forEach((reply) => reply()); });
     expect(await screen.findByText('Op 0')).toBeInTheDocument();
     expect(screen.queryByRole('status', { name: 'Laying out plan graph' })).not.toBeInTheDocument();
+  });
+
+  it('watches the graph container for resizes once the worker layout lands', async () => {
+    vi.stubGlobal('Worker', class {});
+    const observed: Element[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      observe(el: Element) { observed.push(el); }
+      unobserve() {}
+      disconnect() {}
+    });
+
+    render(<PlanGraphCanvas model={largeModel()} showMiniMap={false} stageId={1} />);
+    await act(async () => { replies.splice(0).forEach((reply) => reply()); });
+    const node = await screen.findByText('Op 0');
+    const rail = screen.getByRole('button', { name: /fit to view/i });
+    expect(observed.some((el) => el.isConnected && el.contains(node) && el.contains(rail))).toBe(true);
   });
 });
