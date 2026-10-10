@@ -54,23 +54,67 @@ export function clearLayoutCache(): void {
   layoutCache.clear();
 }
 
+type LayoutOptions = { groupOf?: (node: PlanGraphNodeData) => string | null; direction?: PlanLayoutDirection };
+
+/** What a layout depends on, reduced to plain data so it can cross to a worker. */
+export interface LayoutJob {
+  key: string;
+  nodeIds: string[];
+  groupIds: (string | null)[];
+  edges: { source: string; target: string }[];
+  direction: PlanLayoutDirection;
+  compound: boolean;
+}
+
+export type LayoutPositions = Map<string, { x: number; y: number }>;
+
+function describeLayout(nodes: PlanGraphNodeData[], edges: PlanGraphEdge[], opts: LayoutOptions): LayoutJob {
+  const direction = opts.direction ?? 'RL';
+  const groupIds = nodes.map((node) => opts.groupOf?.(node) ?? null);
+  return {
+    key: layoutCacheKey(nodes, groupIds, edges, direction),
+    nodeIds: nodes.map((node) => node.id),
+    groupIds,
+    edges: edges.map((edge) => ({ source: edge.source, target: edge.target })),
+    direction,
+    compound: Boolean(opts.groupOf),
+  };
+}
+
+function rememberLayout(key: string, positions: LayoutPositions): void {
+  layoutCache.delete(key);
+  // Drops the least recently used entry first.
+  if (layoutCache.size >= LAYOUT_CACHE_LIMIT) layoutCache.delete(layoutCache.keys().next().value as string);
+  layoutCache.set(key, positions);
+}
+
+/** The cache key and plain-data description of a layout, or null when it is
+ * already cached (nothing to compute). Used to run the layout off the main thread. */
+export function pendingLayoutJob(
+  nodes: PlanGraphNodeData[],
+  edges: PlanGraphEdge[],
+  opts: LayoutOptions = {},
+): LayoutJob | null {
+  const job = describeLayout(nodes, edges, opts);
+  return layoutCache.has(job.key) ? null : job;
+}
+
+/** Stores a layout computed elsewhere (the layout worker) so the next
+ * `layoutWithDagre` for the same topology is a cache hit. */
+export function storeLayout(key: string, positions: LayoutPositions): void {
+  rememberLayout(key, positions);
+}
+
 export function layoutWithDagre(
   nodes: PlanGraphNodeData[],
   edges: PlanGraphEdge[],
-  opts: { groupOf?: (node: PlanGraphNodeData) => string | null; direction?: PlanLayoutDirection } = {},
+  opts: LayoutOptions = {},
 ): LaidOutNode[] {
-  const direction = opts.direction ?? 'RL';
-  const groupIds = nodes.map((node) => opts.groupOf?.(node) ?? null);
-  const key = layoutCacheKey(nodes, groupIds, edges, direction);
-  let positions = layoutCache.get(key);
-  if (positions) {
-    // Re-insert so the least recently used entry is the first to go.
-    layoutCache.delete(key);
-  } else {
-    positions = runDagre(nodes, groupIds, edges, direction, Boolean(opts.groupOf));
-    if (layoutCache.size >= LAYOUT_CACHE_LIMIT) layoutCache.delete(layoutCache.keys().next().value as string);
-  }
-  layoutCache.set(key, positions);
+  const job = describeLayout(nodes, edges, opts);
+  let positions = layoutCache.get(job.key);
+  if (!positions) positions = runDagre(job);
+  // Re-inserts a hit as well, so the least recently used entry is the first to go.
+  rememberLayout(job.key, positions);
   const placed = positions;
   return nodes.map((node) => {
     const pos = placed.get(node.id)!;
@@ -78,13 +122,9 @@ export function layoutWithDagre(
   });
 }
 
-function runDagre(
-  nodes: PlanGraphNodeData[],
-  groupIds: (string | null)[],
-  edges: PlanGraphEdge[],
-  direction: PlanLayoutDirection,
-  compound: boolean,
-): Map<string, { x: number; y: number }> {
+/** The Dagre pass itself. Pure: the layout worker runs it on the same job the
+ * main thread would, so both produce identical positions. */
+export function runDagre({ nodeIds, groupIds, edges, direction, compound }: LayoutJob): LayoutPositions {
   const g = new dagre.graphlib.Graph({ compound });
   // RL: PlanGraphEdge.source is the parent/consumer, .target its child/producer.
   // Dagre places an edge's source at the higher-rank end, so 'RL' puts
@@ -123,10 +163,10 @@ function runDagre(
   for (const group of groupIds) if (group) groups.add(group);
   for (const group of groups) g.setNode(group, {});
 
-  nodes.forEach((node, i) => {
-    g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  nodeIds.forEach((id, i) => {
+    g.setNode(id, { width: NODE_WIDTH, height: NODE_HEIGHT });
     const group = groupIds[i];
-    if (group) g.setParent(node.id, group);
+    if (group) g.setParent(id, group);
   });
   for (const edge of edges) {
     g.setEdge(edge.source, edge.target);
@@ -134,10 +174,10 @@ function runDagre(
 
   dagre.layout(g);
 
-  const positions = new Map<string, { x: number; y: number }>();
-  for (const node of nodes) {
-    const pos = g.node(node.id);
-    positions.set(node.id, { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 });
+  const positions: LayoutPositions = new Map();
+  for (const id of nodeIds) {
+    const pos = g.node(id);
+    positions.set(id, { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 });
   }
   return positions;
 }

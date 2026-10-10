@@ -34,6 +34,21 @@ data) or returning to a node filter or scope already laid out reads the position
 back instead of running dagre again, which costs about 1ms per node. The cache
 holds the six most recently used layouts, and a layout that throws is not cached.
 
+A cold layout of a plan with 200 or more nodes runs in a Web Worker
+(`layout.worker.ts`, started by `layout-worker-client.ts`) so the page stays
+responsive while Dagre works. `PlanGraphCanvas` asks `useLayoutPrewarm` for the
+layouts it needs; the hook sends each uncached one to the worker as plain data
+(`pendingLayoutJob`), stores the reply with `storeLayout`, and the canvas then
+calls `layoutWithDagre`, which finds the positions in the cache. The worker
+runs the same `runDagre` as the main thread, so the positions are identical.
+While the layout runs, the first open shows a "Laying out plan graph" line and a
+later relayout keeps the previous graph on screen under a status banner. Smaller
+graphs, an environment without Web Workers (the single-file export is opened from
+`file://`), a worker that fails to start or dies, and a layout that throws all
+take the main-thread path, so an error such as Dagre's intersection failure
+surfaces where it always has. The route starts the worker as soon as the expand
+guardrail dialog opens.
+
 The mount-time fit and every automatic re-fit (a scope switch, a resize) go
 through `useReadableFit`, which clamps the zoom to at least
 `MIN_READABLE_ZOOM` (1.1, so the smallest node text, 10px, renders at 11px on

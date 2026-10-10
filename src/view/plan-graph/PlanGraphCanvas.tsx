@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ReactFlow, MiniMap, Background, Panel, useReactFlow, useNodesInitialized, useStore, ReactFlowProvider, Position, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { useLayoutPrewarm } from './useLayoutPrewarm';
 import { layoutWithDagre, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT, STAGE_GROUP_PADDING_X, STAGE_GROUP_PADDING_Y, STAGE_GROUP_HEADER_HEIGHT, type PlanLayoutDirection } from './dagre-layout';
 import { boundsOf, viewportShowsAll, type Rect } from './readable-fit';
 import { useReadableFit } from './useReadableFit';
@@ -34,6 +35,10 @@ const edgeTypes = {
 // the edges (rather than the old negative z-index behind them) stops a routed
 // edge from painting over a box's finding chips; the boxes' fills are
 // translucent, so an edge crossing a box still reads through.
+// Stand-ins while the first large layout is still being computed.
+const NO_FLOW_NODES: Node[] = [];
+const NO_FLOW_EDGES: Edge[] = [];
+
 const STAGE_GROUP_Z = 1;
 const SEGMENT_GROUP_Z = 2;
 const PLAN_NODE_Z = 3;
@@ -214,15 +219,10 @@ export function PlanGraphCanvas({
 }) {
   const { ref: containerRef, tick: resizeTick } = useResizeTick();
   const narrow = useNarrowViewport();
-  const { flowNodes, flowEdges, graphBounds } = useMemo(() => {
-    // Sum `exclusiveDurationShare` (a true, non-overlapping partition of each
-    // stage's wall time), not `durationShare` (the mode-selected value shown
-    // on each node): under 'inclusive' mode `durationShare` double/triple-
-    // counts a node's own time into every ancestor, so summing it directly
-    // would make this total balloon by tree depth and distort every node's
-    // percentage. Falls back to `durationShare` for hand-built fixtures
-    // (tests) that don't set the exclusive field separately.
-    const totalDuration = model.nodes.reduce((sum, n) => sum + (n.exclusiveDurationShare ?? n.durationShare ?? 0), 0);
+  // Everything the layout depends on, apart from the node data. Kept separate so
+  // the large layouts can be computed in a worker (useLayoutPrewarm) before the
+  // memo below, which then finds them in the layout cache.
+  const layoutPlan = useMemo(() => {
     const groupOf = (n: PlanGraphNodeData) => `segment-${n.segmentIndex}`;
     // The outer per-real-stage box only appears in the full-plan view: the
     // single-stage view already shows one segment box for the one stage in view,
@@ -243,18 +243,16 @@ export function PlanGraphCanvas({
     // readable zoom. Only a phone-width canvas stacks the plan bottom-to-top, so
     // it scrolls down instead.
     const direction: PlanLayoutDirection = narrow && layoutNodes.length <= STACK_MAX_NODES ? 'BT' : 'RL';
-    const laidOutVisible = layoutWithDagre(layoutNodes, layoutEdges, { groupOf, direction });
-
     // A fully-filtered segment/stage (every member hidden) still gets a box,
     // positioned from a full-model layout fallback. That compound Dagre pass
-    // over every node is the most expensive thing this memo does (roughly the
+    // over every node is the most expensive layout the canvas does (roughly the
     // visible pass again, but over the larger unfiltered set), so run it only
     // when a group is genuinely missing from the visible layout. In a normal
     // full open each Exchange-bounded segment keeps its exchange node under the
     // basic filter, so nothing is missing and this pass is skipped entirely.
-    const coveredSegments = new Set(laidOutVisible.map(groupOf));
+    const coveredSegments = new Set(layoutNodes.map(groupOf));
     const coveredStages = showStageGroup
-      ? new Set(laidOutVisible.map(stageGroupOf).filter((id): id is string => id != null))
+      ? new Set(layoutNodes.map(stageGroupOf).filter((id): id is string => id != null))
       : null;
     const needsFullFallback =
       model.nodes.some((n) => !coveredSegments.has(groupOf(n))) ||
@@ -263,6 +261,30 @@ export function PlanGraphCanvas({
           const id = stageGroupOf(n);
           return id != null && !coveredStages.has(id);
         }));
+    return { groupOf, showStageGroup, stageGroupOf, layoutNodes, layoutEdges, direction, needsFullFallback };
+  }, [model, segmentStageIds, visibleNodeIds, visibleEdges, narrow]);
+
+  const layoutRequests = useMemo(() => {
+    const { groupOf, layoutNodes, layoutEdges, direction, needsFullFallback } = layoutPlan;
+    const requests = [{ nodes: layoutNodes, edges: layoutEdges, groupOf, direction }];
+    if (needsFullFallback) requests.push({ nodes: model.nodes, edges: model.edges, groupOf, direction });
+    return requests;
+  }, [layoutPlan, model]);
+  const layoutReady = useLayoutPrewarm(layoutRequests);
+
+  const built = useMemo(() => {
+    // A large layout still running in the worker: nothing to build yet.
+    if (!layoutReady) return null;
+    const { groupOf, showStageGroup, stageGroupOf, layoutNodes, layoutEdges, direction, needsFullFallback } = layoutPlan;
+    // Sum `exclusiveDurationShare` (a true, non-overlapping partition of each
+    // stage's wall time), not `durationShare` (the mode-selected value shown
+    // on each node): under 'inclusive' mode `durationShare` double/triple-
+    // counts a node's own time into every ancestor, so summing it directly
+    // would make this total balloon by tree depth and distort every node's
+    // percentage. Falls back to `durationShare` for hand-built fixtures
+    // (tests) that don't set the exclusive field separately.
+    const totalDuration = model.nodes.reduce((sum, n) => sum + (n.exclusiveDurationShare ?? n.durationShare ?? 0), 0);
+    const laidOutVisible = layoutWithDagre(layoutNodes, layoutEdges, { groupOf, direction });
     const laidOutFull = needsFullFallback
       ? layoutWithDagre(model.nodes, model.edges, { groupOf, direction })
       : laidOutVisible;
@@ -426,7 +448,19 @@ export function PlanGraphCanvas({
       flowNodes.map((n) => ({ x: n.position.x, y: n.position.y, width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 })),
     );
     return { flowNodes, flowEdges, graphBounds };
-  }, [model, findings, stageId, segmentStageIds, visibleNodeIds, visibleEdges, onSelectStage, narrow]);
+  }, [model, findings, stageId, segmentStageIds, visibleEdges, onSelectStage, layoutPlan, layoutReady]);
+
+  // While a new large layout is computed the previous graph stays on screen (the
+  // first open has none, so it shows the loading line instead).
+  const lastBuilt = useRef(built);
+  useEffect(() => {
+    if (built) lastBuilt.current = built;
+  }, [built]);
+  const shown = built ?? lastBuilt.current;
+  const layingOut = built == null;
+  const flowNodes = shown?.flowNodes ?? NO_FLOW_NODES;
+  const flowEdges = shown?.flowEdges ?? NO_FLOW_EDGES;
+  const graphBounds = shown?.graphBounds ?? null;
 
   // Collapsed by default: the key is about 450x190 px and would cover a corner
   // of the graph on first open. The rail's Legend button opens it.
@@ -475,6 +509,14 @@ export function PlanGraphCanvas({
     onSelectNode?.(id);
   };
 
+  if (!shown) {
+    return (
+      <p role="status" aria-live="polite" aria-label="Laying out plan graph" className="p-6 text-sm text-muted-foreground">
+        Laying out plan graph…
+      </p>
+    );
+  }
+
   return (
     <ReactFlowProvider>
       {/* One tooltip provider for the whole canvas. Node finding badges and
@@ -522,6 +564,13 @@ export function PlanGraphCanvas({
           >
             <Background />
             <ViewportAutoFit resizeTick={resizeTick} fitSignal={fitSignal} centerRequest={centerRequest} sheetNodeId={sheetOpen ? selectedNode.id : null} />
+            {layingOut ? (
+              <Panel position="top-center">
+                <p role="status" aria-live="polite" className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-sm">
+                  Laying out plan graph…
+                </p>
+              </Panel>
+            ) : null}
             {allNodesFiltered ? (
               <Panel position="top-center">
                 <p role="status" className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-sm">

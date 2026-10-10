@@ -4,6 +4,7 @@ import { resolvePlanTree } from '@/view/widgets/PlanView';
 import { buildPlanGraphModel } from '@sparkforensics/core/plan-graph-model.ts';
 import { store } from '@/store/store';
 import { PlanGraphCanvas, type CenterRequest } from '@/view/plan-graph/PlanGraphCanvas';
+import { warmLayoutWorker } from '@/view/plan-graph/layout-worker-client';
 import { ExpandConfirmDialog } from '@/view/plan-graph/ExpandConfirmDialog';
 import { Topbar } from '@/view/Topbar';
 import { DocsLink } from '@/view/DocsContext';
@@ -235,6 +236,12 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
     fullModel != null &&
     fullModel.nodes.length > EXPAND_GUARDRAIL_THRESHOLD;
   const guardrailOpen = confirmExpandOpen || initialFullOversized;
+
+  // The guardrail dialog means a large graph is about to be laid out; the user
+  // reads it while the layout worker loads.
+  useEffect(() => {
+    if (guardrailOpen) warmLayoutWorker();
+  }, [guardrailOpen]);
 
   useEffect(() => {
     // ExpandConfirmDialog (Radix Dialog) has its own Escape listener and
