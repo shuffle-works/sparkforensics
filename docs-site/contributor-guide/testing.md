@@ -170,9 +170,10 @@ it serves the app and answers `initialize` on `/mcp`.
 
 ### Benchmarking and output identity
 
-Dependency-free tools measure a performance change and prove it left the
-analysis output alone. Run them on a quiet machine (`cat /proc/loadavg`) and
-report the load average next to the numbers.
+These tools measure a performance change and prove it left the analysis output
+alone. The first two need no dependencies beyond Node. `bench-dashboard` uses
+Playwright. Run them on a quiet machine (`cat /proc/loadavg`) and report the
+load average next to the numbers.
 
 - `node dev/bench-phases.mjs [--repeat N] [--json out.json] <log>[:<baseline>]...`
   times each phase in a fresh `node` child per repeat (cold JIT, as in a real
@@ -185,8 +186,9 @@ report the load average next to the numbers.
   drives the production build (`npx vite build` first) in a real browser, one
   fresh context per repeat, and reports the median time from dropping the log
   to the first rendered dashboard, to the point no lazy-widget skeleton is
-  left, the main-thread long tasks in between, the JS heap, the peak resident memory of the whole browser, and the long tasks
-  of each report-tab switch. `--dist` serves another build output, so a
+  left, the main-thread long tasks in between, the JS heap, the peak resident
+  memory of the whole browser, and the long tasks of each report-tab switch.
+  `--dist` serves another build output, so a
   baseline build copied aside can be interleaved with the branch build.
   `BENCH_BROWSER_CHANNEL=chrome` uses the system Chrome when Playwright's own
   browser is not installed. It starts and stops its own `vite preview`.
