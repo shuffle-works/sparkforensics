@@ -28,6 +28,12 @@ instead. A `BT` node's handles move to `Position.Bottom` (target) and
 `Position.Top` (source) through the `sourcePosition`/`targetPosition` the canvas
 sets on it.
 
+`layoutWithDagre` caches positions by topology: the direction, each node's id and
+group, and the edges. Switching the duration attribution (same topology, new node
+data) or returning to a node filter or scope already laid out reads the positions
+back instead of running dagre again, which costs about 1ms per node. The cache
+holds the six most recently used layouts, and a layout that throws is not cached.
+
 The mount-time fit and every automatic re-fit (a scope switch, a resize) go
 through `useReadableFit`, which clamps the zoom to at least
 `MIN_READABLE_ZOOM` (1.1, so the smallest node text, 10px, renders at 11px on
