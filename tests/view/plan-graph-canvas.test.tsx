@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { render, screen, within, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PlanGraphCanvas } from '../../src/view/plan-graph/PlanGraphCanvas';
-import { layoutWithDagre } from '../../src/view/plan-graph/dagre-layout';
+import { layoutWithDagre, runDagre, clearLayoutCache } from '../../src/view/plan-graph/dagre-layout';
+import { WORKER_LAYOUT_MIN_NODES, overrideLayoutWorkerFactory } from '../../src/view/plan-graph/layout-worker-client';
 import * as dagreLayout from '../../src/view/plan-graph/dagre-layout';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import { docsUrl } from '@sparkforensics/core/docs-config.ts';
@@ -712,5 +713,68 @@ describe('all-nodes-hidden hint', () => {
   it('shows no hint when some operators are visible', () => {
     render(<PlanGraphCanvas model={model()} showMiniMap={false} stageId={1} visibleNodeIds={new Set(['a'])} visibleEdges={[]} />);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+});
+
+describe('large graph laid out in the layout worker', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  // A chain of segment-grouped nodes at the size where layouts leave the main thread.
+  function largeModel(): PlanGraphModel {
+    const nodes = Array.from({ length: WORKER_LAYOUT_MIN_NODES + 10 }, (_, i) => ({
+      id: `n${i}`, sourceNodeId: `n${i}`, label: `Op ${i}`, category: 'transform' as const, operatorDetail: '', primaryMetric: '',
+      segmentIndex: Math.floor(i / 10), splitRole: null, durationShare: 1,
+    }));
+    const edges = nodes.slice(1).map((n, i) => ({ id: `e${i}`, source: nodes[i].id, target: n.id }));
+    return model({ nodes, edges, scope: 'full' });
+  }
+
+  // The client keeps one worker for the module's lifetime, so a single fake that runs
+  // the real layout serves every test here; each reply is held until the test flushes it.
+  const replies: Array<() => void> = [];
+  overrideLayoutWorkerFactory(() => {
+    const fake = {
+      onmessage: null as null | ((e: { data: unknown }) => void),
+      onerror: null,
+      onmessageerror: null,
+      terminate() {},
+      postMessage(message: { id: number; job: Parameters<typeof runDagre>[0] }) {
+        const positions = [...runDagre(message.job)].map(([id, p]) => [id, p.x, p.y]);
+        replies.push(() => fake.onmessage?.({ data: { id: message.id, positions } }));
+      },
+    };
+    return fake as unknown as Worker;
+  });
+  beforeEach(() => {
+    replies.length = 0;
+    clearLayoutCache();
+  });
+
+  it('shows a loading line while the worker lays the graph out, then the graph', async () => {
+    vi.stubGlobal('Worker', class {});
+
+    render(<PlanGraphCanvas model={largeModel()} showMiniMap={false} stageId={1} />);
+    expect(screen.getByRole('status', { name: 'Laying out plan graph' })).toBeInTheDocument();
+    expect(screen.queryByText('Op 0')).not.toBeInTheDocument();
+
+    await act(async () => { replies.splice(0).forEach((reply) => reply()); });
+    expect(await screen.findByText('Op 0')).toBeInTheDocument();
+    expect(screen.queryByRole('status', { name: 'Laying out plan graph' })).not.toBeInTheDocument();
+  });
+
+  it('watches the graph container for resizes once the worker layout lands', async () => {
+    vi.stubGlobal('Worker', class {});
+    const observed: Element[] = [];
+    vi.stubGlobal('ResizeObserver', class {
+      observe(el: Element) { observed.push(el); }
+      unobserve() {}
+      disconnect() {}
+    });
+
+    render(<PlanGraphCanvas model={largeModel()} showMiniMap={false} stageId={1} />);
+    await act(async () => { replies.splice(0).forEach((reply) => reply()); });
+    const node = await screen.findByText('Op 0');
+    const rail = screen.getByRole('button', { name: /fit to view/i });
+    expect(observed.some((el) => el.isConnected && el.contains(node) && el.contains(rail))).toBe(true);
   });
 });
