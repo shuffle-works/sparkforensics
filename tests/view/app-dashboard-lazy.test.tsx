@@ -47,6 +47,7 @@ beforeEach(() => {
     status: 'idle',
     shsParsing: false,
     errorMessage: null,
+    compareLoad: null,
     parse: { pct: 0, lines: 0, etaMs: null },
   });
 });
@@ -56,6 +57,17 @@ test('idle landing does not load the dashboard implementation', () => {
 
   expect(screen.getByTestId('drop-zone')).toBeInTheDocument();
   expect(dashboardModule.evaluated).toBe(false);
+});
+
+test('a two-run comparison load does not load the dashboard implementation', async () => {
+  store.setState({ compareLoad: { current: 1 } });
+
+  render(<App />);
+
+  expect(screen.getByText('Reading the event log')).toBeInTheDocument();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(dashboardModule.evaluated).toBe(false);
+  expect(warmWidgetChunks).not.toHaveBeenCalled();
 });
 
 test('parsing loads the dashboard implementation and warms the widget chunks', async () => {

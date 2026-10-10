@@ -135,10 +135,9 @@ function AppRoutes() {
   const comparisonActive = useStore((s) => s.comparison.active);
   const compareLoad = useStore((s) => s.compareLoad);
 
-  const parsing = status === 'parsing' || compareLoad != null;
   useEffect(() => {
-    if (parsing) preloadDashboard();
-  }, [parsing]);
+    if (status === 'parsing') preloadDashboard();
+  }, [status]);
 
   if (compareLoad) {
     return <ParseProgress label={`Parsing run ${compareLoad.current} of 2`} />;
