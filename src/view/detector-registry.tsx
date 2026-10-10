@@ -1,5 +1,6 @@
 import { lazy, type ComponentType } from 'react';
 
+import { warmLazy } from '@/lib/warm-lazy';
 import type { DetectorInfo } from '@sparkforensics/core/detector-docs.ts';
 import type { AppModel, Finding, FindingType, TaskData } from '@sparkforensics/core/types.ts';
 
@@ -85,6 +86,12 @@ setDisplayName(CacheUtilization, 'CacheUtilization');
 setDisplayName(CoreUsageArea, 'CoreUsageArea');
 setDisplayName(AutoscalingChurn, 'AutoscalingChurn');
 setDisplayName(IncompleteRun, 'IncompleteRun');
+
+/** Starts loading every widget chunk, so a dashboard opened after a parse shows its widgets without
+ * a Suspense fallback (see `warmLazy`). */
+export function warmWidgetChunks(): void {
+  warmLazy(...Object.values(REGISTRY).map((entry) => entry.component));
+}
 
 export interface WidgetProps {
   appModel: AppModel;
