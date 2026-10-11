@@ -1,5 +1,23 @@
 # sparkforensics-web
 
+## 0.29.1
+
+### Patch Changes
+
+- 43a5e93: The configuration audit drops the findings that contradict how Spark behaves, and reads the overhead settings a run sets. Runs that carried these findings lose them, so a CI gate or baseline that counted them moves.
+  
+  - The shuffle-service warning is gone. Spark refuses to start dynamic allocation without the external shuffle service unless shuffle tracking, shuffle-block decommissioning or a reliable shuffle storage plugin is on, and shuffle tracking defaults to on from Spark 3.4, so a logged run with dynamic allocation on and the service off always had one of them and its shuffle data was not at risk.
+  - The `minExecutors` above `maxExecutors` finding is gone. Spark throws on that pair at startup, so no run that wrote an event log has it. The unbounded `maxExecutors` note stays.
+  - The Kryo serializer note appears only on a run with at least one stage outside a SQL execution. DataFrame and SQL shuffles and caches use Spark's own row format, so `spark.serializer` does not apply to them. `auditConfig` takes the run's stages as a second argument; without them the note stays silent.
+  - The low `memoryOverhead` check compares against the default Spark would compute from the run's own `spark.executor.memoryOverheadFactor` (Spark 3.3 and later) and `spark.executor.minMemoryOverhead` (Spark 4.0 and later), falling back to 10% and 384 MiB, instead of always using those two values.
+- 9b80793: Plan operators now carry the SQL metric values that executors report, the figures Spark's SQL tab shows. They are read from the accumulables of each `SparkListenerStageCompleted` event, where a plan metric's value is its running total, so a later stage replaces an earlier one's value. A value from the driver's own accumulator updates still wins when both exist. Exchange `data size`, operator `peak memory`, `spill size`, `number of output rows` on joins and scans, `data sent to Python workers` and the operator timing metrics resolve to real values; `average` metrics are left out, because their total is not the average the SQL tab computes.
+  
+  - `underBroadcast` compares Exchange data sizes that are now populated, so it fires on sort-merge joins with a small side where it previously saw `0 KB` on both. Its logic is unchanged. The corpus gains 29 `underBroadcast` findings, all `info` band.
+  - Plan-shape fingerprints skip executor-side metrics, so `duplicatePlanSubtree` and `cachingOpportunity` ids are unchanged.
+  - The plan view shows the new values, and its per-operator time attribution weights operators by their timing metrics where it used to split stage time evenly.
+- 60be47d: Stop the landing page from preloading the charts and plan-graph vendor chunks. React and its runtime modules are now emitted in `react-vendor` instead of inside those two chunks, so the entry chunk no longer imports from them and they load only with the views that use them.
+- 73b5807: Run reports and run comparisons compute a stage's plan-derived identity once instead of once per stage. The SQL plan tree is indexed by stage id once per execution, and a stage with no attributed plan node reuses a cached whole-tree identity. On a 3.5 GB log the report's metrics step drops from about 0.56 s to about 0.10 s, a comparison of two 566 MB logs from about 0.98 s to about 0.25 s, and comparing runs in the dashboard no longer blocks the main thread for a second. The analysis output is unchanged.
+
 ## 0.29.0
 
 ### Minor Changes
