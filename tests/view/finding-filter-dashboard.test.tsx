@@ -15,8 +15,23 @@ function readyAppModel() {
     stages: new Map([
       [1, { id: 1, submittedAt: 0, completedAt: 1000 }],
       [2, { id: 2, submittedAt: 0, completedAt: 1000 }],
+      [3, { id: 3, submittedAt: 0, completedAt: 1000 }],
+      [4, { id: 4, submittedAt: 0, completedAt: 1000 }],
+      [5, { id: 5, submittedAt: 0, completedAt: 1000 }],
     ]),
   };
+}
+
+// The verdict owns the top three findings (by potential savings) and the
+// Findings tab lists the rest. These three, each with a saving no other test
+// finding has, fill the verdict so the finding under test lands in the board.
+function verdictLeads(impactBand: Finding['impactBand'] = 'warning'): Finding[] {
+  const saving = { basis: 'serial', wallClock: { low: 9_000, high: 9_000 }, estimateMethod: 'modeled' } as Finding['impactEstimate'];
+  return [
+    { type: 'gc', stageId: 3, impactBand, recommendation: 'Lead gc.', impactEstimate: saving },
+    { type: 'shuffle', stageId: 4, impactBand, recommendation: 'Lead shuffle.', impactEstimate: saving },
+    { type: 'partitionSizing', stageId: 5, impactBand, recommendation: 'Lead partitions.', impactEstimate: saving },
+  ] as Finding[];
 }
 
 async function waitForDashboard() {
@@ -111,11 +126,11 @@ test('mounting with URL filter params filters the board on load', async () => {
   expect(screen.getByRole('button', { name: 'Filter by impact: critical' })).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('an active stage filter drops the configAudit row from All recommendations', async () => {
+test('an active stage filter drops the configAudit row from the Findings tab', async () => {
   const user = userEvent.setup();
   const appModel = readyAppModel() as any;
   appModel.app = { ...appModel.app, config: { 'spark.app.name': 'demo' }, resources: { dynamicAllocationEnabled: true } };
-  const catalog: Finding[] = [{ type: 'spill', stageId: 1, impactBand: 'warning' }];
+  const catalog: Finding[] = [{ type: 'spill', stageId: 1, impactBand: 'warning' }, ...verdictLeads()];
   store.setState({ status: 'ready', appModel, catalog, configFindings: auditConfig(appModel.app) });
   render(<App />);
   await waitForDashboard();
@@ -130,7 +145,7 @@ test('filtering to a CFG-only type keeps config matches and does not show the no
   const user = userEvent.setup();
   const appModel = readyAppModel() as any;
   appModel.app = { ...appModel.app, config: { 'spark.app.name': 'demo' }, resources: { dynamicAllocationEnabled: true } };
-  const catalog: Finding[] = [{ type: 'spill', stageId: 1, impactBand: 'warning' }];
+  const catalog: Finding[] = [{ type: 'spill', stageId: 1, impactBand: 'warning' }, ...verdictLeads()];
   store.setState({ status: 'ready', appModel, catalog, configFindings: auditConfig(appModel.app) });
   render(<App />);
   await waitForDashboard();
@@ -209,7 +224,7 @@ test('Show evidence in the stage dialog clears the filter that hides the target,
   await waitForDashboard();
   expect(hasFixTheseFirstRow('skew')).toBe(false);
 
-  await user.click(screen.getByRole('button', { name: 'Stage 1 details' }));
+  await user.click(screen.getByRole('button', { name: 'Stage 1' }));
   const dialog = await screen.findByRole('dialog');
   const skewStep = within(dialog).getAllByTestId('stage-finding').find((step) => step.textContent?.includes('Fix skew.'))!;
   await user.click(within(skewStep).getByRole('button', { name: /show evidence/i }));
@@ -219,31 +234,35 @@ test('Show evidence in the stage dialog clears the filter that hides the target,
   expect(new URLSearchParams(window.location.search).get('type')).toBeNull();
 });
 
-test('a verdict step hidden by the active filter clears only the dimension that hides it, and says so', async () => {
+test('a verdict step that routes to another step\'s card clears only the dimension that hides it, and says so', async () => {
   const user = userEvent.setup();
   const scrollIntoView = vi.fn();
   Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, writable: true, value: scrollIntoView });
   window.history.replaceState({}, '', '/?impact=critical&type=skew');
+  const saving = (ms: number) => ({ basis: 'serial', wallClock: { low: ms, high: ms }, estimateMethod: 'modeled' }) as Finding['impactEstimate'];
   store.setState({
     status: 'ready', appModel: readyAppModel() as any,
     catalog: [
-      {
-        type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Fix spill.',
-        impactEstimate: { basis: 'serial', wallClock: { low: 9_000, high: 9_000 }, estimateMethod: 'modeled' },
-      },
+      { type: 'spill', stageId: 1, impactBand: 'critical', recommendation: 'Fix spill.', impactEstimate: saving(9_000) },
+      { type: 'spill', stageId: 2, impactBand: 'critical', recommendation: 'Fix more spill.', impactEstimate: saving(8_000) },
       { type: 'skew', stageId: 2, impactBand: 'critical', recommendation: 'Fix skew.' },
     ],
   });
   render(<App />);
   await waitForDashboard();
-  expect(hasFixTheseFirstRow('spill')).toBe(false);
 
-  const firstStep = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')[0];
-  expect(firstStep).toHaveTextContent('Stage 1');
-  await user.click(within(firstStep).getByRole('button', { name: /show evidence/i }));
+  const steps = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step');
+  expect(steps[0]).toHaveTextContent('Stage 1');
+  // The first spill step shows its card in place, which no board filter can hide: nothing is cleared.
+  await user.click(within(steps[0]).getByRole('button', { name: /show evidence/i }));
+  expect(screen.queryByText(/Cleared the .* filter/)).not.toBeInTheDocument();
+  expect(new URLSearchParams(window.location.search).get('type')).toBe('skew');
+
+  // The second spill step shares that card, so it routes to it and clears the type filter hiding spill.
+  expect(steps[1]).toHaveTextContent('Stage 2');
+  await user.click(within(steps[1]).getByRole('button', { name: /show evidence/i }));
 
   expect(screen.getByText('Cleared the task skew filter to show this finding.')).toHaveAttribute('role', 'status');
-  expect(hasFixTheseFirstRow('spill')).toBe(true);
   await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
   const params = new URLSearchParams(window.location.search);
   expect(params.get('type')).toBeNull();
@@ -290,16 +309,18 @@ test('the top bar count chip clears the filter that hides the band it counts, an
       { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
       { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' },
       { type: 'skew', stageId: 2, impactBand: 'critical', recommendation: 'Fix skew.' },
+      ...verdictLeads('critical'),
     ],
   });
   render(<App />);
   await waitForDashboard();
-  expect(screen.queryByRole('heading', { level: 2, name: 'Critical' })).not.toBeInTheDocument();
+  // With the verdict's steps holding F1-F3, the bands in Findings are sub-headings of "More findings".
+  expect(screen.queryByRole('heading', { level: 3, name: 'Critical' })).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole('button', { name: '2 critical: show them in Findings' }));
+  await user.click(screen.getByRole('button', { name: '5 critical: show them in Findings' }));
 
   expect(screen.getByText('Cleared the spill filter to show the critical findings.')).toHaveAttribute('role', 'status');
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Critical' })));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 3, name: 'Critical' })));
   const params = new URLSearchParams(window.location.search);
   expect(params.get('type')).toBeNull();
   expect(params.get('stage')).toBe('1');
@@ -313,6 +334,7 @@ test('the top bar count chip reveals a band whose only finding is core locality'
     catalog: [
       { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'Fix spill.' },
       { type: 'coreLocality', stageId: null, impactBand: 'critical', value: 40, recommendation: 'Check locality.', nonLocalTaskCount: 0 },
+      ...verdictLeads(),
     ],
   });
   render(<App />);
@@ -321,7 +343,7 @@ test('the top bar count chip reveals a band whose only finding is core locality'
   await user.click(screen.getByRole('button', { name: '1 critical: show them in Findings' }));
 
   expect(screen.getByText('Cleared the spill filter to show the critical findings.')).toHaveAttribute('role', 'status');
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Critical' })));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 3, name: 'Critical' })));
   expect(new URLSearchParams(window.location.search).get('type')).toBeNull();
 });
 
@@ -330,16 +352,16 @@ test('the top bar count chip still lands when the filter empties the board', asy
   window.history.replaceState({}, '', '/?impact=info');
   store.setState({
     status: 'ready', appModel: readyAppModel() as any,
-    catalog: [{ type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' }],
+    catalog: [{ type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' }, ...verdictLeads('critical')],
   });
   render(<App />);
-  const chip = await screen.findByRole('button', { name: '1 critical: show them in Findings' });
+  const chip = await screen.findByRole('button', { name: '4 critical: show them in Findings' });
   expect(screen.queryByRole('tab', { name: 'Findings' })).not.toBeInTheDocument();
 
   await user.click(chip);
 
   expect(screen.getByText('Cleared the info impact filter to show the critical findings.')).toBeInTheDocument();
-  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: 'Critical' })));
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { level: 3, name: 'Critical' })));
 });
 
 test('in Basic view, a route that clears the last active filter hides the bar and its notice together', async () => {
@@ -349,20 +371,58 @@ test('in Basic view, a route that clears the last active filter hides the bar an
   store.setState({
     status: 'ready', appModel: readyAppModel() as any, widgetDensity: 'basic',
     catalog: [
-      { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.' },
-      { type: 'spill', stageId: 2, impactBand: 'info', recommendation: 'Fix spill.' },
+      { type: 'skew', stageId: 1, impactBand: 'critical', recommendation: 'Fix skew.', impactEstimate: { basis: 'serial', wallClock: { low: 9_000, high: 9_000 }, estimateMethod: 'modeled' } },
+      { type: 'skew', stageId: 2, impactBand: 'critical', recommendation: 'Fix more skew.', impactEstimate: { basis: 'serial', wallClock: { low: 8_000, high: 8_000 }, estimateMethod: 'modeled' } },
+      { type: 'spill', stageId: 3, impactBand: 'info', recommendation: 'Fix spill.' },
     ],
   });
   render(<App />);
   await waitForDashboard();
   expect(screen.getByRole('region', { name: 'Filter findings' })).toBeInTheDocument();
 
-  const firstStep = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')[0];
-  await user.click(within(firstStep).getByRole('button', { name: /show evidence/i }));
+  // The second skew step shares the first step's card, so it routes there and clears the impact filter.
+  const secondStep = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step')[1];
+  await user.click(within(secondStep).getByRole('button', { name: /show evidence/i }));
 
   expect(new URLSearchParams(window.location.search).get('impact')).toBeNull();
   expect(screen.queryByRole('region', { name: 'Filter findings' })).not.toBeInTheDocument();
   expect(screen.queryByText(/Cleared the info impact filter/)).not.toBeInTheDocument();
   // @ts-expect-error -- restore jsdom's default (no scrollIntoView)
   delete Element.prototype.scrollIntoView;
+});
+
+test('the verdict links to the rest with the Findings tab\'s count when each place has a second finding', async () => {
+  store.setState({
+    status: 'ready', appModel: readyAppModel() as any,
+    catalog: [
+      ...verdictLeads(),
+      ...[3, 4, 5].map((stageId) => ({ type: 'spill', stageId, impactBand: 'warning', recommendation: 'Fix spill.' }) as Finding),
+    ],
+  });
+  render(<App />);
+  await waitForDashboard();
+
+  const verdict = screen.getByTestId('run-verdict');
+  expect(within(verdict).getAllByTestId('next-step')).toHaveLength(3);
+  expect(within(verdict).getByRole('button', { name: 'More findings (3)' })).toBeInTheDocument();
+  expect(screen.getByTestId('more-findings-heading')).toHaveTextContent('More findings (3)');
+});
+
+test('a caveat card left after the verdict is not counted as a finding and the verdict shows no link', async () => {
+  const model = readyAppModel();
+  model.stages.set(7, { id: 7, submittedAt: 0, completedAt: 15_000 });
+  store.setState({
+    status: 'ready', appModel: model as any,
+    catalog: [
+      { type: 'skew', stageId: 7, impactBand: 'critical', recommendation: 'Fix skew.', impactEstimate: { basis: 'serial', wallClock: { low: 2_400, high: 2_400 }, estimateMethod: 'modeled' } },
+      { type: 'incompleteRun', stageId: null, impactBand: 'warning', valueText: 'missing', recommendation: 'No ApplicationEnd.' },
+    ] as Finding[],
+  });
+  render(<App />);
+  await waitForDashboard();
+
+  expect(screen.getByTestId('no-more-findings')).toHaveTextContent('No more findings to show.');
+  expect(screen.queryByTestId('more-findings-heading')).not.toBeInTheDocument();
+  expect(await screen.findByRole('heading', { name: 'Incomplete Run' })).toBeInTheDocument();
+  expect(within(screen.getByTestId('run-verdict')).queryByRole('button', { name: /More findings/ })).not.toBeInTheDocument();
 });

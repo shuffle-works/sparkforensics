@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildEvidenceReport } from '../src/evidence-report.js';
-import { makeStage } from './fixtures/stage-app-fixtures.js';
+import { makeStage, dataTail } from './fixtures/stage-app-fixtures.js';
 import { TRUNCATED_HOST_FRAGMENT, truncatedFailureRun } from './fixtures/truncated-failure-run.js';
 import { PER_STAGE_CHECK_TYPES } from '../src/check-coverage.ts';
 import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
@@ -12,7 +12,7 @@ function fixture() {
       startTime: 0, endTime: 5000, sparkVersion: '3.4.0', config: {},
     },
     stages: new Map([
-      [1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600 })],   // skew critical
+      [1, makeStage({ id: 1, taskDurationP50: 100, taskDurationP95: 600, tailAttribution: dataTail() })],   // skew critical
       [2, makeStage({ id: 2, shuffleReadBytes: 2 * 1024 * 1024 * 1024, fetchWaitTime: 10000 })], // shuffle critical
     ]),
     executors: { added: [], removed: [] },

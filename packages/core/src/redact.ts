@@ -9,6 +9,7 @@
 
 import { decodeCollections, encodeCollections, type ExportRunData } from './export-data.ts';
 import type { AppModel, Finding } from './types.ts';
+import { isDetectorConfKey, REDACTED_CONF_VALUE } from './spark-conf.ts';
 import { REDACTED_TEXT, redactTaskFailureGroup, type TaskFailureDetail } from './task-failure.ts';
 
 // Host / IP identifier patterns. Used to enumerate host names that surface only
@@ -123,8 +124,9 @@ function redactFailureText<T>(node: T): T {
 // spark.yarn.am.hostname) carry plain FQDN host names that neither
 // HOST_PATTERNS matches (no IP/EC2 shape) nor collectHostFields's by-key-name
 // walk catches (the literal key is the dotted Spark property name, never
-// `host` itself). app.config is a flat Record<string, string> unique to
-// redactRunModel: no other redact* export ships a raw Spark config dict.
+// `host` itself). app.config and each SQL execution's modifiedConfigs are
+// flat Record<string, string> dicts unique to redactRunModel: no other
+// redact* export ships a raw Spark config dict.
 // Known gap: a hostname value under a differently-named key isn't caught by
 // this suffix check. Confirmed against a real cluster config: spark.master,
 // spark.yarn.historyServer.address, and the plural YARN proxy/HA keys
@@ -248,7 +250,21 @@ export function redactComparison<T>(comparison: T): T {
 // this also walks executors.added/removed for their literal `host` field
 // (ExecutorAddedEvent.host), since raw executor records: not just findings
 //: reach data.js.
-type RunTree = Pick<ExportRunData, 'app' | 'executors' | 'catalog' | 'configFindings'>;
+type RunTree = Pick<ExportRunData, 'app' | 'executors' | 'catalog' | 'configFindings'> & {
+  // Each SQL execution carries the session settings it ran with (`modifiedConfigs`), which can hold
+  // the same host values the application config does.
+  sql?: Array<{ modifiedConfigs?: Record<string, string> }>;
+};
+
+// A per-query setting is whatever the job passed to spark.conf.set: a path, a bucket name, a host. A
+// detector reads only the Spark SQL tuning keys, so every other value is replaced by Spark's own
+// placeholder for a hidden value and keeps no job-written text.
+function withoutJobSetQueryValues<E extends { modifiedConfigs?: Record<string, string> }>(exec: E): E {
+  if (!exec.modifiedConfigs) return exec;
+  const kept = Object.fromEntries(Object.entries(exec.modifiedConfigs)
+    .map(([key, value]) => [key, isDetectorConfKey(key) ? value : REDACTED_CONF_VALUE]));
+  return { ...exec, modifiedConfigs: kept };
+}
 
 function redactRunTree<T extends RunTree>(input: T): T {
   const data = redactFailureText(input);
@@ -261,8 +277,10 @@ function redactRunTree<T extends RunTree>(input: T): T {
   collectHostFields(data.catalog, hosts);
   collectHostFields(data.configFindings, hosts);
   collectConfigHostValues(data.app?.config, hosts);
+  for (const exec of data.sql ?? []) collectConfigHostValues(exec.modifiedConfigs, hosts);
   scanTokens(data, [{ patterns: HOST_PATTERNS, out: hosts }, { patterns: APP_ID_PATTERNS, out: appIds }]);
-  const out = applyReplacements(data, { appIds, hosts });
+  const replaced = applyReplacements(data, { appIds, hosts });
+  const out = replaced.sql ? { ...replaced, sql: replaced.sql.map(withoutJobSetQueryValues) } : replaced;
   if (!out.app) return out;
   const app = withRedactedName(out.app);
   // spark.app.name repeats the name in the config the HTML export ships.

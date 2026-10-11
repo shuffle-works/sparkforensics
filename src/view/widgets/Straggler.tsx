@@ -10,6 +10,7 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import { useAnchoredRow } from '@/view/finding-anchor';
+import { stragglerCauseSummary } from '@sparkforensics/core/finding-presentation.ts';
 import type { StragglerFinding } from '@sparkforensics/core/finding-types.ts';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { canToggleSort } from '@/view/impact-sort';
@@ -22,9 +23,10 @@ import { usePagedRows } from '@/view/usePagedRows';
 export type StragglerProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
 
 // straggler reports whichever signal drove the finding: a speculative-retry
-// count or a straggler-task percentage, distinguished by its `unit` field.
+// count, a straggler-task percentage, or skew's duration ratio, distinguished by its `unit` field.
 function stragglerDetail(f: StragglerFinding): string {
   const value = numericValue(f);
+  if (f.unit === 'ratio') return `task duration ${f.metric} ${value}×`;
   return f.unit === 'count'
     ? `${value} speculative attempt${value === 1 ? '' : 's'} discarded`
     : `${formatMetricValue('pct', value)} of tasks straggled`;
@@ -49,6 +51,7 @@ function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appMod
         </AdvancedOnly>
       </div>
       <p className="text-xs text-muted-foreground">{stragglerDetail(finding)}</p>
+      {stragglerCauseSummary(finding) ? <p className="text-xs text-muted-foreground">{stragglerCauseSummary(finding)}</p> : null}
       <ImpactEstimate finding={finding} />
     </li>
   );

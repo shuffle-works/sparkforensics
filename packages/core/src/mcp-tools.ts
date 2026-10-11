@@ -1,5 +1,5 @@
 import { resolve as resolvePath, join, dirname } from 'node:path';
-import { existsSync, statSync, readFileSync } from 'node:fs';
+import { existsSync, statSync, readFileSync, readdirSync, type Stats } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { collectRun } from './cli/collect-run.ts';
@@ -72,17 +72,69 @@ interface CacheEntry { appModel: AppModel; cacheKey: string; lastAccess: number 
 
 const byRunId = new Map<string, CacheEntry>();   // runId -> { appModel, cacheKey, lastAccess }
 const byCacheKey = new Map<string, string>(); // cacheKey -> runId
+// Built comparisons, keyed by both runs and every option that changes the output. Each entry follows
+// its runs' TTL and eviction (deleteRunEntry), and the map is capped on its own: a comparison holds
+// a row per paired stage, and 8 runs allow 56 ordered pairs.
+const COMPARISON_CACHE_CAP = 16;
+interface ComparisonCacheEntry { runIdA: string; runIdB: string; built: ReturnType<typeof buildComparisonOutput> }
+const comparisonCache = new Map<string, ComparisonCacheEntry>();
+// Threshold overrides are one fixed object per server process (or DEFAULT for none): identity keys them.
+const thresholdsIds = new WeakMap<object, number>();
+let nextThresholdsId = 1;
+function thresholdsKey(thresholds: ThresholdOverrides | undefined): number {
+  if (!thresholds) return 0;
+  let id = thresholdsIds.get(thresholds);
+  if (id === undefined) {
+    id = nextThresholdsId++;
+    thresholdsIds.set(thresholds, id);
+  }
+  return id;
+}
+
 const pendingByCacheKey = new Map<string, Promise<{ runId: string; appModel: AppModel }>>(); // cacheKey -> in-flight Promise<{runId, appModel}>
 
 export function pathCacheKey(path: string): string {
   const resolved = resolvePath(path);
   if (!existsSync(resolved)) throw mcpError('invalid-event-log', `No such file: ${resolved}`);
+  const stat = statSync(resolved);
+  // A rolling event-log directory grows by appending to its live events_N file, which leaves the
+  // directory's own mtime and size alone: the key covers the files inside it.
+  if (stat.isDirectory()) return `path:${resolved}:${directoryStatKey(resolved)}`;
   // Size narrows a same-millisecond mtime collision; ctime narrows the case where a copy tool
   // (rsync --preserve-times, tar) restores an identical mtime+size for different content: ctime
   // can't be set by the copying tool, so it still reflects when the file landed on disk.
-  const { mtimeMs, ctimeMs, size } = statSync(resolved);
-  return `path:${resolved}:${mtimeMs}:${ctimeMs}:${size}`;
+  return `path:${resolved}:${fileStatKey(stat)}`;
 }
+
+function fileStatKey({ mtimeMs, ctimeMs, size }: Stats): string {
+  return `${mtimeMs}:${ctimeMs}:${size}`;
+}
+
+// The file count, newest mtime and ctime, and total size of the files under a directory (the
+// parts of a rolling log, which Spark appends to in place): any part growing, arriving or going
+// changes it.
+function directoryStatKey(dir: string): string {
+  let files = 0, mtimeMs = 0, ctimeMs = 0, size = 0;
+  const walk = (path: string, depth: number): void => {
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      const child = join(path, entry.name);
+      if (entry.isDirectory()) {
+        if (depth < ROLLING_LOG_DEPTH) walk(child, depth + 1);
+        continue;
+      }
+      const stat = statSync(child);
+      files++;
+      mtimeMs = Math.max(mtimeMs, stat.mtimeMs);
+      ctimeMs = Math.max(ctimeMs, stat.ctimeMs);
+      size += stat.size;
+    }
+  };
+  walk(dir, 0);
+  return `dir:${files}:${mtimeMs}:${ctimeMs}:${size}`;
+}
+// A rolling log's parts sit in the directory the path names, or one level down in its
+// eventlog_v2_* subdirectory.
+const ROLLING_LOG_DEPTH = 1;
 
 function shsCacheKey({ shsBaseUrl, appId, attemptId }: { shsBaseUrl: string; appId: string; attemptId?: string }): string {
   return `shs:${shsBaseUrl}:${appId}:${attemptId ?? ''}`;
@@ -99,6 +151,10 @@ function touch(runId: string): void {
 
 function deleteRunEntry(id: string, entry: CacheEntry): void {
   byRunId.delete(id);
+  // A comparison outlives neither of its runs: its entry goes with the first one evicted.
+  for (const [key, cached] of comparisonCache) {
+    if (cached.runIdA === id || cached.runIdB === id) comparisonCache.delete(key);
+  }
   if (byCacheKey.get(entry.cacheKey) === id) byCacheKey.delete(entry.cacheKey);
 }
 
@@ -119,6 +175,11 @@ function evictOverflow(): void {
     const entry = byRunId.get(oldestId);
     if (entry) deleteRunEntry(oldestId, entry);
   }
+}
+
+/** How many built comparisons the cache holds: the occupancy the cap and eviction rules bound. */
+export function comparisonCacheSize(): number {
+  return comparisonCache.size;
 }
 
 export function getCachedAppModel(runId: string): AppModel {
@@ -368,11 +429,30 @@ export async function compareRuns(
   // interactive stage-detail drill-down, which none of compare/matchStages/metricDeltas/findingsDelta
   // read. Findings/metrics come from `catalog` and appModel.stages/sql, both fully populated. Produces
   // identical output to the dashboard; the MCP tool just never exposes per-task drill-down.
-  const { comparison, output } = buildComparisonOutput(
-    { label: runIdA, appModel: appModelA, catalog: catalogA },
-    { label: runIdB, appModel: appModelB, catalog: catalogB },
-    { redact: opts?.redact, normalizePath: opts?.normalizePath, view: opts?.include?.includes('stagePairs') ? 'full' : 'summary' },
-  );
+  const view = opts?.include?.includes('stagePairs') ? 'full' : 'summary';
+  const cacheKey = JSON.stringify([runIdA, runIdB, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? []]);
+  let built = comparisonCache.get(cacheKey)?.built;
+  if (built) {
+    // Re-insert so the oldest entry is the least recently used.
+    comparisonCache.delete(cacheKey);
+    comparisonCache.set(cacheKey, { runIdA, runIdB, built });
+  } else {
+    built = buildComparisonOutput(
+      { label: runIdA, appModel: appModelA, catalog: catalogA },
+      { label: runIdB, appModel: appModelB, catalog: catalogB },
+      { redact: opts?.redact, normalizePath: opts?.normalizePath, view },
+    );
+    // Either run can be evicted while the other one is still being read or parsed (the awaits
+    // above): an entry for a run that is gone would outlive its eviction, so it is only kept
+    // while both are cached.
+    if (byRunId.has(runIdA) && byRunId.has(runIdB)) {
+      comparisonCache.set(cacheKey, { runIdA, runIdB, built });
+      while (comparisonCache.size > COMPARISON_CACHE_CAP) comparisonCache.delete(comparisonCache.keys().next().value!);
+    }
+  }
+  const { comparison } = built;
+  // A copy, so a caller that changes the result cannot change what the next caller is served.
+  const output = structuredClone(built.output);
 
   return {
     runIdA,

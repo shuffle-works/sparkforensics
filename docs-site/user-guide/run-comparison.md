@@ -60,8 +60,13 @@ open that stage's detail in the run's own dashboard, and **← Back to
 comparison** returns here. Below the table, **Re-planned work** lists queries
 that ran a different number of stages in the two runs, with the leftover
 stages and their total run time per side, and **Unmatched stages** lists
-stages that paired with nothing. Both open in the same side-by-side view. The
-table shows 25 pairs and reveals more on request.
+stages that paired with nothing. Both open in the same side-by-side view, and
+list stages by name next to their ID. The table shows 25 pairs and reveals more
+on request.
+
+When no stage pairs at all, the card says why in one sentence and shows **Pick
+a stage pair**: choose a baseline and a candidate stage, then **Compare pair**
+to open them side by side.
 
 The table columns read **Baseline** and **Candidate**; hover a column heading
 to see the full name of the run.

@@ -13,6 +13,7 @@ import { DocsSheet } from '@/view/DocsSheet';
 import { RunComparison } from '@/view/RunComparison';
 import { StageDetailProvider, useStageDetail } from '@/view/StageDetailContext';
 import { usePlanGraphRouteProps } from '@/view/usePlanGraphRouteProps';
+import { warmLazy } from '@/lib/warm-lazy';
 
 const PlanGraphRoute = lazy(() =>
   import('./view/PlanGraphRoute').then(({ PlanGraphRoute }) => ({ default: PlanGraphRoute })),
@@ -21,6 +22,13 @@ const PlanGraphRoute = lazy(() =>
 const DashboardRoute = lazy(() =>
   import('./view/Dashboard').then(({ Dashboard }) => ({ default: Dashboard })),
 );
+
+/** Loads the dashboard and its widget chunks while a log parses, so the dashboard renders without
+ * Suspense fallbacks once parsing finishes (see `warmLazy`). */
+function preloadDashboard() {
+  warmLazy(DashboardRoute);
+  void import('./view/detector-registry').then(({ warmWidgetChunks }) => warmWidgetChunks());
+}
 
 /** Resolves the two selected snapshots and renders the comparison. Closes the
  * comparison if either snapshot is gone. */
@@ -126,6 +134,10 @@ function AppRoutes() {
   const planGraphActive = useStore((s) => s.planGraph.active);
   const comparisonActive = useStore((s) => s.comparison.active);
   const compareLoad = useStore((s) => s.compareLoad);
+
+  useEffect(() => {
+    if (status === 'parsing') preloadDashboard();
+  }, [status]);
 
   if (compareLoad) {
     return <ParseProgress label={`Parsing run ${compareLoad.current} of 2`} />;

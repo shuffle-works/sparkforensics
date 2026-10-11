@@ -74,7 +74,7 @@ function LocalityChart({ stats }: { stats: LocalityStat[] }) {
     >
         <BarChart data={rows}>
           <CartesianGrid vertical={false} stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
-          <XAxis dataKey="locality" tick={{ fontSize: 10 }} />
+          <XAxis dataKey="locality" tick={{ fontSize: 12 }} />
           <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={32} />
           <Tooltip formatter={(value) => [`${Number(value)} task${Number(value) === 1 ? '' : 's'}`, 'Tasks']} />
           <Bar dataKey="count" name="Tasks">

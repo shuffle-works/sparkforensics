@@ -27,12 +27,105 @@ export const STAGE_GROUP_PADDING_X = 32;
 export const STAGE_GROUP_PADDING_Y = 64;
 export const STAGE_GROUP_HEADER_HEIGHT = 0;
 
+export type PlanLayoutDirection = 'RL' | 'BT';
+
+// A layout depends only on the topology: node ids, their group, the edges and
+// the direction. Flipping the duration mode, a finding refresh or returning to a
+// filter or scope already laid out changes the node data but not the topology, so
+// the positions are reused instead of running Dagre again (roughly 1ms per node).
+// Small and recency-ordered: a graph the user left a few views ago is not worth
+// holding on to.
+const LAYOUT_CACHE_LIMIT = 6;
+const layoutCache = new Map<string, Map<string, { x: number; y: number }>>();
+
+function layoutCacheKey(
+  nodes: PlanGraphNodeData[],
+  groupIds: (string | null)[],
+  edges: PlanGraphEdge[],
+  direction: PlanLayoutDirection,
+): string {
+  const nodePart = nodes.map((node, i) => `${node.id}\u0001${groupIds[i] ?? ''}`).join('\u0002');
+  const edgePart = edges.map((edge) => `${edge.source}\u0001${edge.target}`).join('\u0002');
+  return `${direction}\u0003${nodePart}\u0003${edgePart}`;
+}
+
+/** Drops every cached layout; tests use it to start from a cold cache. */
+export function clearLayoutCache(): void {
+  layoutCache.clear();
+}
+
+type LayoutOptions = { groupOf?: (node: PlanGraphNodeData) => string | null; direction?: PlanLayoutDirection };
+
+/** What a layout depends on, reduced to plain data so it can cross to a worker. */
+export interface LayoutJob {
+  key: string;
+  nodeIds: string[];
+  groupIds: (string | null)[];
+  edges: { source: string; target: string }[];
+  direction: PlanLayoutDirection;
+  compound: boolean;
+}
+
+export type LayoutPositions = Map<string, { x: number; y: number }>;
+
+function describeLayout(nodes: PlanGraphNodeData[], edges: PlanGraphEdge[], opts: LayoutOptions): LayoutJob {
+  const direction = opts.direction ?? 'RL';
+  const groupIds = nodes.map((node) => opts.groupOf?.(node) ?? null);
+  return {
+    key: layoutCacheKey(nodes, groupIds, edges, direction),
+    nodeIds: nodes.map((node) => node.id),
+    groupIds,
+    edges: edges.map((edge) => ({ source: edge.source, target: edge.target })),
+    direction,
+    compound: Boolean(opts.groupOf),
+  };
+}
+
+function rememberLayout(key: string, positions: LayoutPositions): void {
+  layoutCache.delete(key);
+  // Drops the least recently used entry first.
+  if (layoutCache.size >= LAYOUT_CACHE_LIMIT) layoutCache.delete(layoutCache.keys().next().value as string);
+  layoutCache.set(key, positions);
+}
+
+/** The cache key and plain-data description of a layout, or null when it is
+ * already cached (nothing to compute). Used to run the layout off the main thread. */
+export function pendingLayoutJob(
+  nodes: PlanGraphNodeData[],
+  edges: PlanGraphEdge[],
+  opts: LayoutOptions = {},
+): LayoutJob | null {
+  const job = describeLayout(nodes, edges, opts);
+  return layoutCache.has(job.key) ? null : job;
+}
+
+/** Stores a layout computed elsewhere (the layout worker) so the next
+ * `layoutWithDagre` for the same topology is a cache hit. */
+export function storeLayout(key: string, positions: LayoutPositions): void {
+  rememberLayout(key, positions);
+}
+
 export function layoutWithDagre(
   nodes: PlanGraphNodeData[],
   edges: PlanGraphEdge[],
-  opts: { groupOf?: (node: PlanGraphNodeData) => string | null } = {},
+  opts: LayoutOptions = {},
 ): LaidOutNode[] {
-  const g = new dagre.graphlib.Graph({ compound: Boolean(opts.groupOf) });
+  const job = describeLayout(nodes, edges, opts);
+  let positions = layoutCache.get(job.key);
+  if (!positions) positions = runDagre(job);
+  // Re-inserts a hit as well, so the least recently used entry is the first to go.
+  rememberLayout(job.key, positions);
+  const placed = positions;
+  return nodes.map((node) => {
+    const pos = placed.get(node.id)!;
+    return { ...node, position: { x: pos.x, y: pos.y } };
+  });
+}
+
+/** The Dagre pass itself. Pure: the layout worker runs it on the same job the
+ * main thread would, so both produce identical positions. */
+export function runDagre({ nodeIds, groupIds, edges, direction, compound }: LayoutJob): LayoutPositions {
+  const g = new dagre.graphlib.Graph({ compound });
   // RL: PlanGraphEdge.source is the parent/consumer, .target its child/producer.
   // Dagre places an edge's source at the higher-rank end, so 'RL' puts
   // reads/scans on the left and the root write on the right, matching the plan's
@@ -53,33 +146,40 @@ export function layoutWithDagre(
   // read/write split, and tight-tree assigns the same ranks a tree wants, so
   // the arrangement and grouping are preserved while the cost drops sharply.
   // ('longest-path' is faster still but produces degenerate placements here.)
-  g.setGraph({ rankdir: 'RL', nodesep: STAGE_GROUP_PADDING_Y * 2, ranksep: 60, ranker: 'tight-tree' });
+  //
+  // 'BT' is the same arrangement turned on its side (reads/scans on top, the
+  // root write at the bottom), used only on a phone-width canvas. The box
+  // clearance moves with the axes: stacked stage boxes now sit one rank apart,
+  // so ranksep takes the 2×STAGE_GROUP_PADDING_Y floor, and side-by-side boxes
+  // need 2×STAGE_GROUP_PADDING_X plus a gap for nodesep.
+  g.setGraph(
+    direction === 'BT'
+      ? { rankdir: 'BT', nodesep: STAGE_GROUP_PADDING_X * 2 + 24, ranksep: STAGE_GROUP_PADDING_Y * 2, ranker: 'tight-tree' }
+      : { rankdir: 'RL', nodesep: STAGE_GROUP_PADDING_Y * 2, ranksep: 60, ranker: 'tight-tree' },
+  );
   g.setDefaultEdgeLabel(() => ({}));
 
   const groups = new Set<string>();
-  if (opts.groupOf) {
-    for (const node of nodes) {
-      const group = opts.groupOf(node);
-      if (group) groups.add(group);
-    }
-    for (const group of groups) g.setNode(group, {});
-  }
+  for (const group of groupIds) if (group) groups.add(group);
+  for (const group of groups) g.setNode(group, {});
 
-  for (const node of nodes) {
-    g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
-    const group = opts.groupOf?.(node);
-    if (group) g.setParent(node.id, group);
-  }
+  nodeIds.forEach((id, i) => {
+    g.setNode(id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+    const group = groupIds[i];
+    if (group) g.setParent(id, group);
+  });
   for (const edge of edges) {
     g.setEdge(edge.source, edge.target);
   }
 
   dagre.layout(g);
 
-  return nodes.map((node) => {
-    const pos = g.node(node.id);
-    return { ...node, position: { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 } };
-  });
+  const positions: LayoutPositions = new Map();
+  for (const id of nodeIds) {
+    const pos = g.node(id);
+    positions.set(id, { x: pos.x - NODE_WIDTH / 2, y: pos.y - NODE_HEIGHT / 2 });
+  }
+  return positions;
 }
 
 // Derives each group's box from its members' own laid-out rectangles rather than

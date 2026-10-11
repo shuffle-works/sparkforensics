@@ -36,6 +36,8 @@ A tuned run says so wherever it reports:
   your override lets through. Tuning `slowHost` also labels `stageSlowness`
   findings (as `slowHost.<name>`), because a slow host hides a stage's
   slowness finding, so the override decides which of those you see.
+  Tuning `skew` labels `straggler` findings the same way (as `skew.<name>`),
+  because `straggler` reports the slow tails `skew`'s thresholds leave to it.
 - A clean check measured against a tuned threshold carries
   `tunedThresholds` too, with the tuned value and the default. Its
   `thresholdSummary` shows the tuned numbers for most detectors (for example

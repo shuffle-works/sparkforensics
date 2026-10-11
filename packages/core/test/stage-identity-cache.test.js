@@ -30,7 +30,56 @@ describe('planNodesOfStage', () => {
   });
 });
 
+describe('the plan walks are memoized per resolved tree', () => {
+  it('walks a tree for its stage nodes once, whichever stage asks', () => {
+    let reads = 0;
+    const counted = (name, stageIds, children = []) => {
+      const n = { name, detail: name, metrics: [], children };
+      Object.defineProperty(n, 'stageIds', { get() { reads++; return stageIds; } });
+      return n;
+    };
+    const root = counted('Root', [1, 2], [counted('A', [1]), counted('B', [2])]);
+    const { sql } = snapshotWith(root);
+    expect(planNodesOfStage({ id: 1, sqlExecutionId: 1 }, sql)).toHaveLength(2);
+    expect(reads).toBe(3);
+    expect(planNodesOfStage({ id: 2, sqlExecutionId: 1 }, sql)).toHaveLength(2);
+    expect(planNodesOfStage({ id: 1, sqlExecutionId: 1 }, sql)).toHaveLength(2);
+    expect(reads).toBe(3);
+  });
+});
+
 describe('stageIdentityWith whole-tree fallback', () => {
+  const countedNormalizer = () => {
+    const normalize = (d) => { normalize.calls++; return d; };
+    normalize.calls = 0;
+    return normalize;
+  };
+
+  it('digests a tree once per normalizer, shared by every stage that falls back to it', () => {
+    const snapshot = snapshotWith(node('Root', 'x 123', [], [node('Leaf', 'y 456', [])]));
+    const normalize = countedNormalizer();
+    const a = stageIdentityWith({ id: 7, name: 'Stage 7', sqlExecutionId: 1 }, snapshot, normalize);
+    expect(normalize.calls).toBe(2);
+    stageIdentityWith({ id: 7, name: 'Stage 7', sqlExecutionId: 1 }, snapshot, normalize);
+    const b = stageIdentityWith({ id: 8, name: 'Stage 8', sqlExecutionId: 1 }, snapshot, normalize);
+    expect(normalize.calls).toBe(2);
+    expect(a.split('§')[1]).toBe(b.split('§')[1]);
+  });
+
+  it('recomputes for a normalizer the per-tree cache dropped, and only that one', () => {
+    const snapshot = snapshotWith(node('Root', 'x', [], [node('Leaf', 'y', [])]));
+    const stage = { id: 7, name: 'Stage 7', sqlExecutionId: 1 };
+    const normalizers = Array.from({ length: 5 }, countedNormalizer);
+    for (const n of normalizers) stageIdentityWith(stage, snapshot, n);
+    // The cache keeps 4: the first normalizer was dropped by the fifth, the rest are still held.
+    stageIdentityWith(stage, snapshot, normalizers[4]);
+    stageIdentityWith(stage, snapshot, normalizers[1]);
+    expect(normalizers.map((n) => n.calls)).toEqual([2, 2, 2, 2, 2]);
+    stageIdentityWith(stage, snapshot, normalizers[0]);
+    expect(normalizers[0].calls).toBe(4);
+  });
+
+
   const snapshot = snapshotWith(node('Root', 'x 123', [], [node('Leaf', 'y 456', [])]));
   const stage = { id: 7, name: 'Stage 7', sqlExecutionId: 1 };
 

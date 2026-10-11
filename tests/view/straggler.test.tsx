@@ -33,10 +33,10 @@ test('surfaces the speculative-count detail and the card\'s fix', () => {
   renderStraggler(appModelWithStage(9), catalog, false);
   expect(screen.getByRole('heading', { name: 'Stragglers' })).toBeInTheDocument();
   expect(screen.getByText(/4 speculative attempts discarded/)).toBeInTheDocument();
-  expect(screen.getByText(/^Rule out a GC pause or a slow shuffle fetch/)).toBeInTheDocument();
+  expect(screen.getByText(/^Nothing in the log attributes the slow tasks/)).toBeInTheDocument();
 });
 
-test('states the card\'s fix, skewed-key/AQE pointer included, at every density', async () => {
+test('states the card\'s fix for a tail with no measured cause, with no skew-key advice, at every density', async () => {
   const catalog: Finding[] = [
     {
       type: 'straggler', stageId: 9, impactBand: 'warning', metric: 'stragglerShare', value: 35, unit: 'pct',
@@ -45,12 +45,12 @@ test('states the card\'s fix, skewed-key/AQE pointer included, at every density'
     } as Finding,
   ];
   renderStraggler(appModelWithStage(9), catalog, false);
-  expect(screen.getByText(/Rule out a GC pause or a slow shuffle fetch before assuming a hardware issue/)).toBeInTheDocument();
-  expect(screen.getByText(/AQE skew-join handling/)).toBeInTheDocument();
+  expect(screen.getByText(/check their input sizes, GC time and hosts before choosing a fix/)).toBeInTheDocument();
+  expect(screen.queryByText(/AQE skew-join handling|salt the key/)).toBeNull();
 
   store.getState().setWidgetDensity('advanced');
   renderStraggler(appModelWithStage(9), catalog, false);
-  expect(screen.getAllByText(/AQE skew-join handling/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/check their input sizes, GC time and hosts before choosing a fix/).length).toBeGreaterThan(0);
   store.getState().setWidgetDensity('basic');
 });
 
@@ -114,4 +114,21 @@ test('paginates the issue list 6-at-a-time', async () => {
   expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Next' }));
   expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
+});
+
+test('names the measured cause of the slow tail', () => {
+  const catalog: Finding[] = [
+    { type: 'straggler', stageId: 9, impactBand: 'warning', metric: 'stragglerShare', value: 12, unit: 'pct', cause: 'host', causeSharePct: 80, host: 'worker-7', hostTasks: 9, recommendation: 'r' } as Finding,
+  ];
+  renderStraggler(appModelWithStage(9), catalog, false);
+  expect(screen.getByText('Tasks piled on worker-7 (80% of their extra time)')).toBeInTheDocument();
+});
+
+test('surfaces skew\'s duration ratio for a tail only skew\'s gate admits', () => {
+  const catalog: Finding[] = [
+    { type: 'straggler', stageId: 9, impactBand: 'warning', metric: 'P95/median', value: 9, unit: 'ratio', recommendation: 'Task duration ratio (P95/median) is 9×.' } as Finding,
+  ];
+  renderStraggler(appModelWithStage(9), catalog, false);
+  expect(screen.getByText(/task duration P95\/median 9×/)).toBeInTheDocument();
+  expect(screen.queryByText(/of tasks straggled/)).toBeNull();
 });

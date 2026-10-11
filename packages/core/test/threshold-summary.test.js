@@ -19,7 +19,7 @@ describe('getThresholdSummary', () => {
 
   it('summarizes each emitted broadcast type, not the broadcastSizing entry', () => {
     expect(getThresholdSummary('overBroadcast')).toBe('a broadcast over 1 GiB');
-    expect(getThresholdSummary('underBroadcast')).toMatch(/size floor/);
+    expect(getThresholdSummary('underBroadcast')).toBe('a join side its type can broadcast, between 1 MiB and 1 GiB, that skipped broadcast');
     expect(getThresholdSummary('broadcastSizing')).toBe('criteria not met');
   });
 

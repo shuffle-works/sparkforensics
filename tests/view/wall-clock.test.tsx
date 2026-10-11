@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
+import path from 'node:path';
 import { test, expect } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { WallClock } from '../../src/view/widgets/WallClock';
 import type { AppModel } from '@sparkforensics/core/types.ts';
 import { store } from '../../src/store/store';
-import { CHART_COLORS } from '../../src/view/charts/ChartTheme';
 import { installInterpretation } from './_shared/interpretation';
+import { contrastRatio, installStylesheet, resolvedColor } from './_shared/css-contrast';
 
 // The widget renders the store's interpretation of the run, as the dashboard installs it.
 function renderWallClock(appModel: AppModel) {
@@ -44,15 +45,25 @@ test('renders a segment for each non-zero wall-clock component', () => {
   expect(screen.getAllByText('Idle').length).toBeGreaterThan(0);
 });
 
-test('the Idle legend label text stays full-strength color, even though its icon fades to match the bar', () => {
-  renderWallClock(makeAppModel());
-  // Recharts' legend icon and label text otherwise share one `entry.color`;
-  // idle's icon is deliberately remapped to a faded color-mix to match its
-  // 60%-opacity bar segment, but that same fade on 12px label text fails
-  // WCAG AA contrast, so the label must keep the full-strength color.
-  const label = screen.getAllByText('Idle').find((el) => el.tagName === 'SPAN' && el.closest('.recharts-legend-item-text'));
-  expect(label).toBeDefined();
-  expect(label?.style.color).toBe(CHART_COLORS.muted);
+test.each(['dark', 'light'])('every legend label renders in the text color with 4.5:1 on the %s panel and canvas', (theme) => {
+  // Recharts colors each label with its series fill inline; pale series colors fail WCAG AA as text.
+  const removeStylesheet = installStylesheet(document, path.join(__dirname, '../../src/index.css'));
+  if (theme === 'light') document.documentElement.dataset.theme = 'light';
+  try {
+    renderWallClock(makeAppModel());
+    for (const name of ['Startup', 'Stages active', 'Scheduler gaps', 'Idle']) {
+      const label = screen.getAllByText(name).find((el) => el.closest('.recharts-legend-item-text'));
+      expect(label, name).toBeDefined();
+      const color = resolvedColor(label!, 'color');
+      expect(color, name).toBe(resolvedColor(label!, '--text'));
+      for (const surface of ['--surface', '--bg']) {
+        expect(contrastRatio(color, resolvedColor(label!, surface)), `${name} on ${surface}`).toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  } finally {
+    delete document.documentElement.dataset.theme;
+    removeStylesheet();
+  }
 });
 
 test('omits a segment entirely when its value is zero (no startup gap here)', () => {

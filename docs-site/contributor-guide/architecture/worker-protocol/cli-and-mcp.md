@@ -12,6 +12,15 @@ Node-only File-like shim (`nodeFileFromPath` in `packages/core/src/cli/collect-r
 The shim reads each requested slice with a positioned `readSync`, so a local log is never
 loaded whole and has no 2 GiB size limit; `collectRun` closes every descriptor it opened once
 parsing settles, on success and on error.
+With `--baseline` and a local candidate, `collectRunPair` (`packages/core/src/cli/collect-run-pair.ts`)
+parses the smaller of the two logs on a worker thread (`collect-run-worker.js`) while the main thread
+parses the other, then posts the finished model back by structured clone, so a pair takes about as
+long as its bigger log. A thread start and the clone cost about 150 ms, so the worker is used only
+when the smaller log is expected to hold at least `MIN_OFFLOAD_PARSE_BYTES` of event text (its size
+on disk, times 8 for a compressed log); below that both logs parse on the main thread, baseline
+first. A worker that cannot start, runs out of memory or returns a model it cannot clone falls back
+to parsing on the main thread; a log the parser rejects fails with the same message either way.
+Both models are resident at once, so peak memory is the sum of both parses.
 Alternatively, `--shs-base-url <url> --app-id <id> [--attempt-id <id>]` fetches
 the run from a Spark History Server instead (mutually exclusive with the
 positional file/directory argument), calling `resolveFromShs`
@@ -105,9 +114,18 @@ local MCP clients) and `packages/server/index.js`'s `/mcp` route (streamable HTT
 the local server). The run cache (`packages/core/src/mcp-tools.ts`) is a module-level LRU
 (cap 8 and 15-minute idle TTL by default, overridable via `SPARKFORENSICS_MCP_CACHE_CAP`
 and `SPARKFORENSICS_MCP_CACHE_TTL_MS`, lazily swept on access) keyed by resolved source
-(path plus mtime, ctime and size, or SHS baseUrl+appId+attemptId), so a client mints a `runId` once
+(path plus mtime, ctime and size, or for a rolling-log directory the file count, newest mtime and
+ctime and total size of the files inside it, since Spark appends to the live part in place and leaves the
+directory's own stat alone; or SHS baseUrl+appId+attemptId), so a client mints a `runId` once
 via `resolveOrCreateRun` and reuses it across subsequent tool calls instead of
 re-parsing.
+
+`compare_runs` also caches each built comparison (cap 16, LRU) in `mcp-tools.ts`, keyed by both
+`runId`s, thresholds, `redact`, `normalizePath` and the `stagePairs` view. An entry is dropped
+with either of its runs, and is only stored while both runs are still cached when the build finishes.
+Each call gets a copy of the cached output, so a caller cannot change what the next one is served.
+`runOutputBlocks()` memoizes the `metrics` block per run model,
+thresholds and `redact`, so a repeated `diagnose_run` skips `computeRunMetrics`.
 
 ### One output builder for the CLI and MCP
 

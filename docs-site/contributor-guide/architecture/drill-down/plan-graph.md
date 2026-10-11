@@ -16,8 +16,46 @@ child/producer), and dagre places an edge's source at the higher-rank end. So
 right, matching the left-to-right reading order of the plan's data flow. Each
 node's React Flow `Handle`s follow the same horizontal routing: `type="target"`
 on `Position.Right` (its parent sits to the right) and `type="source"` on
-`Position.Left` (its children sit to the left), rather than the top/bottom
-anchors a vertical `TB`/`BT` layout would use.
+`Position.Left` (its children sit to the left).
+
+The desktop layout is always this one right-to-left flow, at every canvas size:
+an ancestor is always to the right of its descendant, in reading order, and a
+long chain scrolls sideways at the readable zoom rather than wrapping into rows.
+Only a phone-width viewport (below Tailwind's `sm` breakpoint, 640px,
+`useNarrowViewport.ts`) lays a plan of at most 150 operators out `BT`, the same
+arrangement stacked vertically with reads/scans on top, so it scrolls down
+instead. A `BT` node's handles move to `Position.Bottom` (target) and
+`Position.Top` (source) through the `sourcePosition`/`targetPosition` the canvas
+sets on it.
+
+`layoutWithDagre` caches positions by topology: the direction, each node's id and
+group, and the edges. Switching the duration attribution (same topology, new node
+data) or returning to a node filter or scope already laid out reads the positions
+back instead of running dagre again, which costs about 1ms per node. The cache
+holds the six most recently used layouts, and a layout that throws is not cached.
+
+A cold layout of a plan with 200 or more nodes runs in a Web Worker
+(`layout.worker.ts`, started by `layout-worker-client.ts`) so the page stays
+responsive while Dagre works. `PlanGraphCanvas` asks `useLayoutPrewarm` for the
+layouts it needs; the hook sends each uncached one to the worker as plain data
+(`pendingLayoutJob`), stores the reply with `storeLayout`, and the canvas then
+calls `layoutWithDagre`, which finds the positions in the cache. The worker
+runs the same `runDagre` as the main thread, so the positions are identical.
+While the layout runs, the first open shows a "Laying out plan graph" line and a
+later relayout keeps the previous graph on screen under a status banner. Smaller
+graphs, an environment without Web Workers (the single-file export is opened from
+`file://`), a worker that fails to start or dies, and a layout that throws all
+take the main-thread path, so an error such as Dagre's intersection failure
+surfaces where it always has. The route starts the worker as soon as the expand
+guardrail dialog opens.
+
+The mount-time fit and every automatic re-fit (a scope switch, a resize) go
+through `useReadableFit`, which clamps the zoom to at least
+`MIN_READABLE_ZOOM` (1.1, so the smallest node text, 10px, renders at 11px on
+screen). A graph too large to fit at that zoom overflows the canvas and is
+panned instead of shrunk: centered on an axis that fits, anchored to the start
+(left/top) on an axis that overflows. The rail's "Fit to view" is the one-click
+full overview: a plain `fitView` with no zoom floor.
 
 `PlanGraphNode.tsx` renders every node at a fixed `NODE_WIDTH × NODE_HEIGHT`
 (220×90, also what dagre lays the graph out around) with `truncate`/`title` on
@@ -60,13 +98,13 @@ the toggle, still correctly labeled "Back to segment view" per `model?.scope`,
 renders `disabled` rather than silently no-opping on click. Only the
 explicit-expand path (`requestedScope === 'full'`) leaves it enabled.
 
-The four Plan Advisor finding types (`duplicatePlanSubtree`, `smallFiles`, and
-`broadcastSizing`'s `overBroadcast`/`underBroadcast`, in
+The six Plan Advisor finding types (`duplicatePlanSubtree`, `smallFiles`,
+`nestedLoopJoin`, `pythonUdf`, and `broadcastSizing`'s `overBroadcast`/`underBroadcast`, in
 `packages/core/src/detectors.ts`) set `Finding.planNodeIds`, an unambiguous
 pointer to the specific plan-tree node(s) each finding is about (every node of
 each repeated subtree occurrence for `duplicatePlanSubtree`, the flagged
-scan/write node for `smallFiles`, the `data size`-carrying nodes under both
-join inputs for `underBroadcast`, and the BroadcastExchange node for
+scan/write node for `smallFiles`, the join node for `nestedLoopJoin`, the `BatchEvalPython` nodes for `pythonUdf`, the shuffle `data size`
+Exchange node under each of the two join inputs for `underBroadcast`, and the BroadcastExchange node for
 `overBroadcast`). `buildPlanGraphModel`
 indexes `findings` by `planNodeIds` and attaches each node's matches to its
 `PlanGraphNodeData.findings`, scoped to the current SQL execution (see
@@ -158,7 +196,11 @@ its `useReactFlow` zoom/center calls drive the same instance.
 
 Clicking a node opens the **detail inspector** (`PlanGraphNodeDetail.tsx`), a
 right-docked panel (not a floating card) that reflows the graph rather than
-covering it. Each node box is a fixed size and truncates every field to one
+covering it. Below Tailwind's `sm` breakpoint (640px, `useNarrowViewport.ts`)
+it is a bottom sheet about 40 percent tall instead, with a grabber that
+dismisses it on a downward swipe; while it is open the canvas pans the
+selected node to the middle of the remaining pane and hides the legend and
+minimap. Each node box is a fixed size and truncates every field to one
 line, showing a single `primaryMetric`; the inspector is where the whole
 operator is legible: category and segment, duration share, the node's findings
 (dot + tag + `findingActionLabel`), the operator's **full metric set**
@@ -182,11 +224,14 @@ don't move.
 
 The remaining legibility aids sit on the canvas itself:
 
-- The **MiniMap** (bottom-right, toggled from the rail) colors each node by the
+- The **MiniMap** (bottom-right) shows by default only while part of the graph
+  is off screen; a click on the rail's toggle forces it on or off from then on,
+  and the toggle's pressed state always matches whether it is on screen. It
+  colors each node by the
   worst finding band on it (`planGraphMiniMapNodeColor`, `plan-graph-minimap.ts`),
   so the overview shows where the problems are; a node with no finding keeps the
   neutral plan color and the large group boxes recede into a muted fill.
-- A **legend** panel (`PlanGraphLegend.tsx`, open by default, toggled from the
+- A **legend** panel (`PlanGraphLegend.tsx`, collapsed by default, toggled from the
   rail) keys the operator icons, the heat-bar colors, the shuffle-weighted edge
   thickness, and the segment-vs-stage box layers.
 - When the category filter hides every operator in view, a **status hint**

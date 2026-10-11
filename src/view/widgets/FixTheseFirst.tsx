@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
@@ -15,6 +15,10 @@ import { boardRollup, useFindingSavings, useStepCodes, type BoardGroup } from '@
 import { StepCode } from '@/view/StepCode';
 import type { InterpretationState } from '@/store/store';
 import { RowPagination } from '@/view/RowPagination';
+import { InlineEvidence, useEvidenceOpen } from '@/view/InlineEvidence';
+import type { WidgetProps } from '@/view/detector-registry';
+import type { ActiveWidget } from '@/view/widgets/Alerts';
+import { Button } from '@/components/ui/button';
 import { selectTriageTarget, selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 
 const PAGE_SIZE = 10;
@@ -102,6 +106,63 @@ function LocationBadge({ finding, textClassName }: { finding: Finding; textClass
 // that import it from here.
 export { recommendationText };
 
+
+/** How a board row shows its evidence. `widget` is the card this row owns and
+ * expands in place; without it the row's button routes to the card that
+ * another row or the verdict owns. */
+export interface RowEvidence {
+  widget: ActiveWidget | null;
+  widgetProps: WidgetProps;
+}
+
+/** The row's single evidence control: expands the row's own card in place, or
+ * routes to the card another surface owns. Renders nothing for a finding
+ * with no evidence card to show. */
+function EvidenceButton({
+  target,
+  evidence,
+  state,
+  panelId,
+  onRoute,
+}: {
+  target: TriageTarget | null;
+  evidence: RowEvidence | undefined;
+  state: ReturnType<typeof useEvidenceOpen>;
+  panelId: string;
+  onRoute: (target: TriageTarget) => void;
+}) {
+  if (!target || !evidence) return null;
+  const inline = evidence.widget != null;
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="mt-1 h-6 border-border bg-transparent px-2 text-xs font-medium dark:bg-transparent"
+      data-shortcut-target
+      aria-expanded={inline ? state.open : undefined}
+      aria-controls={inline ? panelId : undefined}
+      onClick={() => (inline ? state.toggle() : onRoute(target))}
+    >
+      {inline && state.open ? 'Hide evidence' : 'Show evidence'}
+      {inline && state.open ? <ChevronUpIcon aria-hidden="true" /> : <ChevronDownIcon aria-hidden="true" />}
+    </Button>
+  );
+}
+
+/** The expanded evidence card, as a full-width table row under its finding. */
+function EvidencePanelRow({ evidence, panelId, open }: { evidence: RowEvidence | undefined; panelId: string; open: boolean }): ReactNode {
+  if (!open || !evidence?.widget) return null;
+  return (
+    <TableRow className="hover:bg-transparent">
+      <TableCell colSpan={3} className="whitespace-normal">
+        <div id={panelId}>
+          <InlineEvidence widget={evidence.widget} widgetProps={evidence.widgetProps} />
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 /** A single-finding row: the finding's tag badge, a short action label (bold)
  * over the full recommendation sentence (muted) as the navigate control, and a
  * right-aligned monospace stage/impact figure. */
@@ -109,10 +170,12 @@ export function FindingRow({
   finding,
   allFindings,
   onRoute,
+  evidence,
 }: {
   finding: Finding;
   allFindings: Finding[];
   onRoute: (target: TriageTarget) => void;
+  evidence?: RowEvidence;
 }) {
   const target = selectTriageTargetForFinding(finding, allFindings);
   const location = locationTag(finding);
@@ -120,21 +183,18 @@ export function FindingRow({
   const text = recommendationText(finding);
   const label = findingActionLabel(finding);
   const stepCode = useStepCodes().byFinding.get(finding) ?? null;
+  const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null);
+  const panelId = `finding-evidence-${finding.id}`;
   return (
+    <>
     <TableRow data-testid="fix-these-first-row" data-finding-type={finding.type} className={STACKED_ROW}>
       <TableCell className={cn('w-px', STACKED_TAG_CELL)}>
         <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
       </TableCell>
       <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
-        <button
-          type="button"
-          data-shortcut-target
-          className="cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          onClick={() => target && onRoute(target)}
-        >
-          <span className="block text-sm font-semibold">{label}</span>
-          <span className="block text-[0.8125rem] text-muted-foreground">{text}</span>
-        </button>
+        <span className="block text-sm font-semibold">{label}</span>
+        <span className="block text-[0.8125rem] text-muted-foreground">{text}</span>
+        <EvidenceButton target={target} evidence={evidence} state={evidenceState} panelId={panelId} onRoute={onRoute} />
       </TableCell>
       {/* flex, not one joined string: as one truncated nowrap string, the
           right-side truncation would hide the important impact figure first.
@@ -151,6 +211,8 @@ export function FindingRow({
         </span>
       </TableCell>
     </TableRow>
+    <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} />
+    </>
   );
 }
 
@@ -225,12 +287,14 @@ export function TypeGroupRow({
   expanded,
   onToggle,
   onRoute,
+  evidence,
 }: {
   group: BoardGroup;
   allFindings: Finding[];
   expanded: boolean;
   onToggle: () => void;
   onRoute: (target: TriageTarget) => void;
+  evidence?: RowEvidence;
 }) {
   const [page, setPage] = useState(0);
   // Members arrive ranked, representative first.
@@ -239,11 +303,16 @@ export function TypeGroupRow({
   // A type-level sentence, not the best member's own recommendationText: that's one specific
   // instance's numbers/stage next to a trailing stat summing every member, which misrepresents
   // the group. undefined (an uncovered type/discriminant) omits the line rather than fall back
-  // to instance text, which would reintroduce the same problem.
-  const title = coreFindingGenericRecommendation(best);
+  // to instance text, which would reintroduce the same problem. Members whose sentences differ
+  // (a skew group mixing AQE skew-join cases) also omit it: no one sentence fits them all.
+  const titles = new Set(sorted.map(coreFindingGenericRecommendation));
+  const title = titles.size === 1 ? coreFindingGenericRecommendation(best) : undefined;
   const label = findingActionLabel(best);
   const codes = useStepCodes().byFinding;
   const stepCode = group.findings.map((finding) => codes.get(finding)).find((code) => code != null) ?? null;
+  const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null);
+  const evidenceTarget = selectTriageTargetForFinding(best, allFindings);
+  const panelId = `group-evidence-${group.key}`;
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
   // Clamp the page used for slicing (not the stored state) so a stale index
   // can't strand the view on an empty page when a finding filter shrinks the
@@ -267,12 +336,15 @@ export function TypeGroupRow({
             aria-expanded={expanded}
             aria-controls={contentId}
             data-shortcut-target
-            className="cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="tap-target-comfortable cursor-pointer rounded-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             onClick={onToggle}
           >
             <span className="block text-sm font-semibold">{label}</span>
             {title ? <span className="block text-[0.8125rem] text-muted-foreground">{title}</span> : null}
           </button>
+          <div>
+            <EvidenceButton target={evidenceTarget} evidence={evidence} state={evidenceState} panelId={panelId} onRoute={onRoute} />
+          </div>
         </TableCell>
         <TableCell className={cn('w-px text-right font-mono text-xs text-muted-foreground', STACKED_TRAILING_CELL)}>
           <span className="inline-flex items-center justify-end gap-1.5" title={group.statTitle}>
@@ -286,6 +358,7 @@ export function TypeGroupRow({
           </span>
         </TableCell>
       </TableRow>
+      <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} />
       {expanded && pageItems.map((finding, index) => (
         <FindingInstanceRow
           key={finding.id}

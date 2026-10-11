@@ -87,8 +87,6 @@ test('branches on the variant (and rule) fields for memoryUtilization', () => {
     .toMatch(/[Rr]educe cluster size|dynamic allocation/);
   expect(coreFindingGenericRecommendation(finding({ type: 'memoryUtilization', variant: 'wasteModel' })))
     .toMatch(/spark\.executor\.memory/);
-  expect(coreFindingGenericRecommendation(finding({ type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapNearCapacity' })))
-    .toMatch(/raise spark\.executor\.memory/i);
   expect(coreFindingGenericRecommendation(finding({ type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned' })))
     .toMatch(/over-provisioned/);
 });

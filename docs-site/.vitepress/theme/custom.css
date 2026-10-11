@@ -647,6 +647,21 @@ sup.footnote-ref {
   cursor: pointer;
 }
 
+/* Hit-area floor: the chip and the heading permalink keep their visual size
+   and reach a 24px target through an invisible, centered overlay. */
+.citation-chip::after,
+.vp-doc .header-anchor::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  min-width: 24px;
+  min-height: 24px;
+  width: 100%;
+  height: 100%;
+  transform: translate(-50%, -50%);
+}
+
 .vp-doc a.citation-chip:hover,
 .vp-doc a.citation-chip:focus-visible,
 .vp-doc a.citation-chip[aria-expanded='true'],
@@ -708,4 +723,13 @@ html {
   height: var(--sf-anchor-offset, 0px);
   visibility: hidden;
   pointer-events: none;
+}
+
+/* Shiki's github themes render comments as #6A737D in both themes: 3.19:1 on
+   the dark code surface and 4.53:1 on the light one. The muted token clears
+   5:1 on both. Shiki sets the token color through inline --shiki-* variables,
+   so the override matches on that value. */
+.vp-doc div[class*='language-'] span[style*='--shiki-light:#6A737D'] {
+  --shiki-light: var(--sf-muted) !important;
+  --shiki-dark: var(--sf-muted) !important;
 }

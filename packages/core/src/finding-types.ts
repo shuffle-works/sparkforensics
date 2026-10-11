@@ -94,6 +94,16 @@ export interface TaskAttemptSample {
  * AQE skew-join handling applies), 'inputScan' (uneven input files) or 'other'. */
 export type SkewOrigin = 'shuffleJoin' | 'inputScan' | 'other';
 
+/** What AQE skew-join handling did for a 'shuffleJoin' stage, read from the final plan and the
+ * effective conf: 'split' (it split the skewed partition, so the rest is not join skew),
+ * 'evenReads' (the shuffle reads are even, so no partition is skewed for AQE to split),
+ * 'belowThreshold' (the partition is under the effective skew threshold or factor), 'planShape' (an
+ * operator sits between the join and its shuffle), 'userRepartition' (the shuffle is an explicit
+ * repartition), 'joinType' (the join type does not let AQE split the skewed side),
+ * 'extraShuffle' (splitting would add a shuffle for the operator above the join) or 'notSplit'
+ * (nothing in the log explains it). */
+export type AqeSkewCase = 'split' | 'evenReads' | 'belowThreshold' | 'planShape' | 'userRepartition' | 'joinType' | 'extraShuffle' | 'notSplit';
+
 /** What a stage reads, by the dominant side: a shuffle, input files, or neither. */
 export type StageReads = 'shuffle' | 'input' | 'other';
 
@@ -103,8 +113,21 @@ export type StageReads = 'shuffle' | 'input' | 'other';
  * enough, so the stage's own repartition(n) or RDD parallelism is). */
 export type ShufflePartitions = 'raise' | 'sufficient' | 'aqeCoalesced' | 'ownPartitioning';
 
+/** Why a stage's slow tail is slow, from what its tasks logged. 'data': the slow tasks read far
+ * more than the median task, so run time follows data volume (skew by Spark's own definition).
+ * 'gc', 'fetchWait' and 'host': the tail's extra time is GC, shuffle fetch wait, or tasks piled on
+ * one host. 'unexplained': the slow tasks read no more than the median and none of those accounts
+ * for their time. 'unattributed': the stage has no data volume to compare and what data, GC, fetch wait and host do not explain is the largest share (or the stage has no tail attribution), so only the duration is known. */
+export type TailCause = 'data' | 'gc' | 'fetchWait' | 'host' | 'unexplained' | 'unattributed';
+
 export interface SkewEvidence {
   origin?: SkewOrigin;
+  // Only on origin 'shuffleJoin' with AQE skew-join handling on and the join resolved from the plan.
+  aqeSkew?: AqeSkewCase;
+  // Always 'data'; a stage whose tail is not data, or has no measured cause, does not get a skew finding.
+  cause?: TailCause;
+  // Median over the slow tasks of how many times the median task's data each read.
+  dataRatio?: number;
 }
 export interface SkewFinding extends NumericFinding<'skew'>, SkewEvidence {}
 
@@ -123,8 +146,9 @@ export interface ShuffleFinding extends NumericFinding<'shuffle'>, ShuffleEviden
 
 export interface PartitionSizingEvidence {
   rule: 'shufflePartitionSkew' | 'lowShuffleParallelism' | 'maxPartitionTooBig';
-  // Only on 'shufflePartitionSkew': see SkewOrigin.
+  // Only on 'shufflePartitionSkew': see SkewOrigin and AqeSkewCase.
   origin?: SkewOrigin;
+  aqeSkew?: AqeSkewCase;
   // Only on 'lowShuffleParallelism': see ShufflePartitions ('raise', 'aqeCoalesced' or 'ownPartitioning').
   partitions?: ShufflePartitions;
 }
@@ -185,11 +209,24 @@ export interface FailuresEvidence {
 export interface FailuresFinding extends NumericFinding<'failures'>, FailuresEvidence {}
 
 export interface StragglerEvidence {
-  unit: 'count' | 'pct';
+  // 'ratio' when only skew's duration gate admits the tail: value is its ratio, metric its name.
+  unit: 'count' | 'pct' | 'ratio';
   speculativeTasks: number;
   stragglerCount: number;
-  // The case the skew advice in the recommendation was written for (see SkewOrigin).
+  // The case the skew advice in the recommendation was written for (see SkewOrigin); set only
+  // when the cause is 'data'.
   origin?: SkewOrigin;
+  // See AqeSkewCase.
+  aqeSkew?: AqeSkewCase;
+  // 'data' only on a tail skew's own gate does not admit: skew reports every other data-driven tail.
+  cause?: TailCause;
+  // Share (0-100) of the slow tasks' extra time that the cause accounts for.
+  causeSharePct?: number;
+  // Set when the cause is 'host': the host most of the slow tasks ran on, and how many did.
+  host?: string;
+  hostTasks?: number;
+  // The slow tasks' CPU time as a share (0-100) of their run time, when the log has CPU time.
+  cpuPct?: number;
 }
 export interface StragglerFinding extends NumericFinding<'straggler'>, StragglerEvidence {}
 
@@ -239,21 +276,24 @@ export interface UtilizationFinding extends NumericFinding<'utilization'>, Utili
 
 export interface MemoryUtilizationEvidence {
   variant: 'idleCores' | 'memoryBand' | 'wasteModel';
-  // memoryBand only: which band a measured executor fell in.
-  rule?: 'heapNearCapacity' | 'heapOverProvisioned';
+  // memoryBand only: the measured band the executors fell in.
+  rule?: 'heapOverProvisioned';
+  // heapOverProvisioned: the executor with the highest sampled heap peak.
   executorId?: string;
-  // heapOverProvisioned only: the executor's peak heap, bytes.
+  // heapOverProvisioned only: that peak heap, bytes (a lower bound: Spark samples at heartbeat).
   heap?: number;
   // The memoryBand caveat for a log with no executor metrics.
   dataUnavailable?: boolean;
 }
 export interface MemoryUtilizationFinding extends NumericFinding<'memoryUtilization'>, MemoryUtilizationEvidence {
   // Impact-estimator inputs: the unrounded idle rate and the run's allocated memory-time
-  // (idleCores), and the allocation and span behind heapOverProvisioned's rounded ratio.
+  // (idleCores), and the allocation and executor-time behind heapOverProvisioned's rounded ratio.
   idleRateFraction?: number;
   allocatedMBSeconds?: number | null;
-  appDurationMs?: number;
   allocatedBytes?: number;
+  // heapOverProvisioned: executors with a measured peak, and the seconds the run's executors were alive.
+  executorCount?: number;
+  executorSeconds?: number;
 }
 
 export interface CacheUtilizationEvidence {
@@ -344,13 +384,41 @@ export interface SmallFilesEvidence extends PlanFindingEvidence {
 }
 export interface SmallFilesFinding extends NumericFinding<'smallFiles'>, SmallFilesEvidence, PlanNodeOrigin {}
 
-/** How the effective spark.sql.autoBroadcastJoinThreshold relates to the finding: 'limits' (the
+export interface PythonUdfEvidence extends PlanFindingEvidence {
+  // Bytes the executors sent to Python workers: the finding's `value`, repeated for the report.
+  dataSentBytes: number;
+  // Bytes the workers returned; null when the plan reports no such metric.
+  dataReturnedBytes: number | null;
+  // Summed wall-clock of the stages that ran the row-at-a-time UDFs, ms.
+  stageDurationMs: number;
+}
+export interface PythonUdfFinding extends NumericFinding<'pythonUdf'>, PythonUdfEvidence, PlanNodeOrigin {}
+/** A BroadcastNestedLoopJoin or CartesianProduct whose output is far larger than both inputs.
+ * `nodeName` is the operator, `joinType` the Spark join type (null when the plan line has none)
+ * and `condition` the join condition with expression ids removed (null for a join without one).
+ * `leftRows` and `rightRows` are the input row counts the executors reported, null for a
+ * CartesianProduct, which re-reads its inputs so their counts are not row counts. */
+export interface NestedLoopJoinEvidence extends PlanFindingEvidence {
+  nodeName: 'BroadcastNestedLoopJoin' | 'CartesianProduct';
+  joinType: string | null;
+  condition: string | null;
+  outputRows: number;
+  leftRows: number | null;
+  rightRows: number | null;
+}
+export interface NestedLoopJoinFinding extends NumericFinding<'nestedLoopJoin'>, NestedLoopJoinEvidence, PlanNodeOrigin {}
+
+/** How the effective broadcast threshold (spark.sql.autoBroadcastJoinThreshold, or its adaptive counterpart under AQE) relates to the finding: 'limits' (the
  * property decided it, or is unknown), 'notLimiting' (already admits, or already below, the
  * broadcast, so something else decided it) or 'disabled' (-1). */
 export type BroadcastThreshold = 'limits' | 'notLimiting' | 'disabled';
 
 export interface UnderBroadcastEvidence extends PlanFindingEvidence {
+  /** The join's other, larger side (`value` is the smaller, build side). */
   largerSideBytes: number;
+  /** The join type and the side a broadcast would build from, the smaller of those the type allows. */
+  joinType: string;
+  buildSide: 'left' | 'right';
   broadcastThreshold?: BroadcastThreshold;
 }
 export interface UnderBroadcastFinding extends NumericFinding<'underBroadcast'>, UnderBroadcastEvidence, PlanNodeOrigin {}
@@ -390,6 +458,8 @@ export interface FindingEvidenceMap {
   configAudit: ConfigAuditEvidence;
   duplicatePlanSubtree: DuplicatePlanSubtreeEvidence;
   smallFiles: SmallFilesEvidence;
+  pythonUdf: PythonUdfEvidence;
+  nestedLoopJoin: NestedLoopJoinEvidence;
   underBroadcast: UnderBroadcastEvidence;
   overBroadcast: OverBroadcastEvidence;
 }
@@ -421,6 +491,8 @@ export type Finding =
   | ConfigAuditFinding
   | DuplicatePlanSubtreeFinding
   | SmallFilesFinding
+  | PythonUdfFinding
+  | NestedLoopJoinFinding
   | UnderBroadcastFinding
   | OverBroadcastFinding;
 

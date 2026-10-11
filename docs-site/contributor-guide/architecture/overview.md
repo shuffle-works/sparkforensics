@@ -27,7 +27,10 @@ flagged-stage task data.
 route and the run comparison take precedence; otherwise idle/error →
 `CompareLanding` (one or two `DropZone`s), parsing → a live progress readout
 (an SHS parse keeps its intake form instead), ready → the lazy-loaded
-`Dashboard`. `src/view/Dashboard.tsx` renders widgets from
+`Dashboard`. While a log parses, `App.tsx` starts loading the `Dashboard`
+chunk and every `REGISTRY` widget chunk (`src/lib/warm-lazy.ts`), so no
+Suspense fallback shows once parsing finishes: a fallback keeps its content off
+screen for at least 300 ms. `src/view/Dashboard.tsx` renders widgets from
 `src/view/detector-registry.tsx`'s `REGISTRY` (see
 [Widget rendering](./widget-rendering.md)).
 
@@ -70,11 +73,15 @@ decodes each decompressed chunk with one streaming `TextDecoder`, splits on
 unclassified`) are computed at `SparkListenerStageCompleted` time, before posting
 the stage's `{ type: 'stage' }` message to main.
 
-When `spark.eventLog.logStageExecutorMetrics=true` (default `false`),
-`SparkListenerStageExecutorMetrics` events populate
+Every `SparkListenerTaskEnd` carries `Task Executor Metrics` (Spark 3.0+); the
+parser folds them into a per-executor maximum posted in
+`runAggregates.executorPeakMetrics`, skipping all-zero rows (local mode, and any task that ended between two
+heartbeats, since Spark samples the metrics at the executor heartbeat). When
+`spark.eventLog.logStageExecutorMetrics=true` (default `false`),
+`SparkListenerStageExecutorMetrics` events also populate
 `stage.executorMetrics: Map<execId, {...}>` with the 23 raw peak-memory/GC
 fields verbatim (camelCased), consumed by the `memoryUtilization` detector's
-per-executor memory bands (see [Memory Utilization](./board-widgets/caching-and-memory.md)).
+heap band, which takes the larger of the two sources (see [Memory Utilization](./board-widgets/caching-and-memory.md)).
 
 These events can arrive *after* `SparkListenerStageCompleted` for the same
 stage, so the per-stage `stage` message posted at completion time

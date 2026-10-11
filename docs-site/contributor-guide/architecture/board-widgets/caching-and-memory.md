@@ -60,9 +60,10 @@ The board widgets for caching opportunities, memory utilization and cache storag
 - **Memory Utilization** (tag `MEM`): app-level card combining three
   sub-findings from the `memoryUtilization` DETECTORS entry
   (`packages/core/src/detectors.ts`): idle-cores rate (busy-core-time from the worker's
-  run-aggregates sweep vs. the run's allocated core time, `metrics.allocation.coreHours`), per-executor memory bands
-  (peak heap vs. allocated, gated on `spark.eventLog.logStageExecutorMetrics`:
-  a distinct `dataUnavailable` finding renders when that config was off), and
+  run-aggregates sweep vs. the run's allocated core time, `metrics.allocation.coreHours`), one heap band
+  (the highest executor heap peak vs. allocated, from `executorHeapPeaks` in
+  `packages/core/src/executor-peaks.ts`: a distinct `dataUnavailable` finding
+  renders when the log has no non-zero peak), and
   an unverified memory-waste model (`confidence` scales `low`/`medium`/`high`
   via `memoryWasteConfidence`, off how far the wasted/used ratio sits past
   the 1.5× buffer).

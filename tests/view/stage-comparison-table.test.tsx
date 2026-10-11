@@ -78,13 +78,13 @@ describe('StageComparisonTable', () => {
     const replanned = screen.getByTestId('replanned-stages');
     expect(replanned).toHaveTextContent('Query 3 → 4');
     expect(replanned).toHaveTextContent('Run time: 9.0s → 4.0s');
-    await user.click(within(replanned).getByRole('button', { name: /Baseline 5, 6/ }));
+    await user.click(within(replanned).getByRole('button', { name: /Baseline left over 5 \(5\), left over 6 \(6\) · Candidate left over 8 \(8\)/ }));
     const dialog = await screen.findByTestId('stage-pair-dialog');
     expect(within(dialog).getByText('Baseline · stage 6')).toBeInTheDocument();
     expect(within(dialog).getByText('Candidate · stage 8')).toBeInTheDocument();
     expect(within(dialog).queryByText('Candidate · stage 9')).not.toBeInTheDocument();
     await user.keyboard('{Escape}');
-    await user.click(within(screen.getByTestId('unmatched-stages')).getByRole('button', { name: /Baseline 7/ }));
+    await user.click(within(screen.getByTestId('unmatched-stages')).getByRole('button', { name: /Baseline only in baseline \(7\) · Candidate none/ }));
     expect(await screen.findByText('Baseline · stage 7')).toBeInTheDocument();
   });
 
@@ -100,11 +100,40 @@ describe('StageComparisonTable', () => {
     const none = { ...model, stagePairs: [], replanned: [], unmatched: { baseStageIds: [1], candStageIds: [2] }, confidence: 'insufficient', reason: 'Too little run time.' };
     const { unmount } = render(<RunComparison model={none as any} onClose={vi.fn()} />);
     expect(screen.getByRole('alert')).toHaveAttribute('data-confidence', 'insufficient');
-    expect(screen.getByText('No stages are paired between the two runs.')).toBeInTheDocument();
+    expect(screen.getByText('No stages are paired: no stage in one run matches a stage in the other.')).toBeInTheDocument();
     unmount();
     const { stagePairs: _omit, ...legacy } = model;
     render(<RunComparison model={legacy as any} onClose={vi.fn()} />);
     expect(screen.queryByText('Stages compared')).not.toBeInTheDocument();
+  });
+
+  it('offers a stage picker with names and ids when nothing paired, and opens the chosen pair', async () => {
+    const user = userEvent.setup();
+    const none = { ...model, stagePairs: [], replanned: [model.replanned[0]], unmatched: { baseStageIds: [7], candStageIds: [] } };
+    render(<RunComparison model={none as any} onClose={vi.fn()} onDrillIn={vi.fn()} />);
+    expect(screen.getByText('No stages are paired: some queries ran a different number of stages in each run, and the other stages match nothing in the other run.')).toBeInTheDocument();
+    const picker = screen.getByTestId('stage-picker');
+    const compare = within(picker).getByRole('button', { name: 'Compare pair' });
+    expect(compare).toBeDisabled();
+    expect(within(picker).getByRole('option', { name: 'Stage 2 · big stage' })).toBeInTheDocument();
+    await user.selectOptions(within(picker).getByLabelText('Baseline stage'), '2');
+    expect(compare).toBeDisabled();
+    await user.selectOptions(within(picker).getByLabelText('Candidate stage'), '12');
+    await user.click(compare);
+    const dialog = await screen.findByTestId('stage-pair-dialog');
+    expect(within(dialog).getByText('Baseline · stage 2')).toBeInTheDocument();
+    expect(within(dialog).getByText('Candidate · stage 12')).toBeInTheDocument();
+  });
+
+  it('names re-planning alone as the cause when no stage is left unmatched', () => {
+    const none = { ...model, stagePairs: [], replanned: [model.replanned[0]], unmatched: { baseStageIds: [], candStageIds: [] } };
+    render(<RunComparison model={none as any} onClose={vi.fn()} />);
+    expect(screen.getByText('No stages are paired: the queries ran a different number of stages in each run, and none of their stages match.')).toBeInTheDocument();
+  });
+
+  it('shows no picker when pairs exist', () => {
+    render(<RunComparison model={model as any} onClose={vi.fn()} />);
+    expect(screen.queryByTestId('stage-picker')).not.toBeInTheDocument();
   });
 
   it('reveals further rows in chunks', async () => {

@@ -41,7 +41,9 @@ run into `<dir>` (which must not already exist or must be empty). Open
 `<dir>/index.html` directly in a browser over `file://`, with no server, to
 get the same interactive dashboard offline, without the docs links. This
 makes it easy to archive or share a run. `--redact` applies to the exported
-report too.
+report too. A SQL execution's per-query settings keep their values only for the Spark SQL
+tuning keys the findings read; every other value the job set with `spark.conf.set` (a path,
+a bucket, a host) is replaced by Spark's `*********(redacted)` placeholder.
 
 ## Machine-readable fixes and costs
 
@@ -79,9 +81,10 @@ A `code` entry has no `key`, `direction` or `suggested`, only a `hint`:
 "remediation": [{ "kind": "code", "hint": "salt the key or repartition on a better key" }]
 ```
 
-Skew and straggler findings carry one when no property can fix them: the
-stage's `evidence.origin` is `other`, or AQE skew-join handling is already on.
-The `hint` is the remedy the `recommendation` gives.
+Skew findings, and straggler findings whose cause is `data`, carry one when no property can fix them: the
+stage's `evidence.origin` is `other`, or AQE skew-join handling is on and its
+`evidence.aqeSkew` case calls for a change to the job. The `hint` is the remedy
+the `recommendation` gives.
 
 `impactEstimate.coreTimeMs` is the busy core time the fix removes: the
 executor task time, in core-milliseconds, next to the `wallClock` range
@@ -128,22 +131,32 @@ When the effective `spark.sql.shuffle.partitions` (logged, else Spark's 200) is
 already at or above the count a low-parallelism shuffle stage needs, the
 property is not what limits that stage: the recommendation points at the
 stage's own partitioning (`repartition(n)` or RDD parallelism) and
-`remediation` is empty. When AQE coalescing is on and the stage ran fewer tasks
-than the property, AQE merged the partitions and the recommendation points at
-`spark.sql.adaptive.advisoryPartitionSizeInBytes` instead. `shuffle` and
+`remediation` is empty. When AQE coalescing is on and a stage in a SQL execution
+ran fewer tasks than the property (or than
+`spark.sql.adaptive.coalescePartitions.initialPartitionNum`, which replaces it
+as the starting count when set), AQE merged the partitions and the
+recommendation points at `spark.sql.adaptive.advisoryPartitionSizeInBytes`
+instead. A stage outside any SQL execution is never read as coalesced. `shuffle` and
 `partitionSizing` (`lowShuffleParallelism`) findings carry `evidence.partitions`
 (`raise`, `sufficient`, `aqeCoalesced` or `ownPartitioning`) for the case.
 
 A `remediation` that sets a property to a fixed value (for example
 `spark.sql.adaptive.skewJoin.enabled`, `spark.speculation` or
 `spark.dynamicAllocation.enabled`) is left out when the run's effective conf
-already has that value. The effective value is the logged property, else
-Spark's default for the run's `sparkVersion`; the defaults modeled are
-`spark.sql.adaptive.enabled` (off before Spark 3.2, on from 3.2),
-`spark.sql.adaptive.skewJoin.enabled` and
-`spark.sql.adaptive.coalescePartitions.enabled` (both on from 3.0), and, for
-every version, `spark.sql.shuffle.partitions` (200) and
-`spark.sql.autoBroadcastJoinThreshold` (10 MiB). Spark before 3.0 has no AQE
+already has that value. The effective value is, in order, the setting the SQL
+execution ran with (its `modifiedConfigs`, for a finding scoped to one
+execution), the logged property, and Spark's default for the run's
+`sparkVersion`. A job that calls `spark.conf.set` is judged against what it set.
+The defaults come from Spark's own configuration sources and cover every
+property a detector reads or suggests: AQE (`spark.sql.adaptive.enabled` is off
+before Spark 3.2 and on from 3.2; skew-join and coalescing from 3.0, and the
+advisory partition size and `coalescePartitions.parallelismFirst`, on from 3.2),
+`spark.sql.shuffle.partitions` (200),
+`spark.sql.autoBroadcastJoinThreshold` (10 MB), speculation (the multiplier is
+1.5 and the quantile 0.75 before Spark 4.0, 3 and 0.9 from 4.0) and the
+dynamic-allocation, serializer and event-log switches, and the executor memory
+overhead factor (from 3.3) and minimum (from 4.0). A default that depends on the cluster (`spark.executor.instances`,
+`spark.default.parallelism`) is not modeled. Spark before 3.0 has no AQE
 skew-join handling, so a skew finding on such a run suggests no conf. Booleans compare
 case-insensitively. The recommendation then stops naming that property and
 points at the remedy left (for example "AQE skew-join handling is already on,
@@ -156,20 +169,35 @@ already on only when `spark.sql.adaptive.enabled` is not effectively `false`;
 with AQE off (logged, or the default on Spark 3.0 and 3.1), the skew findings
 suggest setting `spark.sql.adaptive.enabled` to `true` instead. When
 `spark.sql.autoBroadcastJoinThreshold` is logged `-1` (auto-broadcast
-disabled), an over-broadcast finding has an empty `remediation` and points at
-removing the `broadcast()` hint.
+disabled), and under adaptive execution
+`spark.sql.adaptive.autoBroadcastJoinThreshold` is unset or `-1` too, an
+over-broadcast finding has an empty `remediation` and points at removing the
+`broadcast()` hint.
 
 Skew-join handling is only suggested for a stage that reads a shuffle in a SQL
 execution whose plan has a sort-merge or shuffled-hash join. Skew findings
 carry `evidence.origin`: `shuffleJoin` (the conf above applies), `inputScan`
 (a stage reading uneven input files: the remediation lowers
 `spark.sql.files.maxPartitionBytes`) or `other` (no conf is suggested; the `remediation` holds a `code` entry).
-`shufflePartitionSkew` carries the same field but is judged on shuffle-read
+A `shuffleJoin` finding on a run with AQE skew-join handling on also carries
+`evidence.aqeSkew`, the reason handling did or did not act on the stage's join:
+`split`, `evenReads`, `belowThreshold`, `planShape`, `userRepartition`, `joinType`,
+`extraShuffle` or `notSplit` (see `SKEW`). The remediation matches the case: a
+`decrease` of the skew threshold or factor for `belowThreshold`, a `set` of
+`spark.sql.adaptive.forceOptimizeSkewedJoin` for `extraShuffle` from Spark 3.3
+(or on a run with no recorded version that logs the property), next to the `code`
+entry when a one-sided `joinType` is also blocked by an extra shuffle, none for
+`split` and `evenReads`, and a `code` entry otherwise.
+`shufflePartitionSkew` carries the same fields but is judged on shuffle-read
 sizes, so it is only ever `shuffleJoin` or `other`. A `stageSlowness` finding carries `evidence.reads` (`shuffle`,
-`input` or `other`) and suggests shuffle partitions only for `shuffle`; `spill`
-and `tinyTask` carry the same `reads` key and gate their shuffle-partition
-advice the same way. `straggler` carries `evidence.origin` and the same skew
-advice as a skew finding on that stage. `coldStart` and `autoscalingChurn`
+`input` or `other`) and suggests partition-count changes only for `shuffle`; `spill`
+and `tinyTask` carry the same `reads` key and gate their partition-count
+advice the same way. On a `shuffle` stage the remediation names the lever that
+sized it: `spark.sql.shuffle.partitions`, AQE's advisory size or
+`parallelismFirst` where AQE coalesced the stage (`parallelismFirst=false` comes
+first while it is on, the advisory size after it), or a `code` entry where the
+stage's own `repartition(n)` or RDD parallelism did. `straggler` carries `evidence.origin` and the same skew
+advice as a skew finding on that stage when its `evidence.cause` is `data`; `unattributed` gets no fix, and other causes get advice for that cause. `coldStart` and `autoscalingChurn`
 carry `evidence.dynamicAllocation` (`on` or `off`) and suggest no
 dynamic-allocation property when it is `off`. `underBroadcast` and
 `overBroadcast` carry `evidence.broadcastThreshold` (`limits`, `notLimiting` or

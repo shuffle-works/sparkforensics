@@ -57,7 +57,7 @@ export function byImpactDesc<T>(getFindings: (item: T) => readonly Finding[]) {
 
 /** A finding's own stage number: `stageId` for a per-stage detector, or the
  * lowest id in `stageIds` for a sql-scope finding that spans several stages
- * (duplicatePlanSubtree, smallFiles, underBroadcast, overBroadcast). `null`
+ * (duplicatePlanSubtree, smallFiles, nestedLoopJoin, pythonUdf, underBroadcast, overBroadcast). `null`
  * for an app-level finding with neither field set. */
 export function stageIdOf(finding: Finding): number | null {
   if (finding.stageId != null) return finding.stageId;

@@ -180,17 +180,17 @@ export interface EvidenceReportJson {
 // module (stageShape's totalCores, utilization's unrounded fraction) is left off both, so it never
 // reaches the report; adding, renaming or dropping a key here changes the report contract.
 const EVIDENCE_KEYS = {
-  skew: ['origin'],
+  skew: ['origin', 'aqeSkew', 'cause', 'dataRatio'],
   stageShape: ['rule'],
   shuffle: ['partitions'],
-  partitionSizing: ['rule', 'origin', 'partitions'],
+  partitionSizing: ['rule', 'origin', 'aqeSkew', 'partitions'],
   spill: ['spillMagnitude', 'reads'],
   gc: ['direction'],
   slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue'],
   stageSlowness: ['reads'],
   stageFailed: ['variant', 'numTasks', 'memoryBytesSpilled', 'failedTaskDetails'],
   failures: ['failedTasks', 'dominantReason', 'dominantError', 'failureGroups', 'otherFailedTasks'],
-  straggler: ['unit', 'speculativeTasks', 'stragglerCount', 'origin'],
+  straggler: ['unit', 'speculativeTasks', 'stragglerCount', 'origin', 'aqeSkew', 'cause', 'causeSharePct', 'host', 'hostTasks', 'cpuPct'],
   speculationWaste: [],
   retryWaste: ['numTasks', 'memoryBytesSpilled', 'retriedTaskDetails'],
   tinyTask: ['reads'],
@@ -211,7 +211,9 @@ const EVIDENCE_KEYS = {
     'groupIndex',
   ],
   smallFiles: ['executionId', 'stageIds', 'fileCount', 'direction', 'nodeName'],
-  underBroadcast: ['executionId', 'stageIds', 'largerSideBytes', 'broadcastThreshold'],
+  pythonUdf: ['executionId', 'stageIds', 'dataSentBytes', 'dataReturnedBytes', 'stageDurationMs'],
+  nestedLoopJoin: ['executionId', 'stageIds', 'nodeName', 'joinType', 'condition', 'outputRows', 'leftRows', 'rightRows'],
+  underBroadcast: ['executionId', 'stageIds', 'largerSideBytes', 'joinType', 'buildSide', 'broadcastThreshold'],
   overBroadcast: ['executionId', 'stageIds', 'broadcastThreshold'],
 } as const satisfies { [T in FindingType]: readonly (keyof FindingEvidenceMap[T])[] };
 
@@ -405,13 +407,13 @@ function verdictJson(model: RunVerdictModel): VerdictJson {
 // A WeakMap needs no invalidation: once mcp-tools.ts evicts the appModel, this entry is collectible.
 // Each cache is split first by the overrides object the report ran under (one fixed, frozen object
 // per CLI invocation or MCP server process; DEFAULT_THRESHOLDS for the specification's).
-type ReportCache<T = EvidenceReportJson> = WeakMap<object, WeakMap<AppModel, T>>;
+export type ReportCache<T = EvidenceReportJson> = WeakMap<object, WeakMap<AppModel, T>>;
 const DEFAULT_THRESHOLDS = {};
 const jsonCache: ReportCache = new WeakMap();
 // The redacted report, keyed by the unredacted appModel it was built from.
 const redactedJsonCache: ReportCache = new WeakMap();
 
-function cacheFor<T>(cache: ReportCache<T>, thresholds: ThresholdOverrides | undefined): WeakMap<AppModel, T> {
+export function cacheFor<T>(cache: ReportCache<T>, thresholds: ThresholdOverrides | undefined): WeakMap<AppModel, T> {
   const key = thresholds ?? DEFAULT_THRESHOLDS;
   let byModel = cache.get(key);
   if (!byModel) {

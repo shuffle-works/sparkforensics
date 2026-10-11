@@ -148,7 +148,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
               <YAxis
                 tick={{ fontSize: 10 }}
                 width={36}
-                label={{ value: 'avg concurrent cores', angle: -90, position: 'insideLeft', fontSize: 10 }}
+                label={{ value: 'avg concurrent cores', angle: -90, position: 'insideLeft', fontSize: 12 }}
               />
               <Tooltip
                 {...CHART_TOOLTIP_PROPS}
@@ -156,7 +156,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
                 // Bucket averages are fractional cores; two decimals is the readable precision.
                 formatter={(value) => (typeof value === 'number' ? value.toFixed(2) : String(value))}
               />
-              <Legend wrapperStyle={{ fontSize: 10 }} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
               {order.map((tier) => (
                 <Area
                   key={tier}

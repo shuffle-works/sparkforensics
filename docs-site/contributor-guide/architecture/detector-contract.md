@@ -18,7 +18,7 @@ it on `decrease spark.dynamicAllocation.maxExecutors` plus `decrease
 spark.dynamicAllocation.minExecutors` when the logged floor is above 0.
 `Remediation` is a union: `codeFix(hint)` builds the `{kind: 'code', hint}` entry for a fix no
 property makes, which the skew family emits when its origin is `other` or skew-join handling is
-already on. Code that reads `key` checks `kind` first.
+on and `aqe-skew.ts` finds the job's code is what has to change. Code that reads `key` checks `kind` first.
 
 Each entry is built by the helper for its scope: `defineStageDetector`,
 `defineSqlDetector`, `defineAppDetector` or `defineConfigDetector`. The
@@ -183,6 +183,33 @@ figure share one capacity that never exceeds what the run held.
 `dynamicAllocation` replacement) it double-counts a churned executor's capacity against its
 replacement's; the peak-concurrent sweeps don't.
 
+## Effective configuration
+
+A detector that reads or suggests a Spark property resolves it through
+`effectiveSparkConf()` (`packages/core/src/spark-conf.ts`), which layers three
+sources: the SQL execution's `modifiedConfigs` (the session settings that differ
+from the SparkContext's, as `spark.conf.set` leaves them), the app's Spark
+Properties, then Spark's default for the run's version. It returns the value and
+the layer it came from (`query`, `app` or `default`). `sparkConfDefault()` is the
+version table alone; its entries are read from Spark's `SQLConf.scala` and
+`config/package.scala` at the release tags, and a property whose default depends on
+the cluster or on another property has no entry. Add a property to the table only
+with the release that introduced each of its defaults, and a per-version test.
+
+A detector scoped to one SQL execution (`skew`, `straggler`, `shuffle`,
+`partitionSizing`, `underBroadcast`, `overBroadcast`, `pythonUdf`) passes that execution's
+`modifiedConfigs`: `detectors.ts`'s `stageApp()` and `queryApp()` return the app with
+them applied, so the helpers that take an app (`effectiveConf`, `loggedAs`,
+`switchFix`) need no second argument. Run-wide detectors use the app as logged.
+The frozen detection thresholds do not follow a per-query setting; only the advice does.
+
+The skew family's advice for a stage that reads a shuffle feeding a join comes from
+`diagnoseJoinSkew` in `aqe-skew.ts`, which walks the execution's final plan against the
+conditions Spark's `OptimizeSkewedJoin` checks (join shape, join type, thresholds, extra shuffle)
+and reads the thresholds through the same effective conf. It returns `null` when the plan cannot
+say, and the detector then keeps the general advice. A new case is a new `AqeSkewCase`, a row in
+`finding-presentation.ts`'s generic lines and a row in the user guide's `SKEW` table.
+
 ## Cross-detector suppression
 
 An entry may name another entry's `type` in `suppressedBy`. Once every
@@ -230,7 +257,10 @@ equal to the default labels nothing. Tuning a
 `suppressedBy` target changes which of the suppressed entry's findings
 survive, so those findings carry the suppressor's tuned thresholds too,
 named `<suppressor>.<name>` (e.g. `slowHost.minHosts` on `stageSlowness`).
-Only that one link is followed. The
+`straggler` has no `suppressedBy` but judges a tail with `skew`'s resolved
+thresholds (`DetectorCtx.skewThresholds`), so its findings carry `skew`'s
+tuned thresholds the same way (`THRESHOLD_DEPENDENCY` in
+`threshold-overrides.ts`). Only that one link is followed. The
 evidence report repeats the label on the finding row, the clean check, the
 `detectors` catalog row (whose `thresholds` are then the effective ones)
 and in `summary.tunedThresholds`; see

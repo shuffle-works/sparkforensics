@@ -16,6 +16,7 @@ import {
   ExecutorAddedEventSchema,
   ExecutorRemovedEventSchema,
   BlockUpdatedEventSchema,
+  MAX_ACCUMULABLES_PER_TASK,
   type SparkEvent,
   type SparkPlanInfo,
 } from './event-schemas.ts';
@@ -25,6 +26,8 @@ import { finalizeStage } from './stage-quantiles.ts';
 import { MAX_FAILURE_DETAILS_PER_STAGE, extractTaskFailureDetail, taskFailureKey, type TaskFailureDetail } from './task-failure.ts';
 import { computeRunAggregates } from './run-aggregates.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
+import { effectiveSparkConf } from './spark-conf.ts';
+import { DRIVER_EXECUTOR_ID } from './executor-peaks.ts';
 import type {
   Job, ExecutorAddedEvent, ExecutorRemovedEvent, PlanNode, SparkAppInfo, EvidenceInputs, StageAttemptTotals,
 } from './types';
@@ -52,6 +55,9 @@ interface ResourcesSummary {
   dynamicAllocationEnabled: boolean | null;
   shuffleServiceEnabled: boolean | null;
   serializer: string | null;
+  // The run's effective spark.eventLog.logStageExecutorMetrics (off unless set); null for a log with
+  // no recorded properties. The evidence ledger reads it without importing the defaults table.
+  stageExecutorMetricsLogging: boolean | null;
   // SparkAppInfo.resources is Record<string, unknown>: an index signature keeps this assignable
   // there without a cast.
   [key: string]: unknown;
@@ -131,6 +137,8 @@ interface TaskRecord {
   executorRunTime: number;
   executorCpuTime: number;
   inputBytes: number;
+  inputRecords: number;
+  shuffleReadRecords: number;
   outputBytes: number;
   // Null when the task's metrics carry no Records Written (older Spark, or a non-writing task).
   outputRecords: number | null;
@@ -203,6 +211,8 @@ interface SqlExecutionRecord {
   rootExecutionId?: number;
   // The one line of the plan description that is kept (see stripPlanDescription).
   commandArguments?: string;
+  // The session settings this execution ran with that differ from the SparkContext's (see spark-conf.ts).
+  modifiedConfigs?: Record<string, string>;
   // Released (set to null) by endSqlExecution once the plan tree is resolved and posted.
   sparkPlanInfo: SparkPlanInfo | null;
   // Set by applyAdaptiveExecutionUpdate when AQE re-plans this execution mid-run; a per-execution
@@ -236,6 +246,12 @@ export interface ParserState {
   // cache evidence (logBlockUpdates off, or nothing was ever cached).
   rddBlockUpdates: number;
   taskAccumStages: Map<number, Set<number>>;
+  // Each stage's latest TaskEnd accumulator IDs: a task of the same stage with the same IDs adds
+  // nothing to taskAccumStages (Spark gives a stage's tasks one accumulator set).
+  lastTaskAccumIds: Map<number, readonly number[]>;
+  // Per-executor peak of every ExecutorMetricType value any TaskEnd reported (Spark's own
+  // AppStatusListener folds them the same way); only the metrics in EXECUTOR_METRIC_FIELD_MAP.
+  executorPeakMetrics: Map<string, Record<string, number>>;
   evidenceInputs: EvidenceInputs;
   // An open SQL execution's latest AQE update, as raw line text, not yet parsed (see
   // deferAdaptiveUpdate). Applied when the execution ends, or at parse completion.
@@ -447,6 +463,8 @@ export function createState(): ParserState {
     rddBlocks: new Map(),
     rddBlockUpdates: 0,
     taskAccumStages: new Map(),
+    lastTaskAccumIds: new Map(),
+    executorPeakMetrics: new Map(),
     pendingAdaptiveUpdates: new Map(),
     resolvedPlanExecutions: new Set(),
     evidenceInputs: {
@@ -485,36 +503,45 @@ export function normalizeSparkProperties(
 
 export { parseSparkMemoryMB };
 
-// Derive an allocated-resource summary from the Spark config map. Absent keys degrade to null,
-// not guessed defaults.
-export function extractResources(config: Record<string, string> | null | undefined): ResourcesSummary {
+// Derive an allocated-resource summary from the Spark config map, each setting as the run's
+// effective conf has it (the logged value, else Spark's default for `sparkVersion`). A key with no
+// fixed default degrades to null, not a guess, and so does every key of a log that recorded no
+// Spark properties at all: there is nothing to tell a default from a missing config.
+export function extractResources(config: Record<string, string> | null | undefined, sparkVersion?: string | null): ResourcesSummary {
   const cfg = config ?? {};
+  const recorded = Object.keys(cfg).length > 0;
+  const value = (k: string): string | undefined => (recorded ? effectiveSparkConf({ sparkVersion, properties: cfg }, k)?.value : undefined);
   const int = (k: string) => {
-    if (cfg[k] == null) return null;
-    const n = parseInt(cfg[k], 10);
+    const v = value(k);
+    if (v == null) return null;
+    const n = parseInt(v, 10);
     return Number.isFinite(n) ? n : null;
   };
-  const memMB = (k: string) => (cfg[k] != null ? parseSparkMemoryMB(cfg[k]) : null);
-  const bool = (k: string) => (cfg[k] != null ? String(cfg[k]).toLowerCase() === 'true' : null);
+  const memMB = (k: string) => parseSparkMemoryMB(value(k));
+  const bool = (k: string) => { const v = value(k); return v != null ? v.toLowerCase() === 'true' : null; };
   return {
     executor: {
+      // The executor size stays the logged one: Spark's 1g default does not apply to a local-mode run,
+      // which has no separate executor JVM, and the log does not say which master it ran under.
       memory: cfg['spark.executor.memory'] ?? null,
-      memoryMB: memMB('spark.executor.memory'),
-      memoryOverhead: cfg['spark.executor.memoryOverhead'] ?? null,
+      memoryMB: cfg['spark.executor.memory'] != null ? parseSparkMemoryMB(cfg['spark.executor.memory']) : null,
+      memoryOverhead: value('spark.executor.memoryOverhead') ?? null,
       memoryOverheadMB: memMB('spark.executor.memoryOverhead'),
       cores: int('spark.executor.cores'),
       instances: int('spark.executor.instances'),
     },
     driver: {
-      memory: cfg['spark.driver.memory'] ?? null,
+      memory: value('spark.driver.memory') ?? null,
       memoryMB: memMB('spark.driver.memory'),
-      memoryOverhead: cfg['spark.driver.memoryOverhead'] ?? null,
+      memoryOverhead: value('spark.driver.memoryOverhead') ?? null,
       memoryOverheadMB: memMB('spark.driver.memoryOverhead'),
       cores: int('spark.driver.cores'),
     },
     dynamicAllocationEnabled: bool('spark.dynamicAllocation.enabled'),
     shuffleServiceEnabled: bool('spark.shuffle.service.enabled'),
+    // The serializer a run set: Spark's default is reported as unset.
     serializer: cfg['spark.serializer'] ?? null,
+    stageExecutorMetricsLogging: bool('spark.eventLog.logStageExecutorMetrics'),
   };
 }
 
@@ -605,12 +632,45 @@ function taskRecordOf(event: z.infer<typeof TaskEndEventSchema>, failure: TaskFa
     executorRunTime: m['Executor Run Time'] ?? 0,
     executorCpuTime: m['Executor CPU Time'] ?? 0,
     inputBytes: inp['Bytes Read'] ?? 0,
+    inputRecords: inp['Records Read'] ?? 0,
+    shuffleReadRecords: sr['Total Records Read'] ?? 0,
     outputBytes: out['Bytes Written'] ?? 0,
     outputRecords: out['Records Written'] ?? null,
   };
 }
 
-export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state: ParserState): null {
+// Max-folds the TaskEnd's executor metrics into the executor's run peak. Spark polls them at
+// executor heartbeat (spark.executor.metrics.pollingInterval defaults to 0), so a peak is a lower
+// bound. All-zero rows (local mode) carry no measurement and are skipped.
+function foldTaskExecutorMetrics(event: z.infer<typeof TaskEndEventSchema>, state: ParserState): void {
+  const raw = event['Task Executor Metrics'];
+  const executorId = event['Task Info']?.['Executor ID'];
+  if (!raw || executorId == null) return;
+  let peaks: Record<string, number> | undefined;
+  let measured = false;
+  for (const [sparkName, ourName] of EXECUTOR_METRIC_FIELDS) {
+    const value = raw[sparkName];
+    if (typeof value !== 'number' || !(value > 0)) continue;
+    measured = true;
+    peaks ??= state.executorPeakMetrics.get(executorId) ?? {};
+    if (value > (peaks[ourName] ?? 0)) peaks[ourName] = value;
+  }
+  if (!measured || !peaks) return;
+  state.executorPeakMetrics.set(executorId, peaks);
+  if (executorId !== DRIVER_EXECUTOR_ID) state.evidenceInputs.executorMetricRows++;
+}
+
+function sameIds(a: readonly number[], b: readonly number[] | undefined): boolean {
+  if (b === undefined || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+// `accumulableIds`, when given, are the event's accumulator IDs, which then are not in the event.
+export function accumulateTask(
+  event: z.infer<typeof TaskEndEventSchema>, state: ParserState, accumulableIds?: readonly number[],
+): null {
+  foldTaskExecutorMetrics(event, state);
   const stageId = event['Stage ID'];
   const stage = state.stages.get(stageId);
   if (!stage) return null;
@@ -628,10 +688,13 @@ export function accumulateTask(event: z.infer<typeof TaskEndEventSchema>, state:
 
   state.evidenceInputs.taskRecords++;
 
-  const accumulables = event['Task Info']?.Accumulables ?? [];
-  for (const acc of accumulables) {
-    if (!state.taskAccumStages.has(acc.ID)) state.taskAccumStages.set(acc.ID, new Set());
-    state.taskAccumStages.get(acc.ID)!.add(stageId);
+  const ids = accumulableIds ?? (event['Task Info']?.Accumulables ?? []).map((acc) => acc.ID);
+  if (!sameIds(ids, state.lastTaskAccumIds.get(stageId))) {
+    state.lastTaskAccumIds.set(stageId, ids);
+    for (const id of ids) {
+      if (!state.taskAccumStages.has(id)) state.taskAccumStages.set(id, new Set());
+      state.taskAccumStages.get(id)!.add(stageId);
+    }
   }
 
   const info: TaskInfoRaw = event['Task Info'] ?? {};
@@ -842,6 +905,7 @@ const EXECUTOR_METRIC_FIELD_MAP: Record<string, string> = {
   MajorGCCount: 'majorGCCount', MajorGCTime: 'majorGCTime', TotalGCTime: 'totalGCTime',
   ConcurrentGCCount: 'concurrentGCCount', ConcurrentGCTime: 'concurrentGCTime',
 };
+const EXECUTOR_METRIC_FIELDS = Object.entries(EXECUTOR_METRIC_FIELD_MAP);
 
 export function startApplication(event: z.infer<typeof ApplicationStartEventSchema>, state: ParserState) {
   const config = state.pendingConfig ?? {};
@@ -852,7 +916,7 @@ export function startApplication(event: z.infer<typeof ApplicationStartEventSche
     endTime: null,
     sparkVersion: state.pendingSparkVersion ?? event['Spark Version'] ?? null,
     config,
-    resources: state.pendingResources ?? extractResources(config),
+    resources: state.pendingResources ?? extractResources(config, state.pendingSparkVersion ?? event['Spark Version']),
     rddInfo: state.rddInfo,
   };
   return appMessage(state);
@@ -861,7 +925,7 @@ export function startApplication(event: z.infer<typeof ApplicationStartEventSche
 export function updateEnvironment(event: z.infer<typeof EnvironmentUpdateEventSchema>, state: ParserState) {
   state.evidenceInputs.environmentUpdates++;
   const config = normalizeSparkProperties(event['Spark Properties']);
-  const resources = extractResources(config);
+  const resources = extractResources(config, state.app?.sparkVersion ?? state.pendingSparkVersion);
   // EnvironmentUpdate normally precedes ApplicationStart: stash the config so ApplicationStart can
   // attach it. If it arrives after (a mid-run update), apply live and re-post the app.
   if (state.app) {
@@ -1128,10 +1192,11 @@ export function recordStageExecutorMetrics(event: z.infer<typeof StageExecutorMe
   if (!stage) return null;
   const raw = event['Executor Metrics'] ?? {};
   const metrics: Record<string, number> = {};
-  for (const [sparkName, ourName] of Object.entries(EXECUTOR_METRIC_FIELD_MAP)) {
+  for (const [sparkName, ourName] of EXECUTOR_METRIC_FIELDS) {
     if (raw[sparkName] != null) metrics[ourName] = raw[sparkName];
   }
-  if (Object.keys(metrics).length > 0) {
+  // A row for the driver's own heap is no executor measurement: the heap-peak finding leaves it out too.
+  if (Object.keys(metrics).length > 0 && event['Executor ID'] !== DRIVER_EXECUTOR_ID) {
     state.evidenceInputs.executorMetricRows++;
   }
   stage.executorMetrics.set(event['Executor ID'], metrics);
@@ -1148,6 +1213,7 @@ export function startSqlExecution(event: z.infer<typeof SqlExecutionStartEventSc
     hadAdaptiveUpdate: false,
   };
   if (event.rootExecutionId !== undefined) exec.rootExecutionId = event.rootExecutionId;
+  if (event.modifiedConfigs !== undefined && Object.keys(event.modifiedConfigs).length > 0) exec.modifiedConfigs = event.modifiedConfigs;
   if (event.physicalPlanDescription && KEPT_ARGUMENTS.test(event.physicalPlanDescription)) {
     exec.commandArguments = event.physicalPlanDescription;
   }
@@ -1481,6 +1547,18 @@ const MAX_ACCUMULABLE_ID_DIGITS = 15;
 // doesn't open `{"ID":n` or any `[` in the array (updatedBlockStatuses) falls back. A `]` inside a
 // Name string cuts the array short and leaves invalid JSON, which falls back too.
 export function parseTaskEnd(line: string): unknown {
+  const split = splitTaskEnd(line);
+  if (!split) return null;
+  split.parsed['Task Info']!.Accumulables = split.ids.map((ID) => ({ ID }));
+  return split.parsed;
+}
+
+type SplitTaskEnd = { parsed: { 'Task Info'?: { Accumulables?: unknown } }; ids: number[] };
+
+// parseTaskEnd's work with the IDs left apart from the parsed event, whose Accumulables is empty:
+// validating `{ID}` entries the scan just read as digits cost 0.2s on the largest real log, so
+// parseAndDispatch hands the IDs straight to accumulateTask.
+function splitTaskEnd(line: string): SplitTaskEnd | null {
   if (!line.startsWith(TASK_END_PREFIX)) return null;
   const keyAt = line.indexOf(ACCUMULABLES_KEY);
   if (keyAt === -1) return null;
@@ -1500,6 +1578,7 @@ export function parseTaskEnd(line: string): unknown {
     if (after !== 0x2c && after !== 0x7d) return null; // `,` or `}`
     ids.push(id);
   }
+  if (ids.length > MAX_ACCUMULABLES_PER_TASK) return null; // the schema rejects it: parse whole
   let parsed: { 'Task Info'?: { Accumulables?: unknown } } | null;
   try {
     parsed = JSON.parse(line.slice(0, from) + line.slice(close));
@@ -1508,8 +1587,7 @@ export function parseTaskEnd(line: string): unknown {
   }
   const info = parsed?.['Task Info'];
   if (!info || !Array.isArray(info.Accumulables) || info.Accumulables.length !== 0) return null;
-  info.Accumulables = ids.map((ID) => ({ ID }));
-  return parsed;
+  return { parsed: parsed!, ids };
 }
 
 const ADAPTIVE_UPDATE_PREFIX =
@@ -1587,8 +1665,11 @@ function noteUnreadableSqlStart(line: string, state: ParserState): void {
 function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown) => void): void {
   if (line.startsWith(BLOCK_UPDATED_PREFIX) && !line.includes(RDD_BLOCK_ID_FRAGMENT)) return;
   let parsed: unknown;
+  let taskEndIds: number[] | undefined;
   try {
-    parsed = parseTaskEnd(line) ?? JSON.parse(stripPlanDescription(line));
+    const split = splitTaskEnd(line);
+    if (split) ({ parsed, ids: taskEndIds } = split);
+    else parsed = JSON.parse(stripPlanDescription(line));
   } catch {
     state.skippedLines++;
     noteUnreadableSqlStart(line, state);
@@ -1612,7 +1693,9 @@ function parseAndDispatch(line: string, state: ParserState, emit: (msg: unknown)
   }
   let msg: unknown;
   try {
-    msg = processEvent(result.data, state);
+    msg = taskEndIds && result.data.Event === 'SparkListenerTaskEnd'
+      ? accumulateTask(result.data, state, taskEndIds)
+      : processEvent(result.data, state);
   } catch (err) {
     // processEvent's switch is exhaustive over the schema-validated union (assertNever default), so
     // this is unreachable for any event that got this far. If it fires it's a handler bug, not
@@ -1666,7 +1749,10 @@ export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => 
   for (const executionId of [...state.pendingAdaptiveUpdates.keys()]) flushAdaptiveUpdate(executionId, state, emit);
   emit({ type: 'progress', pct: 1, linesProcessed });
   emit({ type: 'stageLateAttemptWork', data: collectLateAttemptWork(state) });
-  emit({ type: 'runAggregates', data: computeRunAggregates(state.taskStore) });
+  emit({
+    type: 'runAggregates',
+    data: { ...computeRunAggregates(state.taskStore), executorPeakMetrics: Object.fromEntries(state.executorPeakMetrics) },
+  });
   emit({ type: 'stageSpeculationWaste', data: collectLateSpeculationWaste(state) });
   emit({ type: 'stageExecutorMetrics', data: collectStageExecutorMetrics(state) });
   emit(appMessage(state));

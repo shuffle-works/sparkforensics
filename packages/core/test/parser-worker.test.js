@@ -474,6 +474,23 @@ describe('processEvent: SQLExecutionStart', () => {
   });
 });
 
+describe('processEvent: SQLExecutionStart modifiedConfigs', () => {
+  const start = (extra) => ({
+    Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart',
+    executionId: 7, description: 'q', time: 1, physicalPlanDescription: '', ...extra,
+  });
+
+  it('keeps the execution\'s session settings on the sql message', () => {
+    const msg = processEvent(start({ modifiedConfigs: { 'spark.sql.autoBroadcastJoinThreshold': '-1' } }), createState());
+    expect(msg.data.modifiedConfigs).toEqual({ 'spark.sql.autoBroadcastJoinThreshold': '-1' });
+  });
+
+  it('leaves the field off when the execution modified nothing, or the event has none', () => {
+    expect(processEvent(start({ modifiedConfigs: {} }), createState()).data.modifiedConfigs).toBeUndefined();
+    expect(processEvent(start({}), createState()).data.modifiedConfigs).toBeUndefined();
+  });
+});
+
 describe('processEvent: JobStart links stage to SQL execution', () => {
   it('sets sqlExecutionId on stage submitted after JobStart', () => {
     const s = createState();
@@ -1682,6 +1699,32 @@ describe('parseTaskEnd', () => {
     const malformed = createState();
     dispatchLine(taskEnd(FLAT).slice(0, -1), malformed, () => {});
     expect(malformed.skippedLines).toBe(1);
+  });
+
+  it('records each stage\'s accumulator IDs whether or not they repeat from the previous task', () => {
+    const entry = (id) => `{"ID":${id},"Name":"m","Update":1,"Value":1}`;
+    const lines = [
+      SUBMIT,
+      taskEnd([entry(1), entry(2)].join(',')),
+      taskEnd([entry(1), entry(2)].join(',')),
+      taskEnd([entry(1), entry(3)].join(',')),
+      taskEnd([entry(2)].join(',')),
+    ];
+    const viaLine = createState();
+    for (const line of lines) dispatchLine(line, viaLine, () => {});
+    const viaEvent = createState();
+    for (const line of lines) processEvent(JSON.parse(line), viaEvent);
+    expect(viaLine.skippedLines).toBe(0);
+    expect([...viaLine.taskAccumStages.keys()].sort()).toEqual([1, 2, 3]);
+    expect(viaLine.taskAccumStages).toEqual(viaEvent.taskAccumStages);
+  });
+
+  it('skips a TaskEnd with more accumulators than the schema allows, as a whole-line parse does', () => {
+    const many = Array.from({ length: 10_001 }, (_, i) => `{"ID":${i}}`).join(',');
+    const state = createState();
+    for (const line of [SUBMIT, taskEnd(many)]) dispatchLine(line, state, () => {});
+    expect(state.skippedLines).toBe(1);
+    expect(state.evidenceInputs.taskRecords).toBe(0);
   });
 });
 
@@ -3894,5 +3937,61 @@ describe('task-level evidence for stageFailed/retryWaste (real ExecutorLostFailu
     expect(finding.failedTaskDetails).toEqual([
       { taskId: 200, attemptNumber: 0, host: 'worker-9.internal', executorId: 'exec-1', reason: 'ExecutorLostFailure', peakExecMem: 100, memSpilled: 0, shuffleWrite: 0 },
     ]);
+  });
+});
+
+describe('accumulateTask: executor metric peaks from TaskEnd', () => {
+  const taskEnd = (executorId, metrics, stageId = 1) => ({
+    Event: 'SparkListenerTaskEnd', 'Stage ID': stageId,
+    'Task Info': { 'Launch Time': 0, 'Finish Time': 10, 'Executor ID': executorId },
+    'Task Metrics': {},
+    ...(metrics ? { 'Task Executor Metrics': metrics } : {}),
+  });
+  const completion = (s) => {
+    processEvent({ Event: 'SparkListenerApplicationStart', 'App ID': 'app-1', 'App Name': 't', Timestamp: 0 }, s);
+    const sent = [];
+    emitParseCompletion(s, (m) => sent.push(m), 0);
+    return sent.find((m) => m.type === 'runAggregates').data.executorPeakMetrics;
+  };
+
+  it('keeps the largest value of each metric per executor, in camelCase names', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
+    processEvent(taskEnd('1', { JVMHeapMemory: 300, OnHeapExecutionMemory: 50, MinorGCCount: 4 }), s);
+    processEvent(taskEnd('1', { JVMHeapMemory: 900, OnHeapExecutionMemory: 10, MinorGCCount: 0 }), s);
+    processEvent(taskEnd('2', { JVMHeapMemory: 100 }), s);
+    expect(completion(s)).toEqual({
+      1: { jvmHeapMemory: 900, onHeapExecutionMemory: 50, minorGCCount: 4 },
+      2: { jvmHeapMemory: 100 },
+    });
+    expect(s.evidenceInputs.executorMetricRows).toBe(3);
+  });
+
+  it('folds a TaskEnd that arrives after its stage finished', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
+    processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': { 'Stage ID': 1, 'Completion Time': 5 } }, s);
+    processEvent(taskEnd('7', { JVMHeapMemory: 123 }), s);
+    expect(completion(s)).toEqual({ 7: { jvmHeapMemory: 123 } });
+  });
+
+  it('does not count a driver row as an executor metric observation, as the heap-peak finding leaves it out', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
+    processEvent(taskEnd('driver', { JVMHeapMemory: 500 }), s);
+    processEvent({ Event: 'SparkListenerStageExecutorMetrics', 'Stage ID': 1, 'Executor ID': 'driver', 'Executor Metrics': { JVMHeapMemory: 700 } }, s);
+    expect(s.evidenceInputs.executorMetricRows).toBe(0);
+    processEvent({ Event: 'SparkListenerStageExecutorMetrics', 'Stage ID': 1, 'Executor ID': '1', 'Executor Metrics': { JVMHeapMemory: 700 } }, s);
+    expect(s.evidenceInputs.executorMetricRows).toBe(1);
+  });
+
+  it('skips all-zero rows (local mode), non-numeric values and tasks without metrics', () => {
+    const s = createState();
+    processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
+    processEvent(taskEnd('driver', { JVMHeapMemory: 0, OnHeapExecutionMemory: 0 }), s);
+    processEvent(taskEnd('1', { JVMHeapMemory: 'n/a' }), s);
+    processEvent(taskEnd('2', undefined), s);
+    expect(completion(s)).toEqual({});
+    expect(s.evidenceInputs.executorMetricRows).toBe(0);
   });
 });

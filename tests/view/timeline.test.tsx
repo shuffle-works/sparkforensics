@@ -161,6 +161,17 @@ describe('Timeline widget', () => {
     expect(gridlines.length).toBeGreaterThan(5);
   });
 
+  test('x-axis tick labels are distinct on a short run', () => {
+    const stages = new Map([[0, makeStage(0, 1000, 2200)], [1, makeStage(1, 2200, 4100)]]);
+    const { container } = renderTimeline(buildAppModel(stages));
+
+    const labels = Array.from(
+      container.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-label'),
+    ).map((el) => el.textContent);
+    expect(labels.length).toBeGreaterThan(1);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
   // The uncapped 3000-stage recharts render took 17.8s under CI coverage + contention.
   test('advanced tier shows every stage, uncapped by the top-N default', { timeout: 30000 }, () => {
     store.getState().setWidgetDensity('advanced');

@@ -25,7 +25,7 @@ export function PlanExplorer({ stageId, appModel }: PlanExplorerProps) {
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger
           aria-expanded={String(open) as 'true' | 'false'}
-          className="flex cursor-pointer items-center gap-2 bg-transparent text-left"
+          className="tap-target-comfortable flex cursor-pointer items-center gap-2 bg-transparent text-left"
         >
           <h3 className="font-heading text-sm font-medium">Plan context</h3>
           {open ? (

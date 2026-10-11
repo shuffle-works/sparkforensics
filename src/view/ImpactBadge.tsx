@@ -169,8 +169,10 @@ export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }:
       // hovering every single one.
       className={cn(
         severityBadgeVariants({ impactBand }),
-        'h-5 px-1.5 font-mono text-[11px] font-semibold tracking-[.06em]',
-        pillHref && 'underline decoration-current/40 decoration-dotted underline-offset-2',
+        'h-5 px-1.5 font-mono text-xs font-semibold tracking-[.06em]',
+        // `overflow-visible` lets the hit-area overlay paint past the badge's
+        // `overflow-hidden` box so the link reaches 24px without a taller pill.
+        pillHref && 'tap-target-comfortable overflow-visible underline decoration-current/40 decoration-dotted underline-offset-2',
         showGuideLink ? cn('rounded-r-none', className) : className,
       )}
       render={pillHref ? (
@@ -237,7 +239,7 @@ export interface ChipProps {
  * spill-classification badges) where the label isn't a `typeTag` lookup. */
 export function Chip({ label, impactBand, title, className }: ChipProps) {
   return (
-    <Badge title={title} className={cn(severityBadgeVariants({ impactBand }), 'font-mono text-[11px] font-semibold', className)}>
+    <Badge title={title} className={cn(severityBadgeVariants({ impactBand }), 'font-mono text-xs font-semibold', className)}>
       {label}
     </Badge>
   );

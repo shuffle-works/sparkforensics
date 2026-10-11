@@ -1,6 +1,6 @@
 # Caveats, tuning and coverage
 
-Spot-checks for each estimate formula, the overlap caveat, the effect of tuned thresholds and which finding types have an estimate.
+Spot-checks for each estimate formula, how skew and straggler split a tail, the effect of tuned thresholds and which finding types have an estimate.
 
 ## Per-formula spot-checks
 
@@ -10,31 +10,23 @@ Spot-checks for each estimate formula, the overlap caveat, the effect of tuned t
 | shuffle | `shuffleReadBytes / (SHUFFLE_THROUGHPUT_BPS × executors that ran the stage)` | `private-log-02.zstd`, stage 99 (`SHFL` finding): `shuffleReadBytes`=204,172,518,504 over 8 executors → `wasteMs` = 204172518504 / (8 × 125,000,000) × 1000 ≈ 204,173ms, against the stage's 763,776ms duration. The tasks' own measured shuffle fetch wait on this stage is 25.2s of wall-clock (`fetchWaitTime` / average concurrency), so even the per-link model runs well above the network stall actually observed, and the claim is capped there: 25.2s, `measured`. |
 | spill | `diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS × executors that ran the stage)` | Same run and stage (99): `diskBytesSpilled`=145,978,433,675 (note: the `SPILL` finding's own `value`/`metric` report `memoryBytesSpilled`=913,686,966,448, ~6x larger; the formula correctly uses the smaller disk figure, not that one) over 8 executors → `wasteMs` = 145978433675 / (8 × 200,000,000) × 1000 ≈ 91,237ms (91236.521046875 exactly, matching `wallClock`, below the clip). |
 
-## Overlap caveat: skew / straggler
+## One tail, one finding: skew / straggler
 
 `skew` and `straggler` both claim the stage's `tailReplayRecoveryMs` (see
-[Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution)), whichever skew branch fired,
-so when both fire on one stage they report the same recovered tail. The skew branch (P95 or max
-over P50) changes only the fallback single-task delta on a stage without the replay field. This
-phase does not dedupe or suppress either: each keeps its own independently-computed
-`wallClock`. Do not sum `wallClock.high` across multiple findings on the same stage: if
-both fire together, they describe the same underlying waste, not two separate wastes. Both
-are clipped with the post-fix floor described under
+[Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution)), whichever skew branch fired.
+The skew branch (P95 or max over P50) changes only the fallback single-task delta on a stage
+without the replay field. Which of the two reports a tail follows its cause (`tailVerdict` in
+`detectors.ts`, from the stage's `tailAttribution`): `skew` takes a tail whose extra time follows
+data volume, and `straggler` takes the rest, including a tail with no measured cause
+(`cause: 'unattributed'`) or a stage with no tail attribution. Both judge a tail with skew's
+resolved thresholds, so the two never fire on the same stage and their recoverable time is never
+counted twice. Both are clipped with the post-fix floor described under
 [Occupancy-weighted attribution](../impact-estimation.md#occupancy-weighted-attribution), not the plain `ceiling`,
 so a stage gated by one dominant outlier task reports that task's excess as recoverable
-instead of the near-zero room `ceiling >= taskDurationMax` would leave.
-
-`analyzer.ts`'s `flagSkewStragglerOverlap` (run after `deriveImpactBand`, once per `analyze()`
-call) states this caveat on the findings themselves:
-whenever `skew` (either branch) and `straggler` both fire on the same `stageId`, it
-appends a "this overlaps with the X finding on this stage" sentence to both findings'
-`validationRequired` text (rather than suppressing either, so neither finding's own diagnostic
-value is lost). The note rides the
-same confidence-caveat UI (`RowStatusCluster`) a reader already sees before trusting either
-finding's magnitude, since both detectors also carry a `confidence` field that scales
-`low`/`medium`/`high` off how far the finding's own ratio (skew: `ratioWarn`) or task share
-(straggler: `shareWarn`/`warnPct`, `critPct`) sits past its detector threshold
-(unvalidated; see the confidence-disclosure note in detector-contract.md).
+instead of the near-zero room `ceiling >= taskDurationMax` would leave. Both detectors also carry
+a `confidence` field that scales `low`/`medium`/`high` off how far the finding's own ratio
+(skew: `ratioWarn`) or task share (straggler: `shareWarn`/`warnPct`, `critPct`) sits past its
+detector threshold (unvalidated; see the confidence-disclosure note in detector-contract.md).
 
 `stageShape`'s `taskStageSkew` rule doesn't participate in this caveat: it reports a
 `resourceOnly` idle-core-ms figure (see the coverage table below) instead of a wall-clock
@@ -91,10 +83,11 @@ formula per `variant`/`rule` on the same finding type; the basis column says whi
 | `smallFiles` | sql | modeled / cost-only | `fileCount × FILE_OPEN_OVERHEAD_MS` (10 ms per file), divided for a read by the most tasks its stages ran at once (`peakConcurrentTasks`: tasks open their files in parallel; 91,344 files claimed 76 s on a 117 s stage that ran 314 tasks at once) and kept serial for a write (the job commit moves each file on the driver). The figure is split evenly across `stageIds`, each stage's share is gate-clipped, and the sum is capped at the stages' union; with no `stageIds` to map to, cost-only with that same figure as `rawWaste` in `ms`. `stageIds` is narrowed the same way (see [Stage-ID attribution for Plan Advisor findings](../detector-contract/plan-attribution.md#stage-id-attribution-for-plan-advisor-findings)); falls back to the whole execution's stages when the flagged node(s) have no accumulator coverage. |
 | `overBroadcast` | sql | modeled / cost-only | `broadcastBytes / BROADCAST_BANDWIDTH_BPS`, summed and capped over `stageIds`'s union; cost-only with `rawWaste` in `ms` when not stage-mappable. `stageIds` is narrowed the same way; falls back to the whole execution's stages when the flagged node(s) have no accumulator coverage. |
 | `underBroadcast` | sql | modeled / cost-only | `smallerSideBytes / BROADCAST_BANDWIDTH_BPS`, summed and capped over `stageIds`'s union; cost-only with `rawWaste` in `ms` when not stage-mappable. `stageIds` is narrowed the same way; falls back to the whole execution's stages when the flagged node(s) have no accumulator coverage. |
-| `memoryUtilization` | app | cost-only / informational-only | Three of the four variants report `rawWaste` in `mbSeconds`: `variant: 'wasteModel'` passes through its own `wastedMBSeconds`; `'idleCores'` uses `idleRateFraction × allocatedMBSeconds`, with `idleRateFraction` measured against the same allocated core time as `utilization` and `allocatedMBSeconds` the run's allocated memory-seconds from `computeAllocation()` (executor heap plus overhead over each executor's alive time; Spark's defaults when the memory properties are not logged); `'memoryBand'` with `rule: 'heapOverProvisioned'` uses `(allocatedBytes − heap) in MB × appDurationSeconds`. `'memoryBand'` with `rule: 'heapNearCapacity'` is an OOM-risk signal rather than a waste, and the `dataUnavailable` shape has no inputs at all: both informational-only |
+| `memoryUtilization` | app | cost-only / informational-only | Three of the four variants report `rawWaste` in `mbSeconds`: `variant: 'wasteModel'` passes through its own `wastedMBSeconds`; `'idleCores'` uses `idleRateFraction × allocatedMBSeconds`, with `idleRateFraction` measured against the same allocated core time as `utilization` and `allocatedMBSeconds` the run's allocated memory-seconds from `computeAllocation()` (executor heap plus overhead over each executor's alive time; Spark's defaults when the memory properties are not logged); `'memoryBand'` with `rule: 'heapOverProvisioned'` uses `(allocatedBytes − heap) in MB × executorSeconds`, the seconds the run's executors were alive. The `dataUnavailable` shape has no inputs at all: informational-only |
 | `utilization` | app | cost-only | `rawWaste` in `coreHours`: `(1 − utilizationFraction) × allocatedCoreMs / 3.6e6`, where `allocatedCoreMs` is cores × time alive over every executor (`allocatedCoreMs()`, the figure behind `metrics.allocation.coreHours`), so it never exceeds the allocation. The same figure in core-milliseconds is `idleCoreTimeMs` |
 | `coreLocality` | app | cost-only | `rawWaste` in `coreMs`: `nonLocalTaskCount × NETWORK_FETCH_PENALTY_MS` |
 | `autoscalingChurn` | app | cost-only | `rawWaste` in `coreHours`: `shortLivedExecutorCount × EXECUTOR_STARTUP_OVERHEAD_MS / 3.6e6` |
+| `pythonUdf` | sql | informational-only | no waste formula: the gain from Arrow-optimized or pandas UDFs depends on how much of the stage is the UDF body, which the log does not record |
 | `configAudit` | config | informational-only | a config-drift check standing alone; no waste formula |
 | `jobFailureRate` | app | cost-only | `rawWaste` in `coreHours`: `failedJobCount × avgJobDurationMs / 3.6e6` |
 | `cachingOpportunity` | app | cost-only | `rawWaste` in `ms`: `totalReadBytes / RE_READ_THROUGHPUT_BPS` |

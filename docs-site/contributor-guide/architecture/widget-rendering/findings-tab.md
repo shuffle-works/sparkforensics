@@ -20,7 +20,13 @@ unfiltered, core `rankedRollup` recomputed over the kept findings under a
 filter). `ImpactBoard` then buckets rows by each group's `band` (its
 representative member's impact band, after core `rankFindings`, the same
 finding whose impact band its own badge already shows) and cards by each
-active widget's own `worstImpactBand`.
+active widget's own `worstImpactBand`. The verdict's step leads
+(`verdictLeads`) are dropped before the rollup and the cards the verdict
+shows in place (`verdictWidgetIds`) before `computeActiveWidgets`'s list is
+bucketed, so with any step lead the board opens with a "More findings (N)"
+`<h2>` (N is the remaining eligible count) or, when N is 0,
+"No more findings to show." Caveat cards such as `IncompleteRun` never
+count toward N and still render under their own titles below it.
 
 Eligible findings for the rollup are `catalog` ∪ `configFindings` that pass
 core `isEligible` (`packages/core/src/recommendation-rollup.ts`) and have a
@@ -42,7 +48,9 @@ by worst impact band, never by their incomparable raw magnitudes.
 A summary row's tag badge and action label come from the group's own
 highest-impact member (via the same three-tier comparator, core
 `rankFindings`); its sentence is the type-level
-`coreFindingGenericRecommendation`, not one member's own numbers. The
+`coreFindingGenericRecommendation`, not one member's own numbers, and is
+omitted when the members' sentences differ (for example, skew findings with
+different AQE skew-join cases). The
 trailing stat depends on the group's
 kind (`×N · <time> recoverable`, `×N · <total>` with the summed resource
 waste the CLI report also prints, or `×N` alone, adding a per-impact-band
@@ -55,18 +63,23 @@ A band's rollup rows render as a headerless three-column `Table`
 `data-testid="fix-these-first-row"`, `data-finding-type`) has three
 `TableCell`s: the impact dot + ALL-CAPS tag as a real `TagBadge` (not
 `plainBadge`: nothing wraps it, so its own docs links stay real `<a>`s,
-same as everywhere else on the board); a text block inside its own nested
-`<button>` (a short imperative action label, e.g. "Reduce shuffle size",
+same as everywhere else on the board); a text block (a short imperative
+action label, e.g. "Reduce shuffle size",
 from `findingActionLabel` (`packages/core/src/finding-action-label.ts`), over the
 finding's own full `recommendation` sentence in smaller muted text, both
-wrapping rather than truncating); and a right-aligned monospace stage
+wrapping rather than truncating, then one **Show evidence** button); and a right-aligned monospace stage
 reference + impact figure (e.g. `St.49 · 20.1s`, via the shared
-`formatWallClockRange`/`formatRawWaste` in `packages/core/src/format-utils.ts`). That inner button, not the
-row, is the click target: it routes via `selectTriageTargetForFinding`
+`formatWallClockRange`/`formatRawWaste` in `packages/core/src/format-utils.ts`). The
+**Show evidence** button (`EvidenceButton`), not the row, is the click
+target. The first row of a widget's type in a band owns that widget's card
+and expands it in place as a full-width row below (`EvidencePanelRow`,
+`InlineEvidence`); any other row routes via `selectTriageTargetForFinding`
 (`src/view/triage-target.ts`), the same per-finding resolver Stage Summary
-Table's own control uses (see "First investigation routing" below); a
-`TypeGroupRow`'s own inner button toggles its expand state instead
-(`aria-expanded`). An expanded group's members (`FindingInstanceRow`) omit
+Table's own control uses (see "First investigation routing" below), to the
+card another row or the verdict owns. A route that targets an owned card
+opens it too (`useEvidenceOpen`). A `TypeGroupRow` has the same button for
+its representative finding, and its text block is an inner button that
+toggles its expand state (`aria-expanded`). An expanded group's members (`FindingInstanceRow`) omit
 the badge and span its cell (`colSpan={2}`): the location line, then the
 recommendation clamped to one line, then the figure in the third column.
 `ImpactBoard` owns which single group is expanded (`expandedGroupKey`); a
@@ -76,25 +89,19 @@ Each impact band (`ImpactBoard.tsx`'s own `ImpactGroup`, one call per
 entry of `IMPACT_BAND_ORDER_LIST = ['critical', 'warning', 'info']`) is a
 `<section aria-labelledby>` pointing at its
 `<h2 id="impact-band-<band>-heading" tabIndex={-1}>` (Critical, Warning,
-Info; the top bar's count chip focuses it), a sibling of the panel's
-sr-only `<h2>Findings</h2>`, and renders nothing (not even the heading) when it has neither a
+Info; the top bar's count chip focuses it; an `<h3>` under "More
+findings"), and renders nothing (not even the heading) when it has neither a
 rollup row nor an active widget: a run with no critical findings has no
 "Critical" heading or section at all. Inside a band, rollup rows render
-first as the headerless `Table` described above, followed by that band's
-active `REGISTRY` widget cards (`computeActiveWidgets`'s ranked list,
+first as the headerless `Table` described above, followed by the band's
+active `REGISTRY` widget cards that no row owns (`computeActiveWidgets`'s ranked list,
 filtered to this impact band) in their own `WidgetGrid`: every one of
 `orderedWidgets()`'s `REGISTRY` components *except* the one
 always-mounted one below, with at least one finding in `catalog` ∪
 `configFindings`. Within a band, active widgets keep `orderedWidgets()`'s
 own order: the interpretation's `DetectorInfo` sorted by region
-(`action` first), then ascending detector `order`. In Basic
-view a band with both rows and cards folds its `WidgetGrid` behind one
-"Show the evidence (N cards)" disclosure, unmounted while closed; it opens
-itself (and stays open) when the active route target
-(`useActiveRouteTarget`) is one of its cards, and the card, mounting with
-the route still pending, opens and scrolls itself through
-`registerWidget`. A band with cards but no rows, and every band in
-Advanced view, shows its grid directly.
+(`action` first), then ascending detector `order`. Those unowned cards
+render collapsed (`defaultCollapsed`) in both Basic and Advanced view.
 `cacheUtilization`, `memoryUtilization`, and `utilization` are
 `reference`-region types but aren't always-mounted exceptions, so a Cache
 Storage, Memory Utilization, or Executor Utilization card with an active
@@ -118,9 +125,9 @@ neutral rather than clean green, after the interpretation's `coverage.gaps`
 (`verdictGaps`) lines saying why
 and naming the setting to turn on. A clean run lands `cacheUtilization`,
 `memoryUtilization`, and `utilization` here too, same as any ordinary
-action-region type. Caching Opportunities, Config Audit, and the four
-Plan Advisor widgets (Redundant Plan Subtree, Excessive Small Files, Missed
-Broadcast Join, Oversized Broadcast Join) render through the ordinary
+action-region type. Caching Opportunities, Config Audit, and the six
+Plan Advisor widgets (Redundant Plan Subtree, Excessive Small Files,
+Nested Loop Join, Row-at-a-time Python UDFs, Missed Broadcast Join, Oversized Broadcast Join) render through the ordinary
 active/clean paths above (see
 [App- and plan-level widgets](../board-widgets.md#board-widgets-app-and-plan-widgets)).
 Core Usage by Locality (`coreLocality`, resolving to `CoreUsageArea`) is

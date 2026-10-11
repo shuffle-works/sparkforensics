@@ -1,5 +1,5 @@
 import { planNodesOfStage } from './stage-plan-nodes.ts';
-import type { SqlExecution, Stage } from './types.ts';
+import type { PlanNode, SqlExecution, Stage } from './types.ts';
 
 // Plan operators that hand rows to a Python worker process: the row-at-a-time and Arrow Python UDF
 // evaluators, the pandas/Arrow grouped and map operators, and the PythonRDD scan of an RDD
@@ -8,6 +8,17 @@ import type { SqlExecution, Stage } from './types.ts';
 // ArrowAggregatePython and ArrowWindowPython. Spark prefixes a whole-stage-codegen child's name
 // with "*(n) " in some plan strings.
 const PYTHON_PLAN_NODE = /^(?:\*\(\d+\)\s*)?(?:PythonRDD|BatchEvalPython|ArrowEvalPython|ArrowAggregatePython|ArrowWindowPython|\w+InPandas|\w+InArrow)\w*\b/;
+
+// The row-at-a-time Python UDF evaluator: each row is pickled to a Python worker and its result
+// pickled back. The Arrow-based ArrowEvalPython is deliberately not matched, and neither are the
+// UDTF variants (BatchEvalPythonUDTF), which spark.sql.execution.pythonUDF.arrow.enabled does not
+// govern.
+const BATCH_EVAL_PYTHON_NODE = /^(?:\*\(\d+\)\s*)?BatchEvalPython$/;
+
+/** True for a plan node that runs row-at-a-time Python UDFs (BatchEvalPython). */
+export function isBatchEvalPythonNode(node: Pick<PlanNode, 'name'>): boolean {
+  return BATCH_EVAL_PYTHON_NODE.test(node.name ?? '');
+}
 
 // An RDD lambda or map function has no SQL plan to match, and a stage whose plan could not be
 // matched is left with nothing but its name and call site.

@@ -8,7 +8,7 @@
 // detectors.ts is type-only, so it is erased at build time. A detector's scope, order and emits
 // list stay on its DETECTORS entry; renderers get them through detectorInfoByType().
 import type { ThresholdsOf } from './detectors.ts';
-import type { Remediation, SkewOrigin } from './finding-types.ts';
+import type { AqeSkewCase, ConfRemediation, Remediation, SkewOrigin } from './finding-types.ts';
 import type { FindingOf, FindingType } from './types.ts';
 
 export interface FindingPresentation<T extends FindingType> {
@@ -30,12 +30,25 @@ export interface FindingPresentation<T extends FindingType> {
 /** A share threshold as captions and caveats state it: 0.005 -> "0.5%", never float noise like 7.000000000000001%. */
 export const shareLabel = (share: number): string => `${Math.round(share * 1e6) / 1e4}%`;
 
+/** `n.toLocaleString('en-US')` for a whole number, without loading ICU (about 10 ms the first time it is
+ * used), which keeps the CLI's startup off that cost. Other values take the locale path. */
+function groupThousands(n: number): string {
+  return Number.isSafeInteger(n) ? String(n).replace(/\B(?=(\d{3})+$)/g, ',') : n.toLocaleString('en-US');
+}
+
 // Whether the detector found `key` already logged on for this run. Its switchFix (detectors.ts)
 // then worded the row's own text for that case and left the property out of the remediation, so
 // a generic line reads the same decision and never recommends a switch the row says is on.
 // A finding with no remediation (older or hand-built data) keeps the property wording.
 function switchAlreadyOn(finding: { remediation?: Remediation[] }, key: string): boolean {
   return finding.remediation != null && !finding.remediation.some((r) => r.kind === 'conf' && r.key === key);
+}
+
+// The broadcast threshold properties a broadcast-sizing row's remediation names: the adaptive one when
+// it governed the query, else (and for a row with none) spark.sql.autoBroadcastJoinThreshold.
+function broadcastThresholdKeyOf(f: { remediation?: Remediation[] }): string {
+  const keys = (f.remediation ?? []).filter((r): r is ConfRemediation => r.kind === 'conf').map((r) => r.key);
+  return keys.length ? keys.join(' or ') : 'spark.sql.autoBroadcastJoinThreshold';
 }
 
 // The properties an idle-capacity finding lowers once dynamic allocation is on, worded as its row
@@ -45,17 +58,56 @@ function idleCapacityLowering(f: { remediation?: Remediation[] }): string {
   return ` by lowering spark.dynamicAllocation.maxExecutors${lowersFloor ? ' and spark.dynamicAllocation.minExecutors' : ''}`;
 }
 
+// What a shuffle-reading stage's partition-count advice names, read from the row's remediation: the
+// property ('property', also for a finding with no remediation), AQE's coalescing settings ('aqe',
+// which leave spark.sql.shuffle.partitions out), or the stage's own repartition(n) ('code').
+function partitionAdviceKind(f: { remediation?: Remediation[] }): 'property' | 'aqe' | 'code' {
+  if (f.remediation == null || f.remediation.some((r) => r.kind === 'conf' && r.key === 'spark.sql.shuffle.partitions')) return 'property';
+  if (f.remediation.some((r) => r.kind === 'conf' && r.key.startsWith('spark.sql.adaptive.'))) return 'aqe';
+  return f.remediation.some((r) => r.kind === 'code') ? 'code' : 'property';
+}
+
+// The skew-join line per AQE case, with no instance data (numbers, config values).
+const AQE_SKEW_GENERIC: Readonly<Record<AqeSkewCase, string>> = {
+  split: 'AQE skew-join handling already split the skewed partitions, so the imbalance that remains is not join skew: look for a GC pause, a slow host or an expensive key.',
+  evenReads: 'The shuffle reads are even, so the slow tail is not partition-size skew and AQE has nothing to split: look for a GC pause, a slow host or an expensive key.',
+  belowThreshold: 'The largest partition is under what AQE treats as skewed: lower the skew threshold or factor for this query.',
+  planShape: 'An operator sits between the join and its shuffle, so AQE skew-join handling cannot apply: salt the key or repartition on a better key.',
+  userRepartition: 'An explicit repartition feeds the join, so AQE leaves its shuffle alone: drop the repartition, or salt the key.',
+  joinType: 'The join type does not let AQE split the skewed side: put the skewed table on a splittable side, or salt the key.',
+  extraShuffle: 'AQE skipped the split because it would add a shuffle: set spark.sql.adaptive.forceOptimizeSkewedJoin to true if that shuffle is cheaper than the tail, or salt the key.',
+  notSplit: 'AQE did not split the skewed partition and the log does not say why: salt the key or repartition on a better key.',
+};
+// Before Spark 3.3 there is no forceOptimizeSkewedJoin, so an extraShuffle row carries a code fix.
+const AQE_SKEW_EXTRA_SHUFFLE_NO_FORCE = 'AQE skipped the split because it would add a shuffle: salt the key or repartition on a better key.';
+
 const SKEW_JOIN_KEY = 'spark.sql.adaptive.skewJoin.enabled';
 const SKEW_JOIN_ALREADY_ON = 'AQE skew-join handling is already on, so salt the key or repartition on a better key.';
 const SKEW_JOIN_AQE_OFF = 'AQE is off, so enable it (spark.sql.adaptive.enabled) for skew-join handling to apply; otherwise salt the key or repartition on a better key.';
 
 // The skew-join generic line, worded per the row's remediation: AQE logged off, switch already on, or neither.
-function skewJoinGeneric(f: { remediation?: Remediation[]; origin?: SkewOrigin }, unset: string): string {
+function skewJoinGeneric(f: { remediation?: Remediation[]; origin?: SkewOrigin; aqeSkew?: AqeSkewCase }, unset: string): string {
   if (f.origin === 'inputScan') return 'Uneven input files: compact small files or split large ones (lower spark.sql.files.maxPartitionBytes).';
   if (f.origin === 'other') return 'Work is uneven across tasks: salt the key or repartition on a better key.';
+  if (f.aqeSkew === 'extraShuffle' && !f.remediation?.some((r) => r.kind === 'conf')) return AQE_SKEW_EXTRA_SHUFFLE_NO_FORCE;
+  if (f.aqeSkew != null) return AQE_SKEW_GENERIC[f.aqeSkew];
   if (f.remediation?.some((r) => r.kind === 'conf' && r.key === 'spark.sql.adaptive.enabled')) return SKEW_JOIN_AQE_OFF;
   return switchAlreadyOn(f, SKEW_JOIN_KEY) ? SKEW_JOIN_ALREADY_ON : unset;
 }
+/** One line on what a straggler finding's slow tasks lost their time to, for the widget row; null
+ * when the log gave no cause (the finding then only knows their duration). */
+export function stragglerCauseSummary(f: { cause?: string; causeSharePct?: number; host?: string; hostTasks?: number }): string | null {
+  const share = f.causeSharePct != null ? ` (${f.causeSharePct}% of their extra time)` : '';
+  switch (f.cause) {
+    case 'data': return `The slow tasks read more data${share}`;
+    case 'gc': return `GC${share}`;
+    case 'fetchWait': return `Waiting on shuffle fetches${share}`;
+    case 'host': return `Tasks piled on ${f.host ?? 'one host'}${share}`;
+    case 'unexplained': return 'Not data volume, GC, fetch wait or one host';
+    default: return null;
+  }
+}
+
 const DYNAMIC_ALLOCATION_KEY = 'spark.dynamicAllocation.enabled';
 
 // The three configAudit DETECTORS entries share this row, one per audited property.
@@ -94,7 +146,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   skew: {
     name: 'task skew',
     tag: 'SKEW',
-    thresholdSummary: (t) => `P95 task time over ${t.ratioWarn}× the median (the longest task on stages under ${t.minTasksForP95} tasks)`,
+    thresholdSummary: (t) => `P95 task time over ${t.ratioWarn}× the median (the longest task on stages under ${t.minTasksForP95} tasks), and the slow tasks read correspondingly more data`,
     actionLabel: () => 'Fix task skew',
     genericRecommendation: (f) => skewJoinGeneric(f,
       'For join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.'),
@@ -125,9 +177,14 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'TINY',
     thresholdSummary: (t) => `${t.minTasks}+ tasks with a median of ${t.maxP50}ms or less and a P95 of ${t.maxP95}ms or less`,
     actionLabel: () => 'Coalesce small tasks',
-    genericRecommendation: (f) => (f.reads != null && f.reads !== 'shuffle'
-      ? 'Scheduler overhead may dominate: coalesce down to fewer, larger tasks.'
-      : 'Scheduler overhead may dominate: lower spark.sql.shuffle.partitions, or coalesce down to fewer, larger tasks.'),
+    genericRecommendation(f) {
+      if (f.reads != null && f.reads !== 'shuffle') return 'Scheduler overhead may dominate: coalesce down to fewer, larger tasks.';
+      switch (partitionAdviceKind(f)) {
+        case 'aqe': return 'Scheduler overhead may dominate: AQE already coalesced the shuffle, so set spark.sql.adaptive.coalescePartitions.parallelismFirst to false or raise spark.sql.adaptive.advisoryPartitionSizeInBytes, or coalesce down to fewer, larger tasks.';
+        case 'code': return "Scheduler overhead may dominate: this stage's own repartition(n) or RDD parallelism sized it, so lower that count or coalesce down to fewer, larger tasks.";
+        default: return 'Scheduler overhead may dominate: lower spark.sql.shuffle.partitions, or coalesce down to fewer, larger tasks.';
+      }
+    },
   },
 
   shuffle: {
@@ -176,9 +233,15 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     thresholdSummary: (t) => `single-task disk spill above ${t.singleTaskDiskGiB} GiB`,
     actionLabel: () => 'Reduce spill',
     // The skew/volume classification isn't a Finding field, so one sentence covers both.
-    genericRecommendation: (f) => (f.reads != null && f.reads !== 'shuffle'
-      ? 'If the spill is skew-driven, fix task skew first: adding memory will not help. Otherwise increase executor memory or process less data per task.'
-      : 'If the spill is skew-driven, fix task skew first: adding memory will not help. Otherwise raise spark.sql.shuffle.partitions or increase executor memory.'),
+    genericRecommendation(f) {
+      const skewFirst = 'If the spill is skew-driven, fix task skew first: adding memory will not help. Otherwise';
+      if (f.reads != null && f.reads !== 'shuffle') return `${skewFirst} increase executor memory or process less data per task.`;
+      switch (partitionAdviceKind(f)) {
+        case 'aqe': return `${skewFirst} lower spark.sql.adaptive.advisoryPartitionSizeInBytes so AQE's merged partitions are smaller, or increase executor memory.`;
+        case 'code': return `${skewFirst} raise this stage's own partition count (its repartition(n) or RDD parallelism), or increase executor memory.`;
+        default: return `${skewFirst} raise spark.sql.shuffle.partitions or increase executor memory.`;
+      }
+    },
   },
 
   gc: {
@@ -236,18 +299,28 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'SLOW',
     thresholdSummary: () => 'a stage running far longer than its peers, not attributable to a single slow host',
     actionLabel: () => 'Profile slow stage',
-    genericRecommendation: (f) => f.reads === 'input'
-      ? 'Often too few or too uneven input partitions: check input file sizes and lower spark.sql.files.maxPartitionBytes, or look for a large per-task data volume driving heavy spill.'
-      : f.reads === 'other'
-        ? 'Check what the stage computes and for a large per-task data volume driving heavy spill.'
-        : 'Often a partition-count problem: raise parallelism via spark.sql.shuffle.partitions or spark.default.parallelism, or check for a large per-task data volume driving heavy shuffle and spill.',
+    genericRecommendation(f) {
+      if (f.reads === 'input') return 'Often too few or too uneven input partitions: check input file sizes and lower spark.sql.files.maxPartitionBytes, or look for a large per-task data volume driving heavy spill.';
+      if (f.reads === 'other') return 'Check what the stage computes and for a large per-task data volume driving heavy spill.';
+      const spill = 'or check for a large per-task data volume driving heavy shuffle and spill.';
+      switch (partitionAdviceKind(f)) {
+        case 'aqe': return `Often a partition-count problem: AQE coalesced the shuffle, so lower spark.sql.adaptive.advisoryPartitionSizeInBytes to get more tasks, ${spill}`;
+        case 'code': return `Often a partition-count problem: raise this stage's own partition count (its repartition(n) or RDD parallelism), ${spill}`;
+        default: return `Often a partition-count problem: raise spark.sql.shuffle.partitions, ${spill}`;
+      }
+    },
   },
   straggler: {
     name: 'straggling task',
     tag: 'STRAG',
-    thresholdSummary: () => 'one or more tasks finishing far after the rest of their stage',
+    thresholdSummary: () => 'one or more tasks finishing far after the rest of their stage, for a reason other than reading more data',
     actionLabel: () => 'Fix stragglers',
-    genericRecommendation: (f) => `Rule out a GC pause or a slow shuffle fetch before assuming a hardware issue. If uneven data is the cause: ${skewJoinGeneric(f, 'for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.')}`,
+    genericRecommendation: (f) => f.cause === 'data' ? `Uneven data volume drives the slow tasks: ${skewJoinGeneric(f, 'for join-driven skew, enable AQE skew-join handling (spark.sql.adaptive.skewJoin.enabled); otherwise salt the key or repartition on a better key.')}`
+      : f.cause === 'gc' ? 'GC accounts for most of the slow tasks\' extra time: reduce object creation, use primitive types, avoid UDFs, increase executor memory.'
+      : f.cause === 'fetchWait' ? 'Waiting on shuffle fetches accounts for most of the slow tasks\' extra time: look for a slow or overloaded node serving shuffle blocks, executors lost mid-stage, or reducers fetching many small blocks.'
+      : f.cause === 'host' ? 'Most slow tasks ran on one host: check what it was running, and consider enabling spark.speculation to relaunch a lagging task automatically.'
+      : f.cause === 'unexplained' ? 'The slow tasks read no more data than the median task, and GC, shuffle fetch wait and one slow host do not account for their time: look at per-record cost (UDFs, regular expressions, a call out per row).'
+      : 'Nothing in the log attributes the slow tasks to data volume, GC, shuffle fetch wait or one host: check their input sizes, GC time and hosts before choosing a fix.',
   },
   speculationWaste: {
     name: 'speculation waste',
@@ -275,8 +348,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
         case 'idleCores': return 'Reduce idle cores';
         case 'wasteModel': return 'Right-size executor memory';
         case 'memoryBand':
-          if (f.dataUnavailable) return 'Enable memory metrics';
-          return f.rule === 'heapNearCapacity' ? 'Increase executor memory' : 'Reduce executor memory';
+          if (f.dataUnavailable) return 'Executor heap peaks unavailable';
+          return 'Reduce executor memory';
       }
       return undefined;
     },
@@ -288,9 +361,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
         case 'wasteModel': return 'Review spark.executor.memory and executor count.';
         case 'memoryBand':
           if (f.dataUnavailable) return undefined;
-          return f.rule === 'heapNearCapacity'
-            ? 'Memory may be too small: raise spark.executor.memory to avoid OOM/spill.'
-            : 'Memory may be over-provisioned: consider reducing spark.executor.memory for cost savings.';
+          return 'Memory may be over-provisioned: consider reducing spark.executor.memory for cost savings.';
       }
       return undefined;
     },
@@ -369,14 +440,30 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
       ? 'Repartition or coalesce before writing to raise the average file size.'
       : 'Compact the upstream output so fewer, larger files are produced.'),
   },
+  pythonUdf: {
+    name: 'row-at-a-time Python UDF',
+    tag: 'PLAN',
+    thresholdSummary: (t) => `over ${t.minBytesSent / 1048576} MiB sent to Python workers by stages running over ${t.minStageMs / 1000} s`,
+    actionLabel: () => 'Vectorize Python UDF',
+    genericRecommendation: () => 'Use Arrow-optimized Python UDFs (spark.sql.execution.pythonUDF.arrow.enabled, Spark 3.4 and later) or a pandas UDF instead of a row-at-a-time Python UDF.',
+  },
+  nestedLoopJoin: {
+    name: 'nested loop join',
+    tag: 'PLAN',
+    thresholdSummary: (t) => `a nested-loop or cartesian join with over ${groupThousands(t.minOutputRows)} output rows, at least ${t.minExpansion}x its larger input`,
+    actionLabel: (f) => (f.condition == null ? 'Confirm cross join' : 'Add an equi-join key'),
+    genericRecommendation: (f) => (f.condition == null
+      ? 'Confirm the cross join is intended, or add a join key so the rows are matched instead of multiplied.'
+      : 'Add an equi-join key so Spark can use a hash or sort-merge join; for a range condition, bucket the range and join on the bucket as well.'),
+  },
   underBroadcast: {
     name: 'missed broadcast join',
     tag: 'PLAN',
-    thresholdSummary: () => 'a join below the configured size floor that skipped broadcast',
+    thresholdSummary: (t) => `a join side its type can broadcast, between ${t.minSmallerSideBytes / 1048576} MiB and ${t.overBroadcastBytes / 1073741824} GiB, that skipped broadcast`,
     actionLabel: () => 'Use broadcast join',
     genericRecommendation: (f) => (f.broadcastThreshold === 'notLimiting'
-      ? 'The threshold already admits the smaller side, so it is not what stopped the broadcast: consider a broadcast() hint or collecting table statistics.'
-      : 'This could have been a broadcast join: consider a broadcast() hint or raising spark.sql.autoBroadcastJoinThreshold.'),
+      ? 'The threshold already admits the build side, so it is not what stopped the broadcast: consider a broadcast() hint or collecting table statistics.'
+      : `This could have been a broadcast join: consider a broadcast() hint or raising ${broadcastThresholdKeyOf(f)}.`),
   },
   overBroadcast: {
     name: 'oversized broadcast join',
@@ -385,9 +472,9 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     actionLabel: () => 'Fix oversized broadcast',
     genericRecommendation: (f) => (f.broadcastThreshold === 'notLimiting'
       ? 'The configured threshold is below this broadcast, so remove the broadcast() hint that forced it.'
-      : switchAlreadyOn(f, 'spark.sql.autoBroadcastJoinThreshold')
+      : f.broadcastThreshold === 'disabled'
       ? 'Automatic broadcast is already disabled, so remove the broadcast() hint that forced it.'
-      : 'Check for a misapplied broadcast hint or a misconfigured spark.sql.autoBroadcastJoinThreshold.'),
+      : `Check for a misapplied broadcast hint or a misconfigured ${broadcastThresholdKeyOf(f)}.`),
   },
 };
 
