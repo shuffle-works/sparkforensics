@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import dagre from '@dagrejs/dagre';
-import { layoutWithDagre, clearLayoutCache, computeGroupBounds, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT } from '../../src/view/plan-graph/dagre-layout';
+import { layoutWithDagre, runDagre, clearLayoutCache, computeGroupBounds, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT } from '../../src/view/plan-graph/dagre-layout';
 import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/types.ts';
 
 function graphNode(id: string, overrides: Partial<PlanGraphNodeData> = {}): PlanGraphNodeData {
@@ -255,5 +255,48 @@ describe('layout cache', () => {
     layoutWithDagre(nodes(), edges);
     expect(spy).toHaveBeenCalledTimes(5);
     spy.mockRestore();
+  });
+});
+
+// A 30-node forest in 19 segments. Dagre's group ordering puts three groups in a
+// cycle of its constraint graph, drops them from the next sweep and gives two nodes
+// the same slot; without the group re-ordering `layout` throws "Not possible to
+// find intersection inside of the rectangle".
+describe('layout of plans whose segments interleave', () => {
+  const segmentOfNode = [0, 1, 2, 3, 2, 1, 2, 3, 4, 4, 5, 6, 6, 2, 7, 8, 9, 10, 11, 2, 12, 4, 13, 13, 11, 14, 15, 16, 17, 18];
+  const links = [
+    [0, 2], [1, 3], [2, 4], [1, 5], [4, 6], [3, 7], [2, 8], [8, 9], [5, 10], [11, 12], [4, 13], [6, 14], [13, 15], [7, 16],
+    [10, 17], [0, 18], [6, 19], [2, 20], [9, 21], [13, 22], [22, 23], [18, 24], [2, 25], [19, 26], [12, 27], [24, 28], [9, 29],
+  ];
+  const nodes = segmentOfNode.map((segmentIndex, i) => graphNode(`n${i}`, { segmentIndex }));
+  const edges: PlanGraphEdge[] = links.map(([from, to]) => ({ id: `n${from}->n${to}`, source: `n${from}`, target: `n${to}` }));
+  const groupOf = (n: PlanGraphNodeData) => `segment-${n.segmentIndex}`;
+  const overlap = (a: { position: { x: number; y: number } }, b: { position: { x: number; y: number } }) =>
+    Math.abs(a.position.x - b.position.x) < NODE_WIDTH && Math.abs(a.position.y - b.position.y) < NODE_HEIGHT;
+
+  beforeEach(() => clearLayoutCache());
+
+  it('places every node at a finite position, none on top of another', () => {
+    const laidOut = layoutWithDagre(nodes, edges, { groupOf });
+    expect(laidOut.every((n) => Number.isFinite(n.position.x) && Number.isFinite(n.position.y))).toBe(true);
+    for (let i = 0; i < laidOut.length; i++) {
+      for (let j = i + 1; j < laidOut.length; j++) expect(overlap(laidOut[i], laidOut[j])).toBe(false);
+    }
+  });
+
+  it('gives the layout worker job the same positions as the main thread', () => {
+    const onMainThread = layoutWithDagre(nodes, edges, { groupOf });
+    const job = {
+      key: 'interleaved', nodeIds: nodes.map((n) => n.id), groupIds: nodes.map(groupOf),
+      edges: edges.map(({ source, target }) => ({ source, target })), direction: 'RL' as const, compound: true,
+    };
+    const positions = runDagre(job);
+    expect(onMainThread.map((n) => n.position)).toEqual(nodes.map((n) => positions.get(n.id)));
+  });
+
+  it('is deterministic across cold runs', () => {
+    const first = layoutWithDagre(nodes, edges, { groupOf }).map((n) => n.position);
+    clearLayoutCache();
+    expect(layoutWithDagre(nodes, edges, { groupOf }).map((n) => n.position)).toEqual(first);
   });
 });
