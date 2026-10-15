@@ -1,6 +1,6 @@
 import { formatDuration, typeTag } from './format-utils.ts';
 import { TAG_HELP } from './finding-tag-help.ts';
-import { NEUTRAL_METRIC_KEYS, type CompareRunsResult } from './run-comparison.ts';
+import { isEscalation, NEUTRAL_METRIC_KEYS, type CompareRunsResult } from './run-comparison.ts';
 
 /** The slice of a comparison metric row the verdict reads. */
 export interface VerdictMetric {
@@ -12,11 +12,18 @@ export interface VerdictMetric {
   direction: 'improvement' | 'regression' | 'unchanged' | 'neutral' | 'unavailable';
 }
 
-/** The slice of a finding-category delta the verdict reads. */
+/** The slice of an introduced or resolved finding row the verdict reads. */
 export interface VerdictCategory {
   type: string;
   baseCount: number;
   candCount: number;
+}
+
+/** The slice of a changed finding row the verdict reads. */
+export interface VerdictChange {
+  type: string;
+  baseImpactBand: string;
+  candImpactBand: string;
 }
 
 /** How many of a run's ended jobs failed, counted as `summarizeRunOutcome`
@@ -58,13 +65,11 @@ function categoryName(type: string): string {
   return TAG_HELP[tag]?.expansion ?? tag;
 }
 
-/** Net count change per displayed category name. Categories are tallied per
- * (rule, impact band), and several rules share one name (every Plan Advisor
- * type reads "Plan advisor", every stage-shape sub-rule "Stage shape"), so a
- * rule whose findings moved from critical to warning, or two rules under one
- * name moving opposite ways, would otherwise
- * read as both "introduced" and "resolved". Order follows first appearance,
- * introduced before resolved. */
+/** Net count change per displayed category name. Several rules share one name (every Plan Advisor
+ * type reads "Plan advisor", every stage-shape sub-rule "Stage shape"), so two rules under one
+ * name moving opposite ways net out rather than read as both "new" and "less frequent". Findings
+ * that only changed impact band are not in `introduced` or `resolved`, so they do not move a
+ * category. Order follows first appearance, introduced before resolved. */
 function netByCategory(findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[] }): Map<string, number> {
   const net = new Map<string, number>();
   for (const item of [...findings.introduced, ...findings.resolved]) {
@@ -115,7 +120,7 @@ function failureHeadline(base: VerdictJobOutcome, cand: VerdictJobOutcome): { ti
  * inherently better or worse. */
 export function summarizeComparison(
   metrics: VerdictMetric[],
-  findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[] },
+  findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[]; changed?: VerdictChange[] },
   jobs?: { baseline: VerdictJobOutcome; candidate: VerdictJobOutcome },
 ): ComparisonVerdictText {
   const wall = metrics.find((metric) => metric.key === 'wallClock');
@@ -167,6 +172,8 @@ export function summarizeComparison(
   const resolved = namesWhere(net, (change) => change < 0);
   if (introduced.length > 0) sentences.push(`New or more frequent in the candidate: ${introduced.join(', ')}.`);
   if (resolved.length > 0) sentences.push(`Less frequent in the candidate: ${resolved.join(', ')}.`);
+  const escalated = [...new Set((findings.changed ?? []).filter(isEscalation).map((c) => categoryName(c.type)))];
+  if (escalated.length > 0) sentences.push(`More severe in the candidate: ${escalated.join(', ')}.`);
   return { title, tone, sentences };
 }
 

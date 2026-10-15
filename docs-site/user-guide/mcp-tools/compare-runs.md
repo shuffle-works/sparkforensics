@@ -80,7 +80,7 @@ Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` tr
       "direction": "improvement"
     }
   ],
-  "findings": { "introduced": [], "resolved": [] },
+  "findings": { "introduced": [], "resolved": [], "changed": [] },
   "comparisonSchemaVersion": 1,
   "stagePairs": [
     {
@@ -110,13 +110,19 @@ Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` tr
       "direction": "improvement"
     }
   ],
-  "findingsDelta": { "introduced": [], "resolved": [] }
+  "findingsDelta": { "introduced": [], "resolved": [], "changed": [] }
 }
 ```
 
-Each `findings.introduced`/`resolved` row is
-`{ rule, type, impactBand, baseCount, candCount, delta, stages }`, with
-`stages` naming the affected stages. A `metrics` row's `direction` is
+A finding is the same finding in both runs when it has the same type, rule and location (a
+paired stage, a paired SQL execution, an audited setting, or the whole run), whatever its
+value or impact band. Each `findings.introduced`/`resolved` row groups the findings of one
+rule and band that have no counterpart in the other run: `{ rule, type, impactBand,
+baseCount, candCount, delta, stages }`, with `baseCount` 0 on an introduced row, `candCount`
+0 on a resolved row, and `stages` naming the stages the findings sit on. Each
+`findings.changed` row groups the findings both runs have whose impact band differs:
+`{ rule, type, baseImpactBand, candImpactBand, count, stages }`, with `stages` naming the
+candidate's stages. A `metrics` row's `direction` is
 `improvement`, `regression`, `unchanged`, `neutral` (a volume metric, where
 more isn't worse) or `unavailable`, and an unavailable row carries an
 `unavailableReason`.

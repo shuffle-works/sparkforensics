@@ -2,7 +2,7 @@ import { computeEfficiencyModel } from '../efficiency-model.ts';
 import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from '../detectors.ts';
 import { effectiveThresholds } from '../threshold-overrides.ts';
 import { IMPACT_BAND_ORDER } from '../format-utils.ts';
-import type { CompareRunsResult } from '../run-comparison.ts';
+import { isEscalation, type CompareRunsResult } from '../run-comparison.ts';
 import { PAIR_DELTA_METRICS, type PairDeltaMetric, type StagePair } from '../stage-alignment.ts';
 import type { AppModel, Finding, ImpactBand } from '../types.ts';
 import type { RegressionBudget } from './regression-budgets.ts';
@@ -205,11 +205,13 @@ function checkFailOnIntroduced(comparison: CompareRunsResult, band: string): Bud
   if (band !== 'all' && !IMPACT_BANDS.includes(band as ImpactBand)) {
     return { name: 'fail-on-introduced', status: 'inconclusive', detail: `Impact band "${band}" is not recognized (expected "all" or one of ${IMPACT_BANDS.join(', ')}).` };
   }
-  const matches = band === 'all'
+  const introduced = band === 'all'
     ? comparison.findings.introduced
     : comparison.findings.introduced.filter((f) => f.impactBand === band);
-  return matches.length > 0
-    ? { name: 'fail-on-introduced', status: 'violation', detail: `${matches.length} introduced finding(s) match "${band}".` }
+  const escalated = band === 'all' ? [] : comparison.findings.changed.filter((c) => isEscalation(c) && c.candImpactBand === band);
+  const count = introduced.reduce((n, f) => n + f.candCount, 0) + escalated.reduce((n, c) => n + c.count, 0);
+  return count > 0
+    ? { name: 'fail-on-introduced', status: 'violation', detail: `${count} introduced finding(s) match "${band}".` }
     : { name: 'fail-on-introduced', status: 'pass', detail: `No introduced findings match "${band}".` };
 }
 

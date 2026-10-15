@@ -25,6 +25,10 @@ interface CategoryDelta {
   baseCount: number; candCount: number; delta: number;
   stages: string[]; // stage names from the side with more (candidate for introduced, baseline for resolved)
 }
+interface ChangedDelta {
+  rule: string; type: string; baseImpactBand: string; candImpactBand: string; count: number;
+  stages: string[]; // stage names the findings sit on in the candidate
+}
 interface ComparisonModel {
   baselineLabel: string; candidateLabel: string;
   confidence: 'ok' | 'low' | 'insufficient';
@@ -36,7 +40,8 @@ interface ComparisonModel {
   unmatched?: StageAlignment['unmatched'];
   replanned?: ReplannedGroup[];
   metrics: MetricDelta[];
-  findings: { introduced: CategoryDelta[]; resolved: CategoryDelta[] };
+  /** `changed` is absent in a hand-built model. */
+  findings: { introduced: CategoryDelta[]; resolved: CategoryDelta[]; changed?: ChangedDelta[] };
   stageSkew: Array<{ pairId: string; name: string; baseId: number; candId: number; baseline: number | null; candidate: number | null; delta: number | null }>;
   baseStages?: StageSummary[];
   candStages?: StageSummary[];
@@ -143,6 +148,28 @@ function FindingRows({ items }: { items: CategoryDelta[] }) {
   );
 }
 
+function ChangedRows({ items }: { items: ChangedDelta[] }) {
+  return (
+    <ul className="flex flex-col gap-2">
+      {items.map((f) => (
+        <li key={`${f.rule}§${f.baseImpactBand}§${f.candImpactBand}`} className="flex flex-col gap-1 border-b border-border pb-2 last:border-0 last:pb-0">
+          <div className="flex items-center gap-2">
+            <TagBadge
+              type={f.type}
+              impactBand={toImpactBand(f.candImpactBand)}
+              className={typeTag(f.type) === 'PLAN' ? PLAN_TAG_CLASS : undefined}
+            />
+            <span className="comparison-count text-muted-foreground">
+              {f.baseImpactBand} → {f.candImpactBand}{f.count > 1 ? ` (${f.count} findings)` : ''}
+            </span>
+          </div>
+          <StageChips stages={f.stages} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // Names differing, thin run-time coverage or no run time at all is a soft signal, not a block: warn, let the user dismiss,
 // and still show every (name-independent) delta below.
 function LowConfidenceBanner({ reason, confidence }: { reason: string; confidence: 'low' | 'insufficient' }) {
@@ -209,6 +236,7 @@ export function RunComparison({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const changed = model.findings.changed ?? [];
   const header = (
     // Stacks below `sm`: three buttons beside the title pushed the page to
     // ~530px wide on a 390px phone.
@@ -273,7 +301,7 @@ export function RunComparison({
           </Table>
         </WidgetCard>
 
-        {model.findings.introduced.length > 0 || model.findings.resolved.length > 0 ? (
+        {model.findings.introduced.length > 0 || model.findings.resolved.length > 0 || changed.length > 0 ? (
           <WidgetCard title="Findings by category">
             {model.findings.introduced.length > 0 ? (
               <div className="mb-4">
@@ -282,9 +310,15 @@ export function RunComparison({
               </div>
             ) : null}
             {model.findings.resolved.length > 0 ? (
-              <div>
+              <div className={changed.length > 0 ? 'mb-4' : undefined}>
                 <h3 className="trace-eyebrow mb-2">Fewer in candidate ({model.candidateLabel})</h3>
                 <FindingRows items={model.findings.resolved} />
+              </div>
+            ) : null}
+            {changed.length > 0 ? (
+              <div>
+                <h3 className="trace-eyebrow mb-2">Impact changed in candidate ({model.candidateLabel})</h3>
+                <ChangedRows items={changed} />
               </div>
             ) : null}
           </WidgetCard>

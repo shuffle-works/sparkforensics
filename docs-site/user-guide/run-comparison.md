@@ -40,9 +40,14 @@ candidate's dashboard, whose own verdict names the first thing to fix.
 The **Metrics** table covers the whole run: wall-clock duration, memory
 spill, task skew, failed-task rate, disk spill, GC time, input/output bytes,
 executor run-time, and task/executor counts, baseline against candidate with
-the change. **Findings by category** lists which finding types became more or less
-frequent in the candidate, per impact level, with the count in each run and the
-affected stages.
+the change. **Findings by category** lists the findings that are new in the candidate,
+the findings that are gone from it, and the findings whose impact level changed, with the
+affected stages. A finding is the same finding in both runs when it has the same type, rule
+and location (a paired stage, a paired SQL execution, an audited setting, or the whole run),
+whatever its value or impact level. A finding the baseline also has at the same place is
+never new or gone: when its impact level differs, it is listed under **Impact changed** with
+both levels. A finding on a stage that pairs with nothing still matches the same finding on an
+unpaired stage in the other run.
 
 The **Stages compared** table lists every paired stage with its change in run
 time, CPU time, spill (memory and disk together), input, output and shuffle

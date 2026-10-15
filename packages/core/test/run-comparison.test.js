@@ -386,27 +386,27 @@ function catSnap(stages, catalog, app = { name: 'A' }) {
   return { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog };
 }
 
-describe('findingsDelta (category counts)', () => {
-  it('reports categories the candidate has more of as introduced', () => {
+describe('findingsDelta (finding identity)', () => {
+  it('reports findings the candidate has more of as introduced', () => {
     const base = catSnap([], [{ rule: 'spill', impactBand: 'warn' }]);
     const cand = catSnap([], [{ rule: 'spill', impactBand: 'warn' }, { rule: 'spill', impactBand: 'warn' }, { rule: 'skew', impactBand: 'high' }]);
     const d = findingsDelta(base, cand);
     expect(d.introduced).toEqual([
       { rule: 'skew', impactBand: 'high', baseCount: 0, candCount: 1, delta: 1, stages: [] },
-      { rule: 'spill', impactBand: 'warn', baseCount: 1, candCount: 2, delta: 1, stages: [] },
+      { rule: 'spill', impactBand: 'warn', baseCount: 0, candCount: 1, delta: 1, stages: [] },
     ]);
     expect(d.resolved).toEqual([]);
   });
 
-  it('reports categories the candidate has fewer of as resolved', () => {
+  it('reports findings the candidate has fewer of as resolved', () => {
     const base = catSnap([], [{ rule: 'gc', impactBand: 'high' }, { rule: 'gc', impactBand: 'high' }]);
     const cand = catSnap([], [{ rule: 'gc', impactBand: 'high' }]);
     const d = findingsDelta(base, cand);
-    expect(d.resolved).toEqual([{ rule: 'gc', impactBand: 'high', baseCount: 2, candCount: 1, delta: -1, stages: [] }]);
+    expect(d.resolved).toEqual([{ rule: 'gc', impactBand: 'high', baseCount: 1, candCount: 0, delta: -1, stages: [] }]);
     expect(d.introduced).toEqual([]);
   });
 
-  it('labels each category with the stage names from the side that has more', () => {
+  it('labels each row with the stage names from the side the findings are on', () => {
     const stages = [[10, { name: 'Exchange 10' }], [11, { name: 'Sort 11' }]];
     const base = catSnap([], []);
     const cand = catSnap(stages, [
@@ -419,7 +419,7 @@ describe('findingsDelta (category counts)', () => {
     ]);
   });
 
-  it('omits a category present in equal counts on both sides', () => {
+  it('omits a finding present on both sides', () => {
     const base = catSnap([], [{ rule: 'gc', impactBand: 'high' }]);
     const cand = catSnap([], [{ rule: 'gc', impactBand: 'high' }]);
     const d = findingsDelta(base, cand);
@@ -427,12 +427,13 @@ describe('findingsDelta (category counts)', () => {
     expect(d.resolved).toEqual([]);
   });
 
-  it('splits an impact band shift into one resolved + one introduced row', () => {
-    const base = catSnap([], [{ rule: 'skew', impactBand: 'warn' }]);
-    const cand = catSnap([], [{ rule: 'skew', impactBand: 'critical' }]);
+  it('reports an impact band shift as changed, not as one resolved plus one introduced', () => {
+    const base = catSnap([], [{ type: 'skew', rule: 'skew', impactBand: 'warn' }]);
+    const cand = catSnap([], [{ type: 'skew', rule: 'skew', impactBand: 'critical' }]);
     const d = findingsDelta(base, cand);
-    expect(d.introduced).toEqual([{ rule: 'skew', impactBand: 'critical', baseCount: 0, candCount: 1, delta: 1, stages: [] }]);
-    expect(d.resolved).toEqual([{ rule: 'skew', impactBand: 'warn', baseCount: 1, candCount: 0, delta: -1, stages: [] }]);
+    expect(d.introduced).toEqual([]);
+    expect(d.resolved).toEqual([]);
+    expect(d.changed).toEqual([{ rule: 'skew', type: 'skew', baseImpactBand: 'warn', candImpactBand: 'critical', count: 1, stages: [] }]);
   });
 
   it('falls back to type when rule is absent and to "unknown" impact band', () => {
@@ -651,6 +652,16 @@ describe('renderComparisonMarkdown', () => {
     const md = renderComparisonMarkdown(compareRuns(b, c));
     expect(md).toMatch(/### Introduced findings \(1\)\n\n- \[critical\] gc: 0 -> 1/);
     expect(md).toMatch(/### Resolved findings \(1\)\n\n- \[warning\] spill: 1 -> 0/);
+  });
+
+  it('lists a re-banded finding under Changed findings, not under introduced or resolved', () => {
+    const run = (catalog, label) => ({ label, snapshot: { app: { name: 'JobX' }, stages: new Map(), sql: new Map(), jobs: new Map(), catalog } });
+    const b = run([{ type: 'skew', rule: 'skew', impactBand: 'critical' }], 'base');
+    const c = run([{ type: 'skew', rule: 'skew', impactBand: 'warning' }], 'cand');
+    const md = renderComparisonMarkdown(compareRuns(b, c));
+    expect(md).toMatch(/### Introduced findings \(0\)/);
+    expect(md).toMatch(/### Resolved findings \(0\)/);
+    expect(md).toMatch(/### Changed findings \(1\)\n\n- skew: critical -> warning/);
   });
 
   it('opens with the comparison verdict, naming the baseline and the candidate', () => {

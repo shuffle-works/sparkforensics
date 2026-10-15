@@ -42,6 +42,24 @@ test('renders findings as tag badges with base→cand counts and stage chips', (
   expect(screen.getByText(/More in candidate/i)).toBeInTheDocument();
 });
 
+test('lists a finding that changed impact band under its own heading, not as introduced or resolved', () => {
+  const model = {
+    baselineLabel: 'base.log', candidateLabel: 'cand.log',
+    confidence: 'ok', reason: null, matchedCoverage: 1, metrics: [],
+    findings: {
+      introduced: [], resolved: [],
+      changed: [{ rule: 'skew', type: 'skew', baseImpactBand: 'critical', candImpactBand: 'warning', count: 1, stages: ['Exchange 10'] }],
+    },
+    stageSkew: [],
+  };
+  render(<RunComparison model={model as any} onClose={vi.fn()} />);
+  expect(screen.getByText(/Impact changed in candidate/i)).toBeInTheDocument();
+  expect(screen.getByText('critical → warning')).toBeInTheDocument();
+  expect(screen.getByText('Exchange 10')).toBeInTheDocument();
+  expect(screen.queryByText(/More in candidate/i)).toBeNull();
+  expect(screen.queryByText(/Fewer in candidate/i)).toBeNull();
+});
+
 test('renders a PLAN-tagged finding with the dedicated plan-aggregate color', () => {
   const model = {
     baselineLabel: 'base.log', candidateLabel: 'cand.log',

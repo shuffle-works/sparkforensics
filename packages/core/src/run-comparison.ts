@@ -6,7 +6,9 @@ import { totalExecutorCpuMs, withEarlierAttempts } from './run-totals.ts';
 import { captureSnapshot } from './session-snapshot.ts';
 import { alignStages, compileNormalizePatterns, COMPARISON_SCHEMA_VERSION, type StageAlignment, type StagePair } from './stage-alignment.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
-import type { Stage, SparkAppInfo, AppModel, Finding, TunedThresholds } from './types.ts';
+import { diffFindings, findingBand, findingRule, type FindingLocator } from './finding-identity.ts';
+import { IMPACT_BAND_ORDER } from './format-utils.ts';
+import type { Stage, SparkAppInfo, AppModel, Finding, ImpactBand, TunedThresholds } from './types.ts';
 import type { SessionSnapshot } from './session-snapshot.ts';
 import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
 import { isIncompleteRun } from './check-coverage.ts';
@@ -18,8 +20,23 @@ export interface MetricDeltaRow {
   direction: 'improvement' | 'regression' | 'unchanged' | 'neutral' | 'unavailable';
   unavailableReason?: string;
 }
+// An introduced or resolved finding category: the findings of one rule and band that have no
+// counterpart in the other run. An introduced row has `baseCount` 0, a resolved row `candCount` 0.
 export interface FindingsDeltaRow {
   rule: string; type: string; impactBand: string; baseCount: number; candCount: number; delta: number; stages: string[];
+}
+// Findings both runs have, at one location, that moved from one impact band to another. `count`
+// is how many findings of that rule moved between those two bands.
+export interface FindingsChangedRow {
+  rule: string; type: string; baseImpactBand: string; candImpactBand: string; count: number; stages: string[];
+}
+/** True when a changed finding moved to a more severe band (an unknown band ranks least severe). */
+export function isEscalation(row: Pick<FindingsChangedRow, 'baseImpactBand' | 'candImpactBand'>): boolean {
+  const rank = (band: string) => IMPACT_BAND_ORDER[band as ImpactBand] ?? 9;
+  return rank(row.candImpactBand) < rank(row.baseImpactBand);
+}
+export interface FindingsDelta {
+  introduced: FindingsDeltaRow[]; resolved: FindingsDeltaRow[]; changed: FindingsChangedRow[];
 }
 export interface StageSkewRow {
   pairId: string; name: string; baseId: number; candId: number;
@@ -40,7 +57,7 @@ export interface CompareRunsResult {
   bookkeepingStageIds: StageAlignment['bookkeepingStageIds'];
   executionAlignment: StageAlignment['executionAlignment'];
   metrics: MetricDeltaRow[];
-  findings: { introduced: FindingsDeltaRow[]; resolved: FindingsDeltaRow[] };
+  findings: FindingsDelta;
   stageSkew: StageSkewRow[];
   baseStages: Array<{ id: number; name: string; metrics: StageMetricsRow }>;
   candStages: Array<{ id: number; name: string; metrics: StageMetricsRow }>;
@@ -238,44 +255,75 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
   return out;
 }
 
-// Finding categories are counted, not matched: a (rule × impact band) tally needs
-// no cross-run stage identity, so it stays correct even when almost no stages
-// match uniquely (the common case on real logs, see plan rationale). A
-// category the candidate has more of is "introduced"; fewer, "resolved".
-export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapshot): {
-  introduced: FindingsDeltaRow[]; resolved: FindingsDeltaRow[];
-} {
-  interface TallyEntry { rule: string; type: string; impactBand: string; count: number; stages: Set<string>; }
-  const tally = (snap: SessionSnapshot): Map<string, TallyEntry> => {
-    const m = new Map<string, TallyEntry>(); // `${rule}§${impactBand}` -> { rule, impactBand, count, stages:Set }
-    for (const f of snap.catalog) {
-      const rule = 'rule' in f && typeof f.rule === 'string' ? f.rule : f.type;
-      const impactBand = f.impactBand ?? 'unknown';
-      const key = `${rule}§${impactBand}`;
-      const e = m.get(key) ?? { rule, type: f.type, impactBand, count: 0, stages: new Set<string>() };
-      e.count++;
-      // Resolve stageId → name on this snapshot only: a single-side lookup, so
-      // it needs no cross-run identity. App-level findings (stageId null) add none.
-      const stage = f.stageId != null ? snap.stages.get(f.stageId) : null;
-      if (stage?.name) e.stages.add(stage.name);
-      m.set(key, e);
-    }
-    return m;
-  };
-  const b = tally(baseSnap), c = tally(candSnap);
-  const introduced: FindingsDeltaRow[] = [], resolved: FindingsDeltaRow[] = [];
-  for (const key of [...new Set([...b.keys(), ...c.keys()])].sort()) {
-    const be = b.get(key), ce = c.get(key);
-    const baseCount = be?.count ?? 0;
-    const candCount = ce?.count ?? 0;
-    if (candCount === baseCount) continue;
-    const meta = ce ?? be!;
-    const more = candCount > baseCount ? ce! : be!; // the side with more supplies the labels
-    const row: FindingsDeltaRow = { rule: meta.rule, type: meta.type, impactBand: meta.impactBand, baseCount, candCount,
-      delta: candCount - baseCount, stages: [...more.stages].sort() };
-    (candCount > baseCount ? introduced : resolved).push(row);
+// Cross-run identity of a snapshot's stages and SQL executions: a stage (or execution) the aligner
+// paired takes one label on both sides; an unpaired one takes a side-neutral label, so the same problem on an unpaired stage in both runs still matches.
+function findingLocators(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, stagePairs: StagePair[]): { base: FindingLocator; cand: FindingLocator } {
+  const baseStage = new Map<number, string>(), candStage = new Map<number, string>();
+  const executionVotes = new Map<number, Map<number, number>>(); // base execution -> cand execution -> paired stages
+  for (const pair of stagePairs) {
+    baseStage.set(pair.baseStageIds[0], pair.pairId);
+    candStage.set(pair.candStageIds[0], pair.pairId);
+    const baseExec = baseSnap.stages.get(pair.baseStageIds[0])?.sqlExecutionId;
+    const candExec = candSnap.stages.get(pair.candStageIds[0])?.sqlExecutionId;
+    if (baseExec == null || candExec == null) continue;
+    const votes = executionVotes.get(baseExec) ?? new Map<number, number>();
+    votes.set(candExec, (votes.get(candExec) ?? 0) + 1);
+    executionVotes.set(baseExec, votes);
   }
-  return { introduced, resolved };
+  // An execution pairs with the candidate execution that holds most of its paired stages.
+  const executionPair = new Map<number, number>();
+  for (const [baseExec, votes] of executionVotes) {
+    const [candExec] = [...votes].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+    executionPair.set(baseExec, candExec);
+  }
+  const pairedCandExecs = new Set(executionPair.values());
+  return {
+    base: { stage: (id) => baseStage.get(id) ?? 'unpaired', execution: (id) => executionPair.has(id) ? `c${executionPair.get(id)}` : 'unpaired' },
+    cand: { stage: (id) => candStage.get(id) ?? 'unpaired', execution: (id) => pairedCandExecs.has(id) ? `c${id}` : 'unpaired' },
+  };
+}
+
+// A finding is the same finding in both runs when `findingKey` says so (type, rule and location,
+// never value or band). One with a counterpart is not introduced or resolved: a different band
+// makes it `changed`. Each row aggregates findings of one rule and band, with the stage names
+// of the side the findings are on.
+export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, stagePairs: StagePair[] = []): FindingsDelta {
+  const locators = findingLocators(baseSnap, candSnap, stagePairs);
+  const diff = diffFindings(baseSnap.catalog, candSnap.catalog, locators.base, locators.cand);
+  const stageNames = (snap: SessionSnapshot, findings: Finding[]): string[] => {
+    const names = new Set<string>();
+    for (const f of findings) {
+      const name = f.stageId != null ? snap.stages.get(f.stageId)?.name : undefined;
+      if (name) names.add(name);
+    }
+    return [...names].sort();
+  };
+  const group = <T>(items: T[], keyOf: (item: T) => string): Array<[string, T[]]> => {
+    const groups = new Map<string, T[]>();
+    for (const item of items) {
+      const key = keyOf(item);
+      const members = groups.get(key);
+      if (members) members.push(item); else groups.set(key, [item]);
+    }
+    return [...groups].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  };
+  const rows = (findings: Finding[], snap: SessionSnapshot, side: 'base' | 'cand'): FindingsDeltaRow[] =>
+    group(findings, (f) => `${findingRule(f)}§${findingBand(f)}`).map(([, fs]) => {
+      const count = fs.length;
+      return {
+        rule: findingRule(fs[0]), type: fs[0].type, impactBand: findingBand(fs[0]),
+        baseCount: side === 'base' ? count : 0, candCount: side === 'cand' ? count : 0,
+        delta: side === 'cand' ? count : -count, stages: stageNames(snap, fs),
+      };
+    });
+  const changed: FindingsChangedRow[] = group(
+    diff.changed, (c) => `${findingRule(c.candidate)}§${findingBand(c.baseline)}§${findingBand(c.candidate)}`,
+  ).map(([, cs]) => ({
+    rule: findingRule(cs[0].candidate), type: cs[0].candidate.type,
+    baseImpactBand: findingBand(cs[0].baseline), candImpactBand: findingBand(cs[0].candidate),
+    count: cs.length, stages: stageNames(candSnap, cs.map((c) => c.candidate)),
+  }));
+  return { introduced: rows(diff.introduced, candSnap, 'cand'), resolved: rows(diff.resolved, baseSnap, 'base'), changed };
 }
 
 function namesConflict(a: SparkAppInfo | null, b: SparkAppInfo | null): boolean {
@@ -411,7 +459,7 @@ export function compareRuns(
     bookkeepingStageIds: alignment.bookkeepingStageIds,
     executionAlignment: alignment.executionAlignment,
     metrics: metricDeltas(baseSnap, candSnap),
-    findings: findingsDelta(baseSnap, candSnap),
+    findings: findingsDelta(baseSnap, candSnap, alignment.pairs),
     stageSkew: stageSkewDeltas(baseSnap, candSnap, alignment.pairs),
     baseStages: stageList(baseSnap),
     candStages: stageList(candSnap),
@@ -425,6 +473,15 @@ function renderFindingsSection(title: string, findings: FindingsDeltaRow[]): str
   const lines = [`### ${title} (${findings.length})`, ''];
   for (const f of findings) {
     lines.push(`- [${f.impactBand}] ${f.rule}: ${f.baseCount} -> ${f.candCount}`);
+  }
+  return lines;
+}
+
+// Findings both runs have whose impact band moved: `### Changed findings (<count>)`, one bullet each.
+function renderChangedSection(changed: FindingsChangedRow[]): string[] {
+  const lines = [`### Changed findings (${changed.length})`, ''];
+  for (const f of changed) {
+    lines.push(`- ${f.rule}: ${f.baseImpactBand} -> ${f.candImpactBand}${f.count > 1 ? ` (${f.count} findings)` : ''}`);
   }
   return lines;
 }
@@ -467,5 +524,7 @@ export function renderComparisonMarkdown(
   lines.push(...renderFindingsSection('Introduced findings', comparison.findings.introduced));
   lines.push('');
   lines.push(...renderFindingsSection('Resolved findings', comparison.findings.resolved));
+  lines.push('');
+  lines.push(...renderChangedSection(comparison.findings.changed));
   return lines.join('\n');
 }

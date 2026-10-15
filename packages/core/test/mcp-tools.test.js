@@ -717,7 +717,7 @@ describe('compareRuns', () => {
       const result = await compareRuns({ source: { path: a.path } }, { source: { path: b.path } });
       expect(typeof result.runIdA).toBe('string');
       expect(typeof result.runIdB).toBe('string');
-      expect(result.findingsDelta).toEqual({ introduced: [], resolved: [] });
+      expect(result.findingsDelta).toEqual({ introduced: [], resolved: [], changed: [] });
       const wallClock = result.metricDeltas.find((m) => m.key === 'wallClock');
       expect(wallClock.baseline).toBe(2000);
       expect(wallClock.candidate).toBe(1000);
