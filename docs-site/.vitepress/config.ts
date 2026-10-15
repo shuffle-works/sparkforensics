@@ -43,7 +43,8 @@ export default defineConfig({
     config(md) { md.use(footnote); },
   },
   themeConfig: {
-    logo: '/favicon.svg',
+    // The app's pulse-line mark, in the docs ink color for each theme.
+    logo: { light: '/logo-light.svg', dark: '/logo-dark.svg' },
     nav: [
       { text: 'User Guide', link: '/user-guide/getting-started' },
       { text: 'Contributor Guide', link: '/contributor-guide/development-setup' },

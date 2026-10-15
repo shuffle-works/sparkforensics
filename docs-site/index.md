@@ -13,4 +13,8 @@ features:
     details: Set up the project, read the architecture, run the tests, propose a change.
     link: /contributor-guide/development-setup
     linkText: Start contributing
+  - title: Tuning Reference
+    details: Spark architecture, memory, shuffle and tuning notes behind every finding.
+    link: /tuning-reference/
+    linkText: Open the reference
 ---
