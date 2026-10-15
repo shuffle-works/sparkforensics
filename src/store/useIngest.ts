@@ -188,6 +188,7 @@ export function useIngest(opts: Opts = {}) {
       clientRef.current = null;
       const catalog = applySnapshot(s.appModel, s.taskDataCache, snap);
       store.getState().setFindings(catalog, auditConfig(s.appModel.app, s.appModel.stages));
+      store.getState().setSkippedLines(snap.skippedLines ?? 0);
       store.getState().setActiveFile(id);
       store.getState().setStatus('ready');
       await recentFiles.touch(id);
@@ -344,6 +345,7 @@ export function useIngest(opts: Opts = {}) {
     clientRef.current = null;
     const catalog = applySnapshot(s.appModel, s.taskDataCache, snap);
     store.getState().setFindings(catalog, auditConfig(s.appModel.app, s.appModel.stages));
+    store.getState().setSkippedLines(snap.skippedLines ?? 0);
     store.getState().setActiveFile(id);
     store.getState().setStatus('ready');
     store.getState().setComparisonActive(false);
