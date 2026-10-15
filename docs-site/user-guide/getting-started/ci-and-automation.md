@@ -208,8 +208,9 @@ Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,
 comparing a candidate run against a baseline with regression gating
 (`--baseline`/`--max-regression-pct`/`--regression-metric`/
 `--fail-on-introduced`; the baseline is a local file or rolling-log
-directory, no History Server), several regression budgets and several
-candidates in one call (`--regression-budget`/`--budgets`, see
+directory, or a History Server run through `--baseline-shs-base-url`, see
+[Baseline from a History Server](#baseline-from-a-history-server)), several
+regression budgets and several candidates in one call (`--regression-budget`/`--budgets`, see
 [Several budgets and several candidates](#several-budgets-and-several-candidates)),
 rewriting run-specific text before stages are paired (`--normalize-path`, see
 [Pairing stages across runs](#pairing-stages-across-runs)), redacting the app id, the app name and any host/IP
@@ -697,15 +698,45 @@ sparkforensics-analyze candidate.zstd --baseline baseline.zstd \
   named twice are usage errors (exit `2`), and so are `inputBytes` and
   `outputBytes`: workload volume has no regression direction.
 
+### Baseline from a History Server
+
+`--baseline-shs-base-url <url> --baseline-app-id <id> [--baseline-attempt-id <id>]`
+fetch the baseline from a Spark History Server instead of reading a local path.
+The three flags mirror `--shs-base-url`, `--app-id` and `--attempt-id`, and the
+baseline can be on a different server than the candidate. Any candidate source
+works with it: a local log, or a History Server run.
+
+```bash
+sparkforensics-analyze --shs-base-url http://history-a:18080 --app-id application_1234_0002 \
+  --baseline-shs-base-url http://history-b:18080 --baseline-app-id application_1234_0001 \
+  --max-regression-pct 10 --fail-on-introduced critical
+```
+
+- `--baseline-shs-base-url` and `--baseline <path>` are mutually exclusive.
+- `--baseline-app-id` is required with `--baseline-shs-base-url`, and
+  `--baseline-attempt-id` needs `--baseline-shs-base-url`. Each is a usage
+  error (exit `2`) before any fetch, as is a malformed value.
+- Every flag that needs a baseline (the budget flags, `--budgets`,
+  `--stage-regression-budget`, `--stage-quality`, `--fail-on-introduced`,
+  `--normalize-path`) accepts either kind of baseline.
+- A baseline fetch that fails exits `5`. With `--redact` the message names
+  `The baseline` and carries no server address or application id, and no
+  baseline identity reaches any output.
+
 ### Several candidates
 
-Pass two or more logs as positional arguments, with `--baseline`, to compare
-each against the same baseline. The baseline is parsed once. Output is
+Pass two or more logs as positional arguments, with a baseline (`--baseline`
+or `--baseline-shs-base-url`), to compare each against the same baseline. The
+baseline is parsed once. Two or more `--app-id` values with one
+`--shs-base-url` do the same for candidates fetched from one History Server:
+write `--app-id <id>:<attempt>` to name an attempt for one application.
+`--attempt-id` applies to a single `--app-id` only. Positional logs and
+`--shs-base-url` can't be mixed in one call. Output is
 NDJSON: one line per candidate, in argument order, written as each one
 finishes. `--out <path>` writes the lines to a file instead of stdout, and
 `--format ndjson` selects this output for a single candidate too. The mode
-can't be combined with `--export-html`, `--shs-base-url`, `--format json` or
-`--format md` (exit 2). `--redact`, `--thresholds`, `--impact`, `--type`,
+can't be combined with `--export-html`, `--format json` or `--format md`
+(exit 2), and `--format ndjson` with a single `--app-id` is refused. `--redact`, `--thresholds`, `--impact`, `--type`,
 `--stage`, `--conf-keys`, `--conf-redact-regex` and every budget flag apply
 to each candidate.
 
@@ -713,7 +744,7 @@ Each line is one JSON object:
 
 | Field | Meaning |
 | --- | --- |
-| `log` | The candidate path, as given on the command line. With `--redact`, `candidate-<n>` instead, `n` being the candidate's 1-based position. |
+| `log` | The candidate path, or the `--app-id` value, as given on the command line. With `--redact`, `candidate-<n>` instead, `n` being the candidate's 1-based position. |
 | `status` | `pass`, `violation`, `inconclusive` or `error`. |
 | `exitCode` | The exit code this line alone would give: `0` for `pass`, `1` for `violation`, `3` for `inconclusive`, and for `error` `4` (the log can't be read or parsed) or `6` (an internal failure while analyzing it). |
 | `error` | The message when `status` is `error`; otherwise `null`. With `--redact`, a generic message that names no path. |
@@ -743,8 +774,8 @@ Two failures stop the batch before any line is written:
 An internal failure that isn't tied to one candidate, such as an unwritable
 `--out` path, exits `6`.
 
-With `--redact`, no candidate path is written anywhere, since event-log file
-names usually carry the app id. `log` and the `stderr` line prefixes name each
+With `--redact`, no candidate path or application id is written anywhere, since
+event-log file names usually carry the app id. `log` and the `stderr` line prefixes name each
 candidate by its 1-based position (`candidate-1`, `candidate-2`, ...), and an
 `error` line carries a generic message instead of the parser's, which may
 quote the path: `Candidate 2 could not be read or parsed.`, or `could not be
