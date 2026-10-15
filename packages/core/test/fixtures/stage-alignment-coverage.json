@@ -1,6 +1,6 @@
 {
   "pairwise-01.ndjson -> pairwise-01.ndjson": {
-    "pairs": 5,
+    "pairs": 9,
     "unmatched": [
       0,
       0
@@ -10,67 +10,67 @@
     "confidence": "ok"
   },
   "pairwise-01.ndjson -> pairwise-02.ndjson": {
-    "pairs": 5,
+    "pairs": 6,
     "unmatched": [
-      0,
-      0
+      3,
+      3
     ],
-    "matchedCoverage": 0,
-    "runtimeCoverage": 1,
-    "confidence": "ok"
+    "matchedCoverage": 0.2222,
+    "runtimeCoverage": 0.7851,
+    "confidence": "low"
   },
   "pairwise-01.ndjson -> pairwise-03.ndjson": {
     "pairs": 3,
     "unmatched": [
-      0,
+      4,
       0
     ],
     "matchedCoverage": 0,
-    "runtimeCoverage": 1,
+    "runtimeCoverage": 0.943,
     "confidence": "ok"
   },
   "pairwise-01.ndjson -> pairwise-04.ndjson": {
-    "pairs": 3,
+    "pairs": 0,
     "unmatched": [
-      0,
-      0
+      9,
+      8
     ],
-    "matchedCoverage": 0,
-    "runtimeCoverage": 1,
-    "confidence": "ok"
+    "matchedCoverage": 0.1176,
+    "runtimeCoverage": 0,
+    "confidence": "low"
   },
   "pairwise-01.ndjson -> pairwise-05.ndjson": {
     "pairs": 3,
     "unmatched": [
-      0,
+      4,
       0
     ],
     "matchedCoverage": 0,
-    "runtimeCoverage": 1,
+    "runtimeCoverage": 0.9369,
     "confidence": "ok"
   },
   "pairwise-01.ndjson -> pairwise-06.ndjson": {
     "pairs": 3,
     "unmatched": [
-      0,
+      4,
       0
     ],
     "matchedCoverage": 0,
-    "runtimeCoverage": 1,
+    "runtimeCoverage": 0.9543,
     "confidence": "ok"
   },
   "pairwise-01.ndjson -> pairwise-07.ndjson": {
-    "pairs": 3,
+    "pairs": 0,
     "unmatched": [
-      0,
-      0
+      9,
+      8
     ],
-    "matchedCoverage": 0,
-    "runtimeCoverage": 1,
-    "confidence": "ok"
+    "matchedCoverage": 0.1176,
+    "runtimeCoverage": 0,
+    "confidence": "low"
   },
   "pairwise-02.ndjson -> pairwise-02.ndjson": {
-    "pairs": 5,
+    "pairs": 9,
     "unmatched": [
       0,
       0
@@ -82,50 +82,50 @@
   "pairwise-02.ndjson -> pairwise-03.ndjson": {
     "pairs": 3,
     "unmatched": [
-      0,
+      4,
       0
     ],
-    "matchedCoverage": 0.2222,
-    "runtimeCoverage": 1,
-    "confidence": "ok"
+    "matchedCoverage": 0.1538,
+    "runtimeCoverage": 0.8692,
+    "confidence": "low"
   },
   "pairwise-02.ndjson -> pairwise-04.ndjson": {
-    "pairs": 3,
+    "pairs": 8,
     "unmatched": [
       0,
       0
     ],
-    "matchedCoverage": 0,
+    "matchedCoverage": 0.2353,
     "runtimeCoverage": 1,
     "confidence": "ok"
   },
   "pairwise-02.ndjson -> pairwise-05.ndjson": {
     "pairs": 3,
     "unmatched": [
-      0,
+      4,
       0
     ],
     "matchedCoverage": 0,
-    "runtimeCoverage": 1,
-    "confidence": "ok"
+    "runtimeCoverage": 0.849,
+    "confidence": "low"
   },
   "pairwise-02.ndjson -> pairwise-06.ndjson": {
     "pairs": 3,
     "unmatched": [
-      0,
+      4,
       0
     ],
     "matchedCoverage": 0,
-    "runtimeCoverage": 1,
+    "runtimeCoverage": 0.9026,
     "confidence": "ok"
   },
   "pairwise-02.ndjson -> pairwise-07.ndjson": {
-    "pairs": 3,
+    "pairs": 8,
     "unmatched": [
       0,
       0
     ],
-    "matchedCoverage": 0,
+    "matchedCoverage": 0.1176,
     "runtimeCoverage": 1,
     "confidence": "ok"
   },
@@ -140,14 +140,14 @@
     "confidence": "ok"
   },
   "pairwise-03.ndjson -> pairwise-04.ndjson": {
-    "pairs": 4,
+    "pairs": 3,
     "unmatched": [
-      0,
-      0
+      1,
+      5
     ],
     "matchedCoverage": 0,
-    "runtimeCoverage": 1,
-    "confidence": "ok"
+    "runtimeCoverage": 0.688,
+    "confidence": "low"
   },
   "pairwise-03.ndjson -> pairwise-05.ndjson": {
     "pairs": 4,
@@ -170,17 +170,17 @@
     "confidence": "ok"
   },
   "pairwise-03.ndjson -> pairwise-07.ndjson": {
-    "pairs": 4,
+    "pairs": 3,
     "unmatched": [
-      0,
-      0
+      1,
+      5
     ],
     "matchedCoverage": 0,
-    "runtimeCoverage": 1,
-    "confidence": "ok"
+    "runtimeCoverage": 0.6019,
+    "confidence": "low"
   },
   "pairwise-04.ndjson -> pairwise-04.ndjson": {
-    "pairs": 4,
+    "pairs": 8,
     "unmatched": [
       0,
       0
@@ -190,32 +190,32 @@
     "confidence": "ok"
   },
   "pairwise-04.ndjson -> pairwise-05.ndjson": {
-    "pairs": 4,
+    "pairs": 3,
     "unmatched": [
-      0,
-      0
+      5,
+      1
     ],
-    "matchedCoverage": 0.25,
-    "runtimeCoverage": 1,
-    "confidence": "ok"
+    "matchedCoverage": 0.5,
+    "runtimeCoverage": 0.6526,
+    "confidence": "low"
   },
   "pairwise-04.ndjson -> pairwise-06.ndjson": {
-    "pairs": 4,
+    "pairs": 3,
     "unmatched": [
-      0,
-      0
+      5,
+      1
     ],
     "matchedCoverage": 0,
-    "runtimeCoverage": 1,
-    "confidence": "ok"
+    "runtimeCoverage": 0.7942,
+    "confidence": "low"
   },
   "pairwise-04.ndjson -> pairwise-07.ndjson": {
-    "pairs": 4,
+    "pairs": 8,
     "unmatched": [
       0,
       0
     ],
-    "matchedCoverage": 0,
+    "matchedCoverage": 0.375,
     "runtimeCoverage": 1,
     "confidence": "ok"
   },
@@ -240,14 +240,14 @@
     "confidence": "ok"
   },
   "pairwise-05.ndjson -> pairwise-07.ndjson": {
-    "pairs": 4,
+    "pairs": 3,
     "unmatched": [
-      0,
-      0
+      1,
+      5
     ],
     "matchedCoverage": 0,
-    "runtimeCoverage": 1,
-    "confidence": "ok"
+    "runtimeCoverage": 0.5644,
+    "confidence": "low"
   },
   "pairwise-06.ndjson -> pairwise-06.ndjson": {
     "pairs": 4,
@@ -260,17 +260,17 @@
     "confidence": "ok"
   },
   "pairwise-06.ndjson -> pairwise-07.ndjson": {
-    "pairs": 4,
+    "pairs": 3,
     "unmatched": [
-      0,
-      0
+      1,
+      5
     ],
-    "matchedCoverage": 0.75,
-    "runtimeCoverage": 1,
-    "confidence": "ok"
+    "matchedCoverage": 0.1667,
+    "runtimeCoverage": 0.7085,
+    "confidence": "low"
   },
   "pairwise-07.ndjson -> pairwise-07.ndjson": {
-    "pairs": 4,
+    "pairs": 8,
     "unmatched": [
       0,
       0
