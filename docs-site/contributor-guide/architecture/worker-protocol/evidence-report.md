@@ -80,6 +80,9 @@ A stage's failure reason is replaced outright with `[redacted]` wherever it
 appears: a `stageFailed` finding's `valueText`, a stage record's
 `stageFailureReason`, a job's `exception` and the report's `failureReason`
 (`redactStageFailureReasons` in `redact.ts`).
+An executor's removal reason (`executors.removed[].reason` in the HTML export's run
+model) is also replaced with `[redacted]`, by field and not through the failure-reason
+keys (`withoutExecutorRemovalReasons` in `redact.ts`). No surface displays it.
 
 The Markdown rendering mirrors the JSON's field set: each finding block
 prints its `detector version`, its sorted `evidence` entries (byte-magnitude
