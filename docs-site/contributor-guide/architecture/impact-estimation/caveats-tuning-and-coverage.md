@@ -31,7 +31,7 @@ detector threshold (unvalidated; see the confidence-disclosure note in detector-
 `stageShape`'s `taskStageSkew` rule doesn't participate in this caveat: it reports a
 `resourceOnly` idle-core-ms figure (see the coverage table below) instead of a wall-clock
 claim, so there's nothing left to double-count against `skew`/`straggler`. It fires on the
-same straggler tail those two price (on the corpus, each of its 6 firings shares a stage with a
+same straggler tail those two price (on the corpus, 9 of its 10 firings share a stage with a
 `skew` or `straggler` finding), which is why it stays off the wall-clock path.
 
 ## Tuned thresholds
