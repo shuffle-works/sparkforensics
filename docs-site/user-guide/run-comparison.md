@@ -46,7 +46,8 @@ affected stages. A finding is the same finding in both runs when it has the same
 and location (a paired stage, a paired SQL execution, an audited setting, or the whole run),
 whatever its value or impact level. A finding the baseline also has at the same place is
 never new or gone: when its impact level differs, it is listed under **Impact changed** with
-both levels. A finding on a stage that pairs with nothing is new or gone.
+both levels. A finding on a stage that pairs with nothing still matches the same finding on an
+unpaired stage in the other run.
 
 The **Stages compared** table lists every paired stage with its change in run
 time, CPU time, spill (memory and disk together), input, output and shuffle
