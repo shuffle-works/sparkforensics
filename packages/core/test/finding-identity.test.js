@@ -75,7 +75,8 @@ describe('comparison across runs', () => {
     expect(comparison.findings.changed).toEqual([expect.objectContaining({
       rule: 'skew', baseImpactBand: 'critical', candImpactBand: 'warning', count: 1, stages: ['Exchange orders'],
     })]);
-    expect(budgetFor(comparison, 'warning').status).toBe('pass');
+    expect(budgetFor(comparison, 'critical').status).toBe('pass');
+    expect(budgetFor(comparison, 'info').status).toBe('pass');
     expect(budgetFor(comparison, 'all').status).toBe('pass');
     expect(comparisonVerdict(comparison).sentences.join(' ')).not.toMatch(/New or more frequent|Less frequent/);
   });
@@ -123,18 +124,22 @@ describe('comparison across runs', () => {
     expect(budgetFor(comparison, 'all').status).toBe('pass');
   });
 
-  it('counts a finding that worsens into the budgeted band as introduced and says so in the verdict', () => {
-    const comparison = compareRuns(run([finding({ impactBand: 'warning' })], 'base'), run([finding({ impactBand: 'critical' })], 'cand'));
-    expect(comparison.findings.changed).toEqual([expect.objectContaining({ baseImpactBand: 'warning', candImpactBand: 'critical' })]);
-    expect(budgetFor(comparison, 'critical').status).toBe('violation');
-    expect(budgetFor(comparison, 'warning').status).toBe('violation');
-    expect(budgetFor(comparison, 'all').status).toBe('violation');
-    expect(comparisonVerdict(comparison).sentences.join(' ')).toMatch(/More severe in the candidate: /);
+  it('gates an escalation on the exact band, as it gates a new finding', () => {
+    const escalated = compareRuns(run([finding({ impactBand: 'info' })], 'base'), run([finding({ impactBand: 'critical' })], 'cand'));
+    const added = compareRuns(run([], 'base'), run([finding({ impactBand: 'critical' })], 'cand'));
+    expect(escalated.findings.changed).toEqual([expect.objectContaining({ baseImpactBand: 'info', candImpactBand: 'critical' })]);
+    for (const comparison of [escalated, added]) {
+      expect(budgetFor(comparison, 'critical').status).toBe('violation');
+      expect(budgetFor(comparison, 'warning').status).toBe('pass');
+    }
+    expect(budgetFor(escalated, 'all').status).toBe('pass');
+    expect(budgetFor(added, 'all').status).toBe('violation');
+    expect(comparisonVerdict(escalated).sentences.join(' ')).toMatch(/More severe in the candidate: /);
   });
 
-  it('never fails the budget for a finding that improves', () => {
+  it('does not fail the budget for a finding that improves into a band other than the budgeted one', () => {
     const comparison = compareRuns(run([finding({ impactBand: 'critical' })], 'base'), run([finding({ impactBand: 'info' })], 'cand'));
-    for (const band of ['critical', 'warning', 'info', 'all']) expect(budgetFor(comparison, band).status).toBe('pass');
+    for (const band of ['critical', 'warning', 'all']) expect(budgetFor(comparison, band).status).toBe('pass');
     expect(comparisonVerdict(comparison).sentences.join(' ')).not.toMatch(/More severe/);
   });
 });

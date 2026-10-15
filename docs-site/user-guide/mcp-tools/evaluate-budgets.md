@@ -60,7 +60,7 @@ Parameters (all optional):
 - `failOnIntroduced`: fail if the second run introduces any finding in the
   given impact band (`"all"` or one of the impact band names). Requires
   `runIdB`/`sourceB`. A finding the first run also has, with the same type, rule and
-  location, is not introduced, even when its impact band differs, unless the band worsens to the given band or a more severe one: that counts as introduced. A band name it doesn't
+  location, is not introduced, even when its impact band differs, unless its band changes to exactly the given band: that counts as introduced (never under `"all"`). A band name it doesn't
   recognize reports `inconclusive`.
 
 A budget whose required evidence is missing (e.g. no `runIdB`/`sourceB` for a
