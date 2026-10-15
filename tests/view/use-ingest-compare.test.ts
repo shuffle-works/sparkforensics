@@ -234,3 +234,47 @@ test('startCompareLoad reports a cached baseline that is no longer loaded instea
   expect(store.getState().errorMessage).toMatch(/^Baseline: this run is no longer loaded/);
   expect(store.getState().comparison.active).toBe(false);
 });
+
+// A snapshot of a finished run, as captureSnapshot would store it.
+const runSnapshot = (name: string, skippedLines?: number): SessionSnapshot => ({
+  app: { name } as any, stages: new Map(), executors: { added: [], removed: [] }, sql: new Map(), jobs: new Map(),
+  runAggregates: null, evidenceAvailability: null, ...(skippedLines === undefined ? {} : { skippedLines }),
+  catalog: [], taskData: new Map(),
+});
+
+test('drillIntoRun restores the drilled run skipped-line count into the store', async () => {
+  const client = {
+    ...makeFakeClient(['A', 'B']),
+    startParse: vi.fn()
+      .mockImplementationOnce((_f: File, h: any) => { h.onApp?.({ id: 'A', name: 'A' }); h.onDone?.({ skippedLines: 4 }); })
+      .mockImplementationOnce((_f: File, h: any) => { h.onApp?.({ id: 'B', name: 'B' }); h.onDone?.({ skippedLines: 0 }); }),
+  };
+  const { result } = renderHook(() => useIngest({ makeClient: () => client as any }));
+  await act(async () => {
+    result.current.startCompareLoad(fileSource('a::1::2', 'a.log'), fileSource('b::3::4', 'b.log'));
+    await Promise.resolve();
+  });
+  act(() => result.current.drillIntoRun('a::1::2'));
+  expect(store.getState().skippedLines).toBe(4);
+  act(() => result.current.drillIntoRun('b::3::4'));
+  expect(store.getState().skippedLines).toBe(0);
+});
+
+test('pickRecent restores the picked run skipped-line count, not the previous run value', async () => {
+  vi.spyOn(recentFiles, 'touch').mockResolvedValue(undefined as any);
+  store.setState({
+    sessionCache: new Map([['a::1::2', runSnapshot('A', 4)]]),
+    activeFileId: 'b::3::4',
+    skippedLines: 9,
+  });
+  const { result } = renderHook(() => useIngest());
+  await act(async () => { await result.current.pickRecent('a::1::2'); });
+  expect(store.getState().skippedLines).toBe(4);
+});
+
+test('restoring a snapshot saved without skippedLines reads zero', () => {
+  store.setState({ sessionCache: new Map([['a::1::2', runSnapshot('A')]]), skippedLines: 9 });
+  const { result } = renderHook(() => useIngest());
+  act(() => result.current.drillIntoRun('a::1::2'));
+  expect(store.getState().skippedLines).toBe(0);
+});
