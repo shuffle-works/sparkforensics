@@ -33,12 +33,12 @@ function initialShsField(field: ShsField): string {
   }
 }
 
-// A real, gzip-compressed event log (`dev/log-corpus`'s pairwise-01.ndjson,
-// picked by actually running the analyzer over every corpus candidate and
-// taking the one with the most distinct finding types: 13 types, 21 findings,
-// including shuffle, spill, slow-host and speculation) so a first-time
-// visitor with no log of their own can still see a populated board. Relative, not `/sample-runs/...`: same
-// subpath-safety reasoning as docsUrl()/DOCS_SITE_ROOT elsewhere in this app.
+// A real, gzip-compressed event log: `dev/log-corpus/logs/pairwise-01.ndjson`
+// from corpus tag v2026-10-15, the candidate with the most findings under
+// `sparkforensics-analyze --format json` (21 findings, 13 types). A first-time
+// visitor with no log of their own can still see a populated board. Relative,
+// not `/sample-runs/...`: same subpath-safety reasoning as
+// docsUrl()/DOCS_SITE_ROOT elsewhere in this app.
 const SAMPLE_RUN_URL = 'sample-runs/sample-run.ndjson.gz';
 // Getting-started section that documents starting local-server mode.
 const LOCAL_SERVER_SETUP_URL = 'docs/user-guide/getting-started.html#local-server-mode';
