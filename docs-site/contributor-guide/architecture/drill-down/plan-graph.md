@@ -52,20 +52,22 @@ layouts it needs; the hook sends each uncached one to the worker as plain data
 (`pendingLayoutJob`), stores the reply with `storeLayout`, and the canvas then
 calls `layoutWithDagre`, which finds the positions in the cache. The worker
 runs the same `runDagre` as the main thread, so the positions are identical.
-While the layout runs, the first open shows a "Laying out plan graph" line and a
-later relayout keeps the previous graph on screen under a status banner. Smaller
+While the layout runs, the first open shows `LayoutProgress`: an indeterminate
+progress bar under "Laying out plan graph…", centered in the canvas. A later
+relayout keeps the previous graph on screen and shows the same bar in a banner. Smaller
 graphs, an environment without Web Workers (the single-file export is opened from
 `file://`), a worker that fails to start or dies, and a layout that throws all
 take the main-thread path. The route starts the worker as soon as the expand
 guardrail dialog opens.
 
-The mount-time fit and every automatic re-fit (a scope switch, a resize) go
-through `useReadableFit`, which clamps the zoom to at least
+The canvas mounts only after the layout lands, and its first fit is the same
+full overview as the rail's "Fit to view" (`FIT_TO_VIEW_OPTIONS`). Every automatic
+re-fit after that (a scope switch, a resize) goes through `useReadableFit`, which clamps the zoom to at least
 `MIN_READABLE_ZOOM` (1.1, so the smallest node text, 10px, renders at 11px on
 screen). A graph too large to fit at that zoom overflows the canvas and is
 panned instead of shrunk: centered on an axis that fits, anchored to the start
 (left/top) on an axis that overflows. The rail's "Fit to view" is the one-click
-full overview: a plain `fitView` with no zoom floor.
+full overview: a plain `fitView` with no zoom floor, as is the first fit.
 
 `PlanGraphNode.tsx` renders every node at a fixed `NODE_WIDTH × NODE_HEIGHT`
 (220×90, also what dagre lays the graph out around) with `truncate`/`title` on

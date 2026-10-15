@@ -464,6 +464,12 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--
 .landing-compare-intro > p,
 .landing-compare > p { max-width: 62ch; margin: 0; }
 
+/* An indeterminate Progress indicator (no value) slides across its track. */
+@keyframes progress-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .landing-drop-zone { transition-duration: 0.01ms; }
   .group\/button { transition-duration: 0.01ms; }

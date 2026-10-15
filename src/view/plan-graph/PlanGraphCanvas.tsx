@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ReactFlow, MiniMap, Background, Panel, useReactFlow, useNodesInitialized, useStore, ReactFlowProvider, Position, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useLayoutPrewarm } from './useLayoutPrewarm';
+import { LayoutProgress } from './LayoutProgress';
 import { layoutWithDagre, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT, STAGE_GROUP_PADDING_X, STAGE_GROUP_PADDING_Y, STAGE_GROUP_HEADER_HEIGHT, type PlanLayoutDirection } from './dagre-layout';
-import { boundsOf, viewportShowsAll, type Rect } from './readable-fit';
+import { boundsOf, viewportShowsAll, FIT_TO_VIEW_OPTIONS, type Rect } from './readable-fit';
 import { useReadableFit } from './useReadableFit';
 import { PlanGraphNode } from './PlanGraphNode';
 import { PlanGraphNodeDetail } from './PlanGraphNodeDetail';
@@ -61,9 +62,9 @@ const nodeMiddle = (node: Node) => ({
 
 // A fit lands on a readable zoom, never below MIN_READABLE_ZOOM, so a graph too
 // large for the canvas overflows and scrolls instead of shrinking its text to
-// nothing (see readable-fit.ts). The mount-time fit and every automatic re-fit
-// share it; the control rail's "Fit to view" is the one-click full overview
-// with no zoom floor.
+// nothing (see readable-fit.ts). Every automatic re-fit shares it; the first fit
+// when the graph opens and the control rail's "Fit to view" are the one-click
+// full overview with no zoom floor.
 function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: { resizeTick: number; fitSignal: number; centerRequest?: CenterRequest; sheetNodeId: string | null }) {
   const { fitView, setCenter, getNode, getZoom } = useReactFlow();
   const fitReadable = useReadableFit();
@@ -72,11 +73,14 @@ function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: 
   const canvasHeight = useStore((s) => s.height);
   const didInitialFit = useRef(false);
 
-  // Initial fit, once the canvas has a size and the nodes are in the store.
+  // First fit, the same full overview as the rail's "Fit to view". This mounts
+  // only once the layout is done (the canvas shows LayoutProgress until then), and
+  // waits for the canvas to have a size and the nodes to be measured.
   useEffect(() => {
     if (didInitialFit.current || !nodesInitialized || !canvasWidth || !canvasHeight) return;
-    didInitialFit.current = fitReadable(0);
-  }, [nodesInitialized, canvasWidth, canvasHeight, fitReadable]);
+    didInitialFit.current = true;
+    void fitView(FIT_TO_VIEW_OPTIONS);
+  }, [nodesInitialized, canvasWidth, canvasHeight, fitView]);
 
   // On a phone the node detail is a bottom sheet that shrinks the canvas, so
   // the selected node can end up under it or off-screen. Pan it to the middle
@@ -509,11 +513,7 @@ export function PlanGraphCanvas({
   };
 
   if (!shown) {
-    return (
-      <p role="status" aria-live="polite" aria-label="Laying out plan graph" className="p-6 text-sm text-muted-foreground">
-        Laying out plan graph…
-      </p>
-    );
+    return <LayoutProgress />;
   }
 
   return (
@@ -565,9 +565,7 @@ export function PlanGraphCanvas({
             <ViewportAutoFit resizeTick={resizeTick} fitSignal={fitSignal} centerRequest={centerRequest} sheetNodeId={sheetOpen ? selectedNode.id : null} />
             {layingOut ? (
               <Panel position="top-center">
-                <p role="status" aria-live="polite" className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-sm">
-                  Laying out plan graph…
-                </p>
+                <LayoutProgress compact />
               </Panel>
             ) : null}
             {allNodesFiltered ? (

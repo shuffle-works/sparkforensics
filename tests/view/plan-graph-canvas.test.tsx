@@ -24,6 +24,8 @@ const setCenterMock = vi.fn();
 const getNodeMock = vi.fn();
 const fitViewMock = vi.hoisted(() => vi.fn());
 const miniMapSpy = vi.hoisted(() => vi.fn());
+// When set, the canvas treats its nodes as measured (jsdom measures none).
+const nodesInitializedOverride = vi.hoisted(() => ({ current: null as null | boolean }));
 // When set, the canvas reads this React Flow store state (canvas size and
 // viewport transform) instead of jsdom's unmeasured zero-size canvas.
 const storeOverride = vi.hoisted(() => ({ current: null as null | { width: number; height: number; transform: [number, number, number] } }));
@@ -31,6 +33,10 @@ vi.mock('@xyflow/react', async () => {
   const actual = await vi.importActual<typeof import('@xyflow/react')>('@xyflow/react');
   return {
     ...actual,
+    useNodesInitialized: (() => {
+      const measured = actual.useNodesInitialized();
+      return nodesInitializedOverride.current ?? measured;
+    }) as typeof actual.useNodesInitialized,
     useReactFlow: () => ({ setCenter: setCenterMock, getNode: getNodeMock, getZoom: () => 1, zoomIn: vi.fn(), zoomOut: vi.fn(), fitView: fitViewMock, getNodes: () => [], setViewport: vi.fn() }),
     useStore: ((selector: (s: unknown) => unknown, equalityFn?: (a: unknown, b: unknown) => boolean) =>
       storeOverride.current ? selector(storeOverride.current) : actual.useStore(selector as never, equalityFn)) as typeof actual.useStore,
@@ -717,7 +723,11 @@ describe('all-nodes-hidden hint', () => {
 });
 
 describe('large graph laid out in the layout worker', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    storeOverride.current = null;
+    nodesInitializedOverride.current = null;
+  });
 
   // A chain of segment-grouped nodes at the size where layouts leave the main thread.
   function largeModel(): PlanGraphModel {
@@ -750,16 +760,42 @@ describe('large graph laid out in the layout worker', () => {
     clearLayoutCache();
   });
 
-  it('shows a loading line while the worker lays the graph out, then the graph', async () => {
+  it('shows a centered progress bar with the layout message while the worker lays the graph out, then the graph', async () => {
     vi.stubGlobal('Worker', class {});
 
     render(<PlanGraphCanvas model={largeModel()} showMiniMap={false} stageId={1} />);
-    expect(screen.getByRole('status', { name: 'Laying out plan graph' })).toBeInTheDocument();
+    const status = screen.getByRole('status', { name: 'Laying out plan graph' });
+    expect(status).toHaveTextContent('Laying out plan graph…');
+    const bar = within(status).getByRole('progressbar', { name: 'Layout progress' });
+    // No percentage is known, so the bar is indeterminate.
+    expect(bar).not.toHaveAttribute('aria-valuenow');
+    expect(status).toHaveClass('items-center', 'justify-center');
     expect(screen.queryByText('Op 0')).not.toBeInTheDocument();
 
     await act(async () => { replies.splice(0).forEach((reply) => reply()); });
     expect(await screen.findByText('Op 0')).toBeInTheDocument();
     expect(screen.queryByRole('status', { name: 'Laying out plan graph' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('progressbar', { name: 'Layout progress' })).not.toBeInTheDocument();
+  });
+
+  it('fits the plan to the view like the Fit to view button, once, after the worker layout lands', async () => {
+    vi.stubGlobal('Worker', class {});
+    storeOverride.current = { width: 1400, height: 900, transform: [0, 0, 1] };
+    nodesInitializedOverride.current = true;
+    fitViewMock.mockClear();
+
+    const { rerender } = render(<PlanGraphCanvas model={largeModel()} showMiniMap={false} stageId={1} />);
+    // The layout is still running: the canvas is not mounted, so nothing can be fitted yet.
+    expect(fitViewMock).not.toHaveBeenCalled();
+
+    await act(async () => { replies.splice(0).forEach((reply) => reply()); });
+    expect(await screen.findByText('Op 0')).toBeInTheDocument();
+    expect(fitViewMock).toHaveBeenCalledTimes(1);
+    // The same call as the rail button: a full overview with no zoom floor.
+    expect(fitViewMock.mock.lastCall![0]).toEqual({ duration: 200 });
+
+    rerender(<PlanGraphCanvas model={largeModel()} showMiniMap={false} stageId={1} fitSignal={0} />);
+    expect(fitViewMock).toHaveBeenCalledTimes(1);
   });
 
   it('watches the graph container for resizes once the worker layout lands', async () => {
