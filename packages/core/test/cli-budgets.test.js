@@ -206,7 +206,7 @@ describe('evaluateBudgets', () => {
       metrics: [
         { key: 'wallClock', label: 'Wall-clock duration', baseline: 10_000, candidate: 12_000, delta: 2_000, direction: 'regression' },
       ],
-      findings: { introduced: [], resolved: [] },
+      findings: { introduced: [], resolved: [], changed: [] },
       stageSkew: [], baseStages: [], candStages: [],
       ...overrides,
     };
@@ -319,7 +319,7 @@ describe('evaluateBudgets', () => {
 
   it('flags a fail-on-introduced violation for a matching impact band', () => {
     const comparison = baseComparison({
-      findings: { introduced: [{ rule: 'spill', impactBand: 'critical', baseCount: 0, candCount: 1, delta: 1, stages: ['s1'] }], resolved: [] },
+      findings: { introduced: [{ rule: 'spill', impactBand: 'critical', baseCount: 0, candCount: 1, delta: 1, stages: ['s1'] }], resolved: [], changed: [] },
     });
     const { results, violated } = evaluateBudgets({
       appModel: baseAppModel(), catalog: [], budgets: { failOnIntroduced: 'critical' }, comparison,
@@ -330,7 +330,7 @@ describe('evaluateBudgets', () => {
 
   it('passes fail-on-introduced when no introduced finding matches the band', () => {
     const comparison = baseComparison({
-      findings: { introduced: [{ rule: 'spill', impactBand: 'warning', baseCount: 0, candCount: 1, delta: 1, stages: ['s1'] }], resolved: [] },
+      findings: { introduced: [{ rule: 'spill', impactBand: 'warning', baseCount: 0, candCount: 1, delta: 1, stages: ['s1'] }], resolved: [], changed: [] },
     });
     const { violated } = evaluateBudgets({
       appModel: baseAppModel(), catalog: [], budgets: { failOnIntroduced: 'critical' }, comparison,
@@ -340,7 +340,7 @@ describe('evaluateBudgets', () => {
 
   it('flags fail-on-introduced "all" for any introduced finding regardless of band', () => {
     const comparison = baseComparison({
-      findings: { introduced: [{ rule: 'spill', impactBand: 'info', baseCount: 0, candCount: 1, delta: 1, stages: ['s1'] }], resolved: [] },
+      findings: { introduced: [{ rule: 'spill', impactBand: 'info', baseCount: 0, candCount: 1, delta: 1, stages: ['s1'] }], resolved: [], changed: [] },
     });
     const { results, violated } = evaluateBudgets({
       appModel: baseAppModel(), catalog: [], budgets: { failOnIntroduced: 'all' }, comparison,

@@ -111,4 +111,30 @@ describe('comparison across runs', () => {
     const comparison = compareRuns(run([finding({ stageId: 1, impactBand: 'critical', value: 8 })], 'base'), shifted);
     expect(comparison.findings).toEqual({ introduced: [], resolved: [], changed: [] });
   });
+
+  it('keeps a finding on a stage the aligner cannot pair matched across runs', () => {
+    const withStages = (stages, catalog, label) => ({ label, snapshot: { app: APP, jobs: new Map(), sql: new Map(), stages, catalog } });
+    const base = withStages(new Map([[1, stage('Alpha scan')]]), [finding({ stageId: 1, value: 8 })], 'base');
+    const cand = withStages(new Map([[5, stage('Zulu write')]]), [finding({ stageId: 5, value: 4 })], 'cand');
+    const comparison = compareRuns(base, cand);
+    expect(comparison.stagePairs).toEqual([]);
+    expect(comparison.findings.introduced).toEqual([]);
+    expect(comparison.findings.resolved).toEqual([]);
+    expect(budgetFor(comparison, 'all').status).toBe('pass');
+  });
+
+  it('counts a finding that worsens into the budgeted band as introduced and says so in the verdict', () => {
+    const comparison = compareRuns(run([finding({ impactBand: 'warning' })], 'base'), run([finding({ impactBand: 'critical' })], 'cand'));
+    expect(comparison.findings.changed).toEqual([expect.objectContaining({ baseImpactBand: 'warning', candImpactBand: 'critical' })]);
+    expect(budgetFor(comparison, 'critical').status).toBe('violation');
+    expect(budgetFor(comparison, 'warning').status).toBe('violation');
+    expect(budgetFor(comparison, 'all').status).toBe('violation');
+    expect(comparisonVerdict(comparison).sentences.join(' ')).toMatch(/More severe in the candidate: /);
+  });
+
+  it('never fails the budget for a finding that improves', () => {
+    const comparison = compareRuns(run([finding({ impactBand: 'critical' })], 'base'), run([finding({ impactBand: 'info' })], 'cand'));
+    for (const band of ['critical', 'warning', 'info', 'all']) expect(budgetFor(comparison, band).status).toBe('pass');
+    expect(comparisonVerdict(comparison).sentences.join(' ')).not.toMatch(/More severe/);
+  });
 });

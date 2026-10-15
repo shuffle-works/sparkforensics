@@ -7,7 +7,8 @@ import { captureSnapshot } from './session-snapshot.ts';
 import { alignStages, compileNormalizePatterns, COMPARISON_SCHEMA_VERSION, type StageAlignment, type StagePair } from './stage-alignment.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
 import { diffFindings, findingBand, findingRule, type FindingLocator } from './finding-identity.ts';
-import type { Stage, SparkAppInfo, AppModel, Finding, TunedThresholds } from './types.ts';
+import { IMPACT_BAND_ORDER } from './format-utils.ts';
+import type { Stage, SparkAppInfo, AppModel, Finding, ImpactBand, TunedThresholds } from './types.ts';
 import type { SessionSnapshot } from './session-snapshot.ts';
 import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
 import { isIncompleteRun } from './check-coverage.ts';
@@ -28,6 +29,11 @@ export interface FindingsDeltaRow {
 // is how many findings of that rule moved between those two bands.
 export interface FindingsChangedRow {
   rule: string; type: string; baseImpactBand: string; candImpactBand: string; count: number; stages: string[];
+}
+/** True when a changed finding moved to a more severe band (an unknown band ranks least severe). */
+export function isEscalation(row: Pick<FindingsChangedRow, 'baseImpactBand' | 'candImpactBand'>): boolean {
+  const rank = (band: string) => IMPACT_BAND_ORDER[band as ImpactBand] ?? 9;
+  return rank(row.candImpactBand) < rank(row.baseImpactBand);
 }
 export interface FindingsDelta {
   introduced: FindingsDeltaRow[]; resolved: FindingsDeltaRow[]; changed: FindingsChangedRow[];
@@ -250,8 +256,7 @@ export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapsho
 }
 
 // Cross-run identity of a snapshot's stages and SQL executions: a stage (or execution) the aligner
-// paired takes one label on both sides; an unpaired one takes a side-prefixed label no other run's
-// location can equal, so its findings read as introduced or resolved.
+// paired takes one label on both sides; an unpaired one takes a side-neutral label, so the same problem on an unpaired stage in both runs still matches.
 function findingLocators(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, stagePairs: StagePair[]): { base: FindingLocator; cand: FindingLocator } {
   const baseStage = new Map<number, string>(), candStage = new Map<number, string>();
   const executionVotes = new Map<number, Map<number, number>>(); // base execution -> cand execution -> paired stages
@@ -271,9 +276,10 @@ function findingLocators(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, s
     const [candExec] = [...votes].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
     executionPair.set(baseExec, candExec);
   }
+  const pairedCandExecs = new Set(executionPair.values());
   return {
-    base: { stage: (id) => baseStage.get(id) ?? `b${id}`, execution: (id) => executionPair.has(id) ? `c${executionPair.get(id)}` : `b${id}` },
-    cand: { stage: (id) => candStage.get(id) ?? `c${id}`, execution: (id) => `c${id}` },
+    base: { stage: (id) => baseStage.get(id) ?? 'unpaired', execution: (id) => executionPair.has(id) ? `c${executionPair.get(id)}` : 'unpaired' },
+    cand: { stage: (id) => candStage.get(id) ?? 'unpaired', execution: (id) => pairedCandExecs.has(id) ? `c${id}` : 'unpaired' },
   };
 }
 

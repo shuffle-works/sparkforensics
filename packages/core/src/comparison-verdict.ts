@@ -1,6 +1,6 @@
 import { formatDuration, typeTag } from './format-utils.ts';
 import { TAG_HELP } from './finding-tag-help.ts';
-import { NEUTRAL_METRIC_KEYS, type CompareRunsResult } from './run-comparison.ts';
+import { isEscalation, NEUTRAL_METRIC_KEYS, type CompareRunsResult } from './run-comparison.ts';
 
 /** The slice of a comparison metric row the verdict reads. */
 export interface VerdictMetric {
@@ -17,6 +17,13 @@ export interface VerdictCategory {
   type: string;
   baseCount: number;
   candCount: number;
+}
+
+/** The slice of a changed finding row the verdict reads. */
+export interface VerdictChange {
+  type: string;
+  baseImpactBand: string;
+  candImpactBand: string;
 }
 
 /** How many of a run's ended jobs failed, counted as `summarizeRunOutcome`
@@ -113,7 +120,7 @@ function failureHeadline(base: VerdictJobOutcome, cand: VerdictJobOutcome): { ti
  * inherently better or worse. */
 export function summarizeComparison(
   metrics: VerdictMetric[],
-  findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[] },
+  findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[]; changed?: VerdictChange[] },
   jobs?: { baseline: VerdictJobOutcome; candidate: VerdictJobOutcome },
 ): ComparisonVerdictText {
   const wall = metrics.find((metric) => metric.key === 'wallClock');
@@ -165,6 +172,8 @@ export function summarizeComparison(
   const resolved = namesWhere(net, (change) => change < 0);
   if (introduced.length > 0) sentences.push(`New or more frequent in the candidate: ${introduced.join(', ')}.`);
   if (resolved.length > 0) sentences.push(`Less frequent in the candidate: ${resolved.join(', ')}.`);
+  const escalated = [...new Set((findings.changed ?? []).filter(isEscalation).map((c) => categoryName(c.type)))];
+  if (escalated.length > 0) sentences.push(`More severe in the candidate: ${escalated.join(', ')}.`);
   return { title, tone, sentences };
 }
 

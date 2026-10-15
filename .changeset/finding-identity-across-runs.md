@@ -13,6 +13,7 @@ Output changes in the CLI `comparison` block, the MCP `compare_runs` result (inc
 - `findings.changed` is new: one row per rule and band move, `{ rule, type, baseImpactBand, candImpactBand, count, stages }`.
 - `findings.introduced` and `findings.resolved` rows now hold only findings with no counterpart in the other run. An introduced row has `baseCount` 0 and a resolved row has `candCount` 0; a rule with more findings in the candidate no longer reads `1 -> 2`.
 - A finding that moves to a stage or SQL execution that pairs with a different one reads as resolved plus introduced.
-- The `--fail-on-introduced` budget and the MCP `evaluate_budgets` `failOnIntroduced` budget read the same diff, so a re-banded finding no longer violates them. A finding that rises to a gated band is `changed`, not introduced.
+- The `--fail-on-introduced` budget and the MCP `evaluate_budgets` `failOnIntroduced` budget read the same diff, so a re-banded finding no longer violates them. A finding whose band worsens to the gated band or a more severe one still counts for the budget, and the comparison verdict reads "More severe in the candidate" for it. An improved finding never fails.
+- A finding on a stage or SQL execution the aligner leaves unpaired matches the same rule's finding on an unpaired location in the other run.
 - The Markdown comparison report has a `### Changed findings` section.
 - The dashboard comparison page lists band moves under "Impact changed in candidate".

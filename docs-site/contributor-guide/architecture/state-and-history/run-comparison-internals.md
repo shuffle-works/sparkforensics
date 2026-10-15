@@ -43,11 +43,13 @@ already-parsed snapshots, with no worker involved.
   `packages/core/src/finding-identity.ts`: type, rule and location, never the value or the
   impact band. The location is the stage's `pairId` from `alignStages`, the SQL execution that
   holds most of the paired stages, the audited config property, or the whole run; a stage or
-  execution with no pair gets a side-specific label, so its findings never match. Findings
+  execution with no pair gets one side-neutral label, so the same finding on an unpaired
+  stage in both runs still matches. Findings
   that share a key pair one-to-one, same band first. The unpaired candidate findings are
   `introduced`, the unpaired baseline findings are `resolved`, and a pair whose bands
   differ is `changed`. Each row groups findings by rule and band. The verdict, the
-  `fail-on-introduced` budget and the dashboard read this one diff.
+  `fail-on-introduced` budget and the dashboard read this one diff. A `changed` pair whose
+  band worsens also counts for the budget and adds a "More severe in the candidate" verdict sentence.
 - `alignStages(baseSnap, candSnap, { normalizePath })` in
   `packages/core/src/stage-alignment.ts` is the aligner: a pure function from two
   snapshots to the stage pairs, the unmatched stages, the replanned groups, the
