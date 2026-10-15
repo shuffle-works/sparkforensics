@@ -39,9 +39,14 @@ test('stage dimension excludes stageId:null findings when active', () => {
   expect(matchesFilter(f({ stageId: null, type: 'coldStart' }), sel)).toBe(false);
 });
 
-test('stage dimension keeps dropping a sql-scope finding, even one on exactly that stage', () => {
+test('stage dimension shows a sql-scope finding whose only stage is the selected one', () => {
   const sel = { ...emptySelection(), stages: new Set([3]) };
-  expect(matchesFilter(f({ stageId: null, stageIds: [3], type: 'smallFiles' }), sel)).toBe(false);
+  expect(matchesFilter(f({ stageId: null, stageIds: [3], type: 'smallFiles' }), sel)).toBe(true);
+  expect(matchesFilter(f({ stageId: null, stageIds: [4], type: 'smallFiles' }), sel)).toBe(false);
+});
+
+test('stage dimension drops a sql-scope finding that spans several stages', () => {
+  const sel = { ...emptySelection(), stages: new Set([3]) };
   expect(matchesFilter(f({ stageId: null, stageIds: [3, 4], type: 'smallFiles' }), sel)).toBe(false);
 });
 
@@ -65,6 +70,14 @@ test('deriveOptions surfaces only present values, incl. CFG-only types', () => {
   expect(opts.impactBands).toEqual(['critical', 'warning', 'info']); // fixed order, only present
   expect(opts.types).toEqual(['configAudit', 'skew', 'spill']); // sorted, includes CFG-only
   expect(opts.stages).toEqual([2, 5]); // ascending, null excluded
+});
+
+test('deriveOptions offers the stage of a single-stage sql finding', () => {
+  const catalog = [
+    f({ stageId: null, stageIds: [3], type: 'smallFiles' }),
+    f({ stageId: null, stageIds: [4, 5], type: 'smallFiles' }),
+  ];
+  expect(deriveOptions(catalog, []).stages).toEqual([3]);
 });
 
 test('parseFilterSelection seeds valid values and drops unknown/malformed', () => {
