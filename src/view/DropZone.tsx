@@ -35,9 +35,9 @@ function initialShsField(field: ShsField): string {
 
 // A real, gzip-compressed event log (`dev/log-corpus`'s pairwise-01.ndjson,
 // picked by actually running the analyzer over every corpus candidate and
-// taking the one with the most findings: 10, across skew/tiny-tasks/plan/
-// config/utilization) so a first-time visitor with no log of their own can
-// still see a populated board. Relative, not `/sample-runs/...`: same
+// taking the one with the most distinct finding types: 13 types, 21 findings,
+// including shuffle, spill, slow-host and speculation) so a first-time
+// visitor with no log of their own can still see a populated board. Relative, not `/sample-runs/...`: same
 // subpath-safety reasoning as docsUrl()/DOCS_SITE_ROOT elsewhere in this app.
 const SAMPLE_RUN_URL = 'sample-runs/sample-run.ndjson.gz';
 // Getting-started section that documents starting local-server mode.
