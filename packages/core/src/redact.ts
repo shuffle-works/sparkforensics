@@ -266,8 +266,16 @@ function withoutJobSetQueryValues<E extends { modifiedConfigs?: Record<string, s
   return { ...exec, modifiedConfigs: kept };
 }
 
+// An executor's removal reason is Spark's free-text message and can carry a path or a data value. No
+// surface displays it. It is replaced by field, not through REASON_KEYS: `reason` also names unrelated
+// fields elsewhere, and the key walk would blank those.
+function withoutExecutorRemovalReasons<T extends RunTree>(data: T): T {
+  const removed = data.executors.removed.map((e) => ({ ...e, reason: REDACTED_TEXT }));
+  return { ...data, executors: { ...data.executors, removed } };
+}
+
 function redactRunTree<T extends RunTree>(input: T): T {
-  const data = redactFailureText(input);
+  const data = withoutExecutorRemovalReasons(redactFailureText(input));
   const appIds = new Set<string>();
   const hosts = new Set<string>();
   const appId = data.app?.id;

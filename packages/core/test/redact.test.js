@@ -415,6 +415,23 @@ describe('redactRunModel', () => {
     expect(out.appModel.executors.added[0].host).not.toBe('worker-3.internal');
   });
 
+  // An executor's removal reason is Spark's free-text message, so it can carry a path or a data value.
+  it("replaces an executor's removal reason, and leaves other fields named reason alone", () => {
+    const data = sampleExportData();
+    data.executors.removed = [{
+      kind: 'removed', timestamp: 9, executorId: '1',
+      reason: 'Container killed while reading s3://acme-prod-ledger/2026/q3 for customer 4471-ZEBRA',
+    }];
+    data.catalog = [...data.catalog, { type: 'note', reason: 'kept-reason', impactBand: 'info' }];
+    const out = redactRun(data);
+    const json = JSON.stringify(out);
+    expect(json).not.toContain('acme-prod-ledger');
+    expect(json).not.toContain('4471-ZEBRA');
+    expect(out.appModel.executors.removed[0].reason).toBe('[redacted]');
+    expect(out.appModel.executors.removed[0].executorId).toBe('1');
+    expect(out.catalog[1].reason).toBe('kept-reason');
+  });
+
   it('pseudonymizes an IP-shaped host token embedded in a stage name', () => {
     const out = redactRun(sampleExportData());
     expect(out.appModel.stages.get(1).name).toMatch(/host-\d+/);
