@@ -12,7 +12,7 @@ export interface VerdictMetric {
   direction: 'improvement' | 'regression' | 'unchanged' | 'neutral' | 'unavailable';
 }
 
-/** The slice of a finding-category delta the verdict reads. */
+/** The slice of an introduced or resolved finding row the verdict reads. */
 export interface VerdictCategory {
   type: string;
   baseCount: number;
@@ -58,13 +58,11 @@ function categoryName(type: string): string {
   return TAG_HELP[tag]?.expansion ?? tag;
 }
 
-/** Net count change per displayed category name. Categories are tallied per
- * (rule, impact band), and several rules share one name (every Plan Advisor
- * type reads "Plan advisor", every stage-shape sub-rule "Stage shape"), so a
- * rule whose findings moved from critical to warning, or two rules under one
- * name moving opposite ways, would otherwise
- * read as both "introduced" and "resolved". Order follows first appearance,
- * introduced before resolved. */
+/** Net count change per displayed category name. Several rules share one name (every Plan Advisor
+ * type reads "Plan advisor", every stage-shape sub-rule "Stage shape"), so two rules under one
+ * name moving opposite ways net out rather than read as both "new" and "less frequent". Findings
+ * that only changed impact band are not in `introduced` or `resolved`, so they do not move a
+ * category. Order follows first appearance, introduced before resolved. */
 function netByCategory(findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[] }): Map<string, number> {
   const net = new Map<string, number>();
   for (const item of [...findings.introduced, ...findings.resolved]) {
