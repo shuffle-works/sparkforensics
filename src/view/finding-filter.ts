@@ -1,5 +1,5 @@
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
-import { matchesFindingFilterCriteria } from '@sparkforensics/core/finding-filter-predicate.ts';
+import { matchesFindingFilterCriteria, singleStageId } from '@sparkforensics/core/finding-filter-predicate.ts';
 
 /** Fixed impact-band vocabulary, in triage order. */
 export const IMPACT_BANDS: readonly ImpactBand[] = ['critical', 'warning', 'info'];
@@ -21,13 +21,15 @@ export function isEmptySelection(sel: FilterSelection): boolean {
 
 /**
  * One predicate for both the catalog and the config-audit stream. Each empty
- * dimension is unconstrained. The stage clause requires a real `stageId`, so a
- * non-empty stage filter drops every `stageId: null` finding (app/SQL/config).
+ * dimension is unconstrained. The stage clause matches the one stage a finding
+ * is about (`singleStageId`): its own `stageId`, or the only entry of a sql-scope
+ * finding's `stageIds`, as Stage details lists it. A non-empty stage filter
+ * drops app-level, config and multi-stage findings.
  * Delegates to the shared core predicate (src/finding-filter-predicate.ts)
  * that also backs the CLI/MCP evidence report's FindingsFilter.
  */
 export function matchesFilter(finding: Finding, sel: FilterSelection): boolean {
-  return matchesFindingFilterCriteria(finding, {
+  return matchesFindingFilterCriteria({ ...finding, stageId: singleStageId(finding) }, {
     impactBand: sel.impactBands,
     type: sel.types,
     stageId: sel.stages,
