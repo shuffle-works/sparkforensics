@@ -72,6 +72,14 @@ test('deriveOptions surfaces only present values, incl. CFG-only types', () => {
   expect(opts.stages).toEqual([2, 5]); // ascending, null excluded
 });
 
+test('deriveOptions offers the stage of a single-stage sql finding', () => {
+  const catalog = [
+    f({ stageId: null, stageIds: [3], type: 'smallFiles' }),
+    f({ stageId: null, stageIds: [4, 5], type: 'smallFiles' }),
+  ];
+  expect(deriveOptions(catalog, []).stages).toEqual([3]);
+});
+
 test('parseFilterSelection seeds valid values and drops unknown/malformed', () => {
   const options = { impactBands: ['critical', 'warning', 'info'], types: ['skew', 'spill'], stages: [3, 7] };
   const sel = parseFilterSelection('?impact=critical,bogus&type=skew,nope&stage=3,x,7.5', options);

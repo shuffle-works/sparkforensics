@@ -64,7 +64,8 @@ export function deriveOptions(catalog: Finding[], configFindings: Finding[]): Fi
   for (const finding of [...catalog, ...configFindings]) {
     impactBands.add(finding.impactBand);
     types.add(finding.type);
-    if (finding.stageId != null) stages.add(finding.stageId);
+    const stageId = singleStageId(finding);
+    if (stageId != null) stages.add(stageId);
   }
   return {
     impactBands: IMPACT_BANDS.filter((b) => impactBands.has(b)),
