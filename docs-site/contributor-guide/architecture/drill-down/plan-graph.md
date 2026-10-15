@@ -40,7 +40,9 @@ a cycle in it, and Dagre then drops those groups from the next sweep, leaving tw
 nodes on one (rank, order) slot and throwing "Not possible to find intersection
 inside of the rectangle". `runDagre` orders through `orderGroups`: when nodes share a
 slot it orders again with every pair of groups that share a rank pinned to one
-fixed left-to-right order, which cannot form a cycle. A graph with no shared slot is
+fixed left-to-right order. Dagre can still drop nodes then, because the constraints
+it adds from the observed order can contradict the fixed one, so `separateSharedSlots`
+moves any nodes left on one slot to consecutive slots. A graph with no shared slot is
 ordered exactly as by default.
 
 A cold layout of a plan with 200 or more nodes runs in a Web Worker

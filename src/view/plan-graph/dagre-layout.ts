@@ -161,13 +161,34 @@ function groupOrderConstraints(graph: DagreGraph, groupRank: Map<string, number>
   );
 }
 
+/** Gives every node of a rank its own order: nodes that share a slot keep their
+ * relative position and move to consecutive slots. The pinned pass can still leave
+ * a shared slot, because the constraints Dagre adds from the order it observed
+ * can contradict the fixed order through the groups' border and edge nodes. */
+function separateSharedSlots(graph: DagreGraph): void {
+  const ranks = new Map<number, { id: string; order: number }[]>();
+  for (const id of graph.nodes()) {
+    if (graph.children(id).length) continue;
+    const { rank, order } = graph.node(id) as { rank: number; order: number };
+    ranks.set(rank, [...(ranks.get(rank) ?? []), { id, order }]);
+  }
+  for (const members of ranks.values()) {
+    // Array.prototype.sort is stable, so ties keep the graph's node order.
+    members.sort((a, b) => a.order - b.order).forEach(({ id }, slot) => {
+      (graph.node(id) as { order: number }).order = slot;
+    });
+  }
+}
+
 /** Dagre's ordering pass. When two nodes end on one slot, orders again with the
- * groups pinned to one fixed order. A graph whose first pass has no shared slot
- * is ordered exactly as by default. */
+ * groups pinned to one fixed order, then separates any nodes still sharing a slot.
+ * A graph whose first pass has no shared slot is ordered exactly as by default. */
 function orderGroups(groupRank: Map<string, number>): NonNullable<LayoutConfig['customOrder']> {
   return (graph, order) => {
     order(graph, {});
-    if (hasSharedSlot(graph)) order(graph, { constraints: groupOrderConstraints(graph, groupRank) });
+    if (!hasSharedSlot(graph)) return;
+    order(graph, { constraints: groupOrderConstraints(graph, groupRank) });
+    if (hasSharedSlot(graph)) separateSharedSlots(graph);
   };
 }
 

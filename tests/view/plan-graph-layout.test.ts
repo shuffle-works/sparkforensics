@@ -312,3 +312,25 @@ describe.each(Object.entries(INTERLEAVED_PLANS))('layout of a plan with %s', (_n
     expect(layoutWithDagre(nodes, edges, { groupOf }).map((n) => n.position)).toEqual(first);
   });
 });
+
+describe('layout of random segment-interleaved plans', () => {
+  // Seeded generator: a random forest whose nodes land in random segments. Plan 269 of
+  // seed 12345 and plan 29 of seed 4242 still shared a slot after the pinned ordering pass.
+  function randomPlan(next: () => number) {
+    const count = 20 + Math.floor(next() * 70);
+    const segments = 3 + Math.floor(next() * 18);
+    const nodeIds = Array.from({ length: count }, (_, i) => `n${i}`);
+    const groupIds = nodeIds.map(() => `segment-${Math.floor(next() * segments)}`);
+    const edges = nodeIds.slice(1).map((target, i) => ({ source: `n${Math.floor(next() * (i + 1))}`, target }));
+    return { nodeIds, groupIds, edges };
+  }
+
+  it.each([12345, 4242])('places every node of 300 plans at a finite position (seed %i)', (seed) => {
+    let state = seed;
+    const next = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    for (let i = 0; i < 300; i++) {
+      const positions = runDagre({ key: `random-${seed}-${i}`, ...randomPlan(next), direction: 'RL', compound: true });
+      for (const { x, y } of positions.values()) expect(Number.isFinite(x) && Number.isFinite(y)).toBe(true);
+    }
+  });
+});
