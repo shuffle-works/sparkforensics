@@ -46,6 +46,8 @@ const { buildEffectiveConf } = await loadCore('effective-conf');
 const USAGE = `Usage: sparkforensics-analyze <event-log-file|rolling-log-dir> [options]
        sparkforensics-analyze <event-log-file|rolling-log-dir>... --baseline <path> [options]
        sparkforensics-analyze --shs-base-url <url> --app-id <id> [--attempt-id <id>] [options]
+       sparkforensics-analyze --shs-base-url <url> --app-id <id>[:<attempt>] --app-id <id>[:<attempt>]...
+                              (--baseline <path> | --baseline-shs-base-url <url> --baseline-app-id <id>) [options]
 
 Options:
   --format md|json|ndjson          Output format (default: json; ndjson with two or more candidate
@@ -65,26 +67,33 @@ Options:
   --shs-base-url <url>              Fetch the run from a Spark History Server instead of a
                                     local file (mutually exclusive with the positional argument).
   --app-id <id>                     Spark application ID to fetch. Required with --shs-base-url.
-  --attempt-id <id>                 Optional attempt ID, used with --shs-base-url.
+                                    Repeat it for several candidates from the same server, see
+                                    "Several candidates". <id>:<attempt> names an attempt.
+  --attempt-id <id>                 Optional attempt ID, used with --shs-base-url and a single
+                                    --app-id.
   --baseline <path>                 Compare the run against a baseline local event-log file or
-                                    rolling-log directory. Baseline is local-path-only (no SHS
-                                    support). Adds a comparison section to the output.
-  --max-regression-pct <pct>        Requires --baseline. Fail if the regression metric (see
+                                    rolling-log directory. Adds a comparison section to the output.
+                                    Mutually exclusive with --baseline-shs-base-url.
+  --baseline-shs-base-url <url>     Fetch the baseline from a Spark History Server instead of a
+                                    local path. It can be a different server than --shs-base-url.
+  --baseline-app-id <id>            Baseline application ID. Required with --baseline-shs-base-url.
+  --baseline-attempt-id <id>        Optional baseline attempt ID, used with --baseline-shs-base-url.
+  --max-regression-pct <pct>        Requires a baseline. Fail if the regression metric (see
                                     --regression-metric) regressed by more than this percent.
   --regression-metric <key>         Metric key to check with --max-regression-pct (default:
-                                    wallClock). Requires --baseline and --max-regression-pct.
+                                    wallClock). Requires a baseline and --max-regression-pct.
   --regression-budget <metric>:<pct>
-                                    Requires --baseline. Fail if <metric> regressed by more than
+                                    Requires a baseline. Fail if <metric> regressed by more than
                                     <pct> percent. Repeat the flag for several metrics. A metric can
                                     be budgeted once across this flag, --budgets and the
                                     --max-regression-pct/--regression-metric pair (which counts as
                                     one more budget).
-  --budgets <file>                  Requires --baseline. JSON file {"regression": {"<metric>": <pct>}}
+  --budgets <file>                  Requires a baseline. JSON file {"regression": {"<metric>": <pct>}}
                                     with the same budgets as --regression-budget. Unknown keys and
                                     metrics, and a percentage that is not a non-negative number, are
                                     rejected.
   --stage-regression-budget <metric>:<pct>
-                                    Requires --baseline. Fail if any paired stage's <metric>
+                                    Requires a baseline. Fail if any paired stage's <metric>
                                     (executorRunTime, executorCpuTime, memoryBytesSpilled,
                                     diskBytesSpilled, shuffleReadBytes, shuffleWriteBytes) grew
                                     by more than <pct> percent against its baseline stage.
@@ -94,7 +103,7 @@ Options:
   --stage-quality <q[,q]>           Requires --stage-regression-budget. Pair qualities the stage
                                     budgets read, from exact, structural, aligned (default:
                                     exact,structural; an aligned pair may compare different work).
-  --fail-on-introduced <band|all>   Requires --baseline. Fail if any finding was introduced by
+  --fail-on-introduced <band|all>   Requires a baseline. Fail if any finding was introduced by
                                     the candidate matching this impact band (or any, with "all").
                                     A finding the baseline also has at the same place is not
                                     introduced, unless its band worsens to exactly this band.
@@ -108,7 +117,7 @@ Options:
   --type <type[,type]>              Filter the output's findings array to these finding types.
   --stage <id>                      Filter the output's findings array to this stage id,
                                     including a SQL plan finding whose only stage it is.
-  --normalize-path <regex>          Requires --baseline. Repeatable. A regular expression whose every
+  --normalize-path <regex>          Requires a baseline. Repeatable. A regular expression whose every
                                     match in a plan node's text is replaced with a fixed token before
                                     stages are paired between the runs, so run-specific text, such as
                                     an output directory that differs per run, does not keep the same
@@ -129,20 +138,22 @@ Options:
                                     value matches this pattern, on top of Spark's default secret
                                     pattern and the job's own spark.redaction.regex.
 
-Several candidates: pass two or more logs as positional arguments, with --baseline, to compare
-each against the baseline, which is parsed once. Output is NDJSON, one line per candidate in
+Several candidates: pass two or more logs as positional arguments, or two or more --app-id values
+with one --shs-base-url, with a baseline (--baseline or --baseline-shs-base-url), to compare each
+against the baseline, which is parsed once. Output is NDJSON, one line per candidate in
 argument order: {"log", "status", "exitCode", "error", "budgets", "candidate", "comparison"}.
 status is pass, violation, inconclusive or error. A candidate that cannot be read or parsed gets
 an "error" line (exitCode 4, candidate and comparison null); the rest still run. An internal
 failure while analyzing one candidate gets an "error" line with exitCode 6. With --redact, "log"
 and the stderr prefixes name a candidate by position (candidate-1, candidate-2, ...) and an error
-line carries a generic message, so no candidate path is written. Not combinable with
---export-html, --shs-base-url or --format json|md. The exit code is the worst line, in the order
+line carries a generic message, so no candidate path or application ID is written. "log" is the
+path, or the --app-id value as given. Not combinable with --export-html, --format json|md, or a mix
+of positional logs and --shs-base-url. --format ndjson with a single --app-id is not supported. The exit code is the worst line, in the order
 6, 5, 4, 1, 3, 0; a usage error exits 2 before any candidate runs.
 
 Exit codes: 0 pass, 1 a budget was violated, 2 usage error (bad flags or arguments, an unreadable
 or invalid --thresholds or --budgets file), 3 a budget was inconclusive, 4 the candidate log could
-not be read or parsed (or the --shs-base-url fetch failed), 5 the --baseline log could not be read
+not be read or parsed (or the --shs-base-url fetch failed), 5 the baseline could not be read
 or parsed (no candidate lines are written), 6 internal error (including a failed --export-html).
 With --redact, a log that cannot be read, parsed or analyzed is reported by its role (the baseline,
 the candidate, or candidate N with several candidates) instead of the error text, which may carry
@@ -162,9 +173,12 @@ function parseCliArgs(argv) {
       'max-failed-task-rate': { type: 'string' },
       'min-efficiency': { type: 'string' },
       'shs-base-url': { type: 'string' },
-      'app-id': { type: 'string' },
+      'app-id': { type: 'string', multiple: true },
       'attempt-id': { type: 'string' },
       baseline: { type: 'string' },
+      'baseline-shs-base-url': { type: 'string' },
+      'baseline-app-id': { type: 'string' },
+      'baseline-attempt-id': { type: 'string' },
       'max-regression-pct': { type: 'string' },
       'regression-metric': { type: 'string' },
       'regression-budget': { type: 'string', multiple: true },
@@ -254,6 +268,21 @@ async function writeHtmlExport(destDir, appModel, catalog, skippedLines, { redac
 }
 
 const SHS_FLAG_BY_FIELD = { baseUrl: '--shs-base-url', appId: '--app-id', attemptId: '--attempt-id' };
+const BASELINE_SHS_FLAG_BY_FIELD = { baseUrl: '--baseline-shs-base-url', appId: '--baseline-app-id', attemptId: '--baseline-attempt-id' };
+
+// "<id>" or "<id>:<attempt>". The attempt ID charset has no ':', so the first one always splits.
+function parseAppSpec(spec) {
+  const at = spec.indexOf(':');
+  return at === -1 ? { appId: spec, attemptId: undefined } : { appId: spec.slice(0, at), attemptId: spec.slice(at + 1) };
+}
+
+// Names the invalid fields of an SHS request in the flags the user typed, or returns null.
+function shsRequestError(request, flagByField) {
+  const { errors } = validateShsRequest(request);
+  const invalid = Object.entries(errors).filter(([, message]) => message);
+  if (invalid.length === 0) return null;
+  return invalid.map(([field, message]) => `Invalid ${flagByField[field]}: ${message}`).join('\n');
+}
 
 const EXIT = { PASS: 0, VIOLATION: 1, USAGE: 2, INCONCLUSIVE: 3, CANDIDATE_UNREADABLE: 4, BASELINE_UNREADABLE: 5, INTERNAL: 6 };
 
@@ -270,13 +299,14 @@ const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode ===
 // One baseline against several candidates, one NDJSON line each. The baseline is parsed and
 // analyzed once; candidates run one at a time so only one parsed log is held at once. A candidate
 // that cannot be read or parsed yields an "error" line (exit code 4) and the rest still run. Under --redact
-// a candidate is named by its position (candidate-1, ...): log file names usually carry the app id.
+// a candidate is named by its position (candidate-1, ...): log file names and app ids identify the run.
+// loadBaseline() and each candidate's load() resolve to { appModel }, from a local log or a History Server.
 async function runMultiLog({
-  candidatePaths, baselinePath, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath,
+  candidates, loadBaseline, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath,
 }) {
   let baselineAppModel;
   try {
-    ({ appModel: baselineAppModel } = await collectWithEvidence(baselinePath));
+    ({ appModel: baselineAppModel } = await loadBaseline());
   } catch (e) {
     process.stderr.write(`${redact ? redactedFailure('The baseline', EXIT.BASELINE_UNREADABLE) : e.message}\n`);
     process.exitCode = EXIT.BASELINE_UNREADABLE;
@@ -291,11 +321,11 @@ async function runMultiLog({
   };
 
   let worstExit = 0;
-  for (const [index, path] of candidatePaths.entries()) {
-    const log = redact ? `candidate-${index + 1}` : path;
+  for (const [index, { name, load }] of candidates.entries()) {
+    const log = redact ? `candidate-${index + 1}` : name;
     let line;
     try {
-      const { appModel } = await unreadable(collectWithEvidence(path), EXIT.CANDIDATE_UNREADABLE);
+      const { appModel } = await unreadable(load(), EXIT.CANDIDATE_UNREADABLE);
       const catalog = runFindings(appModel, thresholds).catalog;
       const { comparison, output } = buildComparisonOutput(
         { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
@@ -358,6 +388,8 @@ async function runCli(argv, { fetchImpl } = {}) {
   }
 
   const usingShs = values['shs-base-url'] !== undefined;
+  // One entry per --app-id: { appId, attemptId, name }, name being the --app-id value as given.
+  let shsCandidates = [];
   if (usingShs) {
     if (positionals.length > 0) {
       return bail(`Pass either <event-log-file|rolling-log-dir> or --shs-base-url, not both.\n${USAGE}`, 2);
@@ -365,15 +397,21 @@ async function runCli(argv, { fetchImpl } = {}) {
     if (values['app-id'] === undefined) {
       return bail(`--shs-base-url requires --app-id.\n${USAGE}`, 2);
     }
-    const { errors } = validateShsRequest({
-      baseUrl: values['shs-base-url'], appId: values['app-id'], attemptId: values['attempt-id'],
-    });
-    const invalid = Object.entries(errors).filter(([, message]) => message);
-    if (invalid.length > 0) {
-      return bail(`${invalid.map(([field, message]) => `Invalid ${SHS_FLAG_BY_FIELD[field]}: ${message}`).join('\n')}\n${USAGE}`, 2);
+    const specs = values['app-id'];
+    if (values['attempt-id'] !== undefined && (specs.length > 1 || specs[0].includes(':'))) {
+      return bail(`--attempt-id applies to a single --app-id; with several applications write --app-id <id>:<attempt>.\n${USAGE}`, 2);
+    }
+    for (const spec of specs) {
+      const { appId, attemptId } = parseAppSpec(spec);
+      if (attemptId === '') return bail(`Invalid --app-id: an attempt must follow ":" in "${spec}".\n${USAGE}`, 2);
+      const message = shsRequestError({
+        baseUrl: values['shs-base-url'], appId, attemptId: attemptId ?? values['attempt-id'],
+      }, SHS_FLAG_BY_FIELD);
+      if (message) return bail(`${message}\n${USAGE}`, 2);
+      shsCandidates.push({ appId, attemptId: attemptId ?? values['attempt-id'], name: spec });
     }
   } else {
-    if (positionals.length === 0 || (positionals.length > 1 && values.baseline === undefined)) {
+    if (positionals.length === 0 || (positionals.length > 1 && values.baseline === undefined && values['baseline-shs-base-url'] === undefined)) {
       return bail(USAGE, 2);
     }
     if (values['app-id'] !== undefined || values['attempt-id'] !== undefined) {
@@ -381,18 +419,38 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
   }
 
+  const usingBaselineShs = values['baseline-shs-base-url'] !== undefined;
+  if (usingBaselineShs) {
+    if (values.baseline !== undefined) {
+      return bail(`Pass either --baseline <path> or --baseline-shs-base-url, not both.\n${USAGE}`, 2);
+    }
+    if (values['baseline-app-id'] === undefined) {
+      return bail(`--baseline-shs-base-url requires --baseline-app-id.\n${USAGE}`, 2);
+    }
+    const message = shsRequestError({
+      baseUrl: values['baseline-shs-base-url'], appId: values['baseline-app-id'], attemptId: values['baseline-attempt-id'],
+    }, BASELINE_SHS_FLAG_BY_FIELD);
+    if (message) return bail(`${message}\n${USAGE}`, 2);
+  } else if (values['baseline-app-id'] !== undefined || values['baseline-attempt-id'] !== undefined) {
+    return bail(`--baseline-app-id/--baseline-attempt-id require --baseline-shs-base-url.\n${USAGE}`, 2);
+  }
+  const usingBaseline = values.baseline !== undefined || usingBaselineShs;
+
   if (values.format !== undefined && !['json', 'md', 'ndjson'].includes(values.format)) {
     return bail(`Invalid value for --format (expected "json", "md" or "ndjson").\n${USAGE}`, 2);
   }
   // Two or more candidates, or an explicit ndjson, run the multi-candidate mode.
-  const multiLog = !usingShs && (positionals.length > 1 || values.format === 'ndjson');
+  // A single --app-id is a single candidate, and --format ndjson stays a local-log mode for it.
+  const multiLog = usingShs ? shsCandidates.length > 1 : (positionals.length > 1 || values.format === 'ndjson');
   if (multiLog) {
-    if (values.baseline === undefined) return bail(`--format ndjson requires --baseline.\n${USAGE}`, 2);
+    if (!usingBaseline) {
+      return bail(`${usingShs ? 'Several --app-id values' : '--format ndjson'} require --baseline or --baseline-shs-base-url.\n${USAGE}`, 2);
+    }
     if (values.format !== undefined && values.format !== 'ndjson') {
-      return bail(`Several candidate logs write NDJSON; --format ${values.format} cannot be combined with them.\n${USAGE}`, 2);
+      return bail(`Several candidates write NDJSON; --format ${values.format} cannot be combined with them.\n${USAGE}`, 2);
     }
     if (values['export-html'] !== undefined) {
-      return bail(`--export-html writes one dashboard and cannot be combined with several candidate logs.\n${USAGE}`, 2);
+      return bail(`--export-html writes one dashboard and cannot be combined with several candidates.\n${USAGE}`, 2);
     }
   } else if (values.format === 'ndjson') {
     return bail(`--format ndjson requires --baseline and a local candidate log.\n${USAGE}`, 2);
@@ -415,12 +473,11 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
   }
 
-  const usingBaseline = values.baseline !== undefined;
   // Single source of truth for which flags need --baseline: append a future
   // flag here rather than adding its own OR-condition (easy to forget).
   const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced', 'regression-budget', 'budgets', 'normalize-path', 'stage-regression-budget', 'stage-quality'];
   if (!usingBaseline && BASELINE_DEPENDENT_FLAGS.some((flag) => values[flag] !== undefined)) {
-    return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--stage-regression-budget/--stage-quality/--fail-on-introduced/--normalize-path require --baseline.\n${USAGE}`, 2);
+    return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--stage-regression-budget/--stage-quality/--fail-on-introduced/--normalize-path require --baseline or --baseline-shs-base-url.\n${USAGE}`, 2);
   }
   if (values['regression-metric'] !== undefined && values['max-regression-pct'] === undefined) {
     return bail(`--regression-metric requires --max-regression-pct.\n${USAGE}`, 2);
@@ -531,9 +588,19 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
   }
 
+  const shsOpts = fetchImpl !== undefined ? { fetchImpl } : {};
+  const loadBaseline = () => (usingBaselineShs
+    ? resolveFromShs(values['baseline-shs-base-url'], values['baseline-app-id'], values['baseline-attempt-id'], shsOpts)
+    : collectWithEvidence(values.baseline));
+
   if (multiLog) {
+    const candidates = usingShs
+      ? shsCandidates.map(({ appId, attemptId, name }) => ({
+        name, load: () => resolveFromShs(values['shs-base-url'], appId, attemptId, shsOpts),
+      }))
+      : positionals.map((path) => ({ name: path, load: () => collectWithEvidence(path) }));
     return runMultiLog({
-      candidatePaths: positionals, baselinePath: values.baseline, budgets, thresholds,
+      candidates, loadBaseline, budgets, thresholds,
       findingsFilter, redact: values.redact, outPath: values.out,
       confKeys, confRedactRegex: values['conf-redact-regex'], normalizePath,
     });
@@ -544,25 +611,24 @@ async function runCli(argv, { fetchImpl } = {}) {
   // Assigned by every branch below before it's read.
   let skippedLines;
   try {
-    if (usingShs) {
-      const shsPromise = unreadable(resolveFromShs(
-        values['shs-base-url'], values['app-id'], values['attempt-id'],
-        fetchImpl !== undefined ? { fetchImpl } : {},
-      ), EXIT.CANDIDATE_UNREADABLE);
-      // SHS fetch (network) and local --baseline parse (disk) are independent,
-      // so run them concurrently. Local+local below is CPU work on both sides, so
-      // collectRunPair uses a worker thread for it.
+    if (usingShs || usingBaselineShs) {
+      const [{ appId, attemptId }] = usingShs ? shsCandidates : [{}];
+      const candidatePromise = unreadable(usingShs
+        ? resolveFromShs(values['shs-base-url'], appId, attemptId, shsOpts)
+        : collectWithEvidence(positionals[0]), EXIT.CANDIDATE_UNREADABLE);
+      // An SHS fetch (network) and a local parse (disk) are independent, so run them concurrently.
+      // Local+local below is CPU work on both sides, so collectRunPair uses a worker thread for it.
       if (usingBaseline) {
-        const [shsResult, baselineResult] = await Promise.allSettled([
-          shsPromise, unreadable(collectWithEvidence(values.baseline), EXIT.BASELINE_UNREADABLE),
+        const [candidateResult, baselineResult] = await Promise.allSettled([
+          candidatePromise, unreadable(loadBaseline(), EXIT.BASELINE_UNREADABLE),
         ]);
         // The baseline's failure wins, as it does for local logs (exit 5 outranks 4).
         if (baselineResult.status === 'rejected') throw baselineResult.reason;
-        if (shsResult.status === 'rejected') throw shsResult.reason;
-        ({ appModel, skippedLines } = shsResult.value);
+        if (candidateResult.status === 'rejected') throw candidateResult.reason;
+        ({ appModel, skippedLines } = candidateResult.value);
         baselineAppModel = baselineResult.value.appModel;
       } else {
-        ({ appModel, skippedLines } = await shsPromise);
+        ({ appModel, skippedLines } = await candidatePromise);
       }
     } else {
       if (usingBaseline) {

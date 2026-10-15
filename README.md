@@ -225,6 +225,18 @@ baseline (NDJSON, one line per candidate; the baseline is parsed once):
 npx -p sparkforensics-cli sparkforensics-analyze cand-1 cand-2 cand-3 --baseline base --regression-budget wallClock:10 --regression-budget gcTime:25
 ```
 
+Compare against a baseline that lives on a Spark History Server, from a local
+candidate or a History Server one, with `--baseline-shs-base-url`,
+`--baseline-app-id` and `--baseline-attempt-id` (the baseline can be on a
+different server):
+
+```bash
+npx -p sparkforensics-cli sparkforensics-analyze --shs-base-url http://history-server:18080 --app-id application_1234_0002 --baseline-shs-base-url http://history-server:18080 --baseline-app-id application_1234_0001 --max-regression-pct 10
+```
+
+Several candidates from one History Server take repeated `--app-id` values
+(`--app-id <id>:<attempt>` names an attempt) and print NDJSON, one line each.
+
 See [Several budgets and several candidates](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started/ci-and-automation.html#several-budgets-and-several-candidates)
 for the `--budgets` file, the NDJSON line fields and the exit code rules.
 

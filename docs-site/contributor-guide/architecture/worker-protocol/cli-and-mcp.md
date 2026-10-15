@@ -29,6 +29,13 @@ no dependency on the `packages/server` package. The three flags are checked firs
 `validateShsRequest` (`packages/core/src/shs-request.js`), and a malformed one is a usage
 error (exit `2`) before any fetch. A failed SHS fetch reports its message
 to `stderr` and exits `4`, same as a candidate file that can't be parsed.
+`--app-id` repeats: two or more values with one `--shs-base-url` run the several-candidates
+mode (`runMultiLog`), each candidate resolved through `resolveFromShs`; `--app-id <id>:<attempt>`
+names an attempt per application, and `--attempt-id` is for a single `--app-id` only.
+The baseline has the same three flags (`--baseline-shs-base-url`, `--baseline-app-id`,
+`--baseline-attempt-id`), validated with the same `validateShsRequest`, mutually exclusive
+with `--baseline <path>`, and resolved with `resolveFromShs` too; a failed baseline fetch exits `5`.
+A History Server run and a local log load concurrently (CPU-bound local pairs use `collectRunPair`).
 
 Regression budgets beyond the `--max-regression-pct` pair come from repeated
 `--regression-budget <metric>:<pct>` flags and a `--budgets` file, parsed in
@@ -67,7 +74,7 @@ a configured budget was violated, `2` a usage error (unknown or value-less
 flag, unknown `--regression-metric` key, an unreadable or invalid `--thresholds`
 or `--budgets` file), `3` no violations but at least one budget was inconclusive,
 `4` the candidate could not be read or parsed (or its SHS fetch failed), `5` the
-`--baseline` could not be read or parsed, `6` an internal error (an unhandled
+baseline could not be read or parsed, `6` an internal error (an unhandled
 failure, a failed `--export-html` export). `main` catches anything unhandled and
 exits `6` rather than letting Node exit `1`, which would read as a violation.
 When several apply the worst wins: `6`, `5`, `4`, `1`, `3`, `0`; a violation
