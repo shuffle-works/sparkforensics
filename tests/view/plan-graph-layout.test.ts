@@ -325,11 +325,17 @@ describe('layout of random segment-interleaved plans', () => {
     return { nodeIds, groupIds, edges };
   }
 
-  it.each([12345, 4242])('places every node of 300 plans at a finite position (seed %i)', (seed) => {
+  // 300 plans per seed, in chunks of 50 so each test stays well inside the timeout on a loaded runner.
+  const CHUNK = 50;
+  const chunks = [12345, 4242].flatMap((seed) => Array.from({ length: 300 / CHUNK }, (_, c) => [seed, c * CHUNK] as const));
+
+  it.each(chunks)('places every node at a finite position (seed %i, plans from %i)', (seed, first) => {
     let state = seed;
     const next = () => ((state = (state * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-    for (let i = 0; i < 300; i++) {
-      const positions = runDagre({ key: `random-${seed}-${i}`, ...randomPlan(next), direction: 'RL', compound: true });
+    for (let i = 0; i < first + CHUNK; i++) {
+      const plan = randomPlan(next); // advance the generator for every plan so each chunk sees the same plans
+      if (i < first) continue;
+      const positions = runDagre({ key: `random-${seed}-${i}`, ...plan, direction: 'RL', compound: true });
       for (const { x, y } of positions.values()) expect(Number.isFinite(x) && Number.isFinite(y)).toBe(true);
     }
   });
