@@ -10,6 +10,8 @@ export const SMALLEST_NODE_TEXT_PX = 10;
 export const MIN_READABLE_ZOOM = MIN_TEXT_PX / SMALLEST_NODE_TEXT_PX;
 /** Highest zoom a fit may land on, so a one-node plan is not blown up grotesquely. */
 export const MAX_FIT_ZOOM = 1.75;
+/** Options of the full-overview fit: the control rail's "Fit to view" button and the first fit when the graph opens both use them. */
+export const FIT_TO_VIEW_OPTIONS = { duration: 200 } as const;
 /** Breathing room kept around the graph, in screen pixels. */
 export const FIT_PADDING_PX = 24;
 

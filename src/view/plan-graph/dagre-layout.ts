@@ -1,4 +1,4 @@
-import dagre from '@dagrejs/dagre';
+import dagre, { type LayoutConfig } from '@dagrejs/dagre';
 import type { PlanGraphEdge, PlanGraphNodeData } from '@sparkforensics/core/types.ts';
 
 export interface LaidOutNode extends PlanGraphNodeData {
@@ -122,6 +122,76 @@ export function layoutWithDagre(
   });
 }
 
+// Dagre orders the groups of a compound graph with a constraint graph built
+// from the order it gave each rank. Three groups whose rank ranges overlap
+// pairwise can end up ordered A<B, B<C and C<A on different ranks. Dagre then
+// drops every group in that cycle from the next sweep (its resolveConflicts
+// only emits entries that reach in-degree 0), so the nodes inside keep a stale
+// order. Two nodes then share one (rank, order) slot, positions become NaN and
+// `dagre.layout` throws "Not possible to find intersection inside of the
+// rectangle". Plans with many Exchange-bounded segments reach this at a few
+// hundred nodes.
+
+type DagreGraph = InstanceType<typeof dagre.graphlib.Graph>;
+
+function hasSharedSlot(graph: DagreGraph): boolean {
+  const slots = new Set<string>();
+  for (const id of graph.nodes()) {
+    if (graph.children(id).length) continue;
+    const { rank, order } = graph.node(id) as { rank: number; order: number };
+    const key = `${rank}:${order}`;
+    if (slots.has(key)) return true;
+    slots.add(key);
+  }
+  return false;
+}
+
+/** One fixed left-to-right order for every pair of groups that share a rank. A
+ * total order has no cycle, so Dagre keeps every group in every sweep. Groups
+ * that never share a rank need no constraint. */
+function groupOrderConstraints(graph: DagreGraph, groupRank: Map<string, number>): { left: string; right: string }[] {
+  const spans = [...groupRank.keys()]
+    .sort((a, b) => groupRank.get(a)! - groupRank.get(b)!)
+    .map((group) => ({ group, ...(graph.node(group) as { minRank: number; maxRank: number }) }));
+  return spans.flatMap((left, i) =>
+    spans
+      .slice(i + 1)
+      .filter((right) => left.minRank <= right.maxRank && right.minRank <= left.maxRank)
+      .map((right) => ({ left: left.group, right: right.group })),
+  );
+}
+
+/** Gives every node of a rank its own order: nodes that share a slot keep their
+ * relative position and move to consecutive slots. The pinned pass can still leave
+ * a shared slot, because the constraints Dagre adds from the order it observed
+ * can contradict the fixed order through the groups' border and edge nodes. */
+function separateSharedSlots(graph: DagreGraph): void {
+  const ranks = new Map<number, { id: string; order: number }[]>();
+  for (const id of graph.nodes()) {
+    if (graph.children(id).length) continue;
+    const { rank, order } = graph.node(id) as { rank: number; order: number };
+    ranks.set(rank, [...(ranks.get(rank) ?? []), { id, order }]);
+  }
+  for (const members of ranks.values()) {
+    // Array.prototype.sort is stable, so ties keep the graph's node order.
+    members.sort((a, b) => a.order - b.order).forEach(({ id }, slot) => {
+      (graph.node(id) as { order: number }).order = slot;
+    });
+  }
+}
+
+/** Dagre's ordering pass. When two nodes end on one slot, orders again with the
+ * groups pinned to one fixed order, then separates any nodes still sharing a slot.
+ * A graph whose first pass has no shared slot is ordered exactly as by default. */
+function orderGroups(groupRank: Map<string, number>): NonNullable<LayoutConfig['customOrder']> {
+  return (graph, order) => {
+    order(graph, {});
+    if (!hasSharedSlot(graph)) return;
+    order(graph, { constraints: groupOrderConstraints(graph, groupRank) });
+    if (hasSharedSlot(graph)) separateSharedSlots(graph);
+  };
+}
+
 /** The Dagre pass itself. Pure: the layout worker runs it on the same job the
  * main thread would, so both produce identical positions. */
 export function runDagre({ nodeIds, groupIds, edges, direction, compound }: LayoutJob): LayoutPositions {
@@ -172,7 +242,7 @@ export function runDagre({ nodeIds, groupIds, edges, direction, compound }: Layo
     g.setEdge(edge.source, edge.target);
   }
 
-  dagre.layout(g);
+  dagre.layout(g, compound ? { customOrder: orderGroups(new Map([...groups].map((group, i) => [group, i]))) } : undefined);
 
   const positions: LayoutPositions = new Map();
   for (const id of nodeIds) {

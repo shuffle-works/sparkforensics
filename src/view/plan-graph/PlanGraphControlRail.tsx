@@ -4,6 +4,7 @@ import { useReactFlow, type Node } from '@xyflow/react';
 import { ZoomIn, ZoomOut, Maximize2, Timer, Flag, Info, Map } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PlanGraphSettingsControl } from '@/view/plan-graph/PlanGraphSettingsControl';
+import { FIT_TO_VIEW_OPTIONS } from '@/view/plan-graph/readable-fit';
 import type { PlanGraphDurationMode, PlanGraphFilterMode } from '@sparkforensics/core/types.ts';
 
 type FlowData = { durationSharePct: number | null };
@@ -78,7 +79,7 @@ export function PlanGraphControlRail({
         <RailButton label="Zoom out" onClick={() => zoomOut({ duration: 200 })}>
           <ZoomOut aria-hidden="true" />
         </RailButton>
-        <RailButton label="Fit to view" onClick={() => fitView({ duration: 200 })}>
+        <RailButton label="Fit to view" onClick={() => fitView(FIT_TO_VIEW_OPTIONS)}>
           <Maximize2 aria-hidden="true" />
         </RailButton>
       </RailGroup>
