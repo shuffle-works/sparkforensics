@@ -131,44 +131,43 @@ export function layoutWithDagre(
 // `dagre.layout` throws "Not possible to find intersection inside of the
 // rectangle". Plans with many Exchange-bounded segments reach this at a few
 // hundred nodes.
-const MAX_ORDER_ROUNDS = 8;
 
-/** The groups holding a node that shares its (rank, order) slot with another. */
-function groupsWithSharedSlots(graph: InstanceType<typeof dagre.graphlib.Graph>): Set<string> {
-  const slots = new Map<string, string>();
-  const groups = new Set<string>();
+type DagreGraph = InstanceType<typeof dagre.graphlib.Graph>;
+
+function hasSharedSlot(graph: DagreGraph): boolean {
+  const slots = new Set<string>();
   for (const id of graph.nodes()) {
     if (graph.children(id).length) continue;
     const { rank, order } = graph.node(id) as { rank: number; order: number };
     const key = `${rank}:${order}`;
-    const other = slots.get(key);
-    if (other === undefined) {
-      slots.set(key, id);
-      continue;
-    }
-    for (const member of [other, id]) {
-      const group = graph.parent(member);
-      if (group) groups.add(group);
-    }
+    if (slots.has(key)) return true;
+    slots.add(key);
   }
-  return groups;
+  return false;
 }
 
-/** Dagre's ordering pass. When groups collide on a slot, orders again with those
- * groups pinned to one fixed left-to-right order, which cannot contain a cycle.
- * A graph whose first pass is collision-free is ordered exactly as by default. */
+/** One fixed left-to-right order for every pair of groups that share a rank. A
+ * total order has no cycle, so Dagre keeps every group in every sweep. Groups
+ * that never share a rank need no constraint. */
+function groupOrderConstraints(graph: DagreGraph, groupRank: Map<string, number>): { left: string; right: string }[] {
+  const spans = [...groupRank.keys()]
+    .sort((a, b) => groupRank.get(a)! - groupRank.get(b)!)
+    .map((group) => ({ group, ...(graph.node(group) as { minRank: number; maxRank: number }) }));
+  return spans.flatMap((left, i) =>
+    spans
+      .slice(i + 1)
+      .filter((right) => left.minRank <= right.maxRank && right.minRank <= left.maxRank)
+      .map((right) => ({ left: left.group, right: right.group })),
+  );
+}
+
+/** Dagre's ordering pass. When two nodes end on one slot, orders again with the
+ * groups pinned to one fixed order. A graph whose first pass has no shared slot
+ * is ordered exactly as by default. */
 function orderGroups(groupRank: Map<string, number>): NonNullable<LayoutConfig['customOrder']> {
   return (graph, order) => {
-    const pinned = new Set<string>();
-    let constraints: { left: string; right: string }[] = [];
-    for (let round = 0; ; round++) {
-      order(graph, { constraints });
-      const colliding = groupsWithSharedSlots(graph);
-      if (!colliding.size || round === MAX_ORDER_ROUNDS) return;
-      for (const group of colliding) pinned.add(group);
-      const fixedOrder = [...pinned].sort((a, b) => groupRank.get(a)! - groupRank.get(b)!);
-      constraints = fixedOrder.flatMap((left, i) => fixedOrder.slice(i + 1).map((right) => ({ left, right })));
-    }
+    order(graph, {});
+    if (hasSharedSlot(graph)) order(graph, { constraints: groupOrderConstraints(graph, groupRank) });
   };
 }
 

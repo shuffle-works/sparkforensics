@@ -258,16 +258,28 @@ describe('layout cache', () => {
   });
 });
 
-// A 30-node forest in 19 segments. Dagre's group ordering puts three groups in a
-// cycle of its constraint graph, drops them from the next sweep and gives two nodes
-// the same slot; without the group re-ordering `layout` throws "Not possible to
-// find intersection inside of the rectangle".
-describe('layout of plans whose segments interleave', () => {
-  const segmentOfNode = [0, 1, 2, 3, 2, 1, 2, 3, 4, 4, 5, 6, 6, 2, 7, 8, 9, 10, 11, 2, 12, 4, 13, 13, 11, 14, 15, 16, 17, 18];
-  const links = [
-    [0, 2], [1, 3], [2, 4], [1, 5], [4, 6], [3, 7], [2, 8], [8, 9], [5, 10], [11, 12], [4, 13], [6, 14], [13, 15], [7, 16],
-    [10, 17], [0, 18], [6, 19], [2, 20], [9, 21], [13, 22], [22, 23], [18, 24], [2, 25], [19, 26], [12, 27], [24, 28], [9, 29],
-  ];
+// Plans whose segment groups make Dagre's ordering drop nodes: two nodes end on
+// one (rank, order) slot, positions turn NaN and the layout either throws
+// "Not possible to find intersection inside of the rectangle" or places nodes at
+// non-finite coordinates. Each case is a forest given as the segment of every node
+// and the [source, target] links.
+const INTERLEAVED_PLANS = {
+  // 30 nodes in 19 segments: three segments order A<B, B<C and C<A on different ranks.
+  'three segments in an ordering cycle': {
+    segmentOfNode: [0, 1, 2, 3, 2, 1, 2, 3, 4, 4, 5, 6, 6, 2, 7, 8, 9, 10, 11, 2, 12, 4, 13, 13, 11, 14, 15, 16, 17, 18],
+    links: [
+      [0, 2], [1, 3], [2, 4], [1, 5], [4, 6], [3, 7], [2, 8], [8, 9], [5, 10], [11, 12], [4, 13], [6, 14], [13, 15], [7, 16],
+      [10, 17], [0, 18], [6, 19], [2, 20], [9, 21], [13, 22], [22, 23], [18, 24], [2, 25], [19, 26], [12, 27], [24, 28], [9, 29],
+    ],
+  },
+  // 26 nodes: one large segment beside three single-node segments.
+  'single-node segments beside a large one': {
+    segmentOfNode: [0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  2,  0,  3],
+    links: [[0, 1], [0, 2], [1, 3], [0, 4], [4, 5], [3, 6], [4, 7], [3, 8], [9, 15], [1, 19], [9, 20], [6, 21], [8, 22], [6, 23], [1, 10], [1, 13], [1, 14], [4, 16], [4, 24], [4, 25], [2, 11], [2, 12], [2, 17], [2, 18]],
+  },
+} as const;
+
+describe.each(Object.entries(INTERLEAVED_PLANS))('layout of a plan with %s', (_name, { segmentOfNode, links }) => {
   const nodes = segmentOfNode.map((segmentIndex, i) => graphNode(`n${i}`, { segmentIndex }));
   const edges: PlanGraphEdge[] = links.map(([from, to]) => ({ id: `n${from}->n${to}`, source: `n${from}`, target: `n${to}` }));
   const groupOf = (n: PlanGraphNodeData) => `segment-${n.segmentIndex}`;

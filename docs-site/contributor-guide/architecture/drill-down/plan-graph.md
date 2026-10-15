@@ -38,10 +38,10 @@ Dagre orders the segment groups of a compound graph with a constraint graph buil
 from the order it gave each rank. Three groups whose rank ranges overlap can form
 a cycle in it, and Dagre then drops those groups from the next sweep, leaving two
 nodes on one (rank, order) slot and throwing "Not possible to find intersection
-inside of the rectangle". `runDagre` orders through `orderGroups`: when nodes share
-a slot it orders again with the groups involved pinned to one fixed left-to-right
-order, which cannot form a cycle. A graph with no shared slot is ordered exactly as
-by default.
+inside of the rectangle". `runDagre` orders through `orderGroups`: when nodes share a
+slot it orders again with every pair of groups that share a rank pinned to one
+fixed left-to-right order, which cannot form a cycle. A graph with no shared slot is
+ordered exactly as by default.
 
 A cold layout of a plan with 200 or more nodes runs in a Web Worker
 (`layout.worker.ts`, started by `layout-worker-client.ts`) so the page stays
