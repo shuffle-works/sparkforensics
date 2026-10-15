@@ -621,7 +621,7 @@ sparkforensics-analyze candidate --baseline baseline \
 ```
 
 Every match is replaced with a fixed token. Despite the name it is a generic
-regular expression, not only for paths. It needs `--baseline` and applies to
+regular expression, not only for paths. It needs a baseline and applies to
 every candidate of a several-candidates run. It changes which stages pair, and
 so `stagePairs`, `runtimeCoverage` and `confidence`; findings and the other
 metrics are untouched. At most 16 patterns of 200 characters each. An invalid
