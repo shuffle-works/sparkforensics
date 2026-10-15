@@ -91,7 +91,7 @@ describe('collectRun', () => {
   });
 });
 
-// A real, public event log (the landing page's bundled sample run), about 1.6 MB
+// A real, public event log (the landing page's bundled sample run), about 3.2 MB
 // uncompressed: streamFile reads it in ~100 slices, so lines straddle slice boundaries.
 const sampleNdjson = gunzipSync(readFileSync(fileURLToPath(new URL('../../../public/sample-runs/sample-run.ndjson.gz', import.meta.url))));
 
