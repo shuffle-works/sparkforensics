@@ -49,7 +49,7 @@ already-parsed snapshots, with no worker involved.
   `introduced`, the unpaired baseline findings are `resolved`, and a pair whose bands
   differ is `changed`. Each row groups findings by rule and band. The verdict, the
   `fail-on-introduced` budget and the dashboard read this one diff. A `changed` pair whose
-  candidate band is exactly the budgeted band also counts for the budget, and a worsened band adds a "More severe in the candidate" verdict sentence.
+  band worsens to exactly the budgeted band also counts for the budget, and any worsened band adds a "More severe in the candidate" verdict sentence.
 - `alignStages(baseSnap, candSnap, { normalizePath })` in
   `packages/core/src/stage-alignment.ts` is the aligner: a pure function from two
   snapshots to the stage pairs, the unmatched stages, the replanned groups, the

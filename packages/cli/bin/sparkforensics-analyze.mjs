@@ -97,7 +97,7 @@ Options:
   --fail-on-introduced <band|all>   Requires --baseline. Fail if any finding was introduced by
                                     the candidate matching this impact band (or any, with "all").
                                     A finding the baseline also has at the same place is not
-                                    introduced, unless its band changes to exactly this band.
+                                    introduced, unless its band worsens to exactly this band.
   --redact                          Pseudonymize the app id and any host/IP tokens in the output
                                     (app-1, host-1, ...), so a report can be shared outside the
                                     environment that produced it.
