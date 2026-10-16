@@ -62,7 +62,8 @@ Parameters:
 - `plan`: `equal`, `unmatched` (stage counts per side) and `replanned` (groups).
 - `volume`: `inputBytes`, `outputRows` and `outputBytes`, each with `baseline`,
   `candidate` and `relativeDifference`, and `equal`: output rows equal, input
-  and output bytes within the noise band, `null` when nothing is measured on both sides.
+  and output bytes within the noise band. `equal` is `null` unless output rows or
+  output bytes are measured on both sides; input bytes alone never make it `true`.
 - `capacity`: mean and peak executors per side.
 - `overlapMs`: how long the two run windows overlap.
 - `wallClockBridge`: `wallClock`, `taskTime`, `meanExecutors` and
@@ -71,9 +72,16 @@ Parameters:
 - `noiseBand`: the band in use.
 
 The `verdict` tone is `equivalent` when `conf.equal`, `plan.equal` and
-`volume.equal` are all `true`, and `mixed` when the wall clock and executor
-run-time or allocated core-hours move opposite ways past the noise band. A failed
-job or an incomplete log still leads the verdict.
+`volume.equal` are all `true` and either the wall-clock gap is within the noise
+band or a bridge factor (mean executors, task time or task share of allocation)
+moved past it and explains the gap. When configuration and plan agree but the gap
+is past noise and no factor explains it, the tone stays `better` or `worse` from the
+wall clock and the title ends "no measured factor explains it". When `volume.equal`
+is `null`, the tone also comes from the wall clock and the title reads "Same
+configuration and plan. Output was not compared." The tone is `mixed` when the
+wall clock and executor run-time or allocated core-hours move opposite ways past the
+noise band and the configuration or plan differs. A failed job or an incomplete log
+still leads the verdict.
 
 Each side needs either a `runId` or a `source`, and you can mix them: a
 cached run ID for the baseline, a fresh file for the candidate.
