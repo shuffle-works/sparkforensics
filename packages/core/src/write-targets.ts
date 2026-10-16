@@ -44,13 +44,22 @@ export interface WriteTarget {
   target: string | null;
   /**
    * Rows the write produced: the node's "number of output rows" SQL metric, or for a plain write
-   * whose node has none, the rows written by the stages of its root execution. Null when neither is
-   * available. Null means unknown, never zero: a write that stored nothing reports 0.
+   * whose node has none, the rows written by the stages of its root execution. For a Delta MERGE,
+   * UPDATE or DELETE, the rows it wrote to new files: its command node's counters. Null when none
+   * is available. Null means unknown, never zero: a write that stored nothing reports 0.
    */
   outputRows: number | null;
-  /** Where `outputRows` came from: nodeMetric (the write node), stageSum (stages of the root execution), null when it is null. */
-  outputRowsSource: 'nodeMetric' | 'stageSum' | null;
-  /** Bytes written by the stages of the write's root execution, with the same limits as a stage sum of rows; null when there is no such figure. */
+  /**
+   * Where `outputRows` came from: nodeMetric (the write node's output-rows metric), stageSum (stages
+   * of the root execution), commandMetric (a MERGE, UPDATE or DELETE node's row counters), null when
+   * it is null.
+   */
+  outputRowsSource: 'nodeMetric' | 'stageSum' | 'commandMetric' | null;
+  /**
+   * Bytes written to new files: for a plain write the sum over the stages of its root execution,
+   * with the same limits as a stage sum of rows; for a Delta MERGE, UPDATE or DELETE the bytes-added
+   * counter of its command node (0 for a DELETE that wrote nothing). Null when there is no such figure.
+   */
   outputBytes: number | null;
   /** The inserted, updated, deleted and copied row counts of a MergeIntoCommand node's SQL
    * metrics. Null for every other command, for a MERGE whose node carries none of them, and for a
@@ -224,8 +233,9 @@ const DELTA_COMMANDS = new Set([
   'CreateDeltaTableCommand', 'OptimizeTableCommand', 'RestoreTableCommand', 'DeltaReorgTableCommand',
 ]);
 
-// Row-level and maintenance commands: the rows they rewrite are not output rows, so a stage sum
-// would misstate them (a MERGE has mergeRows). A plain write is any other recognized write command.
+// Row-level and maintenance commands: a stage sum would misstate their output (their figures come
+// from the command node's own counters, see commandOutputOf). A plain write is any other recognized
+// write command.
 const NOT_PLAIN_WRITES = new Set([
   'MergeIntoCommand', 'UpdateCommand', 'DeleteCommand', 'DeltaMerge', 'ReplaceData', 'WriteDelta',
   'CreateDeltaTableCommand', 'OptimizeTableCommand', 'RestoreTableCommand', 'DeltaReorgTableCommand',
@@ -274,6 +284,35 @@ function metricValue(node: PlanNode, ...names: string[]): number | null {
   return metric !== undefined && Number.isFinite(metric.value) ? metric.value : null;
 }
 
+// Delta 4.x labels the DELETE copied-rows counter with a trailing period ("number of rows copied.");
+// metricValue matches names exactly, so the counter lists both spellings.
+const COPIED_ROWS_LABELS = ['number of rows copied.', 'number of rows copied'];
+
+// Rows and bytes a MERGE, UPDATE or DELETE wrote to new files, from the command node's counters.
+// A MERGE writes its inserted, updated and copied rows; an UPDATE writes the rows it touched
+// (updated plus copied); a DELETE writes the target rows it copied. Rows removed by a DELETE or
+// MERGE delete clause are not written, so they are not output rows.
+function commandOutputOf(command: string, node: PlanNode): { rows: number | null; bytes: number | null } {
+  if (command === 'MergeIntoCommand') {
+    const parts = [
+      metricValue(node, 'number of inserted rows'),
+      metricValue(node, 'number of updated rows'),
+      metricValue(node, 'number of target rows rewritten unmodified', 'number of rows copied'),
+    ];
+    return {
+      rows: parts.some((v) => v === null) ? null : parts.reduce((sum, v) => sum! + v!, 0),
+      bytes: metricValue(node, 'number of target bytes added'),
+    };
+  }
+  if (command === 'UpdateCommand') {
+    return { rows: metricValue(node, 'number of rows touched (copied + updated)'), bytes: metricValue(node, 'number of bytes added') };
+  }
+  if (command === 'DeleteCommand') {
+    return { rows: metricValue(node, ...COPIED_ROWS_LABELS), bytes: metricValue(node, 'number of bytes added') };
+  }
+  return { rows: null, bytes: null };
+}
+
 function mergeRowsOf(command: string, node: PlanNode): MergeRows | null {
   if (command !== 'MergeIntoCommand') return null;
   const rows = {
@@ -294,6 +333,8 @@ function collectWrites(exec: SqlExecution, root: PlanNode, byRoot: ExecutionsByR
     // A Delta command's simpleString is bare on real logs: its target is found elsewhere.
     const parsed = parsedFromDetail ?? resolveDeltaCommandTarget(command, exec, node, byRoot);
     const nodeRows = outputRowsOf(node);
+    const commandOutput = commandOutputOf(command, node);
+    const outputRows = nodeRows ?? commandOutput.rows;
     out.push({
       sqlExecutionId: exec.id,
       nodeId: node.id ?? null,
@@ -301,9 +342,9 @@ function collectWrites(exec: SqlExecution, root: PlanNode, byRoot: ExecutionsByR
       recognized,
       kind: parsed?.kind ?? null,
       target: parsed?.target ?? null,
-      outputRows: nodeRows,
-      outputRowsSource: nodeRows === null ? null : 'nodeMetric',
-      outputBytes: null,
+      outputRows,
+      outputRowsSource: nodeRows !== null ? 'nodeMetric' : outputRows !== null ? 'commandMetric' : null,
+      outputBytes: commandOutput.bytes,
       mergeRows: mergeRowsOf(command, node),
       raw: detail !== '' ? detail : node.name,
     });

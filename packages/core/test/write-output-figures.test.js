@@ -46,10 +46,10 @@ describe('write output figures on public corpus logs', () => {
     expect(noFigureCheck(json)).toBeUndefined();
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('leaves a MERGE to mergeRows, with no stage sum', async () => {
+  it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('reads a MERGE from its command node, not a stage sum', async () => {
     const [save, merge] = (await reportOf('delta-merge-sql')).writeTargets.writes;
     expect(save).toMatchObject({ command: 'SaveIntoDataSourceCommand', outputRows: 1_000_000, outputRowsSource: 'stageSum' });
-    expect(merge).toMatchObject({ command: 'MergeIntoCommand', outputRows: null, outputRowsSource: null, outputBytes: null });
+    expect(merge).toMatchObject({ command: 'MergeIntoCommand', outputRows: 1_100_000, outputRowsSource: 'commandMetric', outputBytes: 14_314_600 });
     expect(merge.mergeRows.inserted).toBeGreaterThan(0);
   });
 });

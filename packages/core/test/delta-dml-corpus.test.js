@@ -65,7 +65,7 @@ describe('Delta DML write targets on public corpus logs', () => {
   });
 });
 
-// A MERGE's row counts sit on its command node's SQL metrics, not in `outputRows`.
+// A MERGE's row counts sit on its command node's SQL metrics; `outputRows` is the sum of the rows it wrote.
 describe('MERGE row counts on public corpus logs', () => {
   const MERGE_ROWS = { inserted: 100000, updated: 200000, deleted: 0, copied: 800000 };
 
@@ -78,10 +78,50 @@ describe('MERGE row counts on public corpus logs', () => {
   it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('reads them from a SQL MERGE node', async () => {
     const write = await mergeWrite('delta-merge-sql');
     expect(write.mergeRows).toEqual(MERGE_ROWS);
-    expect(write.outputRows).toBeNull();
+    expect(write.outputRows).toBe(1_100_000);
   });
 
   it.skipIf(!existsSync(corpusLog('delta-merge-api')))('reads them from a DeltaTable API merge that has a command node', async () => {
     expect((await mergeWrite('delta-merge-api')).mergeRows).toEqual(MERGE_ROWS);
+  });
+});
+
+// Rows and bytes a MERGE, UPDATE or DELETE wrote to new files come from its command node's counters,
+// and equal the stage sums of its root execution.
+describe('DML output figures on public corpus logs', () => {
+  async function dmlWrites(name) {
+    const { appModel } = await collectRun(corpusLog(name));
+    const { writeTargets } = buildEvidenceReport(appModel, { markdown: false }).json;
+    return writeTargets.writes.filter((w) => w.command !== 'SaveIntoDataSourceCommand');
+  }
+  const figures = ({ outputRows, outputRowsSource, outputBytes }) => ({ outputRows, outputRowsSource, outputBytes });
+
+  it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('reports inserted + updated + copied rows and the bytes added for a SQL MERGE', async () => {
+    const [merge] = await dmlWrites('delta-merge-sql');
+    expect(figures(merge)).toEqual({ outputRows: 1_100_000, outputRowsSource: 'commandMetric', outputBytes: 14_314_600 });
+  });
+
+  it.skipIf(!existsSync(corpusLog('delta-merge-api')))('reports the same figures for a DeltaTable API merge', async () => {
+    const [merge] = await dmlWrites('delta-merge-api');
+    expect(figures(merge)).toEqual({ outputRows: 1_100_000, outputRowsSource: 'commandMetric', outputBytes: 14_314_661 });
+  });
+
+  it.skipIf(!existsSync(corpusLog('delta-concurrent-merge')))('reports each concurrent MERGE from its own node', async () => {
+    const merges = await dmlWrites('delta-concurrent-merge');
+    expect(merges.map((w) => [w.sqlExecutionId, ...Object.values(figures(w))])).toEqual([
+      [3, 275_000, 'commandMetric', 3_578_545],
+      [4, 275_000, 'commandMetric', 3_578_577],
+    ]);
+  });
+
+  it.skipIf(!existsSync(corpusLog('delta-update')))('reports the rows touched, and the bytes added for an UPDATE', async () => {
+    const [update] = await dmlWrites('delta-update');
+    expect(figures(update)).toEqual({ outputRows: 500_000, outputRowsSource: 'commandMetric', outputBytes: 6_010_388 });
+    expect(update.mergeRows).toBeNull();
+  });
+
+  it.skipIf(!existsSync(corpusLog('delta-delete')))('reports 0 rows and 0 bytes written for a DELETE', async () => {
+    const [del] = await dmlWrites('delta-delete');
+    expect(figures(del)).toEqual({ outputRows: 0, outputRowsSource: 'commandMetric', outputBytes: 0 });
   });
 });
