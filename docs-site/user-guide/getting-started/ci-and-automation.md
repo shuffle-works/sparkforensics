@@ -250,6 +250,8 @@ It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
       "kind": "path",
       "target": "hdfs://nn/sandbox/out/t1",
       "outputRows": 5000000,
+      "outputRowsSource": "nodeMetric",
+      "outputBytes": 24824981,
       "mergeRows": null,
       "raw": "Execute InsertIntoHadoopFsRelationCommand hdfs://nn/sandbox/out/t1, false, Parquet, ..."
     }
@@ -293,9 +295,24 @@ It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
   target, such as the column list of `InsertIntoHadoopFsRelationCommand`, does
   not affect the target before it. Treat a `null` target as unknown, not as
   inside or outside any location.
-- `outputRows` is the node's own `number of output rows` SQL metric. It is
-  `null` when the log has no such metric for that node, which is the case for
-  the DataSource V2 and Delta write nodes that report other metrics.
+- `outputRows` is the number of rows the write stored. It is the node's own
+  `number of output rows` SQL metric when the log has one. Otherwise, for a
+  plain write, it is the sum of `outputRecords` over the stages of the write's
+  root execution: a Delta DataFrame write node carries no metric, and its
+  stages run in a child execution of the node's own. A plain write is any
+  write except MERGE, UPDATE, DELETE, table maintenance and the `DeltaMerge`
+  row, whose rewritten rows are not output rows. The sum applies only when the
+  root execution holds one logical write: plain writes that name the same
+  table or path (a CTAS or RTAS and the append it runs) count once and share
+  the figure. `null` means unknown, and a write that stored nothing is `0`.
+  A plain write left with `null` is listed in `notRunChecks` as
+  `writeOutputRows`.
+- `outputRowsSource` says where `outputRows` came from: `nodeMetric`,
+  `stageSum`, or `null` when `outputRows` is `null`. Compare two runs' row
+  counts only when both sides name the same source.
+- `outputBytes` is the sum of the bytes written by the same stages, for a plain
+  write under the same rule as the stage sum of rows. It is `null` when no
+  stage of the root execution reports bytes written or the write is not plain.
 - `mergeRows` holds the row counts of a Delta MERGE: `inserted`, `updated`,
   `deleted` and `copied`, read from the `MergeIntoCommand` node's SQL metrics
   (`number of inserted rows`, `number of updated rows`, `number of deleted rows`
