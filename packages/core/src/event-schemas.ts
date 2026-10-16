@@ -104,6 +104,7 @@ export const ApplicationStartEventSchema = z.object({
   Event: z.literal('SparkListenerApplicationStart'),
   'App ID': z.string().optional(),
   'App Name': z.string().optional(),
+  'App Attempt ID': z.string().optional(),
   Timestamp: z.number().optional(),
   'Spark Version': z.string().optional(),
 });

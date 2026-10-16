@@ -35,13 +35,14 @@ const CANDIDATES = [
 // CLI single-run JSON (`candidate`) against MCP diagnose_run with every `include`.
 const RUN_REPORT_ALLOWED = [
   { path: 'schemaVersion', only: 'cli', reason: 'The CLI stamps its report with the evidence schema version; MCP tool results are not versioned.' },
-  { path: 'generator', only: 'cli', reason: 'The CLI names its own package, version and core build. MCP omits the block: its server factory has no real package version to report.' },
+  { path: 'generator', only: 'differs', reason: 'Each surface names its own package, version and core build.' },
   { path: 'runId', only: 'mcp', reason: 'MCP handle for the cached run, used by follow-up calls. A CLI call has no session.' },
   { path: 'runComplete', only: 'mcp', reason: 'Convenience copy of summary.outcome\'s end-of-run signal that MCP clients read without asking for the summary.' },
 ];
 
 // CLI `comparison` against MCP compare_runs.
 const COMPARISON_ALLOWED = [
+  { path: 'generator', only: 'differs', reason: 'Each surface names its own package, version and core build.' },
   { path: 'runIdA', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
   { path: 'runIdB', only: 'mcp', reason: 'MCP run handles for the baseline and the candidate.' },
   { path: 'stagePairs', only: 'cli', reason: 'One row per paired stage can be large, so compare_runs returns it only with include: [\'stagePairs\']; the CLI always does. Checked equal with that include below.' },
@@ -126,10 +127,13 @@ async function cliOutput(argv) {
 const cliJson = async (argv) => JSON.parse((await cliOutput(argv)).stdout);
 const cliLines = async (argv) => (await cliOutput(argv)).stdout.split('\n').filter(Boolean).map((l) => JSON.parse(l));
 
+// The block the MCP server reports; the CLI reads its own package.json.
+const MCP_GENERATOR = { name: 'sparkforensics-mcp', version: '0.0.0-test', buildId: 'test' };
+
 let mcp;
 beforeAll(async () => {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await createMcpServer().connect(serverTransport);
+  await createMcpServer({ generator: MCP_GENERATOR }).connect(serverTransport);
   mcp = new Client({ name: 'parity-test', version: '1.0.0' });
   await mcp.connect(clientTransport);
 });
@@ -203,7 +207,7 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
       const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson']);
       const viaMcp = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate }, include: ['stagePairs'] });
       const viaMcpDefault = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate } });
-      const dashboard = JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate))));
+      const dashboard = JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate), 'full', line.comparison.generator)));
       for (const surface of [line.comparison, viaMcp, dashboard]) {
         expect(Object.keys(surface)).toEqual(expect.arrayContaining(COMPARISON_BLOCK_FIELDS));
         expect(surface.comparisonSchemaVersion).toBe(1);
@@ -223,7 +227,7 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
       const [self] = await cliLines([BASELINE, '--baseline', BASELINE, '--format', 'ndjson']);
       expect(self.comparison.stagePairs[0]).toEqual({
         pairId: expect.any(String), baseStageIds: expect.any(Array), candStageIds: expect.any(Array),
-        quality: 'exact', score: 1, deltas: expect.any(Object),
+        quality: 'exact', score: 1, deltas: expect.any(Object), stageLabel: expect.any(String),
       });
       expect(Object.keys(self.comparison.stagePairs[0].deltas)).toEqual([
         'executorRunTime', 'executorCpuTime', 'memoryBytesSpilled', 'diskBytesSpilled',
@@ -252,7 +256,7 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
 
     it('reports the same comparison as the dashboard\'s compareRuns', async () => {
       const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson']);
-      expect(line.comparison).toEqual(JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate)))));
+      expect(line.comparison).toEqual(JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate), 'full', line.comparison.generator))));
     });
 
     // A pair whose runs differ in stage count under one execution (a cached and an uncached join): the
@@ -260,7 +264,7 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
     it('reports a replanned group the same on the CLI, compare_runs and the dashboard', async () => {
       const [line] = await cliLines([REPLAN_CANDIDATE, '--baseline', REPLAN_BASELINE, '--format', 'ndjson']);
       const viaMcp = await mcpCall('compare_runs', { sourceA: { path: REPLAN_BASELINE }, sourceB: { path: REPLAN_CANDIDATE }, include: ['stagePairs'] });
-      const dashboard = JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(REPLAN_BASELINE, REPLAN_CANDIDATE))));
+      const dashboard = JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(REPLAN_BASELINE, REPLAN_CANDIDATE), 'full', line.comparison.generator)));
       expect(line.comparison.replanned).toHaveLength(1);
       expect(Object.keys(line.comparison.replanned[0])).toEqual([
         'baseExecutionId', 'candExecutionId', 'baseStageIds', 'candStageIds', 'deltas',
@@ -391,7 +395,7 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
       const cli = (await cliOutput([CANDIDATES[0], '--baseline', BASELINE, '--format', 'md', '--thresholds', thresholdsPath])).stdout;
       expect(cli.match(note)).toHaveLength(1);
 
-      const tuned = createMcpServer({ thresholds: { skew: { ratioWarn: 2 } } });
+      const tuned = createMcpServer({ thresholds: { skew: { ratioWarn: 2 } }, generator: MCP_GENERATOR });
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
       await tuned.connect(serverTransport);
       const client = new Client({ name: 'parity-test-tuned', version: '1.0.0' });

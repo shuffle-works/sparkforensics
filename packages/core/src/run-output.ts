@@ -2,6 +2,7 @@ import { cacheFor, runFindings, type ReportCache } from './evidence-report.ts';
 import { redactRunModel } from './redact.ts';
 import { computeRunMetrics, type RunMetrics } from './run-metrics.ts';
 import { buildEffectiveConf, type EffectiveConf } from './effective-conf.ts';
+import { runAppIdentity, type RunAppIdentity } from './run-identity.ts';
 import type { ThresholdOverrides } from './detectors.ts';
 import type { AppModel } from './types.ts';
 
@@ -39,17 +40,19 @@ function runBlocksBase(appModel: AppModel, redact: boolean | undefined, threshol
 /** The CLI report's `metrics` and `effectiveConf` blocks, shared with MCP diagnose_run. Under
  * `redact` they come from the run redacted with the report's own inputs, so host and app
  * pseudonyms match the report's. `confKeys`/`confRedactRegex` narrow and mask `effectiveConf`.
- * `generator`, when the surface supplies it, is returned as given: it holds no run identifiers. */
+ * `generator`, when the surface supplies it, is returned as given: it holds no run identifiers.
+ * `app` names the Spark application (redacted under `redact`), so two reports can be told apart. */
 export function runOutputBlocks(
   appModel: AppModel,
   { redact, thresholds, confKeys, confRedactRegex, generator }: {
     redact?: boolean; thresholds?: ThresholdOverrides; confKeys?: string[]; confRedactRegex?: string;
     generator?: ReportGenerator;
   } = {},
-): { generator?: ReportGenerator; metrics: RunMetrics; effectiveConf: EffectiveConf | null } {
+): { generator?: ReportGenerator; app: RunAppIdentity; metrics: RunMetrics; effectiveConf: EffectiveConf | null } {
   const { app, metrics } = runBlocksBase(appModel, redact, thresholds);
   return {
     ...(generator ? { generator } : {}),
+    app: runAppIdentity(app),
     metrics,
     effectiveConf: buildEffectiveConf(app, { keys: confKeys, userPattern: confRedactRegex }),
   };

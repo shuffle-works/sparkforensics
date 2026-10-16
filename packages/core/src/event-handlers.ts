@@ -912,6 +912,8 @@ export function startApplication(event: z.infer<typeof ApplicationStartEventSche
   state.app = {
     id: event['App ID'],
     name: event['App Name'],
+    // Only in cluster-mode logs: Spark writes no attempt id for a client or local run.
+    ...(event['App Attempt ID'] ? { attemptId: event['App Attempt ID'] } : {}),
     startTime: event['Timestamp'],
     endTime: null,
     sparkVersion: state.pendingSparkVersion ?? event['Spark Version'] ?? null,

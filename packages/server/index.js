@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import http from 'node:http';
-import { realpathSync, existsSync } from 'node:fs';
+import { realpathSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolveStaticRoot, serveStatic } from './lib/static-files.js';
@@ -22,6 +22,16 @@ async function loadVendoredCore(dir, moduleName, opts) {
   const helperPath = existsSync(srcHelper) ? srcHelper : join(dir, 'vendor-core', 'load-vendored.js');
   const { loadVendored } = await import(pathToFileURL(helperPath).href);
   return loadVendored(dir, moduleName, opts);
+}
+
+// The provenance stamp the MCP tools report: this package's name and version, and the build id of
+// the core it loaded.
+async function loadGenerator(dir) {
+  const srcHelper = join(dir, '..', 'core', 'src', 'load-vendored.js');
+  const helperPath = existsSync(srcHelper) ? srcHelper : join(dir, 'vendor-core', 'load-vendored.js');
+  const { coreBuildId } = await import(pathToFileURL(helperPath).href);
+  const { name, version } = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+  return { name, version, buildId: coreBuildId(dir) };
 }
 
 async function loadCreateMcpServer(dir) {
@@ -52,6 +62,8 @@ export function createServer({
   // This no-op handler marks it handled without hiding the failure from the
   // /mcp handler's own await (rejections are observable per-consumer).
   createMcpServerPromise.catch(() => {});
+  // Hashing core's sources is not free: started on the first /mcp request, then shared.
+  let generatorPromise;
 
   return http.createServer(async (req, res) => {
     try {
@@ -64,7 +76,8 @@ export function createServer({
         // one request and the SDK throws on reuse, so make a fresh
         // server+transport pair per request.
         const createMcpServer = await createMcpServerPromise;
-        const mcpServer = createMcpServer();
+        generatorPromise ??= loadGenerator(dir);
+        const mcpServer = createMcpServer({ generator: await generatorPromise });
         // allowedHosts is matched against the raw Host header (host:port), so
         // derive the port from the actual socket, not a hardcode: tests bind to
         // an ephemeral port via listen(0, ...).

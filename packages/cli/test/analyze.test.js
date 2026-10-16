@@ -949,6 +949,14 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
     });
   });
 
+  it('names the application beside the generator', () => {
+    withLog(ndjsonWithConf(), (path) => {
+      const { app } = JSON.parse(runCli([path]).stdout);
+      expect(Object.keys(app)).toEqual(['id', 'attemptId']);
+      expect(app.attemptId).toBeNull();
+    });
+  });
+
   it('reports null for what a log without CPU time cannot provide', () => {
     withLog(ndjsonWithSkew(), (path) => {
       const { metrics } = JSON.parse(runCli([path]).stdout);

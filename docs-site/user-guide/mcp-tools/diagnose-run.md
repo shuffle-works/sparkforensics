@@ -11,7 +11,18 @@ finding types flagged at the same place), `costSteps`, the same places ranked by
 measured busy core time a fix removes (only findings that carry one), `idle`, the
 core-hours and share of the allocation that ran no task, `remainingPlaces`, how many more
 places the full list holds, and `copyText`, the dashboard's "Copy next steps"
-checklist.
+checklist. A `summary` sentence such as "3 findings in 2 places." counts the
+findings worth fixing. When the run also has notes on an incomplete log or on data
+the log lacked, the sentence says the count leaves them out.
+
+The response names the run and the build that wrote it: `app` (the Spark
+application's `id` and `attemptId`, `null` when the log has none) and `generator`
+(the `sparkforensics-mcp` package `name` and `version`, and the `buildId` of its
+analysis core). Two diagnoses of one job are comparable when `generator.buildId`
+matches. `runId` is a handle for the run this server process has cached. It differs
+per tool by design (`compare_runs` returns `runIdA` and `runIdB`, `evaluate_budgets`
+the `runId` of its first run) and per server process, so match runs by `app.id` and
+`app.attemptId`.
 
 The response also carries the three machine-readable blocks of the CLI's JSON
 report, with the same content: `writeTargets` (every SQL write with its path or
@@ -40,7 +51,7 @@ error, and when both are given `runId` wins):
 - `include`: array of `"summary" | "evidenceAvailability" | "detectors"`
   (default omitted, i.e. none). Each requested value adds one extra top-level
   field to the response, on top of the default `verdict`/`findings`/`recommendations`/
-  `cleanChecks`/`notRunChecks`/`runComplete`/`writeTargets`/`metrics`/`effectiveConf`:
+  `cleanChecks`/`notRunChecks`/`runComplete`/`writeTargets`/`generator`/`app`/`metrics`/`effectiveConf`:
   - `summary`: app id/name/Spark version, stage/job/SQL-execution counts, a
     finding count broken down by impact band, the same counts without evidence
     caveats and the incomplete-run row (`actionableFindingCount`,
@@ -91,6 +102,8 @@ other findings are left out):
 ```json
 {
   "runId": "b8b2c1a4-...",
+  "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "9c1f3a7e2b4d" },
+  "app": { "id": "application_0000000000000_0001", "attemptId": null },
   "runComplete": false,
   "findings": [
     {

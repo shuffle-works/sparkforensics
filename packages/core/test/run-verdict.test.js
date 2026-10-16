@@ -140,6 +140,14 @@ describe('buildRunVerdict', () => {
     expect(verdict.remaining).toBe(0);
   });
 
+  it('says what the finding count leaves out', () => {
+    const incompleteRun = { type: 'incompleteRun', impactBand: 'warning', recommendation: 'Capture the whole log.' };
+    const withNote = buildRunVerdict(appModel(), [timed('skew', 1, 2), incompleteRun]);
+    expect(withNote.summary).toContain('1 finding in 1 place. The count leaves out 1 note on incomplete or missing log data.');
+    const without = buildRunVerdict(appModel(), [timed('skew', 1, 2)]);
+    expect(without.summary).toContain('1 finding in 1 place.');
+  });
+
   it('lists at most three steps and counts the rest', () => {
     const findings = [1, 2, 3, 4, 5].map((id) => timed('skew', id, id));
     const verdict = buildRunVerdict(appModel(), findings);

@@ -13,7 +13,7 @@ pseudonymizes the value of any field named `host`, and drops the message and
 stack text of failed-task errors and the failure reason of a failed stage or job,
 which can carry file paths and data values that no pattern recognizes. On
 `compare_runs`, `runIdA`/`runIdB` are caller-supplied identifiers, not Spark application ids, so
-there's no single app-id field to redact; `redact` instead scans stage names
+there's no single app-id field to redact beyond `baselineApp` and `candidateApp`; `redact` instead scans stage names
 and other free text for embedded app ids and host/IP tokens and
 pseudonymizes those. `list_runs` pseudonymizes every run's app id and name
 consistently, so two attempts of the same app still redact to the same

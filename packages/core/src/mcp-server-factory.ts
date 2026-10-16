@@ -6,6 +6,7 @@ import {
 } from './mcp-tools.ts';
 import { listRuns } from './list-runs.ts';
 import type { ThresholdOverrides } from './detectors.ts';
+import type { ReportGenerator } from './run-output.ts';
 import { MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } from './stage-alignment.ts';
 
 const sourceSchema = z.union([
@@ -61,10 +62,20 @@ function toolResult<T extends object>(promise: Promise<T>): Promise<CallToolResu
   return promise.then((value) => toCallToolResult(JSON.stringify(value), value as Record<string, unknown>), toolErrorResult);
 }
 
+// The handshake version of a server built without a `generator`: no package to read a version from.
+const UNKNOWN_VERSION = '0.0.0';
+
+// Shared by every tool that returns a run handle.
+const RUN_ID_NOTE = 'runId is a handle for the run this server process has cached. It differs per tool by design (compare_runs returns runIdA and runIdB, evaluate_budgets the runId of its first run) and per server process, so match runs by app.id and app.attemptId, not by runId.';
+
 /** `thresholds`: the bin's --thresholds overrides, applied to every analyzing tool for the life
- * of the server. Omitted, every tool runs the specification defaults. */
-export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverrides } = {}): McpServer {
-  const server = new McpServer({ name: 'sparkforensics', version: '1.0.0' });
+ * of the server. Omitted, every tool runs the specification defaults.
+ * `generator`: the host package's name, version and core build id. The server reports its version
+ * in the MCP handshake and every diagnose_run and compare_runs result carries the block. */
+export function createMcpServer(
+  { thresholds, generator }: { thresholds?: ThresholdOverrides; generator?: ReportGenerator } = {},
+): McpServer {
+  const server = new McpServer({ name: 'sparkforensics', version: generator?.version ?? UNKNOWN_VERSION });
 
   server.registerTool('list_runs', {
     description: 'List candidate Spark event-log runs from a local directory or a Spark History Server, before diagnosing one with the other tools.',
@@ -72,7 +83,7 @@ export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverride
   }, (params) => toolResult(listRuns(params)));
 
   server.registerTool('diagnose_run', {
-    description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by potential savings), thresholded findings with remediation text, an impact-ranked fix recommendation rollup, clean-check status, the checks the log lacked the data to run, and the writeTargets, metrics and effectiveConf blocks of the CLI report. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated.',
+    description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by potential savings), thresholded findings with remediation text, an impact-ranked fix recommendation rollup, clean-check status, the checks the log lacked the data to run, and the writeTargets, metrics and effectiveConf blocks of the CLI report. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated. The result names the Spark application (app) and the build that wrote it (generator). ' + RUN_ID_NOTE,
     inputSchema: {
       ...runRefSchema, redact: z.boolean().optional(),
       include: z.array(z.enum(['summary', 'evidenceAvailability', 'detectors'])).optional(),
@@ -81,7 +92,7 @@ export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverride
     },
   }, ({ source, runId, redact, include, format, impactBand, type, stageId }) => toolResultWithMarkdown(
     resolveOrCreateRun({ source, runId }).then(({ runId: id }) =>
-      diagnoseRun(id, { redact, include, markdown: format === 'md', impactBand, type, stageId, thresholds })),
+      diagnoseRun(id, { redact, include, markdown: format === 'md', impactBand, type, stageId, thresholds, generator })),
   ));
 
   server.registerTool('get_run_summary', {
@@ -92,7 +103,7 @@ export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverride
   ));
 
   server.registerTool('compare_runs', {
-    description: 'Compare two runs: the verdict, metric deltas (metrics), categorized findings delta (findings), the stage pairs (stagePairs) with the share of executor run time they cover (runtimeCoverage), and comparability: the configuration differences, plan equality, data volume, executor capacity and the factors that bridge the wall-clock difference. confidence is ok, low or insufficient. metricDeltas and findingsDelta repeat metrics and findings under their earlier names and will be removed.',
+    description: 'Compare two runs: the verdict, metric deltas (metrics), categorized findings delta (findings), the stage pairs (stagePairs) with the share of executor run time they cover (runtimeCoverage), and comparability: the configuration differences, plan equality, data volume, executor capacity and the factors that bridge the wall-clock difference. confidence is ok, low or insufficient. metricDeltas and findingsDelta repeat metrics and findings under their earlier names and will be removed. The result names both Spark applications (baselineApp, candidateApp) and the build that wrote it (generator). Each findings row lists its stage names in stages and the same names without call-site directories in stageLabels. ' + RUN_ID_NOTE,
     inputSchema: {
       runIdA: z.string().optional(), sourceA: sourceSchema.optional(),
       ...secondRunRefSchema,
@@ -108,11 +119,11 @@ export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverride
       ...formatSchema,
     },
   }, ({ runIdA, sourceA, runIdB, sourceB, redact, include, normalizePath, ignoreConf, noiseBand, format }) => toolResultWithMarkdown(
-    compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, ignoreConf, noiseBand, include }),
+    compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, ignoreConf, noiseBand, include, generator }),
   ));
 
   server.registerTool('evaluate_budgets', {
-    description: 'Evaluate a run against pass/fail thresholds, optionally against a baseline run for regression budgets. With two runs, absolute budgets apply to the candidate (sourceB/runIdB), matching the CLI. A run with no ApplicationEnd always adds an inconclusive run-complete result.',
+    description: 'Evaluate a run against pass/fail thresholds, optionally against a baseline run for regression budgets. With two runs, absolute budgets apply to the candidate (sourceB/runIdB), matching the CLI. A run with no ApplicationEnd always adds an inconclusive run-complete result. ' + RUN_ID_NOTE,
     inputSchema: {
       source: sourceSchema.optional().describe('The run to evaluate. When sourceB/runIdB is given, this is the regression baseline instead, and the absolute budgets apply to sourceB/runIdB.'),
       runId: runRefSchema.runId.describe('Same as `source`, referencing an already-resolved run by id.'),

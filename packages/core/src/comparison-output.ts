@@ -1,6 +1,7 @@
 import { buildComparison, type CompareOptions, type CompareRunsResult } from './run-comparison.ts';
 import { comparisonVerdict, type ComparisonVerdictText } from './comparison-verdict.ts';
 import { redactComparison } from './redact.ts';
+import type { ReportGenerator } from './run-output.ts';
 import type { AppModel, Finding } from './types.ts';
 
 export interface ComparisonRunInput { label: string; appModel: AppModel; catalog: Finding[] }
@@ -8,9 +9,10 @@ export interface ComparisonRunInput { label: string; appModel: AppModel; catalog
 // The comparison a surface reports: the CLI's `comparison` object and the shared part of MCP
 // compare_runs. A field added here reaches every surface.
 // `stagePairs` is the one large field (a row per paired stage), so the `summary` view leaves it out.
-export type ComparisonOutput = { verdict: ComparisonVerdictText }
+// `generator` is the build that wrote the output, present when the surface supplies it.
+export type ComparisonOutput = { generator?: ReportGenerator; verdict: ComparisonVerdictText }
   & Pick<CompareRunsResult,
-    'confidence' | 'reason' | 'matchedCoverage' | 'runtimeCoverage' | 'metrics' | 'findings'
+    'baselineApp' | 'candidateApp' | 'confidence' | 'reason' | 'matchedCoverage' | 'runtimeCoverage' | 'metrics' | 'findings'
     | 'comparisonSchemaVersion' | 'unmatched' | 'replanned' | 'bookkeepingStageIds' | 'executionAlignment' | 'comparability'>
   & Partial<Pick<CompareRunsResult, 'stagePairs'>>;
 
@@ -19,9 +21,14 @@ export type ComparisonOutput = { verdict: ComparisonVerdictText }
 export type ComparisonView = 'full' | 'summary';
 
 /** The reported projection of a comparison. Key order is the CLI's JSON order. */
-export function comparisonOutput(comparison: CompareRunsResult, view: ComparisonView = 'full'): ComparisonOutput {
+export function comparisonOutput(
+  comparison: CompareRunsResult, view: ComparisonView = 'full', generator?: ReportGenerator,
+): ComparisonOutput {
   return {
+    ...(generator ? { generator } : {}),
     verdict: comparisonVerdict(comparison),
+    baselineApp: comparison.baselineApp,
+    candidateApp: comparison.candidateApp,
     confidence: comparison.confidence,
     reason: comparison.reason,
     matchedCoverage: comparison.matchedCoverage,
@@ -43,9 +50,9 @@ export function comparisonOutput(comparison: CompareRunsResult, view: Comparison
  * and Markdown; `output` is the projection to serialize. */
 export function buildComparisonOutput(
   baseline: ComparisonRunInput, candidate: ComparisonRunInput,
-  { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand, view }: { redact?: boolean; view?: ComparisonView } & CompareOptions = {},
+  { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand, view, generator }: { redact?: boolean; view?: ComparisonView; generator?: ReportGenerator } & CompareOptions = {},
 ): { comparison: CompareRunsResult; output: ComparisonOutput } {
   const built = buildComparison(baseline, candidate, { normalizePath, ignoreConf, confRedactRegex, noiseBand });
   const comparison = redact ? redactComparison(built) : built;
-  return { comparison, output: comparisonOutput(comparison, view) };
+  return { comparison, output: comparisonOutput(comparison, view, generator) };
 }

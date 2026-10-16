@@ -12,7 +12,7 @@ import { renderComparisonMarkdown, type CompareRunsResult } from './run-comparis
 import { buildComparisonOutput, type ComparisonOutput } from './comparison-output.ts';
 import { compileNormalizePatterns } from './stage-alignment.ts';
 import { compileConfIgnorePatterns } from './comparability.ts';
-import { runOutputBlocks } from './run-output.ts';
+import { runOutputBlocks, type ReportGenerator } from './run-output.ts';
 import { evaluateBudgets, type BudgetsConfig, type BudgetResult } from './cli/budgets.ts';
 import { assertStageBudgetMetric, combineRegressionBudgets } from './cli/regression-budgets.ts';
 import { FINDING_NAMES, titleCase } from './finding-names.ts';
@@ -228,6 +228,8 @@ export async function resolveOrCreateRun(
       const appModel = 'path' in source
         ? await resolveFromPath(source.path)
         : (await resolveFromShs(source.shsBaseUrl, source.appId, source.attemptId, { fetchImpl, maxArchiveBytes, idleTimeoutMs })).appModel;
+      // The attempt the caller asked the History Server for, when the log itself does not name one.
+      if (!('path' in source) && source.attemptId && appModel.app && !appModel.app.attemptId) appModel.app.attemptId = source.attemptId;
 
       const newRunId = randomUUID();
       byRunId.set(newRunId, { appModel, cacheKey, lastAccess: Date.now() });
@@ -246,7 +248,7 @@ export async function resolveOrCreateRun(
 // process by createMcpServer(). A client can't set them per call; the dashboard never has them.
 export function diagnoseRun(runId: string, opts?: {
   redact?: boolean; include?: Array<'summary' | 'evidenceAvailability' | 'detectors'>; markdown?: boolean;
-  impactBand?: string[]; type?: string[]; stageId?: number; thresholds?: ThresholdOverrides;
+  impactBand?: string[]; type?: string[]; stageId?: number; thresholds?: ThresholdOverrides; generator?: ReportGenerator;
 }): {
   runId: string; verdict: EvidenceReportJson['verdict']; findings: FindingRow[]; runComplete: boolean;
   recommendations: RecommendationRow[]; cleanChecks: CleanCheckEntry[]; notRunChecks: NotRunCheckEntry[];
@@ -265,7 +267,7 @@ export function diagnoseRun(runId: string, opts?: {
     notRunChecks: json.notRunChecks,
     // The CLI report's own blocks, so a run reads the same through either surface.
     writeTargets: json.writeTargets,
-    ...runOutputBlocks(appModel, { redact: opts?.redact, thresholds: opts?.thresholds }),
+    ...runOutputBlocks(appModel, { redact: opts?.redact, thresholds: opts?.thresholds, generator: opts?.generator }),
     runComplete: appModel.app?.endTime != null,
     // Top level too, so a client that never asks for `summary` still sees the run was tuned.
     ...(tuned ? { tunedThresholds: tuned } : {}),
@@ -413,7 +415,7 @@ async function resolveAndAnalyze(
 
 export async function compareRuns(
   a: RunRef, b: RunRef, opts?: { redact?: boolean; markdown?: boolean; thresholds?: ThresholdOverrides; normalizePath?: readonly string[];
-    ignoreConf?: readonly string[]; noiseBand?: number;
+    ignoreConf?: readonly string[]; noiseBand?: number; generator?: ReportGenerator;
     /** `stagePairs`: add the per-pair rows, which the default view leaves out. */ include?: Array<'stagePairs'> },
 ): Promise<McpCompareRunsResult & { markdown?: string; tunedThresholds?: Record<string, TunedThresholds> }> {
   // Before any log is read: a bad pattern refuses the call, as the CLI's usage error does.
@@ -437,7 +439,7 @@ export async function compareRuns(
   // read. Findings/metrics come from `catalog` and appModel.stages/sql, both fully populated. Produces
   // identical output to the dashboard; the MCP tool just never exposes per-task drill-down.
   const view = opts?.include?.includes('stagePairs') ? 'full' : 'summary';
-  const cacheKey = JSON.stringify([runIdA, runIdB, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? [], opts?.ignoreConf ?? [], opts?.noiseBand ?? null]);
+  const cacheKey = JSON.stringify([runIdA, runIdB, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? [], opts?.ignoreConf ?? [], opts?.noiseBand ?? null, opts?.generator ?? null]);
   let built = comparisonCache.get(cacheKey)?.built;
   if (built) {
     // Re-insert so the oldest entry is the least recently used.
@@ -447,7 +449,7 @@ export async function compareRuns(
     built = buildComparisonOutput(
       { label: runIdA, appModel: appModelA, catalog: catalogA },
       { label: runIdB, appModel: appModelB, catalog: catalogB },
-      { redact: opts?.redact, normalizePath: opts?.normalizePath, ignoreConf: opts?.ignoreConf, noiseBand: opts?.noiseBand, view },
+      { redact: opts?.redact, normalizePath: opts?.normalizePath, ignoreConf: opts?.ignoreConf, noiseBand: opts?.noiseBand, view, generator: opts?.generator },
     );
     // Either run can be evicted while the other one is still being read or parsed (the awaits
     // above): an entry for a run that is gone would outlive its eviction, so it is only kept

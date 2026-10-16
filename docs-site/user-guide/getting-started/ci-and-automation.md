@@ -436,8 +436,15 @@ the event log and are not in `writeTargets`.
 The CLI's JSON output carries a `generator` block naming the build that wrote
 it: `name` and `version` of the CLI package, and `buildId`, the build id of the
 analysis core the CLI loaded. Equal build ids mean equal analysis code. With
-`--baseline` the block is inside `candidate`. The MCP `diagnose_run` tool does
-not return it. The block holds no run identifiers, so `--redact` leaves it as is.
+`--baseline` the block is inside `candidate` and also leads `comparison`. The MCP
+`diagnose_run` and `compare_runs` tools return the same block with the
+`sparkforensics-mcp` package name and version. The block holds no run
+identifiers, so `--redact` leaves it as is.
+
+An `app` block next to it names the Spark application the report describes:
+`id` and `attemptId`, which is `null` when the log has none (only a cluster-mode
+run writes one). Under `--redact` the id is pseudonymized. A comparison names both
+runs in `baselineApp` and `candidateApp`.
 
 ```json
 "generator": { "name": "sparkforensics-cli", "version": "0.7.0", "buildId": "9c1f3a7e2b4d" }

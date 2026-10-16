@@ -173,7 +173,9 @@ export function isRealFinding(finding: Finding): boolean {
 /** True when a finding is a candidate for the "fix these first" ranking.
  * Shared by evidence-report.ts (CLI/MCP path) and FixTheseFirst.tsx (the
  * dashboard widget) so these hardcoded exclusions can't drift between the two
- * surfaces. Doesn't check `REGISTRY[finding.type] != null`: `REGISTRY` lives
+ * surfaces. The verdict's finding count is the eligible findings, so it leaves out a log-completeness
+ * note (incompleteRun) and a missing-evidence caveat; the verdict wording says so (`verdictSummary`).
+ * Doesn't check `REGISTRY[finding.type] != null`: `REGISTRY` lives
  * in a `.tsx` file, not importable from this core module, so FixTheseFirst.tsx
  * layers that extra check on top of this one. */
 export function isEligible(finding: Finding): boolean {
