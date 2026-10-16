@@ -363,7 +363,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       const result = diagnoseRun(runId, include === undefined ? undefined : { include });
       expect(Object.keys(result).sort()).toEqual(
-        ['app', 'cleanChecks', 'effectiveConf', 'findings', 'metrics', 'notRunChecks', 'recommendations', 'runComplete', 'runId', 'verdict', 'writeTargets'].sort(),
+        ['app', 'cleanChecks', 'effectiveConf', 'findings', 'findingsOmitted', 'metrics', 'notRunChecks', 'recommendations', 'runComplete', 'runId', 'verdict', 'view', 'writeTargets'].sort(),
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -475,6 +475,100 @@ describe('diagnoseRun / getFindingEvidence', () => {
         const result = diagnoseRun(runId, { impactBand: ['critical'], type: ['straggler'], stageId: 1 });
         expect(result.findings).toEqual(direct.findings);
         expect(result.findings).toHaveLength(1);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  describe('view, minBand, maxFindings and finding keys', () => {
+    async function diagnose(opts) {
+      const { dir, path } = tmpEventLogWithFindings();
+      try {
+        const { runId } = await resolveOrCreateRun({ source: { path } });
+        return diagnoseRun(runId, opts);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+
+    it('gives every finding row a key built from its type, rule and stage fingerprint, the same on a rerun', async () => {
+      const first = await diagnose();
+      const second = await diagnose();
+      expect(first.findings.map((f) => f.key)).toEqual(second.findings.map((f) => f.key));
+      const straggler = first.findings.find((f) => f.type === 'straggler');
+      // A stage's fingerprint is the key of its `metrics.stages` entry, so the two join without a table.
+      const fingerprint = Object.keys(first.metrics.stages).find((k) => first.metrics.stages[k].stageIds.includes(1));
+      expect(straggler.key).toBe(`straggler|straggler|stage:${fingerprint}`);
+      // A run-level finding has no stage to name.
+      expect(first.findings.find((f) => f.type === 'memoryUtilization').key).toMatch(/^memoryUtilization\|[^|]+\|run$/);
+    });
+
+    it('lists one short row per finding and leaves out the check lists in the compact view', async () => {
+      const full = await diagnose({ view: 'full' });
+      const compact = await diagnose({ view: 'compact' });
+      expect(compact.view).toBe('compact');
+      expect(full.view).toBe('full');
+      expect(compact.findings.map((f) => f.id)).toEqual(full.findings.map((f) => f.id));
+      for (const row of compact.findings) {
+        for (const dropped of ['evidence', 'recommendation', 'remediation', 'impactEstimate']) expect(row).not.toHaveProperty(dropped);
+      }
+      expect('cleanChecks' in compact).toBe(false);
+      expect('notRunChecks' in compact).toBe(false);
+      for (const kept of ['verdict', 'recommendations', 'metrics', 'writeTargets', 'effectiveConf']) expect(compact).toHaveProperty(kept);
+      expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(full).length);
+    });
+
+    it('keeps the tuned thresholds on a compact row of a tuned detector', async () => {
+      const { dir, path } = tmpEventLogWithFindings();
+      try {
+        const { runId } = await resolveOrCreateRun({ source: { path } });
+        const thresholds = parseThresholdOverrides({ straggler: { minTasks: 2 } });
+        const { findings } = diagnoseRun(runId, { view: 'compact', thresholds });
+        expect(findings.find((f) => f.type === 'straggler').tunedThresholds).toEqual({ minTasks: { value: 2, default: 10 } });
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('puts the lead finding row in each verdict step, in the shape of the view', async () => {
+      for (const view of ['compact', 'full']) {
+        const result = await diagnose({ view });
+        expect(result.verdict.steps.length).toBeGreaterThan(0);
+        for (const step of result.verdict.steps) {
+          expect(step.leadFinding.id).toBe(step.leadFindingId);
+          expect(step.leadFinding.type).toBe(step.type);
+          expect('evidence' in step.leadFinding).toBe(view === 'full');
+        }
+      }
+    });
+
+    it('limits the rows with maxFindings and counts what it left out, keeping every step\'s lead row', async () => {
+      const all = await diagnose({ view: 'compact' });
+      const limited = await diagnose({ view: 'compact', maxFindings: 1 });
+      expect(all.findings.length).toBeGreaterThan(1);
+      expect(limited.findings).toEqual(all.findings.slice(0, 1));
+      expect(limited.findingsOmitted).toBe(all.findings.length - 1);
+      expect(all.findingsOmitted).toBe(0);
+      expect(limited.verdict.steps).toEqual(all.verdict.steps);
+      expect((await diagnose({ maxFindings: 0 })).findings).toEqual([]);
+    });
+
+    it('limits the rows to a band and the more severe ones with minBand', async () => {
+      const all = await diagnose();
+      const critical = await diagnose({ minBand: 'critical' });
+      expect(critical.findings.every((f) => f.impactBand === 'critical')).toBe(true);
+      const warningUp = await diagnose({ minBand: 'warning' });
+      expect(warningUp.findings.every((f) => f.impactBand !== 'info')).toBe(true);
+      expect((await diagnose({ minBand: 'info' })).findings).toEqual(all.findings);
+    });
+
+    it('limits the Markdown findings the same way', async () => {
+      const { dir, path } = tmpEventLogWithFindings();
+      try {
+        const { runId } = await resolveOrCreateRun({ source: { path } });
+        const { markdown } = diagnoseRun(runId, { markdown: true, maxFindings: 1 });
+        expect(markdown).toContain('## Findings (1)');
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

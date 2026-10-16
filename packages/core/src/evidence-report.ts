@@ -14,6 +14,7 @@ import { findingName, titleCase } from './finding-names.ts';
 import { redactReport, redactRunModel } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
 import { findingActionLabel } from './finding-action-label.ts';
+import { findingKeyer } from './run-comparison.ts';
 import { matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
 import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
@@ -41,7 +42,11 @@ export const EVIDENCE_SCHEMA_VERSION: number = 5;
 // configAudit's current setting, incompleteRun's 'missing') carry theirs in `valueText` instead,
 // present only on those rows.
 interface FindingRowColumns {
-  id: string | null; name: string; tag: string; impactBand: 'critical'|'warning'|'info';
+  id: string | null;
+  // The finding's identity across reruns of the same job (`findingKeyer`): type, rule and the
+  // stage's `metrics.stages` fingerprint, or the execution or property it names. A pairing aid, not
+  // unique: findings of one rule at one place share it. `id` stays the within-run handle.
+  key: string; name: string; tag: string; impactBand: 'critical'|'warning'|'info';
   stageId: number | null; metric?: string | null; value?: number | null; valueText?: string;
   recommendation?: string | null; detectorVersion: number;
   // The property changes `recommendation` names, structured: empty when it names none.
@@ -252,11 +257,12 @@ function projectEvidence(f: Finding): Record<string, unknown> {
   return evidence;
 }
 
-function findingRow(f: Finding): FindingRow {
+function findingRow(f: Finding, key: string): FindingRow {
   // Cast: projectEvidence's keys come from EVIDENCE_KEYS[f.type], so `evidence` is that type's
   // FindingEvidenceMap entry, which TypeScript can't correlate with `type` on its own.
   const row = {
     id: f.id ?? null,
+    key,
     type: f.type,
     name: titleCase(findingName(f.type)),
     tag: typeTag(f.type),
@@ -514,7 +520,8 @@ function buildJson(
   const { app, stages, executors, sql, jobs, evidenceAvailability } = appModel;
   const { catalog, config } = findings ?? runFindings(appModel, thresholds);
   const allFindings = [...catalog, ...config];
-  const rows = sortFindings(allFindings.map(findingRow));
+  const keyOf = findingKeyer({ stages: stages ?? new Map(), sql: sql ?? new Map() });
+  const rows = sortFindings(allFindings.map((f) => findingRow(f, keyOf(f))));
   const recommendations = buildRecommendations(allFindings, stages ?? new Map());
   const { cleanChecks, notRunChecks } = buildCheckLists(allFindings, stages ?? new Map(), thresholds);
   const writeTargets = extractWriteTargets(sql ?? new Map(), {
@@ -773,6 +780,10 @@ export interface FindingsFilter {
   impactBand?: string[];
   type?: string[];
   stageId?: number;
+  /** Keep findings at this band or a more severe one. */
+  minBand?: ImpactBand;
+  /** Keep this many rows at most, after every other filter, most severe first. */
+  maxFindings?: number;
 }
 
 // CLI/MCP-facing filter over FindingRow, delegating to the shared core predicate that also backs
@@ -781,21 +792,24 @@ function matchesFindingsFilter(row: FindingRow, filter: FindingsFilter): boolean
   // A sql-scope finding carries its stages in evidence.stageIds, not a stageId column: it matches
   // the one stage it touches, as the dashboard's Stage details lists it.
   const stageIds = 'stageIds' in row.evidence ? row.evidence.stageIds : null;
+  if (filter.minBand && (IMPACT_BAND_ORDER[row.impactBand] ?? 9) > IMPACT_BAND_ORDER[filter.minBand]) return false;
   return matchesFindingFilterCriteria({ ...row, stageId: singleStageId({ stageId: row.stageId, stageIds }) }, filter);
 }
 
-/** Build a FindingsFilter from the three optional CLI/MCP filter dimensions, or undefined when
- * none were passed (the "is anything set" gate before calling buildEvidenceReport). */
+/** Build a FindingsFilter from the optional CLI/MCP filter dimensions, or undefined when none were
+ * passed (the "is anything set" gate before calling buildEvidenceReport). */
 export function toFindingsFilter(
-  impactBand?: string[], type?: string[], stageId?: number,
+  impactBand?: string[], type?: string[], stageId?: number, minBand?: ImpactBand, maxFindings?: number,
 ): FindingsFilter | undefined {
-  return (impactBand || type || stageId !== undefined) ? { impactBand, type, stageId } : undefined;
+  return (impactBand || type || stageId !== undefined || minBand || maxFindings !== undefined)
+    ? { impactBand, type, stageId, minBand, maxFindings }
+    : undefined;
 }
 
 /**
  * Build a portable evidence report from an appModel.
  * @param opts redact=true pseudonymizes app ids / hosts; markdown=false skips the Markdown string;
- *   findingsFilter narrows json.findings (and the Markdown Findings section) only, summary,
+ *   findingsFilter (including its minBand and maxFindings limits) narrows json.findings (and the Markdown Findings section) only, summary,
  *   recommendations, cleanChecks and notRunChecks stay computed from the full set, so a narrow filter never
  *   hides that other checks passed or other fixes exist. thresholds runs the detectors with a user's
  *   validated overrides (CLI/MCP only) and labels whatever they changed.
@@ -805,12 +819,18 @@ export function buildEvidenceReport(
   { redact = false, markdown: computeMarkdown = true, findingsFilter, thresholds }: {
     redact?: boolean; markdown?: boolean; findingsFilter?: FindingsFilter; thresholds?: ThresholdOverrides;
   } = {},
-): { markdown: string; json: EvidenceReportJson } {
+): { markdown: string; json: EvidenceReportJson; findingsMatched: number } {
   let json = redact ? buildRedactedJson(appModel, thresholds) : buildJson(appModel, thresholds);
   const incomplete = json.findings.some((row) => row.type === 'incompleteRun');
   // Filter after redact, not before: redaction only replaces string values on surviving rows,
   // never adds/removes rows, so the two orderings produce identical final content.
-  if (findingsFilter) json = { ...json, findings: json.findings.filter((row) => matchesFindingsFilter(row, findingsFilter)) };
+  // `findingsMatched`: the rows that passed every filter but `maxFindings`, so a caller can say how many that limit left out.
+  let findingsMatched = json.findings.length;
+  if (findingsFilter) {
+    const kept = json.findings.filter((row) => matchesFindingsFilter(row, findingsFilter));
+    findingsMatched = kept.length;
+    json = { ...json, findings: findingsFilter.maxFindings !== undefined ? kept.slice(0, findingsFilter.maxFindings) : kept };
+  }
   const markdown = computeMarkdown ? renderMarkdown(json, incomplete) : '';
-  return { markdown, json };
+  return { markdown, json, findingsMatched };
 }

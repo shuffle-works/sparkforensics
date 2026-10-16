@@ -50,7 +50,11 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, writ
   tuned run (see the tuned-run paragraph below) a tuned row's
   `thresholds` are the ones the run used, plus `tunedThresholds`.
 - `findings` are deterministically sorted rows (impact band → type → stage → id),
-  each with a stable `id`, `tag`, core columns, an always-present `actionLabel`,
+  each with an `id` (a hash of the finding, so it matches within one run), a `key`
+  (`findingKeyer()` in `packages/core/src/run-comparison.ts`: type, rule and location,
+  where a stage is its `stageIdentity` fingerprint, the key of `metrics.stages`, and an
+  SQL execution is a digest of its stages' fingerprints, so it matches across reruns of
+  one job), `tag`, core columns, an always-present `actionLabel`,
   and an `evidence` sub-object holding that finding type's declared evidence
   fields (see the per-type evidence paragraph below); `confidence`/
   `validationRequired`/`docAnchor` appear only when the detector emitted them.
@@ -111,7 +115,7 @@ and is never name-identical to a raw export.
 A finding row carries `impactEstimate` when the finding has one, with the full contract
 documented in [Impact estimation](../impact-estimation.md#occupancy-weighted-attribution)
 (basis, wallClock, estimateMethod, rawWaste, coreTimeMs, and on `utilization` idleCoreTimeMs). It appears after the pinned core
-columns (`id`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`, `detectorVersion`, plus
+columns (`id`, `key`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`, `detectorVersion`, plus
 optional but pinned `confidence`, `validationRequired`, `docAnchor`) without displacing any of
 them. The full row shape is `FindingRowColumns` in `evidence-report.ts`, which also carries
 `name`, `tag`, `valueText`, `remediation`, `actionLabel`, `impact`/`impactMeaning` and, on a tuned run,

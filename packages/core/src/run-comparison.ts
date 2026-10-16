@@ -6,7 +6,8 @@ import { totalExecutorCpuMs, withEarlierAttempts } from './run-totals.ts';
 import { captureSnapshot } from './session-snapshot.ts';
 import { alignStages, compileNormalizePatterns, COMPARISON_SCHEMA_VERSION, type StageAlignment, type StagePair } from './stage-alignment.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
-import { diffFindings, findingBand, findingRule, type FindingLocator } from './finding-identity.ts';
+import { diffFindings, findingBand, findingKey, findingRule, type FindingLocator } from './finding-identity.ts';
+import { cyrb53 } from './string-hash.ts';
 import { IMPACT_BAND_ORDER } from './format-utils.ts';
 import type { Stage, SparkAppInfo, AppModel, Finding, ImpactBand, TunedThresholds } from './types.ts';
 import type { SessionSnapshot } from './session-snapshot.ts';
@@ -28,17 +29,23 @@ export interface MetricDeltaRow {
 }
 // An introduced or resolved finding category: the findings of one rule and band that have no
 // counterpart in the other run. An introduced row has `baseCount` 0, a resolved row `candCount` 0.
+// `keys`: the `key` of each finding the row counts, as `diagnose_run` reports it for the run the
+// findings are in (the candidate for an introduced row, the baseline for a resolved one).
 export interface FindingsDeltaRow {
   rule: string; type: string; impactBand: string; baseCount: number; candCount: number; delta: number; stages: string[];
   /** `stages` as display labels, each name with the directories of its call-site path removed. */
   stageLabels: string[];
+  keys: string[];
 }
 // Findings both runs have, at one location, that moved from one impact band to another. `count`
 // is how many findings of that rule moved between those two bands.
+// `keys` are the candidate run's finding keys, `baseKeys` the baseline's: a pair the aligner matched
+// without an exact fingerprint match has different keys on the two sides.
 export interface FindingsChangedRow {
   rule: string; type: string; baseImpactBand: string; candImpactBand: string; count: number; stages: string[];
   /** `stages` as display labels, each name with the directories of its call-site path removed. */
   stageLabels: string[];
+  keys: string[]; baseKeys: string[];
 }
 /** True when a changed finding moved to a more severe band (an unknown band ranks least severe). */
 export function isEscalation(row: Pick<FindingsChangedRow, 'baseImpactBand' | 'candImpactBand'>): boolean {
@@ -91,6 +98,41 @@ export { normalizeStageName };
 
 export function stageIdentity(stage: Stage, snapshot: Pick<SessionSnapshot, 'sql'>): string {
   return stageIdentityWith(stage, snapshot, normalizeDetail);
+}
+
+/** The key a finding row carries (`findingKey`: type, rule and location) with the location read off
+ * the run alone: a stage by its `stageIdentity` fingerprint (the keys of `metrics.stages`), an SQL
+ * execution by a digest of its stages' fingerprints. Two runs of the same job give the same finding
+ * the same key, so a reader pairs findings across runs without the aligner. A pairing aid: several
+ * findings can share a key (one detector firing per host on a run-level key, stages that share a
+ * fingerprint), and it says nothing about whether the finding's value or band held. */
+export function findingKeyer(snapshot: Pick<SessionSnapshot, 'stages' | 'sql'>): (finding: Finding) => string {
+  const stageLabels = new Map<number, string>();
+  const stageLabel = (id: number): string => {
+    let label = stageLabels.get(id);
+    if (label === undefined) {
+      const stage = snapshot.stages.get(id);
+      label = stage ? stageIdentity(stage, snapshot) : `#${id}`;
+      stageLabels.set(id, label);
+    }
+    return label;
+  };
+  let stagesByExecution: Map<number, number[]> | undefined;
+  const executionLabel = (id: number): string => {
+    if (!stagesByExecution) {
+      stagesByExecution = new Map();
+      for (const [stageId, stage] of snapshot.stages) {
+        if (stage.sqlExecutionId == null) continue;
+        const ids = stagesByExecution.get(stage.sqlExecutionId);
+        if (ids) ids.push(stageId); else stagesByExecution.set(stage.sqlExecutionId, [stageId]);
+      }
+    }
+    const ids = stagesByExecution.get(id);
+    // An execution with no stage has no fingerprint to digest: its id is all that names it.
+    return ids ? cyrb53(JSON.stringify(ids.map(stageLabel).sort())) : `#${id}`;
+  };
+  const locator: FindingLocator = { stage: stageLabel, execution: executionLabel };
+  return (finding) => findingKey(finding, locator);
 }
 
 export function matchStages(baseSnap: SessionSnapshot, candSnap: SessionSnapshot): {
@@ -319,6 +361,8 @@ export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapsh
     return [...names].sort();
   };
   const stageLabelsOf = (names: string[]): string[] => [...new Set(names.map(stageDisplayLabel))].sort();
+  const baseKeyOf = findingKeyer(baseSnap), candKeyOf = findingKeyer(candSnap);
+  const keysOf = (findings: Finding[], keyOf: (f: Finding) => string): string[] => [...new Set(findings.map(keyOf))].sort();
   const group = <T>(items: T[], keyOf: (item: T) => string): Array<[string, T[]]> => {
     const groups = new Map<string, T[]>();
     for (const item of items) {
@@ -336,6 +380,7 @@ export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapsh
         rule: findingRule(fs[0]), type: fs[0].type, impactBand: findingBand(fs[0]),
         baseCount: side === 'base' ? count : 0, candCount: side === 'cand' ? count : 0,
         delta: side === 'cand' ? count : -count, stages, stageLabels: stageLabelsOf(stages),
+        keys: keysOf(fs, side === 'cand' ? candKeyOf : baseKeyOf),
       };
     });
   const changed: FindingsChangedRow[] = group(
@@ -346,6 +391,7 @@ export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapsh
       rule: findingRule(cs[0].candidate), type: cs[0].candidate.type,
       baseImpactBand: findingBand(cs[0].baseline), candImpactBand: findingBand(cs[0].candidate),
       count: cs.length, stages, stageLabels: stageLabelsOf(stages),
+      keys: keysOf(cs.map((c) => c.candidate), candKeyOf), baseKeys: keysOf(cs.map((c) => c.baseline), baseKeyOf),
     };
   });
   return { introduced: rows(diff.introduced, candSnap, 'cand'), resolved: rows(diff.resolved, baseSnap, 'base'), changed };

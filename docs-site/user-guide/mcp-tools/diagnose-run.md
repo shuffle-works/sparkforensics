@@ -2,12 +2,13 @@
 
 Reference for the `diagnose_run` tool of the SparkForensics MCP server.
 
-Diagnose a Spark run: thresholded findings with remediation text, led by the
-same verdict the dashboard opens with. `verdict` gives a `title` ("Start with
+Diagnose a Spark run: thresholded findings, led by the same verdict the
+dashboard opens with. `verdict` gives a `title` ("Start with
 Stage 3", "1 of 3 jobs failed in this run"), `summary` sentences, `steps`, the
 first three places to look in the dashboard's order (each with its action, what
-to try, the potential savings and what that figure counts, and the other
-finding types flagged at the same place), `costSteps`, the same places ranked by the
+to try, the potential savings and what that figure counts, the other
+finding types flagged at the same place, and `leadFinding`, the row of the
+finding that leads the step), `costSteps`, the same places ranked by the
 measured busy core time a fix removes (only findings that carry one), `idle`, the
 core-hours and share of the allocation that ran no task, `remainingPlaces`, how many more
 places the full list holds, and `copyText`, the dashboard's "Copy next steps"
@@ -23,6 +24,29 @@ matches. `runId` is a handle for the run this server process has cached. It diff
 per tool by design (`compare_runs` returns `runIdA` and `runIdB`, `evaluate_budgets`
 the `runId` of its first run) and per server process, so match runs by `app.id` and
 `app.attemptId`.
+
+The answer has two views. `compact` (the default) is an index: the verdict,
+`recommendations`, `metrics`, `writeTargets`, `effectiveConf` and one short row
+per finding, with no `cleanChecks` or `notRunChecks`. A compact row holds `id`,
+`key`, `type`, `tag`, `name`, `impactBand`, `stageId`, `actionLabel`, `metric`,
+`value` (or `valueText`), `impact` and `impactMeaning` when the finding has a
+savings figure, and `tunedThresholds` on a tuned server. Pass the row's `id` to
+[`get_finding_evidence`](./get-finding-evidence.md) for its remediation text,
+evidence and estimate. `full` returns every finding as the CLI report
+writes it, with `cleanChecks` and `notRunChecks`. The `view` field of the
+response names the view. On the bundled sample run the compact answer is about
+40% smaller than the full one.
+
+Each finding row has a `key` that is the same for the same finding in a rerun
+of the job: the finding's type, its rule and where it sits. A finding on a stage
+names the stage by the fingerprint that keys `metrics.stages`, so a row joins to
+its stage's metrics without a lookup. A finding on a SQL execution names it by a
+digest of its stages' fingerprints, and a configuration finding by the property.
+The key pairs findings across runs. It is not unique (a detector that fires once
+per host at one place gives rows that share it) and it says nothing about
+whether the finding's value or impact band stayed the same. The rows of
+[`compare_runs`](./compare-runs.md) list the same keys. `id` stays the handle
+within one run.
 
 The response also carries the three machine-readable blocks of the CLI's JSON
 report, with the same content: `writeTargets` (every SQL write with its path or
@@ -45,13 +69,15 @@ error, and when both are given `runId` wins):
   (`application_<digits>_<digits>`, `local-<digits>`, `app-...`, `spark-...`,
   `driver-<digits>`).
 - `runId`: `string`
+- `view`: `"compact" | "full"` (default `"compact"`), see above
 - `redact`: `boolean` (default `false`), pseudonymizes the app id and any
   host/IP tokens in the response, and replaces the app name with the app
   id's pseudonym
 - `include`: array of `"summary" | "evidenceAvailability" | "detectors"`
   (default omitted, i.e. none). Each requested value adds one extra top-level
   field to the response, on top of the default `verdict`/`findings`/`recommendations`/
-  `cleanChecks`/`notRunChecks`/`runComplete`/`writeTargets`/`generator`/`app`/`metrics`/`effectiveConf`:
+  `runComplete`/`writeTargets`/`generator`/`app`/`metrics`/`effectiveConf` (and `cleanChecks`/`notRunChecks`
+  in the `full` view):
   - `summary`: app id/name/Spark version, stage/job/SQL-execution counts, a
     finding count broken down by impact band, the same counts without evidence
     caveats and the incomplete-run row (`actionableFindingCount`,
@@ -72,14 +98,24 @@ error, and when both are given `runId` wins):
 - `stageId`: number, narrows `findings` to only findings on this stage,
   including a SQL plan finding whose only stage it is (the dashboard's stage
   details rule)
+- `minBand`: `"critical" | "warning" | "info"`, lists only findings at this
+  band or a more severe one
+- `maxFindings`: non-negative integer, lists at most this many findings after
+  every other filter, most severe first. `findingsOmitted` counts the
+  matching findings the limit left out (always present, `0` when none).
 - `format`: `"json" | "md"` (default `"json"`), switches `content[0].text` to
-  a rendered Markdown report instead of JSON. `structuredContent` always
-  stays JSON-shaped, regardless of `format`.
+  a rendered Markdown report instead of JSON. With `"md"`, `structuredContent`
+  is a small object instead of the report: `runId`, `runComplete`, `title` (the
+  verdict's), `findingCount`, `findingsOmitted` and `recommendationCount`. A
+  client that stores `structuredContent` stores only those.
 
-`impactBand`/`type`/`stageId` only filter the `findings` array:
+`impactBand`/`type`/`stageId`/`minBand`/`maxFindings` only limit the `findings` array
+(and the findings section of the Markdown):
 `verdict`, `recommendations`, `cleanChecks`, `notRunChecks`, and the finding counts in `summary` (when
 requested via `include`) always stay computed from the full, unfiltered set,
 so a narrow filter never hides that other checks passed or other fixes exist.
+Each verdict step keeps its `leadFinding` row whatever the limit, so the rows the
+verdict points at are always in the answer.
 
 A `runId` expires. Loaded runs are cached in memory, capped at 8
 (LRU-evicted) and expired 15 minutes after their last use (override with
@@ -95,19 +131,44 @@ Example call:
 { "name": "diagnose_run", "arguments": { "source": { "path": "app-20260101.zstd" } } }
 ```
 
-Example response (an event log with no `ApplicationEnd` event; fields
-trimmed: `verdict`, `recommendations`, `cleanChecks`, `notRunChecks` and the
-other findings are left out):
+Example response in the `compact` view (an event log with no `ApplicationEnd`
+event; fields trimmed: `verdict`, `recommendations`, `metrics`, `writeTargets`,
+`effectiveConf` and the other findings are left out):
 
 ```json
 {
   "runId": "b8b2c1a4-...",
+  "view": "compact",
   "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "9c1f3a7e2b4d" },
   "app": { "id": "application_0000000000000_0001", "attemptId": null },
   "runComplete": false,
+  "findingsOmitted": 0,
   "findings": [
     {
       "id": "1d473001",
+      "key": "incompleteRun|incompleteRun|run",
+      "type": "incompleteRun",
+      "name": "Incomplete Run",
+      "tag": "INCMP",
+      "impactBand": "warning",
+      "stageId": null,
+      "actionLabel": "incomplete run",
+      "metric": "applicationEnd",
+      "value": null,
+      "valueText": "missing"
+    }
+  ]
+}
+```
+
+The same finding in the `full` view (the other fields of the response are left out):
+
+```json
+{
+  "findings": [
+    {
+      "id": "1d473001",
+      "key": "incompleteRun|incompleteRun|run",
       "type": "incompleteRun",
       "name": "Incomplete Run",
       "tag": "INCMP",
@@ -128,5 +189,5 @@ other findings are left out):
 ```
 
 The figure that drove a finding is in the row's `metric` and `value` (or `valueText`).
-`evidence` holds type-specific extra fields and is empty for several types,
+In the `full` view `evidence` holds type-specific extra fields and is empty for several types,
 such as `incompleteRun` above and `skew`.

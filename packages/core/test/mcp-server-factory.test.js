@@ -306,7 +306,7 @@ describe('createMcpServer', () => {
     }
   });
 
-  it('diagnose_run: format "md" puts markdown in content[0].text and keeps structuredContent JSON-shaped', async () => {
+  it('diagnose_run: format "md" puts markdown in content[0].text and a few headline fields in structuredContent', async () => {
     const { dir, path } = tmpEventLog();
     try {
       const server = createMcpServer();
@@ -322,10 +322,54 @@ describe('createMcpServer', () => {
       expect(omittedResult.structuredContent).toEqual(jsonResult.structuredContent);
       expect(omittedResult.content[0].text).toBe(jsonResult.content[0].text);
 
-      expect(mdResult.structuredContent).toEqual(jsonResult.structuredContent);
-      expect('markdown' in mdResult.structuredContent).toBe(false);
       expect(mdResult.content[0].text).toMatch(/^# Spark run evidence report/);
-      expect(mdResult.content[0].text).not.toBe(JSON.stringify(mdResult.structuredContent));
+      expect(mdResult.structuredContent).toEqual({
+        runId: jsonResult.structuredContent.runId,
+        runComplete: true,
+        title: jsonResult.structuredContent.verdict.title,
+        findingCount: jsonResult.structuredContent.findings.length,
+        findingsOmitted: 0,
+        recommendationCount: jsonResult.structuredContent.recommendations.length,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('diagnose_run: answers compact by default, full on request, and keeps writeTargets and effectiveConf in both', async () => {
+    const { dir, path } = tmpEventLogWithFindings();
+    try {
+      const client = await connectedClient(createMcpServer());
+      const byDefault = (await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } })).structuredContent;
+      const compact = (await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, view: 'compact' } })).structuredContent;
+      const full = (await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, view: 'full' } })).structuredContent;
+      expect(byDefault).toEqual(compact);
+      expect(compact.view).toBe('compact');
+      expect(full.view).toBe('full');
+      for (const answer of [compact, full]) {
+        expect(answer).toHaveProperty('writeTargets');
+        expect(answer).toHaveProperty('effectiveConf');
+        expect(answer).toHaveProperty('metrics');
+      }
+      expect(compact).not.toHaveProperty('cleanChecks');
+      expect(full).toHaveProperty('cleanChecks');
+      expect(compact.findings[0]).not.toHaveProperty('evidence');
+      expect(full.findings[0]).toHaveProperty('evidence');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('diagnose_run: maxFindings and minBand limit the rows', async () => {
+    const { dir, path } = tmpEventLogWithFindings();
+    try {
+      const client = await connectedClient(createMcpServer());
+      const call = async (args) => (await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, ...args } })).structuredContent;
+      const all = await call({});
+      const limited = await call({ maxFindings: 1 });
+      expect(limited.findings).toHaveLength(1);
+      expect(limited.findingsOmitted).toBe(all.findings.length - 1);
+      expect((await call({ minBand: 'critical' })).findings.every((f) => f.impactBand === 'critical')).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -388,21 +388,24 @@ function catSnap(stages, catalog, app = { name: 'A' }) {
 
 describe('findingsDelta (finding identity)', () => {
   it('reports findings the candidate has more of as introduced', () => {
-    const base = catSnap([], [{ rule: 'spill', impactBand: 'warn' }]);
-    const cand = catSnap([], [{ rule: 'spill', impactBand: 'warn' }, { rule: 'spill', impactBand: 'warn' }, { rule: 'skew', impactBand: 'high' }]);
+    const base = catSnap([], [{ type: 'spill', rule: 'spill', impactBand: 'warn' }]);
+    const cand = catSnap([], [
+      { type: 'spill', rule: 'spill', impactBand: 'warn' }, { type: 'spill', rule: 'spill', impactBand: 'warn' },
+      { type: 'skew', rule: 'skew', impactBand: 'high' },
+    ]);
     const d = findingsDelta(base, cand);
     expect(d.introduced).toEqual([
-      { rule: 'skew', impactBand: 'high', baseCount: 0, candCount: 1, delta: 1, stages: [], stageLabels: [] },
-      { rule: 'spill', impactBand: 'warn', baseCount: 0, candCount: 1, delta: 1, stages: [], stageLabels: [] },
+      { rule: 'skew', type: 'skew', impactBand: 'high', baseCount: 0, candCount: 1, delta: 1, stages: [], stageLabels: [], keys: ['skew|skew|run'] },
+      { rule: 'spill', type: 'spill', impactBand: 'warn', baseCount: 0, candCount: 1, delta: 1, stages: [], stageLabels: [], keys: ['spill|spill|run'] },
     ]);
     expect(d.resolved).toEqual([]);
   });
 
   it('reports findings the candidate has fewer of as resolved', () => {
-    const base = catSnap([], [{ rule: 'gc', impactBand: 'high' }, { rule: 'gc', impactBand: 'high' }]);
-    const cand = catSnap([], [{ rule: 'gc', impactBand: 'high' }]);
+    const base = catSnap([], [{ type: 'gc', rule: 'gc', impactBand: 'high' }, { type: 'gc', rule: 'gc', impactBand: 'high' }]);
+    const cand = catSnap([], [{ type: 'gc', rule: 'gc', impactBand: 'high' }]);
     const d = findingsDelta(base, cand);
-    expect(d.resolved).toEqual([{ rule: 'gc', impactBand: 'high', baseCount: 1, candCount: 0, delta: -1, stages: [], stageLabels: [] }]);
+    expect(d.resolved).toEqual([{ rule: 'gc', type: 'gc', impactBand: 'high', baseCount: 1, candCount: 0, delta: -1, stages: [], stageLabels: [], keys: ['gc|gc|run'] }]);
     expect(d.introduced).toEqual([]);
   });
 
@@ -410,12 +413,16 @@ describe('findingsDelta (finding identity)', () => {
     const stages = [[10, { name: 'Exchange 10' }], [11, { name: 'Sort 11' }]];
     const base = catSnap([], []);
     const cand = catSnap(stages, [
-      { rule: 'spill', impactBand: 'warn', stageId: 10 },
-      { rule: 'spill', impactBand: 'warn', stageId: 11 },
+      { type: 'spill', rule: 'spill', impactBand: 'warn', stageId: 10 },
+      { type: 'spill', rule: 'spill', impactBand: 'warn', stageId: 11 },
     ]);
     const d = findingsDelta(base, cand);
+    // The key names the stage by its fingerprint (normalized name and plan digest), never its id.
     expect(d.introduced).toEqual([
-      { rule: 'spill', impactBand: 'warn', baseCount: 0, candCount: 2, delta: 2, stages: ['Exchange 10', 'Sort 11'], stageLabels: ['Exchange 10', 'Sort 11'] },
+      {
+        rule: 'spill', type: 'spill', impactBand: 'warn', baseCount: 0, candCount: 2, delta: 2, stages: ['Exchange 10', 'Sort 11'], stageLabels: ['Exchange 10', 'Sort 11'],
+        keys: ['spill|spill|stage:exchange #§', 'spill|spill|stage:sort #§'],
+      },
     ]);
   });
 
@@ -442,14 +449,19 @@ describe('findingsDelta (finding identity)', () => {
     const d = findingsDelta(base, cand);
     expect(d.introduced).toEqual([]);
     expect(d.resolved).toEqual([]);
-    expect(d.changed).toEqual([{ rule: 'skew', type: 'skew', baseImpactBand: 'warn', candImpactBand: 'critical', count: 1, stages: [], stageLabels: [] }]);
+    expect(d.changed).toEqual([{
+      rule: 'skew', type: 'skew', baseImpactBand: 'warn', candImpactBand: 'critical', count: 1, stages: [], stageLabels: [],
+      keys: ['skew|skew|run'], baseKeys: ['skew|skew|run'],
+    }]);
   });
 
   it('falls back to type when rule is absent and to "unknown" impact band', () => {
     const base = catSnap([], []);
     const cand = catSnap([], [{ type: 'coldStart' }]);
     const d = findingsDelta(base, cand);
-    expect(d.introduced).toEqual([{ rule: 'coldStart', type: 'coldStart', impactBand: 'unknown', baseCount: 0, candCount: 1, delta: 1, stages: [], stageLabels: [] }]);
+    expect(d.introduced).toEqual([{
+      rule: 'coldStart', type: 'coldStart', impactBand: 'unknown', baseCount: 0, candCount: 1, delta: 1, stages: [], stageLabels: [], keys: ['coldStart|coldStart|run'],
+    }]);
   });
 });
 
@@ -599,7 +611,10 @@ describe('findingsDelta: app-level findings sharing a rule (bug C1)', () => {
     ]);
     const d = findingsDelta(base, cand);
     expect(d.introduced).toEqual([]);
-    expect(d.resolved).toEqual([{ rule: 'memoryUtilization', type: 'memoryUtilization', impactBand: 'info', baseCount: 1, candCount: 0, delta: -1, stages: [], stageLabels: [] }]);
+    expect(d.resolved).toEqual([{
+      rule: 'memoryUtilization', type: 'memoryUtilization', impactBand: 'info', baseCount: 1, candCount: 0, delta: -1, stages: [], stageLabels: [],
+      keys: ['memoryUtilization|memoryUtilization|run'],
+    }]);
   });
 });
 
