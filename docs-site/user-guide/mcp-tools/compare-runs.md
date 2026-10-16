@@ -58,7 +58,8 @@ Parameters:
   `baseline` and `candidate`, a side that does not set the key is `null`),
   `ignoredKeys` (keys that differ but are left out: per-run identity keys and
   the `ignoreConf` matches) and `withheldKeys` (secrets, never compared or
-  shown). Values come from the same builder as the run report's `effectiveConf`.
+  shown). Values come from the same builder as the run report's `effectiveConf`,
+  so a key withheld there is withheld here, including the CLI's `--conf-redact-regex` matches.
 - `plan`: `equal`, `unmatched` (stage counts per side) and `replanned` (groups).
 - `volume`: `inputBytes`, `outputRows` and `outputBytes`, each with `baseline`,
   `candidate` and `relativeDifference`, and `equal`: output rows equal, input

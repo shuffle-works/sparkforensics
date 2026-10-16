@@ -60,7 +60,7 @@ difference: the wall-clock ratio is the task-time ratio divided by the product o
 the mean-executor ratio and the task-time share ratio, for runs whose executors
 have the same core count. Configuration keys the cluster sets per run (the
 application id, start time and driver address) are never compared, and a key
-whose value is a secret is withheld from both sides and not compared. Output rows must be equal for the output to read as the same; input and
+whose value is a secret is withheld from both sides and not compared, as in the run output's effective configuration; the CLI's `--conf-redact-regex` matches are withheld too. Output rows must be equal for the output to read as the same; input and
 output bytes may differ within the noise band. The output reads as the same only
 when output rows or output bytes are measured on both sides.
 
