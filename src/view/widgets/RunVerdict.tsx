@@ -4,7 +4,7 @@ import { ArrowRight, CheckIcon, ChevronDownIcon, ChevronUpIcon, CircleCheck, Cir
 import { Button } from '@/components/ui/button';
 import { copyText } from '@/lib/clipboard';
 import { cn } from '@/lib/utils';
-import type { InterpretedStep } from '@sparkforensics/core/run-interpretation.ts';
+import type { InterpretedCostStep, InterpretedStep } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useStore, useWidgetDensity, type InterpretationState } from '@/store/store';
 import { findingName, recommendationParts } from '@sparkforensics/core/finding-names.ts';
@@ -187,6 +187,45 @@ function NextStepItem({
   );
 }
 
+/** The cost lane: findings ranked by the measured busy core time their fix removes, beside the
+ * wall-clock steps above it. Only a finding with such a figure is listed. */
+function CostLane({ interpretation, onRoute }: { interpretation: InterpretationState; onRoute: (target: TriageTarget) => void }) {
+  const { openStage } = useStageDetail();
+  const rows = interpretation.data.verdict.costSteps
+    .map((entry) => ({ entry, finding: findingAt(interpretation, entry.leadIndex) }))
+    .filter((row): row is { entry: InterpretedCostStep; finding: Finding } => row.finding != null);
+  if (rows.length === 0) return null;
+  return (
+    <div className="mt-4" data-testid="cost-lane">
+      <p className="trace-eyebrow">By core time</p>
+      <ol aria-label="Findings by core time" className="mt-1.5 space-y-1.5">
+        {rows.map(({ entry, finding }) => (
+          <li key={finding.id ?? entry.leadIndex} className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-[0.8125rem]">
+            <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
+            <button
+              type="button"
+              className="cursor-pointer rounded-sm text-left font-medium underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => {
+                if (entry.stageId != null) openStage(entry.stageId);
+                else {
+                  const target = triageTargetFor(finding);
+                  if (target) onRoute(target);
+                }
+              }}
+            >
+              {findingActionLabel(finding)}
+              {entry.stageId != null ? ` in Stage ${entry.stageId}` : ''}
+            </button>
+            <span className="font-mono text-xs text-muted-foreground tabular-nums">
+              <span className="font-semibold text-foreground">{entry.figure}</span> of core time
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 /** How the rest of the report is organized, relative so it works under any
  * published subpath (same rule as `findingGuideUrl`). */
 const UNDERSTANDING_FINDINGS_URL = 'docs/user-guide/understanding-findings.html';
@@ -262,7 +301,7 @@ function NewcomerPrimer() {
  * each with a plain-language explanation, the concrete fix, and a route to its
  * evidence. The full, band-grouped finding list stays in the Findings tab. */
 export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFindingsCount = 0, renderEvidence, evidenceOwners }: RunVerdictProps) {
-  const { title, summary, failed, clean, failureReason, copyText } = interpretation.data.verdict;
+  const { title, summary, failed, clean, failureReason, copyText, idleLine } = interpretation.data.verdict;
   const shown = interpretation.data.verdict.steps
     .map((step) => ({ step, finding: findingAt(interpretation, step.leadIndex) }))
     .filter((entry): entry is { step: InterpretedStep; finding: Finding } => entry.finding != null);
@@ -296,6 +335,7 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
           {title}
         </h2>
         <p className="mt-1.5 max-w-[72ch] text-sm text-muted-foreground">{summary.join(' ')}</p>
+        {idleLine ? <p data-testid="run-idle-line" className="max-w-[72ch] text-sm text-muted-foreground">{idleLine}</p> : null}
         {failureReason ? (
           <p data-testid="run-failure-reason" className="max-w-prose pt-1 text-sm">
             <span className="font-medium">Spark's recorded reason: </span>
@@ -305,6 +345,7 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
       </div>
       <VerdictStrip interpretation={interpretation} />
       {density === 'advanced' ? null : <div className="mt-4"><NewcomerPrimer /></div>}
+      {shown.length > 0 ? <p className="trace-eyebrow mt-4">By wall clock (run time)</p> : null}
       {shown.length > 0 ? (
         <ol aria-label="Next steps" className="verdict-steps">
           {shown.map(({ step, finding }, index) => (
@@ -320,6 +361,7 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
           ))}
         </ol>
       ) : null}
+      <CostLane interpretation={interpretation} onRoute={onRoute} />
       {shown.length > 0 ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           {moreFindingsCount > 0 ? (

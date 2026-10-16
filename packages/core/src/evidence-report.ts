@@ -17,7 +17,7 @@ import { findingActionLabel } from './finding-action-label.ts';
 import { matchesFindingFilterCriteria, singleStageId } from './finding-filter-predicate.ts';
 import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, resourceGroupTotal, type RollupGroup } from './recommendation-rollup.ts';
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
-import { buildRunVerdict, stepCopyRecommendation, stepCopyText, type RunVerdictModel } from './run-verdict.ts';
+import { buildRunVerdict, stepCopyRecommendation, stepCopyText, type RunIdleLine, type RunVerdictModel } from './run-verdict.ts';
 import {
   estimateProvenance, impactEstimateFigure, impactFigure, rawWasteMeaning, savingsMeaning,
 } from './impact-format.ts';
@@ -128,12 +128,29 @@ export interface VerdictStepRow {
   text: string;
 }
 
+// One cost-lane entry: a finding ranked by the measured busy core time its fix removes.
+export interface VerdictCostStepRow {
+  stageId: number | null;
+  type: string;
+  tag: string;
+  leadFindingId: string | null;
+  actionLabel: string;
+  /** `impactEstimate.coreTimeMs.high`, in core-milliseconds. */
+  coreTimeMs: number;
+  /** `coreTimeMs` as printed ("2.3 core-h"). */
+  coreTime: string;
+}
+
 // The dashboard's run verdict (run-verdict.ts): title, summary sentences, the first steps in the
-// same order, how many more places the full list holds, and the "Copy next steps" text.
+// same order, how many more places the full list holds, and the "Copy next steps" text. `steps`
+// rank by wall clock; `costSteps` rank by measured busy core time and list only findings that
+// carry one; `idle` is the run's allocated core time that ran no task.
 export interface VerdictJson {
   title: string;
   summary: string[];
   steps: VerdictStepRow[];
+  costSteps: VerdictCostStepRow[];
+  idle: RunIdleLine | null;
   remainingPlaces: number;
   copyText: string | null;
 }
@@ -416,6 +433,16 @@ function verdictJson(model: RunVerdictModel): VerdictJson {
         text: stepCopyText(step.lead, recommendation, step.stageId),
       };
     }),
+    costSteps: model.costLane.map(({ finding, coreTimeMs, figure }): VerdictCostStepRow => ({
+      stageId: singleStageId(finding),
+      type: finding.type,
+      tag: typeTag(finding.type),
+      leadFindingId: finding.id ?? null,
+      actionLabel: findingActionLabel(finding),
+      coreTimeMs,
+      coreTime: figure,
+    })),
+    idle: model.idle,
     remainingPlaces: model.remaining,
     copyText: model.copyText,
   };
@@ -617,8 +644,9 @@ function renderRunShape(shape: RunShape): string[] {
 function renderVerdict(verdict: VerdictJson): string[] {
   const lines = ['## Verdict', '', verdict.title];
   if (verdict.summary.length > 0) lines.push('', verdict.summary.join(' '));
+  if (verdict.idle) lines.push('', verdict.idle.text);
   if (verdict.steps.length > 0) {
-    lines.push('');
+    lines.push('', 'By wall clock (run time):', '');
     verdict.steps.forEach((step, i) => {
       lines.push(`${i + 1}. [${step.tag}] ${step.text}`);
       if (step.relatedTypes.length > 0) {
@@ -630,6 +658,13 @@ function renderVerdict(verdict: VerdictJson): string[] {
       const places = `${verdict.remainingPlaces} more place${verdict.remainingPlaces === 1 ? '' : 's'}`;
       lines.push('', `${places} to look at in the Findings section below.`);
     }
+  }
+  if (verdict.costSteps.length > 0) {
+    lines.push('', 'By core time (measured busy core time a fix removes):', '');
+    verdict.costSteps.forEach((step, i) => {
+      const where = step.stageId != null ? ` in Stage ${step.stageId}` : '';
+      lines.push(`${i + 1}. [${step.tag}] ${step.actionLabel}${where}: ${step.coreTime} of core time.`);
+    });
   }
   lines.push('');
   return lines;

@@ -722,7 +722,7 @@
      "confidence": null,
      "value": 0.63,
      "basis": "resourceOnly",
-     "method": "measured",
+     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
@@ -877,7 +877,7 @@
      "confidence": null,
      "value": 0.66,
      "basis": "resourceOnly",
-     "method": "measured",
+     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
@@ -1469,7 +1469,7 @@
      "confidence": null,
      "value": 0.72,
      "basis": "resourceOnly",
-     "method": "measured",
+     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
@@ -1484,7 +1484,7 @@
      "confidence": null,
      "value": 0.97,
      "basis": "resourceOnly",
-     "method": "measured",
+     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
@@ -2155,7 +2155,7 @@
      "confidence": null,
      "value": 1,
      "basis": "resourceOnly",
-     "method": "measured",
+     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
@@ -2325,11 +2325,11 @@
      "confidence": null,
      "value": 0.72,
      "basis": "resourceOnly",
-     "method": "measured",
+     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 39336,
+      "value": 35219.000000000015,
       "unit": "coreMs"
      }
     },
@@ -2522,7 +2522,7 @@
      "confidence": null,
      "value": 0.75,
      "basis": "resourceOnly",
-     "method": "measured",
+     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
@@ -3520,7 +3520,7 @@
      "confidence": null,
      "value": 0.79,
      "basis": "resourceOnly",
-     "method": "measured",
+     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
@@ -3753,7 +3753,7 @@
      "confidence": null,
      "value": 0.99,
      "basis": "resourceOnly",
-     "method": "measured",
+     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
@@ -4085,7 +4085,7 @@
      "confidence": null,
      "value": 0.88,
      "basis": "resourceOnly",
-     "method": "measured",
+     "method": "modeled",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {

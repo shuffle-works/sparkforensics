@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildNextSteps, buildRunVerdict, FINDING_DISPLAY_ORDER, locationKey, rankBySavings, verdictIdlePct,
+  buildCostLane, buildNextSteps, buildRunIdleLine, buildRunVerdict, FINDING_DISPLAY_ORDER, locationKey, rankBySavings, verdictIdlePct,
 } from '../src/run-verdict.ts';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
 
@@ -154,5 +154,54 @@ describe('buildRunVerdict', () => {
     expect(verdict.shown.map((s) => s.stageId)).toEqual([5, 4, 3]);
     expect(verdict.remaining).toBe(2);
     expect(verdict.copyText).toMatch(/2 more places to look at in the full findings list\.$/);
+  });
+});
+
+function cored(type, stageId, coreMs, extra = {}) {
+  return {
+    type, stageId, impactBand: 'info', recommendation: `Fix ${type}.`,
+    impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: coreMs, unit: 'coreMs' }, coreTimeMs: { low: coreMs, high: coreMs } },
+    ...extra,
+  };
+}
+
+describe('buildCostLane', () => {
+  it('ranks by measured busy core time, including findings with no wall-clock claim', () => {
+    const lane = buildCostLane([cored('gc', 1, 3_600_000), cored('retryWaste', 2, 7_200_000), timed('skew', 3, 60)]);
+    expect(lane.map((entry) => entry.finding.type)).toEqual(['retryWaste', 'gc']);
+    expect(lane.map((entry) => entry.figure)).toEqual(['2.0 core-h', '1.0 core-h']);
+  });
+
+  it('leaves out idle capacity, bytes-only, null and zero core-time findings', () => {
+    const idle = { ...cored('utilization', null, 5_000_000), impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 1.4, unit: 'coreHours', idle: true }, idleCoreTimeMs: { low: 5e6, high: 5e6 } } };
+    const bytes = { ...cored('stageShape', 4, 0), impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 9e9, unit: 'bytes' } } };
+    const nulled = { ...cored('straggler', 5, 1000), impactEstimate: { basis: 'serial', wallClock: { low: 1, high: 2 }, estimateMethod: 'measured', coreTimeMs: null } };
+    expect(buildCostLane([idle, bytes, nulled, cored('gc', 6, 0)])).toEqual([]);
+  });
+
+  it('keeps the wall-clock steps in their own order', () => {
+    const findings = [timed('skew', 1, 60), cored('gc', 2, 3_600_000)];
+    const verdict = buildRunVerdict(appModel(), findings);
+    expect(verdict.shown.map((step) => step.lead.type)).toEqual(['skew', 'gc']);
+    expect(verdict.costLane.map((entry) => entry.finding.type)).toEqual(['gc']);
+  });
+});
+
+describe('buildRunIdleLine', () => {
+  const model = (busyCoreMs) => appModel({
+    app: makeApp({ startTime: 0, endTime: 3_600_000 }),
+    executors: { added: [{ executorId: '1', timestamp: 0, totalCores: 4 }], removed: [] },
+    runAggregates: { busyCoreMs },
+  });
+
+  it('states the idle core time and its share of the allocation', () => {
+    const line = buildRunIdleLine(model(3_600_000 * 3));
+    expect(line).toMatchObject({ coreHours: 1, allocatedCoreHours: 4, pct: 25 });
+    expect(line.text).toBe('1.0 core-h (25%) of the allocation ran no task.');
+  });
+
+  it('is null without an allocation or with none idle', () => {
+    expect(buildRunIdleLine(appModel())).toBeNull();
+    expect(buildRunIdleLine(model(3_600_000 * 4))).toBeNull();
   });
 });

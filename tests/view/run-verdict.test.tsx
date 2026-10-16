@@ -43,7 +43,31 @@ afterEach(() => {
   delete navigator.clipboard;
 });
 
+function coreTimed(type: FindingType, stageId: number, coreMs: number): Finding {
+  return {
+    type,
+    impactBand: 'info',
+    stageId,
+    recommendation: `Fix ${type} in Stage ${stageId}.`,
+    impactEstimate: {
+      basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
+      rawWaste: { value: coreMs, unit: 'coreMs' }, coreTimeMs: { low: coreMs, high: coreMs },
+    },
+  } as unknown as Finding;
+}
+
 describe('RunVerdict', () => {
+  it('lists measured core time as its own lane beside the wall-clock steps', () => {
+    renderVerdict([timed('skew', 7, 2_400), coreTimed('gc', 3, 7_200_000)]);
+
+    expect(screen.getByText('By wall clock (run time)')).toBeInTheDocument();
+    const lane = screen.getByTestId('cost-lane');
+    expect(lane).toHaveTextContent('By core time');
+    expect(lane).toHaveTextContent('2.0 core-h of core time');
+    // The lane lists only findings with a core-time figure.
+    expect(within(lane).getAllByRole('listitem')).toHaveLength(1);
+  });
+
   it('leads with the stage to start in, what it could save, and why grouped findings do not add up', () => {
     renderVerdict([timed('skew', 7, 2_400), timed('straggler', 7, 2_300), timed('spill', 3, 1_000, 'warning')]);
 

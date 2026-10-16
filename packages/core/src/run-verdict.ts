@@ -6,16 +6,20 @@ import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
 import { findingActionLabel } from './finding-action-label.ts';
 import { singleStageId } from './finding-filter-predicate.ts';
 import { recommendationText } from './finding-names.ts';
-import { formatDuration, IMPACT_BAND_ORDER } from './format-utils.ts';
+import { formatDuration, formatRawWaste, IMPACT_BAND_ORDER, readsAsZero } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
 import { isEligible } from './recommendation-rollup.ts';
 import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from './run-outcome.ts';
 import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates.ts';
 import { computeWallClock } from './wall-clock.ts';
+import { computeWastedCoreHours } from './wasted-core-hours.ts';
 import type { AppModel, Finding } from './types.ts';
 
 /** How many next steps the verdict lists before pointing at the full list. */
 export const NEXT_STEP_LIMIT = 3;
+
+/** How many cost-lane entries the verdict lists. */
+export const COST_LANE_LIMIT = 3;
 
 /** Finding types whose widget sits in the board's reference region (listed after every action
  * widget). The dashboard's registry must agree: tests/view/detector-registry.test.tsx checks it. */
@@ -67,6 +71,57 @@ export function rankBySavings(findings: Finding[]): Finding[] {
     );
   });
   return candidates.map(({ finding }) => finding);
+}
+
+/** One entry of the cost lane: a finding and the measured busy core time its fix removes. */
+export interface CostLaneEntry {
+  finding: Finding;
+  /** `impactEstimate.coreTimeMs.high`, in core-milliseconds. */
+  coreTimeMs: number;
+  /** `coreTimeMs` as printed ("2.3 core-h"). */
+  figure: string;
+}
+
+/** The cost lane: rankable findings ordered by measured busy core time (`coreTimeMs.high`), the
+ * one unit all of them share. An idle capacity figure, a modeled figure and a bytes-only figure
+ * never carry `coreTimeMs`, and a finding without one is in neither lane. Ties fall back to impact
+ * band, widget display order, then input order, like `rankBySavings`. */
+export function buildCostLane(findings: Finding[]): CostLaneEntry[] {
+  const entries = findings
+    .map((finding, index) => ({ finding, index, coreTimeMs: finding.impactEstimate?.coreTimeMs?.high }))
+    .filter((entry): entry is { finding: Finding; index: number; coreTimeMs: number } =>
+      isRankable(entry.finding) && typeof entry.coreTimeMs === 'number' && Number.isFinite(entry.coreTimeMs) && entry.coreTimeMs > 0);
+  entries.sort((left, right) => (
+    right.coreTimeMs - left.coreTimeMs
+    || (IMPACT_BAND_ORDER[left.finding.impactBand] ?? 9) - (IMPACT_BAND_ORDER[right.finding.impactBand] ?? 9)
+    || (DISPLAY_INDEX.get(left.finding.type) ?? Number.MAX_SAFE_INTEGER) - (DISPLAY_INDEX.get(right.finding.type) ?? Number.MAX_SAFE_INTEGER)
+    || left.index - right.index
+  ));
+  return entries
+    .map(({ finding, coreTimeMs }) => ({ finding, coreTimeMs, figure: formatRawWaste({ value: coreTimeMs, unit: 'coreMs' }) }))
+    // A figure that prints as zero ("0.0 core-s") reads as a measured nothing.
+    .filter((entry) => !readsAsZero(entry.figure));
+}
+
+/** The run's idle capacity, bounded by the run: allocated core time that ran no task. */
+export interface RunIdleLine {
+  coreHours: number;
+  allocatedCoreHours: number;
+  /** Share of the allocation, whole percent. */
+  pct: number;
+  /** "14.8 core-h (22%) of the allocation ran no task." */
+  text: string;
+}
+
+export function buildRunIdleLine(appModel: AppModel): RunIdleLine | null {
+  const { wastedCoreHours, totalCoreHours } = computeWastedCoreHours(
+    appModel.app, appModel.executors.added, appModel.runAggregates, appModel.executors.removed,
+  );
+  if (wastedCoreHours == null || totalCoreHours == null || totalCoreHours <= 0) return null;
+  const figure = formatRawWaste({ value: wastedCoreHours, unit: 'coreHours' });
+  if (readsAsZero(figure)) return null;
+  const pct = Math.round((wastedCoreHours / totalCoreHours) * 100);
+  return { coreHours: wastedCoreHours, allocatedCoreHours: totalCoreHours, pct, text: `${figure} (${pct}%) of the allocation ran no task.` };
 }
 
 /** One place worth a look: the highest-ranked finding at a location, plus the
@@ -333,6 +388,10 @@ export interface RunVerdictModel {
   remaining: number;
   /** The "Copy next steps" checklist, or null when there is no step to copy. */
   copyText: string | null;
+  /** Beside `steps` (which rank by wall clock): the first COST_LANE_LIMIT cost-lane entries. */
+  costLane: CostLaneEntry[];
+  /** The run's idle capacity line, or null when the log gives no allocation. */
+  idle: RunIdleLine | null;
 }
 
 export function buildRunVerdict(appModel: AppModel, allFindings: Finding[]): RunVerdictModel {
@@ -359,5 +418,9 @@ export function buildRunVerdict(appModel: AppModel, allFindings: Finding[]): Run
       remaining,
     })
     : null;
-  return { eligible, outcome, steps, facts, title, summary: verdictSummary(eligible, steps, facts), shown, remaining, copyText };
+  return {
+    eligible, outcome, steps, facts, title, summary: verdictSummary(eligible, steps, facts), shown, remaining, copyText,
+    costLane: buildCostLane(eligible).slice(0, COST_LANE_LIMIT),
+    idle: buildRunIdleLine(appModel),
+  };
 }
