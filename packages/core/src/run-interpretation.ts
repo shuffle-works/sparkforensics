@@ -22,6 +22,7 @@ import {
 } from './run-verdict.ts';
 import { recommendationText } from './finding-names.ts';
 import { getScorecardEstimates } from './scorecard-estimates.ts';
+import { singleStageId } from './finding-filter-predicate.ts';
 import { checkConcurrentJobGroups } from './job-groups.ts';
 import { computeWallClock } from './wall-clock.ts';
 import { computeWastedCoreHours, type WastedCoreHoursResult } from './wasted-core-hours.ts';
@@ -57,6 +58,15 @@ export interface InterpretedStep {
   copyText: string;
 }
 
+/** One cost-lane entry: a finding ranked by the measured busy core time its fix removes.
+ * `leadIndex` names the finding. */
+export interface InterpretedCostStep {
+  leadIndex: number;
+  stageId: number | null;
+  /** The core time as printed ("2.3 core-h"). */
+  figure: string;
+}
+
 export interface RunVerdictData {
   title: string;
   summary: string[];
@@ -64,7 +74,12 @@ export interface RunVerdictData {
   clean: boolean;
   /** Spark's recorded failure reason, first line only. */
   failureReason: string | null;
+  /** Ranked by wall clock (the time lane). */
   steps: InterpretedStep[];
+  /** Ranked by measured busy core time (the cost lane); only findings with such a figure. */
+  costSteps: InterpretedCostStep[];
+  /** The run's idle capacity line ("14.8 core-h (22%) of the allocation ran no task."), or null. */
+  idleLine: string | null;
   /** How many more places the full findings list holds. */
   remaining: number;
   /** The "Copy next steps" checklist, or null with no step. */
@@ -265,6 +280,12 @@ export function interpretRun(appModel: AppModel, catalog: Finding[], configFindi
       clean: verdict.facts.clean,
       failureReason: outcome.reason,
       steps,
+      costSteps: verdict.costLane.map(({ finding, figure }) => ({
+        leadIndex: indexOf.get(finding)!,
+        stageId: singleStageId(finding),
+        figure,
+      })),
+      idleLine: verdict.idle?.text ?? null,
       remaining: verdict.remaining,
       copyText: verdict.copyText,
     },

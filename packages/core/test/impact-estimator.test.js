@@ -940,9 +940,25 @@ describe('estimateImpact: cost-only group B', () => {
     // idleCoreMs = max(0, min(totalCores, taskCount) - 1) * (taskDurationMax - taskDurationP50)
     //            = (min(10, 5) - 1) * (8000 - 500) = 4 * 7500 = 30000.
     expect(est).toEqual({
-      basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
+      basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled',
       rawWaste: { value: 30000, unit: 'coreMs', idle: true },
     });
+  });
+
+  it('stageShape taskStageSkew rule: clips the idle figure to the run idle core-ms', () => {
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 10000, parentIds: [],
+      taskCount: 5, taskDurationP50: 500, taskDurationMax: 8000,
+    }]]);
+    const run = (runIdleCoreMs) => {
+      const findings = [{ type: 'stageShape', rule: 'taskStageSkew', stageId: 0, totalCores: 10, impactBand: 'info' }];
+      estimateImpact(findings, { stages, totalCores: 0, occupancy: computeOccupancy(stages, 0), runIdleCoreMs });
+      return findings[0].impactEstimate;
+    };
+    expect(run(12000).rawWaste).toEqual({ value: 12000, unit: 'coreMs', idle: true });
+    expect(run(12000).estimateMethod).toBe('modeled');
+    expect(run(90000).rawWaste.value).toBe(30000);
+    expect(run(null).rawWaste.value).toBe(30000);
   });
 
   it('stageShape taskStageSkew rule: clamps to 0 idle core-ms when totalCores is missing/small (never negative)', () => {

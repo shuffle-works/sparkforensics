@@ -5,7 +5,8 @@ import { assertNever } from './assert-never.ts';
 import { estimateImpact, type EstimateCtx } from './impact-estimator.ts';
 import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
 import { deriveImpactBand, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
-import { IMPACT_BAND_ORDER } from './format-utils.ts';
+import { IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
+import { computeWastedCoreHours } from './wasted-core-hours.ts';
 import type {
   Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
 } from './types.ts';
@@ -185,6 +186,22 @@ function reconcileExecutorMemoryAdvice(out: Finding[]): Finding[] {
   return reconciled;
 }
 
+// The run's idle core-ms (the Wasted core-hours figure), the ceiling for one stage's idle claim.
+function runIdleCoreMs(
+  app: SparkAppInfo | null,
+  executorsAdded: ExecutorEvent[],
+  executorsRemoved: ExecutorEvent[],
+  runAggregates: RunAggregates | null,
+): number | null {
+  const { wastedCoreHours } = computeWastedCoreHours(
+    app,
+    executorsAdded as Array<{ executorId: string; timestamp: number; totalCores?: number }>,
+    runAggregates,
+    executorsRemoved as Array<{ executorId: string; timestamp: number }>,
+  );
+  return wastedCoreHours == null ? null : wastedCoreHours * MS_PER_CORE_HOUR;
+}
+
 // `app` widened to `SparkAppInfo | null` to match real callers (AppModel.app is
 // nullable at the type level); every detector below tolerates a null app.
 export function analyze(
@@ -212,6 +229,7 @@ export function analyze(
   const impact: EstimateCtx = {
     stages, totalCores, sql,
     occupancy: computeOccupancy(stages as unknown as Map<number, OccupancyStage>, totalCores),
+    runIdleCoreMs: runIdleCoreMs(app, executorsAdded, executorsRemoved, runAggregates),
   };
   // The one cast from the posted-model types to the detector-side shapes: types.ts's Stage and
   // SqlExecution carry a catch-all index signature, while every field DetectorStage/DetectorSqlExec
