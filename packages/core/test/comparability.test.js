@@ -113,6 +113,14 @@ describe('comparability', () => {
     expect(buildComparison(baseRun(), candRun({ outputBytes: 2200 }), { noiseBand: 0.2 }).comparability.volume.equal).toBe(true);
   });
 
+  it('leaves volume equality unknown when neither run measured an output figure', () => {
+    const built = buildComparison(baseRun({ outputRows: null, outputBytes: null }), candRun({ outputRows: null, outputBytes: null }));
+    expect(built.comparability.volume.equal).toBeNull();
+    const verdict = comparisonVerdict(built);
+    expect(verdict.tone).toBe('worse');
+    expect(verdict.title).toMatch(/^Same configuration and plan\. Output was not compared\./);
+  });
+
   it('reads wall clock moving against task time as mixed when configuration differs', () => {
     const built = buildComparison(baseRun(), candRun({ config: { ...SAME_CONF, 'spark.sql.shuffle.partitions': '400' } }));
     const verdict = comparisonVerdict(built);

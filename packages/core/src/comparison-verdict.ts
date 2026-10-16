@@ -91,9 +91,8 @@ function bridgeSentence({ wallClockBridge: bridge }: VerdictComparability): stri
   return `Candidate over baseline: wall clock ${times(wallClock.ratio)} is task time ${times(taskTime.ratio)} divided by mean executors ${times(meanExecutors.ratio)} times task time's share of allocated core time ${times(share.ratio)}.`;
 }
 
-/** True when configuration, plan and output all agree between the runs. */
-function equivalentRuns({ conf, plan, volume }: VerdictComparability): boolean {
-  return conf.equal === true && plan.equal && volume.equal === true;
+function configAndPlanAgree({ conf, plan }: VerdictComparability): boolean {
+  return conf.equal === true && plan.equal;
 }
 
 /** The cost metrics that moved past noise against the direction wall clock moved, as phrases such
@@ -208,11 +207,15 @@ export function summarizeComparison(
     const drift = movedPastNoise(wall)
       ? `Time differs by ${formatDuration(Math.abs(change))} (${percent(change / wall.baseline)})`
       : 'The candidate took about as long as the baseline';
-    if (equivalentRuns(comparability)) {
-      const reasons = movedPastNoise(wall) ? bridgeReasons(comparability) : [];
-      title = `Same configuration, plan and output. ${drift}${reasons.length > 0 ? `: ${reasons.join(', ')}` : ''}.`;
-      tone = 'equivalent';
-      const bridge = movedPastNoise(wall) ? bridgeSentence(comparability) : null;
+    if (configAndPlanAgree(comparability) && comparability.volume.equal !== false) {
+      const outputAgrees = comparability.volume.equal === true;
+      const gap = movedPastNoise(wall);
+      const reasons = gap ? bridgeReasons(comparability) : [];
+      const lead = outputAgrees ? 'Same configuration, plan and output' : 'Same configuration and plan. Output was not compared';
+      const explanation = reasons.length > 0 ? `: ${reasons.join(', ')}` : gap ? ', and no measured factor explains it' : '';
+      title = `${lead}. ${drift}${explanation}.`;
+      if (outputAgrees && (!gap || reasons.length > 0)) tone = 'equivalent';
+      const bridge = gap ? bridgeSentence(comparability) : null;
       if (bridge) sentences.push(bridge);
     } else {
       const opposed = opposingCost(wall, metrics);

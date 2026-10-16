@@ -164,7 +164,8 @@ function compareVolume(
     if (fig.baseline != null && fig.candidate != null) verdicts.push(withinBand(fig.baseline, fig.candidate, noiseBand));
   }
   if (outputRows.baseline != null && outputRows.candidate != null) verdicts.push(outputRows.baseline === outputRows.candidate);
-  return { inputBytes, outputRows, outputBytes, equal: verdicts.length === 0 ? null : verdicts.every(Boolean) };
+  const outputMeasured = [outputRows, outputBytes].some((fig) => fig.baseline != null && fig.candidate != null);
+  return { inputBytes, outputRows, outputBytes, equal: !outputMeasured ? null : verdicts.every(Boolean) };
 }
 
 function ratio(baseline: number | null, candidate: number | null): number | null {

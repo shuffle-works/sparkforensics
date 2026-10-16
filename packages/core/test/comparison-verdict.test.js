@@ -196,6 +196,20 @@ describe('summarizeComparison with comparability', () => {
     }
   });
 
+  it('keeps the wall-clock tone and calls the gap unexplained when no capacity factor moved', () => {
+    const still = { ratio: 1 };
+    const unexplained = { ...agree, wallClockBridge: { ...agree.wallClockBridge, taskTime: still, meanExecutors: still, taskShareOfAllocation: still } };
+    const verdict = summarizeComparison(slower, noFindings, undefined, unexplained);
+    expect(verdict.tone).toBe('worse');
+    expect(verdict.title).toBe('Same configuration, plan and output. Time differs by 49.0s (49%), and no measured factor explains it.');
+  });
+
+  it('says output was not compared and keeps the wall-clock tone when no output figure exists', () => {
+    const verdict = summarizeComparison(slower, noFindings, undefined, { ...agree, volume: { ...agree.volume, equal: null } });
+    expect(verdict.tone).toBe('worse');
+    expect(verdict.title).toMatch(/^Same configuration and plan\. Output was not compared\. Time differs by 49\.0s \(49%\): executors averaged/);
+  });
+
   it('uses the metric rows own noise flag, so a wider caller band reads as the same time', () => {
     const wide = [{ ...slower[0], withinNoise: true }];
     expect(summarizeComparison(wide, noFindings).tone).toBe('same');
