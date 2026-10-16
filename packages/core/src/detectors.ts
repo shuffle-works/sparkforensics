@@ -50,6 +50,9 @@ function binaryThresholdLabel(bytes: number): string {
 interface DetectorHostStat { host: string; taskCount: number; totalDuration: number; }
 interface DetectorExecutorStat {
   executorId: string; taskCount: number; totalDuration: number;
+  // Sum and Welford M2 of ln(1 + task duration) over the executor's tasks: the stage's task spread
+  // on the log scale. Absent on a stage recorded without them.
+  logDurationSum?: number; logDurationM2?: number;
   inputBytes: number; shuffleReadBytes: number; shuffleWriteBytes: number;
 }
 interface DetectorFailureReason { reason: string; count: number; }
@@ -596,16 +599,53 @@ function broadcastCandidate(join: PlanNode): BroadcastCandidate | null {
 }
 
 // Max/median deviation ratio over a list of {key, value}; returns the
-// exceeding entry's key + ratio, or null when < 3 samples or median 0.
+// exceeding entry's key + ratio, or null when < 3 samples or median 0. `qualifies` narrows the
+// entries the maximum is taken from (the median still covers all of them).
 function maxMedianRatio(
   samples: { key: string; value: number }[],
+  qualifies: (sample: { key: string; value: number }) => boolean = () => true,
 ): { key: string; ratio: number; value: number } | null {
   if (samples.length < 3) return null;
   const vals = samples.map(s => s.value).sort((a, b) => a - b);
   const median = medianOfSorted(vals);
   if (median <= 0) return null;
-  const top = samples.reduce((a, b) => (b.value > a.value ? b : a));
+  const pool = samples.filter(qualifies);
+  if (pool.length === 0) return null;
+  const top = pool.reduce((a, b) => (b.value > a.value ? b : a));
   return { key: top.key, ratio: top.value / median, value: top.value };
+}
+
+// z a lone executor's mean must clear to stand out from `executors` chance draws at a family-wise
+// false-flag rate of `alpha`. A normal tail obeys P(Z > z) <= exp(-z^2 / 2) / 2, so a
+// Bonferroni share of alpha / executors gives z = sqrt(2 ln(executors / (2 alpha))): the cutoff
+// grows with the number of executors the largest mean was picked from.
+function chanceOutlierZ(executors: number, alpha: number): number {
+  return Math.sqrt(2 * Math.log(executors / (2 * alpha)));
+}
+
+// How far each executor's task durations sit above the stage's median executor, in standard errors,
+// on the log scale: (executor mean - median of executor means) / (stage task sd / sqrt(executor
+// tasks)). The stage sd is rebuilt from the per-executor count, log sum and M2: within-executor
+// squared deviations plus each executor mean's distance from the grand mean. null when the stage
+// has under two tasks, no spread, or any executor lacks finite log stats, so an unknown spread
+// never flags an executor.
+function executorDurationZ(execs: DetectorExecutorStat[]): Map<string, number> | null {
+  const active = execs.filter(e => e.taskCount > 0);
+  let tasks = 0, logTotal = 0;
+  for (const e of active) {
+    if (!Number.isFinite(e.logDurationSum) || !Number.isFinite(e.logDurationM2)) return null;
+    tasks += e.taskCount;
+    logTotal += e.logDurationSum as number;
+  }
+  if (tasks < 2) return null;
+  const grandMean = logTotal / tasks;
+  let squares = 0;
+  const means = active.map(e => (e.logDurationSum as number) / e.taskCount);
+  active.forEach((e, i) => { squares += (e.logDurationM2 as number) + e.taskCount * (means[i] - grandMean) ** 2; });
+  const sd = Math.sqrt(squares / (tasks - 1));
+  if (!(sd > 0) || !Number.isFinite(sd)) return null;
+  const median = medianOfSorted([...means].sort((a, b) => a - b));
+  return new Map(active.map((e, i) => [e.executorId, (means[i] - median) / (sd / Math.sqrt(e.taskCount))]));
 }
 
 export interface DetectorCatalogEntry {
@@ -2025,7 +2065,7 @@ export const DETECTORS = [
     },
   }),
   defineStageDetector({
-    type: 'slowHost', order: 60, fixEffort: 'config', version: 1,
+    type: 'slowHost', order: 60, fixEffort: 'config', version: 2,
     emits: ['slowHost'],
     docAnchor: '#bottleneck-slow-host',
     thresholds: {
@@ -2041,6 +2081,12 @@ export const DETECTORS = [
       // 324 of 452 slowHost findings, all info. The imbalance is still there on those stages; the
       // floor is why they're dropped.
       stageFloorPct: 0.005,
+      // outlierAlpha: the nominal chance a stage of alike tasks gets any executor flagged on task
+      // time. The slowest of many executors always tops the median, so a task-time executor is
+      // flagged only when its mean sits further above the median than the stage's own task spread
+      // and its task count allow (chanceOutlierZ), more strictly the more executors there are.
+      // The normal-tail bound behind that cutoff is loose: simulated alike stages flag well under it.
+      outlierAlpha: 0.005,
     },
     detect(stage, ctx, thresholds): Finding[] | null {
       const hosts = stage.hostStats ?? [];
@@ -2097,8 +2143,15 @@ export const DETECTORS = [
       const impactBandFor = (r: number): 'critical' | 'warning' | 'info' | null =>
         r >= tiers[3] ? 'critical' : (r >= tiers[1] ? 'warning' : (r >= tiers[0] ? 'info' : null));
       const floorMs = thresholds.floorMs, floorBytes = thresholds.floorBytes;
-      const dims: { dimension: NonNullable<SlowHostFinding['dimension']>; floor: number; samples: { key: string; value: number }[] }[] = [
-        { dimension: 'taskTime', floor: floorMs, samples: execs.filter(e => e.taskCount > 0).map(e => ({ key: e.executorId, value: e.totalDuration / e.taskCount })) },
+      const taskTimeSamples = execs.filter(e => e.taskCount > 0).map(e => ({ key: e.executorId, value: e.totalDuration / e.taskCount }));
+      const taskTimeZs = executorDurationZ(execs);
+      const taskTimeZ = chanceOutlierZ(taskTimeSamples.length, thresholds.outlierAlpha);
+      const dims: { dimension: NonNullable<SlowHostFinding['dimension']>; floor: number; samples: { key: string; value: number }[]; qualifies?: (sample: { key: string; value: number }) => boolean }[] = [
+        {
+          dimension: 'taskTime', floor: floorMs, samples: taskTimeSamples,
+          // Only an executor the stage's own spread can't explain: with no known spread, none.
+          qualifies: sample => (taskTimeZs?.get(sample.key) ?? -Infinity) >= taskTimeZ,
+        },
         { dimension: 'inputBytes', floor: floorBytes, samples: execs.map(e => ({ key: e.executorId, value: e.inputBytes ?? 0 })) },
         { dimension: 'shuffleBytes', floor: floorBytes, samples: execs.map(e => ({ key: e.executorId, value: (e.shuffleReadBytes ?? 0) + (e.shuffleWriteBytes ?? 0) })) },
       ];
@@ -2108,7 +2161,7 @@ export const DETECTORS = [
         dims.push({ dimension: 'storageMemory', floor: floorBytes, samples: [...em.entries()].map(([id, m]) => ({ key: id, value: (m.onHeapStorageMemory ?? 0) + (m.offHeapStorageMemory ?? 0) })) });
       }
       for (const d of dims) {
-        const r = maxMedianRatio(d.samples);
+        const r = maxMedianRatio(d.samples, d.qualifies);
         if (!r || r.value < d.floor) continue; // absolute-magnitude floor: same ratio+floor shape as computeSpillMagnitude
         const tier = impactBandFor(r.ratio);
         if (!tier) continue;

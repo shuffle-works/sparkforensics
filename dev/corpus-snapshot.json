@@ -2447,21 +2447,6 @@
      }
     },
     {
-     "key": "slowHost|0|execMaxMedianRatio||multiDim||2|taskTime||||||",
-     "type": "slowHost",
-     "band": "critical",
-     "confidence": null,
-     "value": 1.6,
-     "basis": "serial",
-     "method": "measured",
-     "wcLow": 1239.5,
-     "wcHigh": 1239.5,
-     "rawWaste": {
-      "value": 1239.5,
-      "unit": "ms"
-     }
-    },
-    {
      "key": "slowHost|4|execMaxMedianRatio||multiDim||0|shuffleBytes||||||",
      "type": "slowHost",
      "band": "info",
