@@ -136,8 +136,7 @@ describe('ScalingSim', () => {
 
   it('fits the y-axis domain tightly to the makespan range instead of anchoring at 0', () => {
     // e.g. a 4m10s-7m30s makespan spread should stay a tight band, not get
-    // compressed against a 0-10m axis (regression: branch defaulted to
-    // Recharts' auto domain, which starts at 0).
+    // compressed against a 0-10m axis (Recharts' auto domain starts at 0).
     expect(makespanYAxisDomain([250_000, 450_000])).toEqual([230_000, 470_000]);
   });
 

@@ -39,20 +39,15 @@ export function PlanGraphNode({ data, sourcePosition = Position.Left, targetPosi
       style={{ width: NODE_WIDTH, height: NODE_HEIGHT }}
       data-category={category}
     >
-      {/* opacity-0!: xyflow's default handle dot used to be fully clipped (and
-          so invisible) by this card's old overflow-hidden; overflow-visible
-          (below, for the finding badge) would otherwise un-clip it into a
-          small dark circle on every node's left/right edge. Keep the
-          pre-existing "handles are invisible" look explicitly instead of
-          inheriting that as an accidental side effect. */}
+      {/* opacity-0!: overflow-visible (for the finding badge) would otherwise
+          show xyflow's default handle dot as a small dark circle on every
+          node's left/right edge. */}
       <Handle type="target" position={targetPosition} className="opacity-0!" />
       <Handle type="source" position={sourcePosition} className="opacity-0!" />
       {findings && findings.length > 0 ? (() => {
         const worst = worstFinding(findings);
         return (
-          // Tooltip.Provider is hoisted to the canvas root (PlanGraphCanvas), so
-          // this per-node badge only mounts the trigger/content, not its own
-          // provider (that multiplied by node count on a large plan).
+          // The Tooltip.Provider lives at the canvas root (PlanGraphCanvas).
           <Tooltip>
             <TooltipTrigger
               data-testid="node-finding-badge"

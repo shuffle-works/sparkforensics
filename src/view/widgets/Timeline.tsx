@@ -14,10 +14,9 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 
 const TIMELINE_TOP_N = 20;
-// Per-category row height for the y-axis. A fixed 320px chart at 20 rows
-// packed labels 14px apart and made every "Stage N" caption unreadable;
-// 24px is the measured gap that keeps a 10px label legible against its
-// neighbors. Chart height scales with row count instead of staying fixed.
+// Per-category row height for the y-axis: 24px is the measured gap that keeps a
+// 10px "Stage N" label legible against its neighbors. Chart height scales with
+// row count instead of staying fixed.
 const ROW_HEIGHT = 24;
 // px the x-axis line, its ticks, and Recharts' default margins consume below
 // the category rows — the plot area is shorter than the chart's own height.

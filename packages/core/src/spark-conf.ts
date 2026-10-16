@@ -51,14 +51,13 @@ export function isDetectorConfKey(key: string): boolean {
  * hidden value, which the effective-conf lookup already ignores. */
 export const REDACTED_CONF_VALUE = '*********(redacted)';
 
-// Defaults by the Spark release that introduced them, each key's steps in ascending order. A key
-// whose first step is 'always' has that default on every release, including a run whose version the
-// log did not record; any other key is only answered for a known version at or after its first
-// step (before it the property does not exist). Values are the strings Spark's ConfigBuilder
-// declares. Each was read from the SQLConf.scala / config/package.scala sources at the release tags
+// Defaults by the Spark release that introduced them (table: detector-contract/threshold-tables.md,
+// Spark defaults by release), each key's steps in ascending order. A key whose first step is
+// 'always' has that default on every release, including a run whose version the log did not
+// record; any other key is only answered for a known version at or after its first step (before
+// it the property does not exist). Values are the strings Spark's ConfigBuilder declares. Each was read from the SQLConf.scala / config/package.scala sources at the release tags
 // from v3.0.0 through v4.2.0, e.g. https://github.com/apache/spark/blob/v4.0.0/core/src/main/scala/org/apache/spark/internal/config/package.scala
 const SPARK_DEFAULTS: Readonly<Record<string, readonly DefaultStep[]>> = {
-  // Speculation: 4.0.0 moved the multiplier from 1.5 to 3 and the quantile from 0.75 to 0.9.
   'spark.speculation': [[ALWAYS, 'false']],
   'spark.speculation.multiplier': [[ALWAYS, '1.5'], [[4, 0], '3']],
   'spark.speculation.quantile': [[ALWAYS, '0.75'], [[4, 0], '0.9']],
@@ -77,27 +76,18 @@ const SPARK_DEFAULTS: Readonly<Record<string, readonly DefaultStep[]>> = {
   'spark.sql.shuffle.partitions': [[ALWAYS, '200']],
   'spark.sql.autoBroadcastJoinThreshold': [[ALWAYS, '10MB']],
   'spark.sql.files.maxPartitionBytes': [[ALWAYS, '128MB']],
-  // Adaptive query execution is on by default from 3.2.0.
   'spark.sql.adaptive.enabled': [[ALWAYS, 'false'], [[3, 2], 'true']],
   'spark.sql.adaptive.skewJoin.enabled': [[[3, 0], 'true']],
   'spark.sql.adaptive.coalescePartitions.enabled': [[[3, 0], 'true']],
-  // A partition is skewed above both the factor times the median partition and the threshold
-  // (OptimizeSkewedJoin.getSkewThreshold); forceOptimizeSkewedJoin (3.3.0) accepts the extra shuffle
-  // a split can cost.
   'spark.sql.adaptive.skewJoin.skewedPartitionFactor': [[[3, 0], '5']],
   'spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes': [[[3, 0], '256MB']],
   'spark.sql.adaptive.forceOptimizeSkewedJoin': [[[3, 3], 'false']],
   // Falls back to spark.sql.adaptive.shuffle.targetPostShuffleInputSize, itself 64MB.
   'spark.sql.adaptive.advisoryPartitionSizeInBytes': [[[3, 0], '64MB']],
-  // With it on, AQE sizes merged tasks from defaultParallelism too, so a larger advisory size alone
-  // does not merge more (CoalesceShufflePartitions.apply, added in 3.2.0).
   'spark.sql.adaptive.coalescePartitions.parallelismFirst': [[[3, 2], 'true']],
-  // The executor memory overhead is max(factor x executor memory, minimum) when spark.executor.memoryOverhead
-  // is unset: the factor from 3.3.0 (0.4 instead for Kubernetes non-JVM jobs, which the log does not
-  // tell apart), the minimum from 4.0.0.
+  // The factor is 0.4 instead on Kubernetes non-JVM jobs, which the log does not tell apart.
   'spark.executor.memoryOverheadFactor': [[[3, 3], '0.1']],
   'spark.executor.minMemoryOverhead': [[[4, 0], '384m']],
-  // Arrow-optimized Python UDFs: added in 3.4.0 (off), on by default from 4.2.0.
   'spark.sql.execution.pythonUDF.arrow.enabled': [[[3, 4], 'false'], [[4, 2], 'true']],
 };
 

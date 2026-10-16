@@ -153,8 +153,7 @@ function StageFindingGroupRow({ group, appModel, getTaskData, idPrefix, findingL
  * plan context (Advanced density only). The three differ only in which
  * `finding.type` they scope to, their title, and how they format a finding
  * into a label line; everything else here, including the slow-host/straggler
- * cross-reference callout, was previously duplicated verbatim across all
- * three files. Renders nothing when the catalog has no matching findings.
+ * cross-reference callout, is shared. Renders nothing when the catalog has no matching findings.
  */
 export const StageFindingGroupWidget = memo(function StageFindingGroupWidget({
   appModel,
@@ -201,8 +200,6 @@ export const StageFindingGroupWidget = memo(function StageFindingGroupWidget({
   const routeIndex = activeRouteTarget
     ? orderedGroups.findIndex((g) => g.findings.some((f) => f === activeRouteTarget.finding))
     : null;
-  // Called unconditionally, before the "no findings" early return, per rules of
-  // hooks (usePagedRows uses useLayoutEffect internally).
   const { totalPages, effectivePage, visible } = usePagedRows(orderedGroups, page, setPage, routeIndex);
 
   if (relevant.length === 0) return null;

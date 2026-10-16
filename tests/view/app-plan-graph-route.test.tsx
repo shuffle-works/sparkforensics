@@ -217,7 +217,7 @@ test('renders the graph canvas with the plan node once opened', () => {
   expect(screen.getByText('SortMergeJoin')).toBeInTheDocument();
 });
 
-// Regression: a finding badge's docs link on the plan-graph route (which
+// A finding badge's docs link on the plan-graph route (which
 // renders instead of Dashboard) must open the app-level DocsSheet both routes share.
 test('clicking a finding badge in the plan graph opens the reference panel', () => {
   const appModel = planTreePlanModel(7);
@@ -265,13 +265,12 @@ test('Basic filter mode hides boilerplate nodes by default', async () => {
   expect(screen.getByText('SortMergeJoin')).toBeInTheDocument();
   expect(screen.queryByText('WholeStageCodegen (1)')).not.toBeInTheDocument();
 
-  // The hidden-node count now lives inside the settings panel (see
-  // PlanGraphSettingsControl), not inline in the topbar row.
+  // The hidden-node count lives inside the settings panel (see PlanGraphSettingsControl).
   await user.click(screen.getByRole('button', { name: /settings/i }));
   expect(await screen.findByText(/1 nodes hidden/)).toBeInTheDocument();
 });
 
-// Regression: hiding a whole operator category (e.g. 'transform' pass-through
+// Hiding a whole operator category (e.g. 'transform' pass-through
 // nodes like Project) under 'io'/'basic' filters must reconnect edges around the
 // hidden node, not drop every edge touching it and fragment the plan. React Flow
 // renders no edge paths in jsdom; plan-graph-route-edge-filter.test.tsx asserts
@@ -321,7 +320,7 @@ test('expanding a plan over the 300-node threshold shows the guardrail dialog in
   expect(screen.getByText(/segment 1 of 1/i)).toBeInTheDocument();
 });
 
-// Regression: ExpandConfirmDialog closes on Escape without stopping propagation,
+// ExpandConfirmDialog closes on Escape without stopping propagation,
 // so an unguarded route-level Escape handler would also tear down the whole route.
 // The route handler is guarded with `!confirmExpandOpen`.
 test('pressing Escape while the guardrail dialog is open closes only the dialog, not the whole plan-graph route', async () => {
@@ -367,7 +366,7 @@ test('expanding a plan under the 300-node threshold proceeds immediately with no
   expect(screen.getByRole('button', { name: /back to segment view/i })).toBeInTheDocument();
 });
 
-// Regression: "Back to segment view" after an explicit "Expand to full plan"
+// "Back to segment view" after an explicit "Expand to full plan"
 // must actually flip the view back, not just relabel the button.
 test('clicking "Back to segment view" after an explicit expand actually returns to segment view', async () => {
   const user = userEvent.setup();
@@ -453,7 +452,7 @@ test('an automatic segment-lookup-failure fallback that stays under the threshol
   const backBtn = screen.getByRole('button', { name: /back to segment view/i });
   expect(backBtn).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /expand to full plan/i })).not.toBeInTheDocument();
-  // Regression: this stage's 'segment' request permanently resolves to 'full'
+  // This stage's 'segment' request permanently resolves to 'full'
   // (no segment maps to it), so there is no segment view to switch back to; the
   // button must be disabled rather than a silent no-op.
   expect(backBtn).toBeDisabled();
@@ -504,7 +503,7 @@ test('clicking a stage box in the full graph switches focus to that stage\'s seg
   expect(screen.getByRole('button', { name: /expand to full plan/i })).toBeInTheDocument();
 });
 
-// Regression: after selecting Stage 8, its segment box must show Stage 8's own
+// After selecting Stage 8, its segment box must show Stage 8's own
 // findings, not the stale anchor Stage 7 findings.
 test('selecting a stage from the full graph shows only that stage\'s findings', async () => {
   const appModel = twoStagePlanModel();
@@ -594,12 +593,8 @@ test('resetModel() clears the plan-graph memo cache, so a changed planTree for t
 //   inclusive: HashAggregate (root) rolls up both descendants = 900/900 =
 //     100%; Filter (middle) rolls up its one child = 600/900 = 67%; Scan
 //     parquet (leaf, no descendants) is unchanged at 300/900 = 33%.
-// This is a regression guard, not just a "some number changed" check: before
-// the totalDuration-denominator fix (PlanGraphCanvas summed the mode-selected
-// `durationShare`, which under inclusive mode already double/triple-counts
-// descendants into ancestors), this same fixture would have produced 50% /
-// 33% / 17% instead, silently shrinking the leaf's share and shorting the
-// middle node's, exactly the bug this test would have caught.
+// The denominator is the exclusive total, so the leaf and middle shares are not
+// shrunk by inclusive roll-ups.
 test('re-renders the graph with hand-verified inclusive duration percentages after toggling the duration mode control', async () => {
   const user = userEvent.setup();
   const appModel = planTreePlanModel(7);

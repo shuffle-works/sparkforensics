@@ -5,7 +5,7 @@ import {
 } from '../src/stage-alignment.js';
 import { stageIdentity, compareRuns } from '../src/run-comparison.js';
 
-// ---- Synthetic snapshots. Every name, path and id below is invented. ----
+// All names, paths and ids below are synthetic.
 
 const node = (name, detail, stageIds, children = []) => ({ name, detail, metrics: [], children, stageIds });
 

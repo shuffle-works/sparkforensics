@@ -1,10 +1,10 @@
-// §8 Concurrent-job-group reliability guard. Groups jobs by SQL
-// execution id (jobs with none form singleton groups). If two DIFFERENT groups' intervals overlap,
-// wall-clock-based estimates become unreliable. Jobs WITHIN a group overlapping (AQE) is normal.
+// Concurrent-job-group reliability guard. Groups jobs by SQL execution id (jobs with none form
+// singleton groups). If two DIFFERENT groups' intervals overlap, wall-clock-based estimates become
+// unreliable. Jobs WITHIN a group overlapping (AQE) is normal.
 export function checkConcurrentJobGroups(jobs: Map<number, {id?: number; sqlExecutionId?: number|null; submissionTime?: number|null; completionTime?: number|null}> | null): {wallClockReliable: boolean; overlappingGroupIds: [string, string][]} {
   const list = jobs ? [...jobs.values()] : [];
   // Build one interval per group: [min submission, max completion].
-  const groups = new Map(); // key -> { start, end }
+  const groups = new Map();
   let singletonSeq = 0;
   for (const j of list) {
     if (j.submissionTime == null || j.completionTime == null) continue;

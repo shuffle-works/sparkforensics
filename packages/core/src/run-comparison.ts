@@ -67,7 +67,7 @@ export interface CompareRunsResult {
   baselineApp: RunAppIdentity; candidateApp: RunAppIdentity;
   // `insufficient`: neither run recorded any executor run time, so there is nothing to compare.
   confidence: 'ok' | 'low' | 'insufficient'; reason: string | null;
-  // Share of stages the old exact matcher (`matchStages`) paired, by count. `runtimeCoverage` is
+  // Share of stages the exact matcher (`matchStages`) paired, by count. `runtimeCoverage` is
   // the gate: the share of executor run time that sits in paired stages.
   matchedCoverage: number;
   comparisonSchemaVersion: typeof COMPARISON_SCHEMA_VERSION;
@@ -209,13 +209,9 @@ export const COMPARISON_METRIC_KEYS: readonly string[] = [
   'executorCpuTime', 'allocatedCoreHours',
 ];
 
-// Volume/count metrics, not cost metrics: more or less input/output data, or
-// tasks/executors, isn't inherently better or worse (it may just reflect a
-// differently-sized job), unlike wall-clock, spill, GC, etc. Exported as the
-// single source of truth for "which metrics have no better/worse direction",
-// shared by the view (RunComparison.tsx, for Δ coloring) and by
-// src/cli/budgets.ts's checkRegression (so a `--regression-metric inputBytes`
-// budget can't misread "processed more data" as a regression).
+// Volume/count metrics have no better/worse direction: more input, output, tasks or executors may
+// just reflect a differently-sized job. Shared by the view (Δ coloring) and by the CLI's
+// checkRegression, so a `--regression-metric inputBytes` budget cannot read more data as a regression.
 export const NEUTRAL_METRIC_KEYS: ReadonlySet<string> = new Set(['inputBytes', 'outputBytes', 'taskCount', 'executorsAdded']);
 
 function direction(key: string, baseline: number | null, candidate: number | null): MetricDeltaRow['direction'] {
@@ -459,7 +455,7 @@ const EMPTY_TASK_DATA = new Map<number, unknown>();
 export interface CompareOptions {
   /** Caller-supplied regular expressions (sources), applied to plan node detail before stages are
    * paired: every match is replaced with a fixed token, so run-specific text such as a per-run
-   * output directory no longer splits a stage in two. Findings and `stageIdentity` never see them.
+   * output directory does not split a stage in two. Findings and `stageIdentity` never see them.
    * Invalid, over-long or empty-matching patterns throw (see `compileNormalizePatterns`). */
   normalizePath?: readonly string[];
   /** Regular expression sources matched against Spark configuration keys: a key that matches one
@@ -474,11 +470,8 @@ export interface CompareOptions {
   noiseBand?: number;
 }
 
-// Wraps the analyze()-to-compareRuns() snapshot-building sequence shared by
-// the CLI's --baseline path and mcp-tools.ts's compareRuns tool: both need
-// captureSnapshot (with an empty taskDataCache, the interactive drill-down
-// cache, never read by compareRuns/matchStages/metricDeltas/findingsDelta)
-// for each side before diffing them.
+// Snapshot-building shared by the CLI's --baseline path and mcp-tools.ts's compareRuns tool. The
+// empty taskDataCache is the interactive drill-down cache, which comparison never reads.
 export function buildComparison(
   baseline: { label: string; appModel: AppModel; catalog: Finding[] },
   candidate: { label: string; appModel: AppModel; catalog: Finding[] },
@@ -506,7 +499,7 @@ export function compareRuns(
   if (!Number.isFinite(noiseBand) || noiseBand < 0 || noiseBand > 1) {
     throw new Error(`noiseBand must be a number from 0 to 1, got ${noiseBand}.`);
   }
-  // The old exact matcher stays the source of `matchedCoverage`; pairs and the gate come from the aligner.
+  // `matchedCoverage` comes from the exact matcher; pairs and the gate come from the aligner.
   const match = matchStages(baseSnap, candSnap);
   const alignment = alignStages(baseSnap, candSnap, { normalizePath: compileNormalizePatterns(options.normalizePath) });
   const runtimeCoverage = alignment.runtimeCoverage;

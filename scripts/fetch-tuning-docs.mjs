@@ -1,40 +1,14 @@
 // Generates packages/core/src/docs-content/{chapters,tuning,diagrams} (all
-// gitignored) from the upstream tuning reference
-// (shuffle-works/spark-tuning-reference) at the commit pinned in
-// docs-content/upstream.json: vendors its Markdown source and content/diagrams/
-// SVGs directly (no submodule) and lets VitePress render.
+// gitignored) from the upstream tuning reference at the commit pinned in
+// docs-content/upstream.json, and projects its manifest into nav-index.json.
+// Commands, flags (--allow-stale, --check) and SPARK_TUNING_REFERENCE_DIR:
+// docs-site/contributor-guide/development-setup.md.
 //
-//   npm run docs:fetch              make docs-content/ match the pin: fetch only
-//                                   when the stamp says it doesn't, then validate
-//   npm run docs:fetch -- --allow-stale
-//                                   same, but keep a stale cached copy (with a
-//                                   warning) if the fetch fails; docs:dev uses it
-//   npm run docs:bump [-- <sha>]    move the pin to <sha> (default: upstream's
-//                                   default-branch head), regenerate, and write
-//                                   a changeset
-//   npm run docs:bump -- --check [<sha>]
-//                                   run the anchor gate against <sha> (default:
-//                                   upstream head) and print the compare link,
-//                                   writing nothing (weekly drift workflow)
-//
-// ensureTuningDocs() below is the one entry point every consumer calls:
-// docs:dev/docs:build (package.json), vendor-core.mjs (every npm pack),
-// the root and packages/core vitest globalSetup, and doc-anchor-coverage.js.
-// It is idempotent: a stamp (docs-content/.generated.json) records the commit
-// and transform the cached copy came from, so a matching cache costs no
-// network. It always re-validates the copy in place against every docs anchor
-// the app links to, so a new docAnchor without upstream content fails the next
-// test run or build even with a warm cache.
-//
-// Requires `git`: upstream is public, so the pinned commit is fetched
-// anonymously over HTTPS. A fetched tree is validated before it replaces the
-// cache, so a bad commit never clobbers good docs. Set
-// SPARK_TUNING_REFERENCE_DIR to a local spark-tuning-reference checkout to
-// build from it instead (offline, or to preview upstream edits); strict mode
-// (CI, npm pack) accepts that only when the checkout sits cleanly at the pin.
-//
-// Also projects the manifest into nav-index.json (projectNavIndex below),
-// consumed by the docs-site sidebar, the MCP tools and doc-anchor-coverage.
+// ensureTuningDocs() is the one idempotent entry point every consumer calls
+// (docs:dev/docs:build, vendor-core.mjs, the vitest globalSetup files and
+// doc-anchor-coverage.js). It validates the copy in place against every docs
+// anchor the app links to, and a fetched tree is validated before it replaces
+// the cache, so a bad commit never clobbers good docs.
 
 import { execFileSync } from 'node:child_process';
 import {

@@ -10,9 +10,7 @@ const TONE_STYLES = {
 } as const;
 
 /** The one shared empty-state shell for the dashboard: an icon, a title, an
- * optional detail line, and an optional trailing action, replacing what used
- * to be a different hand-rolled bare `<p>` per widget with inconsistent
- * wording and no visual weight. Fits directly inside `WidgetCard`'s
+ * optional detail line, and an optional trailing action. Fits directly inside `WidgetCard`'s
  * `CardContent` as ordinary children. */
 export function EmptyState({
   icon: Icon,

@@ -33,8 +33,7 @@ function classificationOf(appModel: WidgetProps['appModel'], stageId: number): S
   return stage?.spillClassification ?? 'unclassified';
 }
 
-/** One flagged stage's row, anchored so a triage route focuses the row itself.
- * `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
+/** One flagged stage's row. */
 function SpillRow({
   finding,
   appModel,
@@ -93,8 +92,7 @@ export const Spill = memo(function Spill({ appModel, catalog, defaultCollapsed =
   const [page, setPage] = useState(0);
 
   // Depends only on `catalog` and `sortMode`; memoized to skip recompute on
-  // unrelated re-renders. Built unconditionally, before the "no issue" early
-  // return, so hook order stays stable (rules of hooks).
+  // unrelated re-renders.
   const { findings, sorted, orderedFindings } = useMemo(() => {
     const findings = catalog.filter(
       (f): f is Finding & { stageId: number } => f.type === 'spill' && f.stageId != null,

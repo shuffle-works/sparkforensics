@@ -233,8 +233,7 @@ describe('impactEstimateCompact', () => {
   });
 
   it('returns the formatted figure for a genuinely nonzero rawWaste value that rounds to one decimal digit ("0.3 MB-s")', () => {
-    // Regression: readsAsZero used to match any "0.<nondigit>" prefix, silently
-    // dropping real values like this one.
+    // A real "0.3" value must not be treated as a rounded-to-zero figure.
     expect(
       impactEstimateCompact({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 0.3, unit: 'mbSeconds' } }),
     ).toBe('0.3 MB-s');

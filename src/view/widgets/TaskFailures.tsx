@@ -76,9 +76,7 @@ function TaskFailureRow({ finding }: { finding: FindingOf<'failures'> & { stageI
 }
 
 /** Board section for task-level `failures` findings: every flagged stage
- * gets its own row (never just the worst). Split out of the former combined
- * `Failures.tsx`; see `StageFailed.tsx` and `RetryWaste.tsx` for its two
- * siblings. */
+ * gets its own row (never just the worst). */
 export function TaskFailures({ appModel, catalog, defaultCollapsed = true }: TaskFailuresProps) {
   const [page, setPage] = useState(0);
   const { sortMode, setSortMode, orderBy } = useSortMode();

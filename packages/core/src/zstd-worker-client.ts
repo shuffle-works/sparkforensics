@@ -41,7 +41,7 @@ type Stream = {
 // `spawn` starts the decompress worker; it runs at most once, on the first zstd stream, and the
 // worker then serves every later stream (the files of a rolling log) one at a time. When it
 // cannot start (no nested workers, a blocked script, a crash), each stream is decoded by
-// `fallback` on the calling thread instead, the path used before this worker existed.
+// `fallback` on the calling thread instead.
 export function createWorkerZstdDecoders(
   spawn: () => ZstdWorkerPort,
   fallback: ZstdDecoderFactory,

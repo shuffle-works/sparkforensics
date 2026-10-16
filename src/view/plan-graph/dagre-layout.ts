@@ -122,15 +122,11 @@ export function layoutWithDagre(
   });
 }
 
-// Dagre orders the groups of a compound graph with a constraint graph built
-// from the order it gave each rank. Three groups whose rank ranges overlap
-// pairwise can end up ordered A<B, B<C and C<A on different ranks. Dagre then
-// drops every group in that cycle from the next sweep (its resolveConflicts
-// only emits entries that reach in-degree 0), so the nodes inside keep a stale
-// order. Two nodes then share one (rank, order) slot, positions become NaN and
-// `dagre.layout` throws "Not possible to find intersection inside of the
-// rectangle". Plans with many Exchange-bounded segments reach this at a few
-// hundred nodes.
+// Dagre can order three overlapping groups in a cycle, drop them from the next
+// sweep, and leave two nodes on one (rank, order) slot, which makes `dagre.layout`
+// throw. The ordering pass below pins the group order and separates shared slots
+// (docs-site/contributor-guide/architecture/drill-down/plan-graph.md, "Layout
+// ordering and cost").
 
 type DagreGraph = InstanceType<typeof dagre.graphlib.Graph>;
 
@@ -201,27 +197,17 @@ export function runDagre({ nodeIds, groupIds, edges, direction, compound }: Layo
   // reads/scans on the left and the root write on the right, matching the plan's
   // left-to-right data flow.
   //
-  // nodesep is the gap between vertically-adjacent nodes (same rank, RL layout).
-  // It must be at least twice STAGE_GROUP_PADDING_Y: the full-plan view wraps
-  // each stage in an outer box that reserves that padding above and below its
-  // members, so two vertically-stacked stages whose members sit closer than
-  // 2×padding would get outer boxes that overlap into each other (they did, by
-  // ~48px, before this floor). Segment boxes use the smaller GROUP_PADDING and
-  // already clear it.
+  // nodesep (gap between vertically-adjacent nodes in RL) is at least twice
+  // STAGE_GROUP_PADDING_Y, or stacked stage boxes overlap. Segment boxes use the
+  // smaller GROUP_PADDING and already clear it.
   //
-  // ranker 'tight-tree' instead of dagre's default 'network-simplex': on a
-  // compound (grouped) graph, network-simplex's rank-assignment iterates
-  // expensively (a 400-node plan measured ~1600ms vs ~500ms for tight-tree,
-  // ~3x), and worse as the plan grows. Every plan is a tree plus the Exchange
-  // read/write split, and tight-tree assigns the same ranks a tree wants, so
-  // the arrangement and grouping are preserved while the cost drops sharply.
-  // ('longest-path' is faster still but produces degenerate placements here.)
+  // ranker 'tight-tree' instead of 'network-simplex', which is several times
+  // slower on a compound graph; plans are trees, so it assigns the same ranks
+  // (calibration in the plan-graph.md page). 'longest-path' places degenerately.
   //
-  // 'BT' is the same arrangement turned on its side (reads/scans on top, the
-  // root write at the bottom), used only on a phone-width canvas. The box
-  // clearance moves with the axes: stacked stage boxes now sit one rank apart,
-  // so ranksep takes the 2×STAGE_GROUP_PADDING_Y floor, and side-by-side boxes
-  // need 2×STAGE_GROUP_PADDING_X plus a gap for nodesep.
+  // 'BT' is the same arrangement on a phone-width canvas. The clearances swap
+  // axes: ranksep takes the 2×STAGE_GROUP_PADDING_Y floor, and nodesep needs
+  // 2×STAGE_GROUP_PADDING_X plus a gap.
   g.setGraph(
     direction === 'BT'
       ? { rankdir: 'BT', nodesep: STAGE_GROUP_PADDING_X * 2 + 24, ranksep: STAGE_GROUP_PADDING_Y * 2, ranker: 'tight-tree' }

@@ -28,6 +28,12 @@ segmentation and deepest-component-to-earliest-stage zip are heuristics. Treat t
 per-operator numbers as directional hints, never as authoritative timings, and
 do not build hard thresholds or findings on top of them.
 
+## Linking a SQL execution to its stages
+
+`sql.get(id).stageIds` is always empty: the parser never populates it. Every
+`scope: 'sql'` detector and the plan views derive the linkage from each stage's own
+`sqlExecutionId` with `stageIdsForSqlExec` (`sql-stages.ts`).
+
 ## Stage-ID attribution for Plan Advisor findings
 
 The Plan Advisor detectors (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `pythonUdf`, `broadcastSizing`

@@ -14,8 +14,6 @@ import type { Finding } from '@sparkforensics/core/types.ts';
 
 export type ExecutorUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
-/** One flagged finding's row, anchored so a triage route focuses the row
- * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
 function UtilizationRow({ finding }: { finding: Finding }) {
   const anchor = useAnchoredRow([finding]);
 
@@ -39,9 +37,7 @@ function UtilizationRow({ finding }: { finding: Finding }) {
  * `reference`-region type excluded from always-mounted status (see
  * `ALWAYS_MOUNTED_EXCEPTIONS` in `detector-registry.tsx`): like an ordinary
  * action widget, it returns `null` with no findings and collapses to a
- * `CleanCheckRow` instead. Split out of the former combined
- * `MemoryUtilization.tsx`; see `MemoryUtilization.tsx` for its
- * `memoryUtilization`-only sibling. */
+ * `CleanCheckRow` instead. */
 export const ExecutorUtilization = memo(function ExecutorUtilization({ catalog, defaultCollapsed = true }: ExecutorUtilizationProps) {
   const [page, setPage] = useState(0);
 

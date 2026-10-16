@@ -20,7 +20,7 @@ describe('RowStatusCluster', () => {
     render(<RowStatusCluster confidence="low" validationRequired="Inspect the raw metrics before acting." />);
     const caveat = screen.getByText(/low confidence/i);
     expect(caveat).toBeInTheDocument();
-    // Copy no longer carries the old ": verify" suffix.
+    // Copy carries no ": verify" suffix.
     expect(caveat.textContent).not.toMatch(/verify/i);
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
     expect(caveat).toHaveAttribute('title', 'Inspect the raw metrics before acting.');

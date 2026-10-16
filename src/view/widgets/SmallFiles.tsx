@@ -23,8 +23,6 @@ import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 
 export type SmallFilesProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
-/** One flagged finding's row, anchored so a triage route focuses the row
- * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
 function SmallFilesRow({ finding }: { finding: FindingOf<'smallFiles'> }) {
   const anchor = useAnchoredRow([finding]);
 
@@ -47,9 +45,7 @@ function SmallFilesRow({ finding }: { finding: FindingOf<'smallFiles'> }) {
 
 /** Board section for `smallFiles` findings: a scan reading many small input
  * files, wasting task-scheduling overhead a coalesce/repartition upstream
- * would avoid. Split out of the former combined `PlanFindings.tsx`; see
- * `DuplicatePlanSubtree.tsx`, `UnderBroadcast.tsx`, and `OverBroadcast.tsx`
- * for its three siblings. */
+ * would avoid. */
 export const SmallFiles = memo(function SmallFiles({ catalog, defaultCollapsed = true }: SmallFilesProps) {
   const { sortMode, setSortMode, orderBy } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);

@@ -14,6 +14,19 @@ import { useFindingAnchor, useIsRouteFlash } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { testFinding } from './_shared/finding';
 
+// Conventions shared by the tests below:
+// - Stage Summary (StageTable) lives inside the Full app report tab, so tests select that tab to
+//   reach its route buttons. Routing back to the Findings tab unmounts Full app report and
+//   remounts Findings, so widget queries are repeated after the route.
+// - Widgets are code-split (React.lazy): open the card first so the chunk resolves with real
+//   timers before faking setTimeout for the flash-clear assertions.
+// - Widgets whose rows use useFindingAnchor take the anchor path: the row itself gets focus and
+//   the flash, and the disclosure title does not get data-route-focused.
+// - The recommendations callout only routes into action-region findings; reference-region
+//   findings are reached from Stage Summary.
+// - Queries are scoped to the widget card because the verdict step for the same finding also
+//   renders a "Stage N" button.
+
 vi.mock('@sparkforensics/core/recent-files.ts', () => ({
   isSupported: () => false,
   list: vi.fn(() => new Promise(() => {})),
@@ -400,12 +413,9 @@ afterEach(() => {
 });
 
 test('routes a Reference-region target from Stage Summary: expanding its exact card, scrolling, and focusing its disclosure', async () => {
-  // All recommendations' callout only routes into action-region findings, so a
-  // reference-region-only finding like memoryUtilization has no top-level
-  // auto-route entry point; Stage Summary (inside Full app report) is the
-  // remaining click-through source. Its destination, Memory Utilization, lives
-  // in the Findings tab, so routing switches back there and Full app report
-  // ends up unselected again.
+  // memoryUtilization is reference-region only, so Stage Summary is its click-through source.
+  // Its destination, Memory Utilization, lives in the Findings tab, so routing switches back
+  // there and Full app report ends up unselected again.
   const focus = vi.spyOn(HTMLElement.prototype, 'focus');
   const user = userEvent.setup();
   renderReady([memoryFinding(1)], [1]);
@@ -433,10 +443,7 @@ test('routes a Reference-region target from Stage Summary: expanding its exact c
 });
 
 test('Strict Mode registration probing preserves a Reference route through committed open', async () => {
-  // All recommendations' callout only routes into action-region findings
-  //; Stage Summary (inside Full app report)
-  // is the remaining click-through route source into a reference-region
-  // finding, whose destination (Memory Utilization) lives in the Findings tab.
+  // The destination (Memory Utilization) lives in the Findings tab.
   const user = userEvent.setup();
   store.setState({
     status: 'ready',
@@ -479,12 +486,9 @@ test('an alert target opens only its exact card and leaves Full app report and C
   // The second spill step shares the lead step's card, so it routes to it.
   await user.click(stepEvidenceButton(1));
 
-  // Spill is code-split (React.lazy); its chunk resolves asynchronously.
   const trigger = await screen.findByRole('heading', { name: 'Spill' });
   // Spill.tsx anchors each row, so routing focuses the row itself
   // rather than the disclosure title; see the anchor-routing tests below.
-  // Scoped to the widget card: the verdict step for this same
-  // finding also renders a "Stage 1" button.
   const spillCard = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
   const row = within(spillCard).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]');
   await waitFor(() => expect(document.activeElement).toBe(row));
@@ -516,7 +520,6 @@ test('initial render never scrolls or moves focus, and opening a step\'s evidenc
   // The verdict keeps its card closed until asked.
   expect(screen.queryByRole('heading', { name: 'Spill' })).not.toBeInTheDocument();
 
-  // Spill is code-split (React.lazy); its chunk resolves asynchronously.
   await userEvent.setup().click(stepEvidenceButton(0));
   expect(await screen.findByRole('heading', { name: 'Spill' })).not.toHaveAttribute('data-route-focused');
   expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
@@ -533,9 +536,6 @@ test('reduced motion routes with instant scrolling', async () => {
     removeEventListener: vi.fn(),
     dispatchEvent: vi.fn(),
   })) as unknown as typeof window.matchMedia;
-  // All recommendations' callout only routes into action-region findings
-  //; Stage Summary (inside Reference) is the
-  // remaining click-through route into a reference-region finding.
   const user = userEvent.setup();
   renderReady([memoryFinding(1)], [1]);
 
@@ -552,11 +552,8 @@ test('reduced motion routes with instant scrolling', async () => {
 });
 
 /** Bare `REGISTRY.spill.component` substitute with no anchor wiring, used
- * only by the blur-cleanup test below. The real `Spill.tsx` now
- * anchors stage 1's row, so routing to `spillFinding(1)` would take the
- * anchor path instead and never set `data-route-focused` on the disclosure
- * trigger; this double keeps the test proving the title-focus/blur-cleanup
- * mechanism it's actually about, independent of the real widget's anchors. */
+ * only by the blur-cleanup test below. The real `Spill.tsx` anchors stage 1's
+ * row, so this double keeps the test on the title-focus/blur-cleanup mechanism. */
 function BareSpill() {
   return <WidgetCard title="Spill">spill details</WidgetCard>;
 }
@@ -568,8 +565,7 @@ test('blur cleanup is ignored for unrelated widgets and clears only the route-fo
   const catalog = [asLead(spillFinding(90)), spillFinding(1, 'critical'), skewFinding(2, 'warning')];
   renderReady(catalog, [1, 2, 90]);
 
-  // Task Skew is the real, code-split (React.lazy) Skew; open its card first so its
-  // chunk resolves before the route.
+  // Task Skew is the real Skew widget; open its card first so its chunk resolves before the route.
   await user.click(stepEvidenceButton(2));
   const skewTrigger = await screen.findByRole('button', { name: 'Task Skew' });
   await user.click(stepEvidenceButton(1));
@@ -654,15 +650,7 @@ test('Stage Summary routes a duplicate-tuple second occurrence with Enter and Sp
   const second = { ...skewFinding(1, 'critical') };
   const user = userEvent.setup();
   renderReady([first, second], [1]);
-  // Stage Summary (StageTable) lives inside the Full app report tab: select
-  // it to reach the route button. Routing switches back to the Findings tab
-  // (every routeable target lives there), which unmounts Full app report and
-  // remounts Findings, so the Task Skew trigger/row must be looked
-  // up fresh after each route rather than captured once up front.
-  // Skew.tsx anchors each row, so routing focuses the row itself
-  // rather than the disclosure title. Scoped to the widget card:
-  // FixTheseFirst's own row for this same finding also renders a
-  // "Open details for Stage 1" StagePill.
+  // The Task Skew trigger/row is looked up fresh after each route rather than captured up front.
   const skewRow = () => {
     const skewTrigger = screen.getByRole('heading', { name: 'Task Skew' });
     const skewCard = skewTrigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
@@ -706,13 +694,6 @@ test('routing preserves the target widget complete established stage order', asy
     .toEqual(['Open details for Stage 2', 'Open details for Stage 9']);
 });
 
-// --- Anchor-based routing (Dashboard.tsx's reportWidgetOpen anchor lookup) ---
-//
-// These substitute `SpillWithAnchoredRows` (a test double built on the real
-// `useFindingAnchor`/`useIsRouteFlash` hooks) into `REGISTRY.spill.component`,
-// exercising Dashboard's real `registerFindingAnchor` plumbing and
-// `reportWidgetOpen`'s anchor-lookup branch end-to-end.
-
 test('an anchored row is scrolled to center and focused instead of the disclosure title, and is flagged as flashed', async () => {
   REGISTRY.spill.component = SpillWithAnchoredRows;
   const focus = vi.spyOn(HTMLElement.prototype, 'focus');
@@ -730,8 +711,6 @@ test('an anchored row is scrolled to center and focused instead of the disclosur
     inline: 'nearest',
   });
   expect(row).toHaveAttribute('data-flashed', 'true');
-  // The anchor path replaces the title-focus path entirely: the disclosure
-  // trigger must not also claim route focus.
   expect(screen.getByRole('heading', { name: 'Spill' })).not.toHaveAttribute('data-route-focused');
 });
 
@@ -772,8 +751,6 @@ test.each<{
     });
 
     const trigger = screen.getByRole('heading', { name: heading });
-    // Scoped to the widget card: the verdict step for this same
-    // finding also renders a "Stage 1" button.
     const card = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
     const row = within(card).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]') as HTMLElement;
     expect(document.activeElement).toBe(row);
@@ -783,7 +760,6 @@ test.each<{
       block: 'center',
       inline: 'nearest',
     });
-    // The anchor path replaces the title-focus path entirely.
     expect(trigger).not.toHaveAttribute('data-route-focused');
 
     act(() => {
@@ -842,10 +818,8 @@ test('a second anchored route supersedes an active flash, canceling the first ti
     expect(row1).toHaveAttribute('data-flashed', 'true');
 
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
-    // Stage Summary (StageTable) lives inside the Full app report tab: select
-    // it to reach the second route button. Routing back to Findings unmounts and
-    // remounts SpillWithAnchoredRows; settling that remount plus the anchor-lookup/
-    // flash-state chain needs an extra microtask tick, hence `await act(async ...)`.
+    // Settling the SpillWithAnchoredRows remount plus the anchor-lookup/flash-state chain
+    // needs an extra microtask tick, hence `await act(async ...)`.
     await act(async () => {
       screen.getByRole('tab', { name: 'Full app report' }).click();
       await Promise.resolve();
@@ -923,9 +897,6 @@ test('a real ShuffleIO.tsx row (Task 6) is anchor-routable: focus and the flash 
   // on `[entry.shuffle, ...entry.partitions]` (filtered for null), so routing
   // to a shuffle finding takes the anchor path on the real widget.
   renderReady([asLead(shuffleFinding(90)), shuffleFinding(1)], [1, 90]);
-  // ShuffleIO is code-split (React.lazy): open the lead step's card to let its chunk
-  // resolve with real timers before faking setTimeout for the flash-clear assertion
-  // further down.
   await openLeadEvidence('Shuffle I/O');
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -944,7 +915,6 @@ test('a real ShuffleIO.tsx row (Task 6) is anchor-routable: focus and the flash 
       block: 'center',
       inline: 'nearest',
     });
-    // The anchor path replaces the title-focus path entirely.
     expect(trigger).not.toHaveAttribute('data-route-focused');
 
     act(() => {
@@ -975,7 +945,6 @@ test("GcPressure.tsx (Task 7) jumps only the routed bucket's own page, leaving t
     gcFinding(stageId, { direction: 'low', value: (17 - stageId) * 10 }),
   );
   renderReady([...highFindings, ...lowFindings], [...highStageIds, ...lowStageIds]);
-  // GcPressure is code-split (React.lazy): open the lead step's card to let its chunk resolve first.
   await openLeadEvidence('GC Pressure');
 
   const overheadSection = screen.getByText('GC overhead', { exact: false }).closest('section') as HTMLElement;
@@ -987,11 +956,7 @@ test("GcPressure.tsx (Task 7) jumps only the routed bucket's own page, leaving t
   expect(within(overheadSection).getByText('Page 1 of 2')).toBeInTheDocument();
   expect(within(lowSection).getByText('Page 1 of 2')).toBeInTheDocument();
 
-  // Stage Summary (StageTable) lives inside the Full app report tab: switch
-  // to it to reach the route button. Routing back switches to Findings
-  // (every routeable target lives there), which unmounts and remounts
-  // GcPressure, so `overheadSection`/`lowSection` must be re-queried after
-  // routing instead of reused from before the tab switch.
+  // `overheadSection`/`lowSection` must be re-queried after routing.
   act(() => {
     screen.getByRole('tab', { name: 'Full app report' }).click();
   });
@@ -1022,9 +987,7 @@ test("GcPressure.tsx (Task 7) jumps only the routed bucket's own page, leaving t
 
 // `GcPressure.tsx`/`TaskFailures.tsx`/`RetryWaste.tsx`/`SlowHost.tsx` each wire
 // `useFindingAnchor`/`useIsRouteFlash` on `[finding]`, so routing to one of
-// their findings takes the anchor path on the real widget. Each is
-// code-split (React.lazy): let its chunk resolve with real timers before
-// faking setTimeout for the flash-clear assertion further down.
+// their findings takes the anchor path on the real widget.
 test.each<{
   title: string;
   key: string;
@@ -1071,8 +1034,6 @@ test.each<{
     });
 
     const trigger = screen.getByRole('heading', { name: heading });
-    // Scoped to the widget card: the verdict step for this same
-    // finding also renders a "Stage 1" button.
     const card = trigger.closest<HTMLElement>('[data-testid^="widget-grid-item-alert-"]') as HTMLElement;
     const row = within(card).getByRole('button', { name: 'Open details for Stage 1' }).closest('[data-flashed]') as HTMLElement;
     expect(row).not.toBeNull();
@@ -1083,7 +1044,6 @@ test.each<{
       block: 'center',
       inline: 'nearest',
     });
-    // The anchor path replaces the title-focus path entirely.
     expect(trigger).not.toHaveAttribute('data-route-focused');
 
     act(() => {
@@ -1103,16 +1063,9 @@ test('a real MemoryUtilization.tsx row (Task 10) is anchor-routable: focus and t
   // get a genuine Stage Summary route button, the only click-through into this
   // reference-region finding.
   renderReady([memoryFinding(1)], [1]);
-  // Memory Utilization's card is the verdict step's evidence. It's code-split
-  // (React.lazy): open it so its chunk resolves with real timers before faking
-  // setTimeout for the flash-clear assertion further down.
+  // Memory Utilization's card is the verdict step's evidence.
   await openLeadEvidence('Memory Utilization');
 
-  // Stage Summary (StageTable) lives inside the Full app report tab: switch
-  // to it to reach the route button. Routing back switches to Findings
-  // (every routeable target lives there), which unmounts and remounts
-  // Memory Utilization; `trigger`/`row` below are queried after that route
-  // click, so they aren't stale.
   act(() => {
     screen.getByRole('tab', { name: 'Full app report' }).click();
   });
@@ -1133,7 +1086,6 @@ test('a real MemoryUtilization.tsx row (Task 10) is anchor-routable: focus and t
       block: 'center',
       inline: 'nearest',
     });
-    // The anchor path replaces the title-focus path entirely.
     expect(trigger).not.toHaveAttribute('data-route-focused');
 
     act(() => {
@@ -1153,9 +1105,6 @@ test('a real CachingOpportunity.tsx row (Task 11) is anchor-routable: focus and 
   // Both findings share the app-level step, which shows the card; the other
   // finding is a Findings-tab row that routes to it.
   renderReady([asLead(cachingFinding('lead', 1024)), cachingFinding('orders', 1024)]);
-  // CachingOpportunity is code-split (React.lazy): open the card so its chunk
-  // resolves with real timers before faking setTimeout for the flash-clear
-  // assertion further down.
   await openLeadEvidence('Caching Opportunities');
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -1174,7 +1123,6 @@ test('a real CachingOpportunity.tsx row (Task 11) is anchor-routable: focus and 
       block: 'center',
       inline: 'nearest',
     });
-    // The anchor path replaces the title-focus path entirely.
     expect(trigger).not.toHaveAttribute('data-route-focused');
 
     act(() => {
@@ -1187,9 +1135,9 @@ test('a real CachingOpportunity.tsx row (Task 11) is anchor-routable: focus and 
 });
 
 test('CachingOpportunity.tsx (widget-ui-unification Task 11) jumps its own pagination to the page containing a route target beyond the first page', async () => {
-  // usePagedRows's page size is VISIBLE_LIMIT (6, src/format-utils.js). The
+  // usePagedRows's page size is VISIBLE_LIMIT (6, packages/core/src/format-utils.ts). The
   // `cachingOpportunity` detector always emits `impactBand: 'info'`
-  // (src/detectors.js), so with an all-cachingOpportunity catalog,
+  // (packages/core/src/detectors.ts), so with an all-cachingOpportunity catalog,
   // `selectTriageTarget`'s impact-band/widget-order tie-breaks are all equal and
   // it falls through to catalog index: `target` (catalog[0]) is what "Start
   // with..." routes to. Giving `target` the smallest `totalReadBytes` makes
@@ -1228,9 +1176,9 @@ test('CachingOpportunity.tsx (widget-ui-unification Task 11) jumps its own pagin
 });
 
 test('MemoryUtilization.tsx (final whole-branch review fix) jumps its own pagination to the page containing a route target beyond the first page', async () => {
-  // Regression: a missing `routeIndex` wire is most reachable in
-  // MemoryUtilization, since its `memoryBand` variant emits one finding per
-  // flagged executor and routinely exceeds VISIBLE_LIMIT (6).
+  // A missing `routeIndex` wire is most reachable in MemoryUtilization, since its
+  // `memoryBand` variant emits one finding per flagged executor and routinely
+  // exceeds VISIBLE_LIMIT (6).
   //
   // Its list sorts purely by impact band, so giving `target` the least severe
   // band among 7 findings pushes it to the last position (page 2). `target`
@@ -1241,8 +1189,6 @@ test('MemoryUtilization.tsx (final whole-branch review fix) jumps its own pagina
   renderReady([target, ...others], [1]);
   await openLeadEvidence('Memory Utilization');
 
-  // Stage Summary (StageTable) lives inside the Full app report tab: switch
-  // to it to reach the route button.
   act(() => {
     screen.getByRole('tab', { name: 'Full app report' }).click();
   });
@@ -1264,9 +1210,8 @@ test('MemoryUtilization.tsx (final whole-branch review fix) jumps its own pagina
   const card = screen
     .getByRole('heading', { name: 'Memory Utilization' })
     .closest<HTMLElement>('[data-testid^="widget-grid-item-"]') as HTMLElement;
-  // Page jumped to page 2 of 2 to reveal the target: without the Finding 1
-  // fix, `usePagedRows` never receives a `routeIndex`, so this stays stuck on
-  // "Page 1 of 2" and the row is never revealed at all.
+  // The page jumps to page 2 of 2 to reveal the target; it requires `usePagedRows`
+  // to receive a `routeIndex`.
   expect(within(card).getByText('Page 2 of 2')).toBeInTheDocument();
 });
 
@@ -1286,20 +1231,13 @@ test('a real DuplicatePlanSubtree.tsx row is anchor-routable: the flash/focus la
   const first = duplicatePlanSubtreeFinding([3], 'Consolidate subtree A.', { impactBand: 'critical' });
   const target = duplicatePlanSubtreeFinding([7], 'Consolidate subtree B.', { impactBand: 'warning', stageId: 7 });
   renderReady([first, target], [7]);
-  // DuplicatePlanSubtree is code-split (React.lazy): open the lead step's card to let
-  // its chunk resolve with real timers before faking setTimeout for the flash-clear
-  // assertion further down.
   await openLeadEvidence('Redundant Plan Subtree');
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
-    // Stage Summary (StageTable) now lives inside the collapsed Reference
-    // accordion: expand it to reach the route
-    // button. This also mounts every reference-region widget for the first
-    // time, including `CoreUsageHistogram`'s own unrelated `getTaskData`
-    // fetch effect; flush that pending, unrelated async update inside `act`
-    // so it doesn't leak into a later test as a bare act() warning; it has
-    // no bearing on this test's anchor/flash assertions.
+    // Selecting the tab mounts every reference-region widget for the first time, including
+    // `CoreUsageHistogram`'s unrelated `getTaskData` fetch effect; flush that pending async
+    // update inside `act` so it does not leak into a later test as a bare act() warning.
     await act(async () => {
       screen.getByRole('tab', { name: 'Full app report' }).click();
       await Promise.resolve();
@@ -1329,7 +1267,6 @@ test('a real DuplicatePlanSubtree.tsx row is anchor-routable: the flash/focus la
       block: 'center',
       inline: 'nearest',
     });
-    // The anchor path replaces the title-focus path entirely.
     expect(trigger).not.toHaveAttribute('data-route-focused');
 
     act(() => {
@@ -1341,7 +1278,7 @@ test('a real DuplicatePlanSubtree.tsx row is anchor-routable: the flash/focus la
   }
 });
 
-// --- Page-jump regression guards for the six widgets whose other routing
+// Page-jump guards for the six widgets whose other routing
 // coverage renders 1-2 findings that never leave page 1 (Spill.tsx,
 // Skew.tsx, SlowHost.tsx, DuplicatePlanSubtree.tsx, TaskFailures.tsx,
 // RetryWaste.tsx), plus basic coverage for ConfigAudit.tsx/CacheUtilization.tsx's own findings list.
@@ -1451,12 +1388,8 @@ test('DuplicatePlanSubtree.tsx jumps its own pagination to the page containing a
   expect(within(card).queryByText(/Consolidate subtree target\./)).not.toBeInTheDocument();
   expect(within(card).getByText('Page 1 of 2')).toBeInTheDocument();
 
-  // Stage Summary (StageTable) lives inside the Full app report tab: expand
-  // it to reach the route button. This also mounts every reference-region
-  // widget for the first time, including CoreUsageHistogram's own unrelated
-  // getTaskData fetch effect; flush that pending, unrelated async update
-  // inside act so it doesn't leak into a later test as a bare act() warning
-  // (same as the anchor-routing test above).
+  // Selecting the tab mounts every reference-region widget; flush the unrelated
+  // CoreUsageHistogram getTaskData effect inside act (same as the anchor-routing test above).
   await act(async () => {
     screen.getByRole('tab', { name: 'Full app report' }).click();
     await Promise.resolve();
@@ -1528,9 +1461,6 @@ test('a real CacheUtilization.tsx row is anchor-routable: focus and the flash la
   const rddInfo = new Map([[1, rddRow(1)]]);
   // The app-level step shows the card for `rdd-0`; `rdd-1` is a Findings-tab row that routes to it.
   renderReadyWithRdd([asLead(cacheUtilizationFinding(0)), cacheUtilizationFinding(1)], rddInfo);
-  // Cache Storage is code-split (React.lazy): open the card so its chunk resolves
-  // with real timers before faking setTimeout for the flash-clear assertion
-  // further down.
   await openLeadEvidence('Cache Storage');
 
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -1549,7 +1479,6 @@ test('a real CacheUtilization.tsx row is anchor-routable: focus and the flash la
       block: 'center',
       inline: 'nearest',
     });
-    // The anchor path replaces the title-focus path entirely.
     expect(trigger).not.toHaveAttribute('data-route-focused');
 
     act(() => {

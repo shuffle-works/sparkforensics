@@ -120,3 +120,22 @@ only until its `ondata` callback returns: copy one before keeping it. On a Node
 without native zstd (before 22.15/23.8), and for a frame past 64 MiB, the Node
 path falls back to fzstd. The SHS archive loader decodes frames inline, and
 only `collectRun` uses the off-thread path.
+
+### Decoder and parser calibration
+
+The decode and parse constants rest on measurements from real logs. "The largest
+log" is a 3.5 GB zstd log of 10,217 frames whose frames reach 39 MB.
+
+| Constant or choice | Measurement |
+|---|---|
+| Native frame walk (`native-zstd.ts`) instead of fzstd | 3-5x faster: the largest log decodes in 1.3-1.8 s against 5.6 s |
+| Off-thread decode only for frames of 64 KB or more | Median frame output is 5.8 KB; thresholds of 16-64 KB measure the same and 256 KB loses most of the gain |
+| `MAX_FRAMES_IN_FLIGHT` of 4 | The largest log parses in 3.1 s at 711 MB peak RSS; 8 in flight take 3.2 s at 886 MB, 2 take 3.5 s at 607 MB. The pool's output chunk size (64 KB to 1 MB) barely matters |
+| `MAX_QUEUED_FRAMES` cap of 64 | Without a cap, small frames queued behind an in-flight one raise peak RSS from 0.6 GB to 4.1 GB |
+| `FrameSplitter` resuming its walk across pushes | Re-copying and re-walking a frame on every push costs about 4 GB of copying near the 64 MiB frame limit |
+| Off-thread decode overall | Parse time over the 14 calibration logs drops from 9.4 s to 8.1 s. A log with few large frames (12 of 6,455 on a 28 MB log) gains nothing |
+| Parsing a second log on a worker thread (`collect-run-pair.ts`) | A worker costs about 50 ms to start and about 100 ms to clone the model of a 140 MB zstd log. A compressed log holds 7 to 12 times its size in event text, so the estimate uses 8 |
+| One `TextDecoder.decode` per chunk | About 36k decode calls on the largest log against 227k for a per-line decode, which is about 8x slower |
+| Cutting `physicalPlanDescription` before `JSON.parse` | The text is 72% of the AQE-update bytes, which are 73% of the log. On the largest log its values total 1.9 GB of the 3.5 GB stream, and one native frame holds all but 51 MB of a value |
+| Deferring AQE updates | 541 of 664 updates on the largest log are superseded, 1.1 MB of plan JSON each once the plan text is cut |
+| String scan of `Accumulables` in `parseTaskEnd` | The array is 71% of TaskEnd bytes on the largest log. Parsing its TaskEnd lines takes 0.5 s, against 1.3 s with a whole `JSON.parse`. Validating the scanned IDs would add 0.2 s |

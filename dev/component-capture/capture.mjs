@@ -215,12 +215,12 @@ async function main() {
     await page.waitForSelector('[data-testid="dashboard"]', { timeout: 180000 });
     console.log('[capture] dashboard rendered.');
 
-    // --- Topbar ---
+    // Topbar
     const topbarHtml = await page.$eval('header', (el) => el.outerHTML).catch(() => null);
     if (topbarHtml) writer.queue('topbar.html', topbarHtml, 'main', 'Topbar');
     else notes.push('topbar: <header> not found');
 
-    // --- Tuning reference panel ---
+    // Tuning reference panel
     const tuningButton = page.locator('[title="Spark tuning reference"]').first();
     if (await tuningButton.count()) {
       await tuningButton.click();
@@ -235,14 +235,14 @@ async function main() {
 
     console.log('[capture] topbar + tuning panel done.');
 
-    // --- All recommendations (highest-impact callout + FixTheseFirst table) ---
+    // All recommendations (highest-impact callout + FixTheseFirst table)
     const recommendationsHtml = await page.$eval('section[aria-label="All recommendations"]', (el) => el.outerHTML).catch(() => null);
     if (recommendationsHtml) writer.queue('all-recommendations/board.html', recommendationsHtml, 'main', 'All recommendations');
     else notes.push('all-recommendations/board: section[aria-label="All recommendations"] not found');
 
     console.log('[capture] all-recommendations done.');
 
-    // --- Suggested Improvements (action-region widgets) ---
+    // Suggested Improvements (action-region widgets)
     const boardHtml = await page.$eval('#suggested-improvements', (el) => el.outerHTML).catch(() => null);
     if (boardHtml) writer.queue('suggested-improvements/board.html', boardHtml, 'main', 'Suggested Improvements');
     else notes.push('suggested-improvements/board: #suggested-improvements not found');
@@ -250,7 +250,7 @@ async function main() {
 
     console.log('[capture] suggested-improvements done.');
 
-    // --- Clean checks (passing action-region widgets) ---
+    // Clean checks (passing action-region widgets)
     const cleanTrigger = page.locator('[data-slot="accordion-trigger"]', { hasText: 'Clean checks' }).first();
     if (await cleanTrigger.count()) {
       await cleanTrigger.click();
@@ -266,7 +266,7 @@ async function main() {
 
     console.log('[capture] clean-checks done.');
 
-    // --- Full app report (reference-region widgets) ---
+    // Full app report (reference-region widgets)
     // Under a Tab (Dashboard.tsx's Findings/Full app report TabsTrigger pair):
     // selecting the tab is the disclosure, no separate collapse state to capture.
     const reportTrigger = page.locator('[data-slot="tabs-trigger"]', { hasText: 'Full app report' }).first();
@@ -283,7 +283,7 @@ async function main() {
 
     console.log('[capture] full-app-report done.');
 
-    // --- Plan graph (picker dialog when 2+ eligible executions, else direct view) ---
+    // Plan graph (picker dialog when 2+ eligible executions, else direct view)
     const planButton = page.locator('header button', { hasText: 'Plan graph' }).first();
     if (await planButton.count()) {
       await planButton.click();
@@ -307,7 +307,7 @@ async function main() {
     const mainIndexHtml = await readFile(path.join(REPO_ROOT, 'dist', 'index.html'), 'utf8');
     const mainFontLinks = extractFontLinks(mainIndexHtml);
 
-    // --- Docs site (separate build, separate design system, own tab) ---
+    // Docs site (separate build, separate design system, own tab)
     const docsPage = await context.newPage();
     let docsCss = '';
     let docsFontLinks = '';

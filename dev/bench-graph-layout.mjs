@@ -1,10 +1,6 @@
 #!/usr/bin/env node
-// Manual dev tool: times the plan-graph pipeline the graph view runs on open, per log and stage:
-// buildPlanGraphModel, then the compound Dagre layout PlanGraphCanvas performs for the same node
-// set (segment groups, plus stage groups in the full scope). Reports the heaviest graphs and the
-// median over repeats: a cold layout, then the layout of the same plan rebuilt in the other
-// duration mode (same topology, new node data), which is the cost of flipping that setting.
-// A plan whose layout throws is reported as such. Logs are labelled by index, never by file name.
+// Manual dev tool: times buildPlanGraphModel and the compound Dagre layout PlanGraphCanvas runs
+// for the same node set, per log and stage. Details: docs-site/contributor-guide/testing.md.
 //
 // Usage:
 //   node dev/bench-graph-layout.mjs [--repeat N] [--top K] [--scope full|segment] <log>...

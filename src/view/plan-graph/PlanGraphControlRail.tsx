@@ -26,12 +26,11 @@ export interface PlanGraphControlRailProps {
   onToggleMiniMap: () => void;
 }
 
-/** One vertical toolbar down the left edge that gathers every global plan-graph
- * control that used to float in its own corner: zoom/fit (was React Flow's
- * Controls), the worst-duration/problem navigation (was a top-left panel), the
- * node-filter and duration settings (was a topbar popover), and the legend and
- * minimap toggles. Grouped View / Navigate / Display, so the canvas itself
- * carries only the graph, the minimap, and the docked detail inspector. */
+/** One vertical toolbar down the left edge with every global plan-graph control:
+ * zoom/fit, worst-duration/problem navigation, node-filter and duration
+ * settings, and the legend and minimap toggles. Grouped View / Navigate /
+ * Display, so the canvas itself carries only the graph, the minimap and the
+ * docked detail inspector. */
 export function PlanGraphControlRail({
   planNodes,
   problemNodes,
@@ -49,7 +48,7 @@ export function PlanGraphControlRail({
 
   // Cycle state tracked by node id, not index, so it survives a filter/scope
   // change: if the last-visited node dropped out of the list, the next click
-  // restarts from the top. (Moved verbatim from the old in-canvas FocusNav.)
+  // restarts from the top.
   const [lastWorstDurationId, setLastWorstDurationId] = useState<string | null>(null);
   const [lastProblemId, setLastProblemId] = useState<string | null>(null);
 

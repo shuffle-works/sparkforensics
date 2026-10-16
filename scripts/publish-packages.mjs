@@ -77,8 +77,8 @@ function main() {
       console.log(`Publishing ${name}@${version}...`);
       execFileSync('npm', ['publish', '--provenance'], { cwd: dir, stdio: 'inherit' });
 
-      // Log line only: changesets/action v1 scraped stdout for it, v2 reads the
-      // CHANGESETS_OUTPUT record written here instead.
+      // Log line only: changesets/action reads the CHANGESETS_OUTPUT record
+      // written below, not stdout.
       console.log(`New tag: ${name}@${version}`);
       recordPublishedTag(outputPath, name, version);
       results.published.push(`${name}@${version}`);

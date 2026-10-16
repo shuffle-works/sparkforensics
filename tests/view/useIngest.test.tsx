@@ -214,8 +214,8 @@ test('getTaskData memoizes through taskDataCache', async () => {
 // DropZone and Dashboard each call `useIngest()` as separate instances; the
 // worker client must be shared across them (not a per-instance ref) so
 // Dashboard's `getTaskData` reaches the client DropZone started the load with.
-// Regression: CoreUsageHistogram rendered an empty chart when its `getTaskData`
-// came from an instance whose own client was never set.
+// `getTaskData` from an instance whose own client was never set must still reach
+// the client started by another instance (CoreUsageHistogram depends on this).
 test('getTaskData from a second, independently-mounted useIngest() instance still reaches the client started by the first', async () => {
   const { result: dropZone } = renderHook(() => useIngest({ makeClient: fakeClient }));
   act(() => dropZone.current.startLoad(new File(['x'], 'log')));

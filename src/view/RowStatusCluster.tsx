@@ -8,16 +8,13 @@ export interface RowStatusClusterProps {
   evidenceKey?: EvidenceKey;
 }
 
-/** Fixed-position, always-visible replacement for the old per-row
- * ConfidenceMarker/EvidenceLink/ExpandToggleButton trio: one cluster that
- * shows confidence and/or evidence with no click needed to reveal either.
- * Confidence is plain, non-interactive text with a tooltip carrying the full
- * `validationRequired` detail; evidence is the cluster's one real click
- * target, wired to the same `revealEvidence` navigation `EvidenceLink` used.
+/** Fixed-position, always-visible cluster that shows confidence and/or evidence
+ * with no click needed to reveal either. Confidence is plain, non-interactive
+ * text with a tooltip carrying the full `validationRequired` detail; evidence
+ * is the cluster's one real click target, wired to `revealEvidence` navigation.
  * Renders nothing when there's nothing to show, so callers never need a
  * guard around the JSX. */
 export function RowStatusCluster({ confidence, validationRequired, evidenceKey }: RowStatusClusterProps) {
-  // Called unconditionally, before any early return, per rules of hooks.
   const { tooltipProps, srOnlyTooltip } = useAccessibleTooltip(validationRequired);
   const { revealEvidence } = useEvidenceAvailabilityNavigation();
 

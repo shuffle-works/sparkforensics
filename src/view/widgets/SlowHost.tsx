@@ -56,11 +56,7 @@ function SlowHostRow({ finding, appModel }: { finding: SlowHostFinding; appModel
 }
 
 /** Board section for `slowHost` findings: a host or executor doing
- * disproportionate work within a stage. Split out of the former combined
- * `ExecutorTimeline.tsx`; see `StageSlowness.tsx`, `Straggler.tsx`,
- * `SpeculationWaste.tsx`, and `ColdStart.tsx` for its four siblings, and
- * `ExecutorCountChart.tsx` for the whole-run chart this file used to also
- * render. */
+ * disproportionate work within a stage. */
 export const SlowHost = memo(function SlowHost({ appModel, catalog, defaultCollapsed = true }: SlowHostProps) {
   const { sortMode, setSortMode, orderBy } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);

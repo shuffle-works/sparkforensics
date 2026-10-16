@@ -33,9 +33,9 @@ function initialShsField(field: ShsField): string {
   }
 }
 
-// A real, gzip-compressed event log: `dev/log-corpus/logs/pairwise-01.ndjson`
-// from corpus tag v2026-10-15, the candidate with the most findings under
-// `sparkforensics-analyze --format json` (21 findings, 13 types). A first-time
+// A real, gzip-compressed event log from the dev corpus
+// (`dev/log-corpus/logs/pairwise-01.ndjson`), chosen as the candidate with the
+// most findings under `sparkforensics-analyze --format json`. A first-time
 // visitor with no log of their own can still see a populated board. Relative,
 // not `/sample-runs/...`: same subpath-safety reasoning as
 // docsUrl()/DOCS_SITE_ROOT elsewhere in this app.
@@ -52,7 +52,7 @@ const SHS_RECOVERY_MESSAGES = {
 } as const;
 
 /** Minimal shape this component needs from a persisted FileSystemFileHandle
- * (or a directory entry's file handle): recent-files.js stores these as
+ * (or a directory entry's file handle): recent-files.ts stores these as
  * opaque `unknown`, so callers narrow only what they actually call. */
 interface FileHandleLike {
   getFile: () => Promise<File>;
@@ -77,8 +77,7 @@ async function readDirectoryFiles(dirEntry: any): Promise<File[]> {
   );
 }
 
-/** Custom drag/drop + click-to-pick + folder-browse + SHS-fetch drop zone.
- * Kept custom (not a shadcn component) per spec. */
+/** Custom drag/drop + click-to-pick + folder-browse + SHS-fetch drop zone. */
 export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSource) => void; compact?: boolean } = {}) {
   const { startLoad, startLoadFolder, startLoadFromUrl, pickRecent } = useIngest();
   // A local load supersedes an in-flight SHS fetch automatically: every parse
@@ -314,8 +313,8 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
           action: {
             label: 'Undo',
             onClick: () => {
-              // Same untyped-JS boundary cast as useIngest.ts's recentFiles.add call:
-              // recent-files.js's default-valued params make TS infer `appName`/
+              // Same boundary cast as useIngest.ts's recentFiles.add call:
+              // recent-files.ts's default-valued params make TS infer `appName`/
               // `issueCount` as exactly `null`.
               recentFiles.add(entry as any).catch(() => {}).finally(refreshEntries);
             },

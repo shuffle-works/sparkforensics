@@ -11,10 +11,8 @@ function findingLabel(f: Finding): string {
 export type TinyTaskProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'getTaskData' | 'defaultCollapsed'>;
 
 /** Flags every stage carrying a `tinyTask` finding (never just the worst
- * one). Thin wrapper around the shared `StageFindingGroupWidget`
- * (`StageFindingGroup.tsx`), which owns the row/card/pagination scaffold
- * this shares with its two siblings, `Skew.tsx` and `StageShape.tsx`.
- * `tinyTask` findings always carry the same single metric shape
+ * one). Thin wrapper over `StageFindingGroupWidget`
+ * (`StageFindingGroup.tsx`). `tinyTask` findings always carry the same single metric shape
  * (`metric: 'taskDurationP50'`, see `detectors.ts`), so, unlike Skew
  * (`metric` varies) or StageShape (`rule` varies), a fixed label format is
  * correct here, not a gap to close. */

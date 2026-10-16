@@ -312,7 +312,7 @@ function FilteredBoard({
 }
 
 /** The main app chrome once a file has parsed successfully: topbar, the
- * (Phase 3) widget board, the docs sheet, and the stage-detail dialog. Also
+ * widget board, the docs sheet, and the stage-detail dialog. Also
  * owns a lightweight drag-to-load overlay so dropping a new file anywhere
  * over the dashboard starts a fresh parse. */
 function DashboardContent() {
@@ -332,11 +332,10 @@ function DashboardContent() {
   const [routeRequest, setRouteRequest] = useState<RouteRequest | null>(null);
   const [routeFocusedWidgetId, setRouteFocusedWidgetId] = useState<string | null>(null);
   const [flashedFinding, setFlashedFinding] = useState<Finding | null>(null);
-  // Refs mirror the active request so the imperative callbacks below stay
-  // referentially stable (widget registration keys on them). `tokenRef`
-  // supersedes older requests; `routeFileRef` catches a file swap that keeps
-  // the same catalog object refs. Findings are held by reference, so a replaced
-  // catalog is detected by `selectTriageTargetForFinding`'s `includes` check.
+  // Refs mirror the active request so the callbacks below stay referentially
+  // stable (widget registration keys on them). `routeFileRef` catches a file swap
+  // that keeps the same catalog object refs. Route design:
+  // docs-site/contributor-guide/architecture/widget-rendering/investigation-routing.md.
   const tokenRef = useRef(0);
   const routeRef = useRef<RouteRequest | null>(null);
   const routeFileRef = useRef<string | null>(null);
@@ -344,11 +343,8 @@ function DashboardContent() {
   const findingAnchorsRef = useRef(new Map<Finding, HTMLElement>());
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // The route coordinator's active destination, derived (not separate state)
-  // so it's naturally non-null exactly while a route is pending and clears
-  // the instant `routeRequest` does. Consumed by widgets via
-  // `useActiveRouteTarget()` to notice mid-render "I'm the destination" and
-  // jump their own pagination before their anchor row exists.
+  // Derived, so it is non-null exactly while a route is pending. Widgets read it
+  // via `useActiveRouteTarget()` to jump their pagination before their anchor row exists.
   const activeRouteTarget = routeRequest?.target ?? null;
 
   useEffect(() => {
@@ -357,12 +353,9 @@ function DashboardContent() {
     };
   }, []);
 
-  // Every `revealEvidence` call (evidence links across the app) bumps
-  // `revealRequest`, and each bump switches to the Full app report tab where
-  // the ledger lives, even after the reader has gone back to Findings. A
-  // layout effect, so the tab is visible before the provider's queued row
-  // focus runs: both panels stay mounted, and a row in the hidden panel
-  // can't take focus.
+  // Each `revealEvidence` bump switches to the Full app report tab, where the
+  // ledger lives. A layout effect, so the tab is visible before the queued row
+  // focus runs (a row in a hidden panel can't take focus).
   useLayoutEffect(() => {
     if (revealRequest > 0) setActiveTab('full-report');
   }, [revealRequest]);
@@ -374,9 +367,8 @@ function DashboardContent() {
     setRouteRequest((current) => (current?.token === token ? null : current));
   }, []);
 
-  // Re-validate a request against live store state: a newer request, a file
-  // swap, or a catalog that no longer holds the finding by reference makes it
-  // stale (never scroll/focus).
+  // A newer request, a file swap, or a catalog that lacks the finding
+  // makes a request stale (never scroll/focus).
   const resolveRoute = useCallback((route: RouteRequest): TriageTarget | null => {
     if (routeRef.current?.token !== route.token) return null;
     const { catalog: currentCatalog, configFindings: currentConfig, activeFileId: currentFileId } = store.getState();
@@ -389,10 +381,7 @@ function DashboardContent() {
   }, []);
 
   const requestRoute = useCallback((target: TriageTarget) => {
-    // Routeable REGISTRY widgets live in the Findings tab, except the
-    // always-mounted one in Full app report (see ReferenceSection's doc
-    // comment above): show the tab that holds the target's widget, whichever
-    // tab the request came from.
+    // Show the tab that holds the target's widget, whichever tab the request came from.
     setActiveTab(isAlwaysMountedType(target.finding.type) ? 'full-report' : 'findings');
     const token = tokenRef.current + 1;
     tokenRef.current = token;
@@ -413,9 +402,8 @@ function DashboardContent() {
 
   const registerWidget = useCallback((widgetId: string, registration: WidgetRegistration) => {
     registrationsRef.current.set(widgetId, registration);
-    // A widget that mounts after a route request (e.g. a Reference widget once
-    // its section expands) opens itself here; already-mounted widgets are opened
-    // by the layout effect below.
+    // A widget mounting after the request (a Reference widget once its section
+    // expands) opens here; already-mounted ones open in the layout effect below.
     const route = routeRef.current;
     if (route?.target.widgetId === widgetId && resolveRoute(route)) registration.open();
 
@@ -446,12 +434,9 @@ function DashboardContent() {
     }
     const registration = registrationsRef.current.get(widgetId);
     if (!registration) {
-      // This WidgetCard just mounted in the same commit as the route request
-      // (e.g. a Basic-view evidence fold opening in the same commit):
-      // its own WidgetGridItem registers as a parent effect that hasn't run
-      // yet. Leave the route pending rather than clearing it: registerWidget
-      // bumps openRequestGeneration once it does register, which re-fires
-      // this reportOpen effect on the next commit so it can complete.
+      // The card mounted in the same commit as the request and its parent has not
+      // registered yet. Keep the route pending; registerWidget re-fires this on
+      // the next commit.
       return;
     }
     const disclosureButton = registration.getDisclosureButton();
@@ -463,9 +448,7 @@ function DashboardContent() {
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const anchorElement = findingAnchorsRef.current.get(resolved.finding);
     if (anchorElement) {
-      // Anchored row exists (a widget wired via `useFindingAnchor`): scroll and
-      // focus the exact flagged row instead of the disclosure title, and flash
-      // it briefly so it stays findable once focus moves on.
+      // Focus the exact flagged row and flash it so it stays findable.
       anchorElement.scrollIntoView({
         behavior: reducedMotion ? 'auto' : 'smooth',
         block: 'center',
@@ -479,9 +462,7 @@ function DashboardContent() {
         setFlashedFinding(null);
       }, 2000);
     } else {
-      // No anchor registered for this finding (widget not yet wired, or a
-      // finding type with no per-row anchor); fall back to widget-level title
-      // focus.
+      // No per-row anchor for this finding: focus the widget title instead.
       registration.wrapperElement.scrollIntoView({
         behavior: reducedMotion ? 'auto' : 'smooth',
         block: 'start',
@@ -497,9 +478,8 @@ function DashboardContent() {
     setRouteFocusedWidgetId((current) => (current === widgetId ? null : current));
   }, []);
 
-  // Open the request's target: for widgets already registered when the request
-  // lands. On next layout the card commits open and reports back via
-  // `reportWidgetOpen`, which scrolls + focuses.
+  // Opens widgets already registered when the request lands; the card then
+  // reports back via `reportWidgetOpen`, which scrolls and focuses.
   useLayoutEffect(() => {
     if (!routeRequest) return;
     const resolved = resolveRoute(routeRequest);

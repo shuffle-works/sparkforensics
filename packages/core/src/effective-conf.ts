@@ -1,8 +1,7 @@
 // The effective Spark configuration of a run for the CLI's JSON output, so a caller can check
-// that a --conf overlay took effect. Every key is listed; a value is withheld when the key or the
-// value matches a secret pattern, and credentials inside URL-like values are stripped. A withheld
-// key is shown as present with no value, and no derivative of the value (no hash, length or
-// prefix) is emitted.
+// that a --conf overlay took effect. A withheld key is shown as present with no value, and no
+// derivative of the value (no hash, length or prefix) is emitted. Patterns and output shape:
+// docs-site/user-guide/getting-started/ci-and-automation.md, "Effective conf".
 import type { SparkAppInfo } from './types.ts';
 
 export const EFFECTIVE_CONF_SCHEMA_VERSION = 1;
@@ -50,16 +49,14 @@ export function compileJvmPattern(source: string): RegExp | null {
 // Sensitive query/parameter names in a URL-like value: signatures of pre-signed and SAS URLs.
 const SIGNATURE_PARAMS = 'sig|signature|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential';
 
-// A `name=value` credential parameter in any value (a JDBC or ODBC string, a JVM option, a query
-// string): `password`, `pwd`, `pass`, `apikey`, `accountkey`, `sas`, `sig` and the like, alone or as
-// the tail of a longer name (`-Djavax.net.ssl.keyStorePassword=`).
+// A `name=value` credential parameter in any value (JDBC or ODBC string, JVM option, query string),
+// alone or as the tail of a longer name (`-Djavax.net.ssl.keyStorePassword=`).
 const CREDENTIAL_PARAM = new RegExp(
   '((?:^|[\\s;&,?:"\'(]|-D)(?:[\\w.-]*?(?:password|passwd|pwd|secret|token|api[_.-]?key|account[_.-]?key|access[_.-]?key|private[_.-]?key)|pass|sas|credential|'
   + `${SIGNATURE_PARAMS})\\s*=\\s*)("[^"]*"|'[^']*'|[^;&,\\s"']*)`, 'gi');
 
-/** Strips credentials from a value: `name=value` credential parameters anywhere (JDBC
- * `password=`/`pwd=`/`pass=`, `apiKey=`, signature parameters such as Azure SAS `sig=`), and, in a
- * value that looks like a URL, userinfo (user:password@host) and the Oracle thin form
+/** Strips credentials from a value: `name=value` credential parameters anywhere, and, in a value
+ * that looks like a URL, userinfo (user:password@host) and the Oracle thin form
  * (jdbc:oracle:thin:user/password@host). */
 export function stripUrlCredentials(value: string): string {
   const urlLike = /^[a-z][a-z0-9+.-]*:/i.test(value) || value.includes('://');

@@ -1,5 +1,5 @@
-// The textbook median of values already sorted ascending: the middle value for an odd count, the
-// mean of the two middle values for an even one. 0 for an empty list.
+// Median of values already sorted ascending: the mean of the two middle values on an even count.
+// 0 for an empty list.
 export function medianOfSorted(sorted: ArrayLike<number>): number {
   const n = sorted.length;
   if (n === 0) return 0;

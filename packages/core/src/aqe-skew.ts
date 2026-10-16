@@ -1,15 +1,12 @@
 // Why AQE skew-join handling did or did not act on a stage's join, read from the execution's final
-// plan and the effective Spark conf. Spark's OptimizeSkewedJoin splits a skewed shuffle partition
-// only when every condition below holds (https://github.com/apache/spark/blob/v3.5.0/sql/core/src/main/scala/org/apache/spark/sql/execution/adaptive/OptimizeSkewedJoin.scala):
-//   - the join is a sort-merge or shuffled-hash join whose two inputs are materialized shuffle
-//     stages Spark added for the join (ENSURE_REQUIREMENTS), under a Sort for a sort-merge join;
-//   - the join type lets the skewed side be split (left side for Inner, Cross, LeftOuter, LeftSemi
-//     and LeftAnti, right side for Inner, Cross and RightOuter);
-//   - the partition is over both skewedPartitionThresholdInBytes and skewedPartitionFactor times the
-//     median partition;
-//   - splitting adds no shuffle for the operators above the join, unless forceOptimizeSkewedJoin.
-// The final plan shows a split (`skew=true` on the join, `AQEShuffleRead skewed`) and the shape the
-// rule matches, so the first condition that fails is the reason.
+// plan and the effective Spark conf. Spark's OptimizeSkewedJoin (apache/spark v3.5.0,
+// sql/core/.../adaptive/OptimizeSkewedJoin.scala) splits a skewed shuffle partition only when the
+// join is a sort-merge or shuffled-hash join over shuffles Spark added for it, the join type lets
+// the skewed side be split, the partition is over both the size threshold and the factor times the
+// median, and the split adds no shuffle above the join (unless forceOptimizeSkewedJoin). The
+// final plan shows a split (`skew=true`, `AQEShuffleRead skewed`) and the shape the rule matches,
+// so the first condition that fails is the reason. The cases are in
+// user-guide/understanding-findings.md.
 import type { PlanNode } from './types.ts';
 import type { AqeSkewCase, Remediation } from './finding-types.ts';
 import { formatBytes } from './format-utils.ts';

@@ -129,3 +129,22 @@ carries `validationRequired`. Consumers include `Spill.tsx`,
 `EfficiencyModel.tsx`. Spill classification is `medium` when
 classified (skew/volume) and `low` when unclassified; plan-summary warnings
 are `low`. Deterministic detectors stay unmarked, treated as high confidence.
+
+### Accessible tooltip pattern
+
+`useAccessibleTooltip` (`src/view/AccessibleTooltip.tsx`) keeps a tooltip's text
+reachable to every input mode:
+
+- The `title` attribute serves mouse hover only. It never fires on keyboard
+  focus, so a sighted keyboard user would see nothing.
+- The same text is an `sr-only` DOM descendant, never gated behind hover or
+  focus, that `aria-describedby` ties to the host element. Assistive tech reads
+  it as the element's accessible description without an extra focus stop.
+- `tooltipProps` also wires `onFocus`/`onBlur`; while focused, a visible
+  bubble renders the same text. It is `aria-hidden` (the description is already
+  covered by `aria-describedby`; a `tooltip` role would double-announce it) and
+  carries `data-testid="visible-tooltip"` for tests.
+- The hook supplies focus handlers, not a tab stop: a host that is not natively
+  focusable needs its own `tabIndex={0}`.
+- With no `text`, `tooltipProps` is empty and `srOnlyTooltip` renders nothing,
+  so `aria-describedby` never points at an empty span.

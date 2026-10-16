@@ -88,8 +88,6 @@ export interface TaskAttemptSample {
   shuffleWrite: number;
 }
 
-// ── Per-stage detectors ─────────────────────────────────────────────────────
-
 /** What a skewed stage reads, which decides the fix: 'shuffleJoin' (a shuffle feeding a join, where
  * AQE skew-join handling applies), 'inputScan' (uneven input files) or 'other'. */
 export type SkewOrigin = 'shuffleJoin' | 'inputScan' | 'other';
@@ -113,11 +111,13 @@ export type StageReads = 'shuffle' | 'input' | 'other';
  * enough, so the stage's own repartition(n) or RDD parallelism is). */
 export type ShufflePartitions = 'raise' | 'sufficient' | 'aqeCoalesced' | 'ownPartitioning';
 
-/** Why a stage's slow tail is slow, from what its tasks logged. 'data': the slow tasks read far
- * more than the median task, so run time follows data volume (skew by Spark's own definition).
- * 'gc', 'fetchWait' and 'host': the tail's extra time is GC, shuffle fetch wait, or tasks piled on
- * one host. 'unexplained': the slow tasks read no more than the median and none of those accounts
- * for their time. 'unattributed': the stage has no data volume to compare and what data, GC, fetch wait and host do not explain is the largest share (or the stage has no tail attribution), so only the duration is known. */
+/** Why a stage's slow tail is slow (attributeTail in stage-quantiles.ts). 'data': the slow tasks
+ * read far more than the median task, so run time follows data volume. 'gc', 'fetchWait' and
+ * 'host': the tail's extra time is GC, shuffle fetch wait, or tasks piled on one host.
+ * 'unexplained': the slow tasks read no more than the median and none of those accounts for their
+ * time. 'unattributed': the stage has no data volume to compare and what data, GC, fetch wait and
+ * host do not explain is the largest share (or the stage has no tail attribution), so only the
+ * duration is known. */
 export type TailCause = 'data' | 'gc' | 'fetchWait' | 'host' | 'unexplained' | 'unattributed';
 
 export interface SkewEvidence {
@@ -220,7 +220,6 @@ export interface StragglerEvidence {
   // The case the skew advice in the recommendation was written for (see SkewOrigin); set only
   // when the cause is 'data'.
   origin?: SkewOrigin;
-  // See AqeSkewCase.
   aqeSkew?: AqeSkewCase;
   // 'data' only on a tail skew's own gate does not admit: skew reports every other data-driven tail.
   cause?: TailCause;
@@ -253,8 +252,6 @@ export interface TinyTaskEvidence {
 }
 export interface TinyTaskFinding extends NumericFinding<'tinyTask'>, TinyTaskEvidence {}
 
-// ── App-level detectors ─────────────────────────────────────────────────────
-
 export type IncompleteRunEvidence = Record<never, never>;
 // valueText is always 'missing': the ApplicationEnd event the log lacks.
 export interface IncompleteRunFinding extends TextFinding<'incompleteRun'>, IncompleteRunEvidence {}
@@ -266,7 +263,7 @@ export interface ColdStartEvidence {
 export interface ColdStartFinding extends NumericFinding<'coldStart'>, ColdStartEvidence {}
 
 export interface UtilizationEvidence {
-  // CPU-time share of capacity (sparkMeasure's measure), a companion to the busy-time `value`.
+  // CPU-time share of capacity, a companion to the busy-time `value`.
   cpuUtilizationPct: number | null;
 }
 export interface UtilizationFinding extends NumericFinding<'utilization'>, UtilizationEvidence {
@@ -349,15 +346,11 @@ export interface JobFailureRateEvidence {
 }
 export interface JobFailureRateFinding extends NumericFinding<'jobFailureRate'>, JobFailureRateEvidence {}
 
-// ── Config-scope detectors ──────────────────────────────────────────────────
-
 export interface ConfigAuditEvidence {
   property: string;
 }
 // valueText is the audited property's current value, or a note that it is unset.
 export interface ConfigAuditFinding extends TextFinding<'configAudit'>, ConfigAuditEvidence {}
-
-// ── SQL-scope (Plan Advisor) detectors ──────────────────────────────────────
 
 interface PlanFindingEvidence {
   executionId: number;
@@ -431,8 +424,6 @@ export interface OverBroadcastEvidence extends PlanFindingEvidence {
   broadcastThreshold?: BroadcastThreshold;
 }
 export interface OverBroadcastFinding extends NumericFinding<'overBroadcast'>, OverBroadcastEvidence, PlanNodeOrigin {}
-
-// ── Unions ──────────────────────────────────────────────────────────────────
 
 /** Public evidence fields per finding type: what a report row's `evidence` carries. */
 export interface FindingEvidenceMap {

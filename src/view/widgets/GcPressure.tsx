@@ -109,8 +109,6 @@ function GcSection({
  * and a "low GC / cost" branch (executor memory likely over-provisioned).
  * Renders nothing when neither branch fired for any stage. */
 export function GcPressure({ catalog, appModel, defaultCollapsed = true }: GcPressureProps) {
-  // Declared unconditionally, before the empty-catalog early return, so hook
-  // order stays stable across renders.
   const [highPage, setHighPage] = useState(0);
   const [lowPage, setLowPage] = useState(0);
   const { sortMode, setSortMode, orderBy } = useSortMode();

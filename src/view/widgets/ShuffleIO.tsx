@@ -60,9 +60,7 @@ function ShuffleRow({ entry, appModel }: { entry: StageEntry; appModel: WidgetPr
   );
 }
 
-/** Shuffle read/write board. Serves the `shuffle` detector type only; see
- * `PartitionSizing.tsx` for the sibling partition-sizing widget this file
- * used to also render. */
+/** Shuffle read/write board. Serves the `shuffle` detector type only. */
 export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCollapsed = true }: WidgetProps) {
   const [page, setPage] = useState(0);
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);

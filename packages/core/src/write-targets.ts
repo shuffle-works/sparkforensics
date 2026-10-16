@@ -1,16 +1,9 @@
 // Write targets: every SQL write command in a run's plans, with the path or table it writes to.
 // Read by automation that halts a session when a target leaves its sandbox, so every rule here
-// fails toward "target unknown" (null), never toward a guessed or partial target:
-//   - a write node whose target cannot be parsed is still reported, with target null and its raw
-//     simpleString;
-//   - a target Spark cut short (no delimiter after it, or a "..." marker in it) is unparseable;
-//   - a write-like node outside the known list is reported as an unrecognized write;
-//   - an execution whose plan is not in the model (or whose start event could not be read) is
-//     listed, never skipped, and the count of unreadable log lines is reported;
-//   - a Delta target is set only when exactly one table or path is named (delta-targets.ts,
-//     api-merge-writes.ts).
-// Targets are verbatim from the simpleString: nothing is resolved (relative paths, ${var}
-// placeholders, catalog-relative table names all pass through as the log states them).
+// fails toward "target unknown" (null), never toward a guessed or partial target, and targets are
+// verbatim from the simpleString. Rules and fields: docs-site/user-guide/getting-started/ci-and-automation.md,
+// "Write targets" (a node whose target cannot be parsed, a cut-short target, an unrecognized write,
+// an unreadable execution, a Delta target named by exactly one table or path).
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { apiMergeWrites } from './api-merge-writes.ts';
 import { indexByRoot, isStagedDeltaWrite, parseDeltaTableV2, resolveDeltaCommandTarget, type ExecutionsByRoot } from './delta-targets.ts';

@@ -8,11 +8,11 @@ type CollectedRun = Awaited<ReturnType<typeof collectRun>>;
 
 // Parsing is single-threaded JS, so two logs parsed one after the other take the sum of their
 // times, and parsing both on one thread (interleaved) takes the same. A worker thread parses one of
-// them in parallel at the price of a thread start (about 50 ms) and a structured clone of the model
-// (about 100 ms for the model of a 140 MB zstd log), so it pays only when the log it parses is big enough.
+// them in parallel at the price of a thread start and a structured clone of the model, so it pays
+// only when the log it parses is big enough (worker-protocol.md, "Decoder and parser calibration").
 const COMPRESSED_LOG = /\.(zstd?|lz4|snappy|zip|gz)$/i;
 // A compressed log holds about this many times its size in event text, and parses at about that
-// many times the cost per byte on disk (measured: 7 to 12 on real zstd logs).
+// many times the cost per byte on disk.
 const COMPRESSED_EXPANSION = 8;
 /** The smaller log's estimated event text (bytes) below which both logs parse in this thread. */
 export const MIN_OFFLOAD_PARSE_BYTES = 32 * 1024 * 1024;

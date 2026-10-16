@@ -155,7 +155,7 @@ test('exposes a data table matching the full-resolution histogram, hidden by def
   expect(screen.getByRole('columnheader', { name: 'Time' })).toHaveClass('text-right');
 });
 
-// Regression: the fetch is gated on the WidgetCard's open state (not mount)
+// The fetch is gated on the WidgetCard's open state (not mount)
 // and cached, so a collapsed widget fetches nothing.
 test('does not fetch task data while collapsed, fetches once expanded, and does not refetch on re-collapse', async () => {
   const user = userEvent.setup();

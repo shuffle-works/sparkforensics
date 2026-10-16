@@ -83,8 +83,8 @@ export default [
   {
     // `.ts`/`.tsx` are NOT linted: typescript-eslint crashes at import time
     // against TypeScript 7 (`ts.Extension.Cjs` gone), and no released version
-    // supports it yet. `tsc --noEmit` is the only type/syntax check on the view
-    // layer until then.
+    // supports it. `tsc --noEmit` is the only type/syntax check on the view
+    // layer.
     ignores: [
       'node_modules/**',
       'packages/server/node_modules/**',

@@ -1,13 +1,8 @@
 #!/usr/bin/env node
-// Manual dev tool: browser dashboard load timing against a production build (`vite build` +
-// `vite preview`). Each repeat opens a fresh browser context, drops the log into the file input
-// and records, in-page: time to the first rendered dashboard and to the point no lazy-widget
-// skeleton is left, main-thread long tasks (>50 ms) between the drop and the dashboard, and the
-// JS heap once the dashboard is up and the peak resident memory of the whole browser. Then it
-// switches the dashboard's report tabs and records the long tasks of each switch.
+// Manual dev tool: browser dashboard load timing and long tasks against a production build
+// (`npx vite build` first). Details: docs-site/contributor-guide/testing.md.
 //
 // Usage: node dev/bench-dashboard.mjs [--repeat N] [--json out.json] [--dist dir] [--no-tabs] <log>...
-//   Run `npx vite build` first. One browser at a time; the preview server is stopped at exit.
 import { spawn, execFileSync } from 'node:child_process';
 import { statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';

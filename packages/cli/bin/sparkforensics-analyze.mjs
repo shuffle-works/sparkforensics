@@ -15,11 +15,7 @@ nodeModule.enableCompileCache?.();
 const binDir = dirname(fileURLToPath(import.meta.url));
 const pkgDir = dirname(binDir);
 
-// vendor-core/ is populated by vendor-core.mjs at pack time. In the monorepo the
-// packages/core/src/ sibling's load-vendored.js is used, which prefers a leftover
-// vendor-core/ only while it still matches core/src and warns when it does not.
-// load-vendored.js is the one module located by hand; the rest load through its
-// exported loadVendored().
+// Core loading (vendor-core/ vs core/src): docs-site/contributor-guide/development-setup.md, "Generated and vendored files".
 const srcHelper = join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
 const helperPath = existsSync(srcHelper) ? srcHelper : join(pkgDir, 'vendor-core', 'load-vendored.js');
 const { coreBuildId, loadVendored } = await import(pathToFileURL(helperPath).href);

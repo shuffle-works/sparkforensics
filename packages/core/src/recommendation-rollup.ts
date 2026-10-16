@@ -25,7 +25,7 @@ export function computeStageUnionMs(
     // incomplete/truncated log (the case `incompleteRun` flags) leaves
     // `completedAt` unset, and coercing it to 0 would contribute a hugely
     // negative interval and a nonsense negative recoverable-time figure.
-    // Same filter `computeWallClock` (src/wall-clock.ts) already applies.
+    // Same filter `computeWallClock` (wall-clock.ts) applies.
     if (stage.submittedAt == null || stage.completedAt == null) continue;
     intervals.push([stage.submittedAt, stage.completedAt]);
   }
@@ -164,7 +164,7 @@ export function rollupGroupStat(group: RollupGroup): { stat: string; statTitle: 
  * (the log carries no executor heap peaks: Spark before 3.0 or local mode), not an
  * optimization or a clean bill of health; the exact same fact already lives
  * in the Evidence availability ledger's own `executorMetrics` entry
- * (src/evidence-availability.ts), so it belongs there, not as its own card. */
+ * (evidence-availability.ts), so it belongs there, not as its own card. */
 export function isRealFinding(finding: Finding): boolean {
   if (finding.type === 'memoryUtilization' && finding.variant === 'memoryBand' && finding.dataUnavailable) return false;
   return true;
@@ -194,10 +194,9 @@ export function isEligible(finding: Finding): boolean {
 /** Ranking tier for a single finding: time-based findings (a real `wallClock`
  * claim) are the only ones whose magnitudes share a unit, so they are the
  * only ones ranked numerically. `resourceOnly` findings carry `rawWaste` in
- * whatever unit their detector emitted, which the spec (section 5) forbids
- * comparing against a time figure or against another resourceOnly finding's
- * own raw magnitude; they rank by impact band instead, below every time-based
- * finding. Informational findings (no magnitude at all) rank last, also by
+ * whatever unit their detector emitted, which cannot be compared against a
+ * time figure or against another resourceOnly finding's own raw magnitude;
+ * they rank by impact band instead, below every time-based finding. Informational findings (no magnitude at all) rank last, also by
  * impact band. */
 const TIER_TIME = 0;
 const TIER_RESOURCE = 1;
@@ -213,8 +212,8 @@ function tierOf(finding: Finding): number {
 /** Ranks a group's members so the "representative" finding (the one whose
  * action label/tag donate to the group's row) is always the highest-impact
  * one, not just the first one `buildRecommendationRollup` happened to
- * collect. Used to pick each type-group's own highest-impact member and to
- * order that group's expanded list; cross-group ordering is
+ * collect. Picks each type-group's own highest-impact member and orders
+ * that group's expanded list; cross-group ordering is
  * `buildRecommendationRollup`'s own job, not this function's. */
 export function rankFindings(findings: Finding[]): Finding[] {
   return [...findings].sort((a, b) => {

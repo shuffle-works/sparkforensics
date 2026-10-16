@@ -31,15 +31,13 @@ const edgeTypes = {
   exchange: PlanGraphExchangeEdge,
 };
 
-// Paint order, all above React Flow's edge layer (z 0): outer stage box, then
-// inner segment box, then the plan nodes on top. Keeping the group boxes above
-// the edges (rather than the old negative z-index behind them) stops a routed
-// edge from painting over a box's finding chips; the boxes' fills are
-// translucent, so an edge crossing a box still reads through.
 // Stand-ins while the first large layout is still being computed.
 const NO_FLOW_NODES: Node[] = [];
 const NO_FLOW_EDGES: Edge[] = [];
 
+// Paint order, all above React Flow's edge layer (z 0): outer stage box, inner
+// segment box, then plan nodes. Boxes above the edges keep a routed edge from
+// painting over their finding chips; the translucent fills let it read through.
 const STAGE_GROUP_Z = 1;
 const SEGMENT_GROUP_Z = 2;
 const PLAN_NODE_Z = 3;
@@ -60,11 +58,8 @@ const nodeMiddle = (node: Node) => ({
   y: node.position.y + (node.measured?.height ?? NODE_HEIGHT) / 2,
 });
 
-// A fit lands on a readable zoom, never below MIN_READABLE_ZOOM, so a graph too
-// large for the canvas overflows and scrolls instead of shrinking its text to
-// nothing (see readable-fit.ts). Every automatic re-fit shares it; the first fit
-// when the graph opens and the control rail's "Fit to view" are the one-click
-// full overview with no zoom floor.
+// Automatic re-fits clamp to a readable zoom; the first fit and the rail's "Fit
+// to view" are the full overview with no floor (see readable-fit.ts).
 function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: { resizeTick: number; fitSignal: number; centerRequest?: CenterRequest; sheetNodeId: string | null }) {
   const { fitView, setCenter, getNode, getZoom } = useReactFlow();
   const fitReadable = useReadableFit();
@@ -73,9 +68,7 @@ function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: 
   const canvasHeight = useStore((s) => s.height);
   const didInitialFit = useRef(false);
 
-  // First fit, the same full overview as the rail's "Fit to view". This mounts
-  // only once the layout is done (the canvas shows LayoutProgress until then), and
-  // waits for the canvas to have a size and the nodes to be measured.
+  // First fit: waits for the canvas to have a size and the nodes to be measured.
   useEffect(() => {
     if (didInitialFit.current || !nodesInitialized || !canvasWidth || !canvasHeight) return;
     didInitialFit.current = true;
@@ -95,12 +88,9 @@ function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: 
     setCenter(x, y, { zoom: getZoom(), duration: 200 });
   }, [sheetNodeId, canvasHeight, getNode, setCenter, getZoom]);
 
-  // Recenter on a paired-node jump (the detail card's "Jump to write/read
-  // half"). Token 0 is the initial value, so the mount never pans. Centers the
-  // node's middle, as the phone sheet pan does, so the two agree when a jump
-  // also changes the selection; falls back to a
-  // by-id fitView when the node isn't in the store yet (e.g. the tick right
-  // after a scope expand brought the partner into view).
+  // Recenter on a paired-node jump. Token 0 is the initial value, so the mount
+  // never pans. Falls back to a by-id fitView when the node isn't in the store
+  // yet (the tick right after a scope expand brought the partner into view).
   useEffect(() => {
     if (!centerRequest || centerRequest.token === 0 || !centerRequest.nodeId) return;
     const target = getNode(centerRequest.nodeId);
@@ -117,20 +107,15 @@ function ViewportAutoFit({ resizeTick, fitSignal, centerRequest, sheetNodeId }: 
   }, [fitReadable]);
 
   // The docs panel resizes this container via CSS, not the window, so `resize`
-  // above never fires for it; resizeTick (a ResizeObserver on the outer row)
-  // covers that. It sits on the outer row, not the canvas wrapper, so opening
-  // the docked inspector (which shrinks the canvas but not the row) does not
-  // fire it and reset the user's pan/zoom. tick 0 is the initial measurement,
-  // already handled by the initial fit above.
+  // never fires for it; resizeTick covers that. tick 0 is the initial
+  // measurement, already handled by the initial fit.
   useEffect(() => {
     if (resizeTick === 0) return;
     fitReadable(200);
   }, [resizeTick, fitReadable]);
 
-  // Re-fit when the route flips scope (Expand to full plan / Back to segment
-  // view): the new graph is a very different size, so keeping the old pan/zoom
-  // would leave the user zoomed into a corner. Signal 0 is the initial value,
-  // already covered by the initial fit above.
+  // Re-fit on a scope flip: the new graph is a very different size. Signal 0 is
+  // the initial value, already covered by the initial fit.
   useEffect(() => {
     if (fitSignal === 0) return;
     fitReadable(300);
@@ -213,7 +198,7 @@ export function PlanGraphCanvas({
    * fit-to-view; 0 is the initial value (no fit beyond the mount-time one). */
   fitSignal?: number;
   /** Node filter + duration settings, surfaced from the control rail's Settings
-   * popover (they used to live in the topbar). The route owns the state. */
+   * popover. The route owns the state. */
   filterMode?: PlanGraphFilterMode;
   onFilterModeChange?: (mode: PlanGraphFilterMode) => void;
   hiddenCount?: number;
@@ -279,13 +264,10 @@ export function PlanGraphCanvas({
     // A large layout still running in the worker: nothing to build yet.
     if (!layoutReady) return null;
     const { groupOf, showStageGroup, stageGroupOf, layoutNodes, layoutEdges, direction, needsFullFallback } = layoutPlan;
-    // Sum `exclusiveDurationShare` (a true, non-overlapping partition of each
-    // stage's wall time), not `durationShare` (the mode-selected value shown
-    // on each node): under 'inclusive' mode `durationShare` double/triple-
-    // counts a node's own time into every ancestor, so summing it directly
-    // would make this total balloon by tree depth and distort every node's
-    // percentage. Falls back to `durationShare` for hand-built fixtures
-    // (tests) that don't set the exclusive field separately.
+    // Sums the exclusive share, not the mode-selected one, so the total does not
+    // grow with tree depth in inclusive mode (docs-site/contributor-guide/
+    // architecture/drill-down/plan-graph.md, "Duration share"). Falls back to `durationShare` for hand-built
+    // fixtures that don't set the exclusive field.
     const totalDuration = model.nodes.reduce((sum, n) => sum + (n.exclusiveDurationShare ?? n.durationShare ?? 0), 0);
     const laidOutVisible = layoutWithDagre(layoutNodes, layoutEdges, { groupOf, direction });
     const laidOutFull = needsFullFallback
@@ -308,9 +290,6 @@ export function PlanGraphCanvas({
         // Read-only graph: no node drag (also keeps xyflow's drag handler off
         // each node, which otherwise throws under jsdom on click).
         draggable: false,
-        // Layer order (see the group boxes below): boxes sit above the edge
-        // layer so their finding chips aren't painted over by a routed edge,
-        // and plan nodes sit above the boxes.
         zIndex: PLAN_NODE_Z,
         // MiniMap reads dimensions off the user node object; this view never
         // passes onNodesChange, so the ResizeObserver's dimension events have
@@ -328,28 +307,19 @@ export function PlanGraphCanvas({
     });
 
     // Group boxes are plain background nodes in the members' coordinate space
-    // (not xyflow parent/child nesting; this view is read-only), layered under
-    // the plan nodes but above the edges (see the *_Z constants). Bounds come
-    // from the compact layout when a segment still has a visible member; a
-    // fully-filtered segment still gets a box sized from the full-model layout.
+    // (not xyflow parent/child nesting). Bounds come from the compact layout when
+    // a segment still has a visible member, else from the full-model layout.
     const groupNodes: Node[] = computeGroupBoundsWithFallback(groupOf, [laidOutVisible, laidOutFull]).map((group) => {
       const segmentIndex = Number(group.id.replace('segment-', ''));
-      // Duration/heat totals reflect the segment's real, unfiltered content;
-      // filtering declutters the view, it doesn't change what happened. Reads
-      // model.nodes (full membership, positions irrelevant here) rather than a
-      // laid-out set, so it stays correct even when the fallback layout above
-      // is skipped and laidOutFull aliases the filtered laidOutVisible.
+      // Totals cover the segment's unfiltered content, so read model.nodes, not a
+      // laid-out set (laidOutFull aliases the filtered one when the fallback is skipped).
       const membersInGroup = model.nodes.filter((n) => groupOf(n) === group.id);
-      // Same rationale as `totalDuration` above: this label is meant to read
-      // as the segment's real wall time, which only the exclusive partition
-      // gives; summing the mode-selected `durationShare` would show an
-      // inflated, mode-dependent number under 'inclusive'.
+      // Exclusive shares, as in `totalDuration` above.
       const groupDuration = membersInGroup.reduce((sum, n) => sum + (n.exclusiveDurationShare ?? n.durationShare ?? 0), 0);
       const hasAnyDuration = membersInGroup.some((n) => n.durationShare != null);
       const groupStageId = segmentStageIds?.get(segmentIndex) ?? null;
-      // Findings render inline in this box's header row when zipped to a real
-      // stage; the outer stage box only paints its own copy as a fallback for a
-      // stage with no matching segment (see matchedStageIds), so there's one copy.
+      // The outer stage box paints findings only for a stage with no matching
+      // segment (see matchedStageIds), so each finding shows once.
       const segmentFindings = groupStageId != null ? findingsForStage(findings, groupStageId) : [];
       return {
         id: group.id,
@@ -381,12 +351,8 @@ export function PlanGraphCanvas({
         .filter((id): id is number => id != null),
     );
 
-    // Outer group layer: one solid tinted box per stage wrapping every segment
-    // box zipped to it, so a stage split across Exchange-bounded segments reads as
-    // one unit. Wider padding/header keeps the outer box strictly containing its
-    // nested segment box(es); see the padding constants for the math.
-    // (showStageGroup and stageGroupOf are defined at the top of the memo, next
-    // to the layout passes that need them.)
+    // Outer layer: one box per stage wrapping every segment box zipped to it. The
+    // padding constants keep it strictly containing the nested segment boxes.
     const stageGroupNodes: Node[] = showStageGroup
       ? (() => {
           const groupOptions = {
@@ -396,9 +362,8 @@ export function PlanGraphCanvas({
           };
           const stageGroups = computeGroupBoundsWithFallback(stageGroupOf, [laidOutVisible, laidOutFull], groupOptions);
           const focalGroupId = `stage-${stageId}`;
-          // Segment/stage zipping can leave the focal stage unmapped when its
-          // segment loses the Math.min(segments, stages) pairing slot; add a focal
-          // finding target around the fallback graph so findings and "Next
+          // Zipping can leave the focal stage unmapped (its segment loses the
+          // Math.min(segments, stages) slot); add a box so its findings and "Next
           // problem" stay reachable.
           if (findingsForStage(findings, stageId).length > 0 && !stageGroups.some((group) => group.id === focalGroupId)) {
             const [focalGroup] = computeGroupBoundsWithFallback(() => focalGroupId, [laidOutVisible, laidOutFull], groupOptions);
@@ -412,9 +377,7 @@ export function PlanGraphCanvas({
               position: group.position,
               draggable: false,
               selectable: false,
-              // Wrapper is decorative; its inner "Focus stage N" button is the
-              // real, separately-focusable control, so keep the wrapper itself
-              // out of the tab order.
+              // Decorative wrapper; its inner "Focus stage N" button is the control.
               focusable: false,
               zIndex: STAGE_GROUP_Z,
               style: { width: group.width, height: group.height },
@@ -432,10 +395,8 @@ export function PlanGraphCanvas({
         })()
       : [];
 
-    // Weighted exchange edges scale relative to the heaviest exchange on screen,
-    // so thickness reads as "which shuffle moved the most data" rather than an
-    // absolute byte count. Unweighted edges (plain parent-child links, broadcast
-    // exchanges) fall through to the default edge renderer.
+    // Exchange edge thickness is relative to the heaviest exchange on screen.
+    // Unweighted edges fall through to the default renderer.
     const renderedEdges = visibleEdges ?? model.edges;
     const maxShuffleBytes = renderedEdges.reduce((max, e) => Math.max(max, e.shuffleBytes ?? 0), 0);
     const flowEdges: Edge[] = renderedEdges.map((e) =>
@@ -465,13 +426,10 @@ export function PlanGraphCanvas({
   const flowEdges = shown?.flowEdges ?? NO_FLOW_EDGES;
   const graphBounds = shown?.graphBounds ?? null;
 
-  // Collapsed by default: the key is about 450x190 px and would cover a corner
-  // of the graph on first open. The rail's Legend button opens it.
+  // Collapsed by default: the key is about 450x190 px and would cover a corner.
   const [legendOpen, setLegendOpen] = useState(false);
-  // `showMiniMap` gates whether the minimap is available at all. Within that it
-  // shows while part of the graph is off screen, unless a click on the rail
-  // toggle chose to force it on or off (`miniMapChoice`, null until then). The
-  // rail's pressed state reads the same `miniMapOpen`, so it matches the screen.
+  // `showMiniMap` gates availability; within it the minimap follows overflow until
+  // the rail toggle forces it (`miniMapChoice`, null until then).
   const [graphOverflows, setGraphOverflows] = useState(true);
   const [miniMapChoice, setMiniMapChoice] = useState<boolean | null>(null);
   const miniMapOpen = showMiniMap && (miniMapChoice ?? graphOverflows);
@@ -497,12 +455,9 @@ export function PlanGraphCanvas({
   // only the empty group boxes with no hint why; this surfaces the reason.
   const allNodesFiltered = visibleNodeIds != null && visibleNodeIds.size === 0 && model.nodes.length > 0;
 
-  // Keyboard open for the node inspector. xyflow makes each node focusable and
-  // selects it on Enter/Space in its own store, but never calls our
-  // onNodeClick, so the docked inspector (the only fully-legible view of a
-  // node) would be pointer-only. This bridges a focused plan node's Enter/Space
-  // to the same onSelectNode the click path uses. Scoped to planNode wrappers,
-  // so the decorative group boxes (now non-focusable anyway) can't trigger it.
+  // xyflow selects a focused node on Enter/Space in its own store but never calls
+  // onNodeClick, so this bridges the key to onSelectNode. Scoped to planNode
+  // wrappers so the decorative group boxes can't trigger it.
   const onCanvasKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const nodeEl = (e.target as HTMLElement).closest('.react-flow__node-planNode');
@@ -518,17 +473,12 @@ export function PlanGraphCanvas({
 
   return (
     <ReactFlowProvider>
-      {/* One tooltip provider for the whole canvas. Node finding badges and
-          weighted-edge labels used to each mount their own base-ui
-          Tooltip.Provider, which multiplied by node/edge count and added
-          measurable render cost on a large plan; a single shared provider here
-          serves every trigger below. */}
+      {/* One shared tooltip provider: a provider per badge or edge label adds
+          measurable render cost on a large plan. */}
       <TooltipProvider>
-      {/* The resize observer lives on this outer row, not the canvas wrapper
-          below: opening the docked inspector shrinks the canvas wrapper (a flex
-          sibling) but leaves this row's width unchanged, so a genuine layout
-          resize (docs panel, window) still triggers a re-fit while opening a
-          node no longer resets the user's pan/zoom. */}
+      {/* The resize observer sits on this outer row, not the canvas wrapper, so
+          opening the docked inspector (which shrinks only the wrapper) does not
+          re-fit and reset the user's pan/zoom. */}
       <div ref={containerRef} className="flex min-h-0 flex-1 flex-col sm:flex-row">
         {/* Rail and canvas share a row so that on a phone the node detail can
             sit below them as a bottom sheet instead of beside them. */}

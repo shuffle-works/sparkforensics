@@ -1,23 +1,12 @@
 #!/usr/bin/env node
-// Manual dev tool: per-phase timing of the analysis pipeline (decompress, parse + model build,
-// detectors, evidence JSON, comparison, CLI end to end, MCP tool call), with median and spread
-// over repeated cold child processes.
+// Manual dev tool: per-phase timing of the analysis pipeline over repeated cold child processes.
+// Phases and flags: docs-site/contributor-guide/testing.md. Parse+model is collect minus
+// decompress and only approximate; treat collect as the real number.
 //
 // Usage:
 //   node dev/bench-phases.mjs [--repeat N] [--json out.json] <log>[:<baseline-log>]...
-//   node dev/bench-phases.mjs --cli  [--repeat N] <log>...     # CLI end to end (child process)
-//   node dev/bench-phases.mjs --mcp  [--repeat N] <log>[:<other>]  # MCP tool calls (cold + warm)
-//
-// Each repeat is a fresh `node` process, so JIT warm-up and heap growth are part of the number,
-// as they are for a real CLI run. Phases are measured in sequence inside one process:
-//   decompress : streamFile with a no-op consumer (codec only; absent for zip archives)
-//   collect    : collectRun = decompress + line split + JSON.parse + event handlers + model
-//   findings   : runFindings (detectors + impact estimates) on the parsed model
-//   evidence   : buildEvidenceReport({markdown:false}) + JSON.stringify of the result
-//   outputBlocks: runOutputBlocks (the CLI report's metrics + effectiveConf blocks; stage identity per stage)
-//   compare    : collect of the second log (not counted) + buildComparisonOutput of the pair
-// parse+model is derived as collect - decompress (the two run back to back, so the second pass
-// has a warm page cache and JIT; treat the split as approximate and collect as the real number).
+//   node dev/bench-phases.mjs --cli  [--repeat N] <log>...
+//   node dev/bench-phases.mjs --mcp  [--repeat N] <log>[:<other>]
 import { spawnSync } from 'node:child_process';
 import { statSync, writeFileSync } from 'node:fs';
 import { join, basename, dirname } from 'node:path';

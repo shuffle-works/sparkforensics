@@ -1,22 +1,8 @@
 #!/usr/bin/env node
-// Manual dev tool: scores the skew and straggler detectors against a task-level ground truth.
-//
-// For every stage with 2+ tasks, replays its own tasks with list scheduling (slots = the stage's
-// observed peak concurrent tasks, tasks in launch order, each on the earliest free slot) twice:
-// with the real durations, and with every task over 4x P50 (the parser's straggler definition)
-// capped at P50. The difference is the wall-clock a tail fix would recover. A stage is a positive
-// when that recoverable time is >= 0.5% of app runtime, the detectors' own noise floor.
-//
-// Reports, per detector and for "either fired": precision/recall of the non-info findings, and
-// how far each finding's wallClock.high sits from the replayed recoverable time.
-// The detectors claim the same replay (finalizeStage's computeTailReplayRecoveryMs); this copy
-// is kept independent so it checks that one. An estimate off the replay here comes from the
-// occupancy clip, not from the claim.
+// Manual dev tool: scores the skew and straggler detectors against a task-level replay of each
+// stage's tasks with and without the tail. Details: docs-site/contributor-guide/testing.md.
 //
 // Usage: node dev/eval-tail-replay.mjs [--set detector.threshold=value ...] [--verbose] <file|dir>...
-//   e.g. --set straggler.shareWarn=0.03 to score a threshold change without editing code.
-//   --verbose also lists every missed or false-positive stage and every estimate more than 2x
-//   off the replay, with the stage's tail figures, to see what a change moved.
 import { readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createState, runParse, runParseFiles, reassembleRollingEntries } from '../packages/core/src/parser-worker.ts';

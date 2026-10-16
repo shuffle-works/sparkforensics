@@ -5,7 +5,7 @@
 // Each raw block is the standard Snappy format (varint uncompressed length +
 // a sequence of literal/copy tagged elements): see
 // https://github.com/google/snappy/blob/main/format_description.txt. This is
-// a different framing from Spark's own LZ4Block format (src/lz4-block.js).
+// a different framing from Spark's own LZ4Block format (lz4-block.ts).
 
 const MAGIC = [0x82, 0x53, 0x4e, 0x41, 0x50, 0x50, 0x59, 0x00]; // 0x82 'S' 'N' 'A' 'P' 'P' 'Y' 0x00
 const HEADER_SIZE = 16; // 8-byte magic + 4-byte version + 4-byte compatible version
@@ -102,7 +102,7 @@ export function decodeSnappyBlock(bytes: Uint8Array): Uint8Array {
 
 // Streaming counterpart: push arbitrary byte slices, each fully-received
 // block is decompressed and handed to `onChunk` as it completes. Mirrors
-// createLz4BlockDecoder's shape/contract (see src/lz4-block.js).
+// createLz4BlockDecoder's shape/contract (see lz4-block.ts).
 export function createSnappyBlockDecoder(
   onChunk: (chunk: Uint8Array) => void,
 ): { push(chunk: Uint8Array): void; end(): void } {

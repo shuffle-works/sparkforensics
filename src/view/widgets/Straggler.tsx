@@ -58,10 +58,7 @@ function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appMod
 }
 
 /** Board section for `straggler` findings: a stage where speculative
- * retries fired or a share of tasks ran far longer than the median. Split
- * out of the former combined `ExecutorTimeline.tsx`; see `SlowHost.tsx`,
- * `StageSlowness.tsx`, `SpeculationWaste.tsx`, and `ColdStart.tsx` for its
- * four siblings. */
+ * retries fired or a share of tasks ran far longer than the median. */
 export const Straggler = memo(function Straggler({ appModel, catalog, defaultCollapsed = true }: StragglerProps) {
   const { sortMode, setSortMode, orderBy } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);

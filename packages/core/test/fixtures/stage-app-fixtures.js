@@ -1,5 +1,4 @@
-// Shared stage/app fixture factories, deduped out of near-identical copies
-// previously pasted into analyzer.test.js, analyzer-finding-identity.test.js,
+// Shared stage/app fixture factories for analyzer.test.js, analyzer-finding-identity.test.js,
 // evidence-report.test.js, and detectors-plan.test.js.
 export function makeStage(overrides = {}) {
   return {

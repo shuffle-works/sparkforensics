@@ -359,9 +359,7 @@ export function StageTable({ appModel, catalog, getTaskData: _getTaskData, onRou
       {
         // How many finding types flag this stage: the same count as the
         // row's chips, so a sort by this column puts the most-flagged stages
-        // first. (It used to count distinct board widgets, which showed "—"
-        // for a stage flagged by skew, straggler and tiny-task findings,
-        // since those share one widget.)
+        // first.
         id: 'findingCount',
         header: 'Findings',
         accessorFn: (r) => r.tags.length,

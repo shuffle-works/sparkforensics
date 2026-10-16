@@ -1,14 +1,9 @@
 #!/usr/bin/env node
-// Manual dev tool: measures the throughput cost per-line
-// SparkEventSchema.safeParse adds on top of plain JSON.parse, against the
-// largest real fixture available.
+// Manual dev tool: measures the throughput cost per-line SparkEventSchema.safeParse adds on top
+// of plain JSON.parse, on the largest fixture (decompressed in memory first). Details:
+// docs-site/contributor-guide/testing.md.
 //
 // Usage: node dev/bench-event-validation.mjs [fixture-dir]
-//
-// Real Spark event logs are zstd-compressed (the native input format), so the
-// largest fixture is decompressed in memory first via the vendored fzstd
-// decoder's one-shot decompress(); otherwise JSON.parse would just fail on
-// binary data instead of measuring validation cost.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { decompress as zstdDecompress } from '../packages/core/src/vendor/fzstd.js';

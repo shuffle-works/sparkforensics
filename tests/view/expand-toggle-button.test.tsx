@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { test, expect, vi } from 'vitest';
 import { ExpandToggleButton } from '@/view/ExpandToggleButton';
 
-// Regression: asserts the `flex w-fit` classes directly (jsdom has no layout);
+// Asserts the `flex w-fit` classes directly (jsdom has no layout);
 // dropping either would let the button sit inline instead of on its own line.
 test('renders on its own line at intrinsic width (flex w-fit), not inline', () => {
   render(<ExpandToggleButton expanded={false} onClick={() => {}} label="Task detail" location="Stage 1" />);

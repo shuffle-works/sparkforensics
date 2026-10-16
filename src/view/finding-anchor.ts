@@ -59,9 +59,10 @@ export interface AnchoredRow {
 }
 
 /** Combines `useFindingAnchor` + `useIsRouteFlash` into the one bundle every
- * anchored row needs: the ref callback, the fixed `tabIndex={-1}` (findings
- * are reached via triage routing, not tab order), `data-flashed` for tests,
- * and the flash className fragment to append to the row's own layout classes. */
+ * anchored row needs: the ref callback, the fixed `tabIndex={-1}` (a triage
+ * route focuses the row itself; -1 keeps it programmatically focusable without
+ * adding it to Tab order), `data-flashed` for tests, and the flash className
+ * fragment to append to the row's own layout classes. */
 export function useAnchoredRow(findings: Finding[]): AnchoredRow {
   const ref = useFindingAnchor(findings);
   const isFlashed = useIsRouteFlash(findings);

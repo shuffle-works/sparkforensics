@@ -5,9 +5,8 @@ import { fileURLToPath } from 'node:url';
 // This file lives at <repoRoot>/vite-plugins/copy-docs-site.ts, so one
 // dirname() strips the filename (-> <repoRoot>/vite-plugins) and a second
 // strips that directory (-> <repoRoot>). Resolving from the file's own
-// location, not process.cwd(), keeps this a zero-behavior-change extraction
-// of vite.config.ts's original __dirname-based resolution (vite.config.ts
-// sits directly at <repoRoot>, one dirname short of this file).
+// location, not process.cwd(), keeps the result independent of where the
+// build is launched from.
 const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
 /** Copies the built VitePress docs site into `<outDir>/docs` at build time, so

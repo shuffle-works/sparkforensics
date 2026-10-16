@@ -23,8 +23,6 @@ import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 
 export type OverBroadcastProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
-/** One flagged finding's row, anchored so a triage route focuses the row
- * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
 function OverBroadcastRow({ finding }: { finding: FindingOf<'overBroadcast'> }) {
   const anchor = useAnchoredRow([finding]);
 
@@ -47,9 +45,7 @@ function OverBroadcastRow({ finding }: { finding: FindingOf<'overBroadcast'> }) 
 
 /** Board section for `overBroadcast` findings: a broadcast join whose build
  * side turned out larger than the threshold assumed, risking an
- * out-of-memory executor. Split out of the former combined
- * `PlanFindings.tsx`; see `DuplicatePlanSubtree.tsx`, `SmallFiles.tsx`, and
- * `UnderBroadcast.tsx` for its three siblings. */
+ * out-of-memory executor. */
 export const OverBroadcast = memo(function OverBroadcast({ catalog, defaultCollapsed = true }: OverBroadcastProps) {
   const { sortMode, setSortMode, orderBy } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
@@ -86,8 +82,6 @@ export const OverBroadcast = memo(function OverBroadcast({ catalog, defaultColla
         </>
       }
       statusBadge={
-        // `sqlPlan` is a widget-wide evidence constant (this detector always reads
-        // the resolved SQL plan), so it sits on the header once, not per row.
         <AdvancedOnly>
           <RowStatusCluster
             confidence={findings[0].confidence}

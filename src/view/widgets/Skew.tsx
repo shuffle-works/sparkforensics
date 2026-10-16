@@ -13,10 +13,8 @@ function findingLabel(f: Finding): string {
 export type SkewProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'getTaskData' | 'defaultCollapsed'>;
 
 /** Per-stage task-duration skew board: flags every stage carrying a `skew`
- * finding (never just the worst one). Thin wrapper around the shared
- * `StageFindingGroupWidget` (`StageFindingGroup.tsx`), which owns the
- * row/card/pagination scaffold this shares with its two siblings,
- * `StageShape.tsx` and `TinyTask.tsx`. */
+ * finding (never just the worst one). Thin wrapper over
+ * `StageFindingGroupWidget` (`StageFindingGroup.tsx`). */
 export const Skew = memo(function Skew(props: SkewProps) {
   return <StageFindingGroupWidget {...props} type="skew" title="Task Skew" idPrefix="skew" findingLabel={findingLabel} />;
 });

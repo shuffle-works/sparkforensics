@@ -44,7 +44,7 @@ test('shows the recommendation text and no doc link (this detector sets no docAn
   const cardDisclosure = screen.getByRole('button', { name: 'Incomplete Run' });
   await user.click(cardDisclosure);
 
-  // The recommendation is shown unconditionally, and the card no longer restates the missing event.
+  // The recommendation is shown unconditionally, and the card does not restate the missing event.
   expect(screen.queryByText(/this run.s event log never recorded an applicationend event/i)).not.toBeInTheDocument();
   expect(screen.getByText(/reflect only what was captured before the run was cut off/i)).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /learn more/i })).not.toBeInTheDocument();

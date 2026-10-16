@@ -1,7 +1,6 @@
-// §4 What-if executor-scaling simulator.
-// DESIGN SPIKE: the makespan model is a first-cut approximation and is NOT
-// validated against ground truth (a single event log only ever observes one
-// scale). Every prediction ships with a Model Error confidence indicator.
+// What-if executor-scaling simulator. The makespan model is a first-cut approximation and is NOT
+// validated against ground truth (a single event log only ever observes one scale). Every
+// prediction ships with a Model Error confidence indicator.
 //
 // Builds on computeCoreTimeSeries' clamp conceptually, but operates on the
 // worker-posted per-stage aggregates (runAggregates.perStage) so raw task data

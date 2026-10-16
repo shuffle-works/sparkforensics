@@ -424,14 +424,10 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence
 
 /** Stage-detail modal: opened via `useStageDetail().openStage(id)`, closed via
  * Escape/backdrop/close-button (all owned by the base-ui `Dialog`, no
- * hand-rolled focus trap). Renders nothing until a stage is open. Sections:
- * verdict (always expanded), then Overview (expanded by default; duration,
- * timestamps, SQL execution, stage type), Tasks (+ duration histogram),
- * Locality (+ bar chart), I/O, Spill and GC (both conditional), an
- * Advanced-only call-stack toggle, and a hierarchical SQL plan tree, each a
- * `CollapsibleSection` collapsed by default unless noted (not the flat
- * `PlanExplorer` accordion used elsewhere; unlike `PlanExplorer`'s embeds,
- * this one stays visible at Basic). */
+ * hand-rolled focus trap). Renders nothing until a stage is open. Body
+ * sections are `CollapsibleSection`s, collapsed by default unless noted; the
+ * SQL plan tree is hierarchical (not the flat `PlanExplorer` accordion) and,
+ * unlike `PlanExplorer`'s embeds, stays visible at Basic. */
 export function StageDetailDialog({ appModel, catalog, getTaskData, onRoute }: StageDetailDialogProps) {
   const { stageId, close } = useStageDetail();
   const stage = stageId != null ? appModel.stages.get(stageId) : undefined;

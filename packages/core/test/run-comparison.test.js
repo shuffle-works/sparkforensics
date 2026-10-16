@@ -136,7 +136,7 @@ describe('stageIdentity (plan-tree structural identity)', () => {
 
   it('falls back to whole-tree identity when no node carries stage attribution (no stageIds anywhere)', () => {
     // Mirrors every other test in this block: hand-built plan nodes with no
-    // `stageIds` field at all. Must behave exactly as before this change.
+    // `stageIds` field at all. Must behave as a plain stage pair.
     const stageA = { id: 1, name: 'Exchange 1', sqlExecutionId: 1 };
     const stageB = { id: 2, name: 'Exchange 2', sqlExecutionId: 1 };
     const snapshot = planSnap(1, { name: 'Exchange', detail: 'x', metrics: [], children: [] });
@@ -242,7 +242,6 @@ describe('matchStages', () => {
   });
 });
 
-// --- metric deltas ---
 import { metricDeltas, COMPARISON_METRIC_KEYS, NEUTRAL_METRIC_KEYS } from '../src/run-comparison.js';
 
 function stageFull(over) {
@@ -379,7 +378,6 @@ describe('metricDeltas', () => {
   });
 });
 
-// --- findings delta ---
 import { findingsDelta } from '../src/run-comparison.js';
 
 function catSnap(stages, catalog, app = { name: 'A' }) {
@@ -465,7 +463,6 @@ describe('findingsDelta (finding identity)', () => {
   });
 });
 
-// --- compareRuns assembler ---
 import { compareRuns } from '../src/run-comparison.js';
 
 const B = (stages, app) => ({ label: 'base.log', snapshot: { app, stages: new Map(stages), sql: new Map(), jobs: new Map(), catalog: [] } });
@@ -599,7 +596,6 @@ describe('compareRuns confidence', () => {
   });
 });
 
-// --- Review regressions ---
 describe('findingsDelta: app-level findings sharing a rule (bug C1)', () => {
   it('counts distinct severities of one rule separately', () => {
     const base = catSnap([], [
@@ -630,7 +626,6 @@ describe('metricDeltas: failed-task rate with absent failedTasks (bug C2)', () =
   });
 });
 
-// --- per-stage summaries for manual pinning ---
 describe('compareRuns per-stage summaries', () => {
   it('exposes id, name, and per-field metrics for every stage on both sides', () => {
     const s = (over) => stageFull({ submittedAt: 0, completedAt: 1000, diskBytesSpilled: 40, jvmGCTime: 5,
@@ -657,7 +652,6 @@ describe('compareRuns per-stage summaries', () => {
   });
 });
 
-// --- shared Markdown renderer ---
 import { renderComparisonMarkdown } from '../src/run-comparison.js';
 import { comparisonVerdict } from '../src/comparison-verdict.ts';
 

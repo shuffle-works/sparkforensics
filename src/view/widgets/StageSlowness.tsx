@@ -43,10 +43,7 @@ function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetPro
 
 /** Board section for `stageSlowness` findings: a stage whose wall-clock
  * duration crossed the absolute-duration floor, suppressed when `slowHost`
- * already fired for the same stage (see `detectors.ts`'s `suppressedBy`).
- * Split out of the former combined `ExecutorTimeline.tsx`; see
- * `SlowHost.tsx`, `Straggler.tsx`, `SpeculationWaste.tsx`, and
- * `ColdStart.tsx` for its four siblings. */
+ * already fired for the same stage (see `detectors.ts`'s `suppressedBy`). */
 export const StageSlowness = memo(function StageSlowness({ appModel, catalog, defaultCollapsed = true }: StageSlownessProps) {
   const { sortMode, setSortMode, orderBy } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);

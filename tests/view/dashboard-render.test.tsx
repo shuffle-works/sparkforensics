@@ -195,9 +195,7 @@ test('Findings impact-band-ranks affected widgets into Critical/Warning/Info ban
 
 test('a clean type still gets its own clean-check line when a sibling sharing its chart component is active', async () => {
   showAllEvidence();
-  // skew/tinyTask/stageShape used to share the TaskSkew component (now each
-  // has its own: Skew/StageShape/TinyTask); kept as a regression guard that
-  // an active skew finding must not swallow the other two's clean-check lines.
+  // An active skew finding must not swallow the tinyTask and stageShape clean-check lines.
   const user = userEvent.setup();
   const catalog: Finding[] = [
     { type: 'skew', stageId: 1, impactBand: 'warning' },

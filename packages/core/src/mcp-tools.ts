@@ -57,7 +57,7 @@ export interface RunSummary {
 export interface McpCompareRunsResult extends ComparisonOutput {
   runIdA: string;
   runIdB: string;
-  /** @deprecated Aliases of `findings` and `metrics`, kept for one release. */
+  /** @deprecated Aliases of `findings` and `metrics`, kept for compatibility. */
   findingsDelta: ComparisonOutput['findings'];
   metricDeltas: ComparisonOutput['metrics'];
 }

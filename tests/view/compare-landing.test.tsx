@@ -8,7 +8,7 @@ import { ThemeProvider } from '@/theme/ThemeProvider';
 import { store } from '@/store/store';
 
 // CompareLanding renders a real <DropZone />, which needs a DocsProvider
-// ancestor (DocsLink throws via useDocs() otherwise) and touches recent-files.js
+// ancestor (DocsLink throws via useDocs() otherwise) and touches recent-files.ts
 // in an effect. useIngest is fully mocked so the DropZone-visible calls stay
 // inert while startCompareLoad stays a spied fn CompareLanding can call.
 const startCompareLoad = vi.fn();

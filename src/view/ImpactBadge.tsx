@@ -87,7 +87,7 @@ export interface TagBadgeProps {
    * existing click handler, and TagBadge's own TAG_HELP title would shadow
    * the button's tooltip over its whole hoverable area. Set at those call
    * sites to suppress both the docs link and the title, keeping the plain
-   * rendering (no TAG_HELP tooltip, no link) it has today. */
+   * rendering (no TAG_HELP tooltip, no link). */
   plainBadge?: boolean;
   /** The specific finding's own `docAnchor`, for call sites that render one
    * finding (or a group sharing one anchor, `sharedDocAnchor`). Wins over the
@@ -111,29 +111,14 @@ export interface TagBadgeProps {
  * opening the in-app panel.
  *
  * Beside the dot+tag, renders a second icon link at the Advanced density tier
- * into this tag's SparkForensics-specific remediation entry in
+ * (wrapped in `AdvancedOnly`) into this tag's remediation entry in
  * `docs-site/user-guide/understanding-findings.md` (`findingGuideUrl`). It
- * opens in the same in-app docs panel as the vendor link (same click
- * behavior, same modifier-key/non-primary-button passthrough, same panel);
- * the vendor link documents Spark generically, this one documents what the
- * tag means for a SparkForensics run, so the two stay distinct entry points
- * rather than collapsing into one. `target`/`rel` stay on the `<a>` as the
- * graceful-degradation fallback (modifier-click, no JS, no `DocsProvider`
- * ancestor), exactly like the vendor link. At Basic density the guide link
- * doesn't render (wrapped in `AdvancedOnly`): the dot+tag pill alone is the
- * primary problem-flagging vocabulary a first-time reader scans, and the
- * "go read the reference doc" affordance is Advanced-tier detail.
- *
- * Rendered as two abutting halves that read as one pill: the dot+tag `Badge`
- * (rounded on its left only when the guide link follows, i.e. at Advanced
- * density) and, immediately after it, the guide `<a>` rounded on the right;
- * never one `<a>` nested inside the other, which isn't valid HTML and is
- * exactly what a single pill-wide anchor would require once a second link
- * needs to sit inside it. The guide link is hand-styled rather than built
- * from `Badge` because `Badge`'s own `overflow-hidden` would clip its
- * `tap-target-comfortable` hit-area overlay, which deliberately paints
- * outside the link's visual bounds to reach a touch-friendly size without
- * growing the pill. */
+ * opens the same in-app docs panel as the vendor link, with the same
+ * modifier-key passthrough and `target`/`rel` fallback; the vendor link
+ * documents Spark generically, this one what the tag means for a
+ * SparkForensics run. The two halves abut as siblings, never nested; see
+ * docs-site/contributor-guide/architecture/board-widgets/visual-system-and-templating.md
+ * for why. */
 export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }: TagBadgeProps) {
   const docs = useOptionalDocs();
   const density = useWidgetDensity();

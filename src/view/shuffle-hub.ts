@@ -1,8 +1,6 @@
-/** DOM markers the Shuffle Works hub's publish-time pipeline
- * (shuffle-works-site's scripts/sync-static-sites.sh) injects into the
- * static HTML shell before this app's own script runs. See
- * docs/product-bar-contract.md in shuffle-works-site for the contract this
- * file implements the app side of. */
+/** DOM markers the host site's publish step injects into the static HTML shell
+ * before this app's script runs (see "The docs site's anchor clicks" in
+ * docs-site/contributor-guide/development-setup.md). */
 export const PRODUCT_BAR_SELECTOR = '[data-shuffle-product-bar]';
 export const HUB_FOOTER_SELECTOR = '[data-shuffle-footer]';
 

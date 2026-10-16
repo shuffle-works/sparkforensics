@@ -66,9 +66,7 @@ function PartitionSizingRow({ entry, appModel }: { entry: StageEntry; appModel: 
 export type PartitionSizingProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'defaultCollapsed'>;
 
 /** Partition-sizing recommendations board: flags every stage carrying a
- * `partitionSizing` finding (never just the worst one). Split out of the
- * former combined `ShuffleIO.tsx`; see that file for the sibling `shuffle`
- * widget. */
+ * `partitionSizing` finding (never just the worst one). */
 export const PartitionSizing = memo(function PartitionSizing({ appModel, catalog, defaultCollapsed = true }: PartitionSizingProps) {
   const [page, setPage] = useState(0);
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);

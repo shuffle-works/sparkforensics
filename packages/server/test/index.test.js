@@ -131,10 +131,10 @@ describe('/mcp route', () => {
     expect(res.status).not.toBe(403);
   });
 
-  // Regression: createServer()'s no-op .catch() on the eager
-  // loadCreateMcpServer(dir) promise must NOT swallow a genuine failure for a
-  // real /mcp caller; the handler's own await observes the same rejection and
-  // must still turn it into a 500. Injected via the loadCreateMcpServer override
+  // createServer()'s no-op .catch() on the eager loadCreateMcpServer(dir) promise
+  // must not swallow a genuine failure for a real /mcp caller; the handler's own
+  // await observes the same rejection and turns it into a 500. Injected via the
+  // loadCreateMcpServer override
   // rather than the real vendor-core/ dir, which bin.test.js races.
   it('surfaces a genuine loadCreateMcpServer failure as a 500, not a swallowed error', async () => {
     const port = await listen({

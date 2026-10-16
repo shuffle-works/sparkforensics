@@ -44,9 +44,8 @@ export const TASK_FIELD_NAMES: string[] = TASK_FIELD_DESCRIPTORS.map((d) => d.na
 const TASK_FIELD_PROPS = TASK_FIELD_DESCRIPTORS.map((d) => d.prop);
 
 // Numeric accumulator fields on `stage` that this function reads/increments.
-// `stage`'s public parameter type stays the loose Record shape per this
-// module's Produces contract; this narrow view is only for the arithmetic
-// below, never a restatement of the object's real shape.
+// `stage`'s public parameter type stays the loose Record shape; this narrow view is only for the
+// arithmetic below, never a restatement of the object's real shape.
 interface StageNumericAccumulator {
   shuffleReadBytes: number;
   shuffleWriteBytes: number;

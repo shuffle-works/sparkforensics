@@ -62,11 +62,8 @@ function computeExecutorSeries(appModel: AppModel): ExecutorSeries {
 }
 
 /** Executor add/remove count over time: a whole-run backdrop chart, not
- * driven by any finding. Extracted out of the former combined
- * `ExecutorTimeline.tsx`, which annotated this same chart with up to 5
- * finding types (now split into `SlowHost`, `StageSlowness`, `Straggler`,
- * `SpeculationWaste`, `ColdStart`); rendered directly in `ReferenceSection`,
- * not through `REGISTRY`. */
+ * driven by any finding. Rendered directly in `ReferenceSection`, not through
+ * `REGISTRY`. */
 /** The chart's hover text on the theme's popover surface: "At 7s: Active
  * executors 2". */
 export function ExecutorCountTooltip({ active, payload, label }: { active?: boolean; payload?: ReadonlyArray<{ value?: unknown }>; label?: unknown }) {

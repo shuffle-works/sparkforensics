@@ -1,4 +1,4 @@
-// Best-effort summary of a resolved plan tree (parser-worker `resolvePlanTree`).
+// Best-effort summary of a resolved plan tree (`resolvePlanTree` in event-handlers.ts).
 // Unparseable fragments are silently skipped, never surfaced as an error.
 
 import type { PlanNode } from './types.ts';
@@ -56,14 +56,14 @@ export function isDeltaLogRead(name: string, detail: string): boolean {
 }
 
 // Stable relation-identity key for a scan node: "<format>:<relation>" (e.g.
-// "delta:mx.store_map", "parquet:warehouse.sales", "jdbc:dw.dim_product")
+// "delta:db.t", "parquet:db.a", "jdbc:db.b")
 // or null when the node is internal Delta metadata / a non-scan / un-nameable.
 // The single source of truth for scan identity, shared by `visitScan` (summary)
 // and the `cachingOpportunity` detector so the regexes live in one place.
 export function scanRelationId(name: string, detail: string): string | null {
-  // 1. Named catalog table, untruncated, from the nodeName (the key fix; the
-  //    Location: path is truncated at ~100 chars and points at _delta_log for
-  //    Delta tables). All catalog tables surface as `spark_catalog.<db>.<table>`.
+  // Named catalog table, untruncated, from the nodeName (the Location: path is truncated at
+  // ~100 chars and points at _delta_log for Delta tables). All catalog tables surface as
+  // `spark_catalog.<db>.<table>`.
   let format = null, table = null;
   const nameM = name.match(/^Scan\s+(parquet|orc|csv|json)\s+(spark_catalog\.\S+)$/i);
   // Fast reject: every branch below that returns a key needs this name match, a FileScan
@@ -81,12 +81,12 @@ export function scanRelationId(name: string, detail: string): string | null {
     return `${format}:${table.replace(/^spark_catalog\./, '')}`;
   }
 
-  // 2. Internal Delta metadata (see isDeltaLogRead) → null.
+  // Internal Delta metadata (see isDeltaLogRead): no relation.
   if (isDeltaLogRead(name, detail)) return null;
 
-  // 3. Anonymous real file read (InMemoryFileIndex, no catalog name) →
-  //    best-effort Location basename. Preserves temp/snapshot self-reuse; a
-  //    truncated Location can still fragment these; inherent, unrecoverable.
+  // Anonymous real file read (InMemoryFileIndex, no catalog name): best-effort Location basename.
+  // Preserves temp/snapshot self-reuse; a truncated Location can still fragment these, which is
+  // unrecoverable.
   const fileM = detail.match(/FileScan\s+(parquet|orc|csv|json)\b/i);
   if (fileM) {
     const locM = detail.match(/Location:[^[]*\[([^\]]+)\]/);
@@ -94,15 +94,14 @@ export function scanRelationId(name: string, detail: string): string | null {
     return `${fileM[1].toLowerCase()}:${pathBasename(locM[1].split(',')[0].trim())}`;
   }
 
-  // 4. JDBC: the inner SQL's first real table, lowercased. null when the first
-  //    post-FROM token is a subquery `(` or there is no single table (CTE/UNION).
+  // JDBC: the inner SQL's first real table, lowercased. null when the first post-FROM token is a
+  // subquery `(` or there is no single table (CTE/UNION).
   if (/JDBCRelation/.test(detail)) {
     const fromM = jdbcSql(detail).match(/\bFROM\s+(\(|[A-Za-z_][\w.]*)/i);
     if (!fromM || fromM[1] === '(') return null;
     return `jdbc:${fromM[1].toLowerCase()}`;
   }
 
-  // 5. Non-scan / unrecognized.
   return null;
 }
 
@@ -225,13 +224,12 @@ export function describePlanNode(
     pushCrossJoinWarning(result, 'CartesianProduct');
   } else if (visitScan(name, detail, result)) {
     recognizedType = 'scan';
-    // handled
   } else if (/Join/i.test(name) && visitJoin(name, detail, result)) {
     recognizedType = 'join';
-    // handled (a Cross join type may also have pushed a crossJoin warning)
+    // A Cross join type may also have pushed a crossJoin warning.
   } else if (/Aggregate/i.test(name) && visitAgg(name, detail, result)) {
     recognizedType = 'agg';
-    // handled (a partial-aggregation pass pushes nothing into result.aggs)
+    // A partial-aggregation pass pushes nothing into result.aggs.
   } else if (isExchangeNode(node)) {
     recognizedType = 'exchange';
     visitExchange(detail, result);
@@ -250,10 +248,9 @@ export function describePlanNode(
   const fields = result.scans[0] ?? result.joins[0] ?? result.aggs[0] ?? result.exchanges[0] ?? null;
   const warning = result.warnings[0] ?? null;
 
-  // Return null if no recognized type, or if it's agg/filter with no content/warning
+  // An agg or filter with no content or warning is not described.
   if (!recognizedType) return null;
   if ((recognizedType === 'agg' || recognizedType === 'filter') && !kind && !warning) return null;
 
-  // For exchange or other types, or if there's content/warning, return the object
   return { kind, warning, ...(fields ?? {}) };
 }

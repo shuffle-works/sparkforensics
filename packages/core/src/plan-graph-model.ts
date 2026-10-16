@@ -1,11 +1,11 @@
 // Flattens a resolved planTree into a { nodes, edges } graph shape for the
 // React Flow + Dagre plan graph view ("Plan graph view" in
 // docs-site/contributor-guide/architecture/drill-down/plan-graph.md). The Exchange
-// write/read split is done upstream now, in resolvePlanTree
-// (event-handlers.ts): this file just walks the already-split tree and maps
-// each real PlanNode onto a PlanGraphNodeData. sourceNodeId still lets a
-// write half point back to its read half's id, so aggregate logic over
-// nodes can group a pair without special-casing exchangeRole everywhere.
+// write/read split happens upstream in resolvePlanTree (event-handlers.ts):
+// this file walks the already-split tree and maps each PlanNode onto a
+// PlanGraphNodeData. sourceNodeId lets a write half point back to its read
+// half's id, so aggregate logic can group a pair without special-casing
+// exchangeRole.
 import { walkPlanTree } from './plan-tree-walk.ts';
 import {
   classifyNode,
@@ -82,15 +82,9 @@ export function buildPlanGraphModel(
 
   const durationMap =
     sqlExec && sqlExecutionId != null ? buildDurationMap(planTree, appModel, sqlExec, sqlExecutionId, durationMode) : null;
-  // A second, always-exclusive map, independent of the requested `durationMode`.
-  // Exclusive shares are a true, non-overlapping partition of each paired
-  // stage's wall time (computeExclusiveSharesForPairs), so their sum is a
-  // stable normalization total. PlanGraphCanvas needs this alongside
-  // `durationMap` (the mode-selected values actually shown) because summing
-  // `durationMap` itself would double/triple-count under 'inclusive' mode,
-  // where an ancestor's share already folds in every descendant's share.
-  // durationMode === 'exclusive' already computed the same map above; only
-  // redo the work when the requested mode actually differs.
+  // Always-exclusive map, independent of `durationMode`: the stable total a
+  // percentage denominator sums (see PlanGraphNodeData.exclusiveDurationShare).
+  // Reuses `durationMap` when the requested mode is already exclusive.
   const exclusiveDurationMap =
     durationMode === 'exclusive'
       ? durationMap
@@ -110,14 +104,12 @@ export function buildPlanGraphModel(
     }
   }
 
-  // resolvePlanTree (event-handlers.ts) now prefixes every id with its owning
-  // execution, but this filter stays as defense in depth: a finding is scoped
-  // to the execution whose graph is being built before it's indexed by node
-  // id, so a stale/synthetic finding whose planNodeIds happen to collide with
-  // this tree's ids (e.g. hand-built test fixtures, or data from before the
-  // prefix existed) still can't badge onto the wrong tree. No linked SQL
-  // execution means no findings attach, matching the sqlExec-falsy behavior
-  // used elsewhere in this function (durationMap, linkedStageIds).
+  // resolvePlanTree (event-handlers.ts) prefixes every id with its owning
+  // execution, but a finding is also scoped to the execution whose graph is
+  // being built, as defense in depth: a synthetic finding whose planNodeIds
+  // collide with this tree's ids (e.g. hand-built test fixtures) cannot badge
+  // onto the wrong tree. No linked SQL execution means no findings attach,
+  // like durationMap and linkedStageIds above.
   const findingsByNodeId = new Map<string, Finding[]>();
   if (sqlExecutionId != null) {
     for (const finding of findings) {

@@ -1,31 +1,11 @@
 #!/usr/bin/env node
-// Manual dev tool: measures how much of the corpus's raw event-log content
-// actually turns into structured data, and names exactly what doesn't.
+// Manual dev tool: measures how much of the corpus's raw event-log content turns into structured
+// data and names what does not. Bucket definitions: docs-site/contributor-guide/testing.md.
 //
 // Usage: node dev/bench-extraction-coverage.mjs [corpus-dir] [--format json] [--strict]
-//   corpus-dir  defaults to dev/log-corpus/logs (the spark-event-corpus-data submodule)
-//   --format json   print a machine-readable summary instead of the console report
-//   --strict        exit 1 if any known-event-type line failed ITS schema (real drift,
-//                    never a wallet of "we chose not to model this")
 //
-// What "counts": every line that decodes as JSON except blank/whitespace-only lines
-// and excluded event types (below), none of which carry information regardless of
-// tooling and are dropped before classification. Every remaining line lands in exactly
-// one bucket, mirroring the real parser's dispatchLine (packages/core/src/event-handlers.ts):
-//   extracted   - known Event type, passes its schema: this is what the app reads today.
-//   unmodeled   - valid JSON, but `Event` is missing or isn't one of our modeled literals.
-//                 Real Spark output we've deliberately not parsed (BlockManagerAdded,
-//                 ...). Not a bug; this is the "what are we missing" report.
-//   schemaFail  - a KNOWN Event type that doesn't match its own schema. A genuine signal
-//                 (schema drift against a real Spark field shape), never silent in the
-//                 real parser either (it increments skippedLines there).
-//   malformed   - doesn't parse as JSON at all.
-// Extraction rate = extracted / (extracted + unmodeled + schemaFail + malformed).
-//
-// Excluded event types: one per-task line emitted with essentially no payload (Spark
-// posts the real metrics on the matching TaskEnd, never on TaskStart), so it dwarfs the
-// unmodeled bucket's line count without representing a real extraction gap. Excluded
-// entirely (like blank lines) rather than counted as unmodeled.
+// Blank lines and SparkListenerTaskStart (one near-empty line per task, never a real extraction
+// gap) are excluded from the counts.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, relative, extname } from 'node:path';
 import { decompress as zstdDecompress } from '../packages/core/src/vendor/fzstd.js';

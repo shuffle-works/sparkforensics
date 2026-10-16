@@ -77,7 +77,7 @@ test('renders a PLAN-tagged finding with the dedicated plan-aggregate color', ()
 });
 
 test('two introduced findings sharing a rule at different severities render without a duplicate-key warning', () => {
-  // findingsDelta groups by `${rule}§${impactBand}` (see run-comparison.js), so
+  // findingsDelta groups by `${rule}§${impactBand}` (see packages/core/src/run-comparison.ts), so
   // one rule regressing at two severities in the same direction is valid
   // output: both rows land in `introduced` together.
   const model = {
@@ -112,7 +112,7 @@ test('different names render a dismissible low-confidence banner but still show 
   );
   render(<RunComparison model={model as any} onClose={vi.fn()} />);
   expect(screen.getByRole('alert')).toHaveTextContent(/run names differ/i);
-  // Metrics still render; a name mismatch no longer hides the comparison.
+  // Metrics still render; a name mismatch does not hide the comparison.
   expect(screen.getByRole('row', { name: /wall-clock/i })).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: /dismiss/i }));
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();

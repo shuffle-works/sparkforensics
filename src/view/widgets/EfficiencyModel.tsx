@@ -12,8 +12,7 @@ const formatCoreHours = (h: number): string => `${Math.round(h * 100) / 100} cor
 // Allocated vs. used core-hours, the waste split into driver- and executor-bound, and
 // right-sizing copy. The top-N list ranks stages by task core-time, NOT by waste: per-stage
 // waste isn't attributable here because concurrent stages share allocated capacity.
-// DESIGN SPIKE: framed as an estimate. The right-sizing block is a pure copy
-// branch on dominantWaste. The unverified ~21% figure is never rendered.
+// Framed as an estimate. The right-sizing block is a pure copy branch on dominantWaste.
 export function EfficiencyModel() {
   const interpretation = useInterpretation()?.data;
   const m = interpretation?.efficiency;

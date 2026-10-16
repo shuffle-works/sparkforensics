@@ -61,8 +61,8 @@ describe('published bin entrypoint', () => {
         const body = await res.text();
         expect(body).toContain('<title>SparkForensics</title>');
 
-        // Round-trip the /mcp route too, so a regression in vendored
-        // mcp-server-factory.js resolution is caught here, not only manually.
+        // Round-trip the /mcp route too, so a failure in vendored
+        // mcp-server-factory resolution is caught here, not only manually.
         const transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${port}/mcp`));
         const client = new Client({ name: 'test-client', version: '1.0.0' });
         await client.connect(transport);

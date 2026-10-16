@@ -55,13 +55,13 @@ test('startCompareLoad parses A then B, snapshots both, opens the comparison', a
   expect(store.getState().comparison).toEqual({ active: true, baselineId: 'a::1::2', candidateId: 'b::3::4' });
   expect(store.getState().compareLoad).toBeNull();
 
-  // Regression: snapshotParsedRun must derive the evidence-availability ledger
+  // snapshotParsedRun must derive the evidence-availability ledger
   // before capturing, so drilling into a compare operand's dashboard doesn't
   // restore a null ledger.
   expect((cache.get('a::1::2') as any)?.evidenceAvailability).not.toBeNull();
   expect((cache.get('b::3::4') as any)?.evidenceAvailability).not.toBeNull();
 
-  // Regression: the candidate's snapshot is set exactly once (by snapshotParsedRun) and
+  // The candidate's snapshot is set exactly once (by snapshotParsedRun) and
   // never overwritten by openComparison's auto-snapshot.
   const bSets = cache.sets.filter(([k]) => k === 'b::3::4');
   expect(bSets.length).toBe(1);
@@ -72,8 +72,8 @@ test('startCompareLoad parses A then B, snapshots both, opens the comparison', a
 });
 
 test('startCompareLoad exposes compareLoad progress while each run parses', async () => {
-  // Regression: {current} must be observable when each run's parse begins, not
-  // wiped synchronously by resetModel before any render.
+  // {current} must be observable when each run's parse begins, not wiped
+  // synchronously by resetModel before any render.
   const observed: Array<{ current: 1 | 2 } | null> = [];
   const client = {
     ...makeFakeClient(['A', 'B']),
@@ -93,8 +93,8 @@ test('startCompareLoad exposes compareLoad progress while each run parses', asyn
 });
 
 test('a recent-source that is gone surfaces a run-named error prefixed exactly once', async () => {
-  // Regression: resolveSourceInput already prefixes "Candidate: "; the abort path
-  // must not prefix it again.
+  // resolveSourceInput already prefixes "Candidate: "; the abort path must not
+  // prefix it again.
   const getHandleSpy = vi.spyOn(recentFiles, 'getHandle').mockResolvedValue(null as any);
   const client = makeFakeClient(['A']);
   const { result } = renderHook(() => useIngest({ makeClient: () => client as any }));

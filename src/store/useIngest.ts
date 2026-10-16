@@ -39,7 +39,7 @@ export type RunSource =
 /** How a compare-load error names each slot: slot A is the baseline, slot B the candidate. */
 const COMPARE_RUN_NAME = { A: 'Baseline', B: 'Candidate' } as const;
 
-/** recent-files.js stores FileSystemFileHandles as opaque `unknown`; callers
+/** recent-files.ts stores FileSystemFileHandles as opaque `unknown`; callers
  * narrow only what they actually call. */
 interface FileHandleLike {
   getFile: () => Promise<File>;

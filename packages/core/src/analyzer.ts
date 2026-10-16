@@ -34,8 +34,8 @@ function fnv1a(str: string): string {
   return (h >>> 0).toString(16).padStart(8, '0');
 }
 
-// The id hash's discriminator slots, in the order it has always joined them: reordering or renaming
-// one changes every finding id, which needs an EVIDENCE_SCHEMA_VERSION bump.
+// The id hash's discriminator slots, in join order: reordering or renaming one changes every
+// finding id, which needs an EVIDENCE_SCHEMA_VERSION bump.
 const DISCRIMINATOR_SLOTS = [
   'host', 'executorId', 'rule', 'variant', 'dimension',
   'direction', 'nodeName', 'rootName', 'subtreeSize', 'groupIndex', 'largerSideBytes',
@@ -44,17 +44,11 @@ const DISCRIMINATOR_SLOTS = [
 type DiscriminatorSlot = (typeof DISCRIMINATOR_SLOTS)[number];
 
 // Per type, the fields that tell apart sibling findings sharing one location and metric; without
-// them those siblings hash to one id:
-//   slowHost (host), memoryUtilization (executorId), partitionSizing (rule);
-//   cacheUtilization (rddId+variant), cachingOpportunity (relation/format for leaf,
-//     operator+relation for composite, executionIds as last resort);
-//   smallFiles (direction/nodeName), nestedLoopJoin (nodeName; outputRows is the metric value),
-//     duplicatePlanSubtree (groupIndex is the real
-//     uniqueness guarantee: rootName+subtreeSize can collide across groups),
-//     underBroadcast (value+largerSideBytes, the join's two side sizes, per node).
-// memoryUtilization leaves out `rule`: the run has one heap band (on its busiest executor), so
-// executorId is already unique and folding rule in risks id churn if band logic changes. partitionSizing keeps
-// `rule`: a stage can emit several rules at once sharing stageId+metric.
+// them those siblings hash to one id (see detector-contract.md, Finding ids). Notes:
+// duplicatePlanSubtree's groupIndex is the real uniqueness guarantee (rootName+subtreeSize can
+// collide across groups); memoryUtilization leaves out `rule` because its one heap band sits on
+// the busiest executor, so executorId is already unique; partitionSizing keeps `rule` because a
+// stage can emit several rules at once sharing stageId+metric.
 const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & keyof FindingOf<T>)[] } = {
   skew: [], stageShape: ['rule'], shuffle: [], partitionSizing: ['rule'], spill: [], gc: ['direction'],
   slowHost: ['host', 'executorId', 'variant', 'dimension'], stageSlowness: [], stageFailed: ['variant'],

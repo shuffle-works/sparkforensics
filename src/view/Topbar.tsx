@@ -57,8 +57,8 @@ function findingMatchesExecutionStage(finding: Finding, stageIds: readonly Stage
 /** Every SQL execution eligible for the Topbar's "open the graph view
  * directly" entry point: it must have a resolved plan tree and at least one
  * linked stage to anchor the graph on. `description`/`startTime`/`endTime`
- * are declared `unknown` on SqlExecution (see the spec's typing footnote), so
- * every read here is guarded rather than trusted. */
+ * are declared `unknown` on SqlExecution, so every read here is guarded rather
+ * than trusted. */
 function eligibleGraphExecutions(appModel: AppModel, catalog: Finding[]): GraphViewPickerEntry[] {
   const out: GraphViewPickerEntry[] = [];
   for (const [executionId, exec] of appModel.sql) {

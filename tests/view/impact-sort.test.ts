@@ -16,8 +16,6 @@ function withWallClockLow(low: number): Finding {
   return finding({ impactEstimate: { basis: 'serial', wallClock: { low, high: low }, estimateMethod: 'measured' } });
 }
 
-// ── sumWallClockLow ─────────────────────────────────────────────────────────
-
 test('sumWallClockLow returns null for an empty finding list', () => {
   expect(sumWallClockLow([])).toBeNull();
 });
@@ -41,8 +39,6 @@ test('sumWallClockLow uses the low (guaranteed-floor) bound, not high, even when
   expect(sumWallClockLow([f])).toBe(10);
 });
 
-// ── stageIdOf ────────────────────────────────────────────────────────────────
-
 test('stageIdOf returns the finding\'s own stageId when set', () => {
   expect(stageIdOf(finding({ stageId: 7 }))).toBe(7);
 });
@@ -64,8 +60,6 @@ test('stageIdOf returns null for an app-level finding with neither stageId nor s
   expect(stageIdOf(finding({ stageId: null, stageIds: [] }))).toBeNull();
 });
 
-// ── canToggleSort ────────────────────────────────────────────────────────────
-
 test('canToggleSort returns false when cardOpen is false, regardless of findings or rowCount', () => {
   const f = withWallClockLow(100);
   expect(canToggleSort([f], 2, false)).toBe(false);
@@ -86,8 +80,6 @@ test('canToggleSort returns true when cardOpen is true, there is sortable impact
   const f = withWallClockLow(100);
   expect(canToggleSort([f], 2, true)).toBe(true);
 });
-
-// ── byImpactDesc ─────────────────────────────────────────────────────────────
 
 const identityFindings = (f: Finding) => [f];
 
@@ -116,8 +108,6 @@ test('byImpactDesc is a stable no-op for two equal-impact items, preserving the 
   const sorted = [a, b].sort(byImpactDesc(identityFindings));
   expect(sorted).toEqual([a, b]);
 });
-
-// ── byStageAsc ───────────────────────────────────────────────────────────────
 
 const stageIdAccessor = (id: number | null) => id;
 

@@ -9,11 +9,10 @@ import { store } from '@/store/store';
 import { useIngest, type RunSource } from '@/store/useIngest';
 import { useTheme } from '@/theme/ThemeProvider';
 
-/** Styled replacement for the old bare `<p role="alert">`: a file-load error
- * (bad format, unreadable file, malformed rolling-log folder) now reads as a
- * real diagnostic panel with a 3px critical left rule, instead of a plain
- * line of red text easy to miss above the fold. Auto-focuses itself, mirroring the
- * SHS-fetch panel's existing error-focus pattern below. */
+/** A file-load error (bad format, unreadable file, malformed rolling-log
+ * folder) shown as a diagnostic panel with a 3px critical left rule, so it is
+ * hard to miss above the fold. Auto-focuses itself, like the SHS-fetch panel's
+ * error focus below. */
 function FileLoadAlert({ message, nonce }: { message: string; nonce?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -135,7 +134,7 @@ function NextStepsRail({ onCompare }: { onCompare: () => void }) {
               className="tap-target-comfortable"
               // Rendered as a real <a>, not a <button>: tell Base UI so it
               // doesn't assume native button keyboard/activation semantics
-              // for an element that isn't one (fixes a console warning).
+              // for an element that isn't one.
               nativeButton={false}
               render={<a href="https://github.com/shuffle-works/sparkforensics-operator" target="_blank" rel="noopener noreferrer" />}
             >

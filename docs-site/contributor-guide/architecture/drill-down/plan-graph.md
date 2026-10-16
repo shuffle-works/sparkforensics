@@ -110,6 +110,11 @@ the toggle, still correctly labeled "Back to segment view" per `model?.scope`,
 renders `disabled` rather than silently no-opping on click. Only the
 explicit-expand path (`requestedScope === 'full'`) leaves it enabled.
 
+An oversized fallback or an oversized `initialScope: 'full'` open withholds the
+graph model until the dialog is confirmed. Dismissing the dialog closes it but
+does not lift that block, and a dismissed fallback does not reopen the dialog,
+because the stage has no ungated segment view to show instead.
+
 The six Plan Advisor finding types (`duplicatePlanSubtree`, `smallFiles`,
 `nestedLoopJoin`, `pythonUdf`, and `broadcastSizing`'s `overBroadcast`/`underBroadcast`, in
 `packages/core/src/detectors.ts`) set `Finding.planNodeIds`, an unambiguous
@@ -271,3 +276,35 @@ still be evicted on a fresh parse or reload. `resetModel()` (`store.ts`) bumps a
 subscribes to it to clear the cache. A counter rather than a direct call, since
 `store.ts` has no view-layer imports anywhere else and importing a `.tsx` module
 there would invert that dependency direction.
+
+## Duration share
+
+`exclusiveDurationShare` is a non-overlapping partition of each stage's wall
+time. The mode-selected `durationShare` equals it in exclusive mode but adds
+every descendant's time into each ancestor in inclusive mode. `PlanGraphCanvas`
+therefore divides each node's share by the sum of the exclusive shares, and labels
+a segment box with the exclusive sum, so neither number grows with tree depth
+when the mode flips. A hand-built node without the exclusive field falls back to
+`durationShare`.
+
+## Layout ordering and cost
+
+`runDagre` uses the `tight-tree` ranker rather than Dagre's default
+`network-simplex`: a plan is a tree plus the Exchange read/write split, so
+`tight-tree` assigns the ranks a tree wants at a fraction of the cost on a compound
+graph. `longest-path` is faster still but places nodes degenerately. `nodesep` in
+`RL` is `2 * STAGE_GROUP_PADDING_Y`, so two vertically stacked stage boxes
+(each reserving that padding above and below its members) cannot overlap; `BT`
+swaps the axes, with `ranksep` at that floor and `nodesep` at
+`2 * STAGE_GROUP_PADDING_X` plus a gap. The compound-graph ordering fallback
+(`orderGroups`) is described above.
+
+Calibration data for the layout cost:
+
+| Measure | Value |
+|---|---|
+| Compound layout of a 400-node plan, `network-simplex` | about 1,600 ms |
+| Same plan, `tight-tree` | about 500 ms |
+| Dagre pass cost | about 1 ms per node |
+| Stage boxes overlapped without the `nodesep` floor | by about 48 px |
+| Worker threshold (`WORKER_LAYOUT_MIN_NODES`) | 200 nodes |

@@ -307,7 +307,7 @@ describe('AutoscalingChurn', () => {
     expect((downsample as Mock).mock.calls.length - callsBefore).toBe(1);
   });
 
-  // Regression: applySnapshot mutates the live appModel's fields in place (not
+  // applySnapshot mutates the live appModel's fields in place (not
   // replacing the object), so a cached-file switch must not leave this widget
   // showing the previous file's churn counts when appModel's reference is unchanged.
   test('reflects a new file after appModel is mutated in place and activeFileId changes (cached-file switch)', async () => {

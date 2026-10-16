@@ -23,8 +23,6 @@ import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 
 export type PythonUdfProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
-/** One flagged finding's row, anchored so a triage route focuses the row
- * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
 function PythonUdfRow({ finding }: { finding: FindingOf<'pythonUdf'> }) {
   const anchor = useAnchoredRow([finding]);
 
@@ -84,8 +82,6 @@ export const PythonUdf = memo(function PythonUdf({ catalog, defaultCollapsed = t
         </>
       }
       statusBadge={
-        // `sqlPlan` is a widget-wide evidence constant (this detector always reads
-        // the resolved SQL plan), so it sits on the header once, not per row.
         <AdvancedOnly>
           <RowStatusCluster
             confidence={findings[0].confidence}

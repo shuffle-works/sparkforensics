@@ -63,7 +63,6 @@ type AreaPoint = LocalityChartPoint;
 export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultCollapsed = true }: CoreUsageAreaProps) {
   const [nonLocalPage, setNonLocalPage] = useState(0);
   const coreLocality = useInterpretation()?.data.coreLocality;
-  // Hooks run unconditionally, so the early return can't precede this.
   const chartModel: LocalityChartModel = useMemo(() => {
     const chart = coreLocality?.chart ?? { hasActivity: false as const };
     return chart.hasActivity ? { ...chart, sampled: downsample(chart.points) } : chart;
@@ -79,8 +78,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
 
   // `topStages` excludes stages below minTasksPerStage even when they hold the
   // non-local tasks, so filter to rows that actually have non-local tasks rather
-  // than gating on the aggregate. Computed before the `hasActivity` early return,
-  // per rules of hooks.
+  // than gating on the aggregate.
   const nonLocalStages = topStages.filter((s) => s.nonLocalTasks > 0);
   const { totalPages: nonLocalTotalPages, effectivePage: nonLocalEffectivePage, visible: visibleNonLocalStages } =
     usePagedRows(nonLocalStages, nonLocalPage, setNonLocalPage);

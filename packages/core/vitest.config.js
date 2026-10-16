@@ -2,10 +2,8 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    // Most moved specs are plain .test.js; a couple (finding-action-label,
-    // impact-band) are core-only TS specs that came from root tests/*.test.ts
-    // (see root vitest.config.js's own comment on that pattern) and moved here
-    // flattened alongside the rest, so both extensions need to be picked up.
+    // Specs are mostly .test.js; a few core-only specs (finding-action-label,
+    // impact-band) are .test.ts, so both extensions are included.
     include: ['test/**/*.test.js', 'test/*.test.ts'],
     globals: true,
     // Generates the gitignored tuning reference (src/docs-content/) from its
@@ -20,7 +18,7 @@ export default defineConfig({
       // as plain JS per AGENTS.md; exclude it the same way the root config
       // does so it isn't counted as uncovered source. src/docs-content/**
       // is markdown reference content bundled for the MCP doc tools, not
-      // code; vitest 5's coverage-v8 now tries to parse every include-glob
+      // code; vitest 5's coverage-v8 parses every include-glob
       // match as JS to remap uncovered files and errors noisily on it.
       exclude: ['src/vendor/**', 'src/docs-content/**'],
     },

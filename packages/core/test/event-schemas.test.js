@@ -241,7 +241,7 @@ describe('TaskEndEventSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  // Regression: Failed/Killed/Speculative are read tolerant of an absent key, so a log
+  // Failed/Killed/Speculative are read tolerant of an absent key, so a log
   // variant omitting 'Speculative' must still parse, not be rejected as a skipped line.
   it('accepts a TaskEnd whose Task Info omits Speculative entirely', () => {
     const result = TaskEndEventSchema.safeParse({
@@ -280,7 +280,7 @@ describe('TaskEndEventSchema', () => {
     expect(result.success).toBe(false);
   });
 
-  // Regression: guards against a crafted TaskEnd with an unbounded Accumulables array
+  // Guards against a crafted TaskEnd with an unbounded Accumulables array
   // growing the never-pruned taskAccumStages.
   it('accepts a TaskEnd at the Accumulables size limit', () => {
     const result = TaskEndEventSchema.safeParse({

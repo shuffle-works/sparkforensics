@@ -1,5 +1,7 @@
 // Savings figures as every surface prints them: the dashboard's widgets and verdict, and the
 // CLI/MCP evidence report. One formatter set, so units and rounding never drift between paths.
+// A figure that rounds to zero ("0s", "0.0 core-h") reads as a measured nothing, so every
+// formatter here shows no figure for it (see readsAsZero in format-utils.ts).
 import { asCoreTime, fmtMs, formatRawWaste, formatWallClockRange, readsAsZero } from './format-utils.ts';
 import type { Finding, ImpactEstimate, RawWasteFigure } from './types.ts';
 
@@ -18,8 +20,7 @@ function certaintyNote(estimate: ImpactEstimate): string {
 
 /** A finding's one-line savings figure: the wall-clock range for a time-based
  * finding, the raw resource figure for a `resourceOnly` one, or nothing for a
- * purely informational estimate or a raw figure that rounds to zero ("0.0
- * core-h" reads as a measured nothing). */
+ * purely informational estimate. */
 export function impactFigure(finding: Finding): string | null {
   const estimate = finding.impactEstimate;
   if (!estimate) return null;
@@ -61,8 +62,8 @@ export function savingsMeaning(finding: Finding): string | null {
 /** A finding's "Potential savings" figure as the widget board shows it: the
  * wall-clock range, or the raw waste only when there is no wall-clock claim,
  * never both (they would read as two competing numbers). A zero-value
- * estimate is suppressed like an informational one: "0s" reads as a measured
- * figure. `meaning` says what the shown figure counts. */
+ * estimate is suppressed like an informational one. `meaning` says what the
+ * shown figure counts. */
 export function impactEstimateFigure(estimate: ImpactEstimate | undefined): { text: string; meaning: string | null } | null {
   if (!estimate) return null;
   const highText = estimate.wallClock && estimate.wallClock.high > 0 ? fmtMs(estimate.wallClock.high) : null;
@@ -81,8 +82,7 @@ export function impactEstimateFigure(estimate: ImpactEstimate | undefined): { te
 /** Compact single-value form for dense lists (the stage table's finding chips,
  * the stage dialog): the high-end wall-clock figure, or the raw-waste figure
  * when there's no wall-clock claim, or `null` for a purely informational or a
- * zero-value estimate (a `0s` in the spot a real estimate goes would read as a
- * measured nothing). */
+ * zero-value estimate. */
 export function impactEstimateCompact(estimate: ImpactEstimate | undefined): string | null {
   if (!estimate) return null;
   if (estimate.wallClock) {

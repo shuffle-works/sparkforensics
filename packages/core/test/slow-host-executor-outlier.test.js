@@ -33,7 +33,7 @@ const taskTimeFindings = ({ app, stages }) =>
 describe('slowHost task time: an executor must stand out from the stage\'s own spread', () => {
   it('does not flag the slowest of 75 executors whose tasks vary as much as the gap (chance outlier)', () => {
     // Every task spreads +-60% around the center, so one executor holding four slower draws is
-    // what 75 executors produce on their own. Its mean is 1.7x the median, the old test's trigger.
+    // what 75 executors produce on their own. Its mean is 1.7x the median.
     const fixture = slowExecutorStage({ executors: 75, tasksEach: 4, logSpread: 0.6, slowdown: 1.7 });
     expect(taskTimeFindings(fixture)).toEqual([]);
   });
