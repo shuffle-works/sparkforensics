@@ -74,6 +74,12 @@ describe('write output figures on a hand-built plan', () => {
     expect(w).toMatchObject({ outputRows: null, outputRowsSource: null });
   });
 
+  it('leaves outputBytes null when no stage of the root reports bytes written', () => {
+    const [w] = run([{ id: 0, rootExecutionId: 0, planTree: write('SaveIntoDataSourceCommand') }, { id: 1, rootExecutionId: 0 }],
+      [[1, { id: 1, sqlExecutionId: 1 }]]);
+    expect(w.outputBytes).toBeNull();
+  });
+
   it('stays null when the root holds two different write targets', () => {
     const writes = run([
       { id: 0, rootExecutionId: 0, planTree: write('SaveIntoDataSourceCommand') },

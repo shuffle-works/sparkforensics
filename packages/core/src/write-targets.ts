@@ -354,7 +354,8 @@ function attachStageOutput(writes: WriteTarget[], sql: Map<number, SqlExecution>
     const group = [root, ...(byRoot.get(root) ?? []).map((exec) => exec.id)];
     const grouped = group.flatMap((id) => stagesByExecution.get(id) ?? []);
     if (grouped.length === 0) continue;
-    write.outputBytes = grouped.reduce((sum, stage) => sum + (stage.outputBytes ?? 0), 0);
+    const withBytes = grouped.filter((stage) => stage.outputBytes != null);
+    if (withBytes.length > 0) write.outputBytes = withBytes.reduce((sum, stage) => sum + stage.outputBytes!, 0);
     if (write.outputRows !== null) continue;
     const reported = grouped.filter((stage) => stage.outputRecords != null);
     if (reported.length === 0) continue;
