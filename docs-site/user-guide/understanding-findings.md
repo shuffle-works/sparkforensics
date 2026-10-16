@@ -227,7 +227,10 @@ One executor is much slower than its peers, or carries most of the stage's
 task time or bytes. It may just hold data locality
 for its tasks or carry one heavy stage, rather than a hardware fault.
 Enable `spark.speculation` to relaunch a lagging task automatically. Only
-flagged on stages that take at least 0.5% of the run.
+flagged on stages that take at least 0.5% of the run. A task-time grade
+rests on the largest of N executor means, which a larger executor count reaches
+by chance more often, so the finding states `confidence: low` with the executor
+count and the task count.
 
 An executor whose tasks ran slower than the median executor's is flagged only
 when the gap is larger than the stage's own spread of task times and the
@@ -288,7 +291,8 @@ join/union result recomputed by two or more executions, matched by plan
 shape) may be worth persisting between stages. Self-flags a confidence that scales with
 how many executions reuse the same relation: reuse is only inferred, from
 plan-scan identity across SQL executions, so confirm the reads really do
-hit the same data before you cache anything.
+hit the same data before you cache anything. The figure is the input those
+queries scanned and how many queries scanned it, not a time.
 
 ### `CSTOR`: Cache storage {#cstor}
 

@@ -48,13 +48,16 @@ by `variant`/`rule` (e.g. `memoryUtilization`, see the coverage table below)
 can produce more than one.
 
 `cachingOpportunity` and `cacheUtilization` are both `cost-only`: `basis:
-'resourceOnly'`, `wallClock: null`, but `rawWaste.unit` is `'ms'`, the same
-unit a real `wallClock` figure would use, because their formula's natural
-output happens to be time (a re-read cost), not because either finding
-makes a wall-clock claim. Left unlabeled, a `resource`-tier "ms" total sitting
-next to a `time`-tier "recoverable time" total would read as directly
-comparable when it isn't: the resource figure was never gate-clipped against
-any stage's occupancy, so it can exceed what the stage actually spent.
+'resourceOnly'`, `wallClock: null`. `cachingOpportunity` reports `rawWaste` in
+`bytes` (the input its queries scanned, `reread: true`). `cacheUtilization` keeps
+`rawWaste.unit` `'ms'`, the unit a real `wallClock` figure would use, because its
+formula's natural output is time (a re-read cost), not because it makes a
+wall-clock claim. Left as "ms", a `resource`-tier total sitting next to a
+`time`-tier "recoverable time" total would read as directly comparable when it
+isn't: the resource figure was never gate-clipped against any stage's occupancy,
+so it can exceed what the stage actually spent. So every surface prints a
+cost-only `ms` figure as core time (`asCoreTime()` in `format-utils.ts`, also
+applied by `resourceGroupTotal()`), never as a duration.
 `rollupGroupStat` (same module) calls this out in the trailing-stat copy
 `FixTheseFirst.tsx` renders: a `resource`-kind group (any unit, including `ms`)
 shows the finding count plus the summed raw waste (omitted when it reads as

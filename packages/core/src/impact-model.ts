@@ -134,6 +134,20 @@ export function costOnly(estimateMethod: ImpactEstimateMethod, rawWaste?: RawWas
     : { basis: 'informational', wallClock: null, estimateMethod };
 }
 
+/** The estimate with what its model assumes and leaves out (`ImpactEstimate.assumptions`). */
+export function withAssumptions(estimate: ImpactEstimate, assumptions: string): ImpactEstimate {
+  return { ...estimate, assumptions };
+}
+
+/** The throughput assumption behind a per-executor I/O model (stageIoParallelism), in the words
+ * `ImpactEstimate.assumptions` carries: the rate and how many executors it was spread over. */
+export function ioModelAssumption(bytesPerSecond: number, stage: Stage): string {
+  const executors = Array.isArray(stage.executorStats) ? stage.executorStats.length : 0;
+  const rate = `${Math.round(bytesPerSecond / 1e6)} MB/s`;
+  if (executors === 0) return `assumes ${rate} on one device, as the stage has no per-executor data`;
+  return `assumes ${rate} per executor over ${executors} ${executors === 1 ? 'executor' : 'executors'}`;
+}
+
 /** The estimate() of an entry whose findings have no waste model at all. */
 export function noWasteModel(): ImpactEstimate {
   return costOnly('none');

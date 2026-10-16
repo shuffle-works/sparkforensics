@@ -16,7 +16,7 @@ import {
   BROADCAST_BANDWIDTH_BPS, EXECUTOR_STARTUP_OVERHEAD_MS, FILE_OPEN_OVERHEAD_MS, IDEAL_BYTES_PER_PARTITION_TASK,
   NETWORK_FETCH_PENALTY_MS, RE_READ_THROUGHPUT_BPS, SHUFFLE_THROUGHPUT_BPS, SPILL_IO_THROUGHPUT_BPS, TAIL_CLAIM,
   TASK_SCHEDULING_OVERHEAD_MS, costOnly, fetchWaitWallClockMs, measuredTaskOverhead, multiStageImpact, noWasteModel,
-  retryWallClockMs, singleStageImpact, stageIoParallelism, stageMappableWasteOrCostOnly, tasksMostlyIdle,
+  ioModelAssumption, retryWallClockMs, singleStageImpact, stageIoParallelism, stageMappableWasteOrCostOnly, tasksMostlyIdle, withAssumptions,
   type EstimateCtx,
 } from './impact-model.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
@@ -646,6 +646,23 @@ function executorDurationZ(execs: DetectorExecutorStat[]): Map<string, number> |
   if (!(sd > 0) || !Number.isFinite(sd)) return null;
   const median = medianOfSorted([...means].sort((a, b) => a - b));
   return new Map(active.map((e, i) => [e.executorId, (means[i] - median) / (sd / Math.sqrt(e.taskCount))]));
+}
+
+// slowHost's taskTime dimension picks the largest of N per-executor mean task times: the more
+// executors, the likelier the largest reaches a given ratio to the median by chance alone, whatever
+// the hardware. The band comes from the modeled saving, so the finding states how weak the signal is.
+// No `host` here: it is one of slowHost's id discriminators, so setting it would change the id.
+function executorTaskTimeCaveat(
+  executorId: string, ratio: number, executorCount: number, taskCount: number,
+): Pick<SlowHostFinding, 'confidence' | 'validationRequired' | 'executorCount' | 'taskCount'> {
+  return {
+    confidence: 'low',
+    validationRequired:
+      `One of ${executorCount} executors: the largest of ${executorCount} per-executor mean task times reaches ${Math.round(ratio * 10) / 10}x the median by chance ` +
+      `when task durations vary widely or each executor ran few tasks (${taskCount} tasks over ${executorCount} executors here). ` +
+      `Compare per-task times on executor ${executorId} in the Spark UI before acting.`,
+    executorCount, taskCount,
+  };
 }
 
 export interface DetectorCatalogEntry {
@@ -1860,8 +1877,11 @@ export const DETECTORS = [
       const measuredMs = fetchWaitWallClockMs(stage);
       const wasteMs = measuredMs == null ? modeledMs : Math.min(modeledMs, measuredMs);
       // rawWaste: the measured byte volume behind the modeled figure.
-      return singleStageImpact(wasteMs, finding.stageId, ctx,
-        measuredMs != null && measuredMs < modeledMs ? 'measured' : 'modeled', { value: shuffleReadBytes, unit: 'bytes' });
+      const capped = measuredMs != null && measuredMs < modeledMs;
+      return withAssumptions(
+        singleStageImpact(wasteMs, finding.stageId, ctx, capped ? 'measured' : 'modeled', { value: shuffleReadBytes, unit: 'bytes' }),
+        `${ioModelAssumption(SHUFFLE_THROUGHPUT_BPS, stage)}; counts network transfer only${capped ? ', capped at the fetch wait the tasks measured' : ''}`,
+      );
     },
   }),
   defineStageDetector({
@@ -1986,7 +2006,10 @@ export const DETECTORS = [
       const diskBytesSpilled = stage.diskBytesSpilled ?? 0;
       const wasteMs = (diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
       // Surfaces the number the formula uses: the displayed metric is memoryBytesSpilled, but disk spill costs the I/O time.
-      return singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: diskBytesSpilled, unit: 'bytes' });
+      return withAssumptions(
+        singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: diskBytesSpilled, unit: 'bytes' }),
+        `${ioModelAssumption(SPILL_IO_THROUGHPUT_BPS, stage)}; counts disk spill only, not memory spill, serialization or GC`,
+      );
     },
   }),
   defineStageDetector({
@@ -2178,6 +2201,7 @@ export const DETECTORS = [
           // in this dimension's own unit (ms for taskTime, bytes for the rest).
           execMaxValue: r.value,
           executorId: r.key,
+          ...(d.dimension === 'taskTime' ? executorTaskTimeCaveat(r.key, r.ratio, d.samples.length, stage.taskCount) : {}),
           recommendation: `Executor ${r.key}'s ${SLOW_HOST_DIMENSION_LABEL[d.dimension]} is ${Math.round(r.ratio * 10) / 10}× the median: investigate uneven partition assignment or a degraded executor.`,
         });
       }
@@ -2816,7 +2840,10 @@ export const DETECTORS = [
       const uncachedBytes = numCachedPartitions > 0 ? (cachedBytes / numCachedPartitions) * numUncachedPartitions : 0;
       const uncachedOrSpilledBytes = uncachedBytes + diskSize;
       const wasteMs = (uncachedOrSpilledBytes / RE_READ_THROUGHPUT_BPS) * 1000;
-      return costOnly('modeled', { value: wasteMs, unit: 'ms' });
+      return withAssumptions(
+        costOnly('modeled', { value: wasteMs, unit: 'ms' }),
+        `assumes ${Math.round(RE_READ_THROUGHPUT_BPS / 1e6)} MB/s per reading task, summed as task time and not divided over executors`,
+      );
     },
   }),
   defineAppDetector({
@@ -3086,8 +3113,13 @@ export const DETECTORS = [
     },
     estimate(finding): ImpactEstimate | null {
       const totalReadBytes = (finding.totalReadBytes as number | undefined) ?? 0;
-      const wasteMs = (totalReadBytes / RE_READ_THROUGHPUT_BPS) * 1000;
-      return costOnly('modeled', { value: wasteMs, unit: 'ms' });
+      // The measured scan volume and the query count, not a time: the bytes are cumulative task
+      // input across queries, and a re-read cost depends on how much of it a cache would serve.
+      const queries = (finding.executionIds as number[] | undefined)?.length ?? 0;
+      return withAssumptions(
+        costOnly('measured', { value: totalReadBytes, unit: 'bytes', reread: true }),
+        `counts the bytes ${queries} ${queries === 1 ? 'query' : 'queries'} scanned from the same relation, matched by plan; a cache would still read it once`,
+      );
     },
   }),
   defineAppDetector({

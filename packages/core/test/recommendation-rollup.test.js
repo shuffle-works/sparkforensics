@@ -197,6 +197,11 @@ describe('rollupGroupStat', () => {
     expect(rollupGroupStat(resource(0)).stat).toBe('×2');
   });
 
+  it('prints a task-time resource group as core time', () => {
+    const group = { kind: 'resource', type: 'cacheUtilization', findingCount: 1, unit: 'ms', total: 594_000, findings: [] };
+    expect(rollupGroupStat(group).stat).toBe('×1 · 0.2 core-h');
+  });
+
   it('gives a one-band count group only its count, and a mixed one its band tally', () => {
     expect(rollupGroupStat(count({ info: 3 })).stat).toBe('×3');
     expect(rollupGroupStat(count({ critical: 2, warning: 1 })).stat).toBe('×3 · 2 critical, 1 warning');

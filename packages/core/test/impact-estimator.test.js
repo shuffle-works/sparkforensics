@@ -453,6 +453,19 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
     expect(est.rawWaste).toEqual({ value: 200_000_000, unit: 'bytes' });
   });
 
+  it('spill and shuffle: assumptions name the rate, the executor count and what the model leaves out', () => {
+    const executorStats = Array.from({ length: 75 }, (_, i) => ({ executorId: String(i) }));
+    const stages = new Map([[0, {
+      id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], executorStats,
+      shuffleReadBytes: 5_000_000_000, diskBytesSpilled: 8_000_000_000,
+    }]]);
+    const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }, { type: 'spill', stageId: 0, impactBand: 'warning' }];
+    estimate(findings, stages);
+    expect(findings[1].impactEstimate.assumptions)
+      .toBe('assumes 200 MB/s per executor over 75 executors; counts disk spill only, not memory spill, serialization or GC');
+    expect(findings[0].impactEstimate.assumptions).toMatch(/^assumes 125 MB\/s per executor over 75 executors; counts network transfer only/);
+  });
+
   it('shuffle and spill: the byte volume is spread over every executor that ran the stage, one link/disk each', () => {
     const executorStats = [{ executorId: '1' }, { executorId: '2' }, { executorId: '3' }, { executorId: '4' }];
     const stages = new Map([[0, {
@@ -879,11 +892,13 @@ describe('estimateImpact: cost-only group B', () => {
   });
 
   it('cachingOpportunity: unconditionally resourceOnly, no stage-mappable branch', () => {
-    const findings = [{ type: 'cachingOpportunity', totalReadBytes: 1_000_000_000, impactBand: 'info' }];
+    const findings = [{ type: 'cachingOpportunity', totalReadBytes: 1_000_000_000, executionIds: [3, 5, 8], impactBand: 'info' }];
     estimate(findings, new Map());
+    // The scanned bytes and the query count, not a time: a time here read as the run's biggest saving.
     expect(findings[0].impactEstimate).toEqual({
-      basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled',
-      rawWaste: { value: expect.any(Number), unit: 'ms' },
+      basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured',
+      rawWaste: { value: 1_000_000_000, unit: 'bytes', reread: true },
+      assumptions: expect.stringContaining('3 queries scanned from the same relation'),
     });
   });
 

@@ -381,6 +381,29 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
     expect(f[0].impactBand).toBe('critical');
     expect(f[0].executorId).toBe('e1');
   });
+  it('grades taskTime on one executor as low confidence, with the executor count and task count', () => {
+    const executorStats = [
+      executorRow('e1', Array(5).fill(100000)),
+      executorRow('e2', Array(5).fill(1000)),
+      executorRow('e3', Array(5).fill(1000)),
+    ];
+    const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [] })]]);
+    const [f] = analyze(makeApp(), stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'taskTime');
+    expect(f).toMatchObject({ confidence: 'low', executorCount: 3, taskCount: 15, executorId: 'e1' });
+    expect(f.host).toBeUndefined(); // host is an id discriminator: setting it would change the id
+    expect(f.validationRequired).toMatch(/^One of 3 executors: the largest of 3 per-executor mean task times reaches 100x the median by chance when/);
+  });
+
+  it('gives a byte dimension no confidence caveat', () => {
+    const executorStats = [
+      { executorId: 'e1', ...base, inputBytes: 5_000_000_000 }, { executorId: 'e2', ...base }, { executorId: 'e3', ...base },
+    ];
+    const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [] })]]);
+    const [f] = analyze(makeApp(), stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'inputBytes');
+    expect(f.confidence).toBeUndefined();
+    expect(f.executorCount).toBeUndefined();
+  });
+
   it('skips the storage-memory dimension when executorMetrics is empty (no crash)', () => {
     const executorStats = [
       { executorId: 'e1', ...base }, { executorId: 'e2', ...base }, { executorId: 'e3', ...base },

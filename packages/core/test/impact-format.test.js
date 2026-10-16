@@ -82,7 +82,7 @@ describe('impactEstimateFigure', () => {
 
   it('falls back to the raw waste in dashboard units when there is no range', () => {
     const estimate = { basis: 'resourceOnly', estimateMethod: 'modeled', rawWaste: { value: 1639227.1, unit: 'mbSeconds' } };
-    expect(impactEstimateFigure(estimate)).toEqual({ text: '0.4 GB-h', meaning: 'of unused executor memory' });
+    expect(impactEstimateFigure(estimate)).toEqual({ text: '0.4 GB-h', meaning: 'of unused executor memory (modeled)' });
   });
 
   it('shows nothing for a figure that reads as zero or an informational estimate', () => {
@@ -151,9 +151,56 @@ describe('estimateProvenance', () => {
 
   it('makes no run-time claim for a resource-only figure, and says nothing without a model', () => {
     expect(estimateProvenance(withEstimate({ basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 5000, unit: 'coreMs' } })))
-      .toBe('Modeled; 5.0 core-s wasted, which may not shorten the run.');
+      .toBe('Modeled; 5.0 core-s of core time, which may not shorten the run.');
     expect(estimateProvenance(withEstimate({ basis: 'informational', wallClock: null, estimateMethod: 'none' }))).toBeNull();
     expect(estimateProvenance(withEstimate(undefined))).toBeNull();
+  });
+});
+
+describe('cost-only task time', () => {
+  // 594s of cumulative task time: as a duration it reads like the wall-clock savings beside it.
+  const costOnly = { basis: 'resourceOnly', wallClock: null, estimateMethod: 'modeled', rawWaste: { value: 594_000, unit: 'ms' } };
+  const finding = { impactEstimate: costOnly };
+
+  it('prints a cost-only ms figure as core time with its certainty', () => {
+    expect(impactEstimateFigure(costOnly)).toEqual({ text: '0.2 core-h', meaning: 'of task time (modeled)' });
+    expect(impactEstimateCompact(costOnly)).toBe('0.2 core-h (modeled)');
+    expect(savingsMeaning(finding)).toBe('of task time (modeled)');
+  });
+
+  it('leaves rawWaste untouched', () => {
+    impactEstimateFigure(costOnly);
+    expect(costOnly.rawWaste).toEqual({ value: 594_000, unit: 'ms' });
+  });
+
+  it('prints a measured cost-only figure without a certainty note', () => {
+    const measured = { ...costOnly, estimateMethod: 'measured' };
+    expect(impactEstimateFigure(measured)).toEqual({ text: '0.2 core-h', meaning: 'of task time' });
+  });
+
+  it('keeps a wall-clock figure as a duration', () => {
+    expect(impactEstimateFigure({ basis: 'serial', estimateMethod: 'modeled', wallClock: { low: 594_000, high: 594_000 }, rawWaste: { value: 594_000, unit: 'ms' } }))
+      .toEqual({ text: '9m 54s', meaning: 'of run time' });
+  });
+
+  it('words a re-read byte figure as scanned input', () => {
+    const reread = { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 2_000_000_000, unit: 'bytes', reread: true } };
+    expect(impactEstimateFigure(reread)).toEqual({ text: '2.0 GB', meaning: 'of input read by the repeated scans' });
+  });
+});
+
+describe('estimateProvenance assumptions', () => {
+  it('appends the assumptions after the provenance sentence', () => {
+    const estimate = {
+      basis: 'serial', estimateMethod: 'modeled', wallClock: { low: 11_100, high: 11_100 },
+      assumptions: 'assumes 200 MB/s per executor over 75 executors; counts disk spill only, not memory spill, serialization or GC',
+    };
+    expect(estimateProvenance({ impactEstimate: estimate }))
+      .toBe('Modeled; the stage ran alone, so this is close to a point estimate. Assumes 200 MB/s per executor over 75 executors; counts disk spill only, not memory spill, serialization or GC.');
+  });
+
+  it('prints nothing for an estimate with no provenance sentence', () => {
+    expect(estimateProvenance({ impactEstimate: { basis: 'informational', wallClock: null, estimateMethod: 'none', assumptions: 'assumes x' } })).toBeNull();
   });
 });
 

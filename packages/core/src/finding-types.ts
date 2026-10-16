@@ -179,6 +179,10 @@ export interface SlowHostEvidence {
   executorId?: string;
   // The deviating executor's raw magnitude in `dimension`'s unit (ms for taskTime, else bytes).
   execMaxValue?: number;
+  // multiDim taskTime: how many executors the deviating one was picked from, and the stage's task
+  // count. The largest of N samples reaches a high ratio by chance more often as N grows.
+  executorCount?: number;
+  taskCount?: number;
 }
 export interface SlowHostFinding extends NumericFinding<'slowHost'>, SlowHostEvidence {}
 

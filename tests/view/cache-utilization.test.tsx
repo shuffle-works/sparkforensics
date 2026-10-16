@@ -240,7 +240,7 @@ test('a flagged row does not leak another RDD\'s findings (per-row catalog filte
   expect(rdd3Row).not.toHaveTextContent('CSTOR');
 });
 
-test('renders the ms raw-waste figure when a cacheUtilization finding carries an impactEstimate', async () => {
+test('renders the task-time raw-waste figure as core time when a cacheUtilization finding carries an impactEstimate', async () => {
   const rddInfo = new Map([[1, rdd(1, { numCachedPartitions: 4 })]]);
   const catalog = [cacheUtilizationFinding({
     rddId: 1,
@@ -248,7 +248,7 @@ test('renders the ms raw-waste figure when a cacheUtilization finding carries an
   })];
   renderWidget(buildAppModel(rddInfo), catalog);
 
-  expect(screen.getByText('1.2s')).toBeInTheDocument();
+  expect(screen.getByText('1.2 core-s')).toBeInTheDocument();
 });
 
 test('passes the worst impact band across all findings to WidgetCard for the header dot', () => {

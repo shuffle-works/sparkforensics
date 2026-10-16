@@ -353,6 +353,9 @@ export interface RawWasteFigure {
   /** Set on a coreMs/coreHours figure that counts allocated core capacity no task ran on
    * (utilization, stageShape's lowParallelism and taskStageSkew), not task time. */
   idle?: true;
+  /** Set on a bytes figure that counts input scanned by repeated reads of one relation
+   * (cachingOpportunity), not data written. */
+  reread?: true;
 }
 
 export type ImpactEstimateBasis = 'serial' | 'contended' | 'resourceOnly' | 'informational';
@@ -369,6 +372,10 @@ export interface ImpactEstimate {
   wallClock: { low: number; high: number } | null;
   estimateMethod: ImpactEstimateMethod;
   rawWaste?: RawWasteFigure;
+  /** What the model assumes and leaves out, as a sentence fragment
+   * ("assumes 200 MB/s per executor over 75 executors; counts disk spill only"). Printed after
+   * the estimate's provenance sentence. Absent when the model rests on no assumed constant. */
+  assumptions?: string;
   /** Busy core time the fix removes (executor task time), in core-milliseconds, as a low..high
    * range; set by estimateImpact (see coreTimeFor). Only a figure read from the log as removed
    * task time counts: skew and straggler's removed task time, gc's jvmGCTime, or retried and

@@ -1,7 +1,7 @@
 // Explicit .ts extensions: plain Node's ESM resolver (the runtime CLI/MCP path
 // runs under) requires the exact specifier, unlike a bundler.
 import { mergeIntervals } from './intervals.ts';
-import { formatRawWaste, formatWallClockRange, readsAsZero, worstImpactBand, IMPACT_BAND_ORDER } from './format-utils.ts';
+import { asCoreTime, formatRawWaste, formatWallClockRange, readsAsZero, worstImpactBand, IMPACT_BAND_ORDER } from './format-utils.ts';
 import type { Finding, RawWasteUnit, ImpactBand } from './types.ts';
 
 interface StageInterval {
@@ -126,7 +126,7 @@ export function buildRecommendationRollup(
 
 /** A resource group's summed waste as the board and CLI print it; null when it reads as zero. */
 export function resourceGroupTotal(group: { total: number; unit: RawWasteUnit }): string | null {
-  const text = formatRawWaste({ value: group.total, unit: group.unit });
+  const text = formatRawWaste(asCoreTime({ value: group.total, unit: group.unit }));
   return readsAsZero(text) ? null : text;
 }
 

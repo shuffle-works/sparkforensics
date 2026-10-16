@@ -100,12 +100,13 @@ keys humanized), and the report ends with a `## Detectors` catalog carrying the
 version + threshold set. A finding's `impactEstimate` prints as its own `- impact: ` line
 worded as the dashboard's "Potential savings": the wall-clock range, or the raw
 waste only when there is no range, followed by what it counts ("of run time", "of
-unused executor memory") and `estimateMethod`, and nothing for an informational or
+unused executor memory", "of task time (modeled)") and `estimateMethod`, and nothing for an informational or
 zero estimate. A `- estimate: ` line carries the Advanced view's provenance sentence
 (`estimateProvenance`). Both come from `packages/core/src/impact-format.ts`, the
 formatters every dashboard surface uses, so memory reads in GB-h from 0.1 GB-h up,
 core time in core-s or core-h, and a time figure has no "Estimated" prefix. JSON finding
-rows carry the same figure as `impact`/`impactMeaning` when there is one, and each
+rows carry the same figure as `impact`/`impactMeaning` when there is one, plus the provenance
+sentence as `estimateProvenance` (with the model's assumptions), and each
 `recommendations` row an `impactMeaning` next to its `impact`, which is null for a
 resource figure that rounds to zero. `EvidenceExport` names downloads
 `evidence-<appId>[-redacted].<md|json|html>`, taking the app id from the (already
@@ -118,7 +119,7 @@ documented in [Impact estimation](../impact-estimation.md#occupancy-weighted-att
 columns (`id`, `key`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`, `detectorVersion`, plus
 optional but pinned `confidence`, `validationRequired`, `docAnchor`) without displacing any of
 them. The full row shape is `FindingRowColumns` in `evidence-report.ts`, which also carries
-`name`, `tag`, `valueText`, `remediation`, `actionLabel`, `impact`/`impactMeaning` and, on a tuned run,
+`name`, `tag`, `valueText`, `remediation`, `actionLabel`, `impact`/`impactMeaning`, `estimateProvenance` and, on a tuned run,
 `tunedThresholds`.
 
 The report carries the same recommendation data the dashboard's "Fix These First" view shows,

@@ -290,12 +290,12 @@
      "confidence": "low",
      "value": 2,
      "basis": "resourceOnly",
-     "method": "modeled",
+     "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 48.052968,
-      "unit": "ms"
+      "value": 6006621,
+      "unit": "bytes"
      }
     },
     {
@@ -305,12 +305,12 @@
      "confidence": "medium",
      "value": 3,
      "basis": "resourceOnly",
-     "method": "modeled",
+     "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 105.309944,
-      "unit": "ms"
+      "value": 13163743,
+      "unit": "bytes"
      }
     },
     {
@@ -505,12 +505,12 @@
      "confidence": "low",
      "value": 2,
      "basis": "resourceOnly",
-     "method": "modeled",
+     "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 120.131288,
-      "unit": "ms"
+      "value": 15016411,
+      "unit": "bytes"
      }
     },
     {
@@ -582,12 +582,12 @@
      "confidence": "medium",
      "value": 3,
      "basis": "resourceOnly",
-     "method": "modeled",
+     "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 306.7254,
-      "unit": "ms"
+      "value": 38340675,
+      "unit": "bytes"
      }
     },
     {
@@ -707,12 +707,12 @@
      "confidence": "medium",
      "value": 3,
      "basis": "resourceOnly",
-     "method": "modeled",
+     "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 306.724896,
-      "unit": "ms"
+      "value": 38340612,
+      "unit": "bytes"
      }
     },
     {
@@ -847,12 +847,12 @@
      "confidence": "medium",
      "value": 3,
      "basis": "resourceOnly",
-     "method": "modeled",
+     "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 192.23988,
-      "unit": "ms"
+      "value": 24029985,
+      "unit": "bytes"
      }
     },
     {
@@ -1316,12 +1316,12 @@
      "confidence": "low",
      "value": 2,
      "basis": "resourceOnly",
-     "method": "modeled",
+     "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 1899.51208,
-      "unit": "ms"
+      "value": 237439010,
+      "unit": "bytes"
      }
     },
     {
@@ -1406,7 +1406,7 @@
      "key": "slowHost|9|execMaxMedianRatio||multiDim||2|taskTime||||||",
      "type": "slowHost",
      "band": "warning",
-     "confidence": null,
+     "confidence": "low",
      "value": 21.1,
      "basis": "serial",
      "method": "measured",
@@ -1597,12 +1597,12 @@
      "confidence": "low",
      "value": 2,
      "basis": "resourceOnly",
-     "method": "modeled",
+     "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 5502.829352,
-      "unit": "ms"
+      "value": 687853669,
+      "unit": "bytes"
      }
     },
     {
@@ -1866,7 +1866,7 @@
      "key": "slowHost|6|execMaxMedianRatio||multiDim||2|taskTime||||||",
      "type": "slowHost",
      "band": "critical",
-     "confidence": null,
+     "confidence": "low",
      "value": 248.2,
      "basis": "serial",
      "method": "measured",
@@ -1952,12 +1952,12 @@
      "confidence": "low",
      "value": 2,
      "basis": "resourceOnly",
-     "method": "modeled",
+     "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 5544.386,
-      "unit": "ms"
+      "value": 693048250,
+      "unit": "bytes"
      }
     },
     {
@@ -2262,7 +2262,7 @@
      "key": "slowHost|3|execMaxMedianRatio||multiDim||1|taskTime||||||",
      "type": "slowHost",
      "band": "critical",
-     "confidence": null,
+     "confidence": "low",
      "value": 177,
      "basis": "serial",
      "method": "measured",
@@ -2393,12 +2393,12 @@
      "confidence": "low",
      "value": 2,
      "basis": "resourceOnly",
-     "method": "modeled",
+     "method": "measured",
      "wcLow": null,
      "wcHigh": null,
      "rawWaste": {
-      "value": 8741.734903999999,
-      "unit": "ms"
+      "value": 1092716863,
+      "unit": "bytes"
      }
     },
     {
