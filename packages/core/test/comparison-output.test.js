@@ -20,11 +20,28 @@ describe('comparisonOutput', () => {
     const built = buildComparison(run('baseline', 'App', 'app-1'), run('candidate', 'App', 'app-2'));
     const out = comparisonOutput(built);
     expect(Object.keys(out)).toEqual([
-      'verdict', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
+      'verdict', 'baselineApp', 'candidateApp', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
       'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'executionAlignment', 'comparability',
     ]);
     expect(out.verdict).toEqual(comparisonVerdict(built));
     expect(out.metrics).toBe(built.metrics);
+  });
+
+  it('names both applications, with a null attempt id when the log has none', () => {
+    const cand = run('candidate', 'App', 'app-2');
+    cand.appModel.app.attemptId = '2';
+    const out = comparisonOutput(buildComparison(run('baseline', 'App', 'app-1'), cand));
+    expect(out.baselineApp).toEqual({ id: 'app-1', attemptId: null });
+    expect(out.candidateApp).toEqual({ id: 'app-2', attemptId: '2' });
+  });
+
+  it('carries the generator the surface passes, first, and leaves it out otherwise', () => {
+    const built = buildComparison(run('baseline', 'App', 'app-1'), run('candidate', 'App', 'app-2'));
+    const generator = { name: 'sparkforensics-mcp', version: '1.2.3', buildId: 'abc123' };
+    const out = comparisonOutput(built, 'full', generator);
+    expect(Object.keys(out)[0]).toBe('generator');
+    expect(out.generator).toEqual(generator);
+    expect('generator' in comparisonOutput(built)).toBe(false);
   });
 });
 
@@ -62,14 +79,21 @@ describe('buildComparisonOutput', () => {
 describe('runOutputBlocks', () => {
   it('returns the run\'s metrics and effective conf', () => {
     const blocks = runOutputBlocks(appModel('App', 'app-1'));
-    expect(Object.keys(blocks)).toEqual(['metrics', 'effectiveConf']);
+    expect(Object.keys(blocks)).toEqual(['app', 'metrics', 'effectiveConf']);
     expect(blocks.metrics.schemaVersion).toBeTypeOf('number');
+  });
+
+  it('names the application, with a null attempt id when the log has none', () => {
+    expect(runOutputBlocks(appModel('App', 'app-1')).app).toEqual({ id: 'app-1', attemptId: null });
+    const withAttempt = appModel('App', 'app-1');
+    withAttempt.app.attemptId = '1';
+    expect(runOutputBlocks(withAttempt).app).toEqual({ id: 'app-1', attemptId: '1' });
   });
 
   it('carries the generator the surface passes, first, and leaves it out otherwise', () => {
     const generator = { name: 'sparkforensics-cli', version: '1.2.3', buildId: 'abc123' };
     const blocks = runOutputBlocks(appModel('App', 'app-1'), { generator });
-    expect(Object.keys(blocks)).toEqual(['generator', 'metrics', 'effectiveConf']);
+    expect(Object.keys(blocks)).toEqual(['generator', 'app', 'metrics', 'effectiveConf']);
     expect(blocks.generator).toEqual(generator);
     expect(runOutputBlocks(appModel('App', 'app-1'), { redact: true, generator }).generator).toEqual(generator);
     expect('generator' in runOutputBlocks(appModel('App', 'app-1'))).toBe(false);

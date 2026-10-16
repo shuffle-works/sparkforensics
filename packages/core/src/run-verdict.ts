@@ -179,6 +179,9 @@ export interface RunFacts {
   /** The log has stages but none recorded an end, so no stage check had
    * anything to measure. */
   noFinishedStages: boolean;
+  /** Findings the count leaves out: the log-completeness and missing-data notes `isEligible` drops,
+   * and finding types the verdict does not rank. Absent counts as none. */
+  uncounted?: number;
 }
 
 function isFailedRun(facts: RunFacts): boolean {
@@ -215,6 +218,13 @@ export function verdictTitle(eligible: Finding[], steps: NextStep[], facts: RunF
   return `Start here: ${lowerFirst(findingActionLabel(lead.lead))}`;
 }
 
+/** What the finding count leaves out, as a sentence tail: notes about an incomplete log or data the
+ * log lacked are not fixes, so the count does not include them. */
+function uncountedNote(uncounted: number | undefined): string {
+  if (!uncounted) return '';
+  return ` The count leaves out ${plural(uncounted, 'note')} on incomplete or missing log data.`;
+}
+
 /** The run-level summary under the title: how much was found and where, what
  * the first fix is worth, and the run's idle capacity when that is large
  * enough to matter but is not the first step (whose title already says it). */
@@ -234,7 +244,7 @@ export function verdictSummary(eligible: Finding[], steps: NextStep[], facts: Ru
   } else if (steps.length === 0) {
     sentences.push('They are listed by impact under Findings.');
   } else {
-    sentences.push(`${plural(eligible.length, 'finding')} in ${plural(steps.length, 'place')}.`);
+    sentences.push(`${plural(eligible.length, 'finding')} in ${plural(steps.length, 'place')}.${uncountedNote(facts.uncounted)}`);
     const wallClock = steps[0].lead.impactEstimate?.wallClock;
     // An idle-capacity lead needs no sentence here: the title gives the idle share and step 1 the fix.
     if (!isIdleCapacityStep(steps[0]) && wallClock && facts.runMs != null) {
@@ -336,6 +346,7 @@ export function buildRunVerdict(appModel: AppModel, allFindings: Finding[]): Run
     clean: isCleanRun(appModel, allFindings),
     outcome,
     noFinishedStages: !hasFinishedStage(appModel.stages),
+    uncounted: allFindings.length - eligible.length,
   };
   const title = verdictTitle(eligible, steps, facts);
   const shown = steps.slice(0, NEXT_STEP_LIMIT);

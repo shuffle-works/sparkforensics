@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -40,6 +40,23 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       'compare_runs', 'diagnose_run', 'evaluate_budgets', 'get_finding_documentation', 'get_finding_evidence', 'get_reference_doc', 'get_run_summary', 'list_runs',
     ]);
+  }, 30000);
+
+  it('reports its package version in the handshake and as the generator of a diagnosis', async () => {
+    const { name, version } = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'));
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
+    cleanupDirs.push(dir);
+    const path = join(dir, 'eventlog');
+    writeFileSync(path,
+      '{"Event":"SparkListenerApplicationStart","App ID":"app-1","App Name":"t","Timestamp":0}\n'
+      + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n');
+    const transport = new StdioClientTransport({ command: binPath, args: [] });
+    client = new Client({ name: 'test-client', version: '1.0.0' });
+    await client.connect(transport);
+    expect(client.getServerVersion()).toMatchObject({ version });
+    const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } });
+    expect(result.structuredContent.generator).toEqual({ name, version, buildId: expect.any(String) });
+    expect(result.structuredContent.app).toEqual({ id: 'app-1', attemptId: null });
   }, 30000);
 
   it('surfaces run-not-found as isError with structuredContent.code', async () => {

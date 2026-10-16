@@ -392,8 +392,8 @@ describe('findingsDelta (finding identity)', () => {
     const cand = catSnap([], [{ rule: 'spill', impactBand: 'warn' }, { rule: 'spill', impactBand: 'warn' }, { rule: 'skew', impactBand: 'high' }]);
     const d = findingsDelta(base, cand);
     expect(d.introduced).toEqual([
-      { rule: 'skew', impactBand: 'high', baseCount: 0, candCount: 1, delta: 1, stages: [] },
-      { rule: 'spill', impactBand: 'warn', baseCount: 0, candCount: 1, delta: 1, stages: [] },
+      { rule: 'skew', impactBand: 'high', baseCount: 0, candCount: 1, delta: 1, stages: [], stageLabels: [] },
+      { rule: 'spill', impactBand: 'warn', baseCount: 0, candCount: 1, delta: 1, stages: [], stageLabels: [] },
     ]);
     expect(d.resolved).toEqual([]);
   });
@@ -402,7 +402,7 @@ describe('findingsDelta (finding identity)', () => {
     const base = catSnap([], [{ rule: 'gc', impactBand: 'high' }, { rule: 'gc', impactBand: 'high' }]);
     const cand = catSnap([], [{ rule: 'gc', impactBand: 'high' }]);
     const d = findingsDelta(base, cand);
-    expect(d.resolved).toEqual([{ rule: 'gc', impactBand: 'high', baseCount: 1, candCount: 0, delta: -1, stages: [] }]);
+    expect(d.resolved).toEqual([{ rule: 'gc', impactBand: 'high', baseCount: 1, candCount: 0, delta: -1, stages: [], stageLabels: [] }]);
     expect(d.introduced).toEqual([]);
   });
 
@@ -415,8 +415,17 @@ describe('findingsDelta (finding identity)', () => {
     ]);
     const d = findingsDelta(base, cand);
     expect(d.introduced).toEqual([
-      { rule: 'spill', impactBand: 'warn', baseCount: 0, candCount: 2, delta: 2, stages: ['Exchange 10', 'Sort 11'] },
+      { rule: 'spill', impactBand: 'warn', baseCount: 0, candCount: 2, delta: 2, stages: ['Exchange 10', 'Sort 11'], stageLabels: ['Exchange 10', 'Sort 11'] },
     ]);
+  });
+
+  it('adds display labels with the call-site directories removed and keeps the raw names', () => {
+    const name = 'collect at /hadoop/yarn/local/usercache/some-user/appcache/application_0000000000000_0001/container_0000000000000_0001_01_000001/etl.py:42';
+    const base = catSnap([[10, { name }]], [{ rule: 'skew', impactBand: 'warn', stageId: 10 }]);
+    const cand = catSnap([[10, { name }]], [{ rule: 'skew', impactBand: 'critical', stageId: 10 }]);
+    const [row] = findingsDelta(base, cand).changed;
+    expect(row.stages).toEqual([name]);
+    expect(row.stageLabels).toEqual(['collect at etl.py:42']);
   });
 
   it('omits a finding present on both sides', () => {
@@ -433,14 +442,14 @@ describe('findingsDelta (finding identity)', () => {
     const d = findingsDelta(base, cand);
     expect(d.introduced).toEqual([]);
     expect(d.resolved).toEqual([]);
-    expect(d.changed).toEqual([{ rule: 'skew', type: 'skew', baseImpactBand: 'warn', candImpactBand: 'critical', count: 1, stages: [] }]);
+    expect(d.changed).toEqual([{ rule: 'skew', type: 'skew', baseImpactBand: 'warn', candImpactBand: 'critical', count: 1, stages: [], stageLabels: [] }]);
   });
 
   it('falls back to type when rule is absent and to "unknown" impact band', () => {
     const base = catSnap([], []);
     const cand = catSnap([], [{ type: 'coldStart' }]);
     const d = findingsDelta(base, cand);
-    expect(d.introduced).toEqual([{ rule: 'coldStart', type: 'coldStart', impactBand: 'unknown', baseCount: 0, candCount: 1, delta: 1, stages: [] }]);
+    expect(d.introduced).toEqual([{ rule: 'coldStart', type: 'coldStart', impactBand: 'unknown', baseCount: 0, candCount: 1, delta: 1, stages: [], stageLabels: [] }]);
   });
 });
 
@@ -581,7 +590,7 @@ describe('findingsDelta: app-level findings sharing a rule (bug C1)', () => {
     ]);
     const d = findingsDelta(base, cand);
     expect(d.introduced).toEqual([]);
-    expect(d.resolved).toEqual([{ rule: 'memoryUtilization', type: 'memoryUtilization', impactBand: 'info', baseCount: 1, candCount: 0, delta: -1, stages: [] }]);
+    expect(d.resolved).toEqual([{ rule: 'memoryUtilization', type: 'memoryUtilization', impactBand: 'info', baseCount: 1, candCount: 0, delta: -1, stages: [], stageLabels: [] }]);
   });
 });
 

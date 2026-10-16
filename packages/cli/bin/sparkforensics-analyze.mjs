@@ -343,7 +343,7 @@ async function runMultiLog({
       const { comparison, output } = buildComparisonOutput(
         { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
         { label: 'candidate', appModel, catalog },
-        { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand },
+        { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand, generator: generatorInfo() },
       );
       const { json } = buildEvidenceReport(appModel, { redact, findingsFilter, markdown: false, thresholds });
       const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
@@ -709,7 +709,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     ({ comparison, output: comparisonJson } = buildComparisonOutput(
       { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
       { label: 'candidate', appModel, catalog },
-      { redact: values.redact, normalizePath, ignoreConf, confRedactRegex: values['conf-redact-regex'], noiseBand },
+      { redact: values.redact, normalizePath, ignoreConf, confRedactRegex: values['conf-redact-regex'], noiseBand, generator: generatorInfo() },
     ));
   }
 

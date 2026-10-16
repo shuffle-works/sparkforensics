@@ -100,7 +100,7 @@ describe('several candidate logs', () => {
     for (const l of lines) {
       expect(l).toMatchObject({ status: 'pass', exitCode: 0, error: null, budgets: [] });
       expect(Object.keys(l.comparison)).toEqual([
-        'verdict', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
+        'generator', 'verdict', 'baselineApp', 'candidateApp', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
         'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'executionAlignment', 'comparability',
       ]);
       expect(l.candidate.summary).toBeDefined();

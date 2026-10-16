@@ -5,12 +5,18 @@ Reference for the `compare_runs` tool of the SparkForensics MCP server.
 Compare two runs: the comparison page's verdict, metric deltas (`metrics`) and
 categorized findings delta (`findings`), and the share of executor run time in
 paired stages (`runtimeCoverage`). The result
-carries the same `verdict`, `confidence`, `reason`, `matchedCoverage`,
+carries the same `generator` (the `sparkforensics-mcp` build that wrote the result),
+`verdict`, `baselineApp` and `candidateApp` (each run's Spark application `id` and
+`attemptId`), `confidence`, `reason`, `matchedCoverage`,
 `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`,
 `unmatched`, `replanned`, `bookkeepingStageIds`, `executionAlignment` and `comparability` as the
 `comparison` object of the CLI's `--baseline` JSON output, plus `stagePairs`
 when `include` asks for it (the CLI always carries it), plus
-`runIdA` and `runIdB`. `metricDeltas` and `findingsDelta` repeat `metrics` and
+`runIdA` and `runIdB`, which are handles for the runs this server process has
+cached and differ per tool by design: match runs by `baselineApp` and `candidateApp`.
+Each row of `findings` lists its stage names in `stages` and the same names with the
+directories of their call-site paths removed in `stageLabels`.
+`metricDeltas` and `findingsDelta` repeat `metrics` and
 `findings` under their earlier names; they are deprecated and will be removed
 in a later release. `verdict` is the headline the dashboard's comparison page
 opens with (the baseline is `runIdA`/`sourceA`, the candidate `runIdB`/`sourceB`): a
@@ -105,6 +111,9 @@ Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` tr
 {
   "runIdA": "aaaa1111-...",
   "runIdB": "bbbb2222-...",
+  "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "9c1f3a7e2b4d" },
+  "baselineApp": { "id": "application_0000000000000_0001", "attemptId": null },
+  "candidateApp": { "id": "application_0000000000000_0002", "attemptId": null },
   "verdict": { "title": "The candidate finished 1.0s faster than the baseline (50%)", "tone": "better", "sentences": [] },
   "confidence": "ok",
   "reason": null,

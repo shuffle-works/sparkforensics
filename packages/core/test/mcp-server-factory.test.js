@@ -110,6 +110,46 @@ describe('createMcpServer', () => {
     }
   });
 
+  it('reports the generator version in the handshake and the generator and app in diagnose_run', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-factory-'));
+    const path = join(dir, 'eventlog');
+    writeFileSync(path,
+      '{"Event":"SparkListenerApplicationStart","App ID":"app-1","App Name":"t","App Attempt ID":"2","Timestamp":0}\n'
+      + '{"Event":"SparkListenerApplicationEnd","Timestamp":100}\n');
+    try {
+      const generator = { name: 'sparkforensics-mcp', version: '4.5.6', buildId: 'abc123' };
+      const client = await connectedClient(createMcpServer({ generator }));
+      expect(client.getServerVersion()).toMatchObject({ name: 'sparkforensics', version: '4.5.6' });
+      const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } });
+      expect(result.structuredContent.generator).toEqual(generator);
+      expect(result.structuredContent.app).toEqual({ id: 'app-1', attemptId: '2' });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reports the generator and both applications in compare_runs', async () => {
+    const { dir, path } = tmpEventLog();
+    try {
+      const generator = { name: 'sparkforensics-mcp', version: '4.5.6', buildId: 'abc123' };
+      const client = await connectedClient(createMcpServer({ generator }));
+      const result = await client.callTool({ name: 'compare_runs', arguments: { sourceA: { path }, sourceB: { path } } });
+      expect(result.structuredContent.generator).toEqual(generator);
+      expect(result.structuredContent.baselineApp).toEqual({ id: 'app-1', attemptId: null });
+      expect(result.structuredContent.candidateApp).toEqual({ id: 'app-1', attemptId: null });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('says in the tool descriptions that runId differs per tool by design', async () => {
+    const client = await connectedClient(createMcpServer());
+    const { tools } = await client.listTools();
+    for (const name of ['diagnose_run', 'compare_runs', 'evaluate_budgets']) {
+      expect(tools.find((t) => t.name === name).description).toMatch(/differs per tool by design/);
+    }
+  });
+
   it('maps a thrown run-not-found error to isError + structuredContent.code', async () => {
     const server = createMcpServer();
     const client = await connectedClient(server);

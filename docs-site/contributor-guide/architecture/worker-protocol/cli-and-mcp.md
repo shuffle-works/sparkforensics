@@ -168,10 +168,18 @@ JSON and the MCP tools call the same core functions:
 - `runOutputBlocks()` in `packages/core/src/run-output.ts` builds the report's
   `metrics` and `effectiveConf` blocks, redacted from the redacted run, for both
   the CLI report and `diagnose_run`, which also returns the report's `writeTargets`.
-  It also returns the `generator` block when the surface passes one. Core does not
-  know its host, so the CLI supplies its package name, version and core build id
-  (`coreBuildId`), and MCP supplies none: the server factory has no real package
-  version to report.
+  It also returns the `app` block (`id` and `attemptId`, from `run-identity.ts`) and
+  the `generator` block when the surface passes one. Core does not know its host, so
+  the CLI, the MCP bin and the local server supply their package name, version and
+  core build id (`coreBuildId`). `createMcpServer({ generator })` reports that
+  version in the MCP handshake and passes the block to `diagnose_run` and
+  `compare_runs`. A server built without one reports version `0.0.0`.
+- `comparisonOutput()` carries the same `generator` block and a `baselineApp` and
+  `candidateApp` block, read from each run's `app` by `compareRuns`. Each findings
+  row has `stageLabels`, the row's `stages` through `stageDisplayLabel()` in
+  `packages/core/src/stage-label.ts`, which reduces every path in a stage name to
+  its last segment. It is display only: `normalizeStageName` stays the stage
+  identity, so pairing does not move.
 
 Neither surface wraps the other: MCP handlers hold a run cache and report errors
 by code, while the CLI maps failures to exit codes and owns stdout. Adding a field

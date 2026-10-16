@@ -12,6 +12,8 @@ import type { Stage, SparkAppInfo, AppModel, Finding, ImpactBand, TunedThreshold
 import type { SessionSnapshot } from './session-snapshot.ts';
 import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
 import { isIncompleteRun } from './check-coverage.ts';
+import { stageDisplayLabel } from './stage-label.ts';
+import { runAppIdentity, type RunAppIdentity } from './run-identity.ts';
 import { summarizeRunOutcome } from './run-outcome.ts';
 import { buildComparability, withinBand, type Comparability } from './comparability.ts';
 
@@ -28,11 +30,15 @@ export interface MetricDeltaRow {
 // counterpart in the other run. An introduced row has `baseCount` 0, a resolved row `candCount` 0.
 export interface FindingsDeltaRow {
   rule: string; type: string; impactBand: string; baseCount: number; candCount: number; delta: number; stages: string[];
+  /** `stages` as display labels, each name with the directories of its call-site path removed. */
+  stageLabels: string[];
 }
 // Findings both runs have, at one location, that moved from one impact band to another. `count`
 // is how many findings of that rule moved between those two bands.
 export interface FindingsChangedRow {
   rule: string; type: string; baseImpactBand: string; candImpactBand: string; count: number; stages: string[];
+  /** `stages` as display labels, each name with the directories of its call-site path removed. */
+  stageLabels: string[];
 }
 /** True when a changed finding moved to a more severe band (an unknown band ranks least severe). */
 export function isEscalation(row: Pick<FindingsChangedRow, 'baseImpactBand' | 'candImpactBand'>): boolean {
@@ -48,6 +54,7 @@ export interface StageSkewRow {
 }
 export interface CompareRunsResult {
   baselineLabel: string; candidateLabel: string;
+  baselineApp: RunAppIdentity; candidateApp: RunAppIdentity;
   // `insufficient`: neither run recorded any executor run time, so there is nothing to compare.
   confidence: 'ok' | 'low' | 'insufficient'; reason: string | null;
   // Share of stages the old exact matcher (`matchStages`) paired, by count. `runtimeCoverage` is
@@ -308,6 +315,7 @@ export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapsh
     }
     return [...names].sort();
   };
+  const stageLabelsOf = (names: string[]): string[] => [...new Set(names.map(stageDisplayLabel))].sort();
   const group = <T>(items: T[], keyOf: (item: T) => string): Array<[string, T[]]> => {
     const groups = new Map<string, T[]>();
     for (const item of items) {
@@ -320,19 +328,23 @@ export function findingsDelta(baseSnap: SessionSnapshot, candSnap: SessionSnapsh
   const rows = (findings: Finding[], snap: SessionSnapshot, side: 'base' | 'cand'): FindingsDeltaRow[] =>
     group(findings, (f) => `${findingRule(f)}§${findingBand(f)}`).map(([, fs]) => {
       const count = fs.length;
+      const stages = stageNames(snap, fs);
       return {
         rule: findingRule(fs[0]), type: fs[0].type, impactBand: findingBand(fs[0]),
         baseCount: side === 'base' ? count : 0, candCount: side === 'cand' ? count : 0,
-        delta: side === 'cand' ? count : -count, stages: stageNames(snap, fs),
+        delta: side === 'cand' ? count : -count, stages, stageLabels: stageLabelsOf(stages),
       };
     });
   const changed: FindingsChangedRow[] = group(
     diff.changed, (c) => `${findingRule(c.candidate)}§${findingBand(c.baseline)}§${findingBand(c.candidate)}`,
-  ).map(([, cs]) => ({
-    rule: findingRule(cs[0].candidate), type: cs[0].candidate.type,
-    baseImpactBand: findingBand(cs[0].baseline), candImpactBand: findingBand(cs[0].candidate),
-    count: cs.length, stages: stageNames(candSnap, cs.map((c) => c.candidate)),
-  }));
+  ).map(([, cs]) => {
+    const stages = stageNames(candSnap, cs.map((c) => c.candidate));
+    return {
+      rule: findingRule(cs[0].candidate), type: cs[0].candidate.type,
+      baseImpactBand: findingBand(cs[0].baseline), candImpactBand: findingBand(cs[0].candidate),
+      count: cs.length, stages, stageLabels: stageLabelsOf(stages),
+    };
+  });
   return { introduced: rows(diff.introduced, candSnap, 'cand'), resolved: rows(diff.resolved, baseSnap, 'base'), changed };
 }
 
@@ -473,6 +485,7 @@ export function compareRuns(
   const metrics = metricDeltas(baseSnap, candSnap, noiseBand);
   return {
     baselineLabel: baseline.label, candidateLabel: candidate.label,
+    baselineApp: runAppIdentity(baseSnap.app), candidateApp: runAppIdentity(candSnap.app),
     confidence,
     reason,
     matchedCoverage: match.coverage,

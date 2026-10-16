@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -13,11 +13,23 @@ const pkgDir = dirname(binDir);
 // vendor-core/ only while it still matches core/src and warns when it does not.
 // load-vendored.js is the one module located by hand; the rest load through its
 // exported loadVendored().
-async function loadCoreModule(moduleName) {
+async function loadVendoredHelper() {
   const srcHelper = join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
   const helperPath = existsSync(srcHelper) ? srcHelper : join(pkgDir, 'vendor-core', 'load-vendored.js');
-  const { loadVendored } = await import(pathToFileURL(helperPath).href);
+  return import(pathToFileURL(helperPath).href);
+}
+
+async function loadCoreModule(moduleName) {
+  const { loadVendored } = await loadVendoredHelper();
   return loadVendored(pkgDir, moduleName);
+}
+
+// The provenance stamp every report carries: this package's name and version, and the build id of
+// the core it loaded (vendor-core/'s stamp or core/src's hash). It is also the handshake version.
+async function generatorInfo() {
+  const { name, version } = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'));
+  const { coreBuildId } = await loadVendoredHelper();
+  return { name, version, buildId: coreBuildId(pkgDir) };
 }
 
 async function loadCreateMcpServer() {
@@ -73,7 +85,7 @@ async function main() {
     }
   }
   const createMcpServer = await loadCreateMcpServer();
-  const server = createMcpServer({ thresholds });
+  const server = createMcpServer({ thresholds, generator: await generatorInfo() });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }
