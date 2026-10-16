@@ -309,8 +309,8 @@ It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
   `stageSum`, or `null` when `outputRows` is `null`. Compare two runs' row
   counts only when both sides name the same source.
 - `outputBytes` is the sum of the bytes written by the same stages, for a plain
-  write under the same rule as the stage sum of rows. It is `null` when the
-  root execution has no stage or the write is not plain.
+  write under the same rule as the stage sum of rows. It is `null` when no
+  stage of the root execution reports bytes written or the write is not plain.
 - `mergeRows` holds the row counts of a Delta MERGE: `inserted`, `updated`,
   `deleted` and `copied`, read from the `MergeIntoCommand` node's SQL metrics
   (`number of inserted rows`, `number of updated rows`, `number of deleted rows`
