@@ -99,7 +99,6 @@ describe('DML output figures on public corpus logs', () => {
   it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('reports inserted + updated + copied rows and the bytes added for a SQL MERGE', async () => {
     const [merge] = await dmlWrites('delta-merge-sql');
     expect(figures(merge)).toEqual({ outputRows: 1_100_000, outputRowsSource: 'commandMetric', outputBytes: 14_314_600 });
-    expect(merge.changedRows).toBeNull();
   });
 
   it.skipIf(!existsSync(corpusLog('delta-merge-api')))('reports the same figures for a DeltaTable API merge', async () => {
@@ -115,16 +114,14 @@ describe('DML output figures on public corpus logs', () => {
     ]);
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-update')))('reports the rows touched, the bytes added and the updated count for an UPDATE', async () => {
+  it.skipIf(!existsSync(corpusLog('delta-update')))('reports the rows touched, and the bytes added for an UPDATE', async () => {
     const [update] = await dmlWrites('delta-update');
     expect(figures(update)).toEqual({ outputRows: 500_000, outputRowsSource: 'commandMetric', outputBytes: 6_010_388 });
-    expect(update.changedRows).toEqual({ updated: 100_000, deleted: null });
     expect(update.mergeRows).toBeNull();
   });
 
-  it.skipIf(!existsSync(corpusLog('delta-delete')))('reports 0 rows and 0 bytes written, and the deleted count, for a DELETE', async () => {
+  it.skipIf(!existsSync(corpusLog('delta-delete')))('reports 0 rows and 0 bytes written for a DELETE', async () => {
     const [del] = await dmlWrites('delta-delete');
     expect(figures(del)).toEqual({ outputRows: 0, outputRowsSource: 'commandMetric', outputBytes: 0 });
-    expect(del.changedRows).toEqual({ updated: null, deleted: 250_000 });
   });
 });

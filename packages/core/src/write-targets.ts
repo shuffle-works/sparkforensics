@@ -26,14 +26,6 @@ export interface MergeRows {
   copied: number | null;
 }
 
-/** The row counts an UPDATE or DELETE command node reports in its SQL metrics. */
-export interface ChangedRows {
-  /** Rows an UPDATE changed: null for a DELETE. */
-  updated: number | null;
-  /** Rows a DELETE removed: null for an UPDATE. */
-  deleted: number | null;
-}
-
 export interface WriteTarget {
   sqlExecutionId: number;
   /** PlanNode.id of the write node, null only for a hand-built plan without ids. */
@@ -73,9 +65,6 @@ export interface WriteTarget {
    * metrics. Null for every other command, for a MERGE whose node carries none of them, and for a
    * DeltaMerge group, which has no command node. */
   mergeRows: MergeRows | null;
-  /** The updated or deleted row count of an UPDATE or DELETE node's SQL metrics. Null for every
-   * other command and for a node that carries neither. */
-  changedRows: ChangedRows | null;
   /** The node's simpleString (its name when the log has no simpleString). */
   raw: string;
 }
@@ -295,10 +284,8 @@ function metricValue(node: PlanNode, ...names: string[]): number | null {
   return metric !== undefined && Number.isFinite(metric.value) ? metric.value : null;
 }
 
-// Delta 4.x labels the UPDATE and DELETE counters with a trailing period ("number of rows updated.");
-// metricValue matches names exactly, so each counter lists both spellings.
-const UPDATED_ROWS_LABELS = ['number of rows updated.', 'number of rows updated'];
-const DELETED_ROWS_LABELS = ['number of rows deleted.', 'number of rows deleted'];
+// Delta 4.x labels the DELETE copied-rows counter with a trailing period ("number of rows copied.");
+// metricValue matches names exactly, so the counter lists both spellings.
 const COPIED_ROWS_LABELS = ['number of rows copied.', 'number of rows copied'];
 
 // Rows and bytes a MERGE, UPDATE or DELETE wrote to new files, from the command node's counters.
@@ -324,15 +311,6 @@ function commandOutputOf(command: string, node: PlanNode): { rows: number | null
     return { rows: metricValue(node, ...COPIED_ROWS_LABELS), bytes: metricValue(node, 'number of bytes added') };
   }
   return { rows: null, bytes: null };
-}
-
-function changedRowsOf(command: string, node: PlanNode): ChangedRows | null {
-  if (command !== 'UpdateCommand' && command !== 'DeleteCommand') return null;
-  const rows = {
-    updated: command === 'UpdateCommand' ? metricValue(node, ...UPDATED_ROWS_LABELS) : null,
-    deleted: command === 'DeleteCommand' ? metricValue(node, ...DELETED_ROWS_LABELS) : null,
-  };
-  return Object.values(rows).every((v) => v === null) ? null : rows;
 }
 
 function mergeRowsOf(command: string, node: PlanNode): MergeRows | null {
@@ -368,7 +346,6 @@ function collectWrites(exec: SqlExecution, root: PlanNode, byRoot: ExecutionsByR
       outputRowsSource: nodeRows !== null ? 'nodeMetric' : outputRows !== null ? 'commandMetric' : null,
       outputBytes: commandOutput.bytes,
       mergeRows: mergeRowsOf(command, node),
-      changedRows: changedRowsOf(command, node),
       raw: detail !== '' ? detail : node.name,
     });
   }, { dedupe: true });

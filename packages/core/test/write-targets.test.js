@@ -144,7 +144,7 @@ describe('evidence report writeTargets contract', () => {
     expect(json.writeTargets).toEqual({
       writes: [{
         sqlExecutionId: 1, nodeId: null, command: 'SaveIntoDataSourceCommand', recognized: true,
-        kind: null, target: null, outputRows: null, outputRowsSource: null, outputBytes: null, mergeRows: null, changedRows: null,
+        kind: null, target: null, outputRows: null, outputRowsSource: null, outputBytes: null, mergeRows: null,
         raw: 'Execute SaveIntoDataSourceCommand',
       }],
       executionsWithoutPlan: [{ sqlExecutionId: 2, reason: 'noPlan' }],
@@ -210,21 +210,18 @@ describe('command output figures', () => {
       metric('number of rows copied.', 40), metric('number of bytes added', 700),
     ]));
     expect(figures(w)).toEqual({ rows: 50, source: 'commandMetric', bytes: 700 });
-    expect(w.changedRows).toEqual({ updated: 10, deleted: null });
   });
 
   it('reads a DELETE\'s copied rows under either label spelling, and keeps 0 as 0', () => {
     const withPeriod = writesOf(cmd('DeleteCommand', [metric('number of rows copied.', 0), metric('number of rows deleted.', 8), metric('number of bytes added', 0)]))[0];
     const bare = writesOf(cmd('DeleteCommand', [metric('number of rows copied', 3), metric('number of rows deleted', 8)]))[0];
     expect(figures(withPeriod)).toEqual({ rows: 0, source: 'commandMetric', bytes: 0 });
-    expect(withPeriod.changedRows).toEqual({ updated: null, deleted: 8 });
     expect(figures(bare)).toEqual({ rows: 3, source: 'commandMetric', bytes: null });
   });
 
-  it('keeps null figures and a null changedRows for an UPDATE whose node has no counters', () => {
+  it('keeps null figures for an UPDATE whose node has no counters', () => {
     const [w] = writesOf(cmd('UpdateCommand', [metric('number of source rows', 3)]));
     expect(figures(w)).toEqual({ rows: null, source: null, bytes: null });
-    expect(w.changedRows).toBeNull();
   });
 
   it('prefers a node\'s own output-rows metric', () => {

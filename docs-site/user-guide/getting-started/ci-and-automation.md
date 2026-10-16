@@ -261,7 +261,6 @@ It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
       "outputRowsSource": "nodeMetric",
       "outputBytes": 24824981,
       "mergeRows": null,
-      "changedRows": null,
       "raw": "Execute InsertIntoHadoopFsRelationCommand hdfs://nn/sandbox/out/t1, false, Parquet, ..."
     }
   ],
@@ -340,11 +339,6 @@ It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
   (see [Delta writes](#delta-writes)). To check that two runs merged the same
   rows, compare `inserted + updated + deleted`. `copied` counts target rows
   Delta rewrote unchanged, which depends on how the table's files are laid out.
-- `changedRows` holds the `updated` or `deleted` row count of a Delta UPDATE or
-  DELETE, read from the node's `number of rows updated` or `number of rows
-  deleted` SQL metric (Delta 4.x spells both labels with a trailing period). The
-  count that does not apply to the command is `null`. The whole value is `null`
-  for every other command, including MERGE, which reports `mergeRows`.
 - `recognized` is `true` for the commands below and `false` for a write-like
   node that is not in that list. An unrecognized write always has `target` and
   `kind` `null`, and `raw` is the only information about it.
