@@ -1,5 +1,4 @@
 ---
-"@sparkforensics/core": patch
 "sparkforensics-web": patch
 "sparkforensics-cli": patch
 "sparkforensics-mcp": patch
