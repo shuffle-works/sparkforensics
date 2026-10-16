@@ -234,7 +234,7 @@ describe('analyze: slow host', () => {
   });
 });
 
-describe('analyze: stage slowness fallback + suppression', () => {
+describe('analyze: stage slowness fallback + suppression (§6)', () => {
   const min = 60000;
   // Wall-clock (completedAt/submittedAt) drives the band; the guard is !(stageDurationMs > 0), not executorRunTime, which here is just realistic filler.
   const slow = (mins, execs) => makeStage({ id: 1, executorRunTime: mins * min * execs, executorStats: Array.from({ length: execs }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 })), hostStats: [], submittedAt: 0, completedAt: mins * min });
@@ -344,7 +344,7 @@ describe('analyze: stage slowness fallback + suppression', () => {
   });
 });
 
-describe('analyze: host duration-share', () => {
+describe('analyze: host duration-share (§2a)', () => {
   it('flags a host owning ≥75% duration and ≥50% tasks', () => {
     const hostStats = [
       { host: 'hot', taskCount: 60, totalDuration: 90000 },
@@ -367,7 +367,7 @@ describe('analyze: host duration-share', () => {
   });
 });
 
-describe('analyze: executor multi-dim imbalance', () => {
+describe('analyze: executor multi-dim imbalance (§2b)', () => {
   const base = { taskCount: 5, totalDuration: 5000, inputBytes: 500, shuffleReadBytes: 0, shuffleWriteBytes: 0 };
   it('flags task-time deviation past the top tier as critical', () => {
     const executorStats = [
@@ -652,7 +652,7 @@ describe('analyze: speculative / straggler', () => {
   });
 });
 
-describe('analyze: one finding per slow-task tail', () => {
+describe('analyze: one finding per slow-task tail (§4)', () => {
   const tailStage = (over = {}) => new Map([[1, makeStage({
     taskCount: 15, taskDurationP50: 100, taskDurationMax: 900,
     speculativeTasks: 0, stragglerCount: 2, ...over,
@@ -683,7 +683,7 @@ describe('analyze: one finding per slow-task tail', () => {
   });
 });
 
-describe('analyze: speculative tiering, collapsed to critical by reconciliation', () => {
+describe('analyze: speculative tiering (§1), collapsed to critical by reconciliation', () => {
   // taskDurationMax raised above p50 so the runtime floor doesn't cap tiering at info.
   // The detector tiers by share (info 5% / warning 12% / critical 25%), but all three clear the 2% floor of the 5s default and collapse to critical here.
   const spec = (n, total) => makeStage({ taskCount: total, speculativeTasks: n, stragglerCount: 0, taskDurationMax: 300 });
@@ -701,7 +701,7 @@ describe('analyze: speculative tiering, collapsed to critical by reconciliation'
   });
 });
 
-describe('analyze: partition sizing', () => {
+describe('analyze: partition sizing (§4)', () => {
   const MiB = 1024 * 1024;
   it('flags shuffle partition skew (max > 5× median AND > 256MiB)', () => {
     const stages = new Map([[1, makeStage({ shuffleReadP50: 10 * MiB, shuffleReadMax: 300 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50 })]]);
@@ -743,7 +743,7 @@ describe('analyze: partition sizing', () => {
   });
 });
 
-describe('analyze: stage shape smells', () => {
+describe('analyze: stage shape smells (§7)', () => {
   const execs = (n) => Array.from({ length: n }, (_, i) => ({ executorId: `e${i}`, taskCount: 1, totalDuration: 0 }));
   it('flags under-parallelization (PRatio < 0.5)', () => {
     const app = makeApp({ resources: { executor: { cores: 4 } } });
@@ -1060,7 +1060,7 @@ describe('analyze: caching opportunity (relation reuse)', () => {
   });
 });
 
-describe('analyze: stage failed outright', () => {
+describe('analyze: stage failed outright (§3)', () => {
   it('fires critical when stageFailureReason is present', () => {
     const stages = new Map([[1, makeStage({ stageFailureReason: 'Job aborted due to stage failure', failedTasks: 0 })]]);
     const b = analyze(makeApp(), stages, [], []).find(b => b.type === 'stageFailed');
@@ -1344,7 +1344,7 @@ describe('analyze: spill confidence metadata', () => {
   });
 });
 
-describe('analyze: spill impact band', () => {
+describe('analyze: spill impact band v2 (§5)', () => {
   // Each case asserts the detector's own spillMagnitude tier alongside .impactBand; these volumes fall under
   // the 0.5% warn floor of the 5s default, so all demote to info. Test names describe the magnitude tier, not the reconciled band.
   const GiB = 1024 * 1024 * 1024, MiB = 1024 * 1024;
@@ -2018,7 +2018,7 @@ describe('analyze: runAggregates threading', () => {
   });
 });
 
-describe('analyze: memoryUtilization detector', () => {
+describe('analyze: memoryUtilization detector (§1)', () => {
   const raBusy = (busyCoreMs, peak) => ({ coreHistogram: [], busyCoreMs, peakConcurrentCores: peak, perStage: {} });
 
   it('1a: fires idleCores warning when idle-core rate exceeds 50%', () => {
