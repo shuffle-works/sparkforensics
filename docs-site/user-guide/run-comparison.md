@@ -37,6 +37,28 @@ output, tasks, executors) are left out, since more or less of them is not
 better or worse on its own. **See where to start in the candidate** opens the
 candidate's dashboard, whose own verdict names the first thing to fix.
 
+When the two runs have the same Spark configuration, the same plan and the same
+output, the verdict reads "Same configuration, plan and output" and says where a
+time difference came from, for example "Time differs by 8m 36s (49%): executors
+averaged 57.0 in the baseline and 32.6 in the candidate". A run that had fewer
+executors, or less of its allocated core time busy, takes longer without being
+a regression, and the verdict does not call it one. When the wall clock moves
+one way and executor run-time or allocated core-hours move the other, the
+verdict reads as a mixed result and names both.
+
+The **What differs between the runs** card sits above the metrics. It lists
+whether the Spark configuration is the same (and, when it is not, each key that
+differs with both values), whether every stage pairs, the input read, output
+rows and output written of each run, the mean and peak executor count, and the
+share of allocated core time that task time filled. Below the table it states how long
+the two run windows overlapped and the arithmetic that bridges the wall-clock
+difference: the wall-clock ratio is the task-time ratio divided by the product of
+the mean-executor ratio and the task-time share ratio, for runs whose executors
+have the same core count. Configuration keys the cluster sets per run (the
+application id, start time and driver address) are never compared, and a key
+whose value is a secret is withheld from both sides and not compared. Output rows must be equal for the output to read as the same; input and
+output bytes may differ within the noise band.
+
 The **Metrics** table covers the whole run: wall-clock duration, memory
 spill, task skew, failed-task rate, disk spill, GC time, input/output bytes,
 executor run-time, and task/executor counts, baseline against candidate with

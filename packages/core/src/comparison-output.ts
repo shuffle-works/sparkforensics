@@ -11,7 +11,7 @@ export interface ComparisonRunInput { label: string; appModel: AppModel; catalog
 export type ComparisonOutput = { verdict: ComparisonVerdictText }
   & Pick<CompareRunsResult,
     'confidence' | 'reason' | 'matchedCoverage' | 'runtimeCoverage' | 'metrics' | 'findings'
-    | 'comparisonSchemaVersion' | 'unmatched' | 'replanned' | 'bookkeepingStageIds' | 'executionAlignment'>
+    | 'comparisonSchemaVersion' | 'unmatched' | 'replanned' | 'bookkeepingStageIds' | 'executionAlignment' | 'comparability'>
   & Partial<Pick<CompareRunsResult, 'stagePairs'>>;
 
 /** `full` carries every field (the CLI); `summary` leaves out `stagePairs` (MCP, which returns them
@@ -34,6 +34,7 @@ export function comparisonOutput(comparison: CompareRunsResult, view: Comparison
     replanned: comparison.replanned,
     bookkeepingStageIds: comparison.bookkeepingStageIds,
     executionAlignment: comparison.executionAlignment,
+    comparability: comparison.comparability,
   };
 }
 
@@ -42,9 +43,9 @@ export function comparisonOutput(comparison: CompareRunsResult, view: Comparison
  * and Markdown; `output` is the projection to serialize. */
 export function buildComparisonOutput(
   baseline: ComparisonRunInput, candidate: ComparisonRunInput,
-  { redact, normalizePath, view }: { redact?: boolean; view?: ComparisonView } & CompareOptions = {},
+  { redact, normalizePath, ignoreConf, noiseBand, view }: { redact?: boolean; view?: ComparisonView } & CompareOptions = {},
 ): { comparison: CompareRunsResult; output: ComparisonOutput } {
-  const built = buildComparison(baseline, candidate, { normalizePath });
+  const built = buildComparison(baseline, candidate, { normalizePath, ignoreConf, noiseBand });
   const comparison = redact ? redactComparison(built) : built;
   return { comparison, output: comparisonOutput(comparison, view) };
 }

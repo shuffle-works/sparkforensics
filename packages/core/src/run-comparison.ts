@@ -13,12 +13,16 @@ import type { SessionSnapshot } from './session-snapshot.ts';
 import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
 import { isIncompleteRun } from './check-coverage.ts';
 import { summarizeRunOutcome } from './run-outcome.ts';
+import { buildComparability, withinBand, type Comparability } from './comparability.ts';
 
 export interface MetricDeltaRow {
   key: string; label: string;
   baseline: number | null; candidate: number | null; delta: number | null;
   direction: 'improvement' | 'regression' | 'unchanged' | 'neutral' | 'unavailable';
   unavailableReason?: string;
+  /** Both sides are measured and the candidate sits within the noise band of the baseline. Never
+   * changes `direction`, which budgets read. */
+  withinNoise: boolean;
 }
 // An introduced or resolved finding category: the findings of one rule and band that have no
 // counterpart in the other run. An introduced row has `baseCount` 0, a resolved row `candCount` 0.
@@ -65,6 +69,7 @@ export interface CompareRunsResult {
   // end-of-run record: the comparison verdict leads with failed jobs and never calls a cut-off
   // log's shorter time a speed-up.
   jobOutcomes: { baseline: VerdictJobOutcome; candidate: VerdictJobOutcome };
+  comparability: Comparability;
 }
 
 function jobOutcome(snapshot: SessionSnapshot): VerdictJobOutcome {
@@ -168,16 +173,21 @@ function direction(key: string, baseline: number | null, candidate: number | nul
   return d < 0 ? 'improvement' : d > 0 ? 'regression' : 'unchanged';
 }
 
-function metric(
-  key: string, label: string, baseline: number | null, candidate: number | null,
-  extra: { unavailableReason?: string } = {},
-): MetricDeltaRow {
-  const dir = direction(key, baseline, candidate);
-  const delta = baseline == null || candidate == null ? null : candidate - baseline;
-  return { key, label, baseline, candidate, delta, direction: dir, ...extra };
-}
+/** A change under this share of the baseline's value is within run-to-run noise: a shared cluster
+ * easily moves a job a percent or two. The caller's `noiseBand` replaces it. */
+export const DEFAULT_NOISE_BAND = 0.02;
 
-export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapshot): MetricDeltaRow[] {
+export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, noiseBand = DEFAULT_NOISE_BAND): MetricDeltaRow[] {
+  const metric = (
+    key: string, label: string, baseline: number | null, candidate: number | null,
+    extra: { unavailableReason?: string } = {},
+  ): MetricDeltaRow => {
+    const delta = baseline == null || candidate == null ? null : candidate - baseline;
+    return {
+      key, label, baseline, candidate, delta, direction: direction(key, baseline, candidate),
+      withinNoise: baseline != null && candidate != null && withinBand(baseline, candidate, noiseBand), ...extra,
+    };
+  };
   const out: MetricDeltaRow[] = [];
   // Run totals count every task attempt, failed and speculative ones too (run-totals.ts), the
   // same sums the CLI metrics block reports; skew stays on each stage's latest attempt.
@@ -391,6 +401,13 @@ export interface CompareOptions {
    * output directory no longer splits a stage in two. Findings and `stageIdentity` never see them.
    * Invalid, over-long or empty-matching patterns throw (see `compileNormalizePatterns`). */
   normalizePath?: readonly string[];
+  /** Regular expression sources matched against Spark configuration keys: a key that matches one
+   * is left out of the configuration comparison, for keys that differ by design such as a per-run
+   * output path. Invalid, over-long or empty patterns throw. */
+  ignoreConf?: readonly string[];
+  /** Share of the baseline's value under which a metric row is `withinNoise`; default
+   * `DEFAULT_NOISE_BAND`. Must be a finite number from 0 to 1. */
+  noiseBand?: number;
 }
 
 // Wraps the analyze()-to-compareRuns() snapshot-building sequence shared by
@@ -421,6 +438,10 @@ export function compareRuns(
   options: CompareOptions = {},
 ): CompareRunsResult {
   const baseSnap = baseline.snapshot, candSnap = candidate.snapshot;
+  const noiseBand = options.noiseBand ?? DEFAULT_NOISE_BAND;
+  if (!Number.isFinite(noiseBand) || noiseBand < 0 || noiseBand > 1) {
+    throw new Error(`noiseBand must be a number from 0 to 1, got ${noiseBand}.`);
+  }
   // The old exact matcher stays the source of `matchedCoverage`; pairs and the gate come from the aligner.
   const match = matchStages(baseSnap, candSnap);
   const alignment = alignStages(baseSnap, candSnap, { normalizePath: compileNormalizePatterns(options.normalizePath) });
@@ -446,6 +467,7 @@ export function compareRuns(
     : lowCoverage
     ? `Only ${share} of executor run time is in matched stages, so per-stage rows mostly compare unrelated work.`
     : null;
+  const metrics = metricDeltas(baseSnap, candSnap, noiseBand);
   return {
     baselineLabel: baseline.label, candidateLabel: candidate.label,
     confidence,
@@ -458,12 +480,13 @@ export function compareRuns(
     replanned: alignment.replanned,
     bookkeepingStageIds: alignment.bookkeepingStageIds,
     executionAlignment: alignment.executionAlignment,
-    metrics: metricDeltas(baseSnap, candSnap),
+    metrics,
     findings: findingsDelta(baseSnap, candSnap, alignment.pairs),
     stageSkew: stageSkewDeltas(baseSnap, candSnap, alignment.pairs),
     baseStages: stageList(baseSnap),
     candStages: stageList(candSnap),
     jobOutcomes: { baseline: jobOutcome(baseSnap), candidate: jobOutcome(candSnap) },
+    comparability: buildComparability(baseSnap, candSnap, alignment, metrics, { ignoreConf: options.ignoreConf, noiseBand }),
   };
 }
 
@@ -484,6 +507,22 @@ function renderChangedSection(changed: FindingsChangedRow[]): string[] {
     lines.push(`- ${f.rule}: ${f.baseImpactBand} -> ${f.candImpactBand}${f.count > 1 ? ` (${f.count} findings)` : ''}`);
   }
   return lines;
+}
+
+// What the runs share, as `- key: value` bullets: configuration, plan, data volume and executors.
+function renderComparabilitySection({ conf, plan, volume, capacity }: Comparability): string[] {
+  const confLine = conf.equal == null ? 'a run records no Spark properties'
+    : conf.equal ? 'same' : `${conf.differences.length} differ (${conf.differences.map((d) => d.key).join(', ')})`;
+  const pair = (f: { baseline: number | null; candidate: number | null }) => `${f.baseline ?? 'n/a'} -> ${f.candidate ?? 'n/a'}`;
+  const execs = (side: { meanExecutors: number | null; peakExecutors: number | null }) =>
+    `${side.meanExecutors == null ? 'n/a' : side.meanExecutors.toFixed(1)} mean / ${side.peakExecutors ?? 'n/a'} peak`;
+  return [
+    '### Comparability', '',
+    `- configuration: ${confLine}`,
+    `- plan: ${plan.equal ? 'every stage pairs' : `${plan.unmatched.baseline} baseline / ${plan.unmatched.candidate} candidate stages unmatched, ${plan.replanned} re-planned`}`,
+    `- input bytes: ${pair(volume.inputBytes)}, output rows: ${pair(volume.outputRows)}, output bytes: ${pair(volume.outputBytes)}`,
+    `- executors: ${execs(capacity.baseline)} -> ${execs(capacity.candidate)}`,
+  ];
 }
 
 // Small Markdown renderer for the comparison section, matching
@@ -514,6 +553,8 @@ export function renderComparisonMarkdown(
   lines.push(`- matched stage coverage: ${(comparison.matchedCoverage * 100).toFixed(1)}%`);
   lines.push(`- runtime coverage: ${comparison.runtimeCoverage === null ? 'n/a' : `${(comparison.runtimeCoverage * 100).toFixed(1)}%`}`);
   lines.push(`- stage pairs: ${comparison.stagePairs.length}, unmatched: ${comparison.unmatched.baseStageIds.length} baseline / ${comparison.unmatched.candStageIds.length} candidate, Delta bookkeeping: ${comparison.bookkeepingStageIds.baseStageIds.length} baseline / ${comparison.bookkeepingStageIds.candStageIds.length} candidate`);
+  lines.push('');
+  lines.push(...renderComparabilitySection(comparison.comparability));
   lines.push('');
   lines.push('### Metric deltas');
   lines.push('');

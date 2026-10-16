@@ -151,3 +151,53 @@ describe('summarizeComparison with failed jobs', () => {
   });
 });
 
+
+describe('summarizeComparison with comparability', () => {
+  const agree = {
+    noiseBand: 0.02,
+    conf: { equal: true, differences: [], ignoredKeys: [], withheldKeys: [] },
+    plan: { equal: true, unmatched: { baseline: 0, candidate: 0 }, replanned: 0 },
+    volume: { inputBytes: {}, outputRows: {}, outputBytes: {}, equal: true },
+    capacity: { baseline: {}, candidate: {} },
+    wallClockBridge: {
+      wallClock: { baseline: 100, candidate: 149, ratio: 1.49 },
+      taskTime: { baseline: 100, candidate: 82, ratio: 0.82 },
+      meanExecutors: { baseline: 57, candidate: 32.6, ratio: 0.57 },
+      taskShareOfAllocation: { baseline: 0.5, candidate: 0.48, ratio: 0.96 },
+      explainedWallClock: 1.49,
+    },
+  };
+  const slower = [metric('wallClock', 'Wall-clock duration', 100_000, 149_000, 'regression')];
+  const failed = { baseline: { failedJobs: 0, totalJobs: 5 }, candidate: { failedJobs: 2, totalJobs: 5 } };
+
+  it('keeps the four-tone verdict without the comparability block', () => {
+    expect(summarizeComparison(slower, noFindings).tone).toBe('worse');
+  });
+
+  it('lets a failed job lead over equivalence', () => {
+    expect(summarizeComparison(slower, noFindings, failed, agree).tone).toBe('worse');
+  });
+
+  it('leaves an incomplete log neutral', () => {
+    const verdict = summarizeComparison(slower, noFindings, {
+      baseline: { failedJobs: 0, totalJobs: 5 }, candidate: { failedJobs: 0, totalJobs: 5, incomplete: true },
+    }, agree);
+    expect(verdict.tone).toBe('unknown');
+  });
+
+  it('does not read unknown configuration, a differing plan or differing volume as equivalent', () => {
+    for (const change of [
+      { conf: { ...agree.conf, equal: null } },
+      { plan: { ...agree.plan, equal: false } },
+      { volume: { ...agree.volume, equal: false } },
+      { volume: { ...agree.volume, equal: null } },
+    ]) {
+      expect(summarizeComparison(slower, noFindings, undefined, { ...agree, ...change }).tone).toBe('worse');
+    }
+  });
+
+  it('uses the metric rows own noise flag, so a wider caller band reads as the same time', () => {
+    const wide = [{ ...slower[0], withinNoise: true }];
+    expect(summarizeComparison(wide, noFindings).tone).toBe('same');
+  });
+});
