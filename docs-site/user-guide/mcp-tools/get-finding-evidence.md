@@ -27,6 +27,7 @@ Example response:
   "runId": "b8b2c1a4-...",
   "finding": {
     "id": "1d473001",
+    "key": "incompleteRun|incompleteRun|run",
     "type": "incompleteRun",
     "name": "Incomplete Run",
     "tag": "INCMP",

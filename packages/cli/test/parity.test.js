@@ -38,6 +38,9 @@ const RUN_REPORT_ALLOWED = [
   { path: 'generator', only: 'differs', reason: 'Each surface names its own package, version and core build.' },
   { path: 'runId', only: 'mcp', reason: 'MCP handle for the cached run, used by follow-up calls. A CLI call has no session.' },
   { path: 'runComplete', only: 'mcp', reason: 'Convenience copy of summary.outcome\'s end-of-run signal that MCP clients read without asking for the summary.' },
+  { path: 'view', only: 'mcp', reason: 'Says which view the MCP tool answered in (compact or full). The CLI has one shape.' },
+  { path: 'findingsOmitted', only: 'mcp', reason: 'Counts the findings a maxFindings limit left out. The CLI report has no such limit.' },
+  { path: /^verdict\.steps\[\d+\]\.leadFinding(\.|\[|$)/, only: 'mcp', reason: 'MCP puts each step\'s lead finding row in the step, so the row is there when maxFindings or minBand leaves it out of `findings`. The CLI lists every finding.' },
 ];
 
 // CLI `comparison` against MCP compare_runs.
@@ -69,7 +72,9 @@ function flatten(value, path = '', out = new Map()) {
   return out;
 }
 
-const covers = (prefix, path) => path === prefix || path.startsWith(`${prefix}.`) || path.startsWith(`${prefix}[`);
+const covers = (prefix, path) => (prefix instanceof RegExp
+  ? prefix.test(path)
+  : path === prefix || path.startsWith(`${prefix}.`) || path.startsWith(`${prefix}[`));
 
 // Returns the differences no allowlist entry explains, plus the entries that explained nothing.
 function diffSurfaces(cli, mcp, allowed) {
@@ -175,7 +180,7 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
   describe.each(CANDIDATES)('%s', (candidate) => {
     it.each([[false], [true]])('reports the same run (redact: %s) through the CLI and diagnose_run', async (redact) => {
       const cli = await cliJson([candidate, '--format', 'json', ...(redact ? ['--redact'] : [])]);
-      const viaMcp = await mcpCall('diagnose_run', { source: { path: candidate }, include: INCLUDE_ALL, redact });
+      const viaMcp = await mcpCall('diagnose_run', { source: { path: candidate }, include: INCLUDE_ALL, redact, view: 'full' });
 
       // Sanity: the blocks the MCP default view gained are really compared.
       expect(Object.keys(cli)).toEqual(expect.arrayContaining(['writeTargets', 'metrics', 'effectiveConf']));
@@ -184,7 +189,27 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
 
     it('returns writeTargets, metrics and effectiveConf in diagnose_run\'s default view', async () => {
       const viaMcp = await mcpCall('diagnose_run', { source: { path: candidate } });
+      expect(viaMcp.view).toBe('compact');
       expect(Object.keys(viaMcp)).toEqual(expect.arrayContaining(['writeTargets', 'metrics', 'effectiveConf']));
+    });
+
+    it('lists in the compact view the same findings, blocks and keys as the full view', async () => {
+      const compact = await mcpCall('diagnose_run', { source: { path: candidate } });
+      const full = await mcpCall('diagnose_run', { source: { path: candidate }, view: 'full' });
+      for (const block of ['recommendations', 'writeTargets', 'metrics', 'effectiveConf', 'runComplete', 'runId']) {
+        expect(compact[block]).toEqual(full[block]);
+      }
+      const withoutLead = (steps) => steps.map((step) => ({ ...step, leadFinding: undefined }));
+      expect(withoutLead(compact.verdict.steps)).toEqual(withoutLead(full.verdict.steps));
+      expect(compact.findings).toHaveLength(full.findings.length);
+      compact.findings.forEach((row, i) => {
+        // Every compact field is the full row's own.
+        for (const [field, value] of Object.entries(row)) expect(full.findings[i][field]).toEqual(value);
+        expect(row.key).toEqual(expect.any(String));
+      });
+      // One finding is one key in the CLI report too.
+      const cliKeys = (await cliJson([candidate, '--format', 'json'])).findings.map((f) => f.key);
+      expect(compact.findings.map((f) => f.key)).toEqual(cliKeys);
     });
 
     it.each([[false], [true]])('reports the same comparison (redact: %s) through the CLI and compare_runs', async (redact) => {

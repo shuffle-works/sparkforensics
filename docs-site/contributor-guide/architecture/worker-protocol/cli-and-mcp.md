@@ -134,6 +134,17 @@ Each call gets a copy of the cached output, so a caller cannot change what the n
 `runOutputBlocks()` memoizes the `metrics` block per run model,
 thresholds and `redact`, so a repeated `diagnose_run` skips `computeRunMetrics`.
 
+`diagnose_run`'s `view`, `minBand` and `maxFindings` live in `diagnoseRun()`
+(`mcp-tools.ts`), not in the report builder: the CLI report has one shape. `minBand` and
+`maxFindings` are part of `FindingsFilter`, so the Markdown findings follow them, and
+`buildEvidenceReport()` returns `findingsMatched`, the rows before `maxFindings`, for
+`findingsOmitted`. The `compact` view maps each `FindingRow` through `compactFindingRow()`
+and leaves out `cleanChecks` and `notRunChecks`. Each verdict step gets its lead row
+from the unfiltered report, which is cached, so a limit never hides it. The factory's
+`diagnose_run` handler defaults `view` to `compact`; `diagnoseRun()` itself defaults to
+`full`. With `format: 'md'` the handler returns `diagnoseHeadline()` as
+`structuredContent`.
+
 ### One output builder for the CLI and MCP
 
 Neither surface lists the fields of a run or a comparison by hand. The CLI's

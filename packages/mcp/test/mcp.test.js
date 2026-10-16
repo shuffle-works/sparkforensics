@@ -80,7 +80,7 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     const transport = new StdioClientTransport({ command: binPath, args: [] });
     client = new Client({ name: 'test-client', version: '1.0.0' });
     await client.connect(transport);
-    const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, include: ['summary'] } });
+    const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, include: ['summary'], view: 'full' } });
     expect(result.isError).toBeFalsy();
     const { notRunChecks, cleanChecks, summary } = result.structuredContent;
     const notRun = new Map(notRunChecks.map((c) => [c.type, c.reason]));

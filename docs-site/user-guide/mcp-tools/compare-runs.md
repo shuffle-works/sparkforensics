@@ -171,11 +171,15 @@ A finding is the same finding in both runs when it has the same type, rule and l
 paired stage, a paired SQL execution, an audited setting, or the whole run), whatever its
 value or impact band. Each `findings.introduced`/`resolved` row groups the findings of one
 rule and band that have no counterpart in the other run: `{ rule, type, impactBand,
-baseCount, candCount, delta, stages }`, with `baseCount` 0 on an introduced row, `candCount`
-0 on a resolved row, and `stages` naming the stages the findings sit on. Each
+baseCount, candCount, delta, stages, keys }`, with `baseCount` 0 on an introduced row, `candCount`
+0 on a resolved row, and `stages` naming the stages the findings sit on. `keys` lists the `key` of
+each finding the row counts, as [`diagnose_run`](./diagnose-run.md) reports it for the run the
+findings are in (the candidate for an introduced row, the baseline for a resolved one), so a row
+points at the findings it counts. Each
 `findings.changed` row groups the findings both runs have whose impact band differs:
-`{ rule, type, baseImpactBand, candImpactBand, count, stages }`, with `stages` naming the
-candidate's stages. A `metrics` row's `direction` is
+`{ rule, type, baseImpactBand, candImpactBand, count, stages, keys, baseKeys }`, with `stages` naming the
+candidate's stages, `keys` the candidate's finding keys and `baseKeys` the baseline's. The two
+differ when the aligner paired stages that do not share a fingerprint. A `metrics` row's `direction` is
 `improvement`, `regression`, `unchanged`, `neutral` (a volume metric, where
 more isn't worse) or `unavailable`, and an unavailable row carries an
 `unavailableReason`.

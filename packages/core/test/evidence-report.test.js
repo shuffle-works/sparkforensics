@@ -168,8 +168,8 @@ describe('buildEvidenceReport', () => {
       'recommendations', 'cleanChecks', 'notRunChecks',
     ]);
     // Core construction order (optional confidence/validation/docAnchor trail it).
-    expect(Object.keys(raw.findings[0]).slice(0, 11)).toEqual([
-      'id', 'type', 'name', 'tag', 'impactBand', 'stageId', 'metric', 'value',
+    expect(Object.keys(raw.findings[0]).slice(0, 12)).toEqual([
+      'id', 'key', 'type', 'name', 'tag', 'impactBand', 'stageId', 'metric', 'value',
       'recommendation', 'detectorVersion', 'evidence',
     ]);
     // actionLabel is always present (unlike confidence/validationRequired/docAnchor/

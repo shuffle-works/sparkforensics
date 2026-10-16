@@ -6,7 +6,10 @@ import { collectRun } from './cli/collect-run.ts';
 import { deriveEvidenceAvailability } from './evidence-availability.ts';
 import { resolveFromShs, DEFAULT_MAX_ARCHIVE_BYTES, DEFAULT_IDLE_TIMEOUT_MS } from './shs-load.ts';
 import { mcpError } from './mcp-error.ts';
-import { buildEvidenceReport, runFindings, toFindingsFilter, type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson } from './evidence-report.ts';
+import {
+  buildEvidenceReport, runFindings, toFindingsFilter,
+  type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson, type VerdictJson, type VerdictStepRow,
+} from './evidence-report.ts';
 import { computeWallClock } from './wall-clock.ts';
 import { renderComparisonMarkdown, type CompareRunsResult } from './run-comparison.ts';
 import { buildComparisonOutput, type ComparisonOutput } from './comparison-output.ts';
@@ -21,7 +24,7 @@ import { DETECTORS, type ThresholdOverrides } from './detectors.ts';
 import { tunedDetectors } from './threshold-overrides.ts';
 import { tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
 import { typeTag } from './format-utils.ts';
-import type { AppModel, Finding, SparkAppInfo, TunedThresholds } from './types.ts';
+import type { AppModel, Finding, ImpactBand, SparkAppInfo, TunedThresholds } from './types.ts';
 import type { RunShape } from './run-shape.ts';
 
 export type RunSource = { path: string } | { shsBaseUrl: string; appId: string; attemptId?: string };
@@ -244,27 +247,80 @@ export async function resolveOrCreateRun(
   return resolution;
 }
 
+/** `compact`: an index, one short row per finding and no clean or not-run check lists. `full`: the
+ * report as the CLI writes it. */
+export type DiagnoseView = 'compact' | 'full';
+
+/** A finding as `view: 'compact'` lists it: enough to rank it, name it and pair it across reruns.
+ * The rest of the row (recommendation, evidence, remediation, estimate) comes from
+ * `get_finding_evidence` by `id`. */
+export interface CompactFindingRow {
+  id: string | null; key: string; type: string; tag: string; name: string;
+  impactBand: FindingRow['impactBand']; stageId: number | null; actionLabel: string;
+  metric: string | null; value: number | null; valueText?: string;
+  impact?: string; impactMeaning?: string | null;
+  tunedThresholds?: TunedThresholds;
+}
+
+export function compactFindingRow(row: FindingRow): CompactFindingRow {
+  return {
+    id: row.id, key: row.key, type: row.type, tag: row.tag, name: row.name,
+    impactBand: row.impactBand, stageId: row.stageId, actionLabel: row.actionLabel,
+    metric: row.metric ?? null, value: row.value ?? null,
+    ...(row.valueText !== undefined ? { valueText: row.valueText } : {}),
+    ...(row.impact !== undefined ? { impact: row.impact, impactMeaning: row.impactMeaning ?? null } : {}),
+    // Kept: a tuned finding's impact figure is uncalibrated, and a reader must see that on its row.
+    ...(row.tunedThresholds !== undefined ? { tunedThresholds: row.tunedThresholds } : {}),
+  };
+}
+
+/** A verdict step with its lead finding's row, which `findings` may not list under `maxFindings` or
+ * `minBand`. Null for a step whose lead has no id. */
+export type DiagnoseVerdictStep = VerdictStepRow & { leadFinding: FindingRow | CompactFindingRow | null };
+
+export type DiagnoseRunResult = {
+  runId: string; view: DiagnoseView;
+  verdict: Omit<VerdictJson, 'steps'> & { steps: DiagnoseVerdictStep[] };
+  findings: Array<FindingRow | CompactFindingRow>;
+  /** Findings that match the filters but sit past `maxFindings`. */
+  findingsOmitted: number;
+  runComplete: boolean;
+  recommendations: RecommendationRow[];
+  tunedThresholds?: Record<string, TunedThresholds>;
+  // Only in the full view.
+  cleanChecks?: CleanCheckEntry[]; notRunChecks?: NotRunCheckEntry[];
+} & Pick<EvidenceReportJson, 'writeTargets'> & ReturnType<typeof runOutputBlocks>
+  & Partial<Pick<EvidenceReportJson, 'summary' | 'evidenceAvailability' | 'detectors'>> & { markdown?: string };
+
 // `thresholds` on every analyzing tool below: the server's --thresholds overrides, fixed for the
 // process by createMcpServer(). A client can't set them per call; the dashboard never has them.
+// `view` defaults to `full` here; the MCP tool defaults it to `compact`.
 export function diagnoseRun(runId: string, opts?: {
   redact?: boolean; include?: Array<'summary' | 'evidenceAvailability' | 'detectors'>; markdown?: boolean;
   impactBand?: string[]; type?: string[]; stageId?: number; thresholds?: ThresholdOverrides; generator?: ReportGenerator;
-}): {
-  runId: string; verdict: EvidenceReportJson['verdict']; findings: FindingRow[]; runComplete: boolean;
-  recommendations: RecommendationRow[]; cleanChecks: CleanCheckEntry[]; notRunChecks: NotRunCheckEntry[];
-  tunedThresholds?: Record<string, TunedThresholds>;
-} & Pick<EvidenceReportJson, 'writeTargets'> & ReturnType<typeof runOutputBlocks>
-  & Partial<Pick<EvidenceReportJson, 'summary' | 'evidenceAvailability' | 'detectors'>> & { markdown?: string } {
+  view?: DiagnoseView; maxFindings?: number; minBand?: ImpactBand;
+}): DiagnoseRunResult {
   const appModel = getCachedAppModel(runId);
-  const findingsFilter = toFindingsFilter(opts?.impactBand, opts?.type, opts?.stageId);
-  const { json, markdown } = buildEvidenceReport(appModel, {
+  const view = opts?.view ?? 'full';
+  const findingsFilter = toFindingsFilter(opts?.impactBand, opts?.type, opts?.stageId, opts?.minBand, opts?.maxFindings);
+  const { json, markdown, findingsMatched } = buildEvidenceReport(appModel, {
     redact: opts?.redact, markdown: opts?.markdown, findingsFilter, thresholds: opts?.thresholds,
+  });
+  // The lead rows come from the unfiltered report (cached, so this costs no second analysis).
+  const allRows = findingsFilter
+    ? buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false, thresholds: opts?.thresholds }).json.findings
+    : json.findings;
+  const shape = (row: FindingRow): FindingRow | CompactFindingRow => (view === 'compact' ? compactFindingRow(row) : row);
+  const steps = json.verdict.steps.map((step): DiagnoseVerdictStep => {
+    const lead = step.leadFindingId == null ? undefined : allRows.find((row) => row.id === step.leadFindingId && row.type === step.type);
+    return { ...step, leadFinding: lead ? shape(lead) : null };
   });
   const include = opts?.include ?? [];
   const tuned = json.summary.tunedThresholds;
   return {
-    runId, verdict: json.verdict, findings: json.findings, recommendations: json.recommendations, cleanChecks: json.cleanChecks,
-    notRunChecks: json.notRunChecks,
+    runId, view, verdict: { ...json.verdict, steps }, findings: json.findings.map(shape), findingsOmitted: findingsMatched - json.findings.length,
+    recommendations: json.recommendations,
+    ...(view === 'full' ? { cleanChecks: json.cleanChecks, notRunChecks: json.notRunChecks } : {}),
     // The CLI report's own blocks, so a run reads the same through either surface.
     writeTargets: json.writeTargets,
     ...runOutputBlocks(appModel, { redact: opts?.redact, thresholds: opts?.thresholds, generator: opts?.generator }),
@@ -275,6 +331,16 @@ export function diagnoseRun(runId: string, opts?: {
     ...(include.includes('evidenceAvailability') ? { evidenceAvailability: json.evidenceAvailability } : {}),
     ...(include.includes('detectors') ? { detectors: json.detectors } : {}),
     ...(opts?.markdown ? { markdown } : {}),
+  };
+}
+
+/** The few fields `format: 'md'` returns as `structuredContent`: the Markdown carries the rest. */
+export function diagnoseHeadline(result: DiagnoseRunResult): {
+  runId: string; runComplete: boolean; title: string; findingCount: number; findingsOmitted: number; recommendationCount: number;
+} {
+  return {
+    runId: result.runId, runComplete: result.runComplete, title: result.verdict.title,
+    findingCount: result.findings.length, findingsOmitted: result.findingsOmitted, recommendationCount: result.recommendations.length,
   };
 }
 

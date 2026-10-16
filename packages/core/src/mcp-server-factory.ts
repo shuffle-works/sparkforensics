@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
-  resolveOrCreateRun, diagnoseRun, getRunSummary, compareRuns, getFindingEvidence, getFindingDocumentation, getReferenceDoc, evaluateBudgetsForRun,
+  resolveOrCreateRun, diagnoseRun, diagnoseHeadline, getRunSummary, compareRuns, getFindingEvidence, getFindingDocumentation, getReferenceDoc, evaluateBudgetsForRun,
+  type DiagnoseRunResult,
 } from './mcp-tools.ts';
 import { listRuns } from './list-runs.ts';
 import type { ThresholdOverrides } from './detectors.ts';
@@ -43,7 +44,7 @@ function toolErrorResult(error: { message: string; code?: string }): CallToolRes
   };
 }
 
-// diagnoseRun/compareRuns may carry a `markdown` field (only when the caller asked for
+// compareRuns may carry a `markdown` field (only when the caller asked for
 // format: 'md'); it never belongs in structuredContent (whose shape must stay stable regardless of
 // format), so it's stripped here and, when present, becomes content[0].text instead of JSON.stringify.
 function toolResultWithMarkdown<T extends object>(promise: Promise<T & { markdown?: string }>): Promise<CallToolResult> {
@@ -51,6 +52,20 @@ function toolResultWithMarkdown<T extends object>(promise: Promise<T & { markdow
     (value) => {
       const { markdown, ...structuredContent } = value;
       return toCallToolResult(markdown !== undefined ? markdown : JSON.stringify(structuredContent), structuredContent as Record<string, unknown>);
+    },
+    toolErrorResult,
+  );
+}
+
+// diagnose_run's own mapping: with `format: 'md'` the Markdown is the content and structuredContent
+// shrinks to a few headline fields, so a client that stores it does not store the whole report.
+function diagnoseToolResult(promise: Promise<DiagnoseRunResult>): Promise<CallToolResult> {
+  return promise.then(
+    (value) => {
+      const { markdown, ...structuredContent } = value;
+      return markdown !== undefined
+        ? toCallToolResult(markdown, diagnoseHeadline(value))
+        : toCallToolResult(JSON.stringify(structuredContent), structuredContent as Record<string, unknown>);
     },
     toolErrorResult,
   );
@@ -83,16 +98,22 @@ export function createMcpServer(
   }, (params) => toolResult(listRuns(params)));
 
   server.registerTool('diagnose_run', {
-    description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by potential savings), thresholded findings with remediation text, an impact-ranked fix recommendation rollup, clean-check status, the checks the log lacked the data to run, and the writeTargets, metrics and effectiveConf blocks of the CLI report. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated. The result names the Spark application (app) and the build that wrote it (generator). ' + RUN_ID_NOTE,
+    description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by potential savings, each with its lead finding), findings, an impact-ranked fix recommendation rollup, and the writeTargets, metrics and effectiveConf blocks of the CLI report. view "compact" (the default) lists one short row per finding and leaves out the clean-check and not-checked lists; view "full" returns every finding with its remediation text and evidence, and those lists. Every finding row has a key that stays the same for the same finding in a rerun of the job (compare_runs rows list the same keys), and an id for get_finding_evidence. With format "md" the content is Markdown and structuredContent holds a few headline fields. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated. The result names the Spark application (app) and the build that wrote it (generator). ' + RUN_ID_NOTE,
     inputSchema: {
       ...runRefSchema, redact: z.boolean().optional(),
+      view: z.enum(['compact', 'full']).optional()
+        .describe('compact (default): one short row per finding. full: the CLI report\'s rows, clean checks and not-checked checks.'),
       include: z.array(z.enum(['summary', 'evidenceAvailability', 'detectors'])).optional(),
       impactBand: z.array(z.string()).optional(), type: z.array(z.string()).optional(), stageId: z.number().int().optional(),
+      minBand: z.enum(['critical', 'warning', 'info']).optional()
+        .describe('List only findings at this band or a more severe one.'),
+      maxFindings: z.number().int().nonnegative().optional()
+        .describe('List at most this many findings, most severe first. findingsOmitted counts the ones left out; each verdict step still carries its lead finding.'),
       ...formatSchema,
     },
-  }, ({ source, runId, redact, include, format, impactBand, type, stageId }) => toolResultWithMarkdown(
+  }, ({ source, runId, redact, include, format, impactBand, type, stageId, view, minBand, maxFindings }) => diagnoseToolResult(
     resolveOrCreateRun({ source, runId }).then(({ runId: id }) =>
-      diagnoseRun(id, { redact, include, markdown: format === 'md', impactBand, type, stageId, thresholds, generator })),
+      diagnoseRun(id, { redact, include, markdown: format === 'md', impactBand, type, stageId, thresholds, generator, view: view ?? 'compact', minBand, maxFindings })),
   ));
 
   server.registerTool('get_run_summary', {
