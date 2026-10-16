@@ -1,5 +1,4 @@
 ---
-"@sparkforensics/core": minor
 "sparkforensics-cli": minor
 "sparkforensics-mcp": minor
 ---
