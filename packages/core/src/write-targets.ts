@@ -15,7 +15,7 @@ import { walkPlanTree } from './plan-tree-walk.ts';
 import { apiMergeWrites } from './api-merge-writes.ts';
 import { indexByRoot, isStagedDeltaWrite, parseDeltaTableV2, resolveDeltaCommandTarget, type ExecutionsByRoot } from './delta-targets.ts';
 import { IDENT_PARTS, isCut, splitArgs, tableName, type Arg } from './write-target-args.ts';
-import type { PlanNode, SqlExecution } from './types.ts';
+import type { PlanNode, SqlExecution, Stage, StageId } from './types.ts';
 
 /** The row counts a MergeIntoCommand node reports in its SQL metrics. */
 export interface MergeRows {
@@ -42,8 +42,16 @@ export interface WriteTarget {
    */
   kind: 'path' | 'table' | 'unqualifiedTable' | 'jdbcTable' | null;
   target: string | null;
-  /** The node's "number of output rows" SQL metric, null when the log has none for it. */
+  /**
+   * Rows the write produced: the node's "number of output rows" SQL metric, or for a plain write
+   * whose node has none, the rows written by the stages of its root execution. Null when neither is
+   * available. Null means unknown, never zero: a write that stored nothing reports 0.
+   */
   outputRows: number | null;
+  /** Where `outputRows` came from: nodeMetric (the write node), stageSum (stages of the root execution), null when it is null. */
+  outputRowsSource: 'nodeMetric' | 'stageSum' | null;
+  /** Bytes written by the stages of the write's root execution, with the same limits as a stage sum of rows; null when there is no such figure. */
+  outputBytes: number | null;
   /** The inserted, updated, deleted and copied row counts of a MergeIntoCommand node's SQL
    * metrics. Null for every other command, for a MERGE whose node carries none of them, and for a
    * DeltaMerge group, which has no command node. */
@@ -216,6 +224,13 @@ const DELTA_COMMANDS = new Set([
   'CreateDeltaTableCommand', 'OptimizeTableCommand', 'RestoreTableCommand', 'DeltaReorgTableCommand',
 ]);
 
+// Row-level and maintenance commands: the rows they rewrite are not output rows, so a stage sum
+// would misstate them (a MERGE has mergeRows). A plain write is any other recognized write command.
+const NOT_PLAIN_WRITES = new Set([
+  'MergeIntoCommand', 'UpdateCommand', 'DeleteCommand', 'DeltaMerge', 'ReplaceData', 'WriteDelta',
+  'CreateDeltaTableCommand', 'OptimizeTableCommand', 'RestoreTableCommand', 'DeltaReorgTableCommand',
+]);
+
 const ARG_PARSERS: Record<string, (args: Arg[]) => Parsed | null> = {
   InsertIntoHadoopFsRelationCommand: parseHadoopFsPath,
   InsertIntoHiveTable: parseTableArg,
@@ -224,6 +239,11 @@ const ARG_PARSERS: Record<string, (args: Arg[]) => Parsed | null> = {
   CreateDataSourceTableAsSelectCommand: parseTableArg,
   SaveIntoDataSourceCommand: parseSaveIntoDataSource,
 };
+
+/** True for a recognized command that writes its output rows (not MERGE, UPDATE, DELETE or table maintenance). */
+export function isPlainWrite(write: Pick<WriteTarget, 'command' | 'recognized'>): boolean {
+  return write.recognized && !NOT_PLAIN_WRITES.has(write.command);
+}
 
 function isKnownWrite(command: string): boolean {
   return command in ARG_PARSERS || V2_WRITES.has(command) || V2_TABLE_AS_SELECT.has(command) || DELTA_COMMANDS.has(command);
@@ -273,6 +293,7 @@ function collectWrites(exec: SqlExecution, root: PlanNode, byRoot: ExecutionsByR
     const [recognized, parsedFromDetail] = parseWrite(command, detail);
     // A Delta command's simpleString is bare on real logs: its target is found elsewhere.
     const parsed = parsedFromDetail ?? resolveDeltaCommandTarget(command, exec, node, byRoot);
+    const nodeRows = outputRowsOf(node);
     out.push({
       sqlExecutionId: exec.id,
       nodeId: node.id ?? null,
@@ -280,7 +301,9 @@ function collectWrites(exec: SqlExecution, root: PlanNode, byRoot: ExecutionsByR
       recognized,
       kind: parsed?.kind ?? null,
       target: parsed?.target ?? null,
-      outputRows: outputRowsOf(node),
+      outputRows: nodeRows,
+      outputRowsSource: nodeRows === null ? null : 'nodeMetric',
+      outputBytes: null,
       mergeRows: mergeRowsOf(command, node),
       raw: detail !== '' ? detail : node.name,
     });
@@ -301,7 +324,49 @@ function attributeStagedWrites(writes: WriteTarget[], sql: Map<number, SqlExecut
   }
 }
 
+// The rows and bytes a plain write stored are reported by the stages of the executions under its
+// root: a Delta DataFrame write's node sits in the root execution while its stages run in a child.
+// Applied only when the root holds one logical write, so the stages cannot belong to another write.
+function attachStageOutput(writes: WriteTarget[], sql: Map<number, SqlExecution>, stages: ReadonlyMap<StageId, Stage>): void {
+  const byRoot = indexByRoot(sql);
+  const stagesByExecution = new Map<number, Stage[]>();
+  for (const stage of stages.values()) {
+    if (stage.sqlExecutionId == null) continue;
+    const list = stagesByExecution.get(stage.sqlExecutionId);
+    if (list) list.push(stage);
+    else stagesByExecution.set(stage.sqlExecutionId, [stage]);
+  }
+  const rootOf = (write: WriteTarget) => sql.get(write.sqlExecutionId)?.rootExecutionId ?? write.sqlExecutionId;
+  // One logical write per root: the plain writes that name the same table or path count once (a
+  // CTAS or RTAS node and the append it runs, Iceberg's replace and its overwrite). A write with no
+  // target, a MERGE, UPDATE or DELETE, or a second target in the root makes the stages ambiguous.
+  const identitiesPerRoot = new Map<number, Set<string>>();
+  writes.forEach((write, i) => {
+    const key = isPlainWrite(write) && write.target !== null ? `${write.kind}:${write.target}` : `#${i}`;
+    const root = rootOf(write);
+    const keys = identitiesPerRoot.get(root);
+    if (keys) keys.add(key);
+    else identitiesPerRoot.set(root, new Set([key]));
+  });
+  for (const write of writes) {
+    const root = rootOf(write);
+    if (!isPlainWrite(write) || identitiesPerRoot.get(root)?.size !== 1) continue;
+    const group = [root, ...(byRoot.get(root) ?? []).map((exec) => exec.id)];
+    const grouped = group.flatMap((id) => stagesByExecution.get(id) ?? []);
+    if (grouped.length === 0) continue;
+    const withBytes = grouped.filter((stage) => stage.outputBytes != null);
+    if (withBytes.length > 0) write.outputBytes = withBytes.reduce((sum, stage) => sum + stage.outputBytes!, 0);
+    if (write.outputRows !== null) continue;
+    const reported = grouped.filter((stage) => stage.outputRecords != null);
+    if (reported.length === 0) continue;
+    write.outputRows = reported.reduce((sum, stage) => sum + stage.outputRecords!, 0);
+    write.outputRowsSource = 'stageSum';
+  }
+}
+
 export interface WriteTargetsInput {
+  /** The run's stages, whose written rows and bytes fill a plain write's figures; absent leaves them to the node metric. */
+  stages?: ReadonlyMap<StageId, Stage>;
   /** Start events the parser could not read: their executions are not in `sql`. */
   unreadableSqlExecutions?: number[];
   skippedLines?: number;
@@ -320,6 +385,7 @@ export function extractWriteTargets(sql: Map<number, SqlExecution>, input: Write
   // DeltaTable API merges run no command node: they are found by their executions' descriptions.
   attributeStagedWrites(writes, sql);
   writes.push(...apiMergeWrites(sql));
+  if (input.stages) attachStageOutput(writes, sql, input.stages);
   writes.sort((a, b) => a.sqlExecutionId - b.sqlExecutionId);
   const executionsWithoutPlan = [...withoutPlan].sort((a, b) => a[0] - b[0])
     .map(([sqlExecutionId, reason]) => ({ sqlExecutionId, reason }));

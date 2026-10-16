@@ -22,3 +22,15 @@ export function totalExecutorCpuMs(stages: Iterable<Pick<Stage, 'executorCpuTime
   for (const s of stages) if (typeof s.executorCpuTime === 'number' && Number.isFinite(s.executorCpuTime) && s.executorCpuTime > 0) ns += s.executorCpuTime;
   return ns > 0 ? nsToMs(ns) : null;
 }
+
+/** Summed output rows over the given stage attempts (see `withEarlierAttempts`). Like the other
+ * task-derived totals it is null until some attempt finished a task, and null when no stage
+ * recorded a row count, never 0. */
+export function totalOutputRows(attempts: Pick<Stage, 'taskCount' | 'outputRecords'>[]): number | null {
+  if (!attempts.some((s) => (s.taskCount ?? 0) > 0)) return null;
+  let sum = 0, present = false;
+  for (const s of attempts) {
+    if (typeof s.outputRecords === 'number' && Number.isFinite(s.outputRecords)) { sum += s.outputRecords; present = true; }
+  }
+  return present ? sum : null;
+}

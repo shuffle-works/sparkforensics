@@ -3,7 +3,7 @@
 // moves independently of the evidence report's. A figure the log cannot provide is null, never 0.
 import { computeAllocation, type Allocation } from './allocation.ts';
 import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from './detectors.ts';
-import { totalExecutorCpuMs, withEarlierAttempts } from './run-totals.ts';
+import { totalExecutorCpuMs, totalOutputRows, withEarlierAttempts } from './run-totals.ts';
 import { isPythonStage } from './python-stage.ts';
 import { stageIdentity } from './run-comparison.ts';
 import { hasCompleteApplicationInterval } from './scorecard-estimates.ts';
@@ -128,7 +128,7 @@ function stageMetrics(stages: Stage[], minTasksForP95: number): StageMetrics {
     shuffleWriteBytes: fromTasks((s) => s.shuffleWriteBytes),
     inputBytes: fromTasks((s) => s.inputBytes),
     outputBytes: fromTasks((s) => s.outputBytes),
-    outputRows: sumOf(finished, (s) => s.outputRecords),
+    outputRows: totalOutputRows(attempts),
     peakExecutionMemoryBytes: peakExecutionMemory(finished),
     taskCount: tasks != null && tasks > 0 ? tasks : null,
     failedTasks: fromTasks((s) => s.failedTasks),

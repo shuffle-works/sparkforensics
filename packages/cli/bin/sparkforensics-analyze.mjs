@@ -35,6 +35,8 @@ const { evaluateBudgets } = await loadCore('cli/budgets');
 const { renderComparisonMarkdown, COMPARISON_METRIC_KEYS } = await loadCore('run-comparison');
 const { buildComparisonOutput } = await loadCore('comparison-output');
 const { compileNormalizePatterns, MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } = await loadCore('stage-alignment');
+const { compileConfIgnorePatterns } = await loadCore('comparability');
+const { DEFAULT_NOISE_BAND } = await loadCore('run-comparison');
 const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
 const { runPayloadScript } = await loadCore('run-payload');
 const { loadThresholdOverrides } = await loadCore('cli/threshold-config');
@@ -126,6 +128,15 @@ Options:
                                     and confidence derived from it, never the findings. Up to
                                     ${MAX_NORMALIZE_PATTERNS} patterns of ${MAX_NORMALIZE_PATTERN_LENGTH} characters; a pattern
                                     that matches the empty string is refused.
+  --ignore-conf <regex>             Requires a baseline. Repeatable. A regular expression matched
+                                    against Spark configuration keys: a key that matches is left out
+                                    of the comparison's configuration check, for keys that differ by
+                                    design, such as a per-run output path. Per-run identity keys
+                                    (application id, start time, driver address) are always left out.
+                                    Same limits as --normalize-path.
+  --noise-band-pct <pct>            Requires a baseline. A metric that differs from the baseline by
+                                    less than this percentage is marked withinNoise (default 2). It
+                                    never changes a metric's direction.
   --thresholds <file>               Run the detectors with the threshold overrides in this JSON
                                     file ({"<detector>": {"<threshold>": value}}; names, units and
                                     defaults are in the report's detectors catalog). Findings a
@@ -193,6 +204,8 @@ function parseCliArgs(argv) {
       stage: { type: 'string' },
       thresholds: { type: 'string' },
       'normalize-path': { type: 'string', multiple: true },
+      'ignore-conf': { type: 'string', multiple: true },
+      'noise-band-pct': { type: 'string' },
       'conf-keys': { type: 'string' },
       'conf-redact-regex': { type: 'string' },
       help: { type: 'boolean' },
@@ -302,7 +315,7 @@ const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode ===
 // a candidate is named by its position (candidate-1, ...): log file names and app ids identify the run.
 // loadBaseline() and each candidate's load() resolve to { appModel }, from a local log or a History Server.
 async function runMultiLog({
-  candidates, loadBaseline, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath,
+  candidates, loadBaseline, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath, ignoreConf, noiseBand,
 }) {
   let baselineAppModel;
   try {
@@ -330,7 +343,7 @@ async function runMultiLog({
       const { comparison, output } = buildComparisonOutput(
         { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
         { label: 'candidate', appModel, catalog },
-        { redact, normalizePath },
+        { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand },
       );
       const { json } = buildEvidenceReport(appModel, { redact, findingsFilter, markdown: false, thresholds });
       const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
@@ -475,9 +488,9 @@ async function runCli(argv, { fetchImpl } = {}) {
 
   // Single source of truth for which flags need --baseline: append a future
   // flag here rather than adding its own OR-condition (easy to forget).
-  const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced', 'regression-budget', 'budgets', 'normalize-path', 'stage-regression-budget', 'stage-quality'];
+  const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced', 'regression-budget', 'budgets', 'normalize-path', 'ignore-conf', 'noise-band-pct', 'stage-regression-budget', 'stage-quality'];
   if (!usingBaseline && BASELINE_DEPENDENT_FLAGS.some((flag) => values[flag] !== undefined)) {
-    return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--stage-regression-budget/--stage-quality/--fail-on-introduced/--normalize-path require --baseline or --baseline-shs-base-url.\n${USAGE}`, 2);
+    return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--stage-regression-budget/--stage-quality/--fail-on-introduced/--ignore-conf/--noise-band-pct/--normalize-path require --baseline or --baseline-shs-base-url.\n${USAGE}`, 2);
   }
   if (values['regression-metric'] !== undefined && values['max-regression-pct'] === undefined) {
     return bail(`--regression-metric requires --max-regression-pct.\n${USAGE}`, 2);
@@ -575,6 +588,23 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
   }
 
+  const ignoreConf = values['ignore-conf'];
+  if (ignoreConf !== undefined) {
+    try {
+      compileConfIgnorePatterns(ignoreConf);
+    } catch (e) {
+      return bail(`--ignore-conf: ${e.message}\n`, 2);
+    }
+  }
+  let noiseBand;
+  if (values['noise-band-pct'] !== undefined) {
+    const pct = Number(values['noise-band-pct']);
+    if (values['noise-band-pct'].trim() === '' || !Number.isFinite(pct) || pct < 0 || pct > 100) {
+      return bail(`--noise-band-pct needs a number from 0 to 100 (default ${DEFAULT_NOISE_BAND * 100}).\n${USAGE}`, 2);
+    }
+    noiseBand = pct / 100;
+  }
+
   const confKeys = splitCsv(values['conf-keys']);
   if (confKeys !== undefined && confKeys.length === 0) {
     return bail(`--conf-keys needs at least one property name.\n${USAGE}`, 2);
@@ -602,7 +632,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     return runMultiLog({
       candidates, loadBaseline, budgets, thresholds,
       findingsFilter, redact: values.redact, outPath: values.out,
-      confKeys, confRedactRegex: values['conf-redact-regex'], normalizePath,
+      confKeys, confRedactRegex: values['conf-redact-regex'], normalizePath, ignoreConf, noiseBand,
     });
   }
 
@@ -679,7 +709,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     ({ comparison, output: comparisonJson } = buildComparisonOutput(
       { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
       { label: 'candidate', appModel, catalog },
-      { redact: values.redact, normalizePath },
+      { redact: values.redact, normalizePath, ignoreConf, confRedactRegex: values['conf-redact-regex'], noiseBand },
     ));
   }
 

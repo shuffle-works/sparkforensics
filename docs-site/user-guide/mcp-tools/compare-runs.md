@@ -7,7 +7,7 @@ categorized findings delta (`findings`), and the share of executor run time in
 paired stages (`runtimeCoverage`). The result
 carries the same `verdict`, `confidence`, `reason`, `matchedCoverage`,
 `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`,
-`unmatched`, `replanned`, `bookkeepingStageIds` and `executionAlignment` as the
+`unmatched`, `replanned`, `bookkeepingStageIds`, `executionAlignment` and `comparability` as the
 `comparison` object of the CLI's `--baseline` JSON output, plus `stagePairs`
 when `include` asks for it (the CLI always carries it), plus
 `runIdA` and `runIdB`. `metricDeltas` and `findingsDelta` repeat `metrics` and
@@ -15,8 +15,7 @@ when `include` asks for it (the CLI always carries it), plus
 in a later release. `verdict` is the headline the dashboard's comparison page
 opens with (the baseline is `runIdA`/`sourceA`, the candidate `runIdB`/`sourceB`): a
 `title` such as "The candidate finished 9.9s faster than the baseline (37%)", or a failed-job
-headline when either run had jobs fail, a `tone` (`better`, `worse`, `same` or
-`unknown`), and `sentences` naming which cost metrics and finding categories
+headline when either run had jobs fail, a `tone` (`better`, `worse`, `same`, `unknown`, `equivalent` or `mixed`), and `sentences` naming which cost metrics and finding categories
 moved each way. When either log has no `ApplicationEnd` event, the title
 compares how much run time each log covers ("The candidate's log covers 2.0s less run
 time than the baseline's") and the tone is `unknown`.
@@ -40,9 +39,50 @@ Parameters:
   pattern that backtracks catastrophically can stall the server, and the length
   cap does not prevent that: an agent passing patterns should keep them simple
   and anchored.
+- `ignoreConf`: `string[]` (optional), regular expressions matched against
+  Spark configuration keys. A key that matches one is left out of
+  `comparability.conf`, for keys that differ by design such as a per-run output
+  path. Same limits as `normalizePath`; an invalid pattern fails the call before
+  any log is read.
+- `noiseBand`: `number` from 0 to 1 (optional, default `0.02`), the share of the
+  baseline value under which a metric row is `withinNoise`. It never changes a
+  row's `direction`.
 - `format`: `"json" | "md"` (default `"json"`), switches `content[0].text` to
   a rendered Markdown report instead of JSON. `structuredContent` always
   stays JSON-shaped, regardless of `format`.
+
+`comparability` says whether the two runs can be read against each other:
+
+- `conf`: `equal` (`true` when `differences` is empty after the ignore list;
+  `null` when a log records no Spark properties), `differences` (rows of `key`,
+  `baseline` and `candidate`, a side that does not set the key is `null`),
+  `ignoredKeys` (keys that differ but are left out: per-run identity keys and
+  the `ignoreConf` matches) and `withheldKeys` (secrets, never compared or
+  shown). Values come from the same builder as the run report's `effectiveConf`,
+  so a key withheld there is withheld here, including the CLI's `--conf-redact-regex` matches.
+- `plan`: `equal`, `unmatched` (stage counts per side) and `replanned` (groups).
+- `volume`: `inputBytes`, `outputRows` and `outputBytes`, each with `baseline`,
+  `candidate` and `relativeDifference`, and `equal`: output rows equal, input
+  and output bytes within the noise band. `equal` is `null` unless output rows or
+  output bytes are measured on both sides; input bytes alone never make it `true`.
+- `capacity`: mean and peak executors per side.
+- `overlapMs`: how long the two run windows overlap.
+- `wallClockBridge`: `wallClock`, `taskTime`, `meanExecutors` and
+  `taskShareOfAllocation`, each with `baseline`, `candidate` and `ratio`, and
+  `explainedWallClock`, the task-time ratio over the product of the other two.
+- `noiseBand`: the band in use.
+
+The `verdict` tone is `equivalent` when `conf.equal`, `plan.equal` and
+`volume.equal` are all `true` and either the wall-clock gap is within the noise
+band or a bridge factor (mean executors, task time or task share of allocation)
+moved past it and explains the gap. When configuration and plan agree but the gap
+is past noise and no factor explains it, the tone stays `better` or `worse` from the
+wall clock and the title ends "no measured factor explains it". When `volume.equal`
+is `null`, the tone also comes from the wall clock and the title reads "Same
+configuration and plan. Output was not compared." The tone is `mixed` when the
+wall clock and executor run-time or allocated core-hours move opposite ways past the
+noise band and the configuration or plan differs. A failed job or an incomplete log
+still leads the verdict.
 
 Each side needs either a `runId` or a `source`, and you can mix them: a
 cached run ID for the baseline, a fresh file for the candidate.
@@ -77,7 +117,8 @@ Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` tr
       "baseline": 2000,
       "candidate": 1000,
       "delta": -1000,
-      "direction": "improvement"
+      "direction": "improvement",
+      "withinNoise": false
     }
   ],
   "findings": { "introduced": [], "resolved": [], "changed": [] },
@@ -107,7 +148,8 @@ Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` tr
       "baseline": 2000,
       "candidate": 1000,
       "delta": -1000,
-      "direction": "improvement"
+      "direction": "improvement",
+      "withinNoise": false
     }
   ],
   "findingsDelta": { "introduced": [], "resolved": [], "changed": [] }

@@ -162,7 +162,7 @@ const INCLUDE_ALL = ['summary', 'evidenceAvailability', 'detectors'];
 // The fields of the comparison block (stage pairs and the run-time coverage they feed).
 const COMPARISON_BLOCK_FIELDS = [
   'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'runtimeCoverage',
-  'executionAlignment',
+  'executionAlignment', 'comparability',
 ];
 // compare_runs leaves stagePairs out unless asked (see COMPARISON_ALLOWED).
 const MCP_DEFAULT_FIELDS = COMPARISON_BLOCK_FIELDS.filter((f) => f !== 'stagePairs');
@@ -237,6 +237,17 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
       const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson', ...flags]);
       const viaMcp = await mcpCall('compare_runs', { sourceA: { path: BASELINE }, sourceB: { path: candidate }, normalizePath: patterns });
       expect(diffSurfaces(line.comparison, viaMcp, COMPARISON_ALLOWED)).toEqual([]);
+    });
+
+    it('applies --ignore-conf, --noise-band-pct and their MCP inputs the same way', async () => {
+      const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson', '--ignore-conf', '^spark\\.sql\\.', '--ignore-conf', 'unused', '--noise-band-pct', '10']);
+      const viaMcp = await mcpCall('compare_runs', {
+        sourceA: { path: BASELINE }, sourceB: { path: candidate }, ignoreConf: ['^spark\\.sql\\.', 'unused'], noiseBand: 0.1,
+      });
+      expect(diffSurfaces(line.comparison, viaMcp, COMPARISON_ALLOWED)).toEqual([]);
+      expect(line.comparison.comparability.noiseBand).toBe(0.1);
+      expect(line.comparison.comparability.conf.differences.some((d) => d.key.startsWith('spark.sql.'))).toBe(false);
+      expect(line.comparison.metrics.every((m) => typeof m.withinNoise === 'boolean')).toBe(true);
     });
 
     it('reports the same comparison as the dashboard\'s compareRuns', async () => {
@@ -334,6 +345,25 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
     await expect(mcpCall('compare_runs', {
       sourceA: { path: BASELINE }, sourceB: { path: CANDIDATES[0] }, normalizePath: ['(unclosed'],
     })).rejects.toThrow(/normalizePath: Normalize pattern/);
+  });
+
+  it('refuses an invalid --ignore-conf or --noise-band-pct, and either without --baseline, with a usage error', async () => {
+    const invalid = await cliOutput([CANDIDATES[0], '--baseline', BASELINE, '--ignore-conf', '(unclosed']);
+    expect(invalid.exitCode).toBe(2);
+    expect(invalid.stderr).toMatch(/--ignore-conf: Ignore pattern "\(unclosed" is not a valid regular expression/);
+    for (const band of ['101', 'abc', ' ']) {
+      const bad = await cliOutput([CANDIDATES[0], '--baseline', BASELINE, '--noise-band-pct', band]);
+      expect(bad.exitCode).toBe(2);
+      expect(bad.stderr).toMatch(/--noise-band-pct needs a number from 0 to 100/);
+    }
+    for (const flag of [['--ignore-conf', 'x'], ['--noise-band-pct', '5']]) {
+      const withoutBaseline = await cliOutput([CANDIDATES[0], ...flag]);
+      expect(withoutBaseline.exitCode).toBe(2);
+      expect(withoutBaseline.stderr).toMatch(/--noise-band-pct\/--normalize-path require --baseline/);
+    }
+    await expect(mcpCall('compare_runs', {
+      sourceA: { path: BASELINE }, sourceB: { path: CANDIDATES[0] }, ignoreConf: ['(unclosed'],
+    })).rejects.toThrow(/ignoreConf: Ignore pattern/);
   });
 
   it('keeps the stderr line and exit code the operator reads for a violated budget', async () => {

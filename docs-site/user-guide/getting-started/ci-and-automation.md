@@ -213,7 +213,9 @@ directory, or a History Server run through `--baseline-shs-base-url`, see
 regression budgets and several candidates in one call (`--regression-budget`/`--budgets`, see
 [Several budgets and several candidates](#several-budgets-and-several-candidates)),
 rewriting run-specific text before stages are paired (`--normalize-path`, see
-[Pairing stages across runs](#pairing-stages-across-runs)), redacting the app id, the app name and any host/IP
+[Pairing stages across runs](#pairing-stages-across-runs)), leaving per-run
+configuration keys out of the comparison (`--ignore-conf`, see
+[Comparing configuration and capacity](#comparing-configuration-and-capacity)), redacting the app id, the app name and any host/IP
 tokens before sharing output (`--redact`), and narrowing the findings to certain impact
 bands, types, or a stage (`--impact`/`--type`/`--stage`), and tuning
 detector thresholds from a file (`--thresholds`, below). Run it with
@@ -248,6 +250,8 @@ It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
       "kind": "path",
       "target": "hdfs://nn/sandbox/out/t1",
       "outputRows": 5000000,
+      "outputRowsSource": "nodeMetric",
+      "outputBytes": 24824981,
       "mergeRows": null,
       "raw": "Execute InsertIntoHadoopFsRelationCommand hdfs://nn/sandbox/out/t1, false, Parquet, ..."
     }
@@ -291,9 +295,24 @@ It has no Markdown counterpart. The MCP `diagnose_run` tool returns it too.
   target, such as the column list of `InsertIntoHadoopFsRelationCommand`, does
   not affect the target before it. Treat a `null` target as unknown, not as
   inside or outside any location.
-- `outputRows` is the node's own `number of output rows` SQL metric. It is
-  `null` when the log has no such metric for that node, which is the case for
-  the DataSource V2 and Delta write nodes that report other metrics.
+- `outputRows` is the number of rows the write stored. It is the node's own
+  `number of output rows` SQL metric when the log has one. Otherwise, for a
+  plain write, it is the sum of `outputRecords` over the stages of the write's
+  root execution: a Delta DataFrame write node carries no metric, and its
+  stages run in a child execution of the node's own. A plain write is any
+  write except MERGE, UPDATE, DELETE, table maintenance and the `DeltaMerge`
+  row, whose rewritten rows are not output rows. The sum applies only when the
+  root execution holds one logical write: plain writes that name the same
+  table or path (a CTAS or RTAS and the append it runs) count once and share
+  the figure. `null` means unknown, and a write that stored nothing is `0`.
+  A plain write left with `null` is listed in `notRunChecks` as
+  `writeOutputRows`.
+- `outputRowsSource` says where `outputRows` came from: `nodeMetric`,
+  `stageSum`, or `null` when `outputRows` is `null`. Compare two runs' row
+  counts only when both sides name the same source.
+- `outputBytes` is the sum of the bytes written by the same stages, for a plain
+  write under the same rule as the stage sum of rows. It is `null` when no
+  stage of the root execution reports bytes written or the write is not plain.
 - `mergeRows` holds the row counts of a Delta MERGE: `inserted`, `updated`,
   `deleted` and `copied`, read from the `MergeIntoCommand` node's SQL metrics
   (`number of inserted rows`, `number of updated rows`, `number of deleted rows`
@@ -627,6 +646,34 @@ so `stagePairs`, `runtimeCoverage` and `confidence`; findings and the other
 metrics are untouched. At most 16 patterns of 200 characters each. An invalid
 pattern, or one that matches the empty string, exits `2` before any log is
 read.
+
+### Comparing configuration and capacity
+
+`comparison.comparability` states what the two runs share, so a time difference
+that comes from capacity is not read as a regression. It holds the Spark
+configuration keys whose values differ (`conf`), whether every stage pairs
+(`plan`), input bytes, output rows and output bytes of both runs (`volume`), the
+mean and peak executors (`capacity`), the overlap of the two run windows
+(`overlapMs`) and the factors that bridge the wall-clock difference
+(`wallClockBridge`). When the configuration, plan and output agree,
+`comparison.verdict.tone` is `equivalent`, and its title names where the time
+went. When the wall clock and executor run-time or allocated core-hours move
+opposite ways, the tone is `mixed`.
+
+Pass `--ignore-conf <regex>`, repeatable, for configuration keys that differ by
+design, such as a per-run output path. A key that matches is left out of
+`conf.differences` and listed in `conf.ignoredKeys`. The application id, start
+time and driver address are always left out. With a baseline, a property withheld
+from `effectiveConf` (including by `--conf-redact-regex`) is also withheld from
+the comparison: it is listed in `conf.withheldKeys` and never compared. Limits and errors are those of
+`--normalize-path`. Pass `--noise-band-pct <pct>` (default `2`) to set the share
+of the baseline value under which a metric row reads `withinNoise: true`; the flag
+never changes a row's `direction`, which budgets read. Both flags need a baseline.
+
+```bash
+sparkforensics-analyze candidate --baseline baseline \
+  --ignore-conf '^spark\.myjob\.output\.' --noise-band-pct 5 --format json
+```
 
 ## Several budgets and several candidates
 
