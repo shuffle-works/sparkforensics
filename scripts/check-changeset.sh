@@ -11,6 +11,23 @@ git fetch origin "$BASE_REF" --quiet
 
 CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD")
 
+# @sparkforensics/core is in .changeset/config.json's "ignore" list, and
+# changesets refuses a changeset that names it together with a package that is
+# not ignored, which blocks the release. Fail early with the offending files.
+MIXED=""
+for f in .changeset/*.md; do
+  [ "$(basename "$f")" = "README.md" ] && continue
+  PKGS=$(awk 'NR==1{next} /^---/{exit} /^["'"'"']/{print}' "$f")
+  if echo "$PKGS" | grep -q '@sparkforensics/core' && [ "$(echo "$PKGS" | wc -l)" -gt 1 ]; then
+    MIXED="$MIXED $f"
+  fi
+done
+if [ -n "$MIXED" ]; then
+  echo "These changesets name @sparkforensics/core together with other packages:$MIXED"
+  echo "Changesets rejects mixed changesets because core is ignored. Remove the @sparkforensics/core line from each."
+  exit 1
+fi
+
 # Keep in sync with the PACKAGES const in scripts/publish-packages.mjs and the
 # mcp-package-name check in .github/workflows/release.yml: those answer "what
 # to actually publish", not "what requires a changeset" (core is vendored
