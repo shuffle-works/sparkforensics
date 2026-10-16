@@ -94,8 +94,7 @@ function PlanGraphRouteContainer() {
 
 /** The local-parse screen: what is happening, how far along, roughly how long
  * is left, a reminder that nothing is uploaded, and (single-run loads only) a
- * way out. A large log can take a while, and a bare percentage gave a
- * first-time visitor no reason to wait or way to stop. */
+ * way out, since a large log can take a while. */
 function ParseProgress({ label, onCancel }: { label: string; onCancel?: () => void }) {
   const parse = useStore((s) => s.parse);
   const pctRounded = Math.round(parse.pct * 100);

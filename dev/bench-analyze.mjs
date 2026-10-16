@@ -1,21 +1,13 @@
 #!/usr/bin/env node
-// Manual dev tool: eval harness for detector/estimator tuning and parser performance.
-//
-// Runs the same collectRun + analyze pipeline the CLI uses over a set of event logs, one child
-// process per log (so each log's peak RSS is its own), and writes a JSON snapshot of per-log
-// timings, peak memory and every finding's type/location/band/estimate. Two snapshots diff into
-// a per-log report of findings added/removed/re-banded and estimate shifts, which is the
-// evidence a threshold or estimator change needs.
+// Manual dev tool: eval harness for detector and estimator tuning. Runs the CLI's collectRun +
+// analyze pipeline per log in a child process and snapshots timings, peak memory and findings.
+// Details: docs-site/contributor-guide/testing.md.
 //
 // Usage:
 //   node dev/bench-analyze.mjs [--out snap.json] [--repeat N] <file|dir>...
 //   node dev/bench-analyze.mjs --diff before.json after.json [--verbose]
-//   node dev/bench-analyze.mjs --update dev/corpus-snapshot.json   (rewrite the committed snapshot)
-//   node dev/bench-analyze.mjs --check dev/corpus-snapshot.json    (CI gate: exit 1 on any finding change)
-//
-// Directories are expanded one level (every regular file inside, sorted), except Spark
-// rolling-log directories (events_<n>_* files), which are analyzed as one run. With no paths
-// it defaults to dev/log-corpus/logs and its external/ subfolder.
+//   node dev/bench-analyze.mjs --update dev/corpus-snapshot.json
+//   node dev/bench-analyze.mjs --check dev/corpus-snapshot.json
 import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, basename, resolve, dirname } from 'node:path';

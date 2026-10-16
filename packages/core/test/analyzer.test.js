@@ -727,11 +727,9 @@ describe('analyze: partition sizing (§4)', () => {
   });
 
   it('maxPartitionTooBig (regression): stays critical on a long-running job even though its own modeled time savings are a tiny fraction of total runtime', () => {
-    // Audit repro: a 2-hour app with one 10-second stage carrying a 6GB single shuffle partition,
-    // everything else nominal. The modeled wall-clock savings (~10s) are a tiny fraction of the
-    // 2-hour run, which would demote a normal wallClock-bearing finding to 'info' via
-    // deriveImpactBand's time-fraction grading; this finding is an OOM/crash-risk safety signal
-    // and must not be silently downgraded just because fixing it doesn't save much time.
+    // A 2-hour app with one 10-second stage carrying a 6GB single shuffle partition.
+    // The modeled wall-clock savings (~10s) are a tiny fraction of the run, but this is an
+    // OOM/crash-risk safety signal and must not be downgraded by time-fraction grading.
     const app = makeApp({ startTime: 0, endTime: 2 * 60 * 60 * 1000 });
     const stages = new Map([[1, makeStage({
       id: 1, submittedAt: 0, completedAt: 10000,
@@ -1387,7 +1385,7 @@ describe('analyze: spill impact band v2 (§5)', () => {
     expect(b.spillMagnitude).toBe('high');
   });
   it('multi-task disk spill magnitude tiers are unaffected by the memory high-tier addition (both reconcile to info here)', () => {
-    // Both carry distinct spillMagnitude tiers (high vs medium, the regression guard) but reconcile to the same info band; the distinction survives in spillMagnitude, not .impactBand.
+    // Both carry distinct spillMagnitude tiers (high vs medium) but reconcile to the same info band; the distinction survives in spillMagnitude, not .impactBand.
     const highStages = new Map([[1, makeStage({ taskCount: 50, memoryBytesSpilled: 100, spillDiskMax: 2 * GiB, spillMemMax: 0, spillClassification: 'volume' })]]);
     const high = analyze(makeApp(), highStages, [], []).find(b => b.type === 'spill');
     expect(high.impactBand).toBe('info');
@@ -1885,10 +1883,9 @@ describe('analyze: utilization detector tolerates a null app', () => {
 });
 
 describe('analyze: utilization detector under executor churn (regression)', () => {
-  // Audit repro: 2 executors x 4 cores (8 cores) held continuously for 100s, with 3 mid-run
-  // replacement events (spot preemption / dynamicAllocation replacement pattern). Concurrency
-  // never exceeds 2 executors / 8 cores, but 5 executors are added over the run's lifetime, so
-  // executorsAdded.length x cores or computeTotalCores would report 20 cores: a 2.5x inflation.
+  // 2 executors x 4 cores (8 cores) held continuously for 100s, with 3 mid-run replacement
+  // events (spot preemption / dynamicAllocation pattern). Concurrency never exceeds 8 cores,
+  // but 5 executors are added over the run, so counting every added executor would report 20.
   function churnedExecutors() {
     const added = [
       { executorId: 'a', timestamp: 0, totalCores: 4 },
@@ -1989,7 +1986,7 @@ describe('analyze: coldStart/utilization do not silently skip on a literal start
     expect(analyze(app, stages, late, []).find(x => x.type === 'coldStart').value).toBe(34);
   });
 
-  // Regression: an executor that idled out before the first stage can't run it, so the wait runs
+  // An executor that idled out before the first stage can't run it, so the wait runs
   // to the next executor added after submission.
   it('coldStart: measures to the next executor when early ones were removed before the first stage', () => {
     const app = makeApp({ startTime: 0, endTime: 300000 });
@@ -2152,7 +2149,7 @@ describe('analyze: memoryUtilization detector (§1)', () => {
     const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 1, memoryMB: 1000 } } });
     const added = ['0', '1', '2', '3'].map((executorId) => ({ executorId, timestamp: 0, totalCores: 1 }));
     const removed = ['1', '2', '3'].map((executorId) => ({ executorId, timestamp: 10000 }));
-    // 100 executor-s used: the old peak x run model (400 executor-s) calls 300 of them waste, past 1.5 x 100.
+    // 100 executor-s used: a peak x run model (400 executor-s) calls 300 of them waste, past 1.5 x 100.
     const stages = new Map([[1, makeStage({ executorRunTime: 100000 })]]);
     const waste = analyze(app, stages, added, removed, sampleJobs, new Map(), raBusy(0, 0))
       .find(b => b.type === 'memoryUtilization' && b.variant === 'wasteModel');
@@ -2175,11 +2172,9 @@ describe('analyze: memoryUtilization detector (§1)', () => {
   });
 
   it('1a (regression): executor churn does not inflate idleCores past the real peak concurrent capacity', () => {
-    // Audit repro: 2 executors x 4 cores (8 cores) held continuously for 100s, with 3 mid-run
-    // replacement events (spot preemption pattern). Concurrency never exceeds 2 executors / 8
-    // cores, but 5 executors are added over the run's lifetime: computeTotalCores/
-    // executorsAdded.length would report 20 cores / 5 executors, inflating the idle rate from an
-    // honest 93.75% (50000 busy / 800000 capacity core-ms) to a churn-inflated 97.5%.
+    // 2 executors x 4 cores (8 cores) held continuously for 100s, with 3 mid-run replacement
+    // events (spot preemption pattern). Concurrency never exceeds 8 cores, so the idle rate is
+    // 93.75% (50000 busy / 800000 capacity core-ms), not the 97.5% a 20-core count would give.
     const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4, memoryMB: 4096 } } });
     const added = [
       { executorId: 'a', timestamp: 0, totalCores: 4 },

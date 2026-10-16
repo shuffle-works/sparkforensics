@@ -105,7 +105,7 @@ export function buildLocalityChart(
     const point: LocalityChartPoint = { t: Math.round((t - start) / 1000) };
     // The series averages each bucket over its full width, so a last bucket
     // that runs past the series' own end (or a run shorter than one bucket)
-    // reads diluted: a 10s stage in a 60s bucket showed well under its busy
+    // reads diluted: a 10s stage in a 60s bucket shows well under its busy
     // cores. Rescale to the part of the bucket the series actually covers.
     const coveredMs = Math.min(bucketWidthMs, seriesEnd - t);
     const scale = bucketWidthMs / coveredMs;

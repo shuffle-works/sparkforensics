@@ -163,7 +163,7 @@ export function DocsSheet() {
          * transparent and pointer-events-none so the dashboard underneath
          * stays clickable; only the resize handle and the docs panel capture
          * pointer events. The Separator uses pointer capture, so dragging over
-         * the iframe no longer loses the pointer stream. */}
+         * the iframe keeps the pointer stream. */}
         <Dialog.Popup
           data-slot="docs-panel"
           className="pointer-events-none fixed inset-0 z-[60]"

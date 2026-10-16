@@ -159,17 +159,13 @@ function failureHeadline(base: VerdictJobOutcome, cand: VerdictJobOutcome): { ti
 }
 
 /** One plain answer to "did the candidate get better or worse than the baseline", from the
- * comparison's own whole-run metrics and finding-category tallies: run time
- * first, then which cost metrics moved each way past run-to-run noise, then which finding
- * categories appeared or went away. When either run had failed jobs, that
- * leads instead and run time becomes the first sentence. When either log is
- * incomplete, run time is stated as what each log covers, never as faster or
- * slower, and the tone stays neutral. Volume and count metrics (input, output,
- * tasks, executors) are left out because more or less of them is not
- * inherently better or worse. With the comparability block, runs whose configuration, plan
- * and output agree read `equivalent` and the title says where a time difference came from, and a
- * wall clock that moved against the cost metrics reads `mixed`; failures and incomplete logs
- * still lead. */
+ * comparison's whole-run metrics and finding-category tallies: run time, then the cost metrics
+ * that moved past run-to-run noise, then the finding categories that appeared or went away. Failed
+ * jobs lead when either run had any; an incomplete log states run time as what each log covers
+ * with a neutral tone. Volume and count metrics are left out (NEUTRAL_METRIC_KEYS). With the
+ * comparability block, runs that agree in configuration, plan and output read `equivalent`, and a
+ * wall clock that moved against the cost metrics reads `mixed`. The rules are in
+ * docs-site/user-guide/run-comparison.md. */
 export function summarizeComparison(
   metrics: VerdictMetric[],
   findings: { introduced: VerdictCategory[]; resolved: VerdictCategory[]; changed?: VerdictChange[] },

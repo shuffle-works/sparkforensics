@@ -91,15 +91,12 @@ const SparkPlanInfoFieldSchema = z
     }
   });
 
-// Fully-specified event schemas.
-
 // SparkListenerLogStart case (inline: sets state.pendingSparkVersion).
 export const LogStartEventSchema = z.object({
   Event: z.literal('SparkListenerLogStart'),
   'Spark Version': z.string().optional(),
 });
 
-// startApplication.
 export const ApplicationStartEventSchema = z.object({
   Event: z.literal('SparkListenerApplicationStart'),
   'App ID': z.string().optional(),
@@ -122,7 +119,6 @@ export const EnvironmentUpdateEventSchema = z.object({
   ]).optional(),
 });
 
-// inline ApplicationEnd case.
 export const ApplicationEndEventSchema = z.object({
   Event: z.literal('SparkListenerApplicationEnd'),
   Timestamp: z.number().optional(),
@@ -151,8 +147,6 @@ export const ExecutorRemovedEventSchema = z.object({
   'Removed Reason': z.string().optional(),
 });
 
-// Schemas transcribed from their handlers.
-
 // startJob. 'spark.sql.execution.id' is read then parseInt'd, which coerces to string internally,
 // so it tolerates the raw value being a number; widened to string|number (some logs emit a JSON number).
 export const JobStartEventSchema = z.object({
@@ -165,7 +159,6 @@ export const JobStartEventSchema = z.object({
   }).optional(),
 });
 
-// endJob.
 export const JobEndEventSchema = z.object({
   Event: z.literal('SparkListenerJobEnd'),
   'Job ID': z.number(),
@@ -231,7 +224,6 @@ export const BlockUpdatedEventSchema = z.object({
   }),
 });
 
-// inline StageCompleted case.
 export const StageCompletedEventSchema = z.object({
   Event: z.literal('SparkListenerStageCompleted'),
   'Stage Info': z.object({
@@ -251,7 +243,6 @@ export const StageCompletedEventSchema = z.object({
   }),
 });
 
-// recordStageExecutorMetrics.
 export const StageExecutorMetricsEventSchema = z.object({
   Event: z.literal('SparkListenerStageExecutorMetrics'),
   'Stage ID': z.number(),
@@ -261,7 +252,6 @@ export const StageExecutorMetricsEventSchema = z.object({
 
 export const MAX_ACCUMULABLES_PER_TASK = 10_000;
 
-// accumulateTask.
 export const TaskEndEventSchema = z.object({
   Event: z.literal('SparkListenerTaskEnd'),
   'Stage ID': z.number(),
@@ -295,8 +285,8 @@ export const TaskEndEventSchema = z.object({
     // Bounded well above any real per-task metric count: caps how much a crafted TaskEnd can grow
     // taskAccumStages, which is never pruned for the life of the parse. Only ID is read. Update and
     // Value stay undeclared: Spark writes some as JSON arrays (internal.metrics.updatedBlockStatuses),
-    // and a string|number check on them rejected the whole TaskEnd, dropping the task from its
-    // stage's stats. They were also ~15% of TaskEnd validation time.
+    // and a string|number check on them would reject the whole TaskEnd, dropping the task from its
+    // stage's stats. Validating them would also add ~15% to TaskEnd validation time.
     Accumulables: z.array(z.object({
       ID: z.number(),
     })).max(MAX_ACCUMULABLES_PER_TASK).optional(),
@@ -332,7 +322,6 @@ export const TaskEndEventSchema = z.object({
   }).optional(),
 });
 
-// startSqlExecution.
 export const SqlExecutionStartEventSchema = z.object({
   Event: z.literal('org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart'),
   executionId: z.number(),
@@ -355,14 +344,12 @@ export const SqlAdaptiveExecutionUpdateEventSchema = z.object({
   sparkPlanInfo: SparkPlanInfoFieldSchema,
 });
 
-// endSqlExecution.
 export const SqlExecutionEndEventSchema = z.object({
   Event: z.literal('org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd'),
   executionId: z.number(),
   time: z.number(),
 });
 
-// applyDriverAccumUpdates.
 export const DriverAccumUpdatesEventSchema = z.object({
   Event: z.literal('org.apache.spark.sql.execution.ui.SparkListenerDriverAccumUpdates'),
   executionId: z.number(),

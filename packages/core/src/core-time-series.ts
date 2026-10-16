@@ -65,7 +65,6 @@ export function computeCoreTimeSeries(intervals: Interval[], {
     return { mode: 'coreCount', histogram };
   }
 
-  // bucketBy === 'time'
   if (segments.length === 0) {
     return { mode: 'time', bucketWidthMs, startTime: null, endTime: null, buckets: [] };
   }

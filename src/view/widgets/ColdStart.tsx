@@ -41,10 +41,7 @@ function IssueRow({ finding }: { finding: Finding }) {
 }
 
 /** Board section for `coldStart` findings: the gap between app start and
- * the first stage submission. App-scoped (`stageId` is always `null`).
- * Split out of the former combined `ExecutorTimeline.tsx`; see
- * `SlowHost.tsx`, `StageSlowness.tsx`, `Straggler.tsx`, and
- * `SpeculationWaste.tsx` for its four siblings. */
+ * the first stage submission. App-scoped (`stageId` is always `null`). */
 export const ColdStart = memo(function ColdStart({ catalog, defaultCollapsed = true }: ColdStartProps) {
   const { sortMode, setSortMode, orderBy } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);

@@ -205,13 +205,13 @@ interface SpillThresholds {
   stageFloorPct: number;
 }
 
-// SpillPressureDetector (5a) + SpillSkewDetector (5b).
+// Spill magnitude: absolute-volume tiers first, then ratio-plus-floor skew tiers.
 function computeSpillMagnitude(
   stage: Pick<DetectorStage, 'taskCount' | 'spillDiskMax' | 'spillMemMax' | 'spillDiskP50' | 'spillMemP50'>,
   t: SpillThresholds,
 ): { magnitude: 'severe' | 'high' | 'medium' } | null {
   const { taskCount, spillDiskMax = 0, spillMemMax = 0, spillDiskP50 = 0, spillMemP50 = 0 } = stage;
-  // 5a: absolute volume, branching on task count.
+  // Absolute volume, branching on task count.
   if (taskCount === 1) {
     if (spillDiskMax >= t.singleTaskDiskGiB * GB || spillMemMax >= t.singleTaskMemGiB * GB) return { magnitude: 'severe' };
   } else {
@@ -219,7 +219,7 @@ function computeSpillMagnitude(
     if (spillDiskMax >= t.highDiskGiB * GB || perTaskDisk >= t.highTaskDiskMB * MB || spillMemMax >= t.highMemGiB * GB) return { magnitude: 'high' };
     if (spillDiskMax >= t.medDiskMB * MB || spillMemMax >= t.medMemGiB * GB) return { magnitude: 'medium' };
   }
-  // 5b: ratio+floor skew (requires enough tasks).
+  // Ratio plus floor skew (requires enough tasks).
   if (taskCount >= t.skewMinTasks) {
     if (spillDiskP50 > 0 && spillDiskMax / spillDiskP50 > t.skewRatio && spillDiskMax >= t.skewDiskFloorMB * MB) return { magnitude: 'high' };
     if (spillMemP50 > 0 && spillMemMax / spillMemP50 > t.skewRatio && spillMemMax >= t.skewMemFloorMB * MB) return { magnitude: 'medium' };
@@ -243,7 +243,7 @@ export function unionStageIds(nodes: PlanNode[], fallback: number[]): number[] {
 
 // Bottom-up shape computation for duplicate-subtree detection and the
 // cachingOpportunity composite detector. `size` is the subtree node count; the default
-// fingerprint encodes operator name + sorted metric NAMES (never values, per spec) + a digest
+// fingerprint encodes operator name + sorted metric NAMES (never values) + a digest
 // of each child's fingerprint, so two subtrees with the same shape but different values still
 // collide. Digesting children keeps each fingerprint O(own size): embedding the full child
 // strings made every node carry its whole subtree, O(n x depth) text on deep real plans.
@@ -309,8 +309,7 @@ export function normalizeDetail(detail: string): string {
     .replace(/\bBuild(Left|Right)\b/g, 'BuildSide');
   // The lookbehind only skips starts inside an identifier, which can't match unless the
   // identifier's own start already did: same output, without re-scanning each identifier from
-  // every one of its letters (O(length^2) on the 6.8 KB average join detail of the largest real
-  // log; 64ms -> 40ms per analyze()).
+  // every one of its letters (O(length^2) on long join details).
   s = s.replace(/(?<![A-Za-z_])([A-Za-z_][\w.]*)\s*=\s*([A-Za-z_][\w.]*)/g, (_m, l, r) => {
     const [a, b] = [l, r].sort();
     return `${a} = ${b}`;
@@ -433,11 +432,8 @@ export function findDuplicateSubtrees(
   { minSubtreeSize, minOccurrences }: { minSubtreeSize: number; minOccurrences: number },
 ): DuplicateSubtreeGroup[] {
   const { shapeOf, allNodes } = computePlanShapes(root);
-  // Defensive, not load-bearing: computePlanShapes's visit() already skips
-  // straight through a read node to its write half's real children, so no
-  // write-half node is ever pushed into allNodes in the first place, this
-  // filter can structurally never exclude anything. Kept in case that
-  // invariant ever changes upstream.
+  // Guard only: computePlanShapes steps through a read node to its write half's children, so no
+  // write-half node reaches allNodes.
   const eligible = allNodes.filter(n => shapeOf.get(n)!.size >= minSubtreeSize && n.exchangeRole !== 'write');
 
   const groups = new Map<string, PlanNode[]>();
@@ -481,7 +477,7 @@ export function findDuplicateSubtrees(
 // scanned table, literals). The fingerprint ignores detail, so occurrences can be same-shaped
 // branches over different data; only identical ones are repeated work that computing once would
 // save. AQE query-stage numbers (`ShuffleQueryStage 718` vs `720`) name the same computation's
-// runtime stage and are ignored too. On the 14 real logs, 270 of 546 groups differed beyond that.
+// runtime stage and are ignored too. Calibration: threshold-tables.md.
 function occurrencesHaveIdenticalDetails(occurrences: PlanNode[]): boolean {
   const detailsOf = (root: PlanNode): string[] => {
     const out: string[] = [];
@@ -505,11 +501,10 @@ function occurrencesHaveIdenticalDetails(occurrences: PlanNode[]): boolean {
 
 // Stages that run nothing but the duplicated occurrences' operators: every operator attributed to
 // the stage is inside `nodes`. A stage shared with operators outside them (the join consuming the
-// subtree, the other join side) does other work too, so its time isn't the subtree's to claim;
-// counting it also let sibling groups claim the same stage twice. A WholeStageCodegen wrapper and
+// subtree, the other join side) does other work too, so its time isn't the subtree's to claim, and
+// counting it would let sibling groups claim the same stage twice. A WholeStageCodegen wrapper and
 // an Exchange's write half aren't other work (the fused pipeline around an operator, the shuffle
-// write of its output), so they're left out of both counts; on the 14 real logs they were the
-// only outside node on 426 stages.
+// write of its output), so they're left out of both counts.
 function countsTowardStage(node: PlanNode): boolean {
   return node.exchangeRole !== 'write' && !node.name.startsWith('WholeStageCodegen');
 }
@@ -709,7 +704,6 @@ export function computeSkewRatio(
 // ratio on a few ms is noise in an hours-long run but real in a seconds-long one; a fixed-ms
 // floor can't scale. Used by skew/straggler, gated on the same occupancy-clipped tail claim their
 // estimate() displays as savings (tailClaimImpact).
-// NOT SOURCED: floor percentages are our own noise floor, unvalidated.
 // Unknown app timing never suppresses a finding; it just skips the floor gate.
 function meetsRuntimeFloor(wasteMs: number, runMs: number | null, floorPct: number): boolean {
   return runMs == null || wasteMs >= runMs * floorPct;
@@ -784,12 +778,10 @@ function skewGate(
   return meetsRuntimeFloor(floorWasteMs, appDurationMs(ctx.app), floorPctWarn) ? result : null;
 }
 
-// Why a stage's slow tail is slow. 'data' when run time proportional to the slow tasks' data volume
-// accounts for at least `dataShareMin` of their extra time (Spark's UI and AQE define skew by data
-// volume, not by duration). Otherwise the largest of GC, shuffle fetch wait, tasks piled on one
-// host, and what none of them accounts for ('unexplained'). A log with no data volume to compare
-// where what is left is the largest share is 'unattributed', as is a stage with no tail
-// attribution: only the duration is known, so straggler reports it and skew does not.
+// Why a stage's slow tail is slow, from attributeTail (stage-quantiles.ts). 'data' when data volume
+// accounts for at least `dataShareMin` of the tail's extra time, else the largest of GC, fetch wait,
+// one host and 'unexplained'. 'unattributed' (no data volume to compare, or no tail attribution)
+// means only the duration is known, so straggler reports it and skew does not.
 interface TailVerdict {
   cause: TailCause;
   // Share (0-100) of the tail's extra time the cause accounts for; 0 for 'unattributed'.
@@ -925,8 +917,7 @@ function predatesAqeSkewJoin(app: DetectorApp | null): boolean {
 // What a skewed stage reads, which decides whether AQE skew-join handling can act on it. It splits
 // skewed partitions on the shuffle-read side of a sort-merge or shuffled-hash join, so only a stage
 // that reads a shuffle, in a SQL execution whose plan has such a join, is 'shuffleJoin'. A plan does
-// not say which stage runs which join (a node's stageIds are empty in real logs), so the join is
-// matched per execution. 'inputScan' reads mostly files (its tasks differ in input size);
+// not say which stage runs which join, so the join is matched per execution. 'inputScan' reads mostly files (its tasks differ in input size);
 // 'other' is any stage the plan cannot tie to a join (an aggregation's shuffle, no plan, no input),
 // and any stage of a run on Spark before 3.0 (skewFix).
 function skewOrigin(stage: DetectorStage, ctx: DetectorCtx, shuffleEvidence: boolean): 'shuffleJoin' | 'inputScan' | 'other' {
@@ -1072,13 +1063,11 @@ function countRelation(stage: DetectorStage, basis: PartitionBasis): CountRelati
   return 'own';
 }
 
-// Whether partition-count advice fits a shuffle-reading stage, from the effective conf and the
-// stage's own task sizes. The partition count that brings each shuffle partition down to the ideal
-// size is per stage; the property is job-wide. 'sufficient': the stage's tasks are already at or
-// under the ideal size. 'aqeCoalesced': AQE merged the property's partitions into fewer tasks, so
-// the advisory partition size is the lever. 'ownPartitioning': the property already gives at least
-// the count needed, so the stage's own repartition(n) or RDD parallelism limits it. Otherwise the
-// property limits the stage: 'raise'.
+// Whether partition-count advice fits a shuffle-reading stage. The count that brings each shuffle
+// partition to the ideal size is per stage; the property is job-wide. 'sufficient': the tasks are
+// already at or under the ideal size. 'aqeCoalesced' and 'ownPartitioning' follow countRelation
+// ('ownPartitioning' also when the property already gives at least the count needed). Otherwise
+// the property limits the stage: 'raise'.
 function shufflePartitionCase(stage: DetectorStage, ctx: DetectorCtx): { partitions: ShufflePartitions; count: number | null; key: string; needed: number } {
   const basis = partitionBasis(stage, ctx);
   const { count, key } = basis;
@@ -1095,15 +1084,12 @@ function shufflePartitionCase(stage: DetectorStage, ctx: DetectorCtx): { partiti
 const ADVISORY_PARTITION_SIZE_KEY = 'spark.sql.adaptive.advisoryPartitionSizeInBytes';
 const PARALLELISM_FIRST_KEY = 'spark.sql.adaptive.coalescePartitions.parallelismFirst';
 
-// What sized a shuffle-reading stage's tasks, for advice that moves the partition count. 'property':
-// the stage ran the configured count of tasks (or the count is unknown), so the property is
-// the lever. 'aqeCoalesced': AQE merged them, so the property no longer sets the count: AQE sizes
-// the merged tasks from the advisory size and, with parallelismFirst (Spark's default), from
+// What sized a shuffle-reading stage's tasks, for advice that moves the partition count: the
+// countRelation outcomes as levers ('matches' is 'property'; 'adjusted' is 'aqeAdjusted', where the
+// advice stays on the property). Under 'aqeCoalesced' the property does not set the count: AQE
+// sizes the merged tasks from the advisory size and, with parallelismFirst (Spark's default), from
 // defaultParallelism too (ShufflePartitionsUtil.coalescePartitions and CoalesceShufflePartitions
-// at v3.5.0). 'aqeAdjusted': AQE ran more tasks than configured (a skew-join split), so the count
-// is not the stage's own doing and the advice stays on the property. 'ownPartitioning': a task count
-// other than the configured one, with no AQE to explain it, is a repartition(n) or RDD operation
-// that fixed its own count.
+// at v3.5.0).
 type PartitionLever = 'property' | 'aqeCoalesced' | 'aqeAdjusted' | 'ownPartitioning';
 
 function partitionLever(stage: DetectorStage, ctx: DetectorCtx): { lever: PartitionLever; count: number | null; key: string; explicitRepartition: boolean } {
@@ -1131,10 +1117,9 @@ function parallelismFirstOn(app: DetectorApp | null): boolean {
   return version == null || Number(version[1]) > 3 || Number(version[2]) >= 2;
 }
 
-// The conf that makes AQE's merged tasks larger. With parallelismFirst on (Spark's default) AQE
-// targets min(total / defaultParallelism, advisory size), so raising the advisory size alone merges
-// nothing for small tasks: turning parallelismFirst off is the required step and the advisory size a
-// follow-up. With it off, the advisory size is the lever.
+// The conf that makes AQE's merged tasks larger. With parallelismFirst on, AQE targets
+// min(total / defaultParallelism, advisory size), so the advisory size alone merges nothing for
+// small tasks: turn parallelismFirst off first. With it off, the advisory size is the lever.
 function aqeCoalesceLargerFix(app: DetectorApp | null): { keys: string; remediation: Remediation[] } {
   return parallelismFirstOn(app)
     ? { keys: `setting ${PARALLELISM_FIRST_KEY}=false (so AQE targets the advisory size, not defaultParallelism tasks) and then raising ${ADVISORY_PARTITION_SIZE_KEY}`, remediation: [setConf(PARALLELISM_FIRST_KEY, false), increaseConf(ADVISORY_PARTITION_SIZE_KEY)] }
@@ -1228,8 +1213,8 @@ const UNBOUNDED_EXECUTORS = 2147483647;
 
 const BROADCAST_THRESHOLD_KEY = 'spark.sql.autoBroadcastJoinThreshold';
 const ADAPTIVE_BROADCAST_THRESHOLD_KEY = 'spark.sql.adaptive.autoBroadcastJoinThreshold';
-// AQE keeps a join side out of a broadcast when too few of its shuffle partitions are non-empty,
-// whatever its size (DynamicJoinSelection at v3.5.0).
+// AQE keeps a join side out of a broadcast when too few of its shuffle partitions are non-empty
+// (DynamicJoinSelection at v3.5.0).
 const NON_EMPTY_PARTITION_RATIO_KEY = 'spark.sql.adaptive.nonEmptyPartitionRatioForBroadcastJoin';
 
 // The property that bounds a broadcast: with AQE, runtime sizes are judged against the adaptive
@@ -1504,8 +1489,7 @@ function gcConfidence(
 // warnFloor gates the finding, so a value just past it is the weakest evidence this detector can
 // produce. highFloor is critPct: straggler's own second (speculative-share) tier, 2x warnPct
 // (0.10 -> 0.20); reused as the high-confidence bar for the stragglerShare path too since that
-// metric has no dedicated critical tier of its own (see the "no dedicated critical tier" comment
-// on the straggler detector) but is the same 0-1 task-share magnitude.
+// metric has no critical tier of its own but is the same 0-1 task-share magnitude.
 function stragglerConfidence(shareValue: number, warnFloor: number, highFloor: number): 'low' | 'medium' | 'high' {
   if (shareValue < warnFloor * 1.5) return 'low';
   if (shareValue >= highFloor) return 'high';
@@ -1602,7 +1586,7 @@ function stragglerGate(stage: DetectorStage, ctx: DetectorCtx, thresholds: {
   if (!useSpeculative && !stragglerShareFires) return null;
   const speculativeTier = speculativeShare >= thresholds.critPct && meetsCritFloor ? 'critical'
                          : speculativeShare >= thresholds.warnPct && meetsWarnFloor ? 'warning' : 'info';
-  // Straggler share has no dedicated critical tier per detector-contract.md; only warning.
+  // A straggler share has only a warning tier (threshold-tables.md, Straggler row).
   const stragglerTier = stragglerShareFires && meetsWarnFloor ? 'warning' : 'info';
   // Report whichever signal actually drove the finding, not just whether speculation was on:
   // a high stragglerShare with few speculative retries must not be reported as a low-value
@@ -1704,7 +1688,6 @@ export const DETECTORS = [
     docAnchor: '#bottleneck-skew',
     // dataShareMin: the share of the slow tasks' extra time that run time proportional to their data
     // volume must account for before the tail is data skew; straggler judges a tail with it too.
-    // NOT SOURCED: our own majority cut.
     thresholds: { ratioWarn: 3, minTasksForP95: 20, dataShareMin: 0.5, floorPctWarn: IMPACT_FLOOR_PCT_WARN },
     detect(stage, ctx, thresholds): Finding | null {
       const gate = skewGate(stage, ctx, thresholds.ratioWarn, thresholds.minTasksForP95, thresholds.floorPctWarn);
@@ -1743,8 +1726,7 @@ export const DETECTORS = [
     emits: ['stageShape'],
     docAnchor: '#bottleneck-stage-shape',
     // lowParallelismFloorPct: the same 0.5% runtime floor the tiered detectors use. Parallelizing a
-    // stage can't save more than the stage's own duration, so a shorter stage can't clear it; on
-    // the 14 real logs that was 2839 of 3005 lowParallelism findings (2168 on sub-second stages).
+    // stage can't save more than the stage's own duration, so a shorter stage can't clear it.
     // App-wide idle capacity stays covered by utilization.
     // taskStageSkew: stageShareMin is the share of the stage's wall-clock the longest task must
     // span, and skewWarn how far past the median task it must run (skew's own max/median 3×).
@@ -1842,8 +1824,7 @@ export const DETECTORS = [
     emits: ['shuffle'],
     docAnchor: '#bottleneck-shuffle',
     // stageFloorPct: the 0.5% runtime floor. The shuffle claim is clipped to the stage, so on a
-    // shorter stage it graded info: 182 of 284 shuffle findings on the 14 real logs. The shuffle
-    // is still there on those stages; the floor is why they're dropped.
+    // shorter stage it would grade info; the shuffle is still there, the floor drops the finding.
     thresholds: { minBytes: 50 * MB, stageFloorPct: 0.005 },
     detect(stage, ctx, thresholds): Finding | null {
       const bytes = stage.shuffleReadBytes;
@@ -1970,8 +1951,7 @@ export const DETECTORS = [
     type: 'spill', order: 10, fixEffort: 'code', version: 1,
     emits: ['spill'],
     docAnchor: '#bottleneck-spill',
-    // stageFloorPct: the 0.5% runtime floor, as for shuffle (12 of 38 spill findings on the 14 real
-    // logs, all info). The spill is still there on those stages; the floor is why they're dropped.
+    // stageFloorPct: the 0.5% runtime floor, as for shuffle.
     thresholds: { singleTaskDiskGiB: 1, singleTaskMemGiB: 4, highDiskGiB: 1, highTaskDiskMB: 512, highMemGiB: 4, medDiskMB: 256, medMemGiB: 1, skewRatio: 5, skewDiskFloorMB: 128, skewMemFloorMB: 256, skewMinTasks: 10, stageFloorPct: 0.005 },
     detect(stage, ctx, thresholds): Finding | null {
       if (stage.memoryBytesSpilled === 0) return null;
@@ -2018,14 +1998,13 @@ export const DETECTORS = [
     docAnchor: '#bottleneck-gc',
     thresholds: {
       warnPct100: 10,
-      // Descending tier: ExecutorGcHeuristic, ported as-is.
+      // A GC share below this reads as over-provisioned memory (the low-GC note).
       lowInfoPct100: 5,
-      // NOT SOURCED: our own noise floor so a stage that barely ran doesn't flag either direction.
+      // Noise floor so a stage that barely ran doesn't flag either direction.
       minRunTimeMs: 10000,
       // lowInfoFloorPct: the 0.5% runtime floor stageShape's lowParallelism uses. The low-GC note is
       // an app-level memory-sizing signal; on a stage shorter than this share of the run it adds
-      // nothing to that call. On the 14 real logs that was 464 of 685 low-GC notes (of 701 gc
-      // findings); the low-GC pattern is still true on those stages, the floor is why they're dropped.
+      // nothing to that call.
       lowInfoFloorPct: 0.005,
     },
     detect(stage, ctx, thresholds): Finding | null {
@@ -2099,10 +2078,8 @@ export const DETECTORS = [
       floorMs: 1000, floorBytes: 64 * MB,
       // stageFloorPct: the tiered detectors' 0.5% runtime floor. On a stage shorter than this share
       // of the run a slow host can't cost that much: duration findings are clipped to the stage
-      // and graded info, and a byte-dimension imbalance (no time estimate, so its ratio tier was
-      // its band) was graded info here since 6298149. So the stage is skipped: on the 14 real logs
-      // 324 of 452 slowHost findings, all info. The imbalance is still there on those stages; the
-      // floor is why they're dropped.
+      // and would grade info, and a byte-dimension imbalance (no time estimate, so its ratio tier
+      // is its band) is graded info there too. So the stage is skipped.
       stageFloorPct: 0.005,
       // outlierAlpha: the nominal chance a stage of alike tasks gets any executor flagged on task
       // time. The slowest of many executors always tops the median, so a task-time executor is
@@ -2188,10 +2165,9 @@ export const DETECTORS = [
         if (!r || r.value < d.floor) continue; // absolute-magnitude floor: same ratio+floor shape as computeSpillMagnitude
         const tier = impactBandFor(r.ratio);
         if (!tier) continue;
-        // taskTime is the only wallClock-bearing dimension here: fixed fallback
-        // (its current floor case), overwritten by deriveImpactBand whenever this
-        // finding gets a real wallClock estimate. The other three dimensions never
-        // get a wallClock estimate, so they keep the dynamic tier unchanged.
+        // taskTime is the only wallClock-bearing dimension: it takes the fixed fallback band (see
+        // threshold-tables.md). The other three never get a wallClock estimate, so they keep the
+        // ratio tier.
         const impactBand = d.dimension === 'taskTime' ? 'info' : tier;
         out.push({
           type: 'slowHost', stageId: stage.id, impactBand,
@@ -2274,8 +2250,7 @@ export const DETECTORS = [
       // too, hence TAIL_CLAIM's post-fix floor. Unknown cluster size: no defensible figure.
       if (ctx.totalCores <= 0) return costOnly('modeled');
       // A stage that read no input and no shuffle, its tasks idle waiting on an external system,
-      // gains nothing from more partitions (a 1-task JDBC count stage open 27 minutes on 5s of CPU
-      // was claimed 99% recoverable): claim 0. Stages that read bytes keep their claim.
+      // gains nothing from more partitions: claim 0. Stages that read bytes keep their claim.
       const readBytes = (stage.inputBytes ?? 0) + (stage.shuffleReadBytes ?? 0);
       const activeMs = typeof stage.taskActiveMs === 'number'
         ? stage.taskActiveMs
@@ -2346,14 +2321,9 @@ export const DETECTORS = [
     // floorPctWarn/floorPctCrit default to impact-band.ts's run-wide noise floor, so a tail this
     // gate admits at its warn floor grades at least warning there too.
     // shareWarnAtFloor: in a large stage, the few stragglers that gate it for tens of seconds can be
-    // only 2.5-5% of its tasks. Scored against a task-level replay of every stage on 14 real logs
-    // (recoverable = replay with each task over 4x P50 capped at P50), admitting 2.5-5% shares
-    // whose clipped tail already clears floorPctWarn found 3 such stages (10-48s) for 1 borderline
-    // miss; admitting every 2.5% share instead added 86 findings below the floor.
+    // only 2.5-5% of its tasks, so a 2.5% share counts once its clipped tail clears floorPctWarn.
     // A stage shorter than floorPctWarn of the run is skipped outright: its tail can't cost more
-    // than the stage's own duration, so every finding there graded info. On the 14 real logs that
-    // was 671 of 753 straggler findings, none above info; the slow tail is still real on those
-    // stages, the floor is why they're dropped.
+    // than the stage's own duration, so every finding there would grade info.
     // A tail skew's gate admits and data explains is skew's finding; one it admits whose cause is not
     // data is this one's. Both use skew's thresholds (ctx.skewThresholds), so tuning skew moves both.
     thresholds: { minTasks: 10, shareWarn: 0.05, shareWarnAtFloor: 0.025, warnPct: 0.10, critPct: 0.20, floorPctWarn: IMPACT_FLOOR_PCT_WARN, floorPctCrit: IMPACT_FLOOR_PCT_CRIT },
@@ -2374,8 +2344,6 @@ export const DETECTORS = [
       const advice = stragglerAdvice(stage, ctx, tail, reported.detail);
       return {
         type: 'straggler', stageId: stage.id,
-        // Fixed fallback: overwritten by deriveImpactBand when this finding gets a real wallClock
-        // estimate (the common case). Only surfaces on the rare occupancy-sweep miss.
         impactBand: 'info', ...advice.evidence,
         metric: reported.metric,
         value: reported.value,
@@ -2457,8 +2425,7 @@ export const DETECTORS = [
     emits: ['tinyTask'],
     docAnchor: '#bottleneck-tiny-tasks',
     // stageFloorPct: the tiered detectors' 0.5% runtime floor. Coalescing can't save more than the
-    // stage's own duration, so on a shorter stage every finding graded info: on the 14 real logs
-    // 132 of 151 tinyTask findings. The tasks are still tiny there; the floor is why they're dropped.
+    // stage's own duration, so on a shorter stage every finding would grade info.
     thresholds: { minTasks: 100, maxP50: 500, maxP95: 1000, stageFloorPct: 0.005 },
     detect(stage, ctx, thresholds): Finding | null {
       if (stage.taskCount < thresholds.minTasks) return null;
@@ -2524,10 +2491,7 @@ export const DETECTORS = [
       // No stage ever recorded a submission timestamp: no basis to measure a startup gap against.
       if (!Number.isFinite(firstStageSubmitted)) return null;
       // The wait is from the first runnable stage to the first executor, not from app start: the
-      // driver's own startup before its first job (36-47s on every real log, whatever the
-      // executors did) isn't something executors could shorten. On the 9 real logs that fired,
-      // the first executor arrived 146-192s after the first stage on two whose old gap read ~40s,
-      // and 2s after it on one the old gap flagged critical at 42s.
+      // driver's own startup before its first job isn't something executors could shorten.
       // An executor added before the first stage only counts if it was still alive at submission:
       // with dynamic allocation scaling to zero, early executors can idle out before any job runs.
       const removedAt = new Map<string, number>();
@@ -2570,7 +2534,6 @@ export const DETECTORS = [
     thresholds: { minUtil: 0.60 },
     detect(ctx, thresholds): Finding | null {
       const { app, executorsAdded, executorsRemoved, runAggregates } = ctx;
-      // Nullish (not falsy) check: a literal startTime:0 must not be treated as "missing".
       if (!app || executorsAdded.length === 0 || app.startTime == null || app.endTime == null) return null;
       const appDuration = app.endTime - app.startTime;
       if (appDuration <= 0) return null;
@@ -2586,13 +2549,12 @@ export const DETECTORS = [
       // Busy core-time (from the whole-run core-time-series, same signal memoryUtilization's
       // idleCores variant already uses), not executor lifetime: an executor that exists for the
       // whole run but sits fully idle must not score as 100% used. Missing runAggregates (older
-      // callers, synthetic fixtures) reads as 0 busy time rather than falling back to the
-      // lifetime-based measure this replaces.
+      // callers, synthetic fixtures) reads as 0 busy time.
       const busyCoreMs = runAggregates?.busyCoreMs ?? 0;
       const utilization = busyCoreMs / capacityCoreMs;
       if (utilization >= thresholds.minUtil) return null;
 
-      // CPU-time-based utilization (sparkMeasure): metric only, no threshold.
+      // CPU-time-based utilization: metric only, no threshold.
       // Null when no stage recorded CPU time (older Spark), the same rule as the CLI metrics block.
       const cpuMs = totalExecutorCpuMs(ctx.stages.values());
       const cpuUtilizationPct = cpuMs == null ? null : Math.round((cpuMs / capacityCoreMs) * 100);
@@ -2632,21 +2594,20 @@ export const DETECTORS = [
     emits: ['memoryUtilization'],
     docAnchor: '#bottleneck-memory-utilization',
     thresholds: {
-      idleCoreWarn: 0.50,          // WastedCoresAlertsReducer
+      idleCoreWarn: 0.50,          // idle share of allocated core time above which idleCores fires
       bandTooHigh: 0.70,           // below this => over-provisioned (cost signal)
-      wasteBufferMultiplier: 1.5,  // UNVERIFIED
+      wasteBufferMultiplier: 1.5,  // wasted memory-time must exceed used by this multiple
     },
     detect(ctx, thresholds): Finding[] {
       const { app, executorsAdded, executorsRemoved, runAggregates, stages } = ctx;
       const out: Finding[] = [];
-      // Nullish (not falsy) check: a literal startTime:0 must not be treated as "missing".
       if (app?.startTime == null || app?.endTime == null) return out;
       const appDurationMs = app.endTime - app.startTime;
       if (appDurationMs <= 0) return out;
 
       const allocatedMB = app.resources?.executor?.memoryMB ?? null;
 
-      // ── 1a idle-cores rate ────────────────────────────────────────────────
+      // Idle-cores rate.
       const busyCoreMs = runAggregates?.busyCoreMs;
       // Allocated core-time, as for `utilization`, so the two findings of one idle condition agree.
       const allocationInput = { app, stages, executors: { added: executorsAdded, removed: executorsRemoved } };
@@ -2670,7 +2631,7 @@ export const DETECTORS = [
         }
       }
 
-      // ── 1b memory band (executor only; driver half dropped since there is no driver metric) ─
+      // Memory band (executor only: there is no driver heap metric).
       // spark.executor.memory is one setting for every executor, so the judgement is made once, on
       // the executor with the highest sampled heap peak. A near-capacity peak is not reported:
       // JVMHeapMemory counts uncollected garbage, so a peak near -Xmx is normal JVM behaviour.
@@ -2715,7 +2676,7 @@ export const DETECTORS = [
         }
       }
 
-      // ── 1c Spark Memory Limit waste model (UNVERIFIED buffer) ─
+      // Spark Memory Limit waste model.
       // executorRunTime sums task time across cores, so dividing by the cores per executor gives
       // executor-seconds: the same unit as the allocated executor-seconds it is compared with.
       // The allocated side is the executors' alive time (computeAllocation), not the peak executor
@@ -3162,7 +3123,6 @@ export const DETECTORS = [
       return costOnly('modeled', { value: coreHoursIsh, unit: 'coreHours' });
     },
   }),
-  // ── Config-sanity entries (scope:'config', inScorecard:false) ────────────────
   defineConfigDetector({
     type: 'configAudit', order: 121, fixEffort: 'config', version: 1, inScorecard: false,
     emits: ['configAudit'],
@@ -3232,15 +3192,13 @@ export const DETECTORS = [
     },
     estimate: noWasteModel,
   }),
-  // ── Plan-metric entries (scope:'sql') ────────────────────────────────────
   defineSqlDetector({
     type: 'duplicatePlanSubtree', order: 130, fixEffort: 'code', version: 2,
     emits: ['duplicatePlanSubtree'],
     docAnchor: '#bottleneck-duplicate-plan-subtree',
     // stageFloorPct: the 0.5% runtime floor. The claim counts at most each linked stage's own
     // task-active time, so a repeat whose stages together lasted less than this share of the run
-    // graded info: 340 of 545 findings on the 14 real logs. The repeat is still in the plan; the
-    // floor is why they're dropped. A repeat with no linked stage time is kept.
+    // would grade info. A repeat with no linked stage time is kept.
     thresholds: { minSubtreeSize: 3, minOccurrences: 2, stageFloorPct: 0.005 },
     detect(sqlExec, ctx, thresholds): Finding[] | null {
       if (!sqlExec.planTree) return null;
@@ -3263,16 +3221,15 @@ export const DETECTORS = [
         if (runMs != null && stagesMs > 0 && stagesMs < runMs * thresholds.stageFloorPct) return null;
         const occurrencesIdentical = occurrencesHaveIdenticalDetails(g.nodes);
         const stageShares = stageOperatorShares(nodes, operatorsByStage);
-        // resolvePlanTree always sets id; safe downstream of it.
+        // resolvePlanTree always sets id, so the `!` here and below is safe.
         const planNodeIds = nodes.map((n) => n.id!).filter(Boolean);
         const detail = duplicateSubtreeDetail({ ...g, value: g.occurrences });
         const differing = occurrencesIdentical ? '' : ` ${DUPLICATE_SUBTREE_DIFFERING_NOTE}`;
         return {
           type: 'duplicatePlanSubtree', executionId: sqlExec.id, stageIds, planNodeIds,
           stageShares, occurrencesIdentical,
-          // Fixed fallback: overwritten by deriveImpactBand when this finding gets a real
-          // wallClock estimate. Repeats with differing details get no estimate (nothing is
-          // known to be recomputed), and neither does a subtree with no stage of its own.
+          // Repeats with differing details get no estimate (nothing is known to be recomputed),
+          // and neither does a subtree with no stage of its own, so this fallback band stands.
           impactBand: occurrencesIdentical && Object.keys(stageShares).length > 0 ? 'warning' : 'info',
           metric: 'subtreeOccurrences', value: g.occurrences,
           rootName: g.rootName, subtreeSize: g.subtreeSize, sampleRelation: g.sampleRelation,
@@ -3292,7 +3249,7 @@ export const DETECTORS = [
       // detect() reports subtreeOccurrences >= 2. Only repeats past the first are redundant:
       // computing the subtree once is real work, so waste is (occurrences-1)/occurrences of the stages' time.
       const occurrences = typeof finding.value === 'number' ? finding.value : 0;
-      // Defensive only: minOccurrences guarantees occurrences >= 2 on real data; a malformed-value fallback.
+      // One occurrence repeats nothing: reached only with minOccurrences tuned below 2 or a malformed value.
       if (occurrences < 2) return costOnly('none');
       // Same-shaped repeats whose details differ compute different data: nothing is known to be
       // recomputed, so there is no time to claim.
@@ -3308,8 +3265,8 @@ export const DETECTORS = [
         const s = ctx.stages.get(id);
         const share = shares ? (shares[id] ?? 0) : 1;
         if (s && share > 0) {
-          // Time with tasks running, not submit-to-complete: a stage left waiting for cores
-          // (2491s open, 60s of tasks on a real log) isn't recomputing anything while it waits.
+          // Time with tasks running, not submit-to-complete: a stage waiting for cores isn't
+          // recomputing anything.
           const activeMs = s.taskActiveMs ?? Math.max(0, (s.completedAt ?? 0) - (s.submittedAt ?? 0));
           wasteMsByStage.set(id, activeMs * share * redundantFraction);
         }
@@ -3367,8 +3324,7 @@ export const DETECTORS = [
     estimate(finding, ctx): ImpactEstimate | null {
       const fileMs = ((finding.fileCount as number | undefined) ?? 0) * FILE_OPEN_OVERHEAD_MS;
       // A read's files are opened by the scan's tasks, in parallel: spread the per-file cost over
-      // the most tasks its stages ran at once (91344 files x 10ms is 913s, claimed against a 117s
-      // stage that ran 314 tasks at once). A write keeps the serial sum: the job commit moves each
+      // the most tasks its stages ran at once. A write keeps the serial sum: the job commit moves each
       // output file on the driver, one after another.
       const stageIds = finding.stageIds as number[] | undefined;
       let slots = 1;
@@ -3381,7 +3337,7 @@ export const DETECTORS = [
   defineSqlDetector({
     // Entry-level type is an identifier only; it never appears on an emitted finding. Findings
     // carry 'underBroadcast'/'overBroadcast' since one shared plan-walk covers both
-    // opposite-direction rules (JoinToBroadcastAlert / BroadcastTooLargeAlert).
+    // opposite-direction rules.
     type: 'broadcastSizing', order: 132, fixEffort: 'config', version: 3,
     // Listed over-first: the two share order 132, and this list order is their display tie-break.
     emits: ['overBroadcast', 'underBroadcast'],
@@ -3435,7 +3391,6 @@ export const DETECTORS = [
               const otherSide = ` (the other side is ${formatBytes(otherBytes)})`;
               out.push({
                 type: 'underBroadcast', executionId: sqlExec.id, stageIds: unionStageIds(contributors, fallbackStageIds),
-                // resolvePlanTree always sets id; safe downstream of it.
                 planNodeIds: contributors.map((n) => n.id!).filter(Boolean),
                 impactBand: 'info', metric: 'smallerSideBytes',
                 value: buildBytes, largerSideBytes: otherBytes,
@@ -3455,9 +3410,8 @@ export const DETECTORS = [
         if (isBroadcastExchangeNode(node.name)) {
           const m = (node.metrics ?? []).find(x => x.name === 'data size');
           if (m && m.value > overBroadcastBytes) {
-            // BroadcastExchange's own metrics are driver-computed and never on any TaskEnd
-            // (node.stageIds always empty in real data); its child carries the executor-side
-            // metrics, so only the child unions in.
+            // BroadcastExchange's own metrics are driver-computed and never on a TaskEnd, so only
+            // its child, which carries the executor-side metrics, contributes stage ids.
             const child = (node.children ?? [])[0];
             // A threshold below the broadcast cannot have admitted it: with none admitting it, a hint forced it.
             const admitted = admittingThresholds.filter((t) => t.threshold == null || t.threshold >= m.value);
@@ -3469,7 +3423,6 @@ export const DETECTORS = [
             out.push({
               type: 'overBroadcast', executionId: sqlExec.id,
               stageIds: unionStageIds(child ? [child] : [], fallbackStageIds),
-              // resolvePlanTree always sets id; safe downstream of it.
               planNodeIds: [node.id!].filter(Boolean),
               impactBand: 'warning', metric: 'broadcastBytes', value: m.value, broadcastThreshold,
               recommendation: autoBroadcastOff
@@ -3544,8 +3497,8 @@ export const DETECTORS = [
     docAnchor: '#joins',
     // minOutputRows: below it the join is cheap whatever its shape. minExpansion: a
     // BroadcastNestedLoopJoin's output must be this many times its larger input, so a join that
-    // keeps its rows, or a cross join against a one-row side, is not an explosion. NOT SOURCED: the 1M and 10x floors are our own noise
-    // floors; the stage time the finding is graded on decides how much it matters.
+    // keeps its rows, or a cross join against a one-row side, is not an explosion. The stage time the
+    // finding is graded on decides how much it matters.
     thresholds: { minOutputRows: 1_000_000, minExpansion: 10 },
     detect(sqlExec, _ctx, thresholds): Finding[] | null {
       if (!sqlExec.planTree) return null;
@@ -3578,9 +3531,7 @@ export const DETECTORS = [
         const on = shape.condition == null ? '' : ` on ${shape.condition}`;
         out.push({
           type: 'nestedLoopJoin', executionId: sqlExec.id, stageIds,
-          // resolvePlanTree always sets id; safe downstream of it.
           planNodeIds: [node.id!].filter(Boolean),
-          // Fixed fallback: overwritten by deriveImpactBand when this finding gets a wall-clock estimate.
           impactBand: 'info',
           metric: 'outputRows', value: outputRows,
           nodeName: shape.operator, joinType: shape.joinType, condition: shape.condition,

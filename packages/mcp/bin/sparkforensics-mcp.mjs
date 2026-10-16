@@ -8,11 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 const binDir = dirname(fileURLToPath(import.meta.url));
 const pkgDir = dirname(binDir);
 
-// vendor-core/ is populated by vendor-core.mjs at pack time. In the monorepo the
-// packages/core/src/ sibling's load-vendored.js is used, which prefers a leftover
-// vendor-core/ only while it still matches core/src and warns when it does not.
-// load-vendored.js is the one module located by hand; the rest load through its
-// exported loadVendored().
+// Core loading (vendor-core/ vs core/src): docs-site/contributor-guide/development-setup.md, "Generated and vendored files".
 async function loadVendoredHelper() {
   const srcHelper = join(pkgDir, '..', 'core', 'src', 'load-vendored.js');
   const helperPath = existsSync(srcHelper) ? srcHelper : join(pkgDir, 'vendor-core', 'load-vendored.js');
@@ -58,7 +54,7 @@ See https://github.com/shuffle-works/sparkforensics#readme for details.
 }
 
 async function main() {
-  // Not strict: arguments this server never read before stay ignored, as they always were.
+  // Not strict: arguments this server does not read are ignored.
   const { values } = parseArgs({
     args: process.argv.slice(2), strict: false,
     options: { thresholds: { type: 'string' }, help: { type: 'boolean', short: 'h' } },

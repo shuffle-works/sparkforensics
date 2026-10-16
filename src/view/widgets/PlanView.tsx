@@ -208,10 +208,9 @@ function PlanTreeNode({ node, depth, durationMap }: PlanTreeNodeProps) {
   const detailSmart = nodeDetail?.kind === 'scan' ? '' : parseOperatorDetail(node.name, detailFull);
   // A read half wrapping a write half (the Exchange split from
   // resolvePlanTree, see event-handlers.ts) is one logical operator for
-  // this legacy tree view, which pre-dates the split (PlanGraphNode.tsx is
-  // the newer view that shows both halves separately). The read half
-  // occupies the exact tree position the original unsplit node used to, but
-  // the write half carries the real metrics, duration, and real children,
+  // this tree view (PlanGraphNode.tsx shows both halves separately). The read
+  // half occupies the tree position of the logical operator, but the write
+  // half carries the real metrics, duration, and real children,
   // one level deeper. Pull all three up here so this renders as one merged
   // row instead of two nested ones.
   const writeHalf = node.exchangeRole === 'read' ? node.children[0] : undefined;

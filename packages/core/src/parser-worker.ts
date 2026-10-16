@@ -251,7 +251,7 @@ export async function runParseFiles(
   emitParseCompletion(state, emit, linesProcessed);
 }
 
-// ─── Worker message bus (only active when running as a Web Worker) ──────────────
+// Message bus, active only when running as a Web Worker.
 
 const isWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
 

@@ -21,9 +21,7 @@ import type { EvidenceAvailabilityEntry, FindingOf } from '@sparkforensics/core/
 
 export type ConfigAuditProps = WidgetProps;
 
-/** One flagged config property's row, anchored so a triage route focuses the
- * row itself. `tabIndex={-1}` keeps it programmatically focusable without Tab
- * order. */
+/** One flagged config property's row. */
 function ConfigAuditRow({ finding }: { finding: FindingOf<'configAudit'> }) {
   const anchor = useAnchoredRow([finding]);
 
@@ -78,8 +76,6 @@ export const ConfigAudit = memo(function ConfigAudit({ appModel, configFindings,
 
   const activeRouteTarget = useActiveRouteTarget();
   const routeIndex = activeRouteTarget ? findings.findIndex((f) => f === activeRouteTarget.finding) : null;
-  // Called unconditionally, before the empty-findings early return, per rules of
-  // hooks (usePagedRows uses useLayoutEffect internally).
   const { totalPages, effectivePage, visible } = usePagedRows(findings, page, setPage, routeIndex);
 
   if (findings.length === 0) {

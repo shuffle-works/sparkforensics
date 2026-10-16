@@ -353,7 +353,7 @@ describe('handleShsProxy (stream failure hardening)', () => {
     });
     await new Promise((r) => setImmediate(r));
     res.destroy(new Error('client disconnected'));
-    // Regression: without 'close'/'error' listeners on res the piping promise never resolved and this hung.
+    // Needs 'close'/'error' listeners on res, otherwise the piping promise never resolves.
     await handled;
     expect(res.destroyed).toBe(true);
   });

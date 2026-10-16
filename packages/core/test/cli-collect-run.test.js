@@ -228,7 +228,7 @@ describe('collectRun streaming', () => {
   });
 });
 
-// Pins dispatch()'s per-message-type wiring to src/ingest.js's routeMessage.
+// Pins dispatch()'s per-message-type wiring to packages/core/src/ingest.ts's routeMessage.
 describe('dispatch', () => {
   const dataTypes = [
     ['app', 'onApp'],

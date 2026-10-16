@@ -141,7 +141,6 @@ describe('StageTable', () => {
 
     render(<StageTable appModel={appModel} catalog={catalog} getTaskData={noTaskData} />);
 
-    // Toggle to the problems-only view
     await user.click(screen.getByRole('button', { name: /problems only/i }));
 
     const rows = screen.getAllByRole('row').slice(1);
@@ -163,7 +162,6 @@ describe('StageTable', () => {
     // Default is now top-N, showing all 3 stages
     expect(screen.getAllByRole('row').slice(1)).toHaveLength(3);
 
-    // Toggle to problems-only view
     await user.click(screen.getByRole('button', { name: /problems only/i }));
 
     expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
@@ -424,7 +422,7 @@ describe('StageTable', () => {
     await user.keyboard(' ');
     expect(openStage).toHaveBeenCalledTimes(3);
 
-    // The row itself is no longer a focusable, labeled, role-less widget.
+    // The row itself is not a focusable, labeled, role-less widget.
     expect(rows[0]).not.toHaveAttribute('tabindex');
     expect(rows[0]).not.toHaveAttribute('aria-label');
   });

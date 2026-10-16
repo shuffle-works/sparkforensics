@@ -138,8 +138,8 @@ describe('estimateImpact: gc', () => {
 
 describe('estimateImpact: skew / straggler: the tail claim is floored at the longest task the fix leaves', () => {
   // These claims shorten the stage's longest task itself, so ceiling(S)'s taskDurationMax term
-  // (the very task being fixed) can't be their floor: that used to cap a one-straggler stage's
-  // claim at ~0. The floor is taskDurationMax - claim, or the core work the fix leaves over every
+  // (the very task being fixed) can't be their floor (it would cap a one-straggler stage's
+  // claim at ~0). The floor is taskDurationMax - claim, or the core work the fix leaves over every
   // core.
   it('skew: P95 branch, floored at the longest task the fix leaves (9000 - 3000 = 6000 on a 10000ms stage)', () => {
     const stages = new Map([[0, {
@@ -149,7 +149,7 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
     const findings = [{ type: 'skew', stageId: 0, metric: 'P95/median', impactBand: 'warning' }];
     estimate(findings, stages);
     const est = findings[0].impactEstimate;
-    // Raw claim P95-P50 = 3000; post-fix floor 6000 leaves 4000ms of room, so the claim fits whole.
+    // Raw claim P95-P50 = 3000; floor 6000 leaves 4000ms of room, so the claim fits whole.
     expect(est.wallClock).toEqual({ low: 3000, high: 3000 });
     expect(est.basis).toBe('serial');
     expect(est.rawWaste).toEqual({ value: 3000, unit: 'ms' });
@@ -163,8 +163,8 @@ describe('estimateImpact: skew / straggler: the tail claim is floored at the lon
     const findings = [{ type: 'skew', stageId: 0, metric: 'max/median', impactBand: 'warning' }];
     estimate(findings, stages);
     const est = findings[0].impactEstimate;
-    // Raw claim max-P50 = 8000; post-fix floor is P50 (1000), room 9000: the old
-    // taskDurationMax floor (9000) would have left only 1000.
+    // Raw claim max-P50 = 8000; floor is P50 (1000), room 9000 (a taskDurationMax
+    // floor of 9000 would leave only 1000).
     expect(est.wallClock).toEqual({ low: 8000, high: 8000 });
     expect(est.rawWaste).toEqual({ value: 8000, unit: 'ms' });
   });

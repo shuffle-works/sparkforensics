@@ -1,12 +1,10 @@
-// Canonical iterative walk over a resolved planTree (parser-worker.js
-// resolvePlanTree). Every plan-*.js consumer and the sql-scope detectors in
-// detectors.js need the same traversal: this is the single implementation
-// they all share, so it must not import from detectors.js (or vice versa).
+// Canonical iterative walk over a resolved planTree (resolvePlanTree in event-handlers.ts). Every
+// plan-*.ts consumer and the sql-scope detectors in detectors.ts need the same traversal: this is
+// the single implementation they all share, so it must not import from detectors.ts (or vice versa).
 //
-// Pre-order, left-to-right child order (children are reverse-pushed so the
-// leftmost pops first): plan-summary.js's finding order depends on this.
-// `visit(node, parent)` gets the parent so callers needing per-edge or
-// per-node state (plan-dot.js's edges, plan-duration-attribution.js's segment
+// Pre-order, left-to-right child order (children are reverse-pushed so the leftmost pops first):
+// plan-summary.ts's finding order depends on this. `visit(node, parent)` gets the parent so callers
+// needing per-edge or per-node state (plan-dot.ts's edges, plan-duration-attribution.ts's segment
 // index) can track it themselves via a Map keyed by node.
 export function walkPlanTree<T extends { children?: T[] }>(
   root: T | null | undefined,

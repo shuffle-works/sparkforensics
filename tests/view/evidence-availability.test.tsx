@@ -121,7 +121,7 @@ test('Memory Utilization finding opens executor-metrics evidence', async () => {
   store.setState({
     ...store.getState(),
     // An ordinary (non-dataUnavailable) row: the dataUnavailable placeholder
-    // no longer carries its own evidence pill (it would be circular, its
+    // carries no evidence pill of its own (it would be circular, its
     // whole content IS the "evidence unavailable" note).
     catalog: [{
       type: 'memoryUtilization', variant: 'memoryBand', stageId: null, executorId: '3', impactBand: 'info',

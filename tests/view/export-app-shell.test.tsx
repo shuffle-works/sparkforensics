@@ -51,7 +51,7 @@ test('routes to the plan graph when planGraph.active is set', async () => {
   render(<ExportApp />);
   // PlanGraphRoute renders this heading unconditionally (before any
   // planTree/model resolution), so it's a stable signal that the real
-  // component mounted, not the now-removed Suspense fallback.
+  // component mounted, not a Suspense fallback.
   expect(await screen.findByRole('heading', { name: /plan graph: stage 1/i })).toBeInTheDocument();
 });
 

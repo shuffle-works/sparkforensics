@@ -129,7 +129,7 @@ test('shows a low-confidence caveat for the waste-model finding', async () => {
 });
 
 test('shows a muted data-unavailable note with no bold label, impact dot, or evidence pill', async () => {
-  // A dataUnavailable-only catalog no longer mounts this widget at all (see
+  // A dataUnavailable-only catalog does not mount this widget at all (see
   // "renders nothing when there are no memoryUtilization findings" below), so
   // this needs a real accompanying finding to exercise the dataUnavailable
   // row's own rendering.

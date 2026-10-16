@@ -23,8 +23,6 @@ import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 
 export type UnderBroadcastProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
-/** One flagged finding's row, anchored so a triage route focuses the row
- * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
 function UnderBroadcastRow({ finding }: { finding: FindingOf<'underBroadcast'> }) {
   const anchor = useAnchoredRow([finding]);
 
@@ -46,9 +44,7 @@ function UnderBroadcastRow({ finding }: { finding: FindingOf<'underBroadcast'> }
 }
 
 /** Board section for `underBroadcast` findings: a join whose small build
- * side stayed a shuffle join instead of broadcasting. Split out of the
- * former combined `PlanFindings.tsx`; see `DuplicatePlanSubtree.tsx`,
- * `SmallFiles.tsx`, and `OverBroadcast.tsx` for its three siblings. */
+ * side stayed a shuffle join instead of broadcasting. */
 export const UnderBroadcast = memo(function UnderBroadcast({ catalog, defaultCollapsed = true }: UnderBroadcastProps) {
   const { sortMode, setSortMode, orderBy } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
@@ -85,8 +81,6 @@ export const UnderBroadcast = memo(function UnderBroadcast({ catalog, defaultCol
         </>
       }
       statusBadge={
-        // `sqlPlan` is a widget-wide evidence constant (this detector always reads
-        // the resolved SQL plan), so it sits on the header once, not per row.
         <AdvancedOnly>
           <RowStatusCluster
             confidence={findings[0].confidence}

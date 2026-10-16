@@ -128,13 +128,10 @@ describe('--export-html argument handling', () => {
       expect(stderr).toBe('');
       const dataJs = readFileSync(join(destDir, 'data.js'), 'utf8');
       const parsed = parseRunPayload(dataJs);
-      // Before the fix, main()'s SHS branch never reassigned `skippedLines` (it stayed at its
-      // `let skippedLines = 0` initializer), so this would be 0 here despite the real parse
-      // skipping a line.
+      // main()'s SHS branch reports the skipped line count of the real parse.
       expect(parsed.skippedLines).toBe(1);
-      // evidenceAvailability was already derived correctly inside resolveFromShs before this fix
-      // (it has its own internal skippedLines value); this proves the two numbers in the same
-      // payload now agree instead of contradicting each other.
+      // evidenceAvailability is derived inside resolveFromShs with its own skippedLines value;
+      // the two numbers in the same payload must agree.
       const executorMetricsEntry = parsed.evidenceAvailability.entries.find((e) => e.key === 'executorMetrics');
       expect(executorMetricsEntry.reasonCode).toBe('parseIncomplete');
     } finally {

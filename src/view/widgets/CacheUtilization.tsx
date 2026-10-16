@@ -85,9 +85,7 @@ function cacheFindingDetail(f: CacheUtilizationFinding): string {
   return `${pct} cached (${f.numCachedPartitions ?? 0}/${f.numPartitions ?? 0} partitions)`;
 }
 
-/** One flagged RDD finding's row, anchored so a triage route focuses the row
- * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order.
- * The row shows its measured detail and the card states the fix once; a
+/** One flagged RDD finding's row. The row shows its measured detail and the card states the fix once; a
  * storageUnobserved caveat has no shared fix, so its row keeps its own text. */
 function CacheFindingRow({ finding }: { finding: CacheUtilizationFinding }) {
   const anchor = useAnchoredRow([finding]);
@@ -130,8 +128,6 @@ export const CacheUtilization = memo(function CacheUtilization({ appModel, catal
     (a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand],
   ), [catalog]);
 
-  // Called unconditionally, before the empty-`rows` early return, per rules
-  // of hooks (usePagedRows uses useLayoutEffect internally).
   const table = usePagedRows(rows, tablePage, setTablePage);
   const activeRouteTarget = useActiveRouteTarget();
   const findingsRouteIndex = activeRouteTarget ? allFindings.findIndex((f) => f === activeRouteTarget.finding) : null;

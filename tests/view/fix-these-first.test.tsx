@@ -106,7 +106,7 @@ describe('useFixTheseFirstData', () => {
 });
 
 describe('duplicatePlanSubtree identity across a cross-execution rollup', () => {
-  // Regression: two unrelated SQL executions can share the same
+  // Two unrelated SQL executions can share the same
   // rootName+groupIndex pair (groupIndex resets per execution), and the rollup
   // groups by `type` alone, so both land in one group and must stay disambiguated.
   it('renders distinct identity labels for two same-rootName/groupIndex findings from different SQL executions', () => {

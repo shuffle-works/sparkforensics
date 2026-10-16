@@ -52,7 +52,7 @@ stays documented here in full.
 | Slow host: mean-duration ratio | stage has ≥ `minHosts` = 3 hosts (or executors) and ≥ `minTasks` = 15 tasks, and lasts ≥ `stageFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, which gets no estimate and keeps its fallback band; every slow-host finding on a shorter stage would grade `info`, the imbalance itself still true; this gate covers every slowHost row); then per host: mean task duration / overall median ≥ `ratioWarn` = 2.0× **and** host task-share ≥ `minShare` = 20% **and** host mean ≥ `floorMs` = 1000 ms (absolute-magnitude floor, rules out sub-second noise) | `warning` |
 | Slow host: duration-share | same stage gate as the row above; then per host: ≥ `shareWarn` = 75% of the stage's total task-duration **and** ≥ `taskShareWarn` = 50% of its task count | `warning` |
 | Stage slowness: absolute fallback, suppressed when `slowHost` already fired | stage wall-clock duration ≥ `infoMin` = 15 min. The band then comes from the partitioning-headroom estimate (see impact-estimation.md), not the duration | `info` |
-| Straggler / speculative-execution | `taskCount ≥ minTasks` = 10, **and** the stage lasts ≥ `floorPctWarn` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, such as one with no completion time; a shorter stage's tail can't cost more than its own duration, so every finding there would grade `info`, the slow tail itself still true), **and** either any speculative task ran, **or** straggler share > `shareWarn` = 5%, **or** straggler share > `shareWarnAtFloor` = 2.5% with the occupancy-clipped tail recovery (`tailRecoveryMs`, as for skew) already ≥ `floorPctWarn` (0.5% of app runtime). Skew's `ratioWarn` = 3 and the 0.5% floor are the values the task-level tail replay was tuned against. `warnPct`/`critPct` (10%/20% speculative share) and `floorPctWarn`/`floorPctCrit` (0.5%/2% of app runtime) do not set the band; they rank the straggler-vs-speculative tiers that pick which *metric* the finding reports. The data cut and skew's gate (`ratioWarn`, `minTasksForP95`, `dataShareMin`, `floorPctWarn`) are not this detector's thresholds: it reads skew's, as resolved for the run (`DetectorCtx.skewThresholds`), so a tail that data-driven is skew's unless skew's gate does not admit it, and tuning `skew` alone never drops a tail from both. A tail skew's gate admits that data does not explain is reported here without the share test, on any stage size | `info` |
+| Straggler / speculative-execution | `taskCount ≥ minTasks` = 10, **and** the stage lasts ≥ `floorPctWarn` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length, such as one with no completion time; a shorter stage's tail can't cost more than its own duration, so every finding there would grade `info`, the slow tail itself still true), **and** either any speculative task ran, **or** straggler share > `shareWarn` = 5%, **or** straggler share > `shareWarnAtFloor` = 2.5% with the occupancy-clipped tail recovery (`tailRecoveryMs`, as for skew) already ≥ `floorPctWarn` (0.5% of app runtime). Skew's `ratioWarn` = 3 and the 0.5% floor are the values the task-level tail replay was tuned against. `warnPct`/`critPct` (10%/20% speculative share) and `floorPctWarn`/`floorPctCrit` (0.5%/2% of app runtime) do not set the band; they rank the straggler-vs-speculative tiers that pick which *metric* the finding reports. The data cut and skew's gate (`ratioWarn`, `minTasksForP95`, `dataShareMin`, `floorPctWarn`) are not this detector's thresholds: it reads skew's, as resolved for the run (`DetectorCtx.skewThresholds`), so a tail that data-driven is skew's unless skew's gate does not admit it, and tuning `skew` alone never drops a tail from both. A tail skew's gate admits that data does not explain is reported here without the share test, on any stage size. A straggler share has no critical tier of its own | `info` |
 | Speculation waste | `speculationWastedAttempts ≥ minWasted` = 5 **and** `speculationWasteMs ≥ minWasteMs` = 60 s | `warning` |
 | Retry waste | `wastedAttempts ≥ minWasted` = 3 **and** `retryWasteMs ≥ minWasteMs` = 30 s (attempts superseded by a later retry of the same task) | `warning` |
 | Tiny tasks | `taskCount ≥ minTasks` = 100 **and** `taskDurationP50 ≤ maxP50` = 500 ms **and** `taskDurationP95 ≤ maxP95` = 1000 ms **and** the stage lasts ≥ `stageFloorPct` = 0.5% of the run (passes when the run's duration is unknown or the stage has zero length; coalescing can't save more than the stage's own duration, so every finding on a shorter stage would grade `info`, the tasks still tiny). Checked against each stage's measured per-task overhead (task wall time minus executor run time, the estimate's own input): a stage with 100+ tasks outside the P50/P95 gate would not save 0.5% of its run by coalescing, while one inside it can, and grades above `info` | `info` |
@@ -162,3 +162,61 @@ and the last `Caused by:` line, 2000 characters in all. While parsing, a stage k
 most 50 distinct failures (`StageRecord.failureDetails`, freed at finalize);
 later ones count only toward the tag. Redaction (`redact.ts`) replaces every
 `failureGroups[].message` and strips message text from `stackExcerpt`.
+
+### Threshold sources
+
+Where each threshold that is not read from Spark's own source comes from.
+
+| Threshold | Source status |
+|---|---|
+| `IMPACT_FLOOR_PCT_WARN` = 0.5% and `IMPACT_FLOOR_PCT_CRIT` = 2% (`impact-band.ts`), and every runtime floor that defaults to them or to 0.5% (`floorPctWarn`, `floorPctCrit`, `stageFloorPct`, `lowInfoFloorPct`, `lowParallelismFloorPct`, `taskStageSkewFloorPct`) | Our own noise floors, unvalidated |
+| `skew` `dataShareMin` = 0.5 | Our own majority cut |
+| `gc` `minRunTimeMs` = 10 s | Our own noise floor, so a stage that barely ran flags in neither direction |
+| `gc` `warnPct100` = 10 and `lowInfoPct100` = 5 | Carried over unchanged from an external GC heuristic |
+| `memoryUtilization` `idleCoreWarn` = 0.50 | Carried over from an external wasted-cores heuristic |
+| `memoryUtilization` `wasteBufferMultiplier` = 1.5 | Unverified buffer |
+| `nestedLoopJoin` `minOutputRows` = 1,000,000 and `minExpansion` = 10 | Our own noise floors; the stage time the finding is graded on decides how much it matters |
+| `pythonUdf` `minBytesSent` and `minStageMs` | Conservative guesses, not tuned against a real workload |
+| The assumed throughputs and overheads in `impact-model.ts` | Starting assumptions, unvalidated |
+
+### Spark defaults by release
+
+`sparkConfDefault()` (`packages/core/src/spark-conf.ts`) answers a property's default for the
+run's Spark version from this table. A property introduced by a release has no default before it.
+
+| Property | Default | From |
+|---|---|---|
+| `spark.speculation.multiplier` | 1.5, then 3 | 4.0.0 |
+| `spark.speculation.quantile` | 0.75, then 0.9 | 4.0.0 |
+| `spark.sql.adaptive.enabled` | false, then true | 3.2.0 |
+| `spark.sql.adaptive.skewJoin.enabled`, `spark.sql.adaptive.coalescePartitions.enabled` | true | 3.0.0 |
+| `spark.sql.adaptive.skewJoin.skewedPartitionFactor` = 5, `spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes` = 256MB | A partition is skewed above both the factor times the median partition and the threshold | 3.0.0 |
+| `spark.sql.adaptive.forceOptimizeSkewedJoin` | false; true accepts the extra shuffle a split can cost | 3.3.0 |
+| `spark.sql.adaptive.advisoryPartitionSizeInBytes` | 64MB (falls back to `spark.sql.adaptive.shuffle.targetPostShuffleInputSize`) | 3.0.0 |
+| `spark.sql.adaptive.coalescePartitions.parallelismFirst` | true; AQE then sizes merged tasks from `defaultParallelism` too, so a larger advisory size alone does not merge more | 3.2.0 |
+| `spark.executor.memoryOverheadFactor` | 0.1 (0.4 for Kubernetes non-JVM jobs, which the log does not tell apart); overhead is max(factor x executor memory, minimum) when `spark.executor.memoryOverhead` is unset | 3.3.0 |
+| `spark.executor.minMemoryOverhead` | 384m | 4.0.0 |
+| `spark.sql.execution.pythonUDF.arrow.enabled` | false, then true | 3.4.0 (introduced), 4.2.0 (on) |
+
+The remaining keys in the table (`spark.speculation`, `spark.executor.memory`, `spark.serializer`,
+`spark.shuffle.service.enabled`, the `spark.eventLog` switches, the dynamic-allocation bounds,
+`spark.sql.shuffle.partitions`, `spark.sql.autoBroadcastJoinThreshold`,
+`spark.sql.files.maxPartitionBytes`) have one default on every release.
+
+### Calibration data
+
+Calibrated on 14 real logs. Each figure counts findings or groups the default thresholds
+produce on them. A 0.5% runtime floor drops findings on stages that barely ran, where the claim
+is clipped to the stage and would grade `info`; the condition is still true there.
+
+| Detector | Calibration figure |
+|---|---|
+| `duplicatePlanSubtree` | 270 of 546 duplicate groups differ beyond AQE query-stage numbers (`occurrencesIdentical: false`); 340 of 545 findings sit on repeats whose stages are shorter than the floor; a WholeStageCodegen wrapper or an Exchange write half is the only operator outside the subtree on 426 stages |
+| `stageShape` (`lowParallelism`) | 2,839 of 3,005 findings fall under the floor, 2,168 of them on sub-second stages |
+| `shuffle` | 182 of 284 findings fall under the floor |
+| `spill` | 12 of 38 findings fall under the floor, all `info` |
+| `gc` (low GC) | 464 of 685 low-GC notes fall under the floor (701 `gc` findings in all) |
+| `slowHost` | 324 of 452 findings fall under the floor, all `info` |
+| `straggler` | 671 of 753 findings fall under the floor, none above `info`. Scored against a task-level replay of every stage (recoverable = replay with each task over 4x P50 capped at P50), admitting 2.5-5% shares whose clipped tail already clears `floorPctWarn` finds 3 stages (10-48 s) for 1 borderline miss; admitting every 2.5% share adds 86 findings below the floor |
+| `tinyTask` | 132 of 151 findings fall under the floor |
+| `coldStart` | The driver's own startup before the first job takes 36-47 s on every log, so the gap is measured from the first stage's submission, not from application start |

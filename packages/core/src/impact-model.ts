@@ -47,10 +47,8 @@ export function measuredTaskOverhead(stage: Stage): { perTaskMs: number; concurr
 
 // Both constants above are single-device figures (one NIC, one local disk). A stage's shuffle
 // reads and spills are spread over every executor that ran its tasks, each moving its own share
-// in parallel, so the stage's aggregate bandwidth scales with that executor count. Dividing a
-// stage-wide byte total by one device's bandwidth modeled the whole cluster as one link: on 14
-// real logs that claimed up to 1,870s of shuffle time on stages whose tasks measured ~0s of
-// shuffle fetch wait (222 of 284 shuffle findings). No executor data falls back to one device.
+// in parallel, so the stage's aggregate bandwidth scales with that executor count. No executor
+// data falls back to one device.
 export function stageIoParallelism(stage: Stage): number {
   const executors = Array.isArray(stage.executorStats) ? stage.executorStats.length : 0;
   return Math.max(1, executors);
@@ -59,9 +57,7 @@ export function stageIoParallelism(stage: Stage): number {
 // Wall-clock the stage's tasks spent blocked fetching shuffle blocks: fetchWaitTime is a
 // cross-task sum like executorRunTime, so dividing by the stage's average concurrency converts it
 // (the gc estimate's conversion). Null when the stage has no run time or duration to convert with.
-// On 14 real logs the link model claimed 2780s over 284 shuffle findings, 256s once capped at
-// this, with about zero fetch wait on 5 of the 10 non-info ones: reads that overlapped compute
-// stalled nothing.
+// The link model caps at this because reads that overlap compute stall nothing.
 export function fetchWaitWallClockMs(stage: Stage): number | null {
   const fetchWaitMs = stage.fetchWaitTime;
   const runTimeMs = stage.executorRunTime ?? 0;
@@ -70,10 +66,9 @@ export function fetchWaitWallClockMs(stage: Stage): number | null {
   return fetchWaitMs / (runTimeMs / durationMs);
 }
 
-// Wall-clock a stage's wasted (retried) attempts cost it. Each one delayed only its own task, and
-// attempts of different tasks ran side by side: one lost executor fails every task it was running
-// at once (4 wasted attempts of 36.6s each, all first attempts, on a real stage that ran 41 tasks
-// at once, claimed as 146.6s). So the stage lost at most its longest retry chain, the most attempts
+// Wall-clock a stage's wasted (retried) attempts cost it. Each one delays only its own task, and
+// attempts of different tasks run side by side: one lost executor fails every task it was running
+// at once. So the stage loses at most its longest retry chain, the most attempts
 // one task wasted (its highest attempt number + 1) times the mean wasted attempt, or their summed
 // time spread over its slots, whichever is larger. Without a sample of every wasted attempt
 // (retryTaskSamples is capped), the chain isn't known: the summed time.
@@ -103,10 +98,8 @@ export const EXECUTOR_STARTUP_OVERHEAD_MS = 15000;
 // Assumed re-read throughput, shared by cachingOpportunity and cacheUtilization.
 export const RE_READ_THROUGHPUT_BPS = 125_000_000;
 
-// Below this share of executorRunTime spent on CPU, a stage's tasks were idle, waiting on something
-// outside Spark: on 14 real logs (2026-09-23) every non-Python stage under 1% was a JDBC read, a
-// file listing or a Delta log read, while file writes, which more partitions do parallelize,
-// start at 2%.
+// Below this share of executorRunTime spent on CPU, a stage's tasks are idle, waiting on something
+// outside Spark (rationale: impact-estimation/caveats-tuning-and-coverage.md, Idle CPU share).
 const IDLE_CPU_SHARE_MAX = 0.01;
 
 // True when the stage's tasks spent under IDLE_CPU_SHARE_MAX of their run time on CPU. False when

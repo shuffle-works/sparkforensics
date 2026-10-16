@@ -193,8 +193,7 @@ export interface SingleStageEstimateOptions {
   // fix leaves (taskDurationMax - claim) or the stage's core work spread over every core.
   shortensLongestTask?: boolean;
   // Core work (task time) the fix itself removes (tailRemovedWorkMs): the core-work floor is then
-  // the work left after it. Flooring a tail fix at the stage's work before the fix held back most
-  // of the claim on stages whose stragglers were a large part of their core time.
+  // the work left after it, not the work before the fix.
   removedCoreWorkMs?: number;
   // Longest task the fix leaves, when known (stragglerFixLongestTaskMs): the stage can't finish
   // before it, however much of the tail the claim spreads over the stage's slots.

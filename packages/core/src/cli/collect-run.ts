@@ -7,8 +7,7 @@ import { routeMessage, type IngestHandlers } from '../ingest.ts';
 import type { AppModel } from '../types.ts';
 import { mcpError } from '../mcp-error.ts';
 
-// No whole-file arrayBuffer(): the parser only ever reads bounded slices, and a
-// whole-file read is what capped local logs at 2 GiB.
+// No whole-file arrayBuffer(): the parser reads bounded slices, so a local log is not capped at 2 GiB.
 export interface FileLike {
   name: string; size: number;
   slice(start: number, end: number): { arrayBuffer(): Promise<ArrayBuffer> };

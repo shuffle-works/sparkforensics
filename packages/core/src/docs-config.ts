@@ -60,11 +60,9 @@ export const METRIC_ANCHORS: Record<string, string> = {
 // section, and gating keeps that from becoming a dead "Learn more" link. docs-config.test.js
 // asserts this stays a subset of the real ids so it can't drift.
 export const KNOWN_DOC_ANCHORS: Set<string> = new Set([
-  // Page sections
   '#intro', '#spark-architecture', '#memory-model', '#partitioning', '#joins',
   '#shuffle', '#data-formats', '#table-formats', '#caching', '#pyspark', '#aqe',
   '#cluster-config', '#anti-patterns', '#metrics', '#config',
-  // Bottleneck sections
   '#bottleneck-cold-start', '#bottleneck-failures', '#bottleneck-gc',
   '#bottleneck-job-failure-rate', '#bottleneck-retry-waste', '#bottleneck-shuffle',
   '#bottleneck-skew', '#bottleneck-slow-host', '#bottleneck-spill',
@@ -75,10 +73,8 @@ export const KNOWN_DOC_ANCHORS: Set<string> = new Set([
   '#bottleneck-partition-sizing', '#bottleneck-speculation-waste',
   '#bottleneck-core-locality', '#bottleneck-caching-opportunity',
   '#bottleneck-autoscaling-churn', '#bottleneck-cache-utilization',
-  // Config-audit sections
   '#config-autoscale-bounds', '#config-memory-overhead', '#config-serializer',
   '#config-shuffle-service',
-  // Metric glossary entries
   ...Object.values(METRIC_ANCHORS),
 ]);
 

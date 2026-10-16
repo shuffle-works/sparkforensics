@@ -116,9 +116,9 @@ describe('listRunsLocal', () => {
     await expect(listRunsLocal({ dir: filePath })).rejects.toMatchObject({ code: 'directory-not-found' });
   });
 
-  // Bug: Date.parse of an unparseable minDate/maxDate returns NaN, and every comparison against
-  // NaN is false, that used to silently filter out every run rather than surfacing the mistake,
-  // indistinguishable from a correctly-filtered "no runs matched" result.
+  // Date.parse of an unparseable minDate/maxDate returns NaN and every comparison against NaN
+  // is false, which would silently filter out every run, indistinguishable from a
+  // correctly-filtered "no runs matched" result.
   it('throws invalid-date-filter for an unparseable minDate instead of silently returning zero runs', async () => {
     const dir = tmpDir();
     writeEventLog(join(dir, 'app1.ndjson'), { appId: 'app-1' });
@@ -133,9 +133,8 @@ describe('listRunsLocal', () => {
       .rejects.toMatchObject({ code: 'invalid-date-filter' });
   });
 
-  // Bug: local mode produced source: { path } with no attempt id, unlike SHS mode's
-  // attempts[0]/attemptId, so two attempts of the same Spark app (same appId, different
-  // `_<n>` filename suffix) couldn't be told apart.
+  // Local mode must carry an attempt id in source (like SHS mode's attempts[0]/attemptId), so two
+  // attempts of the same Spark app (same appId, different `_<n>` filename suffix) are told apart.
   it.skipIf(!existsSync(ATTEMPT_FIXTURE_1) || !existsSync(ATTEMPT_FIXTURE_2))(
     'stamps a distinct attemptId per numbered-suffix attempt of the same app',
     async () => {

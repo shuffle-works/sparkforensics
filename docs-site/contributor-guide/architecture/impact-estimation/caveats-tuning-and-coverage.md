@@ -49,6 +49,30 @@ the tuned detectors. The estimate itself is computed the same way; nothing resca
 The impact bands (`impact-band.ts`) keep their default floors on a tuned run, except that a
 tuned `skew` or `straggler` `floorPctWarn`/`floorPctCrit` grades that entry's own findings.
 
+## Idle CPU share
+
+`stageSlowness` claims nothing for a stage that read no input and no shuffle bytes and whose
+tasks spent under `IDLE_CPU_SHARE_MAX` (`packages/core/src/impact-model.ts`) = 1% of
+`executorRunTime` on CPU: they sat waiting on something outside Spark, which more partitions
+do not split. On the calibration logs every non-Python stage under 1% is a JDBC read, a file
+listing or a Delta log read, while file writes, which more partitions do parallelize, start at
+2%. The share is not used when the log records no CPU time (older Spark) or the stage ran Python
+through a Python worker (a `PythonRDD` stage, or a Python UDF operator in its SQL plan): the
+worker process's CPU is not in `executorCpuTime`, which counts the JVM task thread only, so such
+stages read 0.1% while computing.
+
+## Calibration data
+
+Calibrated on 14 real logs. The per-detector floors are in
+[Calibration data](../detector-contract/threshold-tables.md#calibration-data); these figures
+back the models. Single-stage examples sit in the coverage table below.
+
+| Model or floor | Figure |
+|---|---|
+| Per-executor I/O parallelism (`stageIoParallelism`) | A model that divides a stage's bytes by one device's bandwidth claims up to 1,870 s of shuffle time on stages whose tasks measured about 0 s of shuffle fetch wait (222 of 284 shuffle findings) |
+| Fetch-wait cap on `shuffle` | The per-executor link model alone totals 2,780 s over 284 shuffle findings and 256 s once capped at the measured fetch wait, with about zero fetch wait on 5 of the 10 non-`info` findings: reads that overlapped compute stalled nothing |
+| Retry wall-clock (`retryWallClockMs`) | One stage lost 4 attempts of 36.6 s each, all first attempts, while running 41 tasks at once: the summed time is 146.6 s, the longest-chain claim is 36.6 s |
+
 ## Per-finding-type coverage
 
 One row per distinct `type` string `packages/core/src/detectors.ts` actually emits: every

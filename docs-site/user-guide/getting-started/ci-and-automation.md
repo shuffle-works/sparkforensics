@@ -638,8 +638,10 @@ With `--redact`, the host names the report pseudonymizes become `host-N` in
 every value: the values of `*.host` and `*.hostname` properties, executor
 hosts, and IP or EC2-style addresses. `spark.app.name` becomes the
 application's `app-N` pseudonym. A host name that appears only in some other
-property, such as `spark.yarn.historyServer.address`, is left as is; withhold
-it with `--conf-redact-regex` or leave it out with `--conf-keys`.
+property is left as is. The properties known to carry real host names this way
+are `spark.master`, `spark.yarn.historyServer.address` and the YARN proxy and
+HA keys ending in `AmIpFilter.param.PROXY_HOSTS` and `RM_HA_URLS`. Withhold
+them with `--conf-redact-regex` or leave them out with `--conf-keys`.
 
 ## Pairing stages across runs {#pairing-stages-across-runs}
 

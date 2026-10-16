@@ -18,7 +18,7 @@ function renderRoute(ui: ReactElement) {
 
 // React Flow renders no edge <path> in jsdom (no layout/measure), so
 // connectivity can't be read from the DOM. Stubbing PlanGraphCanvas lets this
-// test inspect the actual `model.edges` PlanGraphRoute computes, which the bug broke.
+// test inspect the actual `model.edges` PlanGraphRoute computes.
 let lastCanvasModel: PlanGraphModel | null = null;
 let lastVisibleNodeIds: Set<string> | undefined;
 let lastVisibleEdges: PlanGraphModel['edges'] | undefined;

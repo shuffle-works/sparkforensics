@@ -4,11 +4,11 @@ import type {
 } from './types.ts';
 import type { RunInterpretation } from './run-interpretation.ts';
 
-/** Version 2 carries the interpretation layer (`interpretation`) and `provenance`. Version 3 types
- * findings per detector: a text figure (stageFailed, configAudit, incompleteRun) moved from `value`
- * to `valueText`, and Plan Advisor findings always carry `planNodeIds`. The export bundle renders
- * only the version it was built for and refuses any other, since an older payload lacks the
- * conclusions it would otherwise have to derive, or carries them in fields this bundle no longer reads. */
+/** The export payload format. It carries the interpretation layer (`interpretation`) and `provenance`,
+ * and types findings per detector: a text figure (stageFailed, configAudit, incompleteRun) is in
+ * `valueText`, and Plan Advisor findings always carry `planNodeIds`. The export bundle renders only
+ * this version and refuses any other: a payload of another version lacks the conclusions the bundle
+ * would otherwise have to derive, or carries them in fields it does not read. */
 export const EXPORT_DATA_SCHEMA_VERSION = 3;
 
 /** @sparkforensics/core's own version (packages/core/package.json, which a test keeps in sync).

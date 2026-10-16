@@ -139,7 +139,9 @@ the snapshot and commit it with the change:
 node dev/bench-analyze.mjs --update dev/corpus-snapshot.json
 ```
 
-Both default to `dev/log-corpus/logs` and its `external/` folder. Only
+Both default to `dev/log-corpus/logs` and its `external/` folder. A directory
+argument expands one level (every regular file, sorted), except a Spark
+rolling-log directory (`events_<n>_*` files), which is analyzed as one run. Only
 public corpus logs belong in the snapshot: never pass private logs to
 `--update`.
 
@@ -155,11 +157,34 @@ detector, threshold, estimate or the vendored fzstd.
 - `node --max-old-space-size=12000 dev/eval-tail-replay.mjs [--set detector.threshold=value] [--verbose] <file|dir>...`
   scores skew and straggler against a task-level replay (precision, recall,
   estimate error). `--verbose` lists each miss, false positive and estimate
-  more than 2x off.
+  more than 2x off. For every stage with 2+ tasks it replays the tasks with
+  list scheduling (slots = the stage's observed peak concurrency, tasks in
+  launch order) twice: with real durations, and with every task over 4x P50
+  capped at P50. A stage is a positive when the difference is at least 0.5% of
+  app runtime. The replay is independent of the detectors' own
+  `computeTailReplayRecoveryMs`, so it checks that claim.
 - `node dev/fuzz-fzstd.mjs --upstream <pristine fzstd esm/index.mjs> <log.zstd>...`
   checks the locally patched `packages/core/src/vendor/fzstd.js` against
   upstream, on whole logs and on randomly corrupted prefixes. Run it after any
-  fzstd edit.
+  fzstd edit. `--iterations N`, `--seed N` and `--mutations N` tune the random
+  cases; it exits 1 when any case differs. Whole-log output must be
+  byte-identical, and on corrupted or truncated prefixes the partial output and
+  the error must match. The one known difference: a corrupt window size that
+  overflows negative throws "Invalid typed array length" at the same byte in
+  both, with a different number in the message. Get upstream with
+  `npm pack fzstd@0.1.1` and extract `package/esm/index.mjs` (its sha256 is in
+  the vendored file's header).
+- `node dev/bench-extraction-coverage.mjs [corpus-dir] [--format json] [--strict]`
+  reports how much of the corpus's event-log content becomes structured data.
+  Each non-blank line of an included event type lands in one bucket:
+  `extracted` (known event, passes its schema), `unmodeled` (valid JSON whose
+  `Event` is not a modeled one), `schemaFail` (known event that fails its own
+  schema, which signals drift against real Spark output) or `malformed` (not
+  JSON). `--format json` prints a machine-readable summary and `--strict`
+  exits 1 on any `schemaFail`.
+- `node dev/bench-event-validation.mjs [fixture-dir]` measures the throughput
+  that per-line `SparkEventSchema.safeParse` adds on top of `JSON.parse` on
+  the largest fixture, decompressed in memory first.
 
 CI also runs a `node18` job, because the published `cli`, `mcp` and
 `server` packages declare `engines.node >=18` while vitest needs Node 22+.

@@ -86,7 +86,7 @@ const DELTA_CLASS: Record<MetricDelta['direction'], string> = {
   unavailable: 'text-muted-foreground',
 };
 
-// Belt-and-suspenders alongside src/run-comparison.ts's own NEUTRAL_METRIC_KEYS
+// Belt-and-suspenders alongside packages/core/src/run-comparison.ts's own NEUTRAL_METRIC_KEYS
 // check inside direction(): forces neutral coloring for these volume/count
 // keys even if a `direction` value ever arrives mismatched (an older cached
 // response, a hand-built fixture), since less/more input/output data or
@@ -266,12 +266,8 @@ export function RunComparison({
 
   return (
     <div
-      // Shares Dashboard's marker: the host site's chrome-toggle script
-      // (shuffle-works-site-build) hides the shared nav/footer while this
-      // testid is present. This is a separate full-page route that
-      // replaces Dashboard's own "dashboard" node (App.tsx renders one or
-      // the other, never both), so without this it would drop the only
-      // signal that script has and let the chrome pop back in.
+      // Shares Dashboard's test id: the host site hides its shared nav/footer
+      // while it is present, and this route replaces Dashboard's node.
       data-testid="dashboard"
       className="mx-auto flex max-w-[72rem] flex-col gap-4 px-4 py-6 sm:px-6"
     >

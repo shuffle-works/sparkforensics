@@ -24,8 +24,6 @@ import type { Stage, PlanNode } from './types.ts';
  * `runtimeCoverage`). Additive changes keep it; a consumer refuses a version it does not know. */
 export const COMPARISON_SCHEMA_VERSION = 1;
 
-// ---- Comparison normalizer ------------------------------------------------------------------
-
 // Targeted patches for the volatile tokens that differ between two runs of one job. Each applies
 // on top of `normalizeDetail`, in this order. No blanket numeric or path stripping: those fuse
 // distinct stages of one run.
@@ -95,8 +93,6 @@ export function comparisonDetailNormalizer(callerPatterns: readonly RegExp[] = [
   };
 }
 
-// ---- Identity and bookkeeping ---------------------------------------------------------------
-
 /** `stageIdentity`'s recipe (normalized stage name plus the attributed nodes' fingerprint) with the
  * comparison normalizer. Internal to the aligner: consumers key on a pair's `pairId`. */
 export function comparisonIdentity(
@@ -124,8 +120,6 @@ export function isDeltaBookkeepingStage(
   }
   return scans > 0;
 }
-
-// ---- Alignment ------------------------------------------------------------------------------
 
 export const PAIR_DELTA_METRICS = [
   'executorRunTime', 'executorCpuTime', 'memoryBytesSpilled', 'diskBytesSpilled',
@@ -268,8 +262,6 @@ function sumFigures(rows: Figures[]): Figures {
 
 const ascending = (a: number, b: number): number => a - b;
 
-// ---- Per-run index --------------------------------------------------------------------------
-
 // What the aligner knows about one SQL execution (or the pseudo-execution of stages outside any):
 // the non-bookkeeping stages it ran and the three things its similarity reads.
 interface ExecInfo {
@@ -394,8 +386,6 @@ function executionSimilarity(a: ExecInfo, b: ExecInfo): number {
   }
   return Math.round((1000 * sum) / weight);
 }
-
-// ---- Stage alignment inside one execution pair -----------------------------------------------
 
 interface RawPair { baseId: number; candId: number; quality: StagePair['quality']; score: number }
 

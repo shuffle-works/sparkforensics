@@ -164,7 +164,7 @@ test('is wrapped in React.memo', () => {
   expect((CoreUsageArea as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for('react.memo'));
 });
 
-// Regression: the chart model is memoized on the interpretation, so an
+// The chart model is memoized on the interpretation, so an
 // unrelated parent re-render must not re-downsample it, and the widget never
 // builds the locality series itself (the interpretation carries it).
 test('does not rebuild or re-downsample the locality series on an unrelated re-render', async () => {
@@ -191,9 +191,9 @@ test('does not rebuild or re-downsample the locality series on an unrelated re-r
   expect((buildLocalityChart as Mock).mock.calls.length).toBe(chartCallsBefore);
 });
 
-// Regression: applySnapshot mutates appModel's fields in place on a cached-file
+// applySnapshot mutates appModel's fields in place on a cached-file
 // switch; the live interpreter reinterprets it, and the widget must follow the
-// new interpretation rather than a memo of the old one.
+// new interpretation rather than a stale memo.
 test('reflects a new interpretation after a cached-file switch', async () => {
   const appModel = buildAppModel();
 

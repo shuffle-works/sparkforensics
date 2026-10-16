@@ -46,9 +46,7 @@ function StageFailedRow({ finding }: { finding: FindingOf<'stageFailed'> & { sta
 }
 
 /** Board section for outright `stageFailed` attempts: every flagged stage
- * gets its own row (never just the worst). Split out of the combined
- * `Failures.tsx`; see `TaskFailures.tsx` and `RetryWaste.tsx` for its two
- * siblings. */
+ * gets its own row (never just the worst). */
 export function StageFailed({ appModel, catalog, defaultCollapsed = true }: StageFailedProps) {
   const [page, setPage] = useState(0);
   const { sortMode, setSortMode, orderBy } = useSortMode();

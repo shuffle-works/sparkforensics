@@ -102,7 +102,7 @@ export const WallClock = memo(function WallClock() {
             // ('value'), which for these four specific labels happens to come
             // out reversed relative to the bar; `itemSorter` re-ranks the
             // computed payload to match `segments`' actual order (recharts
-            // 3.x's <Legend> no longer accepts a `payload` prop directly,
+            // 3.x's <Legend> does not accept a `payload` prop directly,
             // passing one to a custom `content` element gets clobbered, since
             // Recharts clones that element with its own computed props). The
             // computed payload's color also just echoes each <Bar fill>,

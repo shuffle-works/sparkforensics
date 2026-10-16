@@ -1,12 +1,10 @@
-// Whole-run aggregation pass. Runs INSIDE parser-worker.js over the retained
-// per-task launch/finish timestamps in taskStore, so raw task data never
-// reaches the main thread: only the compact summary below is posted. Pure and
-// worker-agnostic so it is unit-testable without a Worker.
+// Whole-run aggregation pass. Runs INSIDE parser-worker.ts over the retained per-task
+// launch/finish timestamps in taskStore, so raw task data never reaches the main thread: only the
+// compact summary below is posted. Pure and worker-agnostic so it is unit-testable without a Worker.
 //
-// Uses computeCoreTimeSeries in coreCount mode (O(n log n)) to derive the
-// busy-core histogram; the time-bucket mode is intentionally NOT used here
-// because it is O(buckets × segments) and a whole run can hold millions of
-// tasks (see core-time-series.js PERF note).
+// Uses computeCoreTimeSeries in coreCount mode (O(n log n)) to derive the busy-core histogram; the
+// time-bucket mode is intentionally NOT used here because it is O(buckets × segments) and a whole
+// run can hold millions of tasks.
 
 import { FIELDS } from './stage-quantiles.ts';
 import { computeCoreTimeSeries } from './core-time-series.ts';

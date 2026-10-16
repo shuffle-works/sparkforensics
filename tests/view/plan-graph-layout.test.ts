@@ -92,7 +92,7 @@ describe('layoutWithDagre', () => {
   });
 
   it('places an edge\'s target (child/producer, e.g. a Scan) left of its source (parent/consumer, e.g. a Join)', () => {
-    // Matches plan-graph-model.js's `source: parentId, target: id`, the
+    // Matches plan-graph-model.ts's `source: parentId, target: id`, the
     // target is the plan-tree child, computed before its parent consumes it.
     const nodes = [graphNode('join'), graphNode('scan')];
     const edges: PlanGraphEdge[] = [{ id: 'join->scan', source: 'join', target: 'scan' }];

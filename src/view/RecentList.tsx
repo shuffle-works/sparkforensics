@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { formatBytes } from '@sparkforensics/core/format-utils.ts';
 import type { RecentFileEntry } from '@sparkforensics/core/recent-files.ts';
 
-// Canonical shape lives in src/recent-files.ts (the IndexedDB layer); re-export
+// Canonical shape lives in packages/core/src/recent-files.ts (the IndexedDB layer); re-export
 // it here for callers importing from this module.
 export type { RecentFileEntry };
 

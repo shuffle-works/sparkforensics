@@ -144,7 +144,8 @@ A `Finding` may carry `confidence: 'low' | 'medium' |
 renders it on widget rows (the verdict's steps print their own "verify before acting" line), gated to Advanced density: a plain "&lt;confidence&gt;
 confidence" badge whose tooltip carries the full `validationRequired` text. A finding with no
 `confidence` field renders identically to a fully-validated one, so every detector whose
-thresholds are our own unvalidated noise floor (marked `NOT SOURCED` in a code comment) should
+thresholds are our own unvalidated noise floor (listed in
+[Threshold sources](./detector-contract/threshold-tables.md#threshold-sources)) should
 set both fields, not just the ones that happen to already have `RowStatusCluster` wired into
 their widget. `skew`, `straggler`, and `gc` set `confidence` for exactly this reason: their
 runtime-floor thresholds carry the same kind of unvalidated-noise-floor caveat `coreLocality`,
@@ -209,6 +210,14 @@ conditions Spark's `OptimizeSkewedJoin` checks (join shape, join type, threshold
 and reads the thresholds through the same effective conf. It returns `null` when the plan cannot
 say, and the detector then keeps the general advice. A new case is a new `AqeSkewCase`, a row in
 `finding-presentation.ts`'s generic lines and a row in the user guide's `SKEW` table.
+
+## Finding ids
+
+A finding's `id` is a stable hash of its `type`, its location (stage, SQL execution or audited
+config property), `metric`, `value` and the per-type discriminator fields in `ID_DISCRIMINATORS`
+(`packages/core/src/analyzer.ts`): the fields that tell apart sibling findings sharing a location
+and metric. Reordering or renaming a discriminator slot changes every id and needs an
+`EVIDENCE_SCHEMA_VERSION` bump.
 
 ## Cross-detector suppression
 

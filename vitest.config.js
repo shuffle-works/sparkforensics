@@ -38,10 +38,10 @@ export default defineConfig({
       // would report it as untouched dead code.
       include: ['src/**'],
       exclude: ['src/vendor/**'],
-      // Non-blocking floor (issue #53): baseline ~75% statements / 66% branches
+      // Non-blocking floor: baseline ~75% statements / 66% branches
       // / 81% functions / 78% lines (src/** only). Not enforced: vitest's
       // coverage.thresholds has no warn-only mode, so setting it exits 1 the
-      // moment any metric dips. Wiring a real gate is deferred (see PR).
+      // moment any metric dips.
     },
   },
 });

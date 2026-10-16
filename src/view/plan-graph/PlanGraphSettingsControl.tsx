@@ -13,16 +13,13 @@ export interface PlanGraphSettingsControlProps {
   durationMode: PlanGraphDurationMode;
   onDurationModeChange: (mode: PlanGraphDurationMode) => void;
   /** Icon-only trigger (aria-label "Settings") for the vertical control rail;
-   * default is the labeled "Settings" button used in the topbar. */
+   * default is the labeled "Settings" button. */
   iconOnly?: boolean;
 }
 
-/** The node-category filter and the duration-attribution scope used to sit
- * inline in PlanGraphRoute's Topbar row (two radiogroups plus a divider),
- * crowding it alongside the expand/close buttons. This folds both into one
- * popover. A Popover, not a Menu, is deliberate: a Menu closes on item click,
- * which would force reopening it to change the second control after the
- * first; a Popover stays open until the user clicks away. */
+/** The node-category filter and the duration-attribution scope in one popover.
+ * A Popover, not a Menu, so changing the first control does not close it before
+ * the second is changed. */
 export function PlanGraphSettingsControl({
   filterMode,
   onFilterModeChange,

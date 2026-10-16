@@ -164,9 +164,8 @@ export function buildDurationMap(
     const s = appModel.stages.get(id);
     if (s) stagesById.set(id, { submittedAt: s.submittedAt, completedAt: s.completedAt });
   }
-  // attributeStageDurationToPlan reads its 3rd arg's own `.stageIds` field;
-  // override it with the derived array rather than the (always-empty on real
-  // data) one already on `sqlExec`.
+  // attributeStageDurationToPlan reads `.stageIds`; use the derived array, not sqlExec's own
+  // (see contributor-guide/architecture/detector-contract/plan-attribution.md).
   return durationMode === 'inclusive'
     ? attributeStageDurationToPlanInclusive(planTree, stagesById, { ...sqlExec, stageIds })
     : attributeStageDurationToPlan(planTree, stagesById, { ...sqlExec, stageIds });

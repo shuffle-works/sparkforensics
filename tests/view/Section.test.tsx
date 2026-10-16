@@ -6,7 +6,7 @@ import { Section } from '../../src/view/Section';
 
 describe('Section', () => {
   it('lets long values wrap instead of overflowing a narrow container', () => {
-    // Regression: grid needs min-w-0 and the value cell must break long
+    // The grid needs min-w-0 and the value cell must break long
     // strings, else a deep join chain's long key/path clips the Stage Detail modal.
     const longValue = 'a'.repeat(200);
     render(<Section rows={[['Path', longValue]]} />);

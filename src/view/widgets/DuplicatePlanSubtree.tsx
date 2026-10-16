@@ -23,8 +23,6 @@ import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 
 export type DuplicatePlanSubtreeProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
-/** One flagged finding's row, anchored so a triage route focuses the row
- * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
 function DuplicatePlanSubtreeRow({ finding }: { finding: FindingOf<'duplicatePlanSubtree'> }) {
   const anchor = useAnchoredRow([finding]);
 
@@ -46,9 +44,7 @@ function DuplicatePlanSubtreeRow({ finding }: { finding: FindingOf<'duplicatePla
 }
 
 /** Board section for `duplicatePlanSubtree` findings: a query plan that
- * repeats an identical subtree, wasting compute the planner could share.
- * Split out of the former combined `PlanFindings.tsx`; see `SmallFiles.tsx`,
- * `UnderBroadcast.tsx`, and `OverBroadcast.tsx` for its three siblings. */
+ * repeats an identical subtree, wasting compute the planner could share. */
 export const DuplicatePlanSubtree = memo(function DuplicatePlanSubtree({ catalog, defaultCollapsed = true }: DuplicatePlanSubtreeProps) {
   const { sortMode, setSortMode, orderBy } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
@@ -89,8 +85,6 @@ export const DuplicatePlanSubtree = memo(function DuplicatePlanSubtree({ catalog
         </>
       }
       statusBadge={
-        // `sqlPlan` is a widget-wide evidence constant (this detector always reads
-        // the resolved SQL plan), so it sits on the header once, not per row.
         <AdvancedOnly>
           <RowStatusCluster
             confidence={groupConfidence?.confidence}

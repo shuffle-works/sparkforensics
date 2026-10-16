@@ -55,9 +55,7 @@ function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stage
 }
 
 /** Board section for `retryWaste` findings: retried task attempts that
- * wasted executor time even though the stage ultimately completed. Split
- * out of the former combined `Failures.tsx`; see `StageFailed.tsx` and
- * `TaskFailures.tsx` for its two siblings. */
+ * wasted executor time even though the stage ultimately completed. */
 export function RetryWaste({ appModel, catalog, defaultCollapsed = true }: RetryWasteProps) {
   const [page, setPage] = useState(0);
   const { sortMode, setSortMode, orderBy } = useSortMode();

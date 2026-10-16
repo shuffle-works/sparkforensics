@@ -172,7 +172,7 @@ describe('estimateSingleStage', () => {
   it('shortensLongestTask: floors a tail claim at the longest task the fix leaves, not at the current one', () => {
     const stages = new Map([[0, stage(0, { submittedAt: 0, completedAt: 10000, taskDurationMax: 9500 })]]);
     const info = computeOccupancy(stages, 0);
-    // Plain clip: ceiling 9500 leaves 500ms. Tail claim of 9000: post-fix longest task 500, room 9500.
+    // Plain clip: ceiling 9500 leaves 500ms. Tail claim of 9000: longest task after the fix 500, room 9500.
     expect(estimateSingleStage(9000, 0, stages, info).wallClock.high).toBe(500);
     expect(estimateSingleStage(9000, 0, stages, info, { shortensLongestTask: true }).wallClock.high).toBe(9000);
   });

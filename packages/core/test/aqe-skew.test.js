@@ -9,8 +9,6 @@ import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
 const MiB = 1024 * 1024;
 const KEY_REMEDY = 'salt the key or repartition on a better key';
 
-// ---- plan builders (the shapes of Spark 3.5 and 4.0 final adaptive plans) ----
-
 const node = (name, children = [], extra = {}) => ({ name, detail: extra.detail ?? name, metrics: extra.metrics ?? [], children, ...(extra.stageIds ? { stageIds: extra.stageIds } : {}) });
 // `bytes` is what the side's exchange wrote: the plan metric that says how much each join input shuffled.
 const exchange = (origin = 'ENSURE_REQUIREMENTS', bytes = null, stageIds = null) => node('Exchange', [node('Exchange', [], { detail: '' })], {
@@ -294,7 +292,6 @@ describe('join recognition', () => {
   });
 });
 
-// ---- real Spark logs ----
 // Each log is a local Spark run with three queries over a key holding 60% of the rows, joined to a
 // small table with broadcast off, 16 shuffle partitions and runtime skew settings: execution 0 an
 // inner join AQE split, execution 1 a left outer join with the skew on the right side, execution 2

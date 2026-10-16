@@ -1,5 +1,4 @@
-// §7 ETL-phase time attribution (Onehouse Spark Analyzer). Heuristic: classify each stage by
-// byte-flow shape. A stage can be both Transform and Load, so buckets overlap and need not sum to
+// ETL-phase time attribution. Heuristic: classify each stage by byte-flow shape. A stage can be both Transform and Load, so buckets overlap and need not sum to
 // wall-clock. Storage-format-aware attribution (Hudi/Delta/Iceberg) isn't portable, out of scope.
 interface EtlPhaseStage {
   submittedAt?: number;

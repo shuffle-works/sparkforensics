@@ -51,9 +51,7 @@ function rowLabel(f: MemoryUtilizationFinding): string {
   return f.variant === 'idleCores' ? 'Idle cores' : 'Memory waste';
 }
 
-/** One flagged finding's row, anchored so a triage route focuses the row
- * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab
- * order. The confidence/evidence marker lives on the widget header (see
+/** The confidence/evidence marker lives on the widget header (see
  * `statusBadge` below), not per row: `executorMetrics` evidence is a
  * widget-wide constant, so repeating it on every row would just be noise. */
 function MemoryRow({ finding }: { finding: MemoryUtilizationFinding }) {
@@ -96,8 +94,7 @@ function MemoryRow({ finding }: { finding: MemoryUtilizationFinding }) {
 
 /** Executor memory utilization. Lists every affected sub-finding: idle cores,
  * per-executor heap bands, and the memory-waste model, never just the worst.
- * `utilization` is now `ExecutorUtilization.tsx`'s own type. `memoryUtilization`
- * is a `reference`-region type excluded from always-mounted status (see
+ * `memoryUtilization` is a `reference`-region type excluded from always-mounted status (see
  * `ALWAYS_MOUNTED_EXCEPTIONS` in `detector-registry.tsx`): like an ordinary
  * action widget, it returns `null` with no findings and collapses to a
  * `CleanCheckRow` instead. */
@@ -133,8 +130,6 @@ export const MemoryUtilization = memo(function MemoryUtilization({ catalog, defa
       impactBand={worstImpactBand(findings)}
       badges={<TagBadge type="memoryUtilization" impactBand={worstImpactBand(findings) ?? 'info'} />}
       statusBadge={
-        // `executorMetrics` is a widget-wide evidence constant, so it sits on
-        // the header once, not per row.
         <AdvancedOnly>
           <RowStatusCluster
             confidence={groupConfidence?.confidence}

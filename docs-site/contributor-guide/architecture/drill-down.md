@@ -123,3 +123,6 @@ ahead of the `#anchor` hash purely to change the string and force a real
 reload; the page never reads that param itself: it reads its light/dark
 preference once, from the `vitepress-theme-appearance` localStorage key
 `ThemeProvider` keeps current, the moment it boots.
+
+The panel's popup is `z-[60]`, above the app's other modal dialogs (`z-50`), so a
+dialog's backdrop blur dims the dashboard behind it without also blurring the docs.

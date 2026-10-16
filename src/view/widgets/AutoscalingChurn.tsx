@@ -112,8 +112,7 @@ function AutoscalingChurnRow({ finding }: { finding: Finding }) {
 
 // memo: skip recomputing bucketChurn when only the finding filter changes.
 export const AutoscalingChurn = memo(function AutoscalingChurn({ appModel, activeFileId, catalog = [], defaultCollapsed = true }: AutoscalingChurnProps) {
-  // Whole derived-series pipeline (including the empty-events guard) in one
-  // `useMemo`; hooks run unconditionally, so the early return can't precede it.
+  // Whole derived-series pipeline (including the empty-events guard) in one `useMemo`.
   const churn: ChurnModel = useMemo(() => {
     const added = appModel.executors.added;
     const removed = appModel.executors.removed;

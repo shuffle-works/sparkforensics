@@ -43,8 +43,7 @@ export type EvidenceReasonCode =
   | 'noUsableCoreTimeAggregate' | 'outsideEventLogScope' | 'parseIncomplete';
 // Contract-pinned evidence `eventType`: the same fixed set as the parser's
 // `evidenceInputs` counter keys, so provenance stays addressable against the
-// documented `{ eventType, count }` shape (review: values must not diverge
-// from the counters they summarize).
+// documented `{ eventType, count }` shape.
 export type EvidenceEventType =
   | 'environmentUpdates' | 'applicationEnds' | 'stageSubmissions' | 'rddStorageSnapshots'
   | 'sqlExecutions' | 'resolvedSqlPlans' | 'executorMetricRows' | 'taskRecords';
@@ -88,10 +87,10 @@ export interface Stage {
   failedTasks?: number;
   inputBytes?: number;
   outputBytes?: number;
-  // Summed Records Written; null when no task of the stage reported one (absent on older stages).
+  // Summed Records Written; null when no task of the stage reported one (absent when the stage carries no record count).
   outputRecords?: number | null;
   // Times the stage was submitted and how many of those attempts failed, counted across
-  // resubmits; absent on stages parsed before these fields existed.
+  // resubmits.
   stageAttempts?: number;
   failedStageAttempts?: number;
   // The summed work of the attempts before the latest one, which the stage's own figures leave
@@ -120,7 +119,7 @@ export interface Stage {
   taskDurationMax?: number;
   peakExecutionMemoryMax?: number;
   // Wall-clock ms during which at least one of the stage's tasks ran (finalizeStage's
-  // computeTaskActiveMs); absent on stages from before this field existed.
+  // computeTaskActiveMs).
   taskActiveMs?: number;
   // Summed (duration - P50) over the tasks slower than 4x P50 (finalizeStage), core-ms.
   stragglerExcessMs?: number;
@@ -166,10 +165,9 @@ export interface TailAttribution {
 }
 
 export interface PlanNode {
-  // Optional, not the design spec's literal `id: string`: dozens of existing
-  // test fixtures hand-build PlanNode literals without one. resolvePlanTree
-  // always sets it in production (enforced by a contract test, not this
-  // type); consumers downstream of resolvePlanTree use `!` with a comment.
+  // Optional because test fixtures hand-build PlanNode literals without one.
+  // resolvePlanTree always sets it in production (enforced by a contract test,
+  // not this type); consumers downstream of resolvePlanTree use `!`.
   id?: string;
   name: string;
   detail?: string;
@@ -213,19 +211,14 @@ export interface PlanGraphNodeData {
    * mode-invariant counterpart). */
   durationShare: number | null;
   /** This node's EXCLUSIVE wall-time share in ms, regardless of which mode
-   * `durationShare` above reflects. Exclusive shares are a true,
-   * non-overlapping partition of each stage's wall time (see
-   * `computeExclusiveSharesForPairs` in plan-duration-attribution.ts), so
-   * summing this field across a set of nodes is a stable total even under
-   * 'inclusive' mode, where `durationShare` deliberately double/triple-
-   * counts a node's own time into every ancestor. Consumers computing a
-   * percentage denominator (PlanGraphCanvas) must sum this field, not
-   * `durationShare`, or the total inflates non-uniformly by tree depth and
-   * distorts every node's percentage. Optional so hand-built fixtures that
-   * only need one duration value don't have to duplicate it. */
+   * `durationShare` above reflects. Exclusive shares partition each stage's
+   * wall time without overlap (see `computeExclusiveSharesForPairs` in
+   * plan-duration-attribution.ts); 'inclusive' `durationShare` counts a node's
+   * time into every ancestor. A percentage denominator must sum this field, not
+   * `durationShare`. Optional so hand-built fixtures need only one duration. */
   exclusiveDurationShare?: number | null;
   /** Plan Advisor findings whose planNodeIds include this node. Empty array
-   * (never undefined) when none: Task 10 always sets it. */
+   * (never undefined) when none. */
   findings?: Finding[];
   /** Every metric Spark reported for this operator, already formatted for
    * display (rows/bytes/timing via `formatPlanMetricValue`). The node box
@@ -407,7 +400,7 @@ export interface PlanGraphSegmentGroupNodeData {
   width: number;
   height: number;
   stageId: number | null;
-  /** Pre-formatted via `formatDuration` (src/format-utils.js) by the caller;
+  /** Pre-formatted via `formatDuration` (format-utils.ts) by the caller;
    * null (never 0) when this segment has no attributed duration, e.g. it
    * fell outside attributeStageDurationToPlan's Math.min(segments, stages)
    * truncation. */

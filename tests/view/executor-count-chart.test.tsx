@@ -89,9 +89,8 @@ test('shows no peak-concurrency summary when the run has no time base to build a
   expect(screen.queryByText(/peak/)).not.toBeInTheDocument();
 });
 
-// Regression: a run with no ApplicationEnd event (startTime present, endTime
-// null) must self-hide the chart instead of substituting Date.now() for the
-// missing end time, which used to plot a fabricated multi-week axis.
+// A run with no ApplicationEnd event (startTime present, endTime null) must
+// self-hide the chart instead of substituting Date.now() for the missing end time.
 test('self-hides with an unavailable message when the run has no end time recorded', () => {
   const incompleteRunAppModel = {
     ...buildAppModel(),
@@ -128,7 +127,7 @@ test('does not recompute the executor series when an unrelated re-render occurs 
   expect((downsample as Mock).mock.calls.length - callsBefore).toBe(1);
 });
 
-// Regression: applySnapshot mutates appModel's fields in place (same object
+// applySnapshot mutates appModel's fields in place (same object
 // reference), so an activeFileId change must still swap the chart to the new file.
 test('reflects a new file after appModel is mutated in place and activeFileId changes (cached-file switch)', async () => {
   const appModel = buildAppModel();

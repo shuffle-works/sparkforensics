@@ -24,13 +24,10 @@ const HOST_PATTERNS = [
   /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, // bare IPv4: 10.1.2.3
 ];
 
-// Spark application id (e.g. application_1690000000000_0001). Besides
-// redactReport's structured summary.app.id field, an app id can also surface
-// as a residual free-text token (e.g. embedded in a finding's evidence or
-// recommendation string), same as a host/IP token embedded in a stage name
-// or plan detail. redactComparison has no structured app-id field at all
-// (baselineLabel/candidateLabel are caller-supplied labels, not Spark app
-// ids), so free text is its *only* source of app ids.
+// Spark application id (e.g. application_1690000000000_0001). Besides the
+// structured summary.app.id field, an app id can surface as a free-text token
+// in evidence or recommendation strings. redactComparison has no structured
+// app-id field, so free text is its only source of app ids.
 const APP_ID_PATTERNS = [/\bapplication_\d{10,}_\d+\b/g];
 
 // Walk every string in the tree once, collecting matches for each `{ patterns,
@@ -57,12 +54,11 @@ function scanTokens(node: unknown, sinks: Array<{ patterns: RegExp[]; out: Set<s
 }
 
 // Recursively collects every string value found under a key literally named
-// `host`, anywhere in the tree. Host names surface at several depths, a
-// finding's own `host`, `evidence.host`, and now
-// `evidence.failedTaskDetails[].host` / `evidence.retriedTaskDetails[].host`,
-// and only some of them are host-*pattern*-shaped (a plain FQDN like
-// `worker-3.internal` matches neither HOST_PATTERN). Walking by key name rather
-// than enumerating known paths keeps any future nested `host` field covered.
+// `host`, anywhere in the tree. Host names surface at several depths (a
+// finding's own `host`, `evidence.host`, `evidence.failedTaskDetails[].host`,
+// `evidence.retriedTaskDetails[].host`), and only some are host-pattern-shaped
+// (a plain FQDN like `worker-3.internal` matches neither HOST_PATTERNS).
+// Walking by key name keeps any nested `host` field covered.
 function collectHostFields(node: unknown, hosts: Set<string>): void {
   if (Array.isArray(node)) {
     for (const n of node) collectHostFields(n, hosts);
@@ -78,9 +74,7 @@ function collectHostFields(node: unknown, hosts: Set<string>): void {
 
 // A failed-task error's message and stack text can carry file paths and data values that no
 // host/app-id pattern recognizes, so they are dropped rather than pseudonymized: every array under
-// a key named `failureGroups` (a `failures` finding's, or a stage's in the HTML export) gets
-// redactTaskFailureGroup applied. Walking by key name, like collectHostFields, needs no path list.
-// Returns a fresh tree.
+// a key named `failureGroups` gets redactTaskFailureGroup applied. Returns a fresh tree.
 function redactFailureGroups<T>(node: T): T {
   if (Array.isArray(node)) return node.map((n) => redactFailureGroups(n)) as T;
   if (node && typeof node === 'object') {
@@ -96,10 +90,8 @@ function redactFailureGroups<T>(node: T): T {
 }
 
 // A stage's failure reason is Spark's free-text message and can carry file paths and data values
-// too, so it is replaced outright, like a failure group's message: a `stageFailed` finding's
-// `valueText`, the `stageFailureReason` of a stage record, a job's `exception` (the run outcome's
-// fallback reason), and the report's `failureReason` copy. Walking by key name, like
-// collectHostFields, needs no path list. Returns a fresh tree.
+// too, so it is replaced outright: a `stageFailed` finding's `valueText`, a stage's
+// `stageFailureReason`, a job's `exception` and the report's `failureReason`. Returns a fresh tree.
 const REASON_KEYS = new Set(['stageFailureReason', 'exception', 'failureReason']);
 function redactStageFailureReasons<T>(node: T): T {
   if (Array.isArray(node)) return node.map((n) => redactStageFailureReasons(n)) as T;
@@ -125,13 +117,10 @@ function redactFailureText<T>(node: T): T {
 // HOST_PATTERNS matches (no IP/EC2 shape) nor collectHostFields's by-key-name
 // walk catches (the literal key is the dotted Spark property name, never
 // `host` itself). app.config and each SQL execution's modifiedConfigs are
-// flat Record<string, string> dicts unique to redactRunModel: no other
-// redact* export ships a raw Spark config dict.
-// Known gap: a hostname value under a differently-named key isn't caught by
-// this suffix check. Confirmed against a real cluster config: spark.master,
-// spark.yarn.historyServer.address, and the plural YARN proxy/HA keys
-// (...AmIpFilter.param.PROXY_HOSTS, ...RM_HA_URLS) all carry real hostnames
-// through un-redacted today.
+// flat Record<string, string> dicts that only the run-tree redaction ships.
+// Known gap: a hostname under a differently-named key is not caught by this
+// suffix check (spark.master, spark.yarn.historyServer.address and the YARN
+// proxy/HA keys); ci-and-automation.md lists them.
 function collectConfigHostValues(config: Record<string, string> | undefined, hosts: Set<string>): void {
   if (!config) return;
   for (const [key, value] of Object.entries(config)) {
@@ -140,11 +129,9 @@ function collectConfigHostValues(config: Record<string, string> | undefined, hos
   }
 }
 
-// Known locations of the identifiers, so we don't have to guess which strings
-// are sensitive: the app id lives at summary.app.id; host names live under any
-// `host` key in the findings tree (see collectHostFields), plus a free-text
-// scan for hosts/IPs and app ids that appear only inside string values (e.g. a
-// finding's evidence/recommendation text).
+// Known locations of the identifiers: the app id lives at summary.app.id; host
+// names live under any `host` key in the findings tree (see collectHostFields),
+// plus a free-text scan for hosts/IPs and app ids inside string values.
 interface RedactableReport {
   // `id` accepts `null`: summary.app.id is genuinely nullable (app can be
   // absent), and `collectIds` below narrows with `typeof appId === 'string'`.
@@ -229,15 +216,10 @@ export function redactReport<T extends RedactableReport>(input: T): T {
   return app ? { ...out, summary: { ...out.summary, app: withRedactedName(app) } } : out;
 }
 
-// Run-comparison counterpart: no single app-id *field* to pseudonymize
-// (baselineLabel/candidateLabel are caller-supplied labels, not Spark app
-// ids), but stage names surface throughout the tree (FindingsDeltaRow.stages,
-// baseStages/candStages[].name) and, like the evidence report's findings, can
+// Run-comparison counterpart: stage names surface throughout the tree and can
 // carry a host/IP token or an app id as free text (e.g. `collect at
 // application_1690000000000_0001 worker-10-1-2-3.scala:45`). Scans the whole
-// comparison tree rather than enumerating those fields individually, so a
-// future CompareRunsResult field carrying free text is covered without this
-// function needing to change.
+// tree rather than enumerating fields, so any free-text field is covered.
 export function redactComparison<T>(comparison: T): T {
   const hosts = new Set<string>();
   const appIds = new Set<string>();
@@ -246,10 +228,8 @@ export function redactComparison<T>(comparison: T): T {
 }
 
 // HTML-export counterpart to redactReport/redactComparison. Unlike
-// redactReport (scoped to EvidenceReportJson's summary.app.id + findings),
-// this also walks executors.added/removed for their literal `host` field
-// (ExecutorAddedEvent.host), since raw executor records: not just findings
-//: reach data.js.
+// redactReport, this also walks executors.added/removed for their literal
+// `host` field, since raw executor records reach the export, not just findings.
 type RunTree = Pick<ExportRunData, 'app' | 'executors' | 'catalog' | 'configFindings'> & {
   // Each SQL execution carries the session settings it ran with (`modifiedConfigs`), which can hold
   // the same host values the application config does.

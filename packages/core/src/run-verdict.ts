@@ -99,7 +99,6 @@ export function buildCostLane(findings: Finding[]): CostLaneEntry[] {
   ));
   return entries
     .map(({ finding, coreTimeMs }) => ({ finding, coreTimeMs, figure: formatRawWaste({ value: coreTimeMs, unit: 'coreMs' }) }))
-    // A figure that prints as zero ("0.0 core-s") reads as a measured nothing.
     .filter((entry) => !readsAsZero(entry.figure));
 }
 

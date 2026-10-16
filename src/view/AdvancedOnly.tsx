@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
 import { useWidgetDensity } from '@/store/store';
 
-/** Flip to true locally to outline AdvancedOnly content in red — useful for
- * spotting what's gated on the live site. Must stay false on commit. */
+/** Debug switch: outlines AdvancedOnly content in red to show what the Advanced tier gates. */
 const DEBUG_HIGHLIGHT = false;
 
 /** Wraps meta/caveat/reference-only content that should only render at the

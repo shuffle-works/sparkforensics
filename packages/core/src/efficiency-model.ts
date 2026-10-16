@@ -1,5 +1,5 @@
-// §5 Efficiency/wastage model. DESIGN SPIKE:
-// decomposes available compute-hours into driver-bound vs executor-bound waste, plus two floors.
+// Efficiency/wastage model: decomposes available compute-hours into driver-bound vs executor-bound
+// waste, plus the zero-skew makespan floor.
 import { stageWindows } from './wall-clock.ts';
 import { allocatedCoreMs, allocatedCoreMsWithin } from './allocation.ts';
 import { computePeakConcurrentCores } from './core-count.ts';

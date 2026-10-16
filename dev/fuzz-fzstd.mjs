@@ -1,15 +1,12 @@
 #!/usr/bin/env node
 // Checks the vendored, locally patched fzstd (packages/core/src/vendor/fzstd.js) against pristine
-// upstream fzstd on real zstd event logs: whole-log output must be byte-identical, and on randomly
-// corrupted and truncated prefixes of each log the partial output and the error must match too.
+// upstream fzstd on real zstd event logs. Details: docs-site/contributor-guide/testing.md.
 //
-// Get upstream with `npm pack fzstd@0.1.1` and extract package/esm/index.mjs (its sha256 is in
-// the vendored file's header), then:
+// Usage:
 //   node dev/fuzz-fzstd.mjs --upstream path/to/index.mjs [--iterations 400] [--seed 12345]
 //        [--mutations 4] <log.zstd>...
-// Exit code 1 when any case differs. The one known difference: a corrupt window size that
-// overflows negative throws "Invalid typed array length" at the same byte in both, with a
-// different number in the message.
+// One known difference: a corrupt window size that overflows negative throws "Invalid typed
+// array length" at the same byte in both, with a different number in the message.
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';

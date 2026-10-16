@@ -432,9 +432,8 @@ describe('sparkforensics-analyze CLI', () => {
     }
   });
 
-  // Regression: recommendations/cleanChecks are EvidenceReportJson keys this
-  // CLI dumps verbatim; the parity test above only compares findings/
-  // schemaVersion, so it wouldn't catch a build that dropped these to stdout.
+  // recommendations/cleanChecks are EvidenceReportJson keys this CLI dumps verbatim;
+  // the parity test above only compares findings/schemaVersion.
   it('carries the recommendations rollup and cleanChecks list through to the CLI JSON output', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-'));
     const path = join(dir, 'eventlog');

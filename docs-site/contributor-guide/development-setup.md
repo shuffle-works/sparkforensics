@@ -56,7 +56,8 @@ nothing; `.github/workflows/tuning-reference-drift.yml` runs it with
 
 Offline, a cached copy keeps working. If the pin has moved since, `npm test` and
 `docs:dev` warn and use the older copy, while `docs:build`, `npm pack` and
-anything with `CI` set fail. To build from a local upstream checkout instead
+anything with `CI` set fail. `npm run docs:fetch -- --allow-stale` keeps a
+stale cached copy with a warning when the fetch fails; `docs:dev` uses it. To build from a local upstream checkout instead
 (offline, or to preview upstream edits in this docs site before they merge),
 set `SPARK_TUNING_REFERENCE_DIR`:
 
@@ -109,7 +110,9 @@ npm run docs:preview   # serves the built docs site locally
   `prepack`. In the monorepo the bins load `packages/core/src/load-vendored.js`,
   which uses a leftover `vendor-core/` only while its `core-source-hash.txt`
   matches `packages/core/src`; otherwise it warns on stderr and runs the
-  source.
+  source. `load-vendored.js` is the one module a bin locates by hand
+  (`vendor-core/load-vendored.js` in a packed install); the bin loads every
+  other core module through its exported `loadVendored()`.
 - The CLI's `export-template/` has no such check. Without it,
   `--export-html` from source uses the repo-root `dist-export/` from
   `npm run build:export` (not produced by `npm run build`); a leftover
@@ -136,6 +139,22 @@ page's head, sizes it from the pinned chrome on screen, which includes the
 Shuffle Works product bar on the published site. Never write that bar's
 marker attribute literally in the docs source, prose included: the hub
 skips injecting its bar into any built page that contains it.
+
+The app side of that contract is three DOM markers, all read in
+`src/view/shuffle-hub.ts` (`PRODUCT_BAR_SELECTOR`, `HUB_FOOTER_SELECTOR`) and
+set on the dashboard, plan graph and run comparison routes. Their exact
+attribute names live in that file, not here, for the reason above.
+
+- The product-bar marker (a `data-shuffle-` attribute ending in `product-bar`)
+  is present when the host site injected its shared bar into the published
+  shell. `ProductBarPortal` portals the page's header controls into it; without
+  it they render in place.
+- The footer marker (a `data-shuffle-` attribute ending in `footer`) is present
+  when the host site injected its footer.
+- The `dashboard` test id (`data-testid="dashboard"`) is the signal the host
+  site's chrome-toggle script uses to hide the shared nav and footer while a
+  dashboard is on screen. Each of those routes carries it, and `App` renders
+  only one at a time, so it stays present across route changes.
 
 ## Driving the app in a browser
 
@@ -167,3 +186,6 @@ skips injecting its bar into any built page that contains it.
   `https://raw.githubusercontent.com/<owner>/<repo>/<sha>/<path>.png`. The
   repo is public, so every reader's browser loads them, and the binaries stay
   out of the feature diff.
+- Seeing what the Advanced density tier gates: set `DEBUG_HIGHLIGHT` to `true`
+  in `src/view/AdvancedOnly.tsx` to outline `AdvancedOnly` content in red.
+  Keep it `false` in anything you commit.

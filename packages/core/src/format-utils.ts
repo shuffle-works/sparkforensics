@@ -14,9 +14,9 @@ const BOTTLENECK_WIDGET: Readonly<Record<string, string>> = {
   coldStart: 'executor-timeline', utilization: 'executor-timeline', speculationWaste: 'executor-timeline',
 } satisfies Partial<Record<FindingType, string>>;
 
-// Cross-widget stage recurrence: how many distinct board widgets (skew+straggler on one stage
-// still count as one, task-skew) flag a stage. Computed once from the full catalog each widget
-// already receives.
+// Cross-widget stage recurrence: how many distinct widget groups (skew, slowHost and straggler
+// share task-skew) flag a stage. No production code calls it, and the group names in
+// BOTTLENECK_WIDGET are labels, not ids of rendered widgets.
 // `stageId` may be number|null|undefined: sql/config-scope findings never set it; `stageId == null`
 // below treats both the same.
 export function stageWidgetFrequency(catalog: Array<{stageId?: number | null; type: string}>): Map<number, number> {
@@ -69,9 +69,7 @@ export function formatStageIdsLabel(stageIds: number[], maxShown: number = DEFAU
 }
 
 /** Worst (lowest IMPACT_BAND_ORDER) impact band across findings, undefined when empty. Shared by
- * every widget that badges/colors a group of findings.
- * @param {{ impactBand: 'critical' | 'warning' | 'info' }[]} findings
- * @returns {'critical' | 'warning' | 'info' | undefined} */
+ * every widget that badges/colors a group of findings. */
 export function worstImpactBand(
   findings: { impactBand: 'critical' | 'warning' | 'info' }[],
 ): 'critical' | 'warning' | 'info' | undefined {
@@ -291,15 +289,10 @@ export function asCoreTime(rawWaste: RawWasteFigure): RawWasteFigure {
   return rawWaste.unit === 'ms' ? { ...rawWaste, unit: 'coreMs' } : rawWaste;
 }
 
-// formatRawWaste/fmtMs round to a fixed precision (one decimal place, or
-// whole milliseconds below 1s), which can collapse a small but genuinely
-// nonzero value down to a formatted string that reads exactly like zero
-// (0.04 coreHours -> "0.0 core-h"). Checking the raw value against 0 misses
-// this; checking the *formatted* text against zero's own formatted text
-// catches it regardless of unit. The fractional group must consume the
-// entire decimal part (all zeros) before the terminator: otherwise a real
-// value like "0.5 core-h" leaves the "." unconsumed, and the terminator
-// char class excludes ".", so it correctly fails to match.
+// True when a formatted figure reads as zero, including a small nonzero value the fixed rounding
+// collapsed (0.04 coreHours -> "0.0 core-h"). It tests the formatted text, so it holds for any unit.
+// The fractional group must consume the whole decimal part before the terminator, so "0.5 core-h"
+// does not match.
 export function readsAsZero(formatted: string): boolean {
   return /^0(\.0+)?(?:[^0-9.]|$)/.test(formatted);
 }

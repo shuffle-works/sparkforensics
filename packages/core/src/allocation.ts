@@ -97,11 +97,7 @@ function loggedDynamicAllocation(app: AllocationInput['app']): 'on' | 'off' | nu
  * from its ExecutorAdded timestamp to its first later ExecutorRemoved timestamp. One with no
  * removal closes at the application end when the log has one, else at the last timestamp the log
  * records (a cut-off log). Cores are the ExecutorAdded event's Total Cores, else
- * spark.executor.cores; memory per executor is spark.executor.memory (default 1g) plus the
- * overhead (spark.executor.memoryOverhead, else the legacy spark.yarn.executor.memoryOverhead,
- * else the larger of 384 MiB and spark.executor.memoryOverheadFactor, default 0.1, times the
- * memory), plus spark.memory.offHeap.size when spark.memory.offHeap.enabled is true, plus
- * spark.executor.pyspark.memory.
+ * spark.executor.cores; memory per executor is the container Spark requests (executorMemoryMiB).
  * The executor counts and seconds come from the same alive intervals.
  * Null, never 0, for a figure whose inputs the log lacks. */
 export function computeAllocation(input: AllocationInput): Allocation {

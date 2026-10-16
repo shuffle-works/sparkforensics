@@ -940,10 +940,9 @@ describe('accumulateTask: populates hostStats / speculativeTasks / failureReason
     }, s);
   }
 
-  // Note: hostStats/speculativeTasks/failureReasons are now folded at
-  // finalizeStage time (see Task 1 dedup refactor), not incrementally on
-  // the stage object, so these assert on the StageCompleted message data
-  // rather than on the pre-finalize stage object.
+  // hostStats/speculativeTasks/failureReasons are folded at finalizeStage time, not
+  // incrementally on the stage object, so these assert on the StageCompleted message
+  // data rather than on the pre-finalize stage object.
 
   it('aggregates host stats from successful tasks', () => {
     const s = createState();
@@ -1153,8 +1152,7 @@ describe('processEvent: SparkListenerSQLAdaptiveExecutionUpdate', () => {
     expect(state.sqlExecutions.get(1).hadAdaptiveUpdate).toBe(true);
   });
 
-  // Regression for the browser-side gap: mutating state.sqlExecutions'
-  // in-memory object is not enough, the real worker posts a `sql` message
+  // Mutating state.sqlExecutions' in-memory object is not enough, the real worker posts a `sql` message
   // via self.postMessage (structured clone), so the main thread only ever
   // sees a snapshot frozen at the time of THAT message. Without a re-emitted
   // 'sql' message here, a browser-side appModel.sql entry never observes
@@ -1937,8 +1935,8 @@ describe('runParseFromUrl', () => {
 
   it('decodes a zstd entry made of thousands of concatenated frames without a stack overflow', async () => {
     // Spark flushes its compression stream periodically, so one real log can be
-    // thousands of concatenated zstd frames. Regression guard: the vendored fzstd
-    // once self-recursed per frame and blew the JS stack (src/vendor/fzstd.js).
+    // thousands of concatenated zstd frames. The vendored fzstd must not
+    // recurse per frame and blow the JS stack (packages/core/src/vendor/fzstd.js).
     const frameCount = 20000;
     const frames = [zstdSync(strToU8('{"Event":"SparkListenerApplicationStart","App ID":"app-zf","App Name":"tzf","Timestamp":1}\n'))];
     for (let i = 0; i < frameCount; i++) {
@@ -2995,7 +2993,6 @@ async function collectMatchingLines(filePath, substrings) {
   return lines;
 }
 
-// ── Minimal File-like stub for the dropped-file (runParse) path ──────────────
 function fakeFile(bytes, name = 'eventlog') {
   const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   return {

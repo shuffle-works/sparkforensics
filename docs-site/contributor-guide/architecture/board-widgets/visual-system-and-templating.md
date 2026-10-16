@@ -32,3 +32,19 @@ rather than the raw boolean, because Base UI's `Collapsible.Trigger` otherwise
 overrides a boolean `aria-expanded` prop with its own internal state via prop
 merging. The explicit `String()` cast keeps the rendered attribute in sync
 with this app's own `open` state.
+
+## Tag badge anatomy
+
+`TagBadge` (`src/view/ImpactBadge.tsx`) renders the impact dot and the ALL-CAPS
+tag as one pill built from two abutting halves:
+
+- The dot+tag `Badge`, rounded on its left only when the guide link follows (at
+  Advanced density).
+- The guide `<a>`, rounded on the right, immediately after it.
+
+The halves are siblings, never one `<a>` nested inside another: nested anchors
+are invalid HTML, and a pill-wide anchor would need a second link inside it. The
+guide link is hand-styled rather than built from `Badge`, because `Badge`'s
+`overflow-hidden` would clip the link's `tap-target-comfortable` overlay. That
+overlay deliberately paints outside the link's visual bounds to reach a
+touch-friendly size without growing the pill.

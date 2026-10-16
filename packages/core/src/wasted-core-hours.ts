@@ -40,7 +40,6 @@ export function computeWastedCoreHours(
   runAggregates: RunAggregates | null,
   executorsRemoved: Array<{ executorId: string; timestamp: number }> = [],
 ): WastedCoreHoursResult {
-  // Nullish (not falsy) guard on times: a literal startTime:0 is valid.
   if (!runAggregates || app?.startTime == null || app?.endTime == null) return EMPTY;
   const appDurationMs = app.endTime - app.startTime;
   if (appDurationMs <= 0) return EMPTY;

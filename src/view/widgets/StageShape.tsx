@@ -25,10 +25,8 @@ function findingLabel(f: Finding): string {
 export type StageShapeProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'getTaskData' | 'defaultCollapsed'>;
 
 /** Per-stage stage-shape findings: flags every stage carrying a `stageShape`
- * finding (never just the worst one). Thin wrapper around the shared
- * `StageFindingGroupWidget` (`StageFindingGroup.tsx`), which owns the
- * row/card/pagination scaffold this shares with its two siblings,
- * `Skew.tsx` and `TinyTask.tsx`. */
+ * finding (never just the worst one). Thin wrapper over
+ * `StageFindingGroupWidget` (`StageFindingGroup.tsx`). */
 export const StageShape = memo(function StageShape(props: StageShapeProps) {
   return (
     <StageFindingGroupWidget {...props} type="stageShape" title="Stage Shape" idPrefix="stage-shape" findingLabel={findingLabel} />

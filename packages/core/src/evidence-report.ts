@@ -314,8 +314,8 @@ function sortFindings(rows: FindingRow[]): FindingRow[] {
 // file's isEligible call omits FixTheseFirst's REGISTRY check: every finding here already came out
 // of analyze()/auditConfig() so it's a known type, and REGISTRY (.tsx) isn't importable here anyway.
 
-// The impact-ranked "highest-leverage fix" rollup, ported from FixTheseFirst.tsx so CLI/MCP/download
-// get the same ranking. buildRecommendationRollup already returns groups in the correct cross-group
+// The impact-ranked "highest-leverage fix" rollup, so CLI, MCP and download share the dashboard's
+// ranking. buildRecommendationRollup already returns groups in the correct cross-group
 // order, so this only maps each group to its JSON row without re-sorting.
 function buildRecommendations(
   findings: Finding[],
@@ -461,7 +461,7 @@ function verdictJson(model: RunVerdictModel): VerdictJson {
 
 // Keyed by appModel object identity: mcp-tools.ts caches one fixed appModel per runId (never
 // mutated), so re-running analyze()/auditConfig() reproduces the same catalog. getFindingEvidence
-// calls buildEvidenceReport once per drill-down; without this, N lookups meant N detector re-runs.
+// calls buildEvidenceReport once per drill-down; the cache spares each lookup a detector re-run.
 // A WeakMap needs no invalidation: once mcp-tools.ts evicts the appModel, this entry is collectible.
 // Each cache is split first by the overrides object the report ran under (one fixed, frozen object
 // per CLI invocation or MCP server process; DEFAULT_THRESHOLDS for the specification's).
@@ -509,8 +509,8 @@ function buildRedactedJson(appModel: AppModel, thresholds: ThresholdOverrides | 
   if (cached) return cached;
   const { catalog, config } = runFindings(appModel, thresholds);
   const run = redactRunModel(appModel, catalog, config);
-  // redactReport stays as a last pass: idempotent over pseudonyms, and it covers the report's own
-  // structured fields (summary.app.id) the same way it always has.
+  // redactReport runs as a last pass: idempotent over pseudonyms, and it covers the report's own
+  // structured fields (summary.app.id).
   const result = redactReport(buildJson(run.appModel, thresholds, { catalog: run.catalog, config: run.configFindings }));
   cache.set(appModel, result);
   return result;
@@ -546,8 +546,6 @@ function buildJson(
     schemaVersion: EVIDENCE_SCHEMA_VERSION,
     summary: {
       app: {
-        // `?? null`, not `?? undefined`: JSON.stringify drops undefined keys but keeps null, and
-        // sparkVersion's null is a deliberate "unknown/absent" sentinel; undefined would drop these.
         id: app?.id ?? null,
         name: app?.name ?? null,
         sparkVersion: app?.sparkVersion ?? null,

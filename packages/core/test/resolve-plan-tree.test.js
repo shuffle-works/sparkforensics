@@ -113,9 +113,8 @@ describe('resolvePlanTree: Exchange split', () => {
   it('prefixes ids with the owning SQL execution so two executions never produce the same id', () => {
     // Without an executionId, nextId resets to 0 on every call, so two
     // executions' identical trees would otherwise both contain a node
-    // literally named "n0"/"n1" (see plan-graph-model.ts's findings guard,
-    // which used to be the only thing preventing that collision from
-    // badging a finding onto the wrong tree).
+    // literally named "n0"/"n1" and a finding could badge the wrong tree
+    // (see plan-graph-model.ts's findings guard).
     const leaf = rawNode('Scan parquet t');
     const join = rawNode('SortMergeJoin', [leaf, rawNode('Scan parquet u')]);
     const idsOf = (root) => {

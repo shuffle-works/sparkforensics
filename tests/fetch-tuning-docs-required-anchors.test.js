@@ -35,8 +35,7 @@ describe('collectRequiredAnchors', () => {
     ]);
   });
 
-  // Regression: the scan used to cover src/ only, so once the detectors moved to
-  // packages/core/src/ it gated 3 of the 40 anchors the app links to.
+  // The scan must cover packages/core/src/ as well as src/, where the detectors live.
   it('covers every detector docAnchor and every allowlisted anchor in the real repo', () => {
     const required = new Set(collectRequiredAnchors());
     const detectorAnchors = [...new Set(DETECTORS.map((d) => d.docAnchor).filter(Boolean))];

@@ -103,7 +103,7 @@ export interface WidgetProps {
   configFindings?: Finding[];
   // The store's `activeFileId` (src/store/store.ts): the one thing that
   // reliably changes identity when the active file switches. `applySnapshot`
-  // (src/session-snapshot.js, used by useIngest.ts's `pickRecent`
+  // (packages/core/src/session-snapshot.ts, used by useIngest.ts's `pickRecent`
   // "restored" fast path and `drillIntoRun`) mutates `appModel`'s fields in
   // place rather than replacing the `appModel` object itself, so a widget
   // that memoizes on `appModel`'s reference alone (ExecutorCountChart.tsx,
@@ -127,7 +127,7 @@ export interface WidgetProps {
 export type WidgetRegion = 'action' | 'reference';
 
 export interface RegistryEntry {
-  // Every real REGISTRY widget is now code-split (finding 13) via
+  // Every real REGISTRY widget is code-split via
   // `React.lazy`, which is a `ComponentType` but not an `FC`: this stays
   // `ComponentType` (rather than `LazyExoticComponent<FC<WidgetProps>>`) so
   // `tests/view/triage-navigation.test.tsx`'s plain-function test doubles

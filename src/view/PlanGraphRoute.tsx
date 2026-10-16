@@ -96,16 +96,9 @@ function safeBuildPlanGraphModel(
   }
 }
 
-// Module-level memo cache: buildPlanGraphModel walks and re-derives the
-// whole plan tree (segment computation, duration attribution) on top of the
-// already-split tree it's handed, the Exchange write/read split itself
-// happens upstream, in resolvePlanTree (event-handlers.ts), which is wasted
-// work to redo on every re-render or re-open of the same stage. Keyed on
-// (activeFileId, stageId, scope, durationMode) rather than stageId alone,
-// since stageId isn't unique across loaded runs, applySnapshot mutates
-// appModel in place rather than replacing it, and a duration-mode flip needs
-// its own cached model (see the "Plan graph view" section in
-// docs-site/contributor-guide/architecture/drill-down/plan-graph.md).
+// Module-level memo: rebuilding the model on every re-render or re-open is wasted
+// work. Keyed on (activeFileId, stageId, scope, durationMode), not stageId alone
+// (docs-site/contributor-guide/architecture/drill-down/plan-graph.md).
 type CacheKey = string;
 const planGraphModelCache = new Map<CacheKey, PlanGraphModel>();
 
@@ -121,13 +114,9 @@ export function clearPlanGraphModelCache(): void {
   planGraphModelCache.clear();
 }
 
-// resetModel() (a fresh file load/reparse) must evict this cache; otherwise
-// a new run sharing the same activeFileId/stageId/scope as a prior one (e.g.
-// reloading the same file) would render a stale model. store.ts can't import
-// this view-layer module to call clearPlanGraphModelCache() directly without
-// inverting the app's store -> view dependency direction (store.ts has no
-// React/view imports anywhere else), so this subscribes to the store's
-// `modelResetCount` counter (bumped only by resetModel()) instead.
+// resetModel() must evict this cache, or a reload of the same file renders a stale
+// model. store.ts has no view imports, so this subscribes to its `modelResetCount`
+// counter instead of being called directly.
 let lastModelResetCount = store.getState().modelResetCount;
 store.subscribe((state) => {
   if (state.modelResetCount !== lastModelResetCount) {
@@ -158,33 +147,23 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
   const [confirmExpandOpen, setConfirmExpandOpen] = useState(false);
   const [initialFullResolved, setInitialFullResolved] = useState(initialScope !== 'full');
   const [fallbackDismissed, setFallbackDismissed] = useState(false);
-  // Which stage's plan segment is currently in view. Seeded from the stageId
-  // prop and only re-seeded on a genuine remount (App.tsx's key={stageId});
-  // clicking a stage box in the full graph (handleSelectStage, below) moves
-  // this without re-opening the whole route or re-resolving appModel.
+  // Which stage's plan segment is in view. Seeded from the stageId prop on a
+  // remount (App.tsx's key={stageId}); handleSelectStage moves it without one.
   const [focusStageId, setFocusStageId] = useState<StageId>(stageId);
-  // Id of the plan node whose detail card is open (null = none). Held here, not
-  // in the canvas, so the route's single Escape handler can close the card
-  // before tearing down the whole route.
+  // Id of the plan node whose detail card is open (null = none). Held here so
+  // the single Escape handler can close it before the route.
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  // Bumped whenever a scope switch (expand/back) should re-fit the viewport, so
-  // switching to a much larger or smaller graph doesn't leave the user zoomed
-  // into a stale corner. The canvas refits on each change.
+  // Bumped on each scope switch; the canvas re-fits on each change.
   const [fitSignal, setFitSignal] = useState(0);
-  // Recenter request for a paired-node jump; the canvas centers on nodeId each
-  // time the token increments. Separate from fitSignal so a jump focuses the
-  // partner rather than re-fitting the whole graph.
+  // Recenter request for a paired-node jump; separate from fitSignal so a jump
+  // focuses the partner rather than re-fitting the graph.
   const [centerRequest, setCenterRequest] = useState<CenterRequest>({ nodeId: null, token: 0 });
-  // A paired-node jump whose partner isn't in the current (segment) view: the
-  // two Exchange halves always live in different segments, so the jump expands
-  // to the full plan and this holds the target until the full model is on
-  // screen (see the apply effect below). Null when no jump is pending.
+  // Target of a paired-node jump waiting on the full plan (the two Exchange
+  // halves always live in different segments); null when none is pending.
   const [pendingJumpId, setPendingJumpId] = useState<string | null>(null);
   const requestCenter = (nodeId: string) => setCenterRequest((prev) => ({ nodeId, token: prev.token + 1 }));
 
-  // A node id only means something within one stage/scope/filter view; drop the
-  // selection when any of those change so a stale id can't leave a card open
-  // over a different graph (or over a node the filter just hid).
+  // A node id only means something within one stage/scope/filter view.
   useEffect(() => {
     setSelectedNodeId(null);
   }, [focusStageId, requestedScope, filterMode]);
@@ -195,26 +174,17 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
     ? memoizedBuildPlanGraphModel(planTree, { scope: 'segment', stageId: focusStageId, appModel, findings, durationMode }, activeFileId)
     : null;
 
-  // A 'segment' request can silently fall back to a 'full' result inside
-  // buildPlanGraphModel (segment lookup failure: no sql linkage, or this
-  // stage's segment fell outside the Math.min(segments, stages)
-  // truncation). Per the design's error-handling requirement, that
-  // fallback still has to pass through the same node-count guardrail as an
-  // explicit "Expand to full plan" click: never render an unguarded full
-  // graph just because scoping failed. This condition intentionally does
-  // NOT depend on `fallbackDismissed`: dismissing the dialog closes the
-  // dialog, but must not lift the block on rendering the oversized model
-  // (see `segmentFellBackUnguarded` below for the flag that does react to
-  // dismissal; it only governs whether the dialog re-opens itself).
+  // A 'segment' request can fall back to a 'full' model inside
+  // buildPlanGraphModel; that must pass the same node-count guardrail as an
+  // explicit expand. Deliberately independent of `fallbackDismissed`: dismissing
+  // the dialog must not lift the block on the oversized model.
   const segmentFellBackOversized =
     segmentModel != null &&
     segmentModel.scope === 'full' &&
     requestedScope === 'segment' &&
     segmentModel.nodes.length > EXPAND_GUARDRAIL_THRESHOLD;
 
-  // Gates the auto-open effect only: true on first detecting the oversized
-  // fallback, false again once the user dismisses the dialog, so the effect
-  // below doesn't immediately reopen it every render.
+  // Gates the auto-open effect only, so a dismissed dialog does not reopen.
   const segmentFellBackUnguarded = segmentFellBackOversized && !fallbackDismissed;
 
   useEffect(() => {
@@ -225,11 +195,8 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
     ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, activeFileId)
     : null;
 
-  // Topbar opens request full scope immediately. That route boundary must use
-  // the same node-count guard as the in-route expansion button instead of
-  // treating `initialScope: 'full'` as blanket consent to render any size.
-  // The derived condition opens the dialog on the first render and withholds
-  // every graph model until confirm/cancel resolves the requested scope.
+  // `initialScope: 'full'` is not consent to render any size: the dialog opens on
+  // the first render and the model is withheld until confirm/cancel.
   const initialFullOversized =
     !initialFullResolved &&
     requestedScope === 'full' &&
@@ -244,14 +211,10 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
   }, [guardrailOpen]);
 
   useEffect(() => {
-    // ExpandConfirmDialog (Radix Dialog) has its own Escape listener and
-    // doesn't stop propagation, so without this guard, pressing Escape while
-    // only the guardrail dialog is open would both close the dialog AND tear
-    // down this whole full-screen route out from under the user.
+    // The Radix dialog's Escape listener does not stop propagation, so skip while
+    // it is open or one press would also close the route.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || guardrailOpen) return;
-      // Escape closes the node detail card first, then (on a second press,
-      // with nothing else open) the route itself.
       if (selectedNodeId) setSelectedNodeId(null);
       else onClose();
     };
@@ -260,20 +223,16 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
   }, [onClose, guardrailOpen, selectedNodeId]);
 
   const model = segmentFellBackOversized
-    ? null // held back until requestedScope flips to 'full' via explicit confirm; dismissing the dialog alone must not unblock this
+    ? null // held back until an explicit confirm flips requestedScope to 'full'
     : initialFullOversized
       ? null
     : requestedScope === 'full'
       ? fullModel
       : segmentModel;
 
-  // Apply a pending paired-node jump once its partner is actually on screen.
-  // Defined after the selection-reset effect above so that on the render where
-  // the scope flips to 'full', this runs last and its selection wins over the
-  // reset's clear (both read pendingJumpId from the same render's closure).
-  // Guarded on requestedScope === 'full' so it waits through the expand
-  // guardrail dialog, and on the node being present so it never selects an id
-  // the full model doesn't contain.
+  // Apply a pending paired-node jump once its partner is on screen. Declared after
+  // the selection-reset effect so its selection wins over that reset's clear on
+  // the render where the scope flips to 'full'.
   useEffect(() => {
     if (!pendingJumpId || requestedScope !== 'full') return;
     if (!model?.nodes.some((n) => n.id === pendingJumpId)) return;
@@ -299,12 +258,8 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
     setFitSignal((s) => s + 1);
   }
 
-  // Jump from one split-Exchange half to its paired half (the detail card's
-  // "Jump to write/read half"). When both halves are already rendered (full
-  // plan), select and recenter the partner directly. Otherwise the partner is
-  // in a different Exchange-bounded segment, so expand to the full plan
-  // (through the same node-count guardrail as the Expand button) and let the
-  // apply effect above select it once the full model is on screen.
+  // Jump to the paired Exchange half: directly when it is rendered, otherwise
+  // expand (through the guardrail) and let the apply effect above select it.
   function handleJumpToPaired(pairedNodeId: string) {
     if (model?.nodes.some((n) => n.id === pairedNodeId)) {
       setSelectedNodeId(pairedNodeId);
@@ -315,20 +270,11 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
     handleExpandClick();
   }
 
-  // Jump focus to a different stage's segment view from the full graph
-  // (PlanGraphCanvas's onSelectStage). Every stage box shown in scope:
-  // 'full' belongs to the same SQL execution as the one currently open
-  // (resolvePlanTree(newStageId, appModel) resolves to the same linkedSql),
-  // so this never needs to re-resolve a different plan tree.
-  //
-  // Bumps fitSignal like every other scope switch: this collapses the full plan
-  // down to one stage's segment while the canvas stays mounted, so the mount-
-  // time fitView never re-fires and, without this, the viewport would keep the
-  // full plan's pan/zoom and strand the user in a corner of the new graph.
-  //
-  // Stable identity (useCallback, only setState setters as deps) matters: this
-  // is a dependency of the canvas's layout memo, so a fresh reference each
-  // render would invalidate that memo and re-run Dagre on every selection.
+  // Focus another stage's segment view from the full graph. Every stage box in
+  // full scope belongs to the same SQL execution, so the plan tree is unchanged.
+  // Bumps fitSignal because the canvas stays mounted and would keep the full
+  // plan's pan/zoom. Stable identity matters: it feeds the canvas's layout memo,
+  // so a fresh reference per render would re-run Dagre on every selection.
   const handleSelectStage = useCallback((newStageId: StageId) => {
     setFocusStageId(newStageId);
     setRequestedScope('segment');
@@ -356,11 +302,8 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
       // model, keep it blocked without immediately reopening the dialog.
       if (segmentModel?.scope === 'full') setFallbackDismissed(true);
     }
-    // Only the fallback path needs a dismiss flag: an explicit "Expand to
-    // full plan" click just leaves requestedScope at 'segment' and the
-    // segment view renders normally. The fallback path has no ungated
-    // segment view to fall back to, so without this flag the guardrail
-    // effect above would immediately reopen the dialog on the next render.
+    // Only the fallback path needs a dismiss flag: it has no ungated segment view,
+    // so the guardrail effect would reopen the dialog on the next render.
     if (segmentFellBackUnguarded) setFallbackDismissed(true);
   }
 
@@ -372,12 +315,8 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
     return onPickRecent(id);
   }
 
-  // The node filter derives three values the canvas consumes. Memoize them on
-  // (model, filterMode) so a render that changes neither (opening a node's
-  // detail card only flips local selection state) hands the canvas the same
-  // Set/array references. Those feed the canvas's layout memo, so churning them
-  // every render would re-run the (expensive) Dagre layout on each click. See
-  // the layout-reuse regression test in tests/view/plan-graph-route.test.tsx.
+  // Memoized on (model, filterMode): these feed the canvas's layout memo, so new
+  // references on a selection-only render would re-run Dagre on each click.
   const { visibleNodeIds, filteredEdges, hiddenNodes } = useMemo(() => {
     const allowedCategories = CATEGORY_BY_MODE[filterMode];
     const visibleNodeIds = new Set<string>();
@@ -392,25 +331,12 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
     return { visibleNodeIds, filteredEdges, hiddenNodes };
   }, [model, filterMode]);
 
-  // Keyed off the actually-rendered `model.scope`, not `requestedScope`
-  // alone: a segment request can silently resolve to a 'full' model via the
-  // segment-lookup-failure fallback (see `segmentFellBackOversized` above)
-  // without the user ever clicking anything, and, when that fallback's
-  // node count is at or under the guardrail threshold, it renders
-  // immediately with no dialog. `requestedScope` stays 'segment' in that
-  // path, so a label keyed on it alone would misreport "Expand to full
-  // plan" while the full plan is already on screen.
+  // Keyed off the rendered `model.scope`: a segment request that fell back to a
+  // small full model leaves `requestedScope` at 'segment'.
   const showingFullPlan = model?.scope === 'full';
 
-  // When the full plan is on screen because of the automatic
-  // segment-lookup-failure fallback above (`requestedScope` never left
-  // 'segment'), buildPlanGraphModel resolves this stage's 'segment' request
-  // to 'full' every time; there is no distinct segment view for this stage
-  // to switch back to, so back-to-segment is only meaningful when the current
-  // full render came from an explicit user request (`requestedScope === 'full'`).
-  // That path only exists when `segmentModel.scope` was already 'segment' (see
-  // `handleExpandClick`'s guard: it's only wired up while !showingFullPlan),
-  // so flipping back is guaranteed to reveal a real segment view.
+  // After the automatic fallback there is no segment view to return to; only an
+  // explicit expand guarantees one.
   const canReturnToSegment = requestedScope === 'full';
 
   const backDisabledReasonId = useId();
@@ -418,11 +344,7 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
 
   return (
     <div
-      // Shares Dashboard's marker: the host site's chrome-toggle script
-      // (shuffle-works-site-build) hides the shared nav/footer while this
-      // testid is present, since the graph route also needs the full
-      // viewport and otherwise replaces Dashboard's own "dashboard" node
-      // (App.tsx renders one or the other, never both).
+      // Same marker as Dashboard: a host page can key off it to hide its chrome.
       data-testid="dashboard"
       className="flex h-screen flex-col"
       // Reserve room for the fixed docs panel (published via --docs-inset by

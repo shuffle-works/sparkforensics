@@ -42,10 +42,7 @@ function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetPro
 }
 
 /** Board section for `speculationWaste` findings: executor time spent on
- * speculative task attempts that were ultimately discarded. Split out of
- * the former combined `ExecutorTimeline.tsx`; see `SlowHost.tsx`,
- * `StageSlowness.tsx`, `Straggler.tsx`, and `ColdStart.tsx` for its four
- * siblings. */
+ * speculative task attempts that were ultimately discarded. */
 export const SpeculationWaste = memo(function SpeculationWaste({ appModel, catalog, defaultCollapsed = true }: SpeculationWasteProps) {
   const { sortMode, setSortMode, orderBy } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);

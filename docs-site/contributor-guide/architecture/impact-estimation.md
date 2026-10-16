@@ -60,6 +60,9 @@ stores it, the HTML export ships it in its `catalog`, and the CLI report and MCP
 their finding rows through `buildEvidenceReport()`. `surface-parity.test.js` compares the four on the
 public corpus logs.
 
+Every surface formats savings through `packages/core/src/impact-format.ts`. A figure that rounds
+to zero ("0s", "0.0 core-h") reads as a measured nothing, so each formatter shows no figure for it.
+
 `coreTimeMs` is busy time only. A `coreMs`/`coreHours` raw figure that counts allocated capacity
 no task ran on carries `rawWaste.idle: true`: `utilization` (`coreHours`) and `stageShape`'s
 `lowParallelism` and `taskStageSkew` (`coreMs`). `coreTimeFor()` gives those `null`, and

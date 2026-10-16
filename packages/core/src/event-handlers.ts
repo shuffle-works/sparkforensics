@@ -261,22 +261,18 @@ export interface ParserState {
 }
 
 // Splits decompressed byte chunks into NDJSON lines. Each chunk is decoded whole in one streaming
-// TextDecoder.decode call (per-line decode was ~8x slower: 227k calls vs ~36k on a 138MB / 3.5GB
-// log), then newlines are found with String.prototype.indexOf on that fresh, flat decoded text.
+// TextDecoder.decode call (per-line decode is ~8x slower), then newlines are found with
+// String.prototype.indexOf on that fresh, flat decoded text.
 // A '\n' char is exactly the 0x0A byte (0x0A never occurs inside a UTF-8 multibyte sequence), and
 // `{ stream: true }` reassembles a character split across a chunk boundary, so no byte-to-UTF-16
 // offset mapping is needed. Only the first line of a chunk joins the carried-over `pending` text.
 //
-// Measured 2026-09-23 against the previous raw-byte-scan version (identical output): 3.5s -> 2.8s
-// on that 3.5GB all-ASCII log, 0.37s -> 0.18s on 93MB of synthetic 2/3/4-byte-heavy NDJSON.
-//
 // A SQL UI event's physicalPlanDescription value (see stripPlanDescription) that is still open
 // when a chunk ends is cut off the pending line, and the following bytes are dropped up to its
-// closing quote without being decoded. On the largest real log that value is 1.9 GB of the
-// 3.5 GB stream, so it is never decoded, joined or scanned as text. A chunk longer than
-// MAX_DECODE_SLICE is decoded in slices of that size, so the skip also applies within one chunk:
-// Node's native zstd emits whole frames, up to 39 MB on that log, which held all but 51 MB of the
-// value inside a single chunk.
+// closing quote without being decoded, so the value is never decoded, joined or scanned as text.
+// A chunk longer than MAX_DECODE_SLICE is decoded in slices of that size, so the skip also applies
+// within one chunk: Node's native zstd emits whole frames that can hold a value entirely.
+// Figures: worker-protocol.md, "Decoder and parser calibration".
 const MAX_DECODE_SLICE = 512 * 1024;
 
 // A line joined from text decoded in more than one slice is a V8 cons string, which the first
@@ -779,13 +775,10 @@ export function resolvePlanTree(
   const seen = new WeakSet<SparkPlanInfo>();
   const nodeMap = new WeakMap<SparkPlanInfo, PlanNode>();
   let nextId = 0;
-  // Prefixed with the owning SQL execution so PlanNode.id is globally unique,
-  // not just unique within this one call: two executions' trees can each
-  // produce a node named "n1", and a consumer keying off id alone (e.g. a
-  // findings-by-nodeId index) must be able to tell them apart without also
-  // threading execution scope through separately. No executionId (e.g. the
-  // legacy unit tests below) falls back to the old unprefixed "n0", "n1", ...
-  // shape.
+  // Prefixed with the owning SQL execution so PlanNode.id is globally unique: two executions'
+  // trees can each produce a node named "n1", and a consumer keying off id alone (e.g. a
+  // findings-by-nodeId index) must tell them apart. No executionId (hand-built trees in tests)
+  // leaves ids unprefixed: "n0", "n1", ...
   const idPrefix = executionId != null ? `e${executionId}:` : '';
 
   function computeMetricsAndStageIds(info: SparkPlanInfo): {
@@ -1428,9 +1421,8 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set(
 );
 
 // SQLExecutionStart and SQLAdaptiveExecutionUpdate carry `physicalPlanDescription`, Spark's text
-// rendering of the plan. The plan tree comes from sparkPlanInfo, yet on a real 3.5 GB log the
-// description was 72% of the AQE-update bytes, which were themselves 73% of the log. Cutting its
-// string value out before JSON.parse halves the parse cost of those lines.
+// rendering of the plan. The plan tree comes from sparkPlanInfo, so the description's string value
+// is cut out before JSON.parse (worker-protocol.md, "Decoder and parser calibration").
 //
 // One exception: a Delta write command's node prints only its bare name in sparkPlanInfo, and its
 // target table appears only on its `Arguments:` line of the description. When the description is
@@ -1542,8 +1534,8 @@ const ACCUMULABLE_ID_KEY = '"ID":';
 const MAX_ACCUMULABLE_ID_DIGITS = 15;
 
 // Parses a TaskEnd line with its Task Info Accumulables array reduced to the `{ID}` entries
-// accumulateTask reads, or returns null for the caller to parse the line whole. That array is 71%
-// of TaskEnd bytes on the largest real log, where parsing its TaskEnd lines took 1.3s (0.5s here).
+// accumulateTask reads, or returns null for the caller to parse the line whole. That array is most
+// of a TaskEnd line's bytes (worker-protocol.md, "Decoder and parser calibration").
 // The IDs are read with a string scan and the array is cut out before JSON.parse, but only when
 // every entry has Spark's flat form (`{"ID":n,...}`, ID first, no nested array): any `{` that
 // doesn't open `{"ID":n` or any `[` in the array (updatedBlockStatuses) falls back. A `]` inside a
@@ -1558,8 +1550,8 @@ export function parseTaskEnd(line: string): unknown {
 type SplitTaskEnd = { parsed: { 'Task Info'?: { Accumulables?: unknown } }; ids: number[] };
 
 // parseTaskEnd's work with the IDs left apart from the parsed event, whose Accumulables is empty:
-// validating `{ID}` entries the scan just read as digits cost 0.2s on the largest real log, so
-// parseAndDispatch hands the IDs straight to accumulateTask.
+// the scan already read the IDs as digits, so parseAndDispatch hands them straight to accumulateTask
+// instead of validating them again.
 function splitTaskEnd(line: string): SplitTaskEnd | null {
   if (!line.startsWith(TASK_END_PREFIX)) return null;
   const keyAt = line.indexOf(ACCUMULABLES_KEY);
@@ -1600,16 +1592,14 @@ const MAX_EXECUTION_ID_DIGITS = 20;
 
 // An AQE update replaces its execution's whole plan, and nothing reads a plan an update replaced:
 // only the last one before SQLExecutionEnd is resolved. So while the execution is open, only its
-// latest update is kept, as unparsed text, and superseded ones are never parsed. On the largest
-// real log 541 of 664 updates were superseded, 1.1 MB of plan JSON each after the plan text is
-// cut. Returns false (parse it now, as any other line) unless the line is Spark's compact form
+// latest update is kept, as unparsed text, and superseded ones are never parsed (figures:
+// worker-protocol.md, "Decoder and parser calibration"). Returns false (parse it now, as any other line) unless the line is Spark's compact form
 // ending in an object-valued `sparkPlanInfo`, its last field: a null-plan update keeps the
 // previous plan, so it can't supersede one. Trade-off: a malformed superseded update is never
-// seen, so it no longer counts as a skipped line.
+// seen, so it does not count as a skipped line.
 //
 // These updates span decode slices, so `line` is a cons string: the prefix and suffix checks read
-// `joined`'s flat pieces instead, or a superseded update is copied flat only to be dropped (541
-// copies of 1.1 MB on that log). A piece too short to hold what is checked falls back to `line`.
+// `joined`'s flat pieces instead, or a superseded update is copied flat only to be dropped. A piece too short to hold what is checked falls back to `line`.
 function deferAdaptiveUpdate(
   line: string, state: ParserState, emit: (msg: unknown) => void, joined?: JoinedLine,
 ): boolean {
@@ -1747,7 +1737,7 @@ export function collectLateAttemptWork(state: ParserState): Map<number, StageAtt
 }
 
 export function emitParseCompletion(state: ParserState, emit: (msg: unknown) => void, linesProcessed: number): void {
-  // Executions that never ended keep their latest AQE update, as they did before it was deferred.
+  // Executions that never ended still apply their latest deferred AQE update.
   for (const executionId of [...state.pendingAdaptiveUpdates.keys()]) flushAdaptiveUpdate(executionId, state, emit);
   emit({ type: 'progress', pct: 1, linesProcessed });
   emit({ type: 'stageLateAttemptWork', data: collectLateAttemptWork(state) });

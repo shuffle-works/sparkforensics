@@ -48,8 +48,7 @@ function CompositeRelationNames({ relations, operator }: { relations: { relation
   );
 }
 
-/** One flagged relation's row, anchored so a triage route focuses the row
- * itself. `tabIndex={-1}` keeps it programmatically focusable without Tab order. */
+/** One flagged relation's row. */
 function CachingRow({ finding }: { finding: FindingOf<'cachingOpportunity'> }) {
   const anchor = useAnchoredRow([finding]);
   const isComposite = finding.variant === 'composite';
@@ -104,8 +103,6 @@ export const CachingOpportunity = memo(function CachingOpportunity({ catalog, de
 
   const activeRouteTarget = useActiveRouteTarget();
   const routeIndex = activeRouteTarget ? findings.findIndex((f) => f === activeRouteTarget.finding) : null;
-  // Called unconditionally, before the empty-findings early return, per rules of
-  // hooks (usePagedRows uses useLayoutEffect internally).
   const { totalPages, effectivePage, visible } = usePagedRows(findings, page, setPage, routeIndex);
 
   if (findings.length === 0) return null;

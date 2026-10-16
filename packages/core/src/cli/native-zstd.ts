@@ -1,11 +1,11 @@
 // Node-only zstd decoding for the CLI/MCP parse path: Node's native zlib zstd, one frame at a
 // time, with the vendored fzstd (what the browser uses) as the fallback.
 //
-// Spark writes an event log as thousands of small zstd frames (one per flush: 10217 frames for
-// the largest real log's 3.5 GB). Node's zstdDecompressSync and createZstdDecompress both stop
-// after the first frame (the stream then fails with "Unknown frame descriptor"), so this walks
-// frame boundaries itself and decompresses each complete frame natively: 3-5x faster than fzstd
-// on the real logs (5.6s -> 1.3-1.8s on the largest).
+// Spark writes an event log as thousands of small zstd frames (one per flush). Node's
+// zstdDecompressSync and createZstdDecompress both stop after the first frame (the stream then
+// fails with "Unknown frame descriptor"), so this walks frame boundaries itself and decompresses
+// each complete frame natively, 3-5x faster than fzstd (worker-protocol.md, "Decoder and parser
+// calibration").
 import * as zlib from 'node:zlib';
 import { Decompress as ZstdDecompress } from '../vendor/fzstd.js';
 
@@ -102,8 +102,7 @@ type SplitStep = { frame: Uint8Array; data: boolean; fallback?: never } | { fall
 // falls back to fzstd when frameEnd says NOT_NATIVE, when it is still incomplete after
 // `maxFrameBytes` compressed bytes, or when a final push ends inside it. A frame that arrives
 // over many pushes is gathered into one buffer that grows by doubling, and its walk resumes where
-// the last push left it: copying the gathered bytes into a new buffer and walking the frame from
-// its start on every push cost about 4 GB of copying near the 64 MB limit.
+// the last push left it, so a large frame is not copied and re-walked on every push.
 class FrameSplitter {
   // The incomplete frame's bytes so far, gathered[0, gatheredLength); null when none is pending.
   private gathered: Uint8Array | null = null;
@@ -188,7 +187,7 @@ function decompressBounded(frame: Uint8Array, maxBytes: number): Uint8Array | nu
 
 // Same push(chunk, final) contract as fzstd's Decompress. Once a frame falls back, fzstd takes
 // the rest of the stream from that frame's first byte; a truncated last frame goes to fzstd too,
-// so it fails with fzstd's own "unexpected EOF", as it always has. `maxFrameBytes` is for tests.
+// so it fails with fzstd's own "unexpected EOF". `maxFrameBytes` is for tests.
 export function createNativeZstdDecoder(
   onChunk: (chunk: Uint8Array) => void,
   { maxFrameBytes = MAX_NATIVE_FRAME_BYTES }: { maxFrameBytes?: number } = {},
@@ -218,15 +217,13 @@ export function createNativeZstdDecoder(
 
 // Frames at least this big (compressed) are decompressed on libuv's threadpool, up to
 // MAX_FRAMES_IN_FLIGHT at a time, while the main thread parses the output of earlier ones.
-// Smaller frames cost less to decompress inline than to hand off (p50 is 5.8 KB of output on the
-// largest real log; 16-64 KB thresholds measured the same, 256 KB lost most of the gain). On that
-// log 4 in flight (the pool's default size) parsed in 3.1s at 711 MB peak RSS, 8 in 3.2s at 886 MB
-// and 2 in 3.5s at 607 MB. The pool's output chunk size barely mattered (64 KB to 1 MB).
+// Smaller frames cost less to decompress inline than to hand off. 4 in flight is the threadpool's
+// default size. Measurements: worker-protocol.md, "Decoder and parser calibration".
 const THREADED_MIN_FRAME_BYTES = 64 * 1024;
 const MAX_FRAMES_IN_FLIGHT = 4;
 const THREADED_CHUNK_BYTES = 256 * 1024;
-// Small frames that arrive while an earlier frame is in flight wait in the queue behind it. With
-// no cap, a first version held most of the largest real log's output (RSS 0.6 -> 4.1 GB).
+// Small frames that arrive while an earlier frame is in flight wait in the queue behind it; the
+// cap bounds the output they hold.
 const MAX_QUEUED_FRAMES = 64;
 
 // One frame decompressing on the threadpool. Node's zstd stream ends after one frame, so each
@@ -283,8 +280,7 @@ class OffThreadFrame {
 // push must be awaited before the next. It keeps references to pushed bytes until their frames
 // are decoded, so callers must not reuse a pushed buffer. Fallback to fzstd, for the same frames
 // as createNativeZstdDecoder, happens only after every queued frame is delivered; a failed frame
-// rejects the push that reaches it. `threadedMinFrameBytes` is for tests. Measured on the 14 real
-// logs: parse 9.4s -> 8.1s; logs with few large frames (12 of 6455 on a 28 MB one) gain nothing.
+// rejects the push that reaches it. `threadedMinFrameBytes` is for tests.
 export function createThreadedZstdDecoder(
   onChunk: (chunk: Uint8Array) => void,
   { maxFrameBytes = MAX_NATIVE_FRAME_BYTES, threadedMinFrameBytes = THREADED_MIN_FRAME_BYTES }:

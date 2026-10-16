@@ -1,5 +1,5 @@
-// Shared by every scope:'sql' detector and the plan views. sql.get(id).stageIds is always empty (parser-worker
-// never populates it), so stage linkage is derived from each stage's own sqlExecutionId.
+// Shared by every scope:'sql' detector and the plan views. sql.get(id).stageIds is always empty
+// (see detector-contract/plan-attribution.md), so stages are linked by their own sqlExecutionId.
 // Minimal param shape (not DetectorStage): external callers pass Map<StageId, Stage>.
 export function stageIdsForSqlExec(
   executionId: number,
