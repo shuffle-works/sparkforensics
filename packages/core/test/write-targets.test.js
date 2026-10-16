@@ -144,7 +144,8 @@ describe('evidence report writeTargets contract', () => {
     expect(json.writeTargets).toEqual({
       writes: [{
         sqlExecutionId: 1, nodeId: null, command: 'SaveIntoDataSourceCommand', recognized: true,
-        kind: null, target: null, outputRows: null, mergeRows: null, raw: 'Execute SaveIntoDataSourceCommand',
+        kind: null, target: null, outputRows: null, outputRowsSource: null, outputBytes: null, mergeRows: null,
+        raw: 'Execute SaveIntoDataSourceCommand',
       }],
       executionsWithoutPlan: [{ sqlExecutionId: 2, reason: 'noPlan' }],
       skippedLines: null,

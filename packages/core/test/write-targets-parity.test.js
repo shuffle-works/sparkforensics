@@ -38,7 +38,8 @@ describe.skipIf(present.length === 0)('write targets agree with the dashboard mo
       if (!card) continue;
       compared++;
       const shown = card.metrics.find((m) => m.name === 'number of output rows');
-      if (write.outputRows === null) expect(shown).toBeUndefined();
+      // Only a node metric is shown on the card; a stage sum has no node figure to agree with.
+      if (write.outputRowsSource !== 'nodeMetric') expect(shown).toBeUndefined();
       else expect(shown?.value).toBe(write.outputRows.toLocaleString('en-US'));
     }
 

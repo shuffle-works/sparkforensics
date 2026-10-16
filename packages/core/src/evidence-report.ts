@@ -22,7 +22,7 @@ import {
   estimateProvenance, impactEstimateFigure, impactFigure, rawWasteMeaning, savingsMeaning,
 } from './impact-format.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
-import { extractWriteTargets, type WriteTargetsReport } from './write-targets.ts';
+import { extractWriteTargets, isPlainWrite, type WriteTargetsReport } from './write-targets.ts';
 import { detectorInfoByType } from './detector-docs.ts';
 import type {
   AppModel, Finding, FindingEvidenceMap, FindingType, EvidenceAvailability, ImpactEstimate, RawWasteUnit, ImpactBand,
@@ -370,6 +370,26 @@ function buildCheckLists(
   return { cleanChecks, notRunChecks };
 }
 
+// A plain write with no output row count (no node metric, and its root execution's stages report no
+// rows written or the root holds another write) is not a check the log could run, so a consumer that
+// compares row counts sees it listed here instead of reading the null as a match.
+const WRITE_FIGURES_CHECK = 'writeOutputRows';
+const LISTED_WRITES = 5;
+
+function notRunWriteFigures(report: WriteTargetsReport): NotRunCheckEntry | null {
+  const missing = report.writes.filter((w) => isPlainWrite(w) && w.outputRows === null);
+  if (missing.length === 0) return null;
+  const named = missing.slice(0, LISTED_WRITES)
+    .map((w) => `execution ${w.sqlExecutionId} ${w.command}`).join(', ');
+  const more = missing.length > LISTED_WRITES ? ` and ${missing.length - LISTED_WRITES} more` : '';
+  return {
+    type: WRITE_FIGURES_CHECK,
+    tag: 'INCMP',
+    thresholdSummary: 'an output row count for every plain write, from its node metric or from the stages of its root execution',
+    reason: `${missing.length} write${missing.length === 1 ? ' has' : 's have'} no output row count (${named}${more}): the write node has no row metric and the stages under its root execution report no rows written, or that root holds more than one write.`,
+  };
+}
+
 function countByImpactBand(findings: Array<{ impactBand: string }>): ImpactBandCounts {
   const counts: ImpactBandCounts = { critical: 0, warning: 0, info: 0 };
   for (const f of findings) if (f.impactBand in counts) counts[f.impactBand as keyof ImpactBandCounts] += 1;
@@ -470,6 +490,11 @@ function buildJson(
   const rows = sortFindings(allFindings.map(findingRow));
   const recommendations = buildRecommendations(allFindings, stages ?? new Map());
   const { cleanChecks, notRunChecks } = buildCheckLists(allFindings, stages ?? new Map(), thresholds);
+  const writeTargets = extractWriteTargets(sql ?? new Map(), {
+    stages, skippedLines: appModel.skippedLines, unreadableSqlExecutions: appModel.unreadableSqlExecutions,
+  });
+  const unfiguredWrites = notRunWriteFigures(writeTargets);
+  if (unfiguredWrites) notRunChecks.push(unfiguredWrites);
   const tuned = tunedDetectors(thresholds);
   const actionable = allFindings.filter(isEligible);
   const fullModel: AppModel = {
@@ -511,9 +536,7 @@ function buildJson(
     // Order follows DETECTORS (stable) => byte-stable serialization.
     detectors: tunedDetectorCatalog(thresholds),
     findings: rows,
-    writeTargets: extractWriteTargets(sql ?? new Map(), {
-      skippedLines: appModel.skippedLines, unreadableSqlExecutions: appModel.unreadableSqlExecutions,
-    }),
+    writeTargets,
     recommendations,
     cleanChecks,
     notRunChecks,
