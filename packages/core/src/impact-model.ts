@@ -19,6 +19,10 @@ export interface EstimateCtx {
   totalCores: number;
   // The run's SQL executions, for the plan nodes behind isPythonStage. Absent on hand-built ctxs.
   sql?: Map<number, SqlExecution>;
+  // Allocated core-ms no task ran on over the whole run (allocation minus busy core time, floored
+  // at 0). The ceiling for any single stage's idle figure; null/absent without executor cores or
+  // an application interval.
+  runIdleCoreMs?: number | null;
 }
 
 // Assumed shuffle-network throughput per executor link, ~1 Gbps. Starting assumption, unvalidated.

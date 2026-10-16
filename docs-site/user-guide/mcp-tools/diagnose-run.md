@@ -7,7 +7,9 @@ same verdict the dashboard opens with. `verdict` gives a `title` ("Start with
 Stage 3", "1 of 3 jobs failed in this run"), `summary` sentences, `steps`, the
 first three places to look in the dashboard's order (each with its action, what
 to try, the potential savings and what that figure counts, and the other
-finding types flagged at the same place), `remainingPlaces`, how many more
+finding types flagged at the same place), `costSteps`, the same places ranked by the
+measured busy core time a fix removes (only findings that carry one), `idle`, the
+core-hours and share of the allocation that ran no task, `remainingPlaces`, how many more
 places the full list holds, and `copyText`, the dashboard's "Copy next steps"
 checklist.
 

@@ -1769,10 +1769,13 @@ export const DETECTORS = [
         // Cores idle during the straggler's tail, at achieved concurrency (not full cluster
         // capacity, which is lowParallelism's territory): resourceOnly, since skew and straggler
         // already claim that tail's wall-clock time.
-        const idleCoreMs =
+        const tailIdleCoreMs =
           Math.max(0, Math.min(totalCores, taskCount) - 1) *
           Math.max(0, (stage.taskDurationMax ?? 0) - (stage.taskDurationP50 ?? 0));
-        return costOnly('measured', { value: idleCoreMs, unit: 'coreMs', idle: true });
+        // An upper bound that assumes every executor stays allocated through the tail, so it is
+        // modeled; one stage cannot idle more than the whole run did, so it is clipped to that.
+        const idleCoreMs = ctx.runIdleCoreMs == null ? tailIdleCoreMs : Math.min(tailIdleCoreMs, ctx.runIdleCoreMs);
+        return costOnly('modeled', { value: idleCoreMs, unit: 'coreMs', idle: true });
       }
       return null;
     },
