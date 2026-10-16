@@ -6,6 +6,7 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { WidgetCard } from '@/view/WidgetCard';
 import { summarizeComparison, type VerdictJobOutcome } from '@sparkforensics/core/comparison-verdict.ts';
 import { StageComparisonTable, type StageSide } from '@/view/StageComparisonTable';
+import { ComparabilityCard } from '@/view/ComparabilityCard';
 import { PinnedStageDeltas, type StageSummary } from '@/view/PinnedStageDeltas';
 import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 import { cn } from '@/lib/utils';
@@ -13,12 +14,14 @@ import { formatBytes, formatDuration, typeTag } from '@sparkforensics/core/forma
 import { NEUTRAL_METRIC_KEYS } from '@sparkforensics/core/run-comparison.ts';
 import type { ImpactBand } from '@sparkforensics/core/types.ts';
 import type { ReplannedGroup, StageAlignment, StagePair } from '@sparkforensics/core/stage-alignment.ts';
+import type { Comparability } from '@sparkforensics/core/comparability.ts';
 
 interface MetricDelta {
   key: string; label: string;
   baseline: number | null; candidate: number | null; delta: number | null;
   direction: 'improvement' | 'regression' | 'unchanged' | 'neutral' | 'unavailable';
   unavailableReason?: string;
+  withinNoise?: boolean;
 }
 interface CategoryDelta {
   rule: string; type: string; impactBand: string;
@@ -47,6 +50,8 @@ interface ComparisonModel {
   candStages?: StageSummary[];
   /** Failed-job counts per run, when the caller has each run's job results. */
   jobOutcomes?: { baseline: VerdictJobOutcome; candidate: VerdictJobOutcome };
+  /** What the two runs share; absent in a hand-built model, which then shows no card. */
+  comparability?: Comparability;
 }
 
 // Per-unit formatting: raw ms/bytes rendered through a bare NumberFormat read as
@@ -194,7 +199,7 @@ function LowConfidenceBanner({ reason, confidence }: { reason: string; confidenc
  * cost metrics moved each way, which finding categories came or went, and
  * where to go next. The tables below stay the evidence for each claim. */
 function ComparisonVerdict({ model, onDrillIn }: { model: ComparisonModel; onDrillIn?: (which: 'baseline' | 'candidate') => void }) {
-  const verdict = summarizeComparison(model.metrics, model.findings, model.jobOutcomes);
+  const verdict = summarizeComparison(model.metrics, model.findings, model.jobOutcomes, model.comparability);
   return (
     <section
       aria-labelledby="comparison-verdict-title"
@@ -281,6 +286,10 @@ export function RunComparison({
             own <h2> keeps the h1 -> h2 -> h3 order intact. */}
         {model.confidence !== 'ok' && model.reason ? <LowConfidenceBanner reason={model.reason} confidence={model.confidence} /> : null}
         <ComparisonVerdict model={model} onDrillIn={onDrillIn} />
+
+        {model.comparability ? (
+          <ComparabilityCard comparability={model.comparability} baselineLabel={model.baselineLabel} candidateLabel={model.candidateLabel} />
+        ) : null}
 
         <WidgetCard title="Metrics">
           <p className="mb-3 text-xs text-muted-foreground">

@@ -92,7 +92,7 @@ export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverride
   ));
 
   server.registerTool('compare_runs', {
-    description: 'Compare two runs: the verdict, metric deltas (metrics), categorized findings delta (findings) and the stage pairs (stagePairs) with the share of executor run time they cover (runtimeCoverage). confidence is ok, low or insufficient. metricDeltas and findingsDelta repeat metrics and findings under their earlier names and will be removed.',
+    description: 'Compare two runs: the verdict, metric deltas (metrics), categorized findings delta (findings), the stage pairs (stagePairs) with the share of executor run time they cover (runtimeCoverage), and comparability: the configuration differences, plan equality, data volume, executor capacity and the factors that bridge the wall-clock difference. confidence is ok, low or insufficient. metricDeltas and findingsDelta repeat metrics and findings under their earlier names and will be removed.',
     inputSchema: {
       runIdA: z.string().optional(), sourceA: sourceSchema.optional(),
       ...secondRunRefSchema,
@@ -101,10 +101,14 @@ export function createMcpServer({ thresholds }: { thresholds?: ThresholdOverride
         .describe('Extra blocks to return. stagePairs: one row per paired stage with its deltas, which can be large.'),
       normalizePath: z.array(z.string().max(MAX_NORMALIZE_PATTERN_LENGTH)).max(MAX_NORMALIZE_PATTERNS).optional()
         .describe('Regular expressions whose every match in a plan node\'s text is replaced with a fixed token before stages are paired, so run-specific text (an output directory that differs per run) does not keep the same stage from pairing. A generic pattern, not only for paths. Affects stage pairing, runtimeCoverage and confidence, never findings. A pattern that backtracks catastrophically can stall the server: keep them simple and anchored.'),
+      ignoreConf: z.array(z.string().max(MAX_NORMALIZE_PATTERN_LENGTH)).max(MAX_NORMALIZE_PATTERNS).optional()
+        .describe('Regular expressions matched against Spark configuration keys. A key that matches is left out of comparability.conf, for keys that differ by design such as a per-run output path. Per-run identity keys (application id, start time, driver address) are always left out.'),
+      noiseBand: z.number().min(0).max(1).optional()
+        .describe('Share of the baseline value under which a metric row is marked withinNoise (default 0.02). Never changes a row\'s direction.'),
       ...formatSchema,
     },
-  }, ({ runIdA, sourceA, runIdB, sourceB, redact, include, normalizePath, format }) => toolResultWithMarkdown(
-    compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, include }),
+  }, ({ runIdA, sourceA, runIdB, sourceB, redact, include, normalizePath, ignoreConf, noiseBand, format }) => toolResultWithMarkdown(
+    compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, ignoreConf, noiseBand, include }),
   ));
 
   server.registerTool('evaluate_budgets', {

@@ -151,7 +151,9 @@
 }
 .comparison-verdict[data-tone="better"] { border-left-color: var(--clean); }
 .comparison-verdict[data-tone="worse"] { border-left-color: var(--critical); }
+.comparison-verdict[data-tone="mixed"] { border-left-color: var(--warning); }
 .comparison-verdict[data-tone="same"],
+.comparison-verdict[data-tone="equivalent"],
 .comparison-verdict[data-tone="unknown"] { border-left-color: var(--accent); }
 .comparison-verdict h2 {
   font-size: 1.625rem;
