@@ -279,7 +279,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   slowHost: {
     name: 'slow executor host',
     tag: 'HOST',
-    thresholdSummary: (t) => `a host ${t.ratioWarn}× slower than its peers by mean task time (per-executor figures from ${t.ratioTiers[0]}×)`,
+    thresholdSummary: (t) => `a host ${t.ratioWarn}× slower than its peers by mean task time (per-executor figures from ${t.ratioTiers[0]}×, and only when the stage's own task-time spread cannot explain the gap)`,
     actionLabel(f) {
       if (f.variant === 'durationShare') return 'Fix data locality';
       if (f.variant === 'multiDim') return 'Investigate degraded executor';

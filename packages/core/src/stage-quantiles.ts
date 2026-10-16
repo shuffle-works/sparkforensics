@@ -107,7 +107,15 @@ export function finalizeStage(
     }
     if (t.executorId) {
       let es = executorStats.get(t.executorId);
-      if (!es) { es = { taskCount: 0, totalDuration: 0, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0 }; executorStats.set(t.executorId, es); }
+      if (!es) { es = { taskCount: 0, totalDuration: 0, logDurationSum: 0, logDurationM2: 0, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0 }; executorStats.set(t.executorId, es); }
+      // Task durations scatter multiplicatively, so the spread slowHost tests an executor against is
+      // kept on the log scale: a running sum and Welford's M2 of ln(1 + duration). A non-finite
+      // duration makes both NaN, which the detector reads as "no spread known".
+      const logDuration = Math.log1p(t.duration);
+      const logMeanBefore = es.taskCount > 0 ? es.logDurationSum / es.taskCount : 0;
+      const logMeanAfter = (es.logDurationSum + logDuration) / (es.taskCount + 1);
+      es.logDurationM2 += (logDuration - logMeanBefore) * (logDuration - logMeanAfter);
+      es.logDurationSum += logDuration;
       es.taskCount++;
       es.totalDuration += t.duration;
       es.inputBytes += t.inputBytes;
@@ -172,7 +180,7 @@ export function finalizeStage(
     ([host, s]) => ({ host, taskCount: s.taskCount, totalDuration: s.totalDuration })
   );
   const executorStatsArr = [...executorStats.entries()].map(
-    ([executorId, s]) => ({ executorId, taskCount: s.taskCount, totalDuration: s.totalDuration, inputBytes: s.inputBytes, shuffleReadBytes: s.shuffleReadBytes, shuffleWriteBytes: s.shuffleWriteBytes })
+    ([executorId, s]) => ({ executorId, taskCount: s.taskCount, totalDuration: s.totalDuration, logDurationSum: s.logDurationSum, logDurationM2: s.logDurationM2, inputBytes: s.inputBytes, shuffleReadBytes: s.shuffleReadBytes, shuffleWriteBytes: s.shuffleWriteBytes })
   );
   const failureReasonsArr = [...failureReasons.entries()].map(
     ([reason, count]) => ({ reason, count })

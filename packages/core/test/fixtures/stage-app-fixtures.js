@@ -34,3 +34,16 @@ export function dataTail(overrides = {}) {
     dataRatio: 8, cpuPct: null, ...overrides,
   };
 }
+
+// One executor's participation row as finalizeStage builds it from that executor's task durations:
+// the count, the summed duration and the sum and M2 of ln(1 + duration) slowHost tests against.
+export function executorRow(executorId, durationsMs, overrides = {}) {
+  const logs = durationsMs.map(Math.log1p);
+  const logDurationSum = logs.reduce((a, b) => a + b, 0);
+  const logMean = logDurationSum / logs.length;
+  return {
+    executorId, taskCount: durationsMs.length, totalDuration: durationsMs.reduce((a, b) => a + b, 0),
+    logDurationSum, logDurationM2: logs.reduce((sum, x) => sum + (x - logMean) ** 2, 0),
+    inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0, ...overrides,
+  };
+}

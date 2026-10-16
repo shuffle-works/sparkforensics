@@ -229,6 +229,13 @@ for its tasks or carry one heavy stage, rather than a hardware fault.
 Enable `spark.speculation` to relaunch a lagging task automatically. Only
 flagged on stages that take at least 0.5% of the run.
 
+An executor whose tasks ran slower than the median executor's is flagged only
+when the gap is larger than the stage's own spread of task times and the
+executor's task count allow. The slowest of 75 executors tops the median by
+chance far more often than the slowest of 3, so the gap it needs grows with
+the number of executors. A stage whose per-task timings are missing flags no
+executor on task time.
+
 ## App-level
 
 ### `COLD`: Executor cold start {#cold}

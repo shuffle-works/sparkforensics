@@ -3,7 +3,7 @@ import { analyze, auditConfig } from '../src/analyzer.js';
 import { DETECTORS, detectorCatalog } from '../src/detectors.js';
 import { detectorInfoByType } from '../src/detector-docs.js';
 import { formatBytes } from '../src/format-utils.js';
-import { makeStage, makeApp, dataTail } from './fixtures/stage-app-fixtures.js';
+import { makeStage, makeApp, dataTail, executorRow } from './fixtures/stage-app-fixtures.js';
 
 // Shared fixture for tests needing no bespoke overrides.
 const sampleApp = makeApp();
@@ -371,9 +371,9 @@ describe('analyze: executor multi-dim imbalance (§2b)', () => {
   const base = { taskCount: 5, totalDuration: 5000, inputBytes: 500, shuffleReadBytes: 0, shuffleWriteBytes: 0 };
   it('flags task-time deviation past the top tier as critical', () => {
     const executorStats = [
-      { executorId: 'e1', ...base, taskCount: 5, totalDuration: 500000 }, // mean 100000
-      { executorId: 'e2', ...base }, // mean 1000
-      { executorId: 'e3', ...base }, // mean 1000  → max/median = 100×
+      executorRow('e1', Array(5).fill(100000)), // mean 100000
+      executorRow('e2', Array(5).fill(1000)), // mean 1000
+      executorRow('e3', Array(5).fill(1000)), // mean 1000  → max/median = 100×
     ];
     const stages = new Map([[1, makeStage({ taskCount: 15, executorStats, hostStats: [] })]]);
     const f = analyze(makeApp(), stages, [], []).filter(b => b.variant === 'multiDim' && b.dimension === 'taskTime');

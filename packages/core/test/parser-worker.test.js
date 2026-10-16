@@ -3564,9 +3564,29 @@ describe('finalizeStage: per-executor stage participation stats', () => {
       'Stage Info': { 'Stage ID': 1, 'Completion Time': 400 } }, s);
     expect(Array.isArray(msg.data.executorStats)).toBe(true);
     expect(msg.data.executorStats).toEqual(expect.arrayContaining([
-      { executorId: 'exec-1', taskCount: 2, totalDuration: 400, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0 },
-      { executorId: 'exec-2', taskCount: 1, totalDuration: 50, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0 },
+      expect.objectContaining({ executorId: 'exec-1', taskCount: 2, totalDuration: 400, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0 }),
+      expect.objectContaining({ executorId: 'exec-2', taskCount: 1, totalDuration: 50, inputBytes: 0, shuffleReadBytes: 0, shuffleWriteBytes: 0 }),
     ]));
+  });
+
+  it('accumulates the sum and M2 of ln(1 + duration) per executor', () => {
+    const s = createState();
+    setupStage(s);
+    const taskEnd = (exec, finish) => processEvent({ Event: 'SparkListenerTaskEnd', 'Stage ID': 1,
+      'Task Info': { 'Index': taskEnd._i = (taskEnd._i ?? 0) + 1, 'Launch Time': 0, 'Finish Time': finish, 'Executor ID': exec },
+      'Task Metrics': {} }, s);
+    [100, 300, 700].forEach((d) => taskEnd('exec-1', d));
+    taskEnd('exec-2', 50);
+    const msg = processEvent({ Event: 'SparkListenerStageCompleted',
+      'Stage Info': { 'Stage ID': 1, 'Completion Time': 800 } }, s);
+    const logs = [100, 300, 700].map(Math.log1p);
+    const mean = logs.reduce((a, b) => a + b, 0) / 3;
+    const exec1 = msg.data.executorStats.find((e) => e.executorId === 'exec-1');
+    expect(exec1.logDurationSum).toBeCloseTo(logs.reduce((a, b) => a + b, 0), 10);
+    expect(exec1.logDurationM2).toBeCloseTo(logs.reduce((sum, x) => sum + (x - mean) ** 2, 0), 10);
+    const exec2 = msg.data.executorStats.find((e) => e.executorId === 'exec-2');
+    expect(exec2.logDurationSum).toBeCloseTo(Math.log1p(50), 10);
+    expect(exec2.logDurationM2).toBe(0); // a single task has no spread
   });
 
   it('omits tasks with no Executor ID from executorStats', () => {
