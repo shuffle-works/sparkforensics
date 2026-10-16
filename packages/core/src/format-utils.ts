@@ -285,6 +285,12 @@ export function formatRawWaste(rawWaste: RawWasteFigure): string {
   }
 }
 
+/** A cost-only figure as core time. Task time summed over tasks (`ms`) is core time, and printing
+ * it as a duration beside wall-clock savings reads as run time it does not shorten. */
+export function asCoreTime(rawWaste: RawWasteFigure): RawWasteFigure {
+  return rawWaste.unit === 'ms' ? { ...rawWaste, unit: 'coreMs' } : rawWaste;
+}
+
 // formatRawWaste/fmtMs round to a fixed precision (one decimal place, or
 // whole milliseconds below 1s), which can collapse a small but genuinely
 // nonzero value down to a formatted string that reads exactly like zero

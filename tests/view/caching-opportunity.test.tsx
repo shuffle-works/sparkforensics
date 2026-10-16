@@ -95,11 +95,11 @@ test('shows Data read via formatBytes, and an em-dash when bytes are unknown', a
   expect(jdbcRow).toHaveTextContent('—');
 });
 
-test('renders the ms raw-waste figure when the finding carries an impactEstimate', async () => {
+test('renders the task-time raw-waste figure as core time when the finding carries an impactEstimate', async () => {
   renderCachingOpportunity([finding({
     impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: 800, unit: 'ms' } },
   })]);
-  expect(screen.getByText('800ms')).toBeInTheDocument();
+  expect(screen.getByText('0.8 core-s')).toBeInTheDocument();
 });
 
 test('renders the recommendation text', async () => {

@@ -110,6 +110,14 @@ idle core capacity", not "of core time". A stage's slow tail is counted once:
 when `skew` and `straggler` both flag the same stage, `skew` carries the
 removed task time and `straggler` has `null`.
 
+A cost-only figure for task time is printed as core time ("0.2 core-h of task
+time (modeled)"), never as a duration beside run-time savings, and a modeled one
+says so. `rawWaste` keeps its value and unit. Each finding row also carries
+`estimateProvenance`, the sentence that says how the estimate was derived and what
+its model assumes and leaves out, for example "assumes 200 MB/s per executor over 75
+executors; counts disk spill only, not memory spill, serialization or GC". Scripts
+read the numbers from `impactEstimate` and `evidence`, not from these strings.
+
 `impactEstimate.idleCoreTimeMs` is the idle capacity as a number a script can
 rank by: the `utilization` finding's allocated core time that ran no task, in
 core-milliseconds, as a `{ "low": ..., "high": ... }` range with `low` equal to

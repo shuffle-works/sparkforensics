@@ -23,8 +23,8 @@ on the same stage are folded into one step, because they usually share a
 cause and their savings overlap rather than add up. Each savings figure says
 what it counts: a time such as "58.6s of run time" is how much sooner the run
 could finish, while a resource figure such as "3.0 GB-h of unused executor
-memory" or "0.7 core-h of core time" is cluster time a fix would free up,
-which cuts cost but may not shorten the run. A figure "of idle core capacity"
+memory" or "0.2 core-h of task time (modeled)" is cluster time a fix would free up,
+which cuts cost but may not shorten the run. A resource figure is always core time, never a duration, and says "(modeled)" when it rests on an assumed rate. A figure "of idle core capacity"
 counts allocated cores that ran no task, not work a fix removes. The steps rank "By wall clock"; a second list, "By core time", ranks findings by the busy core time a fix removes, including findings with no run-time claim. A line under the summary states how much of the allocation ran no task. **Copy next steps**
 copies the whole plan as a plain checklist (run, verdict, and numbered steps
 with their stage and savings) to paste into a ticket or a message. Steps

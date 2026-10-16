@@ -1,7 +1,20 @@
 // Savings figures as every surface prints them: the dashboard's widgets and verdict, and the
 // CLI/MCP evidence report. One formatter set, so units and rounding never drift between paths.
-import { fmtMs, formatRawWaste, formatWallClockRange, readsAsZero } from './format-utils.ts';
+import { asCoreTime, fmtMs, formatRawWaste, formatWallClockRange, readsAsZero } from './format-utils.ts';
 import type { Finding, ImpactEstimate, RawWasteFigure } from './types.ts';
+
+/** The raw figure as the surfaces print it: a cost-only (`resourceOnly`) task-time figure in core
+ * time, anything else as the detector emitted it. `rawWaste` itself stays untouched. */
+function shownRawWaste(estimate: ImpactEstimate): RawWasteFigure | undefined {
+  const rawWaste = estimate.rawWaste;
+  return rawWaste && estimate.basis === 'resourceOnly' ? asCoreTime(rawWaste) : rawWaste;
+}
+
+/** " (modeled)" after a cost-only figure that rests on an assumed constant, so a modeled core
+ * time never reads as a measured one. Empty for any other estimate. */
+function certaintyNote(estimate: ImpactEstimate): string {
+  return estimate.basis === 'resourceOnly' && estimate.estimateMethod === 'modeled' ? ' (modeled)' : '';
+}
 
 /** A finding's one-line savings figure: the wall-clock range for a time-based
  * finding, the raw resource figure for a `resourceOnly` one, or nothing for a
@@ -11,8 +24,9 @@ export function impactFigure(finding: Finding): string | null {
   const estimate = finding.impactEstimate;
   if (!estimate) return null;
   if (estimate.wallClock) return formatWallClockRange(estimate.wallClock.low, estimate.wallClock.high);
-  if (estimate.rawWaste) {
-    const text = formatRawWaste(estimate.rawWaste);
+  const rawWaste = shownRawWaste(estimate);
+  if (rawWaste) {
+    const text = formatRawWaste(rawWaste);
     return readsAsZero(text) ? null : text;
   }
   return null;
@@ -25,7 +39,7 @@ export function rawWasteMeaning(rawWaste: RawWasteFigure | undefined): string | 
     case 'mbSeconds': return 'of unused executor memory';
     case 'coreHours':
     case 'coreMs': return rawWaste.idle ? 'of idle core capacity' : 'of core time';
-    case 'bytes': return 'of extra data written';
+    case 'bytes': return rawWaste.reread ? 'of input read by the repeated scans' : 'of extra data written';
     case 'ms': return 'of task time';
     default: return null;
   }
@@ -40,7 +54,8 @@ export function savingsMeaning(finding: Finding): string | null {
   const estimate = finding.impactEstimate;
   if (!estimate) return null;
   if (estimate.wallClock) return 'of run time';
-  return rawWasteMeaning(estimate.rawWaste);
+  const meaning = rawWasteMeaning(estimate.rawWaste);
+  return meaning && `${meaning}${certaintyNote(estimate)}`;
 }
 
 /** A finding's "Potential savings" figure as the widget board shows it: the
@@ -54,8 +69,12 @@ export function impactEstimateFigure(estimate: ImpactEstimate | undefined): { te
   if (highText && !readsAsZero(highText)) {
     return { text: formatWallClockRange(estimate.wallClock!.low, estimate.wallClock!.high), meaning: 'of run time' };
   }
-  const rawWasteText = estimate.rawWaste && estimate.rawWaste.value > 0 ? formatRawWaste(estimate.rawWaste) : null;
-  if (rawWasteText && !readsAsZero(rawWasteText)) return { text: rawWasteText, meaning: rawWasteMeaning(estimate.rawWaste) };
+  const rawWaste = shownRawWaste(estimate);
+  const rawWasteText = rawWaste && rawWaste.value > 0 ? formatRawWaste(rawWaste) : null;
+  if (rawWasteText && !readsAsZero(rawWasteText)) {
+    const meaning = rawWasteMeaning(estimate.rawWaste);
+    return { text: rawWasteText, meaning: meaning && `${meaning}${certaintyNote(estimate)}` };
+  }
   return null;
 }
 
@@ -71,10 +90,11 @@ export function impactEstimateCompact(estimate: ImpactEstimate | undefined): str
     const text = fmtMs(estimate.wallClock.high);
     return readsAsZero(text) ? null : text;
   }
-  if (estimate.rawWaste) {
-    if (estimate.rawWaste.value <= 0) return null;
-    const text = formatRawWaste(estimate.rawWaste);
-    return readsAsZero(text) ? null : text;
+  const rawWaste = shownRawWaste(estimate);
+  if (rawWaste) {
+    if (rawWaste.value <= 0) return null;
+    const text = formatRawWaste(rawWaste);
+    return readsAsZero(text) ? null : `${text}${certaintyNote(estimate)}`;
   }
   return null;
 }
@@ -88,14 +108,22 @@ export function impactEstimateCompact(estimate: ImpactEstimate | undefined): str
  * formatting and zero rules as the step's own savings figure, which it does
  * not repeat: the step already shows it. */
 export function estimateProvenance(finding: Pick<Finding, 'impactEstimate'>): string | null {
+  const sentence = provenanceSentence(finding);
+  const assumptions = finding.impactEstimate?.assumptions;
+  if (!sentence || !assumptions) return sentence;
+  return `${sentence} ${assumptions[0].toUpperCase()}${assumptions.slice(1)}.`;
+}
+
+function provenanceSentence(finding: Pick<Finding, 'impactEstimate'>): string | null {
   const estimate = finding.impactEstimate;
   if (!estimate || estimate.estimateMethod === 'none') return null;
   const method = `${estimate.estimateMethod[0].toUpperCase()}${estimate.estimateMethod.slice(1)}`;
-  const rawWaste = estimate.rawWaste && estimate.rawWaste.value > 0 ? estimate.rawWaste : null;
+  const shown = shownRawWaste(estimate);
+  const rawWaste = shown && shown.value > 0 ? shown : null;
   const raw = rawWaste && !readsAsZero(formatRawWaste(rawWaste)) ? formatRawWaste(rawWaste) : null;
   const wallClock = estimate.wallClock;
   if (estimate.basis === 'resourceOnly') {
-    return raw ? `${method}; ${raw} wasted, which may not shorten the run.` : null;
+    return raw ? `${method}; ${raw} ${rawWasteMeaning(estimate.rawWaste) ?? 'wasted'}, which may not shorten the run.` : null;
   }
   if (!wallClock || wallClock.high <= 0) return null;
   const highText = formatWallClockRange(wallClock.high, wallClock.high);

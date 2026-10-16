@@ -20,7 +20,7 @@ import { buildRecommendationRollup, isEligible, isRealFinding, rankFindings, res
 import { checkCoverage, isCleanRun } from './check-coverage.ts';
 import { buildRunVerdict, stepCopyRecommendation, stepCopyText, type RunIdleLine, type RunVerdictModel } from './run-verdict.ts';
 import {
-  estimateProvenance, impactEstimateFigure, impactFigure, rawWasteMeaning, savingsMeaning,
+  estimateProvenance, impactEstimateFigure, impactFigure, savingsMeaning,
 } from './impact-format.ts';
 import { computeRunShape, type RunShape } from './run-shape.ts';
 import { extractWriteTargets, isPlainWrite, type WriteTargetsReport } from './write-targets.ts';
@@ -61,6 +61,9 @@ interface FindingRowColumns {
   // when there is a figure to show (none for an informational or zero estimate).
   impact?: string;
   impactMeaning?: string | null;
+  // How the estimate was derived and what its model assumes (estimateProvenance); only when the
+  // estimate has a figure to explain.
+  estimateProvenance?: string;
   // Only on a finding whose detector ran with a user override off its default (CLI/MCP
   // --thresholds): the overridden thresholds. Its impact estimate is uncalibrated.
   tunedThresholds?: TunedThresholds;
@@ -208,7 +211,7 @@ const EVIDENCE_KEYS = {
   partitionSizing: ['rule', 'origin', 'aqeSkew', 'partitions'],
   spill: ['spillMagnitude', 'reads'],
   gc: ['direction'],
-  slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue'],
+  slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue', 'executorCount', 'taskCount'],
   stageSlowness: ['reads'],
   stageFailed: ['variant', 'numTasks', 'memoryBytesSpilled', 'failedTaskDetails'],
   failures: ['failedTasks', 'dominantReason', 'dominantError', 'failureGroups', 'otherFailedTasks'],
@@ -287,6 +290,8 @@ function findingRow(f: Finding, key: string): FindingRow {
     row.impact = figure.text;
     row.impactMeaning = figure.meaning;
   }
+  const provenance = estimateProvenance(f);
+  if (provenance) row.estimateProvenance = provenance;
   if (f.tunedThresholds != null) row.tunedThresholds = f.tunedThresholds;
   return row;
 }
@@ -349,7 +354,7 @@ function buildRecommendations(
         unit: group.unit,
         total: group.total,
         impact: shown,
-        impactMeaning: shown ? rawWasteMeaning(representative.impactEstimate?.rawWaste) : null,
+        impactMeaning: shown ? savingsMeaning(representative) : null,
       };
     }
     return {
