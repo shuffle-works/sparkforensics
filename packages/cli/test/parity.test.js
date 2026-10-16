@@ -227,7 +227,7 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
       const [self] = await cliLines([BASELINE, '--baseline', BASELINE, '--format', 'ndjson']);
       expect(self.comparison.stagePairs[0]).toEqual({
         pairId: expect.any(String), baseStageIds: expect.any(Array), candStageIds: expect.any(Array),
-        quality: 'exact', score: 1, deltas: expect.any(Object),
+        quality: 'exact', score: 1, deltas: expect.any(Object), stageLabel: expect.any(String),
       });
       expect(Object.keys(self.comparison.stagePairs[0].deltas)).toEqual([
         'executorRunTime', 'executorCpuTime', 'memoryBytesSpilled', 'diskBytesSpilled',
