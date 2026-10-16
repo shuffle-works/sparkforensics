@@ -15,7 +15,8 @@ when `include` asks for it (the CLI always carries it), plus
 `runIdA` and `runIdB`, which are handles for the runs this server process has
 cached and differ per tool by design: match runs by `baselineApp` and `candidateApp`.
 Each row of `findings` lists its stage names in `stages` and the same names with the
-directories of their call-site paths removed in `stageLabels`.
+directories of their call-site paths removed in `stageLabels`. The raw names in `stages`
+still carry those paths, and `redact` does not remove them, so show `stageLabels`.
 `metricDeltas` and `findingsDelta` repeat `metrics` and
 `findings` under their earlier names; they are deprecated and will be removed
 in a later release. `verdict` is the headline the dashboard's comparison page
@@ -181,8 +182,9 @@ more isn't worse) or `unavailable`, and an unavailable row carries an
 The comparison block (`comparisonSchemaVersion` `1`) holds:
 
 - `stagePairs` (only with `include`): one entry per pair of stages, `pairId` (stable for one pair of
-  runs; key on it), `baseStageIds` and `candStageIds`, `quality` (`exact`,
-  `structural` or `aligned`), `score` (0 to 1) and `deltas`. `deltas` has one
+  runs; key on it), `baseStageIds` and `candStageIds`, `stageLabel` (the pair's
+  baseline stage name with call-site directories removed; the row has no raw name),
+  `quality` (`exact`, `structural` or `aligned`), `score` (0 to 1) and `deltas`. `deltas` has one
   `{ baseline, candidate, delta }` entry for each of `executorRunTime`,
   `executorCpuTime` (ms), `memoryBytesSpilled`, `diskBytesSpilled`,
   `inputBytes`, `outputBytes`, `shuffleReadBytes` and `shuffleWriteBytes`. The

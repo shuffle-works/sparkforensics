@@ -521,6 +521,15 @@ describe('compareRuns confidence', () => {
     expect(m.metrics.find((x) => x.key === 'wallClock').delta).toBe(10);
   });
 
+  it('labels each stage pair without the call-site directories and carries no raw name', () => {
+    const name = 'collect at /hadoop/yarn/local/usercache/some-user/appcache/application_0000000000000_0001/etl.py:42';
+    const stages = [[1, { name, sqlExecutionId: null, executorRunTime: 50 }]];
+    const m = compareRuns(B(stages, { name: 'JobX' }), C(stages, { name: 'JobX' }));
+    expect(m.stagePairs).toHaveLength(1);
+    expect(m.stagePairs[0].stageLabel).toBe('collect at etl.py:42');
+    expect(JSON.stringify(m.stagePairs)).not.toContain('some-user');
+  });
+
   it("is 'insufficient' when stages exist but none recorded run time", () => {
     const stages = [[1, { name: 'Exchange 1', sqlExecutionId: null }]];
     const m = compareRuns(run([], { name: 'JobX' }, 'base', stages), run([], { name: 'JobX' }, 'cand', stages));

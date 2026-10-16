@@ -176,7 +176,7 @@ JSON and the MCP tools call the same core functions:
   `compare_runs`. A server built without one reports version `0.0.0`.
 - `comparisonOutput()` carries the same `generator` block and a `baselineApp` and
   `candidateApp` block, read from each run's `app` by `compareRuns`. Each findings
-  row has `stageLabels`, the row's `stages` through `stageDisplayLabel()` in
+  row has `stageLabels` and each `stagePairs` row a `stageLabel`, the stage names through `stageDisplayLabel()` in
   `packages/core/src/stage-label.ts`, which reduces every path in a stage name to
   its last segment. It is display only: `normalizeStageName` stays the stage
   identity, so pairing does not move.

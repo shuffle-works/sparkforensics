@@ -52,6 +52,9 @@ export interface StageSkewRow {
   pairId: string; name: string; baseId: number; candId: number;
   baseline: number | null; candidate: number | null; delta: number | null;
 }
+/** A stage pair with its stage name as a display label (call-site directories removed). The pair
+ * carries no raw name, so the label is the only name on the row. */
+export interface LabeledStagePair extends StagePair { stageLabel: string }
 export interface CompareRunsResult {
   baselineLabel: string; candidateLabel: string;
   baselineApp: RunAppIdentity; candidateApp: RunAppIdentity;
@@ -62,7 +65,7 @@ export interface CompareRunsResult {
   matchedCoverage: number;
   comparisonSchemaVersion: typeof COMPARISON_SCHEMA_VERSION;
   runtimeCoverage: number | null;
-  stagePairs: StagePair[];
+  stagePairs: LabeledStagePair[];
   unmatched: StageAlignment['unmatched'];
   replanned: StageAlignment['replanned'];
   bookkeepingStageIds: StageAlignment['bookkeepingStageIds'];
@@ -491,7 +494,9 @@ export function compareRuns(
     matchedCoverage: match.coverage,
     comparisonSchemaVersion: COMPARISON_SCHEMA_VERSION,
     runtimeCoverage,
-    stagePairs: alignment.pairs,
+    stagePairs: alignment.pairs.map((p) => ({
+      ...p, stageLabel: stageDisplayLabel(baseSnap.stages.get(p.baseStageIds[0])?.name ?? ''),
+    })),
     unmatched: alignment.unmatched,
     replanned: alignment.replanned,
     bookkeepingStageIds: alignment.bookkeepingStageIds,
