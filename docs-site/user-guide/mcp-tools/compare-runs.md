@@ -15,8 +15,9 @@ when `include` asks for it (the CLI always carries it), plus
 `runIdA` and `runIdB`, which are handles for the runs this server process has
 cached and differ per tool by design: match runs by `baselineApp` and `candidateApp`.
 Each row of `findings` lists its stage names in `stages` and the same names with the
-directories of their call-site paths removed in `stageLabels`. The raw names in `stages`
-still carry those paths, and `redact` does not remove them, so show `stageLabels`.
+directories of their call-site paths removed in `stageLabels`; each `stagePairs` row has
+the same kind of label in `stageLabel`. The raw names in `stages` still carry those paths,
+and `redact` does not remove them, so show `stageLabels` and `stageLabel`.
 `metricDeltas` and `findingsDelta` repeat `metrics` and
 `findings` under their earlier names; they are deprecated and will be removed
 in a later release. `verdict` is the headline the dashboard's comparison page
