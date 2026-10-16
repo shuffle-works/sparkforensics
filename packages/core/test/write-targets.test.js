@@ -144,7 +144,7 @@ describe('evidence report writeTargets contract', () => {
     expect(json.writeTargets).toEqual({
       writes: [{
         sqlExecutionId: 1, nodeId: null, command: 'SaveIntoDataSourceCommand', recognized: true,
-        kind: null, target: null, outputRows: null, outputRowsSource: null, outputBytes: null, mergeRows: null,
+        kind: null, target: null, outputRows: null, outputRowsSource: null, outputBytes: null, mergeRows: null, changedRows: null,
         raw: 'Execute SaveIntoDataSourceCommand',
       }],
       executionsWithoutPlan: [{ sqlExecutionId: 2, reason: 'noPlan' }],
@@ -162,13 +162,13 @@ describe('mergeRows', () => {
   const merge = (metrics) => node('Execute MergeIntoCommand', 'Execute MergeIntoCommand', { id: 'n1', metrics });
   const metric = (name, value) => ({ name, value });
 
-  it('reads the four counts from a MergeIntoCommand node and leaves outputRows alone', () => {
+  it('reads the four counts from a MergeIntoCommand node; outputRows excludes the deleted count', () => {
     const [write] = writesOf(merge([
       metric('number of inserted rows', 5), metric('number of updated rows', 6), metric('number of deleted rows', 0),
       metric('number of target rows rewritten unmodified', 90), metric('number of source rows', 11),
     ]));
     expect(write.mergeRows).toEqual({ inserted: 5, updated: 6, deleted: 0, copied: 90 });
-    expect(write.outputRows).toBeNull();
+    expect(write.outputRows).toBe(101);
   });
 
   it('reads the older "number of rows copied" label as copied', () => {
@@ -183,5 +183,52 @@ describe('mergeRows', () => {
   it('is null for every other command, even one that carries a matching metric name', () => {
     const update = node('Execute UpdateCommand', 'Execute UpdateCommand', { id: 'n1', metrics: [metric('number of updated rows', 3)] });
     expect(writesOf(update)[0].mergeRows).toBeNull();
+  });
+});
+
+describe('command output figures', () => {
+  const cmd = (name, metrics) => node(`Execute ${name}`, `Execute ${name}`, { id: 'n1', metrics });
+  const metric = (name, value) => ({ name, value });
+  const figures = (w) => ({ rows: w.outputRows, source: w.outputRowsSource, bytes: w.outputBytes });
+
+  it('sums a MERGE\'s inserted, updated and copied rows and reads its bytes added', () => {
+    const [w] = writesOf(cmd('MergeIntoCommand', [
+      metric('number of inserted rows', 5), metric('number of updated rows', 6), metric('number of deleted rows', 4),
+      metric('number of target rows rewritten unmodified', 90), metric('number of target bytes added', 1234),
+    ]));
+    expect(figures(w)).toEqual({ rows: 101, source: 'commandMetric', bytes: 1234 });
+  });
+
+  it('leaves a MERGE\'s rows null when one of the three counters is missing', () => {
+    const [w] = writesOf(cmd('MergeIntoCommand', [metric('number of inserted rows', 5), metric('number of updated rows', 6)]));
+    expect(figures(w)).toEqual({ rows: null, source: null, bytes: null });
+  });
+
+  it('reads an UPDATE from the period-suffixed Delta 4 labels', () => {
+    const [w] = writesOf(cmd('UpdateCommand', [
+      metric('number of rows touched (copied + updated)', 50), metric('number of rows updated.', 10),
+      metric('number of rows copied.', 40), metric('number of bytes added', 700),
+    ]));
+    expect(figures(w)).toEqual({ rows: 50, source: 'commandMetric', bytes: 700 });
+    expect(w.changedRows).toEqual({ updated: 10, deleted: null });
+  });
+
+  it('reads a DELETE\'s copied rows under either label spelling, and keeps 0 as 0', () => {
+    const withPeriod = writesOf(cmd('DeleteCommand', [metric('number of rows copied.', 0), metric('number of rows deleted.', 8), metric('number of bytes added', 0)]))[0];
+    const bare = writesOf(cmd('DeleteCommand', [metric('number of rows copied', 3), metric('number of rows deleted', 8)]))[0];
+    expect(figures(withPeriod)).toEqual({ rows: 0, source: 'commandMetric', bytes: 0 });
+    expect(withPeriod.changedRows).toEqual({ updated: null, deleted: 8 });
+    expect(figures(bare)).toEqual({ rows: 3, source: 'commandMetric', bytes: null });
+  });
+
+  it('keeps null figures and a null changedRows for an UPDATE whose node has no counters', () => {
+    const [w] = writesOf(cmd('UpdateCommand', [metric('number of source rows', 3)]));
+    expect(figures(w)).toEqual({ rows: null, source: null, bytes: null });
+    expect(w.changedRows).toBeNull();
+  });
+
+  it('prefers a node\'s own output-rows metric', () => {
+    const [w] = writesOf(cmd('UpdateCommand', [metric('number of output rows', 9), metric('number of rows touched (copied + updated)', 50)]));
+    expect(figures(w)).toEqual({ rows: 9, source: 'nodeMetric', bytes: null });
   });
 });
