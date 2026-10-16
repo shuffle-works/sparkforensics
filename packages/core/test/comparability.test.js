@@ -78,6 +78,19 @@ describe('comparability', () => {
     expect(buildComparison(base, cand).comparability.conf.differences.map((d) => d.key)).toContain('spark.out.path');
   });
 
+  it('withholds a key the run output withholds, with and without a user redact pattern', () => {
+    const base = baseRun({ config: { ...SAME_CONF, 'spark.foo.internal.path': '/a', 'spark.db.password': 'p1' } });
+    const cand = candRun({ config: { ...SAME_CONF, 'spark.foo.internal.path': '/b', 'spark.db.password': 'p2' } });
+    const plain = buildComparison(base, cand).comparability.conf;
+    expect(plain.withheldKeys).toEqual(['spark.db.password']);
+    expect(plain.differences.map((d) => d.key)).toEqual(['spark.foo.internal.path']);
+    const masked = buildComparison(base, cand, { confRedactRegex: 'internal' }).comparability.conf;
+    expect(masked.withheldKeys).toEqual(['spark.db.password', 'spark.foo.internal.path']);
+    expect(masked.differences).toEqual([]);
+    expect(masked.equal).toBe(true);
+    expect(JSON.stringify(masked)).not.toMatch(/"\/a"|"\/b"/);
+  });
+
   it('does not read runs with different configuration as equivalent', () => {
     const built = buildComparison(baseRun(), candRun({ config: { ...SAME_CONF, 'spark.sql.shuffle.partitions': '400' } }));
     expect(comparisonVerdict(built).tone).not.toBe('equivalent');

@@ -80,6 +80,8 @@ export interface Comparability {
 export interface ComparabilityOptions {
   /** Regular expression sources: a configuration key that matches one is left out of `conf`. */
   ignoreConf?: readonly string[];
+  /** Extra secret pattern, as the run output's `confRedactRegex`: a matching property is withheld. */
+  confRedactRegex?: string;
   /** Share of the baseline's value under which a figure counts as within noise. */
   noiseBand: number;
 }
@@ -108,9 +110,9 @@ export function compileConfIgnorePatterns(patterns: readonly string[] | undefine
   });
 }
 
-function compareConf(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, ignore: RegExp[]): ConfComparability {
-  const base = buildEffectiveConf(baseSnap.app);
-  const cand = buildEffectiveConf(candSnap.app);
+function compareConf(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, ignore: RegExp[], userPattern?: string): ConfComparability {
+  const base = buildEffectiveConf(baseSnap.app, { userPattern });
+  const cand = buildEffectiveConf(candSnap.app, { userPattern });
   if (base == null || cand == null) return { equal: null, differences: [], ignoredKeys: [], withheldKeys: [] };
   const withheld = new Set([...base.maskedKeys, ...cand.maskedKeys]);
   const keys = [...new Set([...Object.keys(base.values), ...Object.keys(cand.values)])].filter((key) => !withheld.has(key)).sort();
@@ -188,7 +190,7 @@ export function buildComparability(
   baseSnap: SessionSnapshot, candSnap: SessionSnapshot,
   alignment: Pick<StageAlignment, 'unmatched' | 'replanned'>,
   metrics: Array<{ key: string; baseline: number | null; candidate: number | null }>,
-  { ignoreConf, noiseBand }: ComparabilityOptions,
+  { ignoreConf, confRedactRegex, noiseBand }: ComparabilityOptions,
 ): Comparability {
   const attempts = (snap: SessionSnapshot): Stage[] => withEarlierAttempts([...snap.stages.values()]);
   const allocation = (snap: SessionSnapshot) => (snap.executors ? computeAllocation(snap) : null);
@@ -213,7 +215,7 @@ export function buildComparability(
 
   return {
     noiseBand,
-    conf: compareConf(baseSnap, candSnap, compileConfIgnorePatterns(ignoreConf)),
+    conf: compareConf(baseSnap, candSnap, compileConfIgnorePatterns(ignoreConf), confRedactRegex),
     plan: comparePlan(alignment),
     volume: compareVolume(attempts(baseSnap), attempts(candSnap), metrics, noiseBand),
     capacity: {

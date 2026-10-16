@@ -43,9 +43,9 @@ export function comparisonOutput(comparison: CompareRunsResult, view: Comparison
  * and Markdown; `output` is the projection to serialize. */
 export function buildComparisonOutput(
   baseline: ComparisonRunInput, candidate: ComparisonRunInput,
-  { redact, normalizePath, ignoreConf, noiseBand, view }: { redact?: boolean; view?: ComparisonView } & CompareOptions = {},
+  { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand, view }: { redact?: boolean; view?: ComparisonView } & CompareOptions = {},
 ): { comparison: CompareRunsResult; output: ComparisonOutput } {
-  const built = buildComparison(baseline, candidate, { normalizePath, ignoreConf, noiseBand });
+  const built = buildComparison(baseline, candidate, { normalizePath, ignoreConf, confRedactRegex, noiseBand });
   const comparison = redact ? redactComparison(built) : built;
   return { comparison, output: comparisonOutput(comparison, view) };
 }

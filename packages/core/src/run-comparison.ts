@@ -405,6 +405,9 @@ export interface CompareOptions {
    * is left out of the configuration comparison, for keys that differ by design such as a per-run
    * output path. Invalid, over-long or empty patterns throw. */
   ignoreConf?: readonly string[];
+  /** Extra secret pattern for the configuration comparison, as the CLI's `--conf-redact-regex`:
+   * a property whose key or value matches is withheld from both sides and not compared. */
+  confRedactRegex?: string;
   /** Share of the baseline's value under which a metric row is `withinNoise`; default
    * `DEFAULT_NOISE_BAND`. Must be a finite number from 0 to 1. */
   noiseBand?: number;
@@ -486,7 +489,7 @@ export function compareRuns(
     baseStages: stageList(baseSnap),
     candStages: stageList(candSnap),
     jobOutcomes: { baseline: jobOutcome(baseSnap), candidate: jobOutcome(candSnap) },
-    comparability: buildComparability(baseSnap, candSnap, alignment, metrics, { ignoreConf: options.ignoreConf, noiseBand }),
+    comparability: buildComparability(baseSnap, candSnap, alignment, metrics, { ignoreConf: options.ignoreConf, confRedactRegex: options.confRedactRegex, noiseBand }),
   };
 }
 
