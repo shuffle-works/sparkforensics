@@ -15,16 +15,27 @@ CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD")
 # changesets refuses a changeset that names it together with a package that is
 # not ignored, which blocks the release. Fail early with the offending files.
 MIXED=""
+CORE_ONLY=""
 for f in .changeset/*.md; do
   [ "$(basename "$f")" = "README.md" ] && continue
   PKGS=$(awk 'NR==1{next} /^---/{exit} /^["'"'"']/{print}' "$f")
   if echo "$PKGS" | grep -q '@sparkforensics/core' && [ "$(echo "$PKGS" | wc -l)" -gt 1 ]; then
     MIXED="$MIXED $f"
   fi
+  # A changeset that names only core is never consumed by "changeset version",
+  # so it stays pending and keeps the release action in version-PR mode.
+  if echo "$PKGS" | grep -q '@sparkforensics/core' && [ "$(echo "$PKGS" | grep -vc '@sparkforensics/core')" -eq 0 ]; then
+    CORE_ONLY="$CORE_ONLY $f"
+  fi
 done
 if [ -n "$MIXED" ]; then
   echo "These changesets name @sparkforensics/core together with other packages:$MIXED"
   echo "Changesets rejects mixed changesets because core is ignored. Remove the @sparkforensics/core line from each."
+  exit 1
+fi
+if [ -n "$CORE_ONLY" ]; then
+  echo "These changesets name only the ignored @sparkforensics/core package:$CORE_ONLY"
+  echo "No release consumes them. Name the public packages the change reaches (sparkforensics-cli, sparkforensics-mcp, sparkforensics-server, sparkforensics-web) instead."
   exit 1
 fi
 
