@@ -1,5 +1,12 @@
 # sparkforensics-server
 
+## 0.8.1
+
+### Patch Changes
+
+- 173d54d: Partition-count advice on tiny-task, spill and slow-stage findings now names the lever that sized the stage: `spark.sql.shuffle.partitions` when the stage ran that many tasks, AQE's advisory partition size and `parallelismFirst` when AQE coalesced it, and the stage's own `repartition(n)` or RDD parallelism otherwise. Slow-stage advice no longer offers `spark.default.parallelism`.
+- 531fd1a: Parsing a large event log is about 8% faster: a TaskEnd's accumulator IDs skip schema validation, a stage's repeated accumulator ID list is recorded once, and the executor-metric field table is built once. Findings and estimates are unchanged.
+
 ## 0.8.0
 
 ### Minor Changes
