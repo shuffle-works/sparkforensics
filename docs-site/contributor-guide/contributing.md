@@ -46,6 +46,9 @@ of this entirely (`.changeset/config.json`'s `ignore` list): it's vendored
 into each publishable code package (`packages/{cli,mcp,server}`) by
 filesystem copy at pack time (`scripts/vendor-core.mjs`), not read as a real
 dependency, so versioning it would have no consumer.
+A changeset never names `@sparkforensics/core`: it names the public packages the
+change reaches (`sparkforensics-cli`, `sparkforensics-mcp`, `sparkforensics-server`,
+`sparkforensics-web`), and the changeset check fails a note that names core.
 
 A release itself is two merges, not one: merging your feature PR into `main`
 runs `.github/workflows/release.yml`, which opens (or updates) a "Version
