@@ -97,7 +97,7 @@ function AutoscalingChurnRow({ finding }: { finding: Finding }) {
   return (
     <div className="flex flex-col gap-1 transition-colors">
       <p className="text-xs text-muted-foreground">
-        Short-lived executors: <strong>{finding.value}%</strong>
+        Short-lived share of removed executors: <strong>{finding.value}%</strong>
       </p>
       <ImpactEstimate finding={finding} />
       <p className="flex flex-wrap items-start gap-2 text-sm">

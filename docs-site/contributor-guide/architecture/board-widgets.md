@@ -42,14 +42,15 @@ The Plan Advisor cards are described in [Plan Advisor](./board-widgets/plan-advi
   short-lived-executor detector (DETECTORS entry `autoscalingChurn` in
   `packages/core/src/detectors.ts`; reuses the same `executorsAdded`/`executorsRemoved`
   matching logic as `utilization`). For each added executor, finds its matching
-  removal event (falling back to `app.endTime` for an executor still alive when
-  the log ends) and flags it short-lived if its lifetime is under 2 minutes
-  (`thresholds.shortLivedMs`). Warns above 30% short-lived, escalates to
+  removal event and flags it short-lived if its lifetime is under 2 minutes
+  (`thresholds.shortLivedMs`). An executor with no removal event is still alive
+  when the log ends, so it counts in neither the short-lived count nor the
+  share's denominator. Warns above 30% short-lived, escalates to
   critical above 60% (`confidence` scales `low`/`medium`/`high` via
   `autoscalingChurnConfidence`, off how far the short-lived share sits past
   `warningPct`/`criticalPct`: these thresholds are unvalidated
   estimates, not checked against real autoscaling-heavy
-  logs). Returns no finding below 5 total executors (noise
+  logs). Returns no finding below 5 removed executors (noise
   floor) or when `app.endTime` is missing (truncated/still-running log). The
   widget shows a finding-driven verdict banner (impact dot + `CHRN` tag +
   recommendation) above its add/remove chart, whose scale-down bars are

@@ -2671,6 +2671,54 @@ describe('analyze, autoscaling churn detector (short-lived executors)', () => {
     expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
   });
 
+  it('emits no finding for executors added early and never removed in a short app', () => {
+    const app = makeApp({ startTime: 0, endTime: 90_000 });
+    const { added, removed } = addedAndRemoved(
+      Array.from({ length: 6 }, () => ({ addedAt: 1000, removedAt: null })),
+    );
+    const catalog = analyze(app, new Map(), added, removed);
+    expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
+  });
+
+  it('emits no finding for late-added executors that are never removed in a long app', () => {
+    const app = makeApp({ startTime: 0, endTime: 3_600_000 });
+    // 4 long-lived executors, then 6 added in the last 50 s and still alive at app end.
+    const pairs = [
+      ...Array.from({ length: 4 }, () => ({ addedAt: 0, removedAt: 3_600_000 })),
+      ...Array.from({ length: 6 }, () => ({ addedAt: 3_550_000, removedAt: null })),
+    ];
+    const { added, removed } = addedAndRemoved(pairs);
+    const catalog = analyze(app, new Map(), added, removed);
+    expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
+  });
+
+  it('measures the short-lived share over removed executors only', () => {
+    const app = makeApp({ startTime: 0, endTime: 600_000 });
+    // 6 removed after 60 s, 14 never removed: 6 of 6 removed are short-lived, not 6 of 20.
+    const pairs = [
+      ...Array.from({ length: 6 }, () => ({ addedAt: 0, removedAt: 60_000 })),
+      ...Array.from({ length: 14 }, () => ({ addedAt: 0, removedAt: null })),
+    ];
+    const { added, removed } = addedAndRemoved(pairs);
+    const catalog = analyze(app, new Map(), added, removed);
+    const finding = catalog.find(b => b.type === 'autoscalingChurn');
+    expect(finding).toBeTruthy();
+    expect(finding.impactBand).toBe('critical');
+    expect(finding.value).toBe(100);
+    expect(finding.shortLivedExecutorCount).toBe(6);
+  });
+
+  it('emits no finding below minExecutors removed executors, however many were added', () => {
+    const app = makeApp({ startTime: 0, endTime: 600_000 });
+    const pairs = [
+      ...Array.from({ length: 4 }, () => ({ addedAt: 0, removedAt: 60_000 })),
+      ...Array.from({ length: 6 }, () => ({ addedAt: 0, removedAt: null })),
+    ];
+    const { added, removed } = addedAndRemoved(pairs);
+    const catalog = analyze(app, new Map(), added, removed);
+    expect(catalog.find(b => b.type === 'autoscalingChurn')).toBeUndefined();
+  });
+
   it('emits no finding when all executors are long-lived', () => {
     const app = makeApp({ startTime: 0, endTime: 600_000 });
     const { added, removed } = addedAndRemoved(

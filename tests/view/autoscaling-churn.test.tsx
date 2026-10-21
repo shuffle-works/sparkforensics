@@ -154,7 +154,7 @@ describe('AutoscalingChurn', () => {
     );
 
     expect(screen.getByText('CHRN')).toBeInTheDocument();
-    expect(screen.getByText(fullTextOf('Short-lived executors: 70%'))).toBeInTheDocument();
+    expect(screen.getByText(fullTextOf('Short-lived share of removed executors: 70%'))).toBeInTheDocument();
     expect(screen.getByText(/^This looks like wasteful re-provisioning/)).toBeInTheDocument();
     expect(screen.queryByText(/70% of executors ran for under 2 minutes/i)).not.toBeInTheDocument();
   });
@@ -212,7 +212,7 @@ describe('AutoscalingChurn', () => {
     await user.click(screen.getByRole('button', { name: /^autoscaling churn$/i }));
 
     // Stat line and the card's fix both render unconditionally, with no per-row toggle.
-    expect(screen.getByText(fullTextOf('Short-lived executors: 70%'))).toBeInTheDocument();
+    expect(screen.getByText(fullTextOf('Short-lived share of removed executors: 70%'))).toBeInTheDocument();
     expect(screen.getByText(/consider raising spark\.dynamicAllocation\.executorIdleTimeout/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /hide recommendation/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /show recommendation/i })).not.toBeInTheDocument();
