@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -191,6 +191,56 @@ describe('createMcpServer', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  describe('input validation', () => {
+    // The SDK reports a schema failure as an isError result or a rejected call, depending on its
+    // version; either way the message names the offending field.
+    async function schemaError(name, args) {
+      const client = await connectedClient(createMcpServer());
+      try {
+        const result = await client.callTool({ name, arguments: args });
+        expect(result.isError).toBe(true);
+        return result.content[0].text;
+      } catch (e) {
+        return e.message;
+      }
+    }
+
+    const { dir, path } = tmpEventLog();
+    afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+    it.each([
+      ['maxRuntimeMs', -1], ['maxSpillGb', -0.5], ['maxSkewRatio', -2], ['maxFailedTaskRatePct', -1],
+      ['minEfficiencyPct', -5], ['maxRegressionPct', -1],
+    ])('rejects a negative %s on evaluate_budgets', async (field, value) => {
+      expect(await schemaError('evaluate_budgets', { source: { path }, [field]: value })).toMatch(new RegExp(field));
+    });
+
+    it('rejects an unknown regressionMetric, regressionBudgets metric and failOnIntroduced', async () => {
+      expect(await schemaError('evaluate_budgets', { source: { path }, sourceB: { path }, maxRegressionPct: 10, regressionMetric: 'bogus' })).toMatch(/regressionMetric/);
+      expect(await schemaError('evaluate_budgets', { source: { path }, sourceB: { path }, regressionBudgets: [{ metric: 'bogus', maxPct: 10 }] })).toMatch(/regressionBudgets/);
+      expect(await schemaError('evaluate_budgets', { source: { path }, sourceB: { path }, failOnIntroduced: 'bogus' })).toMatch(/failOnIntroduced/);
+    });
+
+    it('rejects an unknown impactBand or type and a negative stageId on diagnose_run', async () => {
+      expect(await schemaError('diagnose_run', { source: { path }, impactBand: ['bogus'] })).toMatch(/impactBand/);
+      expect(await schemaError('diagnose_run', { source: { path }, type: ['nonsense'] })).toMatch(/type/);
+      expect(await schemaError('diagnose_run', { source: { path }, stageId: -1 })).toMatch(/stageId/);
+    });
+
+    it('accepts every known band, a known type, metric and failOnIntroduced value', async () => {
+      const client = await connectedClient(createMcpServer());
+      const diagnose = await client.callTool({
+        name: 'diagnose_run', arguments: { source: { path }, impactBand: ['critical', 'warning', 'info'], type: ['straggler'], stageId: 0 },
+      });
+      expect(diagnose.isError).toBeFalsy();
+      const budgets = await client.callTool({
+        name: 'evaluate_budgets',
+        arguments: { source: { path }, sourceB: { path }, maxRuntimeMs: 0, regressionMetric: 'gcTime', maxRegressionPct: 5, failOnIntroduced: 'all', regressionBudgets: [{ metric: 'wallClock', maxPct: 5 }] },
+      });
+      expect(budgets.isError).toBeFalsy();
+    });
   });
 
   it('maps a thrown run-not-found error for evaluate_budgets', async () => {

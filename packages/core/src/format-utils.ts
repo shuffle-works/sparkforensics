@@ -1,5 +1,5 @@
 import { FINDING_PRESENTATION } from './finding-presentation.ts';
-import type { FindingType, RawWasteFigure } from './types.ts';
+import type { FindingType, ImpactBand, RawWasteFigure } from './types.ts';
 
 const TARGET_PARTITION_BYTES = 128 * 1024 * 1024;
 const MAX_RECOMMENDED = 8000;
@@ -7,6 +7,7 @@ const MEANINGFUL_RATIO = 1.5;
 
 export const VISIBLE_LIMIT: number = 6;
 export const IMPACT_BAND_ORDER: Record<'critical' | 'warning' | 'info', number> = { critical: 0, warning: 1, info: 2 };
+export const IMPACT_BANDS = Object.keys(IMPACT_BAND_ORDER) as ImpactBand[];
 
 const BOTTLENECK_WIDGET: Readonly<Record<string, string>> = {
   skew: 'task-skew', slowHost: 'task-skew', straggler: 'task-skew',
