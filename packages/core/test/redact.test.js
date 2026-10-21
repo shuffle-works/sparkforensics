@@ -527,6 +527,28 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
     expect(out).not.toContain('db02.corp.example');
   });
 
+  it('reads a nested-scheme URL through to the inner host', () => {
+    const data = run();
+    data.app.config['spark.master'] = 'k8s://https://kube-api.corp.example:6443';
+    data.app.config['spark.kubernetes.driver.podTemplateFile'] = 'k8s://https://carol@kube-api.corp.example:6443/t';
+    data.stages[0].name = 'See https://docs.example/x';
+    const out = redactRun(data);
+    expect(out.appModel.app.config['spark.master']).toMatch(/^k8s:\/\/https:\/\/host-\d+:6443$/);
+    expect(out.appModel.stages.get(1).name).toMatch(/^See https:\/\/host-\d+\/x$/);
+    const text = flatten(out);
+    expect(text).not.toContain('kube-api');
+    expect(text).not.toContain('carol');
+  });
+
+  it('replaces a short host only as a whole token, never inside a longer word', () => {
+    const data = run();
+    data.app.config['spark.eventLog.dir'] = 's3a://data/logs';
+    data.stages[0].name = 'scan data; metadata, datastore, data.json, data.';
+    const out = redactRun(data);
+    expect(out.appModel.app.config['spark.eventLog.dir']).toMatch(/^s3a:\/\/host-\d+\/logs$/);
+    expect(out.appModel.stages.get(1).name).toMatch(/^scan host-\d+; metadata, datastore, data\.json, host-\d+\.$/);
+  });
+
   it('pseudonymizes host:port values under any config key', () => {
     const out = serialized();
     for (const host of ['hist01.corp.example', 'rm1.corp.example', 'rm2.corp.example']) expect(out).not.toContain(host);

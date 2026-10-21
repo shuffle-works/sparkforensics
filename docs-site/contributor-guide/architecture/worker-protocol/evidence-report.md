@@ -84,7 +84,9 @@ uses a numeric-aware sort, so re-redacting an already-redacted report is a
 no-op even past `host-10`: a token that is already a pseudonym is never numbered
 again. Replacement is one pass per string over a single alternation of the collected
 identifiers, longest first, so its cost does not grow with the number of hosts times
-the number of strings.
+the number of strings. A host is replaced only as a whole token: a short host such as
+a bucket named `data` leaves `metadata` alone. A nested-scheme URL such as
+`k8s://https://host:6443` yields the inner host, never the inner scheme.
 
 User names have no list to look up, so `scrubUserNames` in `redact.ts` replaces them
 where they are recognizable (URL credentials, the segment after `/user/`, `/home/` or

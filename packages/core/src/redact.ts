@@ -28,8 +28,9 @@ const HOST_PATTERNS = [
   /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, // bare IPv4: 10.1.2.3
   // The host of a URL authority (`scheme://[userinfo@]host[:port]/`): hdfs, jdbc, s3a, spark,
   // http. Reads the host from any shape, a short name (`nn01`) or an FQDN (`db01.corp.example`),
-  // a bucket name or a bracketed IPv6 address.
-  /\b[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#@]*@)?(\[[0-9a-f:.]+\]|[^\s/?#:@'"<>()[\]{}|,;\\]+)/gi,
+  // a bucket name or a bracketed IPv6 address. A nested scheme (`k8s://https://host:443`) is read
+  // through to the inner URL's host, never taken as a host itself.
+  /\b(?:[a-z][a-z0-9+.-]*:\/\/)+(?:[^\s/?#@]*@)?(\[[0-9a-f:.]+\]|[^\s/?#:@'"<>()[\]{}|,;\\]+)(?![^\s/?#:@'"<>()[\]{}|,;\\]|:\/\/)/gi,
 ];
 
 // A pseudonym this module writes. Never given a new pseudonym, so a second pass over a redacted
@@ -42,7 +43,7 @@ const PSEUDONYM = /^(?:host|app)-\d+$/;
 // is fixed, so the scrub is idempotent.
 const REDACTED_USER = 'redacted-user';
 const USER_SCRUBS: Array<[RegExp, string]> = [
-  [/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/?#@]+@/gi, `$1${REDACTED_USER}@`],
+  [/((?:\b[a-z][a-z0-9+.-]*:\/\/)+)[^\s/?#@]+@/gi, `$1${REDACTED_USER}@`],
   [/(\/(?:user|home|Users)\/)[^\s/?#:@'"<>()[\]{}|,;&\\]+/g, `$1${REDACTED_USER}`],
   [/((?:\b|(?<=-D))(?:user\.name|username|user)=)[^\s&;,'"<>()[\]{}|\\]+/gi, `$1${REDACTED_USER}`],
 ];
@@ -218,15 +219,27 @@ function deepReplace(node: unknown, replace: (text: string) => string): unknown 
   return node;
 }
 
-function singlePassReplacer(replacements: Array<[string, string]>): (text: string) => string {
-  const byIdentifier = new Map(replacements.filter(([from]) => from.length > 0));
-  if (byIdentifier.size === 0) return (text) => text;
-  const alternation = [...byIdentifier.keys()]
+// A host is replaced only as a whole token, so a short host such as a bucket (`data`) or a master
+// (`master`) leaves `metadata` and `masters` alone. An app id is distinctive enough to be replaced
+// anywhere, including inside a file name.
+const HOST_TOKEN_BEFORE = '(?<![A-Za-z0-9.-])';
+const HOST_TOKEN_AFTER = '(?![A-Za-z0-9-]|\\.[A-Za-z0-9])';
+
+function singlePassReplacer(appIds: Map<string, string>, hosts: Map<string, string>): (text: string) => string {
+  const alternation = (ids: Map<string, string>) => [...ids.keys()]
+    .filter((id) => id.length > 0)
     .sort((a, b) => b.length - a.length)
     .map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('|');
-  const pattern = new RegExp(alternation, 'g');
-  return (text) => text.replace(pattern, (match) => byIdentifier.get(match) ?? match);
+  const appAlternation = alternation(appIds);
+  const hostAlternation = alternation(hosts);
+  const branches = [
+    ...(appAlternation ? [`(?:${appAlternation})`] : []),
+    ...(hostAlternation ? [`${HOST_TOKEN_BEFORE}(?:${hostAlternation})${HOST_TOKEN_AFTER}`] : []),
+  ];
+  if (branches.length === 0) return (text) => text;
+  const pattern = new RegExp(branches.join('|'), 'g');
+  return (text) => text.replace(pattern, (match) => appIds.get(match) ?? hosts.get(match) ?? match);
 }
 
 // Shared by every redact* export below: turns collected app-id/host sets into
@@ -235,11 +248,8 @@ function singlePassReplacer(replacements: Array<[string, string]>): (text: strin
 // has to say what it collects, not how replacement is carried out.
 function applyReplacements<T>(node: T, ids: { appIds?: Set<string>; hosts: Set<string> }): T {
   const unseen = (set: Set<string>) => new Set([...set].filter((id) => !PSEUDONYM.test(id)));
-  const merged: Array<[string, string]> = [
-    ...(ids.appIds ? buildMap(unseen(ids.appIds), 'app') : []),
-    ...buildMap(unseen(ids.hosts), 'host'),
-  ];
-  return deepReplace(node, singlePassReplacer(merged)) as T;
+  const appIds = ids.appIds ? buildMap(unseen(ids.appIds), 'app') : new Map<string, string>();
+  return deepReplace(node, singlePassReplacer(appIds, buildMap(unseen(ids.hosts), 'host'))) as T;
 }
 
 // The app name identifies a job as much as its id, so a redacted name becomes the id's
