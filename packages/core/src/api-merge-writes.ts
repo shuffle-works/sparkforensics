@@ -1,6 +1,7 @@
 // DeltaTable API merges run no command node: each internal query is its own root execution, tied
 // together only by a "MERGE operation" description and adjacent ids. One DeltaMerge write is
 // reported per run of such executions, with a path only when no other merge can be mixed into it.
+import { maxOf, minOf } from './array-extremes.ts';
 import { soleLogPath } from './delta-log-paths.ts';
 import type { SqlExecution } from './types.ts';
 import type { WriteTarget } from './write-targets.ts';
@@ -30,6 +31,24 @@ function selectMergeExecutions(sql: Map<number, MergeExecution>): MergeExecution
     .sort((a, b) => a.id - b.id);
 }
 
+// Which closed [start, end] spans share a point with another span (null spans are skipped): one
+// sort by start, then a span overlaps an earlier one when the running max end reaches its start,
+// or a later one when the next start is not past its end.
+function overlappingSpans(spans: Array<number[] | null>): boolean[] {
+  const order: number[] = [];
+  spans.forEach((span, i) => { if (span !== null) order.push(i); });
+  order.sort((a, b) => spans[a]![0] - spans[b]![0]);
+  const overlapping: boolean[] = spans.map(() => false);
+  let maxEndBefore = -Infinity;
+  order.forEach((i, k) => {
+    const [start, end] = spans[i]!;
+    const nextStart = k + 1 < order.length ? spans[order[k + 1]]![0] : Infinity;
+    overlapping[i] = maxEndBefore >= start || nextStart <= end;
+    maxEndBefore = Math.max(maxEndBefore, end);
+  });
+  return overlapping;
+}
+
 // A run of consecutive execution ids. Nothing in the log ties the members of one merge together,
 // so adjacency is a guess, and a wrong one fuses or splits merges. Each way it can go wrong is
 // marked `unclean` instead of attributed:
@@ -47,13 +66,12 @@ function groupMerges(selected: MergeExecution[]): MergeGroup[] {
   }
   const spans = groups.map(({ members }) => {
     const starts = members.map((m) => m.startTime);
-    return starts.every((t): t is number => typeof t === 'number') ? [Math.min(...starts), Math.max(...starts)] : null;
+    return starts.every((t): t is number => typeof t === 'number') ? [minOf(starts)!, maxOf(starts)!] : null;
   });
+  const overlapping = overlappingSpans(spans);
   groups.forEach((group, i) => {
-    const mine = spans[i];
-    if (mine === null) { group.unclean = 'start time missing'; return; }
-    const overlaps = spans.some((other, j) => j !== i && other !== null && other[0] <= mine[1] && mine[0] <= other[1]);
-    if (overlaps) group.unclean = 'overlaps another merge in time';
+    if (spans[i] === null) { group.unclean = 'start time missing'; return; }
+    if (overlapping[i]) group.unclean = 'overlaps another merge in time';
     else if (!group.members.some((m) => MERGE_WRITE_PHASE.test(m.description ?? ''))) group.unclean = 'no write phase';
   });
   return groups;

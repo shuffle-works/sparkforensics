@@ -89,6 +89,8 @@ directly. The `sparkforensics-analyze` alias package also works:
 That's a headless run against budget thresholds. See [Command-line
 reference](#command-line-reference) below for HTML export, Spark History
 Server fetching, baseline comparisons, and redaction.
+To run a detector check with your own threshold, see
+[Tuning detector thresholds](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started/tuning-thresholds).
 
 ## Development
 
@@ -153,16 +155,9 @@ thing without publishing or installing the package.
 
 #### Server configuration
 
-All settings have working defaults; override them with environment
-variables:
-
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `PORT` | `4173` | Listen port (the `--port` flag takes precedence) |
-| `SPARKFORENSICS_SHS_TIMEOUT_MS` | `30000` | Spark History Server fetch timeout: response headers must arrive within this window, and a streaming body that goes idle this long is cut off. Applies to both the `/shs-proxy` route and the MCP archive download. Progressing downloads of any size are unaffected. |
-| `SPARKFORENSICS_MCP_CACHE_CAP` | `8` | Max parsed runs kept in the MCP tool cache |
-| `SPARKFORENSICS_MCP_CACHE_TTL_MS` | `900000` | Idle eviction time for cached MCP runs (15 min) |
-| `SPARKFORENSICS_MAX_ARCHIVE_BYTES` | `1073741824` | Largest SHS event-log archive the MCP tools or the `--shs-base-url` CLI mode will buffer (1 GiB); larger responses fail with `archive-too-large` |
+All settings have working defaults. The port (`PORT` or `--port`) and the
+`SPARKFORENSICS_*` environment variables are listed in
+[Server configuration](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started#server-configuration).
 
 ### SHS-proxy route test fixture
 

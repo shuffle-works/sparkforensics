@@ -35,6 +35,13 @@ interface StageGroup {
   straggler?: StragglerFinding;
 }
 
+// The first finding of each stage, so a lookup per stage group is one Map read, not a scan of the list.
+function firstByStage<F extends Finding>(findings: F[]): Map<StageId, F> {
+  const byStage = new Map<StageId, F>();
+  for (const f of findings) if (f.stageId != null && !byStage.has(f.stageId)) byStage.set(f.stageId, f);
+  return byStage;
+}
+
 export interface StageFindingGroupWidgetProps extends Pick<WidgetProps, 'appModel' | 'catalog' | 'getTaskData' | 'defaultCollapsed'> {
   /** The `finding.type` this board scopes to, e.g. `'skew'`. */
   type: string;
@@ -179,13 +186,16 @@ export const StageFindingGroupWidget = memo(function StageFindingGroupWidget({
       groupsByStage.get(f.stageId)!.push(f);
     }
 
+    const slowHostByStage = firstByStage(findingsOfType(catalog, 'slowHost'));
+    const stragglerByStage = firstByStage(findingsOfType(catalog, 'straggler'));
+
     const stageGroups: StageGroup[] = [...groupsByStage.entries()]
       .map(([stageId, findings]) => ({
         stageId,
         findings,
         impactBand: worstImpactBand(findings) ?? 'info',
-        slowHost: findingsOfType(catalog, 'slowHost').find((f) => f.stageId === stageId),
-        straggler: findingsOfType(catalog, 'straggler').find((f) => f.stageId === stageId),
+        slowHost: slowHostByStage.get(stageId),
+        straggler: stragglerByStage.get(stageId),
       }))
       .sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand] || a.stageId - b.stageId);
 

@@ -6,7 +6,7 @@ hero:
   tagline: Find out why your Spark job is slow, ranked by which fix saves the most time.
 features:
   - title: User Guide
-    details: Load a run, read the findings, compare two runs, use the MCP tools.
+    details: Load a run, read the findings, compare two runs, gate a build from the command line, use the MCP tools.
     link: /user-guide/getting-started
     linkText: Get started
   - title: Contributor Guide

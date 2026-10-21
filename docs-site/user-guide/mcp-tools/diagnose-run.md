@@ -64,11 +64,7 @@ Parameters (all optional, but pass either a `source` to load a fresh run, or
 a `runId` for one already loaded in this session; passing neither is an
 error, and when both are given `runId` wins):
 
-- `source`: `{ path: string }` or `{ shsBaseUrl: string, appId: string, attemptId?: string }`.
-  A History Server `appId` must have one of Spark's id forms
-  (`application_<digits>_<digits>`, `local-<digits>`, `app-...`, `spark-...`,
-  `driver-<digits>`).
-- `runId`: `string`
+- `source`, `runId`: see [Common parameters](../mcp-tools.md#common-parameters)
 - `view`: `"compact" | "full"` (default `"compact"`), see above
 - `redact`: `boolean` (default `false`), pseudonymizes the app id, host
   names and user names in the response, and replaces the app name with the

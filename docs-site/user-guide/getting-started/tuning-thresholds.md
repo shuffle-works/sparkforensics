@@ -14,6 +14,12 @@ JSON, keyed by detector, then by threshold name:
 }
 ```
 
+Save that as `thresholds.json` and pass it to the CLI:
+
+```sh
+npx -p sparkforensics-cli sparkforensics-analyze <file|dir> --thresholds thresholds.json
+```
+
 The names, units and defaults are the `detectors` catalog in the CLI's JSON
 report (`thresholds` on each row): bytes are raw byte counts, times are
 milliseconds, and `*Pct`/`*Rate` values are fractions (`0.05` is 5%). A tier

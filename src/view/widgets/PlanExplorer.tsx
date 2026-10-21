@@ -1,5 +1,5 @@
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import type { AppModel, StageId } from '@sparkforensics/core/types.ts';
@@ -18,6 +18,9 @@ export interface PlanExplorerProps {
  * for this stage). */
 export function PlanExplorer({ stageId, appModel }: PlanExplorerProps) {
   const [open, setOpen] = useState(false);
+  // The plan tree is built on first open, then stays mounted so its tab and scroll survive a collapse.
+  const everOpened = useRef(false);
+  if (open) everOpened.current = true;
   if (!resolvePlanTree(stageId, appModel)) return null;
 
   return (
@@ -36,7 +39,7 @@ export function PlanExplorer({ stageId, appModel }: PlanExplorerProps) {
         </CollapsibleTrigger>
         <CollapsibleContent keepMounted>
           <div className="pt-3">
-            <PlanView stageId={stageId} appModel={appModel} />
+            {everOpened.current ? <PlanView stageId={stageId} appModel={appModel} /> : null}
           </div>
         </CollapsibleContent>
       </Collapsible>

@@ -38,6 +38,31 @@ function buildStepFunction(intervals: Interval[], hypotheticalCores: number | nu
   return segments;
 }
 
+/**
+ * Wall-clock time at each concurrent-core count: the coreCount histogram of
+ * `computeCoreTimeSeries`, from parallel launch/finish arrays with no object per task or event.
+ * Each pair is one task, `finish > launch`. Both arrays are sorted in place, so the caller hands
+ * over arrays it no longer needs in task order. A task finishing as another launches does not
+ * overlap it, and the busy count applies to the span up to the next distinct event time.
+ */
+export function coreCountHistogram(launches: Float64Array, finishes: Float64Array): number[] {
+  launches.sort();
+  finishes.sort();
+  const histogram: number[] = [];
+  let busy = 0, l = 0, f = 0;
+  while (l < launches.length || f < finishes.length) {
+    const t = f >= finishes.length || (l < launches.length && launches[l] < finishes[f]) ? launches[l] : finishes[f];
+    while (l < launches.length && launches[l] === t) { busy++; l++; }
+    while (f < finishes.length && finishes[f] === t) { busy--; f++; }
+    if (l >= launches.length && f >= finishes.length) break;
+    const next = f >= finishes.length || (l < launches.length && launches[l] < finishes[f]) ? launches[l] : finishes[f];
+    histogram[busy] = (histogram[busy] ?? 0) + (next - t);
+  }
+  // Fill sparse holes with 0 so the array reads as a dense histogram.
+  for (let k = 0; k < histogram.length; k++) if (histogram[k] === undefined) histogram[k] = 0;
+  return histogram;
+}
+
 export function computeCoreTimeSeries(intervals: Interval[], {
   bucketBy = 'time',
   bucketWidthMs = 1000,

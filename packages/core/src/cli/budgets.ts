@@ -1,3 +1,4 @@
+import { maxOf } from '../array-extremes.ts';
 import { computeEfficiencyModel } from '../efficiency-model.ts';
 import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from '../detectors.ts';
 import { effectiveThresholds } from '../threshold-overrides.ts';
@@ -68,7 +69,7 @@ function checkSpill(appModel: AppModel, maxSpillGb: number): BudgetResult {
   if (spills.length === 0) {
     return { name: 'max-spill', status: 'inconclusive', detail: 'No stage has a recorded spill figure in this event log.' };
   }
-  const maxBytes = Math.max(...spills);
+  const maxBytes = maxOf(spills)!;
   const budgetBytes = maxSpillGb * 1024 ** 3;
   return maxBytes > budgetBytes
     ? { name: 'max-spill', status: 'violation', detail: `Peak stage spill ${maxBytes} bytes exceeds budget ${budgetBytes} bytes.` }
@@ -89,10 +90,10 @@ function checkSkew(appModel: AppModel, maxSkewRatio: number, minTasksForP95: num
     .map((stage) => computeSkewRatio(stage, minTasksForP95))
     .map((r) => r?.ratio)
     .filter((ratio): ratio is number => Number.isFinite(ratio));
-  if (ratios.length === 0) {
+  const maxRatio = maxOf(ratios);
+  if (maxRatio === null) {
     return { name: 'max-skew', status: 'inconclusive', detail: 'No stage has a measurable task-duration median.' };
   }
-  const maxRatio = Math.max(...ratios);
   return maxRatio > maxSkewRatio
     ? { name: 'max-skew', status: 'violation', detail: `Peak stage skew ratio ${maxRatio} exceeds budget ${maxSkewRatio}.` }
     : { name: 'max-skew', status: 'pass', detail: `Peak stage skew ratio ${maxRatio} within budget ${maxSkewRatio}.` };

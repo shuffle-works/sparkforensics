@@ -13,12 +13,25 @@ npx sparkforensics-server
 
 Open `http://127.0.0.1:4173` and drop a log in. This is **local-server
 mode**: it also fetches runs from a Spark History Server on your behalf.
-Port and environment-variable overrides, and what changes for a static
-deploy, are in the [project README](https://github.com/shuffle-works/sparkforensics#deploy-modes).
+Port and environment-variable overrides are in
+[Server configuration](#server-configuration). What changes for a static
+deploy is in the [project README](https://github.com/shuffle-works/sparkforensics#deploy-modes).
 
 The [hosted demo](https://shuffle-works.github.io/sparkforensics/) runs the
 same dashboard but can't fetch from a History Server. To work on
 SparkForensics itself, see [Development setup](../contributor-guide/development-setup.md).
+
+### Server configuration {#server-configuration}
+
+All settings have working defaults. Override them with environment variables:
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `PORT` | `4173` | Listen port. The `--port` flag takes precedence. |
+| `SPARKFORENSICS_SHS_TIMEOUT_MS` | `30000` | History Server fetch timeout. Response headers must arrive within this window, and a streaming body that goes idle this long is cut off. It applies to the `/shs-proxy` route and the MCP archive download. Progressing downloads of any size are unaffected. |
+| `SPARKFORENSICS_MCP_CACHE_CAP` | `8` | Most parsed runs kept in the MCP tool cache. |
+| `SPARKFORENSICS_MCP_CACHE_TTL_MS` | `900000` | Idle eviction time for cached MCP runs (15 minutes). |
+| `SPARKFORENSICS_MAX_ARCHIVE_BYTES` | `1073741824` | Largest History Server event-log archive the MCP tools or the CLI's `--shs-base-url` mode buffer (1 GiB). A larger response fails with `archive-too-large`. |
 
 ## Load a run
 
@@ -65,3 +78,32 @@ bastion)? See [Behind an SSH bastion](./alternative-log-retrieval/ssh-bastion.md
 In Chromium-based browsers, single files you open stay listed under
 **Recent files** on the landing page. Rolling-log folders, History Server
 fetches and the sample run are not listed.
+
+## Other ways in {#other-ways-in}
+
+The dashboard is one of several ways to use SparkForensics:
+
+- **Command line and CI.** The `sparkforensics-analyze` CLI reads the same
+  event logs, prints a JSON or Markdown report, and exits non-zero when a run
+  breaks a budget you set. See [CI and automation](./getting-started/ci-and-automation.md).
+- **AI assistants.** The MCP server (`npx sparkforensics-mcp`) lets an agent
+  diagnose, summarize and compare runs. See [MCP tools reference](./mcp-tools.md).
+- **Airflow.** [sparkforensics-operator](https://github.com/shuffle-works/sparkforensics-operator)
+  runs the analysis after every Spark job and acts on the result.
+
+## Glossary {#glossary}
+
+Terms used across the user guide:
+
+| Term | Meaning |
+|------|---------|
+| AQE | Adaptive Query Execution. Spark re-plans a query at run time, for example to split a skewed join or coalesce small shuffle partitions. |
+| P95 | The 95th percentile: 95% of the values are at or below it. For task times, it is the duration that only the slowest 5% of tasks exceed. |
+| SHS | Spark History Server, the service that serves the event logs of finished applications. |
+| Core-hours | The sum, over executors, of cores times the hours each executor was alive. It measures the compute a run reserved, not the compute it used. See [Allocation](./getting-started/ci-and-automation.md#allocation). |
+| GB-h | Gigabyte-hours: executor memory times the hours the executor was alive. The report calls it `memoryGbHours`. |
+| Core-milliseconds | The unit of executor core time. One core busy for one millisecond is one core-millisecond. |
+| Stage fingerprint | The key that identifies a stage: its normalized name plus its plan nodes. The same stage has the same fingerprint in two runs, so a comparison can pair them. |
+| NDJSON | Newline-delimited JSON: one JSON value per line. Spark writes event logs in this format, and the CLI uses it to report several candidates. |
+| Sequence alignment | The method a comparison uses to pair SQL executions and stages across two runs. It keeps the submission order and picks the best-scoring pairs. See [How stages are matched](./run-comparison/how-stages-are-matched.md). |
+| Confidence | How sure a detector is that a finding is real. It scales with how far the measured value is past the threshold and with the sample size. [Advanced view](./getting-started/reading-the-dashboard.md#advanced-view) shows it when it is below high. |
