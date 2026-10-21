@@ -139,7 +139,7 @@ event; fields trimmed: `verdict`, `recommendations`, `metrics`, `writeTargets`,
 {
   "runId": "b8b2c1a4-...",
   "view": "compact",
-  "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "9c1f3a7e2b4d" },
+  "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "28d8c65766bec6168973b27d049568c03588090139f45467ffe983036a0fab65" },
   "app": { "id": "application_0000000000000_0001", "attemptId": null },
   "runComplete": false,
   "findingsOmitted": 0,

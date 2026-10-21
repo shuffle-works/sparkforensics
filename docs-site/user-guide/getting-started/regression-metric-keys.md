@@ -18,6 +18,9 @@ default for `--regression-metric` is `wallClock`:
 - `allocatedCoreHours`: executor cores times hours alive, see
   [Allocation](./ci-and-automation.md#allocation)
 
+Whole-run spill keys are `shuffleSpill` and `diskSpill`. Per-stage budgets use
+`memoryBytesSpilled` and `diskBytesSpilled` instead.
+
 Four more keys, `inputBytes`, `outputBytes`, `taskCount` and
 `executorsAdded`, measure workload volume rather than performance. They have
 no better or worse direction, so a regression budget on one of them reports

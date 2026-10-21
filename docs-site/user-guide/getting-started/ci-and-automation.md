@@ -466,7 +466,7 @@ run writes one). Under `--redact` the id is pseudonymized. A comparison names bo
 runs in `baselineApp` and `candidateApp`.
 
 ```json
-"generator": { "name": "sparkforensics-cli", "version": "0.7.0", "buildId": "9c1f3a7e2b4d" }
+"generator": { "name": "sparkforensics-cli", "version": "0.7.0", "buildId": "28d8c65766bec6168973b27d049568c03588090139f45467ffe983036a0fab65" }
 ```
 
 ## Metrics block
@@ -770,10 +770,10 @@ valid JSON.
 The budgets combine like this:
 
 - `--max-regression-pct` with `--regression-metric` (default `wallClock`)
-  still works and counts as one more budget next to the new ones.
-- Each metric can be budgeted once across the legacy pair, the repeated flag
-  and the file. A metric named twice is a usage error (exit 2), even when both
-  give the same percentage.
+  adds one budget next to the repeated flag and the file.
+- Each metric can be budgeted once across `--max-regression-pct`, the repeated
+  flag and the file. A metric named twice is a usage error (exit 2), even when
+  both give the same percentage.
 - Each budget is checked on its own and gives one `max-regression` result
   that carries `metric`, the key it checks. Any violated budget makes the run
   exit `1`; otherwise an inconclusive one makes it exit `3`. A budget on a
@@ -787,7 +787,9 @@ gate on the stages themselves, repeat
 `--stage-regression-budget <metric>:<pct>` (with `--baseline`). The budget
 fails when any paired stage's metric grew by more than the percentage against
 its baseline stage. The metric is one of `executorRunTime`, `executorCpuTime`, `memoryBytesSpilled`,
-`diskBytesSpilled`, `shuffleReadBytes` and `shuffleWriteBytes`:
+`diskBytesSpilled`, `shuffleReadBytes` and `shuffleWriteBytes`. Whole-run
+budgets name the spill metrics `shuffleSpill` and `diskSpill`
+([keys](./regression-metric-keys.md)):
 
 ```sh
 sparkforensics-analyze candidate.zstd --baseline baseline.zstd \
