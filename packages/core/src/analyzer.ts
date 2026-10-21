@@ -86,7 +86,9 @@ export function findingId(f: Finding): string {
   return fnv1a(`${f.type}|${locationKey(f)}|${f.metric ?? ''}|${f.value ?? f.valueText ?? ''}|${disc}`);
 }
 
-function push(out: Finding[], entry: Detector, result: Finding | Finding[] | null, tuned: TunedThresholds | null = null): void {
+function push(
+  out: Finding[], seen: Set<string>, entry: Detector, result: Finding | Finding[] | null, tuned: TunedThresholds | null = null,
+): void {
   if (!result) return;
   const detectorVersion = entry.version ?? 1;
   for (const f of (Array.isArray(result) ? result : [result])) {
@@ -96,7 +98,8 @@ function push(out: Finding[], entry: Detector, result: Finding | Finding[] | nul
     const id = findingId(stamped);
     // Dedup guard: same id => same finding, keep first. Correctness depends on
     // findingId's discriminators being unique per distinct finding, not on this line.
-    if (out.some((existing) => existing.id === id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
     out.push({ ...stamped, id });
   }
 }
@@ -235,6 +238,7 @@ export function analyze(
     skewThresholds: skewThresholdsFor(thresholds),
   };
   const out: Finding[] = [];
+  const seen = new Set<string>();
   for (const d of detectors) {
     if (d.inScorecard === false) continue;
     const overrides = overridesFor(d, thresholds);
@@ -242,19 +246,19 @@ export function analyze(
     switch (d.scope) {
       case 'stage': {
         const detect = d.withThresholds(overrides);
-        for (const s of ctx.stages.values()) push(out, d, detect(s, ctx), tuned);
+        for (const s of ctx.stages.values()) push(out, seen, d, detect(s, ctx), tuned);
         break;
       }
       case 'sql': {
         const detect = d.withThresholds(overrides);
-        for (const e of ctx.sql.values()) push(out, d, detect(e, ctx), tuned);
+        for (const e of ctx.sql.values()) push(out, seen, d, detect(e, ctx), tuned);
         break;
       }
       case 'app':
-        push(out, d, d.withThresholds(overrides)(ctx), tuned);
+        push(out, seen, d, d.withThresholds(overrides)(ctx), tuned);
         break;
       case 'config':
-        push(out, d, d.withThresholds(overrides)(ctx satisfies DetectorConfigTarget), tuned);
+        push(out, seen, d, d.withThresholds(overrides)(ctx satisfies DetectorConfigTarget), tuned);
         break;
       default:
         assertNever(d);
@@ -280,8 +284,9 @@ const auditConfigCache = new WeakMap<SparkAppInfo, { rddWork: boolean; findings:
 
 function computeAuditConfig(app: SparkAppInfo | null, stages: Map<number, Stage> | undefined): Finding[] {
   const out: Finding[] = [];
+  const seen = new Set<string>();
   const target = { app, stages: stages as unknown as DetectorConfigTarget['stages'] };
-  for (const d of detectors) if (d.scope === 'config') push(out, d, d.withThresholds()(target));
+  for (const d of detectors) if (d.scope === 'config') push(out, seen, d, d.withThresholds()(target));
   // configAudit's estimate is unconditionally costOnly('none'): needs no stages/totalCores, so an
   // empty context gives parity with analyze().
   estimateImpact(out, { stages: new Map(), occupancy: new Map(), totalCores: 0 });

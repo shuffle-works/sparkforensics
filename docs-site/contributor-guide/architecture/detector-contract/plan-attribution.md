@@ -32,7 +32,9 @@ do not build hard thresholds or findings on top of them.
 
 `sql.get(id).stageIds` is always empty: the parser never populates it. Every
 `scope: 'sql'` detector and the plan views derive the linkage from each stage's own
-`sqlExecutionId` with `stageIdsForSqlExec` (`sql-stages.ts`).
+`sqlExecutionId` with `stageIdsForSqlExec` (`sql-stages.ts`). The detectors read one index of all
+stages built once per run with `indexStagesBySqlExecution`, so a run with many executions does not scan
+every stage per execution.
 
 ## Stage-ID attribution for Plan Advisor findings
 

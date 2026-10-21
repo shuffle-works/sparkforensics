@@ -23,7 +23,7 @@ import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { outputRowsOf, ownOutputRows, parseNestedLoopJoin } from './nested-loop-join.ts';
 import { totalExecutorCpuMs } from './run-totals.ts';
 import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
-import { stageIdsForSqlExec } from './sql-stages.ts';
+import { indexStagesBySqlExecution } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
 import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
@@ -175,6 +175,15 @@ export interface DetectorCtx {
   // skew's thresholds as resolved for this run (see skewThresholdsFor): straggler defers to skew's
   // gate and data cut, so it must judge a tail with the values skew itself uses.
   skewThresholds: SkewThresholds;
+  // `stages` grouped by sqlExecutionId, built on first use (see sqlStageIds).
+  stagesBySqlExecution?: Map<number, number[]>;
+}
+
+// The ids of the stages a SQL execution ran: one index over the run's stages, shared by every
+// execution's detect() instead of a scan of all stages each. A copy, as findings keep the array.
+function sqlStageIds(ctx: DetectorCtx, executionId: number): number[] {
+  ctx.stagesBySqlExecution ??= indexStagesBySqlExecution(ctx.stages);
+  return ctx.stagesBySqlExecution.get(executionId)?.slice() ?? [];
 }
 
 // auditConfig(app) calls every config-scope detect({ app }) with whatever appModel.app is
@@ -234,7 +243,7 @@ function pickDominantReason(reasons: DetectorFailureReason[] | undefined): strin
 
 // Shared by the three Plan Advisor detectors: union the given nodes' own stageIds, or fall back
 // to the whole execution's stage set when none have coverage (never a partial blend). `fallback`
-// is a param so callers compute stageIdsForSqlExec once per detect() and reuse it per finding.
+// is a param so callers compute sqlStageIds once per detect() and reuse it per finding.
 export function unionStageIds(nodes: PlanNode[], fallback: number[]): number[] {
   const union = new Set<number>();
   for (const node of nodes) for (const sid of node.stageIds ?? []) union.add(sid);
@@ -3208,7 +3217,7 @@ export const DETECTORS = [
       if (!sqlExec.planTree) return null;
       const groups = findDuplicateSubtrees(sqlExec.planTree, thresholds);
       if (groups.length === 0) return null;
-      const fallbackStageIds = stageIdsForSqlExec(sqlExec.id, ctx.stages);
+      const fallbackStageIds = sqlStageIds(ctx, sqlExec.id);
       const executionNodes: PlanNode[] = [];
       walkPlanTree(sqlExec.planTree, (node) => executionNodes.push(node));
       const operatorsByStage = operatorCountByStage(executionNodes);
@@ -3310,7 +3319,7 @@ export const DETECTORS = [
         checkSide(byName(FILES_WRITTEN_COUNT), byName(FILES_WRITTEN_BYTES), 'write');
       });
       if (hits.length === 0) return null;
-      const fallbackStageIds = stageIdsForSqlExec(sqlExec.id, ctx.stages);
+      const fallbackStageIds = sqlStageIds(ctx, sqlExec.id);
       return hits.map(h => {
         const stageIds = unionStageIds([h.node], fallbackStageIds);
         const planNodeIds = h.node.id ? [h.node.id] : [];
@@ -3355,7 +3364,7 @@ export const DETECTORS = [
     detect(sqlExec, ctx, thresholds): Finding[] | null {
       if (!sqlExec.planTree) return null;
       const { broadcastTiers, comparisonTiers, overBroadcastBytes, minSmallerSideBytes } = thresholds;
-      const fallbackStageIds = stageIdsForSqlExec(sqlExec.id, ctx.stages);
+      const fallbackStageIds = sqlStageIds(ctx, sqlExec.id);
       const app = queryApp(ctx.app, sqlExec.modifiedConfigs);
       const thresholdsFor = (adaptive: boolean) => {
         const key = broadcastThresholdKey(app, adaptive);

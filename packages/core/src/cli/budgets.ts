@@ -1,3 +1,4 @@
+import { maxOf } from '../array-extremes.ts';
 import { computeEfficiencyModel } from '../efficiency-model.ts';
 import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from '../detectors.ts';
 import { effectiveThresholds } from '../threshold-overrides.ts';
@@ -48,7 +49,7 @@ function maxFindingValue(catalog: Finding[], type: string): number | null {
   const values = catalog
     .filter((f) => f.type === type)
     .map((f) => f.value ?? 0);
-  return values.length > 0 ? Math.max(...values) : null;
+  return maxOf(values);
 }
 
 function checkRuntime(appModel: AppModel, maxRuntimeMs: number): BudgetResult {
@@ -87,10 +88,10 @@ function checkSkew(appModel: AppModel, maxSkewRatio: number, minTasksForP95: num
     .map((stage) => computeSkewRatio(stage, minTasksForP95))
     .filter((r) => r !== null)
     .map((r) => r.ratio);
-  if (ratios.length === 0) {
+  const maxRatio = maxOf(ratios);
+  if (maxRatio === null) {
     return { name: 'max-skew', status: 'inconclusive', detail: 'No stage has a measurable task-duration median.' };
   }
-  const maxRatio = Math.max(...ratios);
   return maxRatio > maxSkewRatio
     ? { name: 'max-skew', status: 'violation', detail: `Peak stage skew ratio ${maxRatio} exceeds budget ${maxSkewRatio}.` }
     : { name: 'max-skew', status: 'pass', detail: `Peak stage skew ratio ${maxRatio} within budget ${maxSkewRatio}.` };

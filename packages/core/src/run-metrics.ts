@@ -2,6 +2,7 @@
 // an automated tuning loop can compare across runs without reading a report. Its schemaVersion
 // moves independently of the evidence report's. A figure the log cannot provide is null, never 0.
 import { computeAllocation, type Allocation } from './allocation.ts';
+import { maxOf } from './array-extremes.ts';
 import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from './detectors.ts';
 import { totalExecutorCpuMs, totalOutputRows, withEarlierAttempts } from './run-totals.ts';
 import { isPythonStage } from './python-stage.ts';
@@ -84,14 +85,14 @@ function sumOf(stages: Stage[], pick: (s: Stage) => number | null | undefined): 
 // 0 means either no execution memory used or not recorded; only a positive peak is reported.
 function peakExecutionMemory(stages: Stage[]): number | null {
   const peaks = stages.map((s) => s.peakExecutionMemoryMax).filter((v): v is number => finite(v) && v > 0);
-  return peaks.length > 0 ? Math.max(...peaks) : null;
+  return maxOf(peaks);
 }
 
 function maxSkew(stages: Stage[], minTasksForP95: number): number | null {
   const ratios = stages
     .map((s) => computeSkewRatio(s, minTasksForP95)?.ratio)
     .filter((r): r is number => finite(r));
-  return ratios.length > 0 ? Math.max(...ratios) : null;
+  return maxOf(ratios);
 }
 
 // Failed stage attempts and stages submitted more than once, from the parser's per-stage attempt

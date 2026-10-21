@@ -42,18 +42,20 @@ interface Frame {
   shallow: z.infer<typeof SparkPlanInfoNodeSchema>;
   children: SparkPlanInfo[];
   pendingRaw: unknown[];
+  // Index of the next child of pendingRaw to expand; the array itself is never modified.
+  nextRaw: number;
   depth: number;
 }
 
 export function parseSparkPlanInfoTree(raw: unknown): SparkPlanInfo {
   const rootShallow = SparkPlanInfoNodeSchema.parse(raw);
-  const rootFrame: Frame = { shallow: rootShallow, children: [], pendingRaw: [...rootShallow.children], depth: 0 };
+  const rootFrame: Frame = { shallow: rootShallow, children: [], pendingRaw: rootShallow.children, nextRaw: 0, depth: 0 };
   const stack: Frame[] = [rootFrame];
   const parentOf = new Map<Frame, Frame>();
 
   while (stack.length > 0) {
     const top = stack[stack.length - 1];
-    if (top.pendingRaw.length === 0) {
+    if (top.nextRaw >= top.pendingRaw.length) {
       stack.pop();
       const built: SparkPlanInfo = { ...top.shallow, children: top.children };
       const parent = parentOf.get(top);
@@ -66,9 +68,9 @@ export function parseSparkPlanInfoTree(raw: unknown): SparkPlanInfo {
     if (top.depth > MAX_PLAN_DEPTH) {
       throw new Error(`sparkPlanInfo tree exceeds max depth of ${MAX_PLAN_DEPTH}`);
     }
-    const nextRaw = top.pendingRaw.shift();
+    const nextRaw = top.pendingRaw[top.nextRaw++];
     const shallow = SparkPlanInfoNodeSchema.parse(nextRaw);
-    const frame: Frame = { shallow, children: [], pendingRaw: [...shallow.children], depth: top.depth + 1 };
+    const frame: Frame = { shallow, children: [], pendingRaw: shallow.children, nextRaw: 0, depth: top.depth + 1 };
     parentOf.set(frame, top);
     stack.push(frame);
   }
