@@ -32,9 +32,9 @@ Parameters:
 
 - `runIdA` / `sourceA`: identify the baseline (same `source` shape as above)
 - `runIdB` / `sourceB`: identify the candidate
-- `redact`: `boolean` (default `false`), pseudonymizes any app id or host/IP
-  tokens embedded in free text (stage names and similar) in the response: see
-  the note at the top of this page
+- `redact`: `boolean` (default `false`), pseudonymizes any app id, host name
+  or user name embedded in free text (stage names and similar) in the
+  response: see the note at the top of this page and [What `--redact` covers](../getting-started/ci-and-automation.md#what-redact-covers)
 - `include`: `["stagePairs"]` (optional), adds `stagePairs`, one row per paired
   stage. It is left out by default because it grows with the number of stages.
 - `normalizePath`: `string[]` (optional), regular expressions whose every match

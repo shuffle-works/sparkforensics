@@ -11,8 +11,8 @@ first to get a `runId` and a finding's `id`):
 
 - `runId`: `string`
 - `findingId`: `string`
-- `redact`: `boolean` (default `false`), pseudonymizes the app id and any
-  host/IP tokens in the response
+- `redact`: `boolean` (default `false`), pseudonymizes the app id, host
+  names and user names in the response. See [What `--redact` covers](../getting-started/ci-and-automation.md#what-redact-covers)
 
 Example call:
 
