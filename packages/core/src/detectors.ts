@@ -2853,26 +2853,30 @@ export const DETECTORS = [
     // Short-lived executors: stood up and torn down before doing useful work (wasteful
     // re-provisioning, not normal scale-down). Reuses utilization's add/remove matching, but
     // measures lifetime against a threshold instead of aggregate active-time.
-    type: 'autoscalingChurn', order: 103, fixEffort: 'config', version: 1,
+    type: 'autoscalingChurn', order: 103, fixEffort: 'config', version: 2,
     emits: ['autoscalingChurn'],
     docAnchor: '#bottleneck-autoscaling-churn',
     thresholds: { shortLivedMs: 120_000, warningPct: 0.30, criticalPct: 0.60, minExecutors: 5 },
     detect(ctx, thresholds): Finding | null {
       const { app, executorsAdded, executorsRemoved } = ctx;
       if (!app || executorsAdded.length === 0 || app.endTime == null) return null;
-      if (executorsAdded.length < thresholds.minExecutors) return null;
 
       const removedAt = new Map<string, number>();
       for (const ev of executorsRemoved) removedAt.set(ev.executorId, ev.timestamp);
 
+      // Only executors with a removal event have a measured lifetime. One still alive at app end
+      // was never torn down, so it counts in neither the numerator nor the denominator.
+      let removedCount = 0;
       let shortLivedCount = 0;
       for (const ev of executorsAdded) {
-        const endedAt = removedAt.has(ev.executorId) ? removedAt.get(ev.executorId)! : app.endTime;
-        const lifetime = endedAt - ev.timestamp;
-        if (lifetime < thresholds.shortLivedMs) shortLivedCount++;
+        const endedAt = removedAt.get(ev.executorId);
+        if (endedAt === undefined) continue;
+        removedCount++;
+        if (endedAt - ev.timestamp < thresholds.shortLivedMs) shortLivedCount++;
       }
+      if (removedCount < thresholds.minExecutors) return null;
 
-      const shortLivedPct = shortLivedCount / executorsAdded.length;
+      const shortLivedPct = shortLivedCount / removedCount;
       const impactBand = shortLivedPct > thresholds.criticalPct ? 'critical'
                         : shortLivedPct > thresholds.warningPct ? 'warning' : null;
       if (!impactBand) return null;
@@ -2888,8 +2892,8 @@ export const DETECTORS = [
         // No dynamic-allocation property has an effect when the run's conf turns it off (as for coldStart).
         dynamicAllocation: daOff ? 'off' : 'on',
         recommendation: daOff
-          ? `${pct}% of executors ran for under 2 minutes before being removed: dynamic allocation is off, so the churn comes from executors lost or preempted, not from autoscaling bounds; check the cluster manager's preemption and executor-loss logs.`
-          : `${pct}% of executors ran for under 2 minutes before being removed: this looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.`,
+          ? `${pct}% of removed executors ran for under 2 minutes: dynamic allocation is off, so the churn comes from executors lost or preempted, not from autoscaling bounds; check the cluster manager's preemption and executor-loss logs.`
+          : `${pct}% of removed executors ran for under 2 minutes: this looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.`,
         remediation: daOff ? [] : [
           increaseConf('spark.dynamicAllocation.executorIdleTimeout'),
           decreaseConf('spark.dynamicAllocation.minExecutors'),

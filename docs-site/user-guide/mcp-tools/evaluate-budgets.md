@@ -12,7 +12,8 @@ Parameters (all optional):
   `diagnose_run`). When `runIdB`/`sourceB` is also given, this run is the
   regression baseline instead.
 - `maxRuntimeMs`, `maxSpillGb`, `maxSkewRatio`, `maxFailedTaskRatePct`,
-  `minEfficiencyPct`: absolute budgets, each evaluated only if provided. With
+  `minEfficiencyPct`: absolute budgets, each evaluated only if provided. Each is
+  a non-negative number; a negative value fails schema validation. With
   two runs they apply to the candidate (`runIdB`/`sourceB`), the same as the
   CLI's `--baseline` mode. `minEfficiencyPct` measures busy core time, the
   share of executor core time that ran tasks (100 minus the dashboard's
@@ -29,8 +30,8 @@ Parameters (all optional):
   first run (baseline) and the second run (candidate). Requires
   `runIdB`/`sourceB`. `regressionMetric` without `maxRegressionPct` fails the
   call. A volume key (`inputBytes`, `outputBytes`, `taskCount`,
-  `executorsAdded`), which has no regression direction, or an unknown key
-  reports `inconclusive`.
+  `executorsAdded`), which has no regression direction, reports `inconclusive`.
+  A key that is not a regression metric key fails schema validation.
 - `regressionBudgets`: further regression budgets, an array of
   `{ "metric": "<key>", "maxPct": <number> }`, the MCP form of the CLI's
   repeated `--regression-budget <metric>:<pct>`. Each is checked like
@@ -61,7 +62,7 @@ Parameters (all optional):
   given impact band (`"all"` or one of the impact band names). Requires
   `runIdB`/`sourceB`. A finding the first run also has, with the same type, rule and
   location, is not introduced, even when its impact band differs, unless its band worsens to exactly the given band: that counts as introduced (never under `"all"`, and an improvement never does). A band name it doesn't
-  recognize reports `inconclusive`.
+  recognize fails schema validation.
 
 A budget whose required evidence is missing (e.g. no `runIdB`/`sourceB` for a
 regression budget, or a run with no trustworthy task-level evidence) reports

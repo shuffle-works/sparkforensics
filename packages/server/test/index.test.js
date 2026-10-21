@@ -8,22 +8,22 @@ import { createServer, serverStartupGuidance } from '../index.js';
 const SAMPLE_LOG = fileURLToPath(new URL('../../../public/sample-runs/sample-run.ndjson.gz', import.meta.url));
 
 // node:http (unlike fetch) lets a caller send an explicit Host header, needed
-// to simulate a DNS-rebinding attempt against the /mcp route.
-function requestWithHost(port, hostHeader) {
+// to simulate a DNS-rebinding attempt against the /mcp and /shs-proxy routes.
+function requestWithHost(port, hostHeader, { path = '/mcp', method = 'POST', headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request({
       hostname: '127.0.0.1',
       port,
-      path: '/mcp',
-      method: 'POST',
-      headers: { Host: hostHeader, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+      path,
+      method,
+      headers: { Host: hostHeader, ...headers, 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
     }, (res) => {
       let body = '';
       res.on('data', (chunk) => { body += chunk; });
       res.on('end', () => resolve({ status: res.statusCode, body }));
     });
     req.on('error', reject);
-    req.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }));
+    req.end(method === 'POST' ? JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }) : undefined);
   });
 }
 
@@ -62,6 +62,39 @@ describe('createServer routing', () => {
     const res = await fetch(`http://127.0.0.1:${port}/shs-proxy?baseUrl=http%3A%2F%2Fshs%3A18080&appId=bad`);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ code: 'access-or-upstream-failure' });
+  });
+
+  describe('/shs-proxy Host check', () => {
+    const PROXY_PATH = '/shs-proxy?baseUrl=http%3A%2F%2Fshs%3A18080&appId=application_1_1';
+    const upstreamOk = () => async () => new Response('zip-bytes', { status: 200 });
+
+    it('refuses a foreign Host before fetching upstream, with or without a matching Origin', async () => {
+      let fetched = false;
+      const port = await listen({ staticRoot: process.cwd(), fetchImpl: async () => { fetched = true; return new Response('x'); } });
+      const noOrigin = await requestWithHost(port, `evil.example.com:${port}`, { path: PROXY_PATH, method: 'GET' });
+      const withOrigin = await requestWithHost(port, `evil.example.com:${port}`, {
+        path: PROXY_PATH,
+        method: 'GET',
+        headers: { Origin: `http://evil.example.com:${port}` },
+      });
+      expect(noOrigin.status).toBe(403);
+      expect(withOrigin.status).toBe(403);
+      expect(JSON.parse(withOrigin.body)).toEqual({ code: 'access-or-upstream-failure' });
+      expect(fetched).toBe(false);
+    });
+
+    it('refuses a local hostname on the wrong port', async () => {
+      const port = await listen({ staticRoot: process.cwd(), fetchImpl: upstreamOk() });
+      const res = await requestWithHost(port, `127.0.0.1:${port + 1}`, { path: PROXY_PATH, method: 'GET' });
+      expect(res.status).toBe(403);
+    });
+
+    it.each(['127.0.0.1', 'localhost'])('serves a request whose Host is %s:<port>', async (name) => {
+      const port = await listen({ staticRoot: process.cwd(), fetchImpl: upstreamOk() });
+      const res = await requestWithHost(port, `${name}:${port}`, { path: PROXY_PATH, method: 'GET' });
+      expect(res.status).toBe(200);
+      expect(res.body).toBe('zip-bytes');
+    });
   });
 
   it('serves a 404 for an unknown static path (simulating a static deploy for the frontend)', async () => {

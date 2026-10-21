@@ -2,13 +2,11 @@ import { maxOf } from '../array-extremes.ts';
 import { computeEfficiencyModel } from '../efficiency-model.ts';
 import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from '../detectors.ts';
 import { effectiveThresholds } from '../threshold-overrides.ts';
-import { IMPACT_BAND_ORDER } from '../format-utils.ts';
+import { IMPACT_BANDS } from '../format-utils.ts';
 import { isEscalation, type CompareRunsResult } from '../run-comparison.ts';
 import { PAIR_DELTA_METRICS, type PairDeltaMetric, type StagePair } from '../stage-alignment.ts';
 import type { AppModel, Finding, ImpactBand } from '../types.ts';
 import type { RegressionBudget } from './regression-budgets.ts';
-
-const IMPACT_BANDS = Object.keys(IMPACT_BAND_ORDER) as ImpactBand[];
 
 export interface BudgetsConfig {
   maxRuntimeMs?: number; maxSpillGb?: number; maxSkewRatio?: number;

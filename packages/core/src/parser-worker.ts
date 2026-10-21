@@ -251,6 +251,19 @@ export async function runParseFiles(
   emitParseCompletion(state, emit, linesProcessed);
 }
 
+// Runs one parse task and reports a rejection (for example a dropped file that changed after the
+// drop, which makes `slice().arrayBuffer()` throw NotReadableError) as an `error` message. An
+// async `onmessage` handler's rejection never reaches the parent's `worker.onerror`, so without
+// this the page waits on "Parsing" forever.
+export async function reportParseFailure(task: () => Promise<void>, emit: EmitFn): Promise<void> {
+  try {
+    await task();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    emit({ type: 'error', message: `Could not read the event log: ${message}` });
+  }
+}
+
 // Message bus, active only when running as a Web Worker.
 
 const isWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
@@ -267,15 +280,16 @@ if (isWorker) {
   );
 
   self.onmessage = async ({ data }: MessageEvent<WorkerIncomingMessage>) => {
+    const post: EmitFn = (msg) => self.postMessage(msg);
     if (data.type === 'parse') {
-      workerState = createState();
-      await runParse(data.file, workerState, { zstdDecoder });
+      const state = workerState = createState();
+      await reportParseFailure(() => runParse(data.file, state, { zstdDecoder }), post);
     } else if (data.type === 'parseFromUrl') {
-      workerState = createState();
-      await runParseFromUrl(data.request, workerState);
+      const state = workerState = createState();
+      await reportParseFailure(() => runParseFromUrl(data.request, state), post);
     } else if (data.type === 'parseFiles') {
-      workerState = createState();
-      await runParseFiles(data.files, workerState, { zstdDecoder });
+      const state = workerState = createState();
+      await reportParseFailure(() => runParseFiles(data.files, state, { zstdDecoder }), post);
     } else if (data.type === 'getTaskData') {
       const { stageId, reqId } = data;
       const stored = workerState?.taskStore.get(stageId) ?? new Float64Array(0);
