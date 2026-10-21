@@ -60,6 +60,8 @@ const clientRef: { current: ReturnType<typeof createIngestClient> | null } = { c
 // `recentFiles.add` on success. Null for handle-less loads (folder / SHS-fetch).
 const pendingRef: { current: { handle: unknown; name: string; size: number; lastModified: number } | null } = { current: null };
 
+const errorMessage = (e: unknown): string => (e as { message?: string } | null)?.message ?? String(e);
+
 export function useIngest(opts: Opts = {}) {
   const make = opts.makeClient ?? createIngestClient;
 
@@ -71,28 +73,49 @@ export function useIngest(opts: Opts = {}) {
     return data;
   }, []);
 
+  // Parse completion. A failure before the run is ready (analysis throws on odd log data) ends the
+  // parse with the page error, never an endless "Parsing" screen. After ready the dashboard works,
+  // so a failure in the task-data prefetch or the recent-files bookkeeping is only logged: both
+  // are conveniences (stage data loads on demand), and an error screen would discard a good run.
   const runDone = useCallback(async (skippedLines = 0) => {
     const m = store.getState().appModel;
-    const ledger = deriveEvidenceAvailability(m, { skippedLines }) as EvidenceAvailability;
-    const catalog = analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates);
-    store.getState().setFindings(catalog, auditConfig(m.app, m.stages), ledger);
-    store.getState().setSkippedLines(skippedLines);
-    store.getState().setStatus('ready');
-    const flagged = [...new Set(catalog.map((f) => f.stageId).filter((id): id is number => id != null))];
-    const prefetched = await clientRef.current!.prefetchFlaggedStages(flagged);
-    for (const { stageId, metrics, fieldNames } of prefetched) store.getState().setTaskData(stageId, { metrics, fieldNames });
+    let catalog: ReturnType<typeof analyze>;
+    try {
+      const ledger = deriveEvidenceAvailability(m, { skippedLines }) as EvidenceAvailability;
+      catalog = analyze(m.app, m.stages, m.executors.added, m.executors.removed, m.jobs, m.sql, m.runAggregates);
+      store.getState().setFindings(catalog, auditConfig(m.app, m.stages), ledger);
+      store.getState().setSkippedLines(skippedLines);
+      store.getState().setStatus('ready');
+    } catch (e) {
+      clientRef.current?.terminate();
+      store.getState().setShsParsing(false);
+      store.getState().setError(`Could not analyze this log: ${errorMessage(e)}`);
+      return;
+    }
+
+    try {
+      const flagged = [...new Set(catalog.map((f) => f.stageId).filter((id): id is number => id != null))];
+      const prefetched = await clientRef.current!.prefetchFlaggedStages(flagged);
+      for (const { stageId, metrics, fieldNames } of prefetched) store.getState().setTaskData(stageId, { metrics, fieldNames });
+    } catch (e) {
+      console.warn('Stage data prefetch failed; stages load on demand:', e);
+    }
 
     const pending = pendingRef.current;
     if (pending?.handle) {
       const issueCount = new Set(catalog.map((f) => f.stageId ?? `app:${f.type}`)).size;
-      await recentFiles.add({
-        handle: pending.handle,
-        name: pending.name,
-        size: pending.size,
-        lastModified: pending.lastModified,
-        appName: m.app?.name ?? null,
-        issueCount,
-      });
+      try {
+        await recentFiles.add({
+          handle: pending.handle,
+          name: pending.name,
+          size: pending.size,
+          lastModified: pending.lastModified,
+          appName: m.app?.name ?? null,
+          issueCount,
+        });
+      } catch (e) {
+        console.warn('Could not add this file to the recent list:', e);
+      }
     }
   }, []);
 
@@ -191,7 +214,8 @@ export function useIngest(opts: Opts = {}) {
       store.getState().setSkippedLines(snap.skippedLines ?? 0);
       store.getState().setActiveFile(id);
       store.getState().setStatus('ready');
-      await recentFiles.touch(id);
+      // Only reorders the recent list: an IndexedDB failure must not reject after the run is shown.
+      await recentFiles.touch(id).catch((e) => console.warn('Could not update the recent list:', e));
       return 'restored';
     }
 
@@ -266,33 +290,40 @@ export function useIngest(opts: Opts = {}) {
       clientRef.current?.terminate();
       store.getState().setCompareLoad(null);
       store.getState().setComparisonActive(false);
-      const msg = (e as { message?: string })?.message ?? String(e);
-      store.getState().setError(`${COMPARE_RUN_NAME[which]}: ${msg}`);
+      store.getState().setError(`${COMPARE_RUN_NAME[which]}: ${errorMessage(e)}`);
     };
 
     const parseInto = async (source: RunSource, which: 'A' | 'B', onDone: (skippedLines: number) => void) => {
-      clientRef.current?.terminate();
-      store.getState().resetModel();
-      store.getState().setActiveFile(source.id);
-      // Set progress AFTER resetModel (which clears compareLoad) so the
-      // "Parsing run N of 2" indicator can observe {current}.
-      store.getState().setCompareLoad({ current: which === 'A' ? 1 : 2 });
-      clientRef.current = make();
-      const resolved = await resolveSourceInput(source, which);
-      if (!resolved) {
-        // resolveSourceInput already set a run-named error; tear down directly
-        // rather than routing through abort (which would prefix the run's name again).
+      try {
         clientRef.current?.terminate();
-        store.getState().setCompareLoad(null);
-        store.getState().setComparisonActive(false);
-        return;
+        store.getState().resetModel();
+        store.getState().setActiveFile(source.id);
+        // Set progress AFTER resetModel (which clears compareLoad) so the
+        // "Parsing run N of 2" indicator can observe {current}.
+        store.getState().setCompareLoad({ current: which === 'A' ? 1 : 2 });
+        clientRef.current = make();
+        const resolved = await resolveSourceInput(source, which);
+        if (!resolved) {
+          // resolveSourceInput already set a run-named error; tear down directly
+          // rather than routing through abort (which would prefix the run's name again).
+          clientRef.current?.terminate();
+          store.getState().setCompareLoad(null);
+          store.getState().setComparisonActive(false);
+          return;
+        }
+        const cb = createModelCallbacks(store.getState().appModel, {
+          onProgress: (p: any) => store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed ?? 0, etaMs: p.etaMs ?? null }),
+          // A throw here (snapshotting, or opening the comparison) would otherwise leave the
+          // "Parsing run N of 2" screen up forever.
+          onDone: (d: any) => {
+            try { onDone(d?.skippedLines ?? 0); } catch (e) { abort(which, e); }
+          },
+          onError: (e: any) => abort(which, e),
+        });
+        resolved.start(cb);
+      } catch (e) {
+        abort(which, e);
       }
-      const cb = createModelCallbacks(store.getState().appModel, {
-        onProgress: (p: any) => store.getState().setParse({ pct: p.pct ?? 0, lines: p.linesProcessed ?? 0, etaMs: p.etaMs ?? null }),
-        onDone: (d: any) => onDone(d?.skippedLines ?? 0),
-        onError: (e: any) => abort(which, e),
-      });
-      resolved.start(cb);
     };
 
     // A cached source is already snapshotted: skip straight to the next run.

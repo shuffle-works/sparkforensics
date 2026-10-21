@@ -11,6 +11,7 @@ import {
   typeTag, formatBytes, formatCores, formatDuration, formatWallClockRange, IMPACT_BAND_ORDER,
 } from './format-utils.ts';
 import { findingName, titleCase } from './finding-names.ts';
+import { mdInline } from './markdown-inline.ts';
 import { redactReport, redactRunModel } from './redact.ts';
 import { formatTaskFailureHeadline, type TaskFailureGroup } from './task-failure.ts';
 import { findingActionLabel } from './finding-action-label.ts';
@@ -586,8 +587,8 @@ function buildJson(
 // serialize compactly so no payload is silently dropped from the Markdown.
 function renderEvidenceValue(key: string, value: unknown): string {
   if (typeof value === 'number' && /bytes$/i.test(key)) return formatBytes(value);
-  if (value !== null && typeof value === 'object') return JSON.stringify(value);
-  return String(value);
+  if (value !== null && typeof value === 'object') return mdInline(JSON.stringify(value));
+  return mdInline(String(value));
 }
 
 // The `failures` finding's distinct errors: a headline per group, its stack excerpt as an indented
@@ -595,7 +596,7 @@ function renderEvidenceValue(key: string, value: unknown): string {
 function renderFailureGroups(groups: TaskFailureGroup[]): string[] {
   const lines = [`  - failureGroups: ${groups.length}`];
   for (const g of groups) {
-    lines.push(`    - ${g.count} task(s): ${formatTaskFailureHeadline(g)}`);
+    lines.push(`    - ${g.count} task(s): ${mdInline(formatTaskFailureHeadline(g))}`);
     if (g.stackExcerpt) {
       lines.push('');
       for (const l of g.stackExcerpt.split('\n')) lines.push(`          ${l}`);
@@ -625,7 +626,7 @@ function renderOutcome(outcome: RunOutcomeSummary, incomplete: boolean): string 
       : totalJobs === 1 ? 'The run\'s one job failed.' : `All ${totalJobs} jobs failed.`;
     if (!failureReason) return failed;
     const where = failureReasonStageId != null ? ` (stage ${failureReasonStageId})` : '';
-    return `${failed} Spark's recorded reason${where}: ${failureReason}`;
+    return `${failed} Spark's recorded reason${where}: ${mdInline(failureReason)}`;
   }
   const succeeded = totalJobs === 1 ? 'Its one job succeeded.' : `All ${totalJobs} jobs succeeded.`;
   return incomplete ? `${succeeded} The log has no end-of-run record, so jobs still running when it stops are not counted.` : succeeded;
@@ -652,13 +653,13 @@ function renderRunShape(shape: RunShape): string[] {
 // The dashboard verdict card as text: title, summary, then the numbered steps worded as its
 // "Copy next steps" checklist, each followed by the other finding types flagged at that place.
 function renderVerdict(verdict: VerdictJson): string[] {
-  const lines = ['## Verdict', '', verdict.title];
-  if (verdict.summary.length > 0) lines.push('', verdict.summary.join(' '));
-  if (verdict.idle) lines.push('', verdict.idle.text);
+  const lines = ['## Verdict', '', mdInline(verdict.title)];
+  if (verdict.summary.length > 0) lines.push('', mdInline(verdict.summary.join(' ')));
+  if (verdict.idle) lines.push('', mdInline(verdict.idle.text));
   if (verdict.steps.length > 0) {
     lines.push('', 'By wall clock (run time):', '');
     verdict.steps.forEach((step, i) => {
-      lines.push(`${i + 1}. [${step.tag}] ${step.text}`);
+      lines.push(`${i + 1}. [${step.tag}] ${mdInline(step.text)}`);
       if (step.relatedTypes.length > 0) {
         const related = step.relatedTypes.map(findingName).join(', ');
         lines.push(`   - Also flagged here, likely the same cause: ${related}.`);
@@ -673,7 +674,7 @@ function renderVerdict(verdict: VerdictJson): string[] {
     lines.push('', 'By core time (measured busy core time a fix removes):', '');
     verdict.costSteps.forEach((step, i) => {
       const where = step.stageId != null ? ` in Stage ${step.stageId}` : '';
-      lines.push(`${i + 1}. [${step.tag}] ${step.actionLabel}${where}: ${step.coreTime} of core time.`);
+      lines.push(`${i + 1}. [${step.tag}] ${mdInline(step.actionLabel)}${where}: ${step.coreTime} of core time.`);
     });
   }
   lines.push('');
@@ -686,8 +687,8 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
   const lines: string[] = [];
   lines.push('# Spark run evidence report');
   lines.push('');
-  lines.push(`- Application: ${summary.app.name ?? '(unknown)'} (${summary.app.id ?? 'n/a'})`);
-  lines.push(`- Spark version: ${summary.app.sparkVersion ?? 'n/a'}`);
+  lines.push(`- Application: ${mdInline(summary.app.name ?? '(unknown)')} (${mdInline(summary.app.id ?? 'n/a')})`);
+  lines.push(`- Spark version: ${mdInline(summary.app.sparkVersion ?? 'n/a')}`);
   if (summary.tunedThresholds) lines.push(`- Tuned thresholds: ${tunedRunNote(summary.tunedThresholds)}`);
   lines.push(`- Stages: ${summary.stageCount} · Jobs: ${summary.jobCount} · SQL executions: ${summary.sqlExecutionCount}`);
   lines.push(`- Findings: ${summary.findingCount} (critical ${summary.impactBandCounts.critical}, warning ${summary.impactBandCounts.warning}, info ${summary.impactBandCounts.info})`);
@@ -703,7 +704,7 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
     lines.push(`## Fix these first (${recommendations.length})`);
     lines.push('');
     recommendations.forEach((r, i) => {
-      lines.push(`${i + 1}. [${r.tag}] ${r.actionLabel}`);
+      lines.push(`${i + 1}. [${r.tag}] ${mdInline(r.actionLabel)}`);
       const detail = r.kind === 'count'
         ? Object.entries(r.byImpactBand ?? {}).map(([impactBand, count]) => `${count} ${impactBand}`).join(', ')
         : r.impact && `${r.impact}${r.impactMeaning ? ` ${r.impactMeaning}` : ''}`;
@@ -716,11 +717,11 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
   for (const r of findings) {
     const where = r.stageId != null ? ` (stage ${r.stageId})` : '';
     lines.push(`### ${r.name} · ${r.impactBand}${where}`);
-    lines.push(`- action: ${r.actionLabel}`);
-    if (r.metric != null) lines.push(`- ${r.metric}: ${r.valueText ?? r.value}`);
-    if (r.recommendation) lines.push(`- ${r.recommendation}`);
+    lines.push(`- action: ${mdInline(r.actionLabel)}`);
+    if (r.metric != null) lines.push(`- ${mdInline(r.metric)}: ${mdInline(String(r.valueText ?? r.value))}`);
+    if (r.recommendation) lines.push(`- ${mdInline(r.recommendation)}`);
     if (r.confidence) lines.push(`- confidence: ${r.confidence}`);
-    if (r.validationRequired) lines.push(`- validation: ${r.validationRequired}`);
+    if (r.validationRequired) lines.push(`- validation: ${mdInline(r.validationRequired)}`);
     if (r.tunedThresholds) lines.push(`- tuned thresholds: ${describeTunedThresholds(r.tunedThresholds)}`);
     const impactText = r.impactEstimate ? renderImpactEstimate(r.impactEstimate) : null;
     if (impactText) lines.push(`- impact: ${impactText}`);
@@ -743,7 +744,7 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
     lines.push('## Evidence availability');
     lines.push('');
     for (const e of evidenceAvailability.entries) {
-      lines.push(`- ${e.key}: ${e.state} (${e.summary})`);
+      lines.push(`- ${e.key}: ${e.state} (${mdInline(e.summary)})`);
     }
     lines.push('');
   }
@@ -763,7 +764,7 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
     lines.push('The log lacked the data these checks need, so they neither passed nor failed.');
     lines.push('');
     for (const c of notRunChecks) {
-      lines.push(`- [${c.tag}] ${c.type}: ${c.reason}`);
+      lines.push(`- [${c.tag}] ${c.type}: ${mdInline(c.reason)}`);
     }
     lines.push('');
   }

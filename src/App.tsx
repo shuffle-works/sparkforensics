@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Toaster } from '@/components/ui/sonner';
+import { AppErrorBoundary } from '@/AppErrorBoundary';
 import { useStore } from '@/store/store';
 import { useIngest } from '@/store/useIngest';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
@@ -181,18 +182,20 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <DocsProvider>
-        <StageDetailProvider>
-          {hasOwnHeading ? null : (
-            <header>
-              <h1 className="sr-only">SparkForensics</h1>
-            </header>
-          )}
-          <AppRoutes />
-          <DocsSheet />
-          <Toaster />
-        </StageDetailProvider>
-      </DocsProvider>
+      <AppErrorBoundary>
+        <DocsProvider>
+          <StageDetailProvider>
+            {hasOwnHeading ? null : (
+              <header>
+                <h1 className="sr-only">SparkForensics</h1>
+              </header>
+            )}
+            <AppRoutes />
+            <DocsSheet />
+            <Toaster />
+          </StageDetailProvider>
+        </DocsProvider>
+      </AppErrorBoundary>
     </ThemeProvider>
   );
 }

@@ -672,6 +672,16 @@ describe('renderComparisonMarkdown', () => {
     expect(md).toMatch(/### Resolved findings \(0\)/);
   });
 
+  it('escapes a run label and a differing property key, which a log controls', () => {
+    const snap = (app, label) => ({ label, snapshot: { app, stages: new Map(), sql: new Map(), jobs: new Map(), catalog: [] } });
+    const b = snap({ name: 'JobX', config: { 'spark.a[x](https://evil.example)': '1' } }, 'base\n# Fourth title');
+    const c = snap({ name: 'JobX', config: { 'spark.a[x](https://evil.example)': '2' } }, '[cand](https://evil.example)');
+    const md = renderComparisonMarkdown(compareRuns(b, c), { title: 'T', sentences: [] });
+    expect(md.split('\n').filter((line) => line.startsWith('# '))).toEqual([]);
+    expect(md).toContain('Baseline: base # Fourth title · Candidate: \\[cand\\](https://evil.example)');
+    expect(md).not.toMatch(/(?<!\\)\[x\]/);
+  });
+
   it('lists one bullet per introduced/resolved finding', () => {
     const run = (catalog, app, label) => ({ label, snapshot: { app, stages: new Map(), sql: new Map(), jobs: new Map(), catalog } });
     const b = run([{ type: 'spill', impactBand: 'warning' }], { name: 'JobX' }, 'base');

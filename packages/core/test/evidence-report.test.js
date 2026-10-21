@@ -275,6 +275,51 @@ describe('buildEvidenceReport', () => {
     expect(slow.recommendation).not.toContain(badHost);
   });
 
+  describe('log-controlled text in the Markdown', () => {
+    // Prints as a second H1, a live link and an HTML tag when inserted as written.
+    const HOSTILE = 'etl\n# Second title\n[click](https://evil.example/x) <img src=x onerror=alert(1)>';
+    const lineStarts = (markdown) => markdown.split('\n');
+
+    it('keeps an app name on one line and cannot open a heading, a link or a tag', () => {
+      const fx = fixture();
+      fx.app.name = HOSTILE;
+      const { markdown } = buildEvidenceReport(fx);
+      expect(lineStarts(markdown).filter((line) => line.startsWith('# '))).toEqual(['# Spark run evidence report']);
+      expect(markdown).toContain('- Application: etl # Second title \\[click\\](https://evil.example/x) \\<img src=x onerror=alert(1)\\> (');
+      expect(markdown).not.toMatch(/(?<!\\)</);
+      expect(markdown).not.toMatch(/(?<!\\)\[click\]/);
+    });
+
+    it('escapes the Spark version too', () => {
+      const fx = fixture();
+      fx.app.sparkVersion = '[v](https://evil.example)';
+      expect(buildEvidenceReport(fx).markdown).toContain('- Spark version: \\[v\\](https://evil.example)');
+    });
+
+    it('escapes a failure message, which a log from another team controls', () => {
+      const fx = fixture();
+      fx.stages.set(7, makeStage({
+        id: 7, taskCount: 100, failedTasks: 30,
+        failureReasons: [{ reason: 'ExceptionFailure', count: 30 }],
+        failureGroups: [{
+          reason: 'ExceptionFailure', className: 'java.lang.IllegalStateException', count: 30, lossReason: null,
+          message: 'bad\n# Third title\n[open](https://evil.example)', stackExcerpt: null,
+        }],
+      }));
+      const { markdown } = buildEvidenceReport(fx);
+      expect(lineStarts(markdown).filter((line) => line.startsWith('# '))).toEqual(['# Spark run evidence report']);
+      expect(markdown).not.toMatch(/(?<!\\)\[open\]/);
+    });
+
+    it('escapes the app name in the redacted Markdown path too, where it is replaced by the id pseudonym', () => {
+      const fx = fixture();
+      fx.app.name = HOSTILE;
+      const { markdown } = buildEvidenceReport(fx, { redact: true });
+      expect(markdown).not.toContain('evil.example');
+      expect(markdown).toContain('- Application: app-1 (app-1)');
+    });
+  });
+
   describe('failures finding', () => {
     const failingFixture = () => {
       const fx = fixture();

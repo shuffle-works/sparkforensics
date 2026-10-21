@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { test, expect, beforeEach } from 'vitest';
+import { test, expect, beforeEach, vi } from 'vitest';
+import { gzipSync } from 'node:zlib';
 import { store, emptyAppModel } from '@/store/store';
-import { hydrateExportStore, unsupportedPayloadReason } from '@/export/hydrate-store';
+import { hydrateExportStore, loadExportPayload, unsupportedPayloadReason } from '@/export/hydrate-store';
 import { EXPORT_DATA_SCHEMA_VERSION, type ExportRunData } from '@sparkforensics/core/export-data.ts';
 import { interpretRun } from '@sparkforensics/core/run-interpretation.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
@@ -106,4 +107,42 @@ test('refuses a payload of the right version that lacks a precomputed result', (
   expect(unsupportedPayloadReason({ ...sampleData(), interpretation: [] })).toContain('missing the run interpretation');
   expect(unsupportedPayloadReason({ ...sampleData(), configFindings: undefined, interpretation: null }))
     .toContain('missing the config audit results and run interpretation');
+});
+
+test('unsupportedPayloadReason refuses a payload whose stage, SQL or job lists are not arrays', () => {
+  expect(unsupportedPayloadReason({ ...sampleData(), stages: undefined })).toContain('stage list');
+  expect(unsupportedPayloadReason({ ...sampleData(), sql: null })).toContain('SQL execution list');
+  expect(unsupportedPayloadReason({ ...sampleData(), jobs: {} })).toContain('job list');
+});
+
+const encodePayload = (data: unknown) => gzipSync(JSON.stringify(data)).toString('base64');
+
+test('loadExportPayload hydrates a readable payload and returns no refusal', () => {
+  expect(loadExportPayload(encodePayload(sampleData()))).toBeNull();
+  expect(store.getState().status).toBe('ready');
+});
+
+test('loadExportPayload reports a missing data.js instead of throwing', () => {
+  for (const missing of [undefined, null, '', 42]) {
+    expect(loadExportPayload(missing)).toContain('data.js');
+  }
+  expect(store.getState().status).not.toBe('ready');
+});
+
+test('loadExportPayload reports a truncated or corrupt payload instead of throwing', () => {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  const encoded = encodePayload(sampleData());
+  expect(loadExportPayload(encoded.slice(0, Math.floor(encoded.length / 2)))).toContain('missing or unreadable');
+  expect(loadExportPayload('not base64 at all !!')).toContain('missing or unreadable');
+  expect(loadExportPayload(encodePayload('{"not":"a payload"}').slice(0, 20))).toContain('missing or unreadable');
+});
+
+test('loadExportPayload keeps the version refusal for a payload of another version', () => {
+  expect(loadExportPayload(encodePayload({ ...sampleData(), schemaVersion: 1 }))).toContain('version 1');
+});
+
+test('loadExportPayload reports a payload that fails while hydrating', () => {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  const damaged = { ...sampleData(), stages: [null] };
+  expect(loadExportPayload(encodePayload(damaged))).toContain('missing or unreadable');
 });
