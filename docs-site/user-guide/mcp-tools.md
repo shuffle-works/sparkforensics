@@ -5,9 +5,11 @@ an AI agent) can diagnose a run without opening the dashboard.
 
 Five of the eight tools (`list_runs`, `diagnose_run`, `get_run_summary`,
 `compare_runs`, `get_finding_evidence`) accept an optional `redact: boolean`
-parameter (default `false`) that pseudonymizes the app id and any host/IP
-tokens in the response (`app-1`, `host-1`, ...), so a result can be shared
-outside the environment that produced it. The app name is as identifying as
+parameter (default `false`) that pseudonymizes the app id and any host name or IP
+address in the response (`app-1`, `host-1`, ...), including the host of a URL, and
+replaces a recognizable user name with `redacted-user`, so a result can be shared
+outside the environment that produced it. [What `--redact` covers](getting-started/ci-and-automation.md#what-redact-covers)
+lists what is and is not replaced. The app name is as identifying as
 the id, so every tool replaces it with the app id's pseudonym. It also
 pseudonymizes the value of any field named `host`, and drops the message and
 stack text of failed-task errors and the failure reason of a failed stage or job,

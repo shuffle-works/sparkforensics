@@ -74,11 +74,26 @@ Redaction enumerates hosts two ways: by walking the findings tree for every
 string value under a key literally named `host` (`evidence.host`,
 `evidence.failedTaskDetails[].host`, `evidence.retriedTaskDetails[].host`,
 and any nested `host` field, all covered without enumerating paths),
-and by scanning every string value for EC2-style hostnames / bare IPv4
-tokens. So identifiers that surface only in free text (recommendation copy, a
+and by scanning every string value for EC2-style hostnames, bare IPv4
+tokens and the host of any URL authority (`scheme://[userinfo@]host[:port]`).
+The run-tree redaction (HTML export, run blocks) also reads each stage's
+`hostStats[].host` and every config value that is a list of `host:port` entries.
+So identifiers that surface only in free text (recommendation copy, a
 `stageFailed` failure reason in `valueText`) are pseudonymized too. Pseudonym numbering
 uses a numeric-aware sort, so re-redacting an already-redacted report is a
-no-op even past `host-10`.
+no-op even past `host-10`: a token that is already a pseudonym is never numbered
+again. Replacement is one pass per string over a single alternation of the collected
+identifiers, longest first, so its cost does not grow with the number of hosts times
+the number of strings. A host is replaced only as a whole token: a short host such as
+a bucket named `data` leaves `metadata` and `raw_data` alone. A nested-scheme URL such as
+`k8s://https://host:6443` yields the inner host, never the inner scheme.
+
+User names have no list to look up, so `scrubUserNames` in `redact.ts` replaces them
+where they are recognizable (URL credentials, the segment after `/user/`, `/home/` or
+`/Users/`, `user=` values) with the fixed `redacted-user`. A fixed value keeps the
+scrub idempotent and never replaces a common word elsewhere in the text. The user
+guide's [What `--redact` covers](../../../user-guide/getting-started/ci-and-automation.md#what-redact-covers)
+lists the gaps.
 
 Failed-task error text is dropped rather than pseudonymized, since a message
 or stack trace can carry file paths and data values that no host pattern
@@ -93,6 +108,15 @@ appears: a `stageFailed` finding's `valueText`, a stage record's
 An executor's removal reason (`executors.removed[].reason` in the HTML export's run
 model) is also replaced with `[redacted]`, by field and not through the failure-reason
 keys (`withoutExecutorRemovalReasons` in `redact.ts`). No surface displays it.
+
+Text a log controls reaches the Markdown through `mdInline` (`markdown-inline.ts`): the
+app name, Spark version, failure messages, finding recommendations and metric text, verdict
+lines, evidence values and the comparison section's labels and property keys. It prints the
+text on one line and escapes `\`, `[`, `]`, `<`, `>`, `|` and a leading block marker, so no log
+text adds a heading, a link or an HTML tag to a report pasted into a pull request. Backticks and
+parentheses stay as written, since the report's own prose uses code spans, and the
+`[redacted]` placeholder is kept. A new line in the renderer that prints log-derived text goes
+through `mdInline`.
 
 The Markdown rendering mirrors the JSON's field set: each finding block
 prints its `detector version`, its sorted `evidence` entries (byte-magnitude

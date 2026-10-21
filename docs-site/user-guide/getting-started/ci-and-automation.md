@@ -225,8 +225,8 @@ regression budgets and several candidates in one call (`--regression-budget`/`--
 rewriting run-specific text before stages are paired (`--normalize-path`, see
 [Pairing stages across runs](#pairing-stages-across-runs)), leaving per-run
 configuration keys out of the comparison (`--ignore-conf`, see
-[Comparing configuration and capacity](#comparing-configuration-and-capacity)), redacting the app id, the app name and any host/IP
-tokens before sharing output (`--redact`), and narrowing the findings to certain impact
+[Comparing configuration and capacity](#comparing-configuration-and-capacity)), redacting identifiers before sharing output
+(`--redact`, see [What `--redact` covers](#what-redact-covers)), and narrowing the findings to certain impact
 bands, types, or a stage (`--impact`/`--type`/`--stage`), and tuning
 detector thresholds from a file (`--thresholds`, below). Run it with
 `--help` for the full flag list.
@@ -636,14 +636,51 @@ including signature parameters such as Azure SAS `sig=` and
 `X-Amz-Signature=`.
 `--conf-keys a,b` narrows `values` and `maskedKeys` to the named properties.
 
-With `--redact`, the host names the report pseudonymizes become `host-N` in
-every value: the values of `*.host` and `*.hostname` properties, executor
-hosts, and IP or EC2-style addresses. `spark.app.name` becomes the
-application's `app-N` pseudonym. A host name that appears only in some other
-property is left as is. The properties known to carry real host names this way
-are `spark.master`, `spark.yarn.historyServer.address` and the YARN proxy and
-HA keys ending in `AmIpFilter.param.PROXY_HOSTS` and `RM_HA_URLS`. Withhold
-them with `--conf-redact-regex` or leave them out with `--conf-keys`.
+With `--redact`, the host names and user names in every value are replaced as
+[What `--redact` covers](#what-redact-covers) lists, and `spark.app.name` becomes the
+application's `app-N` pseudonym. A bare host name under a key that does not end in `host` or
+`hostname`, such as `spark.some.server=db01`, is left as is. Withhold such a property with
+`--conf-redact-regex` or leave it out with `--conf-keys`.
+
+## What `--redact` covers {#what-redact-covers}
+
+`--redact` (and the MCP `redact` parameter) replaces identifiers with stable pseudonyms in
+the JSON, the Markdown and the HTML export. It lowers the chance of leaking infrastructure
+identity. It is not a guarantee that the output holds no private text, so read it before
+you share it.
+
+Replaced:
+
+- The application id (`app-N`), wherever it appears, and the application name, which
+  becomes the id's pseudonym. `spark.app.name` is replaced the same way.
+- Host names and IP addresses (`host-N`): every `host` field in the report (findings,
+  executors, per-stage host statistics), the values of properties ending in `host` or
+  `hostname`, any `host:port` property value, bare IPv4 addresses and EC2-style
+  `ip-10-1-2-3` names in any text.
+- The host of every URL, in any text: `hdfs://nn01.corp.example:8020/...`,
+  `jdbc:postgresql://db01:5432/sales`, `spark://master01:7077`, `s3a://bucket/key`. The
+  rest of the URL stays.
+- User names (`redacted-user`) where they can be recognized: the user part of URL
+  credentials (`scheme://user:secret@host`), the path segment after `/user/`, `/home/` or
+  `/Users/`, and the value of `user=`, `username=` and `user.name=` (including
+  `-Duser.name=`).
+- Failed-task messages and stack text, a stage's or job's failure reason and an executor's
+  removal reason (`[redacted]`).
+- A per-query setting that no finding reads (`*********(redacted)`).
+
+Not replaced:
+
+- A user name anywhere else: in a table or database name, an S3 key, SQL text, a stage or
+  job description, or a path that does not use the segments above.
+- The rest of a path. Directory names, table names and file names stay as written.
+- A bare host name in text or under a property whose key does not end in `host` or
+  `hostname`.
+- The application name when it appears as part of other text.
+
+With `--format md`, text a log controls (the application name, property keys, stage and
+failure text) is printed on one line with `[ ] < > |` and a leading block marker escaped,
+so a name such as `etl\n# Title` cannot add a heading, a link or an HTML tag to a report
+pasted into a pull request or ticket.
 
 ## Pairing stages across runs {#pairing-stages-across-runs}
 

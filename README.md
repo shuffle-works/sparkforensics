@@ -240,8 +240,11 @@ Several candidates from one History Server take repeated `--app-id` values
 See [Several budgets and several candidates](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started/ci-and-automation.html#several-budgets-and-several-candidates)
 for the `--budgets` file, the NDJSON line fields and the exit code rules.
 
-Redact the app id, the app name and any host/IP tokens before sharing the output outside
-the environment that produced it:
+Redact the app id, the app name, host names, IP addresses and user names in URLs and
+paths before sharing the output outside the environment that produced it. Other paths, table
+names and SQL text stay as written; the
+[CI guide](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started/ci-and-automation.html#what-redact-covers)
+lists what `--redact` covers and what it does not:
 
 ```bash
 npx -p sparkforensics-cli sparkforensics-analyze path/to/eventlog --redact

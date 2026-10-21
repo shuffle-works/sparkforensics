@@ -138,7 +138,8 @@ its own. A file written by an incompatible
 release opens to a message saying so; export the run again with your current
 release. Turn on
 **Redact identifiers** first if the export is headed outside the environment
-that produced it, since that pseudonymizes the app id, the app name and any
-host/IP tokens in all three formats. **Keyboard shortcuts**
+that produced it, since that pseudonymizes the app id, the app name, host
+names and IP addresses, and recognizable user names in all three formats
+([What `--redact` covers](ci-and-automation.md#what-redact-covers)). **Keyboard shortcuts**
 (press `?` from anywhere) lists every shortcut. Rounding it out: a **Docs**
 link and a theme toggle.
