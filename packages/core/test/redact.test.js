@@ -543,10 +543,10 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
   it('replaces a short host only as a whole token, never inside a longer word', () => {
     const data = run();
     data.app.config['spark.eventLog.dir'] = 's3a://data/logs';
-    data.stages[0].name = 'scan data; metadata, datastore, data.json, data.';
+    data.stages[0].name = 'scan data; metadata, datastore, raw_data, data_events, data.json, data.';
     const out = redactRun(data);
     expect(out.appModel.app.config['spark.eventLog.dir']).toMatch(/^s3a:\/\/host-\d+\/logs$/);
-    expect(out.appModel.stages.get(1).name).toMatch(/^scan host-\d+; metadata, datastore, data\.json, host-\d+\.$/);
+    expect(out.appModel.stages.get(1).name).toMatch(/^scan host-\d+; metadata, datastore, raw_data, data_events, data\.json, host-\d+\.$/);
   });
 
   it('pseudonymizes host:port values under any config key', () => {

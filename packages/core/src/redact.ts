@@ -220,10 +220,10 @@ function deepReplace(node: unknown, replace: (text: string) => string): unknown 
 }
 
 // A host is replaced only as a whole token, so a short host such as a bucket (`data`) or a master
-// (`master`) leaves `metadata` and `masters` alone. An app id is distinctive enough to be replaced
+// (`master`) leaves `metadata`, `raw_data` and `masters` alone. An app id is distinctive enough to be replaced
 // anywhere, including inside a file name.
-const HOST_TOKEN_BEFORE = '(?<![A-Za-z0-9.-])';
-const HOST_TOKEN_AFTER = '(?![A-Za-z0-9-]|\\.[A-Za-z0-9])';
+const HOST_TOKEN_BEFORE = '(?<![A-Za-z0-9_.-])';
+const HOST_TOKEN_AFTER = '(?![A-Za-z0-9_-]|\\.[A-Za-z0-9])';
 
 function singlePassReplacer(appIds: Map<string, string>, hosts: Map<string, string>): (text: string) => string {
   const alternation = (ids: Map<string, string>) => [...ids.keys()]
