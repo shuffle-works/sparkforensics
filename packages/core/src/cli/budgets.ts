@@ -98,8 +98,8 @@ function checkSkew(appModel: AppModel, maxSkewRatio: number, minTasksForP95: num
     : { name: 'max-skew', status: 'pass', detail: `Peak stage skew ratio ${maxRatio} within budget ${maxSkewRatio}.` };
 }
 
-// Failed tasks over all tasks, summed across stages: the jobFailureRate detector reports the same
-// ratio but only once failed jobs pass its floor, so a run of retried tasks never reaches it.
+// Failed task attempts over all task attempts, every stage attempt included: a failed attempt a
+// retry replaced counts as failed, so a run whose jobs all succeeded can still fail the budget.
 function checkFailedTaskRate(appModel: AppModel, maxPct: number): BudgetResult {
   let totalAttempts = 0, failedAttempts = 0;
   for (const stage of withEarlierAttempts([...appModel.stages?.values() ?? []])) {
