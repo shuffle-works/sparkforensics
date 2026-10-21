@@ -80,7 +80,7 @@ export function useIngest(opts: Opts = {}) {
     store.getState().setStatus('ready');
     const flagged = [...new Set(catalog.map((f) => f.stageId).filter((id): id is number => id != null))];
     const prefetched = await clientRef.current!.prefetchFlaggedStages(flagged);
-    for (const { stageId, metrics, fieldNames } of prefetched) store.getState().setTaskData(stageId, { metrics, fieldNames });
+    store.getState().setTaskDataBatch(prefetched.map(({ stageId, metrics, fieldNames }) => [stageId, { metrics, fieldNames }]));
 
     const pending = pendingRef.current;
     if (pending?.handle) {

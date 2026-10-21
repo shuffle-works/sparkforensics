@@ -241,7 +241,7 @@ function StageVerdict({
 function PlanSection({ stage, appModel }: { stage: Stage; appModel: AppModel }) {
   if (!resolvePlanTree(stage.id, appModel)) return null;
   return (
-    <CollapsibleSection title="Query Plan">
+    <CollapsibleSection title="Query Plan" lazy>
       <PlanView stageId={stage.id} appModel={appModel} />
     </CollapsibleSection>
   );

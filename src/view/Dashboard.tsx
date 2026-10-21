@@ -82,7 +82,7 @@ function ReferenceSection({
     <div className="space-y-6">
       <h2 className="sr-only">Full app report</h2>
       <WallClock />
-      <Timeline appModel={appModel} catalog={catalog} />
+      <Timeline key={activeFileId} appModel={appModel} catalog={catalog} />
       <ExecutorCountChart appModel={appModel} activeFileId={activeFileId} />
       <StageTable appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={onRoute} />
       <WidgetGrid>

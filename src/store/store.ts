@@ -85,6 +85,8 @@ interface State {
   setFindings: (catalog: Finding[], configFindings: Finding[], evidenceAvailability?: EvidenceAvailability | null) => void;
   setInterpretation: (interpretation: InterpretationState | null) => void;
   setTaskData: (stageId: StageId, data: TaskData) => void;
+  /** Adds many stages' task data in one state update: a copy of the cache per stage is quadratic. */
+  setTaskDataBatch: (entries: Array<[StageId, TaskData]>) => void;
   setActiveFile: (id: string | null) => void;
   setError: (msg: string | null) => void;
   setTheme: (t: 'dark' | 'light') => void;
@@ -196,6 +198,13 @@ export const store = createStore<State>((set) => ({
     set((s) => {
       const next = new Map(s.taskDataCache);
       next.set(stageId, data);
+      return { taskDataCache: next };
+    }),
+  setTaskDataBatch: (entries) =>
+    set((s) => {
+      if (entries.length === 0) return {};
+      const next = new Map(s.taskDataCache);
+      for (const [stageId, data] of entries) next.set(stageId, data);
       return { taskDataCache: next };
     }),
   setActiveFile: (activeFileId) => set({ activeFileId }),
