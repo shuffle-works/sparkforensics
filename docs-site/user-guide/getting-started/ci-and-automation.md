@@ -18,9 +18,10 @@ Budget violations and inconclusive budgets print to stderr as
 every budget passes, 1 when one is violated, 3 when none is violated but one
 is inconclusive, 2 for a usage error (bad flags or arguments, a budget value
 that is not a non-negative decimal, an unknown `--impact`, `--type` or
-`--fail-on-introduced` value, an invalid `--thresholds` or `--budgets` file), 4 when the candidate log can't be read or
-parsed or its History Server fetch fails, 5 when the `--baseline` log can't be
-read or parsed, and 6 for an internal error, including a failed `--export-html`.
+`--fail-on-introduced` value, an invalid `--thresholds` or `--budgets` file),
+4 when the candidate log can't be read or parsed or its History Server fetch
+fails, 5 when the `--baseline` log can't be read or parsed, and 6 for an
+internal error, including a failed `--export-html`.
 When several of these apply, the worst wins in this order: 6, 5, 4, 1, 3, 0.
 A usage error exits 2 before any log is read.
 
