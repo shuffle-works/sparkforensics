@@ -40,6 +40,12 @@ async function loadHandleShsProxy(dir) {
   return mod.handleShsProxy;
 }
 
+// The Host values this server answers to, matched against the raw Host header (host:port). The
+// port comes from the actual socket, not a hardcode: tests bind to an ephemeral port via listen(0, ...).
+function allowedHostsFor(port) {
+  return [`127.0.0.1:${port}`, `localhost:${port}`];
+}
+
 export function createServer({
   staticRoot,
   fetchImpl = fetch,
@@ -65,6 +71,13 @@ export function createServer({
     try {
       const pathname = new URL(req.url, 'http://localhost').pathname;
       if (pathname === '/shs-proxy') {
+        // A DNS-rebinding page reaches this socket with its own hostname in Host (and a matching
+        // Origin), which the proxy's same-origin check accepts, so refuse any non-local Host first.
+        if (!allowedHostsFor(req.socket.localPort).includes(String(req.headers.host).toLowerCase())) {
+          res.writeHead(403, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ code: 'access-or-upstream-failure' }));
+          return;
+        }
         const handleShsProxy = await handleShsProxyPromise;
         await handleShsProxy(req, res, { fetchImpl });
       } else if (pathname === '/mcp') {
@@ -74,14 +87,10 @@ export function createServer({
         const createMcpServer = await createMcpServerPromise;
         generatorPromise ??= loadGenerator(dir);
         const mcpServer = createMcpServer({ generator: await generatorPromise });
-        // allowedHosts is matched against the raw Host header (host:port), so
-        // derive the port from the actual socket, not a hardcode: tests bind to
-        // an ephemeral port via listen(0, ...).
-        const localPort = req.socket.localPort;
         const mcpTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableDnsRebindingProtection: true,
-          allowedHosts: [`127.0.0.1:${localPort}`, `localhost:${localPort}`],
+          allowedHosts: allowedHostsFor(req.socket.localPort),
         });
         await mcpServer.connect(mcpTransport);
         // Each close() is isolated: a throw or rejection from one must not
