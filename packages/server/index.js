@@ -3,6 +3,7 @@ import http from 'node:http';
 import { realpathSync, existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
 import { resolveStaticRoot, serveStatic } from './lib/static-files.js';
 // No install-mode fallback needed for the sdk package (unlike core below):
 // packages/server/package.json declares '@modelcontextprotocol/sdk' as a direct
@@ -105,16 +106,21 @@ export function createServer({
       }
     } catch (err) {
       console.error('[server] %s %s failed:', req.method, req.url, err?.stack ?? err);
+      // The message stays in the server log: it can carry paths and other internals.
       if (!res.headersSent) res.writeHead(500, { 'content-type': 'text/plain' });
-      res.end(`Internal server error: ${err.message}`);
+      res.end('Internal server error');
     }
   });
 }
 
 export function startServer({ port = DEFAULT_PORT, host = DEFAULT_HOST, staticRoot } = {}) {
   const server = createServer({ staticRoot });
-  return new Promise((resolve) => {
-    server.listen(port, host, () => resolve(server));
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(port, host, () => {
+      server.off('error', reject);
+      resolve(server);
+    });
   });
 }
 
@@ -125,11 +131,39 @@ export function serverStartupGuidance(port) {
   ];
 }
 
-function parsePort(argv) {
-  const flagIdx = argv.indexOf('--port');
-  if (flagIdx !== -1 && argv[flagIdx + 1]) return Number(argv[flagIdx + 1]);
-  if (process.env.PORT) return Number(process.env.PORT);
-  return DEFAULT_PORT;
+class UsageError extends Error {}
+
+// A port is a whole number from 0 (the OS picks one) to 65535; anything else is a usage error.
+function parsePortValue(text, source) {
+  if (!/^\d+$/.test(text) || Number(text) > 65535) {
+    throw new UsageError(`${source} must be a whole number from 0 to 65535 (got "${text}").`);
+  }
+  return Number(text);
+}
+
+export function parseServerArgs(argv, env = process.env) {
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args: argv,
+      options: { port: { type: 'string' }, help: { type: 'boolean', short: 'h' } },
+      allowPositionals: false,
+    }));
+  } catch (e) {
+    if (e?.code?.startsWith('ERR_PARSE_ARGS_')) throw new UsageError(e.message);
+    throw e;
+  }
+  if (values.help) return { help: true };
+  if (values.port !== undefined) return { port: parsePortValue(values.port, '--port') };
+  if (env.PORT) return { port: parsePortValue(env.PORT, 'PORT') };
+  return { port: DEFAULT_PORT };
+}
+
+// One line for a failed start, without a stack trace.
+export function startupErrorMessage(err, port) {
+  if (err?.code === 'EADDRINUSE') return `Port ${port} is already in use. Pass another one with --port <n>.`;
+  if (err?.code === 'EACCES') return `Not allowed to listen on port ${port}.`;
+  return `Could not start the server: ${err?.message ?? err}`;
 }
 
 const USAGE = `Usage: sparkforensics-server [--port <n>]
@@ -149,12 +183,23 @@ See https://github.com/shuffle-works/sparkforensics#readme for details.
 // realpath-resolve it before comparing against this module's real path.
 const invokedDirectly = process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 if (invokedDirectly) {
-  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  let args;
+  try {
+    args = parseServerArgs(process.argv.slice(2));
+  } catch (e) {
+    if (!(e instanceof UsageError)) throw e;
+    process.stderr.write(`${e.message}\n${USAGE}`);
+    process.exitCode = 2;
+  }
+  if (args?.help) {
     process.stderr.write(USAGE);
-  } else {
-    const port = parsePort(process.argv);
-    startServer({ port }).then(() => {
-      for (const line of serverStartupGuidance(port)) console.log(line);
-    });
+  } else if (args) {
+    try {
+      const server = await startServer({ port: args.port });
+      for (const line of serverStartupGuidance(server.address().port)) console.log(line);
+    } catch (e) {
+      process.stderr.write(`${startupErrorMessage(e, args.port)}\n`);
+      process.exitCode = 1;
+    }
   }
 }

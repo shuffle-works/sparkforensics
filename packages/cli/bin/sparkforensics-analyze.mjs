@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import {
-  readFileSync, writeFileSync, existsSync, realpathSync,
+  readFileSync, writeFileSync, existsSync, realpathSync, statSync,
   mkdtempSync, mkdirSync, rmSync, renameSync, readdirSync, cpSync, appendFileSync,
 } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -378,15 +378,31 @@ async function runMultiLog({
   process.exitCode = worstExit;
 }
 
-// Any failure not handled below (a bug, an unwritable --out) exits 6 instead of crashing with
+// Any failure not handled below (a bug, a write that fails after the checks) exits 6 instead of crashing with
 // Node's own exit code, which would read as a violation.
 export async function main(argv, options) {
   try {
     await runCli(argv, options);
   } catch (e) {
-    process.stderr.write(`Internal error: ${e?.stack ?? e}\n`);
+    // A missing or non-file path is the user's to fix: the message alone, without a stack trace.
+    const pathProblem = e?.code === 'ENOENT' || e?.code === 'EISDIR';
+    process.stderr.write(pathProblem ? `${e.message}\n` : `Internal error: ${e?.stack ?? e}\n`);
     process.exitCode = EXIT.INTERNAL;
   }
+}
+
+// Why --out cannot be written, or undefined when it can: its parent folder must exist and the
+// target must not be a folder. Checked before the log is parsed, like --export-html's target.
+function outPathProblem(outPath) {
+  const target = resolve(outPath);
+  const parent = dirname(target);
+  try {
+    if (!statSync(parent).isDirectory()) return `${parent} is not a directory`;
+  } catch (e) {
+    return `${parent} does not exist (${e.code})`;
+  }
+  if (existsSync(target) && statSync(target).isDirectory()) return `${target} is a directory`;
+  return undefined;
 }
 
 async function runCli(argv, { fetchImpl } = {}) {
@@ -473,6 +489,11 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
   } else if (values.format === 'ndjson') {
     return bail(`--format ndjson requires --baseline and a local candidate log.\n${USAGE}`, 2);
+  }
+
+  if (values.out) {
+    const problem = outPathProblem(values.out);
+    if (problem) return bail(`--out: ${problem}.\n${USAGE}`, 2);
   }
 
   let exportHtmlDir;

@@ -54,11 +54,21 @@ See https://github.com/shuffle-works/sparkforensics#readme for details.
 }
 
 async function main() {
-  // Not strict: arguments this server does not read are ignored.
-  const { values } = parseArgs({
-    args: process.argv.slice(2), strict: false,
-    options: { thresholds: { type: 'string' }, help: { type: 'boolean', short: 'h' } },
-  });
+  // Strict: an unknown flag (a typo such as --threshold) is a usage error, never a server that
+  // silently runs with default thresholds. Stray positional arguments are ignored.
+  let values;
+  try {
+    ({ values } = parseArgs({
+      args: process.argv.slice(2), allowPositionals: true,
+      options: { thresholds: { type: 'string' }, help: { type: 'boolean', short: 'h' } },
+    }));
+  } catch (e) {
+    if (!e?.code?.startsWith('ERR_PARSE_ARGS_')) throw e;
+    const createMcpServer = await loadCreateMcpServer();
+    process.stderr.write(`${e.message}\n${usage(Object.keys(createMcpServer()._registeredTools))}`);
+    process.exitCode = 2;
+    return;
+  }
   if (values.help) {
     const createMcpServer = await loadCreateMcpServer();
     process.stderr.write(usage(Object.keys(createMcpServer()._registeredTools)));
@@ -66,11 +76,6 @@ async function main() {
   }
   let thresholds;
   if (values.thresholds !== undefined) {
-    if (typeof values.thresholds !== 'string') {
-      process.stderr.write('--thresholds requires a file path.\n');
-      process.exitCode = 2;
-      return;
-    }
     // Refuse to start rather than serve default-threshold results the user meant to change.
     try {
       thresholds = (await loadCoreModule('cli/threshold-config')).loadThresholdOverrides(values.thresholds);

@@ -24,7 +24,15 @@ export async function serveStatic(req, res, root) {
   // Deliberately not via `new URL()`: its dot-segment resolution collapses
   // `/../../etc/passwd` before we see it, sailing a traversal past the guard
   // below as a 404 instead of a 403.
-  const pathname = decodeURIComponent(req.url.split('?')[0]);
+  let pathname;
+  try {
+    pathname = decodeURIComponent(req.url.split('?')[0]);
+  } catch {
+    // A malformed percent-escape is a bad request, not a server fault.
+    res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
+    res.end('Bad request');
+    return;
+  }
   const stripped = pathname.replace(/^\/+/, '');
   // Any directory-style request (trailing slash, including '/' itself) seeks
   // that directory's index.html, same as a browser navigating to it directly.

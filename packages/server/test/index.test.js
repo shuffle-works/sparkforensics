@@ -3,7 +3,8 @@ import http from 'node:http';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { fileURLToPath } from 'node:url';
-import { createServer, serverStartupGuidance } from '../index.js';
+import { spawnSync } from 'node:child_process';
+import { createServer, startServer, serverStartupGuidance, parseServerArgs, startupErrorMessage } from '../index.js';
 
 const SAMPLE_LOG = fileURLToPath(new URL('../../../public/sample-runs/sample-run.ndjson.gz', import.meta.url));
 
@@ -177,6 +178,83 @@ describe('/mcp route', () => {
     });
     const res = await requestWithHost(port, `127.0.0.1:${port}`);
     expect(res.status).toBe(500);
-    expect(res.body).toContain('boom: mcp-server-factory failed to load');
+    expect(res.body).toBe('Internal server error');
+    expect(res.body).not.toContain('boom');
+  });
+
+  it('answers a malformed percent-escape in a static path with 400', async () => {
+    const port = await listen({ staticRoot: process.cwd(), fetchImpl: fetch });
+    const res = await requestWithHost(port, `127.0.0.1:${port}`, { path: '/%E0%A4%A', method: 'GET' });
+    expect(res.status).toBe(400);
+    expect(res.body).toBe('Bad request');
+  });
+});
+
+describe('parseServerArgs', () => {
+  it.each([
+    [['--port', '47395'], {}, 47395],
+    [['--port=47395'], {}, 47395],
+    [['--port', '0'], {}, 0],
+    [['--port', '65535'], {}, 65535],
+    [[], { PORT: '5000' }, 5000],
+    [['--port', '6000'], { PORT: '5000' }, 6000],
+    [[], {}, 4173],
+  ])('reads the port from %j with env %j as %i', (argv, env, expected) => {
+    expect(parseServerArgs(argv, env)).toEqual({ port: expected });
+  });
+
+  it.each([
+    [['--port', 'abc'], {}],
+    [['--port', '70000'], {}],
+    [['--port=-1'], {}],
+    [['--port', '47.5'], {}],
+    [['--port='], {}],
+    [[], { PORT: 'abc' }],
+    [['--port'], {}],
+    [['--bogus'], {}],
+    [['extra'], {}],
+  ])('rejects %j with env %j as a usage error', (argv, env) => {
+    expect(() => parseServerArgs(argv, env)).toThrow(expect.objectContaining({ constructor: expect.objectContaining({ name: 'UsageError' }) }));
+  });
+
+  it('returns help for --help and -h', () => {
+    expect(parseServerArgs(['--help'])).toEqual({ help: true });
+    expect(parseServerArgs(['-h'])).toEqual({ help: true });
+  });
+});
+
+describe('startServer', () => {
+  it('rejects with EADDRINUSE when the port is taken instead of never settling', async () => {
+    server = await startServer({ port: 0 });
+    const { port } = server.address();
+    const err = await startServer({ port }).catch((e) => e);
+    expect(err.code).toBe('EADDRINUSE');
+    expect(startupErrorMessage(err, port)).toBe(`Port ${port} is already in use. Pass another one with --port <n>.`);
+  });
+});
+
+describe('server bin exit codes', () => {
+  const binFile = fileURLToPath(new URL('../index.js', import.meta.url));
+
+  it.each([['abc'], ['70000'], ['47.5']])('exits 2 with a usage error for --port %s', (value) => {
+    const { status, stderr } = spawnSync(process.execPath, [binFile, '--port', value], { encoding: 'utf8' });
+    expect(status).toBe(2);
+    expect(stderr).toContain('--port must be a whole number from 0 to 65535');
+    expect(stderr).not.toContain('ERR_SOCKET_BAD_PORT');
+  });
+
+  it('exits 2 for PORT=abc and for an unknown flag', () => {
+    const env = { ...process.env, PORT: 'abc' };
+    expect(spawnSync(process.execPath, [binFile], { encoding: 'utf8', env }).status).toBe(2);
+    expect(spawnSync(process.execPath, [binFile, '--bogus'], { encoding: 'utf8' }).status).toBe(2);
+  });
+
+  it('exits 1 with one line when the port is already in use', async () => {
+    server = await startServer({ port: 0 });
+    const { port } = server.address();
+    const { status, stderr } = spawnSync(process.execPath, [binFile, '--port', String(port)], { encoding: 'utf8' });
+    expect(status).toBe(1);
+    expect(stderr.trim().split('\n')).toHaveLength(1);
+    expect(stderr).toContain(`Port ${port} is already in use`);
   });
 });

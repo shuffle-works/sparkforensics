@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMcpServer } from '../src/mcp-server-factory.js';
@@ -69,6 +69,21 @@ describe('createMcpServer', () => {
       expect(result.isError).toBeFalsy();
       expect(result.structuredContent.runs).toHaveLength(1);
       expect(result.structuredContent.runs[0].appId).toBe('app-1');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.getuid?.() === 0)('maps an unreadable event log to invalid-event-log without the path or the raw errno code', async () => {
+    const { dir, path } = tmpEventLog();
+    try {
+      chmodSync(path, 0o000);
+      const client = await connectedClient(createMcpServer());
+      const result = await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } });
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toEqual({ code: 'invalid-event-log' });
+      expect(result.content[0].text).toBe('The event log could not be read (EACCES).');
+      expect(result.content[0].text).not.toContain(dir);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

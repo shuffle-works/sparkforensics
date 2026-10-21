@@ -45,7 +45,19 @@ function toCallToolResult(text: string, structuredContent: Record<string, unknow
   return { content: [{ type: 'text' as const, text }], structuredContent };
 }
 
+// A Node file-system error (EACCES, ENOENT, EISDIR, ELOOP, ...) carries its errno name as `code` and
+// the absolute path in its message. It is reported under the documented code for an unreadable event
+// log, with the errno name and no path.
+const ERRNO_CODE = /^E[A-Z0-9]+$/;
+
 function toolErrorResult(error: { message: string; code?: string }): CallToolResult {
+  if (error.code !== undefined && ERRNO_CODE.test(error.code)) {
+    return {
+      isError: true,
+      content: [{ type: 'text' as const, text: `The event log could not be read (${error.code}).` }],
+      structuredContent: { code: 'invalid-event-log' },
+    };
+  }
   return {
     isError: true,
     content: [{ type: 'text' as const, text: error.message }],
