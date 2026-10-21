@@ -2844,7 +2844,7 @@ export const DETECTORS = [
     // Short-lived executors: stood up and torn down before doing useful work (wasteful
     // re-provisioning, not normal scale-down). Reuses utilization's add/remove matching, but
     // measures lifetime against a threshold instead of aggregate active-time.
-    type: 'autoscalingChurn', order: 103, fixEffort: 'config', version: 1,
+    type: 'autoscalingChurn', order: 103, fixEffort: 'config', version: 2,
     emits: ['autoscalingChurn'],
     docAnchor: '#bottleneck-autoscaling-churn',
     thresholds: { shortLivedMs: 120_000, warningPct: 0.30, criticalPct: 0.60, minExecutors: 5 },
@@ -2883,8 +2883,8 @@ export const DETECTORS = [
         // No dynamic-allocation property has an effect when the run's conf turns it off (as for coldStart).
         dynamicAllocation: daOff ? 'off' : 'on',
         recommendation: daOff
-          ? `${pct}% of executors ran for under 2 minutes before being removed: dynamic allocation is off, so the churn comes from executors lost or preempted, not from autoscaling bounds; check the cluster manager's preemption and executor-loss logs.`
-          : `${pct}% of executors ran for under 2 minutes before being removed: this looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.`,
+          ? `${pct}% of removed executors ran for under 2 minutes: dynamic allocation is off, so the churn comes from executors lost or preempted, not from autoscaling bounds; check the cluster manager's preemption and executor-loss logs.`
+          : `${pct}% of removed executors ran for under 2 minutes: this looks like wasteful re-provisioning rather than normal scale-down; consider raising spark.dynamicAllocation.executorIdleTimeout or widening the minExecutors/maxExecutors bounds to reduce flapping.`,
         remediation: daOff ? [] : [
           increaseConf('spark.dynamicAllocation.executorIdleTimeout'),
           decreaseConf('spark.dynamicAllocation.minExecutors'),
