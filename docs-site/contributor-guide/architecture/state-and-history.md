@@ -37,7 +37,9 @@ task-data prefetch or recent-files write is logged and the dashboard stays.
 
 Render errors stay local. `ErrorBoundary` (`src/view/ErrorBoundary.tsx`) wraps
 each grid card in `WidgetGridItem`, so a widget that throws on a log's data
-shows an error card with **Retry** while its siblings keep rendering.
+shows an error card with **Retry** while its siblings keep rendering. The card
+clears itself when `activeFileId` changes (its `resetKey`), so picking another
+recent run does not keep the previous run's error.
 `AppErrorBoundary` wraps the app routes in `src/App.tsx`: a throw outside a
 card, or a lazy chunk that fails to load, shows a page with **Reload page** and
 **Load another log** (which runs `cancelParse`).
