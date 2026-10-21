@@ -73,7 +73,7 @@ inconclusive (`stderr` warning) rather than silently passing, and gets its own
 exit code distinct from both pass and violation. Exit codes: `0` pass, `1`
 a configured budget was violated, `2` a usage error (unknown or value-less
 flag, unknown `--regression-metric` key, an unreadable or invalid `--thresholds`
-or `--budgets` file), `3` no violations but at least one budget was inconclusive,
+or `--budgets` file, an `--out` whose folder is missing or that names a folder), `3` no violations but at least one budget was inconclusive,
 `4` the candidate could not be read or parsed (or its SHS fetch failed), `5` the
 baseline could not be read or parsed, `6` an internal error (an unhandled
 failure, a failed `--export-html` export). `main` catches anything unhandled and
