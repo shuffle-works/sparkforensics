@@ -495,4 +495,19 @@ describe('evaluateBudgets parse-incomplete', () => {
     expect(results.map((r) => [r.name, r.status])).toEqual([['max-runtime', 'pass'], ['parse-incomplete', 'inconclusive']]);
     expect(results[1].detail).toContain('6 lines');
   });
+
+  it('flags a damaged baseline and names it, with a clean candidate', () => {
+    const appModel = baseAppModel({ skippedLines: 0 });
+    const { results, inconclusive } = evaluateBudgets({ appModel, catalog: [], budgets: {}, comparison: { baselineSkippedLines: 6 } });
+    expect(results).toEqual([{ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('baseline 6 lines') }]);
+    expect(results[0].detail).not.toContain('candidate');
+    expect(inconclusive).toBe(true);
+  });
+
+  it('names both runs in one row when both lost lines', () => {
+    const appModel = baseAppModel({ skippedLines: 1 });
+    const { results } = evaluateBudgets({ appModel, catalog: [], budgets: {}, comparison: { baselineSkippedLines: 2 } });
+    expect(results).toHaveLength(1);
+    expect(results[0].detail).toContain('candidate 1 line, baseline 2 lines');
+  });
 });

@@ -66,6 +66,9 @@ export interface LabeledStagePair extends StagePair { stageLabel: string }
 export interface CompareRunsResult {
   baselineLabel: string; candidateLabel: string;
   baselineApp: RunAppIdentity; candidateApp: RunAppIdentity;
+  // Log lines the baseline's parser skipped as malformed or invalid; above 0 its totals can be
+  // understated. The candidate's count is in its own run summary.
+  baselineSkippedLines: number;
   // `insufficient`: neither run recorded any executor run time, so there is nothing to compare.
   confidence: 'ok' | 'low' | 'insufficient'; reason: string | null;
   // Share of stages the exact matcher (`matchStages`) paired, by count. `runtimeCoverage` is
@@ -529,6 +532,7 @@ export function compareRuns(
   return {
     baselineLabel: baseline.label, candidateLabel: candidate.label,
     baselineApp: runAppIdentity(baseSnap.app), candidateApp: runAppIdentity(candSnap.app),
+    baselineSkippedLines: baseSnap.skippedLines ?? 0,
     confidence,
     reason,
     matchedCoverage: match.coverage,
@@ -610,6 +614,9 @@ export function renderComparisonMarkdown(
   if (comparison.confidence !== 'ok') {
     lines.push(`- confidence: ${comparison.confidence}, ${comparison.reason}`);
     lines.push('');
+  }
+  if (comparison.baselineSkippedLines > 0) {
+    lines.push(`- Baseline skipped lines: ${comparison.baselineSkippedLines} (malformed or invalid log lines; baseline totals cover only the lines that parsed)`);
   }
   lines.push(`- matched stage coverage: ${(comparison.matchedCoverage * 100).toFixed(1)}%`);
   lines.push(`- runtime coverage: ${comparison.runtimeCoverage === null ? 'n/a' : `${(comparison.runtimeCoverage * 100).toFixed(1)}%`}`);

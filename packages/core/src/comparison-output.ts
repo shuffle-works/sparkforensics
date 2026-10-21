@@ -12,7 +12,7 @@ export interface ComparisonRunInput { label: string; appModel: AppModel; catalog
 // `generator` is the build that wrote the output, present when the surface supplies it.
 export type ComparisonOutput = { generator?: ReportGenerator; verdict: ComparisonVerdictText }
   & Pick<CompareRunsResult,
-    'baselineApp' | 'candidateApp' | 'confidence' | 'reason' | 'matchedCoverage' | 'runtimeCoverage' | 'metrics' | 'findings'
+    'baselineApp' | 'candidateApp' | 'baselineSkippedLines' | 'confidence' | 'reason' | 'matchedCoverage' | 'runtimeCoverage' | 'metrics' | 'findings'
     | 'comparisonSchemaVersion' | 'unmatched' | 'replanned' | 'bookkeepingStageIds' | 'executionAlignment' | 'comparability'>
   & Partial<Pick<CompareRunsResult, 'stagePairs'>>;
 
@@ -29,6 +29,7 @@ export function comparisonOutput(
     verdict: comparisonVerdict(comparison),
     baselineApp: comparison.baselineApp,
     candidateApp: comparison.candidateApp,
+    baselineSkippedLines: comparison.baselineSkippedLines,
     confidence: comparison.confidence,
     reason: comparison.reason,
     matchedCoverage: comparison.matchedCoverage,

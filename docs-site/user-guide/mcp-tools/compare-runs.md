@@ -7,7 +7,8 @@ categorized findings delta (`findings`), and the share of executor run time in
 paired stages (`runtimeCoverage`). The result
 carries the same `generator` (the `sparkforensics-mcp` build that wrote the result),
 `verdict`, `baselineApp` and `candidateApp` (each run's Spark application `id` and
-`attemptId`), `confidence`, `reason`, `matchedCoverage`,
+`attemptId`), `baselineSkippedLines` (the baseline's skipped log line count),
+`confidence`, `reason`, `matchedCoverage`,
 `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`,
 `unmatched`, `replanned`, `bookkeepingStageIds`, `executionAlignment` and `comparability` as the
 `comparison` object of the CLI's `--baseline` JSON output, plus `stagePairs`
@@ -116,6 +117,7 @@ Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` tr
   "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "9c1f3a7e2b4d" },
   "baselineApp": { "id": "application_0000000000000_0001", "attemptId": null },
   "candidateApp": { "id": "application_0000000000000_0002", "attemptId": null },
+  "baselineSkippedLines": 0,
   "verdict": { "title": "The candidate finished 1.0s faster than the baseline (50%)", "tone": "better", "sentences": [] },
   "confidence": "ok",
   "reason": null,

@@ -1230,4 +1230,20 @@ describe('skipped lines in MCP output', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('names a damaged baseline in evaluate_budgets with a clean candidate', async () => {
+    const baseline = tmpEventLogWithFindings();
+    const candidate = tmpEventLogWithFindings();
+    try {
+      corruptLog(baseline.path);
+      const { results, violated, inconclusive } = await evaluateBudgetsForRun({ source: { path: baseline.path } }, {}, { source: { path: candidate.path } });
+      expect(results).toEqual([expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('baseline 6 lines') })]);
+      expect(results[0].detail).not.toContain('candidate');
+      expect(violated).toBe(false);
+      expect(inconclusive).toBe(true);
+    } finally {
+      rmSync(baseline.dir, { recursive: true, force: true });
+      rmSync(candidate.dir, { recursive: true, force: true });
+    }
+  });
 });

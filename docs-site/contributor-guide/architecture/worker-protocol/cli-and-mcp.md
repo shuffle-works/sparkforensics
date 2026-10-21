@@ -84,8 +84,9 @@ always wins over an inconclusive result in the same run (exit `1`, not `3`).
 when the catalog has an `incompleteRun` finding, so a run with no
 `ApplicationEnd` exits `3` even with no budget flags. It adds a
 `parse-incomplete` inconclusive result the same way when `appModel.skippedLines`
-is above `0`. With `--baseline`, the
-absolute budgets and this check apply to the candidate run; the MCP
+or the comparison's `baselineSkippedLines` is above `0`, and its detail names
+which run lost lines. With `--baseline`, the
+absolute budgets and the `run-complete` check apply to the candidate run; the MCP
 `evaluate_budgets` tool below uses the same function with the same roles.
 
 ## MCP server
@@ -189,7 +190,8 @@ JSON and the MCP tools call the same core functions:
   version in the MCP handshake and passes the block to `diagnose_run` and
   `compare_runs`. A server built without one reports version `0.0.0`.
 - `comparisonOutput()` carries the same `generator` block and a `baselineApp` and
-  `candidateApp` block, read from each run's `app` by `compareRuns`. Each findings
+  `candidateApp` block, read from each run's `app` by `compareRuns`, and
+  `baselineSkippedLines`, the baseline's skipped log line count. Each findings
   row has `stageLabels` and each `stagePairs` row a `stageLabel`, the stage names through `stageDisplayLabel()` in
   `packages/core/src/stage-label.ts`, which reduces every path in a stage name to
   its last segment. It is display only: `normalizeStageName` stays the stage

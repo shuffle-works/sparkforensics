@@ -274,10 +274,15 @@ export function evaluateBudgets({ appModel, catalog, budgets, comparison, thresh
     results.push({ name: 'run-complete', status: 'inconclusive', detail: incompleteRunFinding.recommendation ?? 'Event log has no ApplicationEnd event.' });
   }
   // Same reasoning for skipped lines: a log damaged mid-file understates its totals, so a passing
-  // budget on it can't be trusted. Inconclusive, never a violation on its own.
-  const skippedLines = appModel.skippedLines ?? 0;
-  if (skippedLines > 0) {
-    results.push({ name: 'parse-incomplete', status: 'inconclusive', detail: `${skippedLines} line${skippedLines === 1 ? '' : 's'} of the event log could not be parsed and were skipped; totals cover only the lines that parsed.` });
+  // budget on it can't be trusted. Inconclusive, never a violation on its own. A damaged baseline
+  // skews every regression budget the same way, so its count is checked too.
+  const damaged = [
+    { role: 'candidate', count: appModel.skippedLines ?? 0 },
+    { role: 'baseline', count: comparison?.baselineSkippedLines ?? 0 },
+  ].filter((d) => d.count > 0);
+  if (damaged.length > 0) {
+    const listed = damaged.map((d) => `${d.role} ${d.count} line${d.count === 1 ? '' : 's'}`).join(', ');
+    results.push({ name: 'parse-incomplete', status: 'inconclusive', detail: `Malformed or invalid event-log lines were skipped (${listed}); totals cover only the lines that parsed.` });
   }
   return {
     results,

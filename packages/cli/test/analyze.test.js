@@ -1126,4 +1126,24 @@ describe('skipped log lines', () => {
       expect(status).toBe(0);
     });
   });
+
+  it('shows a damaged baseline\'s count in the comparison and gates inconclusive', () => {
+    withDamagedLog(false, (clean) => withDamagedLog(true, (damagedBaseline) => {
+      const { stdout, stderr, status } = runCli([clean, '--baseline', damagedBaseline]);
+      const payload = JSON.parse(stdout);
+      expect(payload.candidate.summary.skippedLines).toBe(0);
+      expect(payload.comparison.baselineSkippedLines).toBe(6);
+      expect(stderr).toMatch(/\[inconclusive\] parse-incomplete: .*baseline 6 lines/);
+      expect(status).toBe(3);
+      expect(runCli([clean, '--baseline', damagedBaseline, '--format', 'md']).stdout).toContain('- Baseline skipped lines: 6');
+    }));
+  });
+
+  it('reports zero baseline skipped lines for a clean baseline', () => {
+    withDamagedLog(false, (clean) => {
+      const { stdout, status } = runCli([clean, '--baseline', clean]);
+      expect(JSON.parse(stdout).comparison.baselineSkippedLines).toBe(0);
+      expect(status).toBe(0);
+    });
+  });
 });

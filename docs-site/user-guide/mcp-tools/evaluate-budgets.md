@@ -73,7 +73,9 @@ evaluated run with no ApplicationEnd event adds a `run-complete` result with
 status `inconclusive`, the same check that makes the CLI exit `3`. A run
 whose parser skipped malformed or invalid log lines adds a `parse-incomplete`
 result with status `inconclusive` the same way, since its totals cover only the
-lines that parsed. With two runs, both checks apply to the candidate.
+lines that parsed. With two runs, `run-complete` applies to the candidate, and
+`parse-incomplete` checks both runs: its detail names the run that lost lines
+and how many (for example `baseline 6 lines`).
 
 Each result's `name` is one of `max-runtime`, `max-spill`, `max-skew`,
 `max-failed-task-rate`, `min-efficiency`, `max-regression`,

@@ -100,7 +100,7 @@ describe('several candidate logs', () => {
     for (const l of lines) {
       expect(l).toMatchObject({ status: 'pass', exitCode: 0, error: null, budgets: [] });
       expect(Object.keys(l.comparison)).toEqual([
-        'generator', 'verdict', 'baselineApp', 'candidateApp', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
+        'generator', 'verdict', 'baselineApp', 'candidateApp', 'baselineSkippedLines', 'confidence', 'reason', 'matchedCoverage', 'runtimeCoverage', 'metrics', 'findings',
         'comparisonSchemaVersion', 'stagePairs', 'unmatched', 'replanned', 'bookkeepingStageIds', 'executionAlignment', 'comparability',
       ]);
       expect(l.candidate.summary).toBeDefined();
@@ -412,6 +412,17 @@ describe('skipped log lines across several candidates', () => {
     expect(lines.map((l) => l.candidate.summary.skippedLines)).toEqual([0, 1]);
     expect(lines.map((l) => l.status)).toEqual(['pass', 'inconclusive']);
     expect(lines[1].budgets).toEqual([expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive' })]);
+    expect(status).toBe(3);
+  });
+
+  it('carries a damaged baseline\'s count on every line and gates each one inconclusive', async () => {
+    const damaged = log({ slowMs: 2000 }).replace('{"Event":"SparkListenerTaskEnd"', '{corrupt');
+    writeFileSync(p('damaged-baseline'), damaged);
+    const { status, lines } = await run([p('same'), p('baseline'), '--baseline', p('damaged-baseline')]);
+    expect(lines.map((l) => l.comparison.baselineSkippedLines)).toEqual([1, 1]);
+    expect(lines.map((l) => l.candidate.summary.skippedLines)).toEqual([0, 0]);
+    expect(lines.map((l) => l.status)).toEqual(['inconclusive', 'inconclusive']);
+    expect(lines[0].budgets).toEqual([expect.objectContaining({ name: 'parse-incomplete', detail: expect.stringContaining('baseline 1 line') })]);
     expect(status).toBe(3);
   });
 });
