@@ -8,7 +8,7 @@ The headless analysis CLI and the MCP server, which run the same parser and dete
 browser, for CI. It accepts a single event-log file or a rolling-log
 directory, drives `runParse`/`runParseFiles` (`packages/core/src/parser-worker.ts`) with a
 Node-only File-like shim (`nodeFileFromPath` in `packages/core/src/cli/collect-run.ts`), and writes the exact
-`buildEvidenceReport` JSON schema described above: one format, not a second.
+`buildEvidenceReport` JSON schema (see [Evidence report](./evidence-report.md)): one format, not a second.
 The shim reads each requested slice with a positioned `readSync`, so a local log is never
 loaded whole and has no 2 GiB size limit; `collectRun` closes every descriptor it opened once
 parsing settles, on success and on error.
@@ -40,7 +40,7 @@ A History Server run and a local log load concurrently (CPU-bound local pairs us
 Regression budgets beyond the `--max-regression-pct` pair come from repeated
 `--regression-budget <metric>:<pct>` flags and a `--budgets` file, parsed in
 `packages/core/src/cli/regression-budgets.ts` and passed to `evaluateBudgets()`
-as `regressionBudgets`; the legacy pair is one more budget, and a metric
+as `regressionBudgets`; `--max-regression-pct` is one more budget, and a metric
 budgeted twice is a usage error. Per-stage budgets (`--stage-regression-budget`,
 `--stage-quality`; `stageRegressionBudgets` and `stageQualities` on MCP) read the aligner's
 `stagePairs` through `checkStageRegression` in `cli/budgets.ts` and never match stages
@@ -175,8 +175,8 @@ JSON and the MCP tools call the same core functions:
   dashboard report the same block.
   That projection is the CLI's
   `comparison` object and the shared part of `compare_runs`. `compare_runs` also
-  returns `metricDeltas` and `findingsDelta`, deprecated aliases of `metrics` and
-  `findings` kept for one release.
+  returns `metricDeltas` and `findingsDelta`, which repeat `metrics` and
+  `findings` under other key names.
 - `runOutputBlocks()` in `packages/core/src/run-output.ts` builds the report's
   `metrics` and `effectiveConf` blocks, redacted from the redacted run, for both
   the CLI report and `diagnose_run`, which also returns the report's `writeTargets`.
@@ -198,7 +198,7 @@ by code, while the CLI maps failures to exit codes and owns stdout. Adding a fie
 to the projection adds it to both. `packages/cli/test/parity.test.js` runs the CLI's
 `main()` and the MCP tools through an in-memory client on public corpus logs,
 flattens both outputs and diffs their key sets and values. The differences that
-stay (the MCP run handles, the deprecated aliases, the CLI's `schemaVersion`)
+stay (the MCP run handles, the `metricDeltas` and `findingsDelta` repeats, the CLI's `schemaVersion`)
 are in a commented allowlist in that file, and an entry that explains no
 difference fails the test.
 

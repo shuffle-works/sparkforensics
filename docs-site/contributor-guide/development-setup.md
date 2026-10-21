@@ -95,7 +95,7 @@ This docs site has its own dev loop:
 
 ```bash
 npm run docs:dev       # VitePress dev server for docs-site/
-npm run docs:build     # production build; also checks internal links/anchors
+npm run docs:build     # production build; flags links to missing pages (anchors: `node scripts/check-doc-anchors.mjs`)
 npm run docs:preview   # serves the built docs site locally
 ```
 

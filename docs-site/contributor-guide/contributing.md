@@ -11,6 +11,21 @@
   contributors. If you're writing something a user or a first-time
   contributor should read, it belongs here, not in `docs/`.
 
+## Scope notes
+
+- All of `src/` (the browser app) and `packages/core/src/` (shared analysis
+  logic) is TypeScript, except the two vendored third-party decompressors
+  `packages/core/src/vendor/fflate.js` and `packages/core/src/vendor/fzstd.js`,
+  which stay plain JS. Read the [detector contract](./architecture/detector-contract.md),
+  [worker protocol](./architecture/worker-protocol.md) and
+  [render sequence](./architecture/widget-rendering.md) before adding a
+  detector or changing a threshold.
+- Keep rendered UI copy domain-agnostic: no company, industry, or dataset
+  references in output.
+- Check the [detector table](./architecture/detector-contract/threshold-tables.md#bottleneck-thresholds)
+  before adding a bottleneck finding: several existing Spark log-analysis
+  tools cover overlapping ground, and the category may already exist here.
+
 ## Linting before you commit
 
 `npm install` runs the `prepare` script, which points git at `.githooks/`

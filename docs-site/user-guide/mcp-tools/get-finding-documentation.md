@@ -38,7 +38,7 @@ Example response:
 ```
 
 `tuningDoc` is `null` when the finding type has no vendored tuning-doc page.
-Two types have none: `configAudit` (its four audited
+Two types have none: `configAudit` (its three audited
 properties each have their own anchor rather than one shared page, so no
 single anchor resolves) and `incompleteRun` (no upstream tuning page covers
 this signal at all). A type whose section lives on a general chapter rather
