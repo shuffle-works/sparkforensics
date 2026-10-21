@@ -8,7 +8,7 @@ The headless analysis CLI and the MCP server, which run the same parser and dete
 browser, for CI. It accepts a single event-log file or a rolling-log
 directory, drives `runParse`/`runParseFiles` (`packages/core/src/parser-worker.ts`) with a
 Node-only File-like shim (`nodeFileFromPath` in `packages/core/src/cli/collect-run.ts`), and writes the exact
-`buildEvidenceReport` JSON schema described above: one format, not a second.
+`buildEvidenceReport` JSON schema (see [Evidence report](./evidence-report.md)): one format, not a second.
 The shim reads each requested slice with a positioned `readSync`, so a local log is never
 loaded whole and has no 2 GiB size limit; `collectRun` closes every descriptor it opened once
 parsing settles, on success and on error.
@@ -40,7 +40,7 @@ A History Server run and a local log load concurrently (CPU-bound local pairs us
 Regression budgets beyond the `--max-regression-pct` pair come from repeated
 `--regression-budget <metric>:<pct>` flags and a `--budgets` file, parsed in
 `packages/core/src/cli/regression-budgets.ts` and passed to `evaluateBudgets()`
-as `regressionBudgets`; the legacy pair is one more budget, and a metric
+as `regressionBudgets`; `--max-regression-pct` is one more budget, and a metric
 budgeted twice is a usage error. Per-stage budgets (`--stage-regression-budget`,
 `--stage-quality`; `stageRegressionBudgets` and `stageQualities` on MCP) read the aligner's
 `stagePairs` through `checkStageRegression` in `cli/budgets.ts` and never match stages
@@ -82,8 +82,11 @@ When several apply the worst wins: `6`, `5`, `4`, `1`, `3`, `0`; a violation
 always wins over an inconclusive result in the same run (exit `1`, not `3`).
 `evaluateBudgets()` also always adds an inconclusive `run-complete` result
 when the catalog has an `incompleteRun` finding, so a run with no
-`ApplicationEnd` exits `3` even with no budget flags. With `--baseline`, the
-absolute budgets and this check apply to the candidate run; the MCP
+`ApplicationEnd` exits `3` even with no budget flags. It adds a
+`parse-incomplete` inconclusive result the same way when `appModel.skippedLines`
+or the comparison's `baselineSkippedLines` is above `0`, and its detail names
+which run lost lines. With `--baseline`, the
+absolute budgets and the `run-complete` check apply to the candidate run; the MCP
 `evaluate_budgets` tool below uses the same function with the same roles.
 
 ## MCP server
@@ -175,8 +178,8 @@ JSON and the MCP tools call the same core functions:
   dashboard report the same block.
   That projection is the CLI's
   `comparison` object and the shared part of `compare_runs`. `compare_runs` also
-  returns `metricDeltas` and `findingsDelta`, deprecated aliases of `metrics` and
-  `findings` kept for one release.
+  returns `metricDeltas` and `findingsDelta`, which repeat `metrics` and
+  `findings` under other key names.
 - `runOutputBlocks()` in `packages/core/src/run-output.ts` builds the report's
   `metrics` and `effectiveConf` blocks, redacted from the redacted run, for both
   the CLI report and `diagnose_run`, which also returns the report's `writeTargets`.
@@ -187,7 +190,8 @@ JSON and the MCP tools call the same core functions:
   version in the MCP handshake and passes the block to `diagnose_run` and
   `compare_runs`. A server built without one reports version `0.0.0`.
 - `comparisonOutput()` carries the same `generator` block and a `baselineApp` and
-  `candidateApp` block, read from each run's `app` by `compareRuns`. Each findings
+  `candidateApp` block, read from each run's `app` by `compareRuns`, and
+  `baselineSkippedLines`, the baseline's skipped log line count. Each findings
   row has `stageLabels` and each `stagePairs` row a `stageLabel`, the stage names through `stageDisplayLabel()` in
   `packages/core/src/stage-label.ts`, which reduces every path in a stage name to
   its last segment. It is display only: `normalizeStageName` stays the stage
@@ -198,7 +202,7 @@ by code, while the CLI maps failures to exit codes and owns stdout. Adding a fie
 to the projection adds it to both. `packages/cli/test/parity.test.js` runs the CLI's
 `main()` and the MCP tools through an in-memory client on public corpus logs,
 flattens both outputs and diffs their key sets and values. The differences that
-stay (the MCP run handles, the deprecated aliases, the CLI's `schemaVersion`)
+stay (the MCP run handles, the `metricDeltas` and `findingsDelta` repeats, the CLI's `schemaVersion`)
 are in a commented allowlist in that file, and an entry that explains no
 difference fails the test.
 

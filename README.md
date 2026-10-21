@@ -29,11 +29,11 @@ turns them into findings.
   Node companion that can also pull runs from a Spark History Server.
 - Event logs are streamed and parsed off the main thread in a Web Worker,
   so a 240MB+ (or multi-GB) NDJSON log doesn't freeze the tab.
-- About 25 built-in detectors cover skew, shuffle, spill, GC
+- 25 finding types cover skew, shuffle, spill, GC
   pressure, stragglers, cold start, cache/memory utilization, autoscaling
   churn, job/stage failures and partition sizing, plus a SQL Plan Advisor
   (duplicate subtrees, small files, broadcast sizing) and a config audit.
-  Full roster in the [detector contract](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract).
+  Every detector and its thresholds are in the [detector table](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract/threshold-tables#bottleneck-thresholds).
 - Fix These First orders every finding by its estimated wall-clock impact,
   not severity alone, so the top row is the fix worth doing first.
 - Run comparison (A/B) mode structurally matches stages across two
@@ -291,7 +291,7 @@ The full documentation is published at
   the dashboard, run comparison, CI and automation
 - [Understanding findings](https://shuffle-works.github.io/sparkforensics/docs/user-guide/understanding-findings)
 - [MCP tools](https://shuffle-works.github.io/sparkforensics/docs/user-guide/mcp-tools)
-- [Detector roster](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract)
+- [Detector table](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract/threshold-tables#bottleneck-thresholds)
 - [Worker protocol](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/worker-protocol)
 - [Streaming/parsing design](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/overview#streaming)
 - [Widget layout](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/widget-rendering)

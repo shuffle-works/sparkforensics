@@ -49,7 +49,7 @@ ${toolNames.join(', ')}.
                        Findings a tuned detector produces carry tunedThresholds.
                        An unreadable or invalid file stops the server from starting.
 
-See https://github.com/shuffle-works/sparkforensics#readme for details.
+See https://shuffle-works.github.io/sparkforensics/docs/user-guide/mcp-tools for every tool and its parameters.
 `;
 }
 

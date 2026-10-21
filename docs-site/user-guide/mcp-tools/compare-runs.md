@@ -7,7 +7,8 @@ categorized findings delta (`findings`), and the share of executor run time in
 paired stages (`runtimeCoverage`). The result
 carries the same `generator` (the `sparkforensics-mcp` build that wrote the result),
 `verdict`, `baselineApp` and `candidateApp` (each run's Spark application `id` and
-`attemptId`), `confidence`, `reason`, `matchedCoverage`,
+`attemptId`), `baselineSkippedLines` (the baseline's skipped log line count),
+`confidence`, `reason`, `matchedCoverage`,
 `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`,
 `unmatched`, `replanned`, `bookkeepingStageIds`, `executionAlignment` and `comparability` as the
 `comparison` object of the CLI's `--baseline` JSON output, plus `stagePairs`
@@ -19,8 +20,7 @@ directories of their call-site paths removed in `stageLabels`; each `stagePairs`
 the same kind of label in `stageLabel`. The raw names in `stages` still carry those paths,
 and `redact` does not remove them, so show `stageLabels` and `stageLabel`.
 `metricDeltas` and `findingsDelta` repeat `metrics` and
-`findings` under their earlier names; they are deprecated and will be removed
-in a later release. `verdict` is the headline the dashboard's comparison page
+`findings` under other key names. `verdict` is the headline the dashboard's comparison page
 opens with (the baseline is `runIdA`/`sourceA`, the candidate `runIdB`/`sourceB`): a
 `title` such as "The candidate finished 9.9s faster than the baseline (37%)", or a failed-job
 headline when either run had jobs fail, a `tone` (`better`, `worse`, `same`, `unknown`, `equivalent` or `mixed`), and `sentences` naming which cost metrics and finding categories
@@ -35,7 +35,7 @@ Parameters:
 - `runIdB` / `sourceB`: identify the candidate
 - `redact`: `boolean` (default `false`), pseudonymizes any app id, host name
   or user name embedded in free text (stage names and similar) in the
-  response: see the note at the top of this page and [What `--redact` covers](../getting-started/ci-and-automation.md#what-redact-covers)
+  response: see [the MCP tools reference](../mcp-tools.md) and [What `--redact` covers](../getting-started/ci-and-automation.md#what-redact-covers)
 - `include`: `["stagePairs"]` (optional), adds `stagePairs`, one row per paired
   stage. It is left out by default because it grows with the number of stages.
 - `normalizePath`: `string[]` (optional), regular expressions whose every match
@@ -114,9 +114,10 @@ Example response with `include: ["stagePairs"]` (`metrics` and `metricDeltas` tr
 {
   "runIdA": "aaaa1111-...",
   "runIdB": "bbbb2222-...",
-  "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "9c1f3a7e2b4d" },
+  "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "28d8c65766bec6168973b27d049568c03588090139f45467ffe983036a0fab65" },
   "baselineApp": { "id": "application_0000000000000_0001", "attemptId": null },
   "candidateApp": { "id": "application_0000000000000_0002", "attemptId": null },
+  "baselineSkippedLines": 0,
   "verdict": { "title": "The candidate finished 1.0s faster than the baseline (50%)", "tone": "better", "sentences": [] },
   "confidence": "ok",
   "reason": null,

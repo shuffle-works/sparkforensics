@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -1196,6 +1196,51 @@ describe('budgets on a redacted comparison', () => {
       const run = (comparison) => evaluateBudgets({ appModel: cand.appModel, catalog: cand.catalog, budgets, comparison });
       expect(run(redacted)).toEqual(run(raw));
       expect(run(raw).violated).toBe(true);
+    } finally {
+      rmSync(baseline.dir, { recursive: true, force: true });
+      rmSync(candidate.dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('skipped lines in MCP output', () => {
+  // A complete log whose 6 TaskEnd lines are replaced by a truncated JSON fragment.
+  function corruptLog(path) {
+    const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
+    let replaced = 0;
+    const damaged = lines.map((line) => (line.includes('SparkListenerTaskEnd') && replaced++ < 6 ? '{corrupt' : line));
+    writeFileSync(path, `${damaged.join('\n')}\n`);
+  }
+
+  it.each([
+    ['a damaged log', true, 6],
+    ['a clean log', false, 0],
+  ])('reports the count through summary, diagnose_run and the budget gate for %s', async (_label, damage, expected) => {
+    const { dir, path } = tmpEventLogWithFindings();
+    try {
+      if (damage) corruptLog(path);
+      const { runId } = await resolveOrCreateRun({ source: { path } });
+      expect(getRunSummary(runId).skippedLines).toBe(expected);
+      expect(diagnoseRun(runId, { include: ['summary'] }).summary.skippedLines).toBe(expected);
+      const { results, violated, inconclusive } = await evaluateBudgetsForRun({ runId }, {});
+      expect(results.some((r) => r.name === 'parse-incomplete')).toBe(damage);
+      expect(violated).toBe(false);
+      expect(inconclusive).toBe(damage);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('names a damaged baseline in evaluate_budgets with a clean candidate', async () => {
+    const baseline = tmpEventLogWithFindings();
+    const candidate = tmpEventLogWithFindings();
+    try {
+      corruptLog(baseline.path);
+      const { results, violated, inconclusive } = await evaluateBudgetsForRun({ source: { path: baseline.path } }, {}, { source: { path: candidate.path } });
+      expect(results).toEqual([expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('baseline 6 lines') })]);
+      expect(results[0].detail).not.toContain('candidate');
+      expect(violated).toBe(false);
+      expect(inconclusive).toBe(true);
     } finally {
       rmSync(baseline.dir, { recursive: true, force: true });
       rmSync(candidate.dir, { recursive: true, force: true });

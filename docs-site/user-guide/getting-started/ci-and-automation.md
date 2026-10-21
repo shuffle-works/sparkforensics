@@ -22,6 +22,16 @@ that is not a non-negative decimal, an unknown `--impact`, `--type` or
 4 when the candidate log can't be read or parsed or its History Server fetch
 fails, 5 when the `--baseline` log can't be read or parsed, and 6 for an
 internal error, including a failed `--export-html`.
+
+A log line the parser can't read (corrupt or invalid JSON, or an event that
+fails its schema) is skipped, so every total covers only the lines that
+parsed. The report's `summary.skippedLines` holds the count (`0` for a clean
+log), the Markdown report adds a `Skipped lines` line when it is above `0`, and
+a `parse-incomplete` budget result with status `inconclusive` makes the exit
+code `3` when no budget is violated. It never fails the run on its own. With a
+baseline, `comparison.baselineSkippedLines` holds the baseline's count, the
+Markdown comparison adds a `Baseline skipped lines` line when it is above `0`,
+and the same `parse-incomplete` result names the baseline in its detail.
 When several of these apply, the worst wins in this order: 6, 5, 4, 1, 3, 0.
 A usage error exits 2 before any log is read.
 
@@ -465,10 +475,11 @@ identifiers, so `--redact` leaves it as is.
 An `app` block next to it names the Spark application the report describes:
 `id` and `attemptId`, which is `null` when the log has none (only a cluster-mode
 run writes one). Under `--redact` the id is pseudonymized. A comparison names both
-runs in `baselineApp` and `candidateApp`.
+runs in `baselineApp` and `candidateApp`, and carries the baseline's skipped
+log line count in `baselineSkippedLines`.
 
 ```json
-"generator": { "name": "sparkforensics-cli", "version": "0.7.0", "buildId": "9c1f3a7e2b4d" }
+"generator": { "name": "sparkforensics-cli", "version": "0.7.0", "buildId": "28d8c65766bec6168973b27d049568c03588090139f45467ffe983036a0fab65" }
 ```
 
 ## Metrics block
@@ -772,10 +783,10 @@ valid JSON.
 The budgets combine like this:
 
 - `--max-regression-pct` with `--regression-metric` (default `wallClock`)
-  still works and counts as one more budget next to the new ones.
-- Each metric can be budgeted once across the legacy pair, the repeated flag
-  and the file. A metric named twice is a usage error (exit 2), even when both
-  give the same percentage.
+  adds one budget next to the repeated flag and the file.
+- Each metric can be budgeted once across `--max-regression-pct`, the repeated
+  flag and the file. A metric named twice is a usage error (exit 2), even when
+  both give the same percentage.
 - Each budget is checked on its own and gives one `max-regression` result
   that carries `metric`, the key it checks. Any violated budget makes the run
   exit `1`; otherwise an inconclusive one makes it exit `3`. A budget on a
@@ -789,7 +800,9 @@ gate on the stages themselves, repeat
 `--stage-regression-budget <metric>:<pct>` (with `--baseline`). The budget
 fails when any paired stage's metric grew by more than the percentage against
 its baseline stage. The metric is one of `executorRunTime`, `executorCpuTime`, `memoryBytesSpilled`,
-`diskBytesSpilled`, `shuffleReadBytes` and `shuffleWriteBytes`:
+`diskBytesSpilled`, `shuffleReadBytes` and `shuffleWriteBytes`. Whole-run
+budgets name the spill metrics `shuffleSpill` and `diskSpill`
+([keys](./regression-metric-keys.md)):
 
 ```sh
 npx -p sparkforensics-cli sparkforensics-analyze candidate.zstd --baseline baseline.zstd \
@@ -864,11 +877,12 @@ Each line is one JSON object:
 | `error` | The message when `status` is `error`; otherwise `null`. With `--redact`, a generic message that names no path. |
 | `budgets` | This candidate's budget results, each with `name`, `status` (`pass`, `violation` or `inconclusive`) and `detail`, plus `metric` on `max-regression` and `max-stage-regression`. Empty for an `error` line. |
 | `candidate` | The candidate's report with its `metrics` and `effectiveConf` blocks, the same object the single-candidate JSON output carries under `candidate`. `null` for an `error` line. |
-| `comparison` | `verdict`, `confidence`, `reason`, `matchedCoverage`, `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`, `stagePairs`, `unmatched`, `replanned`, `bookkeepingStageIds` and `executionAlignment`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
+| `comparison` | `verdict`, `baselineSkippedLines`, `confidence`, `reason`, `matchedCoverage`, `runtimeCoverage`, `metrics`, `findings`, `comparisonSchemaVersion`, `stagePairs`, `unmatched`, `replanned`, `bookkeepingStageIds` and `executionAlignment`, the same object the single-candidate JSON output carries under `comparison`. `null` for an `error` line. |
 
 A line's `status` follows the single-candidate rules: `violation` if any
 budget result is a violation, else `inconclusive` if any is inconclusive
-(including the `run-complete` check for a log with no `ApplicationEnd`),
+(including the `run-complete` check for a log with no `ApplicationEnd` and the
+`parse-incomplete` check for a candidate or baseline log with skipped lines),
 else `pass`.
 
 A candidate that can't be read or parsed doesn't stop the others. Its line

@@ -21,10 +21,9 @@ Before opening a PR:
 
 Sample Spark event logs for manual testing live outside this repo. Keep them
 in a sibling `../spark-log-examples/` directory: real `.zstd` event logs plus
-several `run-compare-*-baseline-*`/`run-compare-*-candidate-*` pairs for run
-comparison. They are private and this repo is public: never put their file
-names, app IDs, app names, tables or paths in tracked files, commits or PR
-text. Use the neutral `private-log-NN` labels under
+several pairs of baseline and candidate logs for run comparison. They are
+private and this repo is public: never put their file names, app IDs, app
+names, tables or paths in tracked files, commits or PR text. Use the neutral `private-log-NN` labels under
 [Test fixtures](#test-fixtures), and synthetic IDs such as
 `application_0000000000000_0001`.
 

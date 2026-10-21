@@ -74,8 +74,8 @@ error, and when both are given `runId` wins):
   field to the response, on top of the default `verdict`/`findings`/`recommendations`/
   `runComplete`/`writeTargets`/`generator`/`app`/`metrics`/`effectiveConf` (and `cleanChecks`/`notRunChecks`
   in the `full` view):
-  - `summary`: app id/name/Spark version, stage/job/SQL-execution counts, a
-    finding count broken down by impact band, the same counts without evidence
+  - `summary`: app id/name/Spark version, stage/job/SQL-execution counts,
+    `skippedLines` (as in `get_run_summary`), a finding count broken down by impact band, the same counts without evidence
     caveats and the incomplete-run row (`actionableFindingCount`,
     `actionableImpactBandCounts`, what the dashboard counts), `outcome` (how
     the run ended), `runShape` (as in `get_run_summary`), `clean`, and
@@ -135,7 +135,7 @@ event; fields trimmed: `verdict`, `recommendations`, `metrics`, `writeTargets`,
 {
   "runId": "b8b2c1a4-...",
   "view": "compact",
-  "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "9c1f3a7e2b4d" },
+  "generator": { "name": "sparkforensics-mcp", "version": "0.9.0", "buildId": "28d8c65766bec6168973b27d049568c03588090139f45467ffe983036a0fab65" },
   "app": { "id": "application_0000000000000_0001", "attemptId": null },
   "runComplete": false,
   "findingsOmitted": 0,

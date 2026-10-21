@@ -92,6 +92,8 @@ export default [
       'packages/server/public/**',
       'packages/*/vendor-core/**',
       'dist/**',
+      'dist-export/**',
+      'packages/*/coverage/**',
       'docs-site/.vitepress/dist/**',
       'docs-site/.vitepress/cache/**',
       '.claude/worktrees/**',

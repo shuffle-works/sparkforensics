@@ -176,6 +176,9 @@ export interface EvidenceReportJson {
   summary: {
     app: { id?: string | null; name?: string | null; sparkVersion?: string | null };
     stageCount: number; jobCount: number; sqlExecutionCount: number;
+    // Log lines the parser could not read (corrupt or invalid). Above 0 the totals cover only the
+    // lines that parsed, so they can be understated.
+    skippedLines: number;
     // Every row in `findings`, evidence caveats and the run-completeness check included.
     findingCount: number;
     impactBandCounts: ImpactBandCounts;
@@ -554,6 +557,7 @@ function buildJson(
       stageCount: stages?.size ?? 0,
       jobCount: jobs?.size ?? 0,
       sqlExecutionCount: sql?.size ?? 0,
+      skippedLines: appModel.skippedLines ?? 0,
       findingCount: rows.length,
       impactBandCounts: countByImpactBand(rows),
       actionableFindingCount: actionable.length,
@@ -691,6 +695,7 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
   lines.push(`- Spark version: ${mdInline(summary.app.sparkVersion ?? 'n/a')}`);
   if (summary.tunedThresholds) lines.push(`- Tuned thresholds: ${tunedRunNote(summary.tunedThresholds)}`);
   lines.push(`- Stages: ${summary.stageCount} · Jobs: ${summary.jobCount} · SQL executions: ${summary.sqlExecutionCount}`);
+  if (summary.skippedLines > 0) lines.push(`- Skipped lines: ${summary.skippedLines} (malformed or invalid log lines; totals cover only the lines that parsed)`);
   lines.push(`- Findings: ${summary.findingCount} (critical ${summary.impactBandCounts.critical}, warning ${summary.impactBandCounts.warning}, info ${summary.impactBandCounts.info})`);
   const actionableCounts = summary.actionableImpactBandCounts;
   lines.push(`- Findings to act on: ${summary.actionableFindingCount} (critical ${actionableCounts.critical}, warning ${actionableCounts.warning}, info ${actionableCounts.info})`);
