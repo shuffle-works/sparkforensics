@@ -44,13 +44,6 @@ function taskDataTrusted(appModel: AppModel): boolean {
   return entry?.state === 'present';
 }
 
-function maxFindingValue(catalog: Finding[], type: string): number | null {
-  const values = catalog
-    .filter((f) => f.type === type)
-    .map((f) => f.value ?? 0);
-  return values.length > 0 ? Math.max(...values) : null;
-}
-
 function checkRuntime(appModel: AppModel, maxRuntimeMs: number): BudgetResult {
   const { startTime, endTime } = appModel.app ?? {};
   if (startTime == null || endTime == null) {
@@ -62,11 +55,19 @@ function checkRuntime(appModel: AppModel, maxRuntimeMs: number): BudgetResult {
     : { name: 'max-runtime', status: 'pass', detail: `Runtime ${runtimeMs}ms within budget ${maxRuntimeMs}ms.` };
 }
 
-function checkSpill(appModel: AppModel, catalog: Finding[], maxSpillGb: number): BudgetResult {
+// Peak per-stage memory spill, read from the stages themselves: the spill detector's runtime floor
+// hides a short stage's finding, but a budget measures the run, not the findings.
+function checkSpill(appModel: AppModel, maxSpillGb: number): BudgetResult {
   if (!taskDataTrusted(appModel)) {
     return { name: 'max-spill', status: 'inconclusive', detail: 'No trustworthy task-level evidence to measure spill.' };
   }
-  const maxBytes = maxFindingValue(catalog, 'spill') ?? 0;
+  const spills = [...(appModel.stages?.values() ?? [])]
+    .map((stage) => stage.memoryBytesSpilled)
+    .filter((bytes): bytes is number => Number.isFinite(bytes));
+  if (spills.length === 0) {
+    return { name: 'max-spill', status: 'inconclusive', detail: 'No stage has a recorded spill figure in this event log.' };
+  }
+  const maxBytes = Math.max(...spills);
   const budgetBytes = maxSpillGb * 1024 ** 3;
   return maxBytes > budgetBytes
     ? { name: 'max-spill', status: 'violation', detail: `Peak stage spill ${maxBytes} bytes exceeds budget ${budgetBytes} bytes.` }
@@ -85,8 +86,8 @@ function checkSkew(appModel: AppModel, maxSkewRatio: number, minTasksForP95: num
   // thresholds.ratioWarn (3), so a stricter budget can't be enforced from catalog alone.
   const ratios = stages
     .map((stage) => computeSkewRatio(stage, minTasksForP95))
-    .filter((r) => r !== null)
-    .map((r) => r.ratio);
+    .map((r) => r?.ratio)
+    .filter((ratio): ratio is number => Number.isFinite(ratio));
   if (ratios.length === 0) {
     return { name: 'max-skew', status: 'inconclusive', detail: 'No stage has a measurable task-duration median.' };
   }
@@ -96,20 +97,21 @@ function checkSkew(appModel: AppModel, maxSkewRatio: number, minTasksForP95: num
     : { name: 'max-skew', status: 'pass', detail: `Peak stage skew ratio ${maxRatio} within budget ${maxSkewRatio}.` };
 }
 
-function checkFailedTaskRate(appModel: AppModel, catalog: Finding[], maxPct: number): BudgetResult {
-  const finding = catalog.find((f) => f.type === 'jobFailureRate');
-  if (finding) {
-    const rate = (finding.taskFailureRate as number | undefined) ?? 0;
-    return rate > maxPct
-      ? { name: 'max-failed-task-rate', status: 'violation', detail: `Task failure rate ${rate}% exceeds budget ${maxPct}%.` }
-      : { name: 'max-failed-task-rate', status: 'pass', detail: `Task failure rate ${rate}% within budget ${maxPct}%.` };
+// Failed tasks over all tasks, summed across stages: the jobFailureRate detector reports the same
+// ratio but only once failed jobs pass its floor, so a run of retried tasks never reaches it.
+function checkFailedTaskRate(appModel: AppModel, maxPct: number): BudgetResult {
+  let totalTasks = 0, failedTasks = 0;
+  for (const stage of appModel.stages?.values() ?? []) {
+    totalTasks += stage.taskCount ?? 0;
+    failedTasks += stage.failedTasks ?? 0;
   }
-  if ((appModel.jobs?.size ?? 0) === 0) {
-    return { name: 'max-failed-task-rate', status: 'inconclusive', detail: 'No job data observed in this event log.' };
+  if (totalTasks === 0) {
+    return { name: 'max-failed-task-rate', status: 'inconclusive', detail: 'No task data observed in this event log.' };
   }
-  // jobFailureRate never fired => rate below its 10% info floor, so task failure rate is
-  // implicitly low. v1 limitation: a budget stricter than that floor can't be enforced.
-  return { name: 'max-failed-task-rate', status: 'pass', detail: `No job-failure-rate finding: task failure rate is below the detector's reporting floor.` };
+  const rate = Math.round((failedTasks / totalTasks) * 1000) / 10;
+  return rate > maxPct
+    ? { name: 'max-failed-task-rate', status: 'violation', detail: `Task failure rate ${rate}% exceeds budget ${maxPct}%.` }
+    : { name: 'max-failed-task-rate', status: 'pass', detail: `Task failure rate ${rate}% within budget ${maxPct}%.` };
 }
 
 // Busy core time: the share of available executor core time that ran tasks, 100 minus the
@@ -235,9 +237,9 @@ export function evaluateBudgets({ appModel, catalog, budgets, comparison, thresh
 }): { results: BudgetResult[]; violated: boolean; inconclusive: boolean } {
   const results: BudgetResult[] = [];
   if (Number.isFinite(budgets.maxRuntimeMs)) results.push(checkRuntime(appModel, budgets.maxRuntimeMs!));
-  if (Number.isFinite(budgets.maxSpillGb)) results.push(checkSpill(appModel, catalog, budgets.maxSpillGb!));
+  if (Number.isFinite(budgets.maxSpillGb)) results.push(checkSpill(appModel, budgets.maxSpillGb!));
   if (Number.isFinite(budgets.maxSkewRatio)) results.push(checkSkew(appModel, budgets.maxSkewRatio!, skewMinTasksForP95(thresholds)));
-  if (Number.isFinite(budgets.maxFailedTaskRatePct)) results.push(checkFailedTaskRate(appModel, catalog, budgets.maxFailedTaskRatePct!));
+  if (Number.isFinite(budgets.maxFailedTaskRatePct)) results.push(checkFailedTaskRate(appModel, budgets.maxFailedTaskRatePct!));
   if (Number.isFinite(budgets.minEfficiencyPct)) results.push(checkEfficiency(appModel, budgets.minEfficiencyPct!));
   // Guarded here so any evaluateBudgets caller benefits: regressionMetric without
   // maxRegressionPct would otherwise skip the `if` silently, reporting nothing.
