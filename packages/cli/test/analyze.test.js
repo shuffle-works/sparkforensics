@@ -989,6 +989,13 @@ describe('sparkforensics-analyze --out', () => {
     expect(stderr).toContain('is not a directory');
   });
 
+  it('exits 2 without claiming the folder is missing when a component of the --out parent is a file', async () => {
+    const { status, stderr } = await runMainInProcess([logPath, '--out', join(logPath, 'sub', 'report.json')]);
+    expect(status).toBe(2);
+    expect(stderr).toContain(`--out: ${join(logPath, 'sub')} cannot be read (ENOTDIR)`);
+    expect(stderr).not.toContain('does not exist');
+  });
+
   it('writes the report to a writable --out', async () => {
     const target = join(dir, 'report.json');
     const { status } = await runMainInProcess([logPath, '--out', target]);

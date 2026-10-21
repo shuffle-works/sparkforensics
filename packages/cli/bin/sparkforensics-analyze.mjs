@@ -399,7 +399,7 @@ function outPathProblem(outPath) {
   try {
     if (!statSync(parent).isDirectory()) return `${parent} is not a directory`;
   } catch (e) {
-    return `${parent} does not exist (${e.code})`;
+    return e.code === 'ENOENT' ? `${parent} does not exist (ENOENT)` : `${parent} cannot be read (${e.code})`;
   }
   if (existsSync(target) && statSync(target).isDirectory()) return `${target} is a directory`;
   return undefined;
