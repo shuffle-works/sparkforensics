@@ -18,9 +18,9 @@ Parameters (all optional):
   CLI's `--baseline` mode. `minEfficiencyPct` measures busy core time, the
   share of executor core time that ran tasks (100 minus the dashboard's
   Unused core time), not the dashboard's Efficiency tile. `maxFailedTaskRatePct`
-  reads the task failure rate off the `jobFailureRate` finding, so when that
-  finding didn't fire (under 10% of jobs failed, by default) it passes whatever
-  the task failure rate.
+  measures failed task attempts over all task attempts, retried attempts and
+  earlier stage attempts included, so a failure a retry recovered still counts.
+  A run with no task data is inconclusive.
 - `runIdB` / `sourceB`: a candidate run to compare against the first, so
   regression budgets can be evaluated. Same `runId`/`source` shape, resolved
   the same way. Omit both to skip regression budgets.

@@ -16,4 +16,13 @@ describe('computeSkewRatio', () => {
     const stage = { taskCount: 19, taskDurationP50: 100, taskDurationP95: 400, taskDurationMax: 900 };
     expect(computeSkewRatio(stage, 20)).toEqual({ ratio: 9, metric: 'max/median' });
   });
+
+  it('returns null when the median is absent', () => {
+    expect(computeSkewRatio({ taskCount: 20, taskDurationP95: 400, taskDurationMax: 900 }, 20)).toBeNull();
+  });
+
+  it('returns null when the numerator is absent or not finite', () => {
+    expect(computeSkewRatio({ taskCount: 20, taskDurationP50: 100 }, 20)).toBeNull();
+    expect(computeSkewRatio({ taskCount: 5, taskDurationP50: 100, taskDurationMax: NaN }, 20)).toBeNull();
+  });
 });
