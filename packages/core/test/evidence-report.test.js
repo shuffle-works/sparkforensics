@@ -732,3 +732,21 @@ describe('buildEvidenceReport: tuned thresholds', () => {
     expect(markdown).toContain('(tuned: minBytes 4294967296 (default 52428800))');
   });
 });
+
+describe('buildEvidenceReport skipped lines', () => {
+  it('reports zero skipped lines and no Markdown line for a clean parse', () => {
+    const { json, markdown } = buildEvidenceReport({ ...fixture(), skippedLines: 0 });
+    expect(json.summary.skippedLines).toBe(0);
+    expect(markdown).not.toContain('Skipped lines');
+  });
+
+  it('reports the skipped line count in the summary and the Markdown', () => {
+    const { json, markdown } = buildEvidenceReport({ ...fixture(), skippedLines: 6 });
+    expect(json.summary.skippedLines).toBe(6);
+    expect(markdown).toContain('- Skipped lines: 6');
+  });
+
+  it('keeps the count under redaction', () => {
+    expect(buildEvidenceReport({ ...fixture(), skippedLines: 2 }, { redact: true }).json.summary.skippedLines).toBe(2);
+  });
+});

@@ -74,8 +74,8 @@ error, and when both are given `runId` wins):
   field to the response, on top of the default `verdict`/`findings`/`recommendations`/
   `runComplete`/`writeTargets`/`generator`/`app`/`metrics`/`effectiveConf` (and `cleanChecks`/`notRunChecks`
   in the `full` view):
-  - `summary`: app id/name/Spark version, stage/job/SQL-execution counts, a
-    finding count broken down by impact band, the same counts without evidence
+  - `summary`: app id/name/Spark version, stage/job/SQL-execution counts,
+    `skippedLines` (as in `get_run_summary`), a finding count broken down by impact band, the same counts without evidence
     caveats and the incomplete-run row (`actionableFindingCount`,
     `actionableImpactBandCounts`, what the dashboard counts), `outcome` (how
     the run ended), `runShape` (as in `get_run_summary`), `clean`, and

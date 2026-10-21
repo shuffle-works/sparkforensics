@@ -39,6 +39,8 @@ export interface RunSummary {
   stageCount: number; jobCount: number; sqlExecutionCount: number;
   executorCount: { added: number; removed: number };
   durationMs: number | null;
+  // Log lines the parser skipped as malformed or invalid; above 0 the totals can be understated.
+  skippedLines: number;
   // True only when the log recorded a SparkListenerApplicationEnd (app.endTime != null). A caller
   // checking only durationMs:null couldn't tell an incomplete capture from a zero-length run; this
   // is the explicit signal (mirrors the incompleteRun finding).
@@ -464,6 +466,7 @@ export function getRunSummary(runId: string, opts?: { redact?: boolean; threshol
     sqlExecutionCount: sql.size,
     executorCount: { added: executors.added.length, removed: executors.removed.length },
     durationMs,
+    skippedLines: summary.skippedLines,
     runComplete: app?.endTime != null,
     ...outcome,
     runShape: summary.runShape,
