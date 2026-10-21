@@ -30,7 +30,8 @@ time than the baseline's") and the tone is `unknown`.
 
 Parameters:
 
-- `runIdA` / `sourceA`: identify the baseline (same `source` shape as above)
+- `runIdA` / `sourceA`: identify the baseline (`source` has the shape in
+  [Common parameters](../mcp-tools.md#common-parameters); [Run roles](../mcp-tools.md#run-roles) compares the baseline and candidate across surfaces)
 - `runIdB` / `sourceB`: identify the candidate
 - `redact`: `boolean` (default `false`), pseudonymizes any app id, host name
   or user name embedded in free text (stage names and similar) in the

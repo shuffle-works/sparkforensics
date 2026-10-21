@@ -7,7 +7,9 @@ Each tag links to the matching section of the Spark
 [tuning reference](https://shuffle-works.github.io/spark-tuning-reference/), opened in an in-app **Reference**
 panel next to the board. `INCMP` has no reference section, so its tag opens
 this page instead. Turn on [Advanced view](./getting-started/reading-the-dashboard.md#advanced-view)
-to also see a finding's confidence when it is below high, and a page icon
+to also see a finding's confidence when it is below high (the
+[glossary](./getting-started.md#glossary) says what confidence means; "self-flags a
+confidence" below means the finding sets it itself), and a page icon
 beside the tag that opens this page's entry. Some tags point into another
 tag's reference page because the material overlaps: `SFAIL` shares `FAIL`'s
 section; `PART` is on the `SHFL` page, `SPEC` on `STRAG`, `SHAPE` on `SKEW`,
@@ -20,14 +22,14 @@ section; `PART` is on the `SHFL` page, `SPEC` on `STRAG`, `SHAPE` on `SKEW`,
 A small number of tasks take much longer than their peers in the same
 stage. The fix depends on what the stage reads, which the finding's
 `evidence.origin` records. A stage that reads a shuffle feeding a join
-(`shuffleJoin`) gets AQE skew-join handling
+(`shuffleJoin`) gets AQE (Adaptive Query Execution) skew-join handling
 (`spark.sql.adaptive.skewJoin.enabled`), unless the run's effective conf
 already has it; otherwise salt the key or repartition on a better key. A
 stage that reads files with uneven sizes (`inputScan`) gets compaction of
 small files or a lower `spark.sql.files.maxPartitionBytes`. Any other stage
 (`other`) gets the salting advice and no conf, as a `code` entry in
 `remediation`. Flagged when P95 task time
-(the longest task, on a stage with fewer than 20 tasks) exceeds 3x the median
+(95th percentile; the longest task, on a stage with fewer than 20 tasks) exceeds 3x the median
 and the recoverable tail is at least 0.5% of the run. The median is the
 textbook one: on an even task count, the mean of the two middle values.
 

@@ -46,8 +46,8 @@ Example response:
 }
 ```
 
-Each entry's `source` is the same shape `diagnose_run`/`get_run_summary`
-accept as `source`, so a result row can be passed straight into those tools
+Each entry's `source` has the shape the other tools accept as `source`
+(see [Common parameters](../mcp-tools.md#common-parameters)), so a result row can be passed straight into those tools
 without re-deriving anything, unless `redact` is on: redaction replaces
 `source.path` (or `source.appId`) with the pseudonym, so a redacted row can't
 be loaded. A row can also carry `durationMs` (History Server mode only) and

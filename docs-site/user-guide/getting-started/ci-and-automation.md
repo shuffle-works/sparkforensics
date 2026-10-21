@@ -228,7 +228,7 @@ configuration keys out of the comparison (`--ignore-conf`, see
 [Comparing configuration and capacity](#comparing-configuration-and-capacity)), redacting identifiers before sharing output
 (`--redact`, see [What `--redact` covers](#what-redact-covers)), and narrowing the findings to certain impact
 bands, types, or a stage (`--impact`/`--type`/`--stage`), and tuning
-detector thresholds from a file (`--thresholds`, below). Run it with
+detector thresholds from a file (`--thresholds`, see [Tuning detector thresholds](./tuning-thresholds.md)). Run it with
 `--help` for the full flag list.
 
 Same caveat as above: if the History Server is only reachable through an SSH
@@ -700,7 +700,7 @@ the heaviest. Pass `--normalize-path <regex>`, repeatable, to rewrite what the
 patterns match, in every plan node's text, before stages are paired:
 
 ```bash
-sparkforensics-analyze candidate --baseline baseline \
+npx -p sparkforensics-cli sparkforensics-analyze candidate --baseline baseline \
   --normalize-path '/sandbox/[^/]+/[^/]+/' --format json
 ```
 
@@ -736,7 +736,7 @@ of the baseline value under which a metric row reads `withinNoise: true`; the fl
 never changes a row's `direction`, which budgets read. Both flags need a baseline.
 
 ```bash
-sparkforensics-analyze candidate --baseline baseline \
+npx -p sparkforensics-cli sparkforensics-analyze candidate --baseline baseline \
   --ignore-conf '^spark\.myjob\.output\.' --noise-band-pct 5 --format json
 ```
 
@@ -750,7 +750,7 @@ with `--budgets <file>`. Both need `--baseline`, and each budget takes a
 [metric key](./regression-metric-keys.md#regression-metric-keys) and a percentage of zero or more:
 
 ```bash
-sparkforensics-analyze candidate --baseline baseline \
+npx -p sparkforensics-cli sparkforensics-analyze candidate --baseline baseline \
   --regression-budget wallClock:10 --regression-budget gcTime:25
 ```
 
@@ -790,7 +790,7 @@ its baseline stage. The metric is one of `executorRunTime`, `executorCpuTime`, `
 `diskBytesSpilled`, `shuffleReadBytes` and `shuffleWriteBytes`:
 
 ```sh
-sparkforensics-analyze candidate.zstd --baseline baseline.zstd \
+npx -p sparkforensics-cli sparkforensics-analyze candidate.zstd --baseline baseline.zstd \
   --stage-regression-budget executorRunTime:25 --stage-regression-budget diskBytesSpilled:0
 ```
 
@@ -819,7 +819,7 @@ baseline can be on a different server than the candidate. Any candidate source
 works with it: a local log, or a History Server run.
 
 ```bash
-sparkforensics-analyze --shs-base-url http://history-a:18080 --app-id application_1234_0002 \
+npx -p sparkforensics-cli sparkforensics-analyze --shs-base-url http://history-a:18080 --app-id application_1234_0002 \
   --baseline-shs-base-url http://history-b:18080 --baseline-app-id application_1234_0001 \
   --max-regression-pct 10 --fail-on-introduced critical
 ```

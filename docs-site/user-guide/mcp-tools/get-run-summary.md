@@ -17,7 +17,8 @@ and `peakBusyCores` (busy cores at the peak of Core Usage by Locality,
 averaged over one chart bucket, so it can be fractional). Each is `null` where the
 dashboard shows "Not measured" or "Unavailable".
 
-Parameters: `source`, `runId` and `redact`, as in `diagnose_run`.
+Parameters: `source`, `runId` and `redact`; see
+[Common parameters](../mcp-tools.md#common-parameters).
 
 Example call:
 
