@@ -2,12 +2,12 @@
 // launch/finish timestamps in taskStore, so raw task data never reaches the main thread: only the
 // compact summary below is posted. Pure and worker-agnostic so it is unit-testable without a Worker.
 //
-// Uses computeCoreTimeSeries in coreCount mode (O(n log n)) to derive the busy-core histogram; the
-// time-bucket mode is intentionally NOT used here because it is O(buckets × segments) and a whole
-// run can hold millions of tasks.
+// Uses coreCountHistogram (O(n log n), launch/finish typed arrays and no object per task) to derive
+// the busy-core histogram; computeCoreTimeSeries' time-bucket mode is intentionally NOT used here
+// because it is O(buckets × segments) and a whole run can hold millions of tasks.
 
 import { FIELDS } from './stage-quantiles.ts';
-import { computeCoreTimeSeries } from './core-time-series.ts';
+import { coreCountHistogram } from './core-time-series.ts';
 
 export function computeRunAggregates(taskStore: Map<number, Float64Array>): {
   coreHistogram: number[];
@@ -15,7 +15,11 @@ export function computeRunAggregates(taskStore: Map<number, Float64Array>): {
   peakConcurrentCores: number;
   perStage: Record<string, { totalTaskDurationSum: number; taskCount: number }>;
 } {
-  const intervals: Array<{ launch: number; finish: number }> = [];
+  let totalTasks = 0;
+  for (const arr of taskStore.values()) totalTasks += arr.length / FIELDS.STRIDE;
+  const launches = new Float64Array(totalTasks);
+  const finishes = new Float64Array(totalTasks);
+  let intervalCount = 0;
   const perStage: Record<string, { totalTaskDurationSum: number; taskCount: number }> = {};
   for (const [stageId, arr] of taskStore) {
     const taskCount = arr.length / FIELDS.STRIDE;
@@ -25,15 +29,12 @@ export function computeRunAggregates(taskStore: Map<number, Float64Array>): {
       const launch = arr[base + FIELDS.LAUNCH_TIME];
       const finish = arr[base + FIELDS.FINISH_TIME];
       totalTaskDurationSum += arr[base + FIELDS.DURATION];
-      if (finish > launch) intervals.push({ launch, finish });
+      if (finish > launch) { launches[intervalCount] = launch; finishes[intervalCount++] = finish; }
     }
     perStage[stageId] = { totalTaskDurationSum, taskCount };
   }
 
-  // bucketBy: 'coreCount' always yields the coreCount branch of the union;
-  // narrow explicitly since the callee's return type doesn't correlate to
-  // the literal `bucketBy` argument.
-  const { histogram } = computeCoreTimeSeries(intervals, { bucketBy: 'coreCount' }) as { mode: 'coreCount'; histogram: number[] };
+  const histogram = coreCountHistogram(launches.subarray(0, intervalCount), finishes.subarray(0, intervalCount));
   let busyCoreMs = 0;
   for (let k = 0; k < histogram.length; k++) busyCoreMs += k * histogram[k];
   const peakConcurrentCores = histogram.length > 0 ? histogram.length - 1 : 0;

@@ -1,3 +1,4 @@
+import { coreCountHistogram } from './core-time-series.ts';
 import type { FailedTaskSample } from './event-handlers.ts';
 import { medianOfSorted } from './median.ts';
 import type { TaskFailureDetail, TaskFailureGroup } from './task-failure.ts';
@@ -348,24 +349,18 @@ function medianOf(tasks: TailTask[], valueOf: (t: TailTask) => number): number {
 // task-level fix can compress. Tasks missing either timestamp are skipped.
 export function computeTaskActiveMs(arr: Float64Array): number {
   const taskCount = arr.length / FIELDS.STRIDE;
-  const intervals: [number, number][] = [];
+  const launches = new Float64Array(taskCount);
+  const finishes = new Float64Array(taskCount);
+  let n = 0;
   for (let i = 0; i < taskCount; i++) {
     const launch = arr[i * FIELDS.STRIDE + FIELDS.LAUNCH_TIME];
     const finish = arr[i * FIELDS.STRIDE + FIELDS.FINISH_TIME];
-    if (launch > 0 && finish > launch) intervals.push([launch, finish]);
+    if (launch > 0 && finish > launch) { launches[n] = launch; finishes[n++] = finish; }
   }
-  intervals.sort((a, b) => a[0] - b[0]);
-  let activeMs = 0, start = -Infinity, end = -Infinity;
-  for (const [launch, finish] of intervals) {
-    if (launch > end) {
-      if (end > start) activeMs += end - start;
-      start = launch;
-      end = finish;
-    } else if (finish > end) {
-      end = finish;
-    }
-  }
-  if (end > start) activeMs += end - start;
+  // The time with at least one task running: every busy-core bucket above zero.
+  const histogram = coreCountHistogram(launches.subarray(0, n), finishes.subarray(0, n));
+  let activeMs = 0;
+  for (let k = 1; k < histogram.length; k++) activeMs += histogram[k];
   return activeMs;
 }
 

@@ -393,6 +393,9 @@ describe('StageDetailDialog', () => {
     const dialog = await screen.findByRole('dialog');
 
     expect(within(dialog).getByRole('heading', { name: 'Query Plan' })).toBeInTheDocument();
+    // The plan tree is built only once its section opens.
+    expect(within(dialog).queryByText('SortMergeJoin')).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole('heading', { name: 'Query Plan' }));
     expect(within(dialog).getByText('SortMergeJoin')).toBeInTheDocument();
 
     const exchangeSummary = within(dialog).getByText('Exchange hashpartitioning').closest('summary') as HTMLElement;
