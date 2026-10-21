@@ -236,6 +236,7 @@ describe('evaluateBudgets', () => {
     });
     expect(violated).toBe(true);
     expect(results[0]).toMatchObject({ name: 'max-failed-task-rate', status: 'violation' });
+    expect(results[0].detail).toBe('Task failure rate 0% (1 of 3000 task attempts failed) exceeds budget 0%.');
   });
 
   it('reports failed-task-rate inconclusive when no stage ran a task', () => {

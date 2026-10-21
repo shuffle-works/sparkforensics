@@ -111,10 +111,10 @@ function checkFailedTaskRate(appModel: AppModel, maxPct: number): BudgetResult {
     return { name: 'max-failed-task-rate', status: 'inconclusive', detail: 'No task data observed in this event log.' };
   }
   const pct = (failedAttempts / totalAttempts) * 100;
-  const rate = Math.round(pct * 10) / 10;
+  const rate = `${Math.round(pct * 10) / 10}% (${failedAttempts} of ${totalAttempts} task attempts failed)`;
   return pct > maxPct
-    ? { name: 'max-failed-task-rate', status: 'violation', detail: `Task failure rate ${rate}% exceeds budget ${maxPct}%.` }
-    : { name: 'max-failed-task-rate', status: 'pass', detail: `Task failure rate ${rate}% within budget ${maxPct}%.` };
+    ? { name: 'max-failed-task-rate', status: 'violation', detail: `Task failure rate ${rate} exceeds budget ${maxPct}%.` }
+    : { name: 'max-failed-task-rate', status: 'pass', detail: `Task failure rate ${rate} within budget ${maxPct}%.` };
 }
 
 // Busy core time: the share of available executor core time that ran tasks, 100 minus the
