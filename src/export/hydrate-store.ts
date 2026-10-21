@@ -26,6 +26,9 @@ const isObject = (value: unknown): value is object => value != null && typeof va
 const REQUIRED_RESULTS: { key: keyof ExportRunData; present: (value: unknown) => boolean; label: string }[] = [
   { key: 'configFindings', present: Array.isArray, label: 'config audit results' },
   { key: 'interpretation', present: isObject, label: 'run interpretation' },
+  { key: 'stages', present: Array.isArray, label: 'stage list' },
+  { key: 'sql', present: Array.isArray, label: 'SQL execution list' },
+  { key: 'jobs', present: Array.isArray, label: 'job list' },
 ];
 
 /** Why this bundle cannot render `payload`, or null when it can. The bundle
@@ -86,4 +89,25 @@ export function hydrateExportStore(data: ExportRunData): void {
   store.getState().setInterpretation({ data: data.interpretation, findings: [...catalog, ...data.configFindings] });
   store.getState().setSkippedLines(data.skippedLines);
   store.getState().setStatus('ready');
+}
+
+const UNREADABLE_PAYLOAD_REASON =
+  'The run data in this file is missing or unreadable. Keep data.js in the same folder as index.html, or export the run again.';
+
+/** Decodes the data.js payload and hydrates the store from it. Returns null once the dashboard
+ * can render, or the reason it cannot: a payload version or shape this bundle refuses, or a
+ * payload that is missing (data.js not loaded) or damaged (truncated gzip, invalid JSON, wrong
+ * shape). Never throws, so the caller always has a view to show. */
+export function loadExportPayload(encoded: unknown): string | null {
+  if (typeof encoded !== 'string' || encoded === '') return UNREADABLE_PAYLOAD_REASON;
+  try {
+    const payload = decodeRunPayload(encoded);
+    const unsupported = unsupportedPayloadReason(payload);
+    if (unsupported != null) return unsupported;
+    hydrateExportStore(payload as ExportRunData);
+    return null;
+  } catch (error) {
+    console.error('Export payload could not be loaded:', error);
+    return UNREADABLE_PAYLOAD_REASON;
+  }
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { analyze } from '../src/analyzer.js';
 import { stripPlanDescription, emitParseCompletion, parseTaskEnd } from '../src/event-handlers.ts';
 import { computeTaskActiveMs, computePeakConcurrentTasks, computeTailReplayRecoveryMs } from '../src/stage-quantiles.ts';
-import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
+import { buildChunkDecoder, createState, processEvent, dispatchLine, runParse, reportParseFailure, runParseFromUrl, runParseFiles, naturalCompare, reassembleRollingEntries, sniffCodec, parseSparkMemoryMB, FIELDS, TASK_FIELD_NAMES, computeDurationQuantiles, computeFieldQuantiles, classifySpill, collectStageExecutorMetrics, decodeShsArchive } from '../src/parser-worker.js';
 import { createModelCallbacks } from '../src/model-assembler.ts';
 import { routeMessage } from '../src/ingest.ts';
 import { listZipEntries } from '../src/zip-archive.ts';
@@ -4010,5 +4010,33 @@ describe('accumulateTask: executor metric peaks from TaskEnd', () => {
     processEvent(taskEnd('2', undefined), s);
     expect(completion(s)).toEqual({});
     expect(s.evidenceInputs.executorMetricRows).toBe(0);
+  });
+});
+
+describe('reportParseFailure', () => {
+  it('reports a file that cannot be read after the drop as an error message', async () => {
+    const unreadable = {
+      name: 'changed.log',
+      size: 100,
+      slice: () => ({ arrayBuffer: () => Promise.reject(new DOMException('The requested file could not be read', 'NotReadableError')) }),
+    };
+    const emitted = [];
+    const emit = (m) => emitted.push(m);
+
+    await reportParseFailure(() => runParse(unreadable, createState(), { emit }), emit);
+
+    expect(emitted).toEqual([{ type: 'error', message: 'Could not read the event log: The requested file could not be read' }]);
+  });
+
+  it('reports a non-Error rejection', async () => {
+    const emitted = [];
+    await reportParseFailure(() => Promise.reject('plain string'), (m) => emitted.push(m));
+    expect(emitted).toEqual([{ type: 'error', message: 'Could not read the event log: plain string' }]);
+  });
+
+  it('emits nothing when the task succeeds', async () => {
+    const emitted = [];
+    await reportParseFailure(async () => {}, (m) => emitted.push(m));
+    expect(emitted).toEqual([]);
   });
 });
