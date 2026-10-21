@@ -8,8 +8,8 @@ Evaluate a run against pass/fail thresholds: the MCP equivalent of the CLI's
 
 Parameters (all optional):
 
-- `source` / `runId`: identify the run to evaluate (same shape as
-  `diagnose_run`). When `runIdB`/`sourceB` is also given, this run is the
+- `source` / `runId`: identify the run to evaluate (see
+  [Common parameters](../mcp-tools.md#common-parameters)). When `runIdB`/`sourceB` is also given, this run is the
   regression baseline instead.
 - `maxRuntimeMs`, `maxSpillGb`, `maxSkewRatio`, `maxFailedTaskRatePct`,
   `minEfficiencyPct`: absolute budgets, each evaluated only if provided. Each is

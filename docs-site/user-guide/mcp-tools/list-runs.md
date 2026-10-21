@@ -3,7 +3,8 @@
 Reference for the `list_runs` tool of the SparkForensics MCP server.
 
 List candidate Spark event-log runs from a local directory or a Spark
-History Server, before diagnosing one with the tools above. Local-mode
+History Server, before diagnosing one with [`diagnose_run`](./diagnose-run.md) or another
+[MCP tool](../mcp-tools.md). Local-mode
 scanning is non-recursive: only the files and rolling-log subdirectories
 directly inside `dir` are considered. Runs are listed newest first.
 
@@ -21,7 +22,7 @@ Parameters:
 - `maxResults` (number, optional, default 100): caps the number of runs
   returned; when more candidates matched, `truncated` is `true`.
 - `redact` (boolean, optional, default `false`): pseudonymizes every run's
-  app id, name and `source` (see the note at the top of this page).
+  app id, name and `source` (see [`redact` in the MCP tools reference](../mcp-tools.md)).
 
 Example call:
 
@@ -46,8 +47,8 @@ Example response:
 }
 ```
 
-Each entry's `source` is the same shape `diagnose_run`/`get_run_summary`
-accept as `source`, so a result row can be passed straight into those tools
+Each entry's `source` has the shape the other tools accept as `source`
+(see [Common parameters](../mcp-tools.md#common-parameters)), so a result row can be passed straight into those tools
 without re-deriving anything, unless `redact` is on: redaction replaces
 `source.path` (or `source.appId`) with the pseudonym, so a redacted row can't
 be loaded. A row can also carry `durationMs` (History Server mode only) and

@@ -29,11 +29,11 @@ turns them into findings.
   Node companion that can also pull runs from a Spark History Server.
 - Event logs are streamed and parsed off the main thread in a Web Worker,
   so a 240MB+ (or multi-GB) NDJSON log doesn't freeze the tab.
-- About 25 built-in detectors cover skew, shuffle, spill, GC
+- 25 finding types cover skew, shuffle, spill, GC
   pressure, stragglers, cold start, cache/memory utilization, autoscaling
   churn, job/stage failures and partition sizing, plus a SQL Plan Advisor
   (duplicate subtrees, small files, broadcast sizing) and a config audit.
-  Full roster in the [detector contract](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract).
+  Every detector and its thresholds are in the [detector table](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract/threshold-tables#bottleneck-thresholds).
 - Fix These First orders every finding by its estimated wall-clock impact,
   not severity alone, so the top row is the fix worth doing first.
 - Run comparison (A/B) mode structurally matches stages across two
@@ -89,6 +89,8 @@ directly. The `sparkforensics-analyze` alias package also works:
 That's a headless run against budget thresholds. See [Command-line
 reference](#command-line-reference) below for HTML export, Spark History
 Server fetching, baseline comparisons, and redaction.
+To run a detector check with your own threshold, see
+[Tuning detector thresholds](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started/tuning-thresholds).
 
 ## Development
 
@@ -153,16 +155,9 @@ thing without publishing or installing the package.
 
 #### Server configuration
 
-All settings have working defaults; override them with environment
-variables:
-
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `PORT` | `4173` | Listen port (the `--port` flag takes precedence) |
-| `SPARKFORENSICS_SHS_TIMEOUT_MS` | `30000` | Spark History Server fetch timeout: response headers must arrive within this window, and a streaming body that goes idle this long is cut off. Applies to both the `/shs-proxy` route and the MCP archive download. Progressing downloads of any size are unaffected. |
-| `SPARKFORENSICS_MCP_CACHE_CAP` | `8` | Max parsed runs kept in the MCP tool cache |
-| `SPARKFORENSICS_MCP_CACHE_TTL_MS` | `900000` | Idle eviction time for cached MCP runs (15 min) |
-| `SPARKFORENSICS_MAX_ARCHIVE_BYTES` | `1073741824` | Largest SHS event-log archive the MCP tools or the `--shs-base-url` CLI mode will buffer (1 GiB); larger responses fail with `archive-too-large` |
+All settings have working defaults. The port (`PORT` or `--port`) and the
+`SPARKFORENSICS_*` environment variables are listed in
+[Server configuration](https://shuffle-works.github.io/sparkforensics/docs/user-guide/getting-started#server-configuration).
 
 ### SHS-proxy route test fixture
 
@@ -295,7 +290,7 @@ The full documentation is published at
   the dashboard, run comparison, CI and automation
 - [Understanding findings](https://shuffle-works.github.io/sparkforensics/docs/user-guide/understanding-findings)
 - [MCP tools](https://shuffle-works.github.io/sparkforensics/docs/user-guide/mcp-tools)
-- [Detector roster](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract)
+- [Detector table](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/detector-contract/threshold-tables#bottleneck-thresholds)
 - [Worker protocol](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/worker-protocol)
 - [Streaming/parsing design](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/overview#streaming)
 - [Widget layout](https://shuffle-works.github.io/sparkforensics/docs/contributor-guide/architecture/widget-rendering)

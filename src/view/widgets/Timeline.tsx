@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { Inbox } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Tooltip, XAxis, YAxis } from 'recharts';
 
@@ -59,33 +59,39 @@ interface TimelineRow {
   flagged: boolean;
 }
 
-export function Timeline({ appModel, catalog }: TimelineProps) {
-  const { openStage } = useStageDetail();
+// The run-wide figures every row shares, recomputed only when the run or its findings change.
+function summarizeRun(appModel: AppModel, catalog: Finding[]) {
   const allStages = [...appModel.stages.values()].filter((s) => s.submittedAt && s.completedAt);
-  const total = allStages.length;
   const earliest = allStages.reduce((m, s) => Math.min(m, s.submittedAt!), Infinity);
   const appStart = (appModel.app?.startTime as number | undefined) ?? (Number.isFinite(earliest) ? earliest : 0);
   const flagged = new Set(catalog.filter((f) => f.stageId != null).map((f) => f.stageId));
+  return { allStages, total: allStages.length, appStart, flagged };
+}
+
+export const Timeline = memo(function Timeline({ appModel, catalog }: TimelineProps) {
+  const { openStage } = useStageDetail();
+  const { allStages, total, appStart, flagged } = useMemo(() => summarizeRun(appModel, catalog), [appModel, catalog]);
 
   const density = useWidgetDensity();
   // Density only picks the starting point: Basic opens capped to the fixed
   // top-N, Advanced opens showing every stage. Seeded once on mount (like
   // WidgetCard's own uncontrolled open state) so a later density toggle
-  // doesn't clobber a manual edit made via the input below.
+  // doesn't clobber a manual edit made via the input below. The Dashboard keys
+  // this widget by the active file, so each run starts from its own default.
   const [topN, setTopN] = useState(() => (density === 'advanced' ? total : TIMELINE_TOP_N));
 
-  const { stages } = selectTimelineStages(allStages, topN);
-  // Even if the user raises topN past a legible bar count, downsample the series
-  // handed to the chart (Recharts renders one SVG node per bar).
-  const sampled = downsample(stages);
-
-  const rows: TimelineRow[] = sampled.map((s) => ({
-    stageId: s.id,
-    label: `Stage ${s.id}`,
-    wait: s.submittedAt! - appStart,
-    duration: s.completedAt! - s.submittedAt!,
-    flagged: flagged.has(s.id),
-  }));
+  const rows = useMemo<TimelineRow[]>(() => {
+    const { stages } = selectTimelineStages(allStages, topN);
+    // Even if the user raises topN past a legible bar count, downsample the series
+    // handed to the chart (Recharts renders one SVG node per bar).
+    return downsample(stages).map((s) => ({
+      stageId: s.id,
+      label: `Stage ${s.id}`,
+      wait: s.submittedAt! - appStart,
+      duration: s.completedAt! - s.submittedAt!,
+      flagged: flagged.has(s.id),
+    }));
+  }, [allStages, topN, appStart, flagged]);
 
   // Grow the chart with the row count so every label gets a full ROW_HEIGHT
   // of vertical space, up to MAX_CHART_HEIGHT; past that cap, fall back to
@@ -193,4 +199,4 @@ export function Timeline({ appModel, catalog }: TimelineProps) {
       )}
     </WidgetCard>
   );
-}
+});

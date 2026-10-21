@@ -3,6 +3,58 @@
 SparkForensics has an MCP server with eight tools, so an MCP-aware client (or
 an AI agent) can diagnose a run without opening the dashboard.
 
+| Tool | What it does |
+|------|--------------|
+| [`list_runs`](./mcp-tools/list-runs.md) | Lists event-log runs in a local directory or on a Spark History Server. |
+| [`diagnose_run`](./mcp-tools/diagnose-run.md) | Returns the verdict, the ranked findings and the recommendations for one run. |
+| [`get_run_summary`](./mcp-tools/get-run-summary.md) | Returns counts, duration and how the run ended, with no findings. |
+| [`compare_runs`](./mcp-tools/compare-runs.md) | Compares a baseline run with a candidate run: verdict, metric deltas and findings delta. |
+| [`evaluate_budgets`](./mcp-tools/evaluate-budgets.md) | Checks a run, or a candidate against a baseline, against pass/fail budgets. |
+| [`get_finding_evidence`](./mcp-tools/get-finding-evidence.md) | Returns the row of one finding by id. |
+| [`get_finding_documentation`](./mcp-tools/get-finding-documentation.md) | Returns the detection and tuning notes for one finding type. |
+| [`get_reference_doc`](./mcp-tools/get-reference-doc.md) | Returns one tuning-reference chapter by anchor. |
+
+## Common parameters {#common-parameters}
+
+The tools that load a run (`diagnose_run`, `get_run_summary`, `compare_runs`
+and `evaluate_budgets`) take `source` and `runId`. Each tool page lists the
+other parameters.
+
+- `source`: where to load a run from. Either `{ path: string }` for a local
+  event-log file or rolling-log directory, or
+  `{ shsBaseUrl: string, appId: string, attemptId?: string }` for a Spark
+  History Server run. An `appId` must have one of Spark's id forms
+  (`application_<digits>_<digits>`, `local-<digits>`, `app-...`, `spark-...`,
+  `driver-<digits>`). A run loaded this way gets a `runId`.
+- `runId`: a run already loaded in this server process, as returned by an
+  earlier call. Pass `source` or `runId`. When you pass both, `runId` wins.
+- `redact`: `boolean`, default `false`. `list_runs`, `diagnose_run`,
+  `get_run_summary`, `compare_runs` and `get_finding_evidence` accept it. See
+  [Redaction](#redaction).
+
+`compare_runs` takes two runs, so it names them `runIdA`/`sourceA` and
+`runIdB`/`sourceB`. `evaluate_budgets` takes `runId`/`source` and an optional
+second run as `runIdB`/`sourceB`. `get_finding_evidence` takes only a `runId`.
+`list_runs` returns one `source` per run, in this shape, so a row can be passed
+to the other tools.
+
+## Run roles {#run-roles}
+
+The CLI and the two MCP tools that take two runs give the runs different roles:
+
+| Surface | Baseline | Candidate |
+|---------|----------|-----------|
+| CLI | The `--baseline` run | The positional run |
+| `compare_runs` | `runIdA` / `sourceA` | `runIdB` / `sourceB` |
+| `evaluate_budgets` with one run | None | `runId` / `source` |
+| `evaluate_budgets` with two runs | `runId` / `source` | `runIdB` / `sourceB` |
+
+Absolute budgets and the `run-complete` check apply to the candidate. With
+two runs, `evaluate_budgets` returns the `runId` of the first run, the
+baseline.
+
+## Redaction {#redaction}
+
 Five of the eight tools (`list_runs`, `diagnose_run`, `get_run_summary`,
 `compare_runs`, `get_finding_evidence`) accept an optional `redact: boolean`
 parameter (default `false`) that pseudonymizes the app id and any host name or IP
