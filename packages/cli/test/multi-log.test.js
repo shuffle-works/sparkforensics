@@ -403,3 +403,15 @@ describe('single-candidate exit codes for unreadable input', () => {
     expect((await run([p('same'), '--baseline', p('baseline'), '--budgets', p('missing-budgets.json')])).status).toBe(2);
   });
 });
+
+describe('skipped log lines across several candidates', () => {
+  it('carries each candidate\'s count and gates only the damaged one inconclusive', async () => {
+    const damaged = log({ slowMs: 2000 }).replace('{"Event":"SparkListenerTaskEnd"', '{corrupt').split('\n');
+    writeFileSync(p('damaged'), damaged.join('\n'));
+    const { status, lines } = await run([p('same'), p('damaged'), '--baseline', p('baseline')]);
+    expect(lines.map((l) => l.candidate.summary.skippedLines)).toEqual([0, 1]);
+    expect(lines.map((l) => l.status)).toEqual(['pass', 'inconclusive']);
+    expect(lines[1].budgets).toEqual([expect.objectContaining({ name: 'parse-incomplete', status: 'inconclusive' })]);
+    expect(status).toBe(3);
+  });
+});

@@ -22,6 +22,13 @@ that is not a non-negative decimal, an unknown `--impact`, `--type` or
 4 when the candidate log can't be read or parsed or its History Server fetch
 fails, 5 when the `--baseline` log can't be read or parsed, and 6 for an
 internal error, including a failed `--export-html`.
+
+A log line the parser can't read (corrupt or invalid JSON, or an event that
+fails its schema) is skipped, so every total covers only the lines that
+parsed. The report's `summary.skippedLines` holds the count (`0` for a clean
+log), the Markdown report adds a `Skipped lines` line when it is above `0`, and
+a `parse-incomplete` budget result with status `inconclusive` makes the exit
+code `3` when no budget is violated. It never fails the run on its own.
 When several of these apply, the worst wins in this order: 6, 5, 4, 1, 3, 0.
 A usage error exits 2 before any log is read.
 
@@ -866,7 +873,8 @@ Each line is one JSON object:
 
 A line's `status` follows the single-candidate rules: `violation` if any
 budget result is a violation, else `inconclusive` if any is inconclusive
-(including the `run-complete` check for a log with no `ApplicationEnd`),
+(including the `run-complete` check for a log with no `ApplicationEnd` and the
+`parse-incomplete` check for a log with skipped lines),
 else `pass`.
 
 A candidate that can't be read or parsed doesn't stop the others. Its line

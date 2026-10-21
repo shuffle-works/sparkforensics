@@ -18,7 +18,7 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, writ
 ```
 
 - `summary` is the run header: `{ app: { id, name, sparkVersion }, stageCount,
-  jobCount, sqlExecutionCount, findingCount, impactBandCounts,
+  jobCount, sqlExecutionCount, skippedLines, findingCount, impactBandCounts,
   actionableFindingCount, actionableImpactBandCounts, clean, outcome, runShape }`. `findingCount`
   counts every row in `findings`; the `actionable*` counts leave out evidence
   caveats and the `incompleteRun` row, the same set the dashboard's top bar and

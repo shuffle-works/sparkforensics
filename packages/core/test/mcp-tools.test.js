@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -1199,6 +1199,35 @@ describe('budgets on a redacted comparison', () => {
     } finally {
       rmSync(baseline.dir, { recursive: true, force: true });
       rmSync(candidate.dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('skipped lines in MCP output', () => {
+  // A complete log whose 6 TaskEnd lines are replaced by a truncated JSON fragment.
+  function corruptLog(path) {
+    const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
+    let replaced = 0;
+    const damaged = lines.map((line) => (line.includes('SparkListenerTaskEnd') && replaced++ < 6 ? '{corrupt' : line));
+    writeFileSync(path, `${damaged.join('\n')}\n`);
+  }
+
+  it.each([
+    ['a damaged log', true, 6],
+    ['a clean log', false, 0],
+  ])('reports the count through summary, diagnose_run and the budget gate for %s', async (_label, damage, expected) => {
+    const { dir, path } = tmpEventLogWithFindings();
+    try {
+      if (damage) corruptLog(path);
+      const { runId } = await resolveOrCreateRun({ source: { path } });
+      expect(getRunSummary(runId).skippedLines).toBe(expected);
+      expect(diagnoseRun(runId, { include: ['summary'] }).summary.skippedLines).toBe(expected);
+      const { results, violated, inconclusive } = await evaluateBudgetsForRun({ runId }, {});
+      expect(results.some((r) => r.name === 'parse-incomplete')).toBe(damage);
+      expect(violated).toBe(false);
+      expect(inconclusive).toBe(damage);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

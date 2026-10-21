@@ -70,12 +70,15 @@ regression budget, or a run with no trustworthy task-level evidence) reports
 budgets read figures and impact bands, never the stage text redaction rewrites,
 so a redacted comparison gives the same results. Independent of which budgets you pass, an
 evaluated run with no ApplicationEnd event adds a `run-complete` result with
-status `inconclusive`, the same check that makes the CLI exit `3`. With two
-runs, the check applies to the candidate.
+status `inconclusive`, the same check that makes the CLI exit `3`. A run
+whose parser skipped malformed or invalid log lines adds a `parse-incomplete`
+result with status `inconclusive` the same way, since its totals cover only the
+lines that parsed. With two runs, both checks apply to the candidate.
 
 Each result's `name` is one of `max-runtime`, `max-spill`, `max-skew`,
 `max-failed-task-rate`, `min-efficiency`, `max-regression`,
-`max-stage-regression`, `fail-on-introduced` and `run-complete`. A
+`max-stage-regression`, `fail-on-introduced`, `run-complete` and
+`parse-incomplete`. A
 `max-regression` or `max-stage-regression` result also carries `metric`, the
 key it checked. The returned `runId` is the first
 run's (the baseline, when two runs are given).

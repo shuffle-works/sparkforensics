@@ -82,7 +82,9 @@ When several apply the worst wins: `6`, `5`, `4`, `1`, `3`, `0`; a violation
 always wins over an inconclusive result in the same run (exit `1`, not `3`).
 `evaluateBudgets()` also always adds an inconclusive `run-complete` result
 when the catalog has an `incompleteRun` finding, so a run with no
-`ApplicationEnd` exits `3` even with no budget flags. With `--baseline`, the
+`ApplicationEnd` exits `3` even with no budget flags. It adds a
+`parse-incomplete` inconclusive result the same way when `appModel.skippedLines`
+is above `0`. With `--baseline`, the
 absolute budgets and this check apply to the candidate run; the MCP
 `evaluate_budgets` tool below uses the same function with the same roles.
 

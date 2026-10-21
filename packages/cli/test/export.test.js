@@ -124,8 +124,9 @@ describe('--export-html argument handling', () => {
         ['--shs-base-url', 'http://shs:18080', '--app-id', 'application_1_1', '--export-html', destDir],
         { fetchImpl: shsZipFetch(ndjson) },
       );
-      expect(status).toBe(0);
-      expect(stderr).toBe('');
+      // The skipped line makes the budget gate inconclusive (exit 3); the export is still written.
+      expect(status).toBe(3);
+      expect(stderr).toMatch(/\[inconclusive\] parse-incomplete/);
       const dataJs = readFileSync(join(destDir, 'data.js'), 'utf8');
       const parsed = parseRunPayload(dataJs);
       // main()'s SHS branch reports the skipped line count of the real parse.

@@ -27,7 +27,7 @@ export const DEFAULT_STAGE_BUDGET_QUALITIES: readonly StagePair['quality'][] = [
 export const NEUTRAL_PAIR_METRICS: ReadonlySet<string> = new Set(['inputBytes', 'outputBytes']);
 export interface BudgetResult {
   name: 'max-runtime' | 'max-spill' | 'max-skew' | 'max-failed-task-rate' | 'min-efficiency'
-    | 'max-regression' | 'max-stage-regression' | 'fail-on-introduced' | 'run-complete';
+    | 'max-regression' | 'max-stage-regression' | 'fail-on-introduced' | 'run-complete' | 'parse-incomplete';
   status: 'pass' | 'violation' | 'inconclusive';
   detail: string;
   /** Set on `max-regression` and `max-stage-regression` results: the metric key that budget checks. */
@@ -272,6 +272,12 @@ export function evaluateBudgets({ appModel, catalog, budgets, comparison, thresh
   const incompleteRunFinding = catalog.find((f) => f.type === 'incompleteRun');
   if (incompleteRunFinding) {
     results.push({ name: 'run-complete', status: 'inconclusive', detail: incompleteRunFinding.recommendation ?? 'Event log has no ApplicationEnd event.' });
+  }
+  // Same reasoning for skipped lines: a log damaged mid-file understates its totals, so a passing
+  // budget on it can't be trusted. Inconclusive, never a violation on its own.
+  const skippedLines = appModel.skippedLines ?? 0;
+  if (skippedLines > 0) {
+    results.push({ name: 'parse-incomplete', status: 'inconclusive', detail: `${skippedLines} line${skippedLines === 1 ? '' : 's'} of the event log could not be parsed and were skipped; totals cover only the lines that parsed.` });
   }
   return {
     results,

@@ -466,3 +466,33 @@ describe('evaluateBudgets', () => {
     ]);
   });
 });
+
+describe('evaluateBudgets parse-incomplete', () => {
+  const complete = [
+    '{"Event":"SparkListenerApplicationStart","App ID":"app-skip","App Name":"t","Timestamp":0}',
+    '{"Event":"SparkListenerApplicationEnd","Timestamp":100}',
+  ];
+
+  it('reports inconclusive, never a violation, when the parse skipped lines, even with no budgets set', async () => {
+    const appModel = await parsedAppModel([complete[0], '{corrupt', complete[1]]);
+    const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog: [], budgets: {} });
+    expect(results).toEqual([{ name: 'parse-incomplete', status: 'inconclusive', detail: expect.stringContaining('1 line') }]);
+    expect(violated).toBe(false);
+    expect(inconclusive).toBe(true);
+  });
+
+  it('adds no row for a log that skipped nothing', async () => {
+    const appModel = await parsedAppModel(complete);
+    expect(appModel.skippedLines).toBe(0);
+    const { results, inconclusive } = evaluateBudgets({ appModel, catalog: [], budgets: {} });
+    expect(results).toEqual([]);
+    expect(inconclusive).toBe(false);
+  });
+
+  it('keeps the row beside a passing budget', () => {
+    const appModel = baseAppModel({ skippedLines: 6 });
+    const { results } = evaluateBudgets({ appModel, catalog: [], budgets: { maxRuntimeMs: 60_000 } });
+    expect(results.map((r) => [r.name, r.status])).toEqual([['max-runtime', 'pass'], ['parse-incomplete', 'inconclusive']]);
+    expect(results[1].detail).toContain('6 lines');
+  });
+});

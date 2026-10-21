@@ -3,6 +3,8 @@
 Reference for the `get_run_summary` tool of the SparkForensics MCP server.
 
 App/stage/job/sql counts, duration, and how the run ended: no findings.
+`skippedLines` counts the log lines the parser skipped as malformed or
+invalid; above `0` the totals cover only the lines that parsed.
 `failedJobs`/`totalJobs` count only jobs with an end record, and
 `failureReason` is the first line of Spark's own recorded reason when a job
 failed, the same line the dashboard verdict quotes (`failureReasonStageId` is
@@ -36,6 +38,7 @@ Example response:
   "sqlExecutionCount": 0,
   "executorCount": { "added": 0, "removed": 0 },
   "durationMs": 100,
+  "skippedLines": 0,
   "runComplete": true,
   "failedJobs": 0,
   "totalJobs": 0,

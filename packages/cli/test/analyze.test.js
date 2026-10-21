@@ -1091,3 +1091,39 @@ describe('sparkforensics-analyze metrics and effectiveConf blocks', () => {
     });
   });
 });
+
+describe('skipped log lines', () => {
+  // The skew fixture is a complete log; corrupting 6 of its TaskEnd lines leaves it complete but short of records.
+  function withDamagedLog(damage, fn) {
+    const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-skipped-'));
+    const path = join(dir, 'eventlog');
+    let replaced = 0;
+    const lines = ndjsonWithSkew().split('\n').filter(Boolean);
+    writeFileSync(path, `${lines.map((l) => (damage && l.includes('SparkListenerTaskEnd') && replaced++ < 6 ? '{corrupt' : l)).join('\n')}\n`);
+    try { return fn(path); } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+
+  it('shows the count in the JSON report and gates inconclusive (exit 3) for a damaged log', () => {
+    withDamagedLog(true, (path) => {
+      const { stdout, stderr, status } = runCli([path]);
+      expect(JSON.parse(stdout).summary.skippedLines).toBe(6);
+      expect(stderr).toMatch(/\[inconclusive\] parse-incomplete/);
+      expect(status).toBe(3);
+    });
+  });
+
+  it('shows the count in the Markdown report', () => {
+    withDamagedLog(true, (path) => {
+      expect(runCli([path, '--format', 'md']).stdout).toContain('- Skipped lines: 6');
+    });
+  });
+
+  it('reports zero skipped lines and does not change the exit code for a clean log', () => {
+    withDamagedLog(false, (path) => {
+      const { stdout, stderr, status } = runCli([path]);
+      expect(JSON.parse(stdout).summary.skippedLines).toBe(0);
+      expect(stderr).not.toMatch(/parse-incomplete/);
+      expect(status).toBe(0);
+    });
+  });
+});
