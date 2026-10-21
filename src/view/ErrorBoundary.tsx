@@ -7,6 +7,9 @@ interface ErrorBoundaryProps {
   /** What to show in place of `children` after one of them throws while rendering (or while a
    * lazy chunk fails to load). `reset` clears the error and renders `children` again. */
   fallback: (error: Error, reset: () => void) => ReactNode;
+  /** A caught error is cleared when this value changes, so a fallback does not outlive the data
+   * that caused it. */
+  resetKey?: unknown;
   children: ReactNode;
 }
 
@@ -25,6 +28,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('Render error caught by ErrorBoundary:', error, info.componentStack);
+  }
+
+  componentDidUpdate(prevProps: ErrorBoundaryProps) {
+    if (this.state.error && prevProps.resetKey !== this.props.resetKey) this.reset();
   }
 
   reset = () => this.setState({ error: null });
