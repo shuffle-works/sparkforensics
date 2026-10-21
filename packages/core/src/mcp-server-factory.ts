@@ -9,6 +9,15 @@ import { listRuns } from './list-runs.ts';
 import type { ThresholdOverrides } from './detectors.ts';
 import type { ReportGenerator } from './run-output.ts';
 import { MAX_NORMALIZE_PATTERN_LENGTH, MAX_NORMALIZE_PATTERNS } from './stage-alignment.ts';
+import { IMPACT_BANDS } from './format-utils.ts';
+import { COMPARISON_METRIC_KEYS } from './run-comparison.ts';
+import { FINDING_TYPES } from './cli/flag-values.ts';
+
+// z.enum wants a non-empty tuple; these lists are never empty.
+const nonEmpty = (values: readonly string[]) => values as [string, ...string[]];
+const impactBandSchema = z.enum(nonEmpty(IMPACT_BANDS));
+const findingTypeSchema = z.enum(nonEmpty(FINDING_TYPES));
+const comparisonMetricSchema = z.enum(nonEmpty(COMPARISON_METRIC_KEYS));
 
 const sourceSchema = z.union([
   z.object({ path: z.string() }),
@@ -104,7 +113,7 @@ export function createMcpServer(
       view: z.enum(['compact', 'full']).optional()
         .describe('compact (default): one short row per finding. full: the CLI report\'s rows, clean checks and not-checked checks.'),
       include: z.array(z.enum(['summary', 'evidenceAvailability', 'detectors'])).optional(),
-      impactBand: z.array(z.string()).optional(), type: z.array(z.string()).optional(), stageId: z.number().int().optional(),
+      impactBand: z.array(impactBandSchema).optional(), type: z.array(findingTypeSchema).optional(), stageId: z.number().int().nonnegative().optional(),
       minBand: z.enum(['critical', 'warning', 'info']).optional()
         .describe('List only findings at this band or a more severe one.'),
       maxFindings: z.number().int().nonnegative().optional()
@@ -148,12 +157,13 @@ export function createMcpServer(
     inputSchema: {
       source: sourceSchema.optional().describe('The run to evaluate. When sourceB/runIdB is given, this is the regression baseline instead, and the absolute budgets apply to sourceB/runIdB.'),
       runId: runRefSchema.runId.describe('Same as `source`, referencing an already-resolved run by id.'),
-      maxRuntimeMs: z.number().optional(), maxSpillGb: z.number().optional(), maxSkewRatio: z.number().optional(),
-      maxFailedTaskRatePct: z.number().optional(), minEfficiencyPct: z.number().optional(),
+      maxRuntimeMs: z.number().nonnegative().optional(), maxSpillGb: z.number().nonnegative().optional(), maxSkewRatio: z.number().nonnegative().optional(),
+      maxFailedTaskRatePct: z.number().nonnegative().optional(), minEfficiencyPct: z.number().nonnegative().optional(),
       sourceB: sourceSchema.optional().describe('Optional candidate run, compared against source/runId as the regression baseline (maxRegressionPct/failOnIntroduced). When given, the absolute budgets (maxRuntimeMs etc.) are evaluated on this run.'),
       runIdB: secondRunRefSchema.runIdB.describe('Same as `sourceB`, referencing an already-resolved run by id.'),
-      maxRegressionPct: z.number().optional(), regressionMetric: z.string().optional(), failOnIntroduced: z.string().optional(),
-      regressionBudgets: z.array(z.object({ metric: z.string(), maxPct: z.number().nonnegative() })).optional()
+      maxRegressionPct: z.number().nonnegative().optional(), regressionMetric: comparisonMetricSchema.optional(),
+      failOnIntroduced: z.enum(['all', ...nonEmpty(IMPACT_BANDS)]).optional(),
+      regressionBudgets: z.array(z.object({ metric: comparisonMetricSchema, maxPct: z.number().nonnegative() })).optional()
         .describe('Further regression budgets, one per metric (the CLI\'s repeated --regression-budget). A metric can be budgeted once across this list and maxRegressionPct/regressionMetric.'),
       stageRegressionBudgets: z.array(z.object({ metric: z.string(), maxPct: z.number().nonnegative() })).optional()
         .describe('Per paired stage (needs sourceB/runIdB): fail when any eligible pair\'s metric (executorRunTime, executorCpuTime, memoryBytesSpilled, diskBytesSpilled, shuffleReadBytes, shuffleWriteBytes) regressed by more than maxPct. One entry per metric. Inconclusive when no stage pairs.'),
