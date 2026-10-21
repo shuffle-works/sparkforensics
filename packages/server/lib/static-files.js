@@ -42,7 +42,7 @@ export async function serveStatic(req, res, root) {
 
   // Path-traversal guard: the resolved path must stay within root.
   const rootPrefix = safeRoot + sep;
-  if (target !== safeRoot && !target.startsWith(rootPrefix)) {
+  if (!target.startsWith(rootPrefix)) {
     res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('Forbidden');
     return;
