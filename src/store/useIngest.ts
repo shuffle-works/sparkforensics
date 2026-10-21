@@ -96,7 +96,7 @@ export function useIngest(opts: Opts = {}) {
     try {
       const flagged = [...new Set(catalog.map((f) => f.stageId).filter((id): id is number => id != null))];
       const prefetched = await clientRef.current!.prefetchFlaggedStages(flagged);
-      for (const { stageId, metrics, fieldNames } of prefetched) store.getState().setTaskData(stageId, { metrics, fieldNames });
+      store.getState().setTaskDataBatch(prefetched.map(({ stageId, metrics, fieldNames }) => [stageId, { metrics, fieldNames }]));
     } catch (e) {
       console.warn('Stage data prefetch failed; stages load on demand:', e);
     }

@@ -1,5 +1,5 @@
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 /** A section heading that collapses its body behind a chevron: the same
@@ -10,12 +10,18 @@ export function CollapsibleSection({
   title,
   children,
   defaultOpen = false,
+  lazy = false,
 }: {
   title: string;
   children: ReactNode;
   defaultOpen?: boolean;
+  /** Build the body only once the section has been opened, then keep it mounted:
+   * for a body that is costly to build and rarely opened. */
+  lazy?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+  const everOpened = useRef(open);
+  if (open) everOpened.current = true;
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="space-y-2">
       <CollapsibleTrigger
@@ -29,7 +35,7 @@ export function CollapsibleSection({
           <ChevronDownIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
         )}
       </CollapsibleTrigger>
-      <CollapsibleContent keepMounted>{children}</CollapsibleContent>
+      <CollapsibleContent keepMounted>{lazy && !everOpened.current ? null : children}</CollapsibleContent>
     </Collapsible>
   );
 }

@@ -242,6 +242,9 @@ export interface ParserState {
   executorAccumState: Map<number, Map<number, number>>;
   rddInfo: Map<number, RddInfoRecord>;
   rddBlocks: Map<number, RddBlockState>;
+  // Resident block keys per executor, each as `<rddId>:<block key>`, so removing an executor drops
+  // its blocks without scanning every RDD's.
+  rddBlockKeysByExecutor: Map<string, Set<string>>;
   // SparkListenerBlockUpdated events for rdd_* blocks. Zero means the log carries no block-level
   // cache evidence (logBlockUpdates off, or nothing was ever cached).
   rddBlockUpdates: number;
@@ -457,6 +460,7 @@ export function createState(): ParserState {
     executorAccumState: new Map(),
     rddInfo: new Map(),
     rddBlocks: new Map(),
+    rddBlockKeysByExecutor: new Map(),
     rddBlockUpdates: 0,
     taskAccumStages: new Map(),
     lastTaskAccumIds: new Map(),
@@ -1108,9 +1112,16 @@ export function mergeStageRddInfo(
 
 const RDD_BLOCK_ID = /^rdd_(\d+)_(\d+)$/;
 
-function dropRddBlock(rdd: RddBlockState, key: string): void {
+// A block key is `<partition>@<executor id>`.
+const executorOfBlockKey = (key: string): string => key.slice(key.indexOf('@') + 1);
+
+function dropRddBlock(state: ParserState, rddId: number, rdd: RddBlockState, key: string): void {
   const prev = rdd.blocks.get(key);
   if (!prev) return;
+  const executor = executorOfBlockKey(key);
+  const keys = state.rddBlockKeysByExecutor.get(executor);
+  keys?.delete(`${rddId}:${key}`);
+  if (keys?.size === 0) state.rddBlockKeysByExecutor.delete(executor);
   rdd.memorySize -= prev.memorySize;
   rdd.diskSize -= prev.diskSize;
   const replicas = (rdd.replicasByPartition.get(prev.partition) ?? 1) - 1;
@@ -1144,7 +1155,7 @@ export function recordBlockUpdate(event: z.infer<typeof BlockUpdatedEventSchema>
     state.rddBlocks.set(rddId, rdd);
   }
   const key = `${partition}@${info['Block Manager ID']?.['Executor ID'] ?? ''}`;
-  dropRddBlock(rdd, key);
+  dropRddBlock(state, rddId, rdd, key);
   if (resident) {
     // Sizes count only where the level says the block lives, as Spark's AppStatusListener does: a
     // drop from memory to disk reports Use Memory false but still carries the dropped bytes as
@@ -1155,6 +1166,10 @@ export function recordBlockUpdate(event: z.infer<typeof BlockUpdatedEventSchema>
       diskSize: sl['Use Disk'] ? info['Disk Size'] ?? 0 : 0,
     };
     rdd.blocks.set(key, block);
+    const executor = executorOfBlockKey(key);
+    const keys = state.rddBlockKeysByExecutor.get(executor);
+    if (keys) keys.add(`${rddId}:${key}`);
+    else state.rddBlockKeysByExecutor.set(executor, new Set([`${rddId}:${key}`]));
     rdd.memorySize += block.memorySize;
     rdd.diskSize += block.diskSize;
     rdd.replicasByPartition.set(partition, (rdd.replicasByPartition.get(partition) ?? 0) + 1);
@@ -1322,10 +1337,12 @@ export function removeExecutor(event: z.infer<typeof ExecutorRemovedEventSchema>
   state.executors.removed.push(ev);
   // Blocks lost with their executor get no BlockUpdated; drop them as Spark's AppStatusListener
   // does, so a partition re-cached elsewhere isn't counted twice.
-  const suffix = `@${ev.executorId}`;
-  for (const rdd of state.rddBlocks.values()) {
-    for (const key of rdd.blocks.keys()) {
-      if (key.endsWith(suffix)) dropRddBlock(rdd, key);
+  const keys = state.rddBlockKeysByExecutor.get(ev.executorId);
+  if (keys) {
+    for (const entry of [...keys]) {
+      const split = entry.indexOf(':');
+      const rddId = Number(entry.slice(0, split));
+      dropRddBlock(state, rddId, state.rddBlocks.get(rddId)!, entry.slice(split + 1));
     }
   }
   return { type: 'executor', data: ev };

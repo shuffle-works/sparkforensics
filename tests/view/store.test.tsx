@@ -16,6 +16,22 @@ test('setTaskData fills the lazy cache without replacing the map identity contra
   expect(store.getState().taskDataCache.get(7)?.fieldNames).toEqual(['duration', 'gcTime']);
 });
 
+test('setTaskDataBatch adds every entry in one state update', () => {
+  let updates = 0;
+  const unsubscribe = store.subscribe(() => { updates++; });
+  store.getState().setTaskDataBatch([
+    [1, { metrics: [1], fieldNames: ['duration'] }],
+    [2, { metrics: [2], fieldNames: ['duration'] }],
+    [3, { metrics: [3], fieldNames: ['duration'] }],
+  ]);
+  unsubscribe();
+  expect(updates).toBe(1);
+  expect(store.getState().taskDataCache.get(2)?.metrics).toEqual([2]);
+  const before = store.getState().taskDataCache;
+  store.getState().setTaskDataBatch([]);
+  expect(store.getState().taskDataCache).toBe(before);
+});
+
 test('resetModel clears model, catalog and caches', () => {
   store.getState().setCatalog([{ type: 'gc', stageId: 2, impactBand: 'warning' }]);
   store.getState().resetModel();
