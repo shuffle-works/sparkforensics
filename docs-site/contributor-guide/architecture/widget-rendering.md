@@ -39,7 +39,7 @@ anchor (call sites holding the finding pass `finding.docAnchor`; a widget
 header or grouped row passes `sharedDocAnchor(findings)`), else the type's
 single known anchor (the run interpretation's `detectors[type].docAnchor`, from
 `docAnchorForType` in `packages/core/src/detector-docs.ts`). The
-prop matters for `configAudit`, whose four entries carry different anchors,
+prop matters for `configAudit`, whose three entries carry different anchors,
 so the type lookup finds none. With an anchor, the pill itself links into
 the docs panel, and (density `advanced` only) a second icon link opens that
 tag's entry in `docs-site/user-guide/understanding-findings.md`
