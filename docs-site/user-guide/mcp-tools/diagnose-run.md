@@ -70,9 +70,9 @@ error, and when both are given `runId` wins):
   `driver-<digits>`).
 - `runId`: `string`
 - `view`: `"compact" | "full"` (default `"compact"`), see above
-- `redact`: `boolean` (default `false`), pseudonymizes the app id and any
-  host/IP tokens in the response, and replaces the app name with the app
-  id's pseudonym
+- `redact`: `boolean` (default `false`), pseudonymizes the app id, host
+  names and user names in the response, and replaces the app name with the
+  app id's pseudonym. See [What `--redact` covers](../getting-started/ci-and-automation.md#what-redact-covers)
 - `include`: array of `"summary" | "evidenceAvailability" | "detectors"`
   (default omitted, i.e. none). Each requested value adds one extra top-level
   field to the response, on top of the default `verdict`/`findings`/`recommendations`/

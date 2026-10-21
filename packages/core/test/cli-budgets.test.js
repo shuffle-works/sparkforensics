@@ -1,6 +1,17 @@
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { evaluateBudgets } from '../src/cli/budgets.js';
 import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
+import { collectRun } from '../src/cli/collect-run.ts';
+
+async function parsedAppModel(lines) {
+  const dir = mkdtempSync(join(tmpdir(), 'sf-budgets-'));
+  const path = join(dir, 'eventlog');
+  writeFileSync(path, `${lines.join('\n')}\n`);
+  try { return (await collectRun(path)).appModel; } finally { rmSync(dir, { recursive: true, force: true }); }
+}
 
 function baseAppModel(overrides = {}) {
   return {
@@ -50,9 +61,9 @@ describe('evaluateBudgets', () => {
 
   it('reports both violated and inconclusive when the run has one of each', () => {
     const appModel = baseAppModel({ app: { id: 'a', name: 'n', startTime: 0, endTime: null } });
-    const catalog = [{ type: 'spill', stageId: 1, impactBand: 'critical', value: 5 * 1024 ** 3 }];
+    appModel.stages = new Map([[1, { id: 1, taskCount: 10, memoryBytesSpilled: 5 * 1024 ** 3 }]]);
     const { violated, inconclusive } = evaluateBudgets({
-      appModel, catalog, budgets: { maxRuntimeMs: 1, maxSpillGb: 1 },
+      appModel, catalog: [], budgets: { maxRuntimeMs: 1, maxSpillGb: 1 },
     });
     expect(violated).toBe(true);
     expect(inconclusive).toBe(true);
@@ -66,18 +77,42 @@ describe('evaluateBudgets', () => {
     expect(inconclusive).toBe(true);
   });
 
-  it('flags a spill violation from the finding catalog', () => {
-    const catalog = [{ type: 'spill', stageId: 1, impactBand: 'critical', value: 5 * 1024 ** 3 }];
+  const GB = 1024 ** 3;
+
+  it('flags a spill violation from the stage spill figures', () => {
+    const stages = new Map([[1, { id: 1, taskCount: 10, memoryBytesSpilled: 5 * GB }]]);
     const { results, violated } = evaluateBudgets({
-      appModel: baseAppModel(), catalog, budgets: { maxSpillGb: 1 },
+      appModel: baseAppModel({ stages }), catalog: [], budgets: { maxSpillGb: 1 },
     });
     expect(violated).toBe(true);
     expect(results[0]).toMatchObject({ name: 'max-spill', status: 'violation' });
   });
 
-  it('passes spill when no spill finding exceeds budget', () => {
-    const { violated } = evaluateBudgets({ appModel: baseAppModel(), catalog: [], budgets: { maxSpillGb: 1 } });
+  it('flags a spill violation on a short stage the spill detector floors out of the catalog', () => {
+    // 200 GB spilled by a 20 s stage in a 10 h run: no spill finding, but the run broke the budget.
+    const stages = new Map([[1, { id: 1, taskCount: 10, submittedAt: 0, completedAt: 20_000, memoryBytesSpilled: 200 * GB }]]);
+    const appModel = baseAppModel({ app: { id: 'a', name: 'n', startTime: 0, endTime: 36_000_000 }, stages });
+    const { results, violated } = evaluateBudgets({ appModel, catalog: [], budgets: { maxSpillGb: 1 } });
+    expect(violated).toBe(true);
+    expect(results[0]).toMatchObject({ name: 'max-spill', status: 'violation' });
+    expect(results[0].detail).toContain(`Peak stage spill ${200 * GB} bytes`);
+  });
+
+  it('passes spill when the peak stage spill is within budget', () => {
+    const stages = new Map([[1, { id: 1, taskCount: 10, memoryBytesSpilled: 0.5 * GB }], [2, { id: 2, taskCount: 10, memoryBytesSpilled: 0 }]]);
+    const { results, violated } = evaluateBudgets({
+      appModel: baseAppModel({ stages }), catalog: [], budgets: { maxSpillGb: 1 },
+    });
     expect(violated).toBe(false);
+    expect(results[0]).toMatchObject({ name: 'max-spill', status: 'pass' });
+  });
+
+  it('reports spill inconclusive when no stage carries a spill figure', () => {
+    const { results, violated } = evaluateBudgets({
+      appModel: baseAppModel(), catalog: [], budgets: { maxSpillGb: 1 },
+    });
+    expect(violated).toBe(false);
+    expect(results[0]).toMatchObject({ name: 'max-spill', status: 'inconclusive' });
   });
 
   it('flags a skew violation from real stage metrics', () => {
@@ -122,6 +157,28 @@ describe('evaluateBudgets', () => {
     expect(violated).toBe(false);
   });
 
+  it('ignores a stage with no task-duration median instead of reporting a NaN peak', () => {
+    const stages = new Map([
+      [1, { id: 1, taskCount: 20, taskDurationP50: 100, taskDurationP95: 1000, taskDurationMax: 1000 }],
+      [2, { id: 2 }],
+    ]);
+    const { results, violated } = evaluateBudgets({
+      appModel: baseAppModel({ stages }), catalog: [], budgets: { maxSkewRatio: 5 },
+    });
+    expect(violated).toBe(true);
+    expect(results[0]).toMatchObject({ name: 'max-skew', status: 'violation' });
+    expect(results[0].detail).toContain('Peak stage skew ratio 10 exceeds budget 5.');
+  });
+
+  it('reports skew inconclusive when every stage lacks a usable ratio', () => {
+    const stages = new Map([[1, { id: 1 }], [2, { id: 2, taskCount: 20, taskDurationP50: 100 }]]);
+    const { results, violated } = evaluateBudgets({
+      appModel: baseAppModel({ stages }), catalog: [], budgets: { maxSkewRatio: 5 },
+    });
+    expect(violated).toBe(false);
+    expect(results[0]).toMatchObject({ name: 'max-skew', status: 'inconclusive' });
+  });
+
   it('reports skew inconclusive when there are no stages', () => {
     const { results, violated } = evaluateBudgets({
       appModel: baseAppModel({ stages: new Map() }), catalog: [], budgets: { maxSkewRatio: 2 },
@@ -139,28 +196,64 @@ describe('evaluateBudgets', () => {
     expect(results[0]).toMatchObject({ name: 'max-skew', status: 'inconclusive' });
   });
 
-  it('flags a failed-task-rate violation using taskFailureRate, not the job-rate value', () => {
-    const catalog = [{ type: 'jobFailureRate', value: 15, taskFailureRate: 40 }];
+  it('flags a failed-task-rate violation from the summed stage task counts', () => {
+    const stages = new Map([[1, { id: 1, taskCount: 60, failedTasks: 20 }], [2, { id: 2, taskCount: 40, failedTasks: 20 }]]);
     const { results, violated } = evaluateBudgets({
-      appModel: baseAppModel(), catalog, budgets: { maxFailedTaskRatePct: 20 },
+      appModel: baseAppModel({ stages }), catalog: [], budgets: { maxFailedTaskRatePct: 20 },
     });
     expect(violated).toBe(true);
     expect(results[0]).toMatchObject({ name: 'max-failed-task-rate', status: 'violation' });
+    expect(results[0].detail).toContain('Task failure rate 40%');
   });
 
-  it('reports failed-task-rate inconclusive when there is no job data at all', () => {
-    const appModel = baseAppModel({ jobs: new Map() });
+  it('flags retried task failures when every job succeeded and no jobFailureRate finding fired', async () => {
+    const taskEnd = (index, attemptNumber, failed) => JSON.stringify({
+      Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Stage Attempt ID': 0,
+      'Task Info': { 'Task ID': index * 10 + attemptNumber, Index: index, 'Attempt Number': attemptNumber, 'Launch Time': 0, 'Finish Time': 100, Failed: failed, Killed: false, Speculative: false },
+      'Task Metrics': { 'Executor Run Time': 100 },
+    });
+    const tasks = Array.from({ length: 100 }, (_, i) => (i < 25 ? [taskEnd(i, 0, true), taskEnd(i, 1, false)] : [taskEnd(i, 0, false)])).flat();
+    const stageInfo = { 'Stage ID': 1, 'Stage Name': 'map', 'Number of Tasks': 100, 'Submission Time': 1000 };
+    const appModel = await parsedAppModel([
+      JSON.stringify({ Event: 'SparkListenerApplicationStart', 'App ID': 'application_0000000000000_0001', 'App Name': 't', Timestamp: 0 }),
+      JSON.stringify({ Event: 'SparkListenerJobStart', 'Job ID': 1, 'Submission Time': 0, 'Stage IDs': [1] }),
+      JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': stageInfo }),
+      ...tasks,
+      JSON.stringify({ Event: 'SparkListenerStageCompleted', 'Stage Info': { ...stageInfo, 'Completion Time': 2000 } }),
+      JSON.stringify({ Event: 'SparkListenerJobEnd', 'Job ID': 1, 'Completion Time': 2000, 'Job Result': { Result: 'JobSucceeded' } }),
+      JSON.stringify({ Event: 'SparkListenerApplicationEnd', Timestamp: 3000 }),
+    ]);
+    const { results, violated } = evaluateBudgets({ appModel, catalog: [], budgets: { maxFailedTaskRatePct: 1 } });
+    expect(violated).toBe(true);
+    expect(results[0]).toMatchObject({ name: 'max-failed-task-rate', status: 'violation' });
+    expect(results[0].detail).toContain('Task failure rate 20%');
+  });
+
+  it('flags a failed-task rate that rounds to 0% against a zero budget', () => {
+    const stages = new Map([[1, { id: 1, taskCount: 3000, failedTasks: 1 }]]);
     const { results, violated } = evaluateBudgets({
-      appModel, catalog: [], budgets: { maxFailedTaskRatePct: 20 },
+      appModel: baseAppModel({ stages }), catalog: [], budgets: { maxFailedTaskRatePct: 0 },
+    });
+    expect(violated).toBe(true);
+    expect(results[0]).toMatchObject({ name: 'max-failed-task-rate', status: 'violation' });
+    expect(results[0].detail).toBe('Task failure rate 0% (1 of 3000 task attempts failed) exceeds budget 0%.');
+  });
+
+  it('reports failed-task-rate inconclusive when no stage ran a task', () => {
+    const { results, violated } = evaluateBudgets({
+      appModel: baseAppModel({ stages: new Map([[1, { id: 1, taskCount: 0 }]]) }), catalog: [], budgets: { maxFailedTaskRatePct: 20 },
     });
     expect(violated).toBe(false);
     expect(results[0]).toMatchObject({ name: 'max-failed-task-rate', status: 'inconclusive' });
   });
 
-  it('passes failed-task-rate when jobs exist but no jobFailureRate finding fired', () => {
-    const appModel = baseAppModel({ jobs: new Map([[1, { id: 1, result: 'JobSucceeded', succeeded: true }]]) });
-    const { violated } = evaluateBudgets({ appModel, catalog: [], budgets: { maxFailedTaskRatePct: 20 } });
+  it('passes failed-task-rate when the task failure rate is within budget', () => {
+    const stages = new Map([[1, { id: 1, taskCount: 100, failedTasks: 5 }]]);
+    const { results, violated } = evaluateBudgets({
+      appModel: baseAppModel({ stages }), catalog: [], budgets: { maxFailedTaskRatePct: 20 },
+    });
     expect(violated).toBe(false);
+    expect(results[0]).toMatchObject({ name: 'max-failed-task-rate', status: 'pass' });
   });
 
   it('flags an efficiency violation via computeEfficiencyModel', () => {

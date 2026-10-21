@@ -694,19 +694,21 @@ export function detectorCatalog(): DetectorCatalogEntry[] {
 }
 
 // True task-duration skew ratio: P95/median once enough tasks to trust P95, else max/median.
-// Null when no measurable median (p50 === 0). Exported so cli/budgets.ts recomputes the same
-// ratio rather than reading findings floored at ratioWarn.
+// Null when the median is not a positive number or the numerator is not finite (a stage with no
+// task records). Exported so cli/budgets.ts recomputes the same ratio rather than reading findings
+// floored at ratioWarn.
 // Fields optional: budgets.ts calls this against raw AppModel.stages, whose stages may lack
-// these fields (unfinished run). The `as number` casts keep behavior: an absent field yields NaN.
+// these fields (unfinished run).
 export function computeSkewRatio(
   stage: { taskCount?: number; taskDurationP50?: number; taskDurationP95?: number; taskDurationMax?: number },
   minTasksForP95: number,
 ): { ratio: number; metric: 'P95/median' | 'max/median' } | null {
   const { taskCount, taskDurationP50: p50, taskDurationP95: p95, taskDurationMax: max } = stage;
-  if (p50 === 0) return null;
-  return (taskCount ?? 0) >= minTasksForP95
-    ? { ratio: (p95 as number) / (p50 as number), metric: 'P95/median' }
-    : { ratio: (max as number) / (p50 as number), metric: 'max/median' };
+  if (typeof p50 !== 'number' || !(p50 > 0)) return null;
+  const usesP95 = (taskCount ?? 0) >= minTasksForP95;
+  const numerator = usesP95 ? p95 : max;
+  if (typeof numerator !== 'number' || !Number.isFinite(numerator)) return null;
+  return { ratio: numerator / p50, metric: usesP95 ? 'P95/median' : 'max/median' };
 }
 
 // Absolute-magnitude floor as a % of app runtime, not a fixed ms constant: a skew/straggler
