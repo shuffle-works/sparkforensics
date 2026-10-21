@@ -25,18 +25,38 @@ function timed(fn) {
   return { value, ms: performance.now() - start };
 }
 
+// Times the work prepare(size) returns at n and at 2n and asserts the time grows
+// about linearly: a quadratic site quadruples. Taking the best of a few runs and
+// allowing a small absolute floor keeps a slow or loaded machine from failing it.
+// Returns the value of the last run at 2n so the caller can check correctness.
+function expectNearLinear(prepare, n) {
+  const best = (size) => {
+    let fastest = Infinity, value;
+    for (let run = 0; run < 3; run++) {
+      const result = timed(prepare(size));
+      fastest = Math.min(fastest, result.ms);
+      value = result.value;
+    }
+    return { value, ms: fastest };
+  };
+  const small = best(n);
+  const large = best(2 * n);
+  expect(large.ms).toBeLessThan(3.5 * small.ms + 50);
+  return large.value;
+}
+
 describe('analyze() on a log with very many stages', () => {
   it('keeps one finding per flagged stage and unique ids, in linear time', () => {
     const count = 40_000;
-    const stages = new Map();
-    for (let id = 0; id < count; id++) stages.set(id, makeStage({ id, shuffleReadBytes: 2 * GIB }));
-    const { value: findings, ms } = timed(() => analyze(makeApp(), stages, [], [], new Map()));
+    const findings = expectNearLinear((size) => {
+      const stages = new Map();
+      for (let id = 0; id < size; id++) stages.set(id, makeStage({ id, shuffleReadBytes: 2 * GIB }));
+      return () => analyze(makeApp(), stages, [], [], new Map());
+    }, count / 2);
     const shuffle = findings.filter((f) => f.type === 'shuffle');
     expect(shuffle).toHaveLength(count);
     expect(new Set(shuffle.map((f) => f.id)).size).toBe(count);
-    // The per-finding scan this guards against takes about 7 s at this size.
-    expect(ms).toBeLessThan(4000);
-  }, 30_000);
+  }, 60_000);
 });
 
 describe('maxOf / minOf', () => {
@@ -191,13 +211,13 @@ describe('API merge overlap detection', () => {
   });
 
   it('scales to tens of thousands of runs', () => {
-    const spans = Array.from({ length: 60_000 }, (_, g) => [g * 10, g * 10 + 5]);
-    const { value, ms } = timed(() => apiMergeWrites(mergeRuns(spans)));
+    const value = expectNearLinear((size) => {
+      const sql = mergeRuns(Array.from({ length: size }, (_, g) => [g * 10, g * 10 + 5]));
+      return () => apiMergeWrites(sql);
+    }, 30_000);
     expect(value).toHaveLength(60_000);
     expect(value.every((w) => !w.raw.includes('overlaps'))).toBe(true);
-    // The pairwise scan this guards against takes about 9 s at this size.
-    expect(ms).toBeLessThan(3000);
-  }, 30_000);
+  }, 60_000);
 });
 
 describe('executor removal drops its cached blocks', () => {
@@ -234,18 +254,18 @@ describe('executor removal drops its cached blocks', () => {
   });
 
   it('removes thousands of executors without rescanning every block', () => {
-    const state = createState();
-    const executors = 4000;
-    for (let e = 0; e < executors; e++) {
-      for (let p = 0; p < 50; p++) recordBlockUpdate(blockUpdate(p % 20, e * 50 + p, String(e), 1), state);
-    }
-    const { ms } = timed(() => {
-      for (let e = 0; e < executors; e++) removeExecutor(removal(String(e)), state);
-    });
+    const state = expectNearLinear((executors) => {
+      const state = createState();
+      for (let e = 0; e < executors; e++) {
+        for (let p = 0; p < 50; p++) recordBlockUpdate(blockUpdate(p % 20, e * 50 + p, String(e), 1), state);
+      }
+      return () => {
+        for (let e = 0; e < executors; e++) removeExecutor(removal(String(e)), state);
+        return state;
+      };
+    }, 2000);
     for (const rdd of state.rddBlocks.values()) expect(rdd.blocks.size).toBe(0);
     expect(state.rddBlockKeysByExecutor.size).toBe(0);
-    // Scanning 200k blocks per removed executor takes minutes at this size.
-    expect(ms).toBeLessThan(3000);
   }, 60_000);
 });
 
@@ -253,12 +273,12 @@ describe('parseSparkPlanInfoTree on a very wide node', () => {
   it('expands a 200k-child node in order, in linear time', () => {
     const width = 200_000;
     const leaf = (i) => ({ nodeName: `Scan ${i}`, simpleString: '', children: [], metadata: {}, metrics: [] });
-    const raw = { ...leaf('root'), nodeName: 'Union', children: Array.from({ length: width }, (_, i) => leaf(i)) };
-    const { value: tree, ms } = timed(() => parseSparkPlanInfoTree(raw));
+    const tree = expectNearLinear((size) => {
+      const raw = { ...leaf('root'), nodeName: 'Union', children: Array.from({ length: size }, (_, i) => leaf(i)) };
+      return () => parseSparkPlanInfoTree(raw);
+    }, width / 2);
     expect(tree.children).toHaveLength(width);
     expect(tree.children[0].nodeName).toBe('Scan 0');
     expect(tree.children[width - 1].nodeName).toBe(`Scan ${width - 1}`);
-    // Shifting the pending list per child takes seconds at this size.
-    expect(ms).toBeLessThan(3000);
-  }, 30_000);
+  }, 60_000);
 });
