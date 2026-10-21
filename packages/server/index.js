@@ -162,7 +162,6 @@ export function parseServerArgs(argv, env = process.env) {
 // One line for a failed start, without a stack trace.
 export function startupErrorMessage(err, port) {
   if (err?.code === 'EADDRINUSE') return `Port ${port} is already in use. Pass another one with --port <n>.`;
-  if (err?.code === 'EACCES') return `Not allowed to listen on port ${port}.`;
   return `Could not start the server: ${err?.message ?? err}`;
 }
 

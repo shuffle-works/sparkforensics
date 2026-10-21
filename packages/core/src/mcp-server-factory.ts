@@ -46,24 +46,30 @@ function toCallToolResult(text: string, structuredContent: Record<string, unknow
 }
 
 // A Node file-system error (EACCES, ENOENT, EISDIR, ELOOP, ...) carries its errno name as `code` and
-// the absolute path in its message. It is reported under the documented code for an unreadable event
-// log, with the errno name and no path.
+// the absolute path in its message. It is reported under a documented code, with the errno name and
+// no path: invalid-event-log for the tools that read an event log, access-or-upstream-failure for the
+// documentation tools, which read only bundled files.
 const ERRNO_CODE = /^E[A-Z0-9]+$/;
 
-function toolErrorResult(error: { message: string; code?: string }): CallToolResult {
-  if (error.code !== undefined && ERRNO_CODE.test(error.code)) {
+function errorResultMapper(errnoText: string, errnoCode: string) {
+  return (error: { message: string; code?: string }): CallToolResult => {
+    if (error.code !== undefined && ERRNO_CODE.test(error.code)) {
+      return {
+        isError: true,
+        content: [{ type: 'text' as const, text: `${errnoText} (${error.code}).` }],
+        structuredContent: { code: errnoCode },
+      };
+    }
     return {
       isError: true,
-      content: [{ type: 'text' as const, text: `The event log could not be read (${error.code}).` }],
-      structuredContent: { code: 'invalid-event-log' },
+      content: [{ type: 'text' as const, text: error.message }],
+      structuredContent: { code: error.code ?? 'access-or-upstream-failure' },
     };
-  }
-  return {
-    isError: true,
-    content: [{ type: 'text' as const, text: error.message }],
-    structuredContent: { code: error.code ?? 'access-or-upstream-failure' },
   };
 }
+
+const toolErrorResult = errorResultMapper('The event log could not be read', 'invalid-event-log');
+const docToolErrorResult = errorResultMapper('A documentation file could not be read', 'access-or-upstream-failure');
 
 // compareRuns may carry a `markdown` field (only when the caller asked for
 // format: 'md'); it never belongs in structuredContent (whose shape must stay stable regardless of
@@ -94,8 +100,8 @@ function diagnoseToolResult(promise: Promise<DiagnoseRunResult>): Promise<CallTo
 
 // Counterpart for the tools that never produce a markdown field: its own mapping, so there's no
 // need to cast T to pretend it might carry a `markdown` field it never does.
-function toolResult<T extends object>(promise: Promise<T>): Promise<CallToolResult> {
-  return promise.then((value) => toCallToolResult(JSON.stringify(value), value as Record<string, unknown>), toolErrorResult);
+function toolResult<T extends object>(promise: Promise<T>, onError = toolErrorResult): Promise<CallToolResult> {
+  return promise.then((value) => toCallToolResult(JSON.stringify(value), value as Record<string, unknown>), onError);
 }
 
 // The handshake version of a server built without a `generator`: no package to read a version from.
@@ -205,6 +211,7 @@ export function createMcpServer(
     inputSchema: { type: z.string() },
   }, ({ type }) => toolResult(
     Promise.resolve().then(() => getFindingDocumentation(type)),
+    docToolErrorResult,
   ));
 
   server.registerTool('get_reference_doc', {
@@ -212,6 +219,7 @@ export function createMcpServer(
     inputSchema: { anchor: z.string() },
   }, ({ anchor }) => toolResult(
     Promise.resolve().then(() => getReferenceDoc(anchor)),
+    docToolErrorResult,
   ));
 
   return server;
