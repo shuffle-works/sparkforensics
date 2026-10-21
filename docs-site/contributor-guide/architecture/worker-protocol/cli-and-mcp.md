@@ -61,8 +61,9 @@ for `redactedFailure`'s role-only message.
 
 Optional CLI-flag budgets (`--max-runtime <ms>`, `--max-spill <gb>`,
 `--max-skew <ratio>`, `--max-failed-task-rate <pct>`, `--min-efficiency <pct>`)
-are evaluated in `packages/core/src/cli/budgets.ts` against the existing finding catalog
-(`analyze()`) and `computeEfficiencyModel`; there is no second rule engine.
+are evaluated in `packages/core/src/cli/budgets.ts` against the run's stages and
+`computeEfficiencyModel`, not the finding catalog, whose reporting floors would hide a
+violating stage; there is no second rule engine.
 `--min-efficiency` compares `100 - wastagePct` (busy core time, the complement of
 the dashboard's Unused core time) and says so in its detail ("Busy core time 26% below
 budget 90%."); it is not the Scorecard's Efficiency tile (`stagesActive / total`). A budget
