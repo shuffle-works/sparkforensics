@@ -91,11 +91,11 @@ error, and when both are given `runId` wins):
     scope (stage/sql/app/config), current thresholds, and a doc-page anchor
   This is opt-in because `detectors` in particular is a large, mostly-static
   catalog that would bloat a routine "what's wrong with this run" call.
-- `impactBand`: array of impact bands (e.g. `["critical", "warning"]`),
-  narrows the `findings` array to only these bands
+- `impactBand`: array of impact bands (`"critical"`, `"warning"`, `"info"`, e.g.
+  `["critical", "warning"]`), narrows the `findings` array to only these bands
 - `type`: array of finding `type` values, narrows `findings` to only these
-  types
-- `stageId`: number, narrows `findings` to only findings on this stage,
+  types. A value that is not a finding type fails schema validation.
+- `stageId`: non-negative integer, narrows `findings` to only findings on this stage,
   including a SQL plan finding whose only stage it is (the dashboard's stage
   details rule)
 - `minBand`: `"critical" | "warning" | "info"`, lists only findings at this

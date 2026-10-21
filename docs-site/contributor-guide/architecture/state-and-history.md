@@ -30,6 +30,20 @@ resetting; `cancelParse` (the parse screen's **Cancel**) terminates the worker
 and never snapshots, so a half-parsed model with no findings can't be restored
 later.
 
+Every parse ends in `ready` or `error`, never in a stuck `parsing`. A throw in
+`runDone` before the run is ready (analysis on odd log data) and a throw while
+opening a compare operand set `errorMessage`; once the run is `ready`, a failed
+task-data prefetch or recent-files write is logged and the dashboard stays.
+
+Render errors stay local. `ErrorBoundary` (`src/view/ErrorBoundary.tsx`) wraps
+each grid card in `WidgetGridItem`, so a widget that throws on a log's data
+shows an error card with **Retry** while its siblings keep rendering. The card
+clears itself when `activeFileId` changes (its `resetKey`), so picking another
+recent run does not keep the previous run's error.
+`AppErrorBoundary` wraps the app routes in `src/App.tsx`: a throw outside a
+card, or a lazy chunk that fails to load, shows a page with **Reload page** and
+**Load another log** (which runs `cancelParse`).
+
 `resetModel()` empties the run state (`appModel`, `catalog`,
 `configFindings`, `interpretation`, `taskDataCache`, `skippedLines`), returns
 `status` to idle, clears `shsParsing` and `errorMessage`, closes any comparison or plan-graph view, and bumps
@@ -85,8 +99,11 @@ reason cut mid-host, say) keeps a fragment of it; the md/json report does the
 same. The export bundle never installs the live interpreter:
 `hydrateExportStore` installs the payload's interpretation as is, and
 `src/export/main-export.tsx` refuses, before rendering, any payload whose
-`schemaVersion` it was not built for, or that lacks its `configFindings` or
-`interpretation` (`unsupportedPayloadReason`). An exported file therefore shows
+`schemaVersion` it was not built for, or that lacks its `configFindings`,
+`interpretation`, `stages`, `sql` or `jobs` (`unsupportedPayloadReason`). A
+missing or damaged `data.js` (no payload global, truncated gzip, invalid JSON)
+gets the same view with a "missing or unreadable" reason: `loadExportPayload`
+never throws. An exported file therefore shows
 the conclusions of the core that wrote it, and cannot be reinterpreted by a
 later bundle.
 

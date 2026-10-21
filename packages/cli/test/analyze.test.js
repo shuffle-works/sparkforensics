@@ -709,13 +709,72 @@ describe('sparkforensics-analyze CLI', () => {
       });
     });
 
-    it('is inconclusive when --fail-on-introduced is given an unrecognized impact band', () => {
+    it('exits 2 for --max-regression-pct with an empty value', () => {
+      withBaselineAndCandidate(({ baselinePath, candidatePath }) => {
+        const { status, stderr } = runCli([candidatePath, '--baseline', baselinePath, '--max-regression-pct=']);
+        expect(status).toBe(2);
+        expect(stderr).toMatch(/--max-regression-pct needs a non-negative decimal number/);
+      });
+    });
+
+    it('exits 2 when --fail-on-introduced is given an unrecognized impact band', () => {
       withBaselineAndCandidate(({ baselinePath, candidatePath }) => {
         const { status, stderr } = runCli([candidatePath, '--baseline', baselinePath, '--fail-on-introduced', 'criticall']);
-        expect(status).toBe(3);
-        expect(stderr).toMatch(/\[inconclusive\] fail-on-introduced/);
-        expect(stderr).not.toMatch(/\[pass\] fail-on-introduced/);
+        expect(status).toBe(2);
+        expect(stderr).toMatch(/--fail-on-introduced: unknown value "criticall" \(expected one of: all, critical, warning, info\)/);
       });
+    });
+  });
+
+  describe('flag value validation', () => {
+    // Each row is a value the old bare Number() or an unchecked filter let through as a pass.
+    const BAD_FLAG_VALUES = [
+      ['--min-efficiency', '', /--min-efficiency needs a non-negative decimal number/],
+      ['--min-efficiency', '-5', /--min-efficiency needs a non-negative decimal number/],
+      ['--max-runtime', ' ', /--max-runtime needs a non-negative decimal number/],
+      ['--max-spill', '0x10', /--max-spill needs a non-negative decimal number/],
+      ['--max-skew', '1e3', /--max-skew needs a non-negative decimal number/],
+      ['--max-failed-task-rate', 'abc', /--max-failed-task-rate needs a non-negative decimal number/],
+      ['--stage', '', /--stage needs a non-negative integer stage id/],
+      ['--stage', '0x2', /--stage needs a non-negative integer stage id/],
+      ['--stage', '-1', /--stage needs a non-negative integer stage id/],
+      ['--impact', 'bogus', /--impact: unknown impact band "bogus" \(expected a list from: critical, warning, info\)/],
+      ['--impact', 'critical,bogus', /--impact: unknown impact band "bogus"/],
+      ['--impact', '', /--impact: no impact band given/],
+      ['--type', 'nonsense', /--type: unknown finding type "nonsense" \(expected a list from: /],
+      ['--type', '', /--type: no finding type given/],
+    ];
+
+    it.each(BAD_FLAG_VALUES)('exits 2 for %s "%s"', (flag, value, message) => {
+      const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-flagval-'));
+      const path = join(dir, 'eventlog');
+      writeFileSync(path, ndjsonWithSkew());
+      try {
+        // The = form keeps a leading-dash value attached to its flag.
+        const { status, stderr, stdout } = runCli([path, `${flag}=${value}`]);
+        expect(status).toBe(2);
+        expect(stderr).toMatch(message);
+        expect(stdout).toBe('');
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('still accepts plain non-negative decimals and every known band and type', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-flagval-ok-'));
+      const path = join(dir, 'eventlog');
+      writeFileSync(path, ndjsonWithSkew());
+      try {
+        // Exit 3 (an inconclusive budget on this small log) is fine: the point is no usage error.
+        const { status, stderr } = runCli([
+          path, '--max-runtime', '60000', '--max-spill', '0', '--max-skew', '50.5', '--max-failed-task-rate', '5',
+          '--min-efficiency', '0', '--impact', 'critical,warning,info', '--type', 'straggler,skew', '--stage', '1',
+        ]);
+        expect(status).not.toBe(2);
+        expect(stderr).not.toMatch(/needs a non-negative|unknown (impact band|finding type)/);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
   });
 
@@ -843,7 +902,7 @@ describe('sparkforensics-analyze CLI', () => {
       try {
         const { status, stderr } = runCli([path, '--stage', 'not-a-number']);
         expect(status).toBe(2);
-        expect(stderr).toMatch(/Invalid integer value for --stage/);
+        expect(stderr).toMatch(/--stage needs a non-negative integer stage id/);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

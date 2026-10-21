@@ -414,7 +414,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   autoscalingChurn: {
     name: 'autoscaling churn',
     tag: 'CHRN',
-    thresholdSummary: (t) => `over ${shareLabel(t.warningPct)} of executors living under ${t.shortLivedMs / 60000} minutes`,
+    thresholdSummary: (t) => `over ${shareLabel(t.warningPct)} of removed executors living under ${t.shortLivedMs / 60000} minutes`,
     actionLabel: () => 'Reduce autoscaling churn',
     genericRecommendation: (f) => (f.dynamicAllocation === 'off'
       ? 'Dynamic allocation is off, so the churn comes from executors lost or preempted: check the cluster manager\'s preemption and executor-loss logs.'

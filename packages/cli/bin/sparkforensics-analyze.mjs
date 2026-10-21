@@ -37,6 +37,7 @@ const { buildHtmlExportData, encodeRunPayload } = await loadCore('html-export');
 const { runPayloadScript } = await loadCore('run-payload');
 const { loadThresholdOverrides } = await loadCore('cli/threshold-config');
 const { parseRegressionBudgetFlag, loadBudgetsFile, combineRegressionBudgets, parseStageRegressionBudgetFlag, parseStageQualities } = await loadCore('cli/regression-budgets');
+const { parseNonNegativeNumber, parseStageId, parseImpactBands, parseFindingTypes, parseFailOnIntroduced } = await loadCore('cli/flag-values');
 const { tunedDetectors } = await loadCore('threshold-overrides');
 const { runOutputBlocks } = await loadCore('run-output');
 const { buildEffectiveConf } = await loadCore('effective-conf');
@@ -62,6 +63,9 @@ Options:
   --min-efficiency <pct>            Fail if busy core time (the share of executor core time
                                     that ran tasks, 100 minus the dashboard's Unused core time)
                                     falls below this percent. Not the dashboard's Efficiency tile.
+                                    The six budget flags above and --max-regression-pct take a plain
+                                    non-negative decimal such as 90 or 1.5; an empty, negative,
+                                    hexadecimal or exponent value is a usage error.
   --shs-base-url <url>              Fetch the run from a Spark History Server instead of a
                                     local file (mutually exclusive with the positional argument).
   --app-id <id>                     Spark application ID to fetch. Required with --shs-base-url.
@@ -116,8 +120,10 @@ Options:
                                     (critical, warning, info). recommendations, cleanChecks,
                                     notRunChecks and the summary counts stay on the full,
                                     unfiltered set.
-  --type <type[,type]>              Filter the output's findings array to these finding types.
-  --stage <id>                      Filter the output's findings array to this stage id,
+  --type <type[,type]>              Filter the output's findings array to these finding types. An
+                                    unknown band or type is a usage error.
+  --stage <id>                      Filter the output's findings array to this stage id (a
+                                    non-negative integer),
                                     including a SQL plan finding whose only stage it is.
   --normalize-path <regex>          Requires a baseline. Repeatable. A regular expression whose every
                                     match in a plan node's text is replaced with a fixed token before
@@ -499,30 +505,31 @@ async function runCli(argv, { fetchImpl } = {}) {
     return bail(`Unknown --regression-metric "${values['regression-metric']}" (expected one of: ${COMPARISON_METRIC_KEYS.join(', ')}).\n${USAGE}`, 2);
   }
 
-  const budgets = {
-    maxRuntimeMs: values['max-runtime'] != null ? Number(values['max-runtime']) : undefined,
-    maxSpillGb: values['max-spill'] != null ? Number(values['max-spill']) : undefined,
-    maxSkewRatio: values['max-skew'] != null ? Number(values['max-skew']) : undefined,
-    maxFailedTaskRatePct: values['max-failed-task-rate'] != null ? Number(values['max-failed-task-rate']) : undefined,
-    minEfficiencyPct: values['min-efficiency'] != null ? Number(values['min-efficiency']) : undefined,
-    maxRegressionPct: values['max-regression-pct'] != null ? Number(values['max-regression-pct']) : undefined,
+  const budgets = {};
+  const NUMERIC_BUDGET_FLAGS = {
+    'max-runtime': 'maxRuntimeMs', 'max-spill': 'maxSpillGb', 'max-skew': 'maxSkewRatio',
+    'max-failed-task-rate': 'maxFailedTaskRatePct', 'min-efficiency': 'minEfficiencyPct',
+    'max-regression-pct': 'maxRegressionPct',
   };
-  // Derived from `budgets`, not hardcoded: every key above is numeric
-  // (regressionMetric/failOnIntroduced are added below), so a future numeric
-  // budget field can't skip this check.
-  const NUMERIC_BUDGET_FLAGS = Object.keys(budgets);
-  for (const flag of NUMERIC_BUDGET_FLAGS) {
-    const value = budgets[flag];
-    if (value !== undefined && !Number.isFinite(value)) {
-      return bail(`Invalid numeric value for ${flag}.\n${USAGE}`, 2);
+  try {
+    for (const [flag, field] of Object.entries(NUMERIC_BUDGET_FLAGS)) {
+      if (values[flag] != null) budgets[field] = parseNonNegativeNumber(values[flag], `--${flag}`);
     }
+  } catch (e) {
+    return bail(`${e.message}\n${USAGE}`, 2);
   }
   // Only set when the user passed --regression-metric: evaluateBudgets() treats
   // "regressionMetric is set" as "caller asked for a regression check", so
   // defaulting it here would trip that guard on runs that touched neither flag.
   // checkRegression falls back to 'wallClock' itself once maxRegressionPct is set.
   if (values['regression-metric'] !== undefined) budgets.regressionMetric = values['regression-metric'];
-  if (values['fail-on-introduced'] !== undefined) budgets.failOnIntroduced = values['fail-on-introduced'];
+  if (values['fail-on-introduced'] !== undefined) {
+    try {
+      budgets.failOnIntroduced = parseFailOnIntroduced(values['fail-on-introduced'], '--fail-on-introduced');
+    } catch (e) {
+      return bail(`${e.message}\n${USAGE}`, 2);
+    }
+  }
 
   // --regression-budget and --budgets add to the legacy pair; a metric budgeted twice is refused.
   if (values['regression-budget'] !== undefined || values.budgets !== undefined) {
@@ -557,14 +564,15 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
   }
 
-  const impactBand = splitCsv(values.impact);
-  const type = splitCsv(values.type);
+  let impactBand;
+  let type;
   let stageId;
-  if (values.stage !== undefined) {
-    stageId = Number(values.stage);
-    if (!Number.isInteger(stageId)) {
-      return bail(`Invalid integer value for --stage.\n${USAGE}`, 2);
-    }
+  try {
+    if (values.impact !== undefined) impactBand = parseImpactBands(values.impact, '--impact');
+    if (values.type !== undefined) type = parseFindingTypes(values.type, '--type');
+    if (values.stage !== undefined) stageId = parseStageId(values.stage, '--stage');
+  } catch (e) {
+    return bail(`${e.message}\n${USAGE}`, 2);
   }
   const findingsFilter = toFindingsFilter(impactBand, type, stageId);
 

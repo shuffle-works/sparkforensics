@@ -6,13 +6,12 @@ import { resolve } from 'node:path';
 import { COMPARISON_METRIC_KEYS } from '../run-comparison.ts';
 import { PAIR_DELTA_METRICS } from '../stage-alignment.ts';
 import { NEUTRAL_PAIR_METRICS, STAGE_QUALITIES } from './budgets.ts';
+import { PCT_PATTERN } from './flag-values.ts';
 import type { StagePair } from '../stage-alignment.ts';
 
 export interface RegressionBudget { metric: string; maxPct: number; }
 export interface RegressionBudgetSource { origin: string; budget: RegressionBudget; }
 
-// Plain non-negative decimals only: Number() would also accept '', ' ', '0x10' and '1e3'.
-const PCT_PATTERN = /^\d+(\.\d+)?$/;
 
 function assertKnownMetric(metric: string, origin: string): void {
   if (!COMPARISON_METRIC_KEYS.includes(metric)) {

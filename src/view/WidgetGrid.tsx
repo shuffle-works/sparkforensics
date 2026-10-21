@@ -9,6 +9,8 @@ import {
 } from 'react';
 
 import { cn } from '@/lib/utils';
+import { useStore } from '@/store/store';
+import { ErrorBoundary, WidgetErrorCard } from '@/view/ErrorBoundary';
 import { useRouteFocusedWidgetId, useTriageNavigation } from '@/view/TriageNavigationContext';
 
 interface GridCardState {
@@ -56,6 +58,7 @@ export function WidgetGridItem({
 }) {
   const navigation = useTriageNavigation();
   const focusedWidgetId = useRouteFocusedWidgetId();
+  const activeFileId = useStore((s) => s.activeFileId);
   const [openRequestGeneration, setOpenRequestGeneration] = useState(0);
   // Local mirror of the card's disclosure state, kept via `reportOpen`, so the
   // grid item can widen itself (`col-span`) when its card is open. The card
@@ -103,7 +106,10 @@ export function WidgetGridItem({
           className,
         )}
       >
-        {children}
+        {/* A widget that throws on its log's data shows an error card here, not a blank page. */}
+        <ErrorBoundary resetKey={activeFileId} fallback={(error, reset) => <WidgetErrorCard error={error} onRetry={reset} />}>
+          {children}
+        </ErrorBoundary>
       </div>
     </WidgetGridCardContext.Provider>
   );

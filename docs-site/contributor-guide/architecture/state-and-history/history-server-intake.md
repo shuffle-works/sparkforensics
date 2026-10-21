@@ -44,9 +44,12 @@ The shared helper builds the encoded `/shs-proxy` request and the encoded
 object only.
 
 The optional Node server is loopback-only: a narrow CORS proxy, not a
-general or hosted proxy. It validates the same request contract, sends no
-credentials, follows no upstream redirects, and returns only stable safe error
-codes. It never forwards upstream response text, status details, locations, or
+general or hosted proxy. It answers `/shs-proxy` only when the `Host` header
+is `127.0.0.1:<port>` or `localhost:<port>`, the hosts the `/mcp` route
+accepts (`allowedHostsFor` in `packages/server/index.js`), so a DNS-rebinding
+page gets a 403 before any upstream fetch. It validates the same request
+contract, sends no credentials, follows no upstream redirects, and returns
+only stable safe error codes. It never forwards upstream response text, status details, locations, or
 credentials to the browser.
 
 Routing preserves the recovery boundary: local file and folder failures use the
