@@ -1,8 +1,11 @@
 // Identifier redaction for the portable evidence report. Replaces the
 // application id and every host name with stable pseudonyms (`app-1`,
 // `host-1`, ...) so a report can be shared outside the environment that
-// produced it without leaking infrastructure identity. Opt-in (default OFF)
-// at the call site; raw task records are excluded from the report regardless.
+// produced it without leaking infrastructure identity. User names are scrubbed
+// where they are recognizable (URL credentials, `/user/<name>`, `user=`); other
+// paths and text are kept (ci-and-automation.md, "What --redact covers").
+// Opt-in (default OFF) at the call site; raw task records are excluded from the
+// report regardless.
 //
 // Deterministic (sorted assignment), idempotent (pseudonyms map to themselves),
 // and non-mutating (returns a fresh, deep-copied tree).
@@ -14,15 +17,40 @@ import { REDACTED_TEXT, redactTaskFailureGroup, type TaskFailureDetail } from '.
 
 // Host / IP identifier patterns. Used to enumerate host names that surface only
 // inside free text: recommendation strings, SQL relation/node names, never as a
-// structured `host` field, so redaction reaches those residuals too. Pseudonyms
-// (`host-1`) match neither pattern, keeping the scan idempotent.
+// structured `host` field, so redaction reaches those residuals too. A pattern with a
+// capture group yields that group, not the whole match. Pseudonyms (`host-1`) are never
+// collected (see PSEUDONYM), keeping the scan idempotent.
 const HOST_PATTERNS = [
   // EC2-style ip-10-1-2-3 with an optional dotted domain (ip-10-1-2-3.ec2.internal).
   // Each domain label must start with an alphanumeric, so a trailing sentence
   // period ("… bad node ip-10-1-2-3.") is left out of the match.
   /\bip(?:-\d{1,3}){4}(?:\.[a-z0-9][a-z0-9-]*)*/gi,
   /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, // bare IPv4: 10.1.2.3
+  // The host of a URL authority (`scheme://[userinfo@]host[:port]/`): hdfs, jdbc, s3a, spark,
+  // http. Reads the host from any shape, a short name (`nn01`) or an FQDN (`db01.corp.example`),
+  // a bucket name or a bracketed IPv6 address.
+  /\b[a-z][a-z0-9+.-]*:\/\/(?:[^\s/?#@]*@)?(\[[0-9a-f:.]+\]|[^\s/?#:@'"<>()[\]{}|,;\\]+)/gi,
 ];
+
+// A pseudonym this module writes. Never given a new pseudonym, so a second pass over a redacted
+// tree leaves it alone instead of numbering it again.
+const PSEUDONYM = /^(?:host|app)-\d+$/;
+
+// A user name has no list to look up, so it is scrubbed where it is recognizable: the user part
+// of URL credentials, the segment after `/user/`, `/home/` or `/Users/`, and a `user=` /
+// `username=` / `user.name=` value. The same name elsewhere is not recognized. The replacement
+// is fixed, so the scrub is idempotent.
+const REDACTED_USER = 'redacted-user';
+const USER_SCRUBS: Array<[RegExp, string]> = [
+  [/(\b[a-z][a-z0-9+.-]*:\/\/)[^\s/?#@]+@/gi, `$1${REDACTED_USER}@`],
+  [/(\/(?:user|home|Users)\/)[^\s/?#:@'"<>()[\]{}|,;&\\]+/g, `$1${REDACTED_USER}`],
+  [/((?:\b|(?<=-D))(?:user\.name|username|user)=)[^\s&;,'"<>()[\]{}|\\]+/gi, `$1${REDACTED_USER}`],
+];
+function scrubUserNames(s: string): string {
+  let out = s;
+  for (const [pattern, replacement] of USER_SCRUBS) out = out.replace(pattern, replacement);
+  return out;
+}
 
 // Spark application id (e.g. application_1690000000000_0001). Besides the
 // structured summary.app.id field, an app id can surface as a free-text token
@@ -38,8 +66,7 @@ function scanTokens(node: unknown, sinks: Array<{ patterns: RegExp[]; out: Set<s
   if (typeof node === 'string') {
     for (const { patterns, out } of sinks) {
       for (const re of patterns) {
-        const found = node.match(re);
-        if (found) for (const m of found) out.add(m);
+        for (const m of node.matchAll(re)) out.add(m[1] ?? m[0]);
       }
     }
     return;
@@ -118,14 +145,20 @@ function redactFailureText<T>(node: T): T {
 // walk catches (the literal key is the dotted Spark property name, never
 // `host` itself). app.config and each SQL execution's modifiedConfigs are
 // flat Record<string, string> dicts that only the run-tree redaction ships.
-// Known gap: a hostname under a differently-named key is not caught by this
-// suffix check (spark.master, spark.yarn.historyServer.address and the YARN
-// proxy/HA keys); ci-and-automation.md lists them.
+// A value under any other key is caught when it is a URL (HOST_PATTERNS) or a comma-separated
+// list of `host:port` entries (spark.yarn.historyServer.address, the YARN HA addresses). A bare
+// host name under another key (`spark.some.server=db01`) is not recognized.
+const HOST_PORT = /^(?=[^:]*[a-z])([a-z0-9][a-z0-9.-]*):\d{2,5}$/i;
 function collectConfigHostValues(config: Record<string, string> | undefined, hosts: Set<string>): void {
   if (!config) return;
   for (const [key, value] of Object.entries(config)) {
+    if (!value) continue;
     const lastSegment = key.slice(key.lastIndexOf('.') + 1).toLowerCase();
-    if ((lastSegment === 'host' || lastSegment === 'hostname') && value) hosts.add(value);
+    if (lastSegment === 'host' || lastSegment === 'hostname') hosts.add(value);
+    else for (const entry of value.split(',')) {
+      const host = HOST_PORT.exec(entry.trim())?.[1];
+      if (host) hosts.add(host);
+    }
   }
 }
 
@@ -170,35 +203,43 @@ function buildMap(ids: Set<string>, prefix: string): Map<string, string> {
 
 // Deep-replace every string occurrence of each identifier across the whole
 // tree (covers ids embedded in free-text recommendations, not just the
-// canonical fields). Longest-first so no identifier is a prefix-shadow of
-// another. Returns a fresh tree, never mutates the input.
-function deepReplace(node: unknown, replacements: Array<[string, string]>): unknown {
-  if (typeof node === 'string') {
-    let s = node;
-    for (const [from, to] of replacements) s = s.split(from).join(to);
-    return s;
-  }
-  if (Array.isArray(node)) return node.map((n) => deepReplace(n, replacements));
+// canonical fields), then scrub user names. One pass per string: `replace` reads
+// an alternation of every identifier, longest first so no identifier is a
+// prefix-shadow of another, and its output is never re-read, so a pseudonym can
+// not be replaced again. Returns a fresh tree, never mutates the input.
+function deepReplace(node: unknown, replace: (text: string) => string): unknown {
+  if (typeof node === 'string') return scrubUserNames(replace(node));
+  if (Array.isArray(node)) return node.map((n) => deepReplace(n, replace));
   if (node && typeof node === 'object') {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(node)) out[k] = deepReplace(v, replacements);
+    for (const [k, v] of Object.entries(node)) out[k] = deepReplace(v, replace);
     return out;
   }
   return node;
 }
 
+function singlePassReplacer(replacements: Array<[string, string]>): (text: string) => string {
+  const byIdentifier = new Map(replacements.filter(([from]) => from.length > 0));
+  if (byIdentifier.size === 0) return (text) => text;
+  const alternation = [...byIdentifier.keys()]
+    .sort((a, b) => b.length - a.length)
+    .map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  const pattern = new RegExp(alternation, 'g');
+  return (text) => text.replace(pattern, (match) => byIdentifier.get(match) ?? match);
+}
+
 // Shared by every redact* export below: turns collected app-id/host sets into
-// the longest-first replacement list and applies it. Centralizes the
+// the replacement list and applies it. Centralizes the
 // buildMap+sort+deepReplace sequence so each narrower redact* function only
 // has to say what it collects, not how replacement is carried out.
 function applyReplacements<T>(node: T, ids: { appIds?: Set<string>; hosts: Set<string> }): T {
+  const unseen = (set: Set<string>) => new Set([...set].filter((id) => !PSEUDONYM.test(id)));
   const merged: Array<[string, string]> = [
-    ...(ids.appIds ? buildMap(ids.appIds, 'app') : []),
-    ...buildMap(ids.hosts, 'host'),
+    ...(ids.appIds ? buildMap(unseen(ids.appIds), 'app') : []),
+    ...buildMap(unseen(ids.hosts), 'host'),
   ];
-  // Replace longer identifiers first to avoid partial-substring clobbering.
-  merged.sort((a, b) => b[0].length - a[0].length);
-  return deepReplace(node, merged) as T;
+  return deepReplace(node, singlePassReplacer(merged)) as T;
 }
 
 // The app name identifies a job as much as its id, so a redacted name becomes the id's
@@ -231,6 +272,8 @@ export function redactComparison<T>(comparison: T): T {
 // redactReport, this also walks executors.added/removed for their literal
 // `host` field, since raw executor records reach the export, not just findings.
 type RunTree = Pick<ExportRunData, 'app' | 'executors' | 'catalog' | 'configFindings'> & {
+  // Each stage's `hostStats[].host` names a host with no executor or finding record.
+  stages?: unknown[];
   // Each SQL execution carries the session settings it ran with (`modifiedConfigs`), which can hold
   // the same host values the application config does.
   sql?: Array<{ modifiedConfigs?: Record<string, string> }>;
@@ -264,6 +307,7 @@ function redactRunTree<T extends RunTree>(input: T): T {
   collectHostFields(data.executors.removed, hosts);
   collectHostFields(data.catalog, hosts);
   collectHostFields(data.configFindings, hosts);
+  collectHostFields(data.stages, hosts);
   collectConfigHostValues(data.app?.config, hosts);
   for (const exec of data.sql ?? []) collectConfigHostValues(exec.modifiedConfigs, hosts);
   scanTokens(data, [{ patterns: HOST_PATTERNS, out: hosts }, { patterns: APP_ID_PATTERNS, out: appIds }]);

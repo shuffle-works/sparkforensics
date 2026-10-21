@@ -460,3 +460,120 @@ describe('redactRunModel', () => {
     expect(serialized).not.toContain('am-node-2.internal.corp');
   });
 });
+
+describe('redactRunModel: URL hosts, user names and stage hosts', () => {
+  const USER_NAME = 'alice';
+  const NAME_NODE = 'nn01.corp.example';
+  const DB_HOST = 'db01.corp.example';
+
+  function run() {
+    return {
+      app: {
+        id: 'application_1690000000000_0001', name: 'nightly', sparkVersion: '3.5.0',
+        config: {
+          'spark.eventLog.dir': `hdfs://${NAME_NODE}:8020/user/${USER_NAME}/eventlogs`,
+          'spark.sql.warehouse.dir': `hdfs://${NAME_NODE}:8020/user/${USER_NAME}/warehouse`,
+          'spark.master': 'spark://master01:7077',
+          'spark.yarn.historyServer.address': 'hist01.corp.example:18080',
+          'spark.yarn.rm.ha.addresses': 'rm1.corp.example:8032,rm2.corp.example:8032',
+          'spark.executor.extraJavaOptions': `-Duser.name=${USER_NAME} -Xmx2g`,
+          'spark.executor.instances': '4',
+          'spark.sql.shuffle.partitions': '200',
+        },
+      },
+      stages: [{ id: 1, name: 'collect', hostStats: [{ host: 'worker-zz9', taskCount: 3, totalDuration: 10 }] }],
+      jobs: [],
+      sql: [{
+        id: 0,
+        planNodes: [{ id: 1, detail: `JDBCRelation jdbc:postgresql://${DB_HOST}:5432/sales?user=${USER_NAME}&ssl=true` }],
+      }],
+      executors: { added: [], removed: [] },
+      runAggregates: null,
+      evidenceAvailability: null,
+      catalog: [],
+      configFindings: [],
+    };
+  }
+
+  // Stages, jobs and SQL executions come back as Maps, which JSON.stringify would print as {}.
+  const flatten = (out) => JSON.stringify(out, (_, value) => (value instanceof Map ? [...value] : value));
+  const serialized = () => flatten(redactRun(run()));
+
+  it('pseudonymizes the host of a URL, whatever its scheme or shape', () => {
+    const out = serialized();
+    for (const host of [NAME_NODE, DB_HOST, 'master01']) expect(out).not.toContain(host);
+    expect(redactRun(run()).appModel.app.config['spark.eventLog.dir']).toMatch(/^hdfs:\/\/host-\d+:8020\/user\//);
+  });
+
+  it('pseudonymizes the host of a URL inside a plan node detail and keeps the rest of the text', () => {
+    const detail = redactRun(run()).appModel.sql.get(0).planNodes[0].detail;
+    expect(detail).toMatch(/^JDBCRelation jdbc:postgresql:\/\/host-\d+:5432\/sales\?user=redacted-user&ssl=true$/);
+  });
+
+  it('scrubs the user name from a path, a user= value and a -Duser.name option', () => {
+    const out = serialized();
+    expect(out).not.toContain(USER_NAME);
+    const { config } = redactRun(run()).appModel.app;
+    expect(config['spark.sql.warehouse.dir']).toMatch(/\/user\/redacted-user\/warehouse$/);
+    expect(config['spark.executor.extraJavaOptions']).toBe('-Duser.name=redacted-user -Xmx2g');
+  });
+
+  it('scrubs credentials out of a URL authority', () => {
+    const data = run();
+    data.app.config['spark.some.url'] = 'jdbc:mysql://bob:s3cret@db02.corp.example/app';
+    const out = flatten(redactRun(data));
+    expect(out).not.toContain('bob');
+    expect(out).not.toContain('s3cret');
+    expect(out).not.toContain('db02.corp.example');
+  });
+
+  it('pseudonymizes host:port values under any config key', () => {
+    const out = serialized();
+    for (const host of ['hist01.corp.example', 'rm1.corp.example', 'rm2.corp.example']) expect(out).not.toContain(host);
+  });
+
+  it('pseudonymizes a host that only a stage records in hostStats', () => {
+    const out = redactRun(run());
+    expect(out.appModel.stages.get(1).hostStats[0].host).toMatch(/^host-\d+$/);
+    expect(serialized()).not.toContain('worker-zz9');
+  });
+
+  it('leaves non-identifying config and a URL without an authority alone', () => {
+    const data = run();
+    data.app.config['spark.local.dir'] = 'file:///tmp/spark';
+    const { config } = redactRun(data).appModel.app;
+    expect(config['spark.executor.instances']).toBe('4');
+    expect(config['spark.local.dir']).toBe('file:///tmp/spark');
+  });
+
+  it('is idempotent over URL hosts and scrubbed user names', () => {
+    const once = redactRun(run());
+    const twice = redactRunModel(once.appModel, once.catalog, once.configFindings);
+    expect(flatten(twice)).toBe(flatten(once));
+  });
+
+  it('redactComparison pseudonymizes the URL host and user in a config difference', () => {
+    const comparison = {
+      comparability: { conf: { equal: false, differences: [
+        { key: 'spark.eventLog.dir', baseline: `hdfs://${NAME_NODE}:8020/user/${USER_NAME}/a`, candidate: `hdfs://${NAME_NODE}:8020/user/${USER_NAME}/b` },
+      ] } },
+    };
+    const out = JSON.stringify(redactComparison(comparison));
+    expect(out).not.toContain(NAME_NODE);
+    expect(out).not.toContain(USER_NAME);
+    expect(out).toContain('/user/redacted-user/a');
+  });
+
+  it('redacts 500 hosts across 20 000 stages in well under a second', () => {
+    const hosts = Array.from({ length: 500 }, (_, i) => `worker-${i}.corp.example`);
+    const data = run();
+    data.executors.added = hosts.map((host, i) => ({ kind: 'added', timestamp: 0, executorId: String(i), host, totalCores: 4, resourceProfileId: null }));
+    data.stages = Array.from({ length: 20000 }, (_, i) => ({
+      id: i, name: `stage ${i} on ${hosts[i % 500]}`, hostStats: [{ host: hosts[(i * 7) % 500], taskCount: 1, totalDuration: 1 }],
+    }));
+    const started = performance.now();
+    const out = redactRun(data);
+    expect(performance.now() - started).toBeLessThan(2000);
+    expect(flatten(out)).not.toContain('corp.example');
+  });
+});

@@ -105,9 +105,13 @@ Options:
                                     the candidate matching this impact band (or any, with "all").
                                     A finding the baseline also has at the same place is not
                                     introduced, unless its band worsens to exactly this band.
-  --redact                          Pseudonymize the app id and any host/IP tokens in the output
-                                    (app-1, host-1, ...), so a report can be shared outside the
-                                    environment that produced it.
+  --redact                          Pseudonymize the app id, the app name and every host name and
+                                    IP address in the output (app-1, host-1, ...), including the
+                                    host of any URL. A user name in URL credentials, after /user/,
+                                    /home/ or /Users/, or in a user= value becomes redacted-user.
+                                    Other paths, table names and SQL text are kept as written, so
+                                    check the output before sharing it outside the environment
+                                    that produced it.
   --impact <band[,band]>            Filter the output's findings array to these impact bands
                                     (critical, warning, info). recommendations, cleanChecks,
                                     notRunChecks and the summary counts stay on the full,

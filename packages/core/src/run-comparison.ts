@@ -5,6 +5,7 @@ import { computeAllocation } from './allocation.ts';
 import { totalExecutorCpuMs, withEarlierAttempts } from './run-totals.ts';
 import { captureSnapshot } from './session-snapshot.ts';
 import { alignStages, compileNormalizePatterns, COMPARISON_SCHEMA_VERSION, type StageAlignment, type StagePair } from './stage-alignment.ts';
+import { mdInline } from './markdown-inline.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
 import { diffFindings, findingBand, findingKey, findingRule, type FindingLocator } from './finding-identity.ts';
 import { cyrb53 } from './string-hash.ts';
@@ -572,7 +573,7 @@ function renderChangedSection(changed: FindingsChangedRow[]): string[] {
 // What the runs share, as `- key: value` bullets: configuration, plan, data volume and executors.
 function renderComparabilitySection({ conf, plan, volume, capacity }: Comparability): string[] {
   const confLine = conf.equal == null ? 'a run records no Spark properties'
-    : conf.equal ? 'same' : `${conf.differences.length} differ (${conf.differences.map((d) => d.key).join(', ')})`;
+    : conf.equal ? 'same' : `${conf.differences.length} differ (${mdInline(conf.differences.map((d) => d.key).join(', '))})`;
   const pair = (f: { baseline: number | null; candidate: number | null }) => `${f.baseline ?? 'n/a'} -> ${f.candidate ?? 'n/a'}`;
   const execs = (side: { meanExecutors: number | null; peakExecutors: number | null }) =>
     `${side.meanExecutors == null ? 'n/a' : side.meanExecutors.toFixed(1)} mean / ${side.peakExecutors ?? 'n/a'} peak`;
@@ -600,10 +601,10 @@ export function renderComparisonMarkdown(
     // Names each run by its label (MCP's run IDs), unless the labels are just the role names the
     // CLI passes, where the verdict below already says baseline and candidate.
     if (comparison.baselineLabel !== 'baseline' || comparison.candidateLabel !== 'candidate') {
-      lines.push(`Baseline: ${comparison.baselineLabel} · Candidate: ${comparison.candidateLabel}`, '');
+      lines.push(`Baseline: ${mdInline(comparison.baselineLabel)} · Candidate: ${mdInline(comparison.candidateLabel)}`, '');
     }
-    lines.push(verdict.title);
-    if (verdict.sentences.length > 0) lines.push('', verdict.sentences.join(' '));
+    lines.push(mdInline(verdict.title));
+    if (verdict.sentences.length > 0) lines.push('', mdInline(verdict.sentences.join(' ')));
     lines.push('');
   }
   if (comparison.confidence !== 'ok') {
