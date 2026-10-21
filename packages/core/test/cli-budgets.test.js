@@ -1,6 +1,17 @@
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { evaluateBudgets } from '../src/cli/budgets.js';
 import { parseThresholdOverrides } from '../src/threshold-overrides.ts';
+import { collectRun } from '../src/cli/collect-run.ts';
+
+async function parsedAppModel(lines) {
+  const dir = mkdtempSync(join(tmpdir(), 'sf-budgets-'));
+  const path = join(dir, 'eventlog');
+  writeFileSync(path, `${lines.join('\n')}\n`);
+  try { return (await collectRun(path)).appModel; } finally { rmSync(dir, { recursive: true, force: true }); }
+}
 
 function baseAppModel(overrides = {}) {
   return {
@@ -195,11 +206,33 @@ describe('evaluateBudgets', () => {
     expect(results[0].detail).toContain('Task failure rate 40%');
   });
 
-  it('flags retried task failures when every job succeeded and no jobFailureRate finding fired', () => {
-    const stages = new Map([[1, { id: 1, taskCount: 100, failedTasks: 25 }]]);
-    const jobs = new Map([[1, { id: 1, result: 'JobSucceeded', succeeded: true }]]);
+  it('flags retried task failures when every job succeeded and no jobFailureRate finding fired', async () => {
+    const taskEnd = (index, attemptNumber, failed) => JSON.stringify({
+      Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Stage Attempt ID': 0,
+      'Task Info': { 'Task ID': index * 10 + attemptNumber, Index: index, 'Attempt Number': attemptNumber, 'Launch Time': 0, 'Finish Time': 100, Failed: failed, Killed: false, Speculative: false },
+      'Task Metrics': { 'Executor Run Time': 100 },
+    });
+    const tasks = Array.from({ length: 100 }, (_, i) => (i < 25 ? [taskEnd(i, 0, true), taskEnd(i, 1, false)] : [taskEnd(i, 0, false)])).flat();
+    const stageInfo = { 'Stage ID': 1, 'Stage Name': 'map', 'Number of Tasks': 100, 'Submission Time': 1000 };
+    const appModel = await parsedAppModel([
+      JSON.stringify({ Event: 'SparkListenerApplicationStart', 'App ID': 'application_0000000000000_0001', 'App Name': 't', Timestamp: 0 }),
+      JSON.stringify({ Event: 'SparkListenerJobStart', 'Job ID': 1, 'Submission Time': 0, 'Stage IDs': [1] }),
+      JSON.stringify({ Event: 'SparkListenerStageSubmitted', 'Stage Info': stageInfo }),
+      ...tasks,
+      JSON.stringify({ Event: 'SparkListenerStageCompleted', 'Stage Info': { ...stageInfo, 'Completion Time': 2000 } }),
+      JSON.stringify({ Event: 'SparkListenerJobEnd', 'Job ID': 1, 'Completion Time': 2000, 'Job Result': { Result: 'JobSucceeded' } }),
+      JSON.stringify({ Event: 'SparkListenerApplicationEnd', Timestamp: 3000 }),
+    ]);
+    const { results, violated } = evaluateBudgets({ appModel, catalog: [], budgets: { maxFailedTaskRatePct: 1 } });
+    expect(violated).toBe(true);
+    expect(results[0]).toMatchObject({ name: 'max-failed-task-rate', status: 'violation' });
+    expect(results[0].detail).toContain('Task failure rate 20%');
+  });
+
+  it('flags a failed-task rate that rounds to 0% against a zero budget', () => {
+    const stages = new Map([[1, { id: 1, taskCount: 3000, failedTasks: 1 }]]);
     const { results, violated } = evaluateBudgets({
-      appModel: baseAppModel({ stages, jobs }), catalog: [], budgets: { maxFailedTaskRatePct: 1 },
+      appModel: baseAppModel({ stages }), catalog: [], budgets: { maxFailedTaskRatePct: 0 },
     });
     expect(violated).toBe(true);
     expect(results[0]).toMatchObject({ name: 'max-failed-task-rate', status: 'violation' });

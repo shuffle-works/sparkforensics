@@ -1,6 +1,7 @@
 import { computeEfficiencyModel } from '../efficiency-model.ts';
 import { computeSkewRatio, ENTRY_BY_TYPE, type ThresholdOverrides } from '../detectors.ts';
 import { effectiveThresholds } from '../threshold-overrides.ts';
+import { withEarlierAttempts } from '../run-totals.ts';
 import { IMPACT_BANDS } from '../format-utils.ts';
 import { isEscalation, type CompareRunsResult } from '../run-comparison.ts';
 import { PAIR_DELTA_METRICS, type PairDeltaMetric, type StagePair } from '../stage-alignment.ts';
@@ -100,16 +101,18 @@ function checkSkew(appModel: AppModel, maxSkewRatio: number, minTasksForP95: num
 // Failed tasks over all tasks, summed across stages: the jobFailureRate detector reports the same
 // ratio but only once failed jobs pass its floor, so a run of retried tasks never reaches it.
 function checkFailedTaskRate(appModel: AppModel, maxPct: number): BudgetResult {
-  let totalTasks = 0, failedTasks = 0;
-  for (const stage of appModel.stages?.values() ?? []) {
-    totalTasks += stage.taskCount ?? 0;
-    failedTasks += stage.failedTasks ?? 0;
+  let totalAttempts = 0, failedAttempts = 0;
+  for (const stage of withEarlierAttempts([...appModel.stages?.values() ?? []])) {
+    const retried = (stage.wastedAttempts as number | undefined) ?? 0;
+    totalAttempts += (stage.taskCount ?? 0) + retried;
+    failedAttempts += (stage.failedTasks ?? 0) + retried;
   }
-  if (totalTasks === 0) {
+  if (totalAttempts === 0) {
     return { name: 'max-failed-task-rate', status: 'inconclusive', detail: 'No task data observed in this event log.' };
   }
-  const rate = Math.round((failedTasks / totalTasks) * 1000) / 10;
-  return rate > maxPct
+  const pct = (failedAttempts / totalAttempts) * 100;
+  const rate = Math.round(pct * 10) / 10;
+  return pct > maxPct
     ? { name: 'max-failed-task-rate', status: 'violation', detail: `Task failure rate ${rate}% exceeds budget ${maxPct}%.` }
     : { name: 'max-failed-task-rate', status: 'pass', detail: `Task failure rate ${rate}% within budget ${maxPct}%.` };
 }
