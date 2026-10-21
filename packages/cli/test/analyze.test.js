@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, symlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
@@ -954,6 +954,65 @@ describe('sparkforensics-analyze CLI', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('sparkforensics-analyze --out', () => {
+  let dir;
+  let logPath;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'sparkforensics-out-'));
+    logPath = join(dir, 'eventlog');
+    writeFileSync(logPath, ndjsonWithSkew());
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('exits 2 before analyzing when the parent folder of --out does not exist', async () => {
+    const target = join(dir, 'missing', 'report.json');
+    const { status, stderr, stdout } = await runMainInProcess([logPath, '--out', target]);
+    expect(status).toBe(2);
+    expect(stderr).toContain(`--out: ${join(dir, 'missing')} does not exist (ENOENT)`);
+    expect(stderr).not.toContain('Internal error');
+    expect(stderr).not.toContain('at writeFileSync');
+    expect(stdout).toBe('');
+  });
+
+  it('exits 2 when --out is an existing folder', async () => {
+    const { status, stderr } = await runMainInProcess([logPath, '--out', dir]);
+    expect(status).toBe(2);
+    expect(stderr).toContain(`--out: ${dir} is a directory`);
+  });
+
+  it('exits 2 when the parent of --out is a file', async () => {
+    const { status, stderr } = await runMainInProcess([logPath, '--out', join(logPath, 'report.json')]);
+    expect(status).toBe(2);
+    expect(stderr).toContain('is not a directory');
+  });
+
+  it('exits 2 without claiming the folder is missing when a component of the --out parent is a file', async () => {
+    const { status, stderr } = await runMainInProcess([logPath, '--out', join(logPath, 'sub', 'report.json')]);
+    expect(status).toBe(2);
+    expect(stderr).toContain(`--out: ${join(logPath, 'sub')} cannot be read (ENOTDIR)`);
+    expect(stderr).not.toContain('does not exist');
+  });
+
+  it('writes the report to a writable --out', async () => {
+    const target = join(dir, 'report.json');
+    const { status } = await runMainInProcess([logPath, '--out', target]);
+    expect(status).toBe(0);
+    expect(JSON.parse(readFileSync(target, 'utf8'))).toHaveProperty('generator');
+  });
+
+  it('prints only the message, with no stack trace, when the write itself fails with ENOENT', async () => {
+    // A dangling symlink passes the up-front check (its parent folder exists) and fails on write.
+    const link = join(dir, 'dangling.json');
+    symlinkSync(join(dir, 'gone', 'report.json'), link);
+    const { status, stderr } = await runMainInProcess([logPath, '--out', link]);
+    expect(status).toBe(6);
+    expect(stderr).toMatch(/^ENOENT: no such file or directory/);
+    expect(stderr).not.toContain('Internal error');
+    expect(stderr).not.toContain('    at ');
+    expect(existsSync(join(dir, 'gone'))).toBe(false);
   });
 });
 

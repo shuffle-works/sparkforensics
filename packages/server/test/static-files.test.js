@@ -110,6 +110,18 @@ describe('serveStatic', () => {
     expect(res.statusCode).toBe(403);
     expect(res.bodyText()).toBe('Forbidden');
   });
+  it('rejects a request for the root directory itself (/.) with 403', async () => {
+    const res = fakeRes();
+    await serveStatic({ url: '/.' }, res, rootDir);
+    expect(res.statusCode).toBe(403);
+    expect(res.bodyText()).toBe('Forbidden');
+  });
+  it('returns 400 for a malformed percent-escape', async () => {
+    const res = fakeRes();
+    await serveStatic({ url: '/%E0%A4%A' }, res, rootDir);
+    expect(res.statusCode).toBe(400);
+    expect(res.bodyText()).toBe('Bad request');
+  });
   it('rejects mixed-encoding (..%2f) path traversal with 403', async () => {
     const res = fakeRes();
     await serveStatic({ url: '/..%2f..%2fetc/passwd' }, res, rootDir);

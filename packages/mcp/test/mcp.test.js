@@ -132,6 +132,11 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     expect(Number(listed[1])).toBe(tools.length);
     expect(helpNames.sort()).toEqual(tools.map((t) => t.name).sort());
   }, 30000);
+  it.each([['--threshold'], ['--bogus'], ['--thresholds']])('refuses to start with a usage error for %s', async (...args) => {
+    const refused = await execFileAsync(binPath, args).catch((e) => e);
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toMatch(/Usage: sparkforensics-mcp/);
+  }, 10000);
   it('--thresholds tunes every tool, and an invalid file stops the server from starting', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
     cleanupDirs.push(dir);

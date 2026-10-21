@@ -73,7 +73,7 @@ inconclusive (`stderr` warning) rather than silently passing, and gets its own
 exit code distinct from both pass and violation. Exit codes: `0` pass, `1`
 a configured budget was violated, `2` a usage error (unknown or value-less
 flag, unknown `--regression-metric` key, an unreadable or invalid `--thresholds`
-or `--budgets` file), `3` no violations but at least one budget was inconclusive,
+or `--budgets` file, an `--out` whose folder is missing or that names a folder), `3` no violations but at least one budget was inconclusive,
 `4` the candidate could not be read or parsed (or its SHS fetch failed), `5` the
 baseline could not be read or parsed, `6` an internal error (an unhandled
 failure, a failed `--export-html` export). `main` catches anything unhandled and
@@ -210,12 +210,13 @@ Every tool failure comes back as `{isError: true, content: [...],
 structuredContent: {code}}`, never an HTTP-status-shaped error; `code` is one
 of the 5 existing SHS codes (`SHS_ERROR_CODES`, `packages/core/src/shs-request.js`)
 plus `run-not-found`, `finding-not-found`, `invalid-event-log` (also
-covers a nonexistent `path` source), `archive-too-large` (SHS archive over
+covers a nonexistent `path` source, and any file-system error such as `EACCES` or
+`EISDIR` on an event log that `toolErrorResult` maps to it), `archive-too-large` (SHS archive over
 the `SPARKFORENSICS_MAX_ARCHIVE_BYTES` byte cap, default 1 GiB, because the MCP path buffers
 the whole archive in memory, unlike the streaming `/shs-proxy` route),
 `invalid-type`, `invalid-anchor` (documentation tools), `directory-not-found`,
 `invalid-date-filter`, and `invalid-shs-base-url` (`list_runs`). An error without a
-code reports `access-or-upstream-failure`. A stalled SHS archive body fails as
+code reports `access-or-upstream-failure`, as does a file-system error in a documentation tool. A stalled SHS archive body fails as
 `upstream-unreachable` after `SPARKFORENSICS_SHS_TIMEOUT_MS` (default 30 s) without
 data.
 

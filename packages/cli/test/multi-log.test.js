@@ -187,10 +187,10 @@ describe('several candidate logs', () => {
     expect(status).toBe(6);
   });
 
-  it('exits 6 when the output cannot be written', async () => {
+  it('exits 2 when the folder of --out does not exist', async () => {
     const { status, stderr } = await run([p('same'), p('slower'), '--baseline', p('baseline'), '--out', p('no-such-dir/out.ndjson')]);
-    expect(status).toBe(6);
-    expect(stderr).toMatch(/^Internal error/);
+    expect(status).toBe(2);
+    expect(stderr).toMatch(/^--out: .*no-such-dir does not exist/);
   });
 
   it('names candidates by position and writes no candidate path under --redact', async () => {
@@ -366,10 +366,10 @@ describe('single-candidate exit codes for unreadable input', () => {
     expect((await run([p('garbage'), '--baseline', p('missing')])).status).toBe(5);
   });
 
-  it('exits 6 on an internal failure such as an unwritable --out', async () => {
+  it('exits 2 when the folder of --out does not exist', async () => {
     const { status, stderr } = await run([p('same'), '--out', p('no-such-dir/report.json')]);
-    expect(status).toBe(6);
-    expect(stderr).toMatch(/^Internal error/);
+    expect(status).toBe(2);
+    expect(stderr).toMatch(/^--out: .*no-such-dir does not exist/);
   });
 
   it('exits 4 when the --shs-base-url fetch fails', async () => {

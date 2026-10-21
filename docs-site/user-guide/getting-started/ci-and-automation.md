@@ -46,7 +46,9 @@ The command ships in the `sparkforensics-cli` package. To install it once:
 
 Point it at a single event-log file, or at one run's `eventlog_v2_*`
 rolling-log directory; any other directory is rejected. Output goes to
-stdout; pass `--out <path>` to write it to that file instead.
+stdout; pass `--out <path>` to write it to that file instead. The folder
+that holds the file must exist: a missing folder, or a folder given as the
+path, exits `2` before the log is read.
 
 Pass `--export-html <dir>` to write a self-contained HTML dashboard for the
 run into `<dir>` (which must not already exist or must be empty). Open
@@ -897,8 +899,8 @@ Two failures stop the batch before any line is written:
 - A baseline that can't be read or parsed exits `5`. Fix the baseline and run
   the batch again.
 
-An internal failure that isn't tied to one candidate, such as an unwritable
-`--out` path, exits `6`.
+An internal failure that isn't tied to one candidate, such as a write error
+after the checks pass, exits `6`.
 
 With `--redact`, no candidate path or application id is written anywhere, since
 event-log file names usually carry the app id. `log` and the `stderr` line prefixes name each

@@ -100,7 +100,8 @@ format is the CLI's: see
 [Tuning detector thresholds](./getting-started/tuning-thresholds.md#tuning-detector-thresholds).
 The overrides apply to every tool for the life of the server; a client can't
 change them per call. An unreadable or invalid file stops the server from
-starting: it exits with status 2, with the problem on stderr.
+starting: it exits with status 2, with the problem on stderr. An unknown
+flag, such as a misspelled `--threshold`, stops it the same way.
 `sparkforensics-mcp --help` prints the usage and the tool list. On a tuned
 server, `diagnose_run`, `compare_runs` and `evaluate_budgets` add a top-level `tunedThresholds`, and
 each finding and clean check from a tuned detector carries its own
@@ -163,7 +164,8 @@ The codes:
   parseable date.
 - `invalid-type`: that finding `type` isn't one `get_finding_documentation` recognizes.
 - `invalid-anchor`: that `anchor` doesn't resolve to a known `get_reference_doc` page.
-- `invalid-event-log`: the file doesn't exist, the file isn't a decodable
+- `invalid-event-log`: the file doesn't exist or can't be read (the text
+  names the system error, such as `EACCES`, without the path), the file isn't a decodable
   event log, the folder isn't a rolling event-log directory, or the History
   Server archive couldn't be decoded.
 - `application-not-found`: the History Server returned a 404 for that
