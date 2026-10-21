@@ -27,6 +27,12 @@ updates, `progress` (`pct: 1`), `stageLateAttemptWork`, `runAggregates`,
 `stageSpeculationWaste`, `stageExecutorMetrics`, the terminal `app`, then
 `done`.
 
+A parse that rejects in the worker (a dropped file that changed after the drop
+makes `slice().arrayBuffer()` throw `NotReadableError`, say) is posted as
+`{ type: 'error', message }` by `reportParseFailure`. An async `onmessage`
+rejection never reaches the parent's `worker.onerror`, so the worker reports it
+itself.
+
 A History Server failure is always the typed payload
 `{ type: 'error', source: 'shs', code, message? }`, where `code` is one of
 `local-server-unavailable`, `upstream-unreachable`, `application-not-found`,

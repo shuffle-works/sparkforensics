@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 import { cn } from '@/lib/utils';
+import { ErrorBoundary, WidgetErrorCard } from '@/view/ErrorBoundary';
 import { useRouteFocusedWidgetId, useTriageNavigation } from '@/view/TriageNavigationContext';
 
 interface GridCardState {
@@ -103,7 +104,10 @@ export function WidgetGridItem({
           className,
         )}
       >
-        {children}
+        {/* A widget that throws on its log's data shows an error card here, not a blank page. */}
+        <ErrorBoundary fallback={(error, reset) => <WidgetErrorCard error={error} onRetry={reset} />}>
+          {children}
+        </ErrorBoundary>
       </div>
     </WidgetGridCardContext.Provider>
   );
