@@ -8,7 +8,7 @@ import { createServer, serverStartupGuidance } from '../index.js';
 const SAMPLE_LOG = fileURLToPath(new URL('../../../public/sample-runs/sample-run.ndjson.gz', import.meta.url));
 
 // node:http (unlike fetch) lets a caller send an explicit Host header, needed
-// to simulate a DNS-rebinding attempt against the /mcp route.
+// to simulate a DNS-rebinding attempt against the /mcp and /shs-proxy routes.
 function requestWithHost(port, hostHeader, { path = '/mcp', method = 'POST', headers = {} } = {}) {
   return new Promise((resolve, reject) => {
     const req = http.request({
