@@ -2851,19 +2851,23 @@ export const DETECTORS = [
     detect(ctx, thresholds): Finding | null {
       const { app, executorsAdded, executorsRemoved } = ctx;
       if (!app || executorsAdded.length === 0 || app.endTime == null) return null;
-      if (executorsAdded.length < thresholds.minExecutors) return null;
 
       const removedAt = new Map<string, number>();
       for (const ev of executorsRemoved) removedAt.set(ev.executorId, ev.timestamp);
 
+      // Only executors with a removal event have a measured lifetime. One still alive at app end
+      // was never torn down, so it counts in neither the numerator nor the denominator.
+      let removedCount = 0;
       let shortLivedCount = 0;
       for (const ev of executorsAdded) {
-        const endedAt = removedAt.has(ev.executorId) ? removedAt.get(ev.executorId)! : app.endTime;
-        const lifetime = endedAt - ev.timestamp;
-        if (lifetime < thresholds.shortLivedMs) shortLivedCount++;
+        const endedAt = removedAt.get(ev.executorId);
+        if (endedAt === undefined) continue;
+        removedCount++;
+        if (endedAt - ev.timestamp < thresholds.shortLivedMs) shortLivedCount++;
       }
+      if (removedCount < thresholds.minExecutors) return null;
 
-      const shortLivedPct = shortLivedCount / executorsAdded.length;
+      const shortLivedPct = shortLivedCount / removedCount;
       const impactBand = shortLivedPct > thresholds.criticalPct ? 'critical'
                         : shortLivedPct > thresholds.warningPct ? 'warning' : null;
       if (!impactBand) return null;
