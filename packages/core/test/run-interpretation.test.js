@@ -171,7 +171,7 @@ describe('interpretRun', () => {
 
     expect(rollup.eligibleIndexes).toEqual([1, 2, 3]);
     expect(rollup.groups.map((group) => group.type)).toEqual(['skew', 'spill']);
-    // Members representative first; the group sits under its representative's band, not its worst.
-    expect(rollup.groups[0]).toMatchObject({ kind: 'time', band: 'info', memberIndexes: [1, 2], stat: '×2 · 6.0s recoverable' });
+    // Members representative first; the group sits under its worst member's band.
+    expect(rollup.groups[0]).toMatchObject({ kind: 'time', band: 'critical', memberIndexes: [1, 2], stat: '×2 · 6.0s recoverable' });
   });
 });
