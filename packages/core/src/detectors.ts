@@ -1058,8 +1058,10 @@ function partitionBasis(stage: DetectorStage, ctx: DetectorCtx): PartitionBasis 
 // `AQEShuffleRead` sits over a shuffle exchange that feeds the stage's operators, false when the
 // stage reads shuffle exchanges and none has one (a `repartition(n)` exchange never gets one, so the
 // job sized its tasks). The stage's operators are the non-exchange nodes that list it in `stageIds`;
-// an exchange lists the producing and the reading stage both, so it cannot seed the search. Null when
-// no node ties the stage to a shuffle exchange.
+// an exchange lists the producing and the reading stage both, so it cannot seed the search. A stage
+// with no such operator (a write over a repartition(n)) falls back to the exchange read halves that
+// list it as the later of their stages, since a reading stage is created after the one it reads.
+// Null when no node ties the stage to a shuffle exchange.
 function stageShuffleCoalesced(plan: PlanNode | null | undefined, stageId: number): boolean | null {
   let inputs = 0;
   let coalesced = false;
@@ -1070,14 +1072,28 @@ function stageShuffleCoalesced(plan: PlanNode | null | undefined, stageId: numbe
       return;
     }
     if (/Exchange$|^BroadcastQueryStage$/.test(node.name)) return;
-    const reads = covered || (/^(AQEShuffleRead|CustomShuffleReader)$/.test(node.name) && /\bcoalesced\b/.test(node.detail ?? ''));
+    const reads = covered || isCoalescingShuffleRead(node);
     for (const child of node.children ?? []) feeds(child, reads);
   };
   walkPlanTree(plan, (node) => {
     if (/Exchange$|^ShuffleQueryStage$/.test(node.name) || !node.stageIds?.includes(stageId)) return;
     for (const child of node.children ?? []) feeds(child, false);
   });
+  if (inputs > 0) return coalesced;
+  const readHalves = (node: PlanNode, covered: boolean): void => {
+    if (node.name === 'Exchange' && node.exchangeRole === 'read' && node.stageIds?.includes(stageId) && Math.min(...node.stageIds) !== stageId) {
+      inputs++;
+      coalesced ||= covered;
+    }
+    const reads = /Exchange$/.test(node.name) ? false : covered || isCoalescingShuffleRead(node);
+    for (const child of node.children ?? []) readHalves(child, reads);
+  };
+  if (plan) readHalves(plan, false);
   return inputs === 0 ? null : coalesced;
+}
+
+function isCoalescingShuffleRead(node: PlanNode): boolean {
+  return /^(AQEShuffleRead|CustomShuffleReader)$/.test(node.name) && /\bcoalesced\b/.test(node.detail ?? '');
 }
 
 // Whether a plan holds an exchange the job asked for (`repartition(n)`, `repartition(col)` or a
@@ -1107,7 +1123,8 @@ function countRelation(stage: DetectorStage, basis: PartitionBasis): CountRelati
 // Whether partition-count advice fits a shuffle-reading stage. The count that brings each shuffle
 // partition to the ideal size is per stage; the property is job-wide. 'sufficient': the tasks are
 // already at or under the ideal size. 'aqeCoalesced' and 'ownPartitioning' follow countRelation
-// ('ownPartitioning' also when the property already gives at least the count needed). Otherwise
+// ('ownPartitioning' when the plan shows AQE left the stage's exchange uncoalesced, so raising the
+// property does not reach it, and also when the property already gives at least the count needed). Otherwise
 // the property limits the stage: 'raise'.
 function shufflePartitionCase(stage: DetectorStage, ctx: DetectorCtx): { partitions: ShufflePartitions; count: number | null; key: string; needed: number } {
   const basis = partitionBasis(stage, ctx);
@@ -1118,6 +1135,7 @@ function shufflePartitionCase(stage: DetectorStage, ctx: DetectorCtx): { partiti
   let partitions: ShufflePartitions = 'raise';
   if (stage.shuffleReadBytes / tasks <= IDEAL_BYTES_PER_PARTITION_TASK) partitions = 'sufficient';
   else if (relation === 'coalesced') partitions = 'aqeCoalesced';
+  else if (relation === 'own' && basis.shuffleCoalesced === false) partitions = 'ownPartitioning';
   else if (count != null && count >= needed && relation !== 'adjusted') partitions = 'ownPartitioning';
   return { partitions, count, key, needed };
 }

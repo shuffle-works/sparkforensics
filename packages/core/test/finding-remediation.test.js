@@ -897,6 +897,39 @@ describe('partition-count advice follows what sized the stage', () => {
       expect(keys(of('stageSlowness', slow, config, '3.5.0', planWith(REPARTITION_NUM, null)))).toEqual(['code']);
       expect(keys(of('stageSlowness', slow, config, '3.5.0', planWith(REQUIREMENTS, 'coalesced')))).toEqual([ADVISORY]);
     });
+
+    it('keeps the shuffle and low-parallelism advice off the property when the property already exceeds the count', () => {
+      const large = { taskCount: 5, shuffleReadBytes: 100 * GiB, shuffleReadP50: 0, shuffleReadMax: 0 };
+      const shuffle = of('shuffle', large, config, '3.5.0', planWith(REPARTITION_NUM, null));
+      expect(shuffle.partitions).toBe('ownPartitioning');
+      expect(shuffle.remediation).toEqual([]);
+      expect(shuffle.recommendation).not.toMatch(/increasing spark\.sql\.shuffle\.partitions/);
+      const low = catalogOf([makeStage({ sqlExecutionId: 3, ...large })], makeApp({ config, sparkVersion: '3.5.0' }), planWith(REPARTITION_NUM, null))
+        .find((f) => f.rule === 'lowShuffleParallelism');
+      expect(low.partitions).toBe('ownPartitioning');
+      expect(low.remediation).toEqual([]);
+      expect(low.recommendation).toMatch(/repartition\(n\)/);
+    });
+
+    it('reads the exchange the stage reads when no operator of the stage carries task metrics', () => {
+      const writePlan = (readDetail) => {
+        const write = { name: 'Exchange', detail: '', metrics: [], stageIds: [0, 1], exchangeRole: 'write', children: [] };
+        const exchange = { name: 'Exchange', detail: REPARTITION_NUM, metrics: [], stageIds: [0, 1], exchangeRole: 'read', children: [write] };
+        const queryStage = { name: 'ShuffleQueryStage', detail: '', metrics: [], children: [exchange] };
+        const below = readDetail == null ? queryStage : { name: 'AQEShuffleRead', detail: readDetail, metrics: [], children: [queryStage] };
+        return new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [
+          { name: 'Execute InsertIntoHadoopFsRelationCommand', detail: '', metrics: [], children: [
+            { name: 'WriteFiles', detail: '', metrics: [], children: [below] }] }] } }]]);
+      };
+      const tinyStage = { taskCount: 300, taskDurationP50: 50, taskDurationP95: 100, shuffleReadBytes: 10 * MiB };
+      const own = of('tinyTask', tinyStage, config, '3.5.0', writePlan(null));
+      expect(keys(own)).toEqual(['code']);
+      expect(own.recommendation).not.toMatch(/AQE|advisoryPartitionSize/);
+      expect(keys(of('tinyTask', tinyStage, config, '3.5.0', writePlan('coalesced')))).toEqual([PARALLELISM_FIRST, ADVISORY]);
+      const slow = { taskCount: 300, submittedAt: 0, completedAt: 20 * 60000, shuffleReadBytes: 10 * MiB };
+      expect(keys(of('stageSlowness', slow, config, '3.5.0', writePlan(null)))).toEqual(['code']);
+      expect(keys(of('spill', spilled, config, '3.5.0', writePlan(null)))).toEqual(['code', 'spark.executor.memory']);
+    });
   });
 
   describe('stageSlowness', () => {
