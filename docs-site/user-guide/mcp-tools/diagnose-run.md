@@ -105,6 +105,11 @@ error, and when both are given `runId` wins):
   verdict's), `findingCount`, `findingsOmitted` and `recommendationCount`. A
   client that stores `structuredContent` stores only those.
 
+- `cursor`: `string`, the `pagination.nextCursor` of the previous page. See
+  [Pages](#pages).
+- `pageChars`: positive integer (default `50000`), the character budget of one
+  page. See [Pages](#pages).
+
 `impactBand`/`type`/`stageId`/`minBand`/`maxFindings` only limit the `findings` array
 (and the findings section of the Markdown):
 `verdict`, `recommendations`, `cleanChecks`, `notRunChecks`, and the finding counts in `summary` (when
@@ -112,6 +117,34 @@ requested via `include`) always stay computed from the full, unfiltered set,
 so a narrow filter never hides that other checks passed or other fixes exist.
 Each verdict step keeps its `leadFinding` row whatever the limit, so the rows the
 verdict points at are always in the answer.
+
+## Pages
+
+A JSON answer longer than `pageChars` characters (default 50,000) comes in
+pages, so a client that caps the size of a tool result can read a large run.
+The rows that grow with the run are paged: `findings`, `cleanChecks` and
+`notRunChecks` (full view), the stage rows of `metrics.stages` and
+`writeTargets.writes`, served in that order. The first page keeps the shape of
+the whole answer: the `verdict`, `recommendations`, `app`, `generator`,
+`effectiveConf`, `runComplete` and `findingsOmitted`, the totals of `metrics` and
+`writeTargets`, and as many rows of each list as fit. These fixed blocks count
+toward the budget of the first page, so a request for `include: ["detectors"]`
+can make it longer than `pageChars`.
+
+Every page has a `pagination` object: `page` (1 for the first), `pageChars`,
+`totals` (the rows each paged list holds in the whole answer) and `nextCursor`.
+While `nextCursor` is a string, call the tool again with the same arguments and
+`cursor` set to it. A later page holds `runId`, `view`, `runComplete`, the rows
+it carries in the places the first page puts them (`findings`,
+`metrics.stages`, `writeTargets.writes`, ...) and `pagination`. It always holds
+at least one row, so a `pageChars` smaller than a row still advances. Join the
+pages by concatenating the `findings`, `cleanChecks`, `notRunChecks` and
+`writeTargets.writes` arrays and merging the `metrics.stages` objects.
+
+An answer that fits in `pageChars` has no `pagination` field and is the answer
+the tool gives without paging. A cursor is tied to the run and to the number of
+rows the filters leave: one from another call fails with `invalid-cursor`.
+`format: "md"` is not paged: the Markdown report is one document.
 
 A `runId` expires. Loaded runs are cached in memory, capped at 8
 (LRU-evicted) and expired 15 minutes after their last use (override with

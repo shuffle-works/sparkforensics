@@ -149,6 +149,15 @@ from the unfiltered report, which is cached, so a limit never hides it. The fact
 `full`. With `format: 'md'` the handler returns `diagnoseHeadline()` as
 `structuredContent`.
 
+The handler pages a JSON answer with `paginateDiagnose()` (`diagnose-pagination.ts`) after
+`diagnoseRun()` builds it, so the report builder and direct callers of `diagnoseRun()` see
+the whole result. The paged lists are `findings`, `cleanChecks`, `notRunChecks`,
+`metrics.stages` and `writeTargets.writes`; their rows are served in that order, cut by the
+JSON length of each row. The cursor holds the offset, the page number and the run id with the
+row count, so it is stateless and a cursor from other filters is refused with `invalid-cursor`.
+`get_finding_evidence` resolves a run through `resolveFindingEvidence()`: a cached `runId`, else
+`resolveOrCreateRun()` on the `source`.
+
 ### One output builder for the CLI and MCP
 
 Neither surface lists the fields of a run or a comparison by hand. The CLI's

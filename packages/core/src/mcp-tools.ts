@@ -441,6 +441,27 @@ export function getFindingEvidence(
   return { runId, finding };
 }
 
+/** `get_finding_evidence` for a caller that may have lost its `runId` (a server restart, an eviction):
+ * a cached `runId` is used as it is; otherwise `source` is loaded (cached by its key, else analysed
+ * again) and, with `appId`, must hold that application. Finding ids come from the analysis, so they
+ * are the same in the new run. */
+export async function resolveFindingEvidence(
+  { runId, source, appId }: RunRef & { appId?: string }, findingId: string, opts?: { redact?: boolean; thresholds?: ThresholdOverrides },
+): Promise<{ runId: string; finding: FindingRow }> {
+  if (appId !== undefined && !source) throw mcpError('access-or-upstream-failure', 'appId needs the source of the run to analyse.');
+  if (runId) {
+    evictStale();
+    if (byRunId.has(runId) || !source) return getFindingEvidence(runId, findingId, opts);
+  }
+  if (!source) throw mcpError('access-or-upstream-failure', 'Provide runId, or source (with appId).');
+  const resolved = await resolveOrCreateRun({ source });
+  const actualAppId = resolved.appModel.app?.id ?? null;
+  if (appId !== undefined && actualAppId !== appId) {
+    throw mcpError('run-not-found', `The source holds application ${actualAppId ?? '(none)'}, not ${appId}.`);
+  }
+  return getFindingEvidence(resolved.runId, findingId, opts);
+}
+
 function hasCompleteInterval(app: SparkAppInfo | null): boolean {
   return Number.isFinite(app?.startTime) && Number.isFinite(app?.endTime) && (app?.endTime ?? 0) > (app?.startTime ?? 0);
 }
