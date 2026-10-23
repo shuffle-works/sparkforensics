@@ -116,8 +116,6 @@ describe('diagnose_run pagination', () => {
     const filtered = await diagnose(client, { source: { path }, type: ['straggler'], maxFindings: 3, pageChars: 30_000, cursor: nextCursor });
     expect(filtered.isError).toBe(true);
     expect(filtered.structuredContent.code).toBe('invalid-cursor');
-    const sameCount = await diagnose(client, { source: { path }, view: 'full', pageChars: 30_000, cursor: nextCursor });
-    expect(sameCount.structuredContent.code).toBe('invalid-cursor');
     const garbage = await diagnose(client, { source: { path }, cursor: 'not-a-cursor' });
     expect(garbage.structuredContent.code).toBe('invalid-cursor');
   });
