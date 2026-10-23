@@ -257,7 +257,7 @@ export function rankFindings(findings: Finding[]): Finding[] {
   });
 }
 
-/** A board group ready to render: members ranked representative first, the representative's
+/** A board group ready to render: members ranked representative first, the worst member's
  * band (the heading the group sits under) and the group's trailing figure. */
 export interface RankedRollupGroup {
   kind: RollupGroup['kind'];
@@ -281,7 +281,7 @@ export function rankedRollup(
       kind: group.kind,
       type: group.type,
       unit: group.kind === 'resource' ? group.unit : null,
-      band: members[0].impactBand,
+      band: worstImpactBand(members)!,
       members,
       ...rollupGroupStat(group),
     };

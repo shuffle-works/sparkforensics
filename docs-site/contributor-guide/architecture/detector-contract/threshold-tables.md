@@ -33,8 +33,8 @@ stands regardless of how small that estimate is relative to the run.
 `critical` finding at `warning` when its stage carries under `CRITICAL_MIN_TASK_TIME_SHARE` = 2% of
 the run's summed task time (the stage's `executorStats` task wall time, else `executorRunTime`). It applies
 whether a detector or `deriveImpactBand()` set the band. Failures (`stageFailed`, `jobFailureRate`) and
-`partitionSizing`'s `maxPartitionTooBig` keep `critical`, as do a finding on no single stage and a run
-with no recorded task time.
+`partitionSizing`'s `maxPartitionTooBig` keep `critical`, as do a finding on no single stage, a finding
+on a stage with no recorded task time and a run with no recorded task time.
 
 ### Fixed fallback only (usually wallClock-derived instead)
 

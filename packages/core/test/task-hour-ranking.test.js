@@ -66,6 +66,15 @@ describe('task-hour ranking: a heavy spill stage against a cheap critical findin
     const stages = new Map([[3, stage(3, 1)], [9, stage(9, 1)]]);
     expect(rankedRollup([slowHost, spill], stages).map((group) => group.type)).toEqual(['spill', 'slowHost']);
   });
+
+  it('files a group under its worst member band while the heavier stage leads it', () => {
+    const cheapCritical = finding('skew', 1, 'critical', 5, 10 * 60_000);
+    const heavyWarning = finding('skew', 2, 'warning', 40, 60_000);
+    const stages = new Map([[1, stage(1, 5)], [2, stage(2, 40)]]);
+    const [group] = rankedRollup([cheapCritical, heavyWarning], stages);
+    expect(group.members[0]).toBe(heavyWarning);
+    expect(group.band).toBe('critical');
+  });
 });
 
 describe('capCriticalByTaskTime', () => {
@@ -110,6 +119,12 @@ describe('capCriticalByTaskTime', () => {
     const noTime = [slowHost(1)];
     capCriticalByTaskTime(noTime, new Map([[1, { id: 1 }]]));
     expect(noTime[0].impactBand).toBe('critical');
+  });
+
+  it('leaves a finding on a stage with no recorded task time alone in a run that has some', () => {
+    const findings = [slowHost(3)];
+    capCriticalByTaskTime(findings, new Map([...stages, [3, { id: 3 }]]));
+    expect(findings[0].impactBand).toBe('critical');
   });
 });
 

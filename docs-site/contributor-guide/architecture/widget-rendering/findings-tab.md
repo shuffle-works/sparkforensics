@@ -17,9 +17,9 @@ list). The rollup and its ranking are computed in core by `interpretRun`
 `useFixTheseFirstData` reads it through `boardRollup`
 (`src/view/interpretation.ts`: the interpretation's carried groups when
 unfiltered, core `rankedRollup` recomputed over the kept findings under a
-filter). `ImpactBoard` then buckets rows by each group's `band` (its
-representative member's impact band, after core `rankFindings`, the same
-finding whose impact band its own badge already shows) and cards by each
+filter). `ImpactBoard` then buckets rows by each group's `band` (its worst
+member's impact band, which the group row's badge also shows, while
+`rankFindings` orders the members by stage task time) and cards by each
 active widget's own `worstImpactBand`. The verdict's step leads
 (`verdictLeads`) are dropped before the rollup and the cards the verdict
 shows in place (`verdictWidgetIds`) before `computeActiveWidgets`'s list is

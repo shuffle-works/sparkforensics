@@ -36,13 +36,19 @@ export const SPILL_TASK_TIME_SHARE_PER_PASS = 0.1;
 // stage's task time also covers reading, computing and writing.
 export const SPILL_TASK_TIME_SHARE_MAX = 0.5;
 
-// A stage's summed task wall time: the per-executor sums finalizeStage keeps, else executorRunTime
-// (the same measure without launch and result overhead). 0 when the stage has neither. The cost the
-// ranking orders by (rankStageCostMs), in task-milliseconds.
-export function stageTaskMs(stage: Stage): number {
+// A stage's task wall time (launch to finish), summed per executor by finalizeStage. 0 without
+// executorStats.
+function summedTaskWallMs(stage: Stage): number {
   const executorStats = Array.isArray(stage.executorStats)
     ? (stage.executorStats as { totalDuration?: number }[]) : [];
-  const summed = executorStats.reduce((sum, e) => sum + (e.totalDuration ?? 0), 0);
+  return executorStats.reduce((sum, e) => sum + (e.totalDuration ?? 0), 0);
+}
+
+// A stage's summed task wall time, else executorRunTime (the same measure without launch and
+// result overhead). 0 when the stage has neither. The cost the ranking orders by
+// (rankStageCostMs), in task-milliseconds.
+export function stageTaskMs(stage: Stage): number {
+  const summed = summedTaskWallMs(stage);
   return summed > 0 ? summed : (stage.executorRunTime ?? 0);
 }
 
@@ -64,9 +70,7 @@ export function spillTaskTimeShare(stage: Stage): { share: number; passes: numbe
 // launch round trip that coalescing tasks removes. `concurrency` is the stage's achieved task
 // concurrency (task time / stage duration). Null when the stage has no such data or no overhead.
 export function measuredTaskOverhead(stage: Stage): { perTaskMs: number; concurrency: number } | null {
-  const executorStats = Array.isArray(stage.executorStats)
-    ? (stage.executorStats as { totalDuration?: number }[]) : [];
-  const taskTimeMs = executorStats.reduce((sum, e) => sum + (e.totalDuration ?? 0), 0);
+  const taskTimeMs = summedTaskWallMs(stage);
   const taskCount = stage.taskCount ?? 0;
   const durationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
   const overheadMs = taskTimeMs - (stage.executorRunTime ?? 0);

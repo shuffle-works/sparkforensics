@@ -69,8 +69,8 @@ export function deriveImpactBand(
  * deriveImpactBand graded it from recoverable wall-clock: a stage that small cannot hold a
  * critical cost for a shared cluster. Failures (FAILURE_TYPES) and partitionSizing's
  * maxPartitionTooBig are safety signals whatever the stage costs, and a finding with no single
- * stage, or a run with no recorded task time, has nothing to compare. Mutates in place and returns
- * the array.
+ * stage, a stage with no recorded task time, or such a run has nothing to compare. Mutates in place
+ * and returns the array.
  */
 export function capCriticalByTaskTime(findings: Finding[], stages: Map<number, Stage>): Finding[] {
   let runTaskMs = 0;
@@ -81,7 +81,8 @@ export function capCriticalByTaskTime(findings: Finding[], stages: Map<number, S
     if (FAILURE_TYPES.has(finding.type)) continue;
     if (finding.type === 'partitionSizing' && finding.rule === 'maxPartitionTooBig') continue;
     const stage = typeof finding.stageId === 'number' ? stages.get(finding.stageId) : undefined;
-    if (stage && stageTaskMs(stage) / runTaskMs < CRITICAL_MIN_TASK_TIME_SHARE) finding.impactBand = 'warning';
+    const taskMs = stage ? stageTaskMs(stage) : 0;
+    if (taskMs > 0 && taskMs / runTaskMs < CRITICAL_MIN_TASK_TIME_SHARE) finding.impactBand = 'warning';
   }
   return findings;
 }
