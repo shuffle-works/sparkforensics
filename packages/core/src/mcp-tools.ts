@@ -443,7 +443,8 @@ export function getFindingEvidence(
 
 /** `get_finding_evidence` for a caller that may have lost its `runId` (a server restart, an eviction):
  * a cached `runId` is used as it is; otherwise `source` is loaded (cached by its key, else analysed
- * again) and, with `appId`, must hold that application. Finding ids come from the analysis, so they
+ * again) and, with `appId`, must hold that application, named as the response names it (the
+ * pseudonym under `redact`). Finding ids come from the analysis, so they
  * are the same in the new run. */
 export async function resolveFindingEvidence(
   { runId, source, appId }: RunRef & { appId?: string }, findingId: string, opts?: { redact?: boolean; thresholds?: ThresholdOverrides },
@@ -455,7 +456,9 @@ export async function resolveFindingEvidence(
   }
   if (!source) throw mcpError('access-or-upstream-failure', 'Provide runId, or source (with appId).');
   const resolved = await resolveOrCreateRun({ source });
-  const actualAppId = resolved.appModel.app?.id ?? null;
+  const actualAppId = opts?.redact
+    ? buildEvidenceReport(resolved.appModel, { redact: true, markdown: false, thresholds: opts.thresholds }).json.summary.app.id ?? null
+    : resolved.appModel.app?.id ?? null;
   if (appId !== undefined && actualAppId !== appId) {
     throw mcpError('run-not-found', `The source holds application ${actualAppId ?? '(none)'}, not ${appId}.`);
   }

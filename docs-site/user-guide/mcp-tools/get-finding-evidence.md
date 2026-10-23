@@ -16,7 +16,8 @@ Parameters (`findingId` is required, and so is `runId` or `source`: call
   used as it is. Otherwise the run is loaded from `source`, which analyses it
   again unless the same unchanged source is cached. A finding's `id` is the
   same in the new analysis, so an `id` from before a server restart resolves.
-- `appId`: `string`, the Spark application the finding belongs to. Needs
+- `appId`: `string`, the Spark application the finding belongs to, as
+  `diagnose_run` named it (with `redact`, the pseudonym such as `app-1`). Needs
   `source`. The call fails with `run-not-found` when the log holds another
   application.
 - `findingId`: `string`

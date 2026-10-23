@@ -206,6 +206,19 @@ describe('get_finding_evidence by appId', () => {
     expect(result.content[0].text).not.toContain(path);
   });
 
+  it('matches the redacted app id under redact and does not print the real one', async () => {
+    const client = await connectedClient();
+    const diagnosis = (await diagnose(client, { source: { path }, redact: true })).structuredContent;
+    const finding = diagnosis.findings.find((row) => row.type === 'straggler');
+    expect(diagnosis.app.id).toMatch(/^app-\d+$/);
+    const result = await evidence(client, { source: { path }, appId: diagnosis.app.id, redact: true, findingId: finding.id });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent.finding.id).toBe(finding.id);
+    const wrong = await evidence(client, { source: { path }, appId: 'application_0000000000000_0002', redact: true, findingId: finding.id });
+    expect(wrong.structuredContent.code).toBe('run-not-found');
+    expect(wrong.content[0].text).not.toContain('app-large');
+  });
+
   it.each([
     [{ appId: 'app-large', findingId: 'x' }, 'appId needs the source'],
     [{ findingId: 'x' }, 'Provide runId, or source'],
