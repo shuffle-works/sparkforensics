@@ -22,7 +22,7 @@ import {
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { outputRowsOf, ownOutputRows, parseNestedLoopJoin } from './nested-loop-join.ts';
 import { totalExecutorCpuMs } from './run-totals.ts';
-import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
+import { duplicateSubtreeDetail, duplicateSubtreeNote, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { indexStagesBySqlExecution } from './sql-stages.ts';
 import { cyrb53 } from './string-hash.ts';
 import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
@@ -520,15 +520,6 @@ function rootActionOf(description: string | undefined): string | null {
   return /^\s*(\w+) at /.exec(description ?? '')?.[1] ?? null;
 }
 
-// Delta version a scan node reads, where its detail records one (`Delta[version=3, ...]`,
-// `versionAsOf=3`). Null when it records none: the read is then assumed to match its twin.
-function deltaScanVersion(node: PlanNode): number | null {
-  const detail = node.detail ?? '';
-  if (!/delta/i.test(detail) || relationIdOf(node) === null) return null;
-  const match = /\bversion(?:AsOf)?\s*[=:]\s*(\d+)/i.exec(detail);
-  return match ? Number(match[1]) : null;
-}
-
 // True when every occurrence scans the same Delta tables but at least one at another version. A
 // cache holds one snapshot, so it cannot serve reads of two versions. Any Delta scan with no
 // recorded version leaves the answer unknown (false): the finding stays as it was.
@@ -538,10 +529,12 @@ function occurrencesReadDifferentDeltaVersions(occurrences: PlanNode[]): boolean
     let unknown = false;
     walkPlanTree(root, (n) => {
       const relation = relationIdOf(n);
-      if (relation === null || !/delta/i.test(n.detail ?? '')) return;
-      const version = deltaScanVersion(n);
-      if (version === null) unknown = true;
-      else reads.push({ relation, version });
+      const detail = n.detail ?? '';
+      if (relation === null || !/delta/i.test(detail)) return;
+      // The version the scan records (`Delta[version=3, ...]`, `versionAsOf=3`).
+      const version = /\bversion(?:AsOf)?\s*[=:]\s*(\d+)/i.exec(detail)?.[1];
+      if (version === undefined) unknown = true;
+      else reads.push({ relation, version: Number(version) });
     });
     return unknown || reads.length === 0 ? null : reads;
   };
@@ -3288,7 +3281,7 @@ export const DETECTORS = [
         // resolvePlanTree always sets id, so the `!` here and below is safe.
         const planNodeIds = nodes.map((n) => n.id!).filter(Boolean);
         const detail = duplicateSubtreeDetail({ ...g, value: g.occurrences });
-        const differing = occurrencesIdentical ? '' : ` ${DUPLICATE_SUBTREE_DIFFERING_NOTE}`;
+        const note = duplicateSubtreeNote({ occurrencesIdentical, readsDifferentVersions });
         return {
           type: 'duplicatePlanSubtree', executionId: sqlExec.id, stageIds, planNodeIds,
           stageShares, occurrencesIdentical, readsDifferentVersions,
@@ -3303,10 +3296,10 @@ export const DETECTORS = [
           confidence: occurrencesIdentical ? duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, thresholds) : 'low',
           validationRequired: 'Matching compares operator and metric names only, not literals or expression IDs: confirm the repeat in the Spark UI SQL tab before acting.',
           recommendation: readsDifferentVersions
-            ? `${detail}, reading different versions of the same Delta table: a cache holds one version, so it cannot serve both reads.`
+            ? `${detail}.${note}`
             : (g.isExchangeRoot
               ? `${detail}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`
-              : `${detail}: consider caching/persisting the shared computation or check for a duplicated query branch.`) + differing,
+              : `${detail}: consider caching/persisting the shared computation or check for a duplicated query branch.`) + note,
         };
       }).filter((f): f is Finding => f !== null);
       return findings.length > 0 ? findings : null;

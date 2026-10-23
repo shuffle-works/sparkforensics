@@ -177,3 +177,11 @@ test('confidence and evidence markers stay out of the summary view until the car
   expect(screen.getByRole('button', { name: /evidence:/i })).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
 });
+
+test('explains a repeat reading different Delta versions instead of calling its details different', () => {
+  renderWidget([finding({ occurrencesIdentical: false, readsDifferentVersions: true })]);
+  expect(screen.getAllByText(/different versions of the same Delta table/).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/filters, columns or scanned tables differ/)).toBeNull();
+  expect(screen.queryByText(/cache\/persist the shared computation/)).toBeNull();
+  cleanup();
+});

@@ -73,6 +73,15 @@ test('returns a stable, instance-free sentence for every simple single-branch ty
   }
 });
 
+test('gives no cache advice for duplicatePlanSubtree repeats reading different Delta versions', () => {
+  expect(coreFindingGenericRecommendation(finding({ type: 'duplicatePlanSubtree', readsDifferentVersions: false })))
+    .toMatch(/cache/);
+  const text = coreFindingGenericRecommendation(finding({ type: 'duplicatePlanSubtree', readsDifferentVersions: true }));
+  expect(text).toMatch(/different versions of the same Delta table/);
+  expect(text).not.toMatch(/cache\/persist|computed once and reused/);
+  expect(text).not.toMatch(NO_DIGITS);
+});
+
 test('branches on the property field for configAudit', () => {
   expect(coreFindingGenericRecommendation(finding({ type: 'configAudit', property: 'spark.dynamicAllocation.maxExecutors' })))
     .toMatch(/spark\.dynamicAllocation\.maxExecutors/);
