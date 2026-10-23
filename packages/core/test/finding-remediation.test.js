@@ -854,6 +854,51 @@ describe('partition-count advice follows what sized the stage', () => {
     });
   });
 
+  describe('a stage whose own exchange the plan shows', () => {
+    // The stage (id 1) reads an exchange that stage 0 wrote; the exchange lists both stages, the
+    // stage's own operator lists only itself. `read` is what sits between the operator and the exchange.
+    const planWith = (exchangeDetail, readDetail) => {
+      const exchange = { name: 'Exchange', detail: exchangeDetail, metrics: [], stageIds: [0, 1], exchangeRole: 'read', children: [] };
+      const queryStage = { name: 'ShuffleQueryStage', detail: '', metrics: [], children: [exchange] };
+      const below = readDetail == null ? queryStage : { name: 'AQEShuffleRead', detail: readDetail, metrics: [], children: [queryStage] };
+      return new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [
+        { name: 'HashAggregate', detail: '', metrics: [], stageIds: [1], children: [below] }] } }]]);
+    };
+    const REPARTITION_NUM = 'Exchange hashpartitioning(k#1L, 300), REPARTITION_BY_NUM, [plan_id=4]';
+    const REQUIREMENTS = 'Exchange hashpartitioning(k#1L, 400), ENSURE_REQUIREMENTS, [plan_id=4]';
+    const config = { 'spark.sql.shuffle.partitions': '400' };
+    const spilled = { taskCount: 300, memoryBytesSpilled: 5 * GiB, spillClassification: 'volume', shuffleReadBytes: 10 * GiB };
+
+    it('does not say AQE coalesced a repartition(n) exchange, and offers no advisory size', () => {
+      const f = of('spill', spilled, config, '3.5.0', planWith(REPARTITION_NUM, null));
+      expect(keys(f)).toEqual(['code', 'spark.executor.memory']);
+      expect(f.recommendation).not.toMatch(/AQE|advisoryPartitionSize/);
+      expect(f.recommendation).toMatch(/configured shuffle partition count is 400 but this stage ran 300 tasks.*repartition\(n\).*executor memory/);
+      expect(coreFindingGenericRecommendation(f)).not.toMatch(/advisoryPartitionSizeInBytes/);
+    });
+
+    it('does not say AQE coalesced an exchange that has no AQE shuffle read over it', () => {
+      const f = of('spill', spilled, config, '3.5.0', planWith(REQUIREMENTS, null));
+      expect(keys(f)).toEqual(['code', 'spark.executor.memory']);
+      expect(f.recommendation).not.toMatch(/AQE|advisoryPartitionSize/);
+    });
+
+    it('keeps the advisory size where a coalescing AQE read sits over the exchange', () => {
+      const f = of('spill', spilled, config, '3.5.0', planWith(REQUIREMENTS, 'coalesced'));
+      expect(keys(f)).toEqual([ADVISORY, 'spark.executor.memory']);
+      expect(f.recommendation).toMatch(/AQE coalesced the 400 configured shuffle partitions into 300 tasks/);
+    });
+
+    it('applies the same classification to the other partition-count findings', () => {
+      const tinyStage = { taskCount: 300, taskDurationP50: 50, taskDurationP95: 100, shuffleReadBytes: 10 * MiB };
+      expect(keys(of('tinyTask', tinyStage, config, '3.5.0', planWith(REPARTITION_NUM, null)))).toEqual(['code']);
+      expect(keys(of('tinyTask', tinyStage, config, '3.5.0', planWith(REQUIREMENTS, 'coalesced')))).toEqual([PARALLELISM_FIRST, ADVISORY]);
+      const slow = { taskCount: 300, submittedAt: 0, completedAt: 20 * 60000, shuffleReadBytes: 10 * MiB };
+      expect(keys(of('stageSlowness', slow, config, '3.5.0', planWith(REPARTITION_NUM, null)))).toEqual(['code']);
+      expect(keys(of('stageSlowness', slow, config, '3.5.0', planWith(REQUIREMENTS, 'coalesced')))).toEqual([ADVISORY]);
+    });
+  });
+
   describe('stageSlowness', () => {
     const slow = { taskCount: 400, submittedAt: 0, completedAt: 20 * 60000, shuffleReadBytes: 10 * MiB };
 

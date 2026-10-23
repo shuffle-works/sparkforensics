@@ -1037,6 +1037,8 @@ interface PartitionBasis {
   skewSplit: boolean | null;
   /** Whether the execution's plan holds a `repartition` or `rebalance` the job asked for. */
   explicitRepartition: boolean;
+  /** Whether a coalescing AQE shuffle read sits over the exchange the stage reads; null when the plan does not tie the stage to an exchange. */
+  shuffleCoalesced: boolean | null;
 }
 
 function partitionBasis(stage: DetectorStage, ctx: DetectorCtx): PartitionBasis {
@@ -1047,8 +1049,35 @@ function partitionBasis(stage: DetectorStage, ctx: DetectorCtx): PartitionBasis 
   const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
   const skewSplit = aqe ? planShowsSkewSplit(plan) : null;
   const explicitRepartition = planHasExplicitRepartition(plan);
-  if (initial != null && /^\d+$/.test(initial)) return { count: Number(initial), key: INITIAL_PARTITION_NUM_KEY, aqe, coalesce, skewSplit, explicitRepartition };
-  return { count: effectiveShufflePartitions(app), key: 'spark.sql.shuffle.partitions', aqe, coalesce, skewSplit, explicitRepartition };
+  const shuffleCoalesced = coalesce ? stageShuffleCoalesced(plan, stage.id) : null;
+  if (initial != null && /^\d+$/.test(initial)) return { count: Number(initial), key: INITIAL_PARTITION_NUM_KEY, aqe, coalesce, skewSplit, explicitRepartition, shuffleCoalesced };
+  return { count: effectiveShufflePartitions(app), key: 'spark.sql.shuffle.partitions', aqe, coalesce, skewSplit, explicitRepartition, shuffleCoalesced };
+}
+
+// Whether AQE coalesced the shuffle a stage reads, from the plan: true when a coalescing
+// `AQEShuffleRead` sits over a shuffle exchange that feeds the stage's operators, false when the
+// stage reads shuffle exchanges and none has one (a `repartition(n)` exchange never gets one, so the
+// job sized its tasks). The stage's operators are the non-exchange nodes that list it in `stageIds`;
+// an exchange lists the producing and the reading stage both, so it cannot seed the search. Null when
+// no node ties the stage to a shuffle exchange.
+function stageShuffleCoalesced(plan: PlanNode | null | undefined, stageId: number): boolean | null {
+  let inputs = 0;
+  let coalesced = false;
+  const feeds = (node: PlanNode, covered: boolean): void => {
+    if (node.name === 'ShuffleQueryStage' || node.name === 'Exchange') {
+      inputs++;
+      coalesced ||= covered;
+      return;
+    }
+    if (/Exchange$|^BroadcastQueryStage$/.test(node.name)) return;
+    const reads = covered || (/^(AQEShuffleRead|CustomShuffleReader)$/.test(node.name) && /\bcoalesced\b/.test(node.detail ?? ''));
+    for (const child of node.children ?? []) feeds(child, reads);
+  };
+  walkPlanTree(plan, (node) => {
+    if (/Exchange$|^ShuffleQueryStage$/.test(node.name) || !node.stageIds?.includes(stageId)) return;
+    for (const child of node.children ?? []) feeds(child, false);
+  });
+  return inputs === 0 ? null : coalesced;
 }
 
 // Whether a plan holds an exchange the job asked for (`repartition(n)`, `repartition(col)` or a
@@ -1060,7 +1089,8 @@ function planHasExplicitRepartition(plan: PlanNode | null | undefined): boolean 
 }
 
 // How the stage's task count relates to the configured one. 'matches': the configured count sized it
-// (or the count is unknown). 'coalesced': AQE merged the partitions into fewer tasks. 'adjusted': more
+// (or the count is unknown). 'coalesced': AQE merged the partitions into fewer tasks, unless the plan
+// shows the stage's exchange with no coalescing read over it, which makes the count the job's. 'adjusted': more
 // tasks than configured under AQE, which a skew-join split can produce and several shuffle reads in
 // one execution can obscure: the stage's own repartition(n) is blamed only when the plan holds one.
 // 'own': a different count with no AQE to rewrite it, or with a repartition(n) in the plan, which is
@@ -1069,7 +1099,7 @@ type CountRelation = 'matches' | 'coalesced' | 'adjusted' | 'own';
 
 function countRelation(stage: DetectorStage, basis: PartitionBasis): CountRelation {
   if (basis.count == null || stage.taskCount === basis.count) return 'matches';
-  if (basis.coalesce && stage.taskCount < basis.count) return 'coalesced';
+  if (basis.coalesce && stage.taskCount < basis.count && basis.shuffleCoalesced !== false) return 'coalesced';
   if (basis.aqe && stage.taskCount > basis.count && (basis.skewSplit !== false || !basis.explicitRepartition)) return 'adjusted';
   return 'own';
 }
