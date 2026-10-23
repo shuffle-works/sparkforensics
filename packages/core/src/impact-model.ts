@@ -29,6 +29,35 @@ export interface EstimateCtx {
 export const SHUFFLE_THROUGHPUT_BPS = 125_000_000;
 // Assumed disk I/O throughput per executor for spilled data, ~200 MB/s (conservative HDD/SSD blend).
 export const SPILL_IO_THROUGHPUT_BPS = 200_000_000;
+// Assumed share of a stage's task time that one full pass of its processed bytes through memory spill
+// costs in serialization, compression and sort/merge CPU. Starting assumption, unvalidated.
+export const SPILL_TASK_TIME_SHARE_PER_PASS = 0.1;
+// Ceiling on the share of task time spill is charged, however many passes the stage spilled: the
+// stage's task time also covers reading, computing and writing.
+export const SPILL_TASK_TIME_SHARE_MAX = 0.5;
+
+// A stage's summed task wall time: the per-executor sums finalizeStage keeps, else executorRunTime
+// (the same measure without launch and result overhead). 0 when the stage has neither. The cost the
+// ranking orders by (rankStageCostMs), in task-milliseconds.
+export function stageTaskMs(stage: Stage): number {
+  const executorStats = Array.isArray(stage.executorStats)
+    ? (stage.executorStats as { totalDuration?: number }[]) : [];
+  const summed = executorStats.reduce((sum, e) => sum + (e.totalDuration ?? 0), 0);
+  return summed > 0 ? summed : (stage.executorRunTime ?? 0);
+}
+
+// Share of the stage's task time spill costs in serialization and sort CPU: the passes of the stage's
+// processed bytes (input plus shuffle read) that went through memory spill, times
+// SPILL_TASK_TIME_SHARE_PER_PASS, capped at SPILL_TASK_TIME_SHARE_MAX. `passes` is how many times
+// over the spilled bytes cover what the stage read. Null when the stage spilled no memory or read
+// no bytes to compare it to.
+export function spillTaskTimeShare(stage: Stage): { share: number; passes: number } | null {
+  const processedBytes = (stage.inputBytes ?? 0) + (stage.shuffleReadBytes ?? 0);
+  const spilledBytes = stage.memoryBytesSpilled ?? 0;
+  if (processedBytes <= 0 || spilledBytes <= 0) return null;
+  const passes = spilledBytes / processedBytes;
+  return { share: Math.min(SPILL_TASK_TIME_SHARE_MAX, passes * SPILL_TASK_TIME_SHARE_PER_PASS), passes };
+}
 
 // A stage's own per-task overhead: task wall time (launch to finish, summed per executor by
 // finalizeStage) minus executorRunTime, i.e. deserialization, result serialization and the

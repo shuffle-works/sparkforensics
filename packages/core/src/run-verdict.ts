@@ -8,7 +8,7 @@ import { singleStageId } from './finding-filter-predicate.ts';
 import { recommendationText } from './finding-names.ts';
 import { formatDuration, formatRawWaste, IMPACT_BAND_ORDER, readsAsZero } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
-import { isEligible } from './recommendation-rollup.ts';
+import { compareStageCost, isEligible, rankStageCostMs } from './recommendation-rollup.ts';
 import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from './run-outcome.ts';
 import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates.ts';
 import { computeWallClock } from './wall-clock.ts';
@@ -52,14 +52,18 @@ export function isRankable(finding: Finding): boolean {
   return DISPLAY_INDEX.has(finding.type) && recommendation.length > 0;
 }
 
-/** Every rankable finding, best first. Ranked by potential savings: a quantified estimate always
- * outranks an unquantified one; ties (including "neither has one") fall back to impact band,
- * then widget display order, then input order, so an unquantified warning still leads an info. */
+/** Every rankable finding, best first. A warning or critical finding on a stage with recorded task
+ * time ranks first, by that stage's task time (`rankStageCostMs`, the axis the recommendations also
+ * order by). Ties and every other finding rank by potential savings: a quantified estimate always
+ * outranks an unquantified one; further ties (including "neither has one") fall back to impact
+ * band, then widget display order, then input order, so an unquantified warning still leads an info. */
 export function rankBySavings(findings: Finding[]): Finding[] {
   const candidates = findings
     .map((finding, index) => ({ finding, index }))
     .filter(({ finding }) => isRankable(finding));
   candidates.sort((left, right) => {
+    const costDelta = compareStageCost(rankStageCostMs(left.finding), rankStageCostMs(right.finding));
+    if (costDelta !== 0) return costDelta;
     const leftSavings = potentialSavingsMs(left.finding);
     const rightSavings = potentialSavingsMs(right.finding);
     if (leftSavings !== null && rightSavings !== null && leftSavings !== rightSavings) return rightSavings - leftSavings;

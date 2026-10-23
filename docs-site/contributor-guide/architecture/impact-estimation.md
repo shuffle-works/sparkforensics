@@ -1,7 +1,7 @@
 # Impact estimation
 
 Every finding covered by this section carries an optional `impactEstimate: {basis,
-wallClock, estimateMethod, rawWaste?, coreTimeMs?, idleCoreTimeMs?}` (`packages/core/src/types.ts`), attached by
+wallClock, estimateMethod, rawWaste?, coreTimeMs?, idleCoreTimeMs?, stageTaskMs?}` (`packages/core/src/types.ts`), attached by
 its `DETECTORS` entry's `estimate()` (`packages/core/src/detectors.ts`), which
 `estimateImpact()` (`packages/core/src/impact-estimator.ts`) runs as a post-pass once detection
 and suppression finish (`packages/core/src/analyzer.ts`). The waste models those methods compose

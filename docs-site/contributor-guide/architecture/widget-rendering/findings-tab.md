@@ -40,8 +40,10 @@ within a type by impact kind and, for `resource`, unit: never merged across
 types); each resulting group becomes one row: a type with exactly one
 finding renders that finding directly, a type with more than one collapses
 into a summary row. Within an impact band, group order comes from
-`buildRecommendationRollup`'s own sort: `time` groups (a real `wallClock`
-claim) first, ranked among themselves by their union-capped
+`buildRecommendationRollup`'s own sort: groups holding a warning or critical finding on a stage with recorded task time
+first, by the largest `impactEstimate.stageTaskMs` among their members (`rankStageCostMs`, the axis the verdict steps also use). The rest
+follow in this order: `time` groups (a real `wallClock`
+claim), ranked among themselves by their union-capped
 `recoverableMsHigh` descending; then `resource` groups (`rawWaste` but no
 `wallClock`); then `count` groups (neither), both of the latter two ranked
 by worst impact band, never by their incomparable raw magnitudes.

@@ -4,7 +4,7 @@ import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
 import { estimateImpact, type EstimateCtx } from './impact-estimator.ts';
 import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
-import { deriveImpactBand, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
+import { capCriticalByTaskTime, deriveImpactBand, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
 import { IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { computeWastedCoreHours } from './wasted-core-hours.ts';
 import type {
@@ -268,6 +268,7 @@ export function analyze(
   estimateImpact(findings, impact);
   noteTunedThresholds(findings);
   deriveImpactBand(findings, app, thresholds ? (type) => bandFloors(type, thresholds) : undefined);
+  capCriticalByTaskTime(findings, stages);
   // Ascending IMPACT_BAND_ORDER (critical 0 -> info 2) puts the worst band first;
   // stable sort keeps DETECTORS declaration order within a band.
   findings.sort((a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand]);

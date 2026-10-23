@@ -29,6 +29,13 @@ exempted in `deriveImpactBand()` because it's a hardcoded-critical OOM/crash-ris
 safety signal, not a time-recovery one, so `detectors.ts`'s own classification
 stands regardless of how small that estimate is relative to the run.
 
+`analyzer.ts` then calls `capCriticalByTaskTime()` (`impact-band.ts`), which caps a
+`critical` finding at `warning` when its stage carries under `CRITICAL_MIN_TASK_TIME_SHARE` = 2% of
+the run's summed task time (the stage's `executorStats` task wall time, else `executorRunTime`). It applies
+whether a detector or `deriveImpactBand()` set the band. Failures (`stageFailed`, `jobFailureRate`) and
+`partitionSizing`'s `maxPartitionTooBig` keep `critical`, as do a finding on no single stage and a run
+with no recorded task time.
+
 ### Fixed fallback only (usually wallClock-derived instead)
 
 These rules have no *band* tiers in `packages/core/src/detectors.ts`
@@ -170,6 +177,8 @@ Where each threshold that is not read from Spark's own source comes from.
 | Threshold | Source status |
 |---|---|
 | `IMPACT_FLOOR_PCT_WARN` = 0.5% and `IMPACT_FLOOR_PCT_CRIT` = 2% (`impact-band.ts`), and every runtime floor that defaults to them or to 0.5% (`floorPctWarn`, `floorPctCrit`, `stageFloorPct`, `lowInfoFloorPct`, `lowParallelismFloorPct`, `taskStageSkewFloorPct`) | Our own noise floors, unvalidated |
+| `CRITICAL_MIN_TASK_TIME_SHARE` = 2% (`impact-band.ts`) | `IMPACT_FLOOR_PCT_CRIT` applied to a stage's share of the run's task time instead of its share of run duration. Our own noise floor, unvalidated |
+| `SPILL_TASK_TIME_SHARE_PER_PASS` = 10% and `SPILL_TASK_TIME_SHARE_MAX` = 50% (`impact-model.ts`) | Assumed share of a stage's task time that one pass of its processed bytes through memory spill costs in serialization and sort CPU, and the ceiling on it. Our own starting assumptions, unvalidated |
 | `skew` `dataShareMin` = 0.5 | Our own majority cut |
 | `gc` `minRunTimeMs` = 10 s | Our own noise floor, so a stage that barely ran flags in neither direction |
 | `gc` `warnPct100` = 10 and `lowInfoPct100` = 5 | Carried over unchanged from an external GC heuristic |

@@ -35,7 +35,7 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, writ
   `steps` holds the first three places to look in the verdict card's order, each
   `{ key, stageId, type, tag, leadFindingId, actionLabel, recommendation, impact, impactMeaning,
   relatedTypes, text }`, where `text` is that step's line of the "Copy next steps" checklist and
-  `copyText` is the whole checklist. `steps` rank by wall clock. `costSteps` is a second lane
+  `copyText` is the whole checklist. `steps` rank warning and critical findings by the task time of the stage they sit on (`impactEstimate.stageTaskMs`), then by wall-clock savings; `recommendations` order by the same stage task time first, so both lists agree. `costSteps` is a second lane
   ranked by measured busy core time (`impactEstimate.coreTimeMs.high`), each
   `{ stageId, type, tag, leadFindingId, actionLabel, coreTimeMs, coreTime }`: a finding with no
   core-time figure (an idle capacity, modeled or bytes-only figure) is in neither lane. `idle` is
@@ -139,7 +139,7 @@ and is never name-identical to a raw export.
 
 A finding row carries `impactEstimate` when the finding has one, with the full contract
 documented in [Impact estimation](../impact-estimation.md#occupancy-weighted-attribution)
-(basis, wallClock, estimateMethod, rawWaste, coreTimeMs, and on `utilization` idleCoreTimeMs). It appears after the pinned core
+(basis, wallClock, estimateMethod, rawWaste, coreTimeMs, stageTaskMs, and on `utilization` idleCoreTimeMs). It appears after the pinned core
 columns (`id`, `key`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`, `detectorVersion`, plus
 optional but pinned `confidence`, `validationRequired`, `docAnchor`) without displacing any of
 them. The full row shape is `FindingRowColumns` in `evidence-report.ts`, which also carries

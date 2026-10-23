@@ -388,6 +388,11 @@ export interface ImpactEstimate {
    * a fix removes. `memoryUtilization`'s `idleCores` is the memory view of the same condition and
    * carries none. Absent when the log lacks the executor cores the allocation needs. */
   idleCoreTimeMs?: { low: number; high: number };
+  /** Summed task wall time, in milliseconds, of the stage or stages the finding sits on: the cost of
+   * the work it is about, which the verdict steps and the recommendations rank warning and critical
+   * findings by. Set by estimateImpact; absent on an app-level finding and on a stage that recorded
+   * no task time. */
+  stageTaskMs?: number;
 }
 
 // `Finding` is a union discriminated on `type`, one member per emitted finding type: see

@@ -18,7 +18,8 @@ target's widget still renders every affected stage in its local order.
 `src/view/triage-target.ts` also exports `rankTriageTargets`, which orders
 `catalog` by the run interpretation's `savingsRank`. That rank comes from
 core's `rankBySavings` (`packages/core/src/run-verdict.ts`, shared with the
-CLI/MCP verdict), which orders every routeable finding by potential savings
+CLI/MCP verdict), which orders every routeable finding by the task time of its stage
+(`impactEstimate.stageTaskMs`, warning and critical findings only), then by potential savings
 (`impactEstimate.wallClock.high`), a quantified estimate ahead of an
 unquantified one, then impact band, then widget display order
 (`FINDING_DISPLAY_ORDER`, core's copy of `orderedWidgets()`, which a

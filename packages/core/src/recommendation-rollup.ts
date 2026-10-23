@@ -83,6 +83,30 @@ function buildCountGroup(type: string, findings: Finding[]): RollupGroup {
 
 const KIND_ORDER: Record<RollupGroup['kind'], number> = { time: 0, resource: 1, count: 2 };
 
+/** The cluster cost a finding is ranked by: the task time of the stage or stages it sits on, in
+ * task-milliseconds. Null for an `info` finding (its savings are under the run's noise floor, so it
+ * never leads on the cost of the stage it sits on), for an app-level finding and for a stage with no
+ * recorded task time: those rank after every finding that has one. The verdict steps and the
+ * recommendations both order by this first, so the two lists agree. */
+export function rankStageCostMs(finding: Finding): number | null {
+  if (finding.impactBand === 'info') return null;
+  const ms = finding.impactEstimate?.stageTaskMs;
+  return typeof ms === 'number' && ms > 0 ? ms : null;
+}
+
+/** Descending order on `rankStageCostMs` values, a null after every number. 0 for equal values. */
+export function compareStageCost(left: number | null, right: number | null): number {
+  if (left === null || right === null) return left === right ? 0 : left === null ? 1 : -1;
+  return right - left;
+}
+
+function groupStageCostMs(findings: Finding[]): number | null {
+  return findings.reduce<number | null>((best, f) => {
+    const ms = rankStageCostMs(f);
+    return ms !== null && (best === null || ms > best) ? ms : best;
+  }, null);
+}
+
 export function buildRecommendationRollup(
   findings: Finding[],
   stages: Map<number, { submittedAt?: number; completedAt?: number }>,
@@ -113,6 +137,8 @@ export function buildRecommendationRollup(
     if (countFindings.length > 0) groups.push(buildCountGroup(type, countFindings));
   }
   return groups.sort((a, b) => {
+    const costDelta = compareStageCost(groupStageCostMs(a.findings), groupStageCostMs(b.findings));
+    if (costDelta !== 0) return costDelta;
     const kindDelta = KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
     if (kindDelta !== 0) return kindDelta;
     if (a.kind === 'time' && b.kind === 'time') return b.recoverableMsHigh - a.recoverableMsHigh;
@@ -217,6 +243,8 @@ function tierOf(finding: Finding): number {
  * `buildRecommendationRollup`'s own job, not this function's. */
 export function rankFindings(findings: Finding[]): Finding[] {
   return [...findings].sort((a, b) => {
+    const costDelta = compareStageCost(rankStageCostMs(a), rankStageCostMs(b));
+    if (costDelta !== 0) return costDelta;
     const tierDelta = tierOf(a) - tierOf(b);
     if (tierDelta !== 0) return tierDelta;
     if (tierOf(a) === TIER_TIME) {

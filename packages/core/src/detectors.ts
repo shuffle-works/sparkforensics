@@ -14,7 +14,8 @@ import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type Tail
 import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
 import {
   BROADCAST_BANDWIDTH_BPS, EXECUTOR_STARTUP_OVERHEAD_MS, FILE_OPEN_OVERHEAD_MS, IDEAL_BYTES_PER_PARTITION_TASK,
-  NETWORK_FETCH_PENALTY_MS, RE_READ_THROUGHPUT_BPS, SHUFFLE_THROUGHPUT_BPS, SPILL_IO_THROUGHPUT_BPS, TAIL_CLAIM,
+  NETWORK_FETCH_PENALTY_MS, RE_READ_THROUGHPUT_BPS, SHUFFLE_THROUGHPUT_BPS, SPILL_IO_THROUGHPUT_BPS, SPILL_TASK_TIME_SHARE_MAX,
+  SPILL_TASK_TIME_SHARE_PER_PASS, TAIL_CLAIM, spillTaskTimeShare,
   TASK_SCHEDULING_OVERHEAD_MS, costOnly, fetchWaitWallClockMs, measuredTaskOverhead, multiStageImpact, noWasteModel,
   ioModelAssumption, retryWallClockMs, singleStageImpact, stageIoParallelism, stageMappableWasteOrCostOnly, tasksMostlyIdle, withAssumptions,
   type EstimateCtx,
@@ -1995,11 +1996,19 @@ export const DETECTORS = [
       const stage = ctx.stages.get(finding.stageId);
       if (!stage) return null;
       const diskBytesSpilled = stage.diskBytesSpilled ?? 0;
-      const wasteMs = (diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
-      // Surfaces the number the formula uses: the displayed metric is memoryBytesSpilled, but disk spill costs the I/O time.
+      const ioMs = (diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
+      // The serialization and sort CPU memory spill costs is a share of the stage's task time. At the
+      // stage's own concurrency that share of task time is the same share of its wall-clock duration.
+      const cpu = spillTaskTimeShare(stage);
+      const durationMs = Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
+      const wasteMs = ioMs + (cpu ? durationMs * cpu.share : 0);
+      const cpuAssumption = cpu
+        ? `plus ${Math.round(cpu.share * 100)}% of the stage's task time as serialization and sort CPU (${Math.round(SPILL_TASK_TIME_SHARE_PER_PASS * 100)}% per pass of its input and shuffle-read bytes through memory spill, capped at ${Math.round(SPILL_TASK_TIME_SHARE_MAX * 100)}%; ${Math.round(cpu.passes * 10) / 10} passes here)`
+        : 'the stage read no bytes to compare its memory spill to, so serialization and sort CPU is not counted';
+      // Surfaces the disk figure: the displayed metric is memoryBytesSpilled, but disk spill costs the I/O time.
       return withAssumptions(
         singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: diskBytesSpilled, unit: 'bytes' }),
-        `${ioModelAssumption(SPILL_IO_THROUGHPUT_BPS, stage)}; counts disk spill only, not memory spill, serialization or GC`,
+        `${ioModelAssumption(SPILL_IO_THROUGHPUT_BPS, stage)} for disk spill, ${cpuAssumption}; GC is not counted`,
       );
     },
   }),
