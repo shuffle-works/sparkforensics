@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { analyze } from '../src/analyzer.js';
+import { recommendationParts } from '../src/finding-names.js';
 import { compactFindingRow } from '../src/mcp-tools.js';
 import { attributeSpill, describeExchange, describeSpillCause, exchangeWidth, spillToInputRatio } from '../src/spill-attribution.js';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
@@ -53,13 +54,19 @@ describe('attributeSpill', () => {
     expect(operators).toEqual([{ nodeId: 'sort', name: 'Sort', spillBytes: 3 * TB }]);
   });
 
-  it('names both sorts feeding a SortMergeJoin, largest spill first, and leaves out an operator that did not spill', () => {
-    const side = (id, spill, below) => node(id, 'Sort', 'Sort [k#1 ASC NULLS FIRST], false, 0', [below], { metrics: [sized('spill size', spill)], stageIds: [2] });
-    const join = node('smj', 'SortMergeJoin', 'SortMergeJoin [k#1], [k#2], Inner', [
+  // As an executed plan prints it: each Sort sits in its own codegen stage under an InputAdapter.
+  const sortMergeJoin = (name) => {
+    const side = (id, spill, below) => node('in-' + id, 'InputAdapter', '', [node('wscg-' + id, 'WholeStageCodegen (3)', 'WholeStageCodegen (3)', [
+      node(id, 'Sort', 'Sort [k#1 ASC NULLS FIRST], false, 0', [below], { metrics: [sized('spill size', spill)], stageIds: [2] }),
+    ], { stageIds: [2] })], { stageIds: [2] });
+    return node('smj', name, `${name} [k#1], [k#2], Inner`, [
       side('left', 10 * GB, exchange('xl', wideProject(91), { dataSize: 91 * GB, records: 1e8 })),
       side('right', 24.2 * TB, exchange('xr', wideProject(91), { dataSize: 91 * GB, records: 1e8 })),
     ], { stageIds: [2] });
-    const idle = node('agg', 'HashAggregate', 'HashAggregate(keys=[k#1], functions=[count(1)])', [join], { metrics: [sized('spill size', 0)], stageIds: [2] });
+  };
+
+  it.each(['SortMergeJoin', 'SortMergeJoin(skew=true)'])('names both sorts feeding a %s through its codegen wrappers, largest spill first, and leaves out an operator that did not spill', (name) => {
+    const idle = node('agg', 'HashAggregate', 'HashAggregate(keys=[k#1], functions=[count(1)])', [sortMergeJoin(name)], { metrics: [sized('spill size', 0)], stageIds: [2] });
     const { operators } = attributeSpill(idle, 2);
     expect(operators).toEqual([
       { nodeId: 'right', name: 'Sort', spillBytes: 24.2 * TB, feeds: 'SortMergeJoin' },
@@ -67,19 +74,22 @@ describe('attributeSpill', () => {
     ]);
   });
 
+  it('does not mark a sort as feeding a join it only sits below through other operators', () => {
+    const sort = node('sort', 'Sort', 'Sort [k#1 ASC NULLS FIRST], false, 0', [], { metrics: [sized('spill size', GB)], stageIds: [2] });
+    const join = node('smj', 'SortMergeJoin', 'SortMergeJoin [k#1], [k#2], Inner', [node('f', 'Filter', 'Filter (k#1 > 0)', [sort])]);
+    expect(attributeSpill(join, 2).operators).toEqual([{ nodeId: 'sort', name: 'Sort', spillBytes: GB }]);
+  });
+
   it('names a hash aggregate that spilled', () => {
     const agg = node('agg', 'HashAggregate', 'HashAggregate(keys=[k#1], functions=[sum(v#2)])', [], { metrics: [sized('spill size', 2 * GB)], stageIds: [2] });
     expect(attributeSpill(agg, 2).operators).toEqual([{ nodeId: 'agg', name: 'HashAggregate', spillBytes: 2 * GB }]);
   });
 
-  it('lists every sort and aggregate of the stage, without a spill figure, when the plan reports no spill size', () => {
+  it('names no operator when the plan reports no spill size', () => {
     const plan = node('agg', 'HashAggregate', 'HashAggregate(keys=[k#1], functions=[count(1)])', [
       node('sort', 'Sort', 'Sort [k#1 ASC NULLS FIRST], false, 0', [], { stageIds: [2] }),
     ], { stageIds: [2] });
-    expect(attributeSpill(plan, 2).operators).toEqual([
-      { nodeId: 'agg', name: 'HashAggregate' },
-      { nodeId: 'sort', name: 'Sort' },
-    ]);
+    expect(attributeSpill(plan, 2)).toEqual({ operators: [], exchanges: [] });
   });
 
   it('ignores operators of other stages and plans without stage ids', () => {
@@ -168,10 +178,9 @@ describe('describeSpillCause', () => {
     expect(describeSpillCause([], 9.9, false)).toBe("Memory spill is 9.9x the stage's input.");
   });
 
-  it('names the operators with their node ids and says when the plan reports no spill for them', () => {
+  it('names the operators with their node ids and reported spill', () => {
     expect(describeSpillCause([sort, { nodeId: 'e1:n20', name: 'Sort', spillBytes: GB, feeds: 'SortMergeJoin' }], null, false))
-      .toBe('Spilling operators: Sort e1:n12 3.0 GB, Sort e1:n20 feeding SortMergeJoin 1.0 GB.');
-    expect(describeSpillCause([{ nodeId: 'e1:n12', name: 'Sort' }], null, false)).toBe('Operators that can spill: Sort e1:n12.');
+      .toBe('Spilled by Sort e1:n12 3.0 GB, Sort e1:n20 feeding SortMergeJoin 1.0 GB.');
   });
 
   it('is empty with no operator and no ratio', () => {
@@ -186,8 +195,16 @@ describe('spill finding', () => {
     expect(finding.exchanges).toEqual([{ nodeId: 'xchg', columns: 128, bytesPerRow: 410 }]);
     expect(finding.spillToInputRatio).toBe(16.9);
     expect(finding.wideRows).toBe(true);
-    expect(finding.recommendation).toContain('Spilling operators: Sort sort');
+    expect(finding.recommendation).toContain('Spilled by Sort sort 3000.0 GB.');
     expect(finding.recommendation).toContain("Memory spill is 16.9x the stage's input, so the rows are wide.");
+  });
+
+  it('keeps the recommendation split on its advice, with the cause after it', () => {
+    const recommendation = spillFinding(wideSortPlan()).recommendation;
+    const advice = recommendation.slice(0, recommendation.indexOf(' Spilled by '));
+    const { measured, fix } = recommendationParts(recommendation);
+    expect(measured).toBe(recommendationParts(advice).measured);
+    expect(fix).toBe(`${recommendationParts(advice).fix} Spilled by Sort sort 3000.0 GB. Memory spill is 16.9x the stage's input, so the rows are wide.`);
   });
 
   it('keeps the existing advice and does not call rows wide below a 10x ratio', () => {
@@ -227,7 +244,7 @@ describe('compactFindingRow for a spill finding', () => {
       exchanges: [{ nodeId: 'e1:n10', columns: 128, bytesPerRow: 410 }, { nodeId: 'e1:n30', columns: 91 }],
     }));
     expect(compact.evidenceLines).toEqual([
-      "Spilling operators: Sort e1:n12 3.0 GB. Memory spill is 16.9x the stage's input, so the rows are wide.",
+      "Spilled by Sort e1:n12 3.0 GB. Memory spill is 16.9x the stage's input, so the rows are wide.",
       'Exchange e1:n10: 128 columns, ~410 B/row',
       'Exchange e1:n30: 91 columns',
     ]);

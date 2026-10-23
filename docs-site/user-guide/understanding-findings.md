@@ -116,7 +116,7 @@ five operators of the stage, each with its plan node id: the `Sort`,
 `HashAggregate`, `ObjectHashAggregate` and `Window` nodes that spilled, largest
 first, with the plan's `spill size` for each. A `Sort` under a `SortMergeJoin`
 is marked as feeding it. When the plan reports no `spill size` for any of them,
-the list holds every such operator the stage runs, without a spill figure.
+the finding names no operator.
 `evidence.spillToInputRatio` is the memory spill over the stage's input plus
 shuffle read, left out when that input is under 64 MB (a stage that reads next
 to nothing spills for another reason). At 10 or more, `evidence.wideRows` is

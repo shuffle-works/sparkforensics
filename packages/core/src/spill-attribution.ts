@@ -17,6 +17,9 @@ const SPILL_SIZE = 'spill size';
 const SPILLING_OPERATOR = /^(Sort|HashAggregate|ObjectHashAggregate|Window)$/;
 // Operators above a column list that pass its columns through unchanged.
 const PASS_THROUGH = /^(Sort|Filter|InputAdapter|WholeStageCodegen|ShuffleQueryStage|AQEShuffleRead|CustomShuffleReader|ColumnarToRow|Coalesce)\b/;
+// The codegen wrappers an executed plan puts between a SortMergeJoin and each of its child Sorts.
+const CODEGEN_WRAPPER = /^(InputAdapter|WholeStageCodegen)\b/;
+const SORT_MERGE_JOIN = /^SortMergeJoin(\(skew=true\))?$/;
 // Spark prints a column list past spark.sql.debug.maxToStringFields as `... N more fields`.
 const MORE_FIELDS = /^\.\.\.\s*(\d+)\s+more\s+fields$/;
 
@@ -119,9 +122,13 @@ function indexOperators(plan: PlanNode): Map<number, { node: PlanNode; feeds?: s
   const cached = operatorsByStage.get(plan);
   if (cached) return cached;
   const index = new Map<number, { node: PlanNode; feeds?: string }[]>();
+  // Each node's nearest ancestor-or-self that is not a codegen wrapper; pre-order sets a parent first.
+  const unwrapped = new Map<PlanNode, PlanNode | null>();
   walkPlanTree(plan, (node, parent) => {
+    const consumer = parent ? unwrapped.get(parent) ?? null : null;
+    unwrapped.set(node, CODEGEN_WRAPPER.test(node.name) ? consumer : node);
     if (!SPILLING_OPERATOR.test(node.name)) return;
-    const feeds = node.name === 'Sort' && parent?.name === 'SortMergeJoin' ? parent.name : undefined;
+    const feeds = node.name === 'Sort' && consumer && SORT_MERGE_JOIN.test(consumer.name) ? 'SortMergeJoin' : undefined;
     for (const stageId of node.stageIds ?? []) {
       const entries = index.get(stageId);
       const entry = { node, ...(feeds ? { feeds } : {}) };
@@ -132,22 +139,21 @@ function indexOperators(plan: PlanNode): Map<number, { node: PlanNode; feeds?: s
   return index;
 }
 
-/** The operators of stage `stageId` that spill, with the exchanges they read: where the plan
- * reports a "spill size", only the operators that spilled, largest first; where it reports none,
- * every sort and aggregate the stage runs. Empty when the plan ties no such operator to the stage. */
+/** The operators of stage `stageId` that report a "spill size" above zero, largest first, with the
+ * exchanges they read. Empty when the plan ties no such operator to the stage. */
 export function attributeSpill(
   plan: PlanNode | null | undefined, stageId: number,
 ): { operators: SpillOperator[]; exchanges: SpillExchange[] } {
   const found = plan ? indexOperators(plan).get(stageId) ?? [] : [];
-  const sized = found.map((entry) => ({ ...entry, spillBytes: metricValue(entry.node, SPILL_SIZE) }));
-  const measured = sized.some((entry) => entry.spillBytes != null);
-  const chosen = (measured ? sized.filter((entry) => (entry.spillBytes ?? 0) > 0) : sized)
-    .sort((a, b) => (b.spillBytes ?? 0) - (a.spillBytes ?? 0))
+  const chosen = found
+    .map((entry) => ({ ...entry, spillBytes: metricValue(entry.node, SPILL_SIZE) ?? 0 }))
+    .filter((entry) => entry.spillBytes > 0)
+    .sort((a, b) => b.spillBytes - a.spillBytes)
     .slice(0, MAX_OPERATORS);
   const operators: SpillOperator[] = chosen.map((entry) => ({
     nodeId: entry.node.id ?? '',
     name: entry.node.name,
-    ...(entry.spillBytes != null ? { spillBytes: entry.spillBytes } : {}),
+    spillBytes: entry.spillBytes,
     ...(entry.feeds ? { feeds: entry.feeds } : {}),
   }));
   const exchanges: SpillExchange[] = [];
@@ -173,21 +179,18 @@ export function spillToInputRatio(
 }
 
 function operatorLabel(op: SpillOperator): string {
-  const spill = op.spillBytes != null ? ` ${formatBytes(op.spillBytes)}` : '';
   const feeds = op.feeds ? ` feeding ${op.feeds}` : '';
-  return `${op.name} ${op.nodeId}${feeds}${spill}`;
+  return `${op.name} ${op.nodeId}${feeds} ${formatBytes(op.spillBytes)}`;
 }
 
 /** The finding's sentences on where the spill sits: the operators with their plan node ids, then the
  * spill-to-input ratio, saying the rows are wide when `wide` (a spill several times the data read
  * points at rows decompressed and sorted in memory, not at a partition count). Empty when the plan
- * names no operator and the stage has no ratio. */
+ * names no operator and the stage has no ratio. Free of ": ", so a recommendation it ends still
+ * splits at its advice (recommendationParts). */
 export function describeSpillCause(operators: SpillOperator[], ratio: number | null, wide: boolean): string {
   const sentences: string[] = [];
-  if (operators.length > 0) {
-    const measured = operators.some((op) => op.spillBytes != null);
-    sentences.push(`${measured ? 'Spilling operators' : 'Operators that can spill'}: ${operators.map(operatorLabel).join(', ')}.`);
-  }
+  if (operators.length > 0) sentences.push(`Spilled by ${operators.map(operatorLabel).join(', ')}.`);
   if (ratio !== null) {
     sentences.push(wide
       ? `Memory spill is ${ratio}x the stage's input, so the rows are wide.`
