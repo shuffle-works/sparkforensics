@@ -366,6 +366,10 @@ export interface DuplicatePlanSubtreeEvidence extends PlanFindingEvidence {
   // Share of each linked stage's operators that sit in the repeated subtree.
   stageShares: Record<number, number>;
   occurrencesIdentical: boolean;
+  // The repeats scan the same Delta tables at different recorded versions, so no cache can serve both.
+  readsDifferentVersions: boolean;
+  // Action named by the execution's description ("count", "showString"); absent when it names none.
+  rootAction?: string;
   rootName: string;
   subtreeSize: number;
   sampleRelation: string | null;

@@ -115,6 +115,8 @@ export interface DetectorStage {
 export interface DetectorSqlExec {
   id: number;
   planTree?: PlanNode | null;
+  // Spark's description of the execution, "<action> at <call site>" for a DataFrame action.
+  description?: string;
   // The session settings this execution ran with that differ from the SparkContext's.
   modifiedConfigs?: Record<string, string>;
 }
@@ -506,6 +508,50 @@ function occurrencesHaveIdenticalDetails(occurrences: PlanNode[]): boolean {
     }
   }
   return true;
+}
+
+// Spark names an execution after its action's call site ("count at Job.scala:12"). Only
+// showString (DataFrame.show) and collect read a result for inspection, so a repeat under them is
+// not a missed cache of the job's real work. count and save keep their ranking: reusing an
+// uncached subtree across those actions is real waste. Null when the description has no action.
+const INSPECTION_ACTIONS: ReadonlySet<string> = new Set(['showString', 'collect']);
+
+function rootActionOf(description: string | undefined): string | null {
+  return /^\s*(\w+) at /.exec(description ?? '')?.[1] ?? null;
+}
+
+// Delta version a scan node reads, where its detail records one (`Delta[version=3, ...]`,
+// `versionAsOf=3`). Null when it records none: the read is then assumed to match its twin.
+function deltaScanVersion(node: PlanNode): number | null {
+  const detail = node.detail ?? '';
+  if (!/delta/i.test(detail) || relationIdOf(node) === null) return null;
+  const match = /\bversion(?:AsOf)?\s*[=:]\s*(\d+)/i.exec(detail);
+  return match ? Number(match[1]) : null;
+}
+
+// True when every occurrence scans the same Delta tables but at least one at another version. A
+// cache holds one snapshot, so it cannot serve reads of two versions. Any Delta scan with no
+// recorded version leaves the answer unknown (false): the finding stays as it was.
+function occurrencesReadDifferentDeltaVersions(occurrences: PlanNode[]): boolean {
+  const readsOf = (root: PlanNode): { relation: string; version: number }[] | null => {
+    const reads: { relation: string; version: number }[] = [];
+    let unknown = false;
+    walkPlanTree(root, (n) => {
+      const relation = relationIdOf(n);
+      if (relation === null || !/delta/i.test(n.detail ?? '')) return;
+      const version = deltaScanVersion(n);
+      if (version === null) unknown = true;
+      else reads.push({ relation, version });
+    });
+    return unknown || reads.length === 0 ? null : reads;
+  };
+  const all = occurrences.map(readsOf);
+  if (all.some(r => r === null)) return false;
+  const relationsOf = (reads: { relation: string }[]) => reads.map(r => r.relation).join('|');
+  const versionsOf = (reads: { version: number }[]) => reads.map(r => r.version).join('|');
+  const first = all[0]!;
+  const sameTables = all.every(r => relationsOf(r!) === relationsOf(first));
+  return sameTables && all.some(r => versionsOf(r!) !== versionsOf(first));
 }
 
 // Stages that run nothing but the duplicated occurrences' operators: every operator attributed to
@@ -3234,7 +3280,10 @@ export const DETECTORS = [
           if (stage) stagesMs += Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
         }
         if (runMs != null && stagesMs > 0 && stagesMs < runMs * thresholds.stageFloorPct) return null;
-        const occurrencesIdentical = occurrencesHaveIdenticalDetails(g.nodes);
+        const readsDifferentVersions = occurrencesReadDifferentDeltaVersions(g.nodes);
+        const occurrencesIdentical = !readsDifferentVersions && occurrencesHaveIdenticalDetails(g.nodes);
+        const rootAction = rootActionOf(sqlExec.description);
+        const underInspectionAction = rootAction !== null && INSPECTION_ACTIONS.has(rootAction);
         const stageShares = stageOperatorShares(nodes, operatorsByStage);
         // resolvePlanTree always sets id, so the `!` here and below is safe.
         const planNodeIds = nodes.map((n) => n.id!).filter(Boolean);
@@ -3242,18 +3291,22 @@ export const DETECTORS = [
         const differing = occurrencesIdentical ? '' : ` ${DUPLICATE_SUBTREE_DIFFERING_NOTE}`;
         return {
           type: 'duplicatePlanSubtree', executionId: sqlExec.id, stageIds, planNodeIds,
-          stageShares, occurrencesIdentical,
+          stageShares, occurrencesIdentical, readsDifferentVersions,
+          ...(rootAction !== null && { rootAction }),
           // Repeats with differing details get no estimate (nothing is known to be recomputed),
-          // and neither does a subtree with no stage of its own, so this fallback band stands.
-          impactBand: occurrencesIdentical && Object.keys(stageShares).length > 0 ? 'warning' : 'info',
+          // nor does a repeat under an inspection action, and neither does a subtree with no
+          // stage of its own, so this fallback band stands.
+          impactBand: occurrencesIdentical && !underInspectionAction && Object.keys(stageShares).length > 0 ? 'warning' : 'info',
           metric: 'subtreeOccurrences', value: g.occurrences,
           rootName: g.rootName, subtreeSize: g.subtreeSize, sampleRelation: g.sampleRelation,
           groupIndex: g.groupIndex,
           confidence: occurrencesIdentical ? duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, thresholds) : 'low',
           validationRequired: 'Matching compares operator and metric names only, not literals or expression IDs: confirm the repeat in the Spark UI SQL tab before acting.',
-          recommendation: (g.isExchangeRoot
-            ? `${detail}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`
-            : `${detail}: consider caching/persisting the shared computation or check for a duplicated query branch.`) + differing,
+          recommendation: readsDifferentVersions
+            ? `${detail}, reading different versions of the same Delta table: a cache holds one version, so it cannot serve both reads.`
+            : (g.isExchangeRoot
+              ? `${detail}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`
+              : `${detail}: consider caching/persisting the shared computation or check for a duplicated query branch.`) + differing,
         };
       }).filter((f): f is Finding => f !== null);
       return findings.length > 0 ? findings : null;
@@ -3269,6 +3322,8 @@ export const DETECTORS = [
       // Same-shaped repeats whose details differ compute different data: nothing is known to be
       // recomputed, so there is no time to claim.
       if (finding.occurrencesIdentical === false) return costOnly('none');
+      // A repeat under showString or collect is an inspection of the result, not the job's own work.
+      if (typeof finding.rootAction === 'string' && INSPECTION_ACTIONS.has(finding.rootAction)) return costOnly('none');
       // Each stage contributes the share of its operators inside the repeated subtree: a stage it
       // shares with other operators (the consuming join, the join's other side) isn't all its
       // time, and claiming whole stages let sibling groups claim the same stage twice. Findings
