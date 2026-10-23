@@ -24,6 +24,7 @@ import { DETECTORS, type ThresholdOverrides } from './detectors.ts';
 import { tunedDetectors } from './threshold-overrides.ts';
 import { tuningDocSlugForAnchor, pageForAnchor } from './docs-config.ts';
 import { typeTag } from './format-utils.ts';
+import { describeExchange, describeSpillCause } from './spill-attribution.ts';
 import type { AppModel, Finding, ImpactBand, SparkAppInfo, TunedThresholds } from './types.ts';
 import type { RunShape } from './run-shape.ts';
 
@@ -261,16 +262,29 @@ export interface CompactFindingRow {
   impactBand: FindingRow['impactBand']; stageId: number | null; actionLabel: string;
   metric: string | null; value: number | null; valueText?: string;
   impact?: string; impactMeaning?: string | null;
+  // A spill finding's cause in short lines: its operators with plan node ids and the spill-to-input
+  // ratio, then one line per exchange feeding them with its column count and bytes per row.
+  evidenceLines?: string[];
   tunedThresholds?: TunedThresholds;
 }
 
+// The spill finding's evidence lines, or none when the plan and the stage's input name no cause.
+function spillEvidenceLines(row: FindingRow): string[] {
+  if (row.type !== 'spill') return [];
+  const { operators = [], exchanges = [], spillToInputRatio = null, wideRows = false } = row.evidence;
+  const cause = describeSpillCause(operators, spillToInputRatio, wideRows);
+  return [...(cause ? [cause] : []), ...exchanges.map(describeExchange)];
+}
+
 export function compactFindingRow(row: FindingRow): CompactFindingRow {
+  const evidenceLines = spillEvidenceLines(row);
   return {
     id: row.id, key: row.key, type: row.type, tag: row.tag, name: row.name,
     impactBand: row.impactBand, stageId: row.stageId, actionLabel: row.actionLabel,
     metric: row.metric ?? null, value: row.value ?? null,
     ...(row.valueText !== undefined ? { valueText: row.valueText } : {}),
     ...(row.impact !== undefined ? { impact: row.impact, impactMeaning: row.impactMeaning ?? null } : {}),
+    ...(evidenceLines.length > 0 ? { evidenceLines } : {}),
     // Kept: a tuned finding's impact figure is uncalibrated, and a reader must see that on its row.
     ...(row.tunedThresholds !== undefined ? { tunedThresholds: row.tunedThresholds } : {}),
   };

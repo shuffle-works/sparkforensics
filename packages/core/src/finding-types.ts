@@ -154,10 +154,38 @@ export interface PartitionSizingEvidence {
 }
 export interface PartitionSizingFinding extends NumericFinding<'partitionSizing'>, PartitionSizingEvidence {}
 
+/** An operator of the spilling stage that holds rows in memory: its plan node id and name, and the
+ * "spill size" the plan reports for it (absent when the plan reports none). A Sort that feeds a
+ * SortMergeJoin names it in `feeds`. */
+export interface SpillOperator {
+  nodeId: string;
+  name: string;
+  spillBytes?: number;
+  feeds?: string;
+}
+
+/** The exchange an operator reads its rows from: the plan node id of its read half, the columns the
+ * rows carry (absent when the plan text does not list them) and the estimated bytes per row, the
+ * exchange's "data size" over its shuffle records written (absent without both). */
+export interface SpillExchange {
+  nodeId: string;
+  columns?: number;
+  bytesPerRow?: number;
+}
+
 export interface SpillEvidence {
   spillMagnitude?: 'severe' | 'high' | 'medium';
   // What the stage reads: shuffle-partition advice applies only to 'shuffle'.
   reads?: StageReads;
+  // Memory spilled over the stage's input plus shuffle read, to one decimal; absent when it has none.
+  spillToInputRatio?: number;
+  // Whether that ratio is 10 or more, which means the spilled rows are wide; set with the ratio.
+  wideRows?: boolean;
+  // Up to five operators of the stage, largest reported spill first. With a reported spill on any of
+  // them, only those that spilled; with none, every Sort and aggregate the stage runs.
+  operators?: SpillOperator[];
+  // The exchanges feeding `operators`.
+  exchanges?: SpillExchange[];
 }
 export interface SpillFinding extends NumericFinding<'spill'>, SpillEvidence {}
 

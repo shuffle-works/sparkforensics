@@ -24,6 +24,7 @@ import { outputRowsOf, ownOutputRows, parseNestedLoopJoin } from './nested-loop-
 import { totalExecutorCpuMs } from './run-totals.ts';
 import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { indexStagesBySqlExecution } from './sql-stages.ts';
+import { attributeSpill, describeSpillCause, spillToInputRatio } from './spill-attribution.ts';
 import { cyrb53 } from './string-hash.ts';
 import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
@@ -1963,7 +1964,11 @@ export const DETECTORS = [
     emits: ['spill'],
     docAnchor: '#bottleneck-spill',
     // stageFloorPct: the 0.5% runtime floor, as for shuffle.
-    thresholds: { singleTaskDiskGiB: 1, singleTaskMemGiB: 4, highDiskGiB: 1, highTaskDiskMB: 512, highMemGiB: 4, medDiskMB: 256, medMemGiB: 1, skewRatio: 5, skewDiskFloorMB: 128, skewMemFloorMB: 256, skewMinTasks: 10, stageFloorPct: 0.005 },
+    thresholds: { singleTaskDiskGiB: 1, singleTaskMemGiB: 4, highDiskGiB: 1, highTaskDiskMB: 512, highMemGiB: 4, medDiskMB: 256, medMemGiB: 1, skewRatio: 5, skewDiskFloorMB: 128, skewMemFloorMB: 256, skewMinTasks: 10, stageFloorPct: 0.005,
+      // wideRowRatio: memory spill over the stage's input plus shuffle read from which the rows are called wide;
+      // wideRowMinInputMB: below this input the ratio is not reported, as a stage that reads next to nothing
+      // (generated rows) spills for another reason.
+      wideRowRatio: 10, wideRowMinInputMB: 64 },
     detect(stage, ctx, thresholds): Finding | null {
       if (stage.memoryBytesSpilled === 0) return null;
       if (stageBelowRuntimeFloor(stage, ctx, thresholds.stageFloorPct)) return null;
@@ -1974,19 +1979,28 @@ export const DETECTORS = [
       // shuffle.partitions sizes a shuffle's reduce side: a stage that reads no shuffle gets memory only.
       const reads = stageReads(stage);
       const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, ctx) : null;
+      const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
+      const { operators, exchanges } = attributeSpill(plan, stage.id);
+      const ratio = spillToInputRatio(stage.memoryBytesSpilled, stage.inputBytes, stage.shuffleReadBytes, thresholds.wideRowMinInputMB * MB);
+      const wide = ratio !== null && ratio >= thresholds.wideRowRatio;
+      const advice = cls === 'skew'
+        ? `${formatBytes(stage.memoryBytesSpilled)} spilled, skew-driven: fix task skew first; adding memory will not help.`
+        : shuffleFix
+          ? `${formatBytes(stage.memoryBytesSpilled)} spilled: ${shuffleFix.text}.`
+          : `${formatBytes(stage.memoryBytesSpilled)} spilled: this stage reads no shuffle, so increase executor memory or process less data per task.`;
+      const cause = describeSpillCause(operators, ratio, wide);
       return {
         type: 'spill', stageId: stage.id, impactBand, reads,
         spillMagnitude: mag?.magnitude,
+        ...(ratio !== null ? { spillToInputRatio: ratio, wideRows: wide } : {}),
+        ...(operators.length > 0 ? { operators } : {}),
+        ...(exchanges.length > 0 ? { exchanges } : {}),
         metric: 'memoryBytesSpilled', value: stage.memoryBytesSpilled,
         confidence: classified ? 'medium' : 'low',
         validationRequired: classified
           ? 'Spill cause is inferred from the share of tasks that spilled: confirm against per-task spill metrics in the Spark UI.'
           : 'Spill cause could not be classified: inspect per-task spill metrics in the Spark UI before acting.',
-        recommendation: cls === 'skew'
-          ? `${formatBytes(stage.memoryBytesSpilled)} spilled, skew-driven: fix task skew first; adding memory will not help.`
-          : shuffleFix
-            ? `${formatBytes(stage.memoryBytesSpilled)} spilled: ${shuffleFix.text}.`
-            : `${formatBytes(stage.memoryBytesSpilled)} spilled: this stage reads no shuffle, so increase executor memory or process less data per task.`,
+        recommendation: cause ? `${advice} ${cause}` : advice,
         remediation: cls === 'skew' ? [] : shuffleFix?.remediation ?? [increaseConf('spark.executor.memory')],
       };
     },
