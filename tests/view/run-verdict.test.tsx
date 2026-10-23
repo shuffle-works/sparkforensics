@@ -60,7 +60,7 @@ describe('RunVerdict', () => {
   it('lists measured core time as its own lane beside the wall-clock steps', () => {
     renderVerdict([timed('skew', 7, 2_400), coreTimed('gc', 3, 7_200_000)]);
 
-    expect(screen.getByText('By wall clock (run time)')).toBeInTheDocument();
+    expect(screen.getByText('By cluster time (task-hours)')).toBeInTheDocument();
     const lane = screen.getByTestId('cost-lane');
     expect(lane).toHaveTextContent('By core time');
     expect(lane).toHaveTextContent('2.0 core-h of core time');
@@ -74,7 +74,7 @@ describe('RunVerdict', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Start with Stage 7' })).toBeInTheDocument();
     const verdict = screen.getByTestId('run-verdict');
     expect(verdict).toHaveTextContent('3 findings in 2 places.');
-    expect(verdict).toHaveTextContent('The first fix could save up to 2.4s of this 20.0s run.');
+    expect(verdict).toHaveTextContent('Step 1 could save up to 2.4s of this 20.0s run.');
     expect(verdict).toHaveTextContent('Findings on one stage are grouped, and their savings overlap.');
 
     const steps = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step');
@@ -272,7 +272,7 @@ describe('RunVerdict on a failed run', () => {
     expect(screen.getByTestId('run-failure-reason')).not.toHaveTextContent('Frame.run');
     const verdict = screen.getByTestId('run-verdict');
     expect(verdict).toHaveTextContent('Fix the failure before tuning: the other findings cover only the work that ran.');
-    expect(verdict).not.toHaveTextContent('The first fix could save');
+    expect(verdict).not.toHaveTextContent('Step 1 could save');
     const steps = within(screen.getByRole('list', { name: 'Next steps' })).getAllByTestId('next-step');
     expect(steps[0]).toHaveTextContent('Inspect stage failure in Stage 13');
   });

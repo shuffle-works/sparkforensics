@@ -41,7 +41,7 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, writ
   core-time figure (an idle capacity, modeled or bytes-only figure) is in neither lane. `idle` is
   the run's allocated core time that ran no task, `{ coreHours, allocatedCoreHours, pct, text }`,
   or `null` without an allocation; no single finding's idle figure exceeds it. The Markdown
-  opens with it as `## Verdict`, the two lanes labeled "By wall clock" and "By core time". The
+  opens with it as `## Verdict`, the two lanes labeled "By cluster time (task-hours)" and "By core time". The
   `recommendations` rollup stays alongside: it ranks fix types, the verdict ranks places.
 - `evidenceAvailability` is the ledger above (or `null` when absent).
 - `detectors` is `detectorCatalog()` output: one `{ type, version, scope,

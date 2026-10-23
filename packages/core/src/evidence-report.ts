@@ -661,7 +661,7 @@ function renderVerdict(verdict: VerdictJson): string[] {
   if (verdict.summary.length > 0) lines.push('', mdInline(verdict.summary.join(' ')));
   if (verdict.idle) lines.push('', mdInline(verdict.idle.text));
   if (verdict.steps.length > 0) {
-    lines.push('', 'By wall clock (run time):', '');
+    lines.push('', 'By cluster time (task-hours):', '');
     verdict.steps.forEach((step, i) => {
       lines.push(`${i + 1}. [${step.tag}] ${mdInline(step.text)}`);
       if (step.relatedTypes.length > 0) {

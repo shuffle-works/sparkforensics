@@ -306,7 +306,7 @@ export function verdictSummary(eligible: Finding[], steps: NextStep[], facts: Ru
     const wallClock = steps[0].lead.impactEstimate?.wallClock;
     // An idle-capacity lead needs no sentence here: the title gives the idle share and step 1 the fix.
     if (!isIdleCapacityStep(steps[0]) && wallClock && facts.runMs != null) {
-      sentences.push(`The first fix could save up to ${formatDuration(wallClock.high)} of this ${formatDuration(facts.runMs)} run.`);
+      sentences.push(`Step 1 could save up to ${formatDuration(wallClock.high)} of this ${formatDuration(facts.runMs)} run.`);
     }
     if (steps.some((step) => step.related.length > 0)) {
       sentences.push('Findings on one stage are grouped, and their savings overlap.');
