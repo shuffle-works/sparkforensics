@@ -40,7 +40,7 @@ describe('structured remediation', () => {
       const unlogged = finding({});
       expect(unlogged.remediation).toEqual([]);
       expect(unlogged.partitions).toBe('ownPartitioning');
-      expect(unlogged.recommendation).toMatch(/already 200.*repartition\(n\)/);
+      expect(unlogged.recommendation).toMatch(/\(200\) did not size this stage's 5 tasks.*repartition\(n\)/);
       // A 200-partition default is too few for 40 GiB: 40 GiB / 128 MiB = 320.
       const big = catalogOf(
         [makeStage({ shuffleReadBytes: 40 * 1024 * MiB, taskCount: 5 })], makeApp({ config: {}, sparkVersion: null }),
@@ -909,6 +909,12 @@ describe('partition-count advice follows what sized the stage', () => {
       expect(low.partitions).toBe('ownPartitioning');
       expect(low.remediation).toEqual([]);
       expect(low.recommendation).toMatch(/repartition\(n\)/);
+      for (const f of [shuffle, low]) {
+        expect(f.recommendation).toMatch(/spark\.sql\.shuffle\.partitions \(400\) did not size this stage's 5 tasks/);
+        expect(f.recommendation).not.toMatch(/already/);
+        expect(coreFindingGenericRecommendation(f)).toMatch(/did not size this stage.*own partition count/);
+        expect(coreFindingGenericRecommendation(f)).not.toMatch(/already/);
+      }
     });
 
     it('reads the exchange the stage reads when no operator of the stage carries task metrics', () => {

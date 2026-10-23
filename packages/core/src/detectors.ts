@@ -1199,7 +1199,7 @@ function lowShuffleParallelismFix(stage: DetectorStage, ctx: DetectorCtx): { par
   if (partitions === 'ownPartitioning') {
     return {
       partitions,
-      text: `${key} is already ${count}, so raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller`,
+      text: `${key} (${count}) did not size this stage's ${stage.taskCount} tasks, so raise its own partition count (its repartition(n) or RDD parallelism) so each partition is smaller`,
       remediation: [],
     };
   }
@@ -1896,7 +1896,7 @@ export const DETECTORS = [
         : partitions === 'aqeCoalesced'
           ? { text: `AQE coalesced it into ${stage.taskCount} tasks (from ${count} configured partitions): consider lowering ${ADVISORY_PARTITION_SIZE_KEY} or adding a broadcast join`, remediation: [decreaseConf(ADVISORY_PARTITION_SIZE_KEY)] }
           : partitions === 'ownPartitioning'
-            ? { text: `${key} is already ${count}, so consider raising this stage's own partition count (its repartition(n) or RDD parallelism) or adding a broadcast join`, remediation: [] }
+            ? { text: `${key} (${count}) did not size this stage's ${stage.taskCount} tasks, so consider raising its own partition count (its repartition(n) or RDD parallelism) or adding a broadcast join`, remediation: [] }
             : { text: `consider increasing ${key} or adding a broadcast join`, remediation: [increaseConf(key)] };
       return {
         type: 'shuffle', stageId: stage.id,
