@@ -366,7 +366,7 @@ export interface ImpactEstimate {
   estimateMethod: ImpactEstimateMethod;
   rawWaste?: RawWasteFigure;
   /** What the model assumes and leaves out, as a sentence fragment
-   * ("assumes 200 MB/s per executor over 75 executors; counts disk spill only"). Printed after
+   * ("assumes 200 MB/s per executor over 75 executors for disk spill, ...; GC is not counted"). Printed after
    * the estimate's provenance sentence. Absent when the model rests on no assumed constant. */
   assumptions?: string;
   /** Busy core time the fix removes (executor task time), in core-milliseconds, as a low..high

@@ -391,7 +391,7 @@ export interface RunVerdictModel {
   remaining: number;
   /** The "Copy next steps" checklist, or null when there is no step to copy. */
   copyText: string | null;
-  /** Beside `steps` (which rank by wall clock): the first COST_LANE_LIMIT cost-lane entries. */
+  /** Beside `steps` (which rank by stage task time): the first COST_LANE_LIMIT cost-lane entries. */
   costLane: CostLaneEntry[];
   /** The run's idle capacity line, or null when the log gives no allocation. */
   idle: RunIdleLine | null;

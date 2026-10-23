@@ -12,7 +12,9 @@ estimate, the dot's color tracks how much run time it could save rather than
 how unusual the metric looks, so a small-looking anomaly with a big payoff can
 outrank a dramatic one that would barely move your run time. A finding with
 only a resource estimate, or none, keeps the level its check assigned. A
-critical finding is drawn in red whatever share of the run its saving is.
+critical finding is drawn in red whatever share of the run its saving is. A
+finding on a stage that carries under 2% of the run's task time is capped at
+warning, except failures and oversized partitions.
 
 The board opens with a verdict: one line saying where to start, a short
 summary of what was found, and up to three numbered next steps. Each step
