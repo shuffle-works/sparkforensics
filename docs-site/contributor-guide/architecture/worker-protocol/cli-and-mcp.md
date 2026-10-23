@@ -219,7 +219,7 @@ difference fails the test.
 Every tool failure comes back as `{isError: true, content: [...],
 structuredContent: {code}}`, never an HTTP-status-shaped error; `code` is one
 of the 5 existing SHS codes (`SHS_ERROR_CODES`, `packages/core/src/shs-request.js`)
-plus `run-not-found`, `finding-not-found`, `invalid-event-log` (also
+plus `run-not-found`, `finding-not-found`, `invalid-cursor` (`diagnose_run`), `invalid-event-log` (also
 covers a nonexistent `path` source, and any file-system error such as `EACCES` or
 `EISDIR` on an event log that `toolErrorResult` maps to it), `archive-too-large` (SHS archive over
 the `SPARKFORENSICS_MAX_ARCHIVE_BYTES` byte cap, default 1 GiB, because the MCP path buffers

@@ -159,7 +159,8 @@ and no `structuredContent`.
 
 The codes:
 
-- `run-not-found`: no cached run for the `runId` you passed.
+- `run-not-found`: no cached run for the `runId` you passed, or the `source`
+  of `get_finding_evidence` holds another application than its `appId`.
 - `invalid-cursor`: the `cursor` of `diagnose_run` does not belong to this run and these filters.
 - `finding-not-found`: that `findingId` isn't on that run.
 - `invalid-date-filter`: `list_runs`'s `minDate` or `maxDate` isn't a
