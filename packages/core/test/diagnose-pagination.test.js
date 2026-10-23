@@ -116,6 +116,8 @@ describe('diagnose_run pagination', () => {
     const filtered = await diagnose(client, { source: { path }, type: ['straggler'], maxFindings: 3, pageChars: 30_000, cursor: nextCursor });
     expect(filtered.isError).toBe(true);
     expect(filtered.structuredContent.code).toBe('invalid-cursor');
+    const sameCount = await diagnose(client, { source: { path }, view: 'full', pageChars: 30_000, cursor: nextCursor });
+    expect(sameCount.structuredContent.code).toBe('invalid-cursor');
     const garbage = await diagnose(client, { source: { path }, cursor: 'not-a-cursor' });
     expect(garbage.structuredContent.code).toBe('invalid-cursor');
   });
@@ -135,6 +137,15 @@ describe('diagnose_run pagination', () => {
     expect(md.structuredContent.pagination).toBeUndefined();
   });
 
+  it('refuses a cursor cut from other rows of the same count', () => {
+    const row = (id) => ({ id, type: 'straggler', padding: 'x'.repeat(100) });
+    const result = (ids) => ({ runId: 'r', view: 'compact', runComplete: true, findings: ids.map(row), metrics: { stages: {} }, writeTargets: { writes: [] } });
+    const { nextCursor } = paginateDiagnose(result(['a', 'b', 'c', 'd']), { pageChars: 500 }).pagination;
+    expect(nextCursor).toBeTruthy();
+    expect(() => paginateDiagnose(result(['a', 'b', 'c', 'e']), { pageChars: 500, cursor: nextCursor })).toThrow(/cursor/);
+    expect(paginateDiagnose(result(['a', 'b', 'c', 'd']), { pageChars: 500, cursor: nextCursor }).pagination.page).toBe(2);
+  });
+
   it('paginateDiagnose leaves the result alone when it fits and no cursor is given', () => {
     const result = { runId: 'r', view: 'compact', findings: [], runComplete: true, metrics: { stages: {} }, writeTargets: { writes: [] } };
     expect(paginateDiagnose(result)).toBe(result);
@@ -144,8 +155,7 @@ describe('diagnose_run pagination', () => {
 describe('diagnose_run format "md"', () => {
   const path = tmpLargeEventLog(3);
 
-  // The Markdown is content[0].text; structuredContent is only the headline fields. A client that
-  // shows structuredContent alone shows no report.
+  // A client that reads only structuredContent must get the same report as content[0].text.
   it.each([
     [{ view: 'full', type: ['straggler'] }],
     [{ view: 'compact' }],
@@ -158,7 +168,8 @@ describe('diagnose_run format "md"', () => {
     expect(result.content[0].type).toBe('text');
     expect(result.content[0].text).toMatch(/^# Spark run evidence report/);
     expect(Object.keys(result.structuredContent).sort()).toEqual(
-      ['findingCount', 'findingsOmitted', 'recommendationCount', 'runComplete', 'runId', 'title']);
+      ['findingCount', 'findingsOmitted', 'markdown', 'recommendationCount', 'runComplete', 'runId', 'title']);
+    expect(result.structuredContent.markdown).toBe(result.content[0].text);
   });
 });
 

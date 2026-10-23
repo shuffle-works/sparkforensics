@@ -85,14 +85,14 @@ function toolResultWithMarkdown<T extends object>(promise: Promise<T & { markdow
   );
 }
 
-// diagnose_run's own mapping: with `format: 'md'` the Markdown is the content and structuredContent
-// shrinks to a few headline fields, so a client that stores it does not store the whole report.
+// diagnose_run's own mapping: with `format: 'md'` the Markdown is the content, and structuredContent
+// holds the same Markdown with a few headline fields instead of the whole JSON report.
 function diagnoseToolResult(promise: Promise<object & { markdown?: string }>): Promise<CallToolResult> {
   return promise.then(
     (value) => {
       const { markdown, ...structuredContent } = value;
       return markdown !== undefined
-        ? toCallToolResult(markdown, diagnoseHeadline(value as DiagnoseRunResult))
+        ? toCallToolResult(markdown, { ...diagnoseHeadline(value as DiagnoseRunResult), markdown })
         : toCallToolResult(JSON.stringify(structuredContent), structuredContent as Record<string, unknown>);
     },
     toolErrorResult,
@@ -126,7 +126,7 @@ export function createMcpServer(
   }, (params) => toolResult(listRuns(params)));
 
   server.registerTool('diagnose_run', {
-    description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by potential savings, each with its lead finding), findings, an impact-ranked fix recommendation rollup, and the writeTargets, metrics and effectiveConf blocks of the CLI report. view "compact" (the default) lists one short row per finding and leaves out the clean-check and not-checked lists; view "full" returns every finding with its remediation text and evidence, and those lists. Every finding row has a key that stays the same for the same finding in a rerun of the job (compare_runs rows list the same keys), and an id for get_finding_evidence. With format "md" the content is Markdown and structuredContent holds a few headline fields. A JSON result larger than pageChars (default ' + DEFAULT_PAGE_CHARS + ' characters) comes in pages: the first page has the verdict and the fixed blocks and as many rows as fit, and pagination.nextCursor, when not null, is the cursor argument that fetches the next page of the same call. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated. The result names the Spark application (app) and the build that wrote it (generator). ' + RUN_ID_NOTE,
+    description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by potential savings, each with its lead finding), findings, an impact-ranked fix recommendation rollup, and the writeTargets, metrics and effectiveConf blocks of the CLI report. view "compact" (the default) lists one short row per finding and leaves out the clean-check and not-checked lists; view "full" returns every finding with its remediation text and evidence, and those lists. Every finding row has a key that stays the same for the same finding in a rerun of the job (compare_runs rows list the same keys), and an id for get_finding_evidence. With format "md" the content is Markdown and structuredContent holds the same Markdown (markdown) with a few headline fields. A JSON result larger than pageChars (default ' + DEFAULT_PAGE_CHARS + ' characters) comes in pages: the first page has the verdict and the fixed blocks and as many rows as fit, and pagination.nextCursor, when not null, is the cursor argument that fetches the next page of the same call. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated. The result names the Spark application (app) and the build that wrote it (generator). ' + RUN_ID_NOTE,
     inputSchema: {
       ...runRefSchema, redact: z.boolean().optional(),
       view: z.enum(['compact', 'full']).optional()

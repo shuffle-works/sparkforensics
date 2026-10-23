@@ -336,7 +336,7 @@ export function diagnoseRun(runId: string, opts?: {
   };
 }
 
-/** The few fields `format: 'md'` returns as `structuredContent`: the Markdown carries the rest. */
+/** The few fields `format: 'md'` returns as `structuredContent` next to the Markdown, which carries the rest. */
 export function diagnoseHeadline(result: DiagnoseRunResult): {
   runId: string; runComplete: boolean; title: string; findingCount: number; findingsOmitted: number; recommendationCount: number;
 } {

@@ -101,9 +101,9 @@ error, and when both are given `runId` wins):
   matching findings the limit left out (always present, `0` when none).
 - `format`: `"json" | "md"` (default `"json"`), switches `content[0].text` to
   a rendered Markdown report instead of JSON. With `"md"`, `structuredContent`
-  is a small object instead of the report: `runId`, `runComplete`, `title` (the
-  verdict's), `findingCount`, `findingsOmitted` and `recommendationCount`. A
-  client that stores `structuredContent` stores only those.
+  holds the same report as `markdown`, next to `runId`, `runComplete`, `title`
+  (the verdict's), `findingCount`, `findingsOmitted` and `recommendationCount`.
+  A client that reads only `structuredContent` gets the whole report.
 
 - `cursor`: `string`, the `pagination.nextCursor` of the previous page. See
   [Pages](#pages).
@@ -142,8 +142,8 @@ pages by concatenating the `findings`, `cleanChecks`, `notRunChecks` and
 `writeTargets.writes` arrays and merging the `metrics.stages` objects.
 
 An answer that fits in `pageChars` has no `pagination` field and is the answer
-the tool gives without paging. A cursor is tied to the run and to the number of
-rows the filters leave: one from another call fails with `invalid-cursor`.
+the tool gives without paging. A cursor is tied to the run and to the rows the
+filters, `view` and `redact` leave: one from another call fails with `invalid-cursor`.
 `format: "md"` is not paged: the Markdown report is one document.
 
 A `runId` expires. Loaded runs are cached in memory, capped at 8

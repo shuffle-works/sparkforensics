@@ -146,15 +146,16 @@ thresholds and `redact`, so a repeated `diagnose_run` skips `computeRunMetrics`.
 and leaves out `cleanChecks` and `notRunChecks`. Each verdict step gets its lead row
 from the unfiltered report, which is cached, so a limit never hides it. The factory's
 `diagnose_run` handler defaults `view` to `compact`; `diagnoseRun()` itself defaults to
-`full`. With `format: 'md'` the handler returns `diagnoseHeadline()` as
-`structuredContent`.
+`full`. With `format: 'md'` the handler returns `diagnoseHeadline()` plus the `markdown`
+as `structuredContent`, so it carries the same report as `content[0].text`.
 
 The handler pages a JSON answer with `paginateDiagnose()` (`diagnose-pagination.ts`) after
 `diagnoseRun()` builds it, so the report builder and direct callers of `diagnoseRun()` see
 the whole result. The paged lists are `findings`, `cleanChecks`, `notRunChecks`,
 `metrics.stages` and `writeTargets.writes`; their rows are served in that order, cut by the
-JSON length of each row. The cursor holds the offset, the page number and the run id with the
-row count, so it is stateless and a cursor from other filters is refused with `invalid-cursor`.
+JSON length of each row. The cursor holds the offset, the page number and a fingerprint of the
+run id and an FNV-1a hash of every paged row, so it is stateless and a cursor from other filters,
+another `view` or another `redact` is refused with `invalid-cursor`.
 `get_finding_evidence` resolves a run through `resolveFindingEvidence()`: a cached `runId`, else
 `resolveOrCreateRun()` on the `source`.
 

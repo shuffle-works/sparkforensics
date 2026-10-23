@@ -1,3 +1,4 @@
+import { fnv1a } from './analyzer.ts';
 import { mcpError } from './mcp-error.ts';
 import type { DiagnoseRunResult } from './mcp-tools.ts';
 
@@ -51,11 +52,11 @@ function withRows(result: DiagnoseRunResult, items: Item[]): DiagnoseRunResult {
   };
 }
 
-// The cursor names the page it starts and the run and row count it was cut from, so one issued for a
-// different run or different filters is refused instead of serving rows from the wrong list.
+// The cursor names the page it starts and a hash of the run and every row it was cut from, so one
+// issued for a different run, filters, view or redaction is refused instead of serving rows from the wrong list.
 interface Cursor { offset: number; page: number; fingerprint: string }
 
-const fingerprintOf = (runId: string, itemCount: number): string => `${runId}:${itemCount}`;
+const fingerprintOf = (runId: string, items: Item[]): string => `${runId}:${items.length}:${fnv1a(JSON.stringify(items))}`;
 const encodeCursor = (cursor: Cursor): string => Buffer.from(JSON.stringify(cursor)).toString('base64url');
 
 function decodeCursor(text: string, fingerprint: string): Cursor {
@@ -79,7 +80,7 @@ export function paginateDiagnose(
   const items = itemsOf(result);
   if (cursor === undefined && jsonLength(result) <= pageChars) return result;
 
-  const fingerprint = fingerprintOf(result.runId, items.length);
+  const fingerprint = fingerprintOf(result.runId, items);
   const { offset, page } = cursor === undefined ? { offset: 0, page: 1 } : decodeCursor(cursor, fingerprint);
   const totals: DiagnosePagination['totals'] = { findings: result.findings.length };
   for (const section of SECTIONS) {
