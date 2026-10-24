@@ -115,7 +115,7 @@ least 0.5% of the run.
 (`Sort`, `HashAggregate`, `ObjectHashAggregate`, `Window`), largest first, with
 their plan node ids. A `Sort` under a `SortMergeJoin` is marked as feeding it.
 `evidence.spillToInputRatio` is the memory spill over the stage's input plus
-shuffle read. It is left out when that input is under 64 MB. From 10x,
+shuffle read. It is left out when that input is under 64 MiB. From 10x,
 `evidence.wideRows` is true and the finding says the rows are wide.
 `evidence.exchanges` reports widths only for the exchanges that feed a spilling
 operator, with their column count and estimated bytes per row. The column count comes from the nearest
