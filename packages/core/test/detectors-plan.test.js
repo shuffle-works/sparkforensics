@@ -948,8 +948,7 @@ describe('duplicatePlanSubtree: parity check', () => {
     const join = { name: 'SortMergeJoin', detail: `SortMergeJoin [id#1], [id#2], ${joinType}`, metrics: [], children: [side(tables[0], filters[0]), side(tables[1], filters[1])] };
     const sql = new Map([[1, { ...makeSqlExec(1, join), description: 'count at Job.scala:12' }]]);
     const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
-    const findings = analyze(makeApp(), stages, [], [], new Map(), sql);
-    return { findings, finding: findings.find(f => f.type === 'duplicatePlanSubtree') };
+    return { finding: analyze(makeApp(), stages, [], [], new Map(), sql).find(f => f.type === 'duplicatePlanSubtree') };
   };
 
   it('gives no cache advice and no time claim for a full outer join of the same aggregated scan', () => {
@@ -961,19 +960,32 @@ describe('duplicatePlanSubtree: parity check', () => {
     expect(finding.recommendation).toMatch(/parity check/);
   });
 
+  const verdictOf = (findings) => buildRunVerdict(
+    { app: makeApp(), stages: new Map([[1, makeStage()]]), executors: { added: [], removed: [] }, jobs: new Map(), sql: new Map(), runAggregates: null },
+    findings,
+  );
+  // No time claim, so before the parity rule the warning-band repeat (with its claim) led.
+  const spill = { type: 'spill', stageId: 2, impactBand: 'warning', recommendation: 'Reduce spill.' };
+
   it('carries no dedupe label and does not open the verdict', () => {
-    const { findings, finding } = run();
-    const spill = {
-      type: 'spill', stageId: 2, impactBand: 'warning', recommendation: 'Reduce spill.',
-      impactEstimate: { basis: 'serial', estimateMethod: 'measured', wallClock: { low: 1000, high: 1000 } },
-    };
-    const verdict = buildRunVerdict(
-      { app: makeApp(), stages: new Map(), executors: { added: [], removed: [] }, jobs: new Map(), sql: new Map(), runAggregates: null },
-      [...findings, spill],
-    );
+    const { finding } = run();
+    const verdict = verdictOf([finding, spill]);
     expect(findingActionLabel(finding)).not.toMatch(/dedupe/i);
     expect(verdict.steps[0].lead).toBe(spill);
+  });
+
+  it('counts the parity finding as an ordinary finding, not a note on missing log data', () => {
+    const { finding } = run();
+    const verdict = verdictOf([finding, spill]);
+    expect(verdict.eligible).toContain(finding);
+    expect(verdict.summary.join(' ')).not.toMatch(/leaves out .* missing log data/);
+  });
+
+  it('reads as an info-only run, not a partly checked one, when it is the only finding', () => {
+    const verdict = verdictOf([run().finding]);
+    expect(verdict.title).not.toMatch(/could not run/);
     expect(verdict.title).not.toMatch(/dedupe/i);
+    expect(verdict.summary.join(' ')).not.toMatch(/leaves out/);
   });
 
   it('ranks behind a repeat that carries a time claim', () => {
