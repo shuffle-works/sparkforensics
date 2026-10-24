@@ -35,7 +35,7 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, writ
   `steps` holds the first three places to look in the verdict card's order, each
   `{ key, stageId, type, tag, leadFindingId, actionLabel, recommendation, impact, impactMeaning,
   relatedTypes, text }`, where `text` is that step's line of the "Copy next steps" checklist and
-  `copyText` is the whole checklist. `steps` rank warning and critical findings by the task time of the stage they sit on (`impactEstimate.stageTaskMs`), then by wall-clock savings; `recommendations` order by the same stage task time first, so both lists agree. `costSteps` is a second lane
+  `copyText` is the whole checklist. `steps` rank by stage task time (`impactEstimate.stageTaskMs`), then wall-clock savings, as `recommendations` do. `costSteps` is a second lane
   ranked by measured busy core time (`impactEstimate.coreTimeMs.high`), each
   `{ stageId, type, tag, leadFindingId, actionLabel, coreTimeMs, coreTime }`: a finding with no
   core-time figure (an idle capacity, modeled or bytes-only figure) is in neither lane. `idle` is

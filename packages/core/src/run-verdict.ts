@@ -1,6 +1,6 @@
 // The run verdict: where to start, a short summary, and the top places to look, ranked by
-// stage task time, then potential savings (failures first on a failed run). Shared by the dashboard's verdict card and
-// the CLI/MCP evidence report, so both paths name the same first step in the same words.
+// stage task time, then potential savings (failures first on a failed run). Shared by the dashboard's
+// verdict card and the CLI/MCP evidence report, so both paths name the same first step in the same words.
 import { ENTRY_BY_TYPE } from './detectors.ts';
 import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
 import { findingActionLabel } from './finding-action-label.ts';
@@ -8,7 +8,7 @@ import { singleStageId } from './finding-filter-predicate.ts';
 import { recommendationText } from './finding-names.ts';
 import { formatDuration, formatRawWaste, IMPACT_BAND_ORDER, readsAsZero } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
-import { compareStageCost, isEligible, rankStageCostMs } from './recommendation-rollup.ts';
+import { isEligible, rankStageCostMs } from './recommendation-rollup.ts';
 import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from './run-outcome.ts';
 import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates.ts';
 import { computeWallClock } from './wall-clock.ts';
@@ -52,9 +52,8 @@ export function isRankable(finding: Finding): boolean {
   return DISPLAY_INDEX.has(finding.type) && recommendation.length > 0;
 }
 
-/** Every rankable finding, best first. A warning or critical finding on a stage with recorded task
- * time ranks first, by that stage's task time (`rankStageCostMs`, the axis the recommendations also
- * order by). Ties and every other finding rank by potential savings: a quantified estimate always
+/** Every rankable finding, best first. By the task time of the finding's stage (`rankStageCostMs`,
+ * the axis the recommendations share), then by potential savings: a quantified estimate always
  * outranks an unquantified one; further ties (including "neither has one") fall back to impact
  * band, then widget display order, then input order, so an unquantified warning still leads an info. */
 export function rankBySavings(findings: Finding[]): Finding[] {
@@ -62,7 +61,7 @@ export function rankBySavings(findings: Finding[]): Finding[] {
     .map((finding, index) => ({ finding, index }))
     .filter(({ finding }) => isRankable(finding));
   candidates.sort((left, right) => {
-    const costDelta = compareStageCost(rankStageCostMs(left.finding), rankStageCostMs(right.finding));
+    const costDelta = rankStageCostMs(right.finding) - rankStageCostMs(left.finding);
     if (costDelta !== 0) return costDelta;
     const leftSavings = potentialSavingsMs(left.finding);
     const rightSavings = potentialSavingsMs(right.finding);

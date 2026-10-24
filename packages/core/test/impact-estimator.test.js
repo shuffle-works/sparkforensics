@@ -462,7 +462,7 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
     const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }, { type: 'spill', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
     expect(findings[1].impactEstimate.assumptions)
-      .toBe('assumes 200 MB/s per executor over 75 executors for disk spill, plus 20% of the stage\'s task time as serialization and sort CPU (10% per pass of its input and shuffle-read bytes through memory spill, capped at 50%; 2 passes here); GC is not counted');
+      .toBe('assumes 200 MB/s per executor over 75 executors for disk spill, plus 20% of the stage\'s task time as serialization and sort CPU (10% per pass of its read bytes through memory spill, capped at 50%); GC is not counted');
     expect(findings[0].impactEstimate.assumptions).toMatch(/^assumes 125 MB\/s per executor over 75 executors; counts network transfer only/);
   });
 

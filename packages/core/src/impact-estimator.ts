@@ -4,15 +4,10 @@ import { coreTimeFor, stageTaskMs, type EstimateCtx } from './impact-model.ts';
 
 export type { EstimateCtx } from './impact-model.ts';
 
-// The task time of every stage the finding sits on, each counted once; undefined with no stage or
-// no recorded task time.
+// The task time of the stages the finding sits on; undefined when there is none.
 function findingStageTaskMs(f: Finding, ctx: EstimateCtx): number | undefined {
   const ids = 'stageIds' in f ? f.stageIds : f.stageId != null ? [f.stageId] : [];
-  let total = 0;
-  for (const id of new Set(ids)) {
-    const stage = ctx.stages.get(id);
-    if (stage) total += stageTaskMs(stage);
-  }
+  const total = ids.reduce((sum, id) => sum + (ctx.stages.has(id) ? stageTaskMs(ctx.stages.get(id)!) : 0), 0);
   return total > 0 ? total : undefined;
 }
 
@@ -22,11 +17,7 @@ export function estimateImpact(findings: Finding[], ctx: EstimateCtx): Finding[]
   for (const f of findings) {
     const estimate = ENTRY_BY_TYPE.get(f.type)?.estimate(f, ctx);
     if (!estimate) continue;
-    const stageTask = findingStageTaskMs(f, ctx);
-    f.impactEstimate = {
-      ...estimate, coreTimeMs: coreTimeFor(f, estimate),
-      ...(stageTask !== undefined ? { stageTaskMs: stageTask } : {}),
-    };
+    f.impactEstimate = { ...estimate, coreTimeMs: coreTimeFor(f, estimate), stageTaskMs: findingStageTaskMs(f, ctx) };
   }
   countTailCoreTimeOnce(findings);
   return findings;

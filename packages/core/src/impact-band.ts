@@ -8,9 +8,8 @@ import { FAILURE_TYPES } from './run-outcome.ts';
 export const IMPACT_FLOOR_PCT_WARN = 0.005;
 export const IMPACT_FLOOR_PCT_CRIT = 0.02;
 
-// The share of the run's summed task time a stage must carry for a finding on it to stay `critical`.
-// The same 2% as IMPACT_FLOOR_PCT_CRIT, applied to task time instead of run duration. Source
-// status: threshold-tables.md.
+// The share of the run's task time a stage must carry for a finding on it to stay `critical`: the
+// IMPACT_FLOOR_PCT_CRIT figure, applied to task time.
 export const CRITICAL_MIN_TASK_TIME_SHARE = IMPACT_FLOOR_PCT_CRIT;
 
 /** The share-of-run floors one finding grades against. */
@@ -65,12 +64,9 @@ export function deriveImpactBand(
 
 /**
  * Caps a `critical` band at `warning` when the finding's stage carries under
- * CRITICAL_MIN_TASK_TIME_SHARE of the run's summed task time, whether a detector set the band or
- * deriveImpactBand graded it from recoverable wall-clock: a stage that small cannot hold a
- * critical cost for a shared cluster. Failures (FAILURE_TYPES) and partitionSizing's
- * maxPartitionTooBig are safety signals whatever the stage costs, and a finding with no single
- * stage, a stage with no recorded task time, or such a run has nothing to compare. Mutates in place
- * and returns the array.
+ * CRITICAL_MIN_TASK_TIME_SHARE of the run's task time. Failures and partitionSizing's
+ * maxPartitionTooBig stay critical whatever the stage costs, and a finding with no single stage or
+ * no recorded task time has nothing to compare. Mutates in place and returns the array.
  */
 export function capCriticalByTaskTime(findings: Finding[], stages: Map<number, Stage>): Finding[] {
   let runTaskMs = 0;

@@ -1997,15 +1997,14 @@ export const DETECTORS = [
       if (!stage) return null;
       const diskBytesSpilled = stage.diskBytesSpilled ?? 0;
       const ioMs = (diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
-      // The serialization and sort CPU memory spill costs is a share of the stage's task time. At the
-      // stage's own concurrency that share of task time is the same share of its wall-clock duration.
-      const cpu = spillTaskTimeShare(stage);
+      // The same share of task time is the same share of the stage's duration at constant concurrency.
+      const cpuShare = spillTaskTimeShare(stage);
       const durationMs = Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
-      const wasteMs = ioMs + (cpu ? durationMs * cpu.share : 0);
-      const cpuAssumption = cpu
-        ? `plus ${Math.round(cpu.share * 100)}% of the stage's task time as serialization and sort CPU (${Math.round(SPILL_TASK_TIME_SHARE_PER_PASS * 100)}% per pass of its input and shuffle-read bytes through memory spill, capped at ${Math.round(SPILL_TASK_TIME_SHARE_MAX * 100)}%; ${Math.round(cpu.passes * 10) / 10} passes here)`
-        : 'the stage read no bytes to compare its memory spill to, so serialization and sort CPU is not counted';
-      // Surfaces the disk figure: the displayed metric is memoryBytesSpilled, but disk spill costs the I/O time.
+      const wasteMs = ioMs + durationMs * (cpuShare ?? 0);
+      const cpuAssumption = cpuShare === null
+        ? 'the stage read no bytes to compare its memory spill to, so serialization and sort CPU is not counted'
+        : `plus ${Math.round(cpuShare * 100)}% of the stage's task time as serialization and sort CPU (${SPILL_TASK_TIME_SHARE_PER_PASS * 100}% per pass of its read bytes through memory spill, capped at ${SPILL_TASK_TIME_SHARE_MAX * 100}%)`;
+      // The displayed metric is memoryBytesSpilled; the raw figure is the disk bytes that cost the I/O time.
       return withAssumptions(
         singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: diskBytesSpilled, unit: 'bytes' }),
         `${ioModelAssumption(SPILL_IO_THROUGHPUT_BPS, stage)} for disk spill, ${cpuAssumption}; GC is not counted`,

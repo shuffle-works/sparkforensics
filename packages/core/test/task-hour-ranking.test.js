@@ -54,7 +54,7 @@ describe('task-hour ranking: one axis for verdict steps and recommendations', ()
     const info = finding('gc', 4, 'info', 900, 60_000);
     const order = buildNextSteps([appLevel, info, ...findings]).map((step) => step.lead.type);
     expect(order.slice(0, 3)).toEqual(['spill', 'shuffle', 'skew']);
-    expect(rankStageCostMs(info)).toBeNull();
+    expect(rankStageCostMs(info)).toBe(0);
   });
 });
 

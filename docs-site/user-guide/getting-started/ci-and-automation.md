@@ -129,13 +129,12 @@ time (modeled)"), never as a duration beside run-time savings, and a modeled one
 says so. `rawWaste` keeps its value and unit. Each finding row also carries
 `estimateProvenance`, the sentence that says how the estimate was derived and what
 its model assumes and leaves out, for example "assumes 200 MB/s per executor over 75
-executors for disk spill, plus 20% of the stage's task time as serialization and sort CPU (10% per pass of its input and shuffle-read bytes through memory spill, capped at 50%; 2 passes here); GC is not counted". Scripts
+executors for disk spill, plus 20% of the stage's task time as serialization and sort CPU (10% per pass of its read bytes through memory spill, capped at 50%); GC is not counted". Scripts
 read the numbers from `impactEstimate` and `evidence`, not from these strings.
 
-`impactEstimate.stageTaskMs` is the summed task wall time, in milliseconds, of the stage or stages
-a finding sits on. The verdict steps and the recommendations rank warning and critical findings by it,
-largest first, so both lists give the same order, and a `critical` band needs the stage to carry at
-least 2% of the run's task time. It is absent on a finding with no stage and on a stage with no recorded task time.
+`impactEstimate.stageTaskMs` is the task time, in milliseconds, of the stages a finding sits on. The
+verdict steps and the recommendations rank by it, largest first, and a `critical` band needs the stage
+to carry at least 2% of the run's task time. It is absent without a stage or task time.
 
 `impactEstimate.idleCoreTimeMs` is the idle capacity as a number a script can
 rank by: the `utilization` finding's allocated core time that ran no task, in
