@@ -108,8 +108,7 @@ export type StageReads = 'shuffle' | 'input' | 'other';
 /** Why a shuffle finding's partition-count advice is or is not given: 'raise' (the property limits
  * the stage), 'sufficient' (tasks are already a good size), 'aqeCoalesced' (AQE merged the
  * partitions, so the advisory size is the lever) or 'ownPartitioning' (the property did not size
- * the stage: it is already high enough, or the plan shows AQE left the stage's exchange uncoalesced,
- * so the stage's own repartition(n) or RDD parallelism is the lever). */
+ * the stage, so the stage's own repartition(n) or RDD parallelism is the lever). */
 export type ShufflePartitions = 'raise' | 'sufficient' | 'aqeCoalesced' | 'ownPartitioning';
 
 /** Why a stage's slow tail is slow (attributeTail in stage-quantiles.ts). 'data': the slow tasks

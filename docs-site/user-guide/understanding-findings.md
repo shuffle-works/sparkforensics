@@ -87,10 +87,10 @@ advice follows the effective conf (`evidence.partitions`): `raise` when the
 property limits the stage, `sufficient` when the tasks already read a good
 size each, `aqeCoalesced` when AQE merged the partitions of a stage in a SQL
 execution (lower `spark.sql.adaptive.advisoryPartitionSizeInBytes`), and
-`ownPartitioning` when the property did not size the stage (the property is
-already high enough, or the plan shows an exchange AQE did not coalesce, so the
-stage's own `repartition(n)` or RDD parallelism limits it, as for any stage
-outside a SQL execution). With AQE coalescing on,
+`ownPartitioning` when the property did not size the stage: it is already high
+enough, or the stage's exchange has no coalescing read over it. The stage's own
+`repartition(n)` or RDD parallelism limits it, as for any stage outside a SQL
+execution. With AQE coalescing on,
 `spark.sql.adaptive.coalescePartitions.initialPartitionNum` replaces the
 property as the starting count when it is set, and a stage that ran more tasks
 than that, with a skew split in the final plan or no final plan to rule one

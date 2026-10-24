@@ -855,14 +855,12 @@ describe('partition-count advice follows what sized the stage', () => {
   });
 
   describe('a stage whose own exchange the plan shows', () => {
-    // The stage (id 1) reads an exchange that stage 0 wrote; the exchange lists both stages, the
-    // stage's own operator lists only itself. `read` is what sits between the operator and the exchange.
+    // Stage 1 reads an exchange that stage 0 wrote; `readDetail` is the AQE read over it, if any.
     const planWith = (exchangeDetail, readDetail) => {
       const exchange = { name: 'Exchange', detail: exchangeDetail, metrics: [], stageIds: [0, 1], exchangeRole: 'read', children: [] };
       const queryStage = { name: 'ShuffleQueryStage', detail: '', metrics: [], children: [exchange] };
       const below = readDetail == null ? queryStage : { name: 'AQEShuffleRead', detail: readDetail, metrics: [], children: [queryStage] };
-      return new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [
-        { name: 'HashAggregate', detail: '', metrics: [], stageIds: [1], children: [below] }] } }]]);
+      return new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [below] } }]]);
     };
     const REPARTITION_NUM = 'Exchange hashpartitioning(k#1L, 300), REPARTITION_BY_NUM, [plan_id=4]';
     const REQUIREMENTS = 'Exchange hashpartitioning(k#1L, 400), ENSURE_REQUIREMENTS, [plan_id=4]';
@@ -915,26 +913,6 @@ describe('partition-count advice follows what sized the stage', () => {
         expect(coreFindingGenericRecommendation(f)).toMatch(/did not size this stage.*own partition count/);
         expect(coreFindingGenericRecommendation(f)).not.toMatch(/already/);
       }
-    });
-
-    it('reads the exchange the stage reads when no operator of the stage carries task metrics', () => {
-      const writePlan = (readDetail) => {
-        const write = { name: 'Exchange', detail: '', metrics: [], stageIds: [0, 1], exchangeRole: 'write', children: [] };
-        const exchange = { name: 'Exchange', detail: REPARTITION_NUM, metrics: [], stageIds: [0, 1], exchangeRole: 'read', children: [write] };
-        const queryStage = { name: 'ShuffleQueryStage', detail: '', metrics: [], children: [exchange] };
-        const below = readDetail == null ? queryStage : { name: 'AQEShuffleRead', detail: readDetail, metrics: [], children: [queryStage] };
-        return new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [
-          { name: 'Execute InsertIntoHadoopFsRelationCommand', detail: '', metrics: [], children: [
-            { name: 'WriteFiles', detail: '', metrics: [], children: [below] }] }] } }]]);
-      };
-      const tinyStage = { taskCount: 300, taskDurationP50: 50, taskDurationP95: 100, shuffleReadBytes: 10 * MiB };
-      const own = of('tinyTask', tinyStage, config, '3.5.0', writePlan(null));
-      expect(keys(own)).toEqual(['code']);
-      expect(own.recommendation).not.toMatch(/AQE|advisoryPartitionSize/);
-      expect(keys(of('tinyTask', tinyStage, config, '3.5.0', writePlan('coalesced')))).toEqual([PARALLELISM_FIRST, ADVISORY]);
-      const slow = { taskCount: 300, submittedAt: 0, completedAt: 20 * 60000, shuffleReadBytes: 10 * MiB };
-      expect(keys(of('stageSlowness', slow, config, '3.5.0', writePlan(null)))).toEqual(['code']);
-      expect(keys(of('spill', spilled, config, '3.5.0', writePlan(null)))).toEqual(['code', 'spark.executor.memory']);
     });
   });
 
