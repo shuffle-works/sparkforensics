@@ -185,3 +185,10 @@ test('explains a repeat reading different Delta versions instead of calling its 
   expect(screen.queryByText(/cache\/persist the shared computation/)).toBeNull();
   cleanup();
 });
+
+test('explains a parity check instead of advising a cache', () => {
+  renderWidget([finding({ occurrencesIdentical: true, parityCheck: true })]);
+  expect(screen.getAllByText(/parity check/).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/cache\/persist the shared computation/)).toBeNull();
+  cleanup();
+});

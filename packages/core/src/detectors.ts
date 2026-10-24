@@ -537,6 +537,30 @@ function occurrencesReadDifferentDeltaVersions(occurrences: PlanNode[]): boolean
     && reads.some((scans) => key(scans, 'version') !== key(reads[0], 'version'));
 }
 
+// The nodes under every full outer join whose two sides aggregate scans of the same tables with
+// the same filters. That join compares two computations of one input (a parity check), so its
+// repeated sides are the point of the query, not work to compute once.
+function parityCheckNodes(root: PlanNode): Set<PlanNode> {
+  const sideProfile = (side: PlanNode): { aggregates: boolean; scans: string } => {
+    let aggregates = false;
+    const scans: string[] = [];
+    walkPlanTree(side, (n) => {
+      if (/Aggregate/.test(n.name)) aggregates = true;
+      if (relationIdOf(n) !== null) scans.push(normalizeDetail(n.detail ?? ''));
+    });
+    return { aggregates, scans: scans.sort().join('\n') };
+  };
+  const nodes = new Set<PlanNode>();
+  walkPlanTree(root, (join) => {
+    if (parseJoinType(join.detail ?? '') !== 'FullOuter' || join.children?.length !== 2) return;
+    const [left, right] = join.children.map(sideProfile);
+    if (left.aggregates && right.aggregates && left.scans !== '' && left.scans === right.scans) {
+      walkPlanTree(join, (n) => nodes.add(n));
+    }
+  });
+  return nodes;
+}
+
 // Stages that run nothing but the duplicated occurrences' operators: every operator attributed to
 // the stage is inside `nodes`. A stage shared with operators outside them (the join consuming the
 // subtree, the other join side) does other work too, so its time isn't the subtree's to claim, and
@@ -3292,6 +3316,7 @@ export const DETECTORS = [
       walkPlanTree(sqlExec.planTree, (node) => executionNodes.push(node));
       const operatorsByStage = operatorCountByStage(executionNodes);
       const runMs = appDurationMs(ctx.app);
+      const parityNodes = parityCheckNodes(sqlExec.planTree);
       const findings = groups.map((g): Finding | null => {
         const nodes: PlanNode[] = [];
         for (const n of g.nodes) walkPlanTree(n, (node) => nodes.push(node));
@@ -3306,25 +3331,27 @@ export const DETECTORS = [
         const occurrencesIdentical = !readsDifferentVersions && occurrencesHaveIdenticalDetails(g.nodes);
         const rootAction = rootActionOf(sqlExec.description);
         const underInspectionAction = INSPECTION_ACTIONS.has(rootAction ?? '');
+        const parityCheck = g.nodes.every((n) => parityNodes.has(n));
         const stageShares = stageOperatorShares(nodes, operatorsByStage);
         // resolvePlanTree always sets id, so the `!` here and below is safe.
         const planNodeIds = nodes.map((n) => n.id!).filter(Boolean);
         const detail = duplicateSubtreeDetail({ ...g, value: g.occurrences });
-        const note = duplicateSubtreeNote({ occurrencesIdentical, readsDifferentVersions });
+        const note = duplicateSubtreeNote({ occurrencesIdentical, readsDifferentVersions, parityCheck });
         return {
           type: 'duplicatePlanSubtree', executionId: sqlExec.id, stageIds, planNodeIds,
-          stageShares, occurrencesIdentical, readsDifferentVersions,
+          stageShares, occurrencesIdentical, readsDifferentVersions, parityCheck,
           ...(rootAction !== null && { rootAction }),
-          // Repeats with differing details or under an inspection action get no estimate, and
-          // neither does a subtree with no stage of its own, so this fallback band stands.
-          impactBand: occurrencesIdentical && !underInspectionAction && Object.keys(stageShares).length > 0 ? 'warning' : 'info',
+          // Repeats with differing details, under an inspection action or in a parity check get
+          // no estimate, and neither does a subtree with no stage of its own, so this fallback
+          // band stands.
+          impactBand: occurrencesIdentical && !underInspectionAction && !parityCheck && Object.keys(stageShares).length > 0 ? 'warning' : 'info',
           metric: 'subtreeOccurrences', value: g.occurrences,
           rootName: g.rootName, subtreeSize: g.subtreeSize, sampleRelation: g.sampleRelation,
           groupIndex: g.groupIndex,
           confidence: occurrencesIdentical ? duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, thresholds) : 'low',
           validationRequired: 'Matching compares operator and metric names only, not literals or expression IDs: confirm the repeat in the Spark UI SQL tab before acting.',
-          recommendation: readsDifferentVersions
-            ? `${detail}.${note}`
+          recommendation: readsDifferentVersions || parityCheck
+            ?`${detail}.${note}`
             : `${detail}: ${g.isExchangeRoot
               ? 'this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.'
               : 'consider caching/persisting the shared computation or check for a duplicated query branch.'}${note}`,
@@ -3343,7 +3370,7 @@ export const DETECTORS = [
       // Same-shaped repeats whose details differ compute different data: nothing is known to be
       // recomputed, so there is no time to claim.
       if (finding.occurrencesIdentical === false) return costOnly('none');
-      if (INSPECTION_ACTIONS.has(String(finding.rootAction))) return costOnly('none');
+      if (INSPECTION_ACTIONS.has(String(finding.rootAction)) || finding.parityCheck === true) return costOnly('none');
       // Each stage contributes the share of its operators inside the repeated subtree: a stage it
       // shares with other operators (the consuming join, the join's other side) isn't all its
       // time, and claiming whole stages let sibling groups claim the same stage twice. Findings

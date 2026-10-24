@@ -392,6 +392,7 @@ export interface DuplicatePlanSubtreeEvidence extends PlanFindingEvidence {
   stageShares: Record<number, number>;
   occurrencesIdentical: boolean;
   readsDifferentVersions: boolean;
+  parityCheck: boolean;
   rootAction?: string;
   rootName: string;
   subtreeSize: number;
