@@ -170,12 +170,12 @@ export function ScalingSim({ appModel }: ScalingSimProps) {
               <XAxis
                 dataKey="pct"
                 tickFormatter={(v: number) => `${v}%`}
-                tick={{ fontSize: 10 }}
+                tick={{ fontSize: 11 }}
               />
               <YAxis
                 domain={makespanYAxisDomain}
                 tickFormatter={(v: number) => formatDuration(v)}
-                tick={{ fontSize: 10 }}
+                tick={{ fontSize: 11 }}
                 width={56}
               />
               <Tooltip

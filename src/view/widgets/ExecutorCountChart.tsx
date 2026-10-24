@@ -129,8 +129,8 @@ export const ExecutorCountChart = memo(function ExecutorCountChart({ appModel, a
       >
         <AreaChart data={sampled}>
           <CartesianGrid vertical={false} stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
-          <XAxis dataKey="label" tick={{ fontSize: 10 }} minTickGap={24} />
-          <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={32} />
+          <XAxis dataKey="label" tick={{ fontSize: 11 }} minTickGap={24} />
+          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={32} />
           {/* One line, "At 7s: Active executors 2": Recharts' default
               content would split it into a label and a "name : value" row. */}
           <Tooltip content={ExecutorCountTooltip} />

@@ -204,7 +204,7 @@ function CostLane({ interpretation, onRoute }: { interpretation: InterpretationS
             <TagBadge type={finding.type} impactBand={finding.impactBand} docAnchor={finding.docAnchor} />
             <button
               type="button"
-              className="cursor-pointer rounded-sm text-left font-medium underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="tap-target-comfortable cursor-pointer rounded-sm text-left font-medium underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => {
                 if (entry.stageId != null) openStage(entry.stageId);
                 else {

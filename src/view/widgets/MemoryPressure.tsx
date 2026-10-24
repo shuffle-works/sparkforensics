@@ -138,9 +138,9 @@ export function MemoryPressure({ appModel }: MemoryPressureProps) {
                 dataKey="spillBytes"
                 name="Memory spilled"
                 tickFormatter={(v: number) => formatBytes(v)}
-                tick={{ fontSize: 10 }}
+                tick={{ fontSize: 11 }}
               />
-              <YAxis type="number" dataKey="gcPct" name="GC %" tick={{ fontSize: 10 }} width={32} />
+              <YAxis type="number" dataKey="gcPct" name="GC %" tick={{ fontSize: 11 }} width={32} />
               <Tooltip cursor={{ strokeDasharray: '3 3' }} content={ScatterTooltipContent} />
               <Scatter data={sampled} name="Spill vs. GC">
                 {sampled.map((p) => (
@@ -165,8 +165,8 @@ export function MemoryPressure({ appModel }: MemoryPressureProps) {
             <ComposedChart data={twinData}>
               <CartesianGrid stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
               <XAxis dataKey="stage" tick={{ fontSize: 12 }} />
-              <YAxis yAxisId="left" tick={{ fontSize: 10 }} width={36} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10 }} width={36} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11 }} width={36} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} width={36} />
               <Tooltip />
               <Bar yAxisId="left" dataKey="spillMB" name="Spill (MB)" fill={CHART_COLORS.critical} />
               <Line yAxisId="right" dataKey="gcPct" name="GC %" stroke={CHART_COLORS.info} dot={false} />

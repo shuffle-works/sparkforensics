@@ -93,11 +93,11 @@ export function CoreUsageHistogram({ appModel, getTaskData }: CoreUsageHistogram
               <CartesianGrid vertical={false} stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
               <XAxis
                 dataKey="cores"
-                tick={{ fontSize: 10 }}
+                tick={{ fontSize: 11 }}
                 label={{ value: 'Concurrent busy cores', position: 'insideBottom', offset: -5, fontSize: 12 }}
               />
               <YAxis
-                tick={{ fontSize: 10 }}
+                tick={{ fontSize: 11 }}
                 width={48}
                 tickFormatter={(value: number) => formatDuration(value)}
               />
