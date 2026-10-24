@@ -264,7 +264,7 @@ Findings rows sit in a panel per severity band, with 10px by 12px cells and 16px
 
 ### Charts
 
-Charts render through `ChartFrame`, which pins height and turns off series animation under reduced motion. Axis ticks and legends are mono. Text a reader needs is at least 12px; only numeric tick labels drop to 11px. Dialog and sheet scrims are a flat tint with no blur. Tooltips draw on the popover surface with a 1px rule, 6px corners and 12px text, so they read in both themes. Each chart can expose its data as a table and copy it as TSV.
+Charts render through `ChartFrame`, which pins height and turns off series animation under reduced motion. Axis ticks and legends are mono. Text a reader needs is at least 12px; only numeric tick labels drop to 11px. Tooltips draw on the popover surface with a 1px rule, 6px corners and 12px text, so they read in both themes. Each chart can expose its data as a table and copy it as TSV.
 
 ### Navigation
 
