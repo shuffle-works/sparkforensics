@@ -28,6 +28,9 @@ rule is a third case: it does carry a `wallClock` estimate but is explicitly
 exempted in `deriveImpactBand()` because it's a hardcoded-critical OOM/crash-risk
 safety signal, not a time-recovery one, so `detectors.ts`'s own classification
 stands regardless of how small that estimate is relative to the run.
+`utilization` has no `wallClock`, so `deriveImpactBand()` grades its idle
+core time (`idleCoreTimeMs.high`) as a fraction of the run's allocated core
+time on the same floors.
 
 `analyzer.ts` then calls `capCriticalByTaskTime()` (`impact-band.ts`). It caps a `critical`
 finding at `warning` when its stage carries under `CRITICAL_MIN_TASK_TIME_SHARE` = 2% of the run's
@@ -101,7 +104,7 @@ threshold changes the band or the magnitude.
 | Failed tasks | failure rate > 5% (min 10 tasks) | > 20% |
 | Stage failed outright | none | any `stageFailureReason` present |
 | Slow host: multi-dimensional | max/median ratio across taskTime/inputBytes/shuffleBytes/storageMemory ≥ 1.33× (info); each dimension's sample must also clear an absolute floor (1000 ms for taskTime, 64 MiB for the byte dimensions). A stage lasting under `stageFloorPct` = 0.5% of the run is skipped (see the mean-duration row): a byte dimension there has no time estimate and would otherwise keep its ratio tier (a shorter stage's byte dimension would otherwise keep a warning or critical tier). The taskTime dimension also has to pass a chance test, since the slowest of many executors always tops the median: on the log scale of task duration, (the executor's mean − the median executor's mean) ÷ (the stage's task spread ÷ √ the executor's task count) must reach √(2 ln(executors ÷ (2 × `outlierAlpha`))) with `outlierAlpha` = 0.005 (3.4 for 3 executors, 4.2 for 75), so an executor with fewer tasks or a stage with more executors needs a larger gap. The stage spread is rebuilt from each executor's `logDurationSum` and `logDurationM2` (the sum and M2 of ln(1 + task duration) that `finalizeStage` accumulates); a stage with under two tasks, no spread, or an executor missing or non-finite in either field flags no executor on task time. Of the executors that pass, the one with the largest mean is reported. The taskTime dimension falls back to `info` and takes its band from its wall-clock estimate; the byte dimensions get no time estimate and keep the ratio tier | ≥ `ratioTiers[1]` = 1.78× warning, ≥ `ratioTiers[3]` = 10× critical (`ratioTiers[2]` = 3.16 is not read) |
-| Utilization | busy core time / allocated core time < 60% (info) | none |
+| Utilization | busy core time / allocated core time < 60%; band from the idle share of the allocation (see above) | none |
 | Autoscaling churn: short-lived executors | > 30% of removed executors alive under 2 min (min 5 removed executors) | > 60% |
 | Job failure rate | ≥ 30% (≥ 10% info) | ≥ 50% |
 | Idle cores | idle share of allocated core time > 50% (warning) | none |
