@@ -1038,6 +1038,8 @@ interface PartitionBasis {
   skewSplit: boolean | null;
   /** Whether the execution's plan holds a `repartition` or `rebalance` the job asked for. */
   explicitRepartition: boolean;
+  /** Whether an AQE shuffle read sits over the exchange the stage reads; null when the plan shows none read. */
+  shuffleResized: boolean | null;
 }
 
 function partitionBasis(stage: DetectorStage, ctx: DetectorCtx): PartitionBasis {
@@ -1048,8 +1050,31 @@ function partitionBasis(stage: DetectorStage, ctx: DetectorCtx): PartitionBasis 
   const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
   const skewSplit = aqe ? planShowsSkewSplit(plan) : null;
   const explicitRepartition = planHasExplicitRepartition(plan);
-  if (initial != null && /^\d+$/.test(initial)) return { count: Number(initial), key: INITIAL_PARTITION_NUM_KEY, aqe, coalesce, skewSplit, explicitRepartition };
-  return { count: effectiveShufflePartitions(app), key: 'spark.sql.shuffle.partitions', aqe, coalesce, skewSplit, explicitRepartition };
+  const shuffleResized = aqe ? stageShuffleResized(plan, stage.id) : null;
+  if (initial != null && /^\d+$/.test(initial)) return { count: Number(initial), key: INITIAL_PARTITION_NUM_KEY, aqe, coalesce, skewSplit, explicitRepartition, shuffleResized };
+  return { count: effectiveShufflePartitions(app), key: 'spark.sql.shuffle.partitions', aqe, coalesce, skewSplit, explicitRepartition, shuffleResized };
+}
+
+const SHUFFLE_READ_NODE = /^(AQEShuffleRead|CustomShuffleReader)$/;
+
+// Whether AQE resized the shuffle a stage reads: true when an AQE read (coalesced, skewed or local)
+// sits over an exchange the stage reads, false when it reads exchanges and none has one (a
+// `repartition(n)` exchange never does), null when the plan shows it reading none. An exchange lists its producing
+// and its reading stage, and the reader is the later one.
+function stageShuffleResized(plan: PlanNode | null | undefined, stageId: number): boolean | null {
+  let reads = 0;
+  let resized = false;
+  const visit = (node: PlanNode, covered: boolean): void => {
+    const isExchange = /Exchange$/.test(node.name);
+    if (node.exchangeRole === 'read' && node.stageIds?.includes(stageId) && Math.min(...node.stageIds) !== stageId) {
+      reads++;
+      resized ||= covered;
+    }
+    const over = !isExchange && (covered || SHUFFLE_READ_NODE.test(node.name));
+    for (const child of node.children ?? []) visit(child, over);
+  };
+  if (plan) visit(plan, false);
+  return reads === 0 ? null : resized;
 }
 
 // Whether a plan holds an exchange the job asked for (`repartition(n)`, `repartition(col)` or a
@@ -1061,25 +1086,27 @@ function planHasExplicitRepartition(plan: PlanNode | null | undefined): boolean 
 }
 
 // How the stage's task count relates to the configured one. 'matches': the configured count sized it
-// (or the count is unknown). 'coalesced': AQE merged the partitions into fewer tasks. 'adjusted': more
-// tasks than configured under AQE, which a skew-join split can produce and several shuffle reads in
-// one execution can obscure: the stage's own repartition(n) is blamed only when the plan holds one.
+// (or the count is unknown). 'coalesced': AQE merged the partitions into fewer tasks, unless the plan
+// shows the stage's exchange with no AQE read over it. 'adjusted': more tasks than configured under
+// AQE, which a skew-join split can produce, unless the plan shows the stage's exchange with no AQE
+// read over it. Where the plan does not show the stage's exchange, several shuffle reads in one
+// execution can obscure the cause: the stage's own repartition(n) is blamed only when the plan holds one.
 // 'own': a different count with no AQE to rewrite it, or with a repartition(n) in the plan, which is
 // a repartition(n) or an RDD operation that fixed its own count.
 type CountRelation = 'matches' | 'coalesced' | 'adjusted' | 'own';
 
 function countRelation(stage: DetectorStage, basis: PartitionBasis): CountRelation {
   if (basis.count == null || stage.taskCount === basis.count) return 'matches';
-  if (basis.coalesce && stage.taskCount < basis.count) return 'coalesced';
-  if (basis.aqe && stage.taskCount > basis.count && (basis.skewSplit !== false || !basis.explicitRepartition)) return 'adjusted';
+  if (basis.coalesce && stage.taskCount < basis.count && basis.shuffleResized !== false) return 'coalesced';
+  if (basis.aqe && stage.taskCount > basis.count && (basis.shuffleResized ?? (basis.skewSplit !== false || !basis.explicitRepartition))) return 'adjusted';
   return 'own';
 }
 
 // Whether partition-count advice fits a shuffle-reading stage. The count that brings each shuffle
 // partition to the ideal size is per stage; the property is job-wide. 'sufficient': the tasks are
 // already at or under the ideal size. 'aqeCoalesced' and 'ownPartitioning' follow countRelation
-// ('ownPartitioning' also when the property already gives at least the count needed). Otherwise
-// the property limits the stage: 'raise'.
+// ('ownPartitioning' also when the plan shows an uncoalesced exchange, or the property already gives
+// at least the count needed). Otherwise the property limits the stage: 'raise'.
 function shufflePartitionCase(stage: DetectorStage, ctx: DetectorCtx): { partitions: ShufflePartitions; count: number | null; key: string; needed: number } {
   const basis = partitionBasis(stage, ctx);
   const { count, key } = basis;
@@ -1089,6 +1116,7 @@ function shufflePartitionCase(stage: DetectorStage, ctx: DetectorCtx): { partiti
   let partitions: ShufflePartitions = 'raise';
   if (stage.shuffleReadBytes / tasks <= IDEAL_BYTES_PER_PARTITION_TASK) partitions = 'sufficient';
   else if (relation === 'coalesced') partitions = 'aqeCoalesced';
+  else if (relation === 'own' && basis.shuffleResized === false) partitions = 'ownPartitioning';
   else if (count != null && count >= needed && relation !== 'adjusted') partitions = 'ownPartitioning';
   return { partitions, count, key, needed };
 }
@@ -1152,7 +1180,7 @@ function lowShuffleParallelismFix(stage: DetectorStage, ctx: DetectorCtx): { par
   if (partitions === 'ownPartitioning') {
     return {
       partitions,
-      text: `${key} is already ${count}, so raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller`,
+      text: `${key} (${count}) did not size this stage's ${stage.taskCount} tasks, so raise its own partition count (its repartition(n) or RDD parallelism) so each partition is smaller`,
       remediation: [],
     };
   }
@@ -1849,7 +1877,7 @@ export const DETECTORS = [
         : partitions === 'aqeCoalesced'
           ? { text: `AQE coalesced it into ${stage.taskCount} tasks (from ${count} configured partitions): consider lowering ${ADVISORY_PARTITION_SIZE_KEY} or adding a broadcast join`, remediation: [decreaseConf(ADVISORY_PARTITION_SIZE_KEY)] }
           : partitions === 'ownPartitioning'
-            ? { text: `${key} is already ${count}, so consider raising this stage's own partition count (its repartition(n) or RDD parallelism) or adding a broadcast join`, remediation: [] }
+            ? { text: `${key} (${count}) did not size this stage's ${stage.taskCount} tasks, so consider raising its own partition count (its repartition(n) or RDD parallelism) or adding a broadcast join`, remediation: [] }
             : { text: `consider increasing ${key} or adding a broadcast join`, remediation: [increaseConf(key)] };
       return {
         type: 'shuffle', stageId: stage.id,
