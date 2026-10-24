@@ -1,4 +1,4 @@
-import type { Finding } from './finding-types.ts';
+import type { ExchangeWidth, Finding } from './finding-types.ts';
 export type { DetectorType, FindingType } from './detectors.ts';
 
 export type StageId = number;
@@ -181,6 +181,10 @@ export interface PlanNode {
   // BroadcastExchange node (see resolvePlanTree). Absent on every other
   // node, including ReusedExchange (never split).
   exchangeRole?: 'read' | 'write';
+  // On the write half of a split Exchange: its input's column count, as the plan description gives it.
+  inputColumns?: number;
+  // On an exchange (both halves of a split one): the width of its rows, when known.
+  rowWidth?: ExchangeWidth;
 }
 
 export interface SqlExecution {
@@ -245,6 +249,8 @@ export interface PlanGraphNodeData {
    * segment filtering (which can drop the pairing edge). Null/absent on
    * non-split nodes and on a zero-byte exchange (e.g. a BroadcastExchange). */
   exchangeShuffleBytes?: number | null;
+  /** The width of this exchange's rows (`PlanNode.rowWidth`), on both halves of a split one and on a ReusedExchange. */
+  exchangeWidth?: ExchangeWidth;
 }
 
 export interface PlanGraphEdge {
