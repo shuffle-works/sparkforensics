@@ -887,6 +887,19 @@ describe('partition-count advice follows what sized the stage', () => {
       expect(f.recommendation).toMatch(/AQE coalesced the 400 configured shuffle partitions into 300 tasks/);
     });
 
+    it('does not blame AQE for the extra tasks of a repartition(n) exchange with no AQE read', () => {
+      // A skew split elsewhere in the execution does not reach a stage whose own exchange AQE left alone.
+      const plan = planWith('Exchange hashpartitioning(k#1L, 30000), REPARTITION_BY_NUM, [plan_id=4]', null);
+      plan.get(3).planTree.children.push({ name: 'AQEShuffleRead', detail: 'skewed', metrics: [], children: [] });
+      const f = of('spill', { ...spilled, taskCount: 30000 }, { 'spark.sql.shuffle.partitions': '20003' }, '3.5.0', plan);
+      expect(keys(f)).toEqual(['code', 'spark.executor.memory']);
+      expect(f.recommendation).not.toMatch(/AQE|spark\.sql\.shuffle\.partitions|advisoryPartitionSize/);
+      expect(f.recommendation).toMatch(/configured shuffle partition count is 20003 but this stage ran 30000 tasks.*repartition\(n\)/);
+      const split = planWith('Exchange hashpartitioning(k#1L, 20003), ENSURE_REQUIREMENTS, [plan_id=4]', 'skewed');
+      expect(keys(of('spill', { ...spilled, taskCount: 20100 }, { 'spark.sql.shuffle.partitions': '20003' }, '3.5.0', split)))
+        .toEqual(['spark.sql.shuffle.partitions', 'spark.executor.memory']);
+    });
+
     it('applies the same classification to the other partition-count findings', () => {
       const tinyStage = { taskCount: 300, taskDurationP50: 50, taskDurationP95: 100, shuffleReadBytes: 10 * MiB };
       expect(keys(of('tinyTask', tinyStage, config, '3.5.0', planWith(REPARTITION_NUM, null)))).toEqual(['code']);

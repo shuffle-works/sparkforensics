@@ -94,7 +94,8 @@ execution. With AQE coalescing on,
 `spark.sql.adaptive.coalescePartitions.initialPartitionNum` replaces the
 property as the starting count when it is set, and a stage that ran more tasks
 than that, with a skew split in the final plan or no final plan to rule one
-out, is not blamed on its own `repartition(n)`: the advice states the task and
+out, is not blamed on its own `repartition(n)` unless its exchange has no AQE
+read over it: the advice states the task and
 configured counts and names `repartition(n)` only when the plan holds one the
 job wrote. Only flagged on stages that take at least 0.5% of the run.
 
