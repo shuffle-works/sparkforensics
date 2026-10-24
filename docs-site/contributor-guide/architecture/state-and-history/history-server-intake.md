@@ -19,7 +19,8 @@ disclosure's toggle and the **Other sources** toggle show a chevron
 (`ChevronDownIcon`/`ChevronUpIcon`) that flips with `aria-expanded`, so the
 open/closed state has a visual signal beyond the attribute.
 
-On mount (skipped in `compact` mode), `DropZone` probes reachability with an
+On mount (skipped in `compact` mode and on any host other than `localhost` or
+`127.0.0.1`, the only hosts the local server answers), `DropZone` probes reachability with an
 empty, short-timeout `fetch('/shs-proxy')`: a 400 means `validateShsRequest`
 (`packages/core/src/proxy.js`) rejected the empty request synchronously,
 which only happens when a local server is actually routing that path, so it
