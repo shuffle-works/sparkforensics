@@ -41,7 +41,7 @@ types); each resulting group becomes one row: a type with exactly one
 finding renders that finding directly, a type with more than one collapses
 into a summary row. Within an impact band, group order comes from
 `buildRecommendationRollup`'s own sort: groups ranked by the largest `impactEstimate.stageTaskMs`
-among their warning and critical members first (`rankStageCostMs`, the verdict steps' axis). Ties and
+among their warning and critical members first (`rankCostMs`, the verdict steps' axis: stage task time, or for `utilization` its idle core time). Ties and
 the rest follow in this order: `time` groups (a real `wallClock`
 claim), ranked among themselves by their union-capped
 `recoverableMsHigh` descending; then `resource` groups (`rawWaste` but no

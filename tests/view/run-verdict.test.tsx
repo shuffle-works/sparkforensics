@@ -428,7 +428,7 @@ describe('RunVerdict in Advanced view', () => {
     const [first] = screen.getAllByTestId('next-step-provenance');
     expect(first).toHaveTextContent('Estimate: Modeled; the stage ran alone');
     expect(first).toHaveTextContent('Medium confidence: verify before acting.');
-    expect(screen.getByTestId('run-verdict')).toHaveTextContent('Order: stage task time first, then highest potential savings, unestimated last');
+    expect(screen.getByTestId('run-verdict')).toHaveTextContent('Order: cluster time first, then highest potential savings, unestimated last');
   });
 });
 

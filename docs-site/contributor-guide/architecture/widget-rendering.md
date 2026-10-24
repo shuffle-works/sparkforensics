@@ -105,7 +105,7 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    CLI/MCP evidence report's `verdict` runs) via `buildNextSteps`. Steps group routeable
    eligible findings by location (one stage, one multi-stage finding type,
    or one app-level finding type and variant), ordered by
-   `rankBySavings` (stage task time, then potential savings, then impact band, then widget
+   `rankBySavings` (stage task time or idle core time, then potential savings, then impact band, then widget
    order), the same ranking every other component uses; on a run with a
    failed job, failure steps (`stageFailed`, `jobFailureRate`) move ahead
    (see below), and no other type jumps the order. Each step shows its tag,

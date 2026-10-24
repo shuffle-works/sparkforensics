@@ -74,7 +74,7 @@ export interface RunVerdictData {
   clean: boolean;
   /** Spark's recorded failure reason, first line only. */
   failureReason: string | null;
-  /** Ranked by stage task time, then potential savings (the time lane, `rankBySavings`). */
+  /** Ranked by stage task time or idle core time, then potential savings (the time lane, `rankBySavings`). */
   steps: InterpretedStep[];
   /** Ranked by busy core time (the cost lane); only findings with such a figure. */
   costSteps: InterpretedCostStep[];

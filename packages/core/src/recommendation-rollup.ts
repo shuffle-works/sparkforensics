@@ -83,11 +83,14 @@ function buildCountGroup(type: string, findings: Finding[]): RollupGroup {
 
 const KIND_ORDER: Record<RollupGroup['kind'], number> = { time: 0, resource: 1, count: 2 };
 
-/** The task time of the stages a warning or critical finding sits on: the cost the verdict steps and
- * the recommendations both rank by first. 0 for an info finding, an app-level finding and a stage
- * with no recorded task time, which rank after every finding that has one. */
-export function rankStageCostMs(finding: Finding): number {
-  return finding.impactBand === 'info' ? 0 : finding.impactEstimate?.stageTaskMs ?? 0;
+/** The cluster time a warning or critical finding ranks by, in core-milliseconds: the task time of
+ * the stages it sits on, or for an app-level finding its idle core time (`utilization`). Both are
+ * the verdict steps' and the recommendations' first axis. 0 for an info finding and for one with
+ * neither figure, which rank after every finding that has one. */
+export function rankCostMs(finding: Finding): number {
+  if (finding.impactBand === 'info') return 0;
+  const estimate = finding.impactEstimate;
+  return estimate?.stageTaskMs ?? estimate?.idleCoreTimeMs?.high ?? 0;
 }
 
 export function buildRecommendationRollup(
@@ -120,7 +123,7 @@ export function buildRecommendationRollup(
     if (countFindings.length > 0) groups.push(buildCountGroup(type, countFindings));
   }
   return groups.sort((a, b) => {
-    const costDelta = Math.max(0, ...b.findings.map(rankStageCostMs)) - Math.max(0, ...a.findings.map(rankStageCostMs));
+    const costDelta = Math.max(0, ...b.findings.map(rankCostMs)) - Math.max(0, ...a.findings.map(rankCostMs));
     if (costDelta !== 0) return costDelta;
     const kindDelta = KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
     if (kindDelta !== 0) return kindDelta;
@@ -226,7 +229,7 @@ function tierOf(finding: Finding): number {
  * `buildRecommendationRollup`'s own job, not this function's. */
 export function rankFindings(findings: Finding[]): Finding[] {
   return [...findings].sort((a, b) => {
-    const costDelta = rankStageCostMs(b) - rankStageCostMs(a);
+    const costDelta = rankCostMs(b) - rankCostMs(a);
     if (costDelta !== 0) return costDelta;
     const tierDelta = tierOf(a) - tierOf(b);
     if (tierDelta !== 0) return tierDelta;

@@ -152,7 +152,7 @@ export interface VerdictCostStepRow {
 
 // The dashboard's run verdict (run-verdict.ts): title, summary sentences, the first steps in the
 // same order, how many more places the full list holds, and the "Copy next steps" text. `steps`
-// rank by stage task time (`rankBySavings`); `costSteps` rank by busy core time and list only findings that
+// rank by stage task time or idle core time (`rankBySavings`); `costSteps` rank by busy core time and list only findings that
 // carry one; `idle` is the run's allocated core time that ran no task.
 export interface VerdictJson {
   title: string;

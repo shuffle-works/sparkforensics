@@ -44,7 +44,7 @@ export function selectTriageTarget(interpretation: InterpretationState | null, c
 }
 
 /** Every routeable finding in `catalog` as a triage target, best first: the interpretation's
- * `savingsRank` (core's `rankBySavings`: stage task time, then potential savings, shared with the CLI/MCP verdict). */
+ * `savingsRank` (core's `rankBySavings`: stage task time or idle core time, then potential savings, shared with the CLI/MCP verdict). */
 export function rankTriageTargets(interpretation: InterpretationState | null, catalog: Finding[]): TriageTarget[] {
   return rankedBySavings(interpretation, catalog)
     .map(triageTargetFor)

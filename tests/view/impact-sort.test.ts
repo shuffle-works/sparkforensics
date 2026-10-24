@@ -1,6 +1,8 @@
 import { expect, test } from 'vitest';
 
-import type { Finding } from '@sparkforensics/core/types.ts';
+import { analyze } from '@sparkforensics/core/analyzer.ts';
+import type { Finding, Stage } from '@sparkforensics/core/types.ts';
+import { makeApp, makeStage } from '../../packages/core/test/fixtures/stage-app-fixtures.js';
 import { byStageAsc, canToggleSort, orderByImpact, stageIdOf } from '../../src/view/impact-sort';
 import { installInterpretation } from './_shared/interpretation';
 
@@ -88,6 +90,39 @@ test('orderByImpact lists rows in verdict step order when stage task time and wa
 
   expect(verdictOrder).toEqual([catalog[1], catalog[2], catalog[0]]);
   expect(orderByImpact(interpreted, catalog, identityFindings)).toEqual(verdictOrder);
+});
+
+test('orderByImpact places an idle-allocation finding by its idle core time among stage findings', () => {
+  const idle = finding({
+    type: 'utilization',
+    impactEstimate: { basis: 'resourceOnly', estimateMethod: 'measured', idleCoreTimeMs: { low: 5_000_000, high: 5_000_000 } },
+  });
+  const [heavy, light] = [onStage('gc', 1, 1, 9_000_000), onStage('gc', 2, 1, 1_000_000)];
+  const catalog = [light, idle, heavy];
+  const interpreted = installInterpretation(catalog);
+
+  expect(orderByImpact(interpreted, catalog, identityFindings)).toEqual([heavy, idle, light]);
+});
+
+test('an analyzed run ranks its idle allocation before a stage finding with less task time', () => {
+  // 40 cores held for 100 minutes, busy only for the spilling stage's 6 core-hours: about 60 idle core-hours.
+  const MIN = 60_000;
+  const app = makeApp({ startTime: 0, endTime: 100 * MIN, resources: { executor: { cores: 4 } } });
+  const stage = makeStage({
+    submittedAt: 0, completedAt: 90 * MIN, executorRunTime: 360 * MIN,
+    shuffleReadBytes: 100e9, memoryBytesSpilled: 50e9, diskBytesSpilled: 20e9,
+    executorStats: [{ executorId: '1', taskCount: 100, totalDuration: 360 * MIN }],
+  });
+  const added = Array.from({ length: 10 }, (_, i) => ({ kind: 'added' as const, executorId: String(i + 1), host: 'h', timestamp: 0, totalCores: 4, resourceProfileId: 0 }));
+  const aggregates = { busyCoreMs: 360 * MIN, coreHistogram: [], peakConcurrentCores: 4, perStage: {} };
+  const catalog = analyze(app, new Map([[1, stage as Stage]]), added, [], new Map(), new Map(), aggregates);
+  expect(catalog.find((f) => f.type === 'utilization')?.impactBand).toBe('warning');
+  expect(catalog.find((f) => f.type === 'spill')?.impactBand).not.toBe('info');
+  const interpreted = installInterpretation(catalog);
+  const steps = interpreted.data.verdict.steps.map((step) => interpreted.findings[step.leadIndex].type);
+
+  expect(steps.slice(0, 2)).toEqual(['utilization', 'spill']);
+  expect(orderByImpact(interpreted, catalog, identityFindings).map((f) => f.type).slice(0, 2)).toEqual(['utilization', 'spill']);
 });
 
 test('orderByImpact places a row at its best-ranked finding', () => {
