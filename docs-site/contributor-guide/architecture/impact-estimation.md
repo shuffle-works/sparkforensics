@@ -44,7 +44,7 @@ unknown). `estimateImpact()` sets it for every estimate through `coreTimeFor()` 
 removed task time (`tailClaimImpact()` sets it from the claim's `removedCoreWorkMs`), or the raw
 figure of a type in `MEASURED_CORE_TIME_FIGURE`: gc's `jvmGCTime` (`coreMs`) and the cross-task
 executor-time `ms` sums of `retryWaste` and `speculationWaste`. Spill sets the one modeled
-figure: the serialization and sort CPU of its memory spill, the stage's `executorRunTime` times the
+figure: the serialization and sort CPU of its spill, the stage's `executorRunTime` times the
 spill's task-time share. These are set even when the log has no executor cores. A wall-clock claim is never converted to core time, so every finding with
 only a wall-clock claim gets `null`. Any other modeled figure, one that rests on an assumed constant, gets
 `null` too: coreLocality's `coreMs` (non-local tasks × `NETWORK_FETCH_PENALTY_MS`) and the

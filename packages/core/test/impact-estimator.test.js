@@ -462,7 +462,7 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
     const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }, { type: 'spill', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
     expect(findings[1].impactEstimate.assumptions)
-      .toBe('assumes 200 MB/s per executor over 75 executors for disk spill, plus 20% of the stage\'s task time as serialization and sort CPU (10% per pass of its read bytes through memory spill, capped at 50%); GC is not counted');
+      .toBe('assumes 200 MB/s per executor over 75 executors for disk spill, plus 60% of the stage\'s task time as serialization and sort CPU (50% per pass of its read bytes through disk spill, capped at 60%); GC is not counted');
     expect(findings[0].impactEstimate.assumptions).toMatch(/^assumes 125 MB\/s per executor over 75 executors; counts network transfer only/);
   });
 
@@ -474,9 +474,10 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
     }]]);
     const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }, { type: 'spill', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
-    // 5 GB over 4 x 125 MB/s = 10s (one shared link would claim 40s); 8 GB over 4 x 200 MB/s = 10s.
+    // 5 GB over 4 x 125 MB/s = 10s (one shared link would claim 40s); 8 GB over 4 x 200 MB/s = 10s,
+    // plus the spill CPU cap of 60% of the 100s stage.
     expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(10000, 6);
-    expect(findings[1].impactEstimate.wallClock.high).toBeCloseTo(10000, 6);
+    expect(findings[1].impactEstimate.wallClock.high).toBeCloseTo(10000 + 60000, 6);
     expect(findings[0].impactEstimate.rawWaste).toEqual({ value: 5_000_000_000, unit: 'bytes' });
   });
 });

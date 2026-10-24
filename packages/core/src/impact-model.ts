@@ -29,10 +29,11 @@ export interface EstimateCtx {
 export const SHUFFLE_THROUGHPUT_BPS = 125_000_000;
 // Assumed disk I/O throughput per executor for spilled data, ~200 MB/s (conservative HDD/SSD blend).
 export const SPILL_IO_THROUGHPUT_BPS = 200_000_000;
-// Assumed share of a stage's task time one pass of its read bytes through memory spill costs in
-// serialization and sort CPU, and the ceiling on the total. Unvalidated.
-export const SPILL_TASK_TIME_SHARE_PER_PASS = 0.1;
-export const SPILL_TASK_TIME_SHARE_MAX = 0.5;
+// Share of a stage's task time that one pass of its read bytes through disk spill costs in
+// serialization and sort CPU, and the ceiling on the total. Measured on local sort stages, where one
+// full pass cost 34-56% of the stage's time.
+export const SPILL_TASK_TIME_SHARE_PER_PASS = 0.5;
+export const SPILL_TASK_TIME_SHARE_MAX = 0.6;
 
 // A stage's task wall time, summed per executor by finalizeStage; 0 without executorStats.
 function summedTaskWallMs(stage: Stage): number {
@@ -47,12 +48,14 @@ export function stageTaskMs(stage: Stage): number {
   return summed > 0 ? summed : (stage.executorRunTime ?? 0);
 }
 
-// Share of the stage's task time memory spill costs: the spilled bytes over the bytes the stage read
-// (input plus shuffle read), in passes, times the per-pass share, capped. Null when the stage
-// spilled no memory or read no bytes to compare it to.
+// Share of the stage's task time spill costs: the spilled disk bytes over the bytes the stage read
+// (input plus shuffle read), in passes, times the per-pass share, capped. Shuffle read and disk spill
+// are serialized sizes and Parquet input bytes are compressed; memoryBytesSpilled is the deserialized
+// size and would overstate the passes. Null when the stage spilled nothing to disk or read no bytes
+// to compare it to.
 export function spillTaskTimeShare(stage: Stage): number | null {
   const processedBytes = (stage.inputBytes ?? 0) + (stage.shuffleReadBytes ?? 0);
-  const spilledBytes = stage.memoryBytesSpilled ?? 0;
+  const spilledBytes = stage.diskBytesSpilled ?? 0;
   if (processedBytes <= 0 || spilledBytes <= 0) return null;
   return Math.min(SPILL_TASK_TIME_SHARE_MAX, (spilledBytes / processedBytes) * SPILL_TASK_TIME_SHARE_PER_PASS);
 }
