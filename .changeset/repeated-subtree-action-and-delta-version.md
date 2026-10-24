@@ -5,4 +5,4 @@
 "sparkforensics-server": patch
 ---
 
-A repeated plan subtree under a `show`, `showString` or `collect` action drops to the info band and no longer leads the verdict. Repeats that read different versions of the same Delta table, where the scan records the version, no longer get cache advice. Repeats under `count` and `save` keep their ranking.
+A repeated plan subtree under a `show`, `showString` or `collect` action is informational and no longer leads the verdict. Repeats that read different recorded versions of one Delta table get no cache advice.

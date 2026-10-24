@@ -21,8 +21,7 @@ export function duplicateSubtreeDetail(f: { subtreeSize: number; rootName: strin
   return `A ${f.subtreeSize}-node subtree rooted at ${pathBasename(f.rootName)} repeats ${f.value}x in this plan${touching}`;
 }
 
-/** Why a duplicatePlanSubtree finding's repeats may not be one computation, with a leading space,
- * or '' when they match node-for-node. */
+/** Why the repeats may not be one computation, with a leading space; '' when they match. */
 export function duplicateSubtreeNote(f: { occurrencesIdentical: boolean; readsDifferentVersions?: boolean }): string {
   if (f.readsDifferentVersions) return ' They read different versions of the same Delta table, and a cache holds one version, so it cannot serve both reads.';
   return f.occurrencesIdentical ? '' : ' Their filters, columns or scanned tables differ, so the repeats may compute different data.';
