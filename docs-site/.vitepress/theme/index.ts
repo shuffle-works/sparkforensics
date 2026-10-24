@@ -142,8 +142,21 @@ const theme: Theme = {
             }
           });
       };
-      markAppearanceSwitch();
-      const switchMountObserver = new MutationObserver(markAppearanceSwitch);
+      // VitePress gives the switch only a `title`, and its home layout has no
+      // `main` landmark; add both as each copy or page mounts.
+      const labelAccessibility = () => {
+        document.querySelectorAll('.VPSwitchAppearance').forEach((el) => {
+          if (!el.hasAttribute('aria-label')) el.setAttribute('aria-label', 'Dark theme');
+        });
+        const home = document.querySelector('.VPHome');
+        if (home && !home.hasAttribute('role')) home.setAttribute('role', 'main');
+      };
+      const onDomChange = () => {
+        markAppearanceSwitch();
+        labelAccessibility();
+      };
+      onDomChange();
+      const switchMountObserver = new MutationObserver(onDomChange);
       switchMountObserver.observe(document.documentElement, {
         childList: true,
         subtree: true,

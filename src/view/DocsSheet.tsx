@@ -148,8 +148,8 @@ export function DocsSheet() {
     // closes it). base-ui still owns focus-in, focus-restore, and ESC.
     //
     // z-[60] sits the whole panel above any other modal's backdrop (dialogs
-    // use z-50) so, e.g., the stage-detail dialog's backdrop-blur dims the
-    // dashboard behind it without also blurring these docs.
+    // use z-50) so, e.g., the stage-detail dialog's scrim dims the
+    // dashboard behind it without also dimming these docs.
     <Dialog.Root
       open={isOpen}
       modal={false}

@@ -248,7 +248,7 @@ A finding is flagged with an impact dot plus an ALL-CAPS tag chip (`TagBadge` in
 
 The verdict is a panel with the verdict sentence as its `h2`, a one-line summary, the stage strip, then the numbered next steps. A failed run tints the panel border critical at 40%; a clean run tints it clean.
 
-`VerdictStrip` draws up to eight of the longest stages as bars on the run clock, plus any stage a step points at. Neutral stages use chart-stage at 85% opacity; a step's stage takes its impact color and carries its step code, inside the bar when the bar is at least 8% of the run, beside it otherwise. Rows are 22px with mono 12px stage labels and a mono 10px tick axis; vertical gridlines use the rule color.
+`VerdictStrip` draws up to eight of the longest stages as bars on the run clock, plus any stage a step points at. Neutral stages use chart-stage at 85% opacity; a step's stage takes its impact color and carries its step code, inside the bar when the bar is at least 8% of the run, beside it otherwise. Rows are 22px with mono 12px stage labels and a mono 11px tick axis; vertical gridlines use the rule color.
 
 ### Step codes
 
@@ -264,7 +264,7 @@ Findings rows sit in a panel per severity band, with 10px by 12px cells and 16px
 
 ### Charts
 
-Charts render through `ChartFrame`, which pins height and turns off series animation under reduced motion. Axis ticks and legends are mono. Text a reader needs is at least 12px; only numeric tick labels stay at 10px. Tooltips draw on the popover surface with a 1px rule, 6px corners and 12px text, so they read in both themes. Each chart can expose its data as a table and copy it as TSV.
+Charts render through `ChartFrame`, which pins height and turns off series animation under reduced motion. Axis ticks and legends are mono. Text a reader needs is at least 12px; only numeric tick labels drop to 11px. Dialog and sheet scrims are a flat tint with no blur. Tooltips draw on the popover surface with a 1px rule, 6px corners and 12px text, so they read in both themes. Each chart can expose its data as a table and copy it as TSV.
 
 ### Navigation
 

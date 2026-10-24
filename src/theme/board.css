@@ -34,7 +34,7 @@
   white-space: nowrap;
 }
 .verdict-strip__code--inside { right: 4px; color: var(--panel); }
-.verdict-strip__axis { font-size: 10px; margin-top: 2px; }
+.verdict-strip__axis { font-size: 11px; margin-top: 2px; }
 .verdict-strip__axis > div { position: relative; height: 14px; }
 .verdict-strip__axis > div > span { position: absolute; top: 0; white-space: nowrap; }
 

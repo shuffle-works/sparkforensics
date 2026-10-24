@@ -139,12 +139,12 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
               <CartesianGrid vertical={false} stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
               <XAxis
                 dataKey="t"
-                tick={{ fontSize: 10 }}
+                tick={{ fontSize: 11 }}
                 // Unit on the ticks, not an axis title: the title collided with the legend.
                 tickFormatter={(value) => `${value}s`}
               />
               <YAxis
-                tick={{ fontSize: 10 }}
+                tick={{ fontSize: 11 }}
                 width={36}
                 label={{ value: 'avg concurrent cores', angle: -90, position: 'insideLeft', fontSize: 12 }}
               />

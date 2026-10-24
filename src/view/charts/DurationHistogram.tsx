@@ -78,7 +78,7 @@ export function DurationHistogram({ metrics, fieldNames, markers = {} }: Duratio
       <BarChart data={rows}>
         <CartesianGrid vertical={false} stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
         <XAxis dataKey="bin" tick={{ fontSize: 12 }} />
-        <YAxis allowDecimals={false} tick={{ fontSize: 10 }} width={32} />
+        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={32} />
         <Tooltip
           {...CHART_TOOLTIP_PROPS}
           formatter={(value) => [`${Number(value)} task${Number(value) === 1 ? '' : 's'}`, 'Count']}

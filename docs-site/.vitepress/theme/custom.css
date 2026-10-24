@@ -12,6 +12,7 @@
  */
 
 :root {
+  color-scheme: light;
   /* Trace tokens, light */
   --sf-canvas: #f3f4f6;
   --sf-panel: #ffffff;
@@ -53,6 +54,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   /* Trace tokens, dark: slate, never pure black */
   --sf-canvas: #14161b;
   --sf-panel: #1b1e25;
@@ -323,6 +325,19 @@
 .VPDocAsideOutline .outline-marker {
   background-color: var(--sf-accent);
   border-radius: 1px;
+}
+
+/* 24px minimum hit area for the theme switch and footer links. */
+.VPSwitch.VPSwitchAppearance {
+  min-width: 44px;
+  min-height: 24px;
+}
+
+.VPFooter a,
+.VPDocFooter .edit-link-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
 }
 
 /* Prev/next footer links: panels, label as eyebrow. */

@@ -182,9 +182,9 @@ export const AutoscalingChurn = memo(function AutoscalingChurn({ appModel, activ
         >
             <ComposedChart data={rows}>
               <CartesianGrid stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
-              <XAxis dataKey="t" tick={{ fontSize: 10 }} />
+              <XAxis dataKey="t" tick={{ fontSize: 11 }} />
               <YAxis
-                tick={{ fontSize: 10 }}
+                tick={{ fontSize: 11 }}
                 width={32}
                 domain={yAxisScale.domain}
                 ticks={yAxisScale.ticks}
