@@ -40,6 +40,7 @@ function initialShsField(field: ShsField): string {
 // not `/sample-runs/...`: same subpath-safety reasoning as
 // docsUrl()/DOCS_SITE_ROOT elsewhere in this app.
 const SAMPLE_RUN_URL = 'sample-runs/sample-run.ndjson.gz';
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1']);
 // Getting-started section that documents starting local-server mode.
 const LOCAL_SERVER_SETUP_URL = 'docs/user-guide/getting-started.html#local-server-mode';
 
@@ -117,9 +118,11 @@ export function DropZone({ onPick, compact = false }: { onPick?: (source: RunSou
   // two-run comparison slots) never render the callout this feeds, so they
   // skip the probe entirely rather than firing it twice for no UI benefit.
   // Defaults to (and stays) unreachable on any error, so nothing changes on
-  // screen after paint if the probe is inconclusive.
+  // screen after paint if the probe is inconclusive. The server only answers
+  // loopback hosts, so the probe skips every other origin: a failed request
+  // there would only log a console error.
   useEffect(() => {
-    if (compact) return;
+    if (compact || !LOOPBACK_HOSTS.has(window.location.hostname)) return;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 800);
     fetch('/shs-proxy', { signal: controller.signal })
