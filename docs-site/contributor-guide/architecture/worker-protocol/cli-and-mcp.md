@@ -146,8 +146,14 @@ thresholds and `redact`, so a repeated `diagnose_run` skips `computeRunMetrics`.
 and leaves out `cleanChecks` and `notRunChecks`. Each verdict step gets its lead row
 from the unfiltered report, which is cached, so a limit never hides it. The factory's
 `diagnose_run` handler defaults `view` to `compact`; `diagnoseRun()` itself defaults to
-`full`. With `format: 'md'` the handler returns `diagnoseHeadline()` as
-`structuredContent`.
+`full`. With `format: 'md'` the handler returns `diagnoseHeadline()` plus the `markdown`
+as `structuredContent`.
+
+The handler pages a JSON answer with `paginateDiagnose()` (`diagnose-pagination.ts`) after
+`diagnoseRun()` builds it. Rows are cut by JSON length. The cursor is stateless: it holds the
+offset, the page and a hash of the run and its rows, so one from other filters, `view` or
+`redact` is refused with `invalid-cursor`. `get_finding_evidence` resolves its run through
+`resolveFindingEvidence()`: a cached `runId`, else `resolveOrCreateRun()` on the `source`.
 
 ### One output builder for the CLI and MCP
 
@@ -209,7 +215,7 @@ difference fails the test.
 Every tool failure comes back as `{isError: true, content: [...],
 structuredContent: {code}}`, never an HTTP-status-shaped error; `code` is one
 of the 5 existing SHS codes (`SHS_ERROR_CODES`, `packages/core/src/shs-request.js`)
-plus `run-not-found`, `finding-not-found`, `invalid-event-log` (also
+plus `run-not-found`, `finding-not-found`, `invalid-cursor`, `invalid-event-log` (also
 covers a nonexistent `path` source, and any file-system error such as `EACCES` or
 `EISDIR` on an event log that `toolErrorResult` maps to it), `archive-too-large` (SHS archive over
 the `SPARKFORENSICS_MAX_ARCHIVE_BYTES` byte cap, default 1 GiB, because the MCP path buffers

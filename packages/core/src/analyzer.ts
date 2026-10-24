@@ -25,7 +25,7 @@ export interface AnalyzeOptions {
 }
 
 // FNV-1a 32-bit stable string hash: deterministic finding id across runs, no timestamps/randomness.
-function fnv1a(str: string): string {
+export function fnv1a(str: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);

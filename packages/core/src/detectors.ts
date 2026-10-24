@@ -23,8 +23,9 @@ import {
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { outputRowsOf, ownOutputRows, parseNestedLoopJoin } from './nested-loop-join.ts';
 import { totalExecutorCpuMs } from './run-totals.ts';
-import { DUPLICATE_SUBTREE_DIFFERING_NOTE, duplicateSubtreeDetail, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
+import { duplicateSubtreeDetail, duplicateSubtreeNote, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { indexStagesBySqlExecution } from './sql-stages.ts';
+import { attributeSpill, describeSpillCause, spillToInputRatio } from './spill-attribution.ts';
 import { cyrb53 } from './string-hash.ts';
 import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
@@ -116,6 +117,7 @@ export interface DetectorStage {
 export interface DetectorSqlExec {
   id: number;
   planTree?: PlanNode | null;
+  description?: string;
   // The session settings this execution ran with that differ from the SparkContext's.
   modifiedConfigs?: Record<string, string>;
 }
@@ -517,6 +519,33 @@ function occurrencesHaveIdenticalDetails(occurrences: PlanNode[]): boolean {
     }
   }
   return true;
+}
+
+// Actions that only display a result: a repeat under them is not a missed cache of the job's
+// own work. Under count and save the same repeat is real waste and keeps its ranking.
+const INSPECTION_ACTIONS: ReadonlySet<string> = new Set(['show', 'showString', 'collect']);
+
+// The action in an execution description such as "count at Job.scala:12".
+function rootActionOf(description: string | undefined): string | null {
+  return /^\s*(\w+) at /.exec(description ?? '')?.[1] ?? null;
+}
+
+// True when the occurrences scan the same Delta tables at different recorded versions, which no
+// cache can serve. A Delta scan with no recorded version makes the answer unknown, so false.
+function occurrencesReadDifferentDeltaVersions(occurrences: PlanNode[]): boolean {
+  const reads = occurrences.map((root) => {
+    const scans: { relation: string; version?: string }[] = [];
+    walkPlanTree(root, (n) => {
+      const relation = relationIdOf(n);
+      if (relation === null || !/delta/i.test(n.detail ?? '')) return;
+      scans.push({ relation, version: /\bversion(?:AsOf)?\s*[=:]\s*(\d+)/i.exec(n.detail!)?.[1] });
+    });
+    return scans;
+  });
+  if (reads.some((scans) => scans.length === 0 || scans.some((scan) => scan.version === undefined))) return false;
+  const key = (scans: typeof reads[number], field: 'relation' | 'version') => scans.map((scan) => scan[field]).join('|');
+  return reads.every((scans) => key(scans, 'relation') === key(reads[0], 'relation'))
+    && reads.some((scans) => key(scans, 'version') !== key(reads[0], 'version'));
 }
 
 // Stages that run nothing but the duplicated occurrences' operators: every operator attributed to
@@ -1048,6 +1077,8 @@ interface PartitionBasis {
   skewSplit: boolean | null;
   /** Whether the execution's plan holds a `repartition` or `rebalance` the job asked for. */
   explicitRepartition: boolean;
+  /** Whether an AQE shuffle read sits over the exchange the stage reads; null when the plan shows none read. */
+  shuffleResized: boolean | null;
 }
 
 function partitionBasis(stage: DetectorStage, ctx: DetectorCtx): PartitionBasis {
@@ -1058,8 +1089,31 @@ function partitionBasis(stage: DetectorStage, ctx: DetectorCtx): PartitionBasis 
   const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
   const skewSplit = aqe ? planShowsSkewSplit(plan) : null;
   const explicitRepartition = planHasExplicitRepartition(plan);
-  if (initial != null && /^\d+$/.test(initial)) return { count: Number(initial), key: INITIAL_PARTITION_NUM_KEY, aqe, coalesce, skewSplit, explicitRepartition };
-  return { count: effectiveShufflePartitions(app), key: 'spark.sql.shuffle.partitions', aqe, coalesce, skewSplit, explicitRepartition };
+  const shuffleResized = aqe ? stageShuffleResized(plan, stage.id) : null;
+  if (initial != null && /^\d+$/.test(initial)) return { count: Number(initial), key: INITIAL_PARTITION_NUM_KEY, aqe, coalesce, skewSplit, explicitRepartition, shuffleResized };
+  return { count: effectiveShufflePartitions(app), key: 'spark.sql.shuffle.partitions', aqe, coalesce, skewSplit, explicitRepartition, shuffleResized };
+}
+
+const SHUFFLE_READ_NODE = /^(AQEShuffleRead|CustomShuffleReader)$/;
+
+// Whether AQE resized the shuffle a stage reads: true when an AQE read (coalesced, skewed or local)
+// sits over an exchange the stage reads, false when it reads exchanges and none has one (a
+// `repartition(n)` exchange never does), null when the plan shows it reading none. An exchange lists its producing
+// and its reading stage, and the reader is the later one.
+function stageShuffleResized(plan: PlanNode | null | undefined, stageId: number): boolean | null {
+  let reads = 0;
+  let resized = false;
+  const visit = (node: PlanNode, covered: boolean): void => {
+    const isExchange = /Exchange$/.test(node.name);
+    if (node.exchangeRole === 'read' && node.stageIds?.includes(stageId) && Math.min(...node.stageIds) !== stageId) {
+      reads++;
+      resized ||= covered;
+    }
+    const over = !isExchange && (covered || SHUFFLE_READ_NODE.test(node.name));
+    for (const child of node.children ?? []) visit(child, over);
+  };
+  if (plan) visit(plan, false);
+  return reads === 0 ? null : resized;
 }
 
 // Whether a plan holds an exchange the job asked for (`repartition(n)`, `repartition(col)` or a
@@ -1071,25 +1125,27 @@ function planHasExplicitRepartition(plan: PlanNode | null | undefined): boolean 
 }
 
 // How the stage's task count relates to the configured one. 'matches': the configured count sized it
-// (or the count is unknown). 'coalesced': AQE merged the partitions into fewer tasks. 'adjusted': more
-// tasks than configured under AQE, which a skew-join split can produce and several shuffle reads in
-// one execution can obscure: the stage's own repartition(n) is blamed only when the plan holds one.
+// (or the count is unknown). 'coalesced': AQE merged the partitions into fewer tasks, unless the plan
+// shows the stage's exchange with no AQE read over it. 'adjusted': more tasks than configured under
+// AQE, which a skew-join split can produce, unless the plan shows the stage's exchange with no AQE
+// read over it. Where the plan does not show the stage's exchange, several shuffle reads in one
+// execution can obscure the cause: the stage's own repartition(n) is blamed only when the plan holds one.
 // 'own': a different count with no AQE to rewrite it, or with a repartition(n) in the plan, which is
 // a repartition(n) or an RDD operation that fixed its own count.
 type CountRelation = 'matches' | 'coalesced' | 'adjusted' | 'own';
 
 function countRelation(stage: DetectorStage, basis: PartitionBasis): CountRelation {
   if (basis.count == null || stage.taskCount === basis.count) return 'matches';
-  if (basis.coalesce && stage.taskCount < basis.count) return 'coalesced';
-  if (basis.aqe && stage.taskCount > basis.count && (basis.skewSplit !== false || !basis.explicitRepartition)) return 'adjusted';
+  if (basis.coalesce && stage.taskCount < basis.count && basis.shuffleResized !== false) return 'coalesced';
+  if (basis.aqe && stage.taskCount > basis.count && (basis.shuffleResized ?? (basis.skewSplit !== false || !basis.explicitRepartition))) return 'adjusted';
   return 'own';
 }
 
 // Whether partition-count advice fits a shuffle-reading stage. The count that brings each shuffle
 // partition to the ideal size is per stage; the property is job-wide. 'sufficient': the tasks are
 // already at or under the ideal size. 'aqeCoalesced' and 'ownPartitioning' follow countRelation
-// ('ownPartitioning' also when the property already gives at least the count needed). Otherwise
-// the property limits the stage: 'raise'.
+// ('ownPartitioning' also when the plan shows an uncoalesced exchange, or the property already gives
+// at least the count needed). Otherwise the property limits the stage: 'raise'.
 function shufflePartitionCase(stage: DetectorStage, ctx: DetectorCtx): { partitions: ShufflePartitions; count: number | null; key: string; needed: number } {
   const basis = partitionBasis(stage, ctx);
   const { count, key } = basis;
@@ -1099,6 +1155,7 @@ function shufflePartitionCase(stage: DetectorStage, ctx: DetectorCtx): { partiti
   let partitions: ShufflePartitions = 'raise';
   if (stage.shuffleReadBytes / tasks <= IDEAL_BYTES_PER_PARTITION_TASK) partitions = 'sufficient';
   else if (relation === 'coalesced') partitions = 'aqeCoalesced';
+  else if (relation === 'own' && basis.shuffleResized === false) partitions = 'ownPartitioning';
   else if (count != null && count >= needed && relation !== 'adjusted') partitions = 'ownPartitioning';
   return { partitions, count, key, needed };
 }
@@ -1162,7 +1219,7 @@ function lowShuffleParallelismFix(stage: DetectorStage, ctx: DetectorCtx): { par
   if (partitions === 'ownPartitioning') {
     return {
       partitions,
-      text: `${key} is already ${count}, so raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller`,
+      text: `${key} (${count}) did not size this stage's ${stage.taskCount} tasks, so raise its own partition count (its repartition(n) or RDD parallelism) so each partition is smaller`,
       remediation: [],
     };
   }
@@ -1859,7 +1916,7 @@ export const DETECTORS = [
         : partitions === 'aqeCoalesced'
           ? { text: `AQE coalesced it into ${stage.taskCount} tasks (from ${count} configured partitions): consider lowering ${ADVISORY_PARTITION_SIZE_KEY} or adding a broadcast join`, remediation: [decreaseConf(ADVISORY_PARTITION_SIZE_KEY)] }
           : partitions === 'ownPartitioning'
-            ? { text: `${key} is already ${count}, so consider raising this stage's own partition count (its repartition(n) or RDD parallelism) or adding a broadcast join`, remediation: [] }
+            ? { text: `${key} (${count}) did not size this stage's ${stage.taskCount} tasks, so consider raising its own partition count (its repartition(n) or RDD parallelism) or adding a broadcast join`, remediation: [] }
             : { text: `consider increasing ${key} or adding a broadcast join`, remediation: [increaseConf(key)] };
       return {
         type: 'shuffle', stageId: stage.id,
@@ -1974,7 +2031,9 @@ export const DETECTORS = [
     emits: ['spill'],
     docAnchor: '#bottleneck-spill',
     // stageFloorPct: the 0.5% runtime floor, as for shuffle.
-    thresholds: { singleTaskDiskGiB: 1, singleTaskMemGiB: 4, highDiskGiB: 1, highTaskDiskMB: 512, highMemGiB: 4, medDiskMB: 256, medMemGiB: 1, skewRatio: 5, skewDiskFloorMB: 128, skewMemFloorMB: 256, skewMinTasks: 10, stageFloorPct: 0.005 },
+    thresholds: { singleTaskDiskGiB: 1, singleTaskMemGiB: 4, highDiskGiB: 1, highTaskDiskMB: 512, highMemGiB: 4, medDiskMB: 256, medMemGiB: 1, skewRatio: 5, skewDiskFloorMB: 128, skewMemFloorMB: 256, skewMinTasks: 10, stageFloorPct: 0.005,
+      // The spill-to-input ratio from which rows are called wide, and the input below which it is not reported.
+      wideRowRatio: 10, wideRowMinInputMB: 64 },
     detect(stage, ctx, thresholds): Finding | null {
       if (stage.memoryBytesSpilled === 0) return null;
       if (stageBelowRuntimeFloor(stage, ctx, thresholds.stageFloorPct)) return null;
@@ -1985,19 +2044,28 @@ export const DETECTORS = [
       // shuffle.partitions sizes a shuffle's reduce side: a stage that reads no shuffle gets memory only.
       const reads = stageReads(stage);
       const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, ctx) : null;
+      const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
+      const { operators, exchanges } = attributeSpill(plan, stage.id);
+      const ratio = spillToInputRatio(stage.memoryBytesSpilled, stage.inputBytes, stage.shuffleReadBytes, thresholds.wideRowMinInputMB * MB);
+      const wide = ratio !== null && ratio >= thresholds.wideRowRatio;
+      const advice = cls === 'skew'
+        ? `${formatBytes(stage.memoryBytesSpilled)} spilled, skew-driven: fix task skew first; adding memory will not help.`
+        : shuffleFix
+          ? `${formatBytes(stage.memoryBytesSpilled)} spilled: ${shuffleFix.text}.`
+          : `${formatBytes(stage.memoryBytesSpilled)} spilled: this stage reads no shuffle, so increase executor memory or process less data per task.`;
+      const cause = describeSpillCause(operators, ratio, wide);
       return {
         type: 'spill', stageId: stage.id, impactBand, reads,
         spillMagnitude: mag?.magnitude,
+        ...(ratio !== null ? { spillToInputRatio: ratio, wideRows: wide } : {}),
+        ...(operators.length > 0 ? { operators } : {}),
+        ...(exchanges.length > 0 ? { exchanges } : {}),
         metric: 'memoryBytesSpilled', value: stage.memoryBytesSpilled,
         confidence: classified ? 'medium' : 'low',
         validationRequired: classified
           ? 'Spill cause is inferred from the share of tasks that spilled: confirm against per-task spill metrics in the Spark UI.'
           : 'Spill cause could not be classified: inspect per-task spill metrics in the Spark UI before acting.',
-        recommendation: cls === 'skew'
-          ? `${formatBytes(stage.memoryBytesSpilled)} spilled, skew-driven: fix task skew first; adding memory will not help.`
-          : shuffleFix
-            ? `${formatBytes(stage.memoryBytesSpilled)} spilled: ${shuffleFix.text}.`
-            : `${formatBytes(stage.memoryBytesSpilled)} spilled: this stage reads no shuffle, so increase executor memory or process less data per task.`,
+        recommendation: cause ? `${advice} ${cause}` : advice,
         remediation: cls === 'skew' ? [] : shuffleFix?.remediation ?? [increaseConf('spark.executor.memory')],
       };
     },
@@ -3252,26 +3320,32 @@ export const DETECTORS = [
           if (stage) stagesMs += Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
         }
         if (runMs != null && stagesMs > 0 && stagesMs < runMs * thresholds.stageFloorPct) return null;
-        const occurrencesIdentical = occurrencesHaveIdenticalDetails(g.nodes);
+        const readsDifferentVersions = occurrencesReadDifferentDeltaVersions(g.nodes);
+        const occurrencesIdentical = !readsDifferentVersions && occurrencesHaveIdenticalDetails(g.nodes);
+        const rootAction = rootActionOf(sqlExec.description);
+        const underInspectionAction = INSPECTION_ACTIONS.has(rootAction ?? '');
         const stageShares = stageOperatorShares(nodes, operatorsByStage);
         // resolvePlanTree always sets id, so the `!` here and below is safe.
         const planNodeIds = nodes.map((n) => n.id!).filter(Boolean);
         const detail = duplicateSubtreeDetail({ ...g, value: g.occurrences });
-        const differing = occurrencesIdentical ? '' : ` ${DUPLICATE_SUBTREE_DIFFERING_NOTE}`;
+        const note = duplicateSubtreeNote({ occurrencesIdentical, readsDifferentVersions });
         return {
           type: 'duplicatePlanSubtree', executionId: sqlExec.id, stageIds, planNodeIds,
-          stageShares, occurrencesIdentical,
-          // Repeats with differing details get no estimate (nothing is known to be recomputed),
-          // and neither does a subtree with no stage of its own, so this fallback band stands.
-          impactBand: occurrencesIdentical && Object.keys(stageShares).length > 0 ? 'warning' : 'info',
+          stageShares, occurrencesIdentical, readsDifferentVersions,
+          ...(rootAction !== null && { rootAction }),
+          // Repeats with differing details or under an inspection action get no estimate, and
+          // neither does a subtree with no stage of its own, so this fallback band stands.
+          impactBand: occurrencesIdentical && !underInspectionAction && Object.keys(stageShares).length > 0 ? 'warning' : 'info',
           metric: 'subtreeOccurrences', value: g.occurrences,
           rootName: g.rootName, subtreeSize: g.subtreeSize, sampleRelation: g.sampleRelation,
           groupIndex: g.groupIndex,
           confidence: occurrencesIdentical ? duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, thresholds) : 'low',
           validationRequired: 'Matching compares operator and metric names only, not literals or expression IDs: confirm the repeat in the Spark UI SQL tab before acting.',
-          recommendation: (g.isExchangeRoot
-            ? `${detail}: this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.`
-            : `${detail}: consider caching/persisting the shared computation or check for a duplicated query branch.`) + differing,
+          recommendation: readsDifferentVersions
+            ? `${detail}.${note}`
+            : `${detail}: ${g.isExchangeRoot
+              ? 'this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.'
+              : 'consider caching/persisting the shared computation or check for a duplicated query branch.'}${note}`,
         };
       }).filter((f): f is Finding => f !== null);
       return findings.length > 0 ? findings : null;
@@ -3287,6 +3361,7 @@ export const DETECTORS = [
       // Same-shaped repeats whose details differ compute different data: nothing is known to be
       // recomputed, so there is no time to claim.
       if (finding.occurrencesIdentical === false) return costOnly('none');
+      if (INSPECTION_ACTIONS.has(String(finding.rootAction))) return costOnly('none');
       // Each stage contributes the share of its operators inside the repeated subtree: a stage it
       // shares with other operators (the consuming join, the join's other side) isn't all its
       // time, and claiming whole stages let sibling groups claim the same stage twice. Findings

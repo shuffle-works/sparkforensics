@@ -40,7 +40,7 @@ describe('structured remediation', () => {
       const unlogged = finding({});
       expect(unlogged.remediation).toEqual([]);
       expect(unlogged.partitions).toBe('ownPartitioning');
-      expect(unlogged.recommendation).toMatch(/already 200.*repartition\(n\)/);
+      expect(unlogged.recommendation).toMatch(/\(200\) did not size this stage's 5 tasks.*repartition\(n\)/);
       // A 200-partition default is too few for 40 GiB: 40 GiB / 128 MiB = 320.
       const big = catalogOf(
         [makeStage({ shuffleReadBytes: 40 * 1024 * MiB, taskCount: 5 })], makeApp({ config: {}, sparkVersion: null }),
@@ -851,6 +851,86 @@ describe('partition-count advice follows what sized the stage', () => {
       expect(keys(f)).toEqual(['code', 'spark.executor.memory']);
       expect(f.recommendation).toMatch(/repartition\(n\)/);
       expect(coreFindingGenericRecommendation(f)).toMatch(/own partition count/);
+    });
+  });
+
+  describe('a stage whose own exchange the plan shows', () => {
+    // Stage 1 reads an exchange that stage 0 wrote; `readDetail` is the AQE read over it, if any.
+    const planWith = (exchangeDetail, readDetail) => {
+      const exchange = { name: 'Exchange', detail: exchangeDetail, metrics: [], stageIds: [0, 1], exchangeRole: 'read', children: [] };
+      const queryStage = { name: 'ShuffleQueryStage', detail: '', metrics: [], children: [exchange] };
+      const below = readDetail == null ? queryStage : { name: 'AQEShuffleRead', detail: readDetail, metrics: [], children: [queryStage] };
+      return new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [below] } }]]);
+    };
+    const REPARTITION_NUM = 'Exchange hashpartitioning(k#1L, 300), REPARTITION_BY_NUM, [plan_id=4]';
+    const REQUIREMENTS = 'Exchange hashpartitioning(k#1L, 400), ENSURE_REQUIREMENTS, [plan_id=4]';
+    const config = { 'spark.sql.shuffle.partitions': '400' };
+    const spilled = { taskCount: 300, memoryBytesSpilled: 5 * GiB, spillClassification: 'volume', shuffleReadBytes: 10 * GiB };
+
+    it('does not say AQE coalesced a repartition(n) exchange, and offers no advisory size', () => {
+      const f = of('spill', spilled, config, '3.5.0', planWith(REPARTITION_NUM, null));
+      expect(keys(f)).toEqual(['code', 'spark.executor.memory']);
+      expect(f.recommendation).not.toMatch(/AQE|advisoryPartitionSize/);
+      expect(f.recommendation).toMatch(/configured shuffle partition count is 400 but this stage ran 300 tasks.*repartition\(n\).*executor memory/);
+      expect(coreFindingGenericRecommendation(f)).not.toMatch(/advisoryPartitionSizeInBytes/);
+    });
+
+    it('does not say AQE coalesced an exchange that has no AQE shuffle read over it', () => {
+      const f = of('spill', spilled, config, '3.5.0', planWith(REQUIREMENTS, null));
+      expect(keys(f)).toEqual(['code', 'spark.executor.memory']);
+      expect(f.recommendation).not.toMatch(/AQE|advisoryPartitionSize/);
+    });
+
+    it('keeps the advisory size where a coalescing AQE read sits over the exchange', () => {
+      const f = of('spill', spilled, config, '3.5.0', planWith(REQUIREMENTS, 'coalesced'));
+      expect(keys(f)).toEqual([ADVISORY, 'spark.executor.memory']);
+      expect(f.recommendation).toMatch(/AQE coalesced the 400 configured shuffle partitions into 300 tasks/);
+    });
+
+    it('does not blame AQE for the extra tasks of a repartition(n) exchange with no AQE read', () => {
+      // A skew split elsewhere in the execution does not reach a stage whose own exchange AQE left alone.
+      const plan = planWith('Exchange hashpartitioning(k#1L, 30000), REPARTITION_BY_NUM, [plan_id=4]', null);
+      plan.get(3).planTree.children.push({ name: 'AQEShuffleRead', detail: 'skewed', metrics: [], children: [] });
+      const f = of('spill', { ...spilled, taskCount: 30000 }, { 'spark.sql.shuffle.partitions': '20003' }, '3.5.0', plan);
+      expect(keys(f)).toEqual(['code', 'spark.executor.memory']);
+      expect(f.recommendation).not.toMatch(/AQE|spark\.sql\.shuffle\.partitions|advisoryPartitionSize/);
+      expect(f.recommendation).toMatch(/configured shuffle partition count is 20003 but this stage ran 30000 tasks.*repartition\(n\)/);
+      const split = planWith('Exchange hashpartitioning(k#1L, 20003), ENSURE_REQUIREMENTS, [plan_id=4]', 'skewed');
+      expect(keys(of('spill', { ...spilled, taskCount: 20100 }, { 'spark.sql.shuffle.partitions': '20003' }, '3.5.0', split)))
+        .toEqual(['spark.sql.shuffle.partitions', 'spark.executor.memory']);
+      // A local read after AQE turned the join into a broadcast sizes the stage from the upstream mappers.
+      const local = planWith('Exchange hashpartitioning(k#1L, 200), ENSURE_REQUIREMENTS, [plan_id=4]', 'local');
+      const probe = of('spill', { ...spilled, taskCount: 5000 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', local);
+      expect(keys(probe)).toEqual(['spark.sql.shuffle.partitions', 'spark.executor.memory']);
+      expect(probe.recommendation).not.toMatch(/own partition count/);
+    });
+
+    it('applies the same classification to the other partition-count findings', () => {
+      const tinyStage = { taskCount: 300, taskDurationP50: 50, taskDurationP95: 100, shuffleReadBytes: 10 * MiB };
+      expect(keys(of('tinyTask', tinyStage, config, '3.5.0', planWith(REPARTITION_NUM, null)))).toEqual(['code']);
+      expect(keys(of('tinyTask', tinyStage, config, '3.5.0', planWith(REQUIREMENTS, 'coalesced')))).toEqual([PARALLELISM_FIRST, ADVISORY]);
+      const slow = { taskCount: 300, submittedAt: 0, completedAt: 20 * 60000, shuffleReadBytes: 10 * MiB };
+      expect(keys(of('stageSlowness', slow, config, '3.5.0', planWith(REPARTITION_NUM, null)))).toEqual(['code']);
+      expect(keys(of('stageSlowness', slow, config, '3.5.0', planWith(REQUIREMENTS, 'coalesced')))).toEqual([ADVISORY]);
+    });
+
+    it('keeps the shuffle and low-parallelism advice off the property when the property already exceeds the count', () => {
+      const large = { taskCount: 5, shuffleReadBytes: 100 * GiB, shuffleReadP50: 0, shuffleReadMax: 0 };
+      const shuffle = of('shuffle', large, config, '3.5.0', planWith(REPARTITION_NUM, null));
+      expect(shuffle.partitions).toBe('ownPartitioning');
+      expect(shuffle.remediation).toEqual([]);
+      expect(shuffle.recommendation).not.toMatch(/increasing spark\.sql\.shuffle\.partitions/);
+      const low = catalogOf([makeStage({ sqlExecutionId: 3, ...large })], makeApp({ config, sparkVersion: '3.5.0' }), planWith(REPARTITION_NUM, null))
+        .find((f) => f.rule === 'lowShuffleParallelism');
+      expect(low.partitions).toBe('ownPartitioning');
+      expect(low.remediation).toEqual([]);
+      expect(low.recommendation).toMatch(/repartition\(n\)/);
+      for (const f of [shuffle, low]) {
+        expect(f.recommendation).toMatch(/spark\.sql\.shuffle\.partitions \(400\) did not size this stage's 5 tasks/);
+        expect(f.recommendation).not.toMatch(/already/);
+        expect(coreFindingGenericRecommendation(f)).toMatch(/did not size this stage.*own partition count/);
+        expect(coreFindingGenericRecommendation(f)).not.toMatch(/already/);
+      }
     });
   });
 

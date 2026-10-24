@@ -107,8 +107,8 @@ export type StageReads = 'shuffle' | 'input' | 'other';
 
 /** Why a shuffle finding's partition-count advice is or is not given: 'raise' (the property limits
  * the stage), 'sufficient' (tasks are already a good size), 'aqeCoalesced' (AQE merged the
- * partitions, so the advisory size is the lever) or 'ownPartitioning' (the property is already high
- * enough, so the stage's own repartition(n) or RDD parallelism is). */
+ * partitions, so the advisory size is the lever) or 'ownPartitioning' (the property did not size
+ * the stage, so the stage's own repartition(n) or RDD parallelism is the lever). */
 export type ShufflePartitions = 'raise' | 'sufficient' | 'aqeCoalesced' | 'ownPartitioning';
 
 /** Why a stage's slow tail is slow (attributeTail in stage-quantiles.ts). 'data': the slow tasks
@@ -154,10 +154,35 @@ export interface PartitionSizingEvidence {
 }
 export interface PartitionSizingFinding extends NumericFinding<'partitionSizing'>, PartitionSizingEvidence {}
 
+/** An operator of the spilling stage with the "spill size" the plan reports for it. A Sort under a
+ * SortMergeJoin names it in `feeds`. */
+export interface SpillOperator {
+  nodeId: string;
+  name: string;
+  spillBytes: number;
+  feeds?: string;
+}
+
+/** The exchange an operator reads from (its read half's plan node id): the columns of its rows, and the
+ * estimated bytes per row ("data size" over shuffle records written). Each is absent when unknown. */
+export interface SpillExchange {
+  nodeId: string;
+  columns?: number;
+  bytesPerRow?: number;
+}
+
 export interface SpillEvidence {
   spillMagnitude?: 'severe' | 'high' | 'medium';
   // What the stage reads: shuffle-partition advice applies only to 'shuffle'.
   reads?: StageReads;
+  // Memory spill over the stage's input plus shuffle read; absent when that input is small.
+  spillToInputRatio?: number;
+  // Set with the ratio: true from 10x, which means the rows are wide.
+  wideRows?: boolean;
+  // Up to five operators that report a spill size, largest first.
+  operators?: SpillOperator[];
+  // The exchanges those operators read.
+  exchanges?: SpillExchange[];
 }
 export interface SpillFinding extends NumericFinding<'spill'>, SpillEvidence {}
 
@@ -366,6 +391,8 @@ export interface DuplicatePlanSubtreeEvidence extends PlanFindingEvidence {
   // Share of each linked stage's operators that sit in the repeated subtree.
   stageShares: Record<number, number>;
   occurrencesIdentical: boolean;
+  readsDifferentVersions: boolean;
+  rootAction?: string;
   rootName: string;
   subtreeSize: number;
   sampleRelation: string | null;

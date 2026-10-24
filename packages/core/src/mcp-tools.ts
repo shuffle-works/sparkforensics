@@ -336,7 +336,7 @@ export function diagnoseRun(runId: string, opts?: {
   };
 }
 
-/** The few fields `format: 'md'` returns as `structuredContent`: the Markdown carries the rest. */
+/** The few fields `format: 'md'` returns as `structuredContent` next to the Markdown, which carries the rest. */
 export function diagnoseHeadline(result: DiagnoseRunResult): {
   runId: string; runComplete: boolean; title: string; findingCount: number; findingsOmitted: number; recommendationCount: number;
 } {
@@ -439,6 +439,27 @@ export function getFindingEvidence(
   const finding = json.findings.find((f) => f.id === findingId);
   if (!finding) throw mcpError('finding-not-found', `No finding ${findingId} on run ${runId}.`);
   return { runId, finding };
+}
+
+/** `get_finding_evidence` for a caller whose `runId` may be gone: a cached `runId` is used,
+ * otherwise `source` is loaded and, with `appId`, must hold that application (its redacted id under `redact`). */
+export async function resolveFindingEvidence(
+  { runId, source, appId }: RunRef & { appId?: string }, findingId: string, opts?: { redact?: boolean; thresholds?: ThresholdOverrides },
+): Promise<{ runId: string; finding: FindingRow }> {
+  if (appId !== undefined && !source) throw mcpError('access-or-upstream-failure', 'appId needs the source of the run to analyse.');
+  if (runId) {
+    evictStale();
+    if (byRunId.has(runId) || !source) return getFindingEvidence(runId, findingId, opts);
+  }
+  if (!source) throw mcpError('access-or-upstream-failure', 'Provide runId, or source (with appId).');
+  const resolved = await resolveOrCreateRun({ source });
+  const actualAppId = opts?.redact
+    ? buildEvidenceReport(resolved.appModel, { redact: true, markdown: false, thresholds: opts.thresholds }).json.summary.app.id ?? null
+    : resolved.appModel.app?.id ?? null;
+  if (appId !== undefined && actualAppId !== appId) {
+    throw mcpError('run-not-found', `The source holds application ${actualAppId ?? '(none)'}, not ${appId}.`);
+  }
+  return getFindingEvidence(resolved.runId, findingId, opts);
 }
 
 function hasCompleteInterval(app: SparkAppInfo | null): boolean {
