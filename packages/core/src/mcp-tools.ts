@@ -262,13 +262,11 @@ export interface CompactFindingRow {
   impactBand: FindingRow['impactBand']; stageId: number | null; actionLabel: string;
   metric: string | null; value: number | null; valueText?: string;
   impact?: string; impactMeaning?: string | null;
-  // A spill finding's cause in short lines: its operators with plan node ids and the spill-to-input
-  // ratio, then one line per exchange feeding them with its column count and bytes per row.
+  // A spill finding's operators and ratio, then one line per exchange.
   evidenceLines?: string[];
   tunedThresholds?: TunedThresholds;
 }
 
-// The spill finding's evidence lines, or none when the plan and the stage's input name no cause.
 function spillEvidenceLines(row: FindingRow): string[] {
   if (row.type !== 'spill') return [];
   const { operators = [], exchanges = [], spillToInputRatio = null, wideRows = false } = row.evidence;

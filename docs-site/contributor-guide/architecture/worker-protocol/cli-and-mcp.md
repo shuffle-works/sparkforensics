@@ -143,8 +143,8 @@ thresholds and `redact`, so a repeated `diagnose_run` skips `computeRunMetrics`.
 `maxFindings` are part of `FindingsFilter`, so the Markdown findings follow them, and
 `buildEvidenceReport()` returns `findingsMatched`, the rows before `maxFindings`, for
 `findingsOmitted`. The `compact` view maps each `FindingRow` through `compactFindingRow()`
-(which adds a spill finding's `evidenceLines`, from `spill-attribution.ts`) and leaves out
-`cleanChecks` and `notRunChecks`. Each verdict step gets its lead row
+(which adds a spill finding's `evidenceLines`) and leaves out `cleanChecks` and
+`notRunChecks`. Each verdict step gets its lead row
 from the unfiltered report, which is cached, so a limit never hides it. The factory's
 `diagnose_run` handler defaults `view` to `compact`; `diagnoseRun()` itself defaults to
 `full`. With `format: 'md'` the handler returns `diagnoseHeadline()` as

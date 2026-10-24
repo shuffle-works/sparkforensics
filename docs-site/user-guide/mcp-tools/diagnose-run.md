@@ -30,9 +30,8 @@ The answer has two views. `compact` (the default) is an index: the verdict,
 per finding, with no `cleanChecks` or `notRunChecks`. A compact row holds `id`,
 `key`, `type`, `tag`, `name`, `impactBand`, `stageId`, `actionLabel`, `metric`,
 `value` (or `valueText`), `impact` and `impactMeaning` when the finding has a
-savings figure, `evidenceLines` on a spill finding (its operators with plan
-node ids and the spill-to-input ratio, then one short line per exchange with its
-column count and bytes per row), and `tunedThresholds` on a tuned server. Pass
+savings figure, `evidenceLines` on a spill finding (its operators and ratio,
+then one line per exchange), and `tunedThresholds` on a tuned server. Pass
 the row's `id` to
 [`get_finding_evidence`](./get-finding-evidence.md) for its remediation text,
 evidence and estimate. `full` returns every finding as the CLI report

@@ -1965,9 +1965,7 @@ export const DETECTORS = [
     docAnchor: '#bottleneck-spill',
     // stageFloorPct: the 0.5% runtime floor, as for shuffle.
     thresholds: { singleTaskDiskGiB: 1, singleTaskMemGiB: 4, highDiskGiB: 1, highTaskDiskMB: 512, highMemGiB: 4, medDiskMB: 256, medMemGiB: 1, skewRatio: 5, skewDiskFloorMB: 128, skewMemFloorMB: 256, skewMinTasks: 10, stageFloorPct: 0.005,
-      // wideRowRatio: memory spill over the stage's input plus shuffle read from which the rows are called wide;
-      // wideRowMinInputMB: below this input the ratio is not reported, as a stage that reads next to nothing
-      // (generated rows) spills for another reason.
+      // The spill-to-input ratio from which rows are called wide, and the input below which it is not reported.
       wideRowRatio: 10, wideRowMinInputMB: 64 },
     detect(stage, ctx, thresholds): Finding | null {
       if (stage.memoryBytesSpilled === 0) return null;

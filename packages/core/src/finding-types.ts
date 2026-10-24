@@ -154,8 +154,8 @@ export interface PartitionSizingEvidence {
 }
 export interface PartitionSizingFinding extends NumericFinding<'partitionSizing'>, PartitionSizingEvidence {}
 
-/** An operator of the spilling stage that spilled: its plan node id and name, and the "spill size"
- * the plan reports for it. A Sort that feeds a SortMergeJoin names it in `feeds`. */
+/** An operator of the spilling stage with the "spill size" the plan reports for it. A Sort under a
+ * SortMergeJoin names it in `feeds`. */
 export interface SpillOperator {
   nodeId: string;
   name: string;
@@ -163,9 +163,8 @@ export interface SpillOperator {
   feeds?: string;
 }
 
-/** The exchange an operator reads its rows from: the plan node id of its read half, the columns the
- * rows carry (absent when the plan text does not list them) and the estimated bytes per row, the
- * exchange's "data size" over its shuffle records written (absent without both). */
+/** The exchange an operator reads from (its read half's plan node id): the columns of its rows, and the
+ * estimated bytes per row ("data size" over shuffle records written). Each is absent when unknown. */
 export interface SpillExchange {
   nodeId: string;
   columns?: number;
@@ -176,13 +175,13 @@ export interface SpillEvidence {
   spillMagnitude?: 'severe' | 'high' | 'medium';
   // What the stage reads: shuffle-partition advice applies only to 'shuffle'.
   reads?: StageReads;
-  // Memory spilled over the stage's input plus shuffle read, to one decimal; absent when it has none.
+  // Memory spill over the stage's input plus shuffle read; absent when that input is small.
   spillToInputRatio?: number;
-  // Whether that ratio is 10 or more, which means the spilled rows are wide; set with the ratio.
+  // Set with the ratio: true from 10x, which means the rows are wide.
   wideRows?: boolean;
-  // Up to five operators of the stage that report a spill size, largest first; absent when none does.
+  // Up to five operators that report a spill size, largest first.
   operators?: SpillOperator[];
-  // The exchanges feeding `operators`.
+  // The exchanges those operators read.
   exchanges?: SpillExchange[];
 }
 export interface SpillFinding extends NumericFinding<'spill'>, SpillEvidence {}

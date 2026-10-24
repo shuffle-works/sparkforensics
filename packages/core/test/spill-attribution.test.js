@@ -19,7 +19,6 @@ function truncatedColumns(total, shown = 25) {
   return `[${listed.join(', ')}, ... ${total - shown} more fields]`;
 }
 
-// A shuffle read in stage `consumer`: the read half over the write half (stage `producer`) over `below`.
 function exchange(id, below, { producer = 1, dataSize, records } = {}) {
   const metrics = [
     ...(dataSize != null ? [sized('data size', dataSize)] : []),
@@ -31,7 +30,6 @@ function exchange(id, below, { producer = 1, dataSize, records } = {}) {
 
 const wideProject = (columns) => node('proj', 'Project', `Project ${truncatedColumns(columns)}`, [node('scan', 'Scan parquet db.t', 'FileScan parquet db.t[k#1] Batched: true')]);
 
-// The heaviest write stage in the shape of a wide-row spill: a Sort over a 128-column exchange.
 function wideSortPlan({ spill = 3 * TB } = {}) {
   const sort = node('sort', 'Sort', 'Sort [k#1 ASC NULLS FIRST], false, 0',
     [node('adapter', 'InputAdapter', '', [exchange('xchg', wideProject(128), { dataSize: 410 * GB, records: 1e9 })])],

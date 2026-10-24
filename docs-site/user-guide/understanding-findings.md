@@ -111,23 +111,16 @@ stage that reads a shuffle; `evidence.reads` says what the stage reads
 the stage's own `repartition(n)` or RDD parallelism otherwise. Only flagged on stages that take at
 least 0.5% of the run.
 
-The finding also says where the spill sits. `evidence.operators` lists up to
-five operators of the stage, each with its plan node id: the `Sort`,
-`HashAggregate`, `ObjectHashAggregate` and `Window` nodes that spilled, largest
-first, with the plan's `spill size` for each. A `Sort` under a `SortMergeJoin`
-is marked as feeding it. When the plan reports no `spill size` for any of them,
-the finding names no operator.
+`evidence.operators` lists up to five operators that reported a `spill size`
+(`Sort`, `HashAggregate`, `ObjectHashAggregate`, `Window`), largest first, with
+their plan node ids. A `Sort` under a `SortMergeJoin` is marked as feeding it.
 `evidence.spillToInputRatio` is the memory spill over the stage's input plus
-shuffle read, left out when that input is under 64 MB (a stage that reads next
-to nothing spills for another reason). At 10 or more, `evidence.wideRows` is
-true and the finding says the rows are wide: rows that are decompressed and
-sorted in memory take far more space than the data read.
-
-`evidence.exchanges` gives the width of the exchanges those operators read:
-the column count and the estimated bytes per row (`data size` over shuffle
-records written). The plan text lists no output columns on an exchange, so the
-column count comes from the nearest `Project`, file scan or `ReusedExchange`
-below it, and is left out when a join or an aggregate sits in between.
+shuffle read. It is left out when that input is under 64 MB. From 10x,
+`evidence.wideRows` is true and the finding says the rows are wide.
+`evidence.exchanges` gives the column count and estimated bytes per row of the
+exchanges those operators read. The column count comes from the nearest
+`Project`, file scan or `ReusedExchange` below the exchange, and is left out
+when a join or aggregate sits between.
 
 ### `GC`: Garbage collection pressure {#gc}
 
