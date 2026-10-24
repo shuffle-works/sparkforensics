@@ -2478,8 +2478,8 @@
      "value": 1474275360,
      "basis": "contended",
      "method": "modeled",
-     "wcLow": 1091.7573858511303,
-     "wcHigh": 1125.333333333333,
+     "wcLow": 3505.2009197986977,
+     "wcHigh": 3613,
      "rawWaste": {
       "value": 1129126656,
       "unit": "bytes"
