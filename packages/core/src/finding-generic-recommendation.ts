@@ -22,8 +22,9 @@ export function duplicateSubtreeDetail(f: { subtreeSize: number; rootName: strin
 }
 
 /** Why the repeats may not be one computation, with a leading space; '' when they match. */
-export function duplicateSubtreeNote(f: { occurrencesIdentical: boolean; readsDifferentVersions?: boolean }): string {
+export function duplicateSubtreeNote(f: { occurrencesIdentical: boolean; readsDifferentVersions?: boolean; parityCheck?: boolean }): string {
   if (f.readsDifferentVersions) return ' They read different versions of the same Delta table, and a cache holds one version, so it cannot serve both reads.';
+  if (f.parityCheck) return ' They are the two sides of a full outer join over the same table and filters, a parity check that compares two computations, so computing them once would defeat it.';
   return f.occurrencesIdentical ? '' : ' Their filters, columns or scanned tables differ, so the repeats may compute different data.';
 }
 

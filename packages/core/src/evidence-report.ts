@@ -236,7 +236,7 @@ const EVIDENCE_KEYS = {
   jobFailureRate: ['failedJobs', 'totalJobs', 'failedTasks', 'totalTasks', 'avgJobDurationMs', 'taskFailureRate'],
   configAudit: ['property'],
   duplicatePlanSubtree: [
-    'executionId', 'stageIds', 'stageShares', 'occurrencesIdentical', 'readsDifferentVersions', 'rootAction', 'rootName', 'subtreeSize', 'sampleRelation',
+    'executionId', 'stageIds', 'stageShares', 'occurrencesIdentical', 'readsDifferentVersions', 'parityCheck', 'rootAction', 'rootName', 'subtreeSize', 'sampleRelation',
     'groupIndex',
   ],
   smallFiles: ['executionId', 'stageIds', 'fileCount', 'direction', 'nodeName'],

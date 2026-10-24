@@ -392,6 +392,9 @@ this tag:
   or tables, or read different Delta table versions, the finding stays
   informational and claims no time. So does a repeat under `show`,
   `showString` or `collect`; one under `count` or `save` keeps its ranking.
+  The two sides of a full outer join that aggregate the same table with the
+  same filters are a parity check, not repeated work: they get no cache or
+  dedupe advice.
   Only flagged when the repeat's stages take at least 0.5% of the run.
 - Small files: one plan node reads or writes more than 100 files averaging
   under 3 MB. Compact upstream output, or coalesce before writing.
