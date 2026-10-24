@@ -2084,7 +2084,9 @@ export const DETECTORS = [
         : `plus ${Math.round(cpuShare * 100)}% of the stage's task time as serialization and sort CPU (${SPILL_TASK_TIME_SHARE_PER_PASS * 100}% per pass of its read bytes through memory spill, capped at ${SPILL_TASK_TIME_SHARE_MAX * 100}%)`;
       // The displayed metric is memoryBytesSpilled; the raw figure is the disk bytes that cost the I/O time.
       return withAssumptions(
-        singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: diskBytesSpilled, unit: 'bytes' }),
+        // The sort CPU is part of the core work, so removing it lowers the stage's core-work floor too.
+        singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: diskBytesSpilled, unit: 'bytes' },
+          { removedCoreWorkMs: (stage.executorRunTime ?? 0) * (cpuShare ?? 0) }),
         `${ioModelAssumption(SPILL_IO_THROUGHPUT_BPS, stage)} for disk spill, ${cpuAssumption}; GC is not counted`,
       );
     },

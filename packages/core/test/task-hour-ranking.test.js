@@ -163,6 +163,18 @@ describe('spill impact estimate', () => {
     const noBase = spillEstimate({ memoryBytesSpilled: 50e9, diskBytesSpilled: 0 });
     expect(noBase.assumptions).toContain('serialization and sort CPU is not counted');
   });
+
+  it('keeps the CPU share on a stage packed onto every core, whose core-work floor drops with it', () => {
+    // 400 x 60 s tasks on 16 cores: the 25-minute stage is exactly its core work over every core.
+    const packed = {
+      completedAt: 25 * 60_000, executorRunTime: 400 * 60_000, taskDurationMax: 60_000,
+      shuffleReadBytes: 100e9, memoryBytesSpilled: 400e9, diskBytesSpilled: 0,
+    };
+    const stages = new Map([[0, stage(0, 400 / 60, packed, 4)]]);
+    const findings = [{ type: 'spill', stageId: 0, impactBand: 'warning' }];
+    estimateImpact(findings, { stages, totalCores: 16, occupancy: computeOccupancy(stages, 16) });
+    expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(0.4 * 25 * 60_000, 0);
+  });
 });
 
 describe('task-hour ranking: plan findings on the execution-wide stage fallback', () => {
