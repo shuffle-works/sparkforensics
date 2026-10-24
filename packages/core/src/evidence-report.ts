@@ -213,7 +213,7 @@ const EVIDENCE_KEYS = {
   stageShape: ['rule'],
   shuffle: ['partitions'],
   partitionSizing: ['rule', 'origin', 'aqeSkew', 'partitions'],
-  spill: ['spillMagnitude', 'reads'],
+  spill: ['spillMagnitude', 'reads', 'spillToInputRatio', 'wideRows', 'operators', 'exchanges'],
   gc: ['direction'],
   slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue', 'executorCount', 'taskCount'],
   stageSlowness: ['reads'],

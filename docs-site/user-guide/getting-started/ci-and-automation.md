@@ -158,7 +158,11 @@ ran fewer tasks than the property (or than
 `spark.sql.adaptive.coalescePartitions.initialPartitionNum`, which replaces it
 as the starting count when set), AQE merged the partitions and the
 recommendation points at `spark.sql.adaptive.advisoryPartitionSizeInBytes`
-instead. A stage outside any SQL execution is never read as coalesced. `shuffle` and
+instead, unless the stage's exchange has no `AQEShuffleRead` over it (a
+`repartition(n)` exchange never has one): the job sized that stage, so the
+advice points at its own partitioning. The same holds for a stage that ran more
+tasks than the property with no AQE read over its exchange. A stage outside any SQL execution is
+never read as coalesced. `shuffle` and
 `partitionSizing` (`lowShuffleParallelism`) findings carry `evidence.partitions`
 (`raise`, `sufficient`, `aqeCoalesced` or `ownPartitioning`) for the case.
 

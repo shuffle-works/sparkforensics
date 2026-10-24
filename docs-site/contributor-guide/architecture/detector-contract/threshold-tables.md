@@ -81,6 +81,11 @@ evaluation order (first match wins, `null` when nothing matches):
 Disk spill is weighted worse than memory spill by design: the memory
 thresholds sit well above their disk counterparts at every tier.
 
+The finding also reports `spillToInputRatio`, the memory spill over `inputBytes`
+plus `shuffleReadBytes`, and sets `wideRows` from `wideRowRatio` = 10. A stage
+with under `wideRowMinInputMB` = 64 MiB of input gets no ratio. Neither
+threshold changes the band or the magnitude.
+
 ### Full threshold table (never wallClock-derived)
 
 | Rule | Warning | Critical |
