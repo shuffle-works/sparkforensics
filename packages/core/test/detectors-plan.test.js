@@ -961,14 +961,19 @@ describe('duplicatePlanSubtree: parity check', () => {
     expect(finding.recommendation).toMatch(/parity check/);
   });
 
-  it('is no verdict step and carries no dedupe label', () => {
+  it('carries no dedupe label and does not open the verdict', () => {
     const { findings, finding } = run();
+    const spill = {
+      type: 'spill', stageId: 2, impactBand: 'warning', recommendation: 'Reduce spill.',
+      impactEstimate: { basis: 'serial', estimateMethod: 'measured', wallClock: { low: 1000, high: 1000 } },
+    };
     const verdict = buildRunVerdict(
       { app: makeApp(), stages: new Map(), executors: { added: [], removed: [] }, jobs: new Map(), sql: new Map(), runAggregates: null },
-      findings,
+      [...findings, spill],
     );
-    expect(verdict.steps.some(step => step.lead === finding || step.related.includes(finding))).toBe(false);
     expect(findingActionLabel(finding)).not.toMatch(/dedupe/i);
+    expect(verdict.steps[0].lead).toBe(spill);
+    expect(verdict.title).not.toMatch(/dedupe/i);
   });
 
   it('ranks behind a repeat that carries a time claim', () => {

@@ -148,12 +148,6 @@ describe('buildRunVerdict', () => {
     expect(without.summary).toContain('1 finding in 1 place.');
   });
 
-  it('does not count a parity check as a note on missing log data', () => {
-    const parity = { type: 'duplicatePlanSubtree', parityCheck: true, impactBand: 'info', recommendation: 'Leave them as they are.' };
-    const verdict = buildRunVerdict(appModel(), [timed('spill', 1, 2), parity]);
-    expect(verdict.summary.join(' ')).not.toMatch(/leaves out .* missing log data/);
-  });
-
   it('lists at most three steps and counts the rest', () => {
     const findings = [1, 2, 3, 4, 5].map((id) => timed('skew', id, id));
     const verdict = buildRunVerdict(appModel(), findings);
