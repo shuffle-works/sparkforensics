@@ -118,7 +118,8 @@ export interface StageOccupancyInfo {
   gate: number;
   ceiling: number;
   // The core-work half of `ceiling` (executorRunTime / totalCores, 0 without core data): the only
-  // floor left for a claim that itself shortens the stage's longest task.
+  // floor left for a claim that itself shortens the stage's longest task. A claim that removes
+  // core work (removedCoreWorkMs) lowers it by that share.
   coreWorkFloor: number;
 }
 
