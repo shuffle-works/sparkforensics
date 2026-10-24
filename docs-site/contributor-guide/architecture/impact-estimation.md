@@ -15,7 +15,7 @@ and suppression finish (`packages/core/src/analyzer.ts`). The waste models those
 informational finding with no waste model at all (`configAudit`, `stageFailed`,
 `failures`, `incompleteRun`, `slowHost`'s byte-dimension multiDim shapes, `gc`'s low-GC
 direction, `cacheUtilization`'s `storageUnobserved` caveat, `duplicatePlanSubtree` when its
-repeats differ or map to no stage): it's distinct
+repeats differ, run under an inspection action or map to no stage): it's distinct
 from `'measured'`/`'modeled'`, which both attach a real (if approximate) formula. `basis`
 is one of:
 

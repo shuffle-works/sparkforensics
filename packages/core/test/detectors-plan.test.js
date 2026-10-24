@@ -874,3 +874,63 @@ describe('findCompositeCandidates', () => {
     expect(c1.fingerprint).not.toBe(c2.fingerprint);
   });
 });
+
+describe('duplicatePlanSubtree: action and Delta version context', () => {
+  const scan = (version) => ({
+    name: 'Scan parquet',
+    detail: `FileScan parquet spark_catalog.db.t[c#1] Location: PreparedDeltaFileIndex[hdfs://cluster/wh/db/t], ${version === undefined ? '' : `Delta[version=${version}], `}PushedFilters: []`,
+    metrics: [], children: [],
+  });
+  // A shuffled, sorted aggregation over one Delta scan, in stage 1.
+  const branch = (version) => inStage(node('Sort', ['a'], [node('HashAggregate', ['b'], [node('Exchange', ['c'], [scan(version)])])]), 1);
+  const run = (description, versions = [undefined, undefined]) => {
+    const planTree = node('SortMergeJoin', [], versions.map(branch));
+    const sql = new Map([[1, { ...makeSqlExec(1, planTree), description }]]);
+    const stages = new Map([[1, makeStage({ sqlExecutionId: 1 })]]);
+    return analyze(makeApp(), stages, [], [], new Map(), sql).filter(b => b.type === 'duplicatePlanSubtree');
+  };
+
+  it.each(['show', 'showString', 'collect'])('lowers a repeat under %s to info with no time claim', (action) => {
+    const [finding] = run(`${action} at Job.scala:12`);
+    expect(finding.rootAction).toBe(action);
+    expect(finding.occurrencesIdentical).toBe(true);
+    expect(finding.impactBand).toBe('info');
+    expect(finding.impactEstimate.wallClock).toBeNull();
+  });
+
+  it.each(['count', 'save'])('keeps a repeat under %s above info with its time claim', (action) => {
+    const [finding] = run(`${action} at Job.scala:12`);
+    expect(finding.rootAction).toBe(action);
+    expect(finding.impactBand).not.toBe('info');
+    expect(finding.impactEstimate.wallClock).not.toBeNull();
+  });
+
+  it('keeps a repeat whose execution names no action above info', () => {
+    const [finding] = run('');
+    expect(finding.rootAction).toBeUndefined();
+    expect(finding.impactBand).not.toBe('info');
+  });
+
+  it('gives no cache advice when the repeats read different Delta versions', () => {
+    const [finding] = run('count at Job.scala:12', [3, 4]);
+    expect(finding.readsDifferentVersions).toBe(true);
+    expect(finding.occurrencesIdentical).toBe(false);
+    expect(finding.impactBand).toBe('info');
+    expect(finding.impactEstimate.wallClock).toBeNull();
+    expect(finding.recommendation).not.toMatch(/consider caching|computed once and reused/);
+    expect(finding.recommendation).toMatch(/different versions of the same Delta table/);
+  });
+
+  it('keeps the finding when both repeats read the same Delta version', () => {
+    const [finding] = run('count at Job.scala:12', [3, 3]);
+    expect(finding.readsDifferentVersions).toBe(false);
+    expect(finding.impactBand).not.toBe('info');
+    expect(finding.recommendation).toMatch(/caching/);
+  });
+
+  it('leaves the finding unchanged when a Delta scan records no version', () => {
+    const [finding] = run('count at Job.scala:12', [3, undefined]);
+    expect(finding.readsDifferentVersions).toBe(false);
+    expect(finding.recommendation).toMatch(/caching/);
+  });
+});

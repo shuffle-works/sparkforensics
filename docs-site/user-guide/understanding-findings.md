@@ -389,8 +389,10 @@ this tag:
 
 - Duplicate plan subtree: the same subtree recomputed more than once in the
   plan. When the repeats have the same shape but different filters, columns
-  or tables, the finding stays informational and claims no time. Only flagged
-  when the repeat's stages take at least 0.5% of the run.
+  or tables, or read different Delta table versions, the finding stays
+  informational and claims no time. So does a repeat under `show`,
+  `showString` or `collect`; one under `count` or `save` keeps its ranking.
+  Only flagged when the repeat's stages take at least 0.5% of the run.
 - Small files: one plan node reads or writes more than 100 files averaging
   under 3 MB. Compact upstream output, or coalesce before writing.
 - Nested loop join: a `BroadcastNestedLoopJoin` or `CartesianProduct` whose
