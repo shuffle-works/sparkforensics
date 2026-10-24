@@ -110,13 +110,14 @@ test('an analyzed run ranks its idle allocation before a stage finding with less
   const app = makeApp({ startTime: 0, endTime: 100 * MIN, resources: { executor: { cores: 4 } } });
   const stage = makeStage({
     submittedAt: 0, completedAt: 90 * MIN, executorRunTime: 360 * MIN,
-    shuffleReadBytes: 100e9, memoryBytesSpilled: 50e9,
+    shuffleReadBytes: 100e9, memoryBytesSpilled: 50e9, diskBytesSpilled: 20e9,
     executorStats: [{ executorId: '1', taskCount: 100, totalDuration: 360 * MIN }],
   });
   const added = Array.from({ length: 10 }, (_, i) => ({ kind: 'added' as const, executorId: String(i + 1), host: 'h', timestamp: 0, totalCores: 4, resourceProfileId: 0 }));
   const aggregates = { busyCoreMs: 360 * MIN, coreHistogram: [], peakConcurrentCores: 4, perStage: {} };
   const catalog = analyze(app, new Map([[1, stage as Stage]]), added, [], new Map(), new Map(), aggregates);
   expect(catalog.find((f) => f.type === 'utilization')?.impactBand).toBe('warning');
+  expect(catalog.find((f) => f.type === 'spill')?.impactBand).not.toBe('info');
   const interpreted = installInterpretation(catalog);
   const steps = interpreted.data.verdict.steps.map((step) => interpreted.findings[step.leadIndex].type);
 
