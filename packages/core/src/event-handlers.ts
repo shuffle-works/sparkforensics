@@ -1570,11 +1570,11 @@ function keptCommandArguments(line: string, valueStart: number, quote: number): 
   return command === 'SaveIntoDataSourceCommand' && !kept.includes('DeltaDataSource') ? null : kept;
 }
 
-// Returns `line` with the physicalPlanDescription string value emptied (or cut to the kept
-// arguments line, see keptCommandArguments), or `line` unchanged when
-// the key isn't found in Spark's compact form. The key pattern can't match inside another JSON
-// string: there its quotes would be backslash-escaped. buildChunkDecoder already empties a value
-// that spans chunks, so here the value is empty or within one chunk.
+// Returns `line` with the physicalPlanDescription string value emptied, or cut to the kept
+// arguments line (keptCommandArguments) or the ExchangeInputs block (keptExchangeInputs), or `line`
+// unchanged when the key isn't found in Spark's compact form. The key pattern can't match inside
+// another JSON string: there its quotes would be backslash-escaped. buildChunkDecoder already
+// empties a value longer than MAX_SCANNED_DESCRIPTION (256 Ki chars) that spans chunks.
 export function stripPlanDescription(line: string): string {
   if (!line.startsWith(SQL_UI_EVENT_PREFIX)) return line;
   const keyAt = line.indexOf(PLAN_DESCRIPTION_KEY);
