@@ -1,6 +1,6 @@
 // The run verdict: where to start, a short summary, and the top places to look, ranked by
-// potential savings (failures first on a failed run). Shared by the dashboard's verdict card and
-// the CLI/MCP evidence report, so both paths name the same first step in the same words.
+// stage task time, then potential savings (failures first on a failed run). Shared by the dashboard's
+// verdict card and the CLI/MCP evidence report, so both paths name the same first step in the same words.
 import { ENTRY_BY_TYPE } from './detectors.ts';
 import { hasFinishedStage, isCleanRun } from './check-coverage.ts';
 import { findingActionLabel } from './finding-action-label.ts';
@@ -8,7 +8,7 @@ import { singleStageId } from './finding-filter-predicate.ts';
 import { recommendationText } from './finding-names.ts';
 import { formatDuration, formatRawWaste, IMPACT_BAND_ORDER, readsAsZero } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
-import { isEligible } from './recommendation-rollup.ts';
+import { isEligible, rankStageCostMs } from './recommendation-rollup.ts';
 import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from './run-outcome.ts';
 import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates.ts';
 import { computeWallClock } from './wall-clock.ts';
@@ -52,14 +52,17 @@ export function isRankable(finding: Finding): boolean {
   return DISPLAY_INDEX.has(finding.type) && recommendation.length > 0;
 }
 
-/** Every rankable finding, best first. Ranked by potential savings: a quantified estimate always
- * outranks an unquantified one; ties (including "neither has one") fall back to impact band,
- * then widget display order, then input order, so an unquantified warning still leads an info. */
+/** Every rankable finding, best first. By the task time of the finding's stage (`rankStageCostMs`,
+ * the axis the recommendations share), then by potential savings: a quantified estimate always
+ * outranks an unquantified one; further ties (including "neither has one") fall back to impact
+ * band, then widget display order, then input order, so an unquantified warning still leads an info. */
 export function rankBySavings(findings: Finding[]): Finding[] {
   const candidates = findings
     .map((finding, index) => ({ finding, index }))
     .filter(({ finding }) => isRankable(finding));
   candidates.sort((left, right) => {
+    const costDelta = rankStageCostMs(right.finding) - rankStageCostMs(left.finding);
+    if (costDelta !== 0) return costDelta;
     const leftSavings = potentialSavingsMs(left.finding);
     const rightSavings = potentialSavingsMs(right.finding);
     if (leftSavings !== null && rightSavings !== null && leftSavings !== rightSavings) return rightSavings - leftSavings;
@@ -302,7 +305,7 @@ export function verdictSummary(eligible: Finding[], steps: NextStep[], facts: Ru
     const wallClock = steps[0].lead.impactEstimate?.wallClock;
     // An idle-capacity lead needs no sentence here: the title gives the idle share and step 1 the fix.
     if (!isIdleCapacityStep(steps[0]) && wallClock && facts.runMs != null) {
-      sentences.push(`The first fix could save up to ${formatDuration(wallClock.high)} of this ${formatDuration(facts.runMs)} run.`);
+      sentences.push(`Step 1 could save up to ${formatDuration(wallClock.high)} of this ${formatDuration(facts.runMs)} run.`);
     }
     if (steps.some((step) => step.related.length > 0)) {
       sentences.push('Findings on one stage are grouped, and their savings overlap.');
@@ -387,7 +390,7 @@ export interface RunVerdictModel {
   remaining: number;
   /** The "Copy next steps" checklist, or null when there is no step to copy. */
   copyText: string | null;
-  /** Beside `steps` (which rank by wall clock): the first COST_LANE_LIMIT cost-lane entries. */
+  /** Beside `steps` (which rank by stage task time): the first COST_LANE_LIMIT cost-lane entries. */
   costLane: CostLaneEntry[];
   /** The run's idle capacity line, or null when the log gives no allocation. */
   idle: RunIdleLine | null;

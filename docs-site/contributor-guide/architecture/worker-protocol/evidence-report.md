@@ -35,13 +35,13 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, writ
   `steps` holds the first three places to look in the verdict card's order, each
   `{ key, stageId, type, tag, leadFindingId, actionLabel, recommendation, impact, impactMeaning,
   relatedTypes, text }`, where `text` is that step's line of the "Copy next steps" checklist and
-  `copyText` is the whole checklist. `steps` rank by wall clock. `costSteps` is a second lane
+  `copyText` is the whole checklist. `steps` rank by stage task time (`impactEstimate.stageTaskMs`), then wall-clock savings, as `recommendations` do. `costSteps` is a second lane
   ranked by measured busy core time (`impactEstimate.coreTimeMs.high`), each
   `{ stageId, type, tag, leadFindingId, actionLabel, coreTimeMs, coreTime }`: a finding with no
   core-time figure (an idle capacity, modeled or bytes-only figure) is in neither lane. `idle` is
   the run's allocated core time that ran no task, `{ coreHours, allocatedCoreHours, pct, text }`,
   or `null` without an allocation; no single finding's idle figure exceeds it. The Markdown
-  opens with it as `## Verdict`, the two lanes labeled "By wall clock" and "By core time". The
+  opens with it as `## Verdict`, the two lanes labeled "By cluster time (task-hours)" and "By core time". The
   `recommendations` rollup stays alongside: it ranks fix types, the verdict ranks places.
 - `evidenceAvailability` is the ledger above (or `null` when absent).
 - `detectors` is `detectorCatalog()` output: one `{ type, version, scope,
@@ -139,7 +139,7 @@ and is never name-identical to a raw export.
 
 A finding row carries `impactEstimate` when the finding has one, with the full contract
 documented in [Impact estimation](../impact-estimation.md#occupancy-weighted-attribution)
-(basis, wallClock, estimateMethod, rawWaste, coreTimeMs, and on `utilization` idleCoreTimeMs). It appears after the pinned core
+(basis, wallClock, estimateMethod, rawWaste, coreTimeMs, stageTaskMs, and on `utilization` idleCoreTimeMs). It appears after the pinned core
 columns (`id`, `key`, `type`, `impactBand`, `stageId`, `metric`, `value`, `recommendation`, `detectorVersion`, plus
 optional but pinned `confidence`, `validationRequired`, `docAnchor`) without displacing any of
 them. The full row shape is `FindingRowColumns` in `evidence-report.ts`, which also carries

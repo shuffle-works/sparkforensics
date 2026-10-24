@@ -29,15 +29,40 @@ export interface EstimateCtx {
 export const SHUFFLE_THROUGHPUT_BPS = 125_000_000;
 // Assumed disk I/O throughput per executor for spilled data, ~200 MB/s (conservative HDD/SSD blend).
 export const SPILL_IO_THROUGHPUT_BPS = 200_000_000;
+// Assumed share of a stage's task time one pass of its read bytes through memory spill costs in
+// serialization and sort CPU, and the ceiling on the total. Unvalidated.
+export const SPILL_TASK_TIME_SHARE_PER_PASS = 0.1;
+export const SPILL_TASK_TIME_SHARE_MAX = 0.5;
+
+// A stage's task wall time, summed per executor by finalizeStage; 0 without executorStats.
+function summedTaskWallMs(stage: Stage): number {
+  const executorStats = Array.isArray(stage.executorStats)
+    ? (stage.executorStats as { totalDuration?: number }[]) : [];
+  return executorStats.reduce((sum, e) => sum + (e.totalDuration ?? 0), 0);
+}
+
+// A stage's task time in ms: its summed task wall time, else executorRunTime. 0 when it has neither.
+export function stageTaskMs(stage: Stage): number {
+  const summed = summedTaskWallMs(stage);
+  return summed > 0 ? summed : (stage.executorRunTime ?? 0);
+}
+
+// Share of the stage's task time memory spill costs: the spilled bytes over the bytes the stage read
+// (input plus shuffle read), in passes, times the per-pass share, capped. Null when the stage
+// spilled no memory or read no bytes to compare it to.
+export function spillTaskTimeShare(stage: Stage): number | null {
+  const processedBytes = (stage.inputBytes ?? 0) + (stage.shuffleReadBytes ?? 0);
+  const spilledBytes = stage.memoryBytesSpilled ?? 0;
+  if (processedBytes <= 0 || spilledBytes <= 0) return null;
+  return Math.min(SPILL_TASK_TIME_SHARE_MAX, (spilledBytes / processedBytes) * SPILL_TASK_TIME_SHARE_PER_PASS);
+}
 
 // A stage's own per-task overhead: task wall time (launch to finish, summed per executor by
 // finalizeStage) minus executorRunTime, i.e. deserialization, result serialization and the
 // launch round trip that coalescing tasks removes. `concurrency` is the stage's achieved task
 // concurrency (task time / stage duration). Null when the stage has no such data or no overhead.
 export function measuredTaskOverhead(stage: Stage): { perTaskMs: number; concurrency: number } | null {
-  const executorStats = Array.isArray(stage.executorStats)
-    ? (stage.executorStats as { totalDuration?: number }[]) : [];
-  const taskTimeMs = executorStats.reduce((sum, e) => sum + (e.totalDuration ?? 0), 0);
+  const taskTimeMs = summedTaskWallMs(stage);
   const taskCount = stage.taskCount ?? 0;
   const durationMs = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
   const overheadMs = taskTimeMs - (stage.executorRunTime ?? 0);

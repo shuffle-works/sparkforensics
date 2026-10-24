@@ -48,14 +48,15 @@ describe('useFixTheseFirstData', () => {
     expect(groups[0].band).toBe('critical');
   });
 
-  it('bands a multi-finding group by its highest-impact member, not its worst band', () => {
-    // Both merge into one group; the larger-magnitude info finding outranks
-    // the smaller critical one for the badge.
+  it('bands a multi-finding group by its worst member, not its highest-impact one', () => {
+    // Both merge into one group; the larger-magnitude info finding leads it,
+    // but the group sits under the smaller critical one's band.
     const highImpact = findingWithMagnitude('skew', 1, 5000, 'info');
     const lowerImpact = findingWithMagnitude('skew', 2, 1000, 'critical');
     const { groups } = boardData([highImpact, lowerImpact]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].band).toBe('info');
+    expect(groups[0].findings[0]).toBe(highImpact);
+    expect(groups[0].band).toBe('critical');
   });
 
   it('ranks group members by wallClock.high, not .low', () => {
@@ -72,7 +73,7 @@ describe('useFixTheseFirstData', () => {
     };
     const { groups } = boardData([findingB, findingA]);
     expect(groups).toHaveLength(1);
-    expect(groups[0].band).toBe('critical');
+    expect(groups[0].findings[0]).toBe(findingA);
   });
 
   it('useFixTheseFirstData returns the eligible/groups/triageTarget ImpactBoard renders from', () => {

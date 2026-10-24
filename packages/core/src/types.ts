@@ -366,7 +366,7 @@ export interface ImpactEstimate {
   estimateMethod: ImpactEstimateMethod;
   rawWaste?: RawWasteFigure;
   /** What the model assumes and leaves out, as a sentence fragment
-   * ("assumes 200 MB/s per executor over 75 executors; counts disk spill only"). Printed after
+   * ("assumes 200 MB/s per executor over 75 executors for disk spill; GC is not counted"). Printed after
    * the estimate's provenance sentence. Absent when the model rests on no assumed constant. */
   assumptions?: string;
   /** Busy core time the fix removes (executor task time), in core-milliseconds, as a low..high
@@ -388,6 +388,10 @@ export interface ImpactEstimate {
    * a fix removes. `memoryUtilization`'s `idleCores` is the memory view of the same condition and
    * carries none. Absent when the log lacks the executor cores the allocation needs. */
   idleCoreTimeMs?: { low: number; high: number };
+  /** Task time in milliseconds of the stages the finding sits on, which the verdict steps and the
+   * recommendations rank warning and critical findings by. Absent without a stage or task time, and
+   * when a plan finding's stageIds are its whole execution's (unionStageIds' fallback). */
+  stageTaskMs?: number;
 }
 
 // `Finding` is a union discriminated on `type`, one member per emitted finding type: see

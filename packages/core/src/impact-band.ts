@@ -1,10 +1,17 @@
-import type { Finding, SparkAppInfo } from './types.ts';
+import type { Finding, SparkAppInfo, Stage } from './types.ts';
+import { stageTaskMs } from './impact-model.ts';
+import { FAILURE_TYPES } from './run-outcome.ts';
+import { singleStageId } from './finding-filter-predicate.ts';
 
 // The run-wide noise floor, as a share of the run's duration, that grades every wall-clock
 // estimate. skew and straggler default their firing floors to these same figures (detectors.ts), so
 // a finding they admit grades at least warning here. Source status: threshold-tables.md.
 export const IMPACT_FLOOR_PCT_WARN = 0.005;
 export const IMPACT_FLOOR_PCT_CRIT = 0.02;
+
+// The share of the run's task time a stage must carry for a finding on it to stay `critical`: the
+// IMPACT_FLOOR_PCT_CRIT figure, applied to task time.
+export const CRITICAL_MIN_TASK_TIME_SHARE = IMPACT_FLOOR_PCT_CRIT;
 
 /** The share-of-run floors one finding grades against. */
 export interface ImpactBandFloors { warnPct: number; critPct: number }
@@ -52,6 +59,28 @@ export function deriveImpactBand(
     const pct = recoverableMs / durationMs;
     const { warnPct, critPct } = floorsFor?.(finding.type) ?? DEFAULT_FLOORS;
     finding.impactBand = pct >= critPct ? 'critical' : pct >= warnPct ? 'warning' : 'info';
+  }
+  return findings;
+}
+
+/**
+ * Caps a `critical` band at `warning` when the finding's stage carries under
+ * CRITICAL_MIN_TASK_TIME_SHARE of the run's task time. Failures and partitionSizing's
+ * maxPartitionTooBig stay critical whatever the stage costs, and a finding with no single stage or
+ * no recorded task time has nothing to compare. Mutates in place and returns the array.
+ */
+export function capCriticalByTaskTime(findings: Finding[], stages: Map<number, Stage>): Finding[] {
+  let runTaskMs = 0;
+  for (const stage of stages.values()) runTaskMs += stageTaskMs(stage);
+  if (runTaskMs <= 0) return findings;
+  for (const finding of findings) {
+    if (finding.impactBand !== 'critical') continue;
+    if (FAILURE_TYPES.has(finding.type)) continue;
+    if (finding.type === 'partitionSizing' && finding.rule === 'maxPartitionTooBig') continue;
+    const stageId = singleStageId(finding);
+    const stage = stageId == null ? undefined : stages.get(stageId);
+    const taskMs = stage ? stageTaskMs(stage) : 0;
+    if (taskMs > 0 && taskMs / runTaskMs < CRITICAL_MIN_TASK_TIME_SHARE) finding.impactBand = 'warning';
   }
   return findings;
 }

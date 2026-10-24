@@ -74,7 +74,7 @@ export interface RunVerdictData {
   clean: boolean;
   /** Spark's recorded failure reason, first line only. */
   failureReason: string | null;
-  /** Ranked by wall clock (the time lane). */
+  /** Ranked by stage task time, then potential savings (the time lane, `rankBySavings`). */
   steps: InterpretedStep[];
   /** Ranked by measured busy core time (the cost lane); only findings with such a figure. */
   costSteps: InterpretedCostStep[];
@@ -160,7 +160,7 @@ export interface RunInterpretation {
   coreLocality: CoreLocalityData;
   /** Per finding type: widget order, doc anchor and clean-check criterion. */
   detectors: Record<string, DetectorInfo>;
-  /** Every rankable finding's index, best potential savings first. */
+  /** Every rankable finding's index, in `rankBySavings` order. */
   savingsRank: number[];
   /** Keyed by stage id, for stages with at least one finding. */
   stages: Record<string, StageFindingsData>;

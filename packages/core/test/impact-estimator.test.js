@@ -122,7 +122,7 @@ describe('estimateImpact: gc', () => {
     }]]);
     const findings = [{ type: 'gc', stageId: 0, direction: 'low', impactBand: 'info' }];
     estimate(findings, stages);
-    expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none' });
+    expect(findings[0].impactEstimate).toEqual({ basis: 'informational', wallClock: null, estimateMethod: 'none', stageTaskMs: 100_000 });
   });
 
   it('reports resourceOnly (not a wall-clock claim) when executorRunTime is zero (guards divide-by-zero)', () => {
@@ -457,12 +457,12 @@ describe('estimateImpact: shuffle, spill (no taskDurationMax set, ceiling 0, sol
     const executorStats = Array.from({ length: 75 }, (_, i) => ({ executorId: String(i) }));
     const stages = new Map([[0, {
       id: 0, submittedAt: 0, completedAt: 100000, parentIds: [], executorStats,
-      shuffleReadBytes: 5_000_000_000, diskBytesSpilled: 8_000_000_000,
+      shuffleReadBytes: 5_000_000_000, diskBytesSpilled: 8_000_000_000, memoryBytesSpilled: 10_000_000_000,
     }]]);
     const findings = [{ type: 'shuffle', stageId: 0, impactBand: 'warning' }, { type: 'spill', stageId: 0, impactBand: 'warning' }];
     estimate(findings, stages);
     expect(findings[1].impactEstimate.assumptions)
-      .toBe('assumes 200 MB/s per executor over 75 executors; counts disk spill only, not memory spill, serialization or GC');
+      .toBe('assumes 200 MB/s per executor over 75 executors for disk spill, plus 20% of the stage\'s task time as serialization and sort CPU (10% per pass of its read bytes through memory spill, capped at 50%); GC is not counted');
     expect(findings[0].impactEstimate.assumptions).toMatch(/^assumes 125 MB\/s per executor over 75 executors; counts network transfer only/);
   });
 
@@ -1011,7 +1011,7 @@ describe('estimateImpact: totalCores wiring', () => {
     estimate(unwired, stages);
     expect(unwired[0].impactEstimate).toEqual({
       basis: 'serial', wallClock: { low: 10_000, high: 10_000 }, estimateMethod: 'measured',
-      rawWaste: { value: 20_000, unit: 'ms' },
+      rawWaste: { value: 20_000, unit: 'ms' }, stageTaskMs: 40_000,
     });
 
     // totalCores 8: ceiling = max(0, 40_000/8) = 5_000, room = 5_000:
@@ -1020,7 +1020,7 @@ describe('estimateImpact: totalCores wiring', () => {
     estimate(wired, stages, 8);
     expect(wired[0].impactEstimate).toEqual({
       basis: 'serial', wallClock: { low: 5_000, high: 5_000 }, estimateMethod: 'measured',
-      rawWaste: { value: 20_000, unit: 'ms' },
+      rawWaste: { value: 20_000, unit: 'ms' }, stageTaskMs: 40_000,
     });
   });
 });

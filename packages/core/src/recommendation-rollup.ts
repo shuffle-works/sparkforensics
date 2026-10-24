@@ -83,6 +83,13 @@ function buildCountGroup(type: string, findings: Finding[]): RollupGroup {
 
 const KIND_ORDER: Record<RollupGroup['kind'], number> = { time: 0, resource: 1, count: 2 };
 
+/** The task time of the stages a warning or critical finding sits on: the cost the verdict steps and
+ * the recommendations both rank by first. 0 for an info finding, an app-level finding and a stage
+ * with no recorded task time, which rank after every finding that has one. */
+export function rankStageCostMs(finding: Finding): number {
+  return finding.impactBand === 'info' ? 0 : finding.impactEstimate?.stageTaskMs ?? 0;
+}
+
 export function buildRecommendationRollup(
   findings: Finding[],
   stages: Map<number, { submittedAt?: number; completedAt?: number }>,
@@ -113,6 +120,8 @@ export function buildRecommendationRollup(
     if (countFindings.length > 0) groups.push(buildCountGroup(type, countFindings));
   }
   return groups.sort((a, b) => {
+    const costDelta = Math.max(0, ...b.findings.map(rankStageCostMs)) - Math.max(0, ...a.findings.map(rankStageCostMs));
+    if (costDelta !== 0) return costDelta;
     const kindDelta = KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
     if (kindDelta !== 0) return kindDelta;
     if (a.kind === 'time' && b.kind === 'time') return b.recoverableMsHigh - a.recoverableMsHigh;
@@ -217,6 +226,8 @@ function tierOf(finding: Finding): number {
  * `buildRecommendationRollup`'s own job, not this function's. */
 export function rankFindings(findings: Finding[]): Finding[] {
   return [...findings].sort((a, b) => {
+    const costDelta = rankStageCostMs(b) - rankStageCostMs(a);
+    if (costDelta !== 0) return costDelta;
     const tierDelta = tierOf(a) - tierOf(b);
     if (tierDelta !== 0) return tierDelta;
     if (tierOf(a) === TIER_TIME) {
@@ -229,7 +240,7 @@ export function rankFindings(findings: Finding[]): Finding[] {
   });
 }
 
-/** A board group ready to render: members ranked representative first, the representative's
+/** A board group ready to render: members ranked representative first, the worst member's
  * band (the heading the group sits under) and the group's trailing figure. */
 export interface RankedRollupGroup {
   kind: RollupGroup['kind'];
@@ -253,7 +264,7 @@ export function rankedRollup(
       kind: group.kind,
       type: group.type,
       unit: group.kind === 'resource' ? group.unit : null,
-      band: members[0].impactBand,
+      band: worstImpactBand(members)!,
       members,
       ...rollupGroupStat(group),
     };

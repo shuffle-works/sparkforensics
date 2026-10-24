@@ -345,7 +345,7 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
       </div>
       <VerdictStrip interpretation={interpretation} />
       {density === 'advanced' ? null : <div className="mt-4"><NewcomerPrimer /></div>}
-      {shown.length > 0 ? <p className="trace-eyebrow mt-4">By wall clock (run time)</p> : null}
+      {shown.length > 0 ? <p className="trace-eyebrow mt-4">By cluster time (task-hours)</p> : null}
       {shown.length > 0 ? (
         <ol aria-label="Next steps" className="verdict-steps">
           {shown.map(({ step, finding }, index) => (
@@ -382,8 +382,8 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
       {density === 'advanced' && shown.length > 1 ? (
         <p className="mt-2 text-xs text-muted-foreground">
           {failed
-            ? 'Order: failures first, then highest potential savings; impact band breaks ties.'
-            : 'Order: highest potential savings first, unestimated last; impact band breaks ties.'}
+            ? 'Order: failures first, then stage task time, then highest potential savings; impact band breaks ties.'
+            : 'Order: stage task time first, then highest potential savings, unestimated last; impact band breaks ties.'}
         </p>
       ) : null}
     </section>

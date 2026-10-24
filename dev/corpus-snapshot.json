@@ -1455,8 +1455,8 @@
      "value": 1182791472,
      "basis": "serial",
      "method": "modeled",
-     "wcLow": 327.8383383333333,
-     "wcHigh": 327.8383383333333,
+     "wcLow": 675,
+     "wcHigh": 675,
      "rawWaste": {
       "value": 196703003,
       "unit": "bytes"
@@ -1728,13 +1728,13 @@
     {
      "key": "spill|9|memoryBytesSpilled|||||||||||",
      "type": "spill",
-     "band": "warning",
+     "band": "critical",
      "confidence": "medium",
      "value": 595590032,
      "basis": "serial",
      "method": "modeled",
-     "wcLow": 771.798795,
-     "wcHigh": 771.798795,
+     "wcLow": 2624.980821032502,
+     "wcHigh": 2624.980821032502,
      "rawWaste": {
       "value": 463079277,
       "unit": "bytes"
@@ -1880,13 +1880,13 @@
     {
      "key": "spill|6|memoryBytesSpilled|||||||||||",
      "type": "spill",
-     "band": "warning",
+     "band": "critical",
      "confidence": "medium",
      "value": 1056962592,
      "basis": "serial",
      "method": "modeled",
-     "wcLow": 1370.6474349999999,
-     "wcHigh": 1370.6474349999999,
+     "wcLow": 3797.785247122853,
+     "wcHigh": 3797.785247122853,
      "rawWaste": {
       "value": 822388461,
       "unit": "bytes"
@@ -2002,13 +2002,13 @@
     {
      "key": "spill|5|memoryBytesSpilled|||||||||||",
      "type": "spill",
-     "band": "warning",
+     "band": "critical",
      "confidence": "low",
      "value": 671473280,
      "basis": "serial",
      "method": "modeled",
-     "wcLow": 1148.36914,
-     "wcHigh": 1148.36914,
+     "wcLow": 1987.3851491959856,
+     "wcHigh": 1987.3851491959856,
      "rawWaste": {
       "value": 459347656,
       "unit": "bytes"
@@ -2311,8 +2311,8 @@
      "value": 732025952,
      "basis": "serial",
      "method": "modeled",
-     "wcLow": 948.6550266666667,
-     "wcHigh": 948.6550266666667,
+     "wcLow": 3754.546924206827,
+     "wcHigh": 3754.546924206827,
      "rawWaste": {
       "value": 569193016,
       "unit": "bytes"
@@ -2478,8 +2478,8 @@
      "value": 1474275360,
      "basis": "contended",
      "method": "modeled",
-     "wcLow": 1091.7573858511303,
-     "wcHigh": 1125.333333333333,
+     "wcLow": 3505.2009197986977,
+     "wcHigh": 3613,
      "rawWaste": {
       "value": 1129126656,
       "unit": "bytes"
@@ -2493,8 +2493,8 @@
      "value": 1460644112,
      "basis": "serial",
      "method": "modeled",
-     "wcLow": 1891.969695,
-     "wcHigh": 1891.969695,
+     "wcLow": 4598.0610485220905,
+     "wcHigh": 4598.0610485220905,
      "rawWaste": {
       "value": 1135181817,
       "unit": "bytes"

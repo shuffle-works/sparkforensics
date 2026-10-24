@@ -1,8 +1,17 @@
 import type { Finding } from './types.ts';
-import { ENTRY_BY_TYPE } from './detectors.ts';
-import { coreTimeFor, type EstimateCtx } from './impact-model.ts';
+import { ENTRY_BY_TYPE, isExecutionWideStageIds } from './detectors.ts';
+import { coreTimeFor, stageTaskMs, type EstimateCtx } from './impact-model.ts';
 
 export type { EstimateCtx } from './impact-model.ts';
+
+// The task time of the stages the finding sits on; undefined when there is none or when its
+// stageIds are only its execution's.
+function findingStageTaskMs(f: Finding, ctx: EstimateCtx): number | undefined {
+  if ('stageIds' in f && isExecutionWideStageIds(f.stageIds)) return undefined;
+  const ids = 'stageIds' in f ? f.stageIds : f.stageId != null ? [f.stageId] : [];
+  const total = ids.reduce((sum, id) => sum + (ctx.stages.has(id) ? stageTaskMs(ctx.stages.get(id)!) : 0), 0);
+  return total > 0 ? total : undefined;
+}
 
 /** Attaches each finding's `impactEstimate` from its entry's estimate(), in place. A null estimate
  * leaves the finding uncovered (no impactEstimate). `ctx` is analyze()'s one occupancy sweep. */
@@ -10,7 +19,7 @@ export function estimateImpact(findings: Finding[], ctx: EstimateCtx): Finding[]
   for (const f of findings) {
     const estimate = ENTRY_BY_TYPE.get(f.type)?.estimate(f, ctx);
     if (!estimate) continue;
-    f.impactEstimate = { ...estimate, coreTimeMs: coreTimeFor(f, estimate) };
+    f.impactEstimate = { ...estimate, coreTimeMs: coreTimeFor(f, estimate), stageTaskMs: findingStageTaskMs(f, ctx) };
   }
   countTailCoreTimeOnce(findings);
   return findings;

@@ -118,7 +118,8 @@ export interface StageOccupancyInfo {
   gate: number;
   ceiling: number;
   // The core-work half of `ceiling` (executorRunTime / totalCores, 0 without core data): the only
-  // floor left for a claim that itself shortens the stage's longest task.
+  // floor left for a claim that itself shortens the stage's longest task. A claim that removes
+  // core work (removedCoreWorkMs) lowers it by that share.
   coreWorkFloor: number;
 }
 
@@ -192,8 +193,8 @@ export interface SingleStageEstimateOptions {
   // one-straggler stage's claim at ~0. Such a claim is floored instead at the longest task the
   // fix leaves (taskDurationMax - claim) or the stage's core work spread over every core.
   shortensLongestTask?: boolean;
-  // Core work (task time) the fix itself removes (tailRemovedWorkMs): the core-work floor is then
-  // the work left after it, not the work before the fix.
+  // Core work (task time) the fix itself removes (tailRemovedWorkMs, spill's sort CPU): the
+  // core-work floor is then the work left after it, not the work before the fix.
   removedCoreWorkMs?: number;
   // Longest task the fix leaves, when known (stragglerFixLongestTaskMs): the stage can't finish
   // before it, however much of the tail the claim spreads over the stage's slots.
@@ -222,7 +223,7 @@ export function estimateSingleStage(
     : stageInfo.coreWorkFloor;
   const ceiling = shortensLongestTask
     ? Math.max((stage.taskDurationMax ?? 0) - wasteMsClaimed, longestTaskAfterFixMs, coreWorkFloor)
-    : stageInfo.ceiling;
+    : Math.max(stage.taskDurationMax ?? 0, coreWorkFloor);
   const clipped = clipToCeiling(wasteMsClaimed, stage, ceiling);
   if (stageInfo.gate >= SERIAL_GATE_THRESHOLD) {
     return { basis: 'serial', wallClock: { low: clipped, high: clipped } };

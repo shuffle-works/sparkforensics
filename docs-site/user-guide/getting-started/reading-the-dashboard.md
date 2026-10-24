@@ -12,7 +12,9 @@ estimate, the dot's color tracks how much run time it could save rather than
 how unusual the metric looks, so a small-looking anomaly with a big payoff can
 outrank a dramatic one that would barely move your run time. A finding with
 only a resource estimate, or none, keeps the level its check assigned. A
-critical finding is drawn in red whatever share of the run its saving is.
+critical finding is drawn in red whatever share of the run its saving is. A
+finding on a stage that carries under 2% of the run's task time is capped at
+warning, except failures and oversized partitions.
 
 The board opens with a verdict: one line saying where to start, a short
 summary of what was found, and up to three numbered next steps. Each step
@@ -25,10 +27,10 @@ what it counts: a time such as "58.6s of run time" is how much sooner the run
 could finish, while a resource figure such as "3.0 GB-h of unused executor
 memory" or "0.2 core-h of task time (modeled)" is cluster time a fix would free up,
 which cuts cost but may not shorten the run. A resource figure is always core time, never a duration, and says "(modeled)" when it rests on an assumed rate. A figure "of idle core capacity"
-counts allocated cores that ran no task, not work a fix removes. The steps rank "By wall clock"; a second list, "By core time", ranks findings by the busy core time a fix removes, including findings with no run-time claim. A line under the summary states how much of the allocation ran no task. **Copy next steps**
+counts allocated cores that ran no task, not work a fix removes. The steps rank "By cluster time (task-hours)": by the task time of the stage each sits on, then by run-time savings; a second list, "By core time", ranks findings by the busy core time a fix removes, including findings with no run-time claim. A line under the summary states how much of the allocation ran no task. **Copy next steps**
 copies the whole plan as a plain checklist (run, verdict, and numbered steps
 with their stage and savings) to paste into a ticket or a message. Steps
-follow the same savings ranking as the rest of the board. When much of the
+follow the same stage task-time ranking as the recommendations. When much of the
 run's executor capacity sat idle, the summary says so, without moving
 cluster size ahead of a bigger fix. When the Findings tab lists more
 findings, a **More findings (n)** link under the steps takes you there.

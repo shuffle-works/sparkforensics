@@ -14,7 +14,8 @@ import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type Tail
 import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
 import {
   BROADCAST_BANDWIDTH_BPS, EXECUTOR_STARTUP_OVERHEAD_MS, FILE_OPEN_OVERHEAD_MS, IDEAL_BYTES_PER_PARTITION_TASK,
-  NETWORK_FETCH_PENALTY_MS, RE_READ_THROUGHPUT_BPS, SHUFFLE_THROUGHPUT_BPS, SPILL_IO_THROUGHPUT_BPS, TAIL_CLAIM,
+  NETWORK_FETCH_PENALTY_MS, RE_READ_THROUGHPUT_BPS, SHUFFLE_THROUGHPUT_BPS, SPILL_IO_THROUGHPUT_BPS, SPILL_TASK_TIME_SHARE_MAX,
+  SPILL_TASK_TIME_SHARE_PER_PASS, TAIL_CLAIM, spillTaskTimeShare,
   TASK_SCHEDULING_OVERHEAD_MS, costOnly, fetchWaitWallClockMs, measuredTaskOverhead, multiStageImpact, noWasteModel,
   ioModelAssumption, retryWallClockMs, singleStageImpact, stageIoParallelism, stageMappableWasteOrCostOnly, tasksMostlyIdle, withAssumptions,
   type EstimateCtx,
@@ -249,7 +250,17 @@ function pickDominantReason(reasons: DetectorFailureReason[] | undefined): strin
 export function unionStageIds(nodes: PlanNode[], fallback: number[]): number[] {
   const union = new Set<number>();
   for (const node of nodes) for (const sid of node.stageIds ?? []) union.add(sid);
-  return union.size > 0 ? [...union].sort((a, b) => a - b) : fallback;
+  if (union.size > 0) return [...union].sort((a, b) => a - b);
+  executionWideStageIds.add(fallback);
+  return fallback;
+}
+
+// The fallback arrays unionStageIds returned: the whole execution's stages, not the stages the
+// finding ran on, so their task time is not the finding's.
+const executionWideStageIds = new WeakSet<number[]>();
+
+export function isExecutionWideStageIds(stageIds: number[]): boolean {
+  return executionWideStageIds.has(stageIds);
 }
 
 // Bottom-up shape computation for duplicate-subtree detection and the
@@ -2063,11 +2074,20 @@ export const DETECTORS = [
       const stage = ctx.stages.get(finding.stageId);
       if (!stage) return null;
       const diskBytesSpilled = stage.diskBytesSpilled ?? 0;
-      const wasteMs = (diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
-      // Surfaces the number the formula uses: the displayed metric is memoryBytesSpilled, but disk spill costs the I/O time.
+      const ioMs = (diskBytesSpilled / (SPILL_IO_THROUGHPUT_BPS * stageIoParallelism(stage))) * 1000;
+      // The same share of task time is the same share of the stage's duration at constant concurrency.
+      const cpuShare = spillTaskTimeShare(stage);
+      const durationMs = Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
+      const wasteMs = ioMs + durationMs * (cpuShare ?? 0);
+      const cpuAssumption = cpuShare === null
+        ? 'the stage read no bytes to compare its memory spill to, so serialization and sort CPU is not counted'
+        : `plus ${Math.round(cpuShare * 100)}% of the stage's task time as serialization and sort CPU (${SPILL_TASK_TIME_SHARE_PER_PASS * 100}% per pass of its read bytes through memory spill, capped at ${SPILL_TASK_TIME_SHARE_MAX * 100}%)`;
+      // The displayed metric is memoryBytesSpilled; the raw figure is the disk bytes that cost the I/O time.
       return withAssumptions(
-        singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: diskBytesSpilled, unit: 'bytes' }),
-        `${ioModelAssumption(SPILL_IO_THROUGHPUT_BPS, stage)}; counts disk spill only, not memory spill, serialization or GC`,
+        // The sort CPU is part of the core work, so removing it lowers the stage's core-work floor too.
+        singleStageImpact(wasteMs, finding.stageId, ctx, 'modeled', { value: diskBytesSpilled, unit: 'bytes' },
+          { removedCoreWorkMs: (stage.executorRunTime ?? 0) * (cpuShare ?? 0) }),
+        `${ioModelAssumption(SPILL_IO_THROUGHPUT_BPS, stage)} for disk spill, ${cpuAssumption}; GC is not counted`,
       );
     },
   }),

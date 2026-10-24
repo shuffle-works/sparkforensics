@@ -17,9 +17,9 @@ list). The rollup and its ranking are computed in core by `interpretRun`
 `useFixTheseFirstData` reads it through `boardRollup`
 (`src/view/interpretation.ts`: the interpretation's carried groups when
 unfiltered, core `rankedRollup` recomputed over the kept findings under a
-filter). `ImpactBoard` then buckets rows by each group's `band` (its
-representative member's impact band, after core `rankFindings`, the same
-finding whose impact band its own badge already shows) and cards by each
+filter). `ImpactBoard` then buckets rows by each group's `band` (its worst
+member's impact band, which the group row's badge also shows, while
+`rankFindings` orders the members by stage task time) and cards by each
 active widget's own `worstImpactBand`. The verdict's step leads
 (`verdictLeads`) are dropped before the rollup and the cards the verdict
 shows in place (`verdictWidgetIds`) before `computeActiveWidgets`'s list is
@@ -40,8 +40,10 @@ within a type by impact kind and, for `resource`, unit: never merged across
 types); each resulting group becomes one row: a type with exactly one
 finding renders that finding directly, a type with more than one collapses
 into a summary row. Within an impact band, group order comes from
-`buildRecommendationRollup`'s own sort: `time` groups (a real `wallClock`
-claim) first, ranked among themselves by their union-capped
+`buildRecommendationRollup`'s own sort: groups ranked by the largest `impactEstimate.stageTaskMs`
+among their warning and critical members first (`rankStageCostMs`, the verdict steps' axis). Ties and
+the rest follow in this order: `time` groups (a real `wallClock`
+claim), ranked among themselves by their union-capped
 `recoverableMsHigh` descending; then `resource` groups (`rawWaste` but no
 `wallClock`); then `count` groups (neither), both of the latter two ranked
 by worst impact band, never by their incomparable raw magnitudes.

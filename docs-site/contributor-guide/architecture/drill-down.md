@@ -15,7 +15,7 @@ finding type at the stage (`locationKey`'s rule, the one the verdict groups
 steps by: a `stageId` match, or a `stageIds` list naming only this stage)
 the way `RunVerdict` lists a step: tag and action label, the measurement ("What's happening", split off by `recommendationParts`), "What to try", the impact estimate, and a
 **Show evidence** button. Types follow the verdict's own order
-(`buildNextSteps`: potential savings first, failure findings first on a run
+(`buildNextSteps`: stage task time, then potential savings, failure findings first on a run
 whose jobs failed), with types outside the stage's own verdict step after them,
 worst band first. The grouping and order are computed once by `interpretRun`
 (`interpretStages` in `packages/core/src/run-interpretation.ts`, shipped as

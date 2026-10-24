@@ -279,8 +279,9 @@ function FindingInstanceRow({
 /** A type with more than one finding: a collapsed summary row (tag + the
  * highest-impact member's action label and recommendation + the group's trailing
  * stat) that expands to a paginated list of every finding in the group. The
- * tag/label/text come from the same highest-impact finding, so the row reads as
- * one identity even though the trailing stat describes the whole group. */
+ * label/text come from the same highest-impact finding, so the row reads as
+ * one identity even though the trailing stat describes the whole group; the
+ * tag carries the group's band, the heading it sits under. */
 export function TypeGroupRow({
   group,
   allFindings,
@@ -328,7 +329,7 @@ export function TypeGroupRow({
     <>
       <TableRow data-testid="fix-these-first-group-row" data-finding-type={group.type} className={STACKED_ROW}>
         <TableCell className={cn('w-px', STACKED_TAG_CELL)}>
-          <TagBadge type={group.type} impactBand={best.impactBand} docAnchor={sharedDocAnchor(group.findings)} />
+          <TagBadge type={group.type} impactBand={group.band} docAnchor={sharedDocAnchor(group.findings)} />
         </TableCell>
         <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
           <button

@@ -132,11 +132,11 @@ describe('buildRunVerdict', () => {
     expect(verdict.copyText).toContain('2. ');
   });
 
-  it('names the stage to start with and what the first fix could save', () => {
+  it('names the stage to start with and what step 1 could save', () => {
     const verdict = buildRunVerdict(appModel(), [timed('skew', 1, 2)]);
     expect(verdict.title).toBe('Start with Stage 1');
     expect(verdict.summary).toContain('1 finding in 1 place.');
-    expect(verdict.summary.some((s) => /^The first fix could save up to 2\.0s of this/.test(s))).toBe(true);
+    expect(verdict.summary.some((s) => /^Step 1 could save up to 2\.0s of this/.test(s))).toBe(true);
     expect(verdict.remaining).toBe(0);
   });
 
