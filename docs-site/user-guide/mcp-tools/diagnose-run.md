@@ -9,7 +9,7 @@ first three places to look in the dashboard's order (each with its action, what
 to try, the potential savings and what that figure counts, the other
 finding types flagged at the same place, and `leadFinding`, the row of the
 finding that leads the step), `costSteps`, the same places ranked by the
-measured busy core time a fix removes (only findings that carry one), `idle`, the
+busy core time a fix removes (only findings that carry one), `idle`, the
 core-hours and share of the allocation that ran no task, `remainingPlaces`, how many more
 places the full list holds, and `copyText`, the dashboard's "Copy next steps"
 checklist. A `summary` sentence such as "3 findings in 2 places." counts the

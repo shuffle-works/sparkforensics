@@ -76,7 +76,7 @@ export function rankBySavings(findings: Finding[]): Finding[] {
   return candidates.map(({ finding }) => finding);
 }
 
-/** One entry of the cost lane: a finding and the measured busy core time its fix removes. */
+/** One entry of the cost lane: a finding and the busy core time its fix removes. */
 export interface CostLaneEntry {
   finding: Finding;
   /** `impactEstimate.coreTimeMs.high`, in core-milliseconds. */
@@ -85,7 +85,7 @@ export interface CostLaneEntry {
   figure: string;
 }
 
-/** The cost lane: rankable findings ordered by measured busy core time (`coreTimeMs.high`), the
+/** The cost lane: rankable findings ordered by busy core time (`coreTimeMs.high`), the
  * one unit all of them share. An idle capacity figure, a figure on an assumed constant and a
  * bytes-only figure never carry `coreTimeMs` (spill's modeled sort CPU is the exception), and a finding without one is in neither lane. Ties fall back to impact
  * band, widget display order, then input order, like `rankBySavings`. */

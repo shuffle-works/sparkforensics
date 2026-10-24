@@ -58,7 +58,7 @@ export interface InterpretedStep {
   copyText: string;
 }
 
-/** One cost-lane entry: a finding ranked by the measured busy core time its fix removes.
+/** One cost-lane entry: a finding ranked by the busy core time its fix removes.
  * `leadIndex` names the finding. */
 export interface InterpretedCostStep {
   leadIndex: number;
@@ -76,7 +76,7 @@ export interface RunVerdictData {
   failureReason: string | null;
   /** Ranked by stage task time, then potential savings (the time lane, `rankBySavings`). */
   steps: InterpretedStep[];
-  /** Ranked by measured busy core time (the cost lane); only findings with such a figure. */
+  /** Ranked by busy core time (the cost lane); only findings with such a figure. */
   costSteps: InterpretedCostStep[];
   /** The run's idle capacity line ("14.8 core-h (22%) of the allocation ran no task."), or null. */
   idleLine: string | null;

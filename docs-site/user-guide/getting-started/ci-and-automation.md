@@ -104,10 +104,10 @@ the `recommendation` gives.
 executor task time, in core-milliseconds, next to the `wallClock` range
 (elapsed time). It is a `{ "low": ..., "high": ... }` range with `low` equal
 to `high`, or `null` when the detector measures no such figure: `null` means
-unknown, never zero. Only figures read from the log count: GC time, the
+unknown, never zero. Figures read from the log count: GC time, the
 executor time of retried and discarded speculative attempts, and for skew
-and straggler findings the task time the fix removes from the slow tasks. A `spill` finding adds
-its modeled serialization and sort CPU, a share of the stage's executor time. These are set even when the log has
+and straggler findings the task time the fix removes from the slow tasks. The one modeled figure is
+a `spill` finding's serialization and sort CPU, a share of the stage's executor time. These are set even when the log has
 no executor core data. A finding with only a wall-clock claim has
 `coreTimeMs: null`: its elapsed time is not converted to core time. Task run
 time is used, not `executorCpuTime`, so Python worker CPU is not missed.
