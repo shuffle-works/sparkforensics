@@ -4,6 +4,8 @@ import { computeOccupancy } from '../src/occupancy.js';
 import { capCriticalByTaskTime, CRITICAL_MIN_TASK_TIME_SHARE } from '../src/impact-band.ts';
 import { rankedRollup, rankStageCostMs } from '../src/recommendation-rollup.ts';
 import { buildNextSteps } from '../src/run-verdict.ts';
+import { analyze } from '../src/analyzer.js';
+import { makeApp } from './fixtures/stage-app-fixtures.js';
 
 const HOUR_MS = 3_600_000;
 
@@ -153,5 +155,31 @@ describe('spill impact estimate', () => {
     expect(light.wallClock.high).toBeCloseTo(30 * 60_000 * 0.05, 0);
     const noBase = spillEstimate({ memoryBytesSpilled: 50e9, diskBytesSpilled: 0 });
     expect(noBase.assumptions).toContain('serialization and sort CPU is not counted');
+  });
+});
+
+describe('task-hour ranking: plan findings on the execution-wide stage fallback', () => {
+  const MB = 1024 * 1024;
+  // One execution over two heavy stages; the write node either has stage coverage or none.
+  function run(writeStageIds) {
+    const write = {
+      name: 'Execute InsertIntoHadoopFsRelationCommand', detail: '', children: [], stageIds: writeStageIds,
+      metrics: [{ name: 'number of written files', value: 800, metricType: 'sum' }, { name: 'written output', value: 0.8 * MB, metricType: 'sum' }],
+    };
+    const planTree = { name: 'Project', detail: '', metrics: [], children: [write] };
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 30 * 60_000, stageIds: [1, 2], planTree }]]);
+    const stages = new Map([1, 2].map((id) => [id, stage(id, 100, { sqlExecutionId: 1 })]));
+    return analyze(makeApp(), stages, [], [], new Map(), sql).find((f) => f.type === 'smallFiles');
+  }
+
+  it('gives a smallFiles finding on the fallback no stage task time', () => {
+    const smallFiles = run(undefined);
+    expect(smallFiles.stageIds).toEqual([1, 2]);
+    expect(smallFiles.impactEstimate.stageTaskMs).toBeUndefined();
+    expect(rankStageCostMs(smallFiles)).toBe(0);
+  });
+
+  it('keeps the task time of the stage a plan node ran on', () => {
+    expect(run([2]).impactEstimate.stageTaskMs).toBe(100 * HOUR_MS);
   });
 });

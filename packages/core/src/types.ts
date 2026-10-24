@@ -389,7 +389,8 @@ export interface ImpactEstimate {
    * carries none. Absent when the log lacks the executor cores the allocation needs. */
   idleCoreTimeMs?: { low: number; high: number };
   /** Task time in milliseconds of the stages the finding sits on, which the verdict steps and the
-   * recommendations rank warning and critical findings by. Absent without a stage or task time. */
+   * recommendations rank warning and critical findings by. Absent without a stage or task time, and
+   * when a plan finding's stageIds are its whole execution's (unionStageIds' fallback). */
   stageTaskMs?: number;
 }
 

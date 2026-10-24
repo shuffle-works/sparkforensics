@@ -1,11 +1,13 @@
 import type { Finding } from './types.ts';
-import { ENTRY_BY_TYPE } from './detectors.ts';
+import { ENTRY_BY_TYPE, isExecutionWideStageIds } from './detectors.ts';
 import { coreTimeFor, stageTaskMs, type EstimateCtx } from './impact-model.ts';
 
 export type { EstimateCtx } from './impact-model.ts';
 
-// The task time of the stages the finding sits on; undefined when there is none.
+// The task time of the stages the finding sits on; undefined when there is none or when its
+// stageIds are only its execution's.
 function findingStageTaskMs(f: Finding, ctx: EstimateCtx): number | undefined {
+  if ('stageIds' in f && isExecutionWideStageIds(f.stageIds)) return undefined;
   const ids = 'stageIds' in f ? f.stageIds : f.stageId != null ? [f.stageId] : [];
   const total = ids.reduce((sum, id) => sum + (ctx.stages.has(id) ? stageTaskMs(ctx.stages.get(id)!) : 0), 0);
   return total > 0 ? total : undefined;

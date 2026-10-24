@@ -134,7 +134,8 @@ read the numbers from `impactEstimate` and `evidence`, not from these strings.
 
 `impactEstimate.stageTaskMs` is the task time, in milliseconds, of the stages a finding sits on. The
 verdict steps and the recommendations rank by it, largest first, and a `critical` band needs the stage
-to carry at least 2% of the run's task time. It is absent without a stage or task time.
+to carry at least 2% of the run's task time. It is absent without a stage or task time, and on a plan
+finding whose plan nodes ran on no recorded stage, since its stage ids are then the whole SQL execution's.
 
 `impactEstimate.idleCoreTimeMs` is the idle capacity as a number a script can
 rank by: the `utilization` finding's allocated core time that ran no task, in

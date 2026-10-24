@@ -248,7 +248,17 @@ function pickDominantReason(reasons: DetectorFailureReason[] | undefined): strin
 export function unionStageIds(nodes: PlanNode[], fallback: number[]): number[] {
   const union = new Set<number>();
   for (const node of nodes) for (const sid of node.stageIds ?? []) union.add(sid);
-  return union.size > 0 ? [...union].sort((a, b) => a - b) : fallback;
+  if (union.size > 0) return [...union].sort((a, b) => a - b);
+  executionWideStageIds.add(fallback);
+  return fallback;
+}
+
+// The fallback arrays unionStageIds returned: the whole execution's stages, not the stages the
+// finding ran on, so their task time is not the finding's.
+const executionWideStageIds = new WeakSet<number[]>();
+
+export function isExecutionWideStageIds(stageIds: number[]): boolean {
+  return executionWideStageIds.has(stageIds);
 }
 
 // Bottom-up shape computation for duplicate-subtree detection and the
