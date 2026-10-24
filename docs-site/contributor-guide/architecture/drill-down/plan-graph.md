@@ -227,8 +227,10 @@ operator is legible: category and segment, duration share, the node's findings
 Exchange half the inspector adds an **Exchange section**: which half is in view,
 the shuffle volume across the boundary (`PlanGraphNodeData.exchangeShuffleBytes`,
 the same producing-stage bytes the pairing edge is weighted by, mirrored onto
-both halves so it shows whichever half is open, or "Broadcast, no shuffle"), and
-a **jump to the paired half** (`PlanGraphNodeData.pairedNodeId`). Because the two
+both halves so it shows whichever half is open, or "Broadcast, no shuffle"), the
+width of its rows (`PlanGraphNodeData.exchangeWidth`, from `PlanNode.rowWidth`,
+which `resolvePlanTree` sets on every exchange whose columns or bytes per row are
+known), and a **jump to the paired half** (`PlanGraphNodeData.pairedNodeId`). Because the two
 halves always sit in different segments, the jump selects the partner directly
 when it is already on screen (full plan) and otherwise expands to the full plan
 first, then selects it (`handleJumpToPaired` in `PlanGraphRoute.tsx`, carried

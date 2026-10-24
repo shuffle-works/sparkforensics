@@ -163,12 +163,16 @@ export interface SpillOperator {
   feeds?: string;
 }
 
-/** The exchange an operator reads from (its read half's plan node id): the columns of its rows, and the
- * estimated bytes per row ("data size" over shuffle records written). Each is absent when unknown. */
-export interface SpillExchange {
-  nodeId: string;
+/** The columns of an exchange's rows and their estimated bytes per row ("data size" over shuffle
+ * records written). Each is absent when unknown. */
+export interface ExchangeWidth {
   columns?: number;
   bytesPerRow?: number;
+}
+
+/** The width of an exchange an operator reads from, with its read half's plan node id. */
+export interface SpillExchange extends ExchangeWidth {
+  nodeId: string;
 }
 
 export interface SpillEvidence {

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { X, ArrowLeftRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { TagBadge } from '@/view/ImpactBadge';
-import { formatBytes } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, formatRowWidth } from '@sparkforensics/core/format-utils.ts';
 import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { CATEGORY_ICON } from '@/view/plan-graph/PlanGraphNode';
 import type { PlanGraphNodeData } from '@sparkforensics/core/types.ts';
@@ -124,6 +124,11 @@ export function PlanGraphNodeDetail({
             </p>
           ) : node.label.startsWith('Broadcast') ? (
             <p className="mt-1 text-muted-foreground">Broadcast, no shuffle</p>
+          ) : null}
+          {node.exchangeWidth ? (
+            <p className="mt-1 text-muted-foreground">
+              Rows <span className="font-medium tabular-nums text-foreground">{formatRowWidth(node.exchangeWidth)}</span>
+            </p>
           ) : null}
           {node.pairedNodeId && onJumpToPaired ? (
             <Button

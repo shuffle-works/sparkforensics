@@ -8,9 +8,9 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
-import { formatBytes, recommendPartitions, IMPACT_BAND_ORDER, numericValue, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE } from '@sparkforensics/core/format-utils.ts';
+import { describeSpillRatio, formatBytes, formatRowWidth, recommendPartitions, IMPACT_BAND_ORDER, numericValue, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
 import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
 import { useWidgetDensity } from '@/store/store';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
@@ -31,6 +31,25 @@ type SpillClass = 'skew' | 'volume' | 'unclassified';
 function classificationOf(appModel: WidgetProps['appModel'], stageId: number): SpillClass {
   const stage = appModel.stages.get(stageId);
   return stage?.spillClassification ?? 'unclassified';
+}
+
+/** Where the stage's spill sits: the operators that spilled, the spill-to-input ratio and the width
+ * of the rows they read. */
+function SpillEvidence({ finding }: { finding: FindingOf<'spill'> }) {
+  const { operators = [], exchanges = [], spillToInputRatio, wideRows = false, reads } = finding;
+  if (operators.length === 0 && exchanges.length === 0 && spillToInputRatio === undefined) return null;
+  return (
+    <ul className="space-y-0.5 text-sm text-muted-foreground">
+      {operators.length > 0 ? (
+        <li>
+          Spilled by{' '}
+          {operators.map((op) => `${op.name}${op.feeds ? ` (feeds ${op.feeds})` : ''} ${formatBytes(op.spillBytes)}`).join(', ')}
+        </li>
+      ) : null}
+      {spillToInputRatio !== undefined ? <li>{describeSpillRatio(spillToInputRatio, wideRows, reads === 'input')}</li> : null}
+      {exchanges.length > 0 ? <li>Rows read: {exchanges.map(formatRowWidth).join('; ')}</li> : null}
+    </ul>
+  );
 }
 
 /** One flagged stage's row. */
@@ -71,6 +90,7 @@ function SpillRow({
         {' · '}
         Disk: {formatBytes(stage?.diskBytesSpilled ?? 0)}
       </p>
+      {finding.type === 'spill' ? <SpillEvidence finding={finding} /> : null}
       <ImpactEstimate finding={finding} />
       {partitionHint ? <PartitionHint hint={partitionHint} /> : null}
       {showPlanExplorer ? (

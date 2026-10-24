@@ -21,6 +21,9 @@ import {
   type SparkPlanInfo,
 } from './event-schemas.ts';
 import { DELTA_COMMANDS } from './delta-commands.ts';
+import { exchangeWidth } from './spill-attribution.ts';
+import { isExchangeNode } from './plan-node-detail.ts';
+import { walkPlanTree } from './plan-tree-walk.ts';
 import { assertNever } from './assert-never.ts';
 import { finalizeStage } from './stage-quantiles.ts';
 import { MAX_FAILURE_DETAILS_PER_STAGE, extractTaskFailureDetail, taskFailureKey, type TaskFailureDetail } from './task-failure.ts';
@@ -259,6 +262,8 @@ export interface ParserState {
   // An open SQL execution's latest AQE update, as raw line text, not yet parsed (see
   // deferAdaptiveUpdate). Applied when the execution ends, or at parse completion.
   pendingAdaptiveUpdates: Map<number, string>;
+  // Per open execution: the column count of each Exchange by plan_id (see keptExchangeInputs).
+  exchangeColumns: Map<number, Map<number, number>>;
   // SQL executions whose plan tree endSqlExecution already resolved and posted.
   resolvedPlanExecutions: Set<number>;
 }
@@ -350,8 +355,8 @@ export function buildChunkDecoder() {
       pendingSettled = true;
       return;
     }
-    // A small kept description is not skipped: the line completes in a later chunk and
-    // stripPlanDescription keeps its arguments line.
+    // A description that may still be kept is not skipped: the line completes in a later chunk and
+    // stripPlanDescription keeps what it reads from it.
     const disposition = descriptionDisposition(pending, valueStart);
     if (disposition === 'wait') { undecidedValueStart = valueStart; return; }
     undecidedValueStart = -1;
@@ -466,6 +471,7 @@ export function createState(): ParserState {
     lastTaskAccumIds: new Map(),
     executorPeakMetrics: new Map(),
     pendingAdaptiveUpdates: new Map(),
+    exchangeColumns: new Map(),
     resolvedPlanExecutions: new Set(),
     evidenceInputs: {
       environmentUpdates: 0,
@@ -775,6 +781,7 @@ export function resolvePlanTree(
   executionStageIds: Set<number> | undefined,
   executionId?: number,
   executorAccumMap?: Map<number, number>,
+  exchangeColumns?: Map<number, number>,
 ): PlanNode {
   const seen = new WeakSet<SparkPlanInfo>();
   const nodeMap = new WeakMap<SparkPlanInfo, PlanNode>();
@@ -844,6 +851,9 @@ export function resolvePlanTree(
       exchangeRole: 'write',
     };
     if (stageIds) write.stageIds = stageIds;
+    const planId = /\[plan_id=(\d+)\]/.exec(info.simpleString ?? '')?.[1];
+    const inputColumns = planId ? exchangeColumns?.get(Number(planId)) : undefined;
+    if (inputColumns !== undefined) write.inputColumns = inputColumns;
     // read = consumer side: keeps the original detail (plan-summary.ts's
     // partitioning-key regex needs it), no metrics of its own.
     const read: PlanNode = {
@@ -884,7 +894,15 @@ export function resolvePlanTree(
     nodeMap.set(info, node);
   }
 
-  return nodeMap.get(rootInfo)!;
+  const root = nodeMap.get(rootInfo)!;
+  walkPlanTree(root, (node) => {
+    if (node.exchangeRole === 'write' || !isExchangeNode(node)) return;
+    const rowWidth = exchangeWidth(node);
+    if (!rowWidth) return;
+    node.rowWidth = rowWidth;
+    if (node.exchangeRole) node.children[0].rowWidth = rowWidth;
+  }, { dedupe: true });
+  return root;
 }
 
 // Maps SparkListenerStageExecutorMetrics' "Executor Metrics" field names to our camelCase names.
@@ -1233,8 +1251,15 @@ export function startSqlExecution(event: z.infer<typeof SqlExecutionStartEventSc
   if (sparkPlanInfo !== null) {
     state.accumState.set(exec.id, new Map());
     state.executorAccumState.set(exec.id, new Map());
+    setExchangeColumns(state, exec.id, event.physicalPlanDescription);
   }
   return { type: 'sql', data: exec };
+}
+
+function setExchangeColumns(state: ParserState, executionId: number, description: string | undefined): void {
+  const columns = exchangeColumnsOf(description);
+  if (columns) state.exchangeColumns.set(executionId, columns);
+  else state.exchangeColumns.delete(executionId);
 }
 
 export function endSqlExecution(
@@ -1257,10 +1282,11 @@ export function endSqlExecution(
   const accumMap = state.accumState.get(event.executionId) ?? new Map<number, number>();
   const planTree = resolvePlanTree(
     planInfo, accumMap, state.taskAccumStages, state.sqlExecStages.get(event.executionId), event.executionId,
-    state.executorAccumState.get(event.executionId),
+    state.executorAccumState.get(event.executionId), state.exchangeColumns.get(event.executionId),
   );
   state.accumState.delete(event.executionId);
   state.executorAccumState.delete(event.executionId);
+  state.exchangeColumns.delete(event.executionId);
   // The resolved tree is all anything downstream reads; the raw plan (often megabytes per
   // execution under AQE) would otherwise stay live for the rest of the parse.
   exec!.sparkPlanInfo = null;
@@ -1304,7 +1330,10 @@ export function applyAdaptiveExecutionUpdate(
 ): { type: 'sql'; data: SqlExecutionRecord } | null {
   const exec = state.sqlExecutions.get(event.executionId);
   if (!exec) return null; // late update for an unseen execution, discard (same pattern as applyDriverAccumUpdates)
-  if (event.sparkPlanInfo != null) exec.sparkPlanInfo = event.sparkPlanInfo;
+  if (event.sparkPlanInfo != null) {
+    exec.sparkPlanInfo = event.sparkPlanInfo;
+    setExchangeColumns(state, event.executionId, event.physicalPlanDescription);
+  }
   exec.hadAdaptiveUpdate = true;
   // Re-emit a 'sql' message so the browser's structured-cloned appModel.sql copy sees the flip:
   // otherwise hadAdaptiveUpdate only reads true via collectRun's Node-path object aliasing, never
@@ -1441,11 +1470,17 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set(
 // rendering of the plan. The plan tree comes from sparkPlanInfo, so the description's string value
 // is cut out before JSON.parse (worker-protocol.md, "Decoder and parser calibration").
 //
-// One exception: a Delta write command's node prints only its bare name in sparkPlanInfo, and its
+// Two exceptions. A Delta write command's node prints only its bare name in sparkPlanInfo, and its
 // target table appears only on its `Arguments:` line of the description. When the description is
 // that of one of KEPT_ARGUMENTS_COMMANDS (checked on its first bytes, so no other line pays for it),
-// the value is cut down to that one line, never kept whole. A value that spans decoder chunks is
-// still dropped unread (buildChunkDecoder), so the write target then falls back to its child paths.
+// the value is cut down to that one line, never kept whole. A value that spans decoder chunks and
+// is longer than MAX_SCANNED_DESCRIPTION chars is still dropped unread (buildChunkDecoder), so the
+// write target then falls back to its child paths.
+//
+// The other: sparkPlanInfo lists no columns for an exchange, and the description's `Input [N]` line
+// of each Exchange block gives the exact count. A value of up to MAX_SCANNED_DESCRIPTION chars is
+// cut down to one `<plan_id> <N>` line per Exchange; a longer one is dropped, however its bytes are
+// chunked, and an exchange then takes the columns of the node below it.
 const SQL_UI_EVENT_PREFIX = '{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQL';
 const PLAN_DESCRIPTION_KEY = '"physicalPlanDescription":"';
 
@@ -1461,6 +1496,11 @@ const SMALL_DESCRIPTION_COMMANDS: ReadonlySet<string> = new Set(
   [...KEPT_ARGUMENTS_COMMANDS].filter((command) => command !== 'SaveIntoDataSourceCommand'),
 );
 const PLAN_HEADER = '== Physical Plan ==\\nExecute ';
+const MAX_SCANNED_DESCRIPTION = 256 * 1024;
+const EXCHANGE_INPUTS = 'ExchangeInputs';
+// An Exchange block of the JSON-escaped description: `(4) Exchange`, `Input [2]: [...]` and an
+// `Arguments:` line ending in `[plan_id=53]`, the id that sparkPlanInfo's Exchange line repeats.
+const EXCHANGE_BLOCK = /\\n\(\d+\) (?:Broadcast)?Exchange\\nInput \[(\d+)\]:(?:[^\\]|\\[^n])*\\nArguments: (?:[^\\]|\\[^n])*\[plan_id=(\d+)\]/g;
 // The kept form once JSON-parsed: `<Command>\nArguments: <line>`.
 const KEPT_ARGUMENTS = /^[A-Za-z]+\nArguments: /;
 
@@ -1498,14 +1538,17 @@ function describedCommand(text: string, valueStart: number): string | null {
 }
 
 // What to do with an open description value whose first bytes are text[valueStart...]: 'keep' it
-// (a small Delta command description), 'skip' it, or 'wait' when too little has arrived to tell.
+// (a small Delta command description), 'skip' it once it is past MAX_SCANNED_DESCRIPTION, or 'wait'
+// while it may still close within that length or too little has arrived to tell.
 function descriptionDisposition(text: string, valueStart: number): 'keep' | 'skip' | 'wait' {
   const seen = text.slice(valueStart, valueStart + PLAN_HEADER.length);
-  if (!PLAN_HEADER.startsWith(seen)) return 'skip';
-  if (seen.length < PLAN_HEADER.length) return 'wait';
-  const command = describedCommand(text, valueStart);
-  if (command === null) return 'wait'; // the command name is still arriving
-  return SMALL_DESCRIPTION_COMMANDS.has(command) ? 'keep' : 'skip';
+  if (seen.length < PLAN_HEADER.length && PLAN_HEADER.startsWith(seen)) return 'wait';
+  if (seen === PLAN_HEADER) {
+    const command = describedCommand(text, valueStart);
+    if (command === null) return 'wait'; // the command name is still arriving
+    if (SMALL_DESCRIPTION_COMMANDS.has(command)) return 'keep';
+  }
+  return text.length - valueStart > MAX_SCANNED_DESCRIPTION ? 'skip' : 'wait';
 }
 
 // The `<Command>\nArguments: <line>` part (still JSON-escaped) of the root command of a plan
@@ -1541,7 +1584,23 @@ export function stripPlanDescription(line: string): string {
   const quote = closingQuoteIndex(line, valueStart);
   // Unterminated string (a truncated line): leave it for JSON.parse to reject.
   if (quote === -1) return line;
-  return line.slice(0, valueStart) + (keptCommandArguments(line, valueStart, quote) ?? '') + line.slice(quote);
+  const kept = keptCommandArguments(line, valueStart, quote) ?? keptExchangeInputs(line, valueStart, quote);
+  return line.slice(0, valueStart) + (kept ?? '') + line.slice(quote);
+}
+
+// The `ExchangeInputs` line per Exchange block of the description whose value spans
+// line[valueStart, quote) (still JSON-escaped), or null when it is too long or has none.
+function keptExchangeInputs(line: string, valueStart: number, quote: number): string | null {
+  if (quote - valueStart > MAX_SCANNED_DESCRIPTION) return null;
+  let kept = '';
+  for (const [, columns, planId] of line.slice(valueStart, quote).matchAll(EXCHANGE_BLOCK)) kept += `\\n${planId} ${columns}`;
+  return kept ? EXCHANGE_INPUTS + kept : null;
+}
+
+// The column count of each Exchange by plan_id, from a description kept by keptExchangeInputs.
+function exchangeColumnsOf(description: string | undefined): Map<number, number> | undefined {
+  if (!description?.startsWith(EXCHANGE_INPUTS)) return undefined;
+  return new Map(description.split('\n').slice(1).map((entry) => entry.split(' ').map(Number) as [number, number]));
 }
 
 const TASK_END_PREFIX = '{"Event":"SparkListenerTaskEnd",';

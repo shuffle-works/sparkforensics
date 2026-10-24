@@ -397,3 +397,20 @@ test('card defaults collapsed and shows the peak-spill summary in the collapsed 
     expect(row).not.toBeVisible();
   }
 });
+
+test('shows the spilling operators, the spill-to-input ratio and the exchange widths', () => {
+  const catalog: Finding[] = [{
+    type: 'spill', stageId: 1, impactBand: 'critical', value: 600 * 1024 * 1024, recommendation: 'r', confidence: 'low',
+    reads: 'input', spillToInputRatio: 12, wideRows: true,
+    operators: [{ nodeId: 'e1:n3', name: 'Sort', spillBytes: 2e9, feeds: 'SortMergeJoin' }],
+    exchanges: [{ nodeId: 'e1:n2', columns: 128, bytesPerRow: 410 }],
+  }];
+  render(
+    <DocsProvider>
+      <Spill appModel={buildAppModel()} catalog={catalog} getTaskData={vi.fn()} defaultCollapsed={false} />
+    </DocsProvider>,
+  );
+  expect(screen.getByText(/Spilled by Sort \(feeds SortMergeJoin\) 2\.0 GB/)).toBeInTheDocument();
+  expect(screen.getByText(/12x the stage's input, so the rows are wide or the input files compress well/)).toBeInTheDocument();
+  expect(screen.getByText('Rows read: 128 columns · 410 B/row')).toBeInTheDocument();
+});

@@ -221,13 +221,65 @@ describe('buildChunkDecoder', () => {
       }
     });
 
-    it('drops a chunk-spanning Save description, which holds its whole query plan', () => {
-      const line = startLine(described('SaveIntoDataSourceCommand', 'org.apache.spark.sql.delta.sources.DeltaDataSource@1, [path=/t], Append'));
-      const bytes = enc.encode(`${line}\n`);
-      const dec = buildChunkDecoder();
-      const cut = line.indexOf('Range') - 10;
-      const got = [...dec.decode(bytes.subarray(0, cut)), ...dec.decode(bytes.subarray(cut)), ...dec.flush()].map(stripPlanDescription);
-      expect(JSON.parse(got[0]).physicalPlanDescription).toBe('');
+    it('keeps the arguments of a Save description that spans chunks within the scan limit, and drops a longer one', () => {
+      const save = 'org.apache.spark.sql.delta.sources.DeltaDataSource@1, [path=/t], Append';
+      const short = startLine(described('SaveIntoDataSourceCommand', save));
+      const long = startLine(described('SaveIntoDataSourceCommand', save, `\n${'x'.repeat(300 * 1024)}`));
+      for (const [line, cut, kept] of [
+        [short, short.indexOf('Range') - 10, `SaveIntoDataSourceCommand\nArguments: ${save}`],
+        [long, long.indexOf('Range') - 10, ''],
+      ]) {
+        const dec = buildChunkDecoder();
+        const bytes = enc.encode(`${line}\n`);
+        const got = [...dec.decode(bytes.subarray(0, cut)), ...dec.decode(bytes.subarray(cut)), ...dec.flush()].map(stripPlanDescription);
+        expect(JSON.parse(got[0]).physicalPlanDescription).toBe(kept);
+      }
+    });
+  });
+
+  describe('Exchange inputs in the plan description', () => {
+    const block = (id, columns, planId) =>
+      `(${id}) Exchange\nInput [${columns}]: [${Array.from({ length: columns }, (_, i) => `c${i}#${i}`).join(', ')}]\nArguments: hashpartitioning(c0#0, 200), ENSURE_REQUIREMENTS, [plan_id=${planId}]\n\n`;
+    const described = (padding = '') =>
+      `== Physical Plan ==\nAdaptiveSparkPlan (9)\n\n\n(1) Scan parquet db.t\nOutput [2]: [a#1, b#2]\n\n${block(4, 3, 53)}(5) Sort\nInput [3]: [a#1, b#2, c#3]\n\n${block(8, 128, 61)}${padding}`;
+    const updateLine = (description) => `{"Event":"org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate","executionId":1,"physicalPlanDescription":${JSON.stringify(description)},"sparkPlanInfo":{"nodeName":"AdaptiveSparkPlan"}}`;
+    const keptOf = (line) => JSON.parse(stripPlanDescription(line)).physicalPlanDescription;
+
+    it('cuts a description to the column count of each Exchange by plan_id', () => {
+      expect(keptOf(updateLine(described()))).toBe('ExchangeInputs\n53 3\n61 128');
+      expect(keptOf(updateLine('== Physical Plan ==\n(1) Sort\nInput [3]: [a#1]\n'))).toBe('');
+    });
+
+    it('reads no Exchange block that has no plan_id', () => {
+      expect(keptOf(updateLine(described().replaceAll(', [plan_id=53]', '')))).toBe('ExchangeInputs\n61 128');
+    });
+
+    it('reads a description up to the scan limit however its bytes are chunked, and none longer', () => {
+      const pad = (chars) => `(9) Filter\nCondition : ${'x'.repeat(chars)}\n`;
+      for (const [line, kept] of [
+        [updateLine(described(pad(1000))), 'ExchangeInputs\n53 3\n61 128'],
+        [updateLine(described(pad(300 * 1024))), ''],
+      ]) {
+        const bytes = enc.encode(`${line}\n`);
+        for (const size of [1000, 65536, 300000, bytes.length]) {
+          const dec = buildChunkDecoder();
+          const got = [];
+          for (let at = 0; at < bytes.length; at += size) got.push(...dec.decode(bytes.subarray(at, at + size)));
+          got.push(...dec.flush());
+          expect(got.map(keptOf)).toEqual([kept]);
+        }
+      }
+    });
+
+    it('records the column counts of an execution until its plan resolves, from the start and from the latest update', () => {
+      const state = createState();
+      const start = { Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionStart', executionId: 1, time: 1, physicalPlanDescription: 'ExchangeInputs\n53 3', sparkPlanInfo: { nodeName: 'Exchange', simpleString: 'Exchange x, [plan_id=53]', children: [], metadata: {}, metrics: [] } };
+      processEvent(start, state);
+      expect(state.exchangeColumns.get(1)).toEqual(new Map([[53, 3]]));
+      processEvent({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLAdaptiveExecutionUpdate', executionId: 1, physicalPlanDescription: 'ExchangeInputs\n61 128', sparkPlanInfo: start.sparkPlanInfo }, state);
+      expect(state.exchangeColumns.get(1)).toEqual(new Map([[61, 128]]));
+      processEvent({ Event: 'org.apache.spark.sql.execution.ui.SparkListenerSQLExecutionEnd', executionId: 1, time: 2 }, state);
+      expect(state.exchangeColumns.has(1)).toBe(false);
     });
   });
 

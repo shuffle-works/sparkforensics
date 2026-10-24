@@ -254,6 +254,20 @@ describe('buildPlanGraphModel', () => {
     expect(readHalf.exchangeShuffleBytes).toBe(4096);
   });
 
+  it('carries the exchange row width onto both Exchange halves', () => {
+    const exchange = splitExchange('Exchange hashpartitioning', [node('Scan parquet')]);
+    const rowWidth = { columns: 3, bytesPerRow: 30 };
+    exchange.rowWidth = rowWidth;
+    exchange.children[0].rowWidth = rowWidth;
+    const root = node('SortMergeJoin', [exchange]);
+    const appModel = makeAppModel({ planTree: root, stageId: 1, stageIds: [1, 2], stages: { 1: { submittedAt: 0, completedAt: 500 }, 2: { submittedAt: 500, completedAt: 1000 } } });
+
+    const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
+
+    expect(model.nodes.filter((n) => n.splitRole).map((n) => n.exchangeWidth)).toEqual([rowWidth, rowWidth]);
+    expect(model.nodes.find((n) => !n.splitRole).exchangeWidth).toBeUndefined();
+  });
+
   it('leaves exchangeShuffleBytes null on both halves of a zero-byte (broadcast/empty) exchange', () => {
     const leaf = node('Scan parquet');
     const exchange = splitExchange('BroadcastExchange', [leaf]);

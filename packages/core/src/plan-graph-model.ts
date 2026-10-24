@@ -57,6 +57,7 @@ function makeGraphNode({
     // Drop a detail that only repeats the operator name (no extra information
     // for the card); parseOperatorDetail already treats that case as empty.
     detailText: planNode.detail && planNode.detail !== planNode.name ? planNode.detail : '',
+    ...(planNode.rowWidth ? { exchangeWidth: planNode.rowWidth } : {}),
   };
 }
 

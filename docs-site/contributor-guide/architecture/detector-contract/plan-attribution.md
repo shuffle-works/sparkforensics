@@ -86,11 +86,13 @@ when `SQLExecutionEnd` arrives or at parse completion (`deferAdaptiveUpdate`,
 superseded update is never copied into one flat string either. The raw `sparkPlanInfo` stays worker-side and is released
 once `SQLExecutionEnd` resolves it into `planTree`; `physicalPlanDescription` (Spark's
 text rendering of the plan) is emptied before `JSON.parse` and never retained,
-except the one `Arguments:` line of a Delta write command, which
-`delta-targets.ts` reads to name the write target (`stripPlanDescription`,
-`event-handlers.ts`). `buildChunkDecoder`
+except two cuts (`stripPlanDescription`, `event-handlers.ts`): the one `Arguments:` line
+of a Delta write command, which `delta-targets.ts` reads to name the write target, and,
+for a value of up to `MAX_SCANNED_DESCRIPTION` (256 Ki chars), each Exchange block's
+`Input [N]` count keyed by its `plan_id`. `resolvePlanTree` stores that count as
+`inputColumns` on the exchange's write half, and `exchangeWidth` prefers it. `buildChunkDecoder`
 decodes each decompressed chunk in slices of at most 512 KiB, and drops the bytes of a
-value that crosses a slice boundary without decoding them.
+value longer than `MAX_SCANNED_DESCRIPTION` without decoding them.
 
 A plan node's metric values come from two sources. Driver-side values (file counts, broadcast
 `data size`) arrive in `SparkListenerDriverAccumUpdates` and are summed per execution in
