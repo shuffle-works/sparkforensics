@@ -38,7 +38,7 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, writ
   `copyText` is the whole checklist. `steps` rank by stage task time (`impactEstimate.stageTaskMs`), then wall-clock savings, as `recommendations` do. `costSteps` is a second lane
   ranked by measured busy core time (`impactEstimate.coreTimeMs.high`), each
   `{ stageId, type, tag, leadFindingId, actionLabel, coreTimeMs, coreTime }`: a finding with no
-  core-time figure (an idle capacity, modeled or bytes-only figure) is in neither lane. `idle` is
+  core-time figure (an idle capacity, assumed-constant or bytes-only figure) is in neither lane. `idle` is
   the run's allocated core time that ran no task, `{ coreHours, allocatedCoreHours, pct, text }`,
   or `null` without an allocation; no single finding's idle figure exceeds it. The Markdown
   opens with it as `## Verdict`, the two lanes labeled "By cluster time (task-hours)" and "By core time". The

@@ -14,6 +14,7 @@ import { EvidenceAvailabilityProvider } from '@/view/EvidenceAvailabilityContext
 import { SmallFiles } from '@/view/widgets/SmallFiles';
 import { expectImpactThenStageOrderByText } from './_shared/sort-order-toggle';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 function finding(overrides: Record<string, unknown> = {}): Finding {
   return {
@@ -24,12 +25,13 @@ function finding(overrides: Record<string, unknown> = {}): Finding {
     metric: 'avgFileBytes',
     value: 1024,
     recommendation: 'Coalesce input files before this read.',
-    impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' },
+    impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
     ...overrides,
   } as unknown as Finding;
 }
 
 function renderWidget(catalog: Finding[], { defaultCollapsed = false }: { defaultCollapsed?: boolean } = {}) {
+  installInterpretation(catalog);
   return render(
     <DocsProvider>
       <EvidenceAvailabilityProvider>
@@ -95,8 +97,8 @@ test('defaults to impact order (highest potential savings first), and a toggle f
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
   renderWidget([
-    finding({ stageIds: [1], recommendation: 'Coalesce stage 1', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } }),
-    finding({ stageIds: [2], recommendation: 'Coalesce stage 2', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } }),
+    finding({ stageIds: [1], recommendation: 'Coalesce stage 1', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 } }),
+    finding({ stageIds: [2], recommendation: 'Coalesce stage 2', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 } }),
   ]);
 
   const listItems = () => screen.getAllByRole('listitem').map((li) => li.textContent ?? '');

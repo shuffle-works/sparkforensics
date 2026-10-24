@@ -24,6 +24,7 @@ import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 
 import { StageSlowness } from '@/view/widgets/StageSlowness';
+import { installInterpretation } from './_shared/interpretation';
 
 function appModelWithStage(stageId: number): AppModel {
   return { ...emptyAppModel(), stages: new Map([[stageId, { id: stageId, name: `stage-${stageId}` }]]) as unknown as AppModel['stages'] };
@@ -65,6 +66,7 @@ test('flags every affected stage, not just the worst', () => {
     { type: 'stageSlowness', stageId: 2, impactBand: 'warning', value: 40, recommendation: 'r2' },
   ];
   const appModel: AppModel = { ...emptyAppModel(), stages: new Map([[1, { id: 1 }], [2, { id: 2 }]]) as unknown as AppModel['stages'] };
+  installInterpretation(catalog);
   render(<StageSlowness appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByRole('button', { name: /open details for stage 1/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /open details for stage 2/i })).toBeInTheDocument();
@@ -74,10 +76,11 @@ test('defaults to impact order (highest potential savings first), and a toggle f
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
   const catalog: Finding[] = [
-    { type: 'stageSlowness', stageId: 1, impactBand: 'warning', value: 16, recommendation: 'r1', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } },
-    { type: 'stageSlowness', stageId: 2, impactBand: 'warning', value: 40, recommendation: 'r2', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } },
+    { type: 'stageSlowness', stageId: 1, impactBand: 'warning', value: 16, recommendation: 'r1', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 } },
+    { type: 'stageSlowness', stageId: 2, impactBand: 'warning', value: 40, recommendation: 'r2', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 } },
   ];
   const appModel: AppModel = { ...emptyAppModel(), stages: new Map([[1, { id: 1 }], [2, { id: 2 }]]) as unknown as AppModel['stages'] };
+  installInterpretation(catalog);
   render(<StageSlowness appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
   const rows = () => screen.getAllByRole('button', { name: /open details for stage \d/i });
   await expectImpactThenStageOrderByAccessibleName(user, rows, /stage 1/i, /stage 2/i);
@@ -86,8 +89,8 @@ test('defaults to impact order (highest potential savings first), and a toggle f
 
 test('hides the sort toggle at basic density', () => {
   const catalog: Finding[] = [
-    { type: 'stageSlowness', stageId: 1, impactBand: 'warning', value: 16, recommendation: 'r1', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } },
-    { type: 'stageSlowness', stageId: 2, impactBand: 'warning', value: 40, recommendation: 'r2', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } },
+    { type: 'stageSlowness', stageId: 1, impactBand: 'warning', value: 16, recommendation: 'r1', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 } },
+    { type: 'stageSlowness', stageId: 2, impactBand: 'warning', value: 40, recommendation: 'r2', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 } },
   ];
   const appModel: AppModel = { ...emptyAppModel(), stages: new Map([[1, { id: 1 }], [2, { id: 2 }]]) as unknown as AppModel['stages'] };
   render(<StageSlowness appModel={appModel} catalog={catalog} defaultCollapsed={false} />);

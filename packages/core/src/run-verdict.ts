@@ -86,8 +86,8 @@ export interface CostLaneEntry {
 }
 
 /** The cost lane: rankable findings ordered by measured busy core time (`coreTimeMs.high`), the
- * one unit all of them share. An idle capacity figure, a modeled figure and a bytes-only figure
- * never carry `coreTimeMs`, and a finding without one is in neither lane. Ties fall back to impact
+ * one unit all of them share. An idle capacity figure, a figure on an assumed constant and a
+ * bytes-only figure never carry `coreTimeMs` (spill's modeled sort CPU is the exception), and a finding without one is in neither lane. Ties fall back to impact
  * band, widget display order, then input order, like `rankBySavings`. */
 export function buildCostLane(findings: Finding[]): CostLaneEntry[] {
   const entries = findings

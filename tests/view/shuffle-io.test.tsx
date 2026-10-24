@@ -37,6 +37,7 @@ test('flags every affected stage, not just the worst', () => {
     { type: 'shuffle', stageId: 1, impactBand: 'info', value: 200 * 1024 * 1024 },
     { type: 'shuffle', stageId: 2, impactBand: 'critical', value: 900 * 1024 * 1024 },
   ];
+  installInterpretation(catalog);
   render(<ShuffleIO appModel={appModel} catalog={catalog} defaultCollapsed={false} getTaskData={async () => null as never} />);
 
   expect(screen.getAllByRole('button', { name: /open details for stage 1/i }).length).toBeGreaterThan(0);
@@ -157,9 +158,10 @@ test('defaults to impact order (highest potential savings first), and a toggle f
     2: { shuffleReadBytes: 100 * 1024 * 1024, shuffleWriteBytes: 0, name: 'stage-2' },
   });
   const catalog: Finding[] = [
-    { type: 'shuffle', stageId: 1, impactBand: 'warning', value: 900 * 1024 * 1024, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } },
-    { type: 'shuffle', stageId: 2, impactBand: 'warning', value: 100 * 1024 * 1024, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } },
+    { type: 'shuffle', stageId: 1, impactBand: 'warning', recommendation: 'Fix it.', value: 900 * 1024 * 1024, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 } },
+    { type: 'shuffle', stageId: 2, impactBand: 'warning', recommendation: 'Fix it.', value: 100 * 1024 * 1024, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 } },
   ];
+  installInterpretation(catalog);
   render(<ShuffleIO appModel={appModel} catalog={catalog} defaultCollapsed={false} getTaskData={async () => null as never} />);
   const names = () => screen.getAllByText(/^stage-\d$/).map((el) => el.textContent);
   await expectImpactThenStageOrderByArray(user, names, 'stage-1', 'stage-2');
@@ -172,8 +174,8 @@ test('sort toggle stays hidden at basic density regardless of card state', () =>
     2: { shuffleReadBytes: 100 * 1024 * 1024, shuffleWriteBytes: 0, name: 'stage-2' },
   });
   const catalog: Finding[] = [
-    { type: 'shuffle', stageId: 1, impactBand: 'warning', value: 900 * 1024 * 1024, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } },
-    { type: 'shuffle', stageId: 2, impactBand: 'warning', value: 100 * 1024 * 1024, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } },
+    { type: 'shuffle', stageId: 1, impactBand: 'warning', recommendation: 'Fix it.', value: 900 * 1024 * 1024, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 } },
+    { type: 'shuffle', stageId: 2, impactBand: 'warning', recommendation: 'Fix it.', value: 100 * 1024 * 1024, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 } },
   ];
   render(<ShuffleIO appModel={appModel} catalog={catalog} defaultCollapsed={false} getTaskData={async () => null as never} />);
   expect(screen.queryByRole('group', { name: /sort order/i })).not.toBeInTheDocument();
@@ -230,7 +232,7 @@ test('sort toggle only renders when card is open, at advanced density', async ()
     },
     {
       type: 'shuffle', stageId: 2, impactBand: 'warning', value: 100 * 1e6,
-      impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' },
+      impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
     },
   ];
   render(<ShuffleIO appModel={appModel} catalog={catalog} getTaskData={async () => null as never} />);

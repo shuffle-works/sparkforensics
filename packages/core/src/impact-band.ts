@@ -33,10 +33,7 @@ export function appDurationMs(app: { startTime?: number | null; endTime?: number
  * unknown/zero app duration, or an explicit safety-signal exemption (partitionSizing's
  * maxPartitionTooBig rule) are left as the detector set them. Mutates in place and returns the array.
  *
- * Grades wallClock.high (matching triage-target/FixTheseFirst, which rank by the same optimistic
- * figure), a deliberate split from view/impact-sort.ts's 'impact' sort, which ranks by .low so an
- * optimistic-but-contended finding never outranks a smaller certain one. Same range, two fields for
- * two questions.
+ * Grades wallClock.high, the optimistic figure the verdict ranking uses after stage task time.
  *
  * `floorsFor` supplies a finding type's floors when a tuned run moved them (skew's and straggler's
  * own floorPctWarn/floorPctCrit); omitted, or for any type it returns nothing, the defaults above.

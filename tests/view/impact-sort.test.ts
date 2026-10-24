@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
 
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { byImpactDesc, byStageAsc, canToggleSort, stageIdOf, sumWallClockLow } from '../../src/view/impact-sort';
+import { byStageAsc, canToggleSort, orderByImpact, stageIdOf } from '../../src/view/impact-sort';
+import { installInterpretation } from './_shared/interpretation';
 
 function finding(overrides: Record<string, unknown> = {}): Finding {
   return {
@@ -15,29 +16,6 @@ function finding(overrides: Record<string, unknown> = {}): Finding {
 function withWallClockLow(low: number): Finding {
   return finding({ impactEstimate: { basis: 'serial', wallClock: { low, high: low }, estimateMethod: 'measured' } });
 }
-
-test('sumWallClockLow returns null for an empty finding list', () => {
-  expect(sumWallClockLow([])).toBeNull();
-});
-
-test('sumWallClockLow returns null when no finding in the list carries a wallClock estimate', () => {
-  expect(sumWallClockLow([finding(), finding({ type: 'gc' })])).toBeNull();
-});
-
-test('sumWallClockLow sums only the low bound of each finding carrying a wallClock estimate', () => {
-  const findings = [withWallClockLow(100), withWallClockLow(250)];
-  expect(sumWallClockLow(findings)).toBe(350);
-});
-
-test('sumWallClockLow ignores findings with no wallClock estimate mixed into the list, rather than returning null', () => {
-  const findings = [withWallClockLow(100), finding({ type: 'gc' }), withWallClockLow(50)];
-  expect(sumWallClockLow(findings)).toBe(150);
-});
-
-test('sumWallClockLow uses the low (guaranteed-floor) bound, not high, even when they differ', () => {
-  const f = finding({ impactEstimate: { basis: 'contended', wallClock: { low: 10, high: 9000 }, estimateMethod: 'measured' } });
-  expect(sumWallClockLow([f])).toBe(10);
-});
 
 test('stageIdOf returns the finding\'s own stageId when set', () => {
   expect(stageIdOf(finding({ stageId: 7 }))).toBe(7);
@@ -83,30 +61,48 @@ test('canToggleSort returns true when cardOpen is true, there is sortable impact
 
 const identityFindings = (f: Finding) => [f];
 
-test('byImpactDesc orders items with a higher summed wallClock.low first', () => {
-  const items = [withWallClockLow(100), withWallClockLow(5000)];
-  const sorted = [...items].sort(byImpactDesc(identityFindings));
-  expect(sorted).toEqual([items[1], items[0]]);
+function onStage(type: string, stageId: number, wallClockMs: number, stageTaskMs: number): Finding {
+  return finding({
+    type,
+    stageId,
+    impactEstimate: { basis: 'serial', wallClock: { low: wallClockMs, high: wallClockMs }, estimateMethod: 'measured', stageTaskMs },
+  });
+}
+
+test('orderByImpact lists rows in verdict step order when stage task time and wall-clock savings disagree', () => {
+  const catalog = [
+    onStage('spill', 1, 90_000, 1_000_000),
+    onStage('skew', 2, 5_000, 9_000_000),
+    onStage('gc', 3, 40_000, 4_000_000),
+  ];
+  const interpreted = installInterpretation(catalog);
+  const verdictOrder = interpreted.data.verdict.steps.map((step) => interpreted.findings[step.leadIndex]);
+
+  expect(verdictOrder).toEqual([catalog[1], catalog[2], catalog[0]]);
+  expect(orderByImpact(interpreted, catalog, identityFindings)).toEqual(verdictOrder);
 });
 
-test('byImpactDesc sinks a no-estimate item to the bottom, below one with any estimate', () => {
-  const noEstimate = finding({ type: 'gc' });
-  const withEstimate = withWallClockLow(1);
-  const sorted = [...[noEstimate, withEstimate]].sort(byImpactDesc(identityFindings));
-  expect(sorted).toEqual([withEstimate, noEstimate]);
+test('orderByImpact places a row at its best-ranked finding', () => {
+  const [low, mid, high] = [onStage('gc', 1, 1, 1_000), onStage('gc', 2, 1, 2_000), onStage('gc', 3, 1, 3_000)];
+  const rows = [{ findings: [low] }, { findings: [mid, high] }];
+  const interpreted = installInterpretation([low, mid, high]);
+
+  expect(orderByImpact(interpreted, rows, (row) => row.findings)).toEqual([rows[1], rows[0]]);
 });
 
-test('byImpactDesc treats two no-estimate items as a tie (comparator returns 0)', () => {
-  const a = finding({ type: 'gc' });
-  const b = finding({ type: 'spill' });
-  expect(byImpactDesc(identityFindings)(a, b)).toBe(0);
+test('orderByImpact ranks a finding with no stage after one with stage task time, and an unrankable one last', () => {
+  const noStage = finding({ type: 'gc' });
+  const unrankable = finding({ type: 'gc', stageId: 4, recommendation: '' });
+  const ranked = onStage('gc', 2, 1, 1_000);
+  const interpreted = installInterpretation([unrankable, noStage, ranked]);
+
+  expect(orderByImpact(interpreted, [unrankable, noStage, ranked], identityFindings)).toEqual([ranked, noStage, unrankable]);
 });
 
-test('byImpactDesc is a stable no-op for two equal-impact items, preserving the caller\'s original order', () => {
-  const a = withWallClockLow(500);
-  const b = withWallClockLow(500);
-  const sorted = [a, b].sort(byImpactDesc(identityFindings));
-  expect(sorted).toEqual([a, b]);
+test('orderByImpact keeps the given order without an interpretation', () => {
+  const items = [onStage('gc', 1, 1, 1_000), onStage('gc', 2, 1, 2_000)];
+
+  expect(orderByImpact(null, items, identityFindings)).toEqual(items);
 });
 
 const stageIdAccessor = (id: number | null) => id;

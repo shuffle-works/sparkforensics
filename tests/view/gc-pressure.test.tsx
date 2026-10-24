@@ -39,6 +39,7 @@ describe('GcPressure', () => {
       { type: 'gc', stageId: 3, impactBand: 'critical', value: 45, recommendation: 'r' },
       { type: 'gc', stageId: 9, impactBand: 'warning', value: 12, recommendation: 'r' },
     ];
+    installInterpretation(catalog);
     render(<GcPressure catalog={catalog} appModel={buildAppModel()} />);
     await user.click(screen.getByRole('button', { name: /^gc pressure$/i }));
 
@@ -179,13 +180,14 @@ describe('GcPressure', () => {
     const catalog: Finding[] = [
       {
         type: 'gc', stageId: 1, impactBand: 'warning', value: 40, recommendation: 'r',
-        impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' },
+        impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
       },
       {
         type: 'gc', stageId: 2, impactBand: 'warning', value: 20, recommendation: 'r',
-        impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' },
+        impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 },
       },
     ];
+    installInterpretation(catalog);
     render(<GcPressure catalog={catalog} appModel={buildAppModel()} defaultCollapsed={false} />);
 
     const stagePills = () => screen.getAllByRole('button', { name: /open details for stage \d/i });
@@ -198,13 +200,14 @@ describe('GcPressure', () => {
     const catalog: Finding[] = [
       {
         type: 'gc', stageId: 1, impactBand: 'warning', value: 40, recommendation: 'r',
-        impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' },
+        impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
       },
       {
         type: 'gc', stageId: 2, impactBand: 'warning', value: 20, recommendation: 'r',
-        impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' },
+        impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 },
       },
     ];
+    installInterpretation(catalog);
     render(<GcPressure catalog={catalog} appModel={buildAppModel()} defaultCollapsed={false} />);
 
     expect(screen.queryByRole('group', { name: /sort order/i })).not.toBeInTheDocument();
