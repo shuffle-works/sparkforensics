@@ -249,7 +249,7 @@ export interface PlanGraphNodeData {
    * segment filtering (which can drop the pairing edge). Null/absent on
    * non-split nodes and on a zero-byte exchange (e.g. a BroadcastExchange). */
   exchangeShuffleBytes?: number | null;
-  /** The width of this Exchange's rows (`PlanNode.rowWidth`), on both halves of a split one. */
+  /** The width of this exchange's rows (`PlanNode.rowWidth`), on both halves of a split one and on a ReusedExchange. */
   exchangeWidth?: ExchangeWidth;
 }
 
