@@ -12,7 +12,6 @@ import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { canToggleSort } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -58,7 +57,7 @@ function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stage
  * wasted executor time even though the stage ultimately completed. */
 export function RetryWaste({ appModel, catalog, defaultCollapsed = true }: RetryWasteProps) {
   const [page, setPage] = useState(0);
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const activeRouteTarget = useActiveRouteTarget();
 

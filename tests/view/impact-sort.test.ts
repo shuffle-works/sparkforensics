@@ -40,23 +40,31 @@ test('stageIdOf returns null for an app-level finding with neither stageId nor s
 
 test('canToggleSort returns false when cardOpen is false, regardless of findings or rowCount', () => {
   const f = withWallClockLow(100);
-  expect(canToggleSort([f], 2, false)).toBe(false);
+  expect(canToggleSort(installInterpretation([f]), [f], 2, false)).toBe(false);
 });
 
-test('canToggleSort returns false when there is no sortable impact, even if cardOpen is true', () => {
-  const f = finding({ type: 'gc' });
-  expect(canToggleSort([f], 2, true)).toBe(false);
+test('canToggleSort returns false when no finding in the list is ranked, even if cardOpen is true', () => {
+  const f = finding({ recommendation: '' });
+  expect(canToggleSort(installInterpretation([f]), [f], 2, true)).toBe(false);
+  expect(canToggleSort(null, [withWallClockLow(100)], 2, true)).toBe(false);
 });
 
-test('canToggleSort returns false when rowCount is 1 or less, even if cardOpen is true and there is sortable impact', () => {
+test('canToggleSort returns false when rowCount is 1 or less, even if cardOpen is true and a finding is ranked', () => {
   const f = withWallClockLow(100);
-  expect(canToggleSort([f], 1, true)).toBe(false);
-  expect(canToggleSort([f], 0, true)).toBe(false);
+  const interpreted = installInterpretation([f]);
+  expect(canToggleSort(interpreted, [f], 1, true)).toBe(false);
+  expect(canToggleSort(interpreted, [f], 0, true)).toBe(false);
 });
 
-test('canToggleSort returns true when cardOpen is true, there is sortable impact, and rowCount > 1', () => {
-  const f = withWallClockLow(100);
-  expect(canToggleSort([f], 2, true)).toBe(true);
+test('canToggleSort returns true for ranked findings with no wall-clock claim, which the impact order still moves', () => {
+  const findings = [
+    finding({ stageId: 1, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 1_000 } }),
+    finding({ stageId: 2, impactEstimate: { basis: 'serial', estimateMethod: 'none', stageTaskMs: 9_000 } }),
+  ];
+  const interpreted = installInterpretation(findings);
+
+  expect(orderByImpact(interpreted, findings, (f) => [f])).toEqual([findings[1], findings[0]]);
+  expect(canToggleSort(interpreted, findings, 2, true)).toBe(true);
 });
 
 const identityFindings = (f: Finding) => [f];

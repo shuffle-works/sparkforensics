@@ -16,7 +16,6 @@ import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
 import type { SlowHostFinding, StragglerFinding } from '@sparkforensics/core/finding-types.ts';
 import { useExpandableRow } from '@/view/useExpandableRow';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { canToggleSort } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -173,7 +172,7 @@ export const StageFindingGroupWidget = memo(function StageFindingGroupWidget({
   findingLabel,
 }: StageFindingGroupWidgetProps) {
   const [page, setPage] = useState(0);
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
 
   const { relevant, stageGroups, orderedGroups } = useMemo(() => {

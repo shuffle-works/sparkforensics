@@ -13,7 +13,7 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { StagePillGroup } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import { canToggleSort, stageIdOf } from '@/view/impact-sort';
+import { stageIdOf } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
@@ -47,7 +47,7 @@ function NestedLoopJoinRow({ finding }: { finding: FindingOf<'nestedLoopJoin'> }
  * whose output rows are far above both inputs. Its siblings are `SmallFiles.tsx`,
  * `UnderBroadcast.tsx`, `OverBroadcast.tsx` and `DuplicatePlanSubtree.tsx`. */
 export const NestedLoopJoin = memo(function NestedLoopJoin({ catalog, defaultCollapsed = true }: NestedLoopJoinProps) {
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 

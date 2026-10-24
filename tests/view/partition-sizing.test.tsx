@@ -162,6 +162,7 @@ test('sort toggle only renders when card is open, at advanced density', async ()
       impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 },
     },
   ];
+  installInterpretation(catalog);
   render(<PartitionSizing appModel={appModel} catalog={catalog} />);
 
   // Sort toggle should not be visible when the card is collapsed.
