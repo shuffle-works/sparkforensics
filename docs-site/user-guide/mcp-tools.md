@@ -34,7 +34,8 @@ other parameters.
 
 `compare_runs` takes two runs, so it names them `runIdA`/`sourceA` and
 `runIdB`/`sourceB`. `evaluate_budgets` takes `runId`/`source` and an optional
-second run as `runIdB`/`sourceB`. `get_finding_evidence` takes only a `runId`.
+second run as `runIdB`/`sourceB`. `get_finding_evidence` takes a
+`runId`, or a `source` with an optional `appId` to load the run again.
 `list_runs` returns one `source` per run, in this shape, so a row can be passed
 to the other tools.
 
@@ -158,7 +159,9 @@ and no `structuredContent`.
 
 The codes:
 
-- `run-not-found`: no cached run for the `runId` you passed.
+- `run-not-found`: no cached run for the `runId` you passed, or the `source`
+  of `get_finding_evidence` holds another application than its `appId`.
+- `invalid-cursor`: the `cursor` of `diagnose_run` does not match this call.
 - `finding-not-found`: that `findingId` isn't on that run.
 - `invalid-date-filter`: `list_runs`'s `minDate` or `maxDate` isn't a
   parseable date.

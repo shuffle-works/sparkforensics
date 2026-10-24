@@ -371,7 +371,7 @@ describe('createMcpServer', () => {
     }
   });
 
-  it('diagnose_run: format "md" puts markdown in content[0].text and a few headline fields in structuredContent', async () => {
+  it('diagnose_run: format "md" puts markdown in content[0].text and the same markdown with a few headline fields in structuredContent', async () => {
     const { dir, path } = tmpEventLog();
     try {
       const server = createMcpServer();
@@ -395,6 +395,7 @@ describe('createMcpServer', () => {
         findingCount: jsonResult.structuredContent.findings.length,
         findingsOmitted: 0,
         recommendationCount: jsonResult.structuredContent.recommendations.length,
+        markdown: mdResult.content[0].text,
       });
     } finally {
       rmSync(dir, { recursive: true, force: true });
