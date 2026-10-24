@@ -202,15 +202,16 @@ test('defaults to impact order (highest potential savings first), and a toggle f
   const catalog: Finding[] = [
     {
       type: 'spill', stageId: 1, impactBand: 'critical', value: 600 * 1024 * 1024,
-      recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' },
+      recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
       confidence: 'low',
     },
     {
       type: 'spill', stageId: 2, impactBand: 'warning', value: 300 * 1024 * 1024,
-      recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' },
+      recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 },
       confidence: 'low',
     },
   ];
+  installInterpretation(catalog);
   render(
     <DocsProvider>
       <Spill appModel={buildAppModel()} catalog={catalog} getTaskData={vi.fn()} defaultCollapsed={false} />
@@ -238,12 +239,12 @@ test('hides the sort toggle at basic density even with a wall-clock estimate', (
   const catalog: Finding[] = [
     {
       type: 'spill', stageId: 1, impactBand: 'critical', value: 600 * 1024 * 1024,
-      recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' },
+      recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
       confidence: 'low',
     },
     {
       type: 'spill', stageId: 2, impactBand: 'warning', value: 300 * 1024 * 1024,
-      recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' },
+      recommendation: 'r', impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 },
       confidence: 'low',
     },
   ];

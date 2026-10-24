@@ -373,8 +373,9 @@ export interface ImpactEstimate {
    * range; set by estimateImpact (see coreTimeFor). Only a figure read from the log as removed
    * task time counts: skew and straggler's removed task time, gc's jvmGCTime, or retried and
    * speculative attempts' cross-task executor time, taken as is (low equals high) whether or not
-   * the log records executor cores. Null for every finding with only a wall-clock claim, for a
-   * modeled figure resting on an assumed constant (coreLocality, autoscalingChurn,
+   * the log records executor cores, plus spill's modeled serialization and sort CPU (the stage's
+   * executor time times the spill share). Null for every finding with only a wall-clock claim, for
+   * a modeled figure resting on an assumed constant (coreLocality, autoscalingChurn,
    * jobFailureRate), for an idle capacity figure (`rawWaste.idle`), and for a modeled figure on a
    * serial basis (partitionSizing's lowShuffleParallelism): it is stage wall-clock that more
    * partitions shorten, not task work they remove, so consumers rank it on `wallClock`. skew and

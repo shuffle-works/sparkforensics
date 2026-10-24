@@ -1,28 +1,11 @@
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
+import type { InterpretationState } from '@/store/store';
+import { rankedBySavings } from './interpretation';
 
-/** `'impact'` ranks by potential savings (`wallClock.low`, descending);
+/** `'impact'` ranks as the verdict does (stage task time, then potential savings);
  * `'stage'` ranks by stage number ascending. */
 export type SortMode = 'impact' | 'stage';
-
-/** Sums `wallClock.low` across a list of findings tied to one row/group, or
- * `null` when none of them carry a wall-clock claim (a `resourceOnly`/
- * `informational` estimate isn't comparable to a time figure; see
- * impact-estimation.md). `low` is the guaranteed-floor bound, not `high`, so
- * a contended finding's optimistic upper bound never outranks a serial
- * finding's smaller but certain figure. */
-export function sumWallClockLow(findings: readonly Finding[]): number | null {
-  let total = 0;
-  let sawTime = false;
-  for (const f of findings) {
-    const wallClock = f.impactEstimate?.wallClock;
-    if (wallClock) {
-      sawTime = true;
-      total += wallClock.low;
-    }
-  }
-  return sawTime ? total : null;
-}
 
 /** True when at least one item in the list would actually move under an
  * impact sort: gates whether a widget bothers rendering the sort toggle at
@@ -40,19 +23,20 @@ export function canToggleSort(findings: readonly Finding[], rowCount: number, ca
   return hasSortableImpact(findings) && rowCount > 1 && cardOpen;
 }
 
-/** Comparator: descending potential savings, items with no wall-clock claim
- * sink to the bottom, ties fall through to `Array.prototype.sort`'s
- * stability (so the widget's own pre-existing order survives as the
- * tiebreak). */
-export function byImpactDesc<T>(getFindings: (item: T) => readonly Finding[]) {
-  return (a: T, b: T): number => {
-    const aImpact = sumWallClockLow(getFindings(a));
-    const bImpact = sumWallClockLow(getFindings(b));
-    if (aImpact == null && bImpact == null) return 0;
-    if (aImpact == null) return 1;
-    if (bImpact == null) return -1;
-    return bImpact - aImpact;
-  };
+/** Items in the interpretation's savings rank (core's `rankBySavings`, the order of `verdict.steps`).
+ * An item takes the place of its best-ranked finding; items with none keep their order after the
+ * rest. */
+export function orderByImpact<T>(
+  state: InterpretationState | null,
+  items: readonly T[],
+  getFindings: (item: T) => readonly Finding[],
+): T[] {
+  const place = new Map(rankedBySavings(state, items.flatMap(getFindings)).map((f, i) => [f, i]));
+  const keyed = items.map((item) => ({
+    item,
+    key: Math.min(Number.MAX_SAFE_INTEGER, ...getFindings(item).map((f) => place.get(f) ?? Number.MAX_SAFE_INTEGER)),
+  }));
+  return keyed.sort((a, b) => a.key - b.key).map(({ item }) => item);
 }
 
 /** A finding's own stage number: `stageId` for a per-stage detector, or the

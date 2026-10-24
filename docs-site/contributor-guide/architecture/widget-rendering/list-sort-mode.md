@@ -2,11 +2,13 @@
 
 How a Findings-tab widget opts into the shared list sort mode.
 
-`src/view/impact-sort.ts` (`sumWallClockLow`, `hasSortableImpact`, `canToggleSort`,
-`byImpactDesc`, `stageIdOf`, `byStageAsc`), `src/view/useSortMode.ts` and
+`src/view/impact-sort.ts` (`hasSortableImpact`, `canToggleSort`,
+`orderByImpact`, `stageIdOf`, `byStageAsc`), `src/view/useSortMode.ts` and
 `src/view/SortModeToggle.tsx` are a shared, opt-in set a Findings-tab active widget can use
-to let its own expanded, multi-row list default to potential-savings order (`wallClock.low`
-descending, the guaranteed-floor bound, not the optimistic `high`) instead of stage number.
+to let its own expanded, multi-row list default to the verdict's order instead of stage number:
+`orderByImpact` places each row at its best-ranked finding in the run interpretation's `savingsRank`
+(core's `rankBySavings`: stage task time, then potential savings). The export bundle cannot import
+that ranking, so views read the carried rank.
 Each of the widgets below gets its `sortMode` (`SortMode`, `'impact' | 'stage'`, default
 `'impact'`) from `useSortMode`, which forces impact order at Basic density, and renders a
 `SortModeToggle` in the `WidgetCard` `badges` slot, so it sits on the title row itself
@@ -33,8 +35,8 @@ several stages (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `pythonU
 via `stageIds`) sorts by the lowest stage id it touches (`stageIdOf`). The toggle renders
 only when `canToggleSort` holds: `hasSortableImpact` finds a wall-clock claim in the list,
 there is more than one row, and the card is open; re-sorting a list with no wall-clock
-claim would be a silent no-op. Both comparators return `0` when
-neither side has a comparable value, so those items keep their prior relative order
+claim would be a silent no-op. Rows with no
+rankable finding, and `byStageAsc` ties, keep their prior relative order
 (`Array.prototype.sort`'s stability) rather than being shuffled.
 `FixTheseFirst`'s own expanded group list (see "Findings tab" above) sorts by impact
 on its own and does not use this pattern; it has no stage-order toggle.

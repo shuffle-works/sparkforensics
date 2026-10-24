@@ -9,6 +9,7 @@ import { emptyAppModel, store } from '../../src/store/store';
 import { expectImpactThenStageOrderByAccessibleName } from './_shared/sort-order-toggle';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { testFinding } from './_shared/finding';
+import { installInterpretation } from './_shared/interpretation';
 
 function makeAppModel(stageNames: Record<number, string>): AppModel {
   const stages = new Map(Object.entries(stageNames).map(([id, name]) => [Number(id), { id: Number(id), name }]));
@@ -47,6 +48,7 @@ describe('TaskFailures', () => {
       testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 12, failedTasks: 5, dominantReason: 'FetchFailed', dominantError: null, failureGroups: [], otherFailedTasks: 0, recommendation: 'Investigate driver logs.' }),
       testFinding({ type: 'failures', stageId: 2, impactBand: 'critical', metric: 'failureRate', value: 40, failedTasks: 20, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, recommendation: 'Investigate driver logs.' }),
     ];
+    installInterpretation(catalog);
     render_(catalog);
     await user.click(screen.getByRole('button', { name: /^failed tasks$/i }));
     expect(screen.getByRole('button', { name: /open details for stage 1/i })).toBeInTheDocument();
@@ -147,9 +149,10 @@ describe('TaskFailures', () => {
     const user = userEvent.setup();
     store.getState().setWidgetDensity('advanced');
     const catalog: Finding[] = [
-      testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 40, failedTasks: 4, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } }),
-      testFinding({ type: 'failures', stageId: 2, impactBand: 'warning', metric: 'failureRate', value: 10, failedTasks: 1, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } }),
+      testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', recommendation: 'Fix it.', metric: 'failureRate', value: 40, failedTasks: 4, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 } }),
+      testFinding({ type: 'failures', stageId: 2, impactBand: 'warning', recommendation: 'Fix it.', metric: 'failureRate', value: 10, failedTasks: 1, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 } }),
     ];
+    installInterpretation(catalog);
     render_(catalog);
 
     // Card defaults collapsed; open it first to access the content.
@@ -163,8 +166,8 @@ describe('TaskFailures', () => {
   it('hides the sort toggle at basic density', async () => {
     const user = userEvent.setup();
     const catalog: Finding[] = [
-      testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', metric: 'failureRate', value: 40, failedTasks: 4, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' } }),
-      testFinding({ type: 'failures', stageId: 2, impactBand: 'warning', metric: 'failureRate', value: 10, failedTasks: 1, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' } }),
+      testFinding({ type: 'failures', stageId: 1, impactBand: 'warning', recommendation: 'Fix it.', metric: 'failureRate', value: 40, failedTasks: 4, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 } }),
+      testFinding({ type: 'failures', stageId: 2, impactBand: 'warning', recommendation: 'Fix it.', metric: 'failureRate', value: 10, failedTasks: 1, dominantReason: null, dominantError: null, failureGroups: [], otherFailedTasks: 0, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 } }),
     ];
     render_(catalog);
 

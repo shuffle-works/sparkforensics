@@ -5,6 +5,7 @@ import { analyze } from '../src/analyzer.js';
 import { buildEvidenceReport } from '../src/evidence-report.js';
 import { impactEstimateFigure } from '../src/impact-format.js';
 import { findingSavings } from '../src/run-interpretation.js';
+import { buildCostLane } from '../src/run-verdict.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
 
 function estimate(findings, stages, totalCores) {
@@ -71,6 +72,23 @@ describe('impact estimate coreTimeMs', () => {
     const [est] = estimate([{ type: 'gc', stageId: 0, direction: 'high', value: 12, impactBand: 'warning' }], stages, 0);
     expect(est.rawWaste).toEqual({ value: 1200, unit: 'coreMs' });
     expect(est.coreTimeMs).toEqual({ low: 1200, high: 1200 });
+  });
+
+  it('counts a spill finding\'s modeled sort CPU as core time, in the cost lane too', () => {
+    // 10 GB of memory spill over 5 GB read: 2 passes at 10% is 20% of the stage's 1,000 core-s.
+    const stage = { id: 0, submittedAt: 0, completedAt: 100_000, parentIds: [], executorRunTime: 1_000_000,
+      shuffleReadBytes: 5_000_000_000, memoryBytesSpilled: 10_000_000_000, diskBytesSpilled: 0 };
+    const finding = { type: 'spill', stageId: 0, impactBand: 'warning', recommendation: 'Reduce spill.' };
+    const [est] = estimate([finding], new Map([[0, stage]]), 8);
+    expect(est.coreTimeMs).toEqual({ low: 200_000, high: 200_000 });
+    expect(buildCostLane([finding]).map((entry) => entry.coreTimeMs)).toEqual([200_000]);
+  });
+
+  it('gives a spill finding with no bytes read to compare against no core time', () => {
+    const stage = { id: 0, submittedAt: 0, completedAt: 100_000, parentIds: [], executorRunTime: 1_000_000,
+      memoryBytesSpilled: 10_000_000_000, diskBytesSpilled: 8_000_000_000 };
+    const [est] = estimate([{ type: 'spill', stageId: 0, impactBand: 'warning' }], new Map([[0, stage]]), 8);
+    expect(est.coreTimeMs).toBeNull();
   });
 
   it('is null for a core-time figure modeled on an assumed constant', () => {

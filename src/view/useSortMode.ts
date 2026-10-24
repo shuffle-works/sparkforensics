@@ -1,14 +1,15 @@
 import { useState } from 'react';
 
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { byImpactDesc, byStageAsc, type SortMode } from '@/view/impact-sort';
+import { byStageAsc, orderByImpact, type SortMode } from '@/view/impact-sort';
 import { useWidgetDensity } from '@/store/store';
+import { useInterpretation } from '@/view/interpretation';
 
 export interface UseSortModeResult {
   sortMode: SortMode;
   setSortMode: (mode: SortMode) => void;
   /** Applies the current `sortMode` to a list of items: impact-descending
-   * (`byImpactDesc`) or stage-ascending (`byStageAsc`), given each item's own
+   * (`orderByImpact`) or stage-ascending (`byStageAsc`), given each item's own
    * findings/stage-id accessors. */
   orderBy: <T>(
     items: T[],
@@ -32,6 +33,7 @@ export interface UseSortModeResult {
 export function useSortMode(initial: SortMode = 'impact'): UseSortModeResult {
   const [sortMode, setSortMode] = useState<SortMode>(initial);
   const density = useWidgetDensity();
+  const interpretation = useInterpretation();
   const effectiveMode: SortMode = density === 'advanced' ? sortMode : 'impact';
 
   function orderBy<T>(
@@ -40,7 +42,7 @@ export function useSortMode(initial: SortMode = 'impact'): UseSortModeResult {
     getStageId: (item: T) => number | null,
   ): T[] {
     return effectiveMode === 'impact'
-      ? [...items].sort(byImpactDesc(getFindings))
+      ? orderByImpact(interpretation, items, getFindings)
       : [...items].sort(byStageAsc(getStageId));
   }
 

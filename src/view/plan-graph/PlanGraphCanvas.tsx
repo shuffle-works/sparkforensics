@@ -18,7 +18,8 @@ import { PlanGraphExchangeEdge } from './PlanGraphExchangeEdge';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { byImpactDesc } from '@/view/impact-sort';
+import { orderByImpact } from '@/view/impact-sort';
+import { useInterpretation } from '@/view/interpretation';
 import type { Finding, PlanGraphDurationMode, PlanGraphEdge, PlanGraphFilterMode, PlanGraphModel, PlanGraphNodeData, StageId } from '@sparkforensics/core/types.ts';
 
 const nodeTypes = {
@@ -208,6 +209,7 @@ export function PlanGraphCanvas({
 }) {
   const { ref: containerRef, tick: resizeTick } = useResizeTick();
   const narrow = useNarrowViewport();
+  const interpretation = useInterpretation();
   // Everything the layout depends on, apart from the node data. Kept separate so
   // the large layouts can be computed in a worker (useLayoutPrewarm) before the
   // memo below, which then finds them in the layout cache.
@@ -444,12 +446,12 @@ export function PlanGraphCanvas({
   const sheetOpen = narrow && selectedNode != null;
 
   const planNodes = flowNodes.filter((n) => n.type === 'planNode');
-  // Biggest recoverable-time win first: cycle problem stages by descending
-  // summed wall-clock (stages with no time claim sink to the end), so "Next
-  // problem" points at the largest time saving.
-  const problemNodes = flowNodes
-    .filter((n) => n.type === 'stageGroup' && ((n.data as { findings?: Finding[] }).findings?.length ?? 0) > 0)
-    .sort(byImpactDesc((n) => (n.data as { findings?: Finding[] }).findings ?? []));
+  // Verdict order, so "Next problem" starts at the first step the verdict names.
+  const problemNodes = orderByImpact(
+    interpretation,
+    flowNodes.filter((n) => n.type === 'stageGroup' && ((n.data as { findings?: Finding[] }).findings?.length ?? 0) > 0),
+    (n) => (n.data as { findings?: Finding[] }).findings ?? [],
+  );
 
   // xyflow selects a focused node on Enter/Space in its own store but never calls
   // onNodeClick, so this bridges the key to onSelectNode. Scoped to planNode
