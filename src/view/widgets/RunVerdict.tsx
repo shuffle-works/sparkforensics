@@ -187,7 +187,7 @@ function NextStepItem({
   );
 }
 
-/** The cost lane: findings ranked by the measured busy core time their fix removes, beside the
+/** The cost lane: findings ranked by the busy core time their fix removes, beside the
  * wall-clock steps above it. Only a finding with such a figure is listed. */
 function CostLane({ interpretation, onRoute }: { interpretation: InterpretationState; onRoute: (target: TriageTarget) => void }) {
   const { openStage } = useStageDetail();

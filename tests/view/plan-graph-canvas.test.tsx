@@ -12,6 +12,7 @@ import { ThemeProvider } from '../../src/theme/ThemeProvider';
 import { DocsProvider } from '../../src/view/DocsContext';
 import { DocsSheet } from '../../src/view/DocsSheet';
 import type { PlanGraphModel } from '@sparkforensics/core/types.ts';
+import { installInterpretation } from './_shared/interpretation';
 
 function transformX(testId: string): number {
   const el = screen.getByTestId(testId);
@@ -165,7 +166,7 @@ describe('focus nav', () => {
     expect(setCenterMock).toHaveBeenCalledTimes(1);
   });
 
-  it('orders "Next problem" by descending recoverable time, jumping to the biggest time win first', async () => {
+  it('orders "Next problem" in verdict order, jumping to the stage with the most task time first', async () => {
     const user = userEvent.setup();
     setCenterMock.mockClear();
     const grouped = model({
@@ -177,12 +178,13 @@ describe('focus nav', () => {
       scope: 'full',
     });
     const segmentStageIds = new Map([[0, 7], [1, 8]]);
-    // Stage 8's finding recovers far more wall-clock time than stage 7's, so it
-    // must be the first "Next problem" target regardless of node/list order.
+    // Stage 8 carries far more task time than stage 7, so its finding must be the first
+    // "Next problem" target regardless of node/list order.
     const findings = [
-      { type: 'skew' as const, stageId: 7, impactBand: 'warning' as const, impactEstimate: { basis: 'serial' as const, wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' as const } },
-      { type: 'spill' as const, stageId: 8, impactBand: 'warning' as const, impactEstimate: { basis: 'serial' as const, wallClock: { low: 90000, high: 90000 }, estimateMethod: 'measured' as const } },
+      { type: 'skew' as const, stageId: 7, impactBand: 'warning' as const, recommendation: 'Fix it.', impactEstimate: { basis: 'serial' as const, wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' as const, stageTaskMs: 1000 } },
+      { type: 'spill' as const, stageId: 8, impactBand: 'warning' as const, recommendation: 'Fix it.', impactEstimate: { basis: 'serial' as const, wallClock: { low: 90000, high: 90000 }, estimateMethod: 'measured' as const, stageTaskMs: 9000 } },
     ];
+    installInterpretation(findings);
     render(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={7} findings={findings} segmentStageIds={segmentStageIds} />);
 
     await user.click(screen.getByRole('button', { name: /next problem/i }));

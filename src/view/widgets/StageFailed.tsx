@@ -11,7 +11,6 @@ import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { canToggleSort } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -49,7 +48,7 @@ function StageFailedRow({ finding }: { finding: FindingOf<'stageFailed'> & { sta
  * gets its own row (never just the worst). */
 export function StageFailed({ appModel, catalog, defaultCollapsed = true }: StageFailedProps) {
   const [page, setPage] = useState(0);
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const activeRouteTarget = useActiveRouteTarget();
 

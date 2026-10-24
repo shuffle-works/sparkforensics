@@ -15,7 +15,6 @@ import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import type { TriageTarget } from '@/view/triage-target';
-import { canToggleSort } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode, type UseSortModeResult } from '@/view/useSortMode';
 
@@ -111,7 +110,7 @@ function GcSection({
 export function GcPressure({ catalog, appModel, defaultCollapsed = true }: GcPressureProps) {
   const [highPage, setHighPage] = useState(0);
   const [lowPage, setLowPage] = useState(0);
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const activeRouteTarget = useActiveRouteTarget();
 

@@ -8,7 +8,6 @@ import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
-import { canToggleSort } from '@/view/impact-sort';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
@@ -45,7 +44,7 @@ function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetPro
  * duration crossed the absolute-duration floor, suppressed when `slowHost`
  * already fired for the same stage (see `detectors.ts`'s `suppressedBy`). */
 export const StageSlowness = memo(function StageSlowness({ appModel, catalog, defaultCollapsed = true }: StageSlownessProps) {
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 

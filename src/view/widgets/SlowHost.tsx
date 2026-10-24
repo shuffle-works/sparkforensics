@@ -11,7 +11,6 @@ import type { WidgetProps } from '@/view/detector-registry';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import type { SlowHostFinding } from '@sparkforensics/core/finding-types.ts';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { canToggleSort } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -58,7 +57,7 @@ function SlowHostRow({ finding, appModel }: { finding: SlowHostFinding; appModel
 /** Board section for `slowHost` findings: a host or executor doing
  * disproportionate work within a stage. */
 export const SlowHost = memo(function SlowHost({ appModel, catalog, defaultCollapsed = true }: SlowHostProps) {
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 

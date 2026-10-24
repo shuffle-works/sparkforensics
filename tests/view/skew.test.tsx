@@ -294,10 +294,12 @@ describe('Skew', () => {
     store.getState().setWidgetDensity('advanced');
     const appModel = makeAppModel([1, 2]);
     const catalog = [
-      { ...skewFinding(1, 8), impactEstimate: { basis: 'serial' as const, wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' as const } },
-      { ...skewFinding(2, 4, 'warning'), impactEstimate: { basis: 'serial' as const, wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' as const } },
+      { ...skewFinding(1, 8), impactEstimate: { basis: 'serial' as const, wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' as const, stageTaskMs: 1000 } },
+      { ...skewFinding(2, 4, 'warning'), impactEstimate: { basis: 'serial' as const, wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' as const, stageTaskMs: 9000 } },
     ];
     const getTaskData = vi.fn(async () => TASK_DATA);
+
+    installInterpretation(catalog);
 
     render(<Skew appModel={appModel} catalog={catalog} getTaskData={getTaskData} />);
     await user.click(screen.getByRole('button', { name: /^task skew$/i }));
@@ -311,8 +313,8 @@ describe('Skew', () => {
     const user = userEvent.setup();
     const appModel = makeAppModel([1, 2]);
     const catalog = [
-      { ...skewFinding(1, 8), impactEstimate: { basis: 'serial' as const, wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' as const } },
-      { ...skewFinding(2, 4, 'warning'), impactEstimate: { basis: 'serial' as const, wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' as const } },
+      { ...skewFinding(1, 8), impactEstimate: { basis: 'serial' as const, wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' as const, stageTaskMs: 1000 } },
+      { ...skewFinding(2, 4, 'warning'), impactEstimate: { basis: 'serial' as const, wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' as const, stageTaskMs: 9000 } },
     ];
     const getTaskData = vi.fn(async () => TASK_DATA);
 

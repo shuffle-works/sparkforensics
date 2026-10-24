@@ -47,6 +47,7 @@ test('flags every affected stage, not just the worst', () => {
     { type: 'partitionSizing', stageId: 1, impactBand: 'info', rule: 'lowShuffleParallelism', value: 4, recommendation: 'r1' },
     { type: 'partitionSizing', stageId: 2, impactBand: 'critical', rule: 'lowShuffleParallelism', value: 3, recommendation: 'r2' },
   ];
+  installInterpretation(catalog);
   render(<PartitionSizing appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
   expect(screen.getByRole('button', { name: /open details for stage 1/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /open details for stage 2/i })).toBeInTheDocument();
@@ -110,13 +111,14 @@ test('defaults to impact order (highest potential savings first), and a toggle f
   const catalog: Finding[] = [
     {
       type: 'partitionSizing', stageId: 1, impactBand: 'warning', rule: 'lowShuffleParallelism', value: 4, recommendation: 'r1',
-      impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' },
+      impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
     },
     {
       type: 'partitionSizing', stageId: 2, impactBand: 'warning', rule: 'lowShuffleParallelism', value: 3, recommendation: 'r2',
-      impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' },
+      impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 },
     },
   ];
+  installInterpretation(catalog);
   render(<PartitionSizing appModel={appModel} catalog={catalog} defaultCollapsed={false} />);
 
   const names = () => screen.getAllByRole('button', { name: /open details for stage \d/i }).map((b) => b.getAttribute('aria-label'));
@@ -153,13 +155,14 @@ test('sort toggle only renders when card is open, at advanced density', async ()
   const catalog: Finding[] = [
     {
       type: 'partitionSizing', stageId: 1, impactBand: 'warning', rule: 'lowShuffleParallelism', value: 4, recommendation: 'r1',
-      impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' },
+      impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
     },
     {
       type: 'partitionSizing', stageId: 2, impactBand: 'warning', rule: 'lowShuffleParallelism', value: 3, recommendation: 'r2',
-      impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' },
+      impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 },
     },
   ];
+  installInterpretation(catalog);
   render(<PartitionSizing appModel={appModel} catalog={catalog} />);
 
   // Sort toggle should not be visible when the card is collapsed.
@@ -177,11 +180,11 @@ test('sort toggle stays hidden at basic density even when the card is open', () 
   const catalog: Finding[] = [
     {
       type: 'partitionSizing', stageId: 1, impactBand: 'warning', rule: 'lowShuffleParallelism', value: 4, recommendation: 'r1',
-      impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' },
+      impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
     },
     {
       type: 'partitionSizing', stageId: 2, impactBand: 'warning', rule: 'lowShuffleParallelism', value: 3, recommendation: 'r2',
-      impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' },
+      impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 },
     },
   ];
   render(<PartitionSizing appModel={appModel} catalog={catalog} defaultCollapsed={false} />);

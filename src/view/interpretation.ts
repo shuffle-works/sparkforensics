@@ -34,7 +34,7 @@ export function useFindingSavings(finding: Finding): FindingSavings | null {
   return savingsOf(useInterpretation(), finding);
 }
 
-/** Findings ordered by the interpretation's potential-savings rank, keeping only those in
+/** Findings ordered by the interpretation's `savingsRank` (stage task time, then potential savings), keeping only those in
  * `findings` (e.g. a filtered subset) and only the rankable ones. */
 export function rankedBySavings(state: InterpretationState | null, findings: Finding[]): Finding[] {
   if (!state) return [];
