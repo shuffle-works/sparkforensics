@@ -30,7 +30,7 @@ which cuts cost but may not shorten the run. A resource figure is always core ti
 counts allocated cores that ran no task, not work a fix removes. The steps rank "By cluster time (task-hours)": by the task time of the stage each sits on (for the unused-capacity finding, the core time of the allocation that ran no task), then by run-time savings; a second list, "By core time", ranks findings by the busy core time a fix removes, including findings with no run-time claim. A line under the summary states how much of the allocation ran no task. **Copy next steps**
 copies the whole plan as a plain checklist (run, verdict, and numbered steps
 with their stage and savings) to paste into a ticket or a message. Steps
-follow the same stage task-time ranking as the recommendations. When much of the
+follow the same cluster-time ranking as the recommendations. When much of the
 run's executor capacity sat idle, the summary says so, without moving
 cluster size ahead of a bigger fix. When the Findings tab lists more
 findings, a **More findings (n)** link under the steps takes you there.

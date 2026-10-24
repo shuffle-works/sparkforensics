@@ -3,7 +3,7 @@ import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
 import type { InterpretationState } from '@/store/store';
 import { rankedBySavings } from './interpretation';
 
-/** `'impact'` ranks as the verdict does (stage task time, then potential savings);
+/** `'impact'` ranks as the verdict does (stage task time or idle core time, then potential savings);
  * `'stage'` ranks by stage number ascending. */
 export type SortMode = 'impact' | 'stage';
 

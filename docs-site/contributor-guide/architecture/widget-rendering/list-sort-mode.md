@@ -7,7 +7,7 @@ How a Findings-tab widget opts into the shared list sort mode.
 `src/view/SortModeToggle.tsx` are a shared, opt-in set a Findings-tab active widget can use
 to let its own expanded, multi-row list default to the verdict's order instead of stage number:
 `orderByImpact` places each row at its best-ranked finding in the run interpretation's `savingsRank`
-(core's `rankBySavings`: stage task time, then potential savings). The export bundle cannot import
+(core's `rankBySavings`: stage task time or idle core time, then potential savings). The export bundle cannot import
 that ranking, so views read the carried rank.
 Each of the widgets below gets its `sortMode` (`SortMode`, `'impact' | 'stage'`, default
 `'impact'`) from `useSortMode`, which forces impact order at Basic density, and renders a
