@@ -88,39 +88,24 @@ export function exchangeWidth(exchange: PlanNode): SpillExchange | null {
   };
 }
 
-type IndexedOperator = { node: PlanNode; feeds?: string };
-
-// Each plan's spilling operators by stage, so a stage does not walk the whole tree.
-const operatorsByStage = new WeakMap<PlanNode, Map<number, IndexedOperator[]>>();
-
-function indexOperators(plan: PlanNode): Map<number, IndexedOperator[]> {
-  const cached = operatorsByStage.get(plan);
-  if (cached) return cached;
-  const index = new Map<number, IndexedOperator[]>();
-  // Each node's nearest ancestor-or-self that is not a codegen wrapper.
-  const unwrapped = new Map<PlanNode, PlanNode | null>();
-  walkPlanTree(plan, (node, parent) => {
-    const consumer = parent ? unwrapped.get(parent) ?? null : null;
-    unwrapped.set(node, CODEGEN_WRAPPER.test(node.name) ? consumer : node);
-    if (!SPILLING_OPERATOR.test(node.name)) return;
-    const feeds = node.name === 'Sort' && consumer && SORT_MERGE_JOIN.test(consumer.name) ? 'SortMergeJoin' : undefined;
-    for (const stageId of node.stageIds ?? []) {
-      const entry = { node, ...(feeds ? { feeds } : {}) };
-      index.set(stageId, [...(index.get(stageId) ?? []), entry]);
-    }
-  });
-  operatorsByStage.set(plan, index);
-  return index;
-}
-
 /** The operators of stage `stageId` that report a "spill size" above zero, largest first, with the
  * exchanges they read. Empty when the plan ties no such operator to the stage. */
 export function attributeSpill(
   plan: PlanNode | null | undefined, stageId: number,
 ): { operators: SpillOperator[]; exchanges: SpillExchange[] } {
-  const spilled = (plan ? indexOperators(plan).get(stageId) ?? [] : [])
-    .map(({ node, feeds }) => ({ node, feeds, spillBytes: metricValue(node, 'spill size') ?? 0 }))
-    .filter((entry) => entry.spillBytes > 0)
+  const candidates: { node: PlanNode; feeds?: string; spillBytes: number }[] = [];
+  // Each node's nearest ancestor-or-self that is not a codegen wrapper.
+  const unwrapped = new Map<PlanNode, PlanNode | null>();
+  if (plan) walkPlanTree(plan, (node, parent) => {
+    const consumer = parent ? unwrapped.get(parent) ?? null : null;
+    unwrapped.set(node, CODEGEN_WRAPPER.test(node.name) ? consumer : node);
+    if (!SPILLING_OPERATOR.test(node.name) || !node.stageIds?.includes(stageId)) return;
+    const spillBytes = metricValue(node, 'spill size') ?? 0;
+    if (spillBytes <= 0) return;
+    const feeds = node.name === 'Sort' && consumer && SORT_MERGE_JOIN.test(consumer.name) ? 'SortMergeJoin' : undefined;
+    candidates.push({ node, feeds, spillBytes });
+  });
+  const spilled = candidates
     .sort((a, b) => b.spillBytes - a.spillBytes)
     .slice(0, MAX_OPERATORS);
   const operators = spilled.map(({ node, feeds, spillBytes }): SpillOperator => ({
