@@ -130,3 +130,42 @@ describe('resolvePlanTree: Exchange split', () => {
     expect(idsA.some((id) => idsB.includes(id))).toBe(false);
   });
 });
+
+describe('resolvePlanTree: exchange row width', () => {
+  const metric = (name, accumulatorId) => ({ name, accumulatorId, metricType: 'sum' });
+
+  it('puts the width of every exchange, not only spilling ones, on both halves', () => {
+    const project = rawNode('Project', [rawNode('Scan parquet t')], { detail: 'Project [a#1, b#2, c#3]' });
+    const exchange = rawNode('Exchange', [project], {
+      metrics: [metric('data size', 1), metric('shuffle records written', 2)],
+    });
+    const tree = resolvePlanTree(rawNode('Sort', [exchange]), new Map([[1, 3000], [2, 100]]), new Map(), undefined);
+
+    const read = tree.children[0];
+    expect(read.rowWidth).toEqual({ columns: 3, bytesPerRow: 30 });
+    expect(read.children[0].rowWidth).toBe(read.rowWidth);
+    expect(tree.rowWidth).toBeUndefined();
+  });
+
+  it('leaves out the width of an exchange whose rows are unknown', () => {
+    const join = rawNode('SortMergeJoin', [rawNode('Scan parquet t')]);
+    const tree = resolvePlanTree(rawNode('Sort', [rawNode('Exchange', [join])]), new Map(), new Map(), undefined);
+    expect(tree.children[0].rowWidth).toBeUndefined();
+  });
+});
+
+describe('resolvePlanTree: exchange input columns', () => {
+  const exchange = (planId) => rawNode('Exchange', [rawNode('SortMergeJoin', [rawNode('Scan parquet t')])], {
+    detail: `Exchange hashpartitioning(k#1, 200), ENSURE_REQUIREMENTS, [plan_id=${planId}]`,
+  });
+
+  it('gives the write half of an exchange the column count its plan_id has in the plan description', () => {
+    const root = rawNode('Union', [exchange(53), exchange(61), rawNode('Exchange', [rawNode('Scan parquet u')])]);
+    const tree = resolvePlanTree(root, new Map(), new Map(), undefined, undefined, undefined, new Map([[53, 3], [61, 128]]));
+
+    const writes = tree.children.map((read) => read.children[0]);
+    expect(writes.map((write) => write.inputColumns)).toEqual([3, 128, undefined]);
+    expect(tree.children.every((read) => read.inputColumns === undefined)).toBe(true);
+    expect(tree.children[0].rowWidth).toEqual({ columns: 3 });
+  });
+});

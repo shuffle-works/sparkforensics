@@ -115,7 +115,7 @@ describe('attributeSpill', () => {
 describe('exchangeWidth', () => {
   it('counts the columns of a truncated Project list and divides data size by records written', () => {
     const x = exchange('xchg', wideProject(128), { dataSize: 410 * GB, records: 1e9 });
-    expect(exchangeWidth(x)).toEqual({ nodeId: 'xchg', columns: 128, bytesPerRow: 410 });
+    expect(exchangeWidth(x)).toEqual({ columns: 128, bytesPerRow: 410 });
   });
 
   it('counts a Project list that fits without a truncation tail, skipping commas inside expressions', () => {
@@ -131,17 +131,17 @@ describe('exchangeWidth', () => {
 
   it('reads the columns of a ReusedExchange from its own list', () => {
     const reused = node('r', 'ReusedExchange', 'ReusedExchange [k#1L, d#5], Exchange hashpartitioning(k#1L, 8), ENSURE_REQUIREMENTS, [plan_id=40]');
-    expect(exchangeWidth(reused)).toEqual({ nodeId: 'r', columns: 2 });
+    expect(exchangeWidth(reused)).toEqual({ columns: 2 });
   });
 
   it('reports only bytes per row where the plan below lists no columns', () => {
     const join = node('j', 'SortMergeJoin', 'SortMergeJoin [k#1], [k#2], Inner', [node('a', 'Scan', ''), node('b', 'Scan', '')]);
-    expect(exchangeWidth(exchange('x', join, { dataSize: 10 * GB, records: 1e7 }))).toEqual({ nodeId: 'x', bytesPerRow: 1000 });
+    expect(exchangeWidth(exchange('x', join, { dataSize: 10 * GB, records: 1e7 }))).toEqual({ bytesPerRow: 1000 });
   });
 
   it('reports only the column count where the exchange has no row count', () => {
-    expect(exchangeWidth(exchange('x', wideProject(60), { dataSize: GB }))).toEqual({ nodeId: 'x', columns: 60 });
-    expect(exchangeWidth(exchange('x', wideProject(60), { dataSize: GB, records: 0 }))).toEqual({ nodeId: 'x', columns: 60 });
+    expect(exchangeWidth(exchange('x', wideProject(60), { dataSize: GB }))).toEqual({ columns: 60 });
+    expect(exchangeWidth(exchange('x', wideProject(60), { dataSize: GB, records: 0 }))).toEqual({ columns: 60 });
   });
 
   it('reports nothing for an exchange it can read neither figure from, or a list whose brackets do not balance', () => {
@@ -170,18 +170,23 @@ describe('spillToInputRatio', () => {
 describe('describeSpillCause', () => {
   const sort = { nodeId: 'e1:n12', name: 'Sort', spillBytes: 3 * GB };
 
+  it('says a high ratio on a scan stage can also come from compressed input files', () => {
+    expect(describeSpillCause([], 12, true, true)).toBe("Memory spill is 12x the stage's input, so the rows are wide or the input files compress well, as Parquet does.");
+    expect(describeSpillCause([], 4, false, true)).toBe("Memory spill is 4x the stage's input.");
+  });
+
   it('says the rows are wide from a ratio of 10 up, and only reports the ratio below it', () => {
-    expect(describeSpillCause([], 10, true)).toBe("Memory spill is 10x the stage's input, so the rows are wide.");
-    expect(describeSpillCause([], 9.9, false)).toBe("Memory spill is 9.9x the stage's input.");
+    expect(describeSpillCause([], 10, true, false)).toBe("Memory spill is 10x the stage's input, so the rows are wide.");
+    expect(describeSpillCause([], 9.9, false, false)).toBe("Memory spill is 9.9x the stage's input.");
   });
 
   it('names the operators with their node ids and reported spill', () => {
-    expect(describeSpillCause([sort, { nodeId: 'e1:n20', name: 'Sort', spillBytes: GB, feeds: 'SortMergeJoin' }], null, false))
+    expect(describeSpillCause([sort, { nodeId: 'e1:n20', name: 'Sort', spillBytes: GB, feeds: 'SortMergeJoin' }], null, false, false))
       .toBe('Spilled by Sort e1:n12 3.0 GB, Sort e1:n20 feeding SortMergeJoin 1.0 GB.');
   });
 
   it('is empty with no operator and no ratio', () => {
-    expect(describeSpillCause([], null, false)).toBe('');
+    expect(describeSpillCause([], null, false, false)).toBe('');
   });
 });
 
