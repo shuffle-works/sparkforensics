@@ -188,9 +188,14 @@ export function isEligible(finding: Finding): boolean {
   // cacheUtilization's storageUnobserved keeps its widget card, so a run with no block updates
   // never lists Cache Storage as a passed check) is never a fix to rank.
   if ('dataUnavailable' in finding && finding.dataUnavailable) return false;
-  // A parity check's repeats are meant to run twice, so it keeps its card but is no fix to rank.
-  if (finding.type === 'duplicatePlanSubtree' && finding.parityCheck) return false;
+  if (isParityCheck(finding)) return false;
   return isRealFinding(finding);
+}
+
+/** A parity check's repeats are meant to run twice: it keeps its card but is no fix to rank, and
+ * is no note on missing log data either. */
+export function isParityCheck(finding: Finding): boolean {
+  return finding.type === 'duplicatePlanSubtree' && finding.parityCheck === true;
 }
 
 /** Ranking tier for a single finding: time-based findings (a real `wallClock`

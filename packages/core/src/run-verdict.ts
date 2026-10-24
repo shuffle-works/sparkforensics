@@ -8,7 +8,7 @@ import { singleStageId } from './finding-filter-predicate.ts';
 import { recommendationText } from './finding-names.ts';
 import { formatDuration, formatRawWaste, IMPACT_BAND_ORDER, readsAsZero } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
-import { isEligible } from './recommendation-rollup.ts';
+import { isEligible, isParityCheck } from './recommendation-rollup.ts';
 import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from './run-outcome.ts';
 import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates.ts';
 import { computeWallClock } from './wall-clock.ts';
@@ -404,7 +404,7 @@ export function buildRunVerdict(appModel: AppModel, allFindings: Finding[]): Run
     clean: isCleanRun(appModel, allFindings),
     outcome,
     noFinishedStages: !hasFinishedStage(appModel.stages),
-    uncounted: allFindings.length - eligible.length,
+    uncounted: allFindings.filter((finding) => !isParityCheck(finding)).length - eligible.length,
   };
   const title = verdictTitle(eligible, steps, facts);
   const shown = steps.slice(0, NEXT_STEP_LIMIT);
