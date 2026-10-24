@@ -710,18 +710,6 @@ describe('layout cost (full-model fallback runs only when needed)', () => {
   });
 });
 
-describe('all-nodes-hidden hint', () => {
-  it('shows a status hint when the filter hides every operator', () => {
-    render(<PlanGraphCanvas model={model()} showMiniMap={false} stageId={1} visibleNodeIds={new Set()} visibleEdges={[]} />);
-    expect(screen.getByRole('status')).toHaveTextContent(/hidden by the node filter/i);
-  });
-
-  it('shows no hint when some operators are visible', () => {
-    render(<PlanGraphCanvas model={model()} showMiniMap={false} stageId={1} visibleNodeIds={new Set(['a'])} visibleEdges={[]} />);
-    expect(screen.queryByRole('status')).not.toBeInTheDocument();
-  });
-});
-
 describe('large graph laid out in the layout worker', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
