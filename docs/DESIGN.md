@@ -66,10 +66,7 @@ rounded:
   button: "4px"
   panel: "6px"
   full: "9999px"
-spacing:
-  compact: "12px"
-  standard: "16px"
-  section: "24px"
+# Spacing: see docs-site/contributor-guide/architecture/board-widgets/visual-system-and-templating.md#spacing-roles
 components:
   button-primary:
     backgroundColor: "{colors.accent-soft}"
