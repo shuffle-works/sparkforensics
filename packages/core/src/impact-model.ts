@@ -49,9 +49,10 @@ export function stageTaskMs(stage: Stage): number {
 }
 
 // Share of the stage's task time spill costs: the spilled disk bytes over the bytes the stage read
-// (input plus shuffle read), in passes, times the per-pass share, capped. Both sides are serialized
-// sizes; memoryBytesSpilled is the deserialized size and would overstate the passes. Null when the
-// stage spilled nothing to disk or read no bytes to compare it to.
+// (input plus shuffle read), in passes, times the per-pass share, capped. Shuffle read and disk spill
+// are serialized sizes and Parquet input bytes are compressed; memoryBytesSpilled is the deserialized
+// size and would overstate the passes. Null when the stage spilled nothing to disk or read no bytes
+// to compare it to.
 export function spillTaskTimeShare(stage: Stage): number | null {
   const processedBytes = (stage.inputBytes ?? 0) + (stage.shuffleReadBytes ?? 0);
   const spilledBytes = stage.diskBytesSpilled ?? 0;
