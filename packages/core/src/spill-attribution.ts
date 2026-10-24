@@ -153,9 +153,3 @@ export function describeSpillCause(operators: SpillOperator[], ratio: number | n
   if (ratio !== null) sentences.push(`Memory spill is ${ratio}x the stage's input${wide ? ', so the rows are wide' : ''}.`);
   return sentences.join(' ');
 }
-
-/** `Exchange e1:n4: 128 columns, ~410 B/row`. */
-export function describeExchange({ nodeId, columns, bytesPerRow }: SpillExchange): string {
-  const figures = [columns != null && `${columns} columns`, bytesPerRow != null && `~${bytesPerRow} B/row`];
-  return `Exchange ${nodeId}: ${figures.filter(Boolean).join(', ')}`;
-}

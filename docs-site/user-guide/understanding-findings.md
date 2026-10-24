@@ -117,8 +117,8 @@ their plan node ids. A `Sort` under a `SortMergeJoin` is marked as feeding it.
 `evidence.spillToInputRatio` is the memory spill over the stage's input plus
 shuffle read. It is left out when that input is under 64 MB. From 10x,
 `evidence.wideRows` is true and the finding says the rows are wide.
-`evidence.exchanges` gives the column count and estimated bytes per row of the
-exchanges those operators read. The column count comes from the nearest
+`evidence.exchanges` reports widths only for the exchanges that feed a spilling
+operator, with their column count and estimated bytes per row. The column count comes from the nearest
 `Project`, file scan or `ReusedExchange` below the exchange, and is left out
 when a join or aggregate sits between.
 

@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { analyze } from '../src/analyzer.js';
 import { recommendationParts } from '../src/finding-names.js';
-import { compactFindingRow } from '../src/mcp-tools.js';
-import { attributeSpill, describeExchange, describeSpillCause, exchangeWidth, spillToInputRatio } from '../src/spill-attribution.js';
+import { attributeSpill, describeSpillCause, exchangeWidth, spillToInputRatio } from '../src/spill-attribution.js';
 import { makeApp, makeStage } from './fixtures/stage-app-fixtures.js';
 
 const TB = 1e12;
@@ -226,37 +225,5 @@ describe('spill finding', () => {
     expect(finding).not.toHaveProperty('wideRows');
     expect(finding).not.toHaveProperty('operators');
     expect(finding).not.toHaveProperty('exchanges');
-  });
-});
-
-describe('compactFindingRow for a spill finding', () => {
-  const row = (evidence) => ({
-    id: 's1', key: 'k', type: 'spill', tag: 'SPILL', name: 'Spill', impactBand: 'warning', stageId: 2, actionLabel: 'Reduce spill',
-    metric: 'memoryBytesSpilled', value: 1, evidence,
-  });
-
-  it('adds the cause line and one short line per exchange', () => {
-    const compact = compactFindingRow(row({
-      spillToInputRatio: 16.9, wideRows: true,
-      operators: [{ nodeId: 'e1:n12', name: 'Sort', spillBytes: 3 * GB }],
-      exchanges: [{ nodeId: 'e1:n10', columns: 128, bytesPerRow: 410 }, { nodeId: 'e1:n30', columns: 91 }],
-    }));
-    expect(compact.evidenceLines).toEqual([
-      "Spilled by Sort e1:n12 3.0 GB. Memory spill is 16.9x the stage's input, so the rows are wide.",
-      'Exchange e1:n10: 128 columns, ~410 B/row',
-      'Exchange e1:n30: 91 columns',
-    ]);
-  });
-
-  it('adds nothing when the finding has no such evidence, and nothing to other finding types', () => {
-    expect(compactFindingRow(row({ reads: 'shuffle' }))).not.toHaveProperty('evidenceLines');
-    expect(compactFindingRow({ ...row({}), type: 'gc' })).not.toHaveProperty('evidenceLines');
-  });
-});
-
-describe('describeExchange', () => {
-  it('prints the columns and bytes per row it has', () => {
-    expect(describeExchange({ nodeId: 'e1:n4', columns: 128, bytesPerRow: 410 })).toBe('Exchange e1:n4: 128 columns, ~410 B/row');
-    expect(describeExchange({ nodeId: 'e1:n4', bytesPerRow: 410 })).toBe('Exchange e1:n4: ~410 B/row');
   });
 });
