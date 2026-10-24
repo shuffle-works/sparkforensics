@@ -898,6 +898,11 @@ describe('partition-count advice follows what sized the stage', () => {
       const split = planWith('Exchange hashpartitioning(k#1L, 20003), ENSURE_REQUIREMENTS, [plan_id=4]', 'skewed');
       expect(keys(of('spill', { ...spilled, taskCount: 20100 }, { 'spark.sql.shuffle.partitions': '20003' }, '3.5.0', split)))
         .toEqual(['spark.sql.shuffle.partitions', 'spark.executor.memory']);
+      // A local read after AQE turned the join into a broadcast sizes the stage from the upstream mappers.
+      const local = planWith('Exchange hashpartitioning(k#1L, 200), ENSURE_REQUIREMENTS, [plan_id=4]', 'local');
+      const probe = of('spill', { ...spilled, taskCount: 5000 }, { 'spark.sql.shuffle.partitions': '200' }, '3.5.0', local);
+      expect(keys(probe)).toEqual(['spark.sql.shuffle.partitions', 'spark.executor.memory']);
+      expect(probe.recommendation).not.toMatch(/own partition count/);
     });
 
     it('applies the same classification to the other partition-count findings', () => {

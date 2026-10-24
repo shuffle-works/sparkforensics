@@ -1037,7 +1037,7 @@ interface PartitionBasis {
   skewSplit: boolean | null;
   /** Whether the execution's plan holds a `repartition` or `rebalance` the job asked for. */
   explicitRepartition: boolean;
-  /** Whether an AQE shuffle read that coalesced or skew-split sits over the exchange the stage reads; null when the plan shows none read. */
+  /** Whether an AQE shuffle read sits over the exchange the stage reads; null when the plan shows none read. */
   shuffleResized: boolean | null;
 }
 
@@ -1056,9 +1056,9 @@ function partitionBasis(stage: DetectorStage, ctx: DetectorCtx): PartitionBasis 
 
 const SHUFFLE_READ_NODE = /^(AQEShuffleRead|CustomShuffleReader)$/;
 
-// Whether AQE resized the shuffle a stage reads: true when a coalesced or skewed read sits over an
-// exchange the stage reads, false when it reads exchanges and none has one (a `repartition(n)`
-// exchange never does), null when the plan shows it reading none. An exchange lists its producing
+// Whether AQE resized the shuffle a stage reads: true when an AQE read (coalesced, skewed or local)
+// sits over an exchange the stage reads, false when it reads exchanges and none has one (a
+// `repartition(n)` exchange never does), null when the plan shows it reading none. An exchange lists its producing
 // and its reading stage, and the reader is the later one.
 function stageShuffleResized(plan: PlanNode | null | undefined, stageId: number): boolean | null {
   let reads = 0;
@@ -1069,7 +1069,7 @@ function stageShuffleResized(plan: PlanNode | null | undefined, stageId: number)
       reads++;
       resized ||= covered;
     }
-    const over = !isExchange && (covered || (SHUFFLE_READ_NODE.test(node.name) && /\b(coalesced|skewed)\b/.test(node.detail ?? '')));
+    const over = !isExchange && (covered || SHUFFLE_READ_NODE.test(node.name));
     for (const child of node.children ?? []) visit(child, over);
   };
   if (plan) visit(plan, false);
