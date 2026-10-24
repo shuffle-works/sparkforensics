@@ -113,6 +113,13 @@ describe('capCriticalByTaskTime', () => {
     expect(findings[0].impactBand).toBe('warning');
   });
 
+  it('caps a sql-scope finding whose stageIds hold one cheap stage, but not one spanning several', () => {
+    const sqlScope = (stageIds) => ({ ...slowHost(1), type: 'duplicatePlanSubtree', stageId: undefined, stageIds });
+    const findings = [sqlScope([1]), sqlScope([1, 2])];
+    capCriticalByTaskTime(findings, stages);
+    expect(findings.map((f) => f.impactBand)).toEqual(['warning', 'critical']);
+  });
+
   it('leaves an app-level finding and a run with no recorded task time alone', () => {
     const appLevel = { ...slowHost(1), stageId: null };
     const findings = [appLevel];

@@ -1,6 +1,7 @@
 import type { Finding, SparkAppInfo, Stage } from './types.ts';
 import { stageTaskMs } from './impact-model.ts';
 import { FAILURE_TYPES } from './run-outcome.ts';
+import { singleStageId } from './finding-filter-predicate.ts';
 
 // The run-wide noise floor, as a share of the run's duration, that grades every wall-clock
 // estimate. skew and straggler default their firing floors to these same figures (detectors.ts), so
@@ -76,7 +77,8 @@ export function capCriticalByTaskTime(findings: Finding[], stages: Map<number, S
     if (finding.impactBand !== 'critical') continue;
     if (FAILURE_TYPES.has(finding.type)) continue;
     if (finding.type === 'partitionSizing' && finding.rule === 'maxPartitionTooBig') continue;
-    const stage = typeof finding.stageId === 'number' ? stages.get(finding.stageId) : undefined;
+    const stageId = singleStageId(finding);
+    const stage = stageId == null ? undefined : stages.get(stageId);
     const taskMs = stage ? stageTaskMs(stage) : 0;
     if (taskMs > 0 && taskMs / runTaskMs < CRITICAL_MIN_TASK_TIME_SHARE) finding.impactBand = 'warning';
   }
