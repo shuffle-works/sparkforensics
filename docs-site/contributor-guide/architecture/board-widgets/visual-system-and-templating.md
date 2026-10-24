@@ -19,6 +19,33 @@ tokens). React re-renders on theme toggle, so chart colors
 update live with the theme. `ChartFrame` can also expose the underlying rows through a
 toggleable accessible table and copy them to the clipboard as TSV.
 
+## Spacing roles
+
+Spacing uses five named roles on the 4px scale, defined in the `@theme` block
+of `src/index.css`. Each role is a Tailwind spacing key, so it works in any
+spacing utility (`mt-label`, `space-y-para`, `gap-block`) and as
+`var(--spacing-label)` in CSS.
+
+| Role | Size | Use |
+|------|------|-----|
+| `tight` | 4px | A title and its caption, or a label and its figure |
+| `label` | 8px | An eyebrow or heading and the content it names |
+| `para` | 8px | One paragraph and the next in a single block |
+| `block` | 16px | One block and the next inside a card |
+| `section` | 24px | One section and the next |
+
+`block` equals the default `Card`'s `--card-spacing`. Use `pt-(--card-spacing)`
+inside a card so a `size="sm"` card keeps its 12px.
+
+Rules for a spacing change:
+
+- Do not set a margin on a class in `src/theme/*.css` that components also
+  space with a utility. Those files are not in a cascade layer, so a margin
+  there beats `mt-*`, `mb-*` and `space-y-*` on the same element.
+- Do not put a `gap` on a `Collapsible`: a closed panel keeps the gap. The
+  open body and the collapsed summary carry their own top padding.
+- Do not use a negative margin for rhythm.
+
 ## Templating (XSS-safe)
 
 JSX auto-escapes every interpolated value by default. No `.innerHTML`

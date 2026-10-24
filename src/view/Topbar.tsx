@@ -207,7 +207,7 @@ export function Topbar({
           (the only caller with no sectionControls) has none of its own, so
           this is its one page heading. */}
       {sectionControls ? null : <h1 className="sr-only">SparkForensics</h1>}
-      <div className="flex min-w-0 flex-1 items-center gap-3">
+      <div className="flex min-w-48 flex-1 items-center gap-3">
         {!sectionControls && !exportMode ? (
           <Button
             variant="ghost"

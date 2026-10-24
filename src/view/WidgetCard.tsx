@@ -126,7 +126,7 @@ export function WidgetCard({
     // Timeline" plus a HOST badge at 390px). Row layout returns at `sm` and up,
     // where titles fit on one line and the badges can sit beside it, wrapping
     // to a second row (not clipping) if there are too many to fit.
-    <div className="flex flex-col gap-2 px-(--card-spacing) sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-2 px-(--card-spacing) sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-y-tight">
       {collapsible ? (
         <CollapsibleTrigger
           ref={setTriggerRef}
@@ -156,7 +156,7 @@ export function WidgetCard({
           {open ? statusBadge : null}
         </div>
       ) : null}
-      {subtitle ? <p className="w-full basis-full font-mono text-xs text-muted-foreground sm:-mt-1.5">{subtitle}</p> : null}
+      {subtitle ? <p className="w-full basis-full font-mono text-xs text-muted-foreground">{subtitle}</p> : null}
     </div>
   );
 
@@ -184,7 +184,7 @@ export function WidgetCard({
         <Collapsible open={open} onOpenChange={handleOpenChange}>
           {header}
           {summary && !open ? (
-            <div className="px-(--card-spacing) pb-(--card-spacing)">{summary}</div>
+            <div className="px-(--card-spacing) pt-label pb-(--card-spacing)">{summary}</div>
           ) : null}
           <WidgetGridCardBoundary>
             <CollapsibleContent keepMounted>
@@ -192,7 +192,7 @@ export function WidgetCard({
                   text stays queryable/find-able; the context lets charts skip
                   mounting a 0×0 ResponsiveContainer until the card is open. */}
               <DisclosureOpenContext.Provider value={open}>
-                <CardContent>{body}</CardContent>
+                <CardContent className="pt-(--card-spacing)">{body}</CardContent>
               </DisclosureOpenContext.Provider>
             </CollapsibleContent>
           </WidgetGridCardBoundary>
