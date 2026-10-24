@@ -23,7 +23,7 @@ toggleable accessible table and copy them to the clipboard as TSV.
 
 Spacing uses five named roles on the 4px scale, defined in the `@theme` block
 of `src/index.css`. Each role is a Tailwind spacing key, so it works in any
-spacing utility (`mt-label`, `space-y-para`, `gap-block`) and as
+spacing utility (`mt-label`, `space-y-para`, `gap-card`) and as
 `var(--spacing-label)` in CSS.
 
 | Role | Size | Use |
@@ -31,10 +31,10 @@ spacing utility (`mt-label`, `space-y-para`, `gap-block`) and as
 | `tight` | 4px | A title and its caption, or a label and its figure |
 | `label` | 8px | An eyebrow or heading and the content it names |
 | `para` | 8px | One paragraph and the next in a single block |
-| `block` | 16px | One block and the next inside a card |
+| `card` | 16px | One block and the next inside a card |
 | `section` | 24px | One section and the next |
 
-`block` equals the default `Card`'s `--card-spacing`. Use `pt-(--card-spacing)`
+`card` equals the default `Card`'s `--card-spacing`. Use `pt-(--card-spacing)`
 inside a card so a `size="sm"` card keeps its 12px.
 
 Rules for a spacing change:
