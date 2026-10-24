@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMcpServer } from '../src/mcp-server-factory.js';
 import { paginateDiagnose, DEFAULT_PAGE_CHARS } from '../src/diagnose-pagination.ts';
+import { resolveOrCreateRun, diagnoseRun } from '../src/mcp-tools.ts';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
@@ -55,19 +56,36 @@ async function allPages(client, args) {
   return pages;
 }
 
+// The unpaged answer the handler would page, as a client would parse it.
+async function wholeDiagnosis(path, args = {}) {
+  const { runId } = await resolveOrCreateRun({ source: { path } });
+  return JSON.parse(JSON.stringify(diagnoseRun(runId, { view: 'compact', ...args })));
+}
+
+function pagesOf(result, pageChars) {
+  const pages = [];
+  let cursor;
+  do {
+    const page = paginateDiagnose(result, { cursor, pageChars });
+    pages.push(JSON.parse(JSON.stringify(page)));
+    cursor = page.pagination?.nextCursor ?? undefined;
+  } while (cursor);
+  return pages;
+}
+
 describe('diagnose_run pagination', () => {
   const path = tmpLargeEventLog(150);
 
   it('returns a run that fits the budget unchanged, with no pagination field', async () => {
     const client = await connectedClient();
-    const small = await diagnose(client, { source: { path }, maxFindings: 1, type: ['straggler'], pageChars: 10 ** 7 });
+    const small = await diagnose(client, { source: { path }, maxFindings: 1, type: ['straggler'] });
     expect(small.structuredContent.pagination).toBeUndefined();
     expect(small.content[0].text).toBe(JSON.stringify(small.structuredContent));
   });
 
   it('keeps every compact page of a large run under the default budget and loses no row', async () => {
     const client = await connectedClient();
-    const whole = (await diagnose(client, { source: { path }, pageChars: 10 ** 7 })).structuredContent;
+    const whole = await wholeDiagnosis(path);
     expect(whole.findings.length).toBeGreaterThan(100);
     expect(JSON.stringify(whole).length).toBeGreaterThan(DEFAULT_PAGE_CHARS);
 
@@ -76,7 +94,7 @@ describe('diagnose_run pagination', () => {
     for (const page of pages) expect(page.content[0].text.length).toBeLessThanOrEqual(DEFAULT_PAGE_CHARS);
 
     const [first, ...rest] = pages.map((page) => page.structuredContent);
-    expect(first.pagination).toMatchObject({ page: 1, pageChars: DEFAULT_PAGE_CHARS, totals: { findings: whole.findings.length } });
+    expect(first.pagination).toMatchObject({ page: 1, totals: { findings: whole.findings.length } });
     expect(first.verdict).toEqual(whole.verdict);
     expect(first.recommendations).toEqual(whole.recommendations);
     expect(first.effectiveConf).toEqual(whole.effectiveConf);
@@ -92,9 +110,10 @@ describe('diagnose_run pagination', () => {
 
   it('pages the full view too, with its clean and not-run check lists', async () => {
     const client = await connectedClient();
-    const whole = (await diagnose(client, { source: { path }, view: 'full', pageChars: 10 ** 7 })).structuredContent;
-    const pages = await allPages(client, { source: { path }, view: 'full', pageChars: 20_000 });
-    for (const page of pages) expect(page.content[0].text.length).toBeLessThanOrEqual(20_000);
+    const whole = await wholeDiagnosis(path, { view: 'full' });
+    const pages = await allPages(client, { source: { path }, view: 'full' });
+    expect(pages.length).toBeGreaterThan(1);
+    for (const page of pages) expect(page.content[0].text.length).toBeLessThanOrEqual(DEFAULT_PAGE_CHARS);
     const structured = pages.map((page) => page.structuredContent);
     expect(structured.flatMap((page) => page.findings ?? [])).toEqual(whole.findings);
     expect(structured.flatMap((page) => page.cleanChecks ?? [])).toEqual(whole.cleanChecks);
@@ -103,17 +122,17 @@ describe('diagnose_run pagination', () => {
 
   it('serves the same pages for a repeated call', async () => {
     const client = await connectedClient();
-    const first = await diagnose(client, { source: { path }, pageChars: 30_000 });
-    const again = await diagnose(client, { source: { path }, pageChars: 30_000 });
+    const first = await diagnose(client, { source: { path } });
+    const again = await diagnose(client, { source: { path } });
     expect(again.structuredContent.pagination.nextCursor).toBe(first.structuredContent.pagination.nextCursor);
-    expect((await diagnose(client, { runId: first.structuredContent.runId, pageChars: 30_000, cursor: first.structuredContent.pagination.nextCursor })).structuredContent.pagination.page).toBe(2);
+    expect((await diagnose(client, { runId: first.structuredContent.runId, cursor: first.structuredContent.pagination.nextCursor })).structuredContent.pagination.page).toBe(2);
   });
 
   it('refuses a cursor from another run or other filters', async () => {
     const client = await connectedClient();
-    const first = await diagnose(client, { source: { path }, pageChars: 30_000 });
+    const first = await diagnose(client, { source: { path } });
     const { nextCursor } = first.structuredContent.pagination;
-    const filtered = await diagnose(client, { source: { path }, type: ['straggler'], maxFindings: 3, pageChars: 30_000, cursor: nextCursor });
+    const filtered = await diagnose(client, { source: { path }, type: ['straggler'], maxFindings: 3, cursor: nextCursor });
     expect(filtered.isError).toBe(true);
     expect(filtered.structuredContent.code).toBe('invalid-cursor');
     const garbage = await diagnose(client, { source: { path }, cursor: 'not-a-cursor' });
@@ -121,16 +140,15 @@ describe('diagnose_run pagination', () => {
   });
 
   it('always puts a row on a later page, even when the budget is smaller than the row', async () => {
-    const client = await connectedClient();
-    const pages = await allPages(client, { source: { path }, type: ['straggler'], pageChars: 2000 });
+    const whole = await wholeDiagnosis(path, { type: ['straggler'] });
+    const pages = pagesOf(whole, 2000);
     expect(pages.length).toBeGreaterThan(5);
-    const whole = (await diagnose(client, { source: { path }, type: ['straggler'], pageChars: 10 ** 7 })).structuredContent;
-    expect(pages.flatMap((page) => page.structuredContent.findings ?? [])).toEqual(whole.findings);
+    expect(pages.flatMap((page) => page.findings ?? [])).toEqual(whole.findings);
   });
 
   it('does not page the Markdown report', async () => {
     const client = await connectedClient();
-    const md = await diagnose(client, { source: { path }, format: 'md', pageChars: 1000 });
+    const md = await diagnose(client, { source: { path }, format: 'md' });
     expect(md.content[0].text).toMatch(/^# Spark run evidence report/);
     expect(md.structuredContent.pagination).toBeUndefined();
   });

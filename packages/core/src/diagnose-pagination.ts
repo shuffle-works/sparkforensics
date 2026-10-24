@@ -11,7 +11,6 @@ type Item = { section: Section; key?: string; value: unknown };
 
 interface Pagination {
   page: number;
-  pageChars: number;
   /** Rows per paged list in the whole result. */
   totals: Partial<Record<Section, number>>;
   /** The `cursor` of the next page; null on the last one. */
@@ -66,7 +65,7 @@ export function paginateDiagnose(
   const build = (rows: Item[], nextCursor: string | null) => {
     const list = (section: Section) => rows.filter((item) => item.section === section).map((item) => item.value);
     const stages = Object.fromEntries(rows.filter((item) => item.section === 'stages').map((item) => [item.key!, item.value]));
-    const pagination: Pagination = { page, pageChars, totals, nextCursor };
+    const pagination: Pagination = { page, totals, nextCursor };
     if (page === 1) {
       return {
         ...result, findings: list('findings'),

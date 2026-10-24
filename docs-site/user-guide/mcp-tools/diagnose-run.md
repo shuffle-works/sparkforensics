@@ -106,8 +106,6 @@ error, and when both are given `runId` wins):
 
 - `cursor`: `string`, the `pagination.nextCursor` of the previous page. See
   [Pages](#pages).
-- `pageChars`: positive integer (default `50000`), the character budget of one
-  page. See [Pages](#pages).
 
 `impactBand`/`type`/`stageId`/`minBand`/`maxFindings` only limit the `findings` array
 (and the findings section of the Markdown):
@@ -119,23 +117,23 @@ verdict points at are always in the answer.
 
 ## Pages
 
-A JSON answer longer than `pageChars` characters (default 50,000) comes in
-pages. These lists are paged, in this order: `findings`, `cleanChecks`,
-`notRunChecks`, `metrics.stages` and `writeTargets.writes`. The first page keeps
+A JSON answer longer than 50,000 characters comes in pages. These lists are
+paged, in this order: `findings`, `cleanChecks`, `notRunChecks`,
+`metrics.stages` and `writeTargets.writes`. The first page keeps
 the shape of the whole answer: the fixed blocks (`verdict`, `recommendations`,
 `app`, `generator`, `effectiveConf`, `runComplete`, `findingsOmitted`, the
 other fields of `metrics` and `writeTargets`) and as many rows as fit. The fixed
 blocks count toward the budget, so `include: ["detectors"]` can push the first
-page over `pageChars`.
+page over 50,000 characters.
 
-Every page has a `pagination` object: `page`, `pageChars`, `totals` (the rows
-of each paged list in the whole answer) and `nextCursor`. While `nextCursor` is
+Every page has a `pagination` object: `page`, `totals` (the rows of each paged
+list in the whole answer) and `nextCursor`. While `nextCursor` is
 a string, call the tool again with the same arguments and `cursor` set to it. A
 later page holds `runId`, `view`, `runComplete`, its rows in the same places and
 `pagination`, and at least one row. To join the pages, concatenate the arrays
 and merge the `metrics.stages` objects.
 
-An answer that fits in `pageChars` has no `pagination` field. A cursor from a
+An answer that fits in one page has no `pagination` field. A cursor from a
 call with other filters, `view` or `redact` fails with `invalid-cursor`.
 `format: "md"` is not paged.
 
