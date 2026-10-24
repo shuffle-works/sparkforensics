@@ -358,7 +358,7 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
         onPickRecent={handlePickRecent}
         onRemoveRecent={onRemoveRecent}
         leadingContent={
-          <div className="min-w-0">
+          <div className="flex h-15 min-w-0 flex-col justify-center gap-tight">
             <h1 className="truncate font-heading text-sm font-semibold">Plan graph: Stage {focusStageId}</h1>
             {model && model.scope === 'segment' ? (
               <p className="truncate text-xs text-muted-foreground">

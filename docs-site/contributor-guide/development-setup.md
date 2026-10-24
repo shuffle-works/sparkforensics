@@ -186,6 +186,3 @@ attribute names live in that file, not here, for the reason above.
   `https://raw.githubusercontent.com/<owner>/<repo>/<sha>/<path>.png`. The
   repo is public, so every reader's browser loads them, and the binaries stay
   out of the feature diff.
-- Seeing what the Advanced density tier gates: set `DEBUG_HIGHLIGHT` to `true`
-  in `src/view/AdvancedOnly.tsx` to outline `AdvancedOnly` content in red.
-  Keep it `false` in anything you commit.

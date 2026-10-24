@@ -44,3 +44,15 @@ test('a route-focused disclosure gets visible focus styling and clears it on blu
 
   expect(trigger).not.toHaveAttribute('data-route-focused');
 });
+
+test('an open collapsible card body carries the Card gap below its header', () => {
+  render(<WidgetCard title="Spill"><p>body</p></WidgetCard>);
+  // The Collapsible wraps header and body in one flex child, so the Card's own gap does not reach
+  // between them: the body spaces itself.
+  expect(screen.getByText('body').closest('[data-slot="card-content"]')).toHaveClass('pt-(--card-spacing)');
+});
+
+test('a collapsed card spaces its summary below the header', () => {
+  render(<WidgetCard title="Spill" defaultCollapsed summary={<p>lead</p>}><p>body</p></WidgetCard>);
+  expect(screen.getByText('lead').parentElement).toHaveClass('pt-label');
+});

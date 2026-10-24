@@ -193,7 +193,7 @@ export function FindingRow({
       </TableCell>
       <TableCell className={cn('whitespace-normal', STACKED_TEXT_CELL)}>
         <span className="block text-sm font-semibold">{label}</span>
-        <span className="block text-[0.8125rem] text-muted-foreground">{text}</span>
+        <span className="mt-tight block text-[0.8125rem] text-muted-foreground">{text}</span>
         <EvidenceButton target={target} evidence={evidence} state={evidenceState} panelId={panelId} onRoute={onRoute} />
       </TableCell>
       {/* flex, not one joined string: as one truncated nowrap string, the
@@ -341,7 +341,7 @@ export function TypeGroupRow({
             onClick={onToggle}
           >
             <span className="block text-sm font-semibold">{label}</span>
-            {title ? <span className="block text-[0.8125rem] text-muted-foreground">{title}</span> : null}
+            {title ? <span className="mt-tight block text-[0.8125rem] text-muted-foreground">{title}</span> : null}
           </button>
           <div>
             <EvidenceButton target={evidenceTarget} evidence={evidence} state={evidenceState} panelId={panelId} onRoute={onRoute} />

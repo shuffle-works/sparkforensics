@@ -122,7 +122,7 @@ function NextStepItem({
           {meaning ? <span className="verdict-step__save-meaning"> {meaning}</span> : null}
         </p>
       ) : <span aria-hidden="true" />}
-      <div className="verdict-step__body min-w-0 space-y-1 [overflow-wrap:anywhere]">
+      <div className="verdict-step__body min-w-0 space-y-para [overflow-wrap:anywhere]">
         {measured ? (
           <p className="text-[0.8125rem] text-muted-foreground">
             <span className="font-semibold text-foreground">What's happening: </span>
@@ -335,9 +335,9 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
           {title}
         </h2>
         <p className="mt-1.5 max-w-[72ch] text-sm text-muted-foreground">{summary.join(' ')}</p>
-        {idleLine ? <p data-testid="run-idle-line" className="max-w-[72ch] text-sm text-muted-foreground">{idleLine}</p> : null}
+        {idleLine ? <p data-testid="run-idle-line" className="mt-para max-w-[72ch] text-sm text-muted-foreground">{idleLine}</p> : null}
         {failureReason ? (
-          <p data-testid="run-failure-reason" className="max-w-prose pt-1 text-sm">
+          <p data-testid="run-failure-reason" className="mt-para max-w-prose text-sm">
             <span className="font-medium">Spark's recorded reason: </span>
             <code className="font-mono text-xs [overflow-wrap:anywhere]">{failureReason}</code>
           </p>
