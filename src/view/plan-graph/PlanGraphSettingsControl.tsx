@@ -10,6 +10,7 @@ export interface PlanGraphSettingsControlProps {
   filterMode: PlanGraphFilterMode;
   onFilterModeChange: (mode: PlanGraphFilterMode) => void;
   hiddenCount: number;
+  emptyFilterModes?: ReadonlySet<PlanGraphFilterMode>;
   durationMode: PlanGraphDurationMode;
   onDurationModeChange: (mode: PlanGraphDurationMode) => void;
   /** Icon-only trigger (aria-label "Settings") for the vertical control rail;
@@ -24,6 +25,7 @@ export function PlanGraphSettingsControl({
   filterMode,
   onFilterModeChange,
   hiddenCount,
+  emptyFilterModes,
   durationMode,
   onDurationModeChange,
   iconOnly = false,
@@ -50,7 +52,7 @@ export function PlanGraphSettingsControl({
       >
         <div>
           <h2 className="mb-1.5 text-xs font-medium text-muted-foreground">Node filter</h2>
-          <PlanGraphFilterControl mode={filterMode} onChange={onFilterModeChange} hiddenCount={hiddenCount} />
+          <PlanGraphFilterControl mode={filterMode} onChange={onFilterModeChange} hiddenCount={hiddenCount} emptyModes={emptyFilterModes} />
         </div>
         <div aria-hidden="true" className="h-px bg-border" />
         <div>

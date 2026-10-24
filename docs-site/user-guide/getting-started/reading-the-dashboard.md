@@ -127,7 +127,9 @@ dropping a file onto the dashboard loads it too.
 for the other one (see [Run comparison mode](../run-comparison.md)).
 **Plan graph** opens an interactive node-and-edge view of the run's SQL
 execution plan, filterable down to I/O operators (scan, exchange), a
-broader "basic" set, or every operator. **Export evidence** downloads the
+broader "basic" set, or every operator. A filter that would show no
+operator for a stage is disabled, and the graph opens on the next one that
+shows something. **Export evidence** downloads the
 current run's findings as a portable Markdown or JSON report, the same
 report the CLI produces, or as **Download HTML dashboard**: one
 `.html` file holding this dashboard for the run, which opens in any browser

@@ -14,7 +14,7 @@ export function PlanGraphRadioControl<T extends string>({
 }: {
   ariaLabel: string;
   name: string;
-  options: Array<{ value: T; label: string; description: string }>;
+  options: Array<{ value: T; label: string; description: string; disabled?: boolean }>;
   value: T;
   onChange: (value: T) => void;
   trailingContent?: ReactNode;
@@ -30,6 +30,7 @@ export function PlanGraphRadioControl<T extends string>({
                 name={name}
                 value={opt.value}
                 checked={value === opt.value}
+                disabled={opt.disabled}
                 onChange={() => onChange(opt.value)}
               />
               {opt.label}

@@ -18,6 +18,7 @@ export interface PlanGraphControlRailProps {
   filterMode: PlanGraphFilterMode;
   onFilterModeChange: (mode: PlanGraphFilterMode) => void;
   hiddenCount: number;
+  emptyFilterModes?: ReadonlySet<PlanGraphFilterMode>;
   durationMode: PlanGraphDurationMode;
   onDurationModeChange: (mode: PlanGraphDurationMode) => void;
   legendOpen: boolean;
@@ -37,6 +38,7 @@ export function PlanGraphControlRail({
   filterMode,
   onFilterModeChange,
   hiddenCount,
+  emptyFilterModes,
   durationMode,
   onDurationModeChange,
   legendOpen,
@@ -111,6 +113,7 @@ export function PlanGraphControlRail({
           filterMode={filterMode}
           onFilterModeChange={onFilterModeChange}
           hiddenCount={hiddenCount}
+          emptyFilterModes={emptyFilterModes}
           durationMode={durationMode}
           onDurationModeChange={onDurationModeChange}
         />
