@@ -205,7 +205,8 @@ Every global control lives on one **vertical control rail** down the left edge
 (`PlanGraphControlRail.tsx`), grouped View / Navigate / Display, so nothing
 floats in its own corner. View is zoom in/out and fit (in place of React Flow's
 `Controls`); Navigate is "Next worst duration" and "Next problem" (cycling to
-the worst-share node and the worst-finding stage, via `setCenter`); Display is
+the worst-share node and to the problem stages in the verdict's order
+(`orderByImpact`), via `setCenter`); Display is
 the node-filter/duration Settings popover (`PlanGraphSettingsControl` with its
 `iconOnly` rail variant), plus the legend and minimap
 toggles. The rail renders inside `ReactFlowProvider` alongside `<ReactFlow>`, so
