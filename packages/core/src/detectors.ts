@@ -3351,7 +3351,7 @@ export const DETECTORS = [
           confidence: occurrencesIdentical ? duplicateSubtreeConfidence(g.subtreeSize, g.occurrences, thresholds) : 'low',
           validationRequired: 'Matching compares operator and metric names only, not literals or expression IDs: confirm the repeat in the Spark UI SQL tab before acting.',
           recommendation: readsDifferentVersions || parityCheck
-            ?`${detail}.${note}`
+            ? `${detail}.${note}`
             : `${detail}: ${g.isExchangeRoot
               ? 'this looks like a possible missed exchange reuse; check whether the same shuffle could be computed once and reused.'
               : 'consider caching/persisting the shared computation or check for a duplicated query branch.'}${note}`,
