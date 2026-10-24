@@ -137,7 +137,7 @@ export interface VerdictStepRow {
   text: string;
 }
 
-// One cost-lane entry: a finding ranked by the measured busy core time its fix removes.
+// One cost-lane entry: a finding ranked by the busy core time its fix removes.
 export interface VerdictCostStepRow {
   stageId: number | null;
   type: string;
@@ -152,7 +152,7 @@ export interface VerdictCostStepRow {
 
 // The dashboard's run verdict (run-verdict.ts): title, summary sentences, the first steps in the
 // same order, how many more places the full list holds, and the "Copy next steps" text. `steps`
-// rank by stage task time (`rankBySavings`); `costSteps` rank by measured busy core time and list only findings that
+// rank by stage task time (`rankBySavings`); `costSteps` rank by busy core time and list only findings that
 // carry one; `idle` is the run's allocated core time that ran no task.
 export interface VerdictJson {
   title: string;
@@ -675,7 +675,7 @@ function renderVerdict(verdict: VerdictJson): string[] {
     }
   }
   if (verdict.costSteps.length > 0) {
-    lines.push('', 'By core time (measured busy core time a fix removes):', '');
+    lines.push('', 'By core time (busy core time a fix removes):', '');
     verdict.costSteps.forEach((step, i) => {
       const where = step.stageId != null ? ` in Stage ${step.stageId}` : '';
       lines.push(`${i + 1}. [${step.tag}] ${mdInline(step.actionLabel)}${where}: ${step.coreTime} of core time.`);
