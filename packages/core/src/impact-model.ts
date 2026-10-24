@@ -30,11 +30,10 @@ export const SHUFFLE_THROUGHPUT_BPS = 125_000_000;
 // Assumed disk I/O throughput per executor for spilled data, ~200 MB/s (conservative HDD/SSD blend).
 export const SPILL_IO_THROUGHPUT_BPS = 200_000_000;
 // Share of a stage's task time that one pass of its read bytes through disk spill costs in
-// serialization and sort CPU, and the ceiling on the total. Measured on local sort stages whose
-// CPU roughly doubled once they spilled everything (34-56% of the spilled stage's time); the cap
-// sits below that because other work dilutes the share in real stages.
+// serialization and sort CPU, and the ceiling on the total. Measured on local sort stages, where one
+// full pass cost 34-56% of the stage's time.
 export const SPILL_TASK_TIME_SHARE_PER_PASS = 0.5;
-export const SPILL_TASK_TIME_SHARE_MAX = 0.4;
+export const SPILL_TASK_TIME_SHARE_MAX = 0.6;
 
 // A stage's task wall time, summed per executor by finalizeStage; 0 without executorStats.
 function summedTaskWallMs(stage: Stage): number {

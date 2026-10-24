@@ -181,7 +181,7 @@ Where each threshold that is not read from Spark's own source comes from.
 |---|---|
 | `IMPACT_FLOOR_PCT_WARN` = 0.5% and `IMPACT_FLOOR_PCT_CRIT` = 2% (`impact-band.ts`), and every runtime floor that defaults to them or to 0.5% (`floorPctWarn`, `floorPctCrit`, `stageFloorPct`, `lowInfoFloorPct`, `lowParallelismFloorPct`, `taskStageSkewFloorPct`) | Our own noise floors, unvalidated |
 | `CRITICAL_MIN_TASK_TIME_SHARE` = 2% (`impact-band.ts`) | `IMPACT_FLOOR_PCT_CRIT` applied to a stage's share of the run's task time. Our own noise floor, unvalidated |
-| `SPILL_TASK_TIME_SHARE_PER_PASS` = 50% and `SPILL_TASK_TIME_SHARE_MAX` = 40% (`impact-model.ts`) | Share of a stage's task time one pass of its read bytes through disk spill costs in serialization and sort CPU, and the cap. Measured on local sort stages that spilled fully (34-56% of the stage's time); the cap is lower because other work dilutes the share |
+| `SPILL_TASK_TIME_SHARE_PER_PASS` = 50% and `SPILL_TASK_TIME_SHARE_MAX` = 60% (`impact-model.ts`) | Share of a stage's task time one pass of its read bytes through disk spill costs in serialization and sort CPU, and the cap. Measured on local sort stages, where one full pass cost 34-56% of the stage's time |
 | `skew` `dataShareMin` = 0.5 | Our own majority cut |
 | `gc` `minRunTimeMs` = 10 s | Our own noise floor, so a stage that barely ran flags in neither direction |
 | `gc` `warnPct100` = 10 and `lowInfoPct100` = 5 | Carried over unchanged from an external GC heuristic |

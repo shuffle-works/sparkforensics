@@ -153,7 +153,7 @@ describe('spill impact estimate', () => {
     expect(est.wallClock.high).toBeCloseTo(0.35 * 30 * 60_000 + diskOnly, 0);
     expect(est.assumptions).toContain('plus 35% of the stage\'s task time as serialization and sort CPU');
     const capped = spillEstimate({ ...stageFields, diskBytesSpilled: 20e12 });
-    expect(capped.assumptions).toContain('plus 40% of the stage\'s task time as serialization and sort CPU');
+    expect(capped.assumptions).toContain('plus 60% of the stage\'s task time as serialization and sort CPU');
     expect(est.assumptions).toContain('GC is not counted');
     expect(est.stageTaskMs).toBeCloseTo(422.5 * HOUR_MS, 0);
   });
@@ -162,7 +162,9 @@ describe('spill impact estimate', () => {
     const light = spillEstimate({ shuffleReadBytes: 100e9, memoryBytesSpilled: 50e9, diskBytesSpilled: 10e9 });
     expect(light.wallClock.high).toBeCloseTo(30 * 60_000 * 0.05 + (10e9 / (200_000_000 * 255)) * 1000, 0);
     const noBase = spillEstimate({ memoryBytesSpilled: 50e9, diskBytesSpilled: 10e9 });
-    expect(noBase.assumptions).toContain('serialization and sort CPU is not counted');
+    expect(noBase.assumptions).toContain('the stage read no bytes to compare its disk spill to, so serialization and sort CPU is not counted');
+    const noDisk = spillEstimate({ shuffleReadBytes: 100e9, memoryBytesSpilled: 50e9, diskBytesSpilled: 0 });
+    expect(noDisk.assumptions).toContain('the stage spilled nothing to disk, so serialization and sort CPU is not counted');
   });
 
   it('keeps the CPU share on a stage packed onto every core, whose core-work floor drops with it', () => {
@@ -174,7 +176,7 @@ describe('spill impact estimate', () => {
     const stages = new Map([[0, stage(0, 400 / 60, packed, 4)]]);
     const findings = [{ type: 'spill', stageId: 0, impactBand: 'warning' }];
     estimateImpact(findings, { stages, totalCores: 16, occupancy: computeOccupancy(stages, 16) });
-    expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(0.4 * 25 * 60_000, 0);
+    expect(findings[0].impactEstimate.wallClock.high).toBeCloseTo(0.5 * 25 * 60_000, 0);
   });
 });
 

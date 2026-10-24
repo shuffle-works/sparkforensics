@@ -130,7 +130,7 @@ time (modeled)"), never as a duration beside run-time savings, and a modeled one
 says so. `rawWaste` keeps its value and unit. Each finding row also carries
 `estimateProvenance`, the sentence that says how the estimate was derived and what
 its model assumes and leaves out, for example "assumes 200 MB/s per executor over 75
-executors for disk spill, plus 40% of the stage's task time as serialization and sort CPU (50% per pass of its read bytes through disk spill, capped at 40%); GC is not counted". Scripts
+executors for disk spill, plus 60% of the stage's task time as serialization and sort CPU (50% per pass of its read bytes through disk spill, capped at 60%); GC is not counted". Scripts
 read the numbers from `impactEstimate` and `evidence`, not from these strings.
 
 `impactEstimate.stageTaskMs` is the task time, in milliseconds, of the stages a finding sits on. The
