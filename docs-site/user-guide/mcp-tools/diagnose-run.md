@@ -101,9 +101,11 @@ error, and when both are given `runId` wins):
   matching findings the limit left out (always present, `0` when none).
 - `format`: `"json" | "md"` (default `"json"`), switches `content[0].text` to
   a rendered Markdown report instead of JSON. With `"md"`, `structuredContent`
-  is a small object instead of the report: `runId`, `runComplete`, `title` (the
-  verdict's), `findingCount`, `findingsOmitted` and `recommendationCount`. A
-  client that stores `structuredContent` stores only those.
+  holds the same report as `markdown`, next to `runId`, `runComplete`, `title`
+  (the verdict's), `findingCount`, `findingsOmitted` and `recommendationCount`.
+
+- `cursor`: `string`, the `pagination.nextCursor` of the previous page. See
+  [Pages](#pages).
 
 `impactBand`/`type`/`stageId`/`minBand`/`maxFindings` only limit the `findings` array
 (and the findings section of the Markdown):
@@ -112,6 +114,28 @@ requested via `include`) always stay computed from the full, unfiltered set,
 so a narrow filter never hides that other checks passed or other fixes exist.
 Each verdict step keeps its `leadFinding` row whatever the limit, so the rows the
 verdict points at are always in the answer.
+
+## Pages
+
+A JSON answer longer than 50,000 characters comes in pages. These lists are
+paged, in this order: `findings`, `cleanChecks`, `notRunChecks`,
+`metrics.stages` and `writeTargets.writes`. The first page keeps
+the shape of the whole answer: the fixed blocks (`verdict`, `recommendations`,
+`app`, `generator`, `effectiveConf`, `runComplete`, `findingsOmitted`, the
+other fields of `metrics` and `writeTargets`) and as many rows as fit. The fixed
+blocks count toward the budget, so `include: ["detectors"]` can push the first
+page over 50,000 characters.
+
+Every page has a `pagination` object: `page`, `totals` (the rows of each paged
+list in the whole answer) and `nextCursor`. While `nextCursor` is
+a string, call the tool again with the same arguments and `cursor` set to it. A
+later page holds `runId`, `view`, `runComplete`, its rows in the same places and
+`pagination`, and at least one row. To join the pages, concatenate the arrays
+and merge the `metrics.stages` objects.
+
+An answer that fits in one page has no `pagination` field. A cursor from a
+call with other filters, `view` or `redact` fails with `invalid-cursor`.
+`format: "md"` is not paged.
 
 A `runId` expires. Loaded runs are cached in memory, capped at 8
 (LRU-evicted) and expired 15 minutes after their last use (override with
