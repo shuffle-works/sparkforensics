@@ -1,5 +1,20 @@
 # sparkforensics-web
 
+## 0.30.2
+
+### Patch Changes
+
+- cf91d4d: The autoscaling churn finding measures only executors that were removed. An executor still alive at app end no longer counts as short-lived, so short runs and late scale-ups no longer raise a false critical. The 5-executor floor applies to removed executors, and the finding text, threshold summary and widget now say the share is of removed executors.
+- ce35800: Analysis of very large logs (tens of thousands of stages, millions of tasks) scales linearly where it was quadratic, and no longer throws on a 150k-stage run. Finding de-duplication, SQL-execution stage lookup, merge-write overlap detection, executor-removal cache cleanup and wide plan-tree parsing each avoid a scan per item, per-task core usage is computed from typed arrays, and `computeRunMetrics` and the budget checks no longer spread a per-stage array into `Math.max`. The dashboard prefetches task data in one store update, groups findings by stage once, memoizes the timeline and builds a plan tree only when its section opens. Findings and estimates are unchanged.
+- 959e02b: Findings rank by the task time of the stage they sit on (`impactEstimate.stageTaskMs`), so `verdict.steps` and `recommendations` give the same order. The spill estimate adds the serialization and sort CPU of memory spill and states its assumptions. A `critical` finding needs its stage to carry at least 2% of the run's task time, or it drops to `warning`. Failures and oversized partitions stay `critical`.
+- d9d4dde: `--redact` (and the MCP `redact` parameter) now pseudonymizes the host of every URL (`hdfs://`, `jdbc:`, `spark://`, `s3a://`), `host:port` property values under any key and each stage's per-host statistics, and replaces user names in URL credentials, `/user/`, `/home/` and `/Users/` paths and `user=` values with `redacted-user`. Hosts are replaced in a single pass, so a run with hundreds of hosts and tens of thousands of stages redacts quickly. The help text and the CI guide list what `--redact` covers and what it leaves as written.
+  
+  The Markdown report (`--format md`, MCP `format: "md"`) now prints the application name and other log-controlled text on one line with `[ ] < > |` escaped, so a name from another team's log cannot add a heading, a link or an HTML tag to a report pasted into a pull request or ticket.
+- 3a407c0: A repeated plan subtree under a `show`, `showString` or `collect` action is informational and no longer leads the verdict. Repeats that read different recorded versions of one Delta table get no cache advice.
+- 5a774d9: A failure in one widget, a stale chunk, a parse that fails after the log is read, or an HTML export with a missing or damaged `data.js` now shows a message with a way to recover, instead of a blank page or an endless "Parsing" screen. The parser worker reports a rejected parse (for example a file that changed after it was dropped) as an error.
+- 121f02e: Partition-count advice no longer says AQE coalesced a stage's shuffle or blames AQE skew splits for its extra tasks, when the stage's exchange has no `AQEShuffleRead` over it, as with `repartition(n)`. Those stages point at their own partition count and executor memory, not `spark.sql.adaptive.advisoryPartitionSizeInBytes`.
+- 0c34405: The spill finding names the operators that spilled, with their plan node ids and spill size, and shows the memory spill as a multiple of the stage's input. From 10x it says the rows are wide. Its evidence adds `operators`, `spillToInputRatio`, `wideRows` and `exchanges` (column count and bytes per row).
+
 ## 0.30.1
 
 ### Patch Changes
