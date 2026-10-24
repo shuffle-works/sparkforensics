@@ -8,7 +8,7 @@ import { useInterpretation } from '@/view/interpretation';
 export interface UseSortModeResult {
   sortMode: SortMode;
   setSortMode: (mode: SortMode) => void;
-  /** Applies the current `sortMode` to a list of items: impact-descending
+  /** Applies the current `sortMode` to a list of items: verdict order
    * (`orderByImpact`) or stage-ascending (`byStageAsc`), given each item's own
    * findings/stage-id accessors. */
   orderBy: <T>(
