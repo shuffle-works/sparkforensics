@@ -171,7 +171,7 @@ export function PlanGraphCanvas({
   onJumpToPaired,
   centerRequest,
   fitSignal = 0,
-  filterMode = 'basic', onFilterModeChange = () => {}, hiddenCount = 0,
+  filterMode = 'basic', onFilterModeChange = () => {}, hiddenCount = 0, emptyFilterModes,
   durationMode = 'exclusive', onDurationModeChange = () => {},
 }: {
   model: PlanGraphModel;
@@ -202,6 +202,7 @@ export function PlanGraphCanvas({
   filterMode?: PlanGraphFilterMode;
   onFilterModeChange?: (mode: PlanGraphFilterMode) => void;
   hiddenCount?: number;
+  emptyFilterModes?: ReadonlySet<PlanGraphFilterMode>;
   durationMode?: PlanGraphDurationMode;
   onDurationModeChange?: (mode: PlanGraphDurationMode) => void;
 }) {
@@ -489,6 +490,7 @@ export function PlanGraphCanvas({
           filterMode={filterMode}
           onFilterModeChange={onFilterModeChange}
           hiddenCount={hiddenCount}
+          emptyFilterModes={emptyFilterModes}
           durationMode={durationMode}
           onDurationModeChange={onDurationModeChange}
           legendOpen={legendOpen}

@@ -93,7 +93,8 @@ test('collapseHiddenEdges keeps the shuffle weight on a direct visible edge but 
 test('Basic filtering preserves the full model for canvas grouping while separately identifying foreground nodes', () => {
   clearPlanGraphModelCache();
   const planTree = {
-    id: 'n0', name: 'Project', detail: 'Project', metrics: [], children: [],
+    id: 'n0', name: 'Project', detail: 'Project', metrics: [],
+    children: [{ id: 'n1', name: 'Sort', detail: 'Sort', metrics: [], children: [] }],
   };
   const appModel = planTreeAppModel(7, planTree);
 
@@ -102,7 +103,8 @@ test('Basic filtering preserves the full model for canvas grouping while separat
   );
 
   expect(lastCanvasModel).not.toBeNull();
-  expect(lastCanvasModel!.nodes.map((n) => n.label)).toEqual(['Project']);
-  expect(lastVisibleNodeIds).toEqual(new Set());
+  expect(lastCanvasModel!.nodes.map((n) => n.label).sort()).toEqual(['Project', 'Sort']);
+  const visibleLabels = lastCanvasModel!.nodes.filter((n) => lastVisibleNodeIds!.has(n.id)).map((n) => n.label);
+  expect(visibleLabels).toEqual(['Sort']);
   expect(screen.queryByText('Project')).not.toBeInTheDocument();
 });
