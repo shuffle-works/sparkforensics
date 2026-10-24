@@ -1,5 +1,6 @@
 import { FINDING_PRESENTATION } from './finding-presentation.ts';
 import type { FindingType, ImpactBand, RawWasteFigure } from './types.ts';
+import type { ExchangeWidth } from './finding-types.ts';
 
 const TARGET_PARTITION_BYTES = 128 * 1024 * 1024;
 const MAX_RECOMMENDED = 8000;
@@ -117,6 +118,21 @@ export function formatBytes(bytes: number | undefined): string {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
   if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`;
   return `${(bytes / 1e3).toFixed(0)} KB`;
+}
+
+/** An exchange's row width as "128 columns · 410 B/row", leaving out what is unknown. */
+export function formatRowWidth({ columns, bytesPerRow }: ExchangeWidth): string {
+  return [
+    columns !== undefined ? `${columns} column${columns === 1 ? '' : 's'}` : null,
+    bytesPerRow !== undefined ? `${bytesPerRow < 1000 ? `${bytesPerRow} B` : formatBytes(bytesPerRow)}/row` : null,
+  ].filter(Boolean).join(' · ');
+}
+
+/** The sentence for a spill finding's spill-to-input ratio. A high ratio means wide rows; on a scan
+ * stage (`fromScan`) the input is compressed on disk, so it can come from that as well. */
+export function describeSpillRatio(ratio: number, wide: boolean, fromScan: boolean): string {
+  const reason = !wide ? '' : fromScan ? ', so the rows are wide or the input files compress well, as Parquet does' : ', so the rows are wide';
+  return `Memory spill is ${ratio}x the stage's input${reason}.`;
 }
 
 // Spark reports some duration fields (e.g. executorCpuTime) in nanoseconds

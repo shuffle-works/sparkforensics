@@ -1,11 +1,11 @@
-// Which operators of a spilling stage hold the spilled rows, and how wide those rows are. The plan
-// text lists no output columns on an exchange, so its column count comes from the nearest node
-// below it that lists them. A shape this cannot read yields no figure.
+// Which operators of a spilling stage hold the spilled rows, and how wide those rows are. An
+// exchange's column count is the one its plan description gives (`inputColumns`), else the nearest
+// node below it that lists its columns. A shape this cannot read yields no figure.
 
-import { formatBytes } from './format-utils.ts';
+import { describeSpillRatio, formatBytes } from './format-utils.ts';
 import { isExchangeNode } from './plan-node-detail.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
-import type { SpillExchange, SpillOperator } from './finding-types.ts';
+import type { ExchangeWidth, SpillExchange, SpillOperator } from './finding-types.ts';
 import type { PlanNode } from './types.ts';
 
 const MAX_OPERATORS = 5;
@@ -72,17 +72,16 @@ function inputExchange(node: PlanNode): PlanNode | null {
   return current ?? null;
 }
 
-/** The columns and estimated bytes per row of an exchange (the read half of a split Exchange, or a
- * ReusedExchange); null when neither is known. The write half holds the metrics and the plan below. */
-export function exchangeWidth(exchange: PlanNode): SpillExchange | null {
+/** The width of an exchange (the read half of a split Exchange, or a ReusedExchange); null when
+ * neither its columns nor its bytes per row are known. The write half holds the metrics and the plan below. */
+export function exchangeWidth(exchange: PlanNode): ExchangeWidth | null {
   const write = exchange.exchangeRole === 'read' ? exchange.children[0] : exchange;
-  const columns = outputColumns(write);
+  const columns = write.inputColumns ?? outputColumns(write);
   const dataSize = metricValue(write, 'data size');
   const records = metricValue(write, 'shuffle records written');
   const bytesPerRow = dataSize !== null && records ? Math.round(dataSize / records) : null;
   if (columns === null && bytesPerRow === null) return null;
   return {
-    nodeId: exchange.id!,
     ...(columns !== null ? { columns } : {}),
     ...(bytesPerRow !== null ? { bytesPerRow } : {}),
   };
@@ -111,8 +110,10 @@ export function attributeSpill(
   const operators = spilled.map(({ node, feeds, spillBytes }): SpillOperator => ({
     nodeId: node.id!, name: node.name, spillBytes, ...(feeds ? { feeds } : {}),
   }));
-  const exchanges = [...new Set(spilled.map(({ node }) => inputExchange(node)))]
-    .flatMap((exchange) => (exchange ? exchangeWidth(exchange) ?? [] : []));
+  const exchanges = [...new Set(spilled.map(({ node }) => inputExchange(node)))].flatMap((exchange) => {
+    const width = exchange && exchangeWidth(exchange);
+    return width ? { nodeId: exchange.id!, ...width } : [];
+  });
   return { operators, exchanges };
 }
 
@@ -129,12 +130,11 @@ function operatorLabel({ name, nodeId, feeds, spillBytes }: SpillOperator): stri
   return `${name} ${nodeId}${feeds ? ` feeding ${feeds}` : ''} ${formatBytes(spillBytes)}`;
 }
 
-/** Where the spill sits: the operators with their plan node ids, then the spill-to-input ratio, with
- * the rows called wide when `wide`. Free of ": ", so the recommendation it ends still splits at its
- * advice (recommendationParts). */
-export function describeSpillCause(operators: SpillOperator[], ratio: number | null, wide: boolean): string {
+/** Where the spill sits: the operators with their plan node ids, then the spill-to-input ratio. Free
+ * of ": ", so the recommendation it ends still splits at its advice (recommendationParts). */
+export function describeSpillCause(operators: SpillOperator[], ratio: number | null, wide: boolean, fromScan: boolean): string {
   const sentences: string[] = [];
   if (operators.length > 0) sentences.push(`Spilled by ${operators.map(operatorLabel).join(', ')}.`);
-  if (ratio !== null) sentences.push(`Memory spill is ${ratio}x the stage's input${wide ? ', so the rows are wide' : ''}.`);
+  if (ratio !== null) sentences.push(describeSpillRatio(ratio, wide, fromScan));
   return sentences.join(' ');
 }

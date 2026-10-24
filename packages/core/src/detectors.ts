@@ -2053,7 +2053,7 @@ export const DETECTORS = [
         : shuffleFix
           ? `${formatBytes(stage.memoryBytesSpilled)} spilled: ${shuffleFix.text}.`
           : `${formatBytes(stage.memoryBytesSpilled)} spilled: this stage reads no shuffle, so increase executor memory or process less data per task.`;
-      const cause = describeSpillCause(operators, ratio, wide);
+      const cause = describeSpillCause(operators, ratio, wide, reads === 'input');
       return {
         type: 'spill', stageId: stage.id, impactBand, reads,
         spillMagnitude: mag?.magnitude,

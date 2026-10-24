@@ -143,5 +143,6 @@ log" is a 3.5 GB zstd log of 10,217 frames whose frames reach 39 MB.
 | Parsing a second log on a worker thread (`collect-run-pair.ts`) | A worker costs about 50 ms to start and about 100 ms to clone the model of a 140 MB zstd log. A compressed log holds 7 to 12 times its size in event text, so the estimate uses 8 |
 | One `TextDecoder.decode` per chunk | About 36k decode calls on the largest log against 227k for a per-line decode, which is about 8x slower |
 | Cutting `physicalPlanDescription` before `JSON.parse` | The text is 72% of the AQE-update bytes, which are 73% of the log. On the largest log its values total 1.9 GB of the 3.5 GB stream, and one native frame holds all but 51 MB of a value |
+| Reading descriptions of up to 256 Ki chars (`MAX_SCANNED_DESCRIPTION`) | On synthetic input, 33 MB of 20 KB descriptions decode and scan in 36 ms against 7 ms when skipped. 102 MB of 4 MB descriptions take 39 ms against 38 ms, since only the first 256 Ki chars of each value are decoded |
 | Deferring AQE updates | 541 of 664 updates on the largest log are superseded, 1.1 MB of plan JSON each once the plan text is cut |
 | String scan of `Accumulables` in `parseTaskEnd` | The array is 71% of TaskEnd bytes on the largest log. Parsing its TaskEnd lines takes 0.5 s, against 1.3 s with a whole `JSON.parse`. Validating the scanned IDs would add 0.2 s |
