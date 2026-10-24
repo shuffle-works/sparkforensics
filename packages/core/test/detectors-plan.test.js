@@ -890,7 +890,7 @@ describe('duplicatePlanSubtree: action and Delta version context', () => {
     return analyze(makeApp(), stages, [], [], new Map(), sql).filter(b => b.type === 'duplicatePlanSubtree');
   };
 
-  it.each(['showString', 'collect'])('lowers a repeat under %s to info with no time claim', (action) => {
+  it.each(['show', 'showString', 'collect'])('lowers a repeat under %s to info with no time claim', (action) => {
     const [finding] = run(`${action} at Job.scala:12`);
     expect(finding.rootAction).toBe(action);
     expect(finding.occurrencesIdentical).toBe(true);

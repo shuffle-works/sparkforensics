@@ -511,10 +511,11 @@ function occurrencesHaveIdenticalDetails(occurrences: PlanNode[]): boolean {
 }
 
 // Spark names an execution after its action's call site ("count at Job.scala:12"). Only
-// showString (DataFrame.show) and collect read a result for inspection, so a repeat under them is
-// not a missed cache of the job's real work. count and save keep their ranking: reusing an
-// uncached subtree across those actions is real waste. Null when the description has no action.
-const INSPECTION_ACTIONS: ReadonlySet<string> = new Set(['showString', 'collect']);
+// show (Scala Dataset.show), showString (PySpark DataFrame.show) and collect read a result for
+// inspection, so a repeat under them is not a missed cache of the job's real work. count and save
+// keep their ranking: reusing an uncached subtree across those actions is real waste. Null when the
+// description has no action.
+const INSPECTION_ACTIONS: ReadonlySet<string> = new Set(['show', 'showString', 'collect']);
 
 function rootActionOf(description: string | undefined): string | null {
   return /^\s*(\w+) at /.exec(description ?? '')?.[1] ?? null;
@@ -3315,7 +3316,7 @@ export const DETECTORS = [
       // Same-shaped repeats whose details differ compute different data: nothing is known to be
       // recomputed, so there is no time to claim.
       if (finding.occurrencesIdentical === false) return costOnly('none');
-      // A repeat under showString or collect is an inspection of the result, not the job's own work.
+      // A repeat under show, showString or collect is an inspection of the result, not the job's own work.
       if (typeof finding.rootAction === 'string' && INSPECTION_ACTIONS.has(finding.rootAction)) return costOnly('none');
       // Each stage contributes the share of its operators inside the repeated subtree: a stage it
       // shares with other operators (the consuming join, the join's other side) isn't all its
