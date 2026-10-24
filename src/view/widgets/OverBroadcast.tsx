@@ -13,7 +13,7 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { StagePillGroup } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import { canToggleSort, stageIdOf } from '@/view/impact-sort';
+import { stageIdOf } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
@@ -47,7 +47,7 @@ function OverBroadcastRow({ finding }: { finding: FindingOf<'overBroadcast'> }) 
  * side turned out larger than the threshold assumed, risking an
  * out-of-memory executor. */
 export const OverBroadcast = memo(function OverBroadcast({ catalog, defaultCollapsed = true }: OverBroadcastProps) {
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 

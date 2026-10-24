@@ -8,7 +8,6 @@ import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
-import { canToggleSort } from '@/view/impact-sort';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
@@ -44,7 +43,7 @@ function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetPro
 /** Board section for `speculationWaste` findings: executor time spent on
  * speculative task attempts that were ultimately discarded. */
 export const SpeculationWaste = memo(function SpeculationWaste({ appModel, catalog, defaultCollapsed = true }: SpeculationWasteProps) {
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 

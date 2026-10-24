@@ -7,20 +7,18 @@ import { rankedBySavings } from './interpretation';
  * `'stage'` ranks by stage number ascending. */
 export type SortMode = 'impact' | 'stage';
 
-/** True when at least one item in the list would actually move under an
- * impact sort: gates whether a widget bothers rendering the sort toggle at
- * all, since re-sorting a list with no wall-clock claims is a silent no-op. */
-export function hasSortableImpact(findings: readonly Finding[]): boolean {
-  return findings.some((f) => f.impactEstimate?.wallClock != null);
-}
-
-/** Whether a widget should render its `SortModeToggle`: sortable impact data
- * exists, there's more than one row to reorder, and the card is open (a
- * collapsed card has nothing to reorder yet). `rowCount` is the widget's own
- * row/group count, which isn't always `findings.length` (e.g. a widget may
- * gate on its rendered row-group count instead). */
-export function canToggleSort(findings: readonly Finding[], rowCount: number, cardOpen: boolean): boolean {
-  return hasSortableImpact(findings) && rowCount > 1 && cardOpen;
+/** Whether a widget should render its `SortModeToggle`: some finding in the list has a place in
+ * the savings rank (so the impact order can move rows), there's more than one row to reorder, and
+ * the card is open (a collapsed card has nothing to reorder yet). `rowCount` is the widget's own
+ * row/group count, which isn't always `findings.length` (e.g. a widget may gate on its rendered
+ * row-group count instead). */
+export function canToggleSort(
+  state: InterpretationState | null,
+  findings: readonly Finding[],
+  rowCount: number,
+  cardOpen: boolean,
+): boolean {
+  return rowCount > 1 && cardOpen && rankedBySavings(state, [...findings]).length > 0;
 }
 
 /** Items in the interpretation's savings rank (core's `rankBySavings`, the order of `verdict.steps`).

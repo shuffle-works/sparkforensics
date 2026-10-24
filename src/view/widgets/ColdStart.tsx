@@ -7,7 +7,6 @@ import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useAnchoredRow } from '@/view/finding-anchor';
-import { canToggleSort } from '@/view/impact-sort';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
@@ -43,7 +42,7 @@ function IssueRow({ finding }: { finding: Finding }) {
 /** Board section for `coldStart` findings: the gap between app start and
  * the first stage submission. App-scoped (`stageId` is always `null`). */
 export const ColdStart = memo(function ColdStart({ catalog, defaultCollapsed = true }: ColdStartProps) {
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 

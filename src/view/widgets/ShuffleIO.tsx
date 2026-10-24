@@ -13,7 +13,6 @@ import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { useWidgetDensity } from '@/store/store';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { canToggleSort } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -64,7 +63,7 @@ function ShuffleRow({ entry, appModel }: { entry: StageEntry; appModel: WidgetPr
 export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCollapsed = true }: WidgetProps) {
   const [page, setPage] = useState(0);
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const activeRouteTarget = useActiveRouteTarget();
 
   const { shuffleFindings, sorted, orderedEntries } = useMemo(() => {

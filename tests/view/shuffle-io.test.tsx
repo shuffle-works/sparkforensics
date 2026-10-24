@@ -227,14 +227,15 @@ test('sort toggle only renders when card is open, at advanced density', async ()
   });
   const catalog: Finding[] = [
     {
-      type: 'shuffle', stageId: 1, impactBand: 'warning', value: 900 * 1e6,
+      type: 'shuffle', stageId: 1, impactBand: 'warning', value: 900 * 1e6, recommendation: 'r1',
       impactEstimate: { basis: 'serial', wallClock: { low: 1000, high: 1000 }, estimateMethod: 'measured' },
     },
     {
-      type: 'shuffle', stageId: 2, impactBand: 'warning', value: 100 * 1e6,
+      type: 'shuffle', stageId: 2, impactBand: 'warning', value: 100 * 1e6, recommendation: 'r2',
       impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 },
     },
   ];
+  installInterpretation(catalog);
   render(<ShuffleIO appModel={appModel} catalog={catalog} getTaskData={async () => null as never} />);
 
   // Sort toggle should not be visible when the card is collapsed.
