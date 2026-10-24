@@ -4,6 +4,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Tooltip, XAxis, YAxis } from 'recha
 
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { CollapsibleSection } from '@/view/CollapsibleSection';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useLiveTaskData } from '@/view/useLiveTaskData';
@@ -126,15 +127,17 @@ function RecommendationRow({
   extended,
   finding,
   showImpactEstimate,
+  className,
 }: {
   rec: string;
   extended: string | null;
   finding: Finding;
   showImpactEstimate: boolean;
+  className?: string;
 }) {
   const { measured, fix } = recommendationParts(rec);
   return (
-    <div className="space-y-1 text-sm">
+    <div className={cn('space-y-para text-sm', className)}>
       {measured ? <p className="max-w-full leading-normal break-words"><span className="font-medium">What's happening: </span>{measured}</p> : null}
       <p className="max-w-full leading-normal break-words">
         <span className="font-medium">What to try: </span>
@@ -197,7 +200,7 @@ function StageVerdict({
     <section aria-label="Why this stage was flagged" className="space-y-3">
       <p className="text-sm text-muted-foreground">{stageSummary(stage, runMs, groups.length)}</p>
       {groups.length > 0 ? (
-        <ol className="space-y-4 rounded-md border p-3">
+        <ol className="divide-y rounded-md border px-3">
           {groups.map(([type, { impactBand, finding, recs }]) => {
             // Gate on the compact formatter, not the mere presence of `impactEstimate`:
             // an informational estimate has the field but `<ImpactEstimate>` renders
@@ -205,7 +208,7 @@ function StageVerdict({
             const hasEstimate = savingsOf(interpretation, finding)?.compact != null;
             const target = onShowEvidence ? selectTriageTargetForFinding(finding, catalog) : null;
             return (
-              <li key={type} className="space-y-1.5" data-testid="stage-finding">
+              <li key={type} className="space-y-3 py-3" data-testid="stage-finding">
                 <div className="flex flex-wrap items-center gap-2">
                   <TagBadge type={type} impactBand={impactBand} />
                   <h3 className="text-sm font-semibold">{findingActionLabel(finding)}</h3>
@@ -213,6 +216,7 @@ function StageVerdict({
                 {[...recs.entries()].map(([rec, { extended }], i) => (
                   <RecommendationRow
                     key={i}
+                    className={i > 0 ? 'border-t pt-3' : undefined}
                     rec={rec}
                     extended={extended}
                     finding={finding}

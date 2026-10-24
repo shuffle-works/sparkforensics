@@ -2,7 +2,7 @@
    from the tokens in index.css, so both themes follow automatically. */
 
 /* Verdict stage strip: stages as bars on the shared run clock. */
-.verdict-strip { margin-top: 1.125rem; }
+.verdict-strip { margin-top: var(--spacing-card); }
 .verdict-strip__row,
 .verdict-strip__axis {
   display: grid;
@@ -44,7 +44,6 @@
 
 /* Mono uppercase eyebrow / group label. */
 .trace-eyebrow {
-  margin: 0;
   font: 500 12px/1.4 var(--font-mono);
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -54,14 +53,14 @@
 /* Verdict next steps: code | title | savings, body under the title. */
 .verdict-steps {
   list-style: none;
-  margin: 1rem 0 0;
+  margin: var(--spacing-card) 0 0;
   padding: 0;
   border-top: 1px solid var(--rule);
 }
 .verdict-step {
   display: grid;
   grid-template-columns: 2rem minmax(0, 1fr) auto;
-  gap: .25rem .75rem;
+  gap: var(--spacing-tight) .75rem;
   padding: .75rem 0;
   border-bottom: 1px solid var(--rule);
 }
@@ -88,7 +87,7 @@
   border: 1px solid var(--rule);
   border-radius: var(--radius-panel);
 }
-.findings-table td { padding: .625rem .75rem; vertical-align: top; }
+.findings-table td { padding: .75rem; vertical-align: top; }
 .findings-table td:first-child { padding-left: 1rem; }
 .findings-table td:last-child { padding-right: 1rem; }
 
