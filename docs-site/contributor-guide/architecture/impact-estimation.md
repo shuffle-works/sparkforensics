@@ -77,7 +77,8 @@ which has no core time either. `utilization` also reports the idle figure as `id
 
 `rankCostMs()` (`packages/core/src/recommendation-rollup.ts`) is the cluster-time key of the verdict
 steps and the recommendations, in core-milliseconds: `stageTaskMs`, or for an app-level finding
-its `idleCoreTimeMs.high`. Only `utilization` has one. Every other app-level finding has no
+its `idleCoreTimeMs.high`. Only `utilization` has one, and it is always a warning, so that figure
+ranks it. Every other app-level finding has no
 measured core time and ranks after the findings that have a figure. The cost lane stays busy
 time only, so `utilization` is not in it.
 A stage's slow tail is also counted once: `skew` and `straggler`

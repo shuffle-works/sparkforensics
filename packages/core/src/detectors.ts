@@ -2664,7 +2664,7 @@ export const DETECTORS = [
       const fix = idleCapacityFix(app, 'consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation',
         'dynamic allocation is already on, so consider reducing cluster size');
       return {
-        type: 'utilization', stageId: null, impactBand: 'info',
+        type: 'utilization', stageId: null, impactBand: 'warning',
         metric: 'avgUtilization', value,
         utilizationFraction: utilization,
         appDurationMs: appDuration,

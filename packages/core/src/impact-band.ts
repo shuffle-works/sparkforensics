@@ -29,11 +29,9 @@ export function appDurationMs(app: { startTime?: number | null; endTime?: number
 /**
  * Overwrites `.impactBand` for any finding with a quantified wall-clock estimate, grading it purely
  * by recoverable time as a fraction of the run's duration: a full replace (either direction), not a
- * promote-only floor. An idle-capacity finding (`utilization`) has no wallClock, so it grades its
- * idle core time as a fraction of the run's allocated core time on the same floors. Findings with
- * neither figure (resourceOnly/informational), an unknown/zero app duration, or an explicit
- * safety-signal exemption (partitionSizing's maxPartitionTooBig rule) are left as the detector set
- * them. Mutates in place and returns the array.
+ * promote-only floor. Findings with no wallClock estimate (resourceOnly/informational), an
+ * unknown/zero app duration, or an explicit safety-signal exemption (partitionSizing's
+ * maxPartitionTooBig rule) are left as the detector set them. Mutates in place and returns the array.
  *
  * Grades wallClock.high, the optimistic figure the verdict ranking uses after stage task time.
  *
@@ -54,12 +52,8 @@ export function deriveImpactBand(
     // the run.
     if (finding.type === 'partitionSizing' && finding.rule === 'maxPartitionTooBig') continue;
     const recoverableMs = finding.impactEstimate?.wallClock?.high;
-    const idleMs = finding.impactEstimate?.idleCoreTimeMs?.high;
-    const allocatedMs = finding.type === 'utilization' ? finding.allocatedCoreMs : undefined;
-    let pct: number;
-    if (recoverableMs != null) pct = recoverableMs / durationMs;
-    else if (idleMs != null && allocatedMs != null && allocatedMs > 0) pct = idleMs / allocatedMs;
-    else continue;
+    if (recoverableMs == null) continue;
+    const pct = recoverableMs / durationMs;
     const { warnPct, critPct } = floorsFor?.(finding.type) ?? DEFAULT_FLOORS;
     finding.impactBand = pct >= critPct ? 'critical' : pct >= warnPct ? 'warning' : 'info';
   }
