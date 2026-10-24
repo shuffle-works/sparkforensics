@@ -276,8 +276,8 @@ export interface ParserState {
 // offset mapping is needed. Only the first line of a chunk joins the carried-over `pending` text.
 //
 // A SQL UI event's physicalPlanDescription value (see stripPlanDescription) that is still open
-// when a chunk ends is cut off the pending line, and the following bytes are dropped up to its
-// closing quote without being decoded, so the value is never decoded, joined or scanned as text.
+// when a chunk ends and longer than MAX_SCANNED_DESCRIPTION (256 Ki chars) is cut off the pending
+// line, and the following bytes are dropped up to its closing quote without being decoded.
 // A chunk longer than MAX_DECODE_SLICE is decoded in slices of that size, so the skip also applies
 // within one chunk: Node's native zstd emits whole frames that can hold a value entirely.
 // Figures: worker-protocol.md, "Decoder and parser calibration".
@@ -307,8 +307,8 @@ export function buildChunkDecoder() {
   // line again after every slice scanned about 10 GB on a 100 MB line.
   let pendingIsSqlEvent = false;
   let keyTail = '';
-  // Where the pending line's plan-description value starts, once its key is found but too little
-  // of the value has arrived to tell whether it is a small Delta command description (see
+  // Where the pending line's plan-description value starts, once its key is found but the value
+  // could still close within MAX_SCANNED_DESCRIPTION (256 Ki chars) and be kept for scanning (see
   // descriptionDisposition); -1 otherwise.
   let undecidedValueStart = -1;
   let skippingPlanDescription = false;

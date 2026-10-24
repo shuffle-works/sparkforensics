@@ -88,6 +88,18 @@ describe('PlanGraphNodeDetail', () => {
     expect(screen.getByText(/broadcast, no shuffle/i)).toBeInTheDocument();
   });
 
+  it('shows the row width of a ReusedExchange, which is never split', () => {
+    render(
+      <PlanGraphNodeDetail
+        node={node({ label: 'ReusedExchange', exchangeWidth: { columns: 3, bytesPerRow: 40 } })}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Exchange')).toBeInTheDocument();
+    expect(screen.getByText('3 columns · 40 B/row')).toBeInTheDocument();
+    expect(screen.queryByText(/half/i)).not.toBeInTheDocument();
+  });
+
   it('offers a jump to the paired half, named for the opposite half, and fires onJumpToPaired with its id', async () => {
     const onJumpToPaired = vi.fn();
     render(

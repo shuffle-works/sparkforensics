@@ -114,9 +114,9 @@ export function PlanGraphNodeDetail({
         ) : null}
       </p>
 
-      {node.splitRole ? (
+      {node.splitRole || node.exchangeWidth ? (
         <Section title="Exchange">
-          <p className="text-muted-foreground">{SPLIT_ROLE_NOTE[node.splitRole]}</p>
+          {node.splitRole ? <p className="text-muted-foreground">{SPLIT_ROLE_NOTE[node.splitRole]}</p> : null}
           {node.exchangeShuffleBytes != null ? (
             <p className="mt-1 text-muted-foreground">
               Shuffle written{' '}
