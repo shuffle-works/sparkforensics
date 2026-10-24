@@ -221,9 +221,9 @@ export function stageMappableWasteOrCostOnly(
 const MEASURED_CORE_TIME_FIGURE: ReadonlySet<string> = new Set(['gc', 'retryWaste', 'speculationWaste']);
 
 /** The busy core time a finding's fix removes, in core-milliseconds, or null when the detector
- * measures none. Only a measured figure counts: one its estimate() already set (skew and
- * straggler's removed task time), or the raw figure of a MEASURED_CORE_TIME_FIGURE type. A
- * wall-clock claim, an idle capacity figure and a modeled figure are never converted. It never
+ * measures none. Only a figure its estimate() already set counts (skew and straggler's removed
+ * task time, spill's modeled sort CPU), or the raw figure of a MEASURED_CORE_TIME_FIGURE type. A
+ * wall-clock claim, an idle capacity figure and any other modeled figure are never converted. It never
  * reads executorCpuTime, which leaves out Python worker CPU. */
 export function coreTimeFor(finding: Finding, estimate: ImpactEstimate): { low: number; high: number } | null {
   if (estimate.coreTimeMs !== undefined) return estimate.coreTimeMs;

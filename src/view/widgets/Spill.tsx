@@ -14,7 +14,6 @@ import type { Finding } from '@sparkforensics/core/types.ts';
 import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
 import { useWidgetDensity } from '@/store/store';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { canToggleSort } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
@@ -87,7 +86,7 @@ function SpillRow({
  * so it's a plain-text label on every row (not a hover-only tooltip);
  * `SPILL_CLASS_TITLE` only supplies the supplementary `title=` tooltip. */
 export const Spill = memo(function Spill({ appModel, catalog, defaultCollapsed = true }: WidgetProps) {
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 

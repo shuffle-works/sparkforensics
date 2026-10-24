@@ -13,7 +13,7 @@ import { TagBadge } from '@/view/ImpactBadge';
 import { StagePillGroup } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import { canToggleSort, stageIdOf } from '@/view/impact-sort';
+import { stageIdOf } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
@@ -46,7 +46,7 @@ function DuplicatePlanSubtreeRow({ finding }: { finding: FindingOf<'duplicatePla
 /** Board section for `duplicatePlanSubtree` findings: a query plan that
  * repeats an identical subtree, wasting compute the planner could share. */
 export const DuplicatePlanSubtree = memo(function DuplicatePlanSubtree({ catalog, defaultCollapsed = true }: DuplicatePlanSubtreeProps) {
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 

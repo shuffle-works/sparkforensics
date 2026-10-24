@@ -13,7 +13,6 @@ import { useAnchoredRow } from '@/view/finding-anchor';
 import { stragglerCauseSummary } from '@sparkforensics/core/finding-presentation.ts';
 import type { StragglerFinding } from '@sparkforensics/core/finding-types.ts';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { canToggleSort } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -60,7 +59,7 @@ function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appMod
 /** Board section for `straggler` findings: a stage where speculative
  * retries fired or a share of tasks ran far longer than the median. */
 export const Straggler = memo(function Straggler({ appModel, catalog, defaultCollapsed = true }: StragglerProps) {
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 

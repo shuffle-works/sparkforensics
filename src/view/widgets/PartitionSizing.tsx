@@ -13,7 +13,6 @@ import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { useWidgetDensity } from '@/store/store';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
-import { canToggleSort } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
 import { RowPagination } from '@/view/RowPagination';
@@ -70,7 +69,7 @@ export type PartitionSizingProps = Pick<WidgetProps, 'appModel' | 'catalog' | 'd
 export const PartitionSizing = memo(function PartitionSizing({ appModel, catalog, defaultCollapsed = true }: PartitionSizingProps) {
   const [page, setPage] = useState(0);
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
-  const { sortMode, setSortMode, orderBy } = useSortMode();
+  const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const activeRouteTarget = useActiveRouteTarget();
 
   const { partitionFindings, sorted, orderedEntries } = useMemo(() => {

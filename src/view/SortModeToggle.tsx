@@ -2,8 +2,8 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import type { SortMode } from '@/view/impact-sort';
 
-/** Flips a widget's list between impact order (the default: highest
- * potential savings first) and stage order (ascending stage number).
+/** Flips a widget's list between impact order (the default: the verdict's
+ * order, stage task time then potential savings) and stage order (ascending stage number).
  * Advanced-only: re-ordering by stage is a power-user affordance, and
  * `useSortMode`'s `orderBy` already forces impact order at Basic regardless
  * of a caller's raw `sortMode` state, so hiding the control here can't leave

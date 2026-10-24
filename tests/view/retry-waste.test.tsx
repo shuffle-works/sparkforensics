@@ -83,9 +83,10 @@ describe('RetryWaste', () => {
   it('flags every affected stage, not just the worst, and defaults to impact order', async () => {
     const user = userEvent.setup();
     const catalog: Finding[] = [
-      testFinding({ type: 'retryWaste', stageId: 1, impactBand: 'warning', metric: 'retryWasteMs', value: 40000, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured' }, numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [] }),
-      testFinding({ type: 'retryWaste', stageId: 2, impactBand: 'warning', metric: 'retryWasteMs', value: 10000, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured' }, numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [] }),
+      testFinding({ type: 'retryWaste', stageId: 1, impactBand: 'warning', recommendation: 'Fix it.', metric: 'retryWasteMs', value: 40000, impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 1000 }, numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [] }),
+      testFinding({ type: 'retryWaste', stageId: 2, impactBand: 'warning', recommendation: 'Fix it.', metric: 'retryWasteMs', value: 10000, impactEstimate: { basis: 'serial', wallClock: { low: 5000, high: 5000 }, estimateMethod: 'measured', stageTaskMs: 9000 }, numTasks: 1, memoryBytesSpilled: 0, retriedTaskDetails: [] }),
     ];
+    installInterpretation(catalog);
     render_(catalog, makeAppModel({ 1: 'a', 2: 'b' }));
     // Open the card to see rows ordered by impact estimate
     await user.click(screen.getByRole('button', { name: /^retry waste$/i }));

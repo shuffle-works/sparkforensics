@@ -1,28 +1,30 @@
 import { useState } from 'react';
 
 import type { Finding } from '@sparkforensics/core/types.ts';
-import { byImpactDesc, byStageAsc, type SortMode } from '@/view/impact-sort';
+import { byStageAsc, canToggleSort, orderByImpact, type SortMode } from '@/view/impact-sort';
 import { useWidgetDensity } from '@/store/store';
+import { useInterpretation } from '@/view/interpretation';
 
 export interface UseSortModeResult {
   sortMode: SortMode;
   setSortMode: (mode: SortMode) => void;
-  /** Applies the current `sortMode` to a list of items: impact-descending
-   * (`byImpactDesc`) or stage-ascending (`byStageAsc`), given each item's own
+  /** Applies the current `sortMode` to a list of items: verdict order
+   * (`orderByImpact`) or stage-ascending (`byStageAsc`), given each item's own
    * findings/stage-id accessors. */
   orderBy: <T>(
     items: T[],
     getFindings: (item: T) => readonly Finding[],
     getStageId: (item: T) => number | null,
   ) => T[];
+  /** `canToggleSort` against the current interpretation. */
+  canToggleSort: (findings: readonly Finding[], rowCount: number, cardOpen: boolean) => boolean;
 }
 
 /** Shared `sortMode` state + ordering for the widgets that render a
  * `SortModeToggle` (impact order vs. stage order). Doesn't own pagination
- * (see `usePagedRows`) or the toggle's own visibility gate
- * (`hasSortableImpact`, src/view/impact-sort.ts): callers still decide those
- * for themselves, since gating differs per widget (some also reset a page
- * cursor on change). Re-ordering by stage is Advanced-only (`SortModeToggle`
+ * (see `usePagedRows`), and callers pass the toggle's visibility gate
+ * (`canToggleSort`) their own findings and row count, since gating differs per
+ * widget (some also reset a page cursor on change). Re-ordering by stage is Advanced-only (`SortModeToggle`
  * is itself gated), so at Basic both the returned `sortMode` and `orderBy`
  * are forced to impact order regardless of the raw stored state: flipping
  * density back to Basic after choosing stage order in Advanced can't leave a
@@ -32,6 +34,7 @@ export interface UseSortModeResult {
 export function useSortMode(initial: SortMode = 'impact'): UseSortModeResult {
   const [sortMode, setSortMode] = useState<SortMode>(initial);
   const density = useWidgetDensity();
+  const interpretation = useInterpretation();
   const effectiveMode: SortMode = density === 'advanced' ? sortMode : 'impact';
 
   function orderBy<T>(
@@ -40,9 +43,14 @@ export function useSortMode(initial: SortMode = 'impact'): UseSortModeResult {
     getStageId: (item: T) => number | null,
   ): T[] {
     return effectiveMode === 'impact'
-      ? [...items].sort(byImpactDesc(getFindings))
+      ? orderByImpact(interpretation, items, getFindings)
       : [...items].sort(byStageAsc(getStageId));
   }
 
-  return { sortMode: effectiveMode, setSortMode, orderBy };
+  return {
+    sortMode: effectiveMode,
+    setSortMode,
+    orderBy,
+    canToggleSort: (findings, rowCount, cardOpen) => canToggleSort(interpretation, findings, rowCount, cardOpen),
+  };
 }

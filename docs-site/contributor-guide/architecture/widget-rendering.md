@@ -122,7 +122,7 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    and a **More findings (n)** link shows that tab, with `n` the tab's own
    listed count (`listedCount` in `Dashboard.tsx`).
    Under the steps, `CostLane` lists `verdict.costSteps` ("By core time"): findings ranked by the
-   measured busy core time a fix removes, including findings with no wall-clock claim. The run's
+   busy core time a fix removes, including findings with no wall-clock claim. The run's
    idle line (`verdict.idle`) sits under the summary.
    Basic view adds a collapsed "New to Spark tuning?" primer. An idle-capacity step (`utilization`, or
    `memoryUtilization`'s `idleCores` variant only, never its heap variants)
