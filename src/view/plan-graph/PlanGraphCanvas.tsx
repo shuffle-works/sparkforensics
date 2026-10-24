@@ -171,7 +171,7 @@ export function PlanGraphCanvas({
   onJumpToPaired,
   centerRequest,
   fitSignal = 0,
-  filterMode = 'basic', onFilterModeChange = () => {}, hiddenCount = 0,
+  filterMode = 'basic', onFilterModeChange = () => {}, hiddenCount = 0, emptyFilterModes,
   durationMode = 'exclusive', onDurationModeChange = () => {},
 }: {
   model: PlanGraphModel;
@@ -202,6 +202,7 @@ export function PlanGraphCanvas({
   filterMode?: PlanGraphFilterMode;
   onFilterModeChange?: (mode: PlanGraphFilterMode) => void;
   hiddenCount?: number;
+  emptyFilterModes?: ReadonlySet<PlanGraphFilterMode>;
   durationMode?: PlanGraphDurationMode;
   onDurationModeChange?: (mode: PlanGraphDurationMode) => void;
 }) {
@@ -450,11 +451,6 @@ export function PlanGraphCanvas({
     .filter((n) => n.type === 'stageGroup' && ((n.data as { findings?: Finding[] }).findings?.length ?? 0) > 0)
     .sort(byImpactDesc((n) => (n.data as { findings?: Finding[] }).findings ?? []));
 
-  // The category filter can hide every operator in view (e.g. an I/O-only
-  // filter over a segment with no scan/exchange). The canvas would then show
-  // only the empty group boxes with no hint why; this surfaces the reason.
-  const allNodesFiltered = visibleNodeIds != null && visibleNodeIds.size === 0 && model.nodes.length > 0;
-
   // xyflow selects a focused node on Enter/Space in its own store but never calls
   // onNodeClick, so this bridges the key to onSelectNode. Scoped to planNode
   // wrappers so the decorative group boxes can't trigger it.
@@ -489,6 +485,7 @@ export function PlanGraphCanvas({
           filterMode={filterMode}
           onFilterModeChange={onFilterModeChange}
           hiddenCount={hiddenCount}
+          emptyFilterModes={emptyFilterModes}
           durationMode={durationMode}
           onDurationModeChange={onDurationModeChange}
           legendOpen={legendOpen}
@@ -516,13 +513,6 @@ export function PlanGraphCanvas({
             {layingOut ? (
               <Panel position="top-center">
                 <LayoutProgress compact />
-              </Panel>
-            ) : null}
-            {allNodesFiltered ? (
-              <Panel position="top-center">
-                <p role="status" className="rounded-md border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-sm">
-                  All {model.nodes.length} operators are hidden by the node filter. Change it in Settings to show them.
-                </p>
               </Panel>
             ) : null}
             {legendOpen && !sheetOpen ? (

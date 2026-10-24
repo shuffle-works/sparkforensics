@@ -28,6 +28,20 @@ describe('PlanGraphFilterControl', () => {
     expect(screen.getByText('5 nodes hidden')).toBeInTheDocument();
   });
 
+  it('disables the modes that would show no node and explains why', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<PlanGraphFilterControl mode="advanced" onChange={onChange} hiddenCount={0} emptyModes={new Set(['io', 'basic'])} />);
+
+    const basic = screen.getByRole('radio', { name: /basic/i });
+    expect(basic).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /i\/o only/i })).toBeDisabled();
+    expect(screen.getByRole('radio', { name: /advanced/i })).toBeEnabled();
+
+    await user.hover(basic);
+    expect(await screen.findByText(/no operator in this view matches/i)).toBeInTheDocument();
+  });
+
   it('gives each filter option the project’s comfortable coarse-pointer hit area', () => {
     render(<PlanGraphFilterControl mode="basic" onChange={vi.fn()} hiddenCount={0} />);
 

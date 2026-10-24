@@ -251,9 +251,6 @@ The remaining legibility aids sit on the canvas itself:
 - A **legend** panel (`PlanGraphLegend.tsx`, collapsed by default, toggled from the
   rail) keys the operator icons, the heat-bar colors, the shuffle-weighted edge
   thickness, and the segment-vs-stage box layers.
-- When the category filter hides every operator in view, a **status hint**
-  (top-center) names the count hidden and points at Settings, instead of
-  leaving only empty group boxes on screen.
 
 The view is reached from a "View plan graph" button in `PlanView.tsx`'s toolbar
 (gated by the same `if (dot)` check described in "Plan DOT serialization"

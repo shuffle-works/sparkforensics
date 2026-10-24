@@ -268,6 +268,32 @@ test('Basic filter mode hides boilerplate nodes by default', async () => {
   // The hidden-node count lives inside the settings panel (see PlanGraphSettingsControl).
   await user.click(screen.getByRole('button', { name: /settings/i }));
   expect(await screen.findByText(/1 nodes hidden/)).toBeInTheDocument();
+  expect(screen.getByRole('radio', { name: /basic/i })).toBeChecked();
+});
+
+test('opens on Advanced and disables I/O only and Basic when neither shows a node', async () => {
+  const user = userEvent.setup();
+  const appModel = planTreePlanModel(7);
+  // A source-and-sink-only plan: every operator classifies as transform or boilerplate.
+  const leaf = (id: string, name: string, children: unknown[] = []) => ({ id, name, detail: name, metrics: [], children });
+  const planTree = leaf('n0', 'Execute InsertIntoHadoopFsRelationCommand', [
+    leaf('n1', 'WriteFiles', [leaf('n2', 'WholeStageCodegen (1)', [leaf('n3', 'Project', [leaf('n4', 'Range')])])]),
+  ]);
+  appModel.sql.set(1, { executionId: 1, planTree, stageIds: [7] } as never);
+  store.setState({ appModel });
+  store.getState().openPlanGraph(7);
+
+  render(<App />);
+
+  for (const name of ['Execute InsertIntoHadoopFsRelationCommand', 'WriteFiles', 'WholeStageCodegen (1)', 'Project', 'Range']) {
+    expect(screen.getByText(name)).toBeInTheDocument();
+  }
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: /settings/i }));
+  expect(await screen.findByRole('radio', { name: /advanced/i })).toBeChecked();
+  expect(screen.getByRole('radio', { name: /basic/i })).toBeDisabled();
+  expect(screen.getByRole('radio', { name: /i\/o only/i })).toBeDisabled();
 });
 
 // Hiding a whole operator category (e.g. 'transform' pass-through

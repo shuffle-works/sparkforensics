@@ -24,14 +24,20 @@ export interface PlanGraphFilterControlProps {
   mode: PlanGraphFilterMode;
   onChange: (mode: PlanGraphFilterMode) => void;
   hiddenCount: number;
+  /** Modes that would hide every node in this view; shown but not selectable. */
+  emptyModes?: ReadonlySet<PlanGraphFilterMode>;
 }
 
-export function PlanGraphFilterControl({ mode, onChange, hiddenCount }: PlanGraphFilterControlProps) {
+export function PlanGraphFilterControl({ mode, onChange, hiddenCount, emptyModes }: PlanGraphFilterControlProps) {
   return (
     <PlanGraphRadioControl
       ariaLabel="Node filter"
       name="plan-graph-filter"
-      options={OPTIONS}
+      options={OPTIONS.map((opt) =>
+        emptyModes?.has(opt.value)
+          ? { ...opt, disabled: true, description: 'No operator in this view matches this filter.' }
+          : opt,
+      )}
       value={mode}
       onChange={onChange}
       trailingContent={hiddenCount > 0 ? <Chip label={`${hiddenCount} nodes hidden`} impactBand="info" /> : null}

@@ -27,6 +27,8 @@ const CATEGORY_BY_MODE: Record<PlanGraphFilterMode, string[] | null> = {
   advanced: null, // null = no category filter, show everything
 };
 
+const MODES_NARROW_TO_WIDE: PlanGraphFilterMode[] = ['io', 'basic', 'advanced'];
+
 const EXPAND_GUARDRAIL_THRESHOLD = 300;
 
 /** Exposed for tests: the category filter (`io`/`basic`) hides whole
@@ -163,11 +165,6 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
   const [pendingJumpId, setPendingJumpId] = useState<string | null>(null);
   const requestCenter = (nodeId: string) => setCenterRequest((prev) => ({ nodeId, token: prev.token + 1 }));
 
-  // A node id only means something within one stage/scope/filter view.
-  useEffect(() => {
-    setSelectedNodeId(null);
-  }, [focusStageId, requestedScope, filterMode]);
-
   const planTree = resolvePlanTree(focusStageId, appModel);
 
   const segmentModel = planTree
@@ -229,6 +226,24 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
     : requestedScope === 'full'
       ? fullModel
       : segmentModel;
+
+  // Modes that would show no node in this view. The chosen mode stays in state
+  // (other stages still use it); the view widens to the next mode that shows
+  // something.
+  const emptyModes = useMemo(
+    () => new Set(MODES_NARROW_TO_WIDE.filter((mode) => {
+      const categories = CATEGORY_BY_MODE[mode];
+      return categories != null && !model?.nodes.some((n) => categories.includes(n.category));
+    })),
+    [model],
+  );
+  const effectiveFilterMode =
+    MODES_NARROW_TO_WIDE.slice(MODES_NARROW_TO_WIDE.indexOf(filterMode)).find((mode) => !emptyModes.has(mode)) ?? 'advanced';
+
+  // A node id only means something within one stage/scope/filter view.
+  useEffect(() => {
+    setSelectedNodeId(null);
+  }, [focusStageId, requestedScope, effectiveFilterMode]);
 
   // Apply a pending paired-node jump once its partner is on screen. Declared after
   // the selection-reset effect so its selection wins over that reset's clear on
@@ -315,10 +330,10 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
     return onPickRecent(id);
   }
 
-  // Memoized on (model, filterMode): these feed the canvas's layout memo, so new
+  // Memoized on (model, effectiveFilterMode): these feed the canvas's layout memo, so new
   // references on a selection-only render would re-run Dagre on each click.
   const { visibleNodeIds, filteredEdges, hiddenNodes } = useMemo(() => {
-    const allowedCategories = CATEGORY_BY_MODE[filterMode];
+    const allowedCategories = CATEGORY_BY_MODE[effectiveFilterMode];
     const visibleNodeIds = new Set<string>();
     if (model) {
       for (const n of model.nodes) {
@@ -329,7 +344,7 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
     const filteredEdges = model ? collapseHiddenEdges(model.edges, visibleNodeIds) : [];
     const hiddenNodes = model ? model.nodes.filter((n) => !visibleNodeIds.has(n.id)) : [];
     return { visibleNodeIds, filteredEdges, hiddenNodes };
-  }, [model, filterMode]);
+  }, [model, effectiveFilterMode]);
 
   // Keyed off the rendered `model.scope`: a segment request that fell back to a
   // small full model leaves `requestedScope` at 'segment'.
@@ -415,9 +430,10 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
             onJumpToPaired={handleJumpToPaired}
             centerRequest={centerRequest}
             fitSignal={fitSignal}
-            filterMode={filterMode}
+            filterMode={effectiveFilterMode}
             onFilterModeChange={setFilterMode}
             hiddenCount={hiddenNodes.length}
+            emptyFilterModes={emptyModes}
             durationMode={durationMode}
             onDurationModeChange={setDurationMode}
           />
