@@ -2080,8 +2080,8 @@ export const DETECTORS = [
       const durationMs = Math.max(0, (stage.completedAt ?? 0) - (stage.submittedAt ?? 0));
       const wasteMs = ioMs + durationMs * (cpuShare ?? 0);
       const cpuAssumption = cpuShare === null
-        ? 'the stage read no bytes to compare its memory spill to, so serialization and sort CPU is not counted'
-        : `plus ${Math.round(cpuShare * 100)}% of the stage's task time as serialization and sort CPU (${SPILL_TASK_TIME_SHARE_PER_PASS * 100}% per pass of its read bytes through memory spill, capped at ${SPILL_TASK_TIME_SHARE_MAX * 100}%)`;
+        ? 'the stage read no bytes to compare its disk spill to, so serialization and sort CPU is not counted'
+        : `plus ${Math.round(cpuShare * 100)}% of the stage's task time as serialization and sort CPU (${SPILL_TASK_TIME_SHARE_PER_PASS * 100}% per pass of its read bytes through disk spill, capped at ${SPILL_TASK_TIME_SHARE_MAX * 100}%)`;
       // The sort CPU is part of the core work, so removing it lowers the stage's core-work floor too.
       const removedCoreWorkMs = (stage.executorRunTime ?? 0) * (cpuShare ?? 0);
       // The displayed metric is memoryBytesSpilled; the raw figure is the disk bytes that cost the I/O time.

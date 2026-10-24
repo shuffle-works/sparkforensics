@@ -1733,8 +1733,8 @@
      "value": 595590032,
      "basis": "serial",
      "method": "modeled",
-     "wcLow": 2624.980821032502,
-     "wcHigh": 2624.980821032502,
+     "wcLow": 7976.16880336614,
+     "wcHigh": 7976.16880336614,
      "rawWaste": {
       "value": 463079277,
       "unit": "bytes"
@@ -1885,8 +1885,8 @@
      "value": 1056962592,
      "basis": "serial",
      "method": "modeled",
-     "wcLow": 3797.785247122853,
-     "wcHigh": 3797.785247122853,
+     "wcLow": 10813.035202809573,
+     "wcHigh": 10813.035202809573,
      "rawWaste": {
       "value": 822388461,
       "unit": "bytes"
@@ -2007,8 +2007,8 @@
      "value": 671473280,
      "basis": "serial",
      "method": "modeled",
-     "wcLow": 1987.3851491959856,
-     "wcHigh": 1987.3851491959856,
+     "wcLow": 4018.178324146914,
+     "wcHigh": 4018.178324146914,
      "rawWaste": {
       "value": 459347656,
       "unit": "bytes"
@@ -2311,8 +2311,8 @@
      "value": 732025952,
      "basis": "serial",
      "method": "modeled",
-     "wcLow": 3754.546924206827,
-     "wcHigh": 3754.546924206827,
+     "wcLow": 7786,
+     "wcHigh": 7786,
      "rawWaste": {
       "value": 569193016,
       "unit": "bytes"
@@ -2478,8 +2478,8 @@
      "value": 1474275360,
      "basis": "contended",
      "method": "modeled",
-     "wcLow": 3505.2009197986977,
-     "wcHigh": 3613,
+     "wcLow": 3043.5971009112855,
+     "wcHigh": 3137.2,
      "rawWaste": {
       "value": 1129126656,
       "unit": "bytes"
@@ -2493,8 +2493,8 @@
      "value": 1460644112,
      "basis": "serial",
      "method": "modeled",
-     "wcLow": 4598.0610485220905,
-     "wcHigh": 4598.0610485220905,
+     "wcLow": 10259.569695,
+     "wcHigh": 10259.569695,
      "rawWaste": {
       "value": 1135181817,
       "unit": "bytes"
