@@ -128,13 +128,13 @@
   --sidebar-ring:oklch(0.708 0 0);
 }
 
-/* Spacing roles on the 4px scale: use mt-label, gap-block, space-y-para and so on
-   instead of a raw step. block matches the default Card's --card-spacing. */
+/* Spacing roles on the 4px scale: use mt-label, gap-card, space-y-para and so on
+   instead of a raw step. card matches the default Card's --card-spacing. */
 @theme {
   --spacing-tight: 0.25rem;
   --spacing-label: 0.5rem;
   --spacing-para: 0.5rem;
-  --spacing-block: 1rem;
+  --spacing-card: 1rem;
   --spacing-section: 1.5rem;
 }
 
