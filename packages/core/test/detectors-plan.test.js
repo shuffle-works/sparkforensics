@@ -7,7 +7,8 @@ import { computePlanShapes, normalizeDetail, findCompositeCandidates, planOperat
 import { createState, dispatchLine } from '../src/parser-worker.js';
 import { formatBytes, pathBasename } from '../src/format-utils.js';
 import { makeStage, makeApp } from './fixtures/stage-app-fixtures.js';
-import { rankBySavings } from '../src/run-verdict.js';
+import { buildRunVerdict, rankBySavings } from '../src/run-verdict.js';
+import { findingActionLabel } from '../src/finding-action-label.js';
 
 // Values never feed the fingerprint, so a placeholder value of 1 is fine.
 const node = (name, metricNames = [], children = []) => ({
@@ -958,6 +959,16 @@ describe('duplicatePlanSubtree: parity check', () => {
     expect(finding.impactEstimate.wallClock).toBeNull();
     expect(finding.recommendation).not.toMatch(/consider caching|computed once and reused/);
     expect(finding.recommendation).toMatch(/parity check/);
+  });
+
+  it('is no verdict step and carries no dedupe label', () => {
+    const { findings, finding } = run();
+    const verdict = buildRunVerdict(
+      { app: makeApp(), stages: new Map(), executors: { added: [], removed: [] }, jobs: new Map(), sql: new Map(), runAggregates: null },
+      findings,
+    );
+    expect(verdict.steps.some(step => step.lead === finding || step.related.includes(finding))).toBe(false);
+    expect(findingActionLabel(finding)).not.toMatch(/dedupe/i);
   });
 
   it('ranks behind a repeat that carries a time claim', () => {
