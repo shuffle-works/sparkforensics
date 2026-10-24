@@ -147,17 +147,13 @@ and leaves out `cleanChecks` and `notRunChecks`. Each verdict step gets its lead
 from the unfiltered report, which is cached, so a limit never hides it. The factory's
 `diagnose_run` handler defaults `view` to `compact`; `diagnoseRun()` itself defaults to
 `full`. With `format: 'md'` the handler returns `diagnoseHeadline()` plus the `markdown`
-as `structuredContent`, so it carries the same report as `content[0].text`.
+as `structuredContent`.
 
 The handler pages a JSON answer with `paginateDiagnose()` (`diagnose-pagination.ts`) after
-`diagnoseRun()` builds it, so the report builder and direct callers of `diagnoseRun()` see
-the whole result. The paged lists are `findings`, `cleanChecks`, `notRunChecks`,
-`metrics.stages` and `writeTargets.writes`; their rows are served in that order, cut by the
-JSON length of each row. The cursor holds the offset, the page number and a fingerprint of the
-run id and an FNV-1a hash of every paged row, so it is stateless and a cursor from other filters,
-another `view` or another `redact` is refused with `invalid-cursor`.
-`get_finding_evidence` resolves a run through `resolveFindingEvidence()`: a cached `runId`, else
-`resolveOrCreateRun()` on the `source`.
+`diagnoseRun()` builds it. Rows are cut by JSON length. The cursor is stateless: it holds the
+offset, the page and a hash of the run and its rows, so one from other filters, `view` or
+`redact` is refused with `invalid-cursor`. `get_finding_evidence` resolves its run through
+`resolveFindingEvidence()`: a cached `runId`, else `resolveOrCreateRun()` on the `source`.
 
 ### One output builder for the CLI and MCP
 
@@ -219,7 +215,7 @@ difference fails the test.
 Every tool failure comes back as `{isError: true, content: [...],
 structuredContent: {code}}`, never an HTTP-status-shaped error; `code` is one
 of the 5 existing SHS codes (`SHS_ERROR_CODES`, `packages/core/src/shs-request.js`)
-plus `run-not-found`, `finding-not-found`, `invalid-cursor` (`diagnose_run`), `invalid-event-log` (also
+plus `run-not-found`, `finding-not-found`, `invalid-cursor`, `invalid-event-log` (also
 covers a nonexistent `path` source, and any file-system error such as `EACCES` or
 `EISDIR` on an event log that `toolErrorResult` maps to it), `archive-too-large` (SHS archive over
 the `SPARKFORENSICS_MAX_ARCHIVE_BYTES` byte cap, default 1 GiB, because the MCP path buffers

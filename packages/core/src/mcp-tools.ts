@@ -441,11 +441,8 @@ export function getFindingEvidence(
   return { runId, finding };
 }
 
-/** `get_finding_evidence` for a caller that may have lost its `runId` (a server restart, an eviction):
- * a cached `runId` is used as it is; otherwise `source` is loaded (cached by its key, else analysed
- * again) and, with `appId`, must hold that application, named as the response names it (the
- * pseudonym under `redact`). Finding ids come from the analysis, so they
- * are the same in the new run. */
+/** `get_finding_evidence` for a caller whose `runId` may be gone: a cached `runId` is used,
+ * otherwise `source` is loaded and, with `appId`, must hold that application (its redacted id under `redact`). */
 export async function resolveFindingEvidence(
   { runId, source, appId }: RunRef & { appId?: string }, findingId: string, opts?: { redact?: boolean; thresholds?: ThresholdOverrides },
 ): Promise<{ runId: string; finding: FindingRow }> {
