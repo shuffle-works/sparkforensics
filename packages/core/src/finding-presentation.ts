@@ -196,7 +196,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
       switch (f.partitions) {
         case 'sufficient': return 'The tasks are already a good size, so more partitions will not help: use a broadcast join for the smaller side.';
         case 'aqeCoalesced': return 'AQE coalesced the shuffle: lower spark.sql.adaptive.advisoryPartitionSizeInBytes, or use a broadcast join for the smaller side.';
-        case 'ownPartitioning': return "spark.sql.shuffle.partitions is already high enough, so raise this stage's own partition count (its repartition(n) or RDD parallelism), or use a broadcast join for the smaller side.";
+        case 'ownPartitioning': return "spark.sql.shuffle.partitions did not size this stage, so raise its own partition count (its repartition(n) or RDD parallelism), or use a broadcast join for the smaller side.";
         default: return 'Raise spark.sql.shuffle.partitions, or use a broadcast join for the smaller side.';
       }
     },
@@ -219,7 +219,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
         case 'lowShuffleParallelism':
           if (f.partitions === 'aqeCoalesced') return 'AQE coalesced the shuffle into few tasks: lower spark.sql.adaptive.advisoryPartitionSizeInBytes so each partition is smaller.';
           return switchAlreadyOn(f, 'spark.sql.shuffle.partitions')
-          ? "spark.sql.shuffle.partitions is already high enough, so raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller."
+          ? "spark.sql.shuffle.partitions did not size this stage, so raise its own partition count (its repartition(n) or RDD parallelism) so each partition is smaller."
           : 'Raise spark.sql.shuffle.partitions so each partition is smaller.';
         case 'maxPartitionTooBig': return 'Repartition to break up the oversized partition before this stage.';
       }
