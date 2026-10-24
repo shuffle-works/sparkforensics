@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { estimateImpact } from '../src/impact-estimator.js';
 import { computeOccupancy } from '../src/occupancy.js';
 import { capCriticalByTaskTime, CRITICAL_MIN_TASK_TIME_SHARE } from '../src/impact-band.ts';
-import { rankedRollup, rankStageCostMs } from '../src/recommendation-rollup.ts';
+import { rankedRollup, rankCostMs } from '../src/recommendation-rollup.ts';
 import { buildNextSteps } from '../src/run-verdict.ts';
 import { analyze } from '../src/analyzer.js';
 import { makeApp } from './fixtures/stage-app-fixtures.js';
@@ -56,7 +56,20 @@ describe('task-hour ranking: one axis for verdict steps and recommendations', ()
     const info = finding('gc', 4, 'info', 900, 60_000);
     const order = buildNextSteps([appLevel, info, ...findings]).map((step) => step.lead.type);
     expect(order.slice(0, 3)).toEqual(['spill', 'shuffle', 'skew']);
-    expect(rankStageCostMs(info)).toBe(0);
+    expect(rankCostMs(info)).toBe(0);
+  });
+
+  it('ranks an idle-allocation finding by its idle core time among the stage findings', () => {
+    const idle = (hours, band = 'warning') => ({
+      type: 'utilization', impactBand: band, recommendation: 'resize',
+      impactEstimate: { basis: 'resourceOnly', wallClock: null, estimateMethod: 'measured', rawWaste: { value: hours, unit: 'coreHours', idle: true }, idleCoreTimeMs: { low: hours * HOUR_MS, high: hours * HOUR_MS } },
+    });
+    const order = (list) => buildNextSteps(list).map((step) => step.lead.type);
+    expect(order([...findings, idle(100)])).toEqual(['spill', 'utilization', 'shuffle', 'skew']);
+    expect(order([...findings, idle(1)])).toEqual(['spill', 'shuffle', 'skew', 'utilization']);
+    expect(rankCostMs(idle(100, 'info'))).toBe(0);
+    const stages = new Map([1, 2, 3].map((id) => [id, stage(id, 1)]));
+    expect(rankedRollup([...findings, idle(100)], stages).map((group) => group.type)).toEqual(['spill', 'utilization', 'shuffle', 'skew']);
   });
 });
 
@@ -198,7 +211,7 @@ describe('task-hour ranking: plan findings on the execution-wide stage fallback'
     const smallFiles = run(undefined);
     expect(smallFiles.stageIds).toEqual([1, 2]);
     expect(smallFiles.impactEstimate.stageTaskMs).toBeUndefined();
-    expect(rankStageCostMs(smallFiles)).toBe(0);
+    expect(rankCostMs(smallFiles)).toBe(0);
   });
 
   it('keeps the task time of the stage a plan node ran on', () => {

@@ -8,7 +8,7 @@ import { singleStageId } from './finding-filter-predicate.ts';
 import { recommendationText } from './finding-names.ts';
 import { formatDuration, formatRawWaste, IMPACT_BAND_ORDER, readsAsZero } from './format-utils.ts';
 import { impactFigure, savingsMeaning } from './impact-format.ts';
-import { isEligible, rankStageCostMs } from './recommendation-rollup.ts';
+import { isEligible, rankCostMs } from './recommendation-rollup.ts';
 import { FAILURE_TYPES, quotesReasonOf, summarizeRunOutcome, type RunOutcome } from './run-outcome.ts';
 import { getScorecardEstimates, hasCompleteApplicationInterval } from './scorecard-estimates.ts';
 import { computeWallClock } from './wall-clock.ts';
@@ -52,8 +52,8 @@ export function isRankable(finding: Finding): boolean {
   return DISPLAY_INDEX.has(finding.type) && recommendation.length > 0;
 }
 
-/** Every rankable finding, best first. By the task time of the finding's stage (`rankStageCostMs`,
- * the axis the recommendations share), then by potential savings: a quantified estimate always
+/** Every rankable finding, best first. By cluster time (`rankCostMs`: the task time of the finding's stage, or the
+ * idle core time of an app-level finding; the axis the recommendations share), then by potential savings: a quantified estimate always
  * outranks an unquantified one; further ties (including "neither has one") fall back to impact
  * band, then widget display order, then input order, so an unquantified warning still leads an info. */
 export function rankBySavings(findings: Finding[]): Finding[] {
@@ -61,7 +61,7 @@ export function rankBySavings(findings: Finding[]): Finding[] {
     .map((finding, index) => ({ finding, index }))
     .filter(({ finding }) => isRankable(finding));
   candidates.sort((left, right) => {
-    const costDelta = rankStageCostMs(right.finding) - rankStageCostMs(left.finding);
+    const costDelta = rankCostMs(right.finding) - rankCostMs(left.finding);
     if (costDelta !== 0) return costDelta;
     const leftSavings = potentialSavingsMs(left.finding);
     const rightSavings = potentialSavingsMs(right.finding);

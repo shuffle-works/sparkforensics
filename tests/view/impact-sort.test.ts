@@ -90,6 +90,18 @@ test('orderByImpact lists rows in verdict step order when stage task time and wa
   expect(orderByImpact(interpreted, catalog, identityFindings)).toEqual(verdictOrder);
 });
 
+test('orderByImpact places an idle-allocation finding by its idle core time among stage findings', () => {
+  const idle = finding({
+    type: 'utilization',
+    impactEstimate: { basis: 'resourceOnly', estimateMethod: 'measured', idleCoreTimeMs: { low: 5_000_000, high: 5_000_000 } },
+  });
+  const [heavy, light] = [onStage('gc', 1, 1, 9_000_000), onStage('gc', 2, 1, 1_000_000)];
+  const catalog = [light, idle, heavy];
+  const interpreted = installInterpretation(catalog);
+
+  expect(orderByImpact(interpreted, catalog, identityFindings)).toEqual([heavy, idle, light]);
+});
+
 test('orderByImpact places a row at its best-ranked finding', () => {
   const [low, mid, high] = [onStage('gc', 1, 1, 1_000), onStage('gc', 2, 1, 2_000), onStage('gc', 3, 1, 3_000)];
   const rows = [{ findings: [low] }, { findings: [mid, high] }];

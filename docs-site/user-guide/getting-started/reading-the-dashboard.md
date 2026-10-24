@@ -27,7 +27,7 @@ what it counts: a time such as "58.6s of run time" is how much sooner the run
 could finish, while a resource figure such as "3.0 GB-h of unused executor
 memory" or "0.2 core-h of task time (modeled)" is cluster time a fix would free up,
 which cuts cost but may not shorten the run. A resource figure is always core time, never a duration, and says "(modeled)" when it rests on an assumed rate. A figure "of idle core capacity"
-counts allocated cores that ran no task, not work a fix removes. The steps rank "By cluster time (task-hours)": by the task time of the stage each sits on, then by run-time savings; a second list, "By core time", ranks findings by the busy core time a fix removes, including findings with no run-time claim. A line under the summary states how much of the allocation ran no task. **Copy next steps**
+counts allocated cores that ran no task, not work a fix removes. The steps rank "By cluster time (task-hours)": by the task time of the stage each sits on (for the unused-capacity finding, the core time of the allocation that ran no task), then by run-time savings; a second list, "By core time", ranks findings by the busy core time a fix removes, including findings with no run-time claim. A line under the summary states how much of the allocation ran no task. **Copy next steps**
 copies the whole plan as a plain checklist (run, verdict, and numbered steps
 with their stage and savings) to paste into a ticket or a message. Steps
 follow the same stage task-time ranking as the recommendations. When much of the
