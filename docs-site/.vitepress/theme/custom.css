@@ -328,9 +328,10 @@
 }
 
 /* 24px minimum hit area for the theme switch and footer links. */
-.VPSwitch.VPSwitchAppearance {
-  min-width: 44px;
-  min-height: 24px;
+.VPSwitch.VPSwitchAppearance::after {
+  content: "";
+  position: absolute;
+  inset: -2px -1px;
 }
 
 .VPFooter a,

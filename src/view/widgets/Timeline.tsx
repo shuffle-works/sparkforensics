@@ -15,7 +15,7 @@ import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 
 const TIMELINE_TOP_N = 20;
 // Per-category row height for the y-axis: 24px is the measured gap that keeps a
-// 11px "Stage N" label legible against its neighbors. Chart height scales with
+// 12px "Stage N" label legible against its neighbors. Chart height scales with
 // row count instead of staying fixed.
 const ROW_HEIGHT = 24;
 // px the x-axis line, its ticks, and Recharts' default margins consume below
