@@ -84,8 +84,13 @@ uses a numeric-aware sort, so re-redacting an already-redacted report is a
 no-op even past `host-10`: a token that is already a pseudonym is never numbered
 again. Replacement is one pass per string over a single alternation of the collected
 identifiers, longest first, so its cost does not grow with the number of hosts times
-the number of strings. A host is replaced only as a whole token: a short host such as
-a bucket named `data` leaves `metadata` and `raw_data` alone. A nested-scheme URL such as
+the number of strings. A host from a `host` field, and a URL or `host:port` host shaped
+as an FQDN or IP, is replaced only as a whole token: a short host such as `master` leaves
+`metadata` and `masters` alone. A single-word URL host, such as a bucket named `data` in
+`s3a://data/logs`, and a single-word host from a config `host:port` value, such as
+`shuffle` in `shuffle:18080`, are replaced only in URL authority or `host:port` position.
+The same word in prose or in a finding field such as `type` or `impactBand` stays as
+written. A nested-scheme URL such as
 `k8s://https://host:6443` yields the inner host, never the inner scheme.
 
 User names have no list to look up, so `scrubUserNames` in `redact.ts` replaces them

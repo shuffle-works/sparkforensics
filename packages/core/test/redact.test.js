@@ -540,13 +540,49 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
     expect(text).not.toContain('carol');
   });
 
-  it('replaces a short host only as a whole token, never inside a longer word', () => {
+  it('replaces a single-word URL host only in URL authority position', () => {
     const data = run();
     data.app.config['spark.eventLog.dir'] = 's3a://data/logs';
-    data.stages[0].name = 'scan data; metadata, datastore, raw_data, data_events, data.json, data.';
+    data.stages[0].name = 'scan data at s3a://data/in; metadata, raw_data, data.json, data.';
     const out = redactRun(data);
     expect(out.appModel.app.config['spark.eventLog.dir']).toMatch(/^s3a:\/\/host-\d+\/logs$/);
-    expect(out.appModel.stages.get(1).name).toMatch(/^scan host-\d+; metadata, datastore, raw_data, data_events, data\.json, host-\d+\.$/);
+    expect(out.appModel.stages.get(1).name).toMatch(/^scan data at s3a:\/\/host-\d+\/in; metadata, raw_data, data\.json, data\.$/);
+  });
+
+  it('keeps a sentence period after a single-word URL host outside the host', () => {
+    const finding = { type: 'skew', recommendation: 'Event logs go to s3a://shuffle. Reduce shuffle. Read db01.corp.example.' };
+    const out = redactReport({ findings: [finding], summary: { app: { id: null } } }).findings[0];
+    expect(out.recommendation).toMatch(/^Event logs go to s3a:\/\/host-\d+\. Reduce shuffle\. Read db01\.corp\.example\.$/);
+    expect(redactReport({ findings: [{ type: 'skew', recommendation: 'Logs at s3a://db01.corp.example. See db01.corp.example.' }], summary: { app: { id: null } } }).findings[0].recommendation)
+      .toMatch(/^Logs at s3a:\/\/(host-\d+)\. See \1\.$/);
+  });
+
+  it.each(['shuffle', 'info', 'data'])('keeps enum fields and prose intact when the log dir bucket is %s', (bucket) => {
+    const finding = { type: 'skew', impactBand: 'info', cause: 'data', summary: `uneven ${bucket} assignment`, host: 'worker-zz9' };
+    const data = run();
+    data.app.config['spark.eventLog.dir'] = `s3a://${bucket}/logs`;
+    data.catalog = [finding];
+    const out = redactRun(data);
+    expect(out.appModel.app.config['spark.eventLog.dir']).toMatch(/^s3a:\/\/host-\d+\/logs$/);
+    expect(out.catalog[0]).toEqual({ ...finding, host: expect.stringMatching(/^host-\d+$/) });
+    expect(redactReport({ findings: [finding], summary: { app: { id: null }, dir: `s3a://${bucket}/x` } }).findings[0])
+      .toEqual({ ...finding, host: expect.stringMatching(/^host-\d+$/) });
+  });
+
+  it('replaces a single-word config host:port host only in host:port or URL position', () => {
+    const finding = { type: 'shuffle', impactBand: 'info', summary: 'uneven shuffle assignment', host: 'worker-zz9' };
+    const data = run();
+    data.app.config['spark.yarn.historyServer.address'] = 'shuffle:18080';
+    data.app.config['spark.history.ui.url'] = 'http://shuffle/history';
+    data.stages[0].name = 'shuffle read from shuffle:18080';
+    data.catalog = [finding];
+    const out = redactRun(data);
+    const { config } = out.appModel.app;
+    const [, pseudonym] = config['spark.yarn.historyServer.address'].match(/^(host-\d+):18080$/);
+    expect(config['spark.history.ui.url']).toBe(`http://${pseudonym}/history`);
+    expect(out.appModel.stages.get(1).name).toBe(`shuffle read from ${pseudonym}:18080`);
+    expect(config['spark.sql.shuffle.partitions']).toBe('200');
+    expect(out.catalog[0]).toEqual({ ...finding, host: expect.stringMatching(/^host-\d+$/) });
   });
 
   it('pseudonymizes host:port values under any config key', () => {
