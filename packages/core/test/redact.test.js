@@ -549,6 +549,14 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
     expect(out.appModel.stages.get(1).name).toMatch(/^scan data at s3a:\/\/host-\d+\/in; metadata, raw_data, data\.json, data\.$/);
   });
 
+  it('keeps a sentence period after a single-word URL host outside the host', () => {
+    const finding = { type: 'skew', recommendation: 'Event logs go to s3a://shuffle. Reduce shuffle. Read db01.corp.example.' };
+    const out = redactReport({ findings: [finding], summary: { app: { id: null } } }).findings[0];
+    expect(out.recommendation).toMatch(/^Event logs go to s3a:\/\/host-\d+\. Reduce shuffle\. Read db01\.corp\.example\.$/);
+    expect(redactReport({ findings: [{ type: 'skew', recommendation: 'Logs at s3a://db01.corp.example. See db01.corp.example.' }], summary: { app: { id: null } } }).findings[0].recommendation)
+      .toMatch(/^Logs at s3a:\/\/(host-\d+)\. See \1\.$/);
+  });
+
   it.each(['shuffle', 'info', 'data'])('keeps enum fields and prose intact when the log dir bucket is %s', (bucket) => {
     const finding = { type: 'skew', impactBand: 'info', cause: 'data', summary: `uneven ${bucket} assignment`, host: 'worker-zz9' };
     const data = run();

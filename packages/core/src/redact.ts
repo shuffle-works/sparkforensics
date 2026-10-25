@@ -17,9 +17,8 @@ import { REDACTED_TEXT, redactTaskFailureGroup, type TaskFailureDetail } from '.
 
 // Host / IP identifier patterns. Used to enumerate host names that surface only
 // inside free text: recommendation strings, SQL relation/node names, never as a
-// structured `host` field, so redaction reaches those residuals too. A pattern with a
-// capture group yields that group, not the whole match. Pseudonyms (`host-1`) are never
-// collected (see PSEUDONYM), keeping the scan idempotent.
+// structured `host` field, so redaction reaches those residuals too. Pseudonyms (`host-1`) are
+// never collected (see PSEUDONYM), keeping the scan idempotent.
 const HOST_PATTERNS = [
   // EC2-style ip-10-1-2-3 with an optional dotted domain (ip-10-1-2-3.ec2.internal).
   // Each domain label must start with an alphanumeric, so a trailing sentence
@@ -31,9 +30,11 @@ const HOST_PATTERNS = [
 // The host of a URL authority (`scheme://[userinfo@]host[:port]/`): hdfs, jdbc, s3a, spark,
 // http. Reads the host from any shape, a short name (`nn01`) or an FQDN (`db01.corp.example`),
 // a bucket name or a bracketed IPv6 address. A nested scheme (`k8s://https://host:443`) is read
-// through to the inner URL's host, never taken as a host itself. The host is the end of the match.
+// through to the inner URL's host, never taken as a host itself. The capture group yields the
+// host, which is the end of the match. The host never ends on a dot, so a sentence period after
+// it (`s3a://data.`) stays outside the host.
 const URL_AUTHORITY_PATTERNS = [
-  /\b(?:[a-z][a-z0-9+.-]*:\/\/)+(?:[^\s/?#@]*@)?(\[[0-9a-f:.]+\]|[^\s/?#:@'"<>()[\]{}|,;\\]+)(?![^\s/?#:@'"<>()[\]{}|,;\\]|:\/\/)/gi,
+  /\b(?:[a-z][a-z0-9+.-]*:\/\/)+(?:[^\s/?#@]*@)?(\[[0-9a-f:.]+\]|[^\s/?#:@'"<>()[\]{}|,;\\]*[^\s/?#:@'"<>()[\]{}|,;\\.])(?!\.*[^\s/?#:@'"<>()[\]{}|,;\\.]|:\/\/)/gi,
 ];
 
 // A pseudonym this module writes. Never given a new pseudonym, so a second pass over a redacted
@@ -149,7 +150,7 @@ function redactFailureText<T>(node: T): T {
 // walk catches (the literal key is the dotted Spark property name, never
 // `host` itself). app.config and each SQL execution's modifiedConfigs are
 // flat Record<string, string> dicts that only the run-tree redaction ships.
-// A value under any other key is caught when it is a URL (HOST_PATTERNS) or a comma-separated
+// A value under any other key is caught when it is a URL (URL_AUTHORITY_PATTERNS) or a comma-separated
 // list of `host:port` entries (spark.yarn.historyServer.address, the YARN HA addresses). A bare
 // host name under another key (`spark.some.server=db01`) is not recognized.
 const HOST_PORT = /^(?=[^:]*[a-z])([a-z0-9][a-z0-9.-]*):\d{2,5}$/i;
