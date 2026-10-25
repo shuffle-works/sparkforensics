@@ -34,6 +34,10 @@ const URL_AUTHORITY_PATTERNS = [
   /\b(?:[a-z][a-z0-9+.-]*:\/\/)+(?:[^\s/?#@]*@)?(\[[0-9a-f:.]+\]|[^\s/?#:@'"<>()[\]{}|,;\\]*[^\s/?#:@'"<>()[\]{}|,;\\.])(?!\.*[^\s/?#:@'"<>()[\]{}|,;\\.]|:\/\/)/gi,
 ];
 
+// A single-word host in `host:port` position (`shuffle:18080`). Only replaces a word host already
+// collected from a URL authority or a config `host:port` value; it never collects one.
+const WORD_HOST_PORT_POSITION = /(?<![A-Za-z0-9_.-])([a-z0-9][a-z0-9-]*)(?=:\d{2,5}(?!\d))/gi;
+
 // A pseudonym this module writes. Never given a new pseudonym, so a second pass over a redacted
 // tree leaves it alone instead of numbering it again.
 const PSEUDONYM = /^(?:host|app)-\d+$/;
@@ -148,10 +152,11 @@ function redactFailureText<T>(node: T): T {
 // `host` itself). app.config and each SQL execution's modifiedConfigs are
 // flat Record<string, string> dicts that only the run-tree redaction ships.
 // A value under any other key is caught when it is a URL (URL_AUTHORITY_PATTERNS) or a comma-separated
-// list of `host:port` entries (spark.yarn.historyServer.address, the YARN HA addresses). A bare
-// host name under another key (`spark.some.server=db01`) is not recognized.
+// list of `host:port` entries (spark.yarn.historyServer.address, the YARN HA addresses). A `host:port`
+// host joins `urlHosts`, so a single-word one follows the URL word-host rule. A bare host name under
+// another key (`spark.some.server=db01`) is not recognized.
 const HOST_PORT = /^(?=[^:]*[a-z])([a-z0-9][a-z0-9.-]*):\d{2,5}$/i;
-function collectConfigHostValues(config: Record<string, string> | undefined, hosts: Set<string>): void {
+function collectConfigHostValues(config: Record<string, string> | undefined, hosts: Set<string>, urlHosts: Set<string>): void {
   if (!config) return;
   for (const [key, value] of Object.entries(config)) {
     if (!value) continue;
@@ -159,7 +164,7 @@ function collectConfigHostValues(config: Record<string, string> | undefined, hos
     if (lastSegment === 'host' || lastSegment === 'hostname') hosts.add(value);
     else for (const entry of value.split(',')) {
       const host = HOST_PORT.exec(entry.trim())?.[1];
-      if (host) hosts.add(host);
+      if (host) urlHosts.add(host);
     }
   }
 }
@@ -254,7 +259,7 @@ function singlePassReplacer(
     ? text.replace(pattern, (match) => appIds.get(match) ?? hosts.get(match) ?? match)
     : text);
   if (urlWordHosts.size === 0) return replaceWholeTokens;
-  const replaceUrlHost = (text: string) => URL_AUTHORITY_PATTERNS.reduce((out, re) => out.replace(re, (match, host: string) => {
+  const replaceUrlHost = (text: string) => [...URL_AUTHORITY_PATTERNS, WORD_HOST_PORT_POSITION].reduce((out, re) => out.replace(re, (match, host: string) => {
     const pseudonym = urlWordHosts.get(host);
     return pseudonym ? match.slice(0, match.length - host.length) + pseudonym : match;
   }), text);
@@ -265,8 +270,9 @@ function singlePassReplacer(
 function applyReplacements<T>(node: T, ids: { appIds?: Set<string>; hosts: Set<string>; urlHosts: Set<string> }): T {
   const unseen = (set: Set<string>) => new Set([...set].filter((id) => !PSEUDONYM.test(id)));
   const appIds = ids.appIds ? buildMap(unseen(ids.appIds), 'app') : new Map<string, string>();
-  // A single-word URL host (`s3a://data/logs`) is replaced only in URL authority position, because the
-  // same word elsewhere is prose or a finding's `type`. An FQDN or IP URL host joins the whole-token set.
+  // A single-word URL or config `host:port` host (`s3a://data/logs`, `shuffle:18080`) is replaced only
+  // in URL authority or `host:port` position, because the same word elsewhere is prose or a finding's
+  // `type`. An FQDN or IP host joins the whole-token set.
   const isWord = (host: string) => !/[.:]/.test(host);
   const wordUrlHosts = new Set([...ids.urlHosts].filter((h) => isWord(h) && !ids.hosts.has(h)));
   const allHosts = buildMap(unseen(new Set([...ids.hosts, ...ids.urlHosts])), 'host');
@@ -331,7 +337,7 @@ function withoutExecutorRemovalReasons<T extends RunTree>(data: T): T {
 function redactRunTree<T extends RunTree>(input: T): T {
   const data = withoutExecutorRemovalReasons(redactFailureText(input));
   const ids = { appIds: new Set<string>(), hosts: new Set<string>(), urlHosts: new Set<string>() };
-  const { appIds, hosts } = ids;
+  const { appIds, hosts, urlHosts } = ids;
   const appId = data.app?.id;
   if (typeof appId === 'string' && appId.length > 0) appIds.add(appId);
   collectHostFields(data.executors.added, hosts);
@@ -339,8 +345,8 @@ function redactRunTree<T extends RunTree>(input: T): T {
   collectHostFields(data.catalog, hosts);
   collectHostFields(data.configFindings, hosts);
   collectHostFields(data.stages, hosts);
-  collectConfigHostValues(data.app?.config, hosts);
-  for (const exec of data.sql ?? []) collectConfigHostValues(exec.modifiedConfigs, hosts);
+  collectConfigHostValues(data.app?.config, hosts, urlHosts);
+  for (const exec of data.sql ?? []) collectConfigHostValues(exec.modifiedConfigs, hosts, urlHosts);
   scanIdentifiers(data, ids);
   const replaced = applyReplacements(data, ids);
   const out = replaced.sql ? { ...replaced, sql: replaced.sql.map(withoutJobSetQueryValues) } : replaced;

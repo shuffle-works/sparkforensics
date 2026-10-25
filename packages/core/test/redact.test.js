@@ -569,6 +569,22 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
       .toEqual({ ...finding, host: expect.stringMatching(/^host-\d+$/) });
   });
 
+  it('replaces a single-word config host:port host only in host:port or URL position', () => {
+    const finding = { type: 'shuffle', impactBand: 'info', summary: 'uneven shuffle assignment', host: 'worker-zz9' };
+    const data = run();
+    data.app.config['spark.yarn.historyServer.address'] = 'shuffle:18080';
+    data.app.config['spark.history.ui.url'] = 'http://shuffle/history';
+    data.stages[0].name = 'shuffle read from shuffle:18080';
+    data.catalog = [finding];
+    const out = redactRun(data);
+    const { config } = out.appModel.app;
+    const [, pseudonym] = config['spark.yarn.historyServer.address'].match(/^(host-\d+):18080$/);
+    expect(config['spark.history.ui.url']).toBe(`http://${pseudonym}/history`);
+    expect(out.appModel.stages.get(1).name).toBe(`shuffle read from ${pseudonym}:18080`);
+    expect(config['spark.sql.shuffle.partitions']).toBe('200');
+    expect(out.catalog[0]).toEqual({ ...finding, host: expect.stringMatching(/^host-\d+$/) });
+  });
+
   it('pseudonymizes host:port values under any config key', () => {
     const out = serialized();
     for (const host of ['hist01.corp.example', 'rm1.corp.example', 'rm2.corp.example']) expect(out).not.toContain(host);
