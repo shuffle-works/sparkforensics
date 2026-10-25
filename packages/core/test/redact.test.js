@@ -540,13 +540,25 @@ describe('redactRunModel: URL hosts, user names and stage hosts', () => {
     expect(text).not.toContain('carol');
   });
 
-  it('replaces a short host only as a whole token, never inside a longer word', () => {
+  it('replaces a single-word URL host only in URL authority position', () => {
     const data = run();
     data.app.config['spark.eventLog.dir'] = 's3a://data/logs';
-    data.stages[0].name = 'scan data; metadata, datastore, raw_data, data_events, data.json, data.';
+    data.stages[0].name = 'scan data at s3a://data/in; metadata, raw_data, data.json, data.';
     const out = redactRun(data);
     expect(out.appModel.app.config['spark.eventLog.dir']).toMatch(/^s3a:\/\/host-\d+\/logs$/);
-    expect(out.appModel.stages.get(1).name).toMatch(/^scan host-\d+; metadata, datastore, raw_data, data_events, data\.json, host-\d+\.$/);
+    expect(out.appModel.stages.get(1).name).toMatch(/^scan data at s3a:\/\/host-\d+\/in; metadata, raw_data, data\.json, data\.$/);
+  });
+
+  it.each(['shuffle', 'info', 'data'])('keeps enum fields and prose intact when the log dir bucket is %s', (bucket) => {
+    const finding = { type: 'skew', impactBand: 'info', cause: 'data', summary: `uneven ${bucket} assignment`, host: 'worker-zz9' };
+    const data = run();
+    data.app.config['spark.eventLog.dir'] = `s3a://${bucket}/logs`;
+    data.catalog = [finding];
+    const out = redactRun(data);
+    expect(out.appModel.app.config['spark.eventLog.dir']).toMatch(/^s3a:\/\/host-\d+\/logs$/);
+    expect(out.catalog[0]).toEqual({ ...finding, host: expect.stringMatching(/^host-\d+$/) });
+    expect(redactReport({ findings: [finding], summary: { app: { id: null }, dir: `s3a://${bucket}/x` } }).findings[0])
+      .toEqual({ ...finding, host: expect.stringMatching(/^host-\d+$/) });
   });
 
   it('pseudonymizes host:port values under any config key', () => {
