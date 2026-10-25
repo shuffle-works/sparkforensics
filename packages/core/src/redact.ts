@@ -27,12 +27,9 @@ const HOST_PATTERNS = [
   /\b(?:\d{1,3}\.){3}\d{1,3}\b/g, // bare IPv4: 10.1.2.3
 ];
 
-// The host of a URL authority (`scheme://[userinfo@]host[:port]/`): hdfs, jdbc, s3a, spark,
-// http. Reads the host from any shape, a short name (`nn01`) or an FQDN (`db01.corp.example`),
-// a bucket name or a bracketed IPv6 address. A nested scheme (`k8s://https://host:443`) is read
-// through to the inner URL's host, never taken as a host itself. The capture group yields the
-// host, which is the end of the match. The host never ends on a dot, so a sentence period after
-// it (`s3a://data.`) stays outside the host.
+// The host of a URL authority (`scheme://[userinfo@]host[:port]/`), of any shape: a short name, an
+// FQDN, a bucket or a bracketed IPv6 address. A nested scheme reads through to the inner host. The
+// capture group is the end of the match and never ends on a dot, so a sentence period stays outside.
 const URL_AUTHORITY_PATTERNS = [
   /\b(?:[a-z][a-z0-9+.-]*:\/\/)+(?:[^\s/?#@]*@)?(\[[0-9a-f:.]+\]|[^\s/?#:@'"<>()[\]{}|,;\\]*[^\s/?#:@'"<>()[\]{}|,;\\.])(?!\.*[^\s/?#:@'"<>()[\]{}|,;\\.]|:\/\/)/gi,
 ];
@@ -180,6 +177,14 @@ interface RedactableReport {
   findings?: unknown[];
 }
 
+function scanIdentifiers(node: unknown, ids: { appIds: Set<string>; hosts: Set<string>; urlHosts: Set<string> }): void {
+  scanTokens(node, [
+    { patterns: HOST_PATTERNS, out: ids.hosts },
+    { patterns: URL_AUTHORITY_PATTERNS, out: ids.urlHosts },
+    { patterns: APP_ID_PATTERNS, out: ids.appIds },
+  ]);
+}
+
 function collectIds(report: RedactableReport): { appIds: Set<string>; hosts: Set<string>; urlHosts: Set<string> } {
   const appIds = new Set<string>();
   const hosts = new Set<string>();
@@ -187,14 +192,9 @@ function collectIds(report: RedactableReport): { appIds: Set<string>; hosts: Set
   const appId = report?.summary?.app?.id;
   if (typeof appId === 'string' && appId.length > 0) appIds.add(appId);
   collectHostFields(report?.findings, hosts);
-  // Free-text scan for both host/IP tokens and app-id tokens: an app id can
-  // surface in a finding's evidence/recommendation text (e.g. "retry app
+  // An app id can surface in a finding's evidence/recommendation text (e.g. "retry app
   // application_1690000000000_0001 failed") same as redactComparison's scan.
-  scanTokens(report, [
-    { patterns: HOST_PATTERNS, out: hosts },
-    { patterns: URL_AUTHORITY_PATTERNS, out: urlHosts },
-    { patterns: APP_ID_PATTERNS, out: appIds },
-  ]);
+  scanIdentifiers(report, { appIds, hosts, urlHosts });
   return { appIds, hosts, urlHosts };
 }
 
@@ -228,10 +228,8 @@ function deepReplace(node: unknown, replace: (text: string) => string): unknown 
   return node;
 }
 
-// A host is replaced only as a whole token, so a short host such as `master` leaves `metadata`,
-// `raw_data` and `masters` alone. An app id is distinctive enough to be replaced anywhere, including
-// inside a file name. A single-word host read from a URL (`s3a://data/logs`) is replaced only in URL
-// authority position: the same word elsewhere is prose or a finding's `type` and stays as written.
+// A host is replaced only as a whole token, so `master` leaves `metadata` and `masters` alone. An app
+// id is replaced anywhere, including inside a file name.
 const HOST_TOKEN_BEFORE = '(?<![A-Za-z0-9_.-])';
 const HOST_TOKEN_AFTER = '(?![A-Za-z0-9_-]|\\.[A-Za-z0-9])';
 
@@ -263,15 +261,12 @@ function singlePassReplacer(
   return (text) => replaceUrlHost(replaceWholeTokens(text));
 }
 
-// Shared by every redact* export below: turns collected app-id/host sets into
-// the replacement list and applies it. Centralizes the
-// buildMap+sort+deepReplace sequence so each narrower redact* function only
-// has to say what it collects, not how replacement is carried out.
+// Shared by every redact* export below: turns the collected sets into replacements and applies them.
 function applyReplacements<T>(node: T, ids: { appIds?: Set<string>; hosts: Set<string>; urlHosts: Set<string> }): T {
   const unseen = (set: Set<string>) => new Set([...set].filter((id) => !PSEUDONYM.test(id)));
   const appIds = ids.appIds ? buildMap(unseen(ids.appIds), 'app') : new Map<string, string>();
-  // A URL host with a dot (FQDN, IPv4) or colon (IPv6) is host-shaped, so it joins the whole-token
-  // set. A single word stays in the URL-only map, unless a host field names it too.
+  // A single-word URL host (`s3a://data/logs`) is replaced only in URL authority position, because the
+  // same word elsewhere is prose or a finding's `type`. An FQDN or IP URL host joins the whole-token set.
   const isWord = (host: string) => !/[.:]/.test(host);
   const wordUrlHosts = new Set([...ids.urlHosts].filter((h) => isWord(h) && !ids.hosts.has(h)));
   const allHosts = buildMap(unseen(new Set([...ids.hosts, ...ids.urlHosts])), 'host');
@@ -299,15 +294,9 @@ export function redactReport<T extends RedactableReport>(input: T): T {
 // application_1690000000000_0001 worker-10-1-2-3.scala:45`). Scans the whole
 // tree rather than enumerating fields, so any free-text field is covered.
 export function redactComparison<T>(comparison: T): T {
-  const hosts = new Set<string>();
-  const urlHosts = new Set<string>();
-  const appIds = new Set<string>();
-  scanTokens(comparison, [
-    { patterns: HOST_PATTERNS, out: hosts },
-    { patterns: URL_AUTHORITY_PATTERNS, out: urlHosts },
-    { patterns: APP_ID_PATTERNS, out: appIds },
-  ]);
-  return applyReplacements(comparison, { appIds, hosts, urlHosts });
+  const ids = { appIds: new Set<string>(), hosts: new Set<string>(), urlHosts: new Set<string>() };
+  scanIdentifiers(comparison, ids);
+  return applyReplacements(comparison, ids);
 }
 
 // HTML-export counterpart to redactReport/redactComparison. Unlike
@@ -341,9 +330,8 @@ function withoutExecutorRemovalReasons<T extends RunTree>(data: T): T {
 
 function redactRunTree<T extends RunTree>(input: T): T {
   const data = withoutExecutorRemovalReasons(redactFailureText(input));
-  const appIds = new Set<string>();
-  const hosts = new Set<string>();
-  const urlHosts = new Set<string>();
+  const ids = { appIds: new Set<string>(), hosts: new Set<string>(), urlHosts: new Set<string>() };
+  const { appIds, hosts } = ids;
   const appId = data.app?.id;
   if (typeof appId === 'string' && appId.length > 0) appIds.add(appId);
   collectHostFields(data.executors.added, hosts);
@@ -353,12 +341,8 @@ function redactRunTree<T extends RunTree>(input: T): T {
   collectHostFields(data.stages, hosts);
   collectConfigHostValues(data.app?.config, hosts);
   for (const exec of data.sql ?? []) collectConfigHostValues(exec.modifiedConfigs, hosts);
-  scanTokens(data, [
-    { patterns: HOST_PATTERNS, out: hosts },
-    { patterns: URL_AUTHORITY_PATTERNS, out: urlHosts },
-    { patterns: APP_ID_PATTERNS, out: appIds },
-  ]);
-  const replaced = applyReplacements(data, { appIds, hosts, urlHosts });
+  scanIdentifiers(data, ids);
+  const replaced = applyReplacements(data, ids);
   const out = replaced.sql ? { ...replaced, sql: replaced.sql.map(withoutJobSetQueryValues) } : replaced;
   if (!out.app) return out;
   const app = withRedactedName(out.app);
