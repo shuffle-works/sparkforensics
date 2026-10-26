@@ -184,7 +184,7 @@ describe('diagnose_run format "md"', () => {
     expect(result.content[0].type).toBe('text');
     expect(result.content[0].text).toMatch(/^# Spark run evidence report/);
     expect(Object.keys(result.structuredContent).sort()).toEqual(
-      ['findingCount', 'findingsOmitted', 'markdown', 'recommendationCount', 'runComplete', 'runId', 'title']);
+      ['findingCount', 'findingsOmitted', 'markdown', 'notesHidden', 'recommendationCount', 'runComplete', 'runId', 'title']);
     expect(result.structuredContent.markdown).toBe(result.content[0].text);
   });
 });

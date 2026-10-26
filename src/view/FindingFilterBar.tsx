@@ -72,7 +72,7 @@ function DimensionMenu({
  * chips even when the menus are closed. Renders nothing when the catalog offers
  * no options.
  */
-export function FindingFilterBar({ options, resultCount }: { options: FilterOptions; resultCount: number }) {
+export function FindingFilterBar({ options, resultCount, hiddenNotes = 0 }: { options: FilterOptions; resultCount: number; hiddenNotes?: number }) {
   const { selection, toggleImpactBand, toggleType, toggleStage, clearAll } = useFindingFilter();
   const [stageQuery, setStageQuery] = useState('');
   const [typeQuery, setTypeQuery] = useState('');
@@ -136,7 +136,9 @@ export function FindingFilterBar({ options, resultCount }: { options: FilterOpti
       <span role="status" aria-live="polite" className="text-xs text-muted-foreground">
         {active
           ? `${resultCount} finding${resultCount === 1 ? '' : 's'} match${resultCount === 1 ? 'es' : ''} the active filters`
-          : `Showing all ${resultCount} finding${resultCount === 1 ? '' : 's'}`}
+          : hiddenNotes > 0
+            ? `Showing ${resultCount} finding${resultCount === 1 ? '' : 's'}, info notes hidden`
+            : `Showing all ${resultCount} finding${resultCount === 1 ? '' : 's'}`}
       </span>
       <Separator orientation="vertical" className="h-6" />
 

@@ -119,9 +119,11 @@ Options:
                                     check the output before sharing it outside the environment
                                     that produced it.
   --impact <band[,band]>            Filter the output's findings array to these impact bands
-                                    (critical, warning, info). recommendations, cleanChecks,
-                                    notRunChecks and the summary counts stay on the full,
-                                    unfiltered set.
+                                    (critical, warning, info). Without it the array lists
+                                    critical and warning findings only; notesHidden counts the
+                                    info findings left out, and --impact critical,warning,info
+                                    lists all. recommendations, cleanChecks, notRunChecks and
+                                    the summary counts stay on the full, unfiltered set.
   --type <type[,type]>              Filter the output's findings array to these finding types. An
                                     unknown band or type is a usage error.
   --stage <id>                      Filter the output's findings array to this stage id (a
@@ -365,7 +367,7 @@ async function runMultiLog({
         { label: 'candidate', appModel, catalog },
         { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand, caveatThresholds, generator: generatorInfo() },
       );
-      const { json } = buildEvidenceReport(appModel, { redact, findingsFilter, markdown: false, thresholds });
+      const { json, notesHidden } = buildEvidenceReport(appModel, { redact, findingsFilter, markdown: false, thresholds });
       const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
       for (const r of results) {
         if (r.status !== 'pass') process.stderr.write(`${log}: [${r.status === 'violation' ? 'violation' : 'inconclusive'}] ${r.name}: ${r.detail}\n`);
@@ -377,7 +379,7 @@ async function runMultiLog({
         exitCode,
         error: null,
         budgets: results,
-        candidate: { ...json, ...runOutputBlocks(appModel, { redact, thresholds, confKeys, confRedactRegex, generator: generatorInfo() }) },
+        candidate: { ...json, notesHidden, ...runOutputBlocks(appModel, { redact, thresholds, confKeys, confRedactRegex, generator: generatorInfo() }) },
         comparison: output,
       };
     } catch (e) {
@@ -781,7 +783,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     ));
   }
 
-  const { markdown, json } = buildEvidenceReport(appModel, {
+  const { markdown, json, notesHidden } = buildEvidenceReport(appModel, {
     redact: values.redact, findingsFilter, markdown: values.format === 'md', thresholds,
   });
   let output;
@@ -793,8 +795,8 @@ async function runCli(argv, { fetchImpl } = {}) {
       generator: generatorInfo(),
     });
     const payload = comparison
-      ? { candidate: { ...json, ...machineReadable }, comparison: comparisonJson }
-      : { ...json, ...machineReadable };
+      ? { candidate: { ...json, notesHidden, ...machineReadable }, comparison: comparisonJson }
+      : { ...json, notesHidden, ...machineReadable };
     output = `${JSON.stringify(payload, null, 2)}\n`;
   }
   if (values.out) writeFileSync(values.out, output);

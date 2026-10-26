@@ -45,7 +45,7 @@ function SpillEvidence({ finding }: { finding: FindingOf<'spill'> }) {
           {operators.map((op) => `${op.name}${op.feeds ? ` (feeds ${op.feeds})` : ''} ${formatBytes(op.spillBytes)}`).join(', ')}
         </li>
       ) : null}
-      {spillToInputRatio !== undefined ? <li>{describeSpillRatio(spillToInputRatio, wideRows, reads === 'input')}</li> : null}
+      {spillToInputRatio !== undefined ? <li>{describeSpillRatio(spillToInputRatio, wideRows, reads === 'input', exchanges[0]?.columns)}</li> : null}
       {exchanges.length > 0 ? <li>Rows read: {exchanges.map(formatRowWidth).join('; ')}</li> : null}
     </ul>
   );

@@ -53,7 +53,7 @@ describe.skipIf(LOGS.length === 0)('surface parity on public corpus logs', () =>
       // CLI json and markdown path, and MCP diagnose_run.
       const { json } = buildEvidenceReport(appModel);
       const { runId } = await resolveOrCreateRun({ source: { path } });
-      const mcp = diagnoseRun(runId).findings;
+      const mcp = diagnoseRun(runId, { minBand: 'info' }).findings;
 
       for (const [surface, rows] of [['cli', json.findings], ['mcp', mcp]]) {
         expect(rows.length, `${file} ${surface}`).toBe(dashboard.size);

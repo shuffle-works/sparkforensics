@@ -2044,8 +2044,8 @@ export const DETECTORS = [
       // shuffle.partitions sizes a shuffle's reduce side: a stage that reads no shuffle gets memory only.
       const reads = stageReads(stage);
       const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, ctx) : null;
-      const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
-      const { operators, exchanges } = attributeSpill(plan, stage.id);
+      const execution = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId) : undefined;
+      const { operators, exchanges } = attributeSpill(execution?.planTree, stage.id);
       const ratio = spillToInputRatio(stage.memoryBytesSpilled, stage.inputBytes, stage.shuffleReadBytes, thresholds.wideRowMinInputMB * MB);
       const wide = ratio !== null && ratio >= thresholds.wideRowRatio;
       const advice = cls === 'skew'
@@ -2053,13 +2053,15 @@ export const DETECTORS = [
         : shuffleFix
           ? `${formatBytes(stage.memoryBytesSpilled)} spilled: ${shuffleFix.text}.`
           : `${formatBytes(stage.memoryBytesSpilled)} spilled: this stage reads no shuffle, so increase executor memory or process less data per task.`;
-      const cause = describeSpillCause(operators, ratio, wide, reads === 'input');
+      const cause = describeSpillCause(operators, ratio, wide, reads === 'input', exchanges[0]);
+      const sqlDescription = execution?.description?.trim().slice(0, 200);
       return {
         type: 'spill', stageId: stage.id, impactBand, reads,
         spillMagnitude: mag?.magnitude,
         ...(ratio !== null ? { spillToInputRatio: ratio, wideRows: wide } : {}),
         ...(operators.length > 0 ? { operators } : {}),
         ...(exchanges.length > 0 ? { exchanges } : {}),
+        ...(sqlDescription ? { sqlDescription } : {}),
         metric: 'memoryBytesSpilled', value: stage.memoryBytesSpilled,
         confidence: classified ? 'medium' : 'low',
         validationRequired: classified

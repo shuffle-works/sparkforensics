@@ -21,8 +21,8 @@ schemaVersion, summary, verdict, evidenceAvailability, detectors, findings, writ
   jobCount, sqlExecutionCount, skippedLines, findingCount, impactBandCounts,
   actionableFindingCount, actionableImpactBandCounts, clean, outcome, runShape }`. `findingCount`
   counts every row in `findings`; the `actionable*` counts leave out evidence
-  caveats and the `incompleteRun` row, the same set the dashboard's top bar and
-  verdict count. `clean` is `isCleanRun` from `packages/core/src/check-coverage.ts`, and
+  caveats, the `incompleteRun` row and info findings (`actionableImpactBandCounts.info`
+  is always 0), so they count the critical and warning findings to act on. `clean` is `isCleanRun` from `packages/core/src/check-coverage.ts`, and
   `outcome` is `{ failedJobs, totalJobs, failureReason, failureReasonStageId }` from
   `summarizeRunOutcome` (`packages/core/src/run-outcome.ts`), the job results the dashboard
   verdict leads with; the Markdown prints it as an `- Outcome:` header line. `runShape`
@@ -177,7 +177,9 @@ type on a log where no stage recorded an end, and the run-span types (`utilizati
 in `notRunChecks` instead of `cleanChecks`, each `{ type, tag, thresholdSummary, reason }`, where
 `reason` is the caveat's own recommendation (it names the setting to turn on) or the log-wide
 sentence. The Markdown has a `## Not checked on this log` section above `## Clean checks`, and a
-`Findings to act on` header line.
+`Findings to act on` header line. Its `## Findings` section lists the `slowHost` rows of one
+host (or, for a per-executor row, one executor) as one entry with a line per stage
+(`groupSlowHosts`); the JSON rows stay one per stage.
 
 `Finding` is a union discriminated on `type`, one member per emitted
 finding type (`packages/core/src/finding-types.ts`), and a finding row's `evidence` is an

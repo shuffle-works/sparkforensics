@@ -93,7 +93,9 @@ each widget to the finding itself and what to do about it. Turn it on to also
 show confidence levels, supporting evidence, and a page icon beside each
 finding's tag that opens its entry in these docs, plus a few extra table columns and the finding filter bar (impact,
 type, stage). A filter that is already active, for example from a shared
-link, keeps the filter bar visible either way. In the verdict, each step
+link, keeps the filter bar visible either way. The Findings list leaves out info
+findings until the impact filter names the info band. A line above the list counts
+the hidden notes, and **Show notes** lists them with the other bands. In the verdict, each step
 also says how its savings figure was estimated (measured or modeled, and
 whether the stage ran alone or shared the cluster, which makes the figure a
 range from a floor to an optimistic high), shows any confidence marker, and

@@ -130,8 +130,9 @@ export function formatRowWidth({ columns, bytesPerRow }: ExchangeWidth): string 
 
 /** The sentence for a spill finding's spill-to-input ratio. A high ratio means wide rows; on a scan
  * stage (`fromScan`) the input is compressed on disk, so it can come from that as well. */
-export function describeSpillRatio(ratio: number, wide: boolean, fromScan: boolean): string {
-  const reason = !wide ? '' : fromScan ? ', so the rows are wide or the input files compress well, as Parquet does' : ', so the rows are wide';
+export function describeSpillRatio(ratio: number, wide: boolean, fromScan: boolean, columns?: number): string {
+  const width = columns !== undefined ? ` (${columns} columns)` : '';
+  const reason = !wide ? '' : fromScan ? `, so the rows are wide${width} or the input files compress well, as Parquet does` : `, so the rows are wide${width}`;
   return `Memory spill is ${ratio}x the stage's input${reason}.`;
 }
 

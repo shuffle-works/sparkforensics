@@ -412,6 +412,6 @@ test('shows the spilling operators, the spill-to-input ratio and the exchange wi
     </DocsProvider>,
   );
   expect(screen.getByText(/Spilled by Sort \(feeds SortMergeJoin\) 2\.0 GB/)).toBeInTheDocument();
-  expect(screen.getByText(/12x the stage's input, so the rows are wide or the input files compress well/)).toBeInTheDocument();
+  expect(screen.getByText(/12x the stage's input, so the rows are wide \(128 columns\) or the input files compress well/)).toBeInTheDocument();
   expect(screen.getByText('Rows read: 128 columns · 410 B/row')).toBeInTheDocument();
 });

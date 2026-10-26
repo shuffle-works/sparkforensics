@@ -290,7 +290,7 @@ describe('createMcpServer', () => {
       const server = createMcpServer();
       const client = await connectedClient(server);
 
-      const diagnose = await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, redact: true } });
+      const diagnose = await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, redact: true, minBand: 'info' } });
       expect(diagnose.isError).toBeFalsy();
 
       const summary = await client.callTool({ name: 'get_run_summary', arguments: { source: { path }, redact: true } });
@@ -410,6 +410,7 @@ describe('createMcpServer', () => {
         title: jsonResult.structuredContent.verdict.title,
         findingCount: jsonResult.structuredContent.findings.length,
         findingsOmitted: 0,
+        notesHidden: jsonResult.structuredContent.notesHidden,
         recommendationCount: jsonResult.structuredContent.recommendations.length,
         markdown: mdResult.content[0].text,
       });
@@ -484,7 +485,7 @@ describe('createMcpServer', () => {
     const tuned = { straggler: { minTasks: { value: 2, default: 10 } } };
     try {
       const client = await connectedClient(createMcpServer({ thresholds: parseThresholdOverrides({ straggler: { minTasks: 2 } }) }));
-      const diagnosed = (await client.callTool({ name: 'diagnose_run', arguments: { source: { path } } })).structuredContent;
+      const diagnosed = (await client.callTool({ name: 'diagnose_run', arguments: { source: { path }, minBand: 'info' } })).structuredContent;
       expect(diagnosed.tunedThresholds).toEqual(tuned);
       expect(diagnosed.findings.find((f) => f.type === 'straggler').tunedThresholds).toEqual(tuned.straggler);
       expect(diagnosed.findings.find((f) => f.type === 'memoryUtilization').tunedThresholds).toBeUndefined();

@@ -161,6 +161,10 @@ export interface SpillOperator {
   name: string;
   spillBytes: number;
   feeds?: string;
+  // The operator's plan arguments (a Sort's keys, an aggregate's keys and functions), cut to 300 characters.
+  arguments?: string;
+  // Sort only: true for a global sort (ORDER BY), false for one within each partition.
+  global?: boolean;
 }
 
 /** The columns of an exchange's rows and their estimated bytes per row ("data size" over shuffle
@@ -173,6 +177,12 @@ export interface ExchangeWidth {
 /** The width of an exchange an operator reads from, with its read half's plan node id. */
 export interface SpillExchange extends ExchangeWidth {
   nodeId: string;
+  // The partitioning as the plan prints it (`hashpartitioning(k#1, 200)`) and its partition count.
+  partitioning?: string;
+  partitions?: number;
+  // Why Spark planned the shuffle. REPARTITION_BY_NUM is the job's own repartition(n), so
+  // spark.sql.shuffle.partitions does not change its count.
+  origin?: string;
 }
 
 export interface SpillEvidence {
@@ -187,6 +197,8 @@ export interface SpillEvidence {
   operators?: SpillOperator[];
   // The exchanges those operators read.
   exchanges?: SpillExchange[];
+  // Description of the SQL execution the stage belongs to, cut to 200 characters.
+  sqlDescription?: string;
 }
 export interface SpillFinding extends NumericFinding<'spill'>, SpillEvidence {}
 

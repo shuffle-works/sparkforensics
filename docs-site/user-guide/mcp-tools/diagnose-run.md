@@ -76,8 +76,8 @@ error, and when both are given `runId` wins):
   in the `full` view):
   - `summary`: app id/name/Spark version, stage/job/SQL-execution counts,
     `skippedLines` (as in `get_run_summary`), a finding count broken down by impact band, the same counts without evidence
-    caveats and the incomplete-run row (`actionableFindingCount`,
-    `actionableImpactBandCounts`, what the dashboard counts), `outcome` (how
+    caveats, info notes and the incomplete-run row (`actionableFindingCount`,
+    `actionableImpactBandCounts`, the critical and warning findings to act on), `outcome` (how
     the run ended), `runShape` (as in `get_run_summary`), `clean`, and
     `tunedThresholds` on a tuned server
   - `evidenceAvailability`: which event types the log actually contained, so
@@ -95,14 +95,16 @@ error, and when both are given `runId` wins):
   including a SQL plan finding whose only stage it is (the dashboard's stage
   details rule)
 - `minBand`: `"critical" | "warning" | "info"`, lists only findings at this
-  band or a more severe one
+  band or a more severe one. Without `minBand` or `impactBand`, `findings` leaves
+  out info findings: `notesHidden` counts them, and `minBand: "info"` lists
+  every band.
 - `maxFindings`: non-negative integer, lists at most this many findings after
   every other filter, most severe first. `findingsOmitted` counts the
   matching findings the limit left out (always present, `0` when none).
 - `format`: `"json" | "md"` (default `"json"`), switches `content[0].text` to
   a rendered Markdown report instead of JSON. With `"md"`, `structuredContent`
   holds the same report as `markdown`, next to `runId`, `runComplete`, `title`
-  (the verdict's), `findingCount`, `findingsOmitted` and `recommendationCount`.
+  (the verdict's), `findingCount`, `findingsOmitted`, `notesHidden` and `recommendationCount`.
 
 - `cursor`: `string`, the `pagination.nextCursor` of the previous page. See
   [Pages](#pages).
@@ -121,7 +123,7 @@ A JSON answer longer than 50,000 characters comes in pages. These lists are
 paged, in this order: `findings`, `cleanChecks`, `notRunChecks`,
 `metrics.stages` and `writeTargets.writes`. The first page keeps
 the shape of the whole answer: the fixed blocks (`verdict`, `recommendations`,
-`app`, `generator`, `effectiveConf`, `runComplete`, `findingsOmitted`, the
+`app`, `generator`, `effectiveConf`, `runComplete`, `findingsOmitted`, `notesHidden`, the
 other fields of `metrics` and `writeTargets`) and as many rows as fit. The fixed
 blocks count toward the budget, so `include: ["detectors"]` can push the first
 page over 50,000 characters.
@@ -163,6 +165,7 @@ event; fields trimmed: `verdict`, `recommendations`, `metrics`, `writeTargets`,
   "app": { "id": "application_0000000000000_0001", "attemptId": null },
   "runComplete": false,
   "findingsOmitted": 0,
+  "notesHidden": 0,
   "findings": [
     {
       "id": "1d473001",
