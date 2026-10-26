@@ -70,13 +70,17 @@ export interface WallClockBridge {
 export interface Caveats {
   /** Mean executors differ by more than `executorRatio`, in either direction. */
   executors: { baseline: number; candidate: number } | null;
-  /** More than `unmatchedShare` of the baseline's stages pair with no candidate stage. `runtimeShare`
-   * is those stages' share of the baseline's executor run time, null when it is unmeasured. */
+  /** More than `unmatchedShare` of the baseline's stages pair with no candidate stage, counting the
+   * stages left over in replanned groups. `runtimeShare` is those stages' share of the baseline's
+   * executor run time, null when it is unmeasured. */
   unmatchedStages: { count: number; of: number; runtimeShare: number | null } | null;
   /** The task count changed by more than `taskCountChange`; `change` is relative to the baseline. */
   taskCount: { baseline: number; candidate: number; change: number } | null;
   /** The runs ran in different YARN queues; a side that does not set one is null. */
   queue: { baseline: string | null; candidate: string | null } | null;
+  /** The jar or Python file paths differ (`spark.jars`, `spark.submit.pyFiles`, `spark.yarn.dist.*`),
+   * a likely code change; null when none differs. */
+  codeFiles: ConfDifference[] | null;
 }
 
 export interface CaveatThresholds {
@@ -163,16 +167,19 @@ function comparePlan(alignment: Pick<StageAlignment, 'unmatched' | 'replanned'>)
 }
 
 const QUEUE_CONF_KEY = 'spark.yarn.queue';
+const CODE_FILE_CONF = /^spark\.(jars|submit\.pyFiles|yarn\.dist\..+)$/;
 
 function buildCaveats(
-  baseSnap: SessionSnapshot, alignment: Pick<StageAlignment, 'unmatched' | 'bookkeepingStageIds'>, conf: ConfComparability,
+  baseSnap: SessionSnapshot, alignment: Pick<StageAlignment, 'unmatched' | 'replanned' | 'bookkeepingStageIds'>, conf: ConfComparability,
   meanExecutors: BridgeFactor, taskTime: BridgeFactor, tasks: VolumeFigure, thresholds: CaveatThresholds,
 ): Caveats {
   const { ratio } = meanExecutors;
-  const unmatchedStages = alignment.unmatched.baseStageIds.map((id) => baseSnap.stages.get(id)!);
+  const unmatchedStages = [...alignment.unmatched.baseStageIds, ...alignment.replanned.flatMap((g) => g.baseStageIds)]
+    .map((id) => baseSnap.stages.get(id)!);
   const stageCount = baseSnap.stages.size - alignment.bookkeepingStageIds.baseStageIds.length;
   const unmatchedRunTime = withEarlierAttempts(unmatchedStages).reduce((sum, stage) => sum + (stage.executorRunTime ?? 0), 0);
   const queue = conf.differences.find((d) => d.key === QUEUE_CONF_KEY);
+  const codeFiles = conf.differences.filter((d) => CODE_FILE_CONF.test(d.key));
   return {
     executors: ratio != null && Math.max(ratio, 1 / ratio) > thresholds.executorRatio
       ? { baseline: meanExecutors.baseline!, candidate: meanExecutors.candidate! } : null,
@@ -181,6 +188,7 @@ function buildCaveats(
     taskCount: tasks.relativeDifference != null && Math.abs(tasks.relativeDifference) > thresholds.taskCountChange
       ? { baseline: tasks.baseline!, candidate: tasks.candidate!, change: tasks.relativeDifference } : null,
     queue: queue ? { baseline: queue.baseline, candidate: queue.candidate } : null,
+    codeFiles: codeFiles.length > 0 ? codeFiles : null,
   };
 }
 

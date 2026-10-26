@@ -92,7 +92,9 @@ Parameters:
   (`count` of the baseline's stages with no match, `of` the baseline's stages, and
   `runtimeShare`, their share of the baseline's executor run time), `taskCount`
   (`baseline`, `candidate` and relative `change`) and `queue` (`baseline` and
-  `candidate` values of `spark.yarn.queue`, `null` for a side that does not set it).
+  `candidate` values of `spark.yarn.queue`, `null` for a side that does not set it)
+  and `codeFiles` (each differing `spark.jars`, `spark.submit.pyFiles` or
+  `spark.yarn.dist.*` key with its `baseline` and `candidate` paths).
 
 The `verdict` tone is `equivalent` when `conf.equal`, `plan.equal` and
 `volume.equal` are all `true` and either the wall-clock gap is within the noise
@@ -103,9 +105,11 @@ wall clock and the title ends "no measured factor explains it". When `volume.equ
 is `null`, the tone also comes from the wall clock and the title reads "Same
 configuration and plan. Output was not compared." The tone is `mixed` when the
 wall clock and executor run-time or allocated core-hours move opposite ways past the
-noise band and the configuration or plan differs. When the runs are not equivalent, the
-verdict also carries one sentence for each of `caveats.executors` (when the wall clock
-moved), `caveats.queue` and the plan caveats. A failed job or an incomplete log
+noise band and the configuration or plan differs. When the configuration or plan
+differs, the verdict also carries one sentence for each of `caveats.executors` (when
+the wall clock moved the way the executor change predicts), `caveats.queue` and the
+plan caveats with `caveats.codeFiles`. The plan sentence also shows when
+configuration, plan and output agree. A failed job or an incomplete log
 still leads the verdict.
 
 Each side needs either a `runId` or a `source`, and you can mix them: a

@@ -765,7 +765,9 @@ recorded in `comparison.comparability.caveats` (`null` when it does not apply):
 mean executors that differ by more than `--executor-ratio <n>` times (default `1.5`),
 a baseline with more than `--unmatched-stages-pct <pct>` of its stages unmatched
 (default `20`) or a task count that changes by more than `--task-count-change-pct <pct>`
-(default `25`), and a `spark.yarn.queue` that differs. All three flags need a baseline.
+(default `25`), and a `spark.yarn.queue` that differs. A differing `spark.jars`,
+`spark.submit.pyFiles` or `spark.yarn.dist.*` path is in `caveats.codeFiles` and
+reads as a likely code change. All three flags need a baseline.
 
 ```bash
 npx -p sparkforensics-cli sparkforensics-analyze candidate --baseline baseline \
