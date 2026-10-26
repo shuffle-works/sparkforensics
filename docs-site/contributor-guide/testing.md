@@ -46,6 +46,11 @@ suite. Each has a pack-and-spawn test (for example
 published tarball and spawns the real `.bin` entry point, exercising the
 production build end-to-end.
 
+`npm run test:e2e` (`e2e/`) drives the production build in Playwright Chromium
+through the local server. It needs `npm run build` and
+`npx playwright install chromium`, and fails on any request outside the page's
+origin or any Content-Security-Policy violation.
+
 `npm run test:core`, `test:cli` and `test:mcp` run with v8 coverage; CI
 uploads every suite's lcov to Coveralls. No coverage threshold is enforced
 (see the comment in `vitest.config.js`).

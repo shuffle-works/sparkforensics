@@ -1,6 +1,7 @@
-import { defineConfig, type ViteDevServer } from 'vite';
+import { defineConfig, type Plugin, type ViteDevServer } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { copyDocsSite } from './vite-plugins/copy-docs-site';
@@ -83,13 +84,41 @@ function serveDocsSiteDev() {
   };
 }
 
+// Every request the app makes goes to its own origin: History Server fetches go through the
+// local server's /shs-proxy, and the docs iframe is the same-origin /docs/. The inline theme
+// script in index.html is allowed by hash. Build only: the dev server injects inline scripts.
+function contentSecurityPolicy(): Plugin {
+  return {
+    name: 'content-security-policy',
+    apply: 'build',
+    transformIndexHtml(html) {
+      const scriptHashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+        ([, source]) => `'sha256-${createHash('sha256').update(source).digest('base64')}'`,
+      );
+      const policy = [
+        "default-src 'self'",
+        `script-src 'self' ${scriptHashes.join(' ')}`,
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "connect-src 'self'",
+        "worker-src 'self' blob:",
+        "frame-src 'self'",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+      ].join('; ');
+      return [{ tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: policy }, injectTo: 'head-prepend' }];
+    },
+  };
+}
+
 export default defineConfig({
   base: './',
   define: {
     __SPARKFORENSICS_WEB_VERSION__: JSON.stringify(webVersion),
     __SPARKFORENSICS_CORE_BUILD_ID__: JSON.stringify(coreBuildId),
   },
-  plugins: [react(), tailwindcss(), copyDocsSite('dist'), serveDocsSiteDev()],
+  plugins: [react(), tailwindcss(), contentSecurityPolicy(), copyDocsSite('dist'), serveDocsSiteDev()],
   resolve: { alias: { '@': path.resolve(__dirname, 'src') } },
   build: {
     outDir: 'dist',
