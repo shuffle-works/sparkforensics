@@ -23,6 +23,14 @@ that is not a non-negative decimal, an unknown `--impact`, `--type` or
 fails, 5 when the `--baseline` log can't be read or parsed, and 6 for an
 internal error, including a failed `--export-html`.
 
+The report lists critical and warning findings only. Info findings are notes:
+`notesHidden` counts them, and the Markdown report says how many it left out.
+`--impact critical,warning,info` lists all three bands, and `--impact info` lists the
+notes alone. Rows in `findings` can be one per stage, so the Markdown report
+lists a host or executor that lags in several stages once, with a line of evidence per stage.
+`summary.impactBandCounts` always counts every band, and `Findings to act on`
+counts critical and warning findings.
+
 A log line the parser can't read (corrupt or invalid JSON, or an event that
 fails its schema) is skipped, so every total covers only the lines that
 parsed. The report's `summary.skippedLines` holds the count (`0` for a clean

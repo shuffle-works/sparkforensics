@@ -2,13 +2,14 @@
 // exchange's column count is the one its plan description gives (`inputColumns`), else the nearest
 // node below it that lists its columns. A shape this cannot read yields no figure.
 
-import { describeSpillRatio, formatBytes } from './format-utils.ts';
+import { clipAtWord, describeSpillRatio, formatBytes } from './format-utils.ts';
 import { isExchangeNode } from './plan-node-detail.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import type { ExchangeWidth, SpillExchange, SpillOperator } from './finding-types.ts';
 import type { PlanNode } from './types.ts';
 
 const MAX_OPERATORS = 5;
+const MAX_ARGUMENTS_CHARS = 300;
 const SPILLING_OPERATOR = /^(Sort|HashAggregate|ObjectHashAggregate|Window)$/;
 const PASS_THROUGH = /^(Sort|Filter|InputAdapter|WholeStageCodegen|ShuffleQueryStage|AQEShuffleRead|CustomShuffleReader|ColumnarToRow|Coalesce)\b/;
 // An executed plan puts these between a SortMergeJoin and each of its child Sorts.
@@ -72,6 +73,24 @@ function inputExchange(node: PlanNode): PlanNode | null {
   return current ?? null;
 }
 
+// What a node's plan text says after its name, cut at a word to MAX_ARGUMENTS_CHARS.
+function operatorArguments(node: PlanNode): string | undefined {
+  const text = (node.detail ?? '').slice(node.name.length).trim();
+  if (!text) return undefined;
+  return clipAtWord(text, MAX_ARGUMENTS_CHARS);
+}
+
+// `Exchange hashpartitioning(k#1, 200), REPARTITION_BY_NUM, [plan_id=5]`: the partitioning, its
+// partition count and the shuffle origin. A ReusedExchange prints the exchange it reuses the same way.
+// Spark 3.1 to 3.3 end the line with `[id=#5]`, and Spark 3.0 prints a true/false flag, not an origin.
+function exchangeArguments(exchange: PlanNode): Pick<SpillExchange, 'partitioning' | 'partitions' | 'origin'> {
+  const match = /\bExchange\s+(\w+\(.*\)|SinglePartition)(?:,\s*(?:([A-Z_]+)|true|false))?(?:,\s*\[(?:plan_)?id=#?\d+\])?\s*$/.exec(exchange.detail ?? '');
+  if (!match) return {};
+  const [, partitioning, origin] = match;
+  const partitions = /(\d+)\)$/.exec(partitioning)?.[1];
+  return { partitioning, ...(partitions ? { partitions: Number(partitions) } : {}), ...(origin ? { origin } : {}) };
+}
+
 /** The width of an exchange (the read half of a split Exchange, or a ReusedExchange); null when
  * neither its columns nor its bytes per row are known. The write half holds the metrics and the plan below. */
 export function exchangeWidth(exchange: PlanNode): ExchangeWidth | null {
@@ -107,12 +126,17 @@ export function attributeSpill(
   const spilled = candidates
     .sort((a, b) => b.spillBytes - a.spillBytes)
     .slice(0, MAX_OPERATORS);
-  const operators = spilled.map(({ node, feeds, spillBytes }): SpillOperator => ({
-    nodeId: node.id!, name: node.name, spillBytes, ...(feeds ? { feeds } : {}),
-  }));
+  const operators = spilled.map(({ node, feeds, spillBytes }): SpillOperator => {
+    const args = operatorArguments(node);
+    const sortGlobal = node.name === 'Sort' ? /\],\s*(true|false),\s*\d+$/.exec(node.detail ?? '')?.[1] : undefined;
+    return {
+      nodeId: node.id!, name: node.name, spillBytes, ...(feeds ? { feeds } : {}),
+      ...(args ? { arguments: args } : {}), ...(sortGlobal ? { global: sortGlobal === 'true' } : {}),
+    };
+  });
   const exchanges = [...new Set(spilled.map(({ node }) => inputExchange(node)))].flatMap((exchange) => {
-    const width = exchange && exchangeWidth(exchange);
-    return width ? { nodeId: exchange.id!, ...width } : [];
+    const known = exchange && { ...exchangeWidth(exchange), ...exchangeArguments(exchange) };
+    return known && Object.keys(known).length > 0 ? { nodeId: exchange.id!, ...known } : [];
   });
   return { operators, exchanges };
 }
@@ -132,9 +156,14 @@ function operatorLabel({ name, nodeId, feeds, spillBytes }: SpillOperator): stri
 
 /** Where the spill sits: the operators with their plan node ids, then the spill-to-input ratio. Free
  * of ": ", so the recommendation it ends still splits at its advice (recommendationParts). */
-export function describeSpillCause(operators: SpillOperator[], ratio: number | null, wide: boolean, fromScan: boolean): string {
+export function describeSpillCause(
+  operators: SpillOperator[], ratio: number | null, wide: boolean, fromScan: boolean, exchange?: SpillExchange,
+): string {
   const sentences: string[] = [];
   if (operators.length > 0) sentences.push(`Spilled by ${operators.map(operatorLabel).join(', ')}.`);
-  if (ratio !== null) sentences.push(describeSpillRatio(ratio, wide, fromScan));
+  if (ratio !== null) sentences.push(describeSpillRatio(ratio, wide, fromScan, exchange?.columns));
+  if (exchange?.origin === 'REPARTITION_BY_NUM') {
+    sentences.push(`Its input is the job's own repartition(${exchange.partitions ?? 'n'}), so spark.sql.shuffle.partitions does not change it.`);
+  }
   return sentences.join(' ');
 }

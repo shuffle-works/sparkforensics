@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { zstdCompressSync } from 'node:zlib';
 import { collectRun } from '@sparkforensics/core/cli/collect-run.ts';
 import { deriveEvidenceAvailability } from '@sparkforensics/core/evidence-availability.ts';
-import { buildEvidenceReport } from '@sparkforensics/core/evidence-report.ts';
+import { buildEvidenceReport, toFindingsFilter } from '@sparkforensics/core/evidence-report.ts';
 import { main } from '../bin/sparkforensics-analyze.mjs';
 // tests/helpers/ stays at the repo root because packages/core/test/mcp-tools.test.js
 // shares this same fixture helper.
@@ -180,7 +180,7 @@ describe('sparkforensics-analyze CLI', () => {
 
       const { appModel, skippedLines } = await collectRun(path);
       appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
-      const { json: directJson } = buildEvidenceReport(appModel);
+      const { json: directJson } = buildEvidenceReport(appModel, { findingsFilter: toFindingsFilter() });
 
       expect(cliJson.findings).toEqual(directJson.findings);
       expect(cliJson.schemaVersion).toBe(directJson.schemaVersion);
@@ -300,7 +300,7 @@ describe('sparkforensics-analyze CLI', () => {
 
       const { appModel, skippedLines } = await collectRun(path);
       appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
-      const { markdown } = buildEvidenceReport(appModel);
+      const { markdown } = buildEvidenceReport(appModel, { findingsFilter: toFindingsFilter() });
 
       expect(stdout).toBe(`${markdown}\n`);
     } finally {
@@ -854,13 +854,33 @@ describe('sparkforensics-analyze CLI', () => {
       const path = join(dir, 'eventlog');
       writeFileSync(path, ndjsonWithSkew());
       try {
-        const { stdout, status } = runCli([path, '--stage', '1']);
+        const { stdout, status } = runCli([path, '--stage', '1', '--impact', 'critical,warning,info']);
         expect(status).toBe(0);
         const { findings } = JSON.parse(stdout);
         // The one 2000ms task gates the whole 2000ms stage, so stageShape's taskStageSkew fires too.
         // The tail has no measured cause, so it is straggler's alone.
         expect(findings.map((f) => f.type).sort()).toEqual(['stageShape', 'straggler']);
         expect(findings.every((f) => f.stageId === 1)).toBe(true);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('leaves info findings out unless --impact names them, and counts them in notesHidden', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-e2e-filter-'));
+      const path = join(dir, 'eventlog');
+      writeFileSync(path, ndjsonWithSkew());
+      try {
+        const byDefault = JSON.parse(runCli([path]).stdout);
+        const all = JSON.parse(runCli([path, '--impact', 'critical,warning,info']).stdout);
+        const infoCount = all.findings.filter((f) => f.impactBand === 'info').length;
+        expect(infoCount).toBeGreaterThan(0);
+        expect(byDefault.findings.some((f) => f.impactBand === 'info')).toBe(false);
+        expect(byDefault.notesHidden).toBe(infoCount);
+        expect(all.notesHidden).toBe(0);
+        expect(byDefault.summary.impactBandCounts).toEqual(all.summary.impactBandCounts);
+        const md = runCli([path, '--format', 'md']).stdout;
+        expect(md).toContain(`- Notes hidden: ${infoCount} info finding`);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }
@@ -945,7 +965,7 @@ describe('sparkforensics-analyze CLI', () => {
     try {
       const { appModel, skippedLines } = await collectRun(path);
       appModel.evidenceAvailability = deriveEvidenceAvailability(appModel, { skippedLines });
-      const { json: directJson } = buildEvidenceReport(appModel);
+      const { json: directJson } = buildEvidenceReport(appModel, { findingsFilter: toFindingsFilter() });
 
       expect(cliJson.findings).toEqual(directJson.findings);
       expect(cliJson.schemaVersion).toBe(directJson.schemaVersion);

@@ -27,6 +27,8 @@ function exchange(id, below, { producer = 1, dataSize, records } = {}) {
   return node(id, 'Exchange', 'Exchange hashpartitioning(k#1, 200), ENSURE_REQUIREMENTS, [plan_id=5]', [write], { stageIds: [producer], exchangeRole: 'read' });
 }
 
+const ENSURE_200 = { partitioning: 'hashpartitioning(k#1, 200)', partitions: 200, origin: 'ENSURE_REQUIREMENTS' };
+
 const wideProject = (columns) => node('proj', 'Project', `Project ${truncatedColumns(columns)}`, [node('scan', 'Scan parquet db.t', 'FileScan parquet db.t[k#1] Batched: true')]);
 
 function wideSortPlan({ spill = 3 * TB } = {}) {
@@ -36,8 +38,8 @@ function wideSortPlan({ spill = 3 * TB } = {}) {
   return node('write', 'WriteFiles', 'WriteFiles', [node('wscg', 'WholeStageCodegen (4)', 'WholeStageCodegen (4)', [sort], { stageIds: [2] })]);
 }
 
-function spillFinding(planTree, stageOverrides = {}) {
-  const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [], planTree }]]);
+function spillFinding(planTree, stageOverrides = {}, description = '') {
+  const sql = new Map([[1, { id: 1, description, startTime: 0, endTime: 100, stageIds: [], planTree }]]);
   const stages = new Map([[2, makeStage({
     id: 2, sqlExecutionId: 1, memoryBytesSpilled: 67.7 * TB, diskBytesSpilled: 20 * TB, shuffleReadBytes: 4 * TB,
     spillClassification: 'volume', spillMemMax: 5 * GB, spillDiskMax: 2 * GB, ...stageOverrides,
@@ -48,7 +50,7 @@ function spillFinding(planTree, stageOverrides = {}) {
 describe('attributeSpill', () => {
   it('names the sort that spilled with its plan node id and reported spill', () => {
     const { operators } = attributeSpill(wideSortPlan(), 2);
-    expect(operators).toEqual([{ nodeId: 'sort', name: 'Sort', spillBytes: 3 * TB }]);
+    expect(operators).toEqual([{ nodeId: 'sort', name: 'Sort', spillBytes: 3 * TB, arguments: '[k#1 ASC NULLS FIRST], false, 0', global: false }]);
   });
 
   // As an executed plan prints it: each Sort sits in its own codegen stage under an InputAdapter.
@@ -66,20 +68,22 @@ describe('attributeSpill', () => {
     const idle = node('agg', 'HashAggregate', 'HashAggregate(keys=[k#1], functions=[count(1)])', [sortMergeJoin(name)], { metrics: [sized('spill size', 0)], stageIds: [2] });
     const { operators } = attributeSpill(idle, 2);
     expect(operators).toEqual([
-      { nodeId: 'right', name: 'Sort', spillBytes: 24.2 * TB, feeds: 'SortMergeJoin' },
-      { nodeId: 'left', name: 'Sort', spillBytes: 10 * GB, feeds: 'SortMergeJoin' },
+      { nodeId: 'right', name: 'Sort', spillBytes: 24.2 * TB, feeds: 'SortMergeJoin', arguments: '[k#1 ASC NULLS FIRST], false, 0', global: false },
+      { nodeId: 'left', name: 'Sort', spillBytes: 10 * GB, feeds: 'SortMergeJoin', arguments: '[k#1 ASC NULLS FIRST], false, 0', global: false },
     ]);
   });
 
   it('does not mark a sort as feeding a join it only sits below through other operators', () => {
     const sort = node('sort', 'Sort', 'Sort [k#1 ASC NULLS FIRST], false, 0', [], { metrics: [sized('spill size', GB)], stageIds: [2] });
     const join = node('smj', 'SortMergeJoin', 'SortMergeJoin [k#1], [k#2], Inner', [node('f', 'Filter', 'Filter (k#1 > 0)', [sort])]);
-    expect(attributeSpill(join, 2).operators).toEqual([{ nodeId: 'sort', name: 'Sort', spillBytes: GB }]);
+    expect(attributeSpill(join, 2).operators).toEqual([{ nodeId: 'sort', name: 'Sort', spillBytes: GB, arguments: '[k#1 ASC NULLS FIRST], false, 0', global: false }]);
   });
 
   it('names a hash aggregate that spilled', () => {
     const agg = node('agg', 'HashAggregate', 'HashAggregate(keys=[k#1], functions=[sum(v#2)])', [], { metrics: [sized('spill size', 2 * GB)], stageIds: [2] });
-    expect(attributeSpill(agg, 2).operators).toEqual([{ nodeId: 'agg', name: 'HashAggregate', spillBytes: 2 * GB }]);
+    expect(attributeSpill(agg, 2).operators).toEqual([
+      { nodeId: 'agg', name: 'HashAggregate', spillBytes: 2 * GB, arguments: '(keys=[k#1], functions=[sum(v#2)])' },
+    ]);
   });
 
   it('names no operator when the plan reports no spill size', () => {
@@ -108,7 +112,7 @@ describe('attributeSpill', () => {
     const window = node('window', 'Window', 'Window [rank() ...]', [sort], { metrics: [sized('spill size', GB)], stageIds: [2] });
     const { operators, exchanges } = attributeSpill(window, 2);
     expect(operators.map((op) => op.nodeId)).toEqual(['window', 'sort']);
-    expect(exchanges).toEqual([{ nodeId: 'xchg', columns: 40, bytesPerRow: 400 }]);
+    expect(exchanges).toEqual([{ nodeId: 'xchg', columns: 40, bytesPerRow: 400, ...ENSURE_200 }]);
   });
 });
 
@@ -193,12 +197,12 @@ describe('describeSpillCause', () => {
 describe('spill finding', () => {
   it('names the operator, shows the ratio and says the rows are wide, with the exchange width in evidence', () => {
     const finding = spillFinding(wideSortPlan());
-    expect(finding.operators).toEqual([{ nodeId: 'sort', name: 'Sort', spillBytes: 3 * TB }]);
-    expect(finding.exchanges).toEqual([{ nodeId: 'xchg', columns: 128, bytesPerRow: 410 }]);
+    expect(finding.operators).toEqual([{ nodeId: 'sort', name: 'Sort', spillBytes: 3 * TB, arguments: '[k#1 ASC NULLS FIRST], false, 0', global: false }]);
+    expect(finding.exchanges).toEqual([{ nodeId: 'xchg', columns: 128, bytesPerRow: 410, ...ENSURE_200 }]);
     expect(finding.spillToInputRatio).toBe(16.9);
     expect(finding.wideRows).toBe(true);
     expect(finding.recommendation).toContain('Spilled by Sort sort 3000.0 GB.');
-    expect(finding.recommendation).toContain("Memory spill is 16.9x the stage's input, so the rows are wide.");
+    expect(finding.recommendation).toContain("Memory spill is 16.9x the stage's input, so the rows are wide (128 columns).");
   });
 
   it('keeps the recommendation split on its advice, with the cause after it', () => {
@@ -206,7 +210,7 @@ describe('spill finding', () => {
     const advice = recommendation.slice(0, recommendation.indexOf(' Spilled by '));
     const { measured, fix } = recommendationParts(recommendation);
     expect(measured).toBe(recommendationParts(advice).measured);
-    expect(fix).toBe(`${recommendationParts(advice).fix} Spilled by Sort sort 3000.0 GB. Memory spill is 16.9x the stage's input, so the rows are wide.`);
+    expect(fix).toBe(`${recommendationParts(advice).fix} Spilled by Sort sort 3000.0 GB. Memory spill is 16.9x the stage's input, so the rows are wide (128 columns).`);
   });
 
   it('keeps the existing advice and does not call rows wide below a 10x ratio', () => {
@@ -230,5 +234,69 @@ describe('spill finding', () => {
     expect(finding).not.toHaveProperty('wideRows');
     expect(finding).not.toHaveProperty('operators');
     expect(finding).not.toHaveProperty('exchanges');
+  });
+});
+
+describe('spill finding on a user-partitioned sort', () => {
+  // A repartition(n, key) feeding sortWithinPartitions: the exchange is the job's own, not the session's.
+  function userPartitionedSortPlan(origin, suffix = '[plan_id=42]') {
+    const exchangeNode = node('xchg', 'Exchange', `Exchange hashpartitioning(key#7, 5000)${origin ? `, ${origin}` : ''}, ${suffix}`, [
+      node('xchg-w', 'Exchange', '', [wideProject(127)], { metrics: [sized('data size', 410 * GB), count('shuffle records written', 1e9)], stageIds: [1], exchangeRole: 'write' }),
+    ], { stageIds: [1], exchangeRole: 'read' });
+    return node('sort', 'Sort', 'Sort [day#11 ASC NULLS FIRST, region#12 ASC NULLS FIRST, seq#13 ASC NULLS FIRST], false, 0',
+      [exchangeNode], { metrics: [sized('spill size', 31 * TB)], stageIds: [2] });
+  }
+
+  it('carries the sort keys, the global flag, the exchange arguments and the SQL description', () => {
+    const finding = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'), {}, 'daily load 2026-07');
+    expect(finding.operators[0]).toMatchObject({
+      name: 'Sort', global: false,
+      arguments: '[day#11 ASC NULLS FIRST, region#12 ASC NULLS FIRST, seq#13 ASC NULLS FIRST], false, 0',
+    });
+    expect(finding.exchanges).toEqual([{
+      nodeId: 'xchg', columns: 127, bytesPerRow: 410,
+      partitioning: 'hashpartitioning(key#7, 5000)', partitions: 5000, origin: 'REPARTITION_BY_NUM',
+    }]);
+    expect(finding.sqlDescription).toBe('daily load 2026-07');
+  });
+
+  it('reads the exchange arguments of a Spark 3.1 to 3.3 plan, which ends with [id=#N]', () => {
+    const finding = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM', '[id=#42]'));
+    expect(finding.exchanges[0]).toMatchObject({ partitioning: 'hashpartitioning(key#7, 5000)', partitions: 5000, origin: 'REPARTITION_BY_NUM' });
+  });
+
+  it('reads the partitioning of a Spark 3.0 plan, which prints a flag and no origin', () => {
+    const finding = spillFinding(userPartitionedSortPlan('true', '[id=#42]'));
+    expect(finding.exchanges[0]).toMatchObject({ partitioning: 'hashpartitioning(key#7, 5000)', partitions: 5000 });
+    expect(finding.exchanges[0]).not.toHaveProperty('origin');
+  });
+
+  it('says the partitioning is the job\'s own and gives the column count of the wide rows', () => {
+    const { recommendation } = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'));
+    expect(recommendation).toContain("so the rows are wide (127 columns).");
+    expect(recommendation).toContain("Its input is the job's own repartition(5000), so spark.sql.shuffle.partitions does not change it.");
+  });
+
+  it('advises the job\'s repartition(n), not spark.sql.shuffle.partitions, even when both give the stage\'s task count', () => {
+    const finding = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'), { taskCount: 200 });
+    expect(finding.recommendation).toContain("raise the partition count of the job's own repartition(n) so each partition is smaller, or increase executor memory.");
+    expect(finding.recommendation).not.toContain('raise spark.sql.shuffle.partitions');
+    expect(finding.remediation.map((r) => r.key ?? r.kind)).not.toContain('spark.sql.shuffle.partitions');
+  });
+
+  it('does not say so for a session-planned shuffle', () => {
+    const finding = spillFinding(userPartitionedSortPlan('ENSURE_REQUIREMENTS'), { taskCount: 200 });
+    expect(finding.recommendation).not.toContain('repartition(');
+    expect(finding.recommendation).toContain('raise spark.sql.shuffle.partitions');
+  });
+
+  it('cuts a long description before a token, never inside it, so redaction still sees it whole', () => {
+    const lead = `nightly load from ${'a'.repeat(176)}`;
+    const finding = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'), {}, `${lead} 10.1.2.3 done`);
+    expect(finding.sqlDescription).toBe(`${lead}...`);
+  });
+
+  it('leaves the description out when the execution has none', () => {
+    expect(spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'))).not.toHaveProperty('sqlDescription');
   });
 });

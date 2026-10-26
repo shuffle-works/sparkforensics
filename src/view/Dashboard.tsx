@@ -17,7 +17,9 @@ import {
   emptySelection,
   excludingDimensions,
   filterFindings,
+  IMPACT_BANDS,
   isEmptySelection,
+  matchesFilter,
   type FilterDimension,
   type FilterOptions,
   type FilterSelection,
@@ -109,7 +111,7 @@ function ReferenceSection({
 /** Names the filter values a route cleared, for the notice that says so. */
 function clearedFilterNotice(dimensions: FilterDimension[], selection: FilterSelection, subject: string): string {
   const parts = dimensions.map((dimension) => {
-    if (dimension === 'impactBands') return `${[...selection.impactBands].join(', ')} impact`;
+    if (dimension === 'impactBands') return selection.impactBands.size > 0 ? `${[...selection.impactBands].join(', ')} impact` : 'default impact';
     if (dimension === 'types') return [...selection.types].map((type) => findingName(type)).join(', ');
     return [...selection.stages].map((stageId) => `Stage ${stageId}`).join(', ');
   });
@@ -179,6 +181,8 @@ function FilteredBoard({
     if (dimensions.length === 0) return;
     const next = { ...selection };
     for (const dimension of dimensions) Object.assign(next, { [dimension]: emptySelection()[dimension] });
+    // An empty impact selection lists critical and warning only, so an info finding needs the info band named.
+    if (dimensions.includes('impactBands') && finding.impactBand === 'info') next.impactBands = new Set(IMPACT_BANDS);
     replaceSelection(next);
     setFilterNotice({ text: clearedFilterNotice(dimensions, selection, subject), selection: next });
   }, [selection, replaceSelection]);
@@ -225,7 +229,11 @@ function FilteredBoard({
   // configAudit) empties `filteredCatalog` while `filteredConfig` still has
   // matches, and must NOT show "No findings match".
   const totalFilteredCount = filteredCatalog.length + filteredConfig.length;
-  const filteredToEmpty = (catalog.length + (configFindings ?? []).length) > 0 && totalFilteredCount === 0;
+  // Info findings the impact filter leaves out, that every other filter keeps.
+  const hiddenNotes = useMemo(() => [...catalog, ...(configFindings ?? [])].filter((finding) => (
+    finding.impactBand === 'info' && !matchesFilter(finding, selection) && matchesFilter({ ...finding, impactBand: 'warning' } as Finding, selection)
+  )).length, [catalog, configFindings, selection]);
+  const filteredToEmpty = (catalog.length + (configFindings ?? []).length) > 0 && totalFilteredCount === 0 && hiddenNotes === 0;
   const showFilterBar = density === 'advanced' || !isEmptySelection(selection);
 
   return (
@@ -247,11 +255,17 @@ function FilteredBoard({
       {/* Filtering is a power control: Advanced mode shows it, and so does an
           active selection (e.g. from a shared URL), so a filtered board never
           hides the control that explains and clears it. */}
-      {showFilterBar && <FindingFilterBar options={options} resultCount={totalFilteredCount} />}
+      {showFilterBar && <FindingFilterBar options={options} resultCount={totalFilteredCount} hiddenNotes={hiddenNotes} />}
       {/* The notice explains what the bar lost, so it goes when the bar does
           (Basic view once a route cleared the last active filter). */}
       {showFilterBar && filterNotice?.selection === selection ? (
         <p role="status" className="text-sm text-muted-foreground">{filterNotice.text}</p>
+      ) : null}
+      {hiddenNotes > 0 ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {hiddenNotes} info note{hiddenNotes === 1 ? '' : 's'} hidden. Select the info impact pill in Filter findings
+          {showFilterBar ? '' : ' (in Advanced view)'} to show {hiddenNotes === 1 ? 'it' : 'them'}.
+        </p>
       ) : null}
       {filteredToEmpty && <NoMatchBanner />}
       {/* Filtering to nothing at all is already covered by NoMatchBanner

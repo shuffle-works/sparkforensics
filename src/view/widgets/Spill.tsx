@@ -11,6 +11,7 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { describeSpillRatio, formatBytes, formatRowWidth, recommendPartitions, IMPACT_BAND_ORDER, numericValue, SPILL_CLASS_SHORT, SPILL_CLASS_TITLE } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding, FindingOf } from '@sparkforensics/core/types.ts';
+import type { SpillExchange } from '@sparkforensics/core/finding-types.ts';
 import { ROW_SEPARATOR_CLASS, useAnchoredRow } from '@/view/finding-anchor';
 import { useWidgetDensity } from '@/store/store';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
@@ -32,11 +33,18 @@ function classificationOf(appModel: WidgetProps['appModel'], stageId: number): S
   return stage?.spillClassification ?? 'unclassified';
 }
 
-/** Where the stage's spill sits: the operators that spilled, the spill-to-input ratio and the width
- * of the rows they read. */
+// `hashpartitioning(k#1, 200), 200 partitions, REPARTITION_BY_NUM`, as far as the plan gave it.
+function formatExchangeArguments({ partitioning, partitions, origin }: SpillExchange): string {
+  return [partitioning, partitions !== undefined ? `${partitions} partitions` : undefined, origin].filter(Boolean).join(', ');
+}
+
+/** Where the stage's spill sits: the operators that spilled with their arguments, the spill-to-input
+ * ratio, the width and partitioning of the rows they read, and the SQL execution's description. */
 function SpillEvidence({ finding }: { finding: FindingOf<'spill'> }) {
-  const { operators = [], exchanges = [], spillToInputRatio, wideRows = false, reads } = finding;
-  if (operators.length === 0 && exchanges.length === 0 && spillToInputRatio === undefined) return null;
+  const { operators = [], exchanges = [], spillToInputRatio, wideRows = false, reads, sqlDescription } = finding;
+  if (operators.length === 0 && exchanges.length === 0 && spillToInputRatio === undefined && !sqlDescription) return null;
+  const widths = exchanges.map(formatRowWidth).filter(Boolean);
+  const partitioned = exchanges.filter((ex) => ex.partitioning);
   return (
     <ul className="space-y-0.5 text-sm text-muted-foreground">
       {operators.length > 0 ? (
@@ -45,8 +53,15 @@ function SpillEvidence({ finding }: { finding: FindingOf<'spill'> }) {
           {operators.map((op) => `${op.name}${op.feeds ? ` (feeds ${op.feeds})` : ''} ${formatBytes(op.spillBytes)}`).join(', ')}
         </li>
       ) : null}
-      {spillToInputRatio !== undefined ? <li>{describeSpillRatio(spillToInputRatio, wideRows, reads === 'input')}</li> : null}
-      {exchanges.length > 0 ? <li>Rows read: {exchanges.map(formatRowWidth).join('; ')}</li> : null}
+      {spillToInputRatio !== undefined ? <li>{describeSpillRatio(spillToInputRatio, wideRows, reads === 'input', exchanges[0]?.columns)}</li> : null}
+      {operators.filter((op) => op.arguments).map((op) => (
+        <li key={op.nodeId}>
+          {op.name} {op.nodeId}{op.global === undefined ? '' : op.global ? ' (global sort)' : ' (sort within partitions)'}: {op.arguments}
+        </li>
+      ))}
+      {widths.length > 0 ? <li>Rows read: {widths.join('; ')}</li> : null}
+      {partitioned.length > 0 ? <li>Exchange: {partitioned.map(formatExchangeArguments).join('; ')}</li> : null}
+      {sqlDescription ? <li>SQL: {sqlDescription}</li> : null}
     </ul>
   );
 }
@@ -63,7 +78,9 @@ function SpillRow({
   const density = useWidgetDensity();
   const stage = appModel.stages.get(finding.stageId);
   const cls = classificationOf(appModel, finding.stageId);
-  const partitionHint = cls === 'volume' && stage ? recommendPartitions(stage) : null;
+  // A job's own repartition(n) sets the input partitioning, so spark.sql.shuffle.partitions would not change it.
+  const ownPartitioning = finding.type === 'spill' && finding.exchanges?.[0]?.origin === 'REPARTITION_BY_NUM';
+  const partitionHint = cls === 'volume' && stage && !ownPartitioning ? recommendPartitions(stage) : null;
   const showPlanExplorer = density === 'advanced' && resolvePlanTree(finding.stageId, appModel);
 
   return (

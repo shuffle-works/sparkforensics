@@ -213,7 +213,7 @@ const EVIDENCE_KEYS = {
   stageShape: ['rule'],
   shuffle: ['partitions'],
   partitionSizing: ['rule', 'origin', 'aqeSkew', 'partitions'],
-  spill: ['spillMagnitude', 'reads', 'spillToInputRatio', 'wideRows', 'operators', 'exchanges'],
+  spill: ['spillMagnitude', 'reads', 'spillToInputRatio', 'wideRows', 'operators', 'exchanges', 'sqlDescription'],
   gc: ['direction'],
   slowHost: ['variant', 'host', 'hostTaskShare', 'hostMeanMs', 'dimension', 'executorId', 'execMaxValue', 'executorCount', 'taskCount'],
   stageSlowness: ['reads'],
@@ -539,7 +539,8 @@ function buildJson(
   const unfiguredWrites = notRunWriteFigures(writeTargets);
   if (unfiguredWrites) notRunChecks.push(unfiguredWrites);
   const tuned = tunedDetectors(thresholds);
-  const actionable = allFindings.filter(isEligible);
+  // Notes (info) are context, not work: they stay out of the count a reader acts on.
+  const actionable = allFindings.filter((f) => isEligible(f) && f.impactBand !== 'info');
   const fullModel: AppModel = {
     ...appModel, stages: stages ?? new Map(), jobs: jobs ?? new Map(), executors: executors ?? { added: [], removed: [] },
   };
@@ -685,8 +686,59 @@ function renderVerdict(verdict: VerdictJson): string[] {
   return lines;
 }
 
+// "host h" or "executor e" for a slow-host row, which names one or the other.
+function slowHostSubject(row: FindingRow): string | undefined {
+  if (row.type !== 'slowHost') return undefined;
+  const { host, executorId } = row.evidence;
+  return host !== undefined ? `host ${host}` : executorId !== undefined ? `executor ${executorId}` : undefined;
+}
+
+// The rows of one host (or, for a per-executor row, one executor) in a single entry, at the place of
+// its first row; every other row stays as it is.
+function groupSlowHosts(rows: FindingRow[]): Array<FindingRow | FindingRow[]> {
+  const bySubject = new Map<string, FindingRow[]>();
+  const entries: Array<FindingRow | FindingRow[]> = [];
+  for (const row of rows) {
+    const subject = slowHostSubject(row);
+    if (subject === undefined) {
+      entries.push(row);
+      continue;
+    }
+    const group = bySubject.get(subject);
+    if (group) group.push(row);
+    else {
+      const created = [row];
+      bySubject.set(subject, created);
+      entries.push(created);
+    }
+  }
+  return entries;
+}
+
+// One slow-host entry: the most severe row (rows come most severe first) gives the title, action and
+// advice, and each stage the host or executor lagged in gets a line with that row's evidence (sorted,
+// leaving out the host or executor the title names).
+function renderSlowHostGroup(rows: FindingRow[]): string[] {
+  const [lead] = rows;
+  const subject = slowHostSubject(lead)!;
+  const titled = subject.startsWith('host ') ? 'host' : 'executorId';
+  const lines = [`### ${lead.name} · ${lead.impactBand} (${mdInline(subject)})`, `- action: ${mdInline(lead.actionLabel)}`, '- stages:'];
+  for (const r of rows) {
+    const where = r.stageId != null ? `stage ${r.stageId}` : 'run-wide';
+    const figure = r.metric != null ? `, ${mdInline(r.metric)} ${mdInline(String(r.valueText ?? r.value))}` : '';
+    const evidence = Object.entries(r.evidence ?? {})
+      .filter(([k]) => k !== titled)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => `${k} ${renderEvidenceValue(k, v)}`);
+    lines.push(`  - ${where}: ${r.impactBand}${figure}${evidence.length ? ` · ${evidence.join(', ')}` : ''}`);
+  }
+  if (lead.recommendation) lines.push(`- ${mdInline(lead.recommendation)}`);
+  lines.push('');
+  return lines;
+}
+
 // `incomplete` comes from the unfiltered findings, since a findingsFilter can drop the incompleteRun row.
-function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
+function renderMarkdown(json: EvidenceReportJson, incomplete: boolean, notesHidden: number): string {
   const { summary, verdict, findings, evidenceAvailability, detectors, recommendations, cleanChecks, notRunChecks } = json;
   const lines: string[] = [];
   lines.push('# Spark run evidence report');
@@ -698,7 +750,10 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
   if (summary.skippedLines > 0) lines.push(`- Skipped lines: ${summary.skippedLines} (malformed or invalid log lines; totals cover only the lines that parsed)`);
   lines.push(`- Findings: ${summary.findingCount} (critical ${summary.impactBandCounts.critical}, warning ${summary.impactBandCounts.warning}, info ${summary.impactBandCounts.info})`);
   const actionableCounts = summary.actionableImpactBandCounts;
-  lines.push(`- Findings to act on: ${summary.actionableFindingCount} (critical ${actionableCounts.critical}, warning ${actionableCounts.warning}, info ${actionableCounts.info})`);
+  lines.push(`- Findings to act on: ${summary.actionableFindingCount} (critical ${actionableCounts.critical}, warning ${actionableCounts.warning})`);
+  if (notesHidden > 0) {
+    lines.push(`- Notes hidden: ${notesHidden} info finding${notesHidden === 1 ? '' : 's'}. Include info in the impact filter to list them (CLI: --impact critical,warning,info; MCP: minBand info).`);
+  }
   const outcomeLine = renderOutcome(summary.outcome, incomplete);
   if (outcomeLine) lines.push(`- Outcome: ${outcomeLine}`);
   if (summary.clean) lines.push('- Clean run: no findings, no failed jobs, and every check could run.');
@@ -719,7 +774,12 @@ function renderMarkdown(json: EvidenceReportJson, incomplete: boolean): string {
   }
   lines.push(`## Findings (${findings.length})`);
   lines.push('');
-  for (const r of findings) {
+  for (const entry of groupSlowHosts(findings)) {
+    if (Array.isArray(entry)) {
+      lines.push(...renderSlowHostGroup(entry));
+      continue;
+    }
+    const r = entry;
     const where = r.stageId != null ? ` (stage ${r.stageId})` : '';
     lines.push(`### ${r.name} · ${r.impactBand}${where}`);
     lines.push(`- action: ${mdInline(r.actionLabel)}`);
@@ -805,14 +865,12 @@ function matchesFindingsFilter(row: FindingRow, filter: FindingsFilter): boolean
   return matchesFindingFilterCriteria({ ...row, stageId: singleStageId({ stageId: row.stageId, stageIds }) }, filter);
 }
 
-/** Build a FindingsFilter from the optional CLI/MCP filter dimensions, or undefined when none were
- * passed (the "is anything set" gate before calling buildEvidenceReport). */
+/** Build a FindingsFilter from the optional CLI/MCP filter dimensions. Without `impactBand` or
+ * `minBand` it lists warnings and criticals only: info findings are notes, shown on request. */
 export function toFindingsFilter(
   impactBand?: string[], type?: string[], stageId?: number, minBand?: ImpactBand, maxFindings?: number,
-): FindingsFilter | undefined {
-  return (impactBand || type || stageId !== undefined || minBand || maxFindings !== undefined)
-    ? { impactBand, type, stageId, minBand, maxFindings }
-    : undefined;
+): FindingsFilter {
+  return { impactBand, type, stageId, minBand: impactBand || minBand ? minBand : 'warning', maxFindings };
 }
 
 /**
@@ -828,18 +886,23 @@ export function buildEvidenceReport(
   { redact = false, markdown: computeMarkdown = true, findingsFilter, thresholds }: {
     redact?: boolean; markdown?: boolean; findingsFilter?: FindingsFilter; thresholds?: ThresholdOverrides;
   } = {},
-): { markdown: string; json: EvidenceReportJson; findingsMatched: number } {
+): { markdown: string; json: EvidenceReportJson; findingsMatched: number; notesHidden: number } {
   let json = redact ? buildRedactedJson(appModel, thresholds) : buildJson(appModel, thresholds);
   const incomplete = json.findings.some((row) => row.type === 'incompleteRun');
   // Filter after redact, not before: redaction only replaces string values on surviving rows,
   // never adds/removes rows, so the two orderings produce identical final content.
   // `findingsMatched`: the rows that passed every filter but `maxFindings`, so a caller can say how many that limit left out.
   let findingsMatched = json.findings.length;
+  // `notesHidden`: the info rows the filter's band limit dropped, that every other filter kept.
+  let notesHidden = 0;
   if (findingsFilter) {
     const kept = json.findings.filter((row) => matchesFindingsFilter(row, findingsFilter));
+    notesHidden = json.findings.filter((row) => (
+      row.impactBand === 'info' && !matchesFindingsFilter(row, findingsFilter) && matchesFindingsFilter({ ...row, impactBand: 'warning' }, findingsFilter)
+    )).length;
     findingsMatched = kept.length;
     json = { ...json, findings: findingsFilter.maxFindings !== undefined ? kept.slice(0, findingsFilter.maxFindings) : kept };
   }
-  const markdown = computeMarkdown ? renderMarkdown(json, incomplete) : '';
-  return { markdown, json, findingsMatched };
+  const markdown = computeMarkdown ? renderMarkdown(json, incomplete, notesHidden) : '';
+  return { markdown, json, findingsMatched, notesHidden };
 }

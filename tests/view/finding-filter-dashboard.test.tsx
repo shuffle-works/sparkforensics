@@ -85,6 +85,49 @@ test('a stage filter narrows the board to the selected stage', async () => {
   expect(new URLSearchParams(window.location.search).get('stage')).toBe('1');
 });
 
+test('info findings are hidden until the impact filter names the info band, with their count and how to show them', async () => {
+  const user = userEvent.setup();
+  const catalog: Finding[] = [
+    { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'x' },
+    { type: 'tinyTask', stageId: 2, impactBand: 'info', recommendation: 'y' },
+    ...verdictLeads(),
+  ];
+  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
+  render(<App />);
+  await waitForDashboard();
+
+  expect(hasFixTheseFirstRow('spill')).toBe(true);
+  expect(hasFixTheseFirstRow('tinyTask')).toBe(false);
+  expect(screen.getByText(/1 info note hidden\. Select the info impact pill in Filter findings to show it\./)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Show notes' })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: 'Clean checks' }));
+  const cleanCheckTypes = screen.getAllByTestId('clean-check-row').map((row) => row.dataset.cleanCheckType);
+  expect(cleanCheckTypes).not.toContain('tinyTask');
+  expect(cleanCheckTypes).toContain('skew');
+
+  await clickImpact(user, 'info');
+  expect(hasFixTheseFirstRow('tinyTask')).toBe(true);
+  expect(screen.queryByText(/info notes? hidden/)).not.toBeInTheDocument();
+  expect(new URLSearchParams(window.location.search).get('impact')).toBe('info');
+});
+
+test('naming the info band in the impact filter lists info findings alone', async () => {
+  const user = userEvent.setup();
+  const catalog: Finding[] = [
+    { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'x' },
+    { type: 'tinyTask', stageId: 2, impactBand: 'info', recommendation: 'y' },
+    ...verdictLeads(),
+  ];
+  store.setState({ status: 'ready', appModel: readyAppModel() as any, catalog });
+  render(<App />);
+  await waitForDashboard();
+
+  await clickImpact(user, 'info');
+  expect(hasFixTheseFirstRow('tinyTask')).toBe(true);
+  expect(hasFixTheseFirstRow('spill')).toBe(false);
+});
+
 test('filtered-to-empty shows the distinct no-match banner with an inline clear, not the no-bottlenecks banner', async () => {
   const user = userEvent.setup();
   // `critical` matches only the stage-2 finding and `stage 1` only the stage-1
@@ -127,6 +170,7 @@ test('mounting with URL filter params filters the board on load', async () => {
 });
 
 test('an active stage filter drops the configAudit row from the Findings tab', async () => {
+  window.history.replaceState({}, '', '/?impact=critical,warning,info');
   const user = userEvent.setup();
   const appModel = readyAppModel() as any;
   appModel.app = { ...appModel.app, config: { 'spark.app.name': 'demo' }, resources: { dynamicAllocationEnabled: true } };
@@ -142,6 +186,7 @@ test('an active stage filter drops the configAudit row from the Findings tab', a
 });
 
 test('filtering to a CFG-only type keeps config matches and does not show the no-match banner', async () => {
+  window.history.replaceState({}, '', '/?impact=critical,warning,info');
   const user = userEvent.setup();
   const appModel = readyAppModel() as any;
   appModel.app = { ...appModel.app, config: { 'spark.app.name': 'demo' }, resources: { dynamicAllocationEnabled: true } };

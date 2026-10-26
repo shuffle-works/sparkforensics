@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildEvidenceReport } from '../src/evidence-report.js';
+import { buildEvidenceReport, toFindingsFilter } from '../src/evidence-report.js';
 import { makeStage, dataTail } from './fixtures/stage-app-fixtures.js';
 import { TRUNCATED_HOST_FRAGMENT, truncatedFailureRun } from './fixtures/truncated-failure-run.js';
 import { PER_STAGE_CHECK_TYPES } from '../src/check-coverage.ts';
@@ -271,7 +271,7 @@ describe('buildEvidenceReport', () => {
     expect(serialized).not.toContain(badHost);
     expect(markdown).not.toContain(badHost);
     const slow = json.findings.find((r) => r.type === 'slowHost' && r.stageId === 9);
-    expect(slow.evidence.host).toMatch(/^host-\d+$/);
+    expect(slow.evidence.host).toMatch(/host-\d+$/);
     expect(slow.recommendation).not.toContain(badHost);
   });
 
@@ -523,11 +523,12 @@ describe('buildEvidenceReport', () => {
       const { json, markdown } = buildEvidenceReport(fx);
       const s = json.summary;
       expect(json.findings.some((f) => f.type === 'incompleteRun')).toBe(true);
-      expect(s.actionableFindingCount).toBe(json.findings.filter((f) => f.type !== 'incompleteRun' && f.evidence.dataUnavailable !== true).length);
+      expect(s.actionableFindingCount).toBe(json.findings.filter((f) => f.type !== 'incompleteRun' && f.evidence.dataUnavailable !== true && f.impactBand !== 'info').length);
       expect(s.actionableFindingCount).toBeLessThan(s.findingCount);
-      const sum = s.actionableImpactBandCounts.critical + s.actionableImpactBandCounts.warning + s.actionableImpactBandCounts.info;
+      expect(s.actionableImpactBandCounts.info).toBe(0);
+      const sum = s.actionableImpactBandCounts.critical + s.actionableImpactBandCounts.warning;
       expect(sum).toBe(s.actionableFindingCount);
-      expect(markdown).toContain(`- Findings to act on: ${s.actionableFindingCount} (`);
+      expect(markdown).toContain(`- Findings to act on: ${s.actionableFindingCount} (critical ${s.actionableImpactBandCounts.critical}, warning ${s.actionableImpactBandCounts.warning})`);
     });
 
     it('reports the run outcome in the summary and as a Markdown header line', () => {
@@ -570,7 +571,7 @@ describe('buildEvidenceReport', () => {
     it('carries the run verdict and opens the Markdown with it', () => {
       const { json, markdown } = buildEvidenceReport(fixture());
       const { verdict } = json;
-      expect(verdict.title).toMatch(/^Start with Stage \d$/);
+      expect(verdict.title).toMatch(/Start with Stage \d$/);
       expect(verdict.steps.length).toBeGreaterThan(0);
       const [step] = verdict.steps;
       expect(Object.keys(step)).toEqual([
@@ -748,5 +749,66 @@ describe('buildEvidenceReport skipped lines', () => {
 
   it('keeps the count under redaction', () => {
     expect(buildEvidenceReport({ ...fixture(), skippedLines: 2 }, { redact: true }).json.summary.skippedLines).toBe(2);
+  });
+});
+
+describe('buildEvidenceReport info notes and slow hosts', () => {
+  const slowHostStats = (slow) => [
+    { host: 'host-a', taskCount: 20, totalDuration: 200000 },
+    { host: 'host-b', taskCount: 20, totalDuration: 200000 },
+    { host: 'host-c', taskCount: 20, totalDuration: 200000 },
+    { host: slow, taskCount: 20, totalDuration: 600000 },
+  ];
+
+  function slowHostRun() {
+    const fx = fixture();
+    // The same host lags in two stages.
+    for (const id of [7, 8]) fx.stages.set(id, makeStage({ id, taskCount: 80, hostStats: slowHostStats('host-slow') }));
+    return fx;
+  }
+
+  it('lists a host that lags in several stages once, with its stages and their evidence', () => {
+    const { json, markdown } = buildEvidenceReport(slowHostRun());
+    const rows = json.findings.filter((f) => f.type === 'slowHost' && f.evidence.host === 'host-slow');
+    expect(rows).toHaveLength(2);
+    expect(markdown.match(/^### Slow Executor Host · \w+ \(host host-slow\)$/gm)).toHaveLength(1);
+    const stageLine = (r) => `  - stage ${r.stageId}: ${r.impactBand}, hostMeanRatio ${r.value} · hostMeanMs ${r.evidence.hostMeanMs}, hostTaskShare ${r.evidence.hostTaskShare}`;
+    expect(markdown).toContain(`- stages:\n${rows.map(stageLine).join('\n')}\n`);
+    expect(markdown).not.toMatch(/^### Slow Executor Host · \w+ \(stage \d+\)$/m);
+  });
+
+  it('hides info findings from a default filter and counts them as notes', () => {
+    const fx = slowHostRun();
+    const all = buildEvidenceReport(fx).json.findings;
+    const infoCount = all.filter((f) => f.impactBand === 'info').length;
+    expect(infoCount).toBeGreaterThan(0);
+    const hidden = buildEvidenceReport(fx, { findingsFilter: toFindingsFilter() });
+    expect(hidden.json.findings.map((f) => f.impactBand)).not.toContain('info');
+    expect(hidden.notesHidden).toBe(infoCount);
+    expect(hidden.markdown).toContain(`- Notes hidden: ${infoCount} info finding`);
+    expect(hidden.markdown).toContain('--impact critical,warning,info');
+  });
+
+  it('lists info findings when the filter names the band, and counts none as hidden', () => {
+    const fx = slowHostRun();
+    const all = buildEvidenceReport(fx).json.findings;
+    for (const filter of [toFindingsFilter(['critical', 'warning', 'info']), toFindingsFilter(undefined, undefined, undefined, 'info')]) {
+      const shown = buildEvidenceReport(fx, { findingsFilter: filter });
+      expect(shown.json.findings).toEqual(all);
+      expect(shown.notesHidden).toBe(0);
+      expect(shown.markdown).not.toContain('Notes hidden');
+    }
+  });
+
+  it('does not call a band the caller excluded a hidden note', () => {
+    const { notesHidden } = buildEvidenceReport(slowHostRun(), { findingsFilter: toFindingsFilter(['critical']) });
+    expect(notesHidden).toBe(0);
+  });
+
+  it('counts a note a type filter would keep, not one it drops anyway', () => {
+    const fx = slowHostRun();
+    const infoOfType = (type) => buildEvidenceReport(fx).json.findings.filter((f) => f.impactBand === 'info' && f.type === type).length;
+    const { notesHidden } = buildEvidenceReport(fx, { findingsFilter: toFindingsFilter(undefined, ['slowHost']) });
+    expect(notesHidden).toBe(infoOfType('slowHost'));
   });
 });

@@ -383,6 +383,8 @@ async function waitForDashboard() {
 }
 
 beforeEach(() => {
+  // These tests list info findings too.
+  window.history.replaceState({}, '', '/?impact=critical,warning,info');
   Object.defineProperty(Element.prototype, 'scrollIntoView', {
     configurable: true,
     writable: true,

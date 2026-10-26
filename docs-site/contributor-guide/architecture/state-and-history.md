@@ -130,7 +130,9 @@ outside the Zustand store, in `FindingFilterContext`
 `FilterSelection` (`src/view/finding-filter.ts`, three `Set`s) that every widget
 filters `catalog` through via `filterFindings`. It is seeded from the URL's
 `impact`/`type`/`stage` query params on mount and nowhere else, so a reload with no
-params gives the unfiltered board. Every change writes those params back with
+params gives the default board. A selection that names no impact band lists
+critical and warning findings only (`matchesFilter`); info findings show once
+the selection names the info band. Every change writes those params back with
 `history.replaceState`, never `push`, so filtering doesn't grow Back history. A
 `popstate` listener re-seeds the selection from the URL, so Back and forward
 re-apply filters.
@@ -142,7 +144,7 @@ restore. Filters are seeded only from the URL and never persisted anywhere
 else (no localStorage, no restore-as-default): a filtered view silently
 becoming the default on reload would risk hiding findings from a user who
 didn't realize a filter was still active, so a plain reload with no filter
-params is always the unfiltered board.
+params is always the default board.
 
 ### Recent files vs. session cache
 

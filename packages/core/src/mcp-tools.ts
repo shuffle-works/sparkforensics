@@ -286,6 +286,8 @@ export type DiagnoseRunResult = {
   findings: Array<FindingRow | CompactFindingRow>;
   /** Findings that match the filters but sit past `maxFindings`. */
   findingsOmitted: number;
+  /** Info findings the default hides; pass `minBand: 'info'` to list them. */
+  notesHidden: number;
   runComplete: boolean;
   recommendations: RecommendationRow[];
   tunedThresholds?: Record<string, TunedThresholds>;
@@ -305,13 +307,11 @@ export function diagnoseRun(runId: string, opts?: {
   const appModel = getCachedAppModel(runId);
   const view = opts?.view ?? 'full';
   const findingsFilter = toFindingsFilter(opts?.impactBand, opts?.type, opts?.stageId, opts?.minBand, opts?.maxFindings);
-  const { json, markdown, findingsMatched } = buildEvidenceReport(appModel, {
+  const { json, markdown, findingsMatched, notesHidden } = buildEvidenceReport(appModel, {
     redact: opts?.redact, markdown: opts?.markdown, findingsFilter, thresholds: opts?.thresholds,
   });
   // The lead rows come from the unfiltered report (cached, so this costs no second analysis).
-  const allRows = findingsFilter
-    ? buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false, thresholds: opts?.thresholds }).json.findings
-    : json.findings;
+  const allRows = buildEvidenceReport(appModel, { redact: opts?.redact, markdown: false, thresholds: opts?.thresholds }).json.findings;
   const shape = (row: FindingRow): FindingRow | CompactFindingRow => (view === 'compact' ? compactFindingRow(row) : row);
   const steps = json.verdict.steps.map((step): DiagnoseVerdictStep => {
     const lead = step.leadFindingId == null ? undefined : allRows.find((row) => row.id === step.leadFindingId && row.type === step.type);
@@ -320,7 +320,7 @@ export function diagnoseRun(runId: string, opts?: {
   const include = opts?.include ?? [];
   const tuned = json.summary.tunedThresholds;
   return {
-    runId, view, verdict: { ...json.verdict, steps }, findings: json.findings.map(shape), findingsOmitted: findingsMatched - json.findings.length,
+    runId, view, verdict: { ...json.verdict, steps }, findings: json.findings.map(shape), findingsOmitted: findingsMatched - json.findings.length, notesHidden,
     recommendations: json.recommendations,
     ...(view === 'full' ? { cleanChecks: json.cleanChecks, notRunChecks: json.notRunChecks } : {}),
     // The CLI report's own blocks, so a run reads the same through either surface.
@@ -338,11 +338,11 @@ export function diagnoseRun(runId: string, opts?: {
 
 /** The few fields `format: 'md'` returns as `structuredContent` next to the Markdown, which carries the rest. */
 export function diagnoseHeadline(result: DiagnoseRunResult): {
-  runId: string; runComplete: boolean; title: string; findingCount: number; findingsOmitted: number; recommendationCount: number;
+  runId: string; runComplete: boolean; title: string; findingCount: number; findingsOmitted: number; notesHidden: number; recommendationCount: number;
 } {
   return {
     runId: result.runId, runComplete: result.runComplete, title: result.verdict.title,
-    findingCount: result.findings.length, findingsOmitted: result.findingsOmitted, recommendationCount: result.recommendations.length,
+    findingCount: result.findings.length, findingsOmitted: result.findingsOmitted, notesHidden: result.notesHidden, recommendationCount: result.recommendations.length,
   };
 }
 

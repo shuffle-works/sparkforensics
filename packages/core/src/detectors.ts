@@ -1,4 +1,4 @@
-import { pathBasename, formatBytes, formatDuration, IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
+import { clipAtWord, pathBasename, formatBytes, formatDuration, IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { medianOfSorted } from './median.ts';
 import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId, parseJoinType } from './plan-summary.ts';
@@ -1251,9 +1251,14 @@ function tinyShuffleFix(stage: DetectorStage, ctx: DetectorCtx, coalesceTo: numb
 }
 
 // spill's fix on a stage that reads a shuffle and spills for volume: smaller partitions or more
-// memory. Raising spark.sql.shuffle.partitions only helps while the property sized the stage.
-function spillShuffleFix(stage: DetectorStage, ctx: DetectorCtx): { text: string; remediation: Remediation[] } {
+// memory. Raising spark.sql.shuffle.partitions only helps while the property sized the stage, never
+// when the stage reads the job's own repartition(n) (`userPartitioned`), whatever its count.
+function spillShuffleFix(stage: DetectorStage, ctx: DetectorCtx, userPartitioned: boolean): { text: string; remediation: Remediation[] } {
   const memory = increaseConf('spark.executor.memory');
+  if (userPartitioned) {
+    const hint = "raise the partition count of the job's own repartition(n) so each partition is smaller";
+    return { text: `${hint}, or increase executor memory`, remediation: [codeFix(hint), memory] };
+  }
   const { lever, count, key, explicitRepartition } = partitionLever(stage, ctx);
   if (lever === 'aqeCoalesced') {
     return {
@@ -2043,9 +2048,9 @@ export const DETECTORS = [
       const impactBand = 'warning';
       // shuffle.partitions sizes a shuffle's reduce side: a stage that reads no shuffle gets memory only.
       const reads = stageReads(stage);
-      const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, ctx) : null;
-      const plan = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId)?.planTree : null;
-      const { operators, exchanges } = attributeSpill(plan, stage.id);
+      const execution = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId) : undefined;
+      const { operators, exchanges } = attributeSpill(execution?.planTree, stage.id);
+      const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, ctx, exchanges[0]?.origin === 'REPARTITION_BY_NUM') : null;
       const ratio = spillToInputRatio(stage.memoryBytesSpilled, stage.inputBytes, stage.shuffleReadBytes, thresholds.wideRowMinInputMB * MB);
       const wide = ratio !== null && ratio >= thresholds.wideRowRatio;
       const advice = cls === 'skew'
@@ -2053,13 +2058,15 @@ export const DETECTORS = [
         : shuffleFix
           ? `${formatBytes(stage.memoryBytesSpilled)} spilled: ${shuffleFix.text}.`
           : `${formatBytes(stage.memoryBytesSpilled)} spilled: this stage reads no shuffle, so increase executor memory or process less data per task.`;
-      const cause = describeSpillCause(operators, ratio, wide, reads === 'input');
+      const cause = describeSpillCause(operators, ratio, wide, reads === 'input', exchanges[0]);
+      const sqlDescription = clipAtWord(execution?.description?.trim() ?? '', 200);
       return {
         type: 'spill', stageId: stage.id, impactBand, reads,
         spillMagnitude: mag?.magnitude,
         ...(ratio !== null ? { spillToInputRatio: ratio, wideRows: wide } : {}),
         ...(operators.length > 0 ? { operators } : {}),
         ...(exchanges.length > 0 ? { exchanges } : {}),
+        ...(sqlDescription ? { sqlDescription } : {}),
         metric: 'memoryBytesSpilled', value: stage.memoryBytesSpilled,
         confidence: classified ? 'medium' : 'low',
         validationRequired: classified

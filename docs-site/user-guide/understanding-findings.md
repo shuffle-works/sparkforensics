@@ -110,12 +110,16 @@ stage that reads a shuffle; `evidence.reads` says what the stage reads
 (`shuffle`, `input` or `other`). It names what sized the stage:
 `spark.sql.shuffle.partitions` when the stage ran that many tasks,
 `spark.sql.adaptive.advisoryPartitionSizeInBytes` when AQE coalesced them, and
-the stage's own `repartition(n)` or RDD parallelism otherwise. Only flagged on stages that take at
+the stage's own `repartition(n)` or RDD parallelism otherwise, or when the stage
+reads a `REPARTITION_BY_NUM` exchange. Only flagged on stages that take at
 least 0.5% of the run.
 
 `evidence.operators` lists up to five operators that reported a `spill size`
 (`Sort`, `HashAggregate`, `ObjectHashAggregate`, `Window`), largest first, with
-their plan node ids. A `Sort` under a `SortMergeJoin` is marked as feeding it.
+their plan node ids and plan `arguments` (a `Sort`'s keys, an aggregate's keys
+and functions, cut at a word near 300 characters). A `Sort` carries `global`: true for an
+`ORDER BY`, false for a sort within each partition. A `Sort` under a
+`SortMergeJoin` is marked as feeding it.
 `evidence.spillToInputRatio` is the memory spill over the stage's input plus
 shuffle read. It is left out when that input is under 64 MiB. From 10x,
 `evidence.wideRows` is true and the finding says the rows are wide.
@@ -123,9 +127,16 @@ shuffle read. It is left out when that input is under 64 MiB. From 10x,
 exchanges those operators read. The column count is the `Input [N]` the plan
 description gives the exchange. Without it, the count comes from the nearest
 `Project`, file scan or `ReusedExchange` below the exchange, and is left out
-when a join or aggregate sits between. The plan graph shows the same row width
-on every exchange. On a stage that reads input files, a high ratio can also come
-from Parquet compression, not only from wide rows.
+when a join or aggregate sits between. The finding says the rows are wide with
+that column count. Each exchange also reports `partitioning`, `partitions` and
+`origin` as its plan prints them (Spark 3.0 prints no origin). `REPARTITION_BY_NUM`
+is the job's own `repartition(n)`: the finding says so, because
+`spark.sql.shuffle.partitions` does not change that count, and advises raising that
+`repartition(n)` count. `evidence.sqlDescription` is the description of the
+SQL execution the stage belongs to, cut at a word near 200 characters. The dashboard's spill
+row shows these arguments, the exchange partitioning and the SQL description too. The plan graph shows
+the same row width on every exchange. On a stage that reads input files, a high
+ratio can also come from Parquet compression, not only from wide rows.
 
 ### `GC`: Garbage collection pressure {#gc}
 

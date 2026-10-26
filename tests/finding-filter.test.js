@@ -12,11 +12,18 @@ import {
 
 const f = (over) => ({ type: 'skew', stageId: 1, impactBand: 'critical', ...over });
 
-test('empty selection matches every finding', () => {
+test('empty selection matches every critical and warning finding, and no info finding', () => {
   const sel = emptySelection();
   expect(isEmptySelection(sel)).toBe(true);
   expect(matchesFilter(f(), sel)).toBe(true);
-  expect(matchesFilter(f({ impactBand: 'info', stageId: null, type: 'coldStart' }), sel)).toBe(true);
+  expect(matchesFilter(f({ impactBand: 'warning', stageId: null, type: 'coldStart' }), sel)).toBe(true);
+  expect(matchesFilter(f({ impactBand: 'info', stageId: null, type: 'coldStart' }), sel)).toBe(false);
+});
+
+test('an info finding matches once the selection names the info band', () => {
+  const sel = { ...emptySelection(), impactBands: new Set(['info']) };
+  expect(matchesFilter(f({ impactBand: 'info' }), sel)).toBe(true);
+  expect(matchesFilter(f({ impactBand: 'critical' }), sel)).toBe(false);
 });
 
 test('impact-band dimension: union within, constrains when non-empty', () => {

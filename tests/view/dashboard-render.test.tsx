@@ -94,6 +94,8 @@ function hasConfigAuditStepOrRow() {
 }
 
 beforeEach(() => {
+  // These tests list info findings too.
+  window.history.replaceState({}, '', '/?impact=critical,warning,info');
   store.setState({
     appModel: emptyAppModel(),
     catalog: [],

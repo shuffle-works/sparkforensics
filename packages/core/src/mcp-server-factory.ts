@@ -141,7 +141,7 @@ export function createMcpServer(
       include: z.array(z.enum(['summary', 'evidenceAvailability', 'detectors'])).optional(),
       impactBand: z.array(impactBandSchema).optional(), type: z.array(findingTypeSchema).optional(), stageId: z.number().int().nonnegative().optional(),
       minBand: z.enum(['critical', 'warning', 'info']).optional()
-        .describe('List only findings at this band or a more severe one.'),
+        .describe('List only findings at this band or a more severe one. Without minBand or impactBand, info findings are left out and notesHidden counts them; "info" lists all.'),
       maxFindings: z.number().int().nonnegative().optional()
         .describe('List at most this many findings, most severe first. findingsOmitted counts the ones left out; each verdict step still carries its lead finding.'),
       cursor: z.string().optional()

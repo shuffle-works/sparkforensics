@@ -212,7 +212,7 @@ export function ImpactBoard({
           subheading={hasVerdictLeads}
         />
       ))}
-      {interpretation ? <CleanChecks catalog={catalog} configFindings={configFindings} coverage={interpretation.data.coverage} detectors={interpretation.data.detectors} /> : null}
+      {interpretation ? <CleanChecks catalog={interpretation.findings} coverage={interpretation.data.coverage} detectors={interpretation.data.detectors} /> : null}
     </div>
   );
 }

@@ -11,6 +11,10 @@ export interface FilterSelection {
   stages: Set<number>;
 }
 
+/** The bands a selection that names none lists. Info findings are notes: the selection lists them
+ * once it names the info band. */
+const DEFAULT_IMPACT_BANDS: ReadonlySet<ImpactBand> = new Set<ImpactBand>(['critical', 'warning']);
+
 export function emptySelection(): FilterSelection {
   return { impactBands: new Set(), types: new Set(), stages: new Set() };
 }
@@ -25,12 +29,13 @@ export function isEmptySelection(sel: FilterSelection): boolean {
  * is about (`singleStageId`): its own `stageId`, or the only entry of a sql-scope
  * finding's `stageIds`, as Stage details lists it. A non-empty stage filter
  * drops app-level, config and multi-stage findings.
+ * A selection that names no impact band lists critical and warning findings only.
  * Delegates to the shared core predicate (src/finding-filter-predicate.ts)
  * that also backs the CLI/MCP evidence report's FindingsFilter.
  */
 export function matchesFilter(finding: Finding, sel: FilterSelection): boolean {
   return matchesFindingFilterCriteria({ ...finding, stageId: singleStageId(finding) }, {
-    impactBand: sel.impactBands,
+    impactBand: sel.impactBands.size > 0 ? sel.impactBands : DEFAULT_IMPACT_BANDS,
     type: sel.types,
     stageId: sel.stages,
   });
@@ -46,7 +51,7 @@ export type FilterDimension = keyof FilterSelection;
  * exactly these (and keeping the rest) makes it match again. */
 export function excludingDimensions(finding: Finding, sel: FilterSelection): FilterDimension[] {
   return (['impactBands', 'types', 'stages'] as const).filter(
-    (dimension) => !matchesFilter(finding, { ...emptySelection(), [dimension]: sel[dimension] }),
+    (dimension) => !matchesFilter(finding, { ...emptySelection(), impactBands: new Set(IMPACT_BANDS), [dimension]: sel[dimension] }),
   );
 }
 

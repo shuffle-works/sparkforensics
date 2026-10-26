@@ -138,6 +138,19 @@ test('shows the partition-count hint only for volume-classified spill', async ()
   expect(screen.getByText(/spark\.sql\.shuffle\.partitions = 8/)).toBeInTheDocument();
 });
 
+test('does not suggest spark.sql.shuffle.partitions when the input is the job\'s own repartition(n)', () => {
+  const catalog: Finding[] = [{
+    type: 'spill', stageId: 1, impactBand: 'critical', value: 600 * 1024 * 1024, recommendation: 'r', confidence: 'low',
+    exchanges: [{ nodeId: 'e1:n2', partitioning: 'hashpartitioning(key#7, 4)', partitions: 4, origin: 'REPARTITION_BY_NUM' }],
+  }];
+  render(
+    <DocsProvider>
+      <Spill appModel={buildAppModel()} catalog={catalog} getTaskData={vi.fn()} defaultCollapsed={false} />
+    </DocsProvider>,
+  );
+  expect(screen.queryByText(/spark\.sql\.shuffle\.partitions =/)).not.toBeInTheDocument();
+});
+
 test('does not show the partition hint for skew-classified spill', async () => {
   const catalog: Finding[] = [
     { type: 'spill', stageId: 2, impactBand: 'warning', value: 300 * 1024 * 1024, recommendation: 'Spill is skew-driven: fix task skew first; adding memory will not help.' },
@@ -412,6 +425,25 @@ test('shows the spilling operators, the spill-to-input ratio and the exchange wi
     </DocsProvider>,
   );
   expect(screen.getByText(/Spilled by Sort \(feeds SortMergeJoin\) 2\.0 GB/)).toBeInTheDocument();
-  expect(screen.getByText(/12x the stage's input, so the rows are wide or the input files compress well/)).toBeInTheDocument();
+  expect(screen.getByText(/12x the stage's input, so the rows are wide \(128 columns\) or the input files compress well/)).toBeInTheDocument();
   expect(screen.getByText('Rows read: 128 columns · 410 B/row')).toBeInTheDocument();
+});
+
+test('shows the sort keys, the exchange partitioning and the SQL description', () => {
+  const catalog: Finding[] = [{
+    type: 'spill', stageId: 1, impactBand: 'critical', value: 600 * 1024 * 1024, recommendation: 'r', confidence: 'low',
+    reads: 'shuffle',
+    operators: [{ nodeId: 'e1:n3', name: 'Sort', spillBytes: 2e9, arguments: '[day#11 ASC NULLS FIRST], false, 0', global: false }],
+    exchanges: [{ nodeId: 'e1:n2', partitioning: 'hashpartitioning(key#7, 5000)', partitions: 5000, origin: 'REPARTITION_BY_NUM' }],
+    sqlDescription: 'daily load',
+  }];
+  render(
+    <DocsProvider>
+      <Spill appModel={buildAppModel()} catalog={catalog} getTaskData={vi.fn()} defaultCollapsed={false} />
+    </DocsProvider>,
+  );
+  expect(screen.getByText('Sort e1:n3 (sort within partitions): [day#11 ASC NULLS FIRST], false, 0')).toBeInTheDocument();
+  expect(screen.getByText('Exchange: hashpartitioning(key#7, 5000), 5000 partitions, REPARTITION_BY_NUM')).toBeInTheDocument();
+  expect(screen.getByText('SQL: daily load')).toBeInTheDocument();
+  expect(screen.queryByText(/Rows read/)).not.toBeInTheDocument();
 });

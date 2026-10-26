@@ -341,7 +341,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       expect(redacted.recommendations).toEqual(directRedacted.recommendations);
       expect(redacted.cleanChecks).toEqual(directRedacted.cleanChecks);
 
-      const plain = diagnoseRun(runId);
+      const plain = diagnoseRun(runId, { minBand: 'info' });
       expect(plain.findings).toEqual(buildEvidenceReport(appModel).json.findings);
       expect(redacted.findings.length).toBeGreaterThan(0);
 
@@ -363,7 +363,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const { runId } = await resolveOrCreateRun({ source: { path } });
       const result = diagnoseRun(runId, include === undefined ? undefined : { include });
       expect(Object.keys(result).sort()).toEqual(
-        ['app', 'cleanChecks', 'effectiveConf', 'findings', 'findingsOmitted', 'metrics', 'notRunChecks', 'recommendations', 'runComplete', 'runId', 'verdict', 'view', 'writeTargets'].sort(),
+        ['app', 'cleanChecks', 'effectiveConf', 'findings', 'findingsOmitted', 'metrics', 'notRunChecks', 'notesHidden', 'recommendations', 'runComplete', 'runId', 'verdict', 'view', 'writeTargets'].sort(),
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -403,7 +403,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
     try {
       const { runId, appModel } = await resolveOrCreateRun({ source: { path } });
       const direct = buildEvidenceReport(appModel);
-      const result = diagnoseRun(runId, { markdown: true });
+      const result = diagnoseRun(runId, { markdown: true, minBand: 'info' });
       expect(result.markdown).toBe(direct.markdown);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -444,7 +444,7 @@ describe('diagnoseRun / getFindingEvidence', () => {
       const { dir, path } = tmpEventLogWithFindings();
       try {
         const { runId } = await resolveOrCreateRun({ source: { path } });
-        const { findings } = diagnoseRun(runId, { stageId: 1 });
+        const { findings } = diagnoseRun(runId, { stageId: 1, minBand: 'info' });
         // The fixture's one 2000ms task gates its whole 2000ms stage: straggler (the log carries no
         // data volume, so skew leaves the tail to it) and stageShape's taskStageSkew rule both fire.
         expect(findings.map((f) => f.type).sort()).toEqual(['stageShape', 'straggler']);
@@ -493,8 +493,8 @@ describe('diagnoseRun / getFindingEvidence', () => {
     }
 
     it('gives every finding row a key built from its type, rule and stage fingerprint, the same on a rerun', async () => {
-      const first = await diagnose();
-      const second = await diagnose();
+      const first = await diagnose({ minBand: 'info' });
+      const second = await diagnose({ minBand: 'info' });
       expect(first.findings.map((f) => f.key)).toEqual(second.findings.map((f) => f.key));
       const straggler = first.findings.find((f) => f.type === 'straggler');
       // A stage's fingerprint is the key of its `metrics.stages` entry, so the two join without a table.
@@ -544,8 +544,8 @@ describe('diagnoseRun / getFindingEvidence', () => {
     });
 
     it('limits the rows with maxFindings and counts what it left out, keeping every step\'s lead row', async () => {
-      const all = await diagnose({ view: 'compact' });
-      const limited = await diagnose({ view: 'compact', maxFindings: 1 });
+      const all = await diagnose({ view: 'compact', minBand: 'info' });
+      const limited = await diagnose({ view: 'compact', minBand: 'info', maxFindings: 1 });
       expect(all.findings.length).toBeGreaterThan(1);
       expect(limited.findings).toEqual(all.findings.slice(0, 1));
       expect(limited.findingsOmitted).toBe(all.findings.length - 1);
@@ -555,12 +555,23 @@ describe('diagnoseRun / getFindingEvidence', () => {
     });
 
     it('limits the rows to a band and the more severe ones with minBand', async () => {
-      const all = await diagnose();
+      const all = await diagnose({ minBand: 'info' });
       const critical = await diagnose({ minBand: 'critical' });
       expect(critical.findings.every((f) => f.impactBand === 'critical')).toBe(true);
       const warningUp = await diagnose({ minBand: 'warning' });
       expect(warningUp.findings.every((f) => f.impactBand !== 'info')).toBe(true);
       expect((await diagnose({ minBand: 'info' })).findings).toEqual(all.findings);
+    });
+
+    it('leaves info findings out by default and counts them in notesHidden', async () => {
+      const all = await diagnose({ minBand: 'info' });
+      const byDefault = await diagnose();
+      const infoCount = all.findings.filter((f) => f.impactBand === 'info').length;
+      expect(infoCount).toBeGreaterThan(0);
+      expect(byDefault.findings).toEqual(all.findings.filter((f) => f.impactBand !== 'info'));
+      expect(byDefault.notesHidden).toBe(infoCount);
+      expect(all.notesHidden).toBe(0);
+      expect((await diagnose({ impactBand: ['info'] })).notesHidden).toBe(0);
     });
 
     it('limits the Markdown findings the same way', async () => {
