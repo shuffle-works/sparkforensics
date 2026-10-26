@@ -2518,6 +2518,39 @@ describe('analyze, coreLocality detector', () => {
     expect(finding.validationRequired).toBeTruthy();
   });
 
+  it('words the recommendation from the run: worst stages, host count and the effective locality wait', () => {
+    const stages = new Map([
+      [1, makeStage({ id: 1, localityStats: [{ locality: 'PROCESS_LOCAL', count: 60 }, { locality: 'ANY', count: 40 }] })],
+      [2, makeStage({ id: 2, localityStats: [{ locality: 'PROCESS_LOCAL', count: 100 }] })],
+    ]);
+    const executors = [
+      { executorId: '1', timestamp: 0, host: 'host-a' },
+      { executorId: '2', timestamp: 0, host: 'host-a' },
+      { executorId: '3', timestamp: 0, host: 'host-b' },
+    ];
+    const run = (config) => analyze(makeApp({ config }), stages, executors, [], new Map())
+      .find((b) => b.type === 'coreLocality');
+    const finding = run({ 'spark.locality.wait': '10s' });
+    expect(finding.recommendation).toContain('across 2 hosts');
+    expect(finding.recommendation).toContain('most in stage 1 (40% of 100)');
+    expect(finding.recommendation).toContain('spark.locality.wait (10s)');
+    expect(finding.remediation).toEqual([{ kind: 'conf', key: 'spark.locality.wait', direction: 'increase', suggested: null }]);
+    expect(run({}).recommendation).toContain('spark.locality.wait (3s)');
+  });
+
+  it('omits the host count when the log has no executor hosts', () => {
+    const stages = new Map([[1, makeStage({ localityStats: [{ locality: 'PROCESS_LOCAL', count: 60 }, { locality: 'ANY', count: 40 }] })]]);
+    const finding = analyze(makeApp(), stages, [], [], new Map()).find((b) => b.type === 'coreLocality');
+    expect(finding.recommendation).not.toContain('across');
+  });
+
+  it('states the assumed fetch cost on the core-time estimate', () => {
+    const stages = new Map([[1, makeStage({ localityStats: [{ locality: 'PROCESS_LOCAL', count: 60 }, { locality: 'ANY', count: 40 }] })]]);
+    const finding = analyze(makeApp(), stages, [], [], new Map()).find((b) => b.type === 'coreLocality');
+    expect(finding.impactEstimate.rawWaste).toEqual({ value: 800, unit: 'coreMs' });
+    expect(finding.impactEstimate.assumptions).toMatch(/20 ms .* per non-local task/);
+  });
+
   it('emits a critical finding at/above thresholds.critRatio (0.35)', () => {
     const stages = new Map([[1, makeStage({
       localityStats: [

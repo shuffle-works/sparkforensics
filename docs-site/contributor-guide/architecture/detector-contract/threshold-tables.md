@@ -211,7 +211,7 @@ run's Spark version from this table. A property introduced by a release has no d
 | `spark.sql.execution.pythonUDF.arrow.enabled` | false, then true | 3.4.0 (introduced), 4.2.0 (on) |
 
 The remaining keys in the table (`spark.speculation`, `spark.executor.memory`, `spark.serializer`,
-`spark.shuffle.service.enabled`, the `spark.eventLog` switches, the dynamic-allocation bounds,
+`spark.shuffle.service.enabled`, `spark.locality.wait`, the `spark.eventLog` switches, the dynamic-allocation bounds,
 `spark.sql.shuffle.partitions`, `spark.sql.autoBroadcastJoinThreshold`,
 `spark.sql.files.maxPartitionBytes`) have one default on every release.
 

@@ -149,7 +149,7 @@ interface DetectorApp {
   rddBlockUpdates?: number;
 }
 
-interface DetectorExecutorAddedEvent { executorId: string; timestamp: number; totalCores?: number; }
+interface DetectorExecutorAddedEvent { executorId: string; timestamp: number; totalCores?: number; host?: string; }
 interface DetectorExecutorRemovedEvent { executorId: string; timestamp: number; }
 interface DetectorJob {
   result: string | null;
@@ -1765,6 +1765,8 @@ function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdi
   }
 }
 
+const LOCALITY_WAIT_KEY = 'spark.locality.wait';
+
 export const DETECTORS = [
   defineStageDetector({
     type: 'skew', order: 30, fixEffort: 'code', version: 1,
@@ -2924,13 +2926,16 @@ export const DETECTORS = [
     docAnchor: '#bottleneck-core-locality',
     thresholds: { minTasks: 50, warnRatio: 0.15, critRatio: 0.35 },
     detect(ctx, thresholds): Finding | null {
-      const { totalTasks, nonLocalTasks, ratio } = computeCoreLocalityRatio([...ctx.stages.values()]);
+      const { totalTasks, nonLocalTasks, ratio, topStages } = computeCoreLocalityRatio([...ctx.stages.values()]);
       if (totalTasks == null || totalTasks < thresholds.minTasks) return null;
       // computeCoreLocalityRatio only returns ratio:null together with totalTasks:null (shared
       // EMPTY sentinel); the totalTasks guard above rules that out, so ratio is non-null here.
       if (ratio! < thresholds.warnRatio) return null;
 
       const value = Math.round(ratio! * 100);
+      const hosts = new Set(ctx.executorsAdded.flatMap((e) => (e.host ? [e.host] : []))).size;
+      const worst = topStages.slice(0, 3).map((s) => `stage ${s.stageId} (${Math.round(s.ratio * 100)}% of ${s.taskCount})`).join(', ');
+      const wait = effectiveConf(ctx.app, LOCALITY_WAIT_KEY);
       return {
         type: 'coreLocality', stageId: null,
         impactBand: ratio! >= thresholds.critRatio ? 'critical' : 'warning',
@@ -2939,13 +2944,17 @@ export const DETECTORS = [
         nonLocalTaskCount: nonLocalTasks!,
         confidence: coreLocalityConfidence(ratio!, totalTasks, thresholds),
         validationRequired: `Flagged when at least ${shareLabel(thresholds.warnRatio)} of tasks run non-local (critical at ${shareLabel(thresholds.critRatio)}), on runs of ${thresholds.minTasks}+ tasks.`,
-        recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement: check executor/data colocation.`,
+        recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement${hosts > 0 ? ` across ${hosts} ${hosts === 1 ? 'host' : 'hosts'}` : ''}`
+          + `${worst ? `, most in ${worst}` : ''}. Raise ${LOCALITY_WAIT_KEY}${wait ? ` (${wait})` : ''} so the scheduler waits longer for a local slot, or run executors on the hosts that hold the data.`,
+        remediation: [increaseConf(LOCALITY_WAIT_KEY)],
       };
     },
     estimate(finding): ImpactEstimate | null {
       const nonLocal = (finding.nonLocalTaskCount as number | undefined) ?? 0;
-      const coreMs = nonLocal * NETWORK_FETCH_PENALTY_MS;
-      return costOnly('modeled', { value: coreMs, unit: 'coreMs' });
+      return withAssumptions(
+        costOnly('modeled', { value: nonLocal * NETWORK_FETCH_PENALTY_MS, unit: 'coreMs' }),
+        `assumes ${NETWORK_FETCH_PENALTY_MS} ms of extra core time per non-local task; the log has no measured fetch cost`,
+      );
     },
   }),
   defineAppDetector({

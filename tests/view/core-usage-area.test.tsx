@@ -246,7 +246,7 @@ test('shows the LOCAL badge, impact band, and fix when a coreLocality finding ex
 
   expect(screen.getByText('LOCAL')).toBeInTheDocument();
   expect(screen.getByText(/40% non-local/)).toBeInTheDocument();
-  expect(screen.getByText(/Check executor\/data colocation\./)).toBeInTheDocument();
+  expect(screen.getByText(/Raise spark\.locality\.wait/)).toBeInTheDocument();
 });
 
 test('renders the core-time raw-waste figure when a coreLocality finding carries an impactEstimate', async () => {

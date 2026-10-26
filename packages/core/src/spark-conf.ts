@@ -61,6 +61,7 @@ const SPARK_DEFAULTS: Readonly<Record<string, readonly DefaultStep[]>> = {
   'spark.speculation': [[ALWAYS, 'false']],
   'spark.speculation.multiplier': [[ALWAYS, '1.5'], [[4, 0], '3']],
   'spark.speculation.quantile': [[ALWAYS, '0.75'], [[4, 0], '0.9']],
+  'spark.locality.wait': [[ALWAYS, '3s']],
 
   'spark.executor.memory': [[ALWAYS, '1g']],
   'spark.serializer': [[ALWAYS, 'org.apache.spark.serializer.JavaSerializer']],

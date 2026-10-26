@@ -380,7 +380,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'LOCAL',
     thresholdSummary: () => 'task placement missing data-local core assignment',
     actionLabel: () => 'Fix data locality',
-    genericRecommendation: () => 'Check executor/data colocation.',
+    genericRecommendation: () => 'Raise spark.locality.wait so the scheduler waits longer for a local slot, or run executors on the hosts that hold the data.',
   },
   cachingOpportunity: {
     name: 'caching opportunity',
