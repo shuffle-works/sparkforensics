@@ -590,7 +590,8 @@ const orNa = (value: number | null, format: (value: number) => string): string =
 function changeText(relative: number | null): string | null {
   if (relative == null) return null;
   const percent = relative * 100;
-  return `${percent > 0 ? '+' : ''}${Math.abs(percent) < 1 ? percent.toFixed(1) : Math.round(percent)}%`;
+  const text = Math.abs(percent) < 1 ? percent.toFixed(1) : String(Math.round(percent));
+  return Number(text) === 0 ? '0.0%' : `${percent > 0 ? '+' : ''}${text}%`;
 }
 
 // What the runs share, as `- key: value` bullets: configuration, plan, data volume and executors.
@@ -648,8 +649,9 @@ export function renderComparisonMarkdown(
   lines.push('');
   for (const m of comparison.metrics) {
     const text = METRIC_TEXT[m.key] ?? String;
-    const change = m.baseline ? m.delta! / m.baseline : null;
-    lines.push(`- ${m.label}: ${orNa(m.baseline, text)} -> ${orNa(m.candidate, text)} (${[changeText(change), m.withinNoise ? 'within noise' : m.direction].filter(Boolean).join(', ')})`);
+    const change = m.delta != null && m.baseline ? m.delta / m.baseline : null;
+    const label = m.direction === 'unchanged' ? 'unchanged' : m.withinNoise ? 'within noise' : m.direction;
+    lines.push(`- ${m.label}: ${orNa(m.baseline, text)} -> ${orNa(m.candidate, text)} (${[changeText(change), label].filter(Boolean).join(', ')})`);
   }
   lines.push('');
   lines.push(...renderFindingsSection('Introduced findings', comparison.findings.introduced));

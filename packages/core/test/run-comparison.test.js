@@ -690,6 +690,31 @@ describe('renderComparisonMarkdown', () => {
     expect(m.metrics.find((row) => row.key === 'taskSkew')).toMatchObject({ direction: 'improvement', withinNoise: true });
   });
 
+  it('keeps the unchanged label on an exact zero change', () => {
+    const stage = [1, { name: 'X 1', submittedAt: 0, completedAt: 100, executorRunTime: 80 }];
+    const md = renderComparisonMarkdown(compareRuns(B([stage], { name: 'A' }), C([stage], { name: 'A' })));
+    expect(md).toContain('- Wall-clock duration: 100ms -> 100ms (0.0%, unchanged)');
+  });
+
+  it('prints an unsigned 0.0% for a tiny negative change inside the noise band', () => {
+    const m = compareRuns(
+      B([[1, { name: 'X 1', submittedAt: 0, completedAt: 100_000 }]], { name: 'A' }),
+      C([[1, { name: 'X 1', submittedAt: 0, completedAt: 99_990 }]], { name: 'A' }),
+    );
+    const md = renderComparisonMarkdown(m);
+    expect(md).toContain('- Wall-clock duration: 1m 40s -> 1m 39s (0.0%, within noise)');
+    expect(md).not.toContain('-0.0%');
+  });
+
+  it('prints no percent change when the candidate is missing a metric', () => {
+    const m = compareRuns(
+      B([[1, { name: 'X 1', submittedAt: 0, completedAt: 100, memoryBytesSpilled: 5_000 }]], { name: 'A' }),
+      C([[1, { name: 'X 1', submittedAt: 0, completedAt: 100 }]], { name: 'A' }),
+    );
+    const md = renderComparisonMarkdown(m);
+    expect(md).toMatch(/- Memory spill: [^\n]+ -> n\/a \(unavailable\)\n/);
+  });
+
   it('escapes a run label and a differing property key, which a log controls', () => {
     const snap = (app, label) => ({ label, snapshot: { app, stages: new Map(), sql: new Map(), jobs: new Map(), catalog: [] } });
     const b = snap({ name: 'JobX', config: { 'spark.a[x](https://evil.example)': '1' } }, 'base\n# Fourth title');
