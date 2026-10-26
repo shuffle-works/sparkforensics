@@ -101,6 +101,11 @@ test('info findings are hidden until the impact filter names the info band, with
   expect(screen.getByText(/1 info note hidden\. Select the info impact pill in Filter findings to show it\./)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Show notes' })).not.toBeInTheDocument();
 
+  await user.click(screen.getByRole('button', { name: 'Clean checks' }));
+  const cleanCheckTypes = screen.getAllByTestId('clean-check-row').map((row) => row.dataset.cleanCheckType);
+  expect(cleanCheckTypes).not.toContain('tinyTask');
+  expect(cleanCheckTypes).toContain('skew');
+
   await clickImpact(user, 'info');
   expect(hasFixTheseFirstRow('tinyTask')).toBe(true);
   expect(screen.queryByText(/info notes? hidden/)).not.toBeInTheDocument();
