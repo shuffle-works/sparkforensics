@@ -208,8 +208,11 @@ absent. Every widget self-wraps in `WidgetCard` (`src/view/WidgetCard.tsx`: an
 document outline, except Scorecard, which renders its own header band, and
 RunVerdict, a plain `<section>` with its own `<h2>` title.
 
-Every card is collapsible: the title sits in a `CollapsibleTrigger` button
-with a chevron (`WidgetCard.tsx`), and each widget sets its own
+Every card is collapsible, except in an in-place evidence panel (see
+"In-place evidence panel" in
+[row-expand-contract](./widget-rendering/row-expand-contract.md)): the
+title sits in a `CollapsibleTrigger` button with a chevron (`WidgetCard.tsx`),
+and each widget sets its own
 `defaultCollapsed` (most default to `true`; `ImpactBoard`'s action-region grid
 forces `defaultCollapsed` on every `REGISTRY` widget instance it mounts, so a
 marginal finding doesn't default open). Route navigation ("jump to this

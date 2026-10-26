@@ -190,7 +190,7 @@ export function WidgetCard({
           {statusBadge}
         </div>
         {subtitle ? <p className="font-mono text-xs text-muted-foreground">{subtitle}</p> : null}
-      <div className="mt-2">{body}</div>
+        <div className="mt-2">{body}</div>
       </section>
     );
   }
