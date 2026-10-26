@@ -161,7 +161,7 @@ export interface SpillOperator {
   name: string;
   spillBytes: number;
   feeds?: string;
-  // The operator's plan arguments (a Sort's keys, an aggregate's keys and functions), cut to 300 characters.
+  // The operator's plan arguments (a Sort's keys, an aggregate's keys and functions), cut at a word near 300 characters.
   arguments?: string;
   // Sort only: true for a global sort (ORDER BY), false for one within each partition.
   global?: boolean;
@@ -197,7 +197,7 @@ export interface SpillEvidence {
   operators?: SpillOperator[];
   // The exchanges those operators read.
   exchanges?: SpillExchange[];
-  // Description of the SQL execution the stage belongs to, cut to 200 characters.
+  // Description of the SQL execution the stage belongs to, cut at a word near 200 characters.
   sqlDescription?: string;
 }
 export interface SpillFinding extends NumericFinding<'spill'>, SpillEvidence {}

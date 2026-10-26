@@ -117,7 +117,7 @@ least 0.5% of the run.
 `evidence.operators` lists up to five operators that reported a `spill size`
 (`Sort`, `HashAggregate`, `ObjectHashAggregate`, `Window`), largest first, with
 their plan node ids and plan `arguments` (a `Sort`'s keys, an aggregate's keys
-and functions, cut to 300 characters). A `Sort` carries `global`: true for an
+and functions, cut at a word near 300 characters). A `Sort` carries `global`: true for an
 `ORDER BY`, false for a sort within each partition. A `Sort` under a
 `SortMergeJoin` is marked as feeding it.
 `evidence.spillToInputRatio` is the memory spill over the stage's input plus
@@ -133,7 +133,7 @@ that column count. Each exchange also reports `partitioning`, `partitions` and
 is the job's own `repartition(n)`: the finding says so, because
 `spark.sql.shuffle.partitions` does not change that count, and advises raising that
 `repartition(n)` count. `evidence.sqlDescription` is the description of the
-SQL execution the stage belongs to, cut to 200 characters. The dashboard's spill
+SQL execution the stage belongs to, cut at a word near 200 characters. The dashboard's spill
 row shows these arguments, the exchange partitioning and the SQL description too. The plan graph shows
 the same row width on every exchange. On a stage that reads input files, a high
 ratio can also come from Parquet compression, not only from wide rows.
