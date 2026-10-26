@@ -1,4 +1,4 @@
-import { pathBasename, formatBytes, formatDuration, IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
+import { clipAtWord, pathBasename, formatBytes, formatDuration, IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { medianOfSorted } from './median.ts';
 import { shareLabel } from './finding-presentation.ts';
 import { scanRelationId, parseJoinType } from './plan-summary.ts';
@@ -2059,7 +2059,7 @@ export const DETECTORS = [
           ? `${formatBytes(stage.memoryBytesSpilled)} spilled: ${shuffleFix.text}.`
           : `${formatBytes(stage.memoryBytesSpilled)} spilled: this stage reads no shuffle, so increase executor memory or process less data per task.`;
       const cause = describeSpillCause(operators, ratio, wide, reads === 'input', exchanges[0]);
-      const sqlDescription = execution?.description?.trim().slice(0, 200);
+      const sqlDescription = clipAtWord(execution?.description?.trim() ?? '', 200);
       return {
         type: 'spill', stageId: stage.id, impactBand, reads,
         spillMagnitude: mag?.magnitude,

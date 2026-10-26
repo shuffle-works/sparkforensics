@@ -120,6 +120,15 @@ export function formatBytes(bytes: number | undefined): string {
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
 
+/** `text` cut to at most `max` characters at its last whitespace, with `...` appended. The cut never
+ * splits a token, so redaction run on the cut text still matches a whole host, IP or app id; text
+ * with no whitespace to cut at is returned whole. */
+export function clipAtWord(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max + 1).search(/\s\S*$/);
+  return cut > 0 ? `${text.slice(0, cut).trimEnd()}...` : text;
+}
+
 /** An exchange's row width as "128 columns · 410 B/row", leaving out what is unknown. */
 export function formatRowWidth({ columns, bytesPerRow }: ExchangeWidth): string {
   return [

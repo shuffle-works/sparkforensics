@@ -290,6 +290,12 @@ describe('spill finding on a user-partitioned sort', () => {
     expect(finding.recommendation).toContain('raise spark.sql.shuffle.partitions');
   });
 
+  it('cuts a long description before a token, never inside it, so redaction still sees it whole', () => {
+    const lead = `nightly load from ${'a'.repeat(176)}`;
+    const finding = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'), {}, `${lead} 10.1.2.3 done`);
+    expect(finding.sqlDescription).toBe(`${lead}...`);
+  });
+
   it('leaves the description out when the execution has none', () => {
     expect(spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'))).not.toHaveProperty('sqlDescription');
   });

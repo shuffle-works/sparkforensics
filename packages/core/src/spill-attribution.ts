@@ -2,7 +2,7 @@
 // exchange's column count is the one its plan description gives (`inputColumns`), else the nearest
 // node below it that lists its columns. A shape this cannot read yields no figure.
 
-import { describeSpillRatio, formatBytes } from './format-utils.ts';
+import { clipAtWord, describeSpillRatio, formatBytes } from './format-utils.ts';
 import { isExchangeNode } from './plan-node-detail.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import type { ExchangeWidth, SpillExchange, SpillOperator } from './finding-types.ts';
@@ -73,11 +73,11 @@ function inputExchange(node: PlanNode): PlanNode | null {
   return current ?? null;
 }
 
-// What a node's plan text says after its name, cut to MAX_ARGUMENTS_CHARS.
+// What a node's plan text says after its name, cut at a word to MAX_ARGUMENTS_CHARS.
 function operatorArguments(node: PlanNode): string | undefined {
   const text = (node.detail ?? '').slice(node.name.length).trim();
   if (!text) return undefined;
-  return text.length > MAX_ARGUMENTS_CHARS ? `${text.slice(0, MAX_ARGUMENTS_CHARS)}...` : text;
+  return clipAtWord(text, MAX_ARGUMENTS_CHARS);
 }
 
 // `Exchange hashpartitioning(k#1, 200), REPARTITION_BY_NUM, [plan_id=5]`: the partitioning, its
