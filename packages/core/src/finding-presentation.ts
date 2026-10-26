@@ -375,6 +375,15 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
       ? `Dynamic allocation is already on, so consider reducing cluster size${idleCapacityLowering(f)}.`
       : 'Consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation.'),
   },
+  rightSizing: {
+    name: 'right-sized cluster',
+    tag: 'UTIL',
+    thresholdSummary: (t) => `modeled makespan within ${t.tolerancePct}% of the observed one at under ${shareLabel(t.maxCoreShare)} of the cores (model error under ${t.maxModelErrorPct}%)`,
+    actionLabel: () => 'Right-size cluster',
+    genericRecommendation: (f) => (switchAlreadyOn(f, DYNAMIC_ALLOCATION_KEY)
+      ? `Dynamic allocation is already on, so consider reducing cluster size${idleCapacityLowering(f)}.`
+      : 'Consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation.'),
+  },
   coreLocality: {
     name: 'core locality',
     tag: 'LOCAL',

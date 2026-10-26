@@ -53,7 +53,7 @@ const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & key
   skew: [], stageShape: ['rule'], shuffle: [], partitionSizing: ['rule'], spill: [], gc: ['direction'],
   slowHost: ['host', 'executorId', 'variant', 'dimension'], stageSlowness: [], stageFailed: ['variant'],
   failures: [], straggler: [], speculationWaste: [], retryWaste: [], tinyTask: [],
-  incompleteRun: [], coldStart: [], utilization: [], memoryUtilization: ['executorId', 'variant'],
+  incompleteRun: [], coldStart: [], utilization: [], rightSizing: [], memoryUtilization: ['executorId', 'variant'],
   cacheUtilization: ['variant', 'rddId'], coreLocality: [], autoscalingChurn: [],
   cachingOpportunity: ['variant', 'relation', 'format', 'operator', 'executionIds'],
   jobFailureRate: [], configAudit: [],

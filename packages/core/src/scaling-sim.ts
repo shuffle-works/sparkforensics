@@ -28,6 +28,20 @@ function estimatedTotalAtCores(perStage: Record<string, { totalTaskDurationSum: 
   return sum;
 }
 
+type PerStage = Record<string, { totalTaskDurationSum: number; taskCount: number }>;
+
+// Model Error: predicted-at-baseline vs. observed stages-active wall-clock. `scale` projects the
+// idealized sum onto the observed wall-clock, so predictions are relative to the real run rather
+// than the raw idealization.
+function calibrateToObserved(perStage: PerStage, baselineCores: number, observedActiveMs: number) {
+  const predictedAtBaseline = baselineCores > 0 ? estimatedTotalAtCores(perStage, baselineCores) : 0;
+  const modelErrorPct = observedActiveMs > 0
+    ? Math.round(Math.abs(predictedAtBaseline - observedActiveMs) / observedActiveMs * 100)
+    : null;
+  const scale = predictedAtBaseline > 0 ? observedActiveMs / predictedAtBaseline : 1;
+  return { predictedAtBaseline, modelErrorPct, scale };
+}
+
 /** `observedActiveMs` is the run's stages-active wall-clock (the interpretation's
  * `wallClock.stagesActive`), the one observed makespan predictions are scaled against. */
 export function simulateScaling({ app, observedActiveMs, runAggregates, executorsAdded }: {
@@ -48,16 +62,7 @@ export function simulateScaling({ app, observedActiveMs, runAggregates, executor
   // `executorsAdded` cast: computeTotalCores only reads `totalCores`, present on
   // ExecutorAddedEvent (the only kind passed here) but not on the union type.
   const baselineCores = computeTotalCores(app ?? {}, executorsAdded as Array<{ totalCores?: number }>);
-
-  // Model Error: predicted-at-baseline vs. observed stages-active wall-clock.
-  const predictedAtBaseline = baselineCores > 0 ? estimatedTotalAtCores(perStage, baselineCores) : 0;
-  const modelErrorPct = observedActiveMs > 0
-    ? Math.round(Math.abs(predictedAtBaseline - observedActiveMs) / observedActiveMs * 100)
-    : null;
-
-  // Scale factor projects the idealized sum onto the observed active wall-clock,
-  // so predictions are relative to the real run rather than the raw idealization.
-  const scale = predictedAtBaseline > 0 ? observedActiveMs / predictedAtBaseline : 1;
+  const { modelErrorPct, scale } = calibrateToObserved(perStage, baselineCores, observedActiveMs);
 
   const predictions = TEST_PERCENTAGES.map(pct => {
     const cores = Math.max(1, Math.round(baselineCores * pct / 100));
@@ -66,4 +71,28 @@ export function simulateScaling({ app, observedActiveMs, runAggregates, executor
   });
 
   return { baselineCores, testPercentages: TEST_PERCENTAGES, predictions, modelErrorPct };
+}
+
+/** The smallest core count, up to `baselineCores`, whose modeled makespan stays within
+ * `tolerancePct` percent of the observed one, with that makespan and the model error at the
+ * baseline. Null when the model has nothing to calibrate against. The modeled makespan never
+ * rises with cores, so a binary search finds the smallest count. */
+export function smallestCoresWithinTolerance({ perStage, baselineCores, observedActiveMs, tolerancePct }: {
+  perStage: PerStage;
+  baselineCores: number;
+  observedActiveMs: number;
+  tolerancePct: number;
+}): { cores: number; estMakespanMs: number; modelErrorPct: number } | null {
+  const { predictedAtBaseline, modelErrorPct, scale } = calibrateToObserved(perStage, baselineCores, observedActiveMs);
+  if (predictedAtBaseline <= 0 || modelErrorPct == null) return null;
+  // The scale cancels: scale x estimate(c) <= observed x (1 + tol) is estimate(c) <= predictedAtBaseline x (1 + tol).
+  const limit = predictedAtBaseline * (1 + tolerancePct / 100);
+  let low = 1;
+  let high = baselineCores;
+  while (low < high) {
+    const mid = Math.floor((low + high) / 2);
+    if (estimatedTotalAtCores(perStage, mid) <= limit) high = mid;
+    else low = mid + 1;
+  }
+  return { cores: low, estMakespanMs: Math.round(estimatedTotalAtCores(perStage, low) * scale), modelErrorPct };
 }

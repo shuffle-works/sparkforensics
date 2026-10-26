@@ -117,6 +117,17 @@ scaling simulator and the efficiency model read that flag and show a caveat
 banner rather than suppressing the estimate. The same Full app report grid
 also holds Evidence Availability and the Core Usage Histogram.
 
+The scaling model also backs one `DETECTORS` entry, `rightSizing` (tag `UTIL`,
+`RightSizing.tsx`, action region). `scaling-sim.ts`'s `smallestCoresWithinTolerance`
+finds the fewest cores, up to the run's peak concurrent cores, whose modeled
+stage time stays within `tolerancePct` of the observed stages-active time. The
+finding fires when that count is at most `maxCoreShare` of the peak, on a
+cluster of at least `minBaselineCores`, while the model's error at the peak
+stays within `maxModelErrorPct`. It is always `low` confidence with an
+informational estimate, so it adds no idle core time beside `utilization`'s.
+`utilization` measures allocated core time that ran no task; `rightSizing` names
+the size the stages' own parallelism needs.
+
 ## Confidence metadata
 
 Best-effort (non-deterministic) findings carry a `confidence` +

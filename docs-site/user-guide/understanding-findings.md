@@ -288,6 +288,15 @@ either lower `spark.executor.instances` or enable dynamic allocation; the two ar
 alternatives. With it on, lower `spark.dynamicAllocation.maxExecutors`, and
 `spark.dynamicAllocation.minExecutors` too when the run sets it above 0.
 
+A second `UTIL` finding, the right-sized cluster, says how many cores the run
+needs. It models each stage's task time spread over the cores it can use, and
+reports the smallest core count whose modeled stage time stays within 10% of the
+observed time. It appears when that count is at most 75% of the cores the run
+held at peak, on clusters of at least 8 cores. It stays silent when the model
+misses the observed stage time by more than 20%. The count is low confidence:
+the model is idealized, so re-run with fewer cores to confirm. Its advice is the
+same as the idle-capacity finding's.
+
 ### `MEM`: Memory utilization {#mem}
 
 Executor memory or core capacity may be over- or under-provisioned: more

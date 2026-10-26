@@ -5,6 +5,8 @@ import { scanRelationId, parseJoinType } from './plan-summary.ts';
 import { allocatedCoreMs, computeAllocation } from './allocation.ts';
 import { executorHeapPeaks } from './executor-peaks.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
+import { smallestCoresWithinTolerance } from './scaling-sim.ts';
+import { computeWallClock } from './wall-clock.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { diagnoseJoinSkew, isSkewJoinNode, planShowsSkewSplit } from './aqe-skew.ts';
 import { isBatchEvalPythonNode } from './python-stage.ts';
@@ -171,7 +173,11 @@ export interface DetectorCtx {
   executorsRemoved: DetectorExecutorRemovedEvent[];
   jobs: Map<number, DetectorJob>;
   sql: Map<number, DetectorSqlExec>;
-  runAggregates?: { busyCoreMs?: number; executorPeakMetrics?: Record<string, Record<string, number>> } | null;
+  runAggregates?: {
+    busyCoreMs?: number;
+    perStage?: Record<string, { totalTaskDurationSum: number; taskCount: number }>;
+    executorPeakMetrics?: Record<string, Record<string, number>>;
+  } | null;
   // The one EstimateCtx analyze() also hands every estimate(): a detector's runtime floor clips
   // its claim against the same occupancy sweep the displayed savings come from.
   impact: EstimateCtx;
@@ -2699,6 +2705,40 @@ export const DETECTORS = [
         idleCoreTimeMs: { low: idleMs, high: idleMs },
       };
     },
+  }),
+  defineAppDetector({
+    // The what-if scaling model (scaling-sim.ts) as a recommendation: the smallest core count whose
+    // modeled stage time stays within tolerance of the observed one. `utilization` measures idle
+    // allocation; this names the size the stages' own parallelism needs. The model is idealized, so
+    // the finding is always low confidence and silent when the model misses the observed run.
+    type: 'rightSizing', order: 101, fixEffort: 'config', version: 1,
+    emits: ['rightSizing'],
+    docAnchor: '#bottleneck-utilization',
+    thresholds: { tolerancePct: 10, maxCoreShare: 0.75, minBaselineCores: 8, maxModelErrorPct: 20 },
+    detect(ctx, thresholds): Finding | null {
+      const { app, executorsAdded, executorsRemoved, runAggregates, stages } = ctx;
+      const perStage = runAggregates?.perStage;
+      if (!app || !perStage || app.startTime == null || app.endTime == null) return null;
+      const observedCores = computePeakConcurrentCores(app, executorsAdded, executorsRemoved);
+      if (observedCores < thresholds.minBaselineCores) return null;
+      const observedActiveMs = computeWallClock(app, stages).stagesActive;
+      const fit = smallestCoresWithinTolerance({ perStage, baselineCores: observedCores, observedActiveMs, tolerancePct: thresholds.tolerancePct });
+      if (fit == null || fit.modelErrorPct > thresholds.maxModelErrorPct) return null;
+      if (fit.cores > observedCores * thresholds.maxCoreShare) return null;
+
+      const fix = idleCapacityFix(app, 'consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation',
+        'dynamic allocation is already on, so consider reducing cluster size');
+      return {
+        type: 'rightSizing', stageId: null, impactBand: 'warning',
+        metric: 'rightSizedCores', value: fit.cores,
+        observedCores, observedActiveMs, modeledActiveMs: fit.estMakespanMs, modelErrorPct: fit.modelErrorPct,
+        confidence: 'low',
+        validationRequired: `Modeled from each stage's task time spread over its cores, which misses the observed stage time by ${fit.modelErrorPct}%: re-run with fewer cores to confirm.`,
+        recommendation: `The modeled stage time stays within ${thresholds.tolerancePct}% of the observed ${formatDuration(observedActiveMs)} with about ${fit.cores} of the ${observedCores} cores held at peak: ${fix.text}.`,
+        remediation: fix.remediation,
+      };
+    },
+    estimate: noWasteModel,
   }),
   defineAppDetector({
     type: 'memoryUtilization', order: 102, fixEffort: 'config', version: 1,

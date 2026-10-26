@@ -316,6 +316,17 @@ export interface UtilizationFinding extends NumericFinding<'utilization'>, Utili
   allocatedCoreMs: number;
 }
 
+// `value` is the modeled core count: the smallest whose makespan stays within the detector's
+// tolerance of the observed stages-active time (`observedActiveMs`), `modeledActiveMs` at that count.
+export interface RightSizingEvidence {
+  observedCores: number;
+  observedActiveMs: number;
+  modeledActiveMs: number;
+  // Idealized makespan at `observedCores` against `observedActiveMs`: how far to trust the model.
+  modelErrorPct: number;
+}
+export interface RightSizingFinding extends NumericFinding<'rightSizing'>, RightSizingEvidence {}
+
 export interface MemoryUtilizationEvidence {
   variant: 'idleCores' | 'memoryBand' | 'wasteModel';
   // memoryBand only: the measured band the executors fell in.
@@ -487,6 +498,7 @@ export interface FindingEvidenceMap {
   incompleteRun: IncompleteRunEvidence;
   coldStart: ColdStartEvidence;
   utilization: UtilizationEvidence;
+  rightSizing: RightSizingEvidence;
   memoryUtilization: MemoryUtilizationEvidence;
   cacheUtilization: CacheUtilizationEvidence;
   coreLocality: CoreLocalityEvidence;
@@ -520,6 +532,7 @@ export type Finding =
   | IncompleteRunFinding
   | ColdStartFinding
   | UtilizationFinding
+  | RightSizingFinding
   | MemoryUtilizationFinding
   | CacheUtilizationFinding
   | CoreLocalityFinding
