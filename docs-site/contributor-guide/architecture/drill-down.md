@@ -17,7 +17,10 @@ the way `RunVerdict` lists a step: tag and action label, the measurement ("What'
 **Show evidence** button. Types follow the verdict's own order
 (`buildNextSteps`: stage task time or idle core time, then potential savings, failure findings first on a run
 whose jobs failed), with types outside the stage's own verdict step after them,
-worst band first. The grouping and order are computed once by `interpretRun`
+worst band first. Info findings are left out by the dashboard's default band
+filter (`matchesFilter(f, emptySelection())`) and counted as "N info notes
+hidden", unless the `showInfo` prop is set (`Dashboard.tsx` sets it when Filter
+findings selects the info band). The grouping and order are computed once by `interpretRun`
 (`interpretStages` in `packages/core/src/run-interpretation.ts`, shipped as
 `stages[id].{findingIndexes,typeOrder}`); the dialog only renders them. Show evidence closes the dialog and calls the optional `onRoute` prop
 (`routeToVisible` from `Dashboard.tsx`, which clears any board filter that

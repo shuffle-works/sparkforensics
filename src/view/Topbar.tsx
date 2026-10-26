@@ -20,6 +20,7 @@ import { WidgetDensityControl, WidgetDensityMenuItem } from '@/view/WidgetDensit
 import { store, useStore } from '@/store/store';
 import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import { useTheme } from '@/theme/ThemeProvider';
+import { emptySelection, filterFindings } from '@/view/finding-filter';
 import { worstImpactBand, formatDuration, IMPACT_BAND_ORDER } from '@sparkforensics/core/format-utils.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
 import { stageIdsForSqlExec } from '@sparkforensics/core/sql-stages.ts';
@@ -149,7 +150,7 @@ export function Topbar({
   const showCompare = onCompare != null && !sectionControls && !exportMode && activeFileId != null && app != null && !comparison.baselineId;
   const evidence = useEvidenceExport();
   const appModel = useStore((s) => s.appModel);
-  const graphEntries = useMemo(() => eligibleGraphExecutions(appModel, catalog), [appModel, catalog]);
+  const graphEntries = useMemo(() => eligibleGraphExecutions(appModel, filterFindings(catalog, emptySelection())), [appModel, catalog]);
   const [graphPickerOpen, setGraphPickerOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 

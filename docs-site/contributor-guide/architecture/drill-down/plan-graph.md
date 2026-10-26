@@ -145,6 +145,13 @@ graphed belongs to) before indexing by node id, as defense in depth: a
 hand-built or stale finding whose `planNodeIds` collide with this tree's ids
 still can't badge onto the wrong tree.
 
+`PlanGraphRoute` passes the model, the stage boxes and "Next problem" the catalog
+narrowed by `filterFindings(catalog, emptySelection())`, the dashboard's default
+band filter, so info findings are absent until the Settings "Show info notes"
+checkbox is on. The model cache key includes that choice. The "Open plan graph"
+picker counts the same narrowed list. `StageDetailDialog` applies the same
+default ([Drill-down](../drill-down.md)).
+
 Two other per-node UI features render independently of findings:
 
 - A traffic-light **duration heat bar** on each node
@@ -207,7 +214,7 @@ floats in its own corner. View is zoom in/out and fit (in place of React Flow's
 `Controls`); Navigate is "Next worst duration" and "Next problem" (cycling to
 the worst-share node and to the problem stages in the verdict's order
 (`orderByImpact`), via `setCenter`); Display is
-the node-filter/duration Settings popover (`PlanGraphSettingsControl` with its
+the node-filter/duration/info-notes Settings popover (`PlanGraphSettingsControl` with its
 `iconOnly` rail variant), plus the legend and minimap
 toggles. The rail renders inside `ReactFlowProvider` alongside `<ReactFlow>`, so
 its `useReactFlow` zoom/center calls drive the same instance.

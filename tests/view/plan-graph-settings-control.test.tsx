@@ -55,4 +55,23 @@ describe('PlanGraphSettingsControl', () => {
     await user.click(screen.getByRole('radio', { name: /node \+ descendants/i }));
     expect(onDurationModeChange).toHaveBeenCalledWith('inclusive');
   });
+
+  it('toggles info notes from the panel and reports how many exist', async () => {
+    const user = userEvent.setup();
+    const onShowInfoChange = vi.fn();
+    renderControl({ infoNoteCount: 3, showInfo: false, onShowInfoChange });
+    await user.click(screen.getByRole('button', { name: /settings/i }));
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Show info notes (3)' }));
+    expect(onShowInfoChange).toHaveBeenCalledWith(true);
+  });
+
+  it('omits the info toggle when the run has no info notes', async () => {
+    const user = userEvent.setup();
+    renderControl({ infoNoteCount: 0, onShowInfoChange: vi.fn() });
+    await user.click(screen.getByRole('button', { name: /settings/i }));
+
+    await screen.findByRole('dialog', { name: /plan graph settings/i });
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
 });

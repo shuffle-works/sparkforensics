@@ -319,7 +319,7 @@ function FilteredBoard({
       )}
       {/* Full, unfiltered catalog: a stage pill must still open evidence even
           when the finding is filtered out of the board lists. */}
-      <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={routeToVisible} />
+      <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={routeToVisible} showInfo={selection.impactBands.has('info')} />
     </main>
     </>
   );

@@ -174,6 +174,7 @@ export function PlanGraphCanvas({
   fitSignal = 0,
   filterMode = 'basic', onFilterModeChange = () => {}, hiddenCount = 0, emptyFilterModes,
   durationMode = 'exclusive', onDurationModeChange = () => {},
+  showInfo = false, onShowInfoChange = () => {}, infoNoteCount = 0,
 }: {
   model: PlanGraphModel;
   showMiniMap: boolean;
@@ -206,6 +207,9 @@ export function PlanGraphCanvas({
   emptyFilterModes?: ReadonlySet<PlanGraphFilterMode>;
   durationMode?: PlanGraphDurationMode;
   onDurationModeChange?: (mode: PlanGraphDurationMode) => void;
+  showInfo?: boolean;
+  onShowInfoChange?: (show: boolean) => void;
+  infoNoteCount?: number;
 }) {
   const { ref: containerRef, tick: resizeTick } = useResizeTick();
   const narrow = useNarrowViewport();
@@ -490,6 +494,9 @@ export function PlanGraphCanvas({
           emptyFilterModes={emptyFilterModes}
           durationMode={durationMode}
           onDurationModeChange={onDurationModeChange}
+          showInfo={showInfo}
+          onShowInfoChange={onShowInfoChange}
+          infoNoteCount={infoNoteCount}
           legendOpen={legendOpen}
           onToggleLegend={() => setLegendOpen((o) => !o)}
           miniMapOpen={miniMapOpen}

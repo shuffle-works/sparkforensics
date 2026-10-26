@@ -14,6 +14,7 @@ import { Section } from '@/view/Section';
 import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf, useInterpretation } from '@/view/interpretation';
+import { emptySelection, matchesFilter } from '@/view/finding-filter';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
@@ -29,6 +30,9 @@ export interface StageDetailDialogProps {
   /** Routes to a finding's evidence widget on the board. Omitted where there
    * is no board to route to; the dialog then shows no Show evidence buttons. */
   onRoute?: (target: TriageTarget) => void;
+  /** Lists info findings too, as the dashboard does once its filter selects the
+   * info band. Off by default: info findings are counted as hidden notes. */
+  showInfo?: boolean;
 }
 
 interface LocalityStat {
@@ -156,7 +160,7 @@ function plural(count: number, noun: string): string {
 /** One plain sentence placing the stage in the run: how long it ran, what
  * share of the run that was, how many tasks it split into, and how many
  * findings it carries. */
-function stageSummary(stage: Stage, runMs: number | null, findingTypes: number): string {
+function stageSummary(stage: Stage, runMs: number | null, findingTypes: number, hiddenNotes: number): string {
   const duration = (stage.completedAt ?? 0) - (stage.submittedAt ?? 0);
   const parts: string[] = [];
   if (duration > 0) {
@@ -165,13 +169,14 @@ function stageSummary(stage: Stage, runMs: number | null, findingTypes: number):
   }
   if ((stage.taskCount ?? 0) > 0) parts.push(`split into ${plural(stage.taskCount!, 'task')}`);
   const lead = parts.length > 0 ? `${parts.join(', ')}.` : '';
+  const hidden = hiddenNotes > 0 ? `${plural(hiddenNotes, 'info note')} hidden.` : '';
   const found =
     findingTypes === 0
-      ? 'Nothing was flagged on this stage.'
+      ? (hidden ? '' : 'Nothing was flagged on this stage.')
       : findingTypes === 1
         ? '1 finding here.'
         : `${findingTypes} findings here. They often share one cause, so start with the first.`;
-  return [lead, found].filter(Boolean).join(' ');
+  return [lead, found, hidden].filter(Boolean).join(' ');
 }
 
 /** "Why was this stage flagged": the stage's place in the run, then every
@@ -181,6 +186,7 @@ function stageSummary(stage: Stage, runMs: number | null, findingTypes: number):
 function StageVerdict({
   stage,
   findings,
+  hiddenNotes,
   typeOrder,
   catalog,
   runMs,
@@ -188,6 +194,7 @@ function StageVerdict({
 }: {
   stage: Stage;
   findings: Finding[];
+  hiddenNotes: number;
   typeOrder: string[];
   catalog: Finding[];
   runMs: number | null;
@@ -198,7 +205,7 @@ function StageVerdict({
 
   return (
     <section aria-label="Why this stage was flagged" className="space-y-3">
-      <p className="text-sm text-muted-foreground">{stageSummary(stage, runMs, groups.length)}</p>
+      <p className="text-sm text-muted-foreground">{stageSummary(stage, runMs, groups.length, hiddenNotes)}</p>
       {groups.length > 0 ? (
         <ol className="divide-y rounded-md border px-3">
           {groups.map(([type, { impactBand, finding, recs }]) => {
@@ -257,9 +264,10 @@ interface StageDetailBodyProps {
   catalog: Finding[];
   getTaskData: (stageId: number) => Promise<TaskData>;
   onShowEvidence?: (target: TriageTarget) => void;
+  showInfo: boolean;
 }
 
-function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence }: StageDetailBodyProps) {
+function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence, showInfo }: StageDetailBodyProps) {
   const { exportMode, getTaskData: liveGetTaskData } = useLiveTaskData(getTaskData);
   const [taskData, setTaskData] = useState<TaskData | null>(null);
   const [taskDataError, setTaskDataError] = useState(false);
@@ -269,9 +277,10 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence
   // that touches only this stage (stageIds: [id]) is listed here too.
   const interpretation = useInterpretation();
   const stageFindings = interpretation?.data.stages[String(stage.id)];
-  const findings = interpretation && stageFindings
+  const stageCatalog = interpretation && stageFindings
     ? stageFindings.findingIndexes.map((index) => findingAt(interpretation, index)).filter((f): f is Finding => f != null)
     : [];
+  const findings = showInfo ? stageCatalog : stageCatalog.filter((f) => matchesFilter(f, emptySelection()));
 
   // One fetch per dialog open (or manual retry, bumping `taskDataRetryCount`):
   // the caller mounts a fresh `StageDetailBody` keyed by stage id per stage.
@@ -308,6 +317,7 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence
       <StageVerdict
         stage={stage}
         findings={findings}
+        hiddenNotes={stageCatalog.length - findings.length}
         typeOrder={stageFindings?.typeOrder ?? []}
         catalog={catalog}
         runMs={interpretation?.data.runShape.wallClockMs ?? null}
@@ -432,7 +442,7 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence
  * sections are `CollapsibleSection`s, collapsed by default unless noted; the
  * SQL plan tree is hierarchical (not the flat `PlanExplorer` accordion) and,
  * unlike `PlanExplorer`'s embeds, stays visible at Basic. */
-export function StageDetailDialog({ appModel, catalog, getTaskData, onRoute }: StageDetailDialogProps) {
+export function StageDetailDialog({ appModel, catalog, getTaskData, onRoute, showInfo = false }: StageDetailDialogProps) {
   const { stageId, close } = useStageDetail();
   const stage = stageId != null ? appModel.stages.get(stageId) : undefined;
   const open = stage != null;
@@ -482,6 +492,7 @@ export function StageDetailDialog({ appModel, catalog, getTaskData, onRoute }: S
               catalog={catalog}
               getTaskData={getTaskData}
               onShowEvidence={showEvidence}
+              showInfo={showInfo}
             />
           </>
         ) : null}
