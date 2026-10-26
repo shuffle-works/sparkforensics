@@ -119,9 +119,7 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    `src/view/verdict-evidence.ts`, rendered through `InlineEvidence`; see
    "In-place evidence panel" in
    [row-expand-contract](./widget-rendering/row-expand-contract.md)) or
-   routes to the card that holds it. A step whose widget would show nothing
-   its own text lacks (`evidenceAddsDetail` in `src/view/evidence-detail.ts`)
-   owns no panel and routes. The steps' lead findings
+   routes to the card that holds it. The steps' lead findings
    (`verdictLeadFindings`) and owned cards are left out of the Findings tab,
    and a **More findings (n)** link shows that tab, with `n` the tab's own
    listed count (`listedCount` in `Dashboard.tsx`).

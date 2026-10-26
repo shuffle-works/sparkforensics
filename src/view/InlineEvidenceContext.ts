@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 
 /** What a finding's in-place evidence panel knows about the line above it. */
 export interface InlineEvidenceState {
@@ -8,9 +8,9 @@ export interface InlineEvidenceState {
    * the measured figures in its sentence). A finding the line does not state
    * keeps all of its own facts. */
   stated: ReadonlySet<string>;
-  /** True until the first `WidgetCard` takes the flat panel form, so a card
-   * nested inside a widget's body stays a card. */
-  flatCard: boolean;
+  /** The impact band of the finding the line above states, for the panel's
+   * left rule; absent for a group row, where the widget's own band applies. */
+  band?: ImpactBand;
 }
 
 export const InlineEvidenceContext = createContext<InlineEvidenceState | null>(null);

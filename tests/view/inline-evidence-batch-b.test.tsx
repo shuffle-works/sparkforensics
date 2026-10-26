@@ -28,7 +28,7 @@ afterEach(() => store.getState().setWidgetDensity('basic'));
 /** Renders `ui` the way an in-place evidence panel does, with `stated` ids stated by the line above. */
 function renderPanel(ui: ReactElement, stated: string[]) {
   return render(
-    <InlineEvidenceContext.Provider value={{ stated: new Set(stated), flatCard: true }}>
+    <InlineEvidenceContext.Provider value={{ stated: new Set(stated) }}>
       <StageDetailProvider>
         <DocsProvider>{ui}</DocsProvider>
       </StageDetailProvider>

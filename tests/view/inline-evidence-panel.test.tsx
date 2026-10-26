@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-generic-recommendation.ts';
+import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 
 import { ImpactEstimate } from '@/view/ImpactEstimate';
@@ -14,18 +14,19 @@ import { testFinding } from './_shared/finding';
 
 const estimate = { basis: 'serial', wallClock: { low: 1200, high: 1200 }, estimateMethod: 'measured', rawWaste: { value: 1200, unit: 'ms' } } as const;
 
-function stated() {
-  return testFinding({ type: 'spill', stageId: 1, impactBand: 'critical', id: 'spill-1', impactEstimate: estimate });
+function stated(impactBand: Finding['impactBand'] = 'critical') {
+  return testFinding({ type: 'spill', stageId: 1, impactBand, id: 'spill-1', impactEstimate: estimate });
 }
 function other() {
   return testFinding({ type: 'spill', stageId: 2, impactBand: 'critical', id: 'spill-2', impactEstimate: estimate });
 }
 
 function PanelWidget({ findings }: { findings?: Finding[] }) {
+  const impactBand = worstImpactBand(findings ?? []) ?? 'info';
   return (
-    <WidgetCard title="Spill" impactBand="critical" fixFor={findings ?? []} badges={<TagBadge type="spill" impactBand="critical" />}>
+    <WidgetCard title="Spill" impactBand={impactBand} fixFor={findings ?? []} badges={<TagBadge type="spill" impactBand={impactBand} />}>
       {(findings ?? []).map((finding) => <ImpactEstimate key={finding.id} finding={finding} />)}
-      <WidgetCard title="Nested card">nested body</WidgetCard>
+      <p>panel body</p>
     </WidgetCard>
   );
 }
@@ -41,7 +42,7 @@ describe('in-place evidence panel', () => {
     renderPanel([stated()], []);
     expect(screen.getByRole('heading', { name: 'Spill', level: 3 })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Spill' })).not.toBeInTheDocument();
-    expect(screen.getByText('nested body')).toBeVisible();
+    expect(screen.getByText('panel body')).toBeVisible();
     expect(screen.getByRole('heading', { name: 'Spill' }).closest('section')).toHaveClass('border-l-[3px]', 'border-critical');
   });
 
@@ -53,11 +54,17 @@ describe('in-place evidence panel', () => {
     expect(screen.queryByText(coreFindingGenericRecommendation(finding)!)).not.toBeInTheDocument();
   });
 
-  it('keeps a card nested in the widget a card', async () => {
-    renderPanel([stated()], []);
-    const nested = screen.getByRole('button', { name: 'Nested card' });
-    await userEvent.click(nested);
-    expect(screen.getByText('nested body')).not.toBeVisible();
+  it("draws the left rule in the stated finding's band, not the widget's worst band", () => {
+    const lead = stated('warning');
+    renderPanel([lead, other()], [lead]);
+    const panel = screen.getByRole('heading', { name: 'Spill' }).closest('section');
+    expect(panel).toHaveClass('border-warning');
+    expect(panel).not.toHaveClass('border-critical');
+  });
+
+  it("falls back to the widget's band when the line above states no finding", () => {
+    renderPanel([stated('warning'), other()], []);
+    expect(screen.getByRole('heading', { name: 'Spill' }).closest('section')).toHaveClass('border-critical');
   });
 
   it('makes the heading the route focus target', () => {

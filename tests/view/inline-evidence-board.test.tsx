@@ -64,17 +64,18 @@ describe('evidence panel on a Findings row', () => {
     expect(within(panelRow).queryByText('SHFL')).not.toBeInTheDocument();
   });
 
-  it('routes to the grid card, with no panel, when the row states everything its widget shows', async () => {
+  it('opens a short panel in place, without routing, when the row states everything its widget shows', async () => {
     const utilization = testFinding({
       type: 'utilization', id: 'utilization-1', stageId: null, impactBand: 'warning', metric: 'avgUtilization', value: 33,
       recommendation: 'Average executor utilization was only 33%.', utilizationFraction: 0.33, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 33,
     });
     const onRoute = renderBoard([utilization]);
     const button = screen.getByRole('button', { name: 'Show evidence' });
-    expect(button).not.toHaveAttribute('aria-expanded');
+    expect(button).toHaveAttribute('aria-expanded', 'false');
 
     await userEvent.click(button);
-    expect(onRoute).toHaveBeenCalledTimes(1);
-    expect(within(screen.getByRole('table')).queryByRole('heading')).not.toBeInTheDocument();
+    expect(onRoute).not.toHaveBeenCalled();
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    expect(await within(screen.getByRole('table')).findByRole('heading', { name: 'Executor Utilization' })).toBeInTheDocument();
   });
 });

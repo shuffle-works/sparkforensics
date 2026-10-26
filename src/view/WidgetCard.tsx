@@ -1,5 +1,5 @@
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -12,7 +12,7 @@ import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-g
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
 import { DisclosureOpenContext } from '@/view/DisclosureContext';
-import { InlineEvidenceContext, useInlineEvidence } from '@/view/InlineEvidenceContext';
+import { useInlineEvidence } from '@/view/InlineEvidenceContext';
 import { useWidgetGridCard, WidgetGridCardBoundary } from '@/view/WidgetGrid';
 
 export interface WidgetCardProps {
@@ -68,10 +68,8 @@ export function WidgetCard({
 }: WidgetCardProps) {
   const gridCard = useWidgetGridCard();
   const inlineEvidence = useInlineEvidence();
-  // The first card in an in-place evidence panel is a flat, always-open panel;
-  // cards nested in its body stay cards.
-  const flat = inlineEvidence?.flatCard ?? false;
-  const nestedEvidence = useMemo(() => (inlineEvidence ? { ...inlineEvidence, flatCard: false } : null), [inlineEvidence]);
+  // A card in an in-place evidence panel is a flat, always-open panel.
+  const flat = inlineEvidence !== null;
   const cardRef = useRef<HTMLDivElement>(null);
   // Reference-region tiles start collapsed and share a uniform collapsed height,
   // overriding each widget's own `defaultCollapsed` so the grid stays even.
@@ -175,26 +173,25 @@ export function WidgetCard({
   );
 
   if (flat) {
+    const ruleBand = inlineEvidence.band ?? impactBand;
     return (
-      <InlineEvidenceContext.Provider value={nestedEvidence}>
-        <section id={id} className={cn('border-l-[3px] pl-3', impactBand ? IMPACT_BORDER_CLASS[impactBand] : 'border-border')}>
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-tight">
-            <h3
-              ref={(heading) => gridCard?.setDisclosureButton(heading)}
-              tabIndex={-1}
-              data-route-focused={hasRouteFocus ? '' : undefined}
-              className={cn('rounded-sm font-heading text-sm leading-snug font-semibold outline-none', hasRouteFocus && 'ring-[3px] ring-ring/50')}
-              onBlur={handleDisclosureBlur}
-            >
-              {title}
-            </h3>
-            {badges}
-            {statusBadge}
-          </div>
-          {subtitle ? <p className="font-mono text-xs text-muted-foreground">{subtitle}</p> : null}
-          <div className="mt-2">{body}</div>
-        </section>
-      </InlineEvidenceContext.Provider>
+      <section ref={cardRef} id={id} className={cn('border-l-[3px] pl-3', ruleBand ? IMPACT_BORDER_CLASS[ruleBand] : 'border-border')}>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-tight">
+          <h3
+            ref={(heading) => gridCard?.setDisclosureButton(heading)}
+            tabIndex={-1}
+            data-route-focused={hasRouteFocus ? '' : undefined}
+            className={cn('rounded-sm font-heading text-sm leading-snug font-semibold outline-none', hasRouteFocus && 'ring-[3px] ring-ring/50')}
+            onBlur={handleDisclosureBlur}
+          >
+            {title}
+          </h3>
+          {badges}
+          {statusBadge}
+        </div>
+        {subtitle ? <p className="font-mono text-xs text-muted-foreground">{subtitle}</p> : null}
+      <div className="mt-2">{body}</div>
+      </section>
     );
   }
 

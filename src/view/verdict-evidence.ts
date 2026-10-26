@@ -13,19 +13,16 @@ export function verdictLeadFindings(interpretation: InterpretationState): Findin
 /** Which step shows which evidence panel in place: step index to widget id.
  * A card renders once, so the first step that targets a widget owns it; a
  * later step on the same widget routes to the owner's card. Only widgets in
- * `available` (the cards the Findings board could show) are claimed, and only
- * for a lead whose panel `addsDetail` to the step's own text; any other step
- * routes to the widget's card on the Findings board. */
+ * `available` (the cards the Findings board could show) are claimed. */
 export function verdictEvidenceOwners(
   interpretation: InterpretationState,
   available: ReadonlySet<string>,
-  addsDetail: (lead: Finding) => boolean,
 ): Map<number, string> {
   const owners = new Map<number, string>();
   const claimed = new Set<string>();
   verdictLeadFindings(interpretation).forEach((finding, index) => {
     const widgetId = triageTargetFor(finding)?.widgetId;
-    if (!widgetId || !available.has(widgetId) || claimed.has(widgetId) || !addsDetail(finding)) return;
+    if (!widgetId || !available.has(widgetId) || claimed.has(widgetId)) return;
     claimed.add(widgetId);
     owners.set(index, widgetId);
   });

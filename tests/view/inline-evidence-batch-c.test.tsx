@@ -33,7 +33,7 @@ function renderIn(ui: React.ReactNode, stated: string[] | null) {
   return render(
     stated === null
       ? body
-      : <InlineEvidenceContext.Provider value={{ stated: new Set(stated), flatCard: false }}>{body}</InlineEvidenceContext.Provider>,
+      : <InlineEvidenceContext.Provider value={{ stated: new Set(stated) }}>{body}</InlineEvidenceContext.Provider>,
   );
 }
 

@@ -1,5 +1,6 @@
-import { Suspense, useLayoutEffect, useState } from 'react';
+import { Suspense, useLayoutEffect, useMemo, useState } from 'react';
 
+import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { InlineEvidenceContext } from '@/view/InlineEvidenceContext';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -35,7 +36,10 @@ export function InlineEvidence({
   stated?: readonly Finding[];
 }) {
   const { component: Widget, widgetId, index } = widget;
-  const state = { stated: new Set(stated.flatMap((finding) => (finding.id != null ? [finding.id] : []))), flatCard: true };
+  const statedIds = stated.flatMap((finding) => (finding.id != null ? [finding.id] : []));
+  const band = worstImpactBand([...stated]);
+  const statedKey = statedIds.join('\n');
+  const state = useMemo(() => ({ stated: new Set(statedKey ? statedKey.split('\n') : []), band }), [statedKey, band]);
   return (
     <InlineEvidenceContext.Provider value={state}>
       <WidgetGridItem cardId={`alert-${index}`} widgetId={widgetId}>
