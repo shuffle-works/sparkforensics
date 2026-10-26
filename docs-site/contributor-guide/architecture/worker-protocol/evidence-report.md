@@ -172,9 +172,9 @@ already appear on the way that widget does on the board.
 A check the log could not run is not listed as clean.
 `packages/core/src/check-coverage.ts` holds the one rule, shared with the dashboard's verdict,
 top bar and Clean checks: a type whose only finding is an evidence caveat, every `scope: 'stage'`
-type on a log where no stage recorded an end, and the run-span types (`utilization`,
-`memoryUtilization`, `autoscalingChurn`) on a log with no ApplicationEnd. Those types are listed
-in `notRunChecks` instead of `cleanChecks`, each `{ type, tag, thresholdSummary, reason }`, where
+type on a log where no stage recorded an end, and the run-span types (`RUN_SPAN_CHECK_TYPES`)
+on a log with no ApplicationEnd. Those types are listed in `notRunChecks` instead of
+`cleanChecks`, each `{ type, tag, thresholdSummary, reason }`, where
 `reason` is the caveat's own recommendation (it names the setting to turn on) or the log-wide
 sentence. The Markdown has a `## Not checked on this log` section above `## Clean checks`, and a
 `Findings to act on` header line. Its `## Findings` section lists the `slowHost` rows of one

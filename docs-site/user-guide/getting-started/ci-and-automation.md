@@ -87,7 +87,7 @@ and no change to the job.
 - `direction` is `"increase"` or `"decrease"` (move the current value that
   way) or `"set"` (take the `suggested` value, for a switch or a class name).
 - Entries apply together unless the `recommendation` words them as
-  alternatives ("either ... or"). An idle-capacity finding (`utilization`,
+  alternatives ("either ... or"). An idle-capacity finding (`utilization`, `rightSizing`,
   `memoryUtilization` with `variant: "idleCores"`) does this with dynamic
   allocation off or unset: `set spark.dynamicAllocation.enabled` and `decrease
   spark.executor.instances` are alternatives, so apply one. With dynamic
