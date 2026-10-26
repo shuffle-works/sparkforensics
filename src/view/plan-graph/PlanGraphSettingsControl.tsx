@@ -13,6 +13,10 @@ export interface PlanGraphSettingsControlProps {
   emptyFilterModes?: ReadonlySet<PlanGraphFilterMode>;
   durationMode: PlanGraphDurationMode;
   onDurationModeChange: (mode: PlanGraphDurationMode) => void;
+  showInfo?: boolean;
+  onShowInfoChange?: (show: boolean) => void;
+  /** Info findings in the run; the toggle shows only when there are some. */
+  infoNoteCount?: number;
   /** Icon-only trigger (aria-label "Settings") for the vertical control rail;
    * default is the labeled "Settings" button. */
   iconOnly?: boolean;
@@ -28,6 +32,9 @@ export function PlanGraphSettingsControl({
   emptyFilterModes,
   durationMode,
   onDurationModeChange,
+  showInfo = false,
+  onShowInfoChange,
+  infoNoteCount = 0,
   iconOnly = false,
 }: PlanGraphSettingsControlProps) {
   return (
@@ -59,6 +66,15 @@ export function PlanGraphSettingsControl({
           <h2 className="mb-1.5 text-xs font-medium text-muted-foreground">Duration attribution</h2>
           <PlanGraphDurationModeControl mode={durationMode} onChange={onDurationModeChange} />
         </div>
+        {infoNoteCount > 0 && onShowInfoChange ? (
+          <>
+            <div aria-hidden="true" className="h-px bg-border" />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={showInfo} onChange={(e) => onShowInfoChange(e.target.checked)} />
+              Show info notes ({infoNoteCount})
+            </label>
+          </>
+        ) : null}
       </PopoverContent>
     </Popover>
   );

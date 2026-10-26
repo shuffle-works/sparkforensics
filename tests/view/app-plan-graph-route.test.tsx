@@ -657,3 +657,58 @@ test('re-renders the graph with hand-verified inclusive duration percentages aft
   expect(pctOf('Filter')).toBe('67%');
   expect(pctOf('Scan parquet')).toBe('33%');
 });
+
+test('hides info findings in the graph until "Show info notes" is checked', async () => {
+  const user = userEvent.setup();
+  store.setState({
+    appModel: planTreePlanModel(7),
+    catalog: [
+      testFinding({ type: 'skew', stageId: 7, impactBand: 'warning' as const, recommendation: 'Rebalance partitions' }),
+      testFinding({ type: 'gc', stageId: 7, impactBand: 'info' as const, recommendation: 'Check GC settings' }),
+    ],
+  });
+  store.getState().openPlanGraph(7);
+
+  render(<App />);
+
+  expect(screen.getByText('SKEW')).toBeInTheDocument();
+  expect(screen.queryByText('GC')).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: /settings/i }));
+  await user.click(screen.getByRole('checkbox', { name: 'Show info notes (1)' }));
+  expect(screen.getByText('GC')).toBeInTheDocument();
+
+  await user.click(screen.getByRole('checkbox', { name: 'Show info notes (1)' }));
+  expect(screen.queryByText('GC')).not.toBeInTheDocument();
+});
+
+test('"Next problem" has no stops for info-only stages until info notes are shown', async () => {
+  const user = userEvent.setup();
+  store.setState({
+    appModel: twoStagePlanModel(),
+    catalog: [testFinding({ type: 'gc', stageId: 7, impactBand: 'info' as const, recommendation: 'Check GC settings' })],
+  });
+  store.getState().openPlanGraph(7, { initialScope: 'full' });
+
+  render(<App />);
+
+  expect(screen.queryByRole('button', { name: /next problem/i })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole('button', { name: /settings/i }));
+  await user.click(screen.getByRole('checkbox', { name: 'Show info notes (1)' }));
+  expect(screen.getByRole('button', { name: /next problem/i })).toBeInTheDocument();
+});
+
+test('offers no info toggle when the run has no info findings', async () => {
+  const user = userEvent.setup();
+  store.setState({
+    appModel: planTreePlanModel(7),
+    catalog: [testFinding({ type: 'skew', stageId: 7, impactBand: 'warning' as const, recommendation: 'Rebalance partitions' })],
+  });
+  store.getState().openPlanGraph(7);
+
+  render(<App />);
+  await user.click(screen.getByRole('button', { name: /settings/i }));
+
+  expect(screen.queryByRole('checkbox', { name: /info notes/i })).not.toBeInTheDocument();
+});

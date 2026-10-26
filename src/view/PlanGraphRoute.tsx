@@ -10,6 +10,7 @@ import { Topbar } from '@/view/Topbar';
 import { DocsLink } from '@/view/DocsContext';
 import { useIngest } from '@/store/useIngest';
 import { useRecentFiles } from '@/view/useRecentFiles';
+import { emptySelection, filterFindings } from '@/view/finding-filter';
 import type { AppModel, Finding, PlanGraphDurationMode, PlanGraphEdge, PlanGraphFilterMode, PlanGraphModel, StageId } from '@sparkforensics/core/types.ts';
 
 export interface PlanGraphRouteProps {
@@ -99,13 +100,13 @@ function safeBuildPlanGraphModel(
 }
 
 // Module-level memo: rebuilding the model on every re-render or re-open is wasted
-// work. Keyed on (activeFileId, stageId, scope, durationMode), not stageId alone
+// work. Keyed on (activeFileId, stageId, scope, durationMode, showInfo), not stageId alone
 // (docs-site/contributor-guide/architecture/drill-down/plan-graph.md).
 type CacheKey = string;
 const planGraphModelCache = new Map<CacheKey, PlanGraphModel>();
 
-function cacheKey(activeFileId: string | null, stageId: StageId, scope: 'segment' | 'full', durationMode: PlanGraphDurationMode): CacheKey {
-  return `${activeFileId ?? 'none'}::${stageId}::${scope}::${durationMode}`;
+function cacheKey(activeFileId: string | null, stageId: StageId, scope: 'segment' | 'full', durationMode: PlanGraphDurationMode, showInfo: boolean): CacheKey {
+  return `${activeFileId ?? 'none'}::${stageId}::${scope}::${durationMode}::${showInfo}`;
 }
 
 /** Exposed for tests: clears every memoized model, e.g. between test cases
@@ -131,8 +132,9 @@ function memoizedBuildPlanGraphModel(
   planTree: NonNullable<ReturnType<typeof resolvePlanTree>>,
   opts: { scope: 'segment' | 'full'; stageId: StageId; appModel: AppModel; findings: Finding[]; durationMode: PlanGraphDurationMode },
   activeFileId: string | null,
+  showInfo: boolean,
 ): PlanGraphModel | null {
-  const key = cacheKey(activeFileId, opts.stageId, opts.scope, opts.durationMode);
+  const key = cacheKey(activeFileId, opts.stageId, opts.scope, opts.durationMode, showInfo);
   const cached = planGraphModelCache.get(key);
   if (cached) return cached;
   const result = safeBuildPlanGraphModel(planTree, opts);
@@ -140,11 +142,15 @@ function memoizedBuildPlanGraphModel(
   return result;
 }
 
-export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onClose, initialScope }: PlanGraphRouteProps) {
+export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFileId, onClose, initialScope }: PlanGraphRouteProps) {
   const { resetToDropZone } = useIngest();
   const { recentEntries, onPickRecent, onRemoveRecent } = useRecentFiles(activeFileId);
   const [filterMode, setFilterMode] = useState<PlanGraphFilterMode>('basic');
   const [durationMode, setDurationMode] = useState<PlanGraphDurationMode>('exclusive');
+  // Same default as the dashboard: info findings are notes, listed only on request.
+  const [showInfo, setShowInfo] = useState(false);
+  const findings = useMemo(() => (showInfo ? catalog : filterFindings(catalog, emptySelection())), [catalog, showInfo]);
+  const infoNoteCount = useMemo(() => catalog.filter((f) => f.impactBand === 'info').length, [catalog]);
   const [requestedScope, setRequestedScope] = useState<'segment' | 'full'>(initialScope ?? 'segment');
   const [confirmExpandOpen, setConfirmExpandOpen] = useState(false);
   const [initialFullResolved, setInitialFullResolved] = useState(initialScope !== 'full');
@@ -168,7 +174,7 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
   const planTree = resolvePlanTree(focusStageId, appModel);
 
   const segmentModel = planTree
-    ? memoizedBuildPlanGraphModel(planTree, { scope: 'segment', stageId: focusStageId, appModel, findings, durationMode }, activeFileId)
+    ? memoizedBuildPlanGraphModel(planTree, { scope: 'segment', stageId: focusStageId, appModel, findings, durationMode }, activeFileId, showInfo)
     : null;
 
   // A 'segment' request can fall back to a 'full' model inside
@@ -189,7 +195,7 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
   }, [segmentFellBackUnguarded]);
 
   const fullModel = planTree && (requestedScope === 'full' || confirmExpandOpen)
-    ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, activeFileId)
+    ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, activeFileId, showInfo)
     : null;
 
   // `initialScope: 'full'` is not consent to render any size: the dialog opens on
@@ -258,7 +264,7 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
 
   function handleExpandClick() {
     const candidateModel = planTree
-      ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, activeFileId)
+      ? memoizedBuildPlanGraphModel(planTree, { scope: 'full', stageId: focusStageId, appModel, findings, durationMode }, activeFileId, showInfo)
       : null;
     if (candidateModel && candidateModel.nodes.length > EXPAND_GUARDRAIL_THRESHOLD) {
       setConfirmExpandOpen(true);
@@ -436,6 +442,9 @@ export function PlanGraphRoute({ stageId, appModel, findings, activeFileId, onCl
             emptyFilterModes={emptyModes}
             durationMode={durationMode}
             onDurationModeChange={setDurationMode}
+            showInfo={showInfo}
+            onShowInfoChange={setShowInfo}
+            infoNoteCount={infoNoteCount}
           />
         )}
       </div>

@@ -21,6 +21,9 @@ export interface PlanGraphControlRailProps {
   emptyFilterModes?: ReadonlySet<PlanGraphFilterMode>;
   durationMode: PlanGraphDurationMode;
   onDurationModeChange: (mode: PlanGraphDurationMode) => void;
+  showInfo: boolean;
+  onShowInfoChange: (show: boolean) => void;
+  infoNoteCount: number;
   legendOpen: boolean;
   onToggleLegend: () => void;
   miniMapOpen: boolean;
@@ -41,6 +44,9 @@ export function PlanGraphControlRail({
   emptyFilterModes,
   durationMode,
   onDurationModeChange,
+  showInfo,
+  onShowInfoChange,
+  infoNoteCount,
   legendOpen,
   onToggleLegend,
   miniMapOpen,
@@ -116,6 +122,9 @@ export function PlanGraphControlRail({
           emptyFilterModes={emptyFilterModes}
           durationMode={durationMode}
           onDurationModeChange={onDurationModeChange}
+          showInfo={showInfo}
+          onShowInfoChange={onShowInfoChange}
+          infoNoteCount={infoNoteCount}
         />
         <RailButton label={legendOpen ? 'Hide legend' : 'Legend'} pressed={legendOpen} onClick={onToggleLegend}>
           <Info aria-hidden="true" />

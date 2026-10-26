@@ -14,6 +14,7 @@ import { Section } from '@/view/Section';
 import { findingActionLabel } from '@sparkforensics/core/finding-action-label.ts';
 import { TagBadge } from '@/view/ImpactBadge';
 import { findingAt, savingsOf, useInterpretation } from '@/view/interpretation';
+import { emptySelection, matchesFilter } from '@/view/finding-filter';
 import { selectTriageTargetForFinding, type TriageTarget } from '@/view/triage-target';
 import { useStageDetail } from '@/view/StageDetailContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
@@ -270,7 +271,9 @@ function StageDetailBody({ stage, appModel, catalog, getTaskData, onShowEvidence
   const interpretation = useInterpretation();
   const stageFindings = interpretation?.data.stages[String(stage.id)];
   const findings = interpretation && stageFindings
-    ? stageFindings.findingIndexes.map((index) => findingAt(interpretation, index)).filter((f): f is Finding => f != null)
+    ? stageFindings.findingIndexes
+        .map((index) => findingAt(interpretation, index))
+        .filter((f): f is Finding => f != null && matchesFilter(f, emptySelection()))
     : [];
 
   // One fetch per dialog open (or manual retry, bumping `taskDataRetryCount`):

@@ -284,6 +284,30 @@ test('two or more eligible SQL executions render a picker dialog listing each, a
   expect(screen.queryByText('Open plan graph')).not.toBeInTheDocument();
 });
 
+test('the picker counts and ranks executions by the findings the dashboard lists, not info notes', async () => {
+  const user = userEvent.setup();
+  const appModel = emptyAppModel();
+  appModel.stages.set(7, { id: 7, sqlExecutionId: 1 } as never);
+  appModel.stages.set(9, { id: 9, sqlExecutionId: 2 } as never);
+  appModel.sql.set(1, { executionId: 1, planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] } } as never);
+  appModel.sql.set(2, { executionId: 2, planTree: { name: 'Scan', detail: 'Scan', metrics: [], children: [] } } as never);
+  store.setState({
+    appModel,
+    catalog: [
+      { type: 'skew', stageId: 7, impactBand: 'warning' },
+      { type: 'gc', stageId: 7, impactBand: 'info' },
+      { type: 'gc', stageId: 9, impactBand: 'info' },
+    ] as never,
+  });
+
+  renderTopbar();
+  await user.click(screen.getByRole('button', { name: 'Plan graph' }));
+
+  expect(screen.getByText('1 finding')).toBeInTheDocument();
+  expect(screen.queryByText(/2 findings/)).not.toBeInTheDocument();
+  expect(screen.getAllByText(/\d+ findings?/)).toHaveLength(1);
+});
+
 test('the narrow overflow menu also exposes Plan graph, opening the same picker', async () => {
   const user = userEvent.setup();
   const appModel = emptyAppModel();
