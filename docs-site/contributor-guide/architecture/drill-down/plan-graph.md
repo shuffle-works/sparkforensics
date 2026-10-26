@@ -149,7 +149,9 @@ still can't badge onto the wrong tree.
 narrowed by `filterFindings(catalog, emptySelection())`, the dashboard's default
 band filter, so info findings are absent until the Settings "Show info notes"
 checkbox is on. The model cache key includes that choice. The "Open plan graph"
-picker counts the same narrowed list, and `StageDetailDialog` applies it too.
+picker counts the same narrowed list. `StageDetailDialog` applies it too, unless
+the dashboard's Filter findings selects the info band (its `showInfo` prop), and
+counts the info notes it hides.
 
 Two other per-node UI features render independently of findings:
 

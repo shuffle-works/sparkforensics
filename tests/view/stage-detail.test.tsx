@@ -64,6 +64,7 @@ function renderHarness(
   getTaskData = vi.fn(async () => TASK_DATA),
   catalog: Finding[] = [],
   onRoute?: (target: TriageTarget) => void,
+  showInfo?: boolean,
 ) {
   // The dialog's finding order and figures come from the run's interpretation.
   installInterpretation(catalog, appModel);
@@ -71,7 +72,7 @@ function renderHarness(
     <DocsProvider>
       <StageDetailProvider>
         <OpenButton />
-        <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={onRoute} />
+        <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} onRoute={onRoute} showInfo={showInfo} />
       </StageDetailProvider>
     </DocsProvider>,
   );
@@ -483,9 +484,34 @@ describe('StageDetailDialog reads like a verdict step', () => {
     await user.click(screen.getByRole('button', { name: 'open stage 1' }));
     const dialog = await screen.findByRole('dialog');
 
-    expect(dialog).toHaveTextContent('1 finding here.');
+    expect(dialog).toHaveTextContent('1 finding here. 1 info note hidden.');
     expect(within(dialog).getAllByTestId('stage-finding')).toHaveLength(1);
     expect(dialog).not.toHaveTextContent('Check GC settings.');
+  });
+
+  it('counts hidden info notes instead of saying nothing was flagged', async () => {
+    const user = userEvent.setup();
+    const note = testFinding({ type: 'gc', stageId: 1, impactBand: 'info', recommendation: 'Check GC settings.' });
+    renderHarness(withRun(), vi.fn(async () => TASK_DATA), [note]);
+    await user.click(screen.getByRole('button', { name: 'open stage 1' }));
+    const dialog = await screen.findByRole('dialog');
+
+    expect(dialog).toHaveTextContent('1 info note hidden.');
+    expect(dialog).not.toHaveTextContent('Nothing was flagged on this stage.');
+    expect(within(dialog).queryAllByTestId('stage-finding')).toHaveLength(0);
+  });
+
+  it('lists info findings when the info choice is on', async () => {
+    const user = userEvent.setup();
+    const note = testFinding({ type: 'gc', stageId: 1, impactBand: 'info', recommendation: 'Check GC settings.' });
+    renderHarness(withRun(), vi.fn(async () => TASK_DATA), [skew, note], undefined, true);
+    await user.click(screen.getByRole('button', { name: 'open stage 1' }));
+    const dialog = await screen.findByRole('dialog');
+
+    expect(dialog).toHaveTextContent('2 findings here.');
+    expect(within(dialog).getAllByTestId('stage-finding')).toHaveLength(2);
+    expect(dialog).toHaveTextContent('Check GC settings.');
+    expect(dialog).not.toHaveTextContent('hidden');
   });
 
   it('says when nothing was flagged on the stage', async () => {
