@@ -138,6 +138,19 @@ test('shows the partition-count hint only for volume-classified spill', async ()
   expect(screen.getByText(/spark\.sql\.shuffle\.partitions = 8/)).toBeInTheDocument();
 });
 
+test('does not suggest spark.sql.shuffle.partitions when the input is the job\'s own repartition(n)', () => {
+  const catalog: Finding[] = [{
+    type: 'spill', stageId: 1, impactBand: 'critical', value: 600 * 1024 * 1024, recommendation: 'r', confidence: 'low',
+    exchanges: [{ nodeId: 'e1:n2', partitioning: 'hashpartitioning(key#7, 4)', partitions: 4, origin: 'REPARTITION_BY_NUM' }],
+  }];
+  render(
+    <DocsProvider>
+      <Spill appModel={buildAppModel()} catalog={catalog} getTaskData={vi.fn()} defaultCollapsed={false} />
+    </DocsProvider>,
+  );
+  expect(screen.queryByText(/spark\.sql\.shuffle\.partitions =/)).not.toBeInTheDocument();
+});
+
 test('does not show the partition hint for skew-classified spill', async () => {
   const catalog: Finding[] = [
     { type: 'spill', stageId: 2, impactBand: 'warning', value: 300 * 1024 * 1024, recommendation: 'Spill is skew-driven: fix task skew first; adding memory will not help.' },

@@ -78,7 +78,9 @@ function SpillRow({
   const density = useWidgetDensity();
   const stage = appModel.stages.get(finding.stageId);
   const cls = classificationOf(appModel, finding.stageId);
-  const partitionHint = cls === 'volume' && stage ? recommendPartitions(stage) : null;
+  // A job's own repartition(n) sets the input partitioning, so spark.sql.shuffle.partitions would not change it.
+  const ownPartitioning = finding.type === 'spill' && finding.exchanges?.[0]?.origin === 'REPARTITION_BY_NUM';
+  const partitionHint = cls === 'volume' && stage && !ownPartitioning ? recommendPartitions(stage) : null;
   const showPlanExplorer = density === 'advanced' && resolvePlanTree(finding.stageId, appModel);
 
   return (
