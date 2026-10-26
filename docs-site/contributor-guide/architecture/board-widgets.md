@@ -120,16 +120,16 @@ also holds Evidence Availability and the Core Usage Histogram.
 The scaling model also backs one `DETECTORS` entry, `rightSizing` (tag `UTIL`,
 `RightSizing.tsx`, action region). `scaling-sim.ts`'s `smallestCoresWithinTolerance`
 finds the fewest cores, up to the run's peak concurrent cores, whose modeled
-stage time stays within `tolerancePct` of the observed stages-active time. The
+stage time is within `tolerancePct` of the observed time the stages ran. The
 finding fires when that count is at most `maxCoreShare` of the peak, on a
-cluster of at least `minBaselineCores`, while the model's error at the peak
-stays within `maxModelErrorPct`. It calibrates the model at the peak concurrent
-cores, where the scaling simulator uses `computeTotalCores`, the sum of every
-executor added, so the two model errors differ under dynamic allocation or
-executor replacement. It is always `low` confidence with an
-informational estimate, so it adds no idle core time beside `utilization`'s.
-`utilization` measures allocated core time that ran no task; `rightSizing` names
-the size the stages' own parallelism needs.
+cluster of at least `minBaselineCores`, and only while the model's error at the
+peak is at most `maxModelErrorPct`. The model is calibrated at the peak
+concurrent cores. The scaling card uses `computeTotalCores`, the sum of every
+executor added, so the two errors differ under dynamic allocation or executor
+replacement. The finding is always `low` confidence with an informational
+estimate, so it adds no idle core time beside `utilization`'s. `utilization`
+measures allocated core time that ran no task; `rightSizing` names the size the
+stages' own parallelism needs.
 
 ## Confidence metadata
 

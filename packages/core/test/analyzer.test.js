@@ -3163,8 +3163,8 @@ describe('analyze: rightSizing', () => {
       value: 8, observedCores: 16, observedActiveMs: 10000, modeledActiveMs: 10000, modelErrorPct: 0,
       confidence: 'low', impactBand: 'warning',
     });
-    expect(finding.recommendation).toContain('within 10% of the observed 10.0s with about 8 of the 16 cores');
-    expect(finding.validationRequired).toContain('misses the observed stage time by 0% at the 16 cores held at peak');
+    expect(finding.recommendation).toContain('At its peak the run held 16 cores. A simple model predicts that about 8 would run the stages in 10.0s, within 10% of the 10.0s they took');
+    expect(finding.validationRequired).toContain('At 16 cores it misses the real time by 0%.');
     expect(finding.remediation.map((r) => r.key)).toContain('spark.executor.instances');
     expect(finding.impactEstimate.basis).toBe('informational');
   });

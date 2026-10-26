@@ -24,7 +24,7 @@ function renderWidget(catalog: Finding[]) {
   installInterpretation(catalog, appModel);
   return render(
     <DocsProvider>
-      <RightSizing appModel={appModel} catalog={catalog} getTaskData={() => Promise.reject()} />
+      <RightSizing catalog={catalog} />
     </DocsProvider>,
   );
 }
@@ -32,20 +32,20 @@ function renderWidget(catalog: Finding[]) {
 test('summarizes the modeled core count against the cores held at peak, with the UTIL tag', () => {
   renderWidget([finding()]);
   expect(screen.getByRole('heading', { name: 'Right-sized Cluster' })).toBeInTheDocument();
-  expect(screen.getByText('8 of 16 cores')).toBeInTheDocument();
+  expect(screen.getAllByText('8 of 16 cores').length).toBeGreaterThan(0);
   expect(screen.getByText('UTIL')).toBeInTheDocument();
 });
 
-test('shows the modeled and observed stage time once expanded, and the model error in Advanced density', async () => {
+test('states the observed and predicted stage time once expanded, and the model error in Advanced density', async () => {
   const user = userEvent.setup();
   store.getState().setWidgetDensity('advanced');
   renderWidget([finding()]);
 
   await user.click(screen.getByRole('button', { name: 'Right-sized Cluster' }));
 
-  expect(screen.getByText(/Modeled need:/)).toBeInTheDocument();
-  expect(screen.getByText(/10.5s modeled at 8 cores, against 10.0s observed/)).toBeInTheDocument();
-  expect(screen.getByText(/Model error at the observed core count: 12%/)).toBeInTheDocument();
+  expect(screen.getByText(/would be enough/)).toBeInTheDocument();
+  expect(screen.getByText(/The stages took 10.0s on 16 cores. The model predicts 10.5s on 8./)).toBeInTheDocument();
+  expect(screen.getByText(/Model error at 16 cores: 12%/)).toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
 });
 
@@ -55,7 +55,7 @@ test('hides the model error at Basic density', async () => {
 
   await user.click(screen.getByRole('button', { name: 'Right-sized Cluster' }));
 
-  expect(screen.getByText(/Modeled need:/)).toBeInTheDocument();
+  expect(screen.getByText(/would be enough/)).toBeInTheDocument();
   expect(screen.queryByText(/Model error/)).not.toBeInTheDocument();
 });
 

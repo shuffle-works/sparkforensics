@@ -383,7 +383,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   rightSizing: {
     name: 'right-sized cluster',
     tag: 'UTIL',
-    thresholdSummary: (t) => `modeled makespan within ${t.tolerancePct}% of the observed one at under ${shareLabel(t.maxCoreShare)} of the cores (model error under ${t.maxModelErrorPct}%)`,
+    thresholdSummary: (t) => `the model finds the stages run within ${t.tolerancePct}% of their real time on at most ${shareLabel(t.maxCoreShare)} of the peak cores (model error under ${t.maxModelErrorPct}%)`,
     actionLabel: () => 'Right-size cluster',
     genericRecommendation: idleCapacityRecommendation,
   },

@@ -2733,8 +2733,8 @@ export const DETECTORS = [
         metric: 'rightSizedCores', value: fit.cores,
         observedCores, observedActiveMs, modeledActiveMs: fit.estMakespanMs, modelErrorPct: fit.modelErrorPct,
         confidence: 'low',
-        validationRequired: `Modeled from each stage's task time spread over its cores, which misses the observed stage time by ${fit.modelErrorPct}% at the ${observedCores} cores held at peak (the scaling simulator measures its error at every executor added, so the two differ when executors were replaced or scaled): re-run with fewer cores to confirm.`,
-        recommendation: `The modeled stage time stays within ${thresholds.tolerancePct}% of the observed ${formatDuration(observedActiveMs)} with about ${fit.cores} of the ${observedCores} cores held at peak: ${fix.text}.`,
+        validationRequired: `The model spreads each stage's tasks evenly over the cores and ignores scheduling and shuffle costs. At ${observedCores} cores it misses the real time by ${fit.modelErrorPct}%. The scaling card can show a different error, because it counts every executor ever added. Re-run with fewer cores to check.`,
+        recommendation: `At its peak the run held ${observedCores} cores. A simple model predicts that about ${fit.cores} would run the stages in ${formatDuration(fit.estMakespanMs)}, within ${thresholds.tolerancePct}% of the ${formatDuration(observedActiveMs)} they took: ${fix.text}.`,
         remediation: fix.remediation,
       };
     },
