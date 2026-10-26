@@ -110,7 +110,7 @@ No toggle at all, unconditional content, since these widgets carry no
 confidence/evidence display: `IncompleteRun.tsx`, `ShuffleIO.tsx`, `PartitionSizing.tsx`, `StageFailed.tsx`,
 `TaskFailures.tsx`, `RetryWaste.tsx`, `ColdStart.tsx`, `SlowHost.tsx`,
 `StageSlowness.tsx`, `SpeculationWaste.tsx`,
-`ExecutorCountChart.tsx`, `ExecutorUtilization.tsx`, `JobFailures.tsx`,
+`ExecutorCountChart.tsx`, `ExecutorUtilization.tsx`, `RightSizing.tsx`, `JobFailures.tsx`,
 `CacheUtilization.tsx` and `AutoscalingChurn.tsx`.
 
 Three named exceptions to specific pieces of the contract, not to the row

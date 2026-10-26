@@ -3144,3 +3144,57 @@ describe('analyze: threshold overrides', () => {
     expect(failures.validationRequired ?? '').not.toContain('estimate');
   });
 });
+
+describe('analyze: rightSizing', () => {
+  // 4 executors x 4 cores held for 100 s. One 8-task stage of 80 s of work ran for 10 s, so its
+  // modeled makespan stops falling at 8 cores.
+  const app = makeApp({ startTime: 0, endTime: 100000, resources: { executor: { cores: 4 } } });
+  const added = ['a', 'b', 'c', 'd'].map((executorId) => ({ executorId, timestamp: 0, totalCores: 4 }));
+  const ra = (perStage) => ({ coreHistogram: [], busyCoreMs: 80000, peakConcurrentCores: 16, perStage });
+  const eightTasks = { 1: { totalTaskDurationSum: 80000, taskCount: 8 } };
+  const run = ({ stageEnd = 10000, perStage = eightTasks, thresholds, executors = added } = {}) => analyze(
+    app, new Map([[1, makeStage({ completedAt: stageEnd })]]), executors, [], sampleJobs, new Map(), ra(perStage),
+    thresholds ? { thresholds } : undefined,
+  ).find((f) => f.type === 'rightSizing');
+
+  it('reports the modeled core count with the numbers behind it, at low confidence', () => {
+    const finding = run();
+    expect(finding).toMatchObject({
+      value: 8, observedCores: 16, observedActiveMs: 10000, modeledActiveMs: 10000, modelErrorPct: 0,
+      confidence: 'low', impactBand: 'warning',
+    });
+    expect(finding.recommendation).toContain('At its peak the run held 16 cores. A simple model predicts that about 8 would run the stages in 10.0s, within 10% of the 10.0s they took');
+    expect(finding.validationRequired).toContain('At 16 cores it misses the real time by 0%.');
+    expect(finding.remediation.map((r) => r.key)).toContain('spark.executor.instances');
+    expect(finding.impactEstimate.basis).toBe('informational');
+  });
+
+  it('stays silent when the model misses the observed stage time by more than the bound', () => {
+    // Observed 20 s against a modeled 10 s: 50% model error.
+    expect(run({ stageEnd: 20000 })).toBeUndefined();
+  });
+
+  it('stays silent when the stages use most of the cores', () => {
+    expect(run({ perStage: { 1: { totalTaskDurationSum: 160000, taskCount: 64 } } })).toBeUndefined();
+  });
+
+  it('stays silent on a small cluster', () => {
+    const small = [{ executorId: 'a', timestamp: 0, totalCores: 4 }];
+    expect(run({ executors: small, perStage: { 1: { totalTaskDurationSum: 40000, taskCount: 1 } } })).toBeUndefined();
+  });
+
+  it('stays silent without per-stage aggregates', () => {
+    const finding = analyze(app, new Map([[1, makeStage()]]), added, [], sampleJobs, new Map(), null)
+      .find((f) => f.type === 'rightSizing');
+    expect(finding).toBeUndefined();
+  });
+
+  it('follows threshold overrides and labels the tuned run', () => {
+    // 8 of 16 cores is a 50% share: a 40% cap silences it, a 60% cap keeps it.
+    expect(run({ thresholds: { rightSizing: { maxCoreShare: 0.4 } } })).toBeUndefined();
+    const tuned = run({ thresholds: { rightSizing: { maxCoreShare: 0.6 } } });
+    expect(tuned.tunedThresholds).toEqual({ maxCoreShare: { value: 0.6, default: 0.75 } });
+    // A wider tolerance finds a smaller cluster.
+    expect(run({ thresholds: { rightSizing: { tolerancePct: 40 } } }).value).toBe(6);
+  });
+});

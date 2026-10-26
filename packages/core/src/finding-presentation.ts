@@ -58,6 +58,13 @@ function idleCapacityLowering(f: { remediation?: Remediation[] }): string {
   return ` by lowering spark.dynamicAllocation.maxExecutors${lowersFloor ? ' and spark.dynamicAllocation.minExecutors' : ''}`;
 }
 
+// The shared advice of the two UTIL rows: shrink the cluster, or enable dynamic allocation when it is off.
+function idleCapacityRecommendation(f: { remediation?: Remediation[] }): string {
+  return switchAlreadyOn(f, DYNAMIC_ALLOCATION_KEY)
+    ? `Dynamic allocation is already on, so consider reducing cluster size${idleCapacityLowering(f)}.`
+    : 'Consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation.';
+}
+
 // What a shuffle-reading stage's partition-count advice names, read from the row's remediation: the
 // property ('property', also for a finding with no remediation), AQE's coalescing settings ('aqe',
 // which leave spark.sql.shuffle.partitions out), or the stage's own repartition(n) ('code').
@@ -371,9 +378,14 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'UTIL',
     thresholdSummary: (t) => `average executor utilization below ${shareLabel(t.minUtil)}`,
     actionLabel: () => 'Reduce cluster size',
-    genericRecommendation: (f) => (switchAlreadyOn(f, DYNAMIC_ALLOCATION_KEY)
-      ? `Dynamic allocation is already on, so consider reducing cluster size${idleCapacityLowering(f)}.`
-      : 'Consider either reducing cluster size (spark.executor.instances) or enabling dynamic allocation.'),
+    genericRecommendation: idleCapacityRecommendation,
+  },
+  rightSizing: {
+    name: 'right-sized cluster',
+    tag: 'UTIL',
+    thresholdSummary: (t) => `the model finds the stages run within ${t.tolerancePct}% of their real time on at most ${shareLabel(t.maxCoreShare)} of the peak cores (model error under ${t.maxModelErrorPct}%)`,
+    actionLabel: () => 'Right-size cluster',
+    genericRecommendation: idleCapacityRecommendation,
   },
   coreLocality: {
     name: 'core locality',

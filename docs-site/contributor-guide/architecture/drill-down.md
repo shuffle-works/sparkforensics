@@ -48,16 +48,17 @@ non-empty result gates the "View plan graph" button.
 
 The Summary/Context/Details 3-tier framing (collapsed lead metric → expanded
 widget body → per-stage `StageDetailDialog`) does not apply uniformly across the
-28 registry widgets (`src/view/detector-registry.tsx`). 18 have a stage-anchored
+registry widgets (`REGISTRY` in `src/view/detector-registry.tsx` is the source of
+truth for the full list). These have a stage-anchored
 Details tier reachable via `StagePill`/`StagePillGroup`: Skew, StageShape,
 TinyTask, ShuffleIO, PartitionSizing, Spill, GcPressure, StageFailed,
 TaskFailures, RetryWaste, SlowHost, StageSlowness, Straggler,
 SpeculationWaste, and DuplicatePlanSubtree, SmallFiles, UnderBroadcast and
 OverBroadcast (sql-scope, so
 they list every stage in `stageIds` as a `StagePillGroup` rather than one
-`StagePill`). The other 10 are app- or config-scope with no stage to
+`StagePill`). The rest are app- or config-scope with no stage to
 drill into, by design, so they stop at Summary/Context: MemoryUtilization,
-ExecutorUtilization (`utilization` is an app-wide average, no stage), JobFailures, ConfigAudit,
+ExecutorUtilization (`utilization` is an app-wide average, no stage), RightSizing, JobFailures, ConfigAudit,
 CacheUtilization, CoreUsageArea, AutoscalingChurn, CachingOpportunity (`scope:
 'app'`, `stageId: null` on both its finding constructions, so it has no stage
 to anchor to despite reading like a per-stage widget), IncompleteRun, and

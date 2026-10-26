@@ -25,7 +25,7 @@ export function isEvidenceCaveat(finding: Finding): boolean {
 
 /** App-level checks measured over the run's full span, which a log with no
  * ApplicationEnd (an `incompleteRun` finding) cannot give them. */
-export const RUN_SPAN_CHECK_TYPES: ReadonlySet<string> = new Set(['utilization', 'memoryUtilization', 'autoscalingChurn']);
+export const RUN_SPAN_CHECK_TYPES: ReadonlySet<string> = new Set(['utilization', 'rightSizing', 'memoryUtilization', 'autoscalingChurn']);
 
 /** Detector types that measure each stage, read from the detector catalog. */
 export const PER_STAGE_CHECK_TYPES: ReadonlySet<string> = new Set(

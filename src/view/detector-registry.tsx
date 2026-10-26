@@ -30,6 +30,7 @@ const SpeculationWaste = lazy(() => import('./widgets/SpeculationWaste').then((m
 const ColdStart = lazy(() => import('./widgets/ColdStart').then((m) => ({ default: m.ColdStart })));
 const MemoryUtilization = lazy(() => import('./widgets/MemoryUtilization').then((m) => ({ default: m.MemoryUtilization })));
 const ExecutorUtilization = lazy(() => import('./widgets/ExecutorUtilization').then((m) => ({ default: m.ExecutorUtilization })));
+const RightSizing = lazy(() => import('./widgets/RightSizing').then((m) => ({ default: m.RightSizing })));
 const CachingOpportunity = lazy(() => import('./widgets/CachingOpportunity').then((m) => ({ default: m.CachingOpportunity })));
 const JobFailures = lazy(() => import('./widgets/JobFailures').then((m) => ({ default: m.JobFailures })));
 const ConfigAudit = lazy(() => import('./widgets/ConfigAudit').then((m) => ({ default: m.ConfigAudit })));
@@ -73,6 +74,7 @@ setDisplayName(SpeculationWaste, 'SpeculationWaste');
 setDisplayName(ColdStart, 'ColdStart');
 setDisplayName(MemoryUtilization, 'MemoryUtilization');
 setDisplayName(ExecutorUtilization, 'ExecutorUtilization');
+setDisplayName(RightSizing, 'RightSizing');
 setDisplayName(CachingOpportunity, 'CachingOpportunity');
 setDisplayName(JobFailures, 'JobFailures');
 setDisplayName(ConfigAudit, 'ConfigAudit');
@@ -173,6 +175,7 @@ export const REGISTRY: Readonly<Record<string, RegistryEntry>> = {
 
   memoryUtilization: { component: MemoryUtilization, region: 'reference', widgetId: 'memory-utilization', routeable: true },
   utilization: { component: ExecutorUtilization, region: 'reference', widgetId: 'executor-utilization', routeable: true },
+  rightSizing: { component: RightSizing, region: 'action', widgetId: 'right-sizing', routeable: true },
   coreLocality: { component: CoreUsageArea, region: 'reference', widgetId: 'core-usage-area', routeable: true },
   cachingOpportunity: { component: CachingOpportunity, region: 'action', widgetId: 'caching-opportunity', routeable: true },
   cacheUtilization: { component: CacheUtilization, region: 'reference', widgetId: 'cache-utilization', routeable: true },

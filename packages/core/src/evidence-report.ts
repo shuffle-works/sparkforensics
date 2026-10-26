@@ -226,6 +226,7 @@ const EVIDENCE_KEYS = {
   incompleteRun: [],
   coldStart: ['dynamicAllocation'],
   utilization: ['cpuUtilizationPct'],
+  rightSizing: ['observedCores', 'observedActiveMs', 'modeledActiveMs', 'modelErrorPct'],
   memoryUtilization: ['variant', 'rule', 'executorId', 'heap', 'dataUnavailable'],
   cacheUtilization: [
     'variant', 'rddId', 'rddName', 'memorySize', 'diskSize', 'numCachedPartitions', 'numPartitions', 'dataUnavailable',
