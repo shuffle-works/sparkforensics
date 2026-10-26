@@ -60,7 +60,8 @@ that makes the time gap hard to read:
 - More than 20% of the baseline's stages pair with no candidate stage, re-planned
   leftovers included, or the task count changes by more than 25%: the plans differ.
   The sentence gives the unmatched stage count and their share of the baseline's
-  executor run time. This sentence also shows when configuration, plan and output
+  executor run time. When every stage pairs, a task count change alone reads as a
+  task count change, not a plan difference, and shows when configuration, plan and output
   agree.
 - `spark.jars`, `spark.submit.pyFiles` or a `spark.yarn.dist.*` path differs: the
   sentence names the key as a likely code change.

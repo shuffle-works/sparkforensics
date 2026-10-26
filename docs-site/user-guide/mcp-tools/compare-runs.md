@@ -108,7 +108,8 @@ wall clock and executor run-time or allocated core-hours move opposite ways past
 noise band and the configuration or plan differs. When the configuration or plan
 differs, the verdict also carries one sentence for each of `caveats.executors` (when
 the wall clock moved the way the executor change predicts), `caveats.queue` and the
-plan caveats with `caveats.codeFiles`. The plan sentence also shows when
+plan caveats with `caveats.codeFiles`. When every stage pairs, a task count change
+reads as a task count change, not a plan difference, and also shows when
 configuration, plan and output agree. A failed job or an incomplete log
 still leads the verdict.
 

@@ -231,12 +231,16 @@ describe('summarizeComparison with comparability', () => {
     expect(said(faster, more)).toContain('Mean executors went from 104 to 228, so much of the wall-clock change is executor availability, not the job.');
   });
 
-  it('says the plans differ when configuration, plan and output agree but the task count changed', () => {
+  it('states a task count change without saying the plans differ when every stage paired', () => {
     const caveats = { ...agree.caveats, executors: { baseline: 57, candidate: 32.6 }, taskCount: { baseline: 217_607, candidate: 121_679, change: -0.44 } };
     const verdict = summarizeComparison(slower, noFindings, undefined, { ...agree, caveats });
     expect(verdict.title).toMatch(/^Same configuration, plan and output\./);
-    expect(verdict.sentences).toContain('The plans differ: the task count fell 44%. Compare with care.');
-    expect(verdict.sentences.join(' ')).not.toContain('Mean executors went');
+    expect(verdict.sentences).toContain('The task count fell 44%. Compare with care.');
+    expect(verdict.sentences.join(' ')).not.toMatch(/plans differ|Mean executors went/);
+    const conf = { ...agree.conf, equal: false, differences: [{ key: 'a', baseline: '1', candidate: '2' }] };
+    const confOnly = summarizeComparison(slower, noFindings, undefined, { ...agree, conf, caveats });
+    expect(confOnly.sentences).toContain('The task count fell 44%. Compare with care.');
+    expect(confOnly.sentences.join(' ')).not.toContain('plans differ');
   });
 
   it('adds a likely code change to the plan caveat', () => {

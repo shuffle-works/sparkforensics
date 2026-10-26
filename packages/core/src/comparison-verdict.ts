@@ -94,8 +94,9 @@ function bridgeSentence({ wallClockBridge: bridge }: VerdictComparability): stri
 /** Sentences for the differences between the runs that make a time difference unreliable to read.
  * `wallChange` is the candidate's wall clock minus the baseline's, 0 when it stayed within noise or
  * the executors are stated elsewhere; the executor sentence needs a change the executors explain:
- * fewer executors and slower, or more executors and faster. */
-function caveatSentences({ executors, unmatchedStages, taskCount, queue, codeFiles }: Caveats, wallChange: number): string[] {
+ * fewer executors and slower, or more executors and faster. A task count change alone reads as a
+ * plan difference only when `planDiffers`. */
+function caveatSentences({ executors, unmatchedStages, taskCount, queue, codeFiles }: Caveats, wallChange: number, planDiffers: boolean): string[] {
   const sentences: string[] = [];
   if (executors && wallChange !== 0 && (executors.candidate < executors.baseline) === (wallChange > 0)) {
     sentences.push(`Mean executors went from ${Math.round(executors.baseline)} to ${Math.round(executors.candidate)}, so much of the wall-clock change is executor availability, not the job.`);
@@ -106,9 +107,10 @@ function caveatSentences({ executors, unmatchedStages, taskCount, queue, codeFil
     const runTime = unmatchedStages.runtimeShare == null ? '' : `, holding ${percent(unmatchedStages.runtimeShare)} of the baseline's executor run time`;
     plan.push(`${unmatchedStages.count} of ${unmatchedStages.of} baseline stages have no match${runTime}`);
   }
-  if (taskCount) plan.push(`the task count ${taskCount.change < 0 ? 'fell' : 'rose'} ${percent(taskCount.change)}`);
+  const taskCountChange = taskCount ? `task count ${taskCount.change < 0 ? 'fell' : 'rose'} ${percent(taskCount.change)}` : null;
+  if (taskCountChange) plan.push(`the ${taskCountChange}`);
   const parts: string[] = [];
-  if (plan.length > 0) parts.push(`The plans differ: ${plan.join(', and ')}.`);
+  if (plan.length > 0) parts.push(planDiffers ? `The plans differ: ${plan.join(', and ')}.` : `The ${taskCountChange}.`);
   if (codeFiles) parts.push(`The code may have changed: ${codeFiles.map((d) => d.key).join(', ')} ${codeFiles.length === 1 ? 'differs' : 'differ'}.`);
   if (parts.length > 0) sentences.push(`${parts.join(' ')} Compare with care.`);
   return sentences;
@@ -236,14 +238,14 @@ export function summarizeComparison(
       if (outputAgrees && (!gap || reasons.length > 0)) tone = 'equivalent';
       const bridge = gap ? bridgeSentence(comparability) : null;
       if (bridge) sentences.push(bridge);
-      sentences.push(...caveatSentences(comparability.caveats, 0));
+      sentences.push(...caveatSentences(comparability.caveats, 0, false));
     } else {
       const opposed = opposingCost(wall, metrics);
       if (opposed.length > 0) {
         title = `The candidate finished ${formatDuration(Math.abs(change))} ${change < 0 ? 'faster' : 'slower'} than the baseline (${percent(change / wall.baseline)}), while ${opposed.join(' and ')}`;
         tone = 'mixed';
       }
-      sentences.push(...caveatSentences(comparability.caveats, movedPastNoise(wall) ? change : 0));
+      sentences.push(...caveatSentences(comparability.caveats, movedPastNoise(wall) ? change : 0, !comparability.plan.equal));
     }
   }
 
