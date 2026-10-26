@@ -92,7 +92,9 @@ function contentSecurityPolicy(): Plugin {
     name: 'content-security-policy',
     apply: 'build',
     transformIndexHtml(html) {
-      const scriptHashes = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+      // Inline scripts only (no src), in any case and with any attributes.
+      const inlineScripts = /<script\b(?![^>]*\bsrc\s*=)[^>]*>([\s\S]*?)<\/script\b[^>]*>/gi;
+      const scriptHashes = [...html.matchAll(inlineScripts)].map(
         ([, source]) => `'sha256-${createHash('sha256').update(source).digest('base64')}'`,
       );
       const policy = [
