@@ -263,14 +263,8 @@ function FilteredBoard({
       ) : null}
       {hiddenNotes > 0 ? (
         <p role="status" className="text-sm text-muted-foreground">
-          {hiddenNotes} info note{hiddenNotes === 1 ? '' : 's'} hidden.{' '}
-          <button
-            type="button"
-            onClick={() => replaceSelection({ ...selection, impactBands: new Set(IMPACT_BANDS) })}
-            className="cursor-pointer underline"
-          >
-            Show notes
-          </button>
+          {hiddenNotes} info note{hiddenNotes === 1 ? '' : 's'} hidden. Select the info impact pill in Filter findings
+          {showFilterBar ? '' : ' (in Advanced view)'} to show {hiddenNotes === 1 ? 'it' : 'them'}.
         </p>
       ) : null}
       {filteredToEmpty && <NoMatchBanner />}

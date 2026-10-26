@@ -82,8 +82,9 @@ function operatorArguments(node: PlanNode): string | undefined {
 
 // `Exchange hashpartitioning(k#1, 200), REPARTITION_BY_NUM, [plan_id=5]`: the partitioning, its
 // partition count and the shuffle origin. A ReusedExchange prints the exchange it reuses the same way.
+// Spark 3.1 to 3.3 end the line with `[id=#5]`, and Spark 3.0 prints a true/false flag, not an origin.
 function exchangeArguments(exchange: PlanNode): Pick<SpillExchange, 'partitioning' | 'partitions' | 'origin'> {
-  const match = /\bExchange\s+(\w+\(.*\)|SinglePartition)(?:,\s*([A-Z_]+))?(?:,\s*\[plan_id=\d+\])?\s*$/.exec(exchange.detail ?? '');
+  const match = /\bExchange\s+(\w+\(.*\)|SinglePartition)(?:,\s*(?:([A-Z_]+)|true|false))?(?:,\s*\[(?:plan_)?id=#?\d+\])?\s*$/.exec(exchange.detail ?? '');
   if (!match) return {};
   const [, partitioning, origin] = match;
   const partitions = /(\d+)\)$/.exec(partitioning)?.[1];

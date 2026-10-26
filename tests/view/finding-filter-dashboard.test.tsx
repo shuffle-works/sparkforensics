@@ -85,7 +85,7 @@ test('a stage filter narrows the board to the selected stage', async () => {
   expect(new URLSearchParams(window.location.search).get('stage')).toBe('1');
 });
 
-test('info findings are hidden until the notes are shown, with their count and a way to show them', async () => {
+test('info findings are hidden until the impact filter names the info band, with their count and how to show them', async () => {
   const user = userEvent.setup();
   const catalog: Finding[] = [
     { type: 'spill', stageId: 1, impactBand: 'warning', recommendation: 'x' },
@@ -98,12 +98,13 @@ test('info findings are hidden until the notes are shown, with their count and a
 
   expect(hasFixTheseFirstRow('spill')).toBe(true);
   expect(hasFixTheseFirstRow('tinyTask')).toBe(false);
-  expect(screen.getByText(/1 info note hidden\./)).toBeInTheDocument();
+  expect(screen.getByText(/1 info note hidden\. Select the info impact pill in Filter findings to show it\./)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Show notes' })).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole('button', { name: 'Show notes' }));
+  await clickImpact(user, 'info');
   expect(hasFixTheseFirstRow('tinyTask')).toBe(true);
   expect(screen.queryByText(/info notes? hidden/)).not.toBeInTheDocument();
-  expect(new URLSearchParams(window.location.search).get('impact')).toBe('critical,warning,info');
+  expect(new URLSearchParams(window.location.search).get('impact')).toBe('info');
 });
 
 test('naming the info band in the impact filter lists info findings alone', async () => {

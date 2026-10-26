@@ -716,14 +716,21 @@ function groupSlowHosts(rows: FindingRow[]): Array<FindingRow | FindingRow[]> {
 }
 
 // One slow-host entry: the most severe row (rows come most severe first) gives the title, action and
-// advice, and each stage the host or executor lagged in gets a line.
+// advice, and each stage the host or executor lagged in gets a line with that row's evidence (sorted,
+// leaving out the host or executor the title names).
 function renderSlowHostGroup(rows: FindingRow[]): string[] {
   const [lead] = rows;
-  const lines = [`### ${lead.name} · ${lead.impactBand} (${mdInline(slowHostSubject(lead)!)})`, `- action: ${mdInline(lead.actionLabel)}`, '- stages:'];
+  const subject = slowHostSubject(lead)!;
+  const titled = subject.startsWith('host ') ? 'host' : 'executorId';
+  const lines = [`### ${lead.name} · ${lead.impactBand} (${mdInline(subject)})`, `- action: ${mdInline(lead.actionLabel)}`, '- stages:'];
   for (const r of rows) {
     const where = r.stageId != null ? `stage ${r.stageId}` : 'run-wide';
     const figure = r.metric != null ? `, ${mdInline(r.metric)} ${mdInline(String(r.valueText ?? r.value))}` : '';
-    lines.push(`  - ${where}: ${r.impactBand}${figure}`);
+    const evidence = Object.entries(r.evidence ?? {})
+      .filter(([k]) => k !== titled)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([k, v]) => `${k} ${renderEvidenceValue(k, v)}`);
+    lines.push(`  - ${where}: ${r.impactBand}${figure}${evidence.length ? ` · ${evidence.join(', ')}` : ''}`);
   }
   if (lead.recommendation) lines.push(`- ${mdInline(lead.recommendation)}`);
   lines.push('');

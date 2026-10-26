@@ -767,11 +767,13 @@ describe('buildEvidenceReport info notes and slow hosts', () => {
     return fx;
   }
 
-  it('lists a host that lags in several stages once, with its stages', () => {
+  it('lists a host that lags in several stages once, with its stages and their evidence', () => {
     const { json, markdown } = buildEvidenceReport(slowHostRun());
-    expect(json.findings.filter((f) => f.type === 'slowHost' && f.evidence.host === 'host-slow')).toHaveLength(2);
+    const rows = json.findings.filter((f) => f.type === 'slowHost' && f.evidence.host === 'host-slow');
+    expect(rows).toHaveLength(2);
     expect(markdown.match(/^### Slow Executor Host · \w+ \(host host-slow\)$/gm)).toHaveLength(1);
-    expect(markdown).toMatch(/- stages:\n {2}- stage 7: \w+, hostMeanRatio [\d.]+\n {2}- stage 8: \w+, hostMeanRatio [\d.]+\n/);
+    const stageLine = (r) => `  - stage ${r.stageId}: ${r.impactBand}, hostMeanRatio ${r.value} · hostMeanMs ${r.evidence.hostMeanMs}, hostTaskShare ${r.evidence.hostTaskShare}`;
+    expect(markdown).toContain(`- stages:\n${rows.map(stageLine).join('\n')}\n`);
     expect(markdown).not.toMatch(/^### Slow Executor Host · \w+ \(stage \d+\)$/m);
   });
 

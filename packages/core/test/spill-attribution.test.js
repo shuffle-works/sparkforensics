@@ -239,11 +239,11 @@ describe('spill finding', () => {
 
 describe('spill finding on a user-partitioned sort', () => {
   // A repartition(n, key) feeding sortWithinPartitions: the exchange is the job's own, not the session's.
-  function userPartitionedSortPlan(origin) {
-    const exchangeNode = node('xchg', 'Exchange', `Exchange hashpartitioning(_v#19568, 13741), ${origin}, [plan_id=11496]`, [
+  function userPartitionedSortPlan(origin, suffix = '[plan_id=42]') {
+    const exchangeNode = node('xchg', 'Exchange', `Exchange hashpartitioning(key#7, 5000)${origin ? `, ${origin}` : ''}, ${suffix}`, [
       node('xchg-w', 'Exchange', '', [wideProject(127)], { metrics: [sized('data size', 410 * GB), count('shuffle records written', 1e9)], stageIds: [1], exchangeRole: 'write' }),
     ], { stageIds: [1], exchangeRole: 'read' });
-    return node('sort', 'Sort', 'Sort [month#14359 ASC NULLS FIRST, owner#15275 ASC NULLS FIRST, _orden#19178 ASC NULLS FIRST], false, 0',
+    return node('sort', 'Sort', 'Sort [day#11 ASC NULLS FIRST, region#12 ASC NULLS FIRST, seq#13 ASC NULLS FIRST], false, 0',
       [exchangeNode], { metrics: [sized('spill size', 31 * TB)], stageIds: [2] });
   }
 
@@ -251,23 +251,43 @@ describe('spill finding on a user-partitioned sort', () => {
     const finding = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'), {}, 'daily load 2026-07');
     expect(finding.operators[0]).toMatchObject({
       name: 'Sort', global: false,
-      arguments: '[month#14359 ASC NULLS FIRST, owner#15275 ASC NULLS FIRST, _orden#19178 ASC NULLS FIRST], false, 0',
+      arguments: '[day#11 ASC NULLS FIRST, region#12 ASC NULLS FIRST, seq#13 ASC NULLS FIRST], false, 0',
     });
     expect(finding.exchanges).toEqual([{
       nodeId: 'xchg', columns: 127, bytesPerRow: 410,
-      partitioning: 'hashpartitioning(_v#19568, 13741)', partitions: 13741, origin: 'REPARTITION_BY_NUM',
+      partitioning: 'hashpartitioning(key#7, 5000)', partitions: 5000, origin: 'REPARTITION_BY_NUM',
     }]);
     expect(finding.sqlDescription).toBe('daily load 2026-07');
+  });
+
+  it('reads the exchange arguments of a Spark 3.1 to 3.3 plan, which ends with [id=#N]', () => {
+    const finding = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM', '[id=#42]'));
+    expect(finding.exchanges[0]).toMatchObject({ partitioning: 'hashpartitioning(key#7, 5000)', partitions: 5000, origin: 'REPARTITION_BY_NUM' });
+  });
+
+  it('reads the partitioning of a Spark 3.0 plan, which prints a flag and no origin', () => {
+    const finding = spillFinding(userPartitionedSortPlan('true', '[id=#42]'));
+    expect(finding.exchanges[0]).toMatchObject({ partitioning: 'hashpartitioning(key#7, 5000)', partitions: 5000 });
+    expect(finding.exchanges[0]).not.toHaveProperty('origin');
   });
 
   it('says the partitioning is the job\'s own and gives the column count of the wide rows', () => {
     const { recommendation } = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'));
     expect(recommendation).toContain("so the rows are wide (127 columns).");
-    expect(recommendation).toContain("Its input is the job's own repartition(13741), so spark.sql.shuffle.partitions does not change it.");
+    expect(recommendation).toContain("Its input is the job's own repartition(5000), so spark.sql.shuffle.partitions does not change it.");
+  });
+
+  it('advises the job\'s repartition(n), not spark.sql.shuffle.partitions, even when both give the stage\'s task count', () => {
+    const finding = spillFinding(userPartitionedSortPlan('REPARTITION_BY_NUM'), { taskCount: 200 });
+    expect(finding.recommendation).toContain("raise the partition count of the job's own repartition(n) so each partition is smaller, or increase executor memory.");
+    expect(finding.recommendation).not.toContain('raise spark.sql.shuffle.partitions');
+    expect(finding.remediation.map((r) => r.key ?? r.kind)).not.toContain('spark.sql.shuffle.partitions');
   });
 
   it('does not say so for a session-planned shuffle', () => {
-    expect(spillFinding(userPartitionedSortPlan('ENSURE_REQUIREMENTS')).recommendation).not.toContain('repartition(');
+    const finding = spillFinding(userPartitionedSortPlan('ENSURE_REQUIREMENTS'), { taskCount: 200 });
+    expect(finding.recommendation).not.toContain('repartition(');
+    expect(finding.recommendation).toContain('raise spark.sql.shuffle.partitions');
   });
 
   it('leaves the description out when the execution has none', () => {

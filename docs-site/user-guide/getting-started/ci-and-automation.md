@@ -27,7 +27,7 @@ The report lists critical and warning findings only. Info findings are notes:
 `notesHidden` counts them, and the Markdown report says how many it left out.
 `--impact critical,warning,info` lists all three bands, and `--impact info` lists the
 notes alone. Rows in `findings` can be one per stage, so the Markdown report
-lists a host or executor that lags in several stages once, with its stages.
+lists a host or executor that lags in several stages once, with a line of evidence per stage.
 `summary.impactBandCounts` always counts every band, and `Findings to act on`
 counts critical and warning findings.
 
