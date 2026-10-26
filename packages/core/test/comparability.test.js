@@ -170,6 +170,82 @@ describe('comparability', () => {
   });
 });
 
+describe('caveats', () => {
+  const caveatsOf = (base, cand, opts) => buildComparison(base, cand, opts).comparability.caveats;
+
+  it('flags mean executors that differ past the ratio, in either direction', () => {
+    expect(caveatsOf(baseRun(), candRun()).executors).toEqual({ baseline: 4, candidate: 2 });
+    expect(caveatsOf(candRun(), baseRun()).executors).toEqual({ baseline: 2, candidate: 4 });
+    expect(caveatsOf(baseRun(), candRun({ executors: 3 })).executors).toBeNull();
+    expect(caveatsOf(baseRun(), candRun(), { caveatThresholds: { executorRatio: 2 } }).executors).toBeNull();
+  });
+
+  it('reports a YARN queue difference and says it in the verdict', () => {
+    const base = baseRun({ config: { ...SAME_CONF, 'spark.yarn.queue': 'root.a' } });
+    const cand = candRun({ config: { ...SAME_CONF, 'spark.yarn.queue': 'root.b' } });
+    expect(caveatsOf(base, cand).queue).toEqual({ baseline: 'root.a', candidate: 'root.b' });
+    expect(caveatsOf(base, base).queue).toBeNull();
+    expect(comparisonVerdict(buildComparison(base, cand)).sentences)
+      .toContain('The YARN queue differs: root.a in the baseline, root.b in the candidate.');
+  });
+
+  it('flags unmatched baseline stages with their run-time share, and a task count change', () => {
+    const cand = candRun({ stageName: 'a different stage' });
+    const { unmatchedStages, taskCount } = caveatsOf(baseRun(), cand);
+    expect(unmatchedStages).toEqual({ count: 1, of: 1, runtimeShare: 1 });
+    expect(taskCount).toBeNull();
+    expect(caveatsOf(baseRun(), cand, { caveatThresholds: { unmatchedShare: 1 } }).unmatchedStages).toBeNull();
+    const taskCounts = (counts) => (run) => { run.appModel.stages.get(1).taskCount = counts; return run; };
+    const change = caveatsOf(taskCounts(100)(baseRun()), taskCounts(60)(candRun())).taskCount;
+    expect(change).toEqual({ baseline: 100, candidate: 60, change: -0.4 });
+    expect(caveatsOf(taskCounts(100)(baseRun()), taskCounts(60)(candRun()), { caveatThresholds: { taskCountChange: 0.5 } }).taskCount).toBeNull();
+  });
+
+  it('counts the baseline stages a re-plan leaves over as unmatched', () => {
+    const node = (name, detail, stageIds) => ({ name, detail, metrics: [], children: [], stageIds });
+    const replanRun = (id, stageSpecs) => {
+      const r = baseRun({ id });
+      const children = [];
+      r.appModel.stages = new Map(stageSpecs.map(({ id: stageId, name, nodes, executorRunTime }) => {
+        children.push(...nodes);
+        return [stageId, makeStage({ id: stageId, name, sqlExecutionId: 1, executorRunTime })];
+      }));
+      r.appModel.sql = new Map([[1, { id: 1, description: 'save at X.java:0', planTree: { name: 'Root', detail: '', metrics: [], children } }]]);
+      return r;
+    };
+    const base = replanRun('run-a', [
+      { id: 1, name: 'Exchange 1', nodes: [node('Scan parquet', 'a#1', [1]), node('Exchange', 'hashpartitioning(k#1, 200)', [1])], executorRunTime: 10 },
+      { id: 2, name: 'Exchange 2', nodes: [node('Scan parquet', 'b#2', [2]), node('Exchange', 'hashpartitioning(k#2, 200)', [2])], executorRunTime: 20 },
+      { id: 3, name: 'save at X.java:0', nodes: [node('SortMergeJoin', '[k#1], [k#2], Inner', [3])], executorRunTime: 30 },
+    ]);
+    const cand = replanRun('run-b', [
+      { id: 1, name: 'Exchange 1', nodes: [node('Scan parquet', 'a#1', [1]), node('Exchange', 'hashpartitioning(k#1, 200)', [1])], executorRunTime: 10 },
+      { id: 2, name: 'save at X.java:0', nodes: [node('BroadcastHashJoin', '[k#1], [k#2], Inner, BuildRight', [2])], executorRunTime: 12 },
+    ]);
+    const built = buildComparison(base, cand);
+    expect(built.comparability.plan).toMatchObject({ unmatched: { baseline: 0, candidate: 0 }, replanned: 1 });
+    expect(built.comparability.caveats.unmatchedStages).toEqual({ count: 1, of: 3, runtimeShare: 20 / 60 });
+  });
+
+  it('names a differing jar or Python file path as a likely code change', () => {
+    const base = baseRun({ config: { ...SAME_CONF, 'spark.jars': '/jobs/a-1.jar', 'spark.yarn.dist.pyFiles': '/jobs/lib.zip' } });
+    const cand = candRun({ config: { ...SAME_CONF, 'spark.jars': '/jobs/a-2.jar', 'spark.yarn.dist.pyFiles': '/jobs/lib.zip', 'spark.submit.pyFiles': '/jobs/x.py' } });
+    expect(caveatsOf(base, cand).codeFiles).toEqual([
+      { key: 'spark.jars', baseline: '/jobs/a-1.jar', candidate: '/jobs/a-2.jar' },
+      { key: 'spark.submit.pyFiles', baseline: null, candidate: '/jobs/x.py' },
+    ]);
+    expect(caveatsOf(base, base).codeFiles).toBeNull();
+    expect(comparisonVerdict(buildComparison(base, cand)).sentences)
+      .toContain('The code may have changed: spark.jars, spark.submit.pyFiles differ. Compare with care.');
+  });
+
+  it('refuses a threshold outside its range', () => {
+    for (const caveatThresholds of [{ executorRatio: 0.5 }, { unmatchedShare: 1.5 }, { taskCountChange: -1 }, { executorRatio: Number.NaN }]) {
+      expect(() => buildComparison(baseRun(), candRun(), { caveatThresholds })).toThrow(/executorRatio|unmatchedShare|taskCountChange/);
+    }
+  });
+});
+
 describe('metric noise flag', () => {
   it('marks rows within the band without changing direction', () => {
     const rows = (opts) => Object.fromEntries(buildComparison(baseRun(), candRun({ taskMs: 404_000 }), opts).metrics.map((m) => [m.key, m]));

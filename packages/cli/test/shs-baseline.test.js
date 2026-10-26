@@ -148,6 +148,9 @@ describe('--baseline-shs-base-url argument validation', () => {
     ['--normalize-path', 'x'],
     ['--ignore-conf', 'x'],
     ['--noise-band-pct', '5'],
+    ['--executor-ratio', '2'],
+    ['--unmatched-stages-pct', '30'],
+    ['--task-count-change-pct', '30'],
   ])('accepts %s with a History Server baseline and still refuses it without any baseline', async (flag, value) => {
     const { fetchImpl } = fakeShs();
     const withBaseline = await run([p('slow'), ...baselineShs(), flag, value], { fetchImpl });

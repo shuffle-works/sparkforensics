@@ -50,6 +50,26 @@ the tone from the wall clock. When configuration or plan differs and the wall cl
 one way and executor run-time or allocated core-hours move the other, the
 verdict reads as a mixed result and names both.
 
+When configuration, plan or output differs, the verdict adds a sentence for each difference
+that makes the time gap hard to read:
+
+- Mean executors differ by more than 1.5 times and the run got slower with fewer
+  executors or faster with more: the wall-clock change reflects executor
+  availability, not only the job.
+- The YARN queue (`spark.yarn.queue`) differs: both queues are named.
+- More than 20% of the baseline's stages pair with no candidate stage, re-planned
+  leftovers included, or the task count changes by more than 25%: the plans differ.
+  The sentence gives the unmatched stage count and their share of the baseline's
+  executor run time. When every stage pairs, a task count change alone reads as a
+  task count change, not a plan difference, and shows when configuration and plan
+  agree.
+- `spark.jars`, `spark.submit.pyFiles` or a `spark.yarn.dist.*` path differs: the
+  sentence names the key as a likely code change.
+
+The limits are the defaults of `--executor-ratio`, `--unmatched-stages-pct` and
+`--task-count-change-pct` in the CLI, and of `executorRatio`, `unmatchedShare` and
+`taskCountChange` in `compare_runs`.
+
 The **What differs between the runs** card sits above the metrics. It lists
 whether the Spark configuration is the same (and, when it is not, each key that
 differs with both values), whether every stage pairs, the input read, output

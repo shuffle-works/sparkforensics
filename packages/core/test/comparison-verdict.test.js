@@ -159,6 +159,7 @@ describe('summarizeComparison with comparability', () => {
     plan: { equal: true, unmatched: { baseline: 0, candidate: 0 }, replanned: 0 },
     volume: { inputBytes: {}, outputRows: {}, outputBytes: {}, equal: true },
     capacity: { baseline: {}, candidate: {} },
+    caveats: { executors: null, unmatchedStages: null, taskCount: null, queue: null, codeFiles: null },
     wallClockBridge: {
       wallClock: { baseline: 100, candidate: 149, ratio: 1.49 },
       taskTime: { baseline: 100, candidate: 82, ratio: 0.82 },
@@ -208,6 +209,70 @@ describe('summarizeComparison with comparability', () => {
     const verdict = summarizeComparison(slower, noFindings, undefined, { ...agree, volume: { ...agree.volume, equal: null } });
     expect(verdict.tone).toBe('worse');
     expect(verdict.title).toMatch(/^Same configuration and plan\. Output was not compared\. Time differs by 49\.0s \(49%\): executors averaged/);
+  });
+
+  it('says the wall-clock change is executor availability when mean executors differ past the threshold', () => {
+    const plan = { ...agree.plan, equal: false };
+    const caveats = { ...agree.caveats, executors: { baseline: 217.2, candidate: 91 } };
+    const verdict = summarizeComparison(slower, noFindings, undefined, { ...agree, plan, caveats });
+    expect(verdict.sentences).toContain('Mean executors went from 217 to 91, so much of the wall-clock change is executor availability, not the job.');
+    const flat = [metric('wallClock', 'Wall-clock duration', 100_000, 100_500, 'regression')];
+    expect(summarizeComparison(flat, noFindings, undefined, { ...agree, plan, caveats }).sentences.join(' ')).not.toContain('Mean executors');
+  });
+
+  it('states executors only when the wall clock moved the way the executor change predicts', () => {
+    const plan = { ...agree.plan, equal: false };
+    const fewer = { ...agree.caveats, executors: { baseline: 217, candidate: 91 } };
+    const more = { ...agree.caveats, executors: { baseline: 104, candidate: 228 } };
+    const faster = [metric('wallClock', 'Wall-clock duration', 100_000, 70_000, 'improvement')];
+    const said = (metrics, caveats) => summarizeComparison(metrics, noFindings, undefined, { ...agree, plan, caveats }).sentences.join(' ');
+    expect(said(faster, fewer)).not.toContain('Mean executors');
+    expect(said(slower, more)).not.toContain('Mean executors');
+    expect(said(faster, more)).toContain('Mean executors went from 104 to 228, so much of the wall-clock change is executor availability, not the job.');
+  });
+
+  it('states a task count change without saying the plans differ when every stage paired', () => {
+    const caveats = { ...agree.caveats, executors: { baseline: 57, candidate: 32.6 }, taskCount: { baseline: 217_607, candidate: 121_679, change: -0.44 } };
+    const verdict = summarizeComparison(slower, noFindings, undefined, { ...agree, caveats });
+    expect(verdict.title).toMatch(/^Same configuration, plan and output\./);
+    expect(verdict.sentences).toContain('The task count fell 44%. Compare with care.');
+    expect(verdict.sentences.join(' ')).not.toMatch(/plans differ|Mean executors went/);
+    const conf = { ...agree.conf, equal: false, differences: [{ key: 'a', baseline: '1', candidate: '2' }] };
+    const confOnly = summarizeComparison(slower, noFindings, undefined, { ...agree, conf, caveats });
+    expect(confOnly.sentences).toContain('The task count fell 44%. Compare with care.');
+    expect(confOnly.sentences.join(' ')).not.toContain('plans differ');
+  });
+
+  it('adds a likely code change to the plan caveat', () => {
+    const plan = { ...agree.plan, equal: false };
+    const caveats = {
+      ...agree.caveats,
+      taskCount: { baseline: 100, candidate: 140, change: 0.4 },
+      codeFiles: [{ key: 'spark.jars', baseline: '/jobs/a-1.jar', candidate: '/jobs/a-2.jar' }],
+    };
+    expect(summarizeComparison(slower, noFindings, undefined, { ...agree, plan, caveats }).sentences)
+      .toContain('The plans differ: the task count rose 40%. The code may have changed: spark.jars differs. Compare with care.');
+  });
+
+  it('names a YARN queue difference, an unset side included', () => {
+    const conf = { ...agree.conf, equal: false, differences: [{ key: 'spark.yarn.queue', baseline: null, candidate: 'root.b' }] };
+    const caveats = { ...agree.caveats, queue: { baseline: null, candidate: 'root.b' } };
+    const verdict = summarizeComparison(slower, noFindings, undefined, { ...agree, conf, caveats });
+    expect(verdict.sentences).toContain('The YARN queue differs: unset in the baseline, root.b in the candidate.');
+  });
+
+  it('says the plans differ with the unmatched run-time share and the task count change', () => {
+    const plan = { ...agree.plan, equal: false };
+    const caveats = {
+      ...agree.caveats,
+      unmatchedStages: { count: 75, of: 264, runtimeShare: 0.12 },
+      taskCount: { baseline: 217_607, candidate: 121_679, change: -0.44 },
+    };
+    const verdict = summarizeComparison(slower, noFindings, undefined, { ...agree, plan, caveats });
+    expect(verdict.sentences).toContain("The plans differ: 75 of 264 baseline stages have no match, holding 12% of the baseline's executor run time, and the task count fell 44%. Compare with care.");
+    const countOnly = { ...agree.caveats, taskCount: { baseline: 100, candidate: 140, change: 0.4 } };
+    expect(summarizeComparison(slower, noFindings, undefined, { ...agree, plan, caveats: countOnly }).sentences)
+      .toContain('The plans differ: the task count rose 40%. Compare with care.');
   });
 
   it('uses the metric rows own noise flag, so a wider caller band reads as the same time', () => {

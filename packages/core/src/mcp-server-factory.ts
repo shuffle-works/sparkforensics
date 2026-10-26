@@ -176,10 +176,16 @@ export function createMcpServer(
         .describe('Regular expressions matched against Spark configuration keys. A key that matches is left out of comparability.conf, for keys that differ by design such as a per-run output path. Per-run identity keys (application id, start time, driver address) are always left out.'),
       noiseBand: z.number().min(0).max(1).optional()
         .describe('Share of the baseline value under which a metric row is marked withinNoise (default 0.02). Never changes a row\'s direction.'),
+      executorRatio: z.number().min(1).optional()
+        .describe('Factor by which mean executors must differ, either way, for the verdict to say the wall-clock change reflects executor availability (default 1.5). Sets comparability.caveats.executors.'),
+      unmatchedShare: z.number().min(0).max(1).optional()
+        .describe('Share of the baseline\'s stages that pair with no candidate stage above which the verdict says the plans differ (default 0.2). Sets comparability.caveats.unmatchedStages.'),
+      taskCountChange: z.number().min(0).optional()
+        .describe('Relative task-count change above which the verdict calls out the task count change (default 0.25). Sets comparability.caveats.taskCount.'),
       ...formatSchema,
     },
-  }, ({ runIdA, sourceA, runIdB, sourceB, redact, include, normalizePath, ignoreConf, noiseBand, format }) => toolResultWithMarkdown(
-    compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, ignoreConf, noiseBand, include, generator }),
+  }, ({ runIdA, sourceA, runIdB, sourceB, redact, include, normalizePath, ignoreConf, noiseBand, executorRatio, unmatchedShare, taskCountChange, format }) => toolResultWithMarkdown(
+    compareRuns({ runId: runIdA, source: sourceA }, { runId: runIdB, source: sourceB }, { redact, markdown: format === 'md', thresholds, normalizePath, ignoreConf, noiseBand, caveatThresholds: { executorRatio, unmatchedShare, taskCountChange }, include, generator }),
   ));
 
   server.registerTool('evaluate_budgets', {

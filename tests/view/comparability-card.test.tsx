@@ -52,6 +52,13 @@ test('lists the configuration keys that differ, by name and both values', () => 
   expect(screen.getByTestId('comparison-verdict')).not.toHaveAttribute('data-tone', 'equivalent');
 });
 
+test('adds the executor and queue caveats to the verdict when the runs are not equivalent', () => {
+  render(<RunComparison model={model({ a: '1', 'spark.yarn.queue': 'root.b' }) as any} onClose={vi.fn()} />);
+  const verdict = screen.getByTestId('comparison-verdict');
+  expect(verdict).toHaveTextContent('Mean executors went from 4 to 2, so much of the wall-clock change is executor availability, not the job.');
+  expect(verdict).toHaveTextContent('The YARN queue differs: unset in the baseline, root.b in the candidate.');
+});
+
 test('shows no card for a hand-built model without comparability', () => {
   const bare = { baselineLabel: 'b', candidateLabel: 'c', confidence: 'ok', reason: null, matchedCoverage: 1, metrics: [], findings: { introduced: [], resolved: [] }, stageSkew: [] };
   render(<RunComparison model={bare as any} onClose={vi.fn()} />);

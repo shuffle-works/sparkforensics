@@ -1,7 +1,7 @@
 import { formatDuration, typeTag } from './format-utils.ts';
 import { TAG_HELP } from './finding-tag-help.ts';
 import { DEFAULT_NOISE_BAND, isEscalation, NEUTRAL_METRIC_KEYS, type CompareRunsResult } from './run-comparison.ts';
-import type { Comparability } from './comparability.ts';
+import type { Caveats, Comparability } from './comparability.ts';
 
 /** The slice of a comparison metric row the verdict reads. */
 export interface VerdictMetric {
@@ -16,7 +16,7 @@ export interface VerdictMetric {
 }
 
 /** The slice of the comparability block the verdict reads. */
-export type VerdictComparability = Pick<Comparability, 'noiseBand' | 'conf' | 'plan' | 'volume' | 'wallClockBridge' | 'capacity'>;
+export type VerdictComparability = Pick<Comparability, 'noiseBand' | 'conf' | 'plan' | 'volume' | 'wallClockBridge' | 'capacity' | 'caveats'>;
 
 /** The slice of an introduced or resolved finding row the verdict reads. */
 export interface VerdictCategory {
@@ -89,6 +89,31 @@ function bridgeSentence({ wallClockBridge: bridge }: VerdictComparability): stri
   const { wallClock, taskTime, meanExecutors, taskShareOfAllocation: share } = bridge;
   if (wallClock.ratio == null || taskTime.ratio == null || meanExecutors.ratio == null || share.ratio == null) return null;
   return `Candidate over baseline: wall clock ${times(wallClock.ratio)} is task time ${times(taskTime.ratio)} divided by mean executors ${times(meanExecutors.ratio)} times task time's share of allocated core time ${times(share.ratio)}.`;
+}
+
+/** Sentences for the differences between the runs that make a time difference unreliable to read.
+ * `wallChange` is the candidate's wall clock minus the baseline's, 0 when it stayed within noise or
+ * the executors are stated elsewhere; the executor sentence needs a change the executors explain:
+ * fewer executors and slower, or more executors and faster. A task count change alone reads as a
+ * plan difference only when `planDiffers`. */
+function caveatSentences({ executors, unmatchedStages, taskCount, queue, codeFiles }: Caveats, wallChange: number, planDiffers: boolean): string[] {
+  const sentences: string[] = [];
+  if (executors && wallChange !== 0 && (executors.candidate < executors.baseline) === (wallChange > 0)) {
+    sentences.push(`Mean executors went from ${Math.round(executors.baseline)} to ${Math.round(executors.candidate)}, so much of the wall-clock change is executor availability, not the job.`);
+  }
+  if (queue) sentences.push(`The YARN queue differs: ${queue.baseline ?? 'unset'} in the baseline, ${queue.candidate ?? 'unset'} in the candidate.`);
+  const plan: string[] = [];
+  if (unmatchedStages) {
+    const runTime = unmatchedStages.runtimeShare == null ? '' : `, holding ${percent(unmatchedStages.runtimeShare)} of the baseline's executor run time`;
+    plan.push(`${unmatchedStages.count} of ${unmatchedStages.of} baseline stages have no match${runTime}`);
+  }
+  const taskCountChange = taskCount ? `task count ${taskCount.change < 0 ? 'fell' : 'rose'} ${percent(taskCount.change)}` : null;
+  if (taskCountChange) plan.push(`the ${taskCountChange}`);
+  const parts: string[] = [];
+  if (plan.length > 0) parts.push(planDiffers ? `The plans differ: ${plan.join(', and ')}.` : `The ${taskCountChange}.`);
+  if (codeFiles) parts.push(`The code may have changed: ${codeFiles.map((d) => d.key).join(', ')} ${codeFiles.length === 1 ? 'differs' : 'differ'}.`);
+  if (parts.length > 0) sentences.push(`${parts.join(' ')} Compare with care.`);
+  return sentences;
 }
 
 function configAndPlanAgree({ conf, plan }: VerdictComparability): boolean {
@@ -213,12 +238,14 @@ export function summarizeComparison(
       if (outputAgrees && (!gap || reasons.length > 0)) tone = 'equivalent';
       const bridge = gap ? bridgeSentence(comparability) : null;
       if (bridge) sentences.push(bridge);
+      sentences.push(...caveatSentences(comparability.caveats, 0, false));
     } else {
       const opposed = opposingCost(wall, metrics);
       if (opposed.length > 0) {
         title = `The candidate finished ${formatDuration(Math.abs(change))} ${change < 0 ? 'faster' : 'slower'} than the baseline (${percent(change / wall.baseline)}), while ${opposed.join(' and ')}`;
         tone = 'mixed';
       }
+      sentences.push(...caveatSentences(comparability.caveats, movedPastNoise(wall) ? change : 0, !comparability.plan.equal));
     }
   }
 
