@@ -3,6 +3,7 @@ import { analyze, auditConfig } from '../src/analyzer.js';
 import { DETECTORS, detectorCatalog } from '../src/detectors.js';
 import { detectorInfoByType } from '../src/detector-docs.js';
 import { formatBytes } from '../src/format-utils.js';
+import { FINDING_PRESENTATION } from '../src/finding-presentation.js';
 import { makeStage, makeApp, dataTail, executorRow } from './fixtures/stage-app-fixtures.js';
 
 // Shared fixture for tests needing no bespoke overrides.
@@ -2531,17 +2532,27 @@ describe('analyze, coreLocality detector', () => {
     const run = (config) => analyze(makeApp({ config }), stages, executors, [], new Map())
       .find((b) => b.type === 'coreLocality');
     const finding = run({ 'spark.locality.wait': '10s' });
-    expect(finding.recommendation).toContain('across 2 hosts');
-    expect(finding.recommendation).toContain('most in stage 1 (40% of 100)');
+    expect(finding.recommendation).toContain('on a run of 2 hosts, highest in stage 1 (40% of 100). Raise');
     expect(finding.recommendation).toContain('spark.locality.wait (10s)');
     expect(finding.remediation).toEqual([{ kind: 'conf', key: 'spark.locality.wait', direction: 'increase', suggested: null }]);
+    expect(FINDING_PRESENTATION.coreLocality.genericRecommendation(finding)).toContain('Raise spark.locality.wait');
     expect(run({}).recommendation).toContain('spark.locality.wait (3s)');
   });
 
   it('omits the host count when the log has no executor hosts', () => {
     const stages = new Map([[1, makeStage({ localityStats: [{ locality: 'PROCESS_LOCAL', count: 60 }, { locality: 'ANY', count: 40 }] })]]);
     const finding = analyze(makeApp(), stages, [], [], new Map()).find((b) => b.type === 'coreLocality');
-    expect(finding.recommendation).not.toContain('across');
+    expect(finding.recommendation).not.toContain('on a run of');
+  });
+
+  it('does not suggest a longer locality wait when no task reached a local slot', () => {
+    const stages = new Map([[1, makeStage({ localityStats: [{ locality: 'RACK_LOCAL', count: 20 }, { locality: 'ANY', count: 80 }] })]]);
+    const finding = analyze(makeApp({ config: { 'spark.locality.wait': '10s' } }), stages, [], [], new Map())
+      .find((b) => b.type === 'coreLocality');
+    expect(finding.recommendation).toContain('no data-local executor exists and a longer spark.locality.wait (10s) only delays each task');
+    expect(finding.recommendation).not.toContain('Raise');
+    expect(finding.remediation).toEqual([]);
+    expect(FINDING_PRESENTATION.coreLocality.genericRecommendation(finding)).not.toContain('Raise');
   });
 
   it('states the assumed fetch cost on the core-time estimate', () => {

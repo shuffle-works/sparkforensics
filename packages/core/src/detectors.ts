@@ -1766,6 +1766,7 @@ function stragglerAdvice(stage: DetectorStage, ctx: DetectorCtx, tail: TailVerdi
 }
 
 const LOCALITY_WAIT_KEY = 'spark.locality.wait';
+const LOCAL_TIERS = new Set(['PROCESS_LOCAL', 'NODE_LOCAL']);
 
 export const DETECTORS = [
   defineStageDetector({
@@ -2934,8 +2935,12 @@ export const DETECTORS = [
 
       const value = Math.round(ratio! * 100);
       const hosts = new Set(ctx.executorsAdded.flatMap((e) => (e.host ? [e.host] : []))).size;
-      const worst = topStages.slice(0, 3).map((s) => `stage ${s.stageId} (${Math.round(s.ratio * 100)}% of ${s.taskCount})`).join(', ');
+      const worst = topStages.filter((s) => s.nonLocalTasks > 0).slice(0, 3).map((s) => `stage ${s.stageId} (${Math.round(s.ratio * 100)}% of ${s.taskCount})`).join(', ');
       const wait = effectiveConf(ctx.app, LOCALITY_WAIT_KEY);
+      const hasLocalSlots = [...ctx.stages.values()].some((s) => s.localityStats?.some((l) => LOCAL_TIERS.has(l.locality) && l.count > 0));
+      const waitAdvice = hasLocalSlots
+        ? `Raise ${LOCALITY_WAIT_KEY}${wait ? ` (${wait})` : ''} so the scheduler waits longer for a local slot, or run executors on the hosts that hold the data.`
+        : `No task reached process- or node-local placement, so no data-local executor exists and a longer ${LOCALITY_WAIT_KEY}${wait ? ` (${wait})` : ''} only delays each task: run executors on the hosts that hold the data.`;
       return {
         type: 'coreLocality', stageId: null,
         impactBand: ratio! >= thresholds.critRatio ? 'critical' : 'warning',
@@ -2944,9 +2949,9 @@ export const DETECTORS = [
         nonLocalTaskCount: nonLocalTasks!,
         confidence: coreLocalityConfidence(ratio!, totalTasks, thresholds),
         validationRequired: `Flagged when at least ${shareLabel(thresholds.warnRatio)} of tasks run non-local (critical at ${shareLabel(thresholds.critRatio)}), on runs of ${thresholds.minTasks}+ tasks.`,
-        recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement${hosts > 0 ? ` across ${hosts} ${hosts === 1 ? 'host' : 'hosts'}` : ''}`
-          + `${worst ? `, most in ${worst}` : ''}. Raise ${LOCALITY_WAIT_KEY}${wait ? ` (${wait})` : ''} so the scheduler waits longer for a local slot, or run executors on the hosts that hold the data.`,
-        remediation: [increaseConf(LOCALITY_WAIT_KEY)],
+        recommendation: `${value}% of tasks (${nonLocalTasks!}) ran without process- or node-local data placement${hosts > 0 ? ` on a run of ${hosts} ${hosts === 1 ? 'host' : 'hosts'}` : ''}`
+          + `${worst ? `, highest in ${worst}` : ''}. ${waitAdvice}`,
+        remediation: hasLocalSlots ? [increaseConf(LOCALITY_WAIT_KEY)] : [],
       };
     },
     estimate(finding): ImpactEstimate | null {

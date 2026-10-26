@@ -5,4 +5,4 @@
 "sparkforensics-server": patch
 ---
 
-The core locality finding names the hosts the run used, the stages with the most non-local tasks and the effective `spark.locality.wait`, and carries a `remediation` that raises that property. Its core-time figure states the fetch cost it assumes per non-local task.
+The core locality finding counts the hosts the run used, names the stages with the most non-local tasks and states the effective `spark.locality.wait`. It carries a `remediation` that raises that property when some tasks reached process- or node-local placement; when none did, it says a longer wait will not help and carries no remediation. Its core-time figure states the fetch cost it assumes per non-local task.
