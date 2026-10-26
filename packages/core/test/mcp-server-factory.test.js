@@ -112,6 +112,22 @@ describe('createMcpServer', () => {
     }
   });
 
+  it('uses the default History Server for a source or list_runs call without shsBaseUrl', async () => {
+    const appId = 'application_0000000000000_0001';
+    // Nothing listens on port 1: a call that reaches the default server fails on the fetch, not on input validation.
+    const withDefault = await connectedClient(createMcpServer({ defaultShsBaseUrl: 'http://127.0.0.1:1' }));
+    const viaSource = await withDefault.callTool({ name: 'get_run_summary', arguments: { source: { appId } } });
+    expect(viaSource.content[0].text).toMatch(/SHS fetch failed/);
+    const viaList = await withDefault.callTool({ name: 'list_runs', arguments: {} });
+    expect(viaList.isError).toBe(true);
+    expect(viaList.content[0].text).not.toMatch(/Provide either dir or shsBaseUrl/);
+
+    const without = await connectedClient(createMcpServer());
+    const result = await without.callTool({ name: 'get_run_summary', arguments: { source: { appId } } });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/Input validation error/);
+  });
+
   it('round-trips diagnose_run for a path source', async () => {
     const { dir, path } = tmpEventLog();
     try {

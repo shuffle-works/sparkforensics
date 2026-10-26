@@ -20,13 +20,17 @@ const impactBandSchema = z.enum(nonEmpty(IMPACT_BANDS));
 const findingTypeSchema = z.enum(nonEmpty(FINDING_TYPES));
 const comparisonMetricSchema = z.enum(nonEmpty(COMPARISON_METRIC_KEYS));
 
-const sourceSchema = z.union([
-  z.object({ path: z.string() }),
-  z.object({ shsBaseUrl: z.string(), appId: z.string(), attemptId: z.string().optional() }),
-]);
+// With a server default, shsBaseUrl is optional and falls back to it; without one it is required.
+function buildSourceSchema(defaultShsBaseUrl?: string) {
+  return z.union([
+    z.object({ path: z.string() }),
+    z.object({
+      shsBaseUrl: defaultShsBaseUrl ? z.string().default(defaultShsBaseUrl) : z.string(),
+      appId: z.string(), attemptId: z.string().optional(),
+    }),
+  ]);
+}
 
-const runRefSchema = { source: sourceSchema.optional(), runId: z.string().optional() };
-const secondRunRefSchema = { sourceB: sourceSchema.optional(), runIdB: z.string().optional() };
 const formatSchema = { format: z.enum(['json', 'md']).optional() };
 
 // list_runs takes a bare shsBaseUrl (no appId/attemptId, unlike sourceSchema's SHS branch, since
@@ -112,17 +116,21 @@ const RUN_ID_NOTE = 'runId is a handle for the run this server process has cache
 
 /** `thresholds`: the bin's --thresholds overrides, applied to every analyzing tool for the life
  * of the server. Omitted, every tool runs the specification defaults.
+ * `defaultShsBaseUrl`: the History Server a `source` or `list_runs` call without `shsBaseUrl` uses.
  * `generator`: the host package's name, version and core build id. The server reports its version
  * in the MCP handshake and every diagnose_run and compare_runs result carries the block. */
 export function createMcpServer(
-  { thresholds, generator }: { thresholds?: ThresholdOverrides; generator?: ReportGenerator } = {},
+  { thresholds, generator, defaultShsBaseUrl }: { thresholds?: ThresholdOverrides; generator?: ReportGenerator; defaultShsBaseUrl?: string } = {},
 ): McpServer {
+  const sourceSchema = buildSourceSchema(defaultShsBaseUrl);
+  const runRefSchema = { source: sourceSchema.optional(), runId: z.string().optional() };
+  const secondRunRefSchema = { sourceB: sourceSchema.optional(), runIdB: z.string().optional() };
   const server = new McpServer({ name: 'sparkforensics', version: generator?.version ?? UNKNOWN_VERSION });
 
   server.registerTool('list_runs', {
     description: 'List candidate Spark event-log runs from a local directory or a Spark History Server, before diagnosing one with the other tools.',
     inputSchema: listRunsInputSchema,
-  }, (params) => toolResult(listRuns(params)));
+  }, (params) => toolResult(listRuns({ ...params, shsBaseUrl: params.shsBaseUrl ?? (params.dir ? undefined : defaultShsBaseUrl) })));
 
   server.registerTool('diagnose_run', {
     description: 'Diagnose a Spark run: the dashboard verdict (title, summary, and the top places to look, ranked by stage task time or idle core time, then potential savings, each with its lead finding), findings, an impact-ranked fix recommendation rollup, and the writeTargets, metrics and effectiveConf blocks of the CLI report. view "compact" (the default) lists one short row per finding and leaves out the clean-check and not-checked lists; view "full" returns every finding with its remediation text and evidence, and those lists. Every finding row has a key that stays the same for the same finding in a rerun of the job (compare_runs rows list the same keys), and an id for get_finding_evidence. With format "md" the content is Markdown, and structuredContent holds it as markdown next to a few headline fields. A JSON result longer than ' + DEFAULT_PAGE_CHARS + ' characters comes in pages: pass pagination.nextCursor as cursor, with the other arguments unchanged, for the next one. When the server was started with --thresholds, findings and clean checks from a tuned detector carry tunedThresholds, and their impact estimates are uncalibrated. The result names the Spark application (app) and the build that wrote it (generator). ' + RUN_ID_NOTE,

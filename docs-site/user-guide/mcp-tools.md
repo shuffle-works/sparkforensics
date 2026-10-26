@@ -23,7 +23,8 @@ other parameters.
 - `source`: where to load a run from. Either `{ path: string }` for a local
   event-log file or rolling-log directory, or
   `{ shsBaseUrl: string, appId: string, attemptId?: string }` for a Spark
-  History Server run. An `appId` must have one of Spark's id forms
+  History Server run. `shsBaseUrl` is optional when the server has a default
+  History Server (see [Default History Server](#default-history-server)). An `appId` must have one of Spark's id forms
   (`application_<digits>_<digits>`, `local-<digits>`, `app-...`, `spark-...`,
   `driver-<digits>`). A run loaded this way gets a `runId`.
 - `runId`: a run already loaded in this server process, as returned by an
@@ -94,6 +95,17 @@ Or point an MCP client (Claude Desktop, Claude Code) at it with this config:
   }
 }
 ```
+
+### Default History Server {#default-history-server}
+
+Start the server with `--shs-base-url <url>` (add `"--shs-base-url",
+"http://history-server:18080"` to `args`), or set `SPARKFORENSICS_SHS_BASE_URL`,
+to give every History Server `source` and `list_runs` call a default.
+A call can then pass `{ appId }` alone, or `list_runs` with no arguments. A
+`shsBaseUrl` in the call takes precedence, and so does the flag over the
+variable. Without a default, `shsBaseUrl` is required.
+
+### Tuning thresholds
 
 To tune detector thresholds, start the server with `--thresholds <file>`
 (add `"--thresholds", "/absolute/path/thresholds.json"` to `args`). The file

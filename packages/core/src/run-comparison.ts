@@ -9,7 +9,7 @@ import { mdInline } from './markdown-inline.ts';
 import { tunedRunNote } from './threshold-overrides.ts';
 import { diffFindings, findingBand, findingKey, findingRule, type FindingLocator } from './finding-identity.ts';
 import { cyrb53 } from './string-hash.ts';
-import { IMPACT_BAND_ORDER } from './format-utils.ts';
+import { IMPACT_BAND_ORDER, formatBytes, formatRawWaste, fmtMs } from './format-utils.ts';
 import type { Stage, SparkAppInfo, AppModel, Finding, ImpactBand, TunedThresholds } from './types.ts';
 import type { SessionSnapshot } from './session-snapshot.ts';
 import type { ComparisonVerdictText, VerdictJobOutcome } from './comparison-verdict.ts';
@@ -17,7 +17,7 @@ import { isIncompleteRun } from './check-coverage.ts';
 import { stageDisplayLabel } from './stage-label.ts';
 import { runAppIdentity, type RunAppIdentity } from './run-identity.ts';
 import { summarizeRunOutcome } from './run-outcome.ts';
-import { buildComparability, withinBand, type Comparability } from './comparability.ts';
+import { buildComparability, withinBand, type Comparability, type VolumeFigure } from './comparability.ts';
 
 export interface MetricDeltaRow {
   key: string; label: string;
@@ -574,18 +574,38 @@ function renderChangedSection(changed: FindingsChangedRow[]): string[] {
   return lines;
 }
 
+// Markdown unit per metric key; a key with none prints its number as is.
+const bytesText = (bytes: number): string => (bytes === 0 ? '0 B' : bytes >= 1e12 ? `${(bytes / 1e12).toFixed(1)} TB` : formatBytes(bytes));
+const METRIC_TEXT: Record<string, (value: number) => string> = {
+  wallClock: fmtMs, gcTime: fmtMs, executorRunTime: fmtMs, executorCpuTime: fmtMs,
+  shuffleSpill: bytesText, diskSpill: bytesText, inputBytes: bytesText, outputBytes: bytesText,
+  taskSkew: (ratio) => ratio.toFixed(3),
+  failedTaskRate: (rate) => `${(rate * 100).toFixed(2)}%`,
+  allocatedCoreHours: (value) => formatRawWaste({ value, unit: 'coreHours' }),
+};
+
+const orNa = (value: number | null, format: (value: number) => string): string => (value == null ? 'n/a' : format(value));
+
+/** "+63%" for a relative change, one decimal under 1%; null when there is no change to state. */
+function changeText(relative: number | null): string | null {
+  if (relative == null) return null;
+  const percent = relative * 100;
+  return `${percent > 0 ? '+' : ''}${Math.abs(percent) < 1 ? percent.toFixed(1) : Math.round(percent)}%`;
+}
+
 // What the runs share, as `- key: value` bullets: configuration, plan, data volume and executors.
 function renderComparabilitySection({ conf, plan, volume, capacity }: Comparability): string[] {
   const confLine = conf.equal == null ? 'a run records no Spark properties'
     : conf.equal ? 'same' : `${conf.differences.length} differ (${mdInline(conf.differences.map((d) => d.key).join(', '))})`;
-  const pair = (f: { baseline: number | null; candidate: number | null }) => `${f.baseline ?? 'n/a'} -> ${f.candidate ?? 'n/a'}`;
+  const pair = (f: VolumeFigure, format: (value: number) => string = String) =>
+    `${orNa(f.baseline, format)} -> ${orNa(f.candidate, format)}${f.relativeDifference == null ? '' : ` (${changeText(f.relativeDifference)})`}`;
   const execs = (side: { meanExecutors: number | null; peakExecutors: number | null }) =>
     `${side.meanExecutors == null ? 'n/a' : side.meanExecutors.toFixed(1)} mean / ${side.peakExecutors ?? 'n/a'} peak`;
   return [
     '### Comparability', '',
     `- configuration: ${confLine}`,
     `- plan: ${plan.equal ? 'every stage pairs' : `${plan.unmatched.baseline} baseline / ${plan.unmatched.candidate} candidate stages unmatched, ${plan.replanned} re-planned`}`,
-    `- input bytes: ${pair(volume.inputBytes)}, output rows: ${pair(volume.outputRows)}, output bytes: ${pair(volume.outputBytes)}`,
+    `- input bytes: ${pair(volume.inputBytes, bytesText)}, output rows: ${pair(volume.outputRows)}, output bytes: ${pair(volume.outputBytes, bytesText)}`,
     `- executors: ${execs(capacity.baseline)} -> ${execs(capacity.candidate)}`,
   ];
 }
@@ -627,7 +647,9 @@ export function renderComparisonMarkdown(
   lines.push('### Metric deltas');
   lines.push('');
   for (const m of comparison.metrics) {
-    lines.push(`- ${m.label}: ${m.baseline ?? 'n/a'} -> ${m.candidate ?? 'n/a'} (${m.direction})`);
+    const text = METRIC_TEXT[m.key] ?? String;
+    const change = m.baseline ? m.delta! / m.baseline : null;
+    lines.push(`- ${m.label}: ${orNa(m.baseline, text)} -> ${orNa(m.candidate, text)} (${[changeText(change), m.withinNoise ? 'within noise' : m.direction].filter(Boolean).join(', ')})`);
   }
   lines.push('');
   lines.push(...renderFindingsSection('Introduced findings', comparison.findings.introduced));

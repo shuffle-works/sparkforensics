@@ -236,7 +236,9 @@ dynamic-allocation property when it is `off`. `underBroadcast` and
 `disabled`) and suggest changing the threshold only when it limits the join.
 
 The CLI also supports fetching a run directly from a reachable Spark History
-Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file,
+Server (`--shs-base-url`/`--app-id`/`--attempt-id`) instead of a local file.
+`--shs-base-url` defaults to the `SPARKFORENSICS_SHS_BASE_URL` environment
+variable when `--app-id` is given; the flag takes precedence. It also supports
 comparing a candidate run against a baseline with regression gating
 (`--baseline`/`--max-regression-pct`/`--regression-metric`/
 `--fail-on-introduced`; the baseline is a local file or rolling-log
@@ -841,7 +843,8 @@ npx -p sparkforensics-cli sparkforensics-analyze candidate.zstd --baseline basel
 fetch the baseline from a Spark History Server instead of reading a local path.
 The three flags mirror `--shs-base-url`, `--app-id` and `--attempt-id`, and the
 baseline can be on a different server than the candidate. Any candidate source
-works with it: a local log, or a History Server run.
+works with it: a local log, or a History Server run. Without
+`--baseline-shs-base-url`, `--baseline-app-id` uses `SPARKFORENSICS_SHS_BASE_URL`.
 
 ```bash
 npx -p sparkforensics-cli sparkforensics-analyze --shs-base-url http://history-a:18080 --app-id application_1234_0002 \

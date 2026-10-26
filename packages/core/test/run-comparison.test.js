@@ -667,9 +667,27 @@ describe('renderComparisonMarkdown', () => {
     expect(md).toMatch(/- matched stage coverage: 100\.0%/);
     expect(md).toMatch(/- runtime coverage: 100\.0%/);
     expect(md).toMatch(/- stage pairs: 1, unmatched: 0 baseline \/ 0 candidate, Delta bookkeeping: 0 baseline \/ 0 candidate/);
-    expect(md).toMatch(/### Metric deltas\n\n- Wall-clock duration: 100 -> 200 \(regression\)/);
+    expect(md).toMatch(/### Metric deltas\n\n- Wall-clock duration: 100ms -> 200ms \(\+100%, regression\)/);
     expect(md).toMatch(/### Introduced findings \(0\)/);
     expect(md).toMatch(/### Resolved findings \(0\)/);
+  });
+
+  it('prints metric deltas and data volume in readable units with the percent change', () => {
+    const stage = (spill, input, gc, skewMax) => [1, {
+      name: 'X 1', submittedAt: 0, completedAt: 6_436_487, executorRunTime: 3_789_976_275, jvmGCTime: gc,
+      memoryBytesSpilled: spill, inputBytes: input, taskDurationMax: skewMax,
+    }];
+    const m = compareRuns(
+      B([stage(174_719_415_428_224, 285_981_694_808, 349_512_854, 6_428_000)], { name: 'A' }),
+      C([stage(170_077_293_838_320, 275_011_379_388, 86_368_858, 6_418_000)], { name: 'A' }),
+    );
+    const md = renderComparisonMarkdown(m);
+    expect(md).toContain('- Memory spill: 174.7 TB -> 170.1 TB (-3%, improvement)');
+    expect(md).toContain('- GC time: 97h 5m -> 23h 59m (-75%, improvement)');
+    expect(md).toContain('- input bytes: 286.0 GB -> 275.0 GB (-4%)');
+    // A change inside the noise band reads as such, not as the direction of its sign.
+    expect(md).toMatch(/- Task skew \(p95\): 0\.999 -> 0\.997 \(-0\.2%, within noise\)/);
+    expect(m.metrics.find((row) => row.key === 'taskSkew')).toMatchObject({ direction: 'improvement', withinNoise: true });
   });
 
   it('escapes a run label and a differing property key, which a log controls', () => {

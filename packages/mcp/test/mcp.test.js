@@ -137,6 +137,21 @@ describe('published sparkforensics-mcp stdio bin entrypoint', () => {
     expect(refused.code).toBe(2);
     expect(refused.stderr).toMatch(/Usage: sparkforensics-mcp/);
   }, 10000);
+  it('--shs-base-url and SPARKFORENSICS_SHS_BASE_URL give source and list_runs a default History Server', async () => {
+    const appId = 'application_0000000000000_0001';
+    // Nothing listens on port 1: a call that reaches the default server fails on the fetch, not on input validation.
+    for (const { args, env } of [
+      { args: ['--shs-base-url', 'http://127.0.0.1:1'], env: {} },
+      { args: [], env: { SPARKFORENSICS_SHS_BASE_URL: 'http://127.0.0.1:1' } },
+    ]) {
+      const transport = new StdioClientTransport({ command: binPath, args, env: { ...process.env, ...env } });
+      client = new Client({ name: 'test-client', version: '1.0.0' });
+      await client.connect(transport);
+      const result = await client.callTool({ name: 'get_run_summary', arguments: { source: { appId } } });
+      expect(result.content[0].text).toMatch(/SHS fetch failed/);
+      await client.close();
+    }
+  }, 30000);
   it('--thresholds tunes every tool, and an invalid file stops the server from starting', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'sparkforensics-mcp-'));
     cleanupDirs.push(dir);
