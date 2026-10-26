@@ -50,7 +50,7 @@ the tone from the wall clock. When configuration or plan differs and the wall cl
 one way and executor run-time or allocated core-hours move the other, the
 verdict reads as a mixed result and names both.
 
-When configuration or plan differs, the verdict adds a sentence for each difference
+When configuration, plan or output differs, the verdict adds a sentence for each difference
 that makes the time gap hard to read:
 
 - Mean executors differ by more than 1.5 times and the run got slower with fewer

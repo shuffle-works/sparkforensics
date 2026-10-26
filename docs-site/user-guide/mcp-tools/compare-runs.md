@@ -105,8 +105,8 @@ wall clock and the title ends "no measured factor explains it". When `volume.equ
 is `null`, the tone also comes from the wall clock and the title reads "Same
 configuration and plan. Output was not compared." The tone is `mixed` when the
 wall clock and executor run-time or allocated core-hours move opposite ways past the
-noise band and the configuration or plan differs. When the configuration or plan
-differs, the verdict also carries one sentence for each of `caveats.executors` (when
+noise band and the configuration or plan differs. When the configuration, plan or
+output differs, the verdict also carries one sentence for each of `caveats.executors` (when
 the wall clock moved the way the executor change predicts), `caveats.queue` and the
 plan caveats with `caveats.codeFiles`. When every stage pairs, a task count change
 reads as a task count change, not a plan difference, and also shows when
