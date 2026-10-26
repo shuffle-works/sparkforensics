@@ -201,5 +201,5 @@ The codes:
 - `access-or-upstream-failure`: the fallback code. Bad parameters, a failed
   History Server fetch, or any error that carries no more specific code.
   Common causes: neither `source` nor `runId` given, neither `dir` nor
-  `shsBaseUrl` given, `regressionMetric` without `maxRegressionPct`, and a
+  `shsBaseUrl` given with no default History Server, `regressionMetric` without `maxRegressionPct`, and a
   `source` whose `shsBaseUrl` or `appId` isn't valid.
