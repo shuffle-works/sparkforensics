@@ -37,7 +37,7 @@ async function loadCreateMcpServer() {
 // no I/O. _registeredTools is the SDK's registry; the MCP package test checks that
 // this list matches what listTools reports.
 function usage(toolNames) {
-  return `Usage: sparkforensics-mcp [--thresholds <file>]
+  return `Usage: sparkforensics-mcp [--thresholds <file>] [--shs-base-url <url>]
 
 Starts the SparkForensics MCP server, speaking the MCP protocol over
 stdio. Point an MCP client (Claude Desktop, Claude Code, etc.) at this
@@ -48,6 +48,8 @@ ${toolNames.join(', ')}.
                        this JSON file ({"<detector>": {"<threshold>": value}}).
                        Findings a tuned detector produces carry tunedThresholds.
                        An unreadable or invalid file stops the server from starting.
+  --shs-base-url <url> Default Spark History Server for a source or list_runs call that
+                       gives no shsBaseUrl. Defaults to $SPARKFORENSICS_SHS_BASE_URL.
 
 See https://shuffle-works.github.io/sparkforensics/docs/user-guide/mcp-tools for every tool and its parameters.
 `;
@@ -60,7 +62,7 @@ async function main() {
   try {
     ({ values } = parseArgs({
       args: process.argv.slice(2), allowPositionals: true,
-      options: { thresholds: { type: 'string' }, help: { type: 'boolean', short: 'h' } },
+      options: { thresholds: { type: 'string' }, 'shs-base-url': { type: 'string' }, help: { type: 'boolean', short: 'h' } },
     }));
   } catch (e) {
     if (!e?.code?.startsWith('ERR_PARSE_ARGS_')) throw e;
@@ -86,7 +88,8 @@ async function main() {
     }
   }
   const createMcpServer = await loadCreateMcpServer();
-  const server = createMcpServer({ thresholds, generator: await generatorInfo() });
+  const defaultShsBaseUrl = values['shs-base-url'] ?? process.env.SPARKFORENSICS_SHS_BASE_URL;
+  const server = createMcpServer({ thresholds, generator: await generatorInfo(), defaultShsBaseUrl });
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

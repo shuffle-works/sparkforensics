@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterAll } from 'vitest';
+import { describe, it, expect, vi, afterAll, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -436,5 +436,38 @@ describe('a single History Server candidate', () => {
     const { status } = await run([...candidateShs(SLOW_ID), '--attempt-id', '3', '--baseline', p('baseline')], { fetchImpl });
     expect(status).toBe(0);
     expect(requested).toEqual([`http://${CANDIDATE_HOST}:18080/api/v1/applications/${SLOW_ID}/3/logs`]);
+  });
+});
+
+describe('SPARKFORENSICS_SHS_BASE_URL', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const envUrl = `http://${CANDIDATE_HOST}:18080`;
+
+  it('is the History Server for --app-id and --baseline-app-id, and a flag wins over it', async () => {
+    vi.stubEnv('SPARKFORENSICS_SHS_BASE_URL', envUrl);
+    const { fetchImpl, requested } = fakeShs();
+    const { status } = await run(['--app-id', SLOW_ID, '--baseline-app-id', BASE_ID, '--baseline-shs-base-url', `http://${BASELINE_HOST}:18080`], { fetchImpl });
+    expect(status).toBe(0);
+    expect(requested.sort()).toEqual([
+      `http://${BASELINE_HOST}:18080/api/v1/applications/${BASE_ID}/logs`,
+      `${envUrl}/api/v1/applications/${SLOW_ID}/logs`,
+    ]);
+  });
+
+  it('does not turn a local log into a History Server run', async () => {
+    vi.stubEnv('SPARKFORENSICS_SHS_BASE_URL', envUrl);
+    const { fetchImpl } = fakeShs();
+    const { status } = await run([p('slow')], { fetchImpl });
+    expect(status).toBe(0);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('is named in the error for an --app-id with no History Server', async () => {
+    vi.stubEnv('SPARKFORENSICS_SHS_BASE_URL', '');
+    const { fetchImpl } = fakeShs();
+    const { status, stderr } = await run(['--app-id', SLOW_ID], { fetchImpl });
+    expect(status).toBe(2);
+    expect(stderr).toMatch(/--app-id\/--attempt-id require --shs-base-url or SPARKFORENSICS_SHS_BASE_URL/);
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

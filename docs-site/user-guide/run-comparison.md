@@ -127,7 +127,9 @@ positional run is the candidate, the `--baseline` run the baseline. The CLI's
 `--baseline <local file or rolling-log dir>` flag (or `--baseline-shs-base-url`/`--baseline-app-id` for a History Server run) adds the comparison. In JSON
 the run's report moves under `candidate` and the comparison sits beside it
 under `comparison` (`comparison.verdict` is the headline); in Markdown the
-comparison section follows the report. `--baseline` can also gate a build on
+comparison section follows the report, with durations, sizes and core-hours in
+readable units and the percent change on each metric line (JSON keeps the raw
+values). `--baseline` can also gate a build on
 the comparison
 (`--max-regression-pct`, `--stage-regression-budget`, `--fail-on-introduced`; see [Getting
 started](./getting-started/ci-and-automation.md#ci-and-automation)). The MCP server's

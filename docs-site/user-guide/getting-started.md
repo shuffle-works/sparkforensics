@@ -28,6 +28,7 @@ All settings have working defaults. Override them with environment variables:
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `PORT` | `4173` | Listen port, a whole number from 0 to 65535. The `--port` flag takes precedence. Another value, or an unknown flag, exits `2`; a port already in use exits `1`. |
+| `SPARKFORENSICS_SHS_BASE_URL` | none | Default History Server URL. The CLI uses it for `--app-id` and `--baseline-app-id` when `--shs-base-url` or `--baseline-shs-base-url` is not given. `sparkforensics-mcp` uses it for a `source` or `list_runs` call without `shsBaseUrl`. A flag takes precedence. |
 | `SPARKFORENSICS_SHS_TIMEOUT_MS` | `30000` | History Server fetch timeout. Response headers must arrive within this window, and a streaming body that goes idle this long is cut off. It applies to the `/shs-proxy` route and the MCP archive download. Progressing downloads of any size are unaffected. |
 | `SPARKFORENSICS_MCP_CACHE_CAP` | `8` | Most parsed runs kept in the MCP tool cache. |
 | `SPARKFORENSICS_MCP_CACHE_TTL_MS` | `900000` | Idle eviction time for cached MCP runs (15 minutes). |

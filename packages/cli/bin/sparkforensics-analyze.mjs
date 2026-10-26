@@ -68,6 +68,7 @@ Options:
                                     hexadecimal or exponent value is a usage error.
   --shs-base-url <url>              Fetch the run from a Spark History Server instead of a
                                     local file (mutually exclusive with the positional argument).
+                                    With --app-id, defaults to $SPARKFORENSICS_SHS_BASE_URL.
   --app-id <id>                     Spark application ID to fetch. Required with --shs-base-url.
                                     Repeat it for several candidates from the same server, see
                                     "Several candidates". <id>:<attempt> names an attempt.
@@ -78,6 +79,7 @@ Options:
                                     Mutually exclusive with --baseline-shs-base-url.
   --baseline-shs-base-url <url>     Fetch the baseline from a Spark History Server instead of a
                                     local path. It can be a different server than --shs-base-url.
+                                    With --baseline-app-id, defaults to $SPARKFORENSICS_SHS_BASE_URL.
   --baseline-app-id <id>            Baseline application ID. Required with --baseline-shs-base-url.
   --baseline-attempt-id <id>        Optional baseline attempt ID, used with --baseline-shs-base-url.
   --max-regression-pct <pct>        Requires a baseline. Fail if the regression metric (see
@@ -421,6 +423,12 @@ async function runCli(argv, { fetchImpl } = {}) {
     process.exitCode = 0;
     return;
   }
+  // A flag wins over the environment default, which applies only where an application ID asks for a server.
+  const envShsBaseUrl = process.env.SPARKFORENSICS_SHS_BASE_URL;
+  if (envShsBaseUrl) {
+    if (values['app-id'] !== undefined) values['shs-base-url'] ??= envShsBaseUrl;
+    if (values['baseline-app-id'] !== undefined) values['baseline-shs-base-url'] ??= envShsBaseUrl;
+  }
 
   const usingShs = values['shs-base-url'] !== undefined;
   // One entry per --app-id: { appId, attemptId, name }, name being the --app-id value as given.
@@ -446,11 +454,11 @@ async function runCli(argv, { fetchImpl } = {}) {
       shsCandidates.push({ appId, attemptId: attemptId ?? values['attempt-id'], name: spec });
     }
   } else {
+    if (values['app-id'] !== undefined || values['attempt-id'] !== undefined) {
+      return bail(`--app-id/--attempt-id require --shs-base-url or SPARKFORENSICS_SHS_BASE_URL.\n${USAGE}`, 2);
+    }
     if (positionals.length === 0 || (positionals.length > 1 && values.baseline === undefined && values['baseline-shs-base-url'] === undefined)) {
       return bail(USAGE, 2);
-    }
-    if (values['app-id'] !== undefined || values['attempt-id'] !== undefined) {
-      return bail(`--app-id/--attempt-id require --shs-base-url.\n${USAGE}`, 2);
     }
   }
 
@@ -467,7 +475,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     }, BASELINE_SHS_FLAG_BY_FIELD);
     if (message) return bail(`${message}\n${USAGE}`, 2);
   } else if (values['baseline-app-id'] !== undefined || values['baseline-attempt-id'] !== undefined) {
-    return bail(`--baseline-app-id/--baseline-attempt-id require --baseline-shs-base-url.\n${USAGE}`, 2);
+    return bail(`--baseline-app-id/--baseline-attempt-id require --baseline-shs-base-url or SPARKFORENSICS_SHS_BASE_URL.\n${USAGE}`, 2);
   }
   const usingBaseline = values.baseline !== undefined || usingBaselineShs;
 
