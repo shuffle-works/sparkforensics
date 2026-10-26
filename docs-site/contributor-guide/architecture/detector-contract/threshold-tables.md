@@ -187,7 +187,7 @@ Where each threshold that is not read from Spark's own source comes from.
 | `gc` `minRunTimeMs` = 10 s | Our own noise floor, so a stage that barely ran flags in neither direction |
 | `gc` `warnPct100` = 10 and `lowInfoPct100` = 5 | Carried over unchanged from an external GC heuristic |
 | `memoryUtilization` `idleCoreWarn` = 0.50 | Carried over from an external wasted-cores heuristic |
-| `rightSizing` `tolerancePct`, `maxCoreShare`, `minBaselineCores` and `maxModelErrorPct` | Our own cuts, unvalidated; the model they gate is idealized |
+| `rightSizing` `tolerancePct`, `maxCoreShare`, `minBaselineCores` and `maxModelErrorPct` | Our own cuts; the model they gate is idealized. In the corpus gate, 65 of the 66 public logs have an application end, 9 hold a peak of 8 or more cores (3 with dynamic allocation), 1 of those 9 has a model error at or under 20%, and no log fires the finding. Only 2 logs remove an executor. No corpus log fires or misfires at the cuts, and the corpus has too few large, dynamic-allocation or executor-churn runs to tune them |
 | `memoryUtilization` `wasteBufferMultiplier` = 1.5 | Unverified buffer |
 | `nestedLoopJoin` `minOutputRows` = 1,000,000 and `minExpansion` = 10 | Our own noise floors; the stage time the finding is graded on decides how much it matters |
 | `pythonUdf` `minBytesSent` and `minStageMs` | Conservative guesses, not tuned against a real workload |

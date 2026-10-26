@@ -3164,7 +3164,7 @@ describe('analyze: rightSizing', () => {
       confidence: 'low', impactBand: 'warning',
     });
     expect(finding.recommendation).toContain('within 10% of the observed 10.0s with about 8 of the 16 cores');
-    expect(finding.validationRequired).toContain('misses the observed stage time by 0%');
+    expect(finding.validationRequired).toContain('misses the observed stage time by 0% at the 16 cores held at peak');
     expect(finding.remediation.map((r) => r.key)).toContain('spark.executor.instances');
     expect(finding.impactEstimate.basis).toBe('informational');
   });
