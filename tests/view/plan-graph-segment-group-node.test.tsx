@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { PlanGraphSegmentGroupNode } from '../../src/view/plan-graph/PlanGraphSegmentGroupNode';
+import { StageSelectionProvider } from '../../src/view/plan-graph/stage-selection';
 
 function nodeProps(overrides = {}) {
   return {
@@ -72,5 +74,66 @@ describe('PlanGraphSegmentGroupNode', () => {
     render(<PlanGraphSegmentGroupNode {...nodeProps({ findings })} />);
     expect(screen.getByText('SFAIL')).toBeInTheDocument();
     expect(screen.queryByText('·')).not.toBeInTheDocument();
+  });
+
+  describe('as a stage entry point', () => {
+    const findings = [
+      { type: 'skew', stageId: 12, impactBand: 'critical' as const },
+      { type: 'spill', stageId: 12, impactBand: 'warning' as const },
+    ];
+    const renderSelectable = (selectedStageId: number | null = null) => {
+      const select = vi.fn();
+      render(
+        <StageSelectionProvider value={{ selectedStageId, select }}>
+          <PlanGraphSegmentGroupNode {...nodeProps({ findings })} />
+        </StageSelectionProvider>,
+      );
+      return select;
+    };
+
+    it('selects the stage with the title as the entry', async () => {
+      const select = renderSelectable();
+      const title = screen.getByRole('button', { name: 'Show the findings for stage 12' });
+      await userEvent.click(title);
+      expect(select).toHaveBeenCalledWith(12, title);
+    });
+
+    it('selects the stage from any of its chips', async () => {
+      const select = renderSelectable();
+      const chip = screen.getByRole('button', { name: 'SPILL' });
+      await userEvent.click(chip);
+      expect(select).toHaveBeenCalledWith(12, chip);
+    });
+
+    it('gives the title and each chip the comfortable hit area', () => {
+      renderSelectable();
+      for (const name of ['Show the findings for stage 12', 'SKEW', 'SPILL']) {
+        expect(screen.getByRole('button', { name })).toHaveClass('tap-target-comfortable');
+      }
+    });
+
+    it('shows a ring only on the selected stage', () => {
+      const { unmount } = render(<PlanGraphSegmentGroupNode {...nodeProps()} />);
+      expect(screen.getByText('Stage 12').closest('.border-dashed')).not.toHaveClass('ring-2');
+      unmount();
+
+      renderSelectable(12);
+      expect(screen.getByRole('button', { name: 'Show the findings for stage 12' }).closest('.border-dashed')).toHaveClass('ring-2');
+    });
+
+    it('keeps the unmatched-segment title inert', () => {
+      render(
+        <StageSelectionProvider value={{ selectedStageId: null, select: vi.fn() }}>
+          <PlanGraphSegmentGroupNode {...nodeProps({ stageId: null })} />
+        </StageSelectionProvider>,
+      );
+      expect(screen.queryByRole('button', { name: /show the findings/i })).not.toBeInTheDocument();
+    });
+
+    it('renders plain text where no panel can open', () => {
+      render(<PlanGraphSegmentGroupNode {...nodeProps({ findings })} />);
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+      expect(screen.getByText('SKEW')).toBeInTheDocument();
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ReactFlow, MiniMap, Background, Panel, useReactFlow, useNodesInitialized, useStore, ReactFlowProvider, Position, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useLayoutPrewarm } from './useLayoutPrewarm';
@@ -169,6 +169,7 @@ function findingsForStage(findings: Finding[], stageId: StageId): Finding[] {
 export function PlanGraphCanvas({
   model, showMiniMap, findings = NO_FINDINGS, stageId, segmentStageIds, visibleNodeIds, visibleEdges, onSelectStage,
   selectedNodeId = null, onSelectNode,
+  stagePanel,
   onJumpToPaired,
   centerRequest,
   fitSignal = 0,
@@ -191,6 +192,9 @@ export function PlanGraphCanvas({
    * Owned by the route so Escape can close the inspector before the whole route. */
   selectedNodeId?: string | null;
   onSelectNode?: (id: string | null) => void;
+  /** A stage's findings panel. It fills the inspector slot the node detail
+   * uses, which the route keeps exclusive: a selected node replaces it. */
+  stagePanel?: ReactNode;
   /** Selects and recenters the paired half of a split Exchange node, from the
    * detail card. The route owns the cross-scope expand this may require. */
   onJumpToPaired?: (pairedNodeId: string) => void;
@@ -446,8 +450,9 @@ export function PlanGraphCanvas({
     : undefined;
 
   // The legend and minimap float over the canvas and would cover the node the
-  // sheet just centered, so they stay hidden while the sheet is up.
-  const sheetOpen = narrow && selectedNode != null;
+  // sheet just centered (or the graph itself, for a stage panel), so they stay
+  // hidden while a sheet is up.
+  const sheetOpen = narrow && (selectedNode != null || stagePanel != null);
 
   const planNodes = flowNodes.filter((n) => n.type === 'planNode');
   // Verdict order, so "Next problem" starts at the first step the verdict names.
@@ -518,7 +523,7 @@ export function PlanGraphCanvas({
             onPaneClick={() => onSelectNode?.(null)}
           >
             <Background />
-            <ViewportAutoFit resizeTick={resizeTick} fitSignal={fitSignal} centerRequest={centerRequest} sheetNodeId={sheetOpen ? selectedNode.id : null} />
+            <ViewportAutoFit resizeTick={resizeTick} fitSignal={fitSignal} centerRequest={centerRequest} sheetNodeId={narrow ? selectedNode?.id ?? null : null} />
             {layingOut ? (
               <Panel position="top-center">
                 <LayoutProgress compact />
@@ -543,7 +548,7 @@ export function PlanGraphCanvas({
         </div>
         {selectedNode ? (
           <PlanGraphNodeDetail node={flowData(selectedNode)} sheet={narrow} onClose={() => onSelectNode?.(null)} onJumpToPaired={onJumpToPaired} />
-        ) : null}
+        ) : stagePanel}
       </div>
       </TooltipProvider>
     </ReactFlowProvider>

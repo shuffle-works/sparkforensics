@@ -7,10 +7,7 @@ import { layoutWithDagre, runDagre, clearLayoutCache } from '../../src/view/plan
 import { WORKER_LAYOUT_MIN_NODES, overrideLayoutWorkerFactory } from '../../src/view/plan-graph/layout-worker-client';
 import * as dagreLayout from '../../src/view/plan-graph/dagre-layout';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
-import { docsUrl } from '@sparkforensics/core/docs-config.ts';
-import { ThemeProvider } from '../../src/theme/ThemeProvider';
-import { DocsProvider } from '../../src/view/DocsContext';
-import { DocsSheet } from '../../src/view/DocsSheet';
+import { StageSelectionProvider } from '../../src/view/plan-graph/stage-selection';
 import type { PlanGraphModel } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
 
@@ -274,31 +271,22 @@ describe('compound stage-group containers', () => {
     expect(screen.getByText('SKEW')).toBeInTheDocument();
   });
 
-  it('opens the documentation sheet when a segment finding badge is clicked', async () => {
+  it('selects the stage with the chip as the entry when a segment finding chip is clicked', async () => {
     const user = userEvent.setup();
+    const select = vi.fn();
     const single = model({ scope: 'segment', segmentStageIds: new Map([[0, 7]]) });
     const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
 
     render(
-      <ThemeProvider>
-        <DocsProvider>
-          <PlanGraphCanvas
-            model={single}
-            showMiniMap={false}
-            stageId={7}
-            findings={findings}
-            segmentStageIds={new Map([[0, 7]])}
-          />
-          <DocsSheet />
-        </DocsProvider>
-      </ThemeProvider>,
+      <StageSelectionProvider value={{ selectedStageId: null, select }}>
+        <PlanGraphCanvas model={single} showMiniMap={false} stageId={7} findings={findings} segmentStageIds={new Map([[0, 7]])} />
+      </StageSelectionProvider>,
     );
 
-    await user.click(screen.getByRole('link', { name: 'SKEW' }));
+    const chip = screen.getByRole('button', { name: 'SKEW' });
+    await user.click(chip);
 
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    const [base, hash] = docsUrl('#bottleneck-skew').split('#');
-    expect(document.querySelector('iframe')?.getAttribute('src')).toBe(`${base}?t=dark#${hash}`);
+    expect(select).toHaveBeenCalledWith(7, chip);
   });
 
   it('keeps the focal segment box and its findings when foreground filtering hides every plan node', () => {
@@ -470,6 +458,32 @@ describe('onSelectStage', () => {
   it('renders no clickable stage box in segment scope (nothing to select)', () => {
     render(<PlanGraphCanvas model={model({ scope: 'segment' })} showMiniMap={false} stageId={1} onSelectStage={vi.fn()} />);
     expect(screen.queryByRole('button', { name: /focus stage/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('stage panel slot', () => {
+  const originalMatchMedia = window.matchMedia;
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+  const panel = <div data-testid="stage-panel" />;
+
+  it('renders the stage panel beside the graph', () => {
+    render(<PlanGraphCanvas model={model()} showMiniMap stageId={1} stagePanel={panel} />);
+    expect(screen.getByTestId('stage-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('rf__minimap')).toBeInTheDocument();
+  });
+
+  it('hides the minimap on a phone while the panel is up, as the node sheet does', () => {
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('max-width'),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    render(<PlanGraphCanvas model={model()} showMiniMap stageId={1} stagePanel={panel} />);
+    expect(screen.getByTestId('stage-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('rf__minimap')).not.toBeInTheDocument();
   });
 });
 

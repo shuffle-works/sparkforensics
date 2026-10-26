@@ -176,11 +176,15 @@ even in the default single-stage view where it's the only box on screen. It is
 headered with its stage id (via `segmentStageIds`) and a duration chip, or an
 em-dash placeholder when the segment has no attributed duration. It also
 carries one finding chip (`PlanGraphFindingChip`) per finding on its zipped
-stage, in both the default and the expanded view. Each chip is a `TagBadge` (the ALL-CAPS tag)
+stage, in both the default and the expanded view. Each chip is a button holding a
+plain `TagBadge` (the ALL-CAPS tag, with no docs link)
 followed by the finding's compact magnitude and recoverable-time detail from
 `formatFindingChipDetail` (e.g. "SPILL 4.2 GB · ~38s": the finding's own
 `value`/`metric` and its `impactEstimate.wallClock`), or the bare tag when the
-finding carries neither.
+finding carries neither. A chip and every "Stage N" title (`StageEntryButton`,
+`stage-selection.tsx`) opens that stage's findings panel (see below); both carry
+`tap-target-comfortable`, which lifts the 10px-tall chip to a 24px hit area (44px on
+touch). Outside a `StageSelectionProvider` they render as plain text.
 
 The expanded full-plan view draws two nested layers of background group boxes
 (Dagre `compound: true` for spacing, `computeGroupBounds` for both): the same
@@ -194,6 +198,8 @@ this expanded view the segment box still carries its stage's finding chips
 inline in its header row. The outer stage box paints its own copy only as a
 fallback, for a stage no segment box is zipped to (for example, the focal stage
 when it lost the segment/stage pairing), so every finding appears exactly once.
+That box wraps every node on screen, so its chips sit above its top edge and wrap
+upward, clear of the headers of the boxes inside it.
 Chips match a stage through `Finding.stageId` or `Finding.stageIds`; the
 default segment scope uses the same matching for its displayed stage. Clicking
 an outer stage box ("Focus stage N") switches the route to that stage's segment
@@ -250,6 +256,28 @@ recenters on it via a `centerRequest` token. The selected node id lives in
 the inspector first and the whole route only on a second press. Nodes are
 `draggable: false` (a read-only, auto-laid-out graph); they click to inspect but
 don't move.
+
+Selecting a stage (a chip or a "Stage N" title) fills the same inspector slot
+with the **stage panel** (`PlanGraphStageDetail.tsx`), 384px wide when docked and
+the same 40 percent bottom sheet on a phone (which hides the legend and minimap while it is up), so the graph stays on screen. Both
+inspectors sit in `PlanGraphInspector.tsx`, which owns the dock and sheet layout,
+the grabber and the title row. The selected stage's boxes get a ring. The panel
+holds the findings block of the stage detail dialog, `StageFindings`
+(`widgets/StageFindings.tsx`, shared with the dialog so the text cannot differ),
+and an **Open full stage details** button. The tag in the panel is the docs link.
+The panel and the node detail replace each other: `PlanGraphRoute.tsx` owns both
+selections, and selecting a node clears the stage and the reverse. Escape closes
+one level per press: the stage detail dialog, the panel or the node detail, then
+the route. Focus moves into the panel when it opens, and back to the chip or title
+that opened it when it closes, unless focus has already moved elsewhere.
+
+The button opens the existing `StageDetailDialog`, which the route mounts the same
+way the dashboard does (without `onRoute`, so it shows no **Show evidence**
+buttons), with `showInfo` following the graph's Settings. The dialog's open state
+sits above both routes, so the route clears it when it mounts and mounts the dialog
+after: a dialog left open on the dashboard does not appear over the graph. The
+dialog's own **View plan graph** button is hidden while the graph is active
+(`PlanView.tsx`).
 
 The remaining legibility aids sit on the canvas itself:
 

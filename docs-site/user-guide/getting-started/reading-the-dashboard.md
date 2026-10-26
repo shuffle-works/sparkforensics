@@ -134,7 +134,10 @@ operator for a stage is disabled, and the graph opens on the next one that
 shows something. The graph, its picker and Stage details list critical and
 warning findings only; the graph's **Settings** has a **Show info notes**
 checkbox, and Stage details lists info notes once the info impact pill in
-Filter findings is selected. **Export evidence** downloads the current run's findings as a portable Markdown or JSON report, the same
+Filter findings is selected. In the graph, a finding chip or a "Stage N" title
+opens that stage's findings beside the graph, and **Open full stage details** there
+opens the Stage details dialog over it; Escape closes the dialog, then the findings,
+then the graph. The tag in the findings links to the docs. **Export evidence** downloads the current run's findings as a portable Markdown or JSON report, the same
 report the CLI produces, or as **Download HTML dashboard**: one
 `.html` file holding this dashboard for the run, which opens in any browser
 with no server, like the CLI's `--export-html` folder. Exported dashboards

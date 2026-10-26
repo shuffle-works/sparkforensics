@@ -3,6 +3,7 @@ import { test, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider } from '@/view/DocsContext';
+import { StageDetailProvider } from '@/view/StageDetailContext';
 import { clearPlanGraphModelCache, collapseHiddenEdges, PlanGraphRoute } from '@/view/PlanGraphRoute';
 import { emptyAppModel } from '@/store/store';
 import type { ReactElement } from 'react';
@@ -11,7 +12,9 @@ import type { PlanGraphModel } from '@sparkforensics/core/types.ts';
 function renderRoute(ui: ReactElement) {
   return render(
     <ThemeProvider>
-      <DocsProvider>{ui}</DocsProvider>
+      <DocsProvider>
+        <StageDetailProvider>{ui}</StageDetailProvider>
+      </DocsProvider>
     </ThemeProvider>,
   );
 }

@@ -1,13 +1,17 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { resolvePlanTree } from '@/view/widgets/PlanView';
 import { buildPlanGraphModel } from '@sparkforensics/core/plan-graph-model.ts';
 import { store } from '@/store/store';
 import { PlanGraphCanvas, type CenterRequest } from '@/view/plan-graph/PlanGraphCanvas';
+import { PlanGraphStageDetail } from '@/view/plan-graph/PlanGraphStageDetail';
+import { StageSelectionProvider, type StageSelection } from '@/view/plan-graph/stage-selection';
 import { warmLayoutWorker } from '@/view/plan-graph/layout-worker-client';
 import { ExpandConfirmDialog } from '@/view/plan-graph/ExpandConfirmDialog';
 import { Topbar } from '@/view/Topbar';
 import { DocsLink } from '@/view/DocsContext';
+import { useStageDetail } from '@/view/StageDetailContext';
+import { StageDetailDialog } from '@/view/widgets/StageDetailDialog';
 import { useIngest } from '@/store/useIngest';
 import { useRecentFiles } from '@/view/useRecentFiles';
 import { emptySelection, filterFindings } from '@/view/finding-filter';
@@ -143,7 +147,8 @@ function memoizedBuildPlanGraphModel(
 }
 
 export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFileId, onClose, initialScope }: PlanGraphRouteProps) {
-  const { resetToDropZone } = useIngest();
+  const { resetToDropZone, getTaskData } = useIngest();
+  const { openStage, close: closeStageDetail } = useStageDetail();
   const { recentEntries, onPickRecent, onRemoveRecent } = useRecentFiles(activeFileId);
   const [filterMode, setFilterMode] = useState<PlanGraphFilterMode>('basic');
   const [durationMode, setDurationMode] = useState<PlanGraphDurationMode>('exclusive');
@@ -161,6 +166,11 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
   // Id of the plan node whose detail card is open (null = none). Held here so
   // the single Escape handler can close it before the route.
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Id of the stage whose findings panel is open (null = none). It shares the
+  // inspector slot with the node detail, so selecting one closes the other.
+  const [stagePanelId, setStagePanelId] = useState<StageId | null>(null);
+  // The chip or title that opened the panel, which gets focus back on close.
+  const stageEntryRef = useRef<HTMLElement | null>(null);
   // Bumped on each scope switch; the canvas re-fits on each change.
   const [fitSignal, setFitSignal] = useState(0);
   // Recenter request for a paired-node jump; separate from fitSignal so a jump
@@ -170,6 +180,33 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
   // halves always live in different segments); null when none is pending.
   const [pendingJumpId, setPendingJumpId] = useState<string | null>(null);
   const requestCenter = (nodeId: string) => setCenterRequest((prev) => ({ nodeId, token: prev.token + 1 }));
+
+  const selectNode = useCallback((id: string | null) => {
+    setSelectedNodeId(id);
+    if (id) setStagePanelId(null);
+  }, []);
+  const stageSelection = useMemo<StageSelection>(
+    () => ({
+      selectedStageId: stagePanelId,
+      select: (id, entry) => {
+        stageEntryRef.current = entry;
+        setStagePanelId(id);
+        setSelectedNodeId(null);
+      },
+    }),
+    [stagePanelId],
+  );
+  const panelStage = stagePanelId != null ? appModel.stages.get(stagePanelId) : undefined;
+
+  // The stage detail dialog's open state sits above both routes, so a dialog
+  // opened on the dashboard (its "View plan graph" button) is still open here.
+  // Clear it first and mount the dialog after: one that opens and closes in the
+  // same frame never finishes its exit transition and leaves its scrim behind.
+  const [dialogMounted, setDialogMounted] = useState(false);
+  useEffect(() => {
+    closeStageDetail();
+    setDialogMounted(true);
+  }, [closeStageDetail]);
 
   const planTree = resolvePlanTree(focusStageId, appModel);
 
@@ -218,12 +255,13 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
     // it is open or one press would also close the route.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || guardrailOpen) return;
-      if (selectedNodeId) setSelectedNodeId(null);
+      if (stagePanelId != null) setStagePanelId(null);
+      else if (selectedNodeId) setSelectedNodeId(null);
       else onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, guardrailOpen, selectedNodeId]);
+  }, [onClose, guardrailOpen, stagePanelId, selectedNodeId]);
 
   const model = segmentFellBackOversized
     ? null // held back until an explicit confirm flips requestedScope to 'full'
@@ -257,10 +295,10 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
   useEffect(() => {
     if (!pendingJumpId || requestedScope !== 'full') return;
     if (!model?.nodes.some((n) => n.id === pendingJumpId)) return;
-    setSelectedNodeId(pendingJumpId);
+    selectNode(pendingJumpId);
     requestCenter(pendingJumpId);
     setPendingJumpId(null);
-  }, [pendingJumpId, requestedScope, model]);
+  }, [pendingJumpId, requestedScope, model, selectNode]);
 
   function handleExpandClick() {
     const candidateModel = planTree
@@ -283,7 +321,7 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
   // expand (through the guardrail) and let the apply effect above select it.
   function handleJumpToPaired(pairedNodeId: string) {
     if (model?.nodes.some((n) => n.id === pairedNodeId)) {
-      setSelectedNodeId(pairedNodeId);
+      selectNode(pairedNodeId);
       requestCenter(pairedNodeId);
       return;
     }
@@ -422,6 +460,7 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
               : "Couldn't build the plan graph for this stage."}
           </p>
         ) : (
+          <StageSelectionProvider value={stageSelection}>
           <PlanGraphCanvas
             model={model}
             visibleNodeIds={visibleNodeIds}
@@ -432,7 +471,17 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
             segmentStageIds={model.segmentStageIds}
             onSelectStage={handleSelectStage}
             selectedNodeId={selectedNodeId}
-            onSelectNode={setSelectedNodeId}
+            onSelectNode={selectNode}
+            stagePanel={panelStage ? (
+              <PlanGraphStageDetail
+                stage={panelStage}
+                catalog={catalog}
+                showInfo={showInfo}
+                entryRef={stageEntryRef}
+                onOpenFullDetails={() => openStage(panelStage.id)}
+                onClose={() => setStagePanelId(null)}
+              />
+            ) : null}
             onJumpToPaired={handleJumpToPaired}
             centerRequest={centerRequest}
             fitSignal={fitSignal}
@@ -446,6 +495,7 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
             onShowInfoChange={setShowInfo}
             infoNoteCount={infoNoteCount}
           />
+          </StageSelectionProvider>
         )}
       </div>
       <ExpandConfirmDialog
@@ -454,6 +504,7 @@ export function PlanGraphRoute({ stageId, appModel, findings: catalog, activeFil
         onConfirm={handleExpandConfirm}
         onCancel={handleExpandCancel}
       />
+      {dialogMounted ? <StageDetailDialog appModel={appModel} catalog={catalog} getTaskData={getTaskData} showInfo={showInfo} /> : null}
     </div>
   );
 }
