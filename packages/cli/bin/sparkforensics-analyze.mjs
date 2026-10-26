@@ -152,7 +152,8 @@ Options:
                                     baseline's stages pair with no candidate stage (default 20), the
                                     verdict says the plans differ.
   --task-count-change-pct <pct>     Requires a baseline. When the task count changes by more than
-                                    this percentage (default 25), the verdict says the plans differ.
+                                    this percentage (default 25), the verdict calls out the task
+                                    count change.
   --thresholds <file>               Run the detectors with the threshold overrides in this JSON
                                     file ({"<detector>": {"<threshold>": value}}; names, units and
                                     defaults are in the report's detectors catalog). Findings a

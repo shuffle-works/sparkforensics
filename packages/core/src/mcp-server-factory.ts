@@ -181,7 +181,7 @@ export function createMcpServer(
       unmatchedShare: z.number().min(0).max(1).optional()
         .describe('Share of the baseline\'s stages that pair with no candidate stage above which the verdict says the plans differ (default 0.2). Sets comparability.caveats.unmatchedStages.'),
       taskCountChange: z.number().min(0).optional()
-        .describe('Relative task-count change above which the verdict says the plans differ (default 0.25). Sets comparability.caveats.taskCount.'),
+        .describe('Relative task-count change above which the verdict calls out the task count change (default 0.25). Sets comparability.caveats.taskCount.'),
       ...formatSchema,
     },
   }, ({ runIdA, sourceA, runIdB, sourceB, redact, include, normalizePath, ignoreConf, noiseBand, executorRatio, unmatchedShare, taskCountChange, format }) => toolResultWithMarkdown(
