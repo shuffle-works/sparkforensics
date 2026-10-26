@@ -55,9 +55,9 @@ TaskFailures, RetryWaste, SlowHost, StageSlowness, Straggler,
 SpeculationWaste, and DuplicatePlanSubtree, SmallFiles, UnderBroadcast and
 OverBroadcast (sql-scope, so
 they list every stage in `stageIds` as a `StagePillGroup` rather than one
-`StagePill`). The other 10 are app- or config-scope with no stage to
+`StagePill`). The other 11 are app- or config-scope with no stage to
 drill into, by design, so they stop at Summary/Context: MemoryUtilization,
-ExecutorUtilization (`utilization` is an app-wide average, no stage), JobFailures, ConfigAudit,
+ExecutorUtilization (`utilization` is an app-wide average, no stage), RightSizing, JobFailures, ConfigAudit,
 CacheUtilization, CoreUsageArea, AutoscalingChurn, CachingOpportunity (`scope:
 'app'`, `stageId: null` on both its finding constructions, so it has no stage
 to anchor to despite reading like a per-stage widget), IncompleteRun, and
