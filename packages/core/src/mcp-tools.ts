@@ -11,7 +11,7 @@ import {
   type FindingRow, type RecommendationRow, type CleanCheckEntry, type NotRunCheckEntry, type EvidenceReportJson, type VerdictJson, type VerdictStepRow,
 } from './evidence-report.ts';
 import { computeWallClock } from './wall-clock.ts';
-import { renderComparisonMarkdown, type CompareRunsResult } from './run-comparison.ts';
+import { renderComparisonMarkdown, type CompareOptions, type CompareRunsResult } from './run-comparison.ts';
 import { buildComparisonOutput, type ComparisonOutput } from './comparison-output.ts';
 import { compileNormalizePatterns } from './stage-alignment.ts';
 import { compileConfIgnorePatterns } from './comparability.ts';
@@ -505,7 +505,7 @@ async function resolveAndAnalyze(
 
 export async function compareRuns(
   a: RunRef, b: RunRef, opts?: { redact?: boolean; markdown?: boolean; thresholds?: ThresholdOverrides; normalizePath?: readonly string[];
-    ignoreConf?: readonly string[]; noiseBand?: number; generator?: ReportGenerator;
+    ignoreConf?: readonly string[]; noiseBand?: number; caveatThresholds?: CompareOptions['caveatThresholds']; generator?: ReportGenerator;
     /** `stagePairs`: add the per-pair rows, which the default view leaves out. */ include?: Array<'stagePairs'> },
 ): Promise<McpCompareRunsResult & { markdown?: string; tunedThresholds?: Record<string, TunedThresholds> }> {
   // Before any log is read: a bad pattern refuses the call, as the CLI's usage error does.
@@ -529,7 +529,7 @@ export async function compareRuns(
   // read. Findings/metrics come from `catalog` and appModel.stages/sql, both fully populated. Produces
   // identical output to the dashboard; the MCP tool just never exposes per-task drill-down.
   const view = opts?.include?.includes('stagePairs') ? 'full' : 'summary';
-  const cacheKey = JSON.stringify([runIdA, runIdB, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? [], opts?.ignoreConf ?? [], opts?.noiseBand ?? null, opts?.generator ?? null]);
+  const cacheKey = JSON.stringify([runIdA, runIdB, thresholdsKey(opts?.thresholds), !!opts?.redact, view, opts?.normalizePath ?? [], opts?.ignoreConf ?? [], opts?.noiseBand ?? null, opts?.caveatThresholds ?? null, opts?.generator ?? null]);
   let built = comparisonCache.get(cacheKey)?.built;
   if (built) {
     // Re-insert so the oldest entry is the least recently used.
@@ -539,7 +539,7 @@ export async function compareRuns(
     built = buildComparisonOutput(
       { label: runIdA, appModel: appModelA, catalog: catalogA },
       { label: runIdB, appModel: appModelB, catalog: catalogB },
-      { redact: opts?.redact, normalizePath: opts?.normalizePath, ignoreConf: opts?.ignoreConf, noiseBand: opts?.noiseBand, view, generator: opts?.generator },
+      { redact: opts?.redact, normalizePath: opts?.normalizePath, ignoreConf: opts?.ignoreConf, noiseBand: opts?.noiseBand, caveatThresholds: opts?.caveatThresholds, view, generator: opts?.generator },
     );
     // Either run can be evicted while the other one is still being read or parsed (the awaits
     // above): an entry for a run that is gone would outlive its eviction, so it is only kept

@@ -56,6 +56,13 @@ Parameters:
 - `noiseBand`: `number` from 0 to 1 (optional, default `0.02`), the share of the
   baseline value under which a metric row is `withinNoise`. It never changes a
   row's `direction`.
+- `executorRatio`: `number` of 1 or more (optional, default `1.5`), the factor by
+  which mean executors must differ, either way, for `caveats.executors` to be set.
+- `unmatchedShare`: `number` from 0 to 1 (optional, default `0.2`), the share of the
+  baseline's stages that pair with no candidate stage above which
+  `caveats.unmatchedStages` is set.
+- `taskCountChange`: `number` of 0 or more (optional, default `0.25`), the relative
+  task-count change above which `caveats.taskCount` is set.
 - `format`: `"json" | "md"` (default `"json"`), switches `content[0].text` to
   a rendered Markdown report instead of JSON. `structuredContent` always
   stays JSON-shaped, regardless of `format`.
@@ -80,6 +87,12 @@ Parameters:
   `taskShareOfAllocation`, each with `baseline`, `candidate` and `ratio`, and
   `explainedWallClock`, the task-time ratio over the product of the other two.
 - `noiseBand`: the band in use.
+- `caveats`: differences the verdict calls out, each `null` when it does not apply.
+  `executors` (`baseline` and `candidate` mean executors), `unmatchedStages`
+  (`count` of the baseline's stages with no match, `of` the baseline's stages, and
+  `runtimeShare`, their share of the baseline's executor run time), `taskCount`
+  (`baseline`, `candidate` and relative `change`) and `queue` (`baseline` and
+  `candidate` values of `spark.yarn.queue`, `null` for a side that does not set it).
 
 The `verdict` tone is `equivalent` when `conf.equal`, `plan.equal` and
 `volume.equal` are all `true` and either the wall-clock gap is within the noise
@@ -90,7 +103,9 @@ wall clock and the title ends "no measured factor explains it". When `volume.equ
 is `null`, the tone also comes from the wall clock and the title reads "Same
 configuration and plan. Output was not compared." The tone is `mixed` when the
 wall clock and executor run-time or allocated core-hours move opposite ways past the
-noise band and the configuration or plan differs. A failed job or an incomplete log
+noise band and the configuration or plan differs. When the runs are not equivalent, the
+verdict also carries one sentence for each of `caveats.executors` (when the wall clock
+moved), `caveats.queue` and the plan caveats. A failed job or an incomplete log
 still leads the verdict.
 
 Each side needs either a `runId` or a `source`, and you can mix them: a

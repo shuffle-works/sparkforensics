@@ -65,6 +65,29 @@ export interface WallClockBridge {
   explainedWallClock: number | null;
 }
 
+/** Differences between the runs that make a time difference unreliable to read. Each field is
+ * null when its difference stays within the matching `CaveatThresholds` entry. */
+export interface Caveats {
+  /** Mean executors differ by more than `executorRatio`, in either direction. */
+  executors: { baseline: number; candidate: number } | null;
+  /** More than `unmatchedShare` of the baseline's stages pair with no candidate stage. `runtimeShare`
+   * is those stages' share of the baseline's executor run time, null when it is unmeasured. */
+  unmatchedStages: { count: number; of: number; runtimeShare: number | null } | null;
+  /** The task count changed by more than `taskCountChange`; `change` is relative to the baseline. */
+  taskCount: { baseline: number; candidate: number; change: number } | null;
+  /** The runs ran in different YARN queues; a side that does not set one is null. */
+  queue: { baseline: string | null; candidate: string | null } | null;
+}
+
+export interface CaveatThresholds {
+  /** Factor, 1 or more, by which mean executors differ. */
+  executorRatio: number;
+  /** Share, 0 to 1, of the baseline's stages that pair with none. */
+  unmatchedShare: number;
+  /** Share, 0 or more, by which the task count changes. */
+  taskCountChange: number;
+}
+
 export interface Comparability {
   /** The share of the baseline's value under which a figure counts as within noise. */
   noiseBand: number;
@@ -75,6 +98,7 @@ export interface Comparability {
   /** Milliseconds both run windows cover; null when a run's window is unknown. */
   overlapMs: number | null;
   wallClockBridge: WallClockBridge;
+  caveats: Caveats;
 }
 
 export interface ComparabilityOptions {
@@ -84,6 +108,7 @@ export interface ComparabilityOptions {
   confRedactRegex?: string;
   /** Share of the baseline's value under which a figure counts as within noise. */
   noiseBand: number;
+  caveatThresholds: CaveatThresholds;
 }
 
 /** Keys the cluster sets per run (application id, start time, driver address). Two runs of one job
@@ -134,6 +159,28 @@ function comparePlan(alignment: Pick<StageAlignment, 'unmatched' | 'replanned'>)
     equal: unmatched.baseline === 0 && unmatched.candidate === 0 && alignment.replanned.length === 0,
     unmatched,
     replanned: alignment.replanned.length,
+  };
+}
+
+const QUEUE_CONF_KEY = 'spark.yarn.queue';
+
+function buildCaveats(
+  baseSnap: SessionSnapshot, alignment: Pick<StageAlignment, 'unmatched' | 'bookkeepingStageIds'>, conf: ConfComparability,
+  meanExecutors: BridgeFactor, taskTime: BridgeFactor, tasks: VolumeFigure, thresholds: CaveatThresholds,
+): Caveats {
+  const { ratio } = meanExecutors;
+  const unmatchedStages = alignment.unmatched.baseStageIds.map((id) => baseSnap.stages.get(id)!);
+  const stageCount = baseSnap.stages.size - alignment.bookkeepingStageIds.baseStageIds.length;
+  const unmatchedRunTime = withEarlierAttempts(unmatchedStages).reduce((sum, stage) => sum + (stage.executorRunTime ?? 0), 0);
+  const queue = conf.differences.find((d) => d.key === QUEUE_CONF_KEY);
+  return {
+    executors: ratio != null && Math.max(ratio, 1 / ratio) > thresholds.executorRatio
+      ? { baseline: meanExecutors.baseline!, candidate: meanExecutors.candidate! } : null,
+    unmatchedStages: stageCount > 0 && unmatchedStages.length / stageCount > thresholds.unmatchedShare
+      ? { count: unmatchedStages.length, of: stageCount, runtimeShare: taskTime.baseline ? unmatchedRunTime / taskTime.baseline : null } : null,
+    taskCount: tasks.relativeDifference != null && Math.abs(tasks.relativeDifference) > thresholds.taskCountChange
+      ? { baseline: tasks.baseline!, candidate: tasks.candidate!, change: tasks.relativeDifference } : null,
+    queue: queue ? { baseline: queue.baseline, candidate: queue.candidate } : null,
   };
 }
 
@@ -188,9 +235,9 @@ function runWindow(snap: SessionSnapshot): [number, number] | null {
  * volume and bridge figures are the ones the metrics table shows. */
 export function buildComparability(
   baseSnap: SessionSnapshot, candSnap: SessionSnapshot,
-  alignment: Pick<StageAlignment, 'unmatched' | 'replanned'>,
+  alignment: Pick<StageAlignment, 'unmatched' | 'replanned' | 'bookkeepingStageIds'>,
   metrics: Array<{ key: string; baseline: number | null; candidate: number | null }>,
-  { ignoreConf, confRedactRegex, noiseBand }: ComparabilityOptions,
+  { ignoreConf, confRedactRegex, noiseBand, caveatThresholds }: ComparabilityOptions,
 ): Comparability {
   const attempts = (snap: SessionSnapshot): Stage[] => withEarlierAttempts([...snap.stages.values()]);
   const allocation = (snap: SessionSnapshot) => (snap.executors ? computeAllocation(snap) : null);
@@ -208,6 +255,7 @@ export function buildComparability(
     ? parts[0]! / (parts[1]! * parts[2]!)
     : null;
 
+  const conf = compareConf(baseSnap, candSnap, compileConfIgnorePatterns(ignoreConf), confRedactRegex);
   const baseWindow = runWindow(baseSnap), candWindow = runWindow(candSnap);
   const overlapMs = baseWindow && candWindow
     ? Math.max(0, Math.min(baseWindow[1], candWindow[1]) - Math.max(baseWindow[0], candWindow[0]))
@@ -215,7 +263,7 @@ export function buildComparability(
 
   return {
     noiseBand,
-    conf: compareConf(baseSnap, candSnap, compileConfIgnorePatterns(ignoreConf), confRedactRegex),
+    conf,
     plan: comparePlan(alignment),
     volume: compareVolume(attempts(baseSnap), attempts(candSnap), metrics, noiseBand),
     capacity: {
@@ -230,5 +278,6 @@ export function buildComparability(
       taskShareOfAllocation: taskShare,
       explainedWallClock,
     },
+    caveats: buildCaveats(baseSnap, alignment, conf, meanExecutors, taskTime, figure(row('taskCount')?.baseline ?? null, row('taskCount')?.candidate ?? null), caveatThresholds),
   };
 }

@@ -170,6 +170,44 @@ describe('comparability', () => {
   });
 });
 
+describe('caveats', () => {
+  const caveatsOf = (base, cand, opts) => buildComparison(base, cand, opts).comparability.caveats;
+
+  it('flags mean executors that differ past the ratio, in either direction', () => {
+    expect(caveatsOf(baseRun(), candRun()).executors).toEqual({ baseline: 4, candidate: 2 });
+    expect(caveatsOf(candRun(), baseRun()).executors).toEqual({ baseline: 2, candidate: 4 });
+    expect(caveatsOf(baseRun(), candRun({ executors: 3 })).executors).toBeNull();
+    expect(caveatsOf(baseRun(), candRun(), { caveatThresholds: { executorRatio: 2 } }).executors).toBeNull();
+  });
+
+  it('reports a YARN queue difference and says it in the verdict', () => {
+    const base = baseRun({ config: { ...SAME_CONF, 'spark.yarn.queue': 'root.a' } });
+    const cand = candRun({ config: { ...SAME_CONF, 'spark.yarn.queue': 'root.b' } });
+    expect(caveatsOf(base, cand).queue).toEqual({ baseline: 'root.a', candidate: 'root.b' });
+    expect(caveatsOf(base, base).queue).toBeNull();
+    expect(comparisonVerdict(buildComparison(base, cand)).sentences)
+      .toContain('The YARN queue differs: root.a in the baseline, root.b in the candidate.');
+  });
+
+  it('flags unmatched baseline stages with their run-time share, and a task count change', () => {
+    const cand = candRun({ stageName: 'a different stage' });
+    const { unmatchedStages, taskCount } = caveatsOf(baseRun(), cand);
+    expect(unmatchedStages).toEqual({ count: 1, of: 1, runtimeShare: 1 });
+    expect(taskCount).toBeNull();
+    expect(caveatsOf(baseRun(), cand, { caveatThresholds: { unmatchedShare: 1 } }).unmatchedStages).toBeNull();
+    const taskCounts = (counts) => (run) => { run.appModel.stages.get(1).taskCount = counts; return run; };
+    const change = caveatsOf(taskCounts(100)(baseRun()), taskCounts(60)(candRun())).taskCount;
+    expect(change).toEqual({ baseline: 100, candidate: 60, change: -0.4 });
+    expect(caveatsOf(taskCounts(100)(baseRun()), taskCounts(60)(candRun()), { caveatThresholds: { taskCountChange: 0.5 } }).taskCount).toBeNull();
+  });
+
+  it('refuses a threshold outside its range', () => {
+    for (const caveatThresholds of [{ executorRatio: 0.5 }, { unmatchedShare: 1.5 }, { taskCountChange: -1 }, { executorRatio: Number.NaN }]) {
+      expect(() => buildComparison(baseRun(), candRun(), { caveatThresholds })).toThrow(/executorRatio|unmatchedShare|taskCountChange/);
+    }
+  });
+});
+
 describe('metric noise flag', () => {
   it('marks rows within the band without changing direction', () => {
     const rows = (opts) => Object.fromEntries(buildComparison(baseRun(), candRun({ taskMs: 404_000 }), opts).metrics.map((m) => [m.key, m]));

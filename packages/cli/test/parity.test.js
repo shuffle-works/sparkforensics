@@ -279,6 +279,14 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
       expect(line.comparison.metrics.every((m) => typeof m.withinNoise === 'boolean')).toBe(true);
     });
 
+    it('applies the caveat threshold flags and their MCP inputs the same way', async () => {
+      const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson', '--executor-ratio', '3', '--unmatched-stages-pct', '50', '--task-count-change-pct', '10']);
+      const viaMcp = await mcpCall('compare_runs', {
+        sourceA: { path: BASELINE }, sourceB: { path: candidate }, executorRatio: 3, unmatchedShare: 0.5, taskCountChange: 0.1,
+      });
+      expect(diffSurfaces(line.comparison, viaMcp, COMPARISON_ALLOWED)).toEqual([]);
+    });
+
     it('reports the same comparison as the dashboard\'s compareRuns', async () => {
       const [line] = await cliLines([candidate, '--baseline', BASELINE, '--format', 'ndjson']);
       expect(line.comparison).toEqual(JSON.parse(JSON.stringify(comparisonOutput(await dashboardComparison(BASELINE, candidate), 'full', line.comparison.generator))));
@@ -385,10 +393,19 @@ describe.skipIf(!existsSync(BASELINE))('CLI, MCP and dashboard parity on public 
       expect(bad.exitCode).toBe(2);
       expect(bad.stderr).toMatch(/--noise-band-pct needs a number from 0 to 100/);
     }
-    for (const flag of [['--ignore-conf', 'x'], ['--noise-band-pct', '5']]) {
+    for (const [flag, value, message] of [
+      ['--executor-ratio', '0.5', /--executor-ratio needs a number of 1 or more/],
+      ['--unmatched-stages-pct', '101', /--unmatched-stages-pct needs a number from 0 to 100/],
+      ['--task-count-change-pct', 'abc', /--task-count-change-pct needs a non-negative decimal number/],
+    ]) {
+      const bad = await cliOutput([CANDIDATES[0], '--baseline', BASELINE, flag, value]);
+      expect(bad.exitCode).toBe(2);
+      expect(bad.stderr).toMatch(message);
+    }
+    for (const flag of [['--ignore-conf', 'x'], ['--noise-band-pct', '5'], ['--executor-ratio', '2']]) {
       const withoutBaseline = await cliOutput([CANDIDATES[0], ...flag]);
       expect(withoutBaseline.exitCode).toBe(2);
-      expect(withoutBaseline.stderr).toMatch(/--noise-band-pct\/--normalize-path require --baseline/);
+      expect(withoutBaseline.stderr).toMatch(/--task-count-change-pct\/--normalize-path require --baseline/);
     }
     await expect(mcpCall('compare_runs', {
       sourceA: { path: BASELINE }, sourceB: { path: CANDIDATES[0] }, ignoreConf: ['(unclosed'],

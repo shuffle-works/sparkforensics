@@ -145,6 +145,14 @@ Options:
   --noise-band-pct <pct>            Requires a baseline. A metric that differs from the baseline by
                                     less than this percentage is marked withinNoise (default 2). It
                                     never changes a metric's direction.
+  --executor-ratio <n>              Requires a baseline. When mean executors differ by more than this
+                                    factor (default 1.5), the verdict says the wall-clock change
+                                    reflects executor availability.
+  --unmatched-stages-pct <pct>      Requires a baseline. When more than this percentage of the
+                                    baseline's stages pair with no candidate stage (default 20), the
+                                    verdict says the plans differ.
+  --task-count-change-pct <pct>     Requires a baseline. When the task count changes by more than
+                                    this percentage (default 25), the verdict says the plans differ.
   --thresholds <file>               Run the detectors with the threshold overrides in this JSON
                                     file ({"<detector>": {"<threshold>": value}}; names, units and
                                     defaults are in the report's detectors catalog). Findings a
@@ -214,6 +222,9 @@ function parseCliArgs(argv) {
       'normalize-path': { type: 'string', multiple: true },
       'ignore-conf': { type: 'string', multiple: true },
       'noise-band-pct': { type: 'string' },
+      'executor-ratio': { type: 'string' },
+      'unmatched-stages-pct': { type: 'string' },
+      'task-count-change-pct': { type: 'string' },
       'conf-keys': { type: 'string' },
       'conf-redact-regex': { type: 'string' },
       help: { type: 'boolean' },
@@ -323,7 +334,7 @@ const redactedFailure = (role, exitCode) => `${role} could not be ${exitCode ===
 // a candidate is named by its position (candidate-1, ...): log file names and app ids identify the run.
 // loadBaseline() and each candidate's load() resolve to { appModel }, from a local log or a History Server.
 async function runMultiLog({
-  candidates, loadBaseline, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath, ignoreConf, noiseBand,
+  candidates, loadBaseline, budgets, thresholds, findingsFilter, redact, outPath, confKeys, confRedactRegex, normalizePath, ignoreConf, noiseBand, caveatThresholds,
 }) {
   let baselineAppModel;
   try {
@@ -351,7 +362,7 @@ async function runMultiLog({
       const { comparison, output } = buildComparisonOutput(
         { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
         { label: 'candidate', appModel, catalog },
-        { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand, generator: generatorInfo() },
+        { redact, normalizePath, ignoreConf, confRedactRegex, noiseBand, caveatThresholds, generator: generatorInfo() },
       );
       const { json } = buildEvidenceReport(appModel, { redact, findingsFilter, markdown: false, thresholds });
       const { results, violated, inconclusive } = evaluateBudgets({ appModel, catalog, budgets, comparison, thresholds });
@@ -523,9 +534,9 @@ async function runCli(argv, { fetchImpl } = {}) {
 
   // Single source of truth for which flags need --baseline: append a future
   // flag here rather than adding its own OR-condition (easy to forget).
-  const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced', 'regression-budget', 'budgets', 'normalize-path', 'ignore-conf', 'noise-band-pct', 'stage-regression-budget', 'stage-quality'];
+  const BASELINE_DEPENDENT_FLAGS = ['max-regression-pct', 'regression-metric', 'fail-on-introduced', 'regression-budget', 'budgets', 'normalize-path', 'ignore-conf', 'noise-band-pct', 'executor-ratio', 'unmatched-stages-pct', 'task-count-change-pct', 'stage-regression-budget', 'stage-quality'];
   if (!usingBaseline && BASELINE_DEPENDENT_FLAGS.some((flag) => values[flag] !== undefined)) {
-    return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--stage-regression-budget/--stage-quality/--fail-on-introduced/--ignore-conf/--noise-band-pct/--normalize-path require --baseline or --baseline-shs-base-url.\n${USAGE}`, 2);
+    return bail(`--max-regression-pct/--regression-metric/--regression-budget/--budgets/--stage-regression-budget/--stage-quality/--fail-on-introduced/--ignore-conf/--noise-band-pct/--executor-ratio/--unmatched-stages-pct/--task-count-change-pct/--normalize-path require --baseline or --baseline-shs-base-url.\n${USAGE}`, 2);
   }
   if (values['regression-metric'] !== undefined && values['max-regression-pct'] === undefined) {
     return bail(`--regression-metric requires --max-regression-pct.\n${USAGE}`, 2);
@@ -641,6 +652,25 @@ async function runCli(argv, { fetchImpl } = {}) {
     }
     noiseBand = pct / 100;
   }
+  const caveatThresholds = {};
+  // [flag, option, divisor to the option's unit, lowest, highest], in the flag's unit.
+  for (const [flag, option, divisor, min, max] of [
+    ['executor-ratio', 'executorRatio', 1, 1, Infinity],
+    ['unmatched-stages-pct', 'unmatchedShare', 100, 0, 100],
+    ['task-count-change-pct', 'taskCountChange', 100, 0, Infinity],
+  ]) {
+    if (values[flag] === undefined) continue;
+    let value;
+    try {
+      value = parseNonNegativeNumber(values[flag], `--${flag}`);
+    } catch (e) {
+      return bail(`${e.message}\n${USAGE}`, 2);
+    }
+    if (value < min || value > max) {
+      return bail(`--${flag} needs a number ${max === Infinity ? `of ${min} or more` : `from ${min} to ${max}`}.\n${USAGE}`, 2);
+    }
+    caveatThresholds[option] = value / divisor;
+  }
 
   const confKeys = splitCsv(values['conf-keys']);
   if (confKeys !== undefined && confKeys.length === 0) {
@@ -669,7 +699,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     return runMultiLog({
       candidates, loadBaseline, budgets, thresholds,
       findingsFilter, redact: values.redact, outPath: values.out,
-      confKeys, confRedactRegex: values['conf-redact-regex'], normalizePath, ignoreConf, noiseBand,
+      confKeys, confRedactRegex: values['conf-redact-regex'], normalizePath, ignoreConf, noiseBand, caveatThresholds,
     });
   }
 
@@ -746,7 +776,7 @@ async function runCli(argv, { fetchImpl } = {}) {
     ({ comparison, output: comparisonJson } = buildComparisonOutput(
       { label: 'baseline', appModel: baselineAppModel, catalog: baselineCatalog },
       { label: 'candidate', appModel, catalog },
-      { redact: values.redact, normalizePath, ignoreConf, confRedactRegex: values['conf-redact-regex'], noiseBand, generator: generatorInfo() },
+      { redact: values.redact, normalizePath, ignoreConf, confRedactRegex: values['conf-redact-regex'], noiseBand, caveatThresholds, generator: generatorInfo() },
     ));
   }
 

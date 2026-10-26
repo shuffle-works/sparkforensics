@@ -1,7 +1,7 @@
 import { formatDuration, typeTag } from './format-utils.ts';
 import { TAG_HELP } from './finding-tag-help.ts';
 import { DEFAULT_NOISE_BAND, isEscalation, NEUTRAL_METRIC_KEYS, type CompareRunsResult } from './run-comparison.ts';
-import type { Comparability } from './comparability.ts';
+import type { Caveats, Comparability } from './comparability.ts';
 
 /** The slice of a comparison metric row the verdict reads. */
 export interface VerdictMetric {
@@ -16,7 +16,7 @@ export interface VerdictMetric {
 }
 
 /** The slice of the comparability block the verdict reads. */
-export type VerdictComparability = Pick<Comparability, 'noiseBand' | 'conf' | 'plan' | 'volume' | 'wallClockBridge' | 'capacity'>;
+export type VerdictComparability = Pick<Comparability, 'noiseBand' | 'conf' | 'plan' | 'volume' | 'wallClockBridge' | 'capacity' | 'caveats'>;
 
 /** The slice of an introduced or resolved finding row the verdict reads. */
 export interface VerdictCategory {
@@ -89,6 +89,24 @@ function bridgeSentence({ wallClockBridge: bridge }: VerdictComparability): stri
   const { wallClock, taskTime, meanExecutors, taskShareOfAllocation: share } = bridge;
   if (wallClock.ratio == null || taskTime.ratio == null || meanExecutors.ratio == null || share.ratio == null) return null;
   return `Candidate over baseline: wall clock ${times(wallClock.ratio)} is task time ${times(taskTime.ratio)} divided by mean executors ${times(meanExecutors.ratio)} times task time's share of allocated core time ${times(share.ratio)}.`;
+}
+
+/** Sentences for the differences between the runs that make a time difference unreliable to read.
+ * The executor sentence needs a wall-clock change to explain. */
+function caveatSentences({ executors, unmatchedStages, taskCount, queue }: Caveats, wallClockMoved: boolean): string[] {
+  const sentences: string[] = [];
+  if (executors && wallClockMoved) {
+    sentences.push(`Mean executors went from ${Math.round(executors.baseline)} to ${Math.round(executors.candidate)}, so much of the wall-clock change is executor availability, not the job.`);
+  }
+  if (queue) sentences.push(`The YARN queue differs: ${queue.baseline ?? 'unset'} in the baseline, ${queue.candidate ?? 'unset'} in the candidate.`);
+  const plan: string[] = [];
+  if (unmatchedStages) {
+    const runTime = unmatchedStages.runtimeShare == null ? '' : `, holding ${percent(unmatchedStages.runtimeShare)} of the baseline's executor run time`;
+    plan.push(`${unmatchedStages.count} of ${unmatchedStages.of} baseline stages have no match${runTime}`);
+  }
+  if (taskCount) plan.push(`the task count ${taskCount.change < 0 ? 'fell' : 'rose'} ${percent(taskCount.change)}`);
+  if (plan.length > 0) sentences.push(`The plans differ: ${plan.join(', and ')}. Compare with care.`);
+  return sentences;
 }
 
 function configAndPlanAgree({ conf, plan }: VerdictComparability): boolean {
@@ -219,6 +237,7 @@ export function summarizeComparison(
         title = `The candidate finished ${formatDuration(Math.abs(change))} ${change < 0 ? 'faster' : 'slower'} than the baseline (${percent(change / wall.baseline)}), while ${opposed.join(' and ')}`;
         tone = 'mixed';
       }
+      sentences.push(...caveatSentences(comparability.caveats, movedPastNoise(wall)));
     }
   }
 

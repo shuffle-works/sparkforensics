@@ -17,7 +17,7 @@ import { isIncompleteRun } from './check-coverage.ts';
 import { stageDisplayLabel } from './stage-label.ts';
 import { runAppIdentity, type RunAppIdentity } from './run-identity.ts';
 import { summarizeRunOutcome } from './run-outcome.ts';
-import { buildComparability, withinBand, type Comparability, type VolumeFigure } from './comparability.ts';
+import { buildComparability, withinBand, type CaveatThresholds, type Comparability, type VolumeFigure } from './comparability.ts';
 
 export interface MetricDeltaRow {
   key: string; label: string;
@@ -228,6 +228,10 @@ function direction(key: string, baseline: number | null, candidate: number | nul
 /** A change under this share of the baseline's value is within run-to-run noise: a shared cluster
  * easily moves a job a percent or two. The caller's `noiseBand` replaces it. */
 export const DEFAULT_NOISE_BAND = 0.02;
+
+/** Where the comparison verdict starts to call out a difference between the runs. The caller's
+ * `caveatThresholds` replace them. */
+export const DEFAULT_CAVEAT_THRESHOLDS: CaveatThresholds = { executorRatio: 1.5, unmatchedShare: 0.2, taskCountChange: 0.25 };
 
 export function metricDeltas(baseSnap: SessionSnapshot, candSnap: SessionSnapshot, noiseBand = DEFAULT_NOISE_BAND): MetricDeltaRow[] {
   const metric = (
@@ -472,6 +476,8 @@ export interface CompareOptions {
   /** Share of the baseline's value under which a metric row is `withinNoise`; default
    * `DEFAULT_NOISE_BAND`. Must be a finite number from 0 to 1. */
   noiseBand?: number;
+  /** Overrides for `DEFAULT_CAVEAT_THRESHOLDS`, each validated against its range. */
+  caveatThresholds?: Partial<CaveatThresholds>;
 }
 
 // Snapshot-building shared by the CLI's --baseline path and mcp-tools.ts's compareRuns tool. The
@@ -503,6 +509,13 @@ export function compareRuns(
   if (!Number.isFinite(noiseBand) || noiseBand < 0 || noiseBand > 1) {
     throw new Error(`noiseBand must be a number from 0 to 1, got ${noiseBand}.`);
   }
+  const given = options.caveatThresholds;
+  const executorRatio = given?.executorRatio ?? DEFAULT_CAVEAT_THRESHOLDS.executorRatio;
+  const unmatchedShare = given?.unmatchedShare ?? DEFAULT_CAVEAT_THRESHOLDS.unmatchedShare;
+  const taskCountChange = given?.taskCountChange ?? DEFAULT_CAVEAT_THRESHOLDS.taskCountChange;
+  if (!Number.isFinite(executorRatio) || executorRatio < 1) throw new Error(`executorRatio must be a number of 1 or more, got ${executorRatio}.`);
+  if (!Number.isFinite(unmatchedShare) || unmatchedShare < 0 || unmatchedShare > 1) throw new Error(`unmatchedShare must be a number from 0 to 1, got ${unmatchedShare}.`);
+  if (!Number.isFinite(taskCountChange) || taskCountChange < 0) throw new Error(`taskCountChange must be a number of 0 or more, got ${taskCountChange}.`);
   // `matchedCoverage` comes from the exact matcher; pairs and the gate come from the aligner.
   const match = matchStages(baseSnap, candSnap);
   const alignment = alignStages(baseSnap, candSnap, { normalizePath: compileNormalizePatterns(options.normalizePath) });
@@ -551,7 +564,7 @@ export function compareRuns(
     baseStages: stageList(baseSnap),
     candStages: stageList(candSnap),
     jobOutcomes: { baseline: jobOutcome(baseSnap), candidate: jobOutcome(candSnap) },
-    comparability: buildComparability(baseSnap, candSnap, alignment, metrics, { ignoreConf: options.ignoreConf, confRedactRegex: options.confRedactRegex, noiseBand }),
+    comparability: buildComparability(baseSnap, candSnap, alignment, metrics, { ignoreConf: options.ignoreConf, confRedactRegex: options.confRedactRegex, noiseBand, caveatThresholds: { executorRatio, unmatchedShare, taskCountChange } }),
   };
 }
 

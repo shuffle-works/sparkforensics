@@ -177,8 +177,9 @@ JSON and the MCP tools call the same core functions:
   `compareRuns` the way `thresholds` reaches `analyze()` and stays out of the run
   cache key, because it only affects the comparison. The CLI validates the
   patterns before any log is parsed (exit 2) and MCP before any run is resolved.
-  The same holds for `ignoreConf` (`--ignore-conf`) and `noiseBand`
-  (`--noise-band-pct`), which `compareRuns` reads: `comparability.ts` builds the
+  The same holds for `ignoreConf` (`--ignore-conf`), `noiseBand`
+  (`--noise-band-pct`) and `caveatThresholds` (`--executor-ratio`,
+  `--unmatched-stages-pct`, `--task-count-change-pct`), which `compareRuns` reads: `comparability.ts` builds the
   `comparability` block once from the two snapshots, the aligner's result and the
   metric rows, and `comparisonOutput()` projects it, so the CLI, MCP and the
   dashboard report the same block.

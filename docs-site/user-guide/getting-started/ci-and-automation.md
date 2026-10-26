@@ -760,6 +760,13 @@ the comparison: it is listed in `conf.withheldKeys` and never compared. Limits a
 of the baseline value under which a metric row reads `withinNoise: true`; the flag
 never changes a row's `direction`, which budgets read. Both flags need a baseline.
 
+The verdict calls out three differences that make a time gap hard to read, each
+recorded in `comparison.comparability.caveats` (`null` when it does not apply):
+mean executors that differ by more than `--executor-ratio <n>` times (default `1.5`),
+a baseline with more than `--unmatched-stages-pct <pct>` of its stages unmatched
+(default `20`) or a task count that changes by more than `--task-count-change-pct <pct>`
+(default `25`), and a `spark.yarn.queue` that differs. All three flags need a baseline.
+
 ```bash
 npx -p sparkforensics-cli sparkforensics-analyze candidate --baseline baseline \
   --ignore-conf '^spark\.myjob\.output\.' --noise-band-pct 5 --format json
