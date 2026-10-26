@@ -193,7 +193,8 @@ before Spark 3.2 and on from 3.2; skew-join and coalescing from 3.0, and the
 advisory partition size and `coalescePartitions.parallelismFirst`, on from 3.2),
 `spark.sql.shuffle.partitions` (200),
 `spark.sql.autoBroadcastJoinThreshold` (10 MB), speculation (the multiplier is
-1.5 and the quantile 0.75 before Spark 4.0, 3 and 0.9 from 4.0) and the
+1.5 and the quantile 0.75 before Spark 4.0, 3 and 0.9 from 4.0),
+`spark.locality.wait` (3s) and the
 dynamic-allocation, serializer and event-log switches, and the executor memory
 overhead factor (from 3.3) and minimum (from 4.0). A default that depends on the cluster (`spark.executor.instances`,
 `spark.default.parallelism`) is not modeled. Spark before 3.0 has no AQE

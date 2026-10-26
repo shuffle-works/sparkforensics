@@ -2,7 +2,7 @@
 // Locality tiers (Spark, best to worst): PROCESS_LOCAL > NODE_LOCAL > NO_PREF > RACK_LOCAL > ANY.
 // NO_PREF is not a locality failure (shuffle-read stages report it, no location preference for a
 // shuffle fetch), so it stays in the denominator but never the numerator.
-const NON_LOCAL_TIERS = new Set(['RACK_LOCAL', 'ANY']);
+export const NON_LOCAL_TIERS = new Set(['RACK_LOCAL', 'ANY']);
 const TOP_N = 5;
 const MIN_TASKS_PER_STAGE = 10;
 
