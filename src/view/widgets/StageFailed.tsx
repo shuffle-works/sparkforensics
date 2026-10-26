@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { StagePill } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
@@ -25,6 +26,7 @@ function hasStage<F extends Finding>(f: F): f is F & { stageId: number } {
 
 function StageFailedRow({ finding }: { finding: FindingOf<'stageFailed'> & { stageId: number } }) {
   const anchor = useAnchoredRow([finding]);
+  const stated = useStatedAbove(finding);
   return (
     <li
       ref={anchor.ref}
@@ -32,12 +34,14 @@ function StageFailedRow({ finding }: { finding: FindingOf<'stageFailed'> & { sta
       data-flashed={anchor.dataFlashed}
       className={`flex flex-col gap-1 transition-colors ${anchor.flashClassName}`}
     >
-      <div className="flex items-center gap-2">
-        <StagePill stageId={finding.stageId} />
-        <ImpactDot impactBand={finding.impactBand} />
-      </div>
+      {stated ? null : (
+        <div className="flex items-center gap-2">
+          <StagePill stageId={finding.stageId} />
+          <ImpactDot impactBand={finding.impactBand} />
+        </div>
+      )}
       <p className="text-xs text-muted-foreground">
-        Stage attempt failed outright. Reason: <strong>{finding.valueText}</strong>
+        {stated ? null : 'Stage attempt failed outright. '}Reason: <strong>{finding.valueText}</strong>
       </p>
       <ImpactEstimate finding={finding} />
     </li>

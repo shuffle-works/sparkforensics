@@ -2,7 +2,9 @@ import { Suspense, useMemo, useState } from 'react';
 
 import { Table, TableBody } from '@/components/ui/table';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
+import { useWidgetDensity } from '@/store/store';
 import type { WidgetProps } from '@/view/detector-registry';
+import { evidenceAddsDetail } from '@/view/evidence-detail';
 import { useInterpretation, type BoardGroup } from '@/view/interpretation';
 import { triageTargetFor, type TriageTarget } from '@/view/triage-target';
 import {
@@ -68,6 +70,7 @@ function ImpactGroup({
   subheading: boolean;
 } & WidgetProps) {
   const widgetProps: WidgetProps = { appModel, catalog, configFindings, getTaskData, activeFileId };
+  const density = useWidgetDensity();
   const { evidenceByGroup, unowned } = useMemo(() => {
     const byWidget = new Map(widgets.map((widget) => [widget.widgetId, widget]));
     const taken = new Set<string>();
@@ -76,11 +79,14 @@ function ImpactGroup({
       const widgetId = triageTargetFor(group.findings[0])?.widgetId;
       const widget = widgetId ? byWidget.get(widgetId) : undefined;
       if (!widget || taken.has(widget.widgetId)) continue;
+      // A lone finding whose line already says all its widget would show has no panel: its
+      // button routes to the widget's card in the grid below.
+      if (group.findings.length === 1 && !evidenceAddsDetail(group.findings[0], catalog, density)) continue;
       taken.add(widget.widgetId);
       evidenceByGroup.set(group.key, widget);
     }
     return { evidenceByGroup, unowned: widgets.filter((widget) => !taken.has(widget.widgetId)) };
-  }, [groups, widgets]);
+  }, [groups, widgets, catalog, density]);
 
   if (groups.length === 0 && widgets.length === 0) return null;
   const headingId = `impact-band-${impactBand}-heading`;

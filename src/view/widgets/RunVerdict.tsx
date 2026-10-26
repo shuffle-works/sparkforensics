@@ -27,9 +27,9 @@ export interface RunVerdictProps {
   onShowMoreFindings: () => void;
   /** How many findings the Findings tab lists under "More findings". */
   moreFindingsCount?: number;
-  /** The evidence card for a widget the verdict owns, or null when another
-   * surface owns it. */
-  renderEvidence?: (widgetId: string) => ReactNode;
+  /** The evidence panel for a widget the verdict owns, or null when another
+   * surface owns it. `lead` is the step's finding, which the step already states. */
+  renderEvidence?: (widgetId: string, lead: Finding) => ReactNode;
   /** Step index to the widget whose evidence renders inside that step. */
   evidenceOwners?: ReadonlyMap<number, string>;
 }
@@ -306,9 +306,9 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
     .map((step) => ({ step, finding: findingAt(interpretation, step.leadIndex) }))
     .filter((entry): entry is { step: InterpretedStep; finding: Finding } => entry.finding != null);
   const density = useWidgetDensity();
-  const evidenceFor = (index: number) => {
+  const evidenceFor = (index: number, lead: Finding) => {
     const widgetId = evidenceOwners?.get(index);
-    const card = widgetId ? renderEvidence?.(widgetId) : null;
+    const card = widgetId ? renderEvidence?.(widgetId, lead) : null;
     return widgetId && card ? { widgetId, card } : null;
   };
 
@@ -356,7 +356,7 @@ export function RunVerdict({ interpretation, onRoute, onShowMoreFindings, moreFi
               interpretation={interpretation}
               index={index}
               onRoute={onRoute}
-              evidence={evidenceFor(index)}
+              evidence={evidenceFor(index, finding)}
             />
           ))}
         </ol>

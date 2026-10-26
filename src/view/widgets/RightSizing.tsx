@@ -2,6 +2,8 @@ import { memo, useMemo, useState } from 'react';
 
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
+import { useWidgetDensity } from '@/store/store';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { RowPagination } from '@/view/RowPagination';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
@@ -19,6 +21,10 @@ export type RightSizingProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>
 function RightSizingRow({ finding }: { finding: FindingOf<'rightSizing'> }) {
   const anchor = useAnchoredRow([finding]);
   const { value, observedCores, observedActiveMs, modeledActiveMs, modelErrorPct } = finding;
+  const stated = useStatedAbove(finding);
+  const advanced = useWidgetDensity() === 'advanced';
+  // The line above states the core counts and both durations; only the model error is new.
+  if (stated && !advanced) return null;
 
   return (
     <div
@@ -27,16 +33,20 @@ function RightSizingRow({ finding }: { finding: FindingOf<'rightSizing'> }) {
       data-flashed={anchor.dataFlashed}
       className={`transition-colors ${anchor.flashClassName}`}
     >
-      <p className="flex flex-wrap items-start gap-2">
-        <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
-        <span>
-          <strong>{value} of {observedCores} cores</strong> would be enough
-        </span>
-      </p>
-      <p className="text-xs text-muted-foreground">
-        The stages took {formatDuration(observedActiveMs)} on {observedCores} cores. The model predicts{' '}
-        {formatDuration(modeledActiveMs)} on {value}.
-      </p>
+      {stated ? null : (
+        <>
+          <p className="flex flex-wrap items-start gap-2">
+            <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
+            <span>
+              <strong>{value} of {observedCores} cores</strong> would be enough
+            </span>
+          </p>
+          <p className="text-xs text-muted-foreground">
+            The stages took {formatDuration(observedActiveMs)} on {observedCores} cores. The model predicts{' '}
+            {formatDuration(modeledActiveMs)} on {value}.
+          </p>
+        </>
+      )}
       <AdvancedOnly>
         <p className="text-xs text-muted-foreground">Model error at {observedCores} cores: {modelErrorPct}%.</p>
       </AdvancedOnly>

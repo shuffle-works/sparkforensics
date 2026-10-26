@@ -6,6 +6,7 @@ import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { StageHeader } from '@/view/StageHeader';
+import { useAnyStatedAbove, useInlineEvidence } from '@/view/InlineEvidenceContext';
 import { ExpandToggleButton } from '@/view/ExpandToggleButton';
 import { DurationHistogram } from '@/view/charts/DurationHistogram';
 import { IMPACT_BAND_ORDER, formatDuration, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
@@ -71,8 +72,16 @@ function StageFindingGroupRow({ group, appModel, getTaskData, idPrefix, findingL
     liveGetTaskData ? () => liveGetTaskData(group.stageId) : undefined,
   );
   const anchor = useAnchoredRow(group.findings);
+  const inline = useInlineEvidence();
+  const stageStated = useAnyStatedAbove(group.findings);
   const stage = appModel.stages.get(group.stageId);
   const density = useWidgetDensity();
+  // The line above an evidence panel states a finding's label and its stage, so a stated finding keeps
+  // only its status marker (Advanced) and the other findings keep their whole line.
+  const entries = group.findings.map((f) => ({ finding: f, stated: f.id != null && (inline?.stated.has(f.id) ?? false) }));
+  const listed = entries.filter(({ finding: f, stated }) => !stated || (density === 'advanced' && Boolean(f.confidence) && f.confidence !== 'high'));
+  // tinyTask's sentence states the median task duration, so its P50 is not repeated.
+  const p50Stated = entries.some(({ finding: f, stated }) => stated && f.type === 'tinyTask');
   const showPlanExplorer = density === 'advanced' && resolvePlanTree(group.stageId, appModel);
   const detailId = `${idPrefix}-stage-${group.stageId}-detail`;
 
@@ -83,22 +92,28 @@ function StageFindingGroupRow({ group, appModel, getTaskData, idPrefix, findingL
       data-flashed={anchor.dataFlashed}
       className={`space-y-2 ${ROW_SEPARATOR_CLASS} transition-colors ${anchor.flashClassName}`}
     >
-      <StageHeader stageId={group.stageId} appModel={appModel} />
-      <ul className="flex flex-col gap-1.5">
-        {group.findings.map((f, i) => (
-          <li key={i} className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <ImpactDot impactBand={f.impactBand} />
-            <span>{findingLabel(f)}</span>
-            <ImpactEstimate finding={f} />
-            <AdvancedOnly>
-              <RowStatusCluster confidence={f.confidence} validationRequired={f.validationRequired} />
-            </AdvancedOnly>
-          </li>
-        ))}
-      </ul>
+      <StageHeader stageId={group.stageId} appModel={appModel} stated={stageStated} />
+      {listed.length > 0 ? (
+        <ul className="flex flex-col gap-1.5">
+          {listed.map(({ finding: f, stated }, i) => (
+            <li key={i} className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {stated ? null : (
+                <>
+                  <ImpactDot impactBand={f.impactBand} />
+                  <span>{findingLabel(f)}</span>
+                  <ImpactEstimate finding={f} />
+                </>
+              )}
+              <AdvancedOnly>
+                <RowStatusCluster confidence={f.confidence} validationRequired={f.validationRequired} />
+              </AdvancedOnly>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       {stage?.taskDurationP50 != null ? (
         <p className="text-xs text-muted-foreground">
-          P50 {formatDuration(stage.taskDurationP50)} &middot; P95 {formatDuration(stage.taskDurationP95)} &middot; Max{' '}
+          {p50Stated ? null : <>P50 {formatDuration(stage.taskDurationP50)} &middot; </>}P95 {formatDuration(stage.taskDurationP95)} &middot; Max{' '}
           {formatDuration(stage.taskDurationMax)}
         </p>
       ) : null}

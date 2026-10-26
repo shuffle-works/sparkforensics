@@ -10,6 +10,7 @@ import { FindingFilterBar } from '@/view/FindingFilterBar';
 import { FindingFilterProvider, useFindingFilter } from '@/view/FindingFilterContext';
 import { eligibleFindings, useInterpretation } from '@/view/interpretation';
 import { InlineEvidence } from '@/view/InlineEvidence';
+import { evidenceAddsDetail } from '@/view/evidence-detail';
 import { verdictEvidenceOwners, verdictLeadFindings } from '@/view/verdict-evidence';
 import { computeActiveWidgets, SUGGESTED_IMPROVEMENTS_ANCHOR_ID } from '@/view/widgets/Alerts';
 import {
@@ -155,13 +156,13 @@ function FilteredBoard({
     [interpretation],
   );
   const evidenceOwners = useMemo(
-    () => (interpretation ? verdictEvidenceOwners(interpretation, new Set(evidenceWidgets.map((widget) => widget.widgetId))) : new Map<number, string>()),
-    [interpretation, evidenceWidgets],
+    () => (interpretation ? verdictEvidenceOwners(interpretation, new Set(evidenceWidgets.map((widget) => widget.widgetId)), (lead) => evidenceAddsDetail(lead, catalog, density)) : new Map<number, string>()),
+    [interpretation, evidenceWidgets, catalog, density],
   );
   const verdictWidgetIds = useMemo(() => new Set(evidenceOwners.values()), [evidenceOwners]);
-  const renderVerdictEvidence = useCallback((widgetId: string) => {
+  const renderVerdictEvidence = useCallback((widgetId: string, lead: Finding) => {
     const widget = evidenceWidgets.find((candidate) => candidate.widgetId === widgetId);
-    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} /> : null;
+    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={[lead]} /> : null;
   }, [evidenceWidgets, appModel, catalog, configFindings, getTaskData, activeFileId]);
   const showMoreFindings = useCallback(() => {
     onActiveTabChange('findings');

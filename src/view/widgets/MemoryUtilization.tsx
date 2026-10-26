@@ -5,6 +5,7 @@ import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { useAnchoredRow } from '@/view/finding-anchor';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { RowPagination } from '@/view/RowPagination';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
@@ -56,6 +57,11 @@ function rowLabel(f: MemoryUtilizationFinding): string {
  * widget-wide constant, so repeating it on every row would just be noise. */
 function MemoryRow({ finding }: { finding: MemoryUtilizationFinding }) {
   const anchor = useAnchoredRow([finding]);
+  const stated = useStatedAbove(finding);
+
+  // The line above states the caveat's text and each variant's figure; only a
+  // heap band's executor id is new, so every other stated row is empty.
+  if (stated && (finding.dataUnavailable || !('executorId' in finding) || finding.executorId == null)) return null;
 
   if (finding.dataUnavailable) {
     return (
@@ -83,10 +89,12 @@ function MemoryRow({ finding }: { finding: MemoryUtilizationFinding }) {
         <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
         <strong>{rowLabel(finding)}</strong>
       </p>
-      <p className="text-xs text-muted-foreground">
-        {memoryDetail(finding)}
-        {memoryDiagnosis(finding) != null ? <AdvancedOnly>{memoryDiagnosis(finding)}</AdvancedOnly> : null}
-      </p>
+      {stated ? null : (
+        <p className="text-xs text-muted-foreground">
+          {memoryDetail(finding)}
+          {memoryDiagnosis(finding) != null ? <AdvancedOnly>{memoryDiagnosis(finding)}</AdvancedOnly> : null}
+        </p>
+      )}
       <ImpactEstimate finding={finding} />
     </div>
   );

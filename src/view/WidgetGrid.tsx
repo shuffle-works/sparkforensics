@@ -16,7 +16,7 @@ import { useRouteFocusedWidgetId, useTriageNavigation } from '@/view/TriageNavig
 interface GridCardState {
   openRequestGeneration: number;
   reportOpen: (open: boolean) => void;
-  setDisclosureButton: (button: HTMLButtonElement | null) => void;
+  setDisclosureButton: (button: HTMLElement | null) => void;
   onDisclosureBlur: () => void;
   routeFocused: boolean;
   /** Reference-region tile: the card starts collapsed and floors its collapsed
@@ -65,14 +65,14 @@ export function WidgetGridItem({
   // owns the actual open state, so this is the only channel to observe it.
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const disclosureButtonRef = useRef<HTMLButtonElement | null>(null);
+  const disclosureButtonRef = useRef<HTMLElement | null>(null);
   const gridCard = useMemo(() => ({
     openRequestGeneration,
     reportOpen: (nextOpen: boolean) => {
       setOpen(nextOpen);
       if (widgetId) navigation?.reportWidgetOpen(widgetId, nextOpen);
     },
-    setDisclosureButton: (button: HTMLButtonElement | null) => {
+    setDisclosureButton: (button: HTMLElement | null) => {
       disclosureButtonRef.current = button;
     },
     onDisclosureBlur: () => {

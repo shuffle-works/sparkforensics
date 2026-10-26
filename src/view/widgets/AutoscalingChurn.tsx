@@ -6,6 +6,7 @@ import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { DocsLink } from '@/view/DocsContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { WidgetCard } from '../WidgetCard';
 import { WidgetLeadSummary } from '../WidgetLeadSummary';
 import { CHART_COLORS, ChartFrame } from '../charts/ChartTheme';
@@ -94,11 +95,15 @@ type ChurnModel =
  * `ImpactEstimate` and the tuning link; the card states the fix (there's only
  * ever one active churn finding, so no per-row location is needed). */
 function AutoscalingChurnRow({ finding }: { finding: Finding }) {
+  const stated = useStatedAbove(finding);
   return (
     <div className="flex flex-col gap-1 transition-colors">
-      <p className="text-xs text-muted-foreground">
-        Short-lived share of removed executors: <strong>{finding.value}%</strong>
-      </p>
+      {/* The line above states the short-lived share. */}
+      {stated ? null : (
+        <p className="text-xs text-muted-foreground">
+          Short-lived share of removed executors: <strong>{finding.value}%</strong>
+        </p>
+      )}
       <ImpactEstimate finding={finding} />
       <p className="flex flex-wrap items-start gap-2 text-sm">
         <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />

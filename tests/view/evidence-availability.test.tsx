@@ -48,14 +48,12 @@ function renderDashboard() {
   );
 }
 
-/** The verdict owns the top findings and expands a finding's evidence card in
- * place: click its step's "Show evidence" first. */
+/** The verdict owns the top findings and expands a finding's evidence in place:
+ * its step's "Show evidence" opens the panel. */
 async function openVerdictEvidence(user: ReturnType<typeof userEvent.setup>, cardName: RegExp) {
   await user.click(within(screen.getByTestId('run-verdict')).getByRole('button', { name: 'Show evidence' }));
   // Evidence cards are code-split (React.lazy); the chunk resolves async.
   await screen.findByRole('heading', { name: cardName });
-  // The card opens collapsed; expand it to reach the evidence link in its body.
-  await user.click(within(screen.getByTestId('run-verdict')).getByRole('button', { name: cardName }));
 }
 
 beforeEach(() => {

@@ -5,6 +5,7 @@ import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
+import { useAnyStatedAbove, useInlineEvidence } from '@/view/InlineEvidenceContext';
 import { formatBytes, numericValue, IMPACT_BAND_ORDER, VISIBLE_LIMIT, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
@@ -37,7 +38,12 @@ function partitionSizingLabel(f: FindingOf<'partitionSizing'>): string {
 function PartitionSizingRow({ entry, appModel }: { entry: StageEntry; appModel: WidgetProps['appModel'] }) {
   const density = useWidgetDensity();
   const anchor = useAnchoredRow(entry.partitions);
+  const inline = useInlineEvidence();
+  const stageStated = useAnyStatedAbove(entry.partitions);
   const showPlanExplorer = density === 'advanced' && resolvePlanTree(entry.stageId, appModel);
+  // The line above an evidence panel states a rule's figure in its sentence, so only the other rules keep their label.
+  const labelled = entry.partitions.filter((f) => f.id == null || !inline?.stated.has(f.id));
+  if (stageStated && !appModel.stages.get(entry.stageId)?.name && labelled.length === 0 && !showPlanExplorer) return null;
 
   return (
     <div
@@ -46,18 +52,22 @@ function PartitionSizingRow({ entry, appModel }: { entry: StageEntry; appModel: 
       data-flashed={anchor.dataFlashed}
       className={`space-y-2 ${ROW_SEPARATOR_CLASS} transition-colors ${anchor.flashClassName}`}
     >
-      <StageHeader stageId={entry.stageId} appModel={appModel} />
-      <div className="space-y-2 pt-1">
-        <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-          {entry.partitions.map((f) => (
-            <li key={f.id}>
-              {partitionSizingLabel(f)}{' '}
-              <ImpactEstimate finding={f} />
-            </li>
-          ))}
-        </ul>
-        {showPlanExplorer ? <PlanExplorer stageId={entry.stageId} appModel={appModel} /> : null}
-      </div>
+      <StageHeader stageId={entry.stageId} appModel={appModel} stated={stageStated} />
+      {labelled.length > 0 || showPlanExplorer ? (
+        <div className="space-y-2 pt-1">
+          {labelled.length > 0 ? (
+            <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+              {labelled.map((f) => (
+                <li key={f.id}>
+                  {partitionSizingLabel(f)}{' '}
+                  <ImpactEstimate finding={f} />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {showPlanExplorer ? <PlanExplorer stageId={entry.stageId} appModel={appModel} /> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

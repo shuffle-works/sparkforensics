@@ -10,7 +10,7 @@ export interface WidgetRegistration {
    * CollapsibleTrigger) when the card is collapsible, or null when it renders
    * a static, non-collapsible `<h3>` instead. Used by route navigation to
    * scroll to and focus a widget it jumps to. */
-  getDisclosureButton: () => HTMLButtonElement | null;
+  getDisclosureButton: () => HTMLElement | null;
 }
 
 export interface TriageNavigation {

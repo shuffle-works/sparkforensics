@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from 'react';
 import { CircleCheck } from 'lucide-react';
 
 import { Chip, ImpactDot, TagBadge } from '@/view/ImpactBadge';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { EmptyState } from '@/view/EmptyState';
 import { StagePill } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
@@ -39,21 +40,23 @@ function formatExchangeArguments({ partitioning, partitions, origin }: SpillExch
 }
 
 /** Where the stage's spill sits: the operators that spilled with their arguments, the spill-to-input
- * ratio, the width and partitioning of the rows they read, and the SQL execution's description. */
-function SpillEvidence({ finding }: { finding: FindingOf<'spill'> }) {
+ * ratio, the width and partitioning of the rows they read, and the SQL execution's description.
+ * `stated`: the line above an evidence panel already carries the operators' spill and the ratio. */
+function SpillEvidence({ finding, stated }: { finding: FindingOf<'spill'>; stated: boolean }) {
   const { operators = [], exchanges = [], spillToInputRatio, wideRows = false, reads, sqlDescription } = finding;
   if (operators.length === 0 && exchanges.length === 0 && spillToInputRatio === undefined && !sqlDescription) return null;
   const widths = exchanges.map(formatRowWidth).filter(Boolean);
   const partitioned = exchanges.filter((ex) => ex.partitioning);
+  if (stated && !operators.some((op) => op.arguments) && widths.length === 0 && partitioned.length === 0 && !sqlDescription) return null;
   return (
     <ul className="space-y-0.5 text-sm text-muted-foreground">
-      {operators.length > 0 ? (
+      {!stated && operators.length > 0 ? (
         <li>
           Spilled by{' '}
           {operators.map((op) => `${op.name}${op.feeds ? ` (feeds ${op.feeds})` : ''} ${formatBytes(op.spillBytes)}`).join(', ')}
         </li>
       ) : null}
-      {spillToInputRatio !== undefined ? <li>{describeSpillRatio(spillToInputRatio, wideRows, reads === 'input', exchanges[0]?.columns)}</li> : null}
+      {!stated && spillToInputRatio !== undefined ? <li>{describeSpillRatio(spillToInputRatio, wideRows, reads === 'input', exchanges[0]?.columns)}</li> : null}
       {operators.filter((op) => op.arguments).map((op) => (
         <li key={op.nodeId}>
           {op.name} {op.nodeId}{op.global === undefined ? '' : op.global ? ' (global sort)' : ' (sort within partitions)'}: {op.arguments}
@@ -76,6 +79,7 @@ function SpillRow({
 }) {
   const anchor = useAnchoredRow([finding]);
   const density = useWidgetDensity();
+  const stated = useStatedAbove(finding);
   const stage = appModel.stages.get(finding.stageId);
   const cls = classificationOf(appModel, finding.stageId);
   // A job's own repartition(n) sets the input partitioning, so spark.sql.shuffle.partitions would not change it.
@@ -94,19 +98,23 @@ function SpillRow({
         <div className="flex flex-wrap items-center gap-2">
           <ImpactDot impactBand={finding.impactBand} />
           <Chip label={SPILL_CLASS_SHORT[cls]} impactBand={finding.impactBand} title={SPILL_CLASS_TITLE[cls]} />
-          <StagePill stageId={finding.stageId} />
+          {stated ? null : <StagePill stageId={finding.stageId} />}
         </div>
         <AdvancedOnly>
           <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} />
         </AdvancedOnly>
       </div>
       <p className="text-sm">
-        {/* spill's value is always a numeric byte count. */}
-        Memory spilled: <strong>{formatBytes(numericValue(finding))}</strong>
-        {' · '}
+        {/* spill's value is always a numeric byte count; the line above an evidence panel states it. */}
+        {stated ? null : (
+          <>
+            Memory spilled: <strong>{formatBytes(numericValue(finding))}</strong>
+            {' · '}
+          </>
+        )}
         Disk: {formatBytes(stage?.diskBytesSpilled ?? 0)}
       </p>
-      {finding.type === 'spill' ? <SpillEvidence finding={finding} /> : null}
+      {finding.type === 'spill' ? <SpillEvidence finding={finding} stated={stated} /> : null}
       <ImpactEstimate finding={finding} />
       {partitionHint ? <PartitionHint hint={partitionHint} /> : null}
       {showPlanExplorer ? (

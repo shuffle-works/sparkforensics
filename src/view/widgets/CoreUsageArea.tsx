@@ -13,6 +13,7 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { EmptyState } from '@/view/EmptyState';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { DocsLink } from '@/view/DocsContext';
+import { useAnyStatedAbove } from '@/view/InlineEvidenceContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { RowPagination } from '@/view/RowPagination';
@@ -74,6 +75,8 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
   // core-time window should still surface a real finding from `catalog`.
   const topStages = coreLocality?.ratio.topStages ?? [];
   const coreLocalityFinding = catalog.find((f) => f.type === 'coreLocality');
+  // The line above states the non-local share and the generic fix.
+  const coreLocalityStated = useAnyStatedAbove(coreLocalityFinding ? [coreLocalityFinding] : []);
   const idleCoresFlagged = catalog.some((f) => f.type === 'memoryUtilization' && f.variant === 'idleCores');
 
   // `topStages` excludes stages below minTasksPerStage even when they hold the
@@ -111,7 +114,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
             ) : null}
           </p>
         </AdvancedOnly>
-        {coreLocalityFinding ? (
+        {coreLocalityFinding && !coreLocalityStated ? (
           <p className="flex flex-wrap items-start gap-2 text-sm">
             <ImpactDot impactBand={coreLocalityFinding.impactBand} className="mt-1.5" />
             <span>

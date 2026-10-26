@@ -16,6 +16,7 @@ import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { stageIdOf } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
 import { RowPagination } from '@/view/RowPagination';
@@ -25,6 +26,8 @@ export type UnderBroadcastProps = Pick<WidgetProps, 'catalog' | 'defaultCollapse
 
 function UnderBroadcastRow({ finding }: { finding: FindingOf<'underBroadcast'> }) {
   const anchor = useAnchoredRow([finding]);
+  // The line above the panel already shows the stage pills, the sentence and the savings.
+  if (useStatedAbove(finding)) return null;
 
   return (
     <li

@@ -9,6 +9,7 @@ import { useAnchoredRow } from '@/view/finding-anchor';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { RowPagination } from '@/view/RowPagination';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
 import { WidgetCard } from '@/view/WidgetCard';
@@ -24,6 +25,10 @@ export type ConfigAuditProps = WidgetProps;
 /** One flagged config property's row. */
 function ConfigAuditRow({ finding }: { finding: FindingOf<'configAudit'> }) {
   const anchor = useAnchoredRow([finding]);
+  // The line above the panel already shows the property, the sentence (with the
+  // value it measured) and the savings: only the docs link is new.
+  const stated = useStatedAbove(finding);
+  if (stated && !finding.docAnchor) return null;
 
   return (
     <li
@@ -32,20 +37,24 @@ function ConfigAuditRow({ finding }: { finding: FindingOf<'configAudit'> }) {
       data-flashed={anchor.dataFlashed}
       className={`space-y-1 transition-colors ${anchor.flashClassName}`}
     >
-      <div className="flex items-center gap-2">
-        <ImpactDot impactBand={finding.impactBand} />
-        <code className="text-xs">{finding.property}</code>
-        <span className="text-xs text-muted-foreground">=</span>
-        <code className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-xs text-accent">
-          {finding.valueText}
-        </code>
-      </div>
-      <ImpactEstimate finding={finding} />
+      {stated ? null : (
+        <>
+          <div className="flex items-center gap-2">
+            <ImpactDot impactBand={finding.impactBand} />
+            <code className="text-xs">{finding.property}</code>
+            <span className="text-xs text-muted-foreground">=</span>
+            <code className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-xs text-accent">
+              {finding.valueText}
+            </code>
+          </div>
+          <ImpactEstimate finding={finding} />
+        </>
+      )}
       <p className="text-sm">
-        {recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation}
+        {stated ? null : recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation}
         {finding.docAnchor ? (
           <>
-            {' '}
+            {stated ? null : ' '}
             <DocsLink anchor={finding.docAnchor}>Why {finding.property} matters</DocsLink>
           </>
         ) : null}
