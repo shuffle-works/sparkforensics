@@ -1,9 +1,10 @@
 # What stays on your machine
 
 The browser app parses your event log in a Web Worker on your machine. The
-log's contents are never sent anywhere. The app's pages enforce this with a
-Content-Security-Policy that limits every request the page can make
-(`fetch`, WebSocket, beacon) to the origin that served it.
+log's contents are never sent anywhere. The app page has a
+Content-Security-Policy that limits the page's own requests (`fetch`,
+WebSocket, beacon) to the origin that served it. The policy does not cover
+the parse, zstd and layout workers or the docs iframe. A test does.
 
 ## Which modes contact the network
 
@@ -22,8 +23,10 @@ Links to other sites open only when you click them.
 
 Open your browser's developer tools, load a log, and look at the Network tab:
 every request goes to the page's own origin. The policy is the
-`Content-Security-Policy` meta tag in the app's `index.html`, and a browser
-test (`npm run test:e2e`) fails on any other origin.
+`Content-Security-Policy` meta tag in the app's `index.html`. The browser
+test `e2e/no-network.test.js` (`npm run test:e2e`) loads the sample run and
+the docs panel, and fails on any request from the page, its workers or the
+iframe to another origin.
 
 ## `--redact` is not a network control
 
