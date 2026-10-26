@@ -114,10 +114,14 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    by core `recommendationParts`; a step that merged other types at its
    location adds "Also flagged here, likely the same cause: ...", and the
    summary says once that same-stage findings are grouped. A step's stage
-   label opens its stage details, and its one **Show evidence** expands the
-   evidence card the step owns in place (`verdictEvidenceOwners` in
-   `src/view/verdict-evidence.ts`, rendered through `InlineEvidence`) or
-   routes to the card that holds it. The steps' lead findings
+   label opens its stage details, and its one **Show evidence** opens the
+   evidence panel the step owns in place (`verdictEvidenceOwners` in
+   `src/view/verdict-evidence.ts`, rendered through `InlineEvidence`; see
+   "In-place evidence panel" in
+   [row-expand-contract](./widget-rendering/row-expand-contract.md)) or
+   routes to the card that holds it. A step whose widget would show nothing
+   its own text lacks (`evidenceAddsDetail` in `src/view/evidence-detail.ts`)
+   owns no panel and routes. The steps' lead findings
    (`verdictLeadFindings`) and owned cards are left out of the Findings tab,
    and a **More findings (n)** link shows that tab, with `n` the tab's own
    listed count (`listedCount` in `Dashboard.tsx`).
