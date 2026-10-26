@@ -43,6 +43,8 @@ jobs:
       # production bundle's output.
       - run: npm run build
       - run: npm run test:coverage
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
       - uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}

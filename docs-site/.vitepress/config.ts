@@ -106,6 +106,7 @@ export default defineConfig({
                 { text: 'Behind an SSH bastion', link: '/user-guide/alternative-log-retrieval/ssh-bastion' },
               ],
             },
+            { text: 'What stays on your machine', link: '/user-guide/what-stays-on-your-machine' },
           ],
         },
       ],

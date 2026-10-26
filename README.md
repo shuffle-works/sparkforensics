@@ -9,7 +9,7 @@ it.
 
 Drop a Spark event log in and get an evidence-backed breakdown of which
 stages are slow, why, and how to fix them. Nothing installs on your
-cluster and nothing leaves your machine.
+cluster and [nothing leaves your machine](https://shuffle-works.github.io/sparkforensics/docs/user-guide/what-stays-on-your-machine).
 
 **[Try it now →](https://shuffle-works.github.io/sparkforensics/)** with your
 own event log. No install, no account, no upload. Read the
