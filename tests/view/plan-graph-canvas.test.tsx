@@ -424,6 +424,24 @@ describe('compound stage-group containers', () => {
     expect(within(screen.getByTestId('rf__node-stage-7')).getByText('SKEW')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /next problem/i })).toBeInTheDocument();
   });
+
+  it('stacks the whole-graph focal fallback box under the stage boxes it wraps, so their corner titles stay clickable', () => {
+    const fullFallback = model({ scope: 'full', segmentStageIds: new Map([[0, 99]]) });
+    const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
+
+    render(
+      <PlanGraphCanvas
+        model={fullFallback}
+        showMiniMap={false}
+        stageId={7}
+        findings={findings}
+        segmentStageIds={new Map([[0, 99]])}
+      />,
+    );
+
+    const zIndexOf = (testId: string) => Number(screen.getByTestId(testId).style.zIndex);
+    expect(zIndexOf('rf__node-stage-7')).toBeLessThan(zIndexOf('rf__node-stage-99'));
+  });
 });
 
 describe('onSelectStage', () => {

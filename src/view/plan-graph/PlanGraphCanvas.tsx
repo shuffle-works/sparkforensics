@@ -382,6 +382,7 @@ export function PlanGraphCanvas({
           }
           return stageGroups.map((group) => {
             const groupStageId = Number(group.id.replace('stage-', ''));
+            const wrapsGraph = !matchedStageIds.has(groupStageId);
             return {
               id: group.id,
               type: 'stageGroup',
@@ -390,7 +391,10 @@ export function PlanGraphCanvas({
               selectable: false,
               // Decorative wrapper; its inner "Focus stage N" button is the control.
               focusable: false,
-              zIndex: STAGE_GROUP_Z,
+              // The fallback box wraps the whole graph, so it sits under the
+              // stage boxes inside it; otherwise its overlay button would take
+              // the clicks on their corner "Stage N" titles.
+              zIndex: wrapsGraph ? STAGE_GROUP_Z - 1 : STAGE_GROUP_Z,
               style: { width: group.width, height: group.height },
               measured: { width: group.width, height: group.height },
               data: {
@@ -398,7 +402,7 @@ export function PlanGraphCanvas({
                 height: group.height,
                 stageId: groupStageId,
                 findings: findingsForStage(findings, groupStageId),
-                showOwnFindings: !matchedStageIds.has(groupStageId),
+                showOwnFindings: wrapsGraph,
                 onSelect: () => onSelectStage?.(groupStageId),
               },
             };
