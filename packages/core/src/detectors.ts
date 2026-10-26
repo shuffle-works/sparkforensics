@@ -8,7 +8,7 @@ import { computePeakConcurrentCores } from './core-count.ts';
 import { walkPlanTree } from './plan-tree-walk.ts';
 import { diagnoseJoinSkew, isSkewJoinNode, planShowsSkewSplit } from './aqe-skew.ts';
 import { isBatchEvalPythonNode } from './python-stage.ts';
-import { computeCoreLocalityRatio } from './core-locality-ratio.ts';
+import { computeCoreLocalityRatio, NON_LOCAL_TIERS } from './core-locality-ratio.ts';
 import { STRAGGLER_FACTOR } from './stage-quantiles.ts';
 import { tailRecoveryMs, tailRemovedWorkMs, stragglerFixLongestTaskMs, type TailStage } from './occupancy.ts';
 import { IMPACT_FLOOR_PCT_WARN, IMPACT_FLOOR_PCT_CRIT, appDurationMs } from './impact-band.ts';
@@ -2937,10 +2937,12 @@ export const DETECTORS = [
       const hosts = new Set(ctx.executorsAdded.flatMap((e) => (e.host ? [e.host] : []))).size;
       const worst = topStages.filter((s) => s.nonLocalTasks > 0).slice(0, 3).map((s) => `stage ${s.stageId} (${Math.round(s.ratio * 100)}% of ${s.taskCount})`).join(', ');
       const wait = effectiveConf(ctx.app, LOCALITY_WAIT_KEY);
-      const hasLocalSlots = [...ctx.stages.values()].some((s) => s.localityStats?.some((l) => LOCAL_TIERS.has(l.locality) && l.count > 0));
+      const hasLocalSlots = [...ctx.stages.values()]
+        .filter((s) => s.localityStats?.some((l) => NON_LOCAL_TIERS.has(l.locality) && l.count > 0))
+        .some((s) => s.localityStats!.some((l) => LOCAL_TIERS.has(l.locality) && l.count > 0));
       const waitAdvice = hasLocalSlots
         ? `Raise ${LOCALITY_WAIT_KEY}${wait ? ` (${wait})` : ''} so the scheduler waits longer for a local slot, or run executors on the hosts that hold the data.`
-        : `No task reached process- or node-local placement, so no data-local executor exists and a longer ${LOCALITY_WAIT_KEY}${wait ? ` (${wait})` : ''} only delays each task: run executors on the hosts that hold the data.`;
+        : `No task in the stages with non-local tasks reached process- or node-local placement, so no data-local executor exists and a longer ${LOCALITY_WAIT_KEY}${wait ? ` (${wait})` : ''} only delays each task: run executors on the hosts that hold the data.`;
       return {
         type: 'coreLocality', stageId: null,
         impactBand: ratio! >= thresholds.critRatio ? 'critical' : 'warning',

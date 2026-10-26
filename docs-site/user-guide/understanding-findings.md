@@ -343,8 +343,8 @@ Tasks run without process- or node-local data placement more often than
 expected. The finding gives the non-local share, the number of hosts the run
 used, the stages with the most non-local tasks and the run's
 `spark.locality.wait`. Raise that wait so the scheduler holds a task longer for
-a local slot, or run executors on the hosts that hold the data. When no task
-reached process- or node-local placement, no data-local executor exists and a
+a local slot, or run executors on the hosts that hold the data. When no task in
+the stages with non-local tasks reached process- or node-local placement, no data-local executor exists and a
 longer wait only delays each task, so the finding does not suggest it. The core-time figure assumes a fixed
 fetch cost per non-local task, because the log carries no measured one.
 Self-flags a confidence that scales with the non-local ratio and sample

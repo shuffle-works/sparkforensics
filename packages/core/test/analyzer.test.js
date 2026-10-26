@@ -2555,6 +2555,16 @@ describe('analyze, coreLocality detector', () => {
     expect(FINDING_PRESENTATION.coreLocality.genericRecommendation(finding)).not.toContain('Raise');
   });
 
+  it('ignores local placements in stages without non-local tasks, such as a shuffle read', () => {
+    const stages = new Map([
+      [1, makeStage({ id: 1, localityStats: [{ locality: 'ANY', count: 100 }] })],
+      [2, makeStage({ id: 2, localityStats: [{ locality: 'PROCESS_LOCAL', count: 100 }] })],
+    ]);
+    const finding = analyze(makeApp(), stages, [], [], new Map()).find((b) => b.type === 'coreLocality');
+    expect(finding.recommendation).not.toContain('Raise');
+    expect(finding.remediation).toEqual([]);
+  });
+
   it('states the assumed fetch cost on the core-time estimate', () => {
     const stages = new Map([[1, makeStage({ localityStats: [{ locality: 'PROCESS_LOCAL', count: 60 }, { locality: 'ANY', count: 40 }] })]]);
     const finding = analyze(makeApp(), stages, [], [], new Map()).find((b) => b.type === 'coreLocality');
