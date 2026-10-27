@@ -15,7 +15,7 @@ vi.mock('@/view/TriageNavigationContext', () => ({
     reportWidgetOpen: vi.fn(),
     clearRouteFocus: vi.fn(),
   }),
-  useRouteFocusedWidgetId: () => null,
+  useRouteFocusedCardKey: () => null,
   useRouteFlashedFinding: () => null,
 }));
 

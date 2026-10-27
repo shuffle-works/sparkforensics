@@ -50,7 +50,7 @@ function Harness({
       registerFindingAnchor={registerFindingAnchor}
       reportWidgetOpen={reportWidgetOpen}
       clearRouteFocus={clearRouteFocus}
-      focusedWidgetId={null}
+      focusedCardKey={null}
       activeRouteTarget={null}
       flashedFinding={flashedFinding}
     >

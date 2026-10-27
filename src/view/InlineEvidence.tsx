@@ -40,14 +40,14 @@ export function InlineEvidence({
   scope: readonly Finding[];
 }) {
   const { component: Widget, widgetId, index } = widget;
-  const props = useMemo(() => {
+  const { catalog, configFindings } = widgetProps;
+  const scoped = useMemo(() => {
     const others = new Set(widget.findings.filter((finding) => !scope.includes(finding)));
     return {
-      ...widgetProps,
-      catalog: widgetProps.catalog.filter((finding) => !others.has(finding)),
-      configFindings: widgetProps.configFindings?.filter((finding) => !others.has(finding)),
+      catalog: catalog.filter((finding) => !others.has(finding)),
+      configFindings: configFindings?.filter((finding) => !others.has(finding)),
     };
-  }, [scope, widget.findings, widgetProps]);
+  }, [scope, widget.findings, catalog, configFindings]);
   const statedIds = stated.flatMap((finding) => (finding.id != null ? [finding.id] : []));
   const band = worstImpactBand([...stated]);
   const statedKey = statedIds.join('\n');
@@ -56,7 +56,7 @@ export function InlineEvidence({
     <InlineEvidenceContext.Provider value={state}>
       <WidgetGridItem cardId={scope[0]?.id ? `alert-${index}-${scope[0].id}` : `alert-${index}`} widgetId={widgetId} holds={(finding) => scope.includes(finding)}>
         <Suspense fallback={<WidgetCardSkeleton />}>
-          <Widget {...props} defaultCollapsed={false} />
+          <Widget {...widgetProps} {...scoped} defaultCollapsed={false} />
         </Suspense>
       </WidgetGridItem>
     </InlineEvidenceContext.Provider>

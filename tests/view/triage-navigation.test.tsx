@@ -619,6 +619,26 @@ test('blur cleanup is ignored for unrelated widgets and clears only the route-fo
   await waitFor(() => expect(spillTrigger).not.toHaveAttribute('data-route-focused'));
 });
 
+test('route focus marks only the panel the route opened, not the widget\'s other open panels', async () => {
+  REGISTRY.spill.component = BareSpill;
+  const user = userEvent.setup();
+  // Steps: the lead spill, spill Stage 1, spill Stage 3: each step has its own Spill panel.
+  const catalog = [asLead(spillFinding(90)), spillFinding(1, 'critical'), spillFinding(3, 'critical')];
+  renderReady(catalog, [1, 3, 90]);
+  await waitForDashboard();
+
+  await user.click(stepEvidenceButton(1));
+  const stageOneTrigger = await screen.findByRole('heading', { name: 'Spill' });
+  await routeFromStageSummary('Investigate spill in Stage 3');
+  const stageThreeTrigger = stepPanelHeading(2, 'Spill');
+  await waitFor(() => expect(stageThreeTrigger).toHaveAttribute('data-route-focused'));
+  expect(stepPanelHeading(1, 'Spill')).toBe(stageOneTrigger);
+  expect(stageOneTrigger).not.toHaveAttribute('data-route-focused');
+
+  fireEvent.blur(stageOneTrigger);
+  expect(stageThreeTrigger).toHaveAttribute('data-route-focused');
+});
+
 test('latest request wins before commit and stale routes never scroll or move focus', async () => {
   const spill = spillFinding(1, 'warning');
   const skew = skewFinding(2, 'critical');

@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { memo } from 'react';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { Finding, TaskData } from '@sparkforensics/core/types.ts';
 
+import { REGISTRY, type WidgetProps } from '@/view/detector-registry';
 import { StageDetailProvider } from '@/view/StageDetailContext';
 import { ImpactBoard } from '@/view/widgets/ImpactBoard';
 import { emptyAppModel } from '@/store/store';
@@ -34,6 +36,11 @@ function renderBoard(catalog: Finding[], onRoute = vi.fn()) {
   );
   return onRoute;
 }
+
+const originalShuffleComponent = REGISTRY.shuffle.component;
+afterEach(() => {
+  REGISTRY.shuffle.component = originalShuffleComponent;
+});
 
 const estimate = { basis: 'serial', wallClock: { low: 675, high: 675 }, estimateMethod: 'measured', rawWaste: { value: 675, unit: 'ms' } } as const;
 
@@ -102,5 +109,36 @@ describe('evidence panel on a Findings row', () => {
     const table = within(screen.getByRole('table'));
     expect(await table.findByRole('heading', { name: 'Executor Utilization' })).toBeInTheDocument();
     expect(table.getByText(/4 cores at peak over 1m 0s: 240\.0 core-s allocated, 79\.2 core-s busy, 160\.8 core-s idle\. CPU time was 33% of the allocation\./)).toBeInTheDocument();
+  });
+
+  it('keeps an open panel\'s widget props when the board re-renders with the same inputs', async () => {
+    const renders = vi.fn();
+    REGISTRY.shuffle.component = memo(function CountingShuffle({ catalog }: WidgetProps) {
+      renders(catalog);
+      return <h3>Shuffle I/O</h3>;
+    });
+    const shuffle = testFinding({
+      type: 'shuffle', id: 'shuffle-1', stageId: 1, impactBand: 'warning', value: 286 * 1024 * 1024,
+      recommendation: '286 MB shuffled in this stage.', impactEstimate: estimate,
+    });
+    const model = appModel();
+    installInterpretation([shuffle], model as never);
+    const getTaskData = async () => ({ taskEvents: [] }) as unknown as TaskData;
+    const catalog = [shuffle];
+    const configFindings: Finding[] = [];
+    const onRoute = vi.fn();
+    const board = () => (
+      <StageDetailProvider>
+        <ImpactBoard appModel={model as never} catalog={catalog} configFindings={configFindings} stages={model.stages as never} getTaskData={getTaskData} onRoute={onRoute} />
+      </StageDetailProvider>
+    );
+    const { rerender } = render(board());
+    await userEvent.click(screen.getByRole('button', { name: 'Show evidence' }));
+    await screen.findByRole('heading', { name: 'Shuffle I/O' });
+    const rendersBefore = renders.mock.calls.length;
+
+    rerender(board());
+
+    expect(renders).toHaveBeenCalledTimes(rendersBefore);
   });
 });

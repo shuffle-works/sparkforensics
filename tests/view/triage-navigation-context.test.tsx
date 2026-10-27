@@ -13,7 +13,7 @@ import {
   TriageNavigationProvider,
   useActiveRouteTarget,
   useRouteFlashedFinding,
-  useRouteFocusedWidgetId,
+  useRouteFocusedCardKey,
   useTriageNavigation,
   type TriageNavigation,
 } from '@/view/TriageNavigationContext';
@@ -39,21 +39,21 @@ function noop() {
 
 function Probe({ capture }: { capture: (navigation: TriageNavigation | null) => void }) {
   const navigation = useTriageNavigation();
-  const focusedWidgetId = useRouteFocusedWidgetId();
+  const focusedCardKey = useRouteFocusedCardKey();
   const activeRouteTarget = useActiveRouteTarget();
   const flashedFinding = useRouteFlashedFinding();
   capture(navigation);
 
   return (
     <div>
-      <span data-testid="focused">{focusedWidgetId ?? 'none'}</span>
+      <span data-testid="focused">{focusedCardKey ?? 'none'}</span>
       <span data-testid="target">{activeRouteTarget?.widgetId ?? 'none'}</span>
       <span data-testid="flashed">{flashedFinding?.type ?? 'none'}</span>
     </div>
   );
 }
 
-test('threads focusedWidgetId, activeRouteTarget, and flashedFinding through their own hooks', () => {
+test('threads focusedCardKey, activeRouteTarget, and flashedFinding through their own hooks', () => {
   const finding = spillFinding();
   const target = spillTarget(finding);
   const capture = vi.fn();
@@ -64,7 +64,7 @@ test('threads focusedWidgetId, activeRouteTarget, and flashedFinding through the
       registerFindingAnchor={noop}
       reportWidgetOpen={vi.fn()}
       clearRouteFocus={vi.fn()}
-      focusedWidgetId="spill"
+      focusedCardKey="spill"
       activeRouteTarget={target}
       flashedFinding={finding}
     >
@@ -90,7 +90,7 @@ test('exposes registerFindingAnchor on the navigation bundle, forwarding args an
       registerFindingAnchor={registerFindingAnchor}
       reportWidgetOpen={vi.fn()}
       clearRouteFocus={vi.fn()}
-      focusedWidgetId={null}
+      focusedCardKey={null}
       activeRouteTarget={null}
       flashedFinding={null}
     >
@@ -116,18 +116,18 @@ test('the stable navigation bundle keeps its identity when only focus/target/fla
   const clearRouteFocus = vi.fn();
 
   function Harness() {
-    const [focusedWidgetId, setFocusedWidgetId] = useState<string | null>(null);
+    const [focusedCardKey, setFocusedCardKey] = useState<string | null>(null);
     return (
       <TriageNavigationProvider
         registerWidget={noop}
         registerFindingAnchor={noop}
         reportWidgetOpen={reportWidgetOpen}
         clearRouteFocus={clearRouteFocus}
-        focusedWidgetId={focusedWidgetId}
+        focusedCardKey={focusedCardKey}
         activeRouteTarget={null}
         flashedFinding={null}
       >
-        <button onClick={() => setFocusedWidgetId('spill')}>focus-spill</button>
+        <button onClick={() => setFocusedCardKey('spill')}>focus-spill</button>
         <Probe capture={capture} />
       </TriageNavigationProvider>
     );

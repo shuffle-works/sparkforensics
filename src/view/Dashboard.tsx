@@ -154,6 +154,10 @@ function FilteredBoard({
     () => new Set<Finding>(interpretation ? verdictLeadFindings(interpretation) : []),
     [interpretation],
   );
+  const verdictScopes = useMemo(
+    () => new Map<Finding, readonly Finding[]>([...verdictLeads].map((lead) => [lead, [lead]])),
+    [verdictLeads],
+  );
   const evidenceOwners = useMemo(
     () => (interpretation ? verdictEvidenceOwners(interpretation, new Set(evidenceWidgets.map((widget) => widget.widgetId))) : new Map<number, string>()),
     [interpretation, evidenceWidgets],
@@ -161,8 +165,9 @@ function FilteredBoard({
   const verdictWidgetIds = useMemo(() => new Set(evidenceOwners.values()), [evidenceOwners]);
   const renderVerdictEvidence = useCallback((widgetId: string, lead: Finding) => {
     const widget = evidenceWidgets.find((candidate) => candidate.widgetId === widgetId);
-    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={[lead]} scope={[lead]} /> : null;
-  }, [evidenceWidgets, appModel, catalog, configFindings, getTaskData, activeFileId]);
+    const scope = verdictScopes.get(lead) ?? [lead];
+    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={scope} scope={scope} /> : null;
+  }, [evidenceWidgets, verdictScopes, appModel, catalog, configFindings, getTaskData, activeFileId]);
   const showMoreFindings = useCallback(() => {
     onActiveTabChange('findings');
     requestAnimationFrame(() => {
@@ -356,7 +361,7 @@ function DashboardContent() {
   useTriageShortcuts({ enabled: density === 'advanced', showFindings, showFullReport });
   const { revealRequest } = useEvidenceAvailabilityDisclosure();
   const [routeRequest, setRouteRequest] = useState<RouteRequest | null>(null);
-  const [routeFocusedWidgetId, setRouteFocusedWidgetId] = useState<string | null>(null);
+  const [routeFocusedCardKey, setRouteFocusedCardKey] = useState<string | null>(null);
   const [flashedFinding, setFlashedFinding] = useState<Finding | null>(null);
   // Refs mirror the active request so the callbacks below stay referentially
   // stable (widget registration keys on them). `routeFileRef` catches a file swap
@@ -501,13 +506,13 @@ function DashboardContent() {
         inline: 'nearest',
       });
       disclosureButton.focus({ preventScroll: true });
-      setRouteFocusedWidgetId(widgetId);
+      setRouteFocusedCardKey(registration.focusKey);
     }
     clearRoute(route.token);
   }, [clearRoute, resolveRoute, registrationFor]);
 
-  const clearRouteFocus = useCallback((widgetId: string) => {
-    setRouteFocusedWidgetId((current) => (current === widgetId ? null : current));
+  const clearRouteFocus = useCallback((focusKey: string) => {
+    setRouteFocusedCardKey((current) => (current === focusKey ? null : current));
   }, []);
 
   // Opens widgets already registered when the request lands; the card then
@@ -584,7 +589,7 @@ function DashboardContent() {
           registerFindingAnchor={registerFindingAnchor}
           reportWidgetOpen={reportWidgetOpen}
           clearRouteFocus={clearRouteFocus}
-          focusedWidgetId={routeFocusedWidgetId}
+          focusedCardKey={routeFocusedCardKey}
           activeRouteTarget={activeRouteTarget}
           flashedFinding={flashedFinding}
         >

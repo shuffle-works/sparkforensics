@@ -68,7 +68,8 @@ After the target card commits open, an anchored row (`useFindingAnchor`) is
 scrolled to center and focused, then flashed for 2 s; without one, the card
 wrapper scrolls with a top margin below the fixed header and its disclosure
 button receives visible, temporary route focus (using instant scrolling for
-reduced motion). Requests use a latest-request-wins token (`tokenRef`,
+reduced motion). Route focus is keyed on that card's `focusKey`, not the widget
+id, so the widget's other open panels stay unmarked. Requests use a latest-request-wins token (`tokenRef`,
 `DashboardContent`) that guards every step and revalidates; a stale,
 missing, unmounted, changed-catalog, or changed-active-file target cancels
 without redirecting, scrolling, or moving focus. A widget id can hold several

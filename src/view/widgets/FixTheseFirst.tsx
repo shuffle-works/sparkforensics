@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
 import type { AppModel, Finding } from '@sparkforensics/core/types.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
@@ -203,7 +203,8 @@ export function FindingRow({
   const text = recommendationText(finding);
   const label = findingActionLabel(finding);
   const stepCode = useStepCodes().byFinding.get(finding) ?? null;
-  const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null, [finding]);
+  const scope = useMemo(() => [finding], [finding]);
+  const evidenceState = useEvidenceOpen(evidence?.widget?.widgetId ?? null, scope);
   const panelId = `finding-evidence-${finding.id}`;
   return (
     <>
@@ -231,7 +232,7 @@ export function FindingRow({
         </span>
       </TableCell>
     </TableRow>
-    <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} stated={[finding]} scope={[finding]} />
+    <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} stated={scope} scope={scope} />
     </>
   );
 }

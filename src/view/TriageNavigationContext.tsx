@@ -14,13 +14,15 @@ export interface WidgetRegistration {
   /** Set on an evidence panel scoped to some findings of its widget: a route to one of them
    * resolves to this registration. A registration without it takes any finding no panel holds. */
   holds?: (finding: Finding) => boolean;
+  /** Tells this card apart from the widget's other cards, so route focus marks only the card a route opened. */
+  focusKey: string;
 }
 
 export interface TriageNavigation {
   registerWidget: (widgetId: string, registration: WidgetRegistration) => () => void;
   registerFindingAnchor: (finding: Finding, element: HTMLElement) => () => void;
   reportWidgetOpen: (widgetId: string, open: boolean) => void;
-  clearRouteFocus: (widgetId: string) => void;
+  clearRouteFocus: (focusKey: string) => void;
 }
 
 const TriageNavigationContext = createContext<TriageNavigation | null>(null);
@@ -42,12 +44,12 @@ export function TriageNavigationProvider({
   registerFindingAnchor,
   reportWidgetOpen,
   clearRouteFocus,
-  focusedWidgetId,
+  focusedCardKey,
   activeRouteTarget,
   flashedFinding,
 }: TriageNavigation & {
   children: ReactNode;
-  focusedWidgetId: string | null;
+  focusedCardKey: string | null;
   activeRouteTarget: TriageTarget | null;
   flashedFinding: Finding | null;
 }) {
@@ -58,7 +60,7 @@ export function TriageNavigationProvider({
 
   return (
     <TriageNavigationContext.Provider value={value}>
-      <RouteFocusContext.Provider value={focusedWidgetId}>
+      <RouteFocusContext.Provider value={focusedCardKey}>
         <ActiveRouteTargetContext.Provider value={activeRouteTarget}>
           <RouteFlashContext.Provider value={flashedFinding}>
             {children}
@@ -73,7 +75,7 @@ export function useTriageNavigation() {
   return useContext(TriageNavigationContext);
 }
 
-export function useRouteFocusedWidgetId() {
+export function useRouteFocusedCardKey() {
   return useContext(RouteFocusContext);
 }
 

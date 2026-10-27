@@ -1,6 +1,7 @@
 import {
   createContext,
   useContext,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -12,7 +13,7 @@ import { cn } from '@/lib/utils';
 import type { Finding } from '@sparkforensics/core/types.ts';
 import { useStore } from '@/store/store';
 import { ErrorBoundary, WidgetErrorCard } from '@/view/ErrorBoundary';
-import { useRouteFocusedWidgetId, useTriageNavigation } from '@/view/TriageNavigationContext';
+import { useRouteFocusedCardKey, useTriageNavigation } from '@/view/TriageNavigationContext';
 
 interface GridCardState {
   openRequestGeneration: number;
@@ -61,7 +62,8 @@ export function WidgetGridItem({
   holds?: (finding: Finding) => boolean;
 }) {
   const navigation = useTriageNavigation();
-  const focusedWidgetId = useRouteFocusedWidgetId();
+  const focusedCardKey = useRouteFocusedCardKey();
+  const focusKey = useId();
   const activeFileId = useStore((s) => s.activeFileId);
   const [openRequestGeneration, setOpenRequestGeneration] = useState(0);
   // Local mirror of the card's disclosure state, kept via `reportOpen`, so the
@@ -83,11 +85,11 @@ export function WidgetGridItem({
       disclosureButtonRef.current = button;
     },
     onDisclosureBlur: () => {
-      if (widgetId) navigation?.clearRouteFocus(widgetId);
+      navigation?.clearRouteFocus(focusKey);
     },
-    routeFocused: widgetId ? focusedWidgetId === widgetId : false,
+    routeFocused: focusedCardKey === focusKey,
     collapsedTile,
-  }), [navigation, openRequestGeneration, widgetId, focusedWidgetId, collapsedTile]);
+  }), [navigation, openRequestGeneration, widgetId, focusedCardKey, focusKey, collapsedTile]);
 
   useLayoutEffect(() => {
     if (!navigation || !widgetId || !wrapperRef.current) return;
@@ -99,8 +101,9 @@ export function WidgetGridItem({
       },
       getDisclosureButton: () => disclosureButtonRef.current,
       holds: scoped ? (finding) => holdsRef.current?.(finding) ?? false : undefined,
+      focusKey,
     });
-  }, [navigation, widgetId, scoped]);
+  }, [navigation, widgetId, scoped, focusKey]);
 
   return (
     <WidgetGridCardContext.Provider value={gridCard}>

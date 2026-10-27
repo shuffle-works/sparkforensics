@@ -37,12 +37,12 @@ function TestNavigationProvider({
   children,
   registerWidget,
   reportWidgetOpen = vi.fn(),
-  focusedWidgetId = null,
+  focusedCardKey = null,
 }: {
   children: React.ReactNode;
   registerWidget: (widgetId: string, registration: WidgetRegistration) => () => void;
   reportWidgetOpen?: (widgetId: string, open: boolean) => void;
-  focusedWidgetId?: string | null;
+  focusedCardKey?: string | null;
 }) {
   return (
     <TriageNavigationProvider
@@ -50,7 +50,7 @@ function TestNavigationProvider({
       registerFindingAnchor={vi.fn(() => vi.fn())}
       reportWidgetOpen={reportWidgetOpen}
       clearRouteFocus={vi.fn()}
-      focusedWidgetId={focusedWidgetId}
+      focusedCardKey={focusedCardKey}
       activeRouteTarget={null}
       flashedFinding={null}
     >
