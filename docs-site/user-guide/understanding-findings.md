@@ -111,12 +111,15 @@ stage that reads a shuffle; `evidence.reads` says what the stage reads
 `spark.sql.shuffle.partitions` when the stage ran that many tasks,
 `spark.sql.adaptive.advisoryPartitionSizeInBytes` when AQE coalesced them, and
 the stage's own `repartition(n)` or RDD parallelism otherwise, or when the stage
-reads a `REPARTITION_BY_NUM` exchange. Under AQE coalescing, a stage whose
-shuffle would need more tasks to reach 128 MiB per partition also gets
-`spark.sql.adaptive.coalescePartitions.minPartitionNum` set to that count.
-Coalescing never splits a partition, so when the configured shuffle partition
-count is below that count, the finding advises raising the configured count to
-it instead of the floor. Only
+reads a `REPARTITION_BY_NUM` exchange. Under AQE coalescing, a volume spill
+that gets the `spark.executor.cores` advice below, on a stage whose shuffle
+would need more tasks to reach 128 MiB per partition, also gets
+`spark.sql.adaptive.coalescePartitions.minPartitionNum` set to that count. Spark
+reads that floor only while
+`spark.sql.adaptive.coalescePartitions.parallelismFirst` is on, so it is not
+named when that setting is off. Coalescing never splits a partition, so when the
+configured shuffle partition count is below that count, the finding advises
+raising the configured count to it instead of the floor. Only
 flagged on stages that take at least 0.5% of the run.
 
 A volume spill also checks the memory each task slot has: the executor's

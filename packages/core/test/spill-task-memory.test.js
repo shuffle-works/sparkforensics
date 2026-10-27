@@ -94,4 +94,34 @@ describe('spill advice from execution memory per task slot', () => {
     expect(generic).toContain('raise spark.sql.shuffle.partitions');
     expect(generic).not.toContain('minPartitionNum');
   });
+
+  it('leaves the coalesce floor out when parallelismFirst is off', () => {
+    const sql = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [] } }]]);
+    const config = { ...FOUR_CORES, 'spark.sql.shuffle.partitions': '400', 'spark.sql.adaptive.coalescePartitions.parallelismFirst': 'false' };
+    const app = makeApp({ config, sparkVersion: '3.5.0', resources: { executor: { cores: 4, memoryMB: 4096 } } });
+    const stage = makeStage({ id: 1, sqlExecutionId: 3, ...VOLUME, taskCount: 100 });
+    const f = analyze(app, new Map([[1, stage]]), [], [], new Map(), sql).find((x) => x.type === 'spill');
+    expect(keys(f)).toEqual(['spark.sql.adaptive.advisoryPartitionSizeInBytes', 'spark.executor.cores', 'spark.executor.memory']);
+    expect(f.recommendation).not.toContain('minPartitionNum');
+  });
+
+  it('sizes no partition count under AQE coalescing when the peak is well under the share', () => {
+    const sql = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [] } }]]);
+    for (const partitions of ['400', '200']) {
+      const app = makeApp({ config: { ...FOUR_CORES, 'spark.sql.shuffle.partitions': partitions }, sparkVersion: '3.5.0', resources: { executor: { cores: 4, memoryMB: 4096 } } });
+      const stage = makeStage({ id: 1, sqlExecutionId: 3, ...VOLUME, taskCount: 100, peakExecutionMemoryMax: 100 * MiB });
+      const f = analyze(app, new Map([[1, stage]]), [], [], new Map(), sql).find((x) => x.type === 'spill');
+      expect(keys(f)).toEqual(['spark.sql.adaptive.advisoryPartitionSizeInBytes', 'spark.executor.memory']);
+    }
+  });
+
+  it('names the count raise in the group line when the count is initialPartitionNum', () => {
+    const sql = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [] } }]]);
+    const config = { ...FOUR_CORES, 'spark.sql.adaptive.coalescePartitions.initialPartitionNum': '200' };
+    const app = makeApp({ config, sparkVersion: '3.5.0', resources: { executor: { cores: 4, memoryMB: 4096 } } });
+    const stage = makeStage({ id: 1, sqlExecutionId: 3, ...VOLUME, taskCount: 100 });
+    const f = analyze(app, new Map([[1, stage]]), [], [], new Map(), sql).find((x) => x.type === 'spill');
+    expect(f.remediation).toContainEqual({ kind: 'conf', key: 'spark.sql.adaptive.coalescePartitions.initialPartitionNum', direction: 'increase', suggested: 320 });
+    expect(FINDING_PRESENTATION.spill.genericRecommendation(f)).toContain(' or raise spark.sql.shuffle.partitions');
+  });
 });
