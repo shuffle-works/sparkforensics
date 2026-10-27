@@ -88,10 +88,10 @@ test('canToggleSort returns false when no row has a stage', () => {
   expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, true)).toBe(false);
 });
 
-test('canToggleSort returns false when every row has the same impact', () => {
-  const rows = [onStage('gc', 1, 1, 5_000), onStage('gc', 2, 1, 5_000)];
+test('canToggleSort returns true when every row has the same impact but the rows are not in stage order', () => {
+  const rows = [onStage('gc', 2, 1, 5_000), onStage('gc', 1, 1, 5_000)];
 
-  expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, true)).toBe(false);
+  expect(canToggleSort(installInterpretation(rows), rows, identityFindings, stageOf, true)).toBe(true);
 });
 
 test('canToggleSort returns false when cardOpen is false, even if the orders differ', () => {

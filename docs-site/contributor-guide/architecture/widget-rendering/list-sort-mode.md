@@ -34,8 +34,8 @@ only when `canToggleSort` holds: the card is open, a finding in the rows has a p
 `savingsRank`, and the stage order lists a different sequence of stage ids than the impact
 order. A widget passes the same rows, in the same order, that it passes to `orderBy`, with the
 same finding and stage accessors. The gate compares the stage id of each position in both orders
-over all rows, so pagination does not affect it, and rows tied on one stage never show it. The toggle is hidden when the orders match, when all rows share
-one stage or have none, and when every row has the same impact. With no ranked finding the
+over all rows, so pagination does not affect it, and rows tied on one stage never show it. The toggle is hidden when the stage order adds no stage
+information: all rows share one stage, have none, or are already in stage order. With no ranked finding the
 impact order is the input order, so the toggle would do nothing. Rows with no
 rankable finding, and `byStageAsc` ties, keep their prior relative order
 (`Array.prototype.sort`'s stability) rather than being shuffled.
