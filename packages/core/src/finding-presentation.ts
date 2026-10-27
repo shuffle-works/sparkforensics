@@ -249,7 +249,8 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
       if (f.reads != null && f.reads !== 'shuffle') return `${skewFirst}${cores} increase executor memory or process less data per task.`;
       if (has('spark.sql.adaptive.advisoryPartitionSizeInBytes')) {
         const floor = has('spark.sql.adaptive.coalescePartitions.minPartitionNum') ? ' or raise spark.sql.adaptive.coalescePartitions.minPartitionNum' : '';
-        const count = has('spark.sql.shuffle.partitions') || has('spark.sql.adaptive.coalescePartitions.initialPartitionNum') ? ' or raise spark.sql.shuffle.partitions' : '';
+        const countKey = ['spark.sql.adaptive.coalescePartitions.initialPartitionNum', 'spark.sql.shuffle.partitions'].find(has);
+        const count = countKey ? ` or raise ${countKey}` : '';
         return `${skewFirst} lower spark.sql.adaptive.advisoryPartitionSizeInBytes so AQE's merged partitions are smaller${floor}${count}${cores} or increase executor memory.`;
       }
       switch (partitionAdviceKind(f)) {

@@ -122,6 +122,8 @@ describe('spill advice from execution memory per task slot', () => {
     const stage = makeStage({ id: 1, sqlExecutionId: 3, ...VOLUME, taskCount: 100 });
     const f = analyze(app, new Map([[1, stage]]), [], [], new Map(), sql).find((x) => x.type === 'spill');
     expect(f.remediation).toContainEqual({ kind: 'conf', key: 'spark.sql.adaptive.coalescePartitions.initialPartitionNum', direction: 'increase', suggested: 320 });
-    expect(FINDING_PRESENTATION.spill.genericRecommendation(f)).toContain(' or raise spark.sql.shuffle.partitions');
+    const generic = FINDING_PRESENTATION.spill.genericRecommendation(f);
+    expect(generic).toContain(' or raise spark.sql.adaptive.coalescePartitions.initialPartitionNum');
+    expect(generic).not.toContain('spark.sql.shuffle.partitions');
   });
 });
