@@ -367,10 +367,9 @@ export function PlanGraphCanvas({
       headerHeight: STAGE_GROUP_HEADER_HEIGHT,
     };
     const stageGroups = computeGroupBoundsWithFallback(stageGroupOf, [laidOutVisible, laidOutFull], groupOptions);
-    // A stage box can start inside another (a stage paired with segments on
-    // both sides of another stage's). Each header sits at its box's top edge, so
-    // painting boxes in top-edge order keeps every header above the overlays of
-    // the boxes it starts inside.
+    // The padded boxes of adjacent stages can partly overlap. Each header sits
+    // at its box's top edge, so painting boxes in top-edge order keeps every
+    // header above the overlay of a box it overlaps.
     stageGroups.sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
     const stageGroupNodes: Node[] = stageGroups.map((group) => {
       const groupStageId = Number(group.id.replace('stage-', ''));
