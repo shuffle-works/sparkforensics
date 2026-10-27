@@ -180,7 +180,8 @@ executor loss reason stay (hosts in it are pseudonymized).
 
 When the dominant error's text matches a known message, the finding gets a
 specific fix and a structured remediation. A container killed for exceeding
-memory limits points to `spark.executor.memoryOverhead`. The raw failure text stays on the finding.
+memory limits points to `spark.executor.memoryOverhead`. The raw failure text
+stays on the finding.
 
 ### `SFAIL`: Failed stage {#sfail}
 
@@ -188,8 +189,11 @@ A stage attempt failed outright rather than losing individual tasks within
 it. Inspect the driver log for the failure reason and the job that triggered
 it. A stage that failed the maximum allowable number of times points to
 `spark.stage.maxConsecutiveAttempts`, after the loss that caused the attempts
-is fixed. Spark names that stage in the failed job's error, so the fix goes on
-the named stage, not on the stages the abort cancelled. With redaction on, the
+is fixed. A stage aborted because one task failed too many times, with a
+container memory kill as the last failure, points to
+`spark.executor.memoryOverhead`. Spark names the aborted stage in the failed
+job's error, so the fix goes on the named stage, not on the stages the abort
+cancelled. With redaction on, the
 failure reason becomes `[redacted]`, since it can carry file paths and data
 values.
 
