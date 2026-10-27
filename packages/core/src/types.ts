@@ -277,13 +277,17 @@ export interface PlanGraphModel {
    * a 'segment' request falls back to 'full' (no sql linkage, or the
    * segment fell outside the Math.min(segments, stages) truncation). */
   scope: 'segment' | 'full';
-  /** Component identity -> stage id for strict stage pairs and display-only
-   * nearest-component fallbacks. Computed regardless of `scope`: compound
-   * stage-group container headers need this in 'full' scope too, not just to
-   * resolve which component a 'segment' request refers to. */
+  /** Component identity -> stage id: the segment's own stage for a strict
+   * pair, or the nearest strictly paired segment's stage for an inherited one
+   * (the "nearest stage" label). Computed regardless of `scope`: the stage
+   * boxes need this in 'full' scope too, not just to resolve which component a
+   * 'segment' request refers to. */
   segmentStageIds: Map<number, number>;
-  /** Stage id -> summed exclusive duration share of every segment zipped to
-   * that stage, over the whole plan whatever `scope` renders. A stage with no
+  /** Segments with no stage pair of their own: their `segmentStageIds` entry
+   * is only the nearest stage, not a link the log supports. */
+  inheritedSegments: Set<number>;
+  /** Stage id -> exclusive duration share of the stage's strictly paired
+   * segment, over the whole plan whatever `scope` renders. A stage with no
    * measured node has no entry. */
   stageDurations: Map<number, number>;
 }
@@ -411,20 +415,18 @@ export type { Finding, FindingOf, FindingEvidenceMap, Remediation, TunedThreshol
 
 export interface TaskData { metrics: Float64Array | number[]; fieldNames: string[]; }
 
+/** A segment box is drawn only for a segment with no stage pair of its own; a
+ * paired segment is the inside of its stage box. */
 export interface PlanGraphSegmentGroupNodeData {
   width: number;
   height: number;
-  /** The stage this segment belongs to, or null when it matched none (it then
-   * draws its own "Stage —" header, as no stage box surrounds it). */
-  stageId: number | null;
+  /** The nearest strictly paired segment's stage, named in the box's header;
+   * null when the plan pairs no segment with any stage. */
+  nearestStageId: number | null;
   /** Pre-formatted via `formatDuration` (format-utils.ts) by the caller;
-   * null (never 0) when this segment has no attributed duration, e.g. it
-   * fell outside attributeStageDurationToPlan's Math.min(segments, stages)
-   * truncation. Shown only on a segment with no stage. */
+   * null (never 0) when this segment has no attributed duration, which is
+   * the usual case for an unpaired segment. */
   durationLabel: string | null;
-  /** True when other segments belong to the same stage, so each draws as a
-   * band inside the stage box. */
-  sharesStage: boolean;
 }
 
 export interface PlanGraphStageGroupNodeData {
@@ -433,13 +435,12 @@ export interface PlanGraphStageGroupNodeData {
   stageId: number;
   /** Every finding on this stage, in full (not just the worst impact band). */
   findings: Finding[];
-  /** The summed duration of the stage's segments, pre-formatted via
-   * `formatDuration`; null when none of them has an attributed duration. */
+  /** The stage's strictly paired segment's duration, pre-formatted via
+   * `formatDuration`; null when it has no attributed duration. */
   durationLabel: string | null;
-  /** How many segment boxes belong to this stage. Zero means no segment box
-   * is zipped to this stage id (see PlanGraphCanvas.tsx's focal-stage
-   * fallback), so the box wraps the whole graph and paints its header above
-   * its top edge. */
-  segmentCount: number;
+  /** True when no segment box is paired with this stage id (see
+   * PlanGraphCanvas.tsx's focal-stage fallback), so the box wraps the whole
+   * graph and paints its header above its top edge. */
+  wrapsGraph: boolean;
   onSelect?: () => void;
 }

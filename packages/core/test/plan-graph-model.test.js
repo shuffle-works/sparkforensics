@@ -39,7 +39,7 @@ function makeAppModel({ stageId = 1, sqlExecutionId = 1, stageIds = [stageId], p
 describe('buildPlanGraphModel', () => {
   it('returns an empty model for a null planTree', () => {
     const model = buildPlanGraphModel(null, { scope: 'full', stageId: 1, appModel: makeAppModel({ planTree: null }) });
-    expect(model).toEqual({ nodes: [], edges: [], segmentIndex: null, segmentCount: 0, scope: 'full', segmentStageIds: new Map(), stageDurations: new Map() });
+    expect(model).toEqual({ nodes: [], edges: [], segmentIndex: null, segmentCount: 0, scope: 'full', segmentStageIds: new Map(), inheritedSegments: new Set(), stageDurations: new Map() });
   });
 
   it('builds one node per plan node and one edge per parent-child link, in full scope', () => {
@@ -431,9 +431,10 @@ describe('buildPlanGraphModel', () => {
 
     expect(model.scope).toBe('full');
     expect(model.segmentStageIds).toEqual(new Map([[1, 1], [0, 2]]));
+    expect(model.inheritedSegments).toEqual(new Set());
   });
 
-  it('fills segmentStageIds for a segment past the Math.min(segments, stages) truncation from its nearest paired neighbor', () => {
+  it('labels a segment past the Math.min(segments, stages) truncation with its nearest paired neighbor\'s stage and marks it inherited', () => {
     const leaf = node('Scan parquet');
     const exchange = splitExchange('Exchange hashpartitioning', [leaf]);
     const root = node('SortMergeJoin', [exchange]);
@@ -442,6 +443,36 @@ describe('buildPlanGraphModel', () => {
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
     expect(model.segmentStageIds).toEqual(new Map([[1, 1], [0, 1]]));
+    expect(model.inheritedSegments).toEqual(new Set([0]));
+  });
+
+  it('adds nothing to a stage total from an inherited segment', () => {
+    const leaf = node('Scan parquet', [], [{ name: 'time', metricType: 'timing', value: 10 }]);
+    const exchange = splitExchange('Exchange hashpartitioning', [leaf]);
+    const root = node('SortMergeJoin', [exchange], [{ name: 'time', metricType: 'timing', value: 90 }]);
+    const appModel = makeAppModel({
+      planTree: root,
+      stageId: 1,
+      stageIds: [1],
+      stages: { 1: { submittedAt: 0, completedAt: 500 } },
+    });
+
+    const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
+
+    expect(model.stageDurations).toEqual(new Map([[1, 500]]));
+  });
+
+  it('opens the single-stage view on the stage\'s paired segment, never on an inherited one', () => {
+    const leaf = node('Scan parquet');
+    const exchange = splitExchange('Exchange hashpartitioning', [leaf]);
+    const root = node('SortMergeJoin', [exchange]);
+    const appModel = makeAppModel({ planTree: root, stageId: 1, stageIds: [1] });
+
+    const model = buildPlanGraphModel(root, { scope: 'segment', stageId: 1, appModel });
+
+    expect(model.scope).toBe('segment');
+    expect(model.segmentIndex).toBe(1);
+    expect(model.nodes.every((n) => n.segmentIndex === 1)).toBe(true);
   });
 
   it('leaves durationShare null (never 0) for a segment past the Math.min(segments, stages) truncation', () => {

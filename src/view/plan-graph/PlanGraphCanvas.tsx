@@ -224,8 +224,11 @@ export function PlanGraphCanvas({
   // memo below, which then finds them in the layout cache.
   const layoutPlan = useMemo(() => {
     const groupOf = (n: PlanGraphNodeData) => `segment-${n.segmentIndex}`;
+    // A segment with no stage pair of its own (inherited) is not inside a stage
+    // box: its stage id is only the nearest one.
+    const pairedStageOf = (segmentIndex: number) => (model.inheritedSegments.has(segmentIndex) ? undefined : segmentStageIds?.get(segmentIndex));
     const stageGroupOf = (n: PlanGraphNodeData) => {
-      const sId = segmentStageIds?.get(n.segmentIndex);
+      const sId = pairedStageOf(n.segmentIndex);
       return sId != null ? `stage-${sId}` : null;
     };
 
@@ -254,7 +257,7 @@ export function PlanGraphCanvas({
         const id = stageGroupOf(n);
         return id != null && !coveredStages.has(id);
       });
-    return { groupOf, stageGroupOf, layoutNodes, layoutEdges, direction, needsFullFallback };
+    return { groupOf, pairedStageOf, stageGroupOf, layoutNodes, layoutEdges, direction, needsFullFallback };
   }, [model, segmentStageIds, visibleNodeIds, visibleEdges, narrow]);
 
   const layoutRequests = useMemo(() => {
@@ -268,7 +271,7 @@ export function PlanGraphCanvas({
   const built = useMemo(() => {
     // A large layout still running in the worker: nothing to build yet.
     if (!layoutReady) return null;
-    const { groupOf, stageGroupOf, layoutNodes, layoutEdges, direction, needsFullFallback } = layoutPlan;
+    const { groupOf, pairedStageOf, stageGroupOf, layoutNodes, layoutEdges, direction, needsFullFallback } = layoutPlan;
     // Sums the exclusive share, not the mode-selected one, so the total does not
     // grow with tree depth in inclusive mode (docs-site/contributor-guide/
     // architecture/drill-down/plan-graph.md, "Duration share"). Falls back to `durationShare` for hand-built
@@ -311,17 +314,15 @@ export function PlanGraphCanvas({
       };
     });
 
-    // Segments drawn per stage: a single-stage view draws one, whatever the plan holds.
-    const segmentsPerStage = new Map<number, number>();
-    for (const segmentIndex of new Set(model.nodes.map((n) => n.segmentIndex))) {
-      const sId = segmentStageIds?.get(segmentIndex);
-      if (sId != null) segmentsPerStage.set(sId, (segmentsPerStage.get(sId) ?? 0) + 1);
-    }
+    // A paired segment is the inside of its stage box and paints nothing itself.
+    // A segment with no pair of its own gets a dashed box of its own, so no stage
+    // box has to reach across it.
+    const unpairedGroupOf = (n: PlanGraphNodeData) => (pairedStageOf(n.segmentIndex) == null ? groupOf(n) : null);
 
     // Group boxes are plain background nodes in the members' coordinate space
     // (not xyflow parent/child nesting). Bounds come from the compact layout when
     // a segment still has a visible member, else from the full-model layout.
-    const groupNodes: Node[] = computeGroupBoundsWithFallback(groupOf, [laidOutVisible, laidOutFull]).map((group) => {
+    const groupNodes: Node[] = computeGroupBoundsWithFallback(unpairedGroupOf, [laidOutVisible, laidOutFull]).map((group) => {
       const segmentIndex = Number(group.id.replace('segment-', ''));
       // Totals cover the segment's unfiltered content, so read model.nodes, not a
       // laid-out set (laidOutFull aliases the filtered one when the fallback is skipped).
@@ -329,7 +330,6 @@ export function PlanGraphCanvas({
       // Exclusive shares, as in `totalDuration` above.
       const groupDuration = membersInGroup.reduce((sum, n) => sum + (n.exclusiveDurationShare ?? n.durationShare ?? 0), 0);
       const hasAnyDuration = membersInGroup.some((n) => n.durationShare != null);
-      const groupStageId = segmentStageIds?.get(segmentIndex) ?? null;
       return {
         id: group.id,
         type: 'segmentGroup',
@@ -345,16 +345,21 @@ export function PlanGraphCanvas({
         data: {
           width: group.width,
           height: group.height,
-          stageId: groupStageId,
+          nearestStageId: segmentStageIds?.get(segmentIndex) ?? null,
           durationLabel: hasAnyDuration ? formatDuration(groupDuration) : null,
-          sharesStage: groupStageId != null && (segmentsPerStage.get(groupStageId) ?? 0) > 1,
         },
       };
     });
 
-    // One stroked box per stage wrapping every segment box zipped to it, and the
-    // only place the stage's name, duration and findings are painted. The padding
-    // constants keep it strictly containing the segment boxes.
+    // Stages with a segment box of their own inside them; a focal stage without
+    // one is drawn around the whole graph below.
+    const pairedStageIds = new Set(
+      [...new Set(model.nodes.map((n) => n.segmentIndex))].map(pairedStageOf).filter((id): id is number => id != null),
+    );
+
+    // One stroked box per stage wrapping its paired segment, and the only place
+    // the stage's name, duration and findings are painted. The padding constants
+    // keep it strictly containing the segment's box.
     const groupOptions = {
       paddingX: STAGE_GROUP_PADDING_X,
       paddingY: STAGE_GROUP_PADDING_Y,
@@ -370,14 +375,14 @@ export function PlanGraphCanvas({
       const [focalGroup] = computeGroupBoundsWithFallback(() => focalGroupId, [laidOutVisible, laidOutFull], groupOptions);
       if (focalGroup) stageGroups.push(focalGroup);
     }
-    // A stage whose segments are not adjacent gets a box that overlaps other
-    // stage boxes. Each header sits at its box's top edge, so painting boxes in
-    // top-edge order keeps every header above the overlays of the boxes it
+    // The whole-graph box of a focal stage with no segment overlaps the stage
+    // boxes inside it. Each header sits at its box's top edge, so painting boxes
+    // in top-edge order keeps every header above the overlays of the boxes it
     // starts inside.
     stageGroups.sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
     const stageGroupNodes: Node[] = stageGroups.map((group) => {
       const groupStageId = Number(group.id.replace('stage-', ''));
-      const segmentCount = segmentsPerStage.get(groupStageId) ?? 0;
+      const wrapsGraph = !pairedStageIds.has(groupStageId);
       return {
         id: group.id,
         type: 'stageGroup',
@@ -389,7 +394,7 @@ export function PlanGraphCanvas({
         // The fallback box wraps the whole graph, so it sits under the stage
         // boxes inside it; otherwise its overlay button would take the clicks
         // on their "Stage N" titles.
-        zIndex: segmentCount === 0 ? STAGE_GROUP_Z - 1 : STAGE_GROUP_Z,
+        zIndex: wrapsGraph ? STAGE_GROUP_Z - 1 : STAGE_GROUP_Z,
         style: { width: group.width, height: group.height },
         measured: { width: group.width, height: group.height },
         data: {
@@ -398,7 +403,7 @@ export function PlanGraphCanvas({
           stageId: groupStageId,
           findings: findingsForStage(findings, groupStageId),
           durationLabel: model.stageDurations.has(groupStageId) ? formatDuration(model.stageDurations.get(groupStageId)!) : null,
-          segmentCount,
+          wrapsGraph,
           // Only the full plan has other stages to focus.
           onSelect: model.scope === 'full' && onSelectStage ? () => onSelectStage(groupStageId) : undefined,
         },

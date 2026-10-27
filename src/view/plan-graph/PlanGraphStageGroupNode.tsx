@@ -7,14 +7,13 @@ import type { PlanGraphStageGroupNodeData } from '@sparkforensics/core/types.ts'
 
 export type PlanGraphStageGroupNodeProps = NodeProps & { data: PlanGraphStageGroupNodeData };
 
-// The one stroked box of a stage, wrapping every segment box zipped to it. It
-// owns the stage's name, summed duration, finding chips and selection ring; the
-// segment boxes inside are plain fills. A box with no segment inside it
-// (segmentCount 0: a focal stage the zip left unmapped) wraps the whole graph,
+// The one stroked box of a stage, wrapping the segment paired with it. It owns
+// the stage's name, duration, finding chips and selection ring. A box with no
+// segment inside it (wrapsGraph: a focal stage the zip left unpaired) wraps the whole graph,
 // whose top edge coincides with the top edge of the first stage box inside, so
 // its header sits above the box instead of over those boxes' headers.
 export function PlanGraphStageGroupNode({ data }: PlanGraphStageGroupNodeProps) {
-  const { width, height, stageId, findings, durationLabel, segmentCount, onSelect } = data;
+  const { width, height, stageId, findings, durationLabel, wrapsGraph, onSelect } = data;
   const selected = useStageSelection()?.selectedStageId === stageId;
   return (
     <div
@@ -39,7 +38,7 @@ export function PlanGraphStageGroupNode({ data }: PlanGraphStageGroupNodeProps) 
       <div
         className={cn(
           'pointer-events-none absolute flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-primary [&>*]:pointer-events-auto',
-          segmentCount > 0 ? 'left-2 right-2 top-2' : 'bottom-full left-0 right-0 mb-1',
+          wrapsGraph ? 'bottom-full left-0 right-0 mb-1' : 'left-2 right-2 top-2',
         )}
       >
         <StageEntryButton stageId={stageId} aria-label={`Show the findings for stage ${stageId}`} className="hover:underline">

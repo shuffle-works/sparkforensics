@@ -108,7 +108,7 @@ describe('stage panel in the plan graph', () => {
     expect(open.getByRole('link', { name: 'SKEW' })).toBeInTheDocument();
     expect(panel()).toHaveTextContent('What to try: salt the join key.');
     expect(screen.getByTestId(`rf__node-stage-${STAGE_ID}`).firstElementChild).toHaveClass('ring-primary');
-    expect(screen.getByTestId('rf__node-segment-0').firstElementChild).not.toHaveClass('ring-primary');
+    expect(screen.queryByTestId('rf__node-segment-0')).not.toBeInTheDocument();
   });
 
   test('a stage title opens the same panel', () => {

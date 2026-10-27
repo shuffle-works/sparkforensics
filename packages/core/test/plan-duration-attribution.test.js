@@ -4,7 +4,7 @@ import {
   attributeStageDurationToPlanInclusive,
   computeSegments,
   zipSegmentsToStages,
-  mapSegmentsToStagesForDisplay,
+  linkSegmentsToStages,
 } from '../src/plan-duration-attribution.js';
 
 // Mirrors resolvePlanTree's real split shape (see event-handlers.ts): the
@@ -194,8 +194,10 @@ describe('computeSegments / zipSegmentsToStages', () => {
   });
 });
 
-describe('mapSegmentsToStagesForDisplay', () => {
+describe('linkSegmentsToStages', () => {
   function node(name, children = []) { return { name, detail: '', metrics: [], children }; }
+  const stageIdsOf = (links) => new Map([...links].map(([segment, link]) => [segment, link.stageId]));
+  const inheritedOf = (links) => new Set([...links].filter(([, link]) => link.inherited).map(([segment]) => segment));
 
   it('matches zipSegmentsToStages exactly when segment and stage counts are equal', () => {
     const leaf = node('Scan parquet');
@@ -207,9 +209,10 @@ describe('mapSegmentsToStagesForDisplay', () => {
       [20, { submittedAt: 500, completedAt: 900 }],
     ]);
 
-    const map = mapSegmentsToStagesForDisplay(segments, stagesById, [20, 10], segmentTopology);
+    const links = linkSegmentsToStages(segments, stagesById, [20, 10], segmentTopology);
 
-    expect(map).toEqual(new Map([[1, 10], [0, 20]]));
+    expect(stageIdsOf(links)).toEqual(new Map([[1, 10], [0, 20]]));
+    expect(inheritedOf(links)).toEqual(new Set());
   });
 
   it("fills a segment past the Math.min(segments, stages) cutoff with its nearest strictly-paired neighbor's stage, instead of leaving it unmapped", () => {
@@ -227,9 +230,10 @@ describe('mapSegmentsToStagesForDisplay', () => {
     const strict = zipSegmentsToStages(segments, stagesById, [10], segmentTopology);
     expect(strict.pairs).toHaveLength(1); // sanity: confirms the gap this test fills
 
-    const map = mapSegmentsToStagesForDisplay(segments, stagesById, [10], segmentTopology);
+    const links = linkSegmentsToStages(segments, stagesById, [10], segmentTopology);
 
-    expect(map).toEqual(new Map([[2, 10], [1, 10], [0, 10]]));
+    expect(stageIdsOf(links)).toEqual(new Map([[2, 10], [1, 10], [0, 10]]));
+    expect(inheritedOf(links)).toEqual(new Set([1, 0]));
   });
 
   it('fills each unmapped segment from whichever strictly-paired segment is structurally closest, without chaining through another filled segment', () => {
@@ -249,9 +253,10 @@ describe('mapSegmentsToStagesForDisplay', () => {
       [20, { submittedAt: 100, completedAt: 200 }],
     ]);
 
-    const map = mapSegmentsToStagesForDisplay(segments, stagesById, [20, 10], segmentTopology);
+    const links = linkSegmentsToStages(segments, stagesById, [20, 10], segmentTopology);
 
-    expect(map).toEqual(new Map([[3, 10], [2, 20], [1, 20], [0, 20]]));
+    expect(stageIdsOf(links)).toEqual(new Map([[3, 10], [2, 20], [1, 20], [0, 20]]));
+    expect(inheritedOf(links)).toEqual(new Set([1, 0]));
   });
 
   it('uses component-tree distance for an uneven branch instead of numeric id distance', () => {
@@ -262,7 +267,7 @@ describe('mapSegmentsToStagesForDisplay', () => {
       [20, { submittedAt: 100, completedAt: 300 }],
     ]);
 
-    const map = mapSegmentsToStagesForDisplay(segments, stagesById, [20, 10], segmentTopology);
+    const map = stageIdsOf(linkSegmentsToStages(segments, stagesById, [20, 10], segmentTopology));
 
     expect(map.get(segOf.get(deep))).toBe(10);
     expect(map.get(segOf.get(left))).toBe(20);
@@ -274,7 +279,7 @@ describe('mapSegmentsToStagesForDisplay', () => {
   it('returns an empty map when there are no stages to pair against', () => {
     const leaf = node('Scan parquet');
     const { segments, segmentTopology } = computeSegments(leaf);
-    expect(mapSegmentsToStagesForDisplay(segments, new Map(), [], segmentTopology)).toEqual(new Map());
+    expect(linkSegmentsToStages(segments, new Map(), [], segmentTopology)).toEqual(new Map());
   });
 
   it("never changes attributeStageDurationToPlan's own output for the same mismatched counts", () => {

@@ -12,10 +12,14 @@ import type { PlanGraphModel } from '@sparkforensics/core/types.ts';
 import { installInterpretation } from './_shared/interpretation';
 
 function transformX(testId: string): number {
+  return translateOf(testId).x;
+}
+
+function translateOf(testId: string): { x: number; y: number } {
   const el = screen.getByTestId(testId);
-  const match = el.getAttribute('style')?.match(/translate\((-?\d+(?:\.\d+)?)px/);
+  const match = el.getAttribute('style')?.match(/translate\((-?\d+(?:\.\d+)?)px,\s*(-?\d+(?:\.\d+)?)px/);
   if (!match) throw new Error(`no transform found on ${testId}`);
-  return Number(match[1]);
+  return { x: Number(match[1]), y: Number(match[2]) };
 }
 
 const setCenterMock = vi.fn();
@@ -69,7 +73,7 @@ function model(overrides: Partial<PlanGraphModel> = {}): PlanGraphModel {
       { id: 'b', sourceNodeId: 'b', label: 'SortMergeJoin', category: 'join', operatorDetail: '', primaryMetric: '', segmentIndex: 0, splitRole: null, durationShare: 200 },
     ],
     edges: [{ id: 'a->b', source: 'a', target: 'b' }],
-    segmentIndex: 0, segmentCount: 1, scope: 'segment', segmentStageIds: new Map(), stageDurations: new Map(),
+    segmentIndex: 0, segmentCount: 1, scope: 'segment', segmentStageIds: new Map(), inheritedSegments: new Set(), stageDurations: new Map(),
     ...overrides,
   };
 }
@@ -240,10 +244,10 @@ describe('compound stage-group containers', () => {
     expect(stage42.getByText(formatDuration(500))).toBeInTheDocument();
     expect(stage43.queryByText('—')).not.toBeInTheDocument();
     expect(screen.getAllByText(/^Stage \d+$/)).toHaveLength(2);
-    expect(within(screen.getByTestId('rf__node-segment-0')).queryByText(/stage/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('rf__node-segment-0')).not.toBeInTheDocument();
   });
 
-  it('draws one stage box in single-stage scope and one per stage in full scope, merging segments zipped to the same stage', () => {
+  it('draws one stage box in single-stage scope and one per stage in full scope, leaving an inherited segment out of every stage box', () => {
     const single = model({ scope: 'segment' });
     const { rerender } = render(<PlanGraphCanvas model={single} showMiniMap={false} stageId={1} segmentStageIds={new Map([[0, 1]])} />);
     expect(screen.getAllByTestId(/rf__node-stage-/)).toHaveLength(1);
@@ -258,40 +262,90 @@ describe('compound stage-group containers', () => {
       scope: 'full',
       stageDurations: new Map([[42, 800], [43, 200]]),
     });
-    const segmentStageIds = new Map([[0, 42], [1, 42], [2, 43]]);
-    rerender(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={42} segmentStageIds={segmentStageIds} />);
+    const segmentStageIds = new Map([[0, 42], [1, 43], [2, 42]]);
+    rerender(<PlanGraphCanvas model={{ ...grouped, inheritedSegments: new Set([2]) }} showMiniMap={false} stageId={42} segmentStageIds={segmentStageIds} />);
 
     expect(screen.getAllByTestId(/rf__node-stage-/)).toHaveLength(2);
     expect(within(screen.getByTestId('rf__node-stage-42')).getByText('Stage 42')).toBeInTheDocument();
     expect(within(screen.getByTestId('rf__node-stage-43')).getByText('Stage 43')).toBeInTheDocument();
-    // The stage shows the sum of its segments' durations.
     expect(within(screen.getByTestId('rf__node-stage-42')).getByText(formatDuration(800))).toBeInTheDocument();
   });
 
-  it('fills the segments of a shared stage as bands and leaves a lone segment plain', () => {
+  it('draws an inherited segment as an unmatched dashed box that names the nearest stage', () => {
     const grouped = model({
       nodes: [
         { id: 'a', sourceNodeId: 'a', label: 'Scan parquet', category: 'scan', operatorDetail: '', primaryMetric: '', segmentIndex: 0, splitRole: null, durationShare: 500 },
-        { id: 'b', sourceNodeId: 'b', label: 'SortMergeJoin', category: 'join', operatorDetail: '', primaryMetric: '', segmentIndex: 1, splitRole: null, durationShare: 300 },
-        { id: 'c', sourceNodeId: 'c', label: 'Filter', category: 'filter', operatorDetail: '', primaryMetric: '', segmentIndex: 2, splitRole: null, durationShare: 200 },
+        { id: 'b', sourceNodeId: 'b', label: 'SortMergeJoin', category: 'join', operatorDetail: '', primaryMetric: '', segmentIndex: 1, splitRole: null, durationShare: null },
       ],
       edges: [],
       scope: 'full',
+      inheritedSegments: new Set([1]),
     });
-    const segmentStageIds = new Map([[0, 42], [1, 42], [2, 43]]);
-    render(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={42} segmentStageIds={segmentStageIds} />);
+    render(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={42} segmentStageIds={new Map([[0, 42], [1, 42]])} />);
 
-    const box = (id: string) => screen.getByTestId(id).firstElementChild;
-    expect(box('rf__node-segment-0')).toHaveClass('bg-primary/10');
-    expect(box('rf__node-segment-1')).toHaveClass('bg-primary/10');
-    expect(box('rf__node-segment-2')).not.toHaveClass('bg-primary/10');
+    const unmatched = within(screen.getByTestId('rf__node-segment-1'));
+    expect(unmatched.getByText('Stage —')).toBeInTheDocument();
+    expect(unmatched.getByText('nearest: Stage 42')).toBeInTheDocument();
+    expect(screen.getAllByTestId(/rf__node-stage-/)).toHaveLength(1);
+    expect(screen.getAllByText('Stage 42')).toHaveLength(1);
   });
 
-  it('does not count a stage\'s segments that the single-stage view leaves out', () => {
-    const single = model({ scope: 'segment' });
-    render(<PlanGraphCanvas model={single} showMiniMap={false} stageId={1} segmentStageIds={new Map([[0, 1], [1, 1]])} />);
+  it('draws a segment with no stage at all as an unmatched box that names no stage', () => {
+    render(<PlanGraphCanvas model={model({ scope: 'full' })} showMiniMap={false} stageId={1} segmentStageIds={new Map()} />);
 
-    expect(screen.getByTestId('rf__node-segment-0').firstElementChild).not.toHaveClass('bg-primary/10');
+    expect(within(screen.getByTestId('rf__node-segment-0')).getByText('Stage —')).toBeInTheDocument();
+    expect(screen.queryByText(/nearest/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId(/rf__node-stage-/)).not.toBeInTheDocument();
+  });
+
+  describe('a stage box never encloses a node of another stage', () => {
+    // The shape of a log whose middle stage is missing: the root segment (0) has
+    // no stage pair and inherits stage 5 from segment 1, while segment 2 sits
+    // between them.
+    const planNode = (id: string, segmentIndex: number) => ({
+      id, sourceNodeId: id, label: id, category: 'transform', operatorDetail: '', primaryMetric: '', segmentIndex, splitRole: null, durationShare: null,
+    });
+    const reproduction = (inheritedSegments: Set<number>) => model({
+      scope: 'full',
+      nodes: [
+        planNode('join', 0), planNode('read1', 0), planNode('read2', 0),
+        planNode('write1', 1), planNode('range1', 1),
+        planNode('write2', 2), planNode('filter2', 2), planNode('range2', 2),
+      ],
+      edges: [
+        { id: 'join->read1', source: 'join', target: 'read1' }, { id: 'join->read2', source: 'join', target: 'read2' },
+        { id: 'read1->write1', source: 'read1', target: 'write1' }, { id: 'write1->range1', source: 'write1', target: 'range1' },
+        { id: 'read2->write2', source: 'read2', target: 'write2' }, { id: 'write2->filter2', source: 'write2', target: 'filter2' },
+        { id: 'filter2->range2', source: 'filter2', target: 'range2' },
+      ],
+      inheritedSegments,
+    });
+    const segmentStageIds = new Map([[0, 5], [1, 5], [2, 9]]);
+    const planNodeIds = ['join', 'read1', 'read2', 'write1', 'range1', 'write2', 'filter2', 'range2'];
+
+    const enclosed = (stageTestId: string, nodeIds: string[]) => {
+      const box = translateOf(stageTestId);
+      const el = screen.getByTestId(stageTestId);
+      const w = parseFloat(el.style.width);
+      const h = parseFloat(el.style.height);
+      return nodeIds.filter((id) => {
+        const n = translateOf(`rf__node-${id}`);
+        return n.x < box.x + w && n.x + dagreLayout.NODE_WIDTH > box.x && n.y < box.y + h && n.y + dagreLayout.NODE_HEIGHT > box.y;
+      });
+    };
+
+    it('keeps stage 5 off the nodes of stage 9 and of the unmatched root segment', () => {
+      render(<PlanGraphCanvas model={reproduction(new Set([0]))} showMiniMap={false} stageId={5} segmentStageIds={segmentStageIds} />);
+
+      expect(enclosed('rf__node-stage-5', planNodeIds.filter((id) => !['write1', 'range1'].includes(id)))).toEqual([]);
+      expect(enclosed('rf__node-stage-9', planNodeIds.filter((id) => !['write2', 'filter2', 'range2'].includes(id)))).toEqual([]);
+    });
+
+    it('would have enclosed them when the inherited segment counted as part of stage 5', () => {
+      render(<PlanGraphCanvas model={reproduction(new Set())} showMiniMap={false} stageId={5} segmentStageIds={segmentStageIds} />);
+
+      expect(enclosed('rf__node-stage-5', ['write2', 'filter2', 'range2'])).not.toEqual([]);
+    });
   });
 
   it('shows a stage\'s full summed duration in the single-stage view, not the shown segment\'s share', () => {
@@ -301,15 +355,15 @@ describe('compound stage-group containers', () => {
     const stage7 = within(screen.getByTestId('rf__node-stage-7'));
     expect(stage7.getByText(formatDuration(30000))).toBeInTheDocument();
     expect(stage7.queryByText(formatDuration(300))).not.toBeInTheDocument();
-    expect(screen.getByTestId('rf__node-segment-0').firstElementChild).not.toHaveClass('bg-primary/10');
   });
 
-  it('wraps each segment box 8px inside the top and bottom edges of its stage box', () => {
+  it('leaves 8px between its segment and the top and bottom edges of a stage box', () => {
     const grouped = model({ scope: 'full' });
     render(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={1} segmentStageIds={new Map([[0, 1]])} />);
 
-    const height = (id: string) => parseFloat(screen.getByTestId(id).style.height);
-    expect(height('rf__node-stage-1') - height('rf__node-segment-0')).toBe(16);
+    // A segment box is the nodes plus 24px each side and a 32px header; the stage box adds 8px above and below.
+    const segmentHeight = dagreLayout.NODE_HEIGHT + 24 + 24 + 32;
+    expect(parseFloat(screen.getByTestId('rf__node-stage-1').style.height)).toBe(segmentHeight + 16);
   });
 
   it('in single-stage (segment) scope, shows the focal stage\'s findings on the stage box', () => {
@@ -339,7 +393,7 @@ describe('compound stage-group containers', () => {
     expect(select).toHaveBeenCalledWith(7, chip);
   });
 
-  it('keeps the focal stage and segment boxes and the findings when foreground filtering hides every plan node', () => {
+  it('keeps the focal stage box and its findings when foreground filtering hides every plan node', () => {
     const single = model({
       scope: 'segment',
       segmentStageIds: new Map([[0, 7]]),
@@ -358,7 +412,6 @@ describe('compound stage-group containers', () => {
       />,
     );
 
-    expect(screen.getByTestId('rf__node-segment-0')).toBeInTheDocument();
     expect(within(screen.getByTestId('rf__node-stage-7')).getByText('SKEW')).toBeInTheDocument();
     expect(screen.queryByTestId('rf__node-a')).not.toBeInTheDocument();
     expect(screen.queryByTestId('rf__node-b')).not.toBeInTheDocument();
@@ -382,7 +435,6 @@ describe('compound stage-group containers', () => {
     expect(screen.getAllByText('SKEW')).toHaveLength(1);
     expect(within(screen.getByTestId('rf__node-stage-7')).getByText('SKEW')).toBeInTheDocument();
     expect(within(screen.getByTestId('rf__node-stage-8')).queryByText('SKEW')).not.toBeInTheDocument();
-    expect(within(screen.getByTestId('rf__node-segment-0')).queryByText('SKEW')).not.toBeInTheDocument();
   });
 
   it('keeps the focal stage box and Next problem target when foreground filtering hides that stage\'s operators', () => {

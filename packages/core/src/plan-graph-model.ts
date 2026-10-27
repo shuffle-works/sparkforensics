@@ -14,7 +14,7 @@ import {
   getPrimaryMetric,
   formatPlanMetricValue,
 } from './plan-node-detail.ts';
-import { computeSegments, mapSegmentsToStagesForDisplay } from './plan-duration-attribution.ts';
+import { computeSegments, linkSegmentsToStages } from './plan-duration-attribution.ts';
 import { stageIdsForSqlExec } from './sql-stages.ts';
 import type {
   AppModel, Finding, PlanGraphDurationMode, PlanGraphEdge, PlanGraphModel, PlanGraphNodeData, PlanNode,
@@ -72,7 +72,7 @@ export function buildPlanGraphModel(
   },
 ): PlanGraphModel {
   const { scope, stageId, appModel, findings = [], durationMode = 'exclusive' } = opts;
-  if (!planTree) return { nodes: [], edges: [], segmentIndex: null, segmentCount: 0, scope: 'full', segmentStageIds: new Map<number, number>(), stageDurations: new Map<number, number>() };
+  if (!planTree) return { nodes: [], edges: [], segmentIndex: null, segmentCount: 0, scope: 'full', segmentStageIds: new Map<number, number>(), inheritedSegments: new Set<number>(), stageDurations: new Map<number, number>() };
 
   const stage = appModel.stages.get(stageId);
   const sqlExecutionId = stage?.sqlExecutionId ?? null;
@@ -92,6 +92,7 @@ export function buildPlanGraphModel(
       : sqlExec && sqlExecutionId != null ? buildDurationMap(planTree, appModel, sqlExec, sqlExecutionId, 'exclusive') : null;
 
   const segmentStageIds = new Map<number, number>();
+  const inheritedSegments = new Set<number>();
   const linkedStageIds: number[] =
     sqlExec && sqlExecutionId != null ? stageIdsForSqlExec(sqlExecutionId, appModel.stages) : [];
   if (linkedStageIds.length) {
@@ -100,8 +101,9 @@ export function buildPlanGraphModel(
       const s = appModel.stages.get(id);
       if (s) stagesById.set(id, { submittedAt: s.submittedAt, completedAt: s.completedAt });
     }
-    for (const [segIdx, sId] of mapSegmentsToStagesForDisplay(segments, stagesById, linkedStageIds, segmentTopology)) {
-      segmentStageIds.set(segIdx, sId);
+    for (const [segIdx, link] of linkSegmentsToStages(segments, stagesById, linkedStageIds, segmentTopology)) {
+      segmentStageIds.set(segIdx, link.stageId);
+      if (link.inherited) inheritedSegments.add(segIdx);
     }
   }
 
@@ -199,22 +201,22 @@ export function buildPlanGraphModel(
 
   const stageDurations = new Map<number, number>();
   for (const n of allNodes) {
-    const sId = segmentStageIds.get(n.segmentIndex);
+    const sId = inheritedSegments.has(n.segmentIndex) ? undefined : segmentStageIds.get(n.segmentIndex);
     if (sId == null || n.durationShare == null) continue;
     stageDurations.set(sId, (stageDurations.get(sId) ?? 0) + (n.exclusiveDurationShare ?? n.durationShare));
   }
 
   if (scope === 'full') {
-    return { nodes: allNodes, edges: allEdges, segmentIndex: null, segmentCount, scope: 'full', segmentStageIds, stageDurations };
+    return { nodes: allNodes, edges: allEdges, segmentIndex: null, segmentCount, scope: 'full', segmentStageIds, inheritedSegments, stageDurations };
   }
 
   let targetSegmentIndex: number | null = null;
   for (const [segIdx, sId] of segmentStageIds) {
-    if (sId === stageId) { targetSegmentIndex = segIdx; break; }
+    if (sId === stageId && !inheritedSegments.has(segIdx)) { targetSegmentIndex = segIdx; break; }
   }
 
   if (targetSegmentIndex === null) {
-    return { nodes: allNodes, edges: allEdges, segmentIndex: null, segmentCount, scope: 'full', segmentStageIds, stageDurations };
+    return { nodes: allNodes, edges: allEdges, segmentIndex: null, segmentCount, scope: 'full', segmentStageIds, inheritedSegments, stageDurations };
   }
 
   const nodeIds = new Set<string>();
@@ -225,5 +227,5 @@ export function buildPlanGraphModel(
   });
   const edges = allEdges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
 
-  return { nodes, edges, segmentIndex: targetSegmentIndex, segmentCount, scope: 'segment', segmentStageIds, stageDurations };
+  return { nodes, edges, segmentIndex: targetSegmentIndex, segmentCount, scope: 'segment', segmentStageIds, inheritedSegments, stageDurations };
 }

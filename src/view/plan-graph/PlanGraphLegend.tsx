@@ -59,8 +59,8 @@ export function PlanGraphLegend() {
       </p>
 
       <p className="text-muted-foreground">
-        A <span className="text-foreground">stage</span> box wraps one Spark stage. Shaded bands inside it are the
-        Exchange-bounded segments of the plan paired with that stage; a dashed box is a segment matched to no stage.
+        A <span className="text-foreground">stage</span> box wraps the Exchange-bounded segment of the plan that the log pairs with one
+        Spark stage. A dashed box is a segment with no stage of its own; it names the nearest stage.
       </p>
     </div>
   );

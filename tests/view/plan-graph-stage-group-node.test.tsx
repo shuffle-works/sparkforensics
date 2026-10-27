@@ -9,7 +9,7 @@ function nodeProps(overrides = {}) {
   return {
     id: 'stage-12', selected: false, type: 'stageGroup', dragging: false, zIndex: -2, isConnectable: false,
     selectable: true, deletable: true, draggable: true, positionAbsoluteX: 0, positionAbsoluteY: 0,
-    data: { width: 400, height: 300, stageId: 12, findings: [], durationLabel: null, segmentCount: 1, ...overrides },
+    data: { width: 400, height: 300, stageId: 12, findings: [], durationLabel: null, wrapsGraph: false, ...overrides },
   };
 }
 
@@ -70,15 +70,15 @@ describe('PlanGraphStageGroupNode', () => {
   describe('header placement', () => {
     const findings = [{ type: 'skew', stageId: 12, impactBand: 'critical' as const }];
 
-    it('sits inside the top edge when segment boxes are inside the box', () => {
-      render(<PlanGraphStageGroupNode {...nodeProps({ findings, segmentCount: 2 })} />);
+    it('sits inside the top edge when a segment is inside the box', () => {
+      render(<PlanGraphStageGroupNode {...nodeProps({ findings })} />);
       const header = screen.getByText('Stage 12').closest('div');
       expect(header).toHaveClass('top-2');
       expect(header).not.toHaveClass('bottom-full');
     });
 
     it('sits above the top edge when the box wraps the whole graph, clear of the headers inside it', () => {
-      render(<PlanGraphStageGroupNode {...nodeProps({ findings, segmentCount: 0 })} />);
+      render(<PlanGraphStageGroupNode {...nodeProps({ findings, wrapsGraph: true })} />);
       const header = screen.getByText('Stage 12').closest('div');
       expect(header).toHaveClass('bottom-full');
       expect(header).not.toHaveClass('top-2');
