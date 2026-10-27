@@ -211,12 +211,11 @@ above the top edge, clear of the headers of the stage boxes inside it. Stage box
 paint in top-edge order, so that box paints under those boxes and its click target
 doesn't take their title clicks.
 
-The stage box's padding matches the height a segment box would reserve.
-`STAGE_GROUP_PADDING_Y` (64, no reserved header height) exceeds the segment
-layer's own reserved offset (`GROUP_PADDING + GROUP_HEADER_HEIGHT` = 56 at the
-top), leaving 8px for the header to start in. `STAGE_GROUP_PADDING_BOTTOM` (32)
-leaves 8px below, as nothing is painted there. `STAGE_GROUP_PADDING_X` (32) stays close to `GROUP_PADDING`'s own
-24px floor so the box doesn't visibly balloon sideways.
+The stage box wraps its paired segment's plan nodes directly. `STAGE_GROUP_PADDING_Y`
+(64, no reserved header height) leaves room above the nodes for the header, with
+room to wrap it onto a second row. `STAGE_GROUP_PADDING_BOTTOM` (32) matches
+`STAGE_GROUP_PADDING_X` (32), as nothing is painted below the nodes, and the
+sideways padding stays small so the box doesn't visibly balloon.
 
 Every global control lives on one **vertical control rail** down the left edge
 (`PlanGraphControlRail.tsx`), grouped View / Navigate / Display, so nothing
