@@ -489,8 +489,8 @@ this tag:
   100,000 unmodified target rows rewritten (`number of target rows rewritten
   unmodified`), and at least twice the rows inserted, updated and deleted.
   Weak skipping: at least 8 target files before skipping, at least 90% of them
-  kept after skipping, and the rewritten files in at most half of the
-  partitions scanned (so it needs a partitioned target). The advice is to
+  kept after skipping, and the files removed and added in at most half of
+  the partitions scanned (so it needs a partitioned target). The advice is to
   filter the MERGE source to the rows that changed (for example with a
   row-hash anti-join), to repeat the partition range in the MERGE condition so
   Delta can prune files, and to check the target's file layout.
