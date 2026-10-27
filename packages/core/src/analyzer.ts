@@ -197,7 +197,9 @@ function linkSingleKeyToBroadcast(findings: Finding[]): Finding[] {
     if (!broadcast || broadcast.type !== 'underBroadcast') return f;
     const how = broadcast.broadcastThreshold === 'disabled'
       ? 'automatic broadcast is disabled, so add a broadcast() hint or set the threshold to a positive size'
-      : 'add a broadcast() hint or raise the threshold';
+      : broadcast.broadcastThreshold === 'notLimiting'
+        ? 'add a broadcast() hint'
+        : 'add a broadcast() hint or raise the threshold';
     return { ...f, recommendation: `${f.recommendation ?? ''} The same stage also has a missed broadcast: ${how}.`.trim() };
   });
 }

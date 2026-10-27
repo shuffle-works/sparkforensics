@@ -52,8 +52,12 @@ describe('single-key shuffle next to a missed broadcast', () => {
     return analyze(makeApp({ config, sparkVersion: '3.5.3' }), stages, [], [], new Map(), sql);
   };
 
-  it('points to the broadcast', () => {
-    expect(skewOf(findings()).recommendation).toContain('also has a missed broadcast: add a broadcast() hint or raise the threshold');
+  it('advises only a hint when the threshold already admits the small side', () => {
+    expect(skewOf(findings()).recommendation).toContain('also has a missed broadcast: add a broadcast() hint.');
+  });
+  it('advises raising the threshold when it is below the small side', () => {
+    const f = skewOf(findings({ 'spark.sql.autoBroadcastJoinThreshold': String(MiB) }));
+    expect(f.recommendation).toContain('also has a missed broadcast: add a broadcast() hint or raise the threshold');
   });
   it('says automatic broadcast is disabled when the threshold is -1', () => {
     const f = skewOf(findings({ 'spark.sql.autoBroadcastJoinThreshold': '-1' }));
