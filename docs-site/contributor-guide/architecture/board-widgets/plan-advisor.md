@@ -13,7 +13,8 @@ The Plan Advisor board widgets, which report SQL-plan-level findings.
   averaging <3 MiB), nested-loop and cartesian joins whose output dwarfs
   their inputs (`nestedLoopJoin`, graded by the time of the stages that run the
   join), Delta MERGEs that rewrite mostly unmodified rows or keep most target
-  files after skipping (`mergeRewrite`, two rules, each an info finding), and broadcast-join sizing in both directions (missed-
+  files after skipping (`mergeRewrite`, two rules, each an info finding; `target` is read with
+  `resolveDeltaCommandTarget`, so it is null when the log names no single target), and broadcast-join sizing in both directions (missed-
   broadcast info finding, over-broadcast warning at >1 GB), and
   row-at-a-time Python UDFs (`BatchEvalPython` stages that sent >64 MiB to
   Python workers over >30 s; an info finding). Each of the seven

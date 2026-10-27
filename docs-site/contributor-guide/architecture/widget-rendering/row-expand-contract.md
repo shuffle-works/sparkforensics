@@ -166,7 +166,8 @@ routing" in [investigation-routing](./investigation-routing.md)).
   the stage's task duration spread with its histogram, Slow Executor Host the
   deviating executor's measured amount, Nested Loop Joins the join node, type,
   condition and input rows, MERGE rewrites the unmodified and changed row counts
-  with the file and partition counts. A panel leaves out a core usage chart with
+  with the file and partition counts (a row names its query and target, and
+  merges commands with identical counts). A panel leaves out a core usage chart with
   fewer than 3 points. Never drop a row's own evidence to avoid a
   repeat; `tests/view/evidence-panels-not-empty.test.tsx` opens every "Show
   evidence" button on the sample run and the public fixtures, in the default

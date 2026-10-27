@@ -37,6 +37,8 @@ describe('mergeRewrite', () => {
     expect(f).toMatchObject({ rule: 'rewrittenRows', impactBand: 'info', value: 800_000, rewrittenRows: 800_000, changedRows: 300_000, planNodeIds: ['n1'] });
     // The counts live in the evidence fields, not the text.
     expect(f.recommendation).not.toMatch(/\d/);
+    // A bare command node on a synthetic plan names no target.
+    expect(f.target).toBeNull();
   });
 
   it('skips the rows rule below the floor or below the ratio', () => {
@@ -97,6 +99,7 @@ describe('mergeRewrite on public corpus logs', () => {
   it.skipIf(!existsSync(corpusLog('delta-merge-sql')))('flags the SQL MERGE that copied 800000 rows to change 300000', async () => {
     const findings = await corpusFindings('delta-merge-sql');
     expect(findings.map((f) => [f.rule, f.rewrittenRows, f.changedRows])).toEqual([['rewrittenRows', 800_000, 300_000]]);
+    expect(findings[0].target).toBe('file:///tmp/spark-workload-output/data-delta-table');
   });
 
   it.skipIf(!existsSync(corpusLog('delta-merge-api')))('flags the DeltaTable API MERGE', async () => {

@@ -1,7 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 
 import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
-import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { FindingOf } from '@sparkforensics/core/types.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
@@ -16,7 +15,7 @@ import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { stageIdOf } from '@/view/impact-sort';
 import { SortModeToggle } from '@/view/SortModeToggle';
 import { useSortMode } from '@/view/useSortMode';
-import { useStatedAbove } from '@/view/InlineEvidenceContext';
+import { useAnyStatedAbove } from '@/view/InlineEvidenceContext';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
 import { RowPagination } from '@/view/RowPagination';
@@ -24,8 +23,46 @@ import { PLAN_TAG_CLASS } from '@/view/plan-finding-shared';
 
 export type MergeRewriteProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
-// The counters behind a row: the finding text states the action only, so every row shows them.
-function mergeMeasurement(finding: FindingOf<'mergeRewrite'>): string {
+type MergeFinding = FindingOf<'mergeRewrite'>;
+
+// MERGE commands whose counters are identical share one row. A MERGE that trips both rules has two
+// findings with the same counters, so `executionIds` counts each command once.
+interface MergeRowGroup {
+  findings: MergeFinding[];
+  executionIds: number[];
+  targets: (string | null)[];
+}
+
+function groupByCounters(findings: MergeFinding[]): MergeRowGroup[] {
+  const groups = new Map<string, MergeRowGroup>();
+  for (const f of findings) {
+    const key = JSON.stringify([f.rewrittenRows, f.changedRows, f.filesBefore, f.filesAfter, f.partitionsScanned, f.partitionsTouched]);
+    const group = groups.get(key) ?? { findings: [], executionIds: [], targets: [] };
+    group.findings.push(f);
+    if (!group.executionIds.includes(f.executionId)) {
+      group.executionIds.push(f.executionId);
+      group.targets.push(f.target);
+    }
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}
+
+function listQueries(ids: number[]): string {
+  const sorted = [...ids].sort((a, b) => a - b).map(String);
+  return sorted.length < 2 ? sorted.join('') : `${sorted.slice(0, -1).join(', ')} and ${sorted[sorted.length - 1]}`;
+}
+
+// Names the MERGE by its SQL query number, and by its target when the log names one for all of them.
+function rowLabel({ executionIds, targets }: MergeRowGroup): string {
+  const target = targets.every((t) => t === targets[0]) ? targets[0] : null;
+  const on = target ? ` on ${target}` : '';
+  return executionIds.length === 1
+    ? `MERGE query ${executionIds[0]}${on}`
+    : `${executionIds.length} MERGE commands (queries ${listQueries(executionIds)})${on}`;
+}
+
+function mergeMeasurement(finding: MergeFinding): string {
   const n = (v: number) => v.toLocaleString('en-US');
   const { rewrittenRows, changedRows, filesBefore, filesAfter, partitionsScanned, partitionsTouched } = finding;
   const rows = `${n(rewrittenRows)} unmodified rows rewritten, ${n(changedRows)} rows inserted, updated or deleted.`;
@@ -35,10 +72,11 @@ function mergeMeasurement(finding: FindingOf<'mergeRewrite'>): string {
     : rows;
 }
 
-function MergeRewriteRow({ finding }: { finding: FindingOf<'mergeRewrite'> }) {
-  const anchor = useAnchoredRow([finding]);
-  // The line above an evidence panel already shows the stage pills, the sentence and the savings.
-  const stated = useStatedAbove(finding);
+function MergeRewriteRow({ group }: { group: MergeRowGroup }) {
+  const anchor = useAnchoredRow(group.findings);
+  // The line above an evidence panel already shows the stage pills.
+  const stated = useAnyStatedAbove(group.findings);
+  const stageIds = [...new Set(group.findings.flatMap((f) => f.stageIds))].sort((a, b) => a - b);
 
   return (
     <li
@@ -47,15 +85,14 @@ function MergeRewriteRow({ finding }: { finding: FindingOf<'mergeRewrite'> }) {
       data-flashed={anchor.dataFlashed}
       className={`space-y-2 ${ROW_SEPARATOR_CLASS} transition-colors ${anchor.flashClassName}`}
     >
-      {!stated && finding.stageIds.length > 0 ? (
-        <StagePillGroup pills={finding.stageIds.map((id) => ({ id }))} />
-      ) : null}
-      {stated ? null : (
-        <p>
-          {recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation} <ImpactEstimate finding={finding} />
-        </p>
-      )}
-      <p className="text-xs text-muted-foreground">{mergeMeasurement(finding)}</p>
+      {!stated && stageIds.length > 0 ? <StagePillGroup pills={stageIds.map((id) => ({ id }))} /> : null}
+      <p>
+        <span className="font-medium">{rowLabel(group)}</span>
+        {' '}
+        <span className="text-muted-foreground">{mergeMeasurement(group.findings[0])}</span>
+        {' '}
+        <ImpactEstimate finding={group.findings[0]} />
+      </p>
     </li>
   );
 }
@@ -68,18 +105,20 @@ export const MergeRewrite = memo(function MergeRewrite({ catalog, defaultCollaps
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const [page, setPage] = useState(0);
 
-  const { findings, pills } = useMemo(() => {
+  const { findings, groups } = useMemo(() => {
     const findings = findingsOfType(catalog, 'mergeRewrite').sort(
       (a, b) => IMPACT_BAND_ORDER[a.impactBand] - IMPACT_BAND_ORDER[b.impactBand],
     );
-    const pills = [...new Set(findings.flatMap((f) => f.stageIds))].map((id) => ({ id }));
-    return { findings, pills };
+    return { findings, groups: groupByCounters(findings) };
   }, [catalog, sortMode]);
 
-  const orderedFindings = orderBy(findings, (f) => [f], stageIdOf);
+  const orderedGroups = orderBy(groups, (g) => g.findings, (g) => stageIdOf(g.findings[0]));
   const activeRouteTarget = useActiveRouteTarget();
-  const routeIndex = activeRouteTarget ? orderedFindings.findIndex((f) => f === activeRouteTarget.finding) : null;
-  const { totalPages, effectivePage, visible } = usePagedRows(orderedFindings, page, setPage, routeIndex);
+  const routeIndex = activeRouteTarget ? orderedGroups.findIndex((g) => g.findings.includes(activeRouteTarget.finding as MergeFinding)) : null;
+  const { totalPages, effectivePage, visible } = usePagedRows(orderedGroups, page, setPage, routeIndex);
+  // Stage order only means something when a row has a stage.
+  const hasStages = findings.some((f) => f.stageIds.length > 0);
+  const commandCount = new Set(findings.map((f) => f.executionId)).size;
 
   if (findings.length === 0) return null;
 
@@ -93,7 +132,7 @@ export const MergeRewrite = memo(function MergeRewrite({ catalog, defaultCollaps
       badges={
         <>
           <TagBadge type="mergeRewrite" impactBand={worstImpactBand(findings) ?? 'info'} className={PLAN_TAG_CLASS} />
-          {canToggleSort(findings, findings.length, cardOpen) ? (
+          {hasStages && canToggleSort(findings, groups.length, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}
         </>
@@ -109,14 +148,14 @@ export const MergeRewrite = memo(function MergeRewrite({ catalog, defaultCollaps
       }
       summary={
         <WidgetLeadSummary
-          value={`${pills.length} stage${pills.length === 1 ? '' : 's'}`}
+          value={`${commandCount} MERGE command${commandCount === 1 ? '' : 's'}`}
           context={findingCount(findings.length)}
         />
       }
     >
       <ul className="space-y-3 text-sm">
-        {visible.map((f) => (
-          <MergeRewriteRow key={f.id} finding={f} />
+        {visible.map((g) => (
+          <MergeRewriteRow key={g.findings[0].id} group={g} />
         ))}
       </ul>
       <RowPagination

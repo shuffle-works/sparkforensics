@@ -25,6 +25,7 @@ import {
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { outputRowsOf, ownOutputRows, parseNestedLoopJoin } from './nested-loop-join.ts';
 import { commandOf, mergeRowsOf, metricValue } from './write-targets.ts';
+import { indexByRoot, resolveDeltaCommandTarget, type ExecutionsByRoot } from './delta-targets.ts';
 import { totalExecutorCpuMs } from './run-totals.ts';
 import { duplicateSubtreeDetail, duplicateSubtreeNote, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { indexStagesBySqlExecution } from './sql-stages.ts';
@@ -128,6 +129,9 @@ export interface DetectorSqlExec {
   description?: string;
   // The session settings this execution ran with that differ from the SparkContext's.
   modifiedConfigs?: Record<string, string>;
+  // What a Delta command's target is resolved from (delta-targets.ts).
+  rootExecutionId?: number;
+  commandArguments?: string;
 }
 
 interface DetectorRddInfo {
@@ -193,6 +197,8 @@ export interface DetectorCtx {
   skewThresholds: SkewThresholds;
   // `stages` grouped by sqlExecutionId, built on first use (see sqlStageIds).
   stagesBySqlExecution?: Map<number, number[]>;
+  // `sql` grouped by root execution, built on first use (see resolveDeltaCommandTarget).
+  executionsByRoot?: ExecutionsByRoot;
 }
 
 // The ids of the stages a SQL execution ran: one index over the run's stages, shared by every
@@ -3838,7 +3844,7 @@ export const DETECTORS = [
       minCopiedRows: 100_000, minCopiedToChangedRatio: 2,
       minTargetFiles: 8, minFilesKeptShare: 0.9, maxTouchedPartitionShare: 0.5,
     },
-    detect(sqlExec, _ctx, thresholds): Finding[] | null {
+    detect(sqlExec, ctx, thresholds): Finding[] | null {
       if (!sqlExec.planTree) return null;
       const out: Finding[] = [];
       walkPlanTree(sqlExec.planTree, (node) => {
@@ -3854,10 +3860,12 @@ export const DETECTORS = [
         const removedFrom = metricValue(node, 'number of target partitions from which files were removed');
         const addedTo = metricValue(node, 'number of target partitions to which files were added');
         const partitionsTouched = removedFrom == null || addedTo == null ? removedFrom ?? addedTo : Math.max(removedFrom, addedTo);
+        ctx.executionsByRoot ??= indexByRoot(ctx.sql);
+        const target = resolveDeltaCommandTarget(command, sqlExec, node, ctx.executionsByRoot)?.target ?? null;
         const base = {
           type: 'mergeRewrite' as const, executionId: sqlExec.id, stageIds: unionStageIds([node], []),
           planNodeIds: [node.id!].filter(Boolean), impactBand: 'info' as const,
-          rewrittenRows: rows.copied, changedRows, filesBefore, filesAfter, partitionsScanned, partitionsTouched,
+          rewrittenRows: rows.copied, changedRows, filesBefore, filesAfter, partitionsScanned, partitionsTouched, target,
         };
         if (rows.copied >= thresholds.minCopiedRows && rows.copied >= thresholds.minCopiedToChangedRatio * changedRows) {
           out.push({

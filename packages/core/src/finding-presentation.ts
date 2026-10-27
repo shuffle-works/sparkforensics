@@ -496,7 +496,7 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
   mergeRewrite: {
     name: 'MERGE rewrite',
     tag: 'PLAN',
-    thresholdSummary: (t) => `a MERGE that rewrote over ${groupThousands(t.minCopiedRows)} unmodified rows, ${t.minCopiedToChangedRatio}x the rows it changed, or kept ${shareLabel(t.minFilesKeptShare)} of at least ${t.minTargetFiles} target files after skipping while changing at most ${shareLabel(t.maxTouchedPartitionShare)} of the partitions it scanned`,
+    thresholdSummary: (t) => `a MERGE that rewrote at least ${groupThousands(t.minCopiedRows)} unmodified rows, at least ${t.minCopiedToChangedRatio}x the rows it changed, or kept ${shareLabel(t.minFilesKeptShare)} of at least ${t.minTargetFiles} target files after skipping while changing at most ${shareLabel(t.maxTouchedPartitionShare)} of the partitions it scanned`,
     actionLabel: (f) => (f.rule === 'weakSkipping' ? 'Prune MERGE target files' : 'Filter MERGE source'),
     genericRecommendation: (f) => (f.rule === 'weakSkipping'
       ? 'Repeat the target partition range in the MERGE condition so Delta can prune files, and check the target\'s file layout.'

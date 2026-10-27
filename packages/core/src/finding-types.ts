@@ -451,6 +451,8 @@ export interface MergeRewriteEvidence extends PlanFindingEvidence {
   filesAfter: number | null;
   partitionsScanned: number | null;
   partitionsTouched: number | null;
+  /** The table or path the MERGE writes, null when the log does not name exactly one. */
+  target: string | null;
 }
 export interface MergeRewriteFinding extends NumericFinding<'mergeRewrite'>, MergeRewriteEvidence, PlanNodeOrigin {}
 
