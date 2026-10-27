@@ -5,7 +5,7 @@
 (Components below live in `src/view/widgets/`, one file per widget name,
 e.g. `JobFailures.tsx`, `MemoryUtilization.tsx`.)
 
-Beyond the stage-level cards, eleven app- and plan-level cards render in the
+Beyond the stage-level cards, thirteen app- and plan-level cards render in the
 Findings tab, all `region: 'action'` in `detector-registry.tsx`: Incomplete
 Run, Job Failures, Caching Opportunities, Autoscaling Churn, Config Audit, and
 the eight Plan Advisor cards (Redundant Plan Subtree, Excessive Small Files,
