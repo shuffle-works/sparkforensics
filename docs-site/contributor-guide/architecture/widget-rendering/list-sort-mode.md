@@ -32,7 +32,8 @@ several stages (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `mergeRe
 via `stageIds`) sorts by the lowest stage id it touches (`stageIdOf`). The toggle renders
 only when `canToggleSort` holds: a finding in the list has a place in `savingsRank`,
 there is more than one row, and the card is open; with no ranked finding the impact
-order is the input order, so the toggle would do nothing. Rows with no
+order is the input order, so the toggle would do nothing. `MergeRewrite.tsx` also
+hides it when none of its findings has a stage, since stage order would be the input order. Rows with no
 rankable finding, and `byStageAsc` ties, keep their prior relative order
 (`Array.prototype.sort`'s stability) rather than being shuffled.
 `FixTheseFirst`'s own expanded group list (see "Findings tab" above) sorts by impact
