@@ -28,6 +28,14 @@ hides the target, as the verdict's own route does);
 `finalFocus` skips returning focus to the opener in that case, so the route's
 own focus on the evidence stands. Without `onRoute` the button is not shown.
 
+The findings block is its own component, `StageFindings`
+(`src/view/widgets/StageFindings.tsx`): it reads the stage's findings from the run's
+interpretation, applies the band filter and renders the sentence and the finding
+types above. The dialog renders it first in its body, and the plan graph's stage
+panel renders it on its own. The plan graph route mounts the same dialog, opened
+from that panel's **Open full stage details** button (see
+[Plan graph](./drill-down/plan-graph.md)).
+
 ## Plan DOT serialization
 
 `packages/core/src/plan-dot.ts` (entry `planTreeToDot(planTree, { title })`) serializes a

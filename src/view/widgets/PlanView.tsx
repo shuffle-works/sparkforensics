@@ -374,6 +374,8 @@ export interface PlanViewProps {
  * fails to parse, but never throws. */
 export function PlanView({ stageId, appModel }: PlanViewProps) {
   const openPlanGraph = useStore((s) => s.openPlanGraph);
+  // Over the plan graph the button would open what is already on screen.
+  const graphActive = useStore((s) => s.planGraph.active);
   const planTree = resolvePlanTree(stageId, appModel);
   if (!planTree) return null;
 
@@ -393,7 +395,7 @@ export function PlanView({ stageId, appModel }: PlanViewProps) {
           <TabsTrigger value="summary">Summary</TabsTrigger>
         </TabsList>
         <div className="flex gap-2">
-          {dot ? (
+          {dot && !graphActive ? (
             <Button type="button" variant="ghost" size="sm" onClick={() => openPlanGraph(stageId)}>
               View plan graph
             </Button>

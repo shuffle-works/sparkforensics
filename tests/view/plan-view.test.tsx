@@ -392,4 +392,14 @@ describe('PlanView', () => {
 
     expect(store.getState().planGraph).toEqual({ active: true, stageId: 1, initialScope: 'segment' });
   });
+
+  it('hides the "View plan graph" button while the plan graph is on screen', () => {
+    store.getState().openPlanGraph(1);
+    const planTree = node('SortMergeJoin', 'SortMergeJoin [id#1], [id#2], Inner');
+
+    render(<PlanView stageId={1} appModel={makeAppModel(planTree)} />);
+
+    expect(screen.getByRole('tab', { name: 'Tree' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'View plan graph' })).not.toBeInTheDocument();
+  });
 });

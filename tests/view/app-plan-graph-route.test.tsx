@@ -217,9 +217,9 @@ test('renders the graph canvas with the plan node once opened', () => {
   expect(screen.getByText('SortMergeJoin')).toBeInTheDocument();
 });
 
-// A finding badge's docs link on the plan-graph route (which
-// renders instead of Dashboard) must open the app-level DocsSheet both routes share.
-test('clicking a finding badge in the plan graph opens the reference panel', () => {
+// A chip opens the stage's findings panel; the docs link is the tag inside it.
+// The panel must reach the app-level DocsSheet both routes share.
+test('the tag in the stage panel opens the reference panel', () => {
   const appModel = planTreePlanModel(7);
   const finding = testFinding({ type: 'skew', stageId: 7, impactBand: 'critical' as const, recommendation: 'Rebalance partitions' });
   store.setState({ appModel, catalog: [finding] });
@@ -229,9 +229,10 @@ test('clicking a finding badge in the plan graph opens the reference panel', () 
 
   // fireEvent, not userEvent: userEvent.click's mousedown bubbles into React
   // Flow's pane, whose d3-drag zoom/pan throws on that synthetic event in jsdom.
-  fireEvent.click(screen.getByRole('link', { name: 'SKEW' }));
+  fireEvent.click(screen.getByRole('button', { name: 'SKEW' }));
+  fireEvent.click(within(screen.getByTestId('plan-stage-detail')).getByRole('link', { name: 'SKEW' }));
 
-  expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: /reference/i })).toBeInTheDocument();
 });
 
 test('a finding that only carries stageIds (not stageId) still reaches the plan graph', () => {

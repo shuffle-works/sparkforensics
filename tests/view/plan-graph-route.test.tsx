@@ -3,6 +3,7 @@ import { test, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 import { DocsProvider } from '@/view/DocsContext';
+import { StageDetailProvider } from '@/view/StageDetailContext';
 import { PlanGraphRoute } from '@/view/PlanGraphRoute';
 import { emptyAppModel } from '@/store/store';
 import type { ReactElement } from 'react';
@@ -47,7 +48,9 @@ vi.mock('@xyflow/react', async () => {
 function renderRoute(ui: ReactElement) {
   return render(
     <ThemeProvider>
-      <DocsProvider>{ui}</DocsProvider>
+      <DocsProvider>
+        <StageDetailProvider>{ui}</StageDetailProvider>
+      </DocsProvider>
     </ThemeProvider>,
   );
 }

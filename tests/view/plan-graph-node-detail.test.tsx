@@ -155,7 +155,7 @@ describe('PlanGraphNodeDetail', () => {
       render(<PlanGraphNodeDetail node={node()} onClose={vi.fn()} />);
       expect(screen.getByTestId('plan-node-detail')).toHaveAttribute('data-variant', 'dock');
       expect(screen.getByTestId('plan-node-detail').className).toContain('w-80');
-      expect(screen.queryByTestId('plan-node-detail-grabber')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('plan-graph-inspector-grabber')).not.toBeInTheDocument();
     });
 
     it('is a partial-height sheet with a grabber, not a full-height side panel', () => {
@@ -164,20 +164,20 @@ describe('PlanGraphNodeDetail', () => {
       expect(dialog).toHaveAttribute('data-variant', 'sheet');
       expect(dialog.className).toContain('h-2/5');
       expect(dialog.className).not.toContain('w-80');
-      expect(screen.getByTestId('plan-node-detail-grabber')).toBeInTheDocument();
+      expect(screen.getByTestId('plan-graph-inspector-grabber')).toBeInTheDocument();
     });
 
     it('closes when the grabber is dragged down far enough', () => {
       const onClose = vi.fn();
       render(<PlanGraphNodeDetail node={node()} sheet onClose={onClose} />);
-      drag(screen.getByTestId('plan-node-detail-grabber'), 120);
+      drag(screen.getByTestId('plan-graph-inspector-grabber'), 120);
       expect(onClose).toHaveBeenCalledTimes(1);
     });
 
     it('stays open on a short drag or an upward drag', () => {
       const onClose = vi.fn();
       render(<PlanGraphNodeDetail node={node()} sheet onClose={onClose} />);
-      const grabber = screen.getByTestId('plan-node-detail-grabber');
+      const grabber = screen.getByTestId('plan-graph-inspector-grabber');
       drag(grabber, 20);
       drag(grabber, -120);
       expect(onClose).not.toHaveBeenCalled();
