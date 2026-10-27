@@ -64,10 +64,10 @@ describe('evidence panel on a Findings row', () => {
     expect(within(panelRow).queryByText('SHFL')).not.toBeInTheDocument();
   });
 
-  it('opens a short panel in place, without routing, when the row states everything its widget shows', async () => {
+  it('opens the measurements behind a figure the row already states, in place and without routing', async () => {
     const utilization = testFinding({
       type: 'utilization', id: 'utilization-1', stageId: null, impactBand: 'warning', metric: 'avgUtilization', value: 33,
-      recommendation: 'Average executor utilization was only 33%.', utilizationFraction: 0.33, appDurationMs: 60_000, totalCores: 4, cpuUtilizationPct: 33,
+      recommendation: 'Average executor utilization was only 33%.', utilizationFraction: 0.33, appDurationMs: 60_000, totalCores: 4, allocatedCoreMs: 240_000, cpuUtilizationPct: 33,
     });
     const onRoute = renderBoard([utilization]);
     const button = screen.getByRole('button', { name: 'Show evidence' });
@@ -76,6 +76,8 @@ describe('evidence panel on a Findings row', () => {
     await userEvent.click(button);
     expect(onRoute).not.toHaveBeenCalled();
     expect(button).toHaveAttribute('aria-expanded', 'true');
-    expect(await within(screen.getByRole('table')).findByRole('heading', { name: 'Executor Utilization' })).toBeInTheDocument();
+    const table = within(screen.getByRole('table'));
+    expect(await table.findByRole('heading', { name: 'Executor Utilization' })).toBeInTheDocument();
+    expect(table.getByText(/4 cores at peak over 1m 0s: 240\.0 core-s allocated, 79\.2 core-s busy, 160\.8 core-s idle\. CPU time was 33% of the allocation\./)).toBeInTheDocument();
   });
 });

@@ -53,10 +53,73 @@ export type CoreUsageAreaProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed
 
 const TITLE = 'Core Usage by Locality';
 
-type LocalityChartModel =
-  | { hasActivity: false }
-  | { hasActivity: true; order: string[]; points: AreaPoint[]; sampled: AreaPoint[]; peakCores: number };
+type ActiveLocalityChart = { hasActivity: true; order: string[]; points: AreaPoint[]; sampled: AreaPoint[]; peakCores: number };
+type LocalityChartModel = { hasActivity: false } | ActiveLocalityChart;
 type AreaPoint = LocalityChartPoint;
+
+/** The locality chart's model, from the store's interpretation. */
+export function useLocalityChartModel(): LocalityChartModel {
+  const chart = useInterpretation()?.data.coreLocality?.chart ?? { hasActivity: false as const };
+  return useMemo(() => (chart.hasActivity ? { ...chart, sampled: downsample(chart.points) } : chart), [chart]);
+}
+
+// Fewer points than this show no trend, so an evidence panel leaves the chart out.
+const MIN_PANEL_CHART_POINTS = 3;
+
+/** Whether an evidence panel embeds the chart: the run has activity and enough points for a trend. */
+export const panelShowsChart = (model: LocalityChartModel): model is ActiveLocalityChart =>
+  model.hasActivity && model.points.length >= MIN_PANEL_CHART_POINTS;
+
+/** Concurrent core usage over time, stacked by locality tier, with idle capacity. */
+export function CoreUsageChart({ model: { order, points, sampled } }: { model: ActiveLocalityChart }) {
+  return (
+    <ChartFrame
+      ariaLabel="Approximate concurrent core usage over time, stacked by task locality tier, with idle capacity shown. See the legend for tier colors."
+      height={HEIGHT}
+      table={{
+        caption: 'Concurrent core usage over time by locality tier',
+        columns: ['Time (s)', ...order.map((tier) => TIER_LABEL[tier] ?? tier)],
+        rows: points.map((p) => [p.t, ...order.map((tier) => Math.round(p[tier]))]),
+        align: Array.from({ length: order.length + 1 }, () => 'right'),
+      }}
+    >
+      <AreaChart data={sampled}>
+        <CartesianGrid vertical={false} stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
+        <XAxis
+          dataKey="t"
+          tick={{ fontSize: 11 }}
+          // Unit on the ticks, not an axis title: the title collided with the legend.
+          tickFormatter={(value) => `${value}s`}
+        />
+        <YAxis
+          tick={{ fontSize: 11 }}
+          width={36}
+          label={{ value: 'avg concurrent cores', angle: -90, position: 'insideLeft', fontSize: 12 }}
+        />
+        <Tooltip
+          {...CHART_TOOLTIP_PROPS}
+          labelFormatter={(label) => `${label}s from app start`}
+          // Bucket averages are fractional cores; two decimals is the readable precision.
+          formatter={(value) => (typeof value === 'number' ? value.toFixed(2) : String(value))}
+        />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        {order.map((tier) => (
+          <Area
+            key={tier}
+            type="monotone"
+            dataKey={tier}
+            name={TIER_LABEL[tier] ?? tier}
+            stackId="cores"
+            stroke={TIER_COLOR[tier] ?? CHART_COLORS.muted}
+            fill={TIER_COLOR[tier] ?? CHART_COLORS.muted}
+            fillOpacity={tier === 'idle' ? 0.15 : 0.8}
+            isAnimationActive={false}
+          />
+        ))}
+      </AreaChart>
+    </ChartFrame>
+  );
+}
 
 // memo: skip re-downsampling when only the finding filter changes. Always
 // mounted by `Alerts.tsx`, so the `hasActivity`/finding branches below are the
@@ -64,10 +127,7 @@ type AreaPoint = LocalityChartPoint;
 export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultCollapsed = true }: CoreUsageAreaProps) {
   const [nonLocalPage, setNonLocalPage] = useState(0);
   const coreLocality = useInterpretation()?.data.coreLocality;
-  const chartModel: LocalityChartModel = useMemo(() => {
-    const chart = coreLocality?.chart ?? { hasActivity: false as const };
-    return chart.hasActivity ? { ...chart, sampled: downsample(chart.points) } : chart;
-  }, [coreLocality]);
+  const chartModel = useLocalityChartModel();
 
   // Non-local-ratio aggregate + per-stage breakdown (every stage, so the
   // pagination below sees the whole list). Not gated on
@@ -93,7 +153,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
       </WidgetCard>
     );
   }
-  const { order, points, sampled, peakCores } = chartModel;
+  const { peakCores } = chartModel;
 
   return (
     <WidgetCard
@@ -128,51 +188,7 @@ export const CoreUsageArea = memo(function CoreUsageArea({ catalog, defaultColla
             <RowStatusCluster confidence={coreLocalityFinding.confidence} validationRequired={coreLocalityFinding.validationRequired} />
           ) : null}
         </AdvancedOnly>
-        <ChartFrame
-          ariaLabel="Approximate concurrent core usage over time, stacked by task locality tier, with idle capacity shown. See the legend for tier colors."
-          height={HEIGHT}
-          table={{
-            caption: 'Concurrent core usage over time by locality tier',
-            columns: ['Time (s)', ...order.map((tier) => TIER_LABEL[tier] ?? tier)],
-            rows: points.map((p) => [p.t, ...order.map((tier) => Math.round(p[tier]))]),
-            align: Array.from({ length: order.length + 1 }, () => 'right'),
-          }}
-        >
-            <AreaChart data={sampled}>
-              <CartesianGrid vertical={false} stroke={CHART_COLORS.muted} strokeOpacity={0.2} />
-              <XAxis
-                dataKey="t"
-                tick={{ fontSize: 11 }}
-                // Unit on the ticks, not an axis title: the title collided with the legend.
-                tickFormatter={(value) => `${value}s`}
-              />
-              <YAxis
-                tick={{ fontSize: 11 }}
-                width={36}
-                label={{ value: 'avg concurrent cores', angle: -90, position: 'insideLeft', fontSize: 12 }}
-              />
-              <Tooltip
-                {...CHART_TOOLTIP_PROPS}
-                labelFormatter={(label) => `${label}s from app start`}
-                // Bucket averages are fractional cores; two decimals is the readable precision.
-                formatter={(value) => (typeof value === 'number' ? value.toFixed(2) : String(value))}
-              />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              {order.map((tier) => (
-                <Area
-                  key={tier}
-                  type="monotone"
-                  dataKey={tier}
-                  name={TIER_LABEL[tier] ?? tier}
-                  stackId="cores"
-                  stroke={TIER_COLOR[tier] ?? CHART_COLORS.muted}
-                  fill={TIER_COLOR[tier] ?? CHART_COLORS.muted}
-                  fillOpacity={tier === 'idle' ? 0.15 : 0.8}
-                  isAnimationActive={false}
-                />
-              ))}
-            </AreaChart>
-        </ChartFrame>
+        <CoreUsageChart model={chartModel} />
         <AdvancedOnly>
           {visibleNonLocalStages.length > 0 ? (
             <>

@@ -89,6 +89,28 @@ describe.each(SQL_WIDGETS)('$name in an evidence panel', ({ Widget, type, extra 
   });
 });
 
+describe('SmallFiles average file size', () => {
+  const make = (id: string, stageId: number): Finding =>
+    testFinding({
+      type: 'smallFiles', id, stageIds: [stageId], impactBand: 'warning', value: 1024, fileCount: 4, direction: 'write',
+      recommendation: `Measured ${id} sentence: fix it.`,
+    } as never) as Finding;
+
+  it('shows only for the stated finding in a panel', () => {
+    const [a, b] = [make('a', 11), make('b', 22)];
+    installInterpretation([a, b]);
+    renderIn(<SmallFiles catalog={[a, b]} defaultCollapsed={false} />, ['a']);
+    expect(screen.getAllByText(/Average file size/)).toHaveLength(1);
+  });
+
+  it('is absent outside a panel', () => {
+    const a = make('a', 11);
+    installInterpretation([a]);
+    renderIn(<SmallFiles catalog={[a]} defaultCollapsed={false} />, null);
+    expect(screen.queryByText(/Average file size/)).not.toBeInTheDocument();
+  });
+});
+
 describe('ConfigAudit in an evidence panel', () => {
   const make = (id: string, property: string): Finding =>
     testFinding({
@@ -115,12 +137,12 @@ describe('ConfigAudit in an evidence panel', () => {
     expect(screen.getByText(/Measured b sentence/)).toBeInTheDocument();
   });
 
-  it('renders nothing for a stated finding with no docs link', () => {
+  it('keeps the audited setting of a stated finding with no docs link', () => {
     const bare = { ...make('a', 'spark.a'), docAnchor: undefined } as Finding;
     renderAudit([bare], ['a']);
-    expect(screen.queryByText('spark.a')).not.toBeInTheDocument();
+    expect(screen.getByText('spark.a')).toBeInTheDocument();
+    expect(screen.getByText('value-a')).toBeInTheDocument();
     expect(screen.queryByText(/Why spark.a matters/)).not.toBeInTheDocument();
-    expect(document.querySelector('li')).toBeNull();
   });
 
   it('is unchanged outside a panel', () => {

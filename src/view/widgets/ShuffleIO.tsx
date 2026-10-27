@@ -58,6 +58,11 @@ function ShuffleRow({ entry, appModel }: { entry: StageEntry; appModel: WidgetPr
           Write: {formatBytes(writeBytes)}
         </p>
       )}
+      {stated && stage?.taskCount ? (
+        <p className="text-xs text-muted-foreground">
+          {stage.taskCount} tasks read a median of {formatBytes(stage.shuffleReadP50)} each, the largest {formatBytes(stage.shuffleReadMax)}.
+        </p>
+      ) : null}
       <ImpactEstimate finding={entry.shuffle} />
       {partitionHint || showPlanExplorer ? (
         <div className="space-y-2 pt-1">

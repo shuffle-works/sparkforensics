@@ -25,8 +25,7 @@ function metricLabel(f: Finding): string {
 function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetProps['appModel'] }) {
   const anchor = useAnchoredRow([finding]);
   const stated = useStatedAbove(finding);
-  // The line above an evidence panel states the discarded executor time and the stage, so only the stage's name is left.
-  if (stated && !(finding.stageId != null && appModel.stages.get(finding.stageId)?.name)) return null;
+  const stage = finding.stageId != null ? appModel.stages.get(finding.stageId) : undefined;
   return (
     <li
       ref={anchor.ref}
@@ -39,6 +38,11 @@ function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetPro
         {finding.stageId != null ? <StageHeader stageId={finding.stageId} appModel={appModel} stated={stated} /> : null}
         {stated ? null : <strong>{metricLabel(finding)}</strong>}
       </div>
+      {stated && stage?.taskCount ? (
+        <p className="text-xs text-muted-foreground">
+          {String(stage.speculativeTasks ?? 0)} of {stage.taskCount} tasks ran speculatively; {String(stage.speculationWastedAttempts ?? 0)} attempts were discarded.
+        </p>
+      ) : null}
       <ImpactEstimate finding={finding} />
     </li>
   );

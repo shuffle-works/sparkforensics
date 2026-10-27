@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 
-import { IMPACT_BAND_ORDER, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { recommendationParts } from '@sparkforensics/core/finding-names.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import type { FindingOf } from '@sparkforensics/core/types.ts';
@@ -26,8 +26,9 @@ export type SmallFilesProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
 function SmallFilesRow({ finding }: { finding: FindingOf<'smallFiles'> }) {
   const anchor = useAnchoredRow([finding]);
-  // The line above the panel already shows the stage pills, the sentence and the savings.
-  if (useStatedAbove(finding)) return null;
+  // The line above an evidence panel already shows the stage pills, the sentence and the savings.
+  const stated = useStatedAbove(finding);
+  const averageBytes = numericValue(finding);
 
   return (
     <li
@@ -36,12 +37,19 @@ function SmallFilesRow({ finding }: { finding: FindingOf<'smallFiles'> }) {
       data-flashed={anchor.dataFlashed}
       className={`space-y-2 ${ROW_SEPARATOR_CLASS} transition-colors ${anchor.flashClassName}`}
     >
-      {finding.stageIds.length > 0 ? (
+      {!stated && finding.stageIds.length > 0 ? (
         <StagePillGroup pills={finding.stageIds.map((id) => ({ id }))} />
       ) : null}
-      <p>
-        {recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation} <ImpactEstimate finding={finding} />
-      </p>
+      {stated ? null : (
+        <p>
+          {recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation} <ImpactEstimate finding={finding} />
+        </p>
+      )}
+      {stated ? (
+        <p className="text-xs text-muted-foreground">
+          Average file size {formatBytes(averageBytes)}, about {formatBytes(averageBytes * finding.fileCount)} {finding.direction === 'write' ? 'written' : 'read'} in total.
+        </p>
+      ) : null}
     </li>
   );
 }

@@ -46,6 +46,16 @@ function renderPlain(ui: ReactElement) {
 
 const stageButton = (n: number) => screen.queryByRole('button', { name: `Open details for Stage ${n}` });
 
+/** A run with one busy stage of `durationMs`: the core usage chart has one point per started minute. */
+const busyRun = (durationMs: number): AppModel => ({
+  ...emptyAppModel(),
+  app: { startTime: 0, endTime: durationMs } as AppModel['app'],
+  stages: new Map<number, unknown>([
+    [1, { stageId: 1, submittedAt: 0, completedAt: durationMs, executorRunTime: durationMs * 2, localityStats: [{ locality: 'PROCESS_LOCAL', count: 4 }] }],
+  ]) as unknown as AppModel['stages'],
+});
+const coreChart = () => screen.queryByRole('img', { name: /concurrent core usage/i });
+
 describe('StageFailed', () => {
   const catalog = (): Finding[] => [
     testFinding({ type: 'stageFailed', stageId: 3, impactBand: 'critical', id: 'sf-3', valueText: 'OOM in task 7', recommendation: 'This stage attempt failed outright.' }),
@@ -242,17 +252,34 @@ describe('AutoscalingChurn', () => {
 });
 
 describe('ExecutorUtilization', () => {
+  const measured = { appDurationMs: 10_000, totalCores: 2, allocatedCoreMs: 100_000, cpuUtilizationPct: 12 };
   const catalog = (): Finding[] => [
-    testFinding({ type: 'utilization', stageId: null, impactBand: 'warning', id: 'u-1', value: 30, metric: 'avgUtilization' }),
-    testFinding({ type: 'utilization', stageId: null, impactBand: 'info', id: 'u-2', value: 55, metric: 'avgUtilization' }),
+    testFinding({ type: 'utilization', stageId: null, impactBand: 'warning', id: 'u-1', value: 30, utilizationFraction: 0.3, metric: 'avgUtilization', ...measured }),
+    testFinding({ type: 'utilization', stageId: null, impactBand: 'info', id: 'u-2', value: 55, utilizationFraction: 0.55, metric: 'avgUtilization', ...measured }),
   ];
 
-  it('renders no row for a stated finding; the other finding keeps its figure', () => {
+  it('drops the stated average but keeps the core-time breakdown; the other finding keeps its figure', () => {
     const findings = catalog();
     installInterpretation(findings);
     renderPanel(<ExecutorUtilization catalog={findings} defaultCollapsed={false} />, ['u-1']);
     expect(screen.queryByText('30%')).not.toBeInTheDocument();
+    expect(screen.getByText(/2 cores at peak over 10\.0s: 100\.0 core-s allocated, 30\.0 core-s busy, 70\.0 core-s idle\. CPU time was 12% of the allocation\./)).toBeInTheDocument();
     expect(screen.getByText('55%')).toBeInTheDocument();
+  });
+
+  it('leaves the core usage chart out of the panel when it has fewer than 3 points', () => {
+    const findings = catalog();
+    installInterpretation(findings, busyRun(60_000));
+    renderPanel(<ExecutorUtilization catalog={findings} defaultCollapsed={false} />, ['u-1']);
+    expect(coreChart()).not.toBeInTheDocument();
+    expect(screen.getByText(/2 cores at peak over 10\.0s/)).toBeInTheDocument();
+  });
+
+  it('keeps the core usage chart in the panel when it has 3 points', () => {
+    const findings = catalog();
+    installInterpretation(findings, busyRun(180_000));
+    renderPanel(<ExecutorUtilization catalog={findings} defaultCollapsed={false} />, ['u-1']);
+    expect(coreChart()).toBeInTheDocument();
   });
 
   it('is unchanged outside the panel', () => {
@@ -261,28 +288,43 @@ describe('ExecutorUtilization', () => {
     renderPlain(<ExecutorUtilization catalog={findings} defaultCollapsed={false} />);
     expect(screen.getByText('30%')).toBeInTheDocument();
     expect(screen.getByText('55%')).toBeInTheDocument();
+    expect(screen.queryByText(/cores at peak/)).not.toBeInTheDocument();
   });
 });
 
 describe('MemoryUtilization', () => {
   const catalog = (): Finding[] => [
-    testFinding({ type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', id: 'm-idle', metric: 'idleCoreRate', value: 75 }),
-    testFinding({ type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, executorId: '7', impactBand: 'info', id: 'm-band', metric: 'heapUsedRatio', value: 20, recommendation: 'The busiest of 4 sampled executors peaked at 20% of allocated heap: reduce it.' }),
-    testFinding({ type: 'memoryUtilization', variant: 'wasteModel', stageId: null, impactBand: 'info', id: 'm-waste', metric: 'wastedMBSeconds', value: 12345 }),
+    testFinding({ type: 'memoryUtilization', variant: 'idleCores', stageId: null, impactBand: 'warning', id: 'm-idle', metric: 'idleCoreRate', value: 75, allocatedMBSeconds: 40_000 }),
+    testFinding({ type: 'memoryUtilization', variant: 'memoryBand', rule: 'heapOverProvisioned', stageId: null, executorId: '7', impactBand: 'info', id: 'm-band', metric: 'heapUsedRatio', value: 20, heap: 1024 ** 3, allocatedBytes: 5 * 1024 ** 3, executorCount: 4, recommendation: 'The busiest of 4 sampled executors peaked at 20% of allocated heap: reduce it.' }),
+    testFinding({ type: 'memoryUtilization', variant: 'wasteModel', stageId: null, impactBand: 'info', id: 'm-waste', metric: 'wastedMBSeconds', value: 12345, allocatedMBSeconds: 50_000 }),
   ];
 
-  it('drops the stated figures, keeping only the executor id of a stated heap band', () => {
+  it('drops the stated figures and keeps the measurements behind each', () => {
     const findings = catalog();
     installInterpretation(findings);
     store.getState().setWidgetDensity('advanced');
     const { container } = renderPanel(<MemoryUtilization catalog={findings} defaultCollapsed={false} />, ['m-idle', 'm-band', 'm-waste']);
     expect(screen.getByText('Executor 7')).toBeInTheDocument();
-    expect(container.textContent).not.toContain('Idle cores');
-    expect(container.textContent).not.toContain('Memory waste');
     expect(container.textContent).not.toContain('of available core-time idle');
     expect(container.textContent).not.toContain('of allocated heap used');
     expect(container.textContent).not.toContain('The busiest of 4 sampled executors');
     expect(container.textContent).not.toContain('wasted');
+    expect(container.textContent).toContain('40,000 MB-s of executor memory-time allocated.');
+    expect(container.textContent).toMatch(/Peak heap .* of .* allocated, across 4 sampled executors\./);
+    expect(container.textContent).toContain('50,000 MB-s of executor memory-time allocated, 37,655 MB-s used.');
+  });
+
+  it('shows the idle-cores chart only when it has 3 or more points, else the memory-time line', () => {
+    const findings = catalog();
+    installInterpretation(findings, busyRun(60_000));
+    const short = renderPanel(<MemoryUtilization catalog={findings} defaultCollapsed={false} />, ['m-idle']);
+    expect(coreChart()).not.toBeInTheDocument();
+    expect(short.container.textContent).toContain('40,000 MB-s of executor memory-time allocated.');
+    short.unmount();
+    installInterpretation(findings, busyRun(180_000));
+    const long = renderPanel(<MemoryUtilization catalog={findings} defaultCollapsed={false} />, ['m-idle']);
+    expect(coreChart()).toBeInTheDocument();
+    expect(long.container.textContent).not.toContain('40,000 MB-s of executor memory-time allocated.');
   });
 
   it('keeps every figure of a finding the line above does not state', () => {

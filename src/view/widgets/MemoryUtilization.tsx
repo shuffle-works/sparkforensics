@@ -11,11 +11,12 @@ import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { usePagedRows } from '@/view/usePagedRows';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import { formatMetricValue, formatRawWaste, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { formatBytes, formatMetricValue, formatRawWaste, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { MemoryUtilizationFinding } from '@sparkforensics/core/finding-types.ts';
+import { CoreUsageChart, panelShowsChart, useLocalityChartModel } from './CoreUsageArea';
 
 export type MemoryUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
@@ -45,6 +46,25 @@ function memoryDiagnosis(f: MemoryUtilizationFinding): string | null {
   return adviceStart === -1 ? null : ` ${recommendation.slice(0, adviceStart)}.`;
 }
 
+const memoryTime = (mbSeconds: number) => formatRawWaste({ value: mbSeconds, unit: 'mbSeconds' });
+
+/** The measurements behind a variant's figure, which the line above an evidence panel does not
+ * repeat. An idle-core rate shows the chart of idle capacity when it has enough points for a trend. */
+function MemoryEvidence({ finding }: { finding: MemoryUtilizationFinding }) {
+  const chart = useLocalityChartModel();
+  if (finding.variant === 'idleCores' && panelShowsChart(chart)) return <CoreUsageChart model={chart} />;
+  if (finding.heap != null && finding.allocatedBytes != null) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Peak heap {formatBytes(finding.heap)} of {formatBytes(finding.allocatedBytes)} allocated, across {finding.executorCount} sampled executors.
+      </p>
+    );
+  }
+  if (finding.allocatedMBSeconds == null) return null;
+  const used = finding.variant === 'wasteModel' ? `, ${memoryTime(finding.allocatedMBSeconds - numericValue(finding))} used` : '';
+  return <p className="text-xs text-muted-foreground">{memoryTime(finding.allocatedMBSeconds)} of executor memory-time allocated{used}.</p>;
+}
+
 /** Per-executor findings name the executor; the two app-wide variants (idle-core
  * rate, waste model) get a fixed label. */
 function rowLabel(f: MemoryUtilizationFinding): string {
@@ -59,9 +79,8 @@ function MemoryRow({ finding }: { finding: MemoryUtilizationFinding }) {
   const anchor = useAnchoredRow([finding]);
   const stated = useStatedAbove(finding);
 
-  // The line above states the caveat's text and each variant's figure; only a
-  // heap band's executor id is new, so every other stated row is empty.
-  if (stated && (finding.dataUnavailable || !('executorId' in finding) || finding.executorId == null)) return null;
+  // The line above states the caveat's text.
+  if (stated && finding.dataUnavailable) return null;
 
   if (finding.dataUnavailable) {
     return (
@@ -89,7 +108,7 @@ function MemoryRow({ finding }: { finding: MemoryUtilizationFinding }) {
         <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
         <strong>{rowLabel(finding)}</strong>
       </p>
-      {stated ? null : (
+      {stated ? <MemoryEvidence finding={finding} /> : (
         <p className="text-xs text-muted-foreground">
           {memoryDetail(finding)}
           {memoryDiagnosis(finding) != null ? <AdvancedOnly>{memoryDiagnosis(finding)}</AdvancedOnly> : null}
