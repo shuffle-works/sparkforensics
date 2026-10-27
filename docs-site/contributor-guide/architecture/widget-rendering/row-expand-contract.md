@@ -157,7 +157,8 @@ mounted with `defaultCollapsed={false}`, and `WidgetCard` reads the context:
   only the stated figure shows the measurements behind it instead: Executor
   Utilization shows the core-time breakdown and the core usage chart, Memory
   Utilization the chart, the heap peak or the allocated memory-time, Excessive
-  Small Files the average file size. Never drop a row's own evidence to avoid a
+  Small Files the average file size. A panel leaves out a core usage chart with
+  fewer than 3 points. Never drop a row's own evidence to avoid a
   repeat; `tests/view/evidence-panels-not-empty.test.tsx` opens every "Show
   evidence" button on the sample run and the public fixtures and fails on a
   panel with nothing under its heading.
