@@ -4,7 +4,7 @@ How the plan graph is modelled and rendered in the drill-down.
 
 `buildPlanGraphModel(planTree, opts)` (`packages/core/src/plan-graph-model.ts`) flattens a
 resolved `planTree` into a `{ nodes, edges, segmentIndex, segmentCount, scope,
-segmentStageIds }` graph shape. `src/view/PlanGraphRoute.tsx` owns the view
+segmentStageIds, inheritedSegments, stageDurations }` graph shape. `src/view/PlanGraphRoute.tsx` owns the view
 state and `src/view/plan-graph/PlanGraphCanvas.tsx` renders the model with
 `@xyflow/react` (React Flow, pan/zoom/viewport/MiniMap) and `@dagrejs/dagre`
 (node layout, `src/view/plan-graph/dagre-layout.ts`, `rankdir: 'RL'`).
@@ -94,9 +94,11 @@ shared with `attributeStageDurationToPlan`). `computeSegments` gives every
 connected component a stable pre-order identity plus separate
 parent/depth/traversal metadata. The numeric identity does not encode
 Exchange-ancestor depth: `zipSegmentsToStages` orders by the explicit depth
-metadata (deepest first, plan traversal order for ties), and the display-only
-fallback uses component-tree edge distance to find the nearest strictly paired
-component.
+metadata (deepest first, plan traversal order for ties). `linkSegmentsToStages`
+adds a link for every segment: a strictly paired segment gets its own stage, and a
+segment the zip left unpaired takes the nearest strictly paired segment's stage
+(component-tree edge distance) and is marked inherited. The model carries the
+labels as `segmentStageIds` and the inherited segments as `inheritedSegments`.
 
 The view has an opt-in "Expand to full plan" toggle gated by a 300-node
 confirmation dialog (`ExpandConfirmDialog.tsx`). A segment-lookup failure that
@@ -171,13 +173,17 @@ counting. `computePlanShapes` in `detectors.ts` walks straight through the
 read half to the write half's real children, so every real Exchange in a
 matched subtree is counted once instead of twice.
 
-The segment-level group box (`PlanGraphSegmentGroupNode.tsx`) always renders,
-even in the default single-stage view where it's the only box on screen. It is
-headered with its stage id (via `segmentStageIds`) and a duration chip, or an
-em-dash placeholder when the segment has no attributed duration. It also
-carries one finding chip (`PlanGraphFindingChip`) per finding on its zipped
-stage, in both the default and the expanded view. Each chip is a button holding a
-plain `TagBadge` (the ALL-CAPS tag, with no docs link)
+Each stage is drawn as one stroked box, `PlanGraphStageGroupNode.tsx` (Dagre
+`compound: true` for spacing, `computeGroupBounds` for the bounds), in both the
+default single-stage view and the expanded full-plan view. The box wraps the one
+Exchange-bounded segment the log strictly pairs with that stage, so it can never
+enclose a node of another stage. It is the only stroked box around that segment
+and the only one that rings on selection. Its header holds the "Stage N"
+title, a duration chip with the stage's exclusive duration
+(`PlanGraphModel.stageDurations`, computed over the whole plan, so the single-stage
+view shows the same total; omitted when none is attributed), and one finding chip
+(`PlanGraphFindingChip`) per finding on the stage, in that order. Each chip is a
+button holding a plain `TagBadge` (the ALL-CAPS tag, with no docs link)
 followed by the finding's compact magnitude and recoverable-time detail from
 `formatFindingChipDetail` (e.g. "SPILL 4.2 GB · ~38s": the finding's own
 `value`/`metric` and its `impactEstimate.wallClock`), or the bare tag when the
@@ -186,33 +192,33 @@ finding carries neither. A chip and every "Stage N" title (`StageEntryButton`,
 `tap-target-comfortable`, which lifts the 10px-tall chip to a 24px hit area (44px on
 touch). Outside a `StageSelectionProvider` they render as plain text.
 
-The expanded full-plan view draws two nested layers of background group boxes
-(Dagre `compound: true` for spacing, `computeGroupBounds` for both): the same
-inner segment box described above, plus an outer solid tinted container per
-distinct stage id (`PlanGraphStageGroupNode.tsx`, layered under the inner
-segment box, which is in turn under the plan nodes; all three sit above the
-edge layer so a routed edge can't paint over a box's finding chips) merging
-every segment zipped to that stage, so a stage split
-across several Exchange-bounded segments still reads as one unit of work. In
-this expanded view the segment box still carries its stage's finding chips
-inline in its header row. The outer stage box paints its own copy only as a
-fallback, for a stage no segment box is zipped to (for example, the focal stage
-when it lost the segment/stage pairing), so every finding appears exactly once.
-That box wraps every node on screen, so its chips sit above its top edge and wrap
-upward, clear of the headers of the boxes inside it.
-Chips match a stage through `Finding.stageId` or `Finding.stageIds`; the
-default segment scope uses the same matching for its displayed stage. Clicking
-an outer stage box ("Focus stage N") switches the route to that stage's segment
-view (`handleSelectStage` in `PlanGraphRoute.tsx`), with no reopen.
+A segment with no stage pair of its own (an inherited segment, or one with no
+stage label at all) has no stage box. `PlanGraphSegmentGroupNode.tsx` draws it as a
+dashed box with a "Stage —" header, a "nearest: Stage N" note when the model
+labels it, and its own duration chip (an em-dash placeholder when it has no
+attributed duration). An inherited segment adds nothing to its nearest stage's
+duration or findings. The paint order is the dashed segment boxes, then the stage
+boxes, then the plan nodes, all above the edge layer so a routed edge can't paint
+over a box's finding chips.
 
-The outer layer's own corner tag is positioned opposite the segment box's
-top-left header, because a stage with just one segment (the common case) would
-otherwise show the same "Stage N" header twice, stacked. `STAGE_GROUP_PADDING_Y`
-(64, no reserved header height) is sized to strictly exceed the segment layer's
-own reserved offset (`GROUP_PADDING + GROUP_HEADER_HEIGHT` = 56 at the top),
-while `STAGE_GROUP_PADDING_X` (32) is kept close to `GROUP_PADDING`'s own 24px
-floor so the outer box doesn't visibly balloon sideways. Both still strictly
-contain the outer box around its nested segment box(es).
+Chips match a stage through `Finding.stageId` or `Finding.stageIds`. In the full
+plan, clicking a stage box ("Focus stage N") switches the route to that stage's
+segment view (`handleSelectStage` in `PlanGraphRoute.tsx`), with no reopen; the
+single-stage view draws no such click target. The header sits inside the box, in
+the room above its segment. The padded boxes of adjacent stages can partly
+overlap, so stage boxes paint in top-edge order: a header stays above the box it
+overlaps and its title stays clickable. A focal
+stage with findings that lost the segment/stage pairing has no paired segment
+and no box. `PlanGraphUnmatchedStageNode` draws its header alone above the
+graph, with the same title, duration chip and finding chips plus a note that it
+is not matched to a part of the plan. It encloses no node, and "Next problem"
+cycles to it in the full plan.
+
+The stage box wraps its paired segment's plan nodes directly. `STAGE_GROUP_PADDING_Y`
+(64, no reserved header height) leaves room above the nodes for the header, with
+room to wrap it onto a second row. `STAGE_GROUP_PADDING_BOTTOM` (32) matches
+`STAGE_GROUP_PADDING_X` (32), as nothing is painted below the nodes, and the
+sideways padding stays small so the box doesn't visibly balloon.
 
 Every global control lives on one **vertical control rail** down the left edge
 (`PlanGraphControlRail.tsx`), grouped View / Navigate / Display, so nothing
@@ -290,7 +296,7 @@ The remaining legibility aids sit on the canvas itself:
   neutral plan color and the large group boxes recede into a muted fill.
 - A **legend** panel (`PlanGraphLegend.tsx`, collapsed by default, toggled from the
   rail) keys the operator icons, the heat-bar colors, the shuffle-weighted edge
-  thickness, and the segment-vs-stage box layers.
+  thickness, the stage box and the dashed box of a segment with no stage of its own.
 
 The view is reached from a "View plan graph" button in `PlanView.tsx`'s toolbar
 (gated by the same `if (dot)` check described in "Plan DOT serialization"
@@ -320,7 +326,7 @@ there would invert that dependency direction.
 time. The mode-selected `durationShare` equals it in exclusive mode but adds
 every descendant's time into each ancestor in inclusive mode. `PlanGraphCanvas`
 therefore divides each node's share by the sum of the exclusive shares, and labels
-a segment box with the exclusive sum, so neither number grows with tree depth
+a stage box with its exclusive duration, so neither number grows with tree depth
 when the mode flips. A hand-built node without the exclusive field falls back to
 `durationShare`.
 
@@ -331,7 +337,8 @@ when the mode flips. A hand-built node without the exclusive field falls back to
 `tight-tree` assigns the ranks a tree wants at a fraction of the cost on a compound
 graph. `longest-path` is faster still but places nodes degenerately. `nodesep` in
 `RL` is `2 * STAGE_GROUP_PADDING_Y`, so two vertically stacked stage boxes
-(each reserving that padding above and below its members) cannot overlap; `BT`
+(each reserving that padding above its members and `STAGE_GROUP_PADDING_BOTTOM`
+below) cannot overlap; `BT`
 swaps the axes, with `ranksep` at that floor and `nodesep` at
 `2 * STAGE_GROUP_PADDING_X` plus a gap. The compound-graph ordering fallback
 (`orderGroups`) is described above.

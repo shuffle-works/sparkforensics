@@ -9,14 +9,24 @@ function nodeProps(overrides = {}) {
   return {
     id: 'stage-12', selected: false, type: 'stageGroup', dragging: false, zIndex: -2, isConnectable: false,
     selectable: true, deletable: true, draggable: true, positionAbsoluteX: 0, positionAbsoluteY: 0,
-    data: { width: 400, height: 300, stageId: 12, findings: [], ...overrides },
+    data: { width: 400, height: 300, stageId: 12, findings: [], durationLabel: null, ...overrides },
   };
 }
 
 describe('PlanGraphStageGroupNode', () => {
-  it('shows the stage id in the corner', () => {
+  it('names the stage once', () => {
     render(<PlanGraphStageGroupNode {...nodeProps()} />);
-    expect(screen.getByText('Stage 12')).toBeInTheDocument();
+    expect(screen.getAllByText('Stage 12')).toHaveLength(1);
+  });
+
+  it('shows the summed duration beside the name', () => {
+    render(<PlanGraphStageGroupNode {...nodeProps({ durationLabel: '2.9s' })} />);
+    expect(screen.getByText('2.9s')).toBeInTheDocument();
+  });
+
+  it('shows no duration chip when no segment has an attributed duration', () => {
+    render(<PlanGraphStageGroupNode {...nodeProps()} />);
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
   });
 
   it('shows one tag chip per finding on this stage', () => {
@@ -34,7 +44,7 @@ describe('PlanGraphStageGroupNode', () => {
     expect(screen.queryByText('SKEW')).not.toBeInTheDocument();
   });
 
-  it('shows the finding magnitude and recoverable time next to its own-findings tag', () => {
+  it('shows the finding magnitude and recoverable time next to its tag', () => {
     const findings = [
       { type: 'spill', stageId: 12, impactBand: 'warning' as const, metric: 'memoryBytesSpilled', value: 4.2e9, impactEstimate: { wallClock: { low: 30000, high: 38000 } } },
     ];
@@ -51,11 +61,24 @@ describe('PlanGraphStageGroupNode', () => {
     expect(onSelect).toHaveBeenCalledOnce();
   });
 
-  it('renders the clickable box even when onSelect is not provided (no crash)', async () => {
-    const user = userEvent.setup();
+  it('has no box click target when onSelect is not provided', () => {
     render(<PlanGraphStageGroupNode {...nodeProps()} />);
-    await user.click(screen.getByRole('button', { name: /focus stage 12/i }));
+    expect(screen.queryByRole('button', { name: /focus stage 12/i })).not.toBeInTheDocument();
     expect(screen.getByText('Stage 12')).toBeInTheDocument();
+  });
+
+  describe('header placement', () => {
+    const findings = [{ type: 'skew', stageId: 12, impactBand: 'critical' as const }];
+
+    it('sits inside the top edge of the box', () => {
+      render(<PlanGraphStageGroupNode {...nodeProps({ findings })} />);
+      expect(screen.getByText('Stage 12').closest('div')).toHaveClass('top-2');
+    });
+
+    it('lets clicks past the empty part of the header to the box behind it', () => {
+      render(<PlanGraphStageGroupNode {...nodeProps({ findings })} />);
+      expect(screen.getByText('Stage 12').closest('div')).toHaveClass('pointer-events-none', '[&>*]:pointer-events-auto');
+    });
   });
 
   describe('as a stage entry point', () => {
@@ -70,14 +93,14 @@ describe('PlanGraphStageGroupNode', () => {
       return select;
     };
 
-    it('selects the stage with the corner title as the entry', async () => {
+    it('selects the stage with the title as the entry', async () => {
       const select = renderSelectable();
       const title = screen.getByRole('button', { name: 'Show the findings for stage 12' });
       await userEvent.click(title);
       expect(select).toHaveBeenCalledWith(12, title);
     });
 
-    it('selects the stage from its own-findings chip', async () => {
+    it('selects the stage from its chip', async () => {
       const select = renderSelectable({ findings });
       const chip = screen.getByRole('button', { name: 'SKEW' });
       await userEvent.click(chip);
@@ -92,20 +115,17 @@ describe('PlanGraphStageGroupNode', () => {
       expect(select).not.toHaveBeenCalled();
     });
 
-    it('paints its own chips above the top edge, clear of the headers inside the box', () => {
-      renderSelectable({ findings });
-      const row = screen.getByRole('button', { name: 'SKEW' }).closest('div');
-      expect(row).toHaveClass('bottom-full');
-      expect(row).not.toHaveClass('top-1');
-    });
-
     it('shows a ring only on the selected stage', () => {
-      const { unmount } = render(<PlanGraphStageGroupNode {...nodeProps()} />);
-      expect(screen.getByText('Stage 12').closest('.relative')).not.toHaveClass('ring-2');
+      const { container, unmount } = render(<PlanGraphStageGroupNode {...nodeProps()} />);
+      expect(container.firstElementChild).not.toHaveClass('ring-2');
       unmount();
 
-      renderSelectable({}, 12);
-      expect(screen.getByRole('button', { name: 'Focus stage 12' }).parentElement).toHaveClass('ring-2');
+      const { container: selected } = render(
+        <StageSelectionProvider value={{ selectedStageId: 12, select: vi.fn() }}>
+          <PlanGraphStageGroupNode {...nodeProps()} />
+        </StageSelectionProvider>,
+      );
+      expect(selected.firstElementChild).toHaveClass('ring-2');
     });
   });
 });

@@ -277,11 +277,19 @@ export interface PlanGraphModel {
    * a 'segment' request falls back to 'full' (no sql linkage, or the
    * segment fell outside the Math.min(segments, stages) truncation). */
   scope: 'segment' | 'full';
-  /** Component identity -> stage id for strict stage pairs and display-only
-   * nearest-component fallbacks. Computed regardless of `scope`: compound
-   * stage-group container headers need this in 'full' scope too, not just to
-   * resolve which component a 'segment' request refers to. */
+  /** Component identity -> stage id: the segment's own stage for a strict
+   * pair, or the nearest strictly paired segment's stage for an inherited one
+   * (the "nearest stage" label). Computed regardless of `scope`: the stage
+   * boxes need this in 'full' scope too, not just to resolve which component a
+   * 'segment' request refers to. */
   segmentStageIds: Map<number, number>;
+  /** Segments with no stage pair of their own: their `segmentStageIds` entry
+   * is only the nearest stage, not a link the log supports. */
+  inheritedSegments: Set<number>;
+  /** Stage id -> summed exclusive duration share of every segment strictly
+   * paired with the stage, over the whole plan whatever `scope` renders. A stage with no
+   * measured node has no entry. */
+  stageDurations: Map<number, number>;
 }
 
 export type PlanGraphFilterMode = 'io' | 'basic' | 'advanced';
@@ -407,28 +415,32 @@ export type { Finding, FindingOf, FindingEvidenceMap, Remediation, TunedThreshol
 
 export interface TaskData { metrics: Float64Array | number[]; fieldNames: string[]; }
 
+/** A segment box is drawn only for a segment with no stage pair of its own; a
+ * paired segment is the inside of its stage box. */
 export interface PlanGraphSegmentGroupNodeData {
   width: number;
   height: number;
-  stageId: number | null;
+  /** The nearest strictly paired segment's stage, named in the box's header;
+   * null when the plan pairs no segment with any stage. */
+  nearestStageId: number | null;
   /** Pre-formatted via `formatDuration` (format-utils.ts) by the caller;
-   * null (never 0) when this segment has no attributed duration, e.g. it
-   * fell outside attributeStageDurationToPlan's Math.min(segments, stages)
-   * truncation. */
+   * null (never 0) when this segment has no attributed duration, which is
+   * the usual case for an unpaired segment. */
   durationLabel: string | null;
-  /** Every finding on this stage, in full (not just the worst impact band). */
-  findings: Finding[];
 }
 
 export interface PlanGraphStageGroupNodeData {
   width: number;
   height: number;
   stageId: number;
+  /** Every finding on this stage, in full (not just the worst impact band). */
   findings: Finding[];
-  /** True when no segment box is zipped to this stage id, so this box has
-   * to paint its own findings chips instead of leaving that to the segment
-   * box's header row (see PlanGraphCanvas.tsx's focal-stage fallback).
-   * Defaults to shown when omitted. */
-  showOwnFindings?: boolean;
+  /** The summed duration of every segment strictly paired with the stage,
+   * pre-formatted via `formatDuration`; null when it has no attributed duration. */
+  durationLabel: string | null;
   onSelect?: () => void;
 }
+
+/** The focal stage when it has findings but no strictly paired segment: its
+ * header alone, drawn above the graph with no box around any node. */
+export type PlanGraphUnmatchedStageNodeData = Pick<PlanGraphStageGroupNodeData, 'width' | 'height' | 'stageId' | 'findings' | 'durationLabel'>;

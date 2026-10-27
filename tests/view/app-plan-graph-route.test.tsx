@@ -530,7 +530,7 @@ test('clicking a stage box in the full graph switches focus to that stage\'s seg
   expect(screen.getByRole('button', { name: /expand to full plan/i })).toBeInTheDocument();
 });
 
-// After selecting Stage 8, its segment box must show Stage 8's own
+// After selecting Stage 8, its stage box must show Stage 8's own
 // findings, not the stale anchor Stage 7 findings.
 test('selecting a stage from the full graph shows only that stage\'s findings', async () => {
   const appModel = twoStagePlanModel();
@@ -545,13 +545,8 @@ test('selecting a stage from the full graph shows only that stage\'s findings', 
 
   render(<App />);
 
-  // Findings render in the matched segment box's header, so locate each by its
-  // "Stage N" label rather than a fixed segment index.
-  const segmentFor = (label: string) =>
-    screen.getAllByTestId(/rf__node-segment-/).find((node) => within(node).queryByText(label));
-
-  expect(within(segmentFor('Stage 7')!).getByText('SKEW')).toBeInTheDocument();
-  expect(within(segmentFor('Stage 8')!).getByText('SHFL')).toBeInTheDocument();
+  expect(within(screen.getByTestId('rf__node-stage-7')).getByText('SKEW')).toBeInTheDocument();
+  expect(within(screen.getByTestId('rf__node-stage-8')).getByText('SHFL')).toBeInTheDocument();
 
   // fireEvent avoids d3-zoom's jsdom-incompatible pointer handling; the behavior
   // under test is the stage box's React handler, not React Flow's drag logic.

@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { buildPlanGraphModel } from '../src/plan-graph-model.js';
+import { buildDurationMap } from '../src/plan-node-detail.ts';
+
+vi.mock('../src/plan-node-detail.ts', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, buildDurationMap: vi.fn(actual.buildDurationMap) };
+});
 
 let nextTestId = 0;
 function node(name, children = [], metrics = [], overrides = {}) {
@@ -39,7 +45,7 @@ function makeAppModel({ stageId = 1, sqlExecutionId = 1, stageIds = [stageId], p
 describe('buildPlanGraphModel', () => {
   it('returns an empty model for a null planTree', () => {
     const model = buildPlanGraphModel(null, { scope: 'full', stageId: 1, appModel: makeAppModel({ planTree: null }) });
-    expect(model).toEqual({ nodes: [], edges: [], segmentIndex: null, segmentCount: 0, scope: 'full', segmentStageIds: new Map() });
+    expect(model).toEqual({ nodes: [], edges: [], segmentIndex: null, segmentCount: 0, scope: 'full', segmentStageIds: new Map(), inheritedSegments: new Set(), stageDurations: new Map() });
   });
 
   it('builds one node per plan node and one edge per parent-child link, in full scope', () => {
@@ -120,6 +126,26 @@ describe('buildPlanGraphModel', () => {
       .reduce((total, graphNode) => total + (graphNode.durationShare ?? 0), 0);
     expect(totalForStage(1)).toBe(500);
     expect(totalForStage(2)).toBe(1000);
+  });
+
+  it('totals each stage over every segment of the plan, in single-stage scope too', () => {
+    const exchangeA = splitExchange('Exchange a', [node('Scan a')]);
+    const exchangeB = splitExchange('Exchange b', [node('Scan b')]);
+    const root = node('SortMergeJoin', [exchangeA, exchangeB]);
+    const appModel = makeAppModel({
+      planTree: root,
+      stageId: 1,
+      stageIds: [1, 2],
+      stages: { 1: { submittedAt: 0, completedAt: 10000 }, 2: { submittedAt: 10000, completedAt: 30000 } },
+    });
+
+    const full = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
+    const single = buildPlanGraphModel(root, { scope: 'segment', stageId: 2, appModel });
+
+    expect(full.stageDurations).toEqual(new Map([[1, 10000], [2, 20000]]));
+    expect(single.scope).toBe('segment');
+    expect(single.nodes.every((graphNode) => single.segmentStageIds.get(graphNode.segmentIndex) === 2)).toBe(true);
+    expect(single.stageDurations).toEqual(full.stageDurations);
   });
 
   it('routes the parent edge to the read half and the child edge to the write half, with a read->write pairing edge', () => {
@@ -411,9 +437,10 @@ describe('buildPlanGraphModel', () => {
 
     expect(model.scope).toBe('full');
     expect(model.segmentStageIds).toEqual(new Map([[1, 1], [0, 2]]));
+    expect(model.inheritedSegments).toEqual(new Set());
   });
 
-  it('fills segmentStageIds for a segment past the Math.min(segments, stages) truncation from its nearest paired neighbor', () => {
+  it('labels a segment past the Math.min(segments, stages) truncation with its nearest paired neighbor\'s stage and marks it inherited', () => {
     const leaf = node('Scan parquet');
     const exchange = splitExchange('Exchange hashpartitioning', [leaf]);
     const root = node('SortMergeJoin', [exchange]);
@@ -422,6 +449,36 @@ describe('buildPlanGraphModel', () => {
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
     expect(model.segmentStageIds).toEqual(new Map([[1, 1], [0, 1]]));
+    expect(model.inheritedSegments).toEqual(new Set([0]));
+  });
+
+  it('adds nothing to a stage total from an inherited segment', () => {
+    const leaf = node('Scan parquet');
+    const exchange = splitExchange('Exchange hashpartitioning', [leaf]);
+    const root = node('SortMergeJoin', [exchange]);
+    const appModel = makeAppModel({ planTree: root, stageId: 1, stageIds: [1] });
+    // The inherited root segment carries a measured share here, so only its
+    // inherited mark keeps that share out of stage 1's total.
+    vi.mocked(buildDurationMap).mockReturnValueOnce(new Map([[root, 1000], [leaf, 500]]));
+
+    const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
+
+    expect(model.inheritedSegments).toEqual(new Set([0]));
+    expect(model.nodes.find((n) => n.label === 'SortMergeJoin').durationShare).toBe(1000);
+    expect(model.stageDurations).toEqual(new Map([[1, 500]]));
+  });
+
+  it('opens the single-stage view on the stage\'s paired segment, never on an inherited one', () => {
+    const leaf = node('Scan parquet');
+    const exchange = splitExchange('Exchange hashpartitioning', [leaf]);
+    const root = node('SortMergeJoin', [exchange]);
+    const appModel = makeAppModel({ planTree: root, stageId: 1, stageIds: [1] });
+
+    const model = buildPlanGraphModel(root, { scope: 'segment', stageId: 1, appModel });
+
+    expect(model.scope).toBe('segment');
+    expect(model.segmentIndex).toBe(1);
+    expect(model.nodes.every((n) => n.segmentIndex === 1)).toBe(true);
   });
 
   it('leaves durationShare null (never 0) for a segment past the Math.min(segments, stages) truncation', () => {

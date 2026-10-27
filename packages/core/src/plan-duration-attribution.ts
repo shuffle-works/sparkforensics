@@ -114,40 +114,48 @@ function componentDistance(fromIndex: number, toIndex: number, segmentTopology: 
   return Number.POSITIVE_INFINITY;
 }
 
-// Display-only: the "Stage N" label on a segment's group box. A segment past
+export interface SegmentStageLink {
+  /** The stage the segment is paired with, or for an inherited segment the nearest paired segment's stage. */
+  stageId: number;
+  /** True when the segment has no pair of its own and only borrows `stageId`. */
+  inherited: boolean;
+}
+
+// Links every segment to a stage for display. A segment past
 // zipSegmentsToStages' Math.min cutoff has no timing to pair on, but the plan
 // still places it structurally near a component that won a stage slot (often a
-// broadcast-builder just upstream of the join consuming it). Inherit the
-// nearest strictly-paired component's stage id rather than showing "Stage —".
-// Distance counts parent/child edges in the component tree, not numeric id
-// distance. Neighbor search is always against the ORIGINAL strict pairs, not
-// other filled components, so labels don't drift through inherited-from-
-// inherited guesses. Duration attribution keeps its own strict pairing and
-// must never double-count one stage's wall time across two segments.
-export function mapSegmentsToStagesForDisplay(
+// broadcast-builder just upstream of the join consuming it). It borrows the
+// nearest strictly-paired component's stage id, marked `inherited`: a placement
+// label, not evidence that the segment ran in that stage. Distance counts
+// parent/child edges in the component tree, not numeric id distance. Neighbor
+// search is always against the ORIGINAL strict pairs, not other filled
+// components, so labels don't drift through inherited-from-inherited guesses.
+// Duration attribution keeps its own strict pairing and must never double-count
+// one stage's wall time across two segments.
+export function linkSegmentsToStages(
   segments: PlanNode[][],
   stagesById: Map<number, unknown>,
   stageIds: number[],
   segmentTopology: Map<number, unknown>,
-): Map<number, number> {
+): Map<number, SegmentStageLink> {
   const typedStagesById = stagesById as Map<number, { submittedAt?: number; completedAt?: number }>;
   const typedTopology = segmentTopology as SegmentTopology;
   const { orderedSegments, pairs } = zipSegmentsToStages(segments, typedStagesById, stageIds, typedTopology);
-  const map = new Map<number, number>(pairs.map((p) => [p.segmentIndex, p.stageId]));
+  const links = new Map<number, SegmentStageLink>(pairs.map((p) => [p.segmentIndex, { stageId: p.stageId, inherited: false }]));
   const pairedIndices = pairs.map((p) => p.segmentIndex);
-  if (pairedIndices.length === 0) return map;
+  if (pairedIndices.length === 0) return links;
 
   for (const { i } of orderedSegments as { i: number }[]) {
-    if (map.has(i)) continue;
+    if (links.has(i)) continue;
     let nearest = pairedIndices[0];
     let nearestDist = componentDistance(i, nearest, typedTopology);
     for (const pi of pairedIndices) {
       const dist = componentDistance(i, pi, typedTopology);
       if (dist < nearestDist) { nearestDist = dist; nearest = pi; }
     }
-    map.set(i, map.get(nearest)!);
+    links.set(i, { stageId: links.get(nearest)!.stageId, inherited: true });
   }
-  return map;
+  return links;
 }
 
 function computeExclusiveSharesForPairs(

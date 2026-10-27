@@ -16,15 +16,15 @@ export const NODE_WIDTH = 220;
 export const NODE_HEIGHT = 90;
 const GROUP_PADDING = 24;
 const GROUP_HEADER_HEIGHT = 32;
-// Outer stage box must strictly contain a segment box, which reserves
-// GROUP_PADDING + GROUP_HEADER_HEIGHT = 56px above its members and GROUP_PADDING
-// (24px) elsewhere, so both stage paddings exceed those: PADDING_Y (>56) leaves
-// 8px top / 40px bottom margin; PADDING_X (>24) stays near the floor so the box
-// doesn't balloon sideways. HEADER stays 0 (the stage box paints no header row;
-// its showOwnFindings fallback sizes from the whole fallback graph, so no chip
-// row can collide).
+// The stage box wraps its paired segment's plan nodes directly; that segment
+// draws no box of its own. PADDING_Y leaves 64px above the nodes for the stage
+// header, with room to wrap it onto a second row. PADDING_X (32px) stays small so
+// the box doesn't balloon sideways, and PADDING_BOTTOM (32px) matches it, as
+// nothing is painted below the nodes. HEADER stays 0: the header sits inside
+// PADDING_Y.
 export const STAGE_GROUP_PADDING_X = 32;
 export const STAGE_GROUP_PADDING_Y = 64;
+export const STAGE_GROUP_PADDING_BOTTOM = 32;
 export const STAGE_GROUP_HEADER_HEIGHT = 0;
 
 export type PlanLayoutDirection = 'RL' | 'BT';
@@ -198,8 +198,8 @@ export function runDagre({ nodeIds, groupIds, edges, direction, compound }: Layo
   // left-to-right data flow.
   //
   // nodesep (gap between vertically-adjacent nodes in RL) is at least twice
-  // STAGE_GROUP_PADDING_Y, or stacked stage boxes overlap. Segment boxes use the
-  // smaller GROUP_PADDING and already clear it.
+  // STAGE_GROUP_PADDING_Y, or stacked stage boxes overlap. Unmatched segment
+  // boxes use the smaller GROUP_PADDING and already clear it.
   //
   // ranker 'tight-tree' instead of 'network-simplex', which is several times
   // slower on a compound graph; plans are trees, so it assigns the same ranks
@@ -244,10 +244,11 @@ export function runDagre({ nodeIds, groupIds, edges, direction, compound }: Layo
 export function computeGroupBounds(
   laidOutNodes: LaidOutNode[],
   groupOf: (node: PlanGraphNodeData) => string | null,
-  opts: { paddingX?: number; paddingY?: number; headerHeight?: number } = {},
+  opts: { paddingX?: number; paddingY?: number; paddingBottom?: number; headerHeight?: number } = {},
 ): LaidOutGroup[] {
   const paddingX = opts.paddingX ?? GROUP_PADDING;
   const paddingY = opts.paddingY ?? GROUP_PADDING;
+  const paddingBottom = opts.paddingBottom ?? paddingY;
   const headerHeight = opts.headerHeight ?? GROUP_HEADER_HEIGHT;
   const bounds = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>();
   for (const node of laidOutNodes) {
@@ -271,7 +272,7 @@ export function computeGroupBounds(
     id,
     position: { x: b.minX - paddingX, y: b.minY - paddingY - headerHeight },
     width: (b.maxX - b.minX) + paddingX * 2,
-    height: (b.maxY - b.minY) + paddingY * 2 + headerHeight,
+    height: (b.maxY - b.minY) + paddingY + paddingBottom + headerHeight,
   }));
 }
 
@@ -283,7 +284,7 @@ export function computeGroupBounds(
 export function computeGroupBoundsWithFallback(
   groupOf: (node: PlanGraphNodeData) => string | null,
   layoutCandidates: LaidOutNode[][],
-  opts: { paddingX?: number; paddingY?: number; headerHeight?: number } = {},
+  opts: { paddingX?: number; paddingY?: number; paddingBottom?: number; headerHeight?: number } = {},
 ): LaidOutGroup[] {
   const seen = new Set<string>();
   const result: LaidOutGroup[] = [];

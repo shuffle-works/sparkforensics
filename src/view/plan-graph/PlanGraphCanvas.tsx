@@ -3,7 +3,7 @@ import { ReactFlow, MiniMap, Background, Panel, useReactFlow, useNodesInitialize
 import '@xyflow/react/dist/style.css';
 import { useLayoutPrewarm } from './useLayoutPrewarm';
 import { LayoutProgress } from './LayoutProgress';
-import { layoutWithDagre, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT, STAGE_GROUP_PADDING_X, STAGE_GROUP_PADDING_Y, STAGE_GROUP_HEADER_HEIGHT, type PlanLayoutDirection } from './dagre-layout';
+import { layoutWithDagre, computeGroupBoundsWithFallback, NODE_WIDTH, NODE_HEIGHT, STAGE_GROUP_PADDING_X, STAGE_GROUP_PADDING_Y, STAGE_GROUP_PADDING_BOTTOM, STAGE_GROUP_HEADER_HEIGHT, type PlanLayoutDirection } from './dagre-layout';
 import { boundsOf, viewportShowsAll, FIT_TO_VIEW_OPTIONS, type Rect } from './readable-fit';
 import { useReadableFit } from './useReadableFit';
 import { PlanGraphNode } from './PlanGraphNode';
@@ -13,7 +13,7 @@ import { PlanGraphLegend } from './PlanGraphLegend';
 import { PlanGraphControlRail } from './PlanGraphControlRail';
 import { planGraphMiniMapNodeColor } from './plan-graph-minimap';
 import { PlanGraphSegmentGroupNode } from './PlanGraphSegmentGroupNode';
-import { PlanGraphStageGroupNode } from './PlanGraphStageGroupNode';
+import { PlanGraphStageGroupNode, PlanGraphUnmatchedStageNode } from './PlanGraphStageGroupNode';
 import { PlanGraphExchangeEdge } from './PlanGraphExchangeEdge';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
@@ -26,6 +26,7 @@ const nodeTypes = {
   planNode: PlanGraphNode,
   segmentGroup: PlanGraphSegmentGroupNode,
   stageGroup: PlanGraphStageGroupNode,
+  unmatchedStage: PlanGraphUnmatchedStageNode,
 };
 
 const edgeTypes = {
@@ -36,12 +37,18 @@ const edgeTypes = {
 const NO_FLOW_NODES: Node[] = [];
 const NO_FLOW_EDGES: Edge[] = [];
 
-// Paint order, all above React Flow's edge layer (z 0): outer stage box, inner
-// segment box, then plan nodes. Boxes above the edges keep a routed edge from
-// painting over their finding chips; the translucent fills let it read through.
-const STAGE_GROUP_Z = 1;
-const SEGMENT_GROUP_Z = 2;
+// Paint order, all above React Flow's edge layer (z 0): segment fills, then the
+// stage box with its header, then plan nodes. Boxes above the edges keep a routed
+// edge from painting over their finding chips; the translucent fills let it read
+// through.
+const SEGMENT_GROUP_Z = 1;
+const STAGE_GROUP_Z = 2;
 const PLAN_NODE_Z = 3;
+
+// Room above the graph for an unmatched focal stage's header row and its note,
+// and the gap between them and the graph.
+const UNMATCHED_STAGE_HEADER_HEIGHT = 40;
+const UNMATCHED_STAGE_HEADER_GAP = 8;
 
 // Node<T> requires T extends Record<string, unknown>, which PlanGraphNodeData (a
 // closed interface) doesn't satisfy; read data through this cast so `nodes` stays
@@ -223,12 +230,11 @@ export function PlanGraphCanvas({
   // memo below, which then finds them in the layout cache.
   const layoutPlan = useMemo(() => {
     const groupOf = (n: PlanGraphNodeData) => `segment-${n.segmentIndex}`;
-    // The outer per-real-stage box only appears in the full-plan view: the
-    // single-stage view already shows one segment box for the one stage in view,
-    // so a nested layer would just duplicate its "Stage N" label.
-    const showStageGroup = model.scope === 'full';
+    // A segment with no stage pair of its own (inherited) is not inside a stage
+    // box: its stage id is only the nearest one.
+    const pairedStageOf = (segmentIndex: number) => (model.inheritedSegments.has(segmentIndex) ? undefined : segmentStageIds?.get(segmentIndex));
     const stageGroupOf = (n: PlanGraphNodeData) => {
-      const sId = segmentStageIds?.get(n.segmentIndex);
+      const sId = pairedStageOf(n.segmentIndex);
       return sId != null ? `stage-${sId}` : null;
     };
 
@@ -250,17 +256,14 @@ export function PlanGraphCanvas({
     // full open each Exchange-bounded segment keeps its exchange node under the
     // basic filter, so nothing is missing and this pass is skipped entirely.
     const coveredSegments = new Set(layoutNodes.map(groupOf));
-    const coveredStages = showStageGroup
-      ? new Set(layoutNodes.map(stageGroupOf).filter((id): id is string => id != null))
-      : null;
+    const coveredStages = new Set(layoutNodes.map(stageGroupOf).filter((id): id is string => id != null));
     const needsFullFallback =
       model.nodes.some((n) => !coveredSegments.has(groupOf(n))) ||
-      (coveredStages != null &&
-        model.nodes.some((n) => {
-          const id = stageGroupOf(n);
-          return id != null && !coveredStages.has(id);
-        }));
-    return { groupOf, showStageGroup, stageGroupOf, layoutNodes, layoutEdges, direction, needsFullFallback };
+      model.nodes.some((n) => {
+        const id = stageGroupOf(n);
+        return id != null && !coveredStages.has(id);
+      });
+    return { groupOf, pairedStageOf, stageGroupOf, layoutNodes, layoutEdges, direction, needsFullFallback };
   }, [model, segmentStageIds, visibleNodeIds, visibleEdges, narrow]);
 
   const layoutRequests = useMemo(() => {
@@ -274,7 +277,7 @@ export function PlanGraphCanvas({
   const built = useMemo(() => {
     // A large layout still running in the worker: nothing to build yet.
     if (!layoutReady) return null;
-    const { groupOf, showStageGroup, stageGroupOf, layoutNodes, layoutEdges, direction, needsFullFallback } = layoutPlan;
+    const { groupOf, pairedStageOf, stageGroupOf, layoutNodes, layoutEdges, direction, needsFullFallback } = layoutPlan;
     // Sums the exclusive share, not the mode-selected one, so the total does not
     // grow with tree depth in inclusive mode (docs-site/contributor-guide/
     // architecture/drill-down/plan-graph.md, "Duration share"). Falls back to `durationShare` for hand-built
@@ -317,10 +320,15 @@ export function PlanGraphCanvas({
       };
     });
 
+    // A paired segment is the inside of its stage box and paints nothing itself.
+    // A segment with no pair of its own gets a dashed box of its own, so no stage
+    // box has to reach across it.
+    const unpairedGroupOf = (n: PlanGraphNodeData) => (pairedStageOf(n.segmentIndex) == null ? groupOf(n) : null);
+
     // Group boxes are plain background nodes in the members' coordinate space
     // (not xyflow parent/child nesting). Bounds come from the compact layout when
     // a segment still has a visible member, else from the full-model layout.
-    const groupNodes: Node[] = computeGroupBoundsWithFallback(groupOf, [laidOutVisible, laidOutFull]).map((group) => {
+    const groupNodes: Node[] = computeGroupBoundsWithFallback(unpairedGroupOf, [laidOutVisible, laidOutFull]).map((group) => {
       const segmentIndex = Number(group.id.replace('segment-', ''));
       // Totals cover the segment's unfiltered content, so read model.nodes, not a
       // laid-out set (laidOutFull aliases the filtered one when the fallback is skipped).
@@ -328,10 +336,6 @@ export function PlanGraphCanvas({
       // Exclusive shares, as in `totalDuration` above.
       const groupDuration = membersInGroup.reduce((sum, n) => sum + (n.exclusiveDurationShare ?? n.durationShare ?? 0), 0);
       const hasAnyDuration = membersInGroup.some((n) => n.durationShare != null);
-      const groupStageId = segmentStageIds?.get(segmentIndex) ?? null;
-      // The outer stage box paints findings only for a stage with no matching
-      // segment (see matchedStageIds), so each finding shows once.
-      const segmentFindings = groupStageId != null ? findingsForStage(findings, groupStageId) : [];
       return {
         id: group.id,
         type: 'segmentGroup',
@@ -347,68 +351,50 @@ export function PlanGraphCanvas({
         data: {
           width: group.width,
           height: group.height,
-          stageId: groupStageId,
+          nearestStageId: segmentStageIds?.get(segmentIndex) ?? null,
           durationLabel: hasAnyDuration ? formatDuration(groupDuration) : null,
-          findings: segmentFindings,
         },
       };
     });
 
-    // Stage ids whose findings a segment box already carries inline, so the outer
-    // stage box knows when it's the only place left to show them.
-    const matchedStageIds = new Set(
-      groupNodes
-        .map((g) => (g.data as { stageId: number | null }).stageId)
-        .filter((id): id is number => id != null),
-    );
-
-    // Outer layer: one box per stage wrapping every segment box zipped to it. The
-    // padding constants keep it strictly containing the nested segment boxes.
-    const stageGroupNodes: Node[] = showStageGroup
-      ? (() => {
-          const groupOptions = {
-            paddingX: STAGE_GROUP_PADDING_X,
-            paddingY: STAGE_GROUP_PADDING_Y,
-            headerHeight: STAGE_GROUP_HEADER_HEIGHT,
-          };
-          const stageGroups = computeGroupBoundsWithFallback(stageGroupOf, [laidOutVisible, laidOutFull], groupOptions);
-          const focalGroupId = `stage-${stageId}`;
-          // Zipping can leave the focal stage unmapped (its segment loses the
-          // Math.min(segments, stages) slot); add a box so its findings and "Next
-          // problem" stay reachable.
-          if (findingsForStage(findings, stageId).length > 0 && !stageGroups.some((group) => group.id === focalGroupId)) {
-            const [focalGroup] = computeGroupBoundsWithFallback(() => focalGroupId, [laidOutVisible, laidOutFull], groupOptions);
-            if (focalGroup) stageGroups.push(focalGroup);
-          }
-          return stageGroups.map((group) => {
-            const groupStageId = Number(group.id.replace('stage-', ''));
-            const wrapsGraph = !matchedStageIds.has(groupStageId);
-            return {
-              id: group.id,
-              type: 'stageGroup',
-              position: group.position,
-              draggable: false,
-              selectable: false,
-              // Decorative wrapper; its inner "Focus stage N" button is the control.
-              focusable: false,
-              // The fallback box wraps the whole graph, so it sits under the
-              // stage boxes inside it; otherwise its overlay button would take
-              // the clicks on their corner "Stage N" titles.
-              zIndex: wrapsGraph ? STAGE_GROUP_Z - 1 : STAGE_GROUP_Z,
-              style: { width: group.width, height: group.height },
-              measured: { width: group.width, height: group.height },
-              data: {
-                width: group.width,
-                height: group.height,
-                stageId: groupStageId,
-                findings: findingsForStage(findings, groupStageId),
-                showOwnFindings: wrapsGraph,
-                onSelect: () => onSelectStage?.(groupStageId),
-              },
-            };
-          });
-        })()
-      : [];
+    // One stroked box per stage wrapping its paired segment, and the only place
+    // the stage's name, duration and findings are painted. It wraps the paired
+    // segment's plan nodes directly, with room above them for the header.
+    const groupOptions = {
+      paddingX: STAGE_GROUP_PADDING_X,
+      paddingY: STAGE_GROUP_PADDING_Y,
+      paddingBottom: STAGE_GROUP_PADDING_BOTTOM,
+      headerHeight: STAGE_GROUP_HEADER_HEIGHT,
+    };
+    const stageGroups = computeGroupBoundsWithFallback(stageGroupOf, [laidOutVisible, laidOutFull], groupOptions);
+    // The padded boxes of adjacent stages can partly overlap. Each header sits
+    // at its box's top edge, so painting boxes in top-edge order keeps every
+    // header above the overlay of a box it overlaps.
+    stageGroups.sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
+    const stageGroupNodes: Node[] = stageGroups.map((group) => {
+      const groupStageId = Number(group.id.replace('stage-', ''));
+      return {
+        id: group.id,
+        type: 'stageGroup',
+        position: group.position,
+        draggable: false,
+        selectable: false,
+        // Decorative wrapper; its inner "Focus stage N" button is the control.
+        focusable: false,
+        zIndex: STAGE_GROUP_Z,
+        style: { width: group.width, height: group.height },
+        measured: { width: group.width, height: group.height },
+        data: {
+          width: group.width,
+          height: group.height,
+          stageId: groupStageId,
+          findings: findingsForStage(findings, groupStageId),
+          durationLabel: model.stageDurations.has(groupStageId) ? formatDuration(model.stageDurations.get(groupStageId)!) : null,
+          // Only the full plan has other stages to focus.
+          onSelect: model.scope === 'full' && onSelectStage ? () => onSelectStage(groupStageId) : undefined,
+        },
+      };
+    });
 
     // Exchange edge thickness is relative to the heaviest exchange on screen.
     // Unweighted edges fall through to the default renderer.
@@ -420,12 +406,37 @@ export function PlanGraphCanvas({
         : { id: e.id, source: e.source, target: e.target },
     );
 
-    // Render order = paint order: stage boxes back, then segment boxes, then plan
-    // nodes (React Flow renders last on top).
+    // Within one z index, render order = paint order (React Flow renders last on top).
     const flowNodes = [...stageGroupNodes, ...groupNodes, ...planNodes];
-    const graphBounds = boundsOf(
-      flowNodes.map((n) => ({ x: n.position.x, y: n.position.y, width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 })),
-    );
+    const rectOf = (n: Node) => ({ x: n.position.x, y: n.position.y, width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 });
+    // Zipping can leave the focal stage unpaired (its segment loses the
+    // Math.min(segments, stages) slot). Its findings stay reachable from a
+    // header above the graph, which encloses no node.
+    const focalFindings = findingsForStage(findings, stageId);
+    const contentBounds = boundsOf(flowNodes.map(rectOf));
+    if (focalFindings.length > 0 && contentBounds && !stageGroups.some((group) => group.id === `stage-${stageId}`)) {
+      const width = contentBounds.width;
+      const height = UNMATCHED_STAGE_HEADER_HEIGHT;
+      flowNodes.unshift({
+        id: `stage-${stageId}`,
+        type: 'unmatchedStage',
+        position: { x: contentBounds.x, y: contentBounds.y - UNMATCHED_STAGE_HEADER_GAP - height },
+        draggable: false,
+        selectable: false,
+        focusable: false,
+        zIndex: STAGE_GROUP_Z,
+        style: { width, height },
+        measured: { width, height },
+        data: {
+          width,
+          height,
+          stageId,
+          findings: focalFindings,
+          durationLabel: model.stageDurations.has(stageId) ? formatDuration(model.stageDurations.get(stageId)!) : null,
+        },
+      });
+    }
+    const graphBounds = boundsOf(flowNodes.map(rectOf));
     return { flowNodes, flowEdges, graphBounds };
   }, [model, findings, stageId, segmentStageIds, visibleEdges, onSelectStage, layoutPlan, layoutReady]);
 
@@ -460,9 +471,10 @@ export function PlanGraphCanvas({
 
   const planNodes = flowNodes.filter((n) => n.type === 'planNode');
   // Verdict order, so "Next problem" starts at the first step the verdict names.
+  // Only the full-plan view has stages to step between.
   const problemNodes = orderByImpact(
     interpretation,
-    flowNodes.filter((n) => n.type === 'stageGroup' && ((n.data as { findings?: Finding[] }).findings?.length ?? 0) > 0),
+    flowNodes.filter((n) => model.scope === 'full' && (n.type === 'stageGroup' || n.type === 'unmatchedStage') && ((n.data as { findings?: Finding[] }).findings?.length ?? 0) > 0),
     (n) => (n.data as { findings?: Finding[] }).findings ?? [],
   );
 
