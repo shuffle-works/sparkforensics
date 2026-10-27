@@ -370,6 +370,11 @@ export function PlanGraphCanvas({
       const [focalGroup] = computeGroupBoundsWithFallback(() => focalGroupId, [laidOutVisible, laidOutFull], groupOptions);
       if (focalGroup) stageGroups.push(focalGroup);
     }
+    // A stage whose segments are not adjacent gets a box that overlaps other
+    // stage boxes. Each header sits at its box's top edge, so painting boxes in
+    // top-edge order keeps every header above the overlays of the boxes it
+    // starts inside.
+    stageGroups.sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
     const stageGroupNodes: Node[] = stageGroups.map((group) => {
       const groupStageId = Number(group.id.replace('stage-', ''));
       const segmentCount = segmentsPerStage.get(groupStageId) ?? 0;

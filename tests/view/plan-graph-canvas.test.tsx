@@ -492,6 +492,29 @@ describe('compound stage-group containers', () => {
     const zIndexOf = (testId: string) => Number(screen.getByTestId(testId).style.zIndex);
     expect(zIndexOf('rf__node-stage-7')).toBeLessThan(zIndexOf('rf__node-stage-99'));
   });
+
+  it('paints a stage box that starts inside another stage box above it, so its title stays clickable', () => {
+    // Stage 5's segments sit on either side of stage 9's, so stage 5's box wraps
+    // stage 9's box and the "Stage 9" title lies under stage 5's overlay.
+    const wrapping = model({
+      nodes: [
+        // Stage 9's node comes first, so its box is built first.
+        { id: 'b', sourceNodeId: 'b', label: 'SortMergeJoin', category: 'join', operatorDetail: '', primaryMetric: '', segmentIndex: 1, splitRole: null, durationShare: null },
+        { id: 'a', sourceNodeId: 'a', label: 'Scan parquet', category: 'scan', operatorDetail: '', primaryMetric: '', segmentIndex: 0, splitRole: null, durationShare: null },
+        { id: 'c', sourceNodeId: 'c', label: 'HashAggregate', category: 'aggregate', operatorDetail: '', primaryMetric: '', segmentIndex: 2, splitRole: null, durationShare: null },
+      ],
+      edges: [{ id: 'a->b', source: 'a', target: 'b' }, { id: 'b->c', source: 'b', target: 'c' }],
+      scope: 'full',
+    });
+
+    render(<PlanGraphCanvas model={wrapping} showMiniMap={false} stageId={5} segmentStageIds={new Map([[0, 5], [1, 9], [2, 5]])} onSelectStage={vi.fn()} />);
+
+    const stage5 = screen.getByTestId('rf__node-stage-5');
+    const stage9 = screen.getByTestId('rf__node-stage-9');
+    // Same z index, so React Flow's render order is the paint order.
+    expect(stage5.style.zIndex).toBe(stage9.style.zIndex);
+    expect(stage5.compareDocumentPosition(stage9) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });
 
 describe('onSelectStage', () => {
