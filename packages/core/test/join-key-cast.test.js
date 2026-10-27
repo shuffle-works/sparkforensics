@@ -60,6 +60,7 @@ describe('parseJoinKeys', () => {
       operator: 'SortMergeJoin',
       leftKeys: ['cast(k#2 as decimal(20,0))'],
       rightKeys: ['cast(k#8L as decimal(20,0))'],
+      joinType: 'Inner',
     });
   });
 
@@ -115,6 +116,17 @@ describe('joinKeyCastOf', () => {
   it('reports a multi-key join when the exchange covers every key of the cast side', () => {
     const multiKey = joinOf('SortMergeJoin [cast(a#1 as decimal(20,0)), d#4], [x#7, y#8], Inner');
     expect(castOf(exchange('hashpartitioning(d#4, a#1, 4)', multiKey))).toMatchObject({ exchangeKeys: ['a'] });
+  });
+
+  it('reports nothing when the join type does not keep the cast side partitioning', () => {
+    expect(castOf(exchange('hashpartitioning(k#2, 4)', joinOf('SortMergeJoin [cast(k#2 as decimal(20,0))], [k#8L], FullOuter')))).toBeNull();
+    expect(castOf(exchange('hashpartitioning(k#8L, 4)', joinOf('SortMergeJoin [k#2L], [cast(k#8L as bigint)], LeftOuter')))).toBeNull();
+    expect(castOf(exchange('hashpartitioning(k#2, 4)', joinOf('SortMergeJoin [cast(k#2 as bigint)], [k#8L], RightOuter')))).toBeNull();
+  });
+
+  it('reports a cast on the side an outer join keeps', () => {
+    expect(castOf(exchange('hashpartitioning(k#2, 4)', joinOf('SortMergeJoin [cast(k#2 as bigint)], [k#8L], LeftOuter')))).toMatchObject({ exchangeKeys: ['k'] });
+    expect(castOf(exchange('hashpartitioning(k#8L, 4)', joinOf('ShuffledHashJoin [k#2L], [cast(k#8L as bigint)], RightOuter, BuildLeft')))).toMatchObject({ exchangeKeys: ['k'] });
   });
 
   it('reports nothing for an exchange the job asked for', () => {

@@ -185,10 +185,10 @@ export function partitioningArgs(detail: string, kind: 'hash' | 'range'): { keys
   return depth === 0 && /^\d+$/.test(count) ? { keys: args, numPartitions: parseInt(count, 10) } : null;
 }
 
-/** The operator and raw key expressions (expression ids kept) of a keyed join node's detail, or null. */
-export function parseJoinKeys(detail: string): { operator: string; leftKeys: string[]; rightKeys: string[] } | null {
+/** The operator, raw key expressions (expression ids kept) and join type of a keyed join node's detail, or null. */
+export function parseJoinKeys(detail: string): { operator: string; leftKeys: string[]; rightKeys: string[]; joinType: string } | null {
   const m = detail.match(JOIN_DETAIL);
-  return m ? { operator: m[1], leftKeys: splitTopLevel(m[2].slice(1, -1)), rightKeys: splitTopLevel(m[3].slice(1, -1)) } : null;
+  return m ? { operator: m[1], leftKeys: splitTopLevel(m[2].slice(1, -1)), rightKeys: splitTopLevel(m[3].slice(1, -1)), joinType: m[4] } : null;
 }
 
 function visitExchange(detail: string, result: PlanSummary): void {
