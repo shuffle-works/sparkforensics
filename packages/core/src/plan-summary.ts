@@ -116,13 +116,14 @@ function jdbcSql(detail: string): string {
 /** The filters a FileScan detail names. `dataFilters` are the predicates Spark evaluates on the rows
  * it reads, with the null checks it adds to every filtered column left out. */
 export function parseScanFilters(detail: string): { partitionFilters: string[]; dataFilters: string[] } {
+  // Spark cuts a long list to `[a, b, c...` with no closing bracket; its last item is then unknown.
   const list = (key: string) => {
-    const m = detail.match(new RegExp(`${key}:\\s*\\[(.*?)\\](?:,\\s*\\w+:|$)`, 's'));
+    const m = detail.match(new RegExp(`${key}:\\s*\\[(.*?)(?:\\]|(?<=\\.\\.\\.))(?=,\\s*\\w+:|$)`, 's'));
     return m ? splitTopLevel(m[1]).map(f => f.replace(/#\w+/g, '')) : [];
   };
   return {
     partitionFilters: list('PartitionFilters'),
-    dataFilters: list('DataFilters').filter(f => !/^isnotnull\([^()]*\)$/.test(f)),
+    dataFilters: list('DataFilters').filter(f => !f.endsWith('...') && !/^isnotnull\([^()]*\)$/.test(f)),
   };
 }
 

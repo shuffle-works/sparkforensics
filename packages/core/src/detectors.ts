@@ -3895,7 +3895,8 @@ export const DETECTORS = [
     thresholds: { minBytesRead: GB, minPartitionsRead: 2 },
     detect(sqlExec, ctx, thresholds): Finding[] | null {
       if (!sqlExec.planTree) return null;
-      const out: Finding[] = [];
+      // One finding per table: a self-join's scans of one table share its id discriminators.
+      const byRelation = new Map<string, { nodes: PlanNode[]; bytesRead: number; partitionsRead: number; dataFilters: Set<string> }>();
       walkPlanTree(sqlExec.planTree, (node) => {
         const partitionsRead = metricValue(node, 'number of partitions read');
         const bytesRead = metricValue(node, FILES_READ_BYTES);
@@ -3904,17 +3905,23 @@ export const DETECTORS = [
         if (partitionsRead < thresholds.minPartitionsRead || bytesRead < thresholds.minBytesRead) return;
         const { partitionFilters, dataFilters } = parseScanFilters(node.detail ?? '');
         if (partitionFilters.length > 0 || dataFilters.length === 0) return;
-        out.push({
-          type: 'unprunedScan', executionId: sqlExec.id, stageIds: unionStageIds([node], sqlStageIds(ctx, sqlExec.id)),
-          planNodeIds: node.id ? [node.id] : [], impactBand: 'info',
-          metric: 'bytesRead', value: bytesRead, partitionsRead, dataFilters,
-          relation: relation.replace(/^[a-z]+:/, ''),
-          confidence: 'low',
-          validationRequired: 'The plan does not name the table\'s partition columns. Confirm which columns it is partitioned by: the scan filters other columns, so partition pruning did not apply.',
-          recommendation: 'No partition filter reached the scan of this partitioned table: add a filter on a partition column, for example the date the table is partitioned by, so Spark can skip partitions.',
-        });
+        const group = byRelation.get(relation) ?? { nodes: [], bytesRead: 0, partitionsRead: 0, dataFilters: new Set<string>() };
+        group.nodes.push(node);
+        group.bytesRead += bytesRead;
+        group.partitionsRead += partitionsRead;
+        for (const f of dataFilters) group.dataFilters.add(f);
+        byRelation.set(relation, group);
       }, { dedupe: true });
-      return out.length > 0 ? out : null;
+      if (byRelation.size === 0) return null;
+      return [...byRelation].map(([relation, group]): Finding => ({
+        type: 'unprunedScan', executionId: sqlExec.id, stageIds: unionStageIds(group.nodes, sqlStageIds(ctx, sqlExec.id)),
+        planNodeIds: group.nodes.flatMap((n) => (n.id ? [n.id] : [])), impactBand: 'info',
+        metric: 'bytesRead', value: group.bytesRead, partitionsRead: group.partitionsRead, dataFilters: [...group.dataFilters],
+        relation: relation.replace(/^[a-z]+:/, ''),
+        confidence: 'low',
+        validationRequired: 'The plan does not name the table\'s partition columns. Confirm which columns it is partitioned by: the scan filters other columns, so partition pruning did not apply.',
+        recommendation: 'No partition filter reached the scan of this partitioned table: add a filter on a partition column, for example the date the table is partitioned by, so Spark can skip partitions.',
+      }));
     },
     estimate: noWasteModel,
   }),

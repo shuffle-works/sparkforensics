@@ -39,6 +39,16 @@ describe('parseScanFilters', () => {
   it('returns empty lists for a detail with no filters', () => {
     expect(parseScanFilters(scanDetail('', ''))).toEqual({ partitionFilters: [], dataFilters: [] });
   });
+
+  it('drops the cut last item of a truncated list and stops at the next key', () => {
+    const detail = 'FileScan parquet [k#1L,d#2] Batched: true, DataFilters: [isnotnull(store_id#12L), isnotnull(product_id#13L), isnotnull(sa..., '
+      + 'Format: Parquet, Location: InMemoryFileIndex(1 paths)[file:/tmp/events], PartitionFilters: [isnotnull(d#2), (d#2 = 2026-01-05), (lon..., '
+      + 'PushedFilters: [], ReadSchema: struct<k:bigint>';
+    expect(parseScanFilters(detail)).toEqual({
+      partitionFilters: ['isnotnull(d)', '(d = 2026-01-05)', '(lon...'],
+      dataFilters: [],
+    });
+  });
 });
 
 describe('unprunedScan', () => {
@@ -76,6 +86,21 @@ describe('unprunedScan', () => {
     node.name = 'Scan json';
     node.detail = 'FileScan json [txn#1] Location: DeltaLogFileIndex(1 paths)[file:/tmp/events/_delta_log/00.json], PartitionFilters: [], DataFilters: []';
     expect(unprunedFindings(node)).toEqual([]);
+  });
+
+  it('stays silent on a truncated filter list that holds only null checks', () => {
+    expect(unprunedFindings(scanNode({ dataFilters: 'isnotnull(store_id#12L), isnotnull(product_id#13L), isnotnull(sa...' }))).toEqual([]);
+  });
+
+  it('merges two unpruned scans of one table in one execution into one finding', () => {
+    const left = scanNode();
+    const right = { ...scanNode({ dataFilters: 'isnotnull(k#1L), (k#1L = 4)' }), id: 'n2' };
+    const join = { id: 'j', name: 'SortMergeJoin', detail: '', metrics: [], children: [left, right] };
+    const findings = unprunedFindings(join);
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      value: 8 * GIB, partitionsRead: 40, dataFilters: ['(k = 3)', '(k = 4)'], planNodeIds: ['n1', 'n2'],
+    });
   });
 
   it('honors a lowered byte floor', () => {
