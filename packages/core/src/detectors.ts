@@ -33,7 +33,7 @@ import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
 import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
-import { adviseFailure, adviseFailureGroups } from './failure-advice.ts';
+import { adviseFailure, adviseFailureGroup } from './failure-advice.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure, TailAttribution } from './types.ts';
 import type { AqeSkewCase, FindingOf, Remediation, SkewOrigin, TailCause, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
 
@@ -251,6 +251,13 @@ function computeSpillMagnitude(
 function pickDominantReason(reasons: DetectorFailureReason[] | undefined): string | null {
   if (!Array.isArray(reasons) || reasons.length === 0) return null;
   return [...reasons].sort((a, b) => b.count - a.count)[0].reason;
+}
+
+// Groups arrive most frequent first: the largest group under the dominant reason tag, so a named
+// error or its advice agrees with the tag even when one tag splits into many messages.
+function dominantFailureGroup(stage: { failureReasons?: DetectorFailureReason[]; failureGroups?: TaskFailureGroup[] }): TaskFailureGroup | undefined {
+  const dominantReason = pickDominantReason(stage.failureReasons);
+  return stage.failureGroups?.find((g) => g.reason === dominantReason);
 }
 
 // Shared by the three Plan Advisor detectors: union the given nodes' own stageIds, or fall back
@@ -2474,14 +2481,12 @@ export const DETECTORS = [
       if (failureRate <= thresholds.warnRate) return null;
       const value = Math.round(failureRate * 1000) / 10;
       const dominantReason = pickDominantReason(stage.failureReasons);
-      // Groups arrive most frequent first. Name the dominant error from the largest group under the
-      // dominant tag, so the error and the tag agree even when one tag splits into many messages.
       const allGroups = stage.failureGroups ?? [];
-      const dominantGroup = allGroups.find((g) => g.reason === dominantReason);
+      const dominantGroup = dominantFailureGroup(stage);
       const dominantError = (dominantGroup ? describeTaskFailure(dominantGroup) : null) ?? dominantReason;
       const failureGroups = allGroups.slice(0, MAX_FAILURE_GROUPS);
       const groupedTasks = failureGroups.reduce((sum, g) => sum + g.count, 0);
-      const advice = adviseFailureGroups(allGroups);
+      const advice = adviseFailureGroup(dominantGroup);
       return {
         type: 'failures', stageId: stage.id,
         impactBand: failureRate > thresholds.critRate ? 'critical' : 'warning',
@@ -2583,7 +2588,7 @@ export const DETECTORS = [
       const wasted = stage.wastedAttempts ?? 0;
       const wastedMs = stage.retryWasteMs ?? 0;
       if (wasted < thresholds.minWasted || wastedMs < thresholds.minWasteMs) return null;
-      const advice = adviseFailureGroups(stage.failureGroups ?? []);
+      const advice = adviseFailureGroup(dominantFailureGroup(stage));
       return {
         type: 'retryWaste', stageId: stage.id,
         impactBand: 'warning',

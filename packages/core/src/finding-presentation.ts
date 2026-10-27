@@ -44,6 +44,18 @@ function switchAlreadyOn(finding: { remediation?: Remediation[] }, key: string):
   return finding.remediation != null && !finding.remediation.some((r) => r.kind === 'conf' && r.key === key);
 }
 
+// The fix a known failure message points to (failure-advice.ts), keyed by the property its
+// remediation raises. The detectors' recommendation and a failure row's generic line both read it.
+export const FAILURE_FIX = {
+  'spark.executor.memoryOverhead': 'The cluster manager killed executors that used more memory than their container allows. Raise spark.executor.memoryOverhead, which holds off-heap, native and Python worker memory, or lower spark.executor.cores so fewer tasks share each container.',
+  'spark.stage.maxConsecutiveAttempts': 'The stage was aborted after failing its maximum number of consecutive attempts, usually because executors or nodes were lost again and again. Fix the loss first. Raise spark.stage.maxConsecutiveAttempts only to ride out loss that clears on its own.',
+} as const;
+
+function failureFix(f: { remediation?: Remediation[] }): string | undefined {
+  const fixes: Record<string, string> = FAILURE_FIX;
+  return f.remediation?.map((r) => (r.kind === 'conf' ? fixes[r.key] : undefined)).find((fix) => fix !== undefined);
+}
+
 // The broadcast threshold properties a broadcast-sizing row's remediation names: the adaptive one when
 // it governed the query, else (and for a row with none) spark.sql.autoBroadcastJoinThreshold.
 function broadcastThresholdKeyOf(f: { remediation?: Remediation[] }): string {
@@ -275,21 +287,21 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
     tag: 'SFAIL',
     thresholdSummary: () => 'a stage that failed outright',
     actionLabel: () => 'Inspect stage failure',
-    genericRecommendation: () => 'Inspect the driver log for the failure reason and the job that triggered it.',
+    genericRecommendation: (f) => failureFix(f) ?? 'Inspect the driver log for the failure reason and the job that triggered it.',
   },
   failures: {
     name: 'failed tasks',
     tag: 'FAIL',
     thresholdSummary: (t) => `over ${shareLabel(t.warnRate)} of a stage's tasks failing`,
     actionLabel: () => 'Investigate task failures',
-    genericRecommendation: () => 'Investigate driver logs for executor instability or data-driven errors.',
+    genericRecommendation: (f) => failureFix(f) ?? 'Investigate driver logs for executor instability or data-driven errors.',
   },
   retryWaste: {
     name: 'retry waste',
     tag: 'RETRY',
     thresholdSummary: (t) => `${t.minWasted}+ retried attempts wasting at least ${t.minWasteMs / 1000}s`,
     actionLabel: () => 'Investigate retry cause',
-    genericRecommendation: () => 'Investigate executor loss or fetch failures behind the retried attempts.',
+    genericRecommendation: (f) => failureFix(f) ?? 'Investigate executor loss or fetch failures behind the retried attempts.',
   },
 
   slowHost: {

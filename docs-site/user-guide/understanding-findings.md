@@ -178,8 +178,8 @@ become `[redacted]` and message lines inside excerpts are dropped, since they
 can carry file paths and data values; class names, stack frames and the
 executor loss reason stay (hosts in it are pseudonymized).
 
-A failure whose text matches a known message gets a specific fix and a
-structured remediation. A container killed for exceeding memory limits points
+When the dominant error's text matches a known message, the finding gets a
+specific fix and a structured remediation. A container killed for exceeding memory limits points
 to `spark.executor.memoryOverhead`. The raw failure text stays on the finding.
 
 ### `SFAIL`: Failed stage {#sfail}
@@ -229,8 +229,8 @@ tasks has finished, which is 1.5x and 75% before Spark 4.0 and 3x and 90% from
 ### `RETRY`: Retry waste {#retry}
 
 Repeated task attempts ate into execution time even though the stage
-completed. Investigate executor loss or fetch failures. When the stage's failed
-attempts match a known message, such as a container memory kill, the advice
+completed. Investigate executor loss or fetch failures. When the stage's dominant
+failed-task error matches a known message, such as a container memory kill, the advice
 names its fix as `FAIL` does.
 
 ### `TINY`: Tiny tasks {#tiny}
