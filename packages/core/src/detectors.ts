@@ -24,6 +24,8 @@ import {
 } from './impact-model.ts';
 import { isExchangeNode, isBroadcastExchangeNode } from './plan-node-detail.ts';
 import { outputRowsOf, ownOutputRows, parseNestedLoopJoin } from './nested-loop-join.ts';
+import { commandOf, mergeRowsOf, metricValue } from './write-targets.ts';
+import { indexByRoot, resolveDeltaCommandTarget, type ExecutionsByRoot } from './delta-targets.ts';
 import { totalExecutorCpuMs } from './run-totals.ts';
 import { duplicateSubtreeDetail, duplicateSubtreeNote, SLOW_HOST_DIMENSION_LABEL } from './finding-generic-recommendation.ts';
 import { indexStagesBySqlExecution } from './sql-stages.ts';
@@ -127,6 +129,9 @@ export interface DetectorSqlExec {
   description?: string;
   // The session settings this execution ran with that differ from the SparkContext's.
   modifiedConfigs?: Record<string, string>;
+  // What a Delta command's target is resolved from (delta-targets.ts).
+  rootExecutionId?: number;
+  commandArguments?: string;
 }
 
 interface DetectorRddInfo {
@@ -192,6 +197,8 @@ export interface DetectorCtx {
   skewThresholds: SkewThresholds;
   // `stages` grouped by sqlExecutionId, built on first use (see sqlStageIds).
   stagesBySqlExecution?: Map<number, number[]>;
+  // `sql` grouped by root execution, built on first use (see resolveDeltaCommandTarget).
+  executionsByRoot?: ExecutionsByRoot;
 }
 
 // The ids of the stages a SQL execution ran: one index over the run's stages, shared by every
@@ -3824,6 +3831,60 @@ export const DETECTORS = [
       return multiStageImpact([...wasteMsByStage.keys()], wasteMsByStage, ctx, 'modeled', rawWaste)
         ?? costOnly('modeled', rawWaste);
     },
+  }),
+  defineSqlDetector({
+    type: 'mergeRewrite', order: 135, fixEffort: 'code', version: 1,
+    emits: ['mergeRewrite'],
+    docAnchor: '#table-formats',
+    // rewrittenRows: unmodified rows rewritten (at least minCopiedRows, and minCopiedToChangedRatio
+    // times the rows inserted, updated and deleted). weakSkipping: at least minTargetFiles files and
+    // minFilesKeptShare of them kept after skipping, while the files removed and added sit in at most
+    // maxTouchedPartitionShare of the partitions scanned.
+    thresholds: {
+      minCopiedRows: 100_000, minCopiedToChangedRatio: 2,
+      minTargetFiles: 8, minFilesKeptShare: 0.9, maxTouchedPartitionShare: 0.5,
+    },
+    detect(sqlExec, ctx, thresholds): Finding[] | null {
+      if (!sqlExec.planTree) return null;
+      const out: Finding[] = [];
+      walkPlanTree(sqlExec.planTree, (node) => {
+        const command = commandOf(node.name);
+        const rows = mergeRowsOf(command, node);
+        if (rows?.copied == null) return;
+        const changedRows = (rows.inserted ?? 0) + (rows.updated ?? 0) + (rows.deleted ?? 0);
+        const filesBefore = metricValue(node, 'number of target files before skipping');
+        const filesAfter = metricValue(node, 'number of target files after skipping');
+        const partitionsScanned = metricValue(node, 'number of target partitions after skipping');
+        // A partition the MERGE removed files from or added files to holds a change: each counter is a
+        // lower bound on the partitions changed, so the larger one is.
+        const removedFrom = metricValue(node, 'number of target partitions from which files were removed');
+        const addedTo = metricValue(node, 'number of target partitions to which files were added');
+        const partitionsTouched = removedFrom == null || addedTo == null ? removedFrom ?? addedTo : Math.max(removedFrom, addedTo);
+        ctx.executionsByRoot ??= indexByRoot(ctx.sql);
+        const target = resolveDeltaCommandTarget(command, sqlExec, node, ctx.executionsByRoot)?.target ?? null;
+        const base = {
+          type: 'mergeRewrite' as const, executionId: sqlExec.id, stageIds: unionStageIds([node], []),
+          planNodeIds: [node.id!].filter(Boolean), impactBand: 'info' as const,
+          rewrittenRows: rows.copied, changedRows, filesBefore, filesAfter, partitionsScanned, partitionsTouched, target,
+        };
+        if (rows.copied >= thresholds.minCopiedRows && rows.copied >= thresholds.minCopiedToChangedRatio * changedRows) {
+          out.push({
+            ...base, rule: 'rewrittenRows', metric: 'rewrittenRows', value: rows.copied,
+            recommendation: `Most rows the MERGE rewrote did not change: filter the MERGE source to the rows that changed (for example with a row-hash anti-join), repeat the target partition range in the MERGE condition so Delta can prune files, and check the target's file layout.`,
+          });
+        }
+        if (filesBefore != null && filesAfter != null && partitionsScanned != null && partitionsTouched != null
+          && filesBefore >= thresholds.minTargetFiles && filesAfter >= thresholds.minFilesKeptShare * filesBefore
+          && partitionsScanned > 1 && partitionsTouched <= thresholds.maxTouchedPartitionShare * partitionsScanned) {
+          out.push({
+            ...base, rule: 'weakSkipping', metric: 'filesKept', value: filesAfter,
+            recommendation: `The MERGE kept most target files after skipping although its changes touch few partitions: repeat the target partition range in the MERGE condition so Delta can prune files, and check the target's file layout.`,
+          });
+        }
+      }, { dedupe: true });
+      return out.length > 0 ? out : null;
+    },
+    estimate: noWasteModel,
   }),
 ] as const satisfies readonly Detector[];
 

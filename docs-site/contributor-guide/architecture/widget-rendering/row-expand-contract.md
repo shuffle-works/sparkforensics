@@ -78,8 +78,8 @@ the evidence key doesn't vary per row; also the control shown in the
 widget's empty-findings/no-data states), `MemoryUtilization.tsx`'s widget
 header (confidence + evidence, one marker, since `executorMetrics` is
 widget-wide; `ExecutorUtilization.tsx`'s rows carry neither), each of the
-six Plan Advisor widgets' (`DuplicatePlanSubtree.tsx`, `SmallFiles.tsx`,
-`NestedLoopJoin.tsx`, `PythonUdf.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`) widget header (confidence +
+seven Plan Advisor widgets' (`DuplicatePlanSubtree.tsx`, `SmallFiles.tsx`,
+`NestedLoopJoin.tsx`, `MergeRewrite.tsx`, `PythonUdf.tsx`, `UnderBroadcast.tsx`, `OverBroadcast.tsx`) widget header (confidence +
 `sqlPlan` evidence, one marker per widget since each is its own finding
 type; no per-row control), `ScalingSim.tsx`
 (two call sites, evidence only), `CoreUsageArea.tsx`, `EfficiencyModel.tsx`
@@ -165,7 +165,9 @@ routing" in [investigation-routing](./investigation-routing.md)).
   Small Files the average file size, Stragglers the straggling task count and
   the stage's task duration spread with its histogram, Slow Executor Host the
   deviating executor's measured amount, Nested Loop Joins the join node, type,
-  condition and input rows. A panel leaves out a core usage chart with
+  condition and input rows, MERGE rewrites the unmodified and changed row counts
+  with the file and partition counts (a row names its query and target, and
+  merges commands with identical counts). A panel leaves out a core usage chart with
   fewer than 3 points. Never drop a row's own evidence to avoid a
   repeat; `tests/view/evidence-panels-not-empty.test.tsx` opens every "Show
   evidence" button on the sample run and the public fixtures, in the default

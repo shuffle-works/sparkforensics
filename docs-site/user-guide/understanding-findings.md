@@ -461,7 +461,7 @@ shuffle storage plugin, and `minExecutors` above `maxExecutors`.
 
 ### `PLAN`: Plan advisor {#plan}
 
-Flags patterns in the SQL execution plan worth reviewing. Six checks share
+Flags patterns in the SQL execution plan worth reviewing. Seven checks share
 this tag:
 
 - Duplicate plan subtree: the same subtree recomputed more than once in the
@@ -484,6 +484,21 @@ this tag:
   of a range join and join on the bucket, or to confirm that a cross join is
   intended. It needs the executors' `number of output rows` metrics, so a join
   with no reported row counts is not flagged.
+- MERGE rewrite: a Delta `MERGE` whose command node reports one of two
+  patterns, each its own informational finding. Rewritten rows: at least
+  100,000 unmodified target rows rewritten (`number of target rows rewritten
+  unmodified`), and at least twice the rows inserted, updated and deleted.
+  Weak skipping: at least 8 target files before skipping, at least 90% of them
+  kept after skipping, and the files removed and added in at most half of
+  the partitions scanned (so it needs a partitioned target). The advice is to
+  filter the MERGE source to the rows that changed (for example with a
+  row-hash anti-join), to repeat the partition range in the MERGE condition so
+  Delta can prune files, and to check the target's file layout. The finding
+  text is that advice; the row counts, file counts and partition counts are in
+  its evidence. The card names each row by its SQL query number and, when the
+  log names one, the target table or path, and merges commands with identical
+  counts into one row ("2 MERGE commands (queries 4 and 7)"). Its Impact/Stage
+  sort buttons show only when a row has a stage.
 - Row-at-a-time Python UDF: a plan runs `BatchEvalPython`, which pickles
   every row to a Python worker and back. Flagged when its stages sent at
   least 64 MiB to the workers (`data sent to Python workers`) and ran for at

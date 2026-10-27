@@ -439,6 +439,23 @@ export interface SmallFilesEvidence extends PlanFindingEvidence {
 }
 export interface SmallFilesFinding extends NumericFinding<'smallFiles'>, SmallFilesEvidence, PlanNodeOrigin {}
 
+/** A MergeIntoCommand that rewrote far more unmodified target rows than it changed (`rewrittenRows`),
+ * or kept most target files after skipping although its changes touched few of the partitions it
+ * scanned (`weakSkipping`). `value` is the unmodified rows rewritten, or the files kept. The file and
+ * partition counts are null for a rule that does not read them. */
+export interface MergeRewriteEvidence extends PlanFindingEvidence {
+  rule: 'rewrittenRows' | 'weakSkipping';
+  rewrittenRows: number;
+  changedRows: number;
+  filesBefore: number | null;
+  filesAfter: number | null;
+  partitionsScanned: number | null;
+  partitionsTouched: number | null;
+  /** The table or path the MERGE writes, null when the log does not name exactly one. */
+  target: string | null;
+}
+export interface MergeRewriteFinding extends NumericFinding<'mergeRewrite'>, MergeRewriteEvidence, PlanNodeOrigin {}
+
 export interface PythonUdfEvidence extends PlanFindingEvidence {
   // Bytes the executors sent to Python workers: the finding's `value`, repeated for the report.
   dataSentBytes: number;
@@ -512,6 +529,7 @@ export interface FindingEvidenceMap {
   configAudit: ConfigAuditEvidence;
   duplicatePlanSubtree: DuplicatePlanSubtreeEvidence;
   smallFiles: SmallFilesEvidence;
+  mergeRewrite: MergeRewriteEvidence;
   pythonUdf: PythonUdfEvidence;
   nestedLoopJoin: NestedLoopJoinEvidence;
   underBroadcast: UnderBroadcastEvidence;
@@ -546,6 +564,7 @@ export type Finding =
   | ConfigAuditFinding
   | DuplicatePlanSubtreeFinding
   | SmallFilesFinding
+  | MergeRewriteFinding
   | PythonUdfFinding
   | NestedLoopJoinFinding
   | UnderBroadcastFinding

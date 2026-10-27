@@ -314,6 +314,30 @@
      }
     },
     {
+     "key": "mergeRewrite|3|rewrittenRows|rewrittenRows||||||||||",
+     "type": "mergeRewrite",
+     "band": "info",
+     "confidence": null,
+     "value": 200000,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
+     "key": "mergeRewrite|4|rewrittenRows|rewrittenRows||||||||||",
+     "type": "mergeRewrite",
+     "band": "info",
+     "confidence": null,
+     "value": 200000,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
      "key": "straggler|5|stragglerShare|||||||||||",
      "type": "straggler",
      "band": "warning",
@@ -591,6 +615,18 @@
      }
     },
     {
+     "key": "mergeRewrite|3|rewrittenRows|rewrittenRows||||||||||",
+     "type": "mergeRewrite",
+     "band": "info",
+     "confidence": null,
+     "value": 800000,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
+    },
+    {
      "key": "straggler|4|stragglerShare|||||||||||",
      "type": "straggler",
      "band": "critical",
@@ -714,6 +750,18 @@
       "value": 38340612,
       "unit": "bytes"
      }
+    },
+    {
+     "key": "mergeRewrite|4|rewrittenRows|rewrittenRows||||||||||",
+     "type": "mergeRewrite",
+     "band": "info",
+     "confidence": null,
+     "value": 800000,
+     "basis": "informational",
+     "method": "none",
+     "wcLow": null,
+     "wcHigh": null,
+     "rawWaste": null
     },
     {
      "key": "stageShape|4|taskStageSkew|taskStageSkew||||||||||",

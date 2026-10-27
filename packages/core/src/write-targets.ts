@@ -95,7 +95,7 @@ const NOT_WRITES = new Set([
   'UpdateEventTimeWatermarkColumn',
 ]);
 
-function commandOf(nodeName: string): string {
+export function commandOf(nodeName: string): string {
   return nodeName.replace(/^Execute\s+/, '').trim().replace(/Exec$/, '');
 }
 
@@ -272,7 +272,7 @@ function outputRowsOf(node: PlanNode): number | null {
 
 // A name in `names` is read when the log has it. 'number of rows copied' is the label older Delta
 // releases give the rewritten-unmodified counter.
-function metricValue(node: PlanNode, ...names: string[]): number | null {
+export function metricValue(node: PlanNode, ...names: string[]): number | null {
   const metric = node.metrics?.find((m) => names.includes(m.name));
   return metric !== undefined && Number.isFinite(metric.value) ? metric.value : null;
 }
@@ -306,7 +306,7 @@ function commandOutputOf(command: string, node: PlanNode): { rows: number | null
   return { rows: null, bytes: null };
 }
 
-function mergeRowsOf(command: string, node: PlanNode): MergeRows | null {
+export function mergeRowsOf(command: string, node: PlanNode): MergeRows | null {
   if (command !== 'MergeIntoCommand') return null;
   const rows = {
     inserted: metricValue(node, 'number of inserted rows'),

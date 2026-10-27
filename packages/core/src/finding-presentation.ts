@@ -493,6 +493,15 @@ export const FINDING_PRESENTATION: { readonly [T in FindingType]: FindingPresent
       ? 'Confirm the cross join is intended, or add a join key so the rows are matched instead of multiplied.'
       : 'Add an equi-join key so Spark can use a hash or sort-merge join; for a range condition, bucket the range and join on the bucket as well.'),
   },
+  mergeRewrite: {
+    name: 'MERGE rewrite',
+    tag: 'PLAN',
+    thresholdSummary: (t) => `a MERGE that rewrote at least ${groupThousands(t.minCopiedRows)} unmodified rows, at least ${t.minCopiedToChangedRatio}x the rows it changed, or kept ${shareLabel(t.minFilesKeptShare)} of at least ${t.minTargetFiles} target files after skipping while changing at most ${shareLabel(t.maxTouchedPartitionShare)} of the partitions it scanned`,
+    actionLabel: (f) => (f.rule === 'weakSkipping' ? 'Prune MERGE target files' : 'Filter MERGE source'),
+    genericRecommendation: (f) => (f.rule === 'weakSkipping'
+      ? 'Repeat the target partition range in the MERGE condition so Delta can prune files, and check the target\'s file layout.'
+      : 'Filter the MERGE source to the rows that changed (for example with a row-hash anti-join), repeat the target partition range in the MERGE condition so Delta can prune files, and check the target\'s file layout.'),
+  },
   underBroadcast: {
     name: 'missed broadcast join',
     tag: 'PLAN',

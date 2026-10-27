@@ -241,6 +241,7 @@ const EVIDENCE_KEYS = {
     'groupIndex',
   ],
   smallFiles: ['executionId', 'stageIds', 'fileCount', 'direction', 'nodeName'],
+  mergeRewrite: ['executionId', 'stageIds', 'rule', 'rewrittenRows', 'changedRows', 'filesBefore', 'filesAfter', 'partitionsScanned', 'partitionsTouched', 'target'],
   pythonUdf: ['executionId', 'stageIds', 'dataSentBytes', 'dataReturnedBytes', 'stageDurationMs'],
   nestedLoopJoin: ['executionId', 'stageIds', 'nodeName', 'joinType', 'condition', 'outputRows', 'leftRows', 'rightRows'],
   underBroadcast: ['executionId', 'stageIds', 'largerSideBytes', 'joinType', 'buildSide', 'broadcastThreshold'],
