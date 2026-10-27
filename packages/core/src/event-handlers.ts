@@ -192,6 +192,9 @@ interface StageRecord {
   // Distinct failures seen so far, by taskFailureKey; freed with taskAttempts at finalize.
   failureDetails: Map<string, TaskFailureDetail> | null;
   retryTaskSamples: FailedTaskSample[];
+  // Failure detail of each retried attempt, by interned detail: the retried failures a completed
+  // stage no longer holds in taskAttempts. Summarized as retryFailureGroups at finalize.
+  retryFailures: Map<TaskFailureDetail, number>;
   retryWasteMs: number;
   wastedAttempts: number;
   speculationWasteMs: number;
@@ -588,6 +591,10 @@ function taskRecordToSample(t: TaskRecord): FailedTaskSample {
   };
 }
 
+function countRetryFailure(stage: StageRecord, t: TaskRecord): void {
+  if (t.failure) stage.retryFailures.set(t.failure, (stage.retryFailures.get(t.failure) ?? 0) + 1);
+}
+
 // One shared detail object per distinct failure, so a stage with thousands of failed attempts
 // holds each bounded stack excerpt once. Past the cap an attempt keeps only its reason tag.
 function internTaskFailure(stage: StageRecord, endReason: Record<string, unknown> | undefined): TaskFailureDetail | null {
@@ -729,6 +736,7 @@ export function accumulateTask(
       if (stage.retryTaskSamples.length < MAX_TASK_SAMPLES) {
         stage.retryTaskSamples.push(taskRecordToSample(existing));
       }
+      countRetryFailure(stage, existing);
     }
     stage.lateAttemptWork = mergeAttemptTotals(discardedAttemptTotals(existing), stage.lateAttemptWork);
     stage.taskAttempts.set(key, record);
@@ -746,6 +754,7 @@ export function accumulateTask(
       if (stage.retryTaskSamples.length < MAX_TASK_SAMPLES) {
         stage.retryTaskSamples.push(taskRecordToSample(record));
       }
+      countRetryFailure(stage, record);
     }
   }
 
@@ -1075,6 +1084,7 @@ export function submitStage(event: z.infer<typeof StageSubmittedEventSchema>, st
     taskAttempts: new Map(),
     failureDetails: new Map(),
     retryTaskSamples: [],
+    retryFailures: new Map(),
     retryWasteMs: 0,
     wastedAttempts: 0,
     speculationWasteMs: 0,
