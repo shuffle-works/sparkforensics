@@ -63,6 +63,13 @@ export function useLocalityChartModel(): LocalityChartModel {
   return useMemo(() => (chart.hasActivity ? { ...chart, sampled: downsample(chart.points) } : chart), [chart]);
 }
 
+// Fewer points than this show no trend, so an evidence panel leaves the chart out.
+const MIN_PANEL_CHART_POINTS = 3;
+
+/** Whether an evidence panel embeds the chart: the run has activity and enough points for a trend. */
+export const panelShowsChart = (model: LocalityChartModel): model is ActiveLocalityChart =>
+  model.hasActivity && model.points.length >= MIN_PANEL_CHART_POINTS;
+
 /** Concurrent core usage over time, stacked by locality tier, with idle capacity. */
 export function CoreUsageChart({ model: { order, points, sampled } }: { model: ActiveLocalityChart }) {
   return (

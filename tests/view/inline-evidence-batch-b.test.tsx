@@ -46,6 +46,16 @@ function renderPlain(ui: ReactElement) {
 
 const stageButton = (n: number) => screen.queryByRole('button', { name: `Open details for Stage ${n}` });
 
+/** A run with one busy stage of `durationMs`: the core usage chart has one point per started minute. */
+const busyRun = (durationMs: number): AppModel => ({
+  ...emptyAppModel(),
+  app: { startTime: 0, endTime: durationMs } as AppModel['app'],
+  stages: new Map<number, unknown>([
+    [1, { stageId: 1, submittedAt: 0, completedAt: durationMs, executorRunTime: durationMs * 2, localityStats: [{ locality: 'PROCESS_LOCAL', count: 4 }] }],
+  ]) as unknown as AppModel['stages'],
+});
+const coreChart = () => screen.queryByRole('img', { name: /concurrent core usage/i });
+
 describe('StageFailed', () => {
   const catalog = (): Finding[] => [
     testFinding({ type: 'stageFailed', stageId: 3, impactBand: 'critical', id: 'sf-3', valueText: 'OOM in task 7', recommendation: 'This stage attempt failed outright.' }),
@@ -257,6 +267,21 @@ describe('ExecutorUtilization', () => {
     expect(screen.getByText('55%')).toBeInTheDocument();
   });
 
+  it('leaves the core usage chart out of the panel when it has fewer than 3 points', () => {
+    const findings = catalog();
+    installInterpretation(findings, busyRun(60_000));
+    renderPanel(<ExecutorUtilization catalog={findings} defaultCollapsed={false} />, ['u-1']);
+    expect(coreChart()).not.toBeInTheDocument();
+    expect(screen.getByText(/2 cores at peak over 10\.0s/)).toBeInTheDocument();
+  });
+
+  it('keeps the core usage chart in the panel when it has 3 points', () => {
+    const findings = catalog();
+    installInterpretation(findings, busyRun(180_000));
+    renderPanel(<ExecutorUtilization catalog={findings} defaultCollapsed={false} />, ['u-1']);
+    expect(coreChart()).toBeInTheDocument();
+  });
+
   it('is unchanged outside the panel', () => {
     const findings = catalog();
     installInterpretation(findings);
@@ -287,6 +312,19 @@ describe('MemoryUtilization', () => {
     expect(container.textContent).toContain('40,000 MB-s of executor memory-time allocated.');
     expect(container.textContent).toMatch(/Peak heap .* of .* allocated, across 4 sampled executors\./);
     expect(container.textContent).toContain('50,000 MB-s of executor memory-time allocated, 37,655 MB-s used.');
+  });
+
+  it('shows the idle-cores chart only when it has 3 or more points, else the memory-time line', () => {
+    const findings = catalog();
+    installInterpretation(findings, busyRun(60_000));
+    const short = renderPanel(<MemoryUtilization catalog={findings} defaultCollapsed={false} />, ['m-idle']);
+    expect(coreChart()).not.toBeInTheDocument();
+    expect(short.container.textContent).toContain('40,000 MB-s of executor memory-time allocated.');
+    short.unmount();
+    installInterpretation(findings, busyRun(180_000));
+    const long = renderPanel(<MemoryUtilization catalog={findings} defaultCollapsed={false} />, ['m-idle']);
+    expect(coreChart()).toBeInTheDocument();
+    expect(long.container.textContent).not.toContain('40,000 MB-s of executor memory-time allocated.');
   });
 
   it('keeps every figure of a finding the line above does not state', () => {

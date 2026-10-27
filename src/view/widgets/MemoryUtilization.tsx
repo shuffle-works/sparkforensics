@@ -16,7 +16,7 @@ import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import { isRealFinding } from '@sparkforensics/core/recommendation-rollup.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { MemoryUtilizationFinding } from '@sparkforensics/core/finding-types.ts';
-import { CoreUsageChart, useLocalityChartModel } from './CoreUsageArea';
+import { CoreUsageChart, panelShowsChart, useLocalityChartModel } from './CoreUsageArea';
 
 export type MemoryUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
@@ -49,10 +49,10 @@ function memoryDiagnosis(f: MemoryUtilizationFinding): string | null {
 const memoryTime = (mbSeconds: number) => formatRawWaste({ value: mbSeconds, unit: 'mbSeconds' });
 
 /** The measurements behind a variant's figure, which the line above an evidence panel does not
- * repeat. An idle-core rate shows the chart of idle capacity when the run has stage activity. */
+ * repeat. An idle-core rate shows the chart of idle capacity when it has enough points for a trend. */
 function MemoryEvidence({ finding }: { finding: MemoryUtilizationFinding }) {
   const chart = useLocalityChartModel();
-  if (finding.variant === 'idleCores' && chart.hasActivity) return <CoreUsageChart model={chart} />;
+  if (finding.variant === 'idleCores' && panelShowsChart(chart)) return <CoreUsageChart model={chart} />;
   if (finding.heap != null && finding.allocatedBytes != null) {
     return (
       <p className="text-xs text-muted-foreground">

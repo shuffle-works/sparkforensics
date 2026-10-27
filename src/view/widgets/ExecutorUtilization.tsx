@@ -12,7 +12,7 @@ import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { formatCores, formatDuration, formatMetricValue, formatRawWaste, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { FindingOf } from '@sparkforensics/core/types.ts';
-import { CoreUsageChart, useLocalityChartModel } from './CoreUsageArea';
+import { CoreUsageChart, panelShowsChart, useLocalityChartModel } from './CoreUsageArea';
 
 export type ExecutorUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
@@ -45,7 +45,7 @@ function UtilizationRow({ finding }: { finding: FindingOf<'utilization'> }) {
           {cpuUtilizationPct != null ? `. CPU time was ${cpuUtilizationPct}% of the allocation.` : '.'}
         </p>
       ) : null}
-      {stated && chart.hasActivity ? <CoreUsageChart model={chart} /> : null}
+      {stated && panelShowsChart(chart) ? <CoreUsageChart model={chart} /> : null}
       <ImpactEstimate finding={finding} />
     </div>
   );
