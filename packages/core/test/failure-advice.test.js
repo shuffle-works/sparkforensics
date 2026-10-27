@@ -59,8 +59,15 @@ describe('adviseStageFailure', () => {
     expect(adviseStageFailure(4, abort, [])).toBeNull();
   });
 
+  it('reads a task-failure abort only for the stage it names', () => {
+    const taskAbort = `Job aborted due to stage failure: Task 2 in stage 3.0 failed 4 times, most recent failure: Lost task 2.3 in stage 3.0 (TID 40) (host-a executor 5): ExecutorLostFailure (executor 5 exited caused by one of the running tasks) Reason: ${CONTAINER_KILL}`;
+    expect(adviseStageFailure(3, taskAbort, [taskAbort]).id).toBe('containerMemoryLimit');
+    expect(adviseStageFailure(3, 'fetch failed', [taskAbort]).id).toBe('containerMemoryLimit');
+    expect(adviseStageFailure(4, taskAbort, [taskAbort])).toBeNull();
+  });
+
   it('ignores an abort text that names no stage', () => {
-    expect(adviseStageFailure(4, 'fetch failed', [`Task 0 in stage 3.0 failed 4 times: ${CONTAINER_KILL}`])).toBeNull();
+    expect(adviseStageFailure(4, 'fetch failed', [`Job aborted: ${CONTAINER_KILL}`])).toBeNull();
   });
 });
 
@@ -169,7 +176,7 @@ describe('failure advice from parsed events', () => {
 
   // Spark's FetchFailed path: the failing stage closes with its last attempt's fetch failure, then
   // the abort names it in the job's exception and in the reason of any stage it cancels.
-  function abortedJob({ withSibling }) {
+  function abortedJob({ withSibling, failingReason = FETCH_FAILED, abort = JOB_ABORTED }) {
     const s = createState();
     const stageIds = withSibling ? [1, 2] : [1];
     processEvent({ Event: 'SparkListenerJobStart', 'Job ID': 0, 'Submission Time': 0, 'Stage IDs': stageIds }, s);
@@ -178,11 +185,11 @@ describe('failure advice from parsed events', () => {
       const info = { 'Stage ID': id, 'Completion Time': 20000, 'Failure Reason': reason };
       return processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': info }, s).data;
     };
-    const stages = new Map([[1, closeStage(1, FETCH_FAILED)]]);
-    if (withSibling) stages.set(2, closeStage(2, JOB_ABORTED));
+    const stages = new Map([[1, closeStage(1, failingReason)]]);
+    if (withSibling) stages.set(2, closeStage(2, abort));
     processEvent({
       Event: 'SparkListenerJobEnd', 'Job ID': 0, 'Completion Time': 20000,
-      'Job Result': { Result: 'JobFailed', Exception: { Message: JOB_ABORTED } },
+      'Job Result': { Result: 'JobFailed', Exception: { Message: abort } },
     }, s);
     return analyze(makeApp(), stages, [], [], s.jobs, new Map());
   }
@@ -195,6 +202,15 @@ describe('failure advice from parsed events', () => {
     expect(finding.remediation).toEqual(MAX_ATTEMPTS);
     expect(finding.valueText).toBe(FETCH_FAILED);
     expect(coreFindingGenericRecommendation(finding)).toMatch(/spark\.stage\.maxConsecutiveAttempts/);
+  });
+
+  it('puts a task-failure abort on the failing stage, not on the running sibling it cancelled', () => {
+    const taskAbort = `Job aborted due to stage failure: Task 2 in stage 1.0 failed 4 times, most recent failure: Lost task 2.3 in stage 1.0 (TID 40) (host-a executor 5): ExecutorLostFailure (executor 5 exited caused by one of the running tasks) Reason: ${CONTAINER_KILL}`;
+    const findings = abortedJob({ withSibling: true, failingReason: taskAbort, abort: taskAbort });
+    expect(stageFailedOf(findings, 1).remediation).toEqual(OVERHEAD);
+    const sibling = stageFailedOf(findings, 2);
+    expect(sibling.valueText).toBe(taskAbort);
+    expect(sibling.remediation ?? []).toEqual([]);
   });
 
   it('gives the cancelled sibling no max-attempts advice', () => {
