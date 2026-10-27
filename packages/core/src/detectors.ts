@@ -33,6 +33,7 @@ import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
 import { parseSparkMemoryMB } from './spark-memory.ts';
 import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
+import { adviseFailure, adviseFailureGroups } from './failure-advice.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure, TailAttribution } from './types.ts';
 import type { AqeSkewCase, FindingOf, Remediation, SkewOrigin, TailCause, StageReads, ShufflePartitions, BroadcastThreshold, SlowHostFinding, TaskAttemptSample, TunedThresholds } from './finding-types.ts';
 
@@ -2447,6 +2448,7 @@ export const DETECTORS = [
     thresholds: {},
     detect(stage): Finding | null {
       if (stage.stageFailureReason == null) return null;
+      const advice = adviseFailure([stage.stageFailureReason]);
       return {
         type: 'stageFailed', stageId: stage.id, impactBand: 'critical',
         variant: 'stageFailure',
@@ -2454,7 +2456,8 @@ export const DETECTORS = [
         numTasks: stage.taskCount,
         memoryBytesSpilled: stage.memoryBytesSpilled,
         failedTaskDetails: stage.failedTaskSamples ?? [],
-        recommendation: `This stage attempt failed outright. Inspect the driver log for the failure reason and the job that triggered it.`,
+        recommendation: advice?.recommendation ?? `This stage attempt failed outright. Inspect the driver log for the failure reason and the job that triggered it.`,
+        ...(advice && { remediation: advice.remediation }),
       };
     },
     estimate: noWasteModel,
@@ -2478,6 +2481,7 @@ export const DETECTORS = [
       const dominantError = (dominantGroup ? describeTaskFailure(dominantGroup) : null) ?? dominantReason;
       const failureGroups = allGroups.slice(0, MAX_FAILURE_GROUPS);
       const groupedTasks = failureGroups.reduce((sum, g) => sum + g.count, 0);
+      const advice = adviseFailureGroups(allGroups);
       return {
         type: 'failures', stageId: stage.id,
         impactBand: failureRate > thresholds.critRate ? 'critical' : 'warning',
@@ -2489,7 +2493,8 @@ export const DETECTORS = [
         // stack excerpt; otherFailedTasks counts the failed tasks no shown group covers.
         failureGroups,
         otherFailedTasks: Math.max(0, stage.failedTasks - groupedTasks),
-        recommendation: `${value}% of tasks failed${dominantError ? ` (dominant error: ${dominantError})` : ''}: investigate driver logs for executor instability or data-driven errors.`,
+        recommendation: `${value}% of tasks failed${dominantError ? ` (dominant error: ${dominantError})` : ''}: ${advice?.recommendation ?? 'investigate driver logs for executor instability or data-driven errors.'}`,
+        ...(advice && { remediation: advice.remediation }),
       };
     },
     estimate: noWasteModel,
@@ -2578,6 +2583,7 @@ export const DETECTORS = [
       const wasted = stage.wastedAttempts ?? 0;
       const wastedMs = stage.retryWasteMs ?? 0;
       if (wasted < thresholds.minWasted || wastedMs < thresholds.minWasteMs) return null;
+      const advice = adviseFailureGroups(stage.failureGroups ?? []);
       return {
         type: 'retryWaste', stageId: stage.id,
         impactBand: 'warning',
@@ -2585,7 +2591,8 @@ export const DETECTORS = [
         numTasks: stage.taskCount,
         memoryBytesSpilled: stage.memoryBytesSpilled,
         retriedTaskDetails: stage.retryTaskSamples ?? [],
-        recommendation: `Retried task attempts wasted ${Math.round(wastedMs / 1000)}s of executor time (${wasted} attempt${wasted === 1 ? '' : 's'}) even though the stage completed: investigate executor loss or fetch failures.`,
+        recommendation: `Retried task attempts wasted ${Math.round(wastedMs / 1000)}s of executor time (${wasted} attempt${wasted === 1 ? '' : 's'}) even though the stage completed: ${advice?.recommendation ?? 'investigate executor loss or fetch failures.'}`,
+        ...(advice && { remediation: advice.remediation }),
         extended: `${wasted} task attempts were superseded by a later retry, wasting ${Math.round(wastedMs / 1000)}s of executor time. Common causes: executor loss (OOM-kill, node death) or shuffle FetchFailed forcing a stage-map recompute. Check driver logs for the dominant reason (see the Failures widget) even if the final failure rate looks low; retries hide the true cost.`,
       };
     },
