@@ -205,8 +205,10 @@ segment view (`handleSelectStage` in `PlanGraphRoute.tsx`), with no reopen; the
 single-stage view draws no such click target. The header sits inside the box, in
 the room above its segment boxes. A focal stage that lost the segment/stage pairing
 has no segment box, so its box wraps every node on screen and its header sits above
-the top edge, clear of the headers of the stage boxes inside it. That box paints
-under those boxes so its click target doesn't take their title clicks.
+the top edge, clear of the headers of the stage boxes inside it. Stage boxes paint
+in top-edge order, so that box paints under those boxes and its click target
+doesn't take their title clicks. The same order keeps a header visible when a
+stage with non-adjacent segments gets a box that overlaps other stage boxes.
 
 The stage box strictly contains its segment boxes. `STAGE_GROUP_PADDING_Y` (64, no
 reserved header height) exceeds the segment layer's own reserved offset
