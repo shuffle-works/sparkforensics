@@ -340,7 +340,8 @@ export interface MemoryUtilizationEvidence {
 }
 export interface MemoryUtilizationFinding extends NumericFinding<'memoryUtilization'>, MemoryUtilizationEvidence {
   // Impact-estimator inputs: the unrounded idle rate and the run's allocated memory-time
-  // (idleCores), and the allocation and executor-time behind heapOverProvisioned's rounded ratio.
+  // (idleCores; wasteModel carries the allocated memory-time too), and the allocation and
+  // executor-time behind heapOverProvisioned's rounded ratio.
   idleRateFraction?: number;
   allocatedMBSeconds?: number | null;
   allocatedBytes?: number;

@@ -104,10 +104,10 @@ describe('ConfigAudit in an evidence panel', () => {
     );
   }
 
-  it('drops the property, value and sentence of the stated finding but keeps its docs link', () => {
+  it('drops the sentence of the stated finding but keeps its audited setting and docs link', () => {
     renderAudit([make('a', 'spark.a'), make('b', 'spark.b')], ['a']);
-    expect(screen.queryByText('spark.a')).not.toBeInTheDocument();
-    expect(screen.queryByText('value-a')).not.toBeInTheDocument();
+    expect(screen.getByText('spark.a')).toBeInTheDocument();
+    expect(screen.getByText('value-a')).toBeInTheDocument();
     expect(screen.queryByText(/Measured a sentence/)).not.toBeInTheDocument();
     expect(screen.getByText('Why spark.a matters')).toBeInTheDocument();
     expect(screen.getByText('spark.b')).toBeInTheDocument();
@@ -115,12 +115,12 @@ describe('ConfigAudit in an evidence panel', () => {
     expect(screen.getByText(/Measured b sentence/)).toBeInTheDocument();
   });
 
-  it('renders nothing for a stated finding with no docs link', () => {
+  it('keeps the audited setting of a stated finding with no docs link', () => {
     const bare = { ...make('a', 'spark.a'), docAnchor: undefined } as Finding;
     renderAudit([bare], ['a']);
-    expect(screen.queryByText('spark.a')).not.toBeInTheDocument();
+    expect(screen.getByText('spark.a')).toBeInTheDocument();
+    expect(screen.getByText('value-a')).toBeInTheDocument();
     expect(screen.queryByText(/Why spark.a matters/)).not.toBeInTheDocument();
-    expect(document.querySelector('li')).toBeNull();
   });
 
   it('is unchanged outside a panel', () => {

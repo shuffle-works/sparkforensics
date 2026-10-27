@@ -345,9 +345,9 @@ describe('SpeculationWaste in an evidence panel', () => {
     expect(screen.getByText('map at A.scala:1')).toBeInTheDocument();
   });
 
-  it('renders no row for a stated finding on a stage with no name', () => {
-    const { container } = run(['a'], { 1: {}, 2: { name: 'map at B.scala:2' } });
-    expect(container.querySelectorAll('li')).toHaveLength(1);
+  it('shows the speculative task count of the stated finding', () => {
+    run(['a'], { 1: { name: 'map at A.scala:1', taskCount: 200, speculativeTasks: 5, speculationWastedAttempts: 6 }, 2: { name: 'map at B.scala:2' } });
+    expect(screen.getByText('5 of 200 tasks ran speculatively; 6 attempts were discarded.')).toBeInTheDocument();
   });
 
   it('keeps everything outside a panel', () => {

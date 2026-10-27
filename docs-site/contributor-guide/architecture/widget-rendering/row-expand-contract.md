@@ -151,10 +151,16 @@ mounted with `defaultCollapsed={false}`, and `WidgetCard` reads the context:
   `stated` keeps the stage name), the savings (`ImpactEstimate` renders
   nothing), and any figure the finding's sentence repeats. It keeps whatever
   the line lacks: call sites, breakdowns, hints, charts, the status marker. A
-  row left empty renders nothing. A finding the line does not state keeps all
-  its facts, so one panel can hold both kinds. A panel whose line states
-  everything its widget shows stays short (the heading and any status marker);
-  it still opens in place.
+  finding the line does not state keeps all its facts, so one panel can hold
+  both kinds.
+- A panel always shows evidence the line does not state. A widget whose row is
+  only the stated figure shows the measurements behind it instead: Executor
+  Utilization shows the core-time breakdown and the core usage chart, Memory
+  Utilization the chart, the heap peak or the allocated memory-time, Excessive
+  Small Files the average file size. Never drop a row's own evidence to avoid a
+  repeat; `tests/view/evidence-panels-not-empty.test.tsx` opens every "Show
+  evidence" button on the sample run and the public fixtures and fails on a
+  panel with nothing under its heading.
 
 None of this applies in the grid, the Full app report or the stage dialog,
 where the context is absent and every widget renders in full.

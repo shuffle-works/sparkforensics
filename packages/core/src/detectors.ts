@@ -2844,7 +2844,7 @@ export const DETECTORS = [
           const value = Math.round(wastedMBSeconds);
           out.push({
             type: 'memoryUtilization', variant: 'wasteModel', stageId: null,
-            impactBand: 'info', metric: 'wastedMBSeconds', value,
+            impactBand: 'info', metric: 'wastedMBSeconds', value, allocatedMBSeconds,
             confidence: memoryWasteConfidence(wastedMBSeconds, usedMBSeconds, thresholds.wasteBufferMultiplier),
             validationRequired: `Memory-waste estimate uses allocated-vs-used memory-time and a ${thresholds.wasteBufferMultiplier}x buffer: confirm against the Spark UI before acting.`,
             recommendation: `Allocated executor memory sat largely idle over the run (~${value.toLocaleString('en-US')} MB-seconds wasted): review spark.executor.memory and executor count.`,

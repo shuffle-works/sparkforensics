@@ -9,29 +9,41 @@ import { useAnchoredRow } from '@/view/finding-anchor';
 import { usePagedRows } from '@/view/usePagedRows';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
-import { formatMetricValue, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import { formatCores, formatDuration, formatMetricValue, formatRawWaste, IMPACT_BAND_ORDER, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
-import type { Finding } from '@sparkforensics/core/types.ts';
+import type { FindingOf } from '@sparkforensics/core/types.ts';
+import { CoreUsageChart, useLocalityChartModel } from './CoreUsageArea';
 
 export type ExecutorUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultCollapsed'>;
 
-function UtilizationRow({ finding }: { finding: Finding }) {
+const coreTime = (value: number) => formatRawWaste({ value, unit: 'coreMs' });
+
+function UtilizationRow({ finding }: { finding: FindingOf<'utilization'> }) {
   const anchor = useAnchoredRow([finding]);
   const stated = useStatedAbove(finding);
-  // The average utilization is the whole row, and the line above states it.
-  if (stated) return null;
+  const chart = useLocalityChartModel();
+  const { allocatedCoreMs, utilizationFraction, totalCores, appDurationMs, cpuUtilizationPct } = finding;
 
   return (
     <div
       ref={anchor.ref}
       tabIndex={anchor.tabIndex}
       data-flashed={anchor.dataFlashed}
-      className={`transition-colors ${anchor.flashClassName}`}
+      className={`space-y-2 transition-colors ${anchor.flashClassName}`}
     >
-      <p className="flex flex-wrap items-start gap-2">
-        <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
-        <strong>{formatMetricValue('pct', numericValue(finding))}</strong> average executor utilization
+      {/* The line above an evidence panel states the average. */}
+      {stated ? null : (
+        <p className="flex flex-wrap items-start gap-2">
+          <ImpactDot impactBand={finding.impactBand} className="mt-1.5" />
+          <strong>{formatMetricValue('pct', numericValue(finding))}</strong> average executor utilization
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {formatCores(totalCores)} cores at peak over {formatDuration(appDurationMs)}: {coreTime(allocatedCoreMs)} allocated,{' '}
+        {coreTime(allocatedCoreMs * utilizationFraction)} busy, {coreTime(allocatedCoreMs * (1 - utilizationFraction))} idle
+        {cpuUtilizationPct != null ? `. CPU time was ${cpuUtilizationPct}% of the allocation.` : '.'}
       </p>
+      {stated && chart.hasActivity ? <CoreUsageChart model={chart} /> : null}
       <ImpactEstimate finding={finding} />
     </div>
   );
