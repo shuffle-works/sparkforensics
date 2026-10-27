@@ -116,8 +116,6 @@ export const MergeRewrite = memo(function MergeRewrite({ catalog, defaultCollaps
   const activeRouteTarget = useActiveRouteTarget();
   const routeIndex = activeRouteTarget ? orderedGroups.findIndex((g) => g.findings.includes(activeRouteTarget.finding as MergeFinding)) : null;
   const { totalPages, effectivePage, visible } = usePagedRows(orderedGroups, page, setPage, routeIndex);
-  // Stage order only means something when a row has a stage.
-  const hasStages = findings.some((f) => f.stageIds.length > 0);
   const commandCount = new Set(findings.map((f) => f.executionId)).size;
 
   if (findings.length === 0) return null;
@@ -132,7 +130,7 @@ export const MergeRewrite = memo(function MergeRewrite({ catalog, defaultCollaps
       badges={
         <>
           <TagBadge type="mergeRewrite" impactBand={worstImpactBand(findings) ?? 'info'} className={PLAN_TAG_CLASS} />
-          {hasStages && canToggleSort(findings, groups.length, cardOpen) ? (
+          {canToggleSort(groups, (g) => g.findings, (g) => stageIdOf(g.findings[0]), cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}
         </>

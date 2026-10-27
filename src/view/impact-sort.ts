@@ -7,18 +7,21 @@ import { rankedBySavings } from './interpretation';
  * `'stage'` ranks by stage number ascending. */
 export type SortMode = 'impact' | 'stage';
 
-/** Whether a widget should render its `SortModeToggle`: some finding in the list has a place in
- * the savings rank (so the impact order can move rows), there's more than one row to reorder, and
- * the card is open (a collapsed card has nothing to reorder yet). `rowCount` is the widget's own
- * row/group count, which isn't always `findings.length` (e.g. a widget may gate on its rendered
- * row-group count instead). */
-export function canToggleSort(
+/** Whether a widget should render its `SortModeToggle`: the card is open (a collapsed card has
+ * nothing to reorder yet), some finding in the rows has a place in the savings rank, and the stage
+ * order puts the rows in a different sequence than the impact order. `items` are the widget's rows
+ * in the order it passes to `orderBy`; the orders are compared by row identity over all of them, so
+ * pagination doesn't matter. */
+export function canToggleSort<T>(
   state: InterpretationState | null,
-  findings: readonly Finding[],
-  rowCount: number,
+  items: readonly T[],
+  getFindings: (item: T) => readonly Finding[],
+  getStageId: (item: T) => number | null,
   cardOpen: boolean,
 ): boolean {
-  return rowCount > 1 && cardOpen && rankedBySavings(state, [...findings]).length > 0;
+  if (!cardOpen || rankedBySavings(state, items.flatMap(getFindings)).length === 0) return false;
+  const stageOrder = [...items].sort(byStageAsc(getStageId));
+  return orderByImpact(state, items, getFindings).some((item, i) => item !== stageOrder[i]);
 }
 
 /** Items in the interpretation's savings rank (core's `rankBySavings`, the order of `verdict.steps`).

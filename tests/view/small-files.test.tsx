@@ -145,7 +145,11 @@ test('card defaults collapsed and shows a finding-count summary', async () => {
   renderWidget(
     [
       finding({ stageIds: [1], recommendation: 'Coalesce stage 1' }),
-      finding({ stageIds: [2], recommendation: 'Coalesce stage 2' }),
+      finding({
+        stageIds: [2],
+        recommendation: 'Coalesce stage 2',
+        impactEstimate: { basis: 'serial', wallClock: { low: 100, high: 100 }, estimateMethod: 'measured', stageTaskMs: 5000 },
+      }),
     ],
     { defaultCollapsed: true },
   );

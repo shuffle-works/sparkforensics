@@ -211,7 +211,7 @@ export const StageFindingGroupWidget = memo(function StageFindingGroupWidget({
       badges={
         <>
           <TagBadge type={type} impactBand={widgetImpactBand ?? 'info'} />
-          {canToggleSort(relevant, stageGroups.length, cardOpen) ? (
+          {canToggleSort(stageGroups, (g) => g.findings, (g) => g.stageId, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}
         </>

@@ -174,7 +174,7 @@ export const Spill = memo(function Spill({ appModel, catalog, defaultCollapsed =
       badges={
         <>
           <TagBadge type="spill" impactBand={impactBand} />
-          {canToggleSort(findings, sorted.length, cardOpen) ? (
+          {canToggleSort(sorted, (f) => [f], (f) => f.stageId, cardOpen) ? (
             <SortModeToggle mode={sortMode} onChange={setSortMode} />
           ) : null}
         </>

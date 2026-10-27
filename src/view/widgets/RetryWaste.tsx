@@ -98,7 +98,7 @@ export function RetryWaste({ appModel, catalog, defaultCollapsed = true }: Retry
       badges={
         <>
           <TagBadge type="retryWaste" impactBand={worstImpactBand(findings)!} />
-          {canToggleSort(findings, findings.length, cardOpen) ? (
+          {canToggleSort(sorted, (f) => [f], (f) => f.stageId, cardOpen) ? (
             <SortModeToggle
               mode={sortMode}
               onChange={(next) => {

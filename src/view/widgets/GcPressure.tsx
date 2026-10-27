@@ -158,7 +158,9 @@ export function GcPressure({ catalog, appModel, defaultCollapsed = true }: GcPre
       badges={
         <>
           <TagBadge type="gc" impactBand={impactBand ?? 'info'} />
-          {canToggleSort(findings, findings.length, cardOpen) ? (
+          {[highFindings, lowFindings].some((section) =>
+            canToggleSort(sortedByValue(section), (f) => [f], (f) => f.stageId as number, cardOpen),
+          ) ? (
             <SortModeToggle
               mode={sortMode}
               onChange={(next) => {

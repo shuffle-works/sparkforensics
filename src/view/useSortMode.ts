@@ -16,14 +16,19 @@ export interface UseSortModeResult {
     getFindings: (item: T) => readonly Finding[],
     getStageId: (item: T) => number | null,
   ) => T[];
-  /** `canToggleSort` against the current interpretation. */
-  canToggleSort: (findings: readonly Finding[], rowCount: number, cardOpen: boolean) => boolean;
+  /** `canToggleSort` against the current interpretation: whether the two orders of `items` differ. */
+  canToggleSort: <T>(
+    items: readonly T[],
+    getFindings: (item: T) => readonly Finding[],
+    getStageId: (item: T) => number | null,
+    cardOpen: boolean,
+  ) => boolean;
 }
 
 /** Shared `sortMode` state + ordering for the widgets that render a
  * `SortModeToggle` (impact order vs. stage order). Doesn't own pagination
  * (see `usePagedRows`), and callers pass the toggle's visibility gate
- * (`canToggleSort`) their own findings and row count, since gating differs per
+ * (`canToggleSort`) their own rows and accessors, since gating differs per
  * widget (some also reset a page cursor on change). Re-ordering by stage is Advanced-only (`SortModeToggle`
  * is itself gated), so at Basic both the returned `sortMode` and `orderBy`
  * are forced to impact order regardless of the raw stored state: flipping
@@ -51,6 +56,7 @@ export function useSortMode(initial: SortMode = 'impact'): UseSortModeResult {
     sortMode: effectiveMode,
     setSortMode,
     orderBy,
-    canToggleSort: (findings, rowCount, cardOpen) => canToggleSort(interpretation, findings, rowCount, cardOpen),
+    canToggleSort: (items, getFindings, getStageId, cardOpen) =>
+      canToggleSort(interpretation, items, getFindings, getStageId, cardOpen),
   };
 }

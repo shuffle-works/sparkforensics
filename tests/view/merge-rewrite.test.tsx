@@ -113,17 +113,17 @@ test('keeps MERGE commands with different counts in separate rows', () => {
   expect(rows()).toHaveLength(2);
 });
 
-test('shows the Impact/Stage sort buttons at advanced density only when rows have a stage', () => {
+test('shows the Impact/Stage sort buttons at advanced density only when the stage order differs', () => {
   store.getState().setWidgetDensity('advanced');
-  const two = (stageIds: number[]) => [
-    finding({ executionId: 4, stageIds, impactEstimate: estimate(1000) }),
-    finding({ executionId: 7, stageIds, rewrittenRows: 500000, impactEstimate: estimate(9000) }),
+  const two = (first: number[], second: number[]) => [
+    finding({ executionId: 4, stageIds: first, impactEstimate: estimate(1000) }),
+    finding({ executionId: 7, stageIds: second, rewrittenRows: 500000, impactEstimate: estimate(9000) }),
   ];
-  const { unmount } = renderWidget(two([5]));
+  const { unmount } = renderWidget(two([9], [5]));
   expect(screen.getByRole('group', { name: /sort order/i })).toBeInTheDocument();
   unmount();
 
-  renderWidget(two([]));
+  renderWidget(two([], []));
   expect(screen.queryByRole('group', { name: /sort order/i })).not.toBeInTheDocument();
   store.getState().setWidgetDensity('basic');
 });

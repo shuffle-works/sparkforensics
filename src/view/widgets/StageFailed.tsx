@@ -84,7 +84,7 @@ export function StageFailed({ appModel, catalog, defaultCollapsed = true }: Stag
       badges={
         <>
           <TagBadge type="stageFailed" impactBand={worstImpactBand(findings)!} />
-          {canToggleSort(findings, findings.length, cardOpen) ? (
+          {canToggleSort(sorted, (f) => [f], (f) => f.stageId, cardOpen) ? (
             <SortModeToggle
               mode={sortMode}
               onChange={(next) => {
