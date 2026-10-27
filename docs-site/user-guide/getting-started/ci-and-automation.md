@@ -230,7 +230,8 @@ A `shuffleJoin` finding on a run with AQE skew-join handling on also carries
 entry when a one-sided `joinType` is also blocked by an extra shuffle, none for
 `split` and `evenReads`, and a `code` entry otherwise.
 `shufflePartitionSkew` carries the same fields but is judged on shuffle-read
-sizes, so it is only ever `shuffleJoin` or `other`. A `stageSlowness` finding carries `evidence.reads` (`shuffle`,
+sizes, so it is only ever `shuffleJoin` or `other`. It also carries
+`singleKey: true` when one key holds the shuffle, with a `code` remediation. A `stageSlowness` finding carries `evidence.reads` (`shuffle`,
 `input` or `other`) and suggests partition-count changes only for `shuffle`; `spill`
 and `tinyTask` carry the same `reads` key and gate their partition-count
 advice the same way. On a `shuffle` stage the remediation names the lever that

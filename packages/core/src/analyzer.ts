@@ -183,6 +183,25 @@ function reconcileExecutorMemoryAdvice(out: Finding[]): Finding[] {
   return reconciled;
 }
 
+// A single-key shuffle stage whose join was also not broadcast: say the missed broadcast is the
+// cheapest fix, since the broadcast removes the shuffle that the key skews.
+function linkSingleKeyToBroadcast(findings: Finding[]): Finding[] {
+  const missed = new Map<number, Finding>();
+  for (const f of findings) {
+    if (f.type !== 'underBroadcast') continue;
+    for (const id of f.stageIds ?? []) if (!missed.has(id)) missed.set(id, f);
+  }
+  if (missed.size === 0) return findings;
+  return findings.map((f) => {
+    const broadcast = f.type === 'partitionSizing' && f.singleKey && f.stageId != null ? missed.get(f.stageId) : undefined;
+    if (!broadcast || broadcast.type !== 'underBroadcast') return f;
+    const how = broadcast.broadcastThreshold === 'disabled'
+      ? 'automatic broadcast is disabled, so add a broadcast() hint or set the threshold to a positive size'
+      : 'add a broadcast() hint or raise the threshold';
+    return { ...f, recommendation: `${f.recommendation ?? ''} The same stage also has a missed broadcast: ${how}.`.trim() };
+  });
+}
+
 // The run's idle core-ms (the Wasted core-hours figure), the ceiling for one stage's idle claim.
 function runIdleCoreMs(
   app: SparkAppInfo | null,
@@ -264,7 +283,7 @@ export function analyze(
         assertNever(d);
     }
   }
-  const findings = reconcileExecutorMemoryAdvice(applySuppression(out));
+  const findings = linkSingleKeyToBroadcast(reconcileExecutorMemoryAdvice(applySuppression(out)));
   estimateImpact(findings, impact);
   noteTunedThresholds(findings);
   deriveImpactBand(findings, app, thresholds ? (type) => bandFloors(type, thresholds) : undefined);

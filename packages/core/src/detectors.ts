@@ -957,6 +957,9 @@ function pythonUdfArrowFix(app: DetectorApp | null): { text: string; remediation
 const MORE_DATA_RATIO = 2;
 
 const SKEW_KEY_REMEDY = 'salt the key or repartition on a better key';
+// A single key (often NULL or a constant) holds the shuffle: partition count and AQE cannot split it.
+const SINGLE_KEY_REMEDY = 'broadcast the small side with a hint, filter or split out the NULL rows, or give the NULL rows a random key';
+const SINGLE_KEY_CAUSE = `almost all rows share one key (often NULL or a constant), so more partitions will not help: ${SINGLE_KEY_REMEDY}`;
 
 // What a stage reads, by the dominant side: a stage that reads a shuffle and mostly input files is
 // an input stage for any fix that sizes a shuffle's reduce side.
@@ -1962,11 +1965,14 @@ export const DETECTORS = [
     type: 'partitionSizing', order: 22, fixEffort: 'config', version: 1,
     emits: ['partitionSizing'],
     docAnchor: '#bottleneck-partition-sizing',
-    thresholds: { skewRatio: 5, skewFloorBytes: 256 * MB, lowParTotalBytes: GB, lowParMaxTasks: 7, maxPartBytes: 5 * GB },
+    thresholds: { skewRatio: 5, skewFloorBytes: 256 * MB, singleKeyShare: 0.9, lowParTotalBytes: GB, lowParMaxTasks: 7, maxPartBytes: 5 * GB },
     detect(stage, ctx, thresholds): Finding[] {
       const out: Finding[] = [];
       const { shuffleReadP50: p50, shuffleReadMax: max, shuffleReadBytes: total, taskCount } = stage;
       if (max > thresholds.skewRatio * p50 && max > thresholds.skewFloorBytes) {
+        // One task reading nearly the whole shuffle while the median reads nothing: more partitions
+        // or AQE splitting cannot divide a single key, so the advice is about the key itself.
+        const singleKey = p50 === 0 && max >= thresholds.singleKeyShare * total;
         // p50 can be 0 (over half the shuffle partitions empty): a ratio against zero renders
         // "Infinity×", so fall back to median-free phrasing.
         const ratioText = p50 > 0
@@ -1976,8 +1982,11 @@ export const DETECTORS = [
         out.push({
           type: 'partitionSizing', stageId: stage.id, impactBand: 'warning',
           rule: 'shufflePartitionSkew', origin: fix.origin, aqeSkew: fix.aqeSkew, metric: 'shuffleReadMax', value: max,
-          recommendation: `The largest shuffle partition (${formatBytes(max)}) is ${ratioText}: ${fix.text}.`,
-          remediation: fix.remediation,
+          ...(singleKey ? { singleKey } : {}),
+          recommendation: singleKey
+            ? `The largest shuffle partition (${formatBytes(max)}) holds ${Math.round(max / total * 100)}% of the stage's shuffle read and the median partition is empty: ${SINGLE_KEY_CAUSE}.`
+            : `The largest shuffle partition (${formatBytes(max)}) is ${ratioText}: ${fix.text}.`,
+          remediation: singleKey ? [codeFix(SINGLE_KEY_REMEDY)] : fix.remediation,
         });
       }
       if (total >= thresholds.lowParTotalBytes && taskCount <= thresholds.lowParMaxTasks) {

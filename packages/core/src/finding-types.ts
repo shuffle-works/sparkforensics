@@ -149,6 +149,9 @@ export interface PartitionSizingEvidence {
   // Only on 'shufflePartitionSkew': see SkewOrigin and AqeSkewCase.
   origin?: SkewOrigin;
   aqeSkew?: AqeSkewCase;
+  // Only on 'shufflePartitionSkew': true when the median partition is empty and one partition holds
+  // nearly all the stage's shuffle read, so one key carries the shuffle.
+  singleKey?: true;
   // Only on 'lowShuffleParallelism': see ShufflePartitions ('raise', 'aqeCoalesced' or 'ownPartitioning').
   partitions?: ShufflePartitions;
 }

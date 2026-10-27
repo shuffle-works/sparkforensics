@@ -122,6 +122,11 @@ properties and host names were removed, and the tasks of stages that read no shu
 Regenerate one the same way: run the job with `apache/spark:<version>` in `local[4]` with an
 uncompressed, non-rolling event log, and trim it with the same removals.
 
+`packages/core/test/fixtures/synthetic/single-key-shuffle.ndjson` is a hand-made log of one stage
+whose nine empty tasks and one 400 MiB task make a single-key shuffle. It sits in a subfolder
+because `evidence-panels-not-empty.test.tsx` opens every log directly under `fixtures/`.
+`single-key-shuffle.test.js` reads it.
+
 ### Corpus regression snapshot
 
 `dev/corpus-snapshot.json` records every finding (type, location, band,
