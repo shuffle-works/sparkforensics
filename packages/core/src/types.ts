@@ -286,8 +286,8 @@ export interface PlanGraphModel {
   /** Segments with no stage pair of their own: their `segmentStageIds` entry
    * is only the nearest stage, not a link the log supports. */
   inheritedSegments: Set<number>;
-  /** Stage id -> exclusive duration share of the stage's strictly paired
-   * segment, over the whole plan whatever `scope` renders. A stage with no
+  /** Stage id -> summed exclusive duration share of every segment strictly
+   * paired with the stage, over the whole plan whatever `scope` renders. A stage with no
    * measured node has no entry. */
   stageDurations: Map<number, number>;
 }
@@ -435,8 +435,8 @@ export interface PlanGraphStageGroupNodeData {
   stageId: number;
   /** Every finding on this stage, in full (not just the worst impact band). */
   findings: Finding[];
-  /** The stage's strictly paired segment's duration, pre-formatted via
-   * `formatDuration`; null when it has no attributed duration. */
+  /** The summed duration of every segment strictly paired with the stage,
+   * pre-formatted via `formatDuration`; null when it has no attributed duration. */
   durationLabel: string | null;
   onSelect?: () => void;
 }

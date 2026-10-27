@@ -358,8 +358,8 @@ export function PlanGraphCanvas({
     });
 
     // One stroked box per stage wrapping its paired segment, and the only place
-    // the stage's name, duration and findings are painted. The padding constants
-    // keep it strictly containing the segment's box.
+    // the stage's name, duration and findings are painted. It wraps the paired
+    // segment's plan nodes directly, with room above them for the header.
     const groupOptions = {
       paddingX: STAGE_GROUP_PADDING_X,
       paddingY: STAGE_GROUP_PADDING_Y,
