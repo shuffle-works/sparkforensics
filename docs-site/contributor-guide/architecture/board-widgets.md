@@ -9,7 +9,7 @@ Beyond the stage-level cards, eleven app- and plan-level cards render in the
 Findings tab, all `region: 'action'` in `detector-registry.tsx`: Incomplete
 Run, Job Failures, Caching Opportunities, Autoscaling Churn, Config Audit, and
 the seven Plan Advisor cards (Redundant Plan Subtree, Excessive Small Files,
-Nested Loop Join, MERGE rewrites, Row-at-a-time Python UDFs, Missed Broadcast Join, Oversized Broadcast Join).
+Nested Loop Join, MERGE rewrites, Unpruned Partitioned Scans, Row-at-a-time Python UDFs, Missed Broadcast Join, Oversized Broadcast Join).
 `REGISTRY` maps every finding type to its own component: 28 `action` and 4
 `reference` entries.
 

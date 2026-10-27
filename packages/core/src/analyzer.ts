@@ -58,7 +58,7 @@ const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & key
   cacheUtilization: ['variant', 'rddId'], coreLocality: [], autoscalingChurn: [],
   cachingOpportunity: ['variant', 'relation', 'format', 'operator', 'executionIds'],
   jobFailureRate: [], configAudit: [],
-  duplicatePlanSubtree: ['rootName', 'subtreeSize', 'groupIndex'], smallFiles: ['direction', 'nodeName'], mergeRewrite: ['rule'],
+  duplicatePlanSubtree: ['rootName', 'subtreeSize', 'groupIndex'], smallFiles: ['direction', 'nodeName'], mergeRewrite: ['rule'], unprunedScan: ['relation'],
   pythonUdf: [],
   nestedLoopJoin: ['nodeName'],
   underBroadcast: ['largerSideBytes'], overBroadcast: [],

@@ -1,7 +1,7 @@
 import { clipAtWord, pathBasename, formatBytes, formatDuration, IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { medianOfSorted } from './median.ts';
 import { shareLabel } from './finding-presentation.ts';
-import { scanRelationId, parseJoinType } from './plan-summary.ts';
+import { scanRelationId, parseJoinType, parseScanFilters } from './plan-summary.ts';
 import { allocatedCoreMs, computeAllocation } from './allocation.ts';
 import { executorHeapPeaks } from './executor-peaks.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
@@ -3881,6 +3881,38 @@ export const DETECTORS = [
             recommendation: `The MERGE kept most target files after skipping although its changes touch few partitions: repeat the target partition range in the MERGE condition so Delta can prune files, and check the target's file layout.`,
           });
         }
+      }, { dedupe: true });
+      return out.length > 0 ? out : null;
+    },
+    estimate: noWasteModel,
+  }),
+  defineSqlDetector({
+    type: 'unprunedScan', order: 136, fixEffort: 'code', version: 1,
+    emits: ['unprunedScan'],
+    docAnchor: '#table-formats',
+    // A scan of a partitioned table (it reports "number of partitions read") that reads at least
+    // minPartitionsRead partitions and minBytesRead bytes with no partition filter.
+    thresholds: { minBytesRead: GB, minPartitionsRead: 2 },
+    detect(sqlExec, ctx, thresholds): Finding[] | null {
+      if (!sqlExec.planTree) return null;
+      const out: Finding[] = [];
+      walkPlanTree(sqlExec.planTree, (node) => {
+        const partitionsRead = metricValue(node, 'number of partitions read');
+        const bytesRead = metricValue(node, FILES_READ_BYTES);
+        const relation = relationIdOf(node);
+        if (partitionsRead == null || bytesRead == null || relation === null) return;
+        if (partitionsRead < thresholds.minPartitionsRead || bytesRead < thresholds.minBytesRead) return;
+        const { partitionFilters, dataFilters } = parseScanFilters(node.detail ?? '');
+        if (partitionFilters.length > 0 || dataFilters.length === 0) return;
+        out.push({
+          type: 'unprunedScan', executionId: sqlExec.id, stageIds: unionStageIds([node], sqlStageIds(ctx, sqlExec.id)),
+          planNodeIds: node.id ? [node.id] : [], impactBand: 'info',
+          metric: 'bytesRead', value: bytesRead, partitionsRead, dataFilters,
+          relation: relation.replace(/^[a-z]+:/, ''),
+          confidence: 'low',
+          validationRequired: 'The plan does not name the table\'s partition columns. Confirm which columns it is partitioned by: the scan filters other columns, so partition pruning did not apply.',
+          recommendation: 'No partition filter reached the scan of this partitioned table: add a filter on a partition column, for example the date the table is partitioned by, so Spark can skip partitions.',
+        });
       }, { dedupe: true });
       return out.length > 0 ? out : null;
     },

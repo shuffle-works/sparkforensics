@@ -461,7 +461,7 @@ shuffle storage plugin, and `minExecutors` above `maxExecutors`.
 
 ### `PLAN`: Plan advisor {#plan}
 
-Flags patterns in the SQL execution plan worth reviewing. Seven checks share
+Flags patterns in the SQL execution plan worth reviewing. Eight checks share
 this tag:
 
 - Duplicate plan subtree: the same subtree recomputed more than once in the
@@ -499,6 +499,16 @@ this tag:
   log names one, the target table or path, and merges commands with identical
   counts into one row ("2 MERGE commands (queries 4 and 7)"). Its Impact/Stage
   sort buttons show only when the Stage order would change the rows' order.
+- Unpruned partitioned scan: a scan of a partitioned table with no partition
+  filter that filters the rows it reads and read at least 2 partitions and
+  1 GiB. The bytes and partitions are what the scan read, after any Delta
+  file skipping. The plan marks a partitioned table's scan by its
+  `number of partitions read` metric but does not name the partition columns,
+  so this is an informational, low-confidence finding: confirm which columns
+  the table is partitioned by. The scan's filters are on other columns; add a
+  filter on a partition column, for example the date the table is partitioned
+  by. The card names each scan's table, the bytes and partitions it read, and
+  its filters.
 - Row-at-a-time Python UDF: a plan runs `BatchEvalPython`, which pickles
   every row to a Python worker and back. Flagged when its stages sent at
   least 64 MiB to the workers (`data sent to Python workers`) and ran for at

@@ -113,6 +113,19 @@ function jdbcSql(detail: string): string {
   return (sqlM ? sqlM[1] : (jdbcM ? jdbcM[1] : '')).replace(/\s+/g, ' ').trim();
 }
 
+/** The filters a FileScan detail names. `dataFilters` are the predicates Spark evaluates on the rows
+ * it reads, with the null checks it adds to every filtered column left out. */
+export function parseScanFilters(detail: string): { partitionFilters: string[]; dataFilters: string[] } {
+  const list = (key: string) => {
+    const m = detail.match(new RegExp(`${key}:\\s*\\[(.*?)\\](?:,\\s*\\w+:|$)`, 's'));
+    return m ? splitTopLevel(m[1]).map(f => f.replace(/#\w+/g, '')) : [];
+  };
+  return {
+    partitionFilters: list('PartitionFilters'),
+    dataFilters: list('DataFilters').filter(f => !/^isnotnull\([^()]*\)$/.test(f)),
+  };
+}
+
 function visitScan(name: string, detail: string, result: PlanSummary): boolean {
   // Identity (path + format) comes from the shared classifier; a null key means
   // internal Delta metadata / an un-nameable read; no Sources bullet.

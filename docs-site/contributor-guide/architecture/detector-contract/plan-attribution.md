@@ -38,7 +38,7 @@ every stage per execution.
 
 ## Stage-ID attribution for Plan Advisor findings
 
-The Plan Advisor detectors (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `mergeRewrite`, `pythonUdf`, `broadcastSizing`
+The Plan Advisor detectors (`duplicatePlanSubtree`, `smallFiles`, `nestedLoopJoin`, `mergeRewrite`, `unprunedScan`, `pythonUdf`, `broadcastSizing`
 in `packages/core/src/detectors.ts`) each attribute their finding to a narrowed `stageIds` set
 rather than the whole SQL execution: `PlanNode.stageIds` is resolved once per plan
 tree at parse time by unioning, per node, every metric's accumulator ID against a

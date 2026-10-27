@@ -37,6 +37,7 @@ const ConfigAudit = lazy(() => import('./widgets/ConfigAudit').then((m) => ({ de
 const DuplicatePlanSubtree = lazy(() => import('./widgets/DuplicatePlanSubtree').then((m) => ({ default: m.DuplicatePlanSubtree })));
 const PythonUdf = lazy(() => import('./widgets/PythonUdf').then((m) => ({ default: m.PythonUdf })));
 const MergeRewrite = lazy(() => import('./widgets/MergeRewrite').then((m) => ({ default: m.MergeRewrite })));
+const UnprunedScan = lazy(() => import('./widgets/UnprunedScan').then((m) => ({ default: m.UnprunedScan })));
 const NestedLoopJoin = lazy(() => import('./widgets/NestedLoopJoin').then((m) => ({ default: m.NestedLoopJoin })));
 const SmallFiles = lazy(() => import('./widgets/SmallFiles').then((m) => ({ default: m.SmallFiles })));
 const UnderBroadcast = lazy(() => import('./widgets/UnderBroadcast').then((m) => ({ default: m.UnderBroadcast })));
@@ -83,6 +84,7 @@ setDisplayName(DuplicatePlanSubtree, 'DuplicatePlanSubtree');
 setDisplayName(PythonUdf, 'PythonUdf');
 setDisplayName(SmallFiles, 'SmallFiles');
 setDisplayName(MergeRewrite, 'MergeRewrite');
+setDisplayName(UnprunedScan, 'UnprunedScan');
 setDisplayName(NestedLoopJoin, 'NestedLoopJoin');
 setDisplayName(UnderBroadcast, 'UnderBroadcast');
 setDisplayName(OverBroadcast, 'OverBroadcast');
@@ -190,6 +192,7 @@ export const REGISTRY: Readonly<Record<string, RegistryEntry>> = {
   smallFiles: { component: SmallFiles, region: 'action', widgetId: 'small-files', routeable: true },
   pythonUdf: { component: PythonUdf, region: 'action', widgetId: 'python-udf', routeable: true },
   mergeRewrite: { component: MergeRewrite, region: 'action', widgetId: 'merge-rewrite', routeable: true },
+  unprunedScan: { component: UnprunedScan, region: 'action', widgetId: 'unpruned-scan', routeable: true },
   nestedLoopJoin: { component: NestedLoopJoin, region: 'action', widgetId: 'nested-loop-join', routeable: true },
   underBroadcast: { component: UnderBroadcast, region: 'action', widgetId: 'under-broadcast', routeable: true },
   overBroadcast: { component: OverBroadcast, region: 'action', widgetId: 'over-broadcast', routeable: true },

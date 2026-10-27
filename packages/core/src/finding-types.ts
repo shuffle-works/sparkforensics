@@ -456,6 +456,17 @@ export interface MergeRewriteEvidence extends PlanFindingEvidence {
 }
 export interface MergeRewriteFinding extends NumericFinding<'mergeRewrite'>, MergeRewriteEvidence, PlanNodeOrigin {}
 
+/** A scan of a partitioned table that filters the rows it reads but has no partition filter. `value` is the bytes read. The plan does not name the partition columns, so the finding asks
+ * for confirmation. */
+export interface UnprunedScanEvidence extends PlanFindingEvidence {
+  partitionsRead: number;
+  /** The scan's row filters, without the null checks Spark adds. */
+  dataFilters: string[];
+  /** The scanned table or path, as the Sources list names it. */
+  relation: string;
+}
+export interface UnprunedScanFinding extends NumericFinding<'unprunedScan'>, UnprunedScanEvidence, PlanNodeOrigin {}
+
 export interface PythonUdfEvidence extends PlanFindingEvidence {
   // Bytes the executors sent to Python workers: the finding's `value`, repeated for the report.
   dataSentBytes: number;
@@ -530,6 +541,7 @@ export interface FindingEvidenceMap {
   duplicatePlanSubtree: DuplicatePlanSubtreeEvidence;
   smallFiles: SmallFilesEvidence;
   mergeRewrite: MergeRewriteEvidence;
+  unprunedScan: UnprunedScanEvidence;
   pythonUdf: PythonUdfEvidence;
   nestedLoopJoin: NestedLoopJoinEvidence;
   underBroadcast: UnderBroadcastEvidence;
@@ -565,6 +577,7 @@ export type Finding =
   | DuplicatePlanSubtreeFinding
   | SmallFilesFinding
   | MergeRewriteFinding
+  | UnprunedScanFinding
   | PythonUdfFinding
   | NestedLoopJoinFinding
   | UnderBroadcastFinding
