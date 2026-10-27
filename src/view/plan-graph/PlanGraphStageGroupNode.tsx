@@ -1,4 +1,5 @@
 import type { NodeProps } from '@xyflow/react';
+import { Chip } from '@/view/ImpactBadge';
 import { cn } from '@/lib/utils';
 import { PlanGraphFindingChip } from './PlanGraphFindingChip';
 import { StageEntryButton, useStageSelection } from './stage-selection';
@@ -6,50 +7,49 @@ import type { PlanGraphStageGroupNodeData } from '@sparkforensics/core/types.ts'
 
 export type PlanGraphStageGroupNodeProps = NodeProps & { data: PlanGraphStageGroupNodeData };
 
-// Outer group layer: a solid tinted field wrapping every segment box zipped to
-// the same stage. Findings are stage-scoped but render inline in the matched
-// segment box's header row, not here, so a stage split across segments doesn't
-// get two rows of chips. showOwnFindings is the exception: a focal stage the zip
-// left with no matching segment box paints its chips here as a fallback. That
-// box wraps the whole graph, so the chips sit above its top edge, clear of the
-// headers of the boxes inside it.
-// Otherwise this box paints only a corner "Stage N" tag, opposite the segment
-// box's top-left header so the two don't collide.
+// The one stroked box of a stage, wrapping every segment box zipped to it. It
+// owns the stage's name, summed duration, finding chips and selection ring; the
+// segment boxes inside are plain fills. A box with no segment inside it
+// (segmentCount 0: a focal stage the zip left unmapped) wraps the whole graph,
+// whose top edge coincides with the top edge of the first stage box inside, so
+// its header sits above the box instead of over those boxes' headers.
 export function PlanGraphStageGroupNode({ data }: PlanGraphStageGroupNodeProps) {
-  const { width, height, stageId, findings, showOwnFindings = true, onSelect } = data;
+  const { width, height, stageId, findings, durationLabel, segmentCount, onSelect } = data;
   const selected = useStageSelection()?.selectedStageId === stageId;
   return (
     <div
-      className={cn('relative rounded-xl border border-primary/25 bg-primary/5 nopan nodrag', selected && 'ring-2 ring-primary')}
+      className={cn('relative rounded-xl border border-primary/45 bg-primary/5 nopan nodrag', selected && 'ring-2 ring-primary')}
       style={{ width, height, pointerEvents: 'all' }}
     >
-      {/* Overlay click target, painted first so it sits behind the findings
-          chips/label below in stacking order. */}
-      <button
-        type="button"
-        aria-label={`Focus stage ${stageId}`}
-        onClick={onSelect}
-        style={{ pointerEvents: 'auto' }}
-        className="absolute inset-0 size-full cursor-pointer rounded-xl transition-colors hover:border-primary/50 hover:bg-primary/10"
-      />
-      {showOwnFindings && findings.length > 0 ? (
-        // Anchored to the top edge and growing upward, so many chips wrap into
-        // more rows above the box instead of down over the boxes inside it.
-        <div className="absolute bottom-full left-0 right-0 mb-1 flex flex-wrap items-end gap-1">
-          {findings.map((f, i) => (
-            <PlanGraphFindingChip key={f.id ?? `${f.type}-${i}`} finding={f} stageId={stageId} className="h-4 gap-1 px-1.5 text-xs" />
-          ))}
-        </div>
+      {/* Overlay click target, painted first so it sits behind the header below
+          in stacking order. Only a box with somewhere to go is a target. */}
+      {onSelect ? (
+        <button
+          type="button"
+          aria-label={`Focus stage ${stageId}`}
+          onClick={onSelect}
+          style={{ pointerEvents: 'auto' }}
+          className="absolute inset-0 size-full cursor-pointer rounded-xl transition-colors hover:border-primary/50 hover:bg-primary/10"
+        />
       ) : null}
-      {/* Full-strength primary, not /70: at 70% opacity over the tinted field
-          this dropped to ~2.8:1, under the 4.5:1 floor for 12px text. The
-          wrapper positions it: the button's hit-area class sets its own
-          `position`. */}
-      <span className="absolute right-2 bottom-1 text-xs font-medium text-primary">
+      {/* The header spans the box so its chips can wrap, but only its contents
+          take clicks: the rest of the row belongs to the overlay. Full-strength
+          primary, not /70: at 70% opacity over the tinted field the title
+          dropped to ~2.8:1, under the 4.5:1 floor for 12px text. */}
+      <div
+        className={cn(
+          'pointer-events-none absolute flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-primary [&>*]:pointer-events-auto',
+          segmentCount > 0 ? 'left-2 right-2 top-2' : 'bottom-full left-0 right-0 mb-1',
+        )}
+      >
         <StageEntryButton stageId={stageId} aria-label={`Show the findings for stage ${stageId}`} className="hover:underline">
           Stage {stageId}
         </StageEntryButton>
-      </span>
+        {durationLabel ? <Chip label={durationLabel} impactBand="info" title="Approximate share of this stage's wall time" /> : null}
+        {findings.map((f, i) => (
+          <PlanGraphFindingChip key={f.id ?? `${f.type}-${i}`} finding={f} stageId={stageId} className="h-4 gap-1 px-1.5 text-xs" />
+        ))}
+      </div>
     </div>
   );
 }

@@ -169,6 +169,18 @@ describe('computeGroupBounds', () => {
     expect(group.width).toBe(NODE_WIDTH + 20);
     expect(group.height).toBe(NODE_HEIGHT + 100);
   });
+
+  it('lets paddingBottom differ from the top padding, and defaults it to paddingY', () => {
+    const laidOut = [graphNode('a', { segmentIndex: 0 })].map((n) => ({ ...n, position: { x: 0, y: 0 } }));
+    const groupOf = () => 'g';
+
+    const trimmed = computeGroupBounds(laidOut, groupOf, { paddingY: 50, paddingBottom: 20, headerHeight: 0 })[0];
+    const symmetric = computeGroupBounds(laidOut, groupOf, { paddingY: 50, headerHeight: 0 })[0];
+
+    expect(trimmed.position.y).toBe(-50);
+    expect(trimmed.height).toBe(NODE_HEIGHT + 70);
+    expect(symmetric.height).toBe(NODE_HEIGHT + 100);
+  });
 });
 
 describe('computeGroupBoundsWithFallback', () => {

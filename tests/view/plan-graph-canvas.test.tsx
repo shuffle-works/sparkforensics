@@ -219,7 +219,7 @@ describe('focus nav', () => {
 });
 
 describe('compound stage-group containers', () => {
-  it('always renders a segment-level group container with its stage id and duration chip', () => {
+  it('paints each stage\'s id and duration on its stage box, and no header on the segment boxes', () => {
     const grouped = model({
       nodes: [
         { id: 'a', sourceNodeId: 'a', label: 'Scan parquet', category: 'scan', operatorDetail: '', primaryMetric: '', segmentIndex: 0, splitRole: null, durationShare: 500 },
@@ -232,18 +232,20 @@ describe('compound stage-group containers', () => {
 
     render(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={42} segmentStageIds={segmentStageIds} />);
 
-    const segment0 = within(screen.getByTestId('rf__node-segment-0'));
-    const segment1 = within(screen.getByTestId('rf__node-segment-1'));
-    expect(segment0.getByText(/stage 42/i)).toBeInTheDocument();
-    expect(segment1.getByText(/stage 43/i)).toBeInTheDocument();
-    expect(segment0.getByText(formatDuration(500))).toBeInTheDocument();
-    expect(segment1.getByText('—')).toBeInTheDocument();
+    const stage42 = within(screen.getByTestId('rf__node-stage-42'));
+    const stage43 = within(screen.getByTestId('rf__node-stage-43'));
+    expect(stage42.getByText('Stage 42')).toBeInTheDocument();
+    expect(stage43.getByText('Stage 43')).toBeInTheDocument();
+    expect(stage42.getByText(formatDuration(500))).toBeInTheDocument();
+    expect(stage43.queryByText('—')).not.toBeInTheDocument();
+    expect(screen.getAllByText(/^Stage \d+$/)).toHaveLength(2);
+    expect(within(screen.getByTestId('rf__node-segment-0')).queryByText(/stage/i)).not.toBeInTheDocument();
   });
 
-  it('renders the outer stage-level group only in full scope, merging segments zipped to the same stage', () => {
+  it('draws one stage box in single-stage scope and one per stage in full scope, merging segments zipped to the same stage', () => {
     const single = model({ scope: 'segment' });
     const { rerender } = render(<PlanGraphCanvas model={single} showMiniMap={false} stageId={1} segmentStageIds={new Map([[0, 1]])} />);
-    expect(screen.queryByTestId(/rf__node-stage-/)).not.toBeInTheDocument();
+    expect(screen.getAllByTestId(/rf__node-stage-/)).toHaveLength(1);
 
     const grouped = model({
       nodes: [
@@ -260,18 +262,54 @@ describe('compound stage-group containers', () => {
     expect(screen.getAllByTestId(/rf__node-stage-/)).toHaveLength(2);
     expect(within(screen.getByTestId('rf__node-stage-42')).getByText('Stage 42')).toBeInTheDocument();
     expect(within(screen.getByTestId('rf__node-stage-43')).getByText('Stage 43')).toBeInTheDocument();
+    // The stage shows the sum of its segments' durations.
+    expect(within(screen.getByTestId('rf__node-stage-42')).getByText(formatDuration(800))).toBeInTheDocument();
   });
 
-  it('in single-stage (segment) scope, shows the focal stage\'s findings on the one segment box', () => {
+  it('fills the segments of a shared stage as bands and leaves a lone segment plain', () => {
+    const grouped = model({
+      nodes: [
+        { id: 'a', sourceNodeId: 'a', label: 'Scan parquet', category: 'scan', operatorDetail: '', primaryMetric: '', segmentIndex: 0, splitRole: null, durationShare: 500 },
+        { id: 'b', sourceNodeId: 'b', label: 'SortMergeJoin', category: 'join', operatorDetail: '', primaryMetric: '', segmentIndex: 1, splitRole: null, durationShare: 300 },
+        { id: 'c', sourceNodeId: 'c', label: 'Filter', category: 'filter', operatorDetail: '', primaryMetric: '', segmentIndex: 2, splitRole: null, durationShare: 200 },
+      ],
+      edges: [],
+      scope: 'full',
+    });
+    const segmentStageIds = new Map([[0, 42], [1, 42], [2, 43]]);
+    render(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={42} segmentStageIds={segmentStageIds} />);
+
+    const box = (id: string) => screen.getByTestId(id).firstElementChild;
+    expect(box('rf__node-segment-0')).toHaveClass('bg-primary/10');
+    expect(box('rf__node-segment-1')).toHaveClass('bg-primary/10');
+    expect(box('rf__node-segment-2')).not.toHaveClass('bg-primary/10');
+  });
+
+  it('does not count a stage\'s segments that the single-stage view leaves out', () => {
+    const single = model({ scope: 'segment' });
+    render(<PlanGraphCanvas model={single} showMiniMap={false} stageId={1} segmentStageIds={new Map([[0, 1], [1, 1]])} />);
+
+    expect(screen.getByTestId('rf__node-segment-0').firstElementChild).not.toHaveClass('bg-primary/10');
+  });
+
+  it('wraps each segment box 8px inside the top and bottom edges of its stage box', () => {
+    const grouped = model({ scope: 'full' });
+    render(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={1} segmentStageIds={new Map([[0, 1]])} />);
+
+    const height = (id: string) => parseFloat(screen.getByTestId(id).style.height);
+    expect(height('rf__node-stage-1') - height('rf__node-segment-0')).toBe(16);
+  });
+
+  it('in single-stage (segment) scope, shows the focal stage\'s findings on the stage box', () => {
     const single = model({ scope: 'segment', segmentStageIds: new Map([[0, 7]]) });
     const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
 
     render(<PlanGraphCanvas model={single} showMiniMap={false} stageId={7} findings={findings} segmentStageIds={new Map([[0, 7]])} />);
 
-    expect(screen.getByText('SKEW')).toBeInTheDocument();
+    expect(within(screen.getByTestId('rf__node-stage-7')).getByText('SKEW')).toBeInTheDocument();
   });
 
-  it('selects the stage with the chip as the entry when a segment finding chip is clicked', async () => {
+  it('selects the stage with the chip as the entry when a finding chip is clicked', async () => {
     const user = userEvent.setup();
     const select = vi.fn();
     const single = model({ scope: 'segment', segmentStageIds: new Map([[0, 7]]) });
@@ -289,7 +327,7 @@ describe('compound stage-group containers', () => {
     expect(select).toHaveBeenCalledWith(7, chip);
   });
 
-  it('keeps the focal segment box and its findings when foreground filtering hides every plan node', () => {
+  it('keeps the focal stage and segment boxes and the findings when foreground filtering hides every plan node', () => {
     const single = model({
       scope: 'segment',
       segmentStageIds: new Map([[0, 7]]),
@@ -309,12 +347,12 @@ describe('compound stage-group containers', () => {
     );
 
     expect(screen.getByTestId('rf__node-segment-0')).toBeInTheDocument();
-    expect(screen.getByText('SKEW')).toBeInTheDocument();
+    expect(within(screen.getByTestId('rf__node-stage-7')).getByText('SKEW')).toBeInTheDocument();
     expect(screen.queryByTestId('rf__node-a')).not.toBeInTheDocument();
     expect(screen.queryByTestId('rf__node-b')).not.toBeInTheDocument();
   });
 
-  it('in expanded (full) scope, shows findings inline in the matched segment box\'s header, not duplicated on the outer stage box', () => {
+  it('in expanded (full) scope, shows each finding once, on its stage box', () => {
     const grouped = model({
       nodes: [
         { id: 'a', sourceNodeId: 'a', label: 'Scan parquet', category: 'scan', operatorDetail: '', primaryMetric: '', segmentIndex: 0, splitRole: null, durationShare: null },
@@ -328,11 +366,11 @@ describe('compound stage-group containers', () => {
 
     render(<PlanGraphCanvas model={grouped} showMiniMap={false} stageId={7} findings={findings} segmentStageIds={segmentStageIds} />);
 
-    // Exactly one "SKEW" chip on screen, and it's inside stage 7's segment box.
+    // Exactly one "SKEW" chip on screen, and it's inside stage 7's box.
     expect(screen.getAllByText('SKEW')).toHaveLength(1);
-    expect(within(screen.getByTestId('rf__node-segment-0')).getByText('SKEW')).toBeInTheDocument();
-    expect(within(screen.getByTestId('rf__node-stage-7')).queryByText('SKEW')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('rf__node-stage-7')).getByText('SKEW')).toBeInTheDocument();
     expect(within(screen.getByTestId('rf__node-stage-8')).queryByText('SKEW')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('rf__node-segment-0')).queryByText('SKEW')).not.toBeInTheDocument();
   });
 
   it('keeps the focal stage box and Next problem target when foreground filtering hides that stage\'s operators', () => {
@@ -359,7 +397,7 @@ describe('compound stage-group containers', () => {
       />,
     );
 
-    expect(within(screen.getByTestId('rf__node-segment-0')).getByText('SKEW')).toBeInTheDocument();
+    expect(within(screen.getByTestId('rf__node-stage-7')).getByText('SKEW')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /next problem/i })).toBeInTheDocument();
     expect(screen.queryByTestId('rf__node-focal')).not.toBeInTheDocument();
     expect(screen.getByTestId('rf__node-other')).toBeInTheDocument();
@@ -425,7 +463,7 @@ describe('compound stage-group containers', () => {
     expect(screen.getByRole('button', { name: /next problem/i })).toBeInTheDocument();
   });
 
-  it('stacks the whole-graph focal fallback box under the stage boxes it wraps, so their corner titles stay clickable', () => {
+  it('stacks the whole-graph focal fallback box under the stage boxes it wraps, so their titles stay clickable', () => {
     const fullFallback = model({ scope: 'full', segmentStageIds: new Map([[0, 99]]) });
     const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
 

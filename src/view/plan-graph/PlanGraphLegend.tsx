@@ -17,7 +17,7 @@ const LEGEND_CATEGORIES: { category: string; label: string }[] = [
 
 /** On-canvas key for the plan graph's visual vocabulary: what the operator
  * icons mean, how the heat bar and edge thickness encode magnitude, and what
- * the two box layers are. The control rail owns the open/close toggle; this is
+ * the stage boxes are. The control rail owns the open/close toggle; this is
  * just the panel it reveals. */
 export function PlanGraphLegend() {
   return (
@@ -59,8 +59,8 @@ export function PlanGraphLegend() {
       </p>
 
       <p className="text-muted-foreground">
-        A <span className="text-foreground">segment</span> box groups one Exchange-bounded stage of the plan; a{' '}
-        <span className="text-foreground">stage</span> box (full-plan view) wraps every segment of one Spark stage.
+        A <span className="text-foreground">stage</span> box wraps one Spark stage. Shaded bands inside it are the
+        Exchange-bounded segments of the plan paired with that stage; a dashed box is a segment matched to no stage.
       </p>
     </div>
   );

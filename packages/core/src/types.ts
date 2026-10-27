@@ -410,25 +410,32 @@ export interface TaskData { metrics: Float64Array | number[]; fieldNames: string
 export interface PlanGraphSegmentGroupNodeData {
   width: number;
   height: number;
+  /** The stage this segment belongs to, or null when it matched none (it then
+   * draws its own "Stage —" header, as no stage box surrounds it). */
   stageId: number | null;
   /** Pre-formatted via `formatDuration` (format-utils.ts) by the caller;
    * null (never 0) when this segment has no attributed duration, e.g. it
    * fell outside attributeStageDurationToPlan's Math.min(segments, stages)
-   * truncation. */
+   * truncation. Shown only on a segment with no stage. */
   durationLabel: string | null;
-  /** Every finding on this stage, in full (not just the worst impact band). */
-  findings: Finding[];
+  /** True when other segments belong to the same stage, so each draws as a
+   * band inside the stage box. */
+  sharesStage: boolean;
 }
 
 export interface PlanGraphStageGroupNodeData {
   width: number;
   height: number;
   stageId: number;
+  /** Every finding on this stage, in full (not just the worst impact band). */
   findings: Finding[];
-  /** True when no segment box is zipped to this stage id, so this box has
-   * to paint its own findings chips instead of leaving that to the segment
-   * box's header row (see PlanGraphCanvas.tsx's focal-stage fallback).
-   * Defaults to shown when omitted. */
-  showOwnFindings?: boolean;
+  /** The summed duration of the stage's segments, pre-formatted via
+   * `formatDuration`; null when none of them has an attributed duration. */
+  durationLabel: string | null;
+  /** How many segment boxes belong to this stage. Zero means no segment box
+   * is zipped to this stage id (see PlanGraphCanvas.tsx's focal-stage
+   * fallback), so the box wraps the whole graph and paints its header above
+   * its top edge. */
+  segmentCount: number;
   onSelect?: () => void;
 }
