@@ -1,4 +1,4 @@
-import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, isExecutionWideStageIds, skewThresholdsFor, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
+import { DETECTORS, ENTRY_BY_TYPE, hasStageOutsideSql, skewThresholdsFor, type Detector, type DetectorCtx, type DetectorConfigTarget, type ThresholdOverrides } from './detectors.ts';
 import { effectiveThresholds, findingTunedThresholds, overridesFor, tunedThresholdsNote } from './threshold-overrides.ts';
 import { computePeakConcurrentCores } from './core-count.ts';
 import { assertNever } from './assert-never.ts';
@@ -7,6 +7,7 @@ import { computeOccupancy, type OccupancyStage } from './occupancy.ts';
 import { capCriticalByTaskTime, deriveImpactBand, IMPACT_FLOOR_PCT_CRIT, IMPACT_FLOOR_PCT_WARN, type ImpactBandFloors } from './impact-band.ts';
 import { IMPACT_BAND_ORDER, MS_PER_CORE_HOUR } from './format-utils.ts';
 import { computeWastedCoreHours } from './wasted-core-hours.ts';
+import { walkPlanTree } from './plan-tree-walk.ts';
 import type {
   Finding, FindingOf, FindingType, SparkAppInfo, Stage, ExecutorEvent, Job, SqlExecution, RunAggregates, TunedThresholds,
 } from './types.ts';
@@ -183,15 +184,27 @@ function reconcileExecutorMemoryAdvice(out: Finding[]): Finding[] {
   return reconciled;
 }
 
+// The stage a join reads its two shuffles in. Each side's exchange lists the stages that wrote it
+// and the one that read it, the later one. Null unless both sides name the same single reader.
+function joinReadStage(f: FindingOf<'underBroadcast'>, sql: Map<number, SqlExecution>): number | null {
+  const readers: number[][] = [];
+  walkPlanTree(sql.get(f.executionId)?.planTree, (node) => {
+    if (node.id == null || !f.planNodeIds.includes(node.id)) return;
+    const ids = node.stageIds ?? [];
+    readers.push(ids.filter((id) => id !== Math.min(...ids)));
+  });
+  const [first] = readers;
+  return readers.length === 2 && readers.every((r) => r.length === 1 && r[0] === first[0]) ? first[0] : null;
+}
+
 // A single-key shuffle stage whose join was also not broadcast: say the missed broadcast is the
-// cheapest fix, since the broadcast removes the shuffle that the key skews. The join's stage ids
-// also list the stages that write its inputs; the join reads them in the latest one.
-function linkSingleKeyToBroadcast(findings: Finding[]): Finding[] {
+// cheapest fix, since the broadcast removes the shuffle that the key skews.
+function linkSingleKeyToBroadcast(findings: Finding[], sql: Map<number, SqlExecution>): Finding[] {
   const missed = new Map<number, Finding>();
   for (const f of findings) {
-    if (f.type !== 'underBroadcast' || f.stageIds.length === 0 || isExecutionWideStageIds(f.stageIds)) continue;
-    const joinStage = Math.max(...f.stageIds);
-    if (!missed.has(joinStage)) missed.set(joinStage, f);
+    if (f.type !== 'underBroadcast') continue;
+    const joinStage = joinReadStage(f, sql);
+    if (joinStage != null && !missed.has(joinStage)) missed.set(joinStage, f);
   }
   if (missed.size === 0) return findings;
   return findings.map((f) => {
@@ -287,7 +300,7 @@ export function analyze(
         assertNever(d);
     }
   }
-  const findings = linkSingleKeyToBroadcast(reconcileExecutorMemoryAdvice(applySuppression(out)));
+  const findings = linkSingleKeyToBroadcast(reconcileExecutorMemoryAdvice(applySuppression(out)), sql);
   estimateImpact(findings, impact);
   noteTunedThresholds(findings);
   deriveImpactBand(findings, app, thresholds ? (type) => bandFloors(type, thresholds) : undefined);

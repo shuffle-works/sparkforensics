@@ -42,13 +42,13 @@ describe('single-key shuffle next to a missed broadcast', () => {
     name: 'Exchange', detail: 'Exchange hashpartitioning(k#1L, 200)', id: `r${id}`, exchangeRole: 'read', metrics: [], stageIds,
     children: [{ name: 'Exchange', detail: '', id: `w${id}`, exchangeRole: 'write', metrics: [{ name: 'data size', value: bytes, metricType: 'size' }], children: [], stageIds }],
   });
-  const plan = (stageIds) => ({
+  const plan = (buildStageIds, streamStageIds) => ({
     name: 'SortMergeJoin', detail: 'SortMergeJoin [a#1L], [b#2L], Inner', metrics: [],
-    children: [exchange(small, 'L', stageIds), exchange(large, 'R', stageIds)],
+    children: [exchange(small, 'L', buildStageIds), exchange(large, 'R', streamStageIds)],
   });
-  const findings = (config, joinStageIds = [1], skewStage = 1) => {
+  const findings = (config, buildStageIds = [0, 1], streamStageIds = buildStageIds, skewStage = 1) => {
     const stages = new Map([[skewStage, makeStage({ id: skewStage, shuffleReadP50: 0, shuffleReadMax: 400 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50, sqlExecutionId: 1 })]]);
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [skewStage], planTree: plan(joinStageIds) }]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [skewStage], planTree: plan(buildStageIds, streamStageIds) }]]);
     return analyze(makeApp({ config, sparkVersion: '3.5.3' }), stages, [], [], new Map(), sql);
   };
 
@@ -69,7 +69,12 @@ describe('single-key shuffle next to a missed broadcast', () => {
     expect(skewOf(all).recommendation).not.toContain('missed broadcast');
   });
   it('does not link a stage that only writes the join\'s input', () => {
-    const all = findings(undefined, [0, 1], 0);
+    const all = findings(undefined, [0, 1], [0, 1], 0);
+    expect(all.some((f) => f.type === 'underBroadcast')).toBe(true);
+    expect(skewOf(all).recommendation).not.toContain('missed broadcast');
+  });
+  it('does not link when no side shows the stage that reads it', () => {
+    const all = findings(undefined, [1], [2], 2);
     expect(all.some((f) => f.type === 'underBroadcast')).toBe(true);
     expect(skewOf(all).recommendation).not.toContain('missed broadcast');
   });
