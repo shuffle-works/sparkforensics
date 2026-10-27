@@ -26,7 +26,7 @@ export type ConfigAuditProps = WidgetProps;
 function ConfigAuditRow({ finding }: { finding: FindingOf<'configAudit'> }) {
   const anchor = useAnchoredRow([finding]);
   // The line above the panel already shows the sentence (with the value it measured)
-  // and the savings; the audited setting is the evidence.
+  // and the savings; the docs link, or without one the audited setting, is the evidence.
   const stated = useStatedAbove(finding);
 
   return (
@@ -36,24 +36,28 @@ function ConfigAuditRow({ finding }: { finding: FindingOf<'configAudit'> }) {
       data-flashed={anchor.dataFlashed}
       className={`space-y-1 transition-colors ${anchor.flashClassName}`}
     >
-      <div className="flex items-center gap-2">
-        <ImpactDot impactBand={finding.impactBand} />
-        <code className="text-xs">{finding.property}</code>
-        <span className="text-xs text-muted-foreground">=</span>
-        <code className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-xs text-accent">
-          {finding.valueText}
-        </code>
-      </div>
-      <ImpactEstimate finding={finding} />
-      <p className="text-sm">
-        {stated ? null : recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation}
-        {finding.docAnchor ? (
-          <>
-            {stated ? null : ' '}
-            <DocsLink anchor={finding.docAnchor}>Why {finding.property} matters</DocsLink>
-          </>
-        ) : null}
-      </p>
+      {stated && finding.docAnchor ? null : (
+        <div className="flex items-center gap-2">
+          <ImpactDot impactBand={finding.impactBand} />
+          <code className="text-xs">{finding.property}</code>
+          <span className="text-xs text-muted-foreground">=</span>
+          <code className="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-xs text-accent">
+            {finding.valueText}
+          </code>
+        </div>
+      )}
+      {stated ? null : <ImpactEstimate finding={finding} />}
+      {stated && !finding.docAnchor ? null : (
+        <p className="text-sm">
+          {stated ? null : recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation}
+          {finding.docAnchor ? (
+            <>
+              {stated ? null : ' '}
+              <DocsLink anchor={finding.docAnchor}>Why {finding.property} matters</DocsLink>
+            </>
+          ) : null}
+        </p>
+      )}
     </li>
   );
 }

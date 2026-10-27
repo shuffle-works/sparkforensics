@@ -38,7 +38,7 @@ function IssueRow({ finding, appModel }: { finding: Finding; appModel: WidgetPro
         {finding.stageId != null ? <StageHeader stageId={finding.stageId} appModel={appModel} stated={stated} /> : null}
         {stated ? null : <strong>{metricLabel(finding)}</strong>}
       </div>
-      {stage?.taskCount ? (
+      {stated && stage?.taskCount ? (
         <p className="text-xs text-muted-foreground">
           {String(stage.speculativeTasks ?? 0)} of {stage.taskCount} tasks ran speculatively; {String(stage.speculationWastedAttempts ?? 0)} attempts were discarded.
         </p>

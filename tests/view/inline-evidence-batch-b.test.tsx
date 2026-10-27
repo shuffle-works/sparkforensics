@@ -263,6 +263,7 @@ describe('ExecutorUtilization', () => {
     renderPlain(<ExecutorUtilization catalog={findings} defaultCollapsed={false} />);
     expect(screen.getByText('30%')).toBeInTheDocument();
     expect(screen.getByText('55%')).toBeInTheDocument();
+    expect(screen.queryByText(/cores at peak/)).not.toBeInTheDocument();
   });
 });
 

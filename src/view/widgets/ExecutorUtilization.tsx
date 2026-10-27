@@ -29,7 +29,7 @@ function UtilizationRow({ finding }: { finding: FindingOf<'utilization'> }) {
       ref={anchor.ref}
       tabIndex={anchor.tabIndex}
       data-flashed={anchor.dataFlashed}
-      className={`space-y-2 transition-colors ${anchor.flashClassName}`}
+      className={`${stated ? 'space-y-2 ' : ''}transition-colors ${anchor.flashClassName}`}
     >
       {/* The line above an evidence panel states the average. */}
       {stated ? null : (
@@ -38,11 +38,13 @@ function UtilizationRow({ finding }: { finding: FindingOf<'utilization'> }) {
           <strong>{formatMetricValue('pct', numericValue(finding))}</strong> average executor utilization
         </p>
       )}
-      <p className="text-xs text-muted-foreground">
-        {formatCores(totalCores)} cores at peak over {formatDuration(appDurationMs)}: {coreTime(allocatedCoreMs)} allocated,{' '}
-        {coreTime(allocatedCoreMs * utilizationFraction)} busy, {coreTime(allocatedCoreMs * (1 - utilizationFraction))} idle
-        {cpuUtilizationPct != null ? `. CPU time was ${cpuUtilizationPct}% of the allocation.` : '.'}
-      </p>
+      {stated ? (
+        <p className="text-xs text-muted-foreground">
+          {formatCores(totalCores)} cores at peak over {formatDuration(appDurationMs)}: {coreTime(allocatedCoreMs)} allocated,{' '}
+          {coreTime(allocatedCoreMs * utilizationFraction)} busy, {coreTime(allocatedCoreMs * (1 - utilizationFraction))} idle
+          {cpuUtilizationPct != null ? `. CPU time was ${cpuUtilizationPct}% of the allocation.` : '.'}
+        </p>
+      ) : null}
       {stated && chart.hasActivity ? <CoreUsageChart model={chart} /> : null}
       <ImpactEstimate finding={finding} />
     </div>

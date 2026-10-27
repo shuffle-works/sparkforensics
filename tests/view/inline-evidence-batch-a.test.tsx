@@ -111,6 +111,7 @@ describe('ShuffleIO in an evidence panel', () => {
     expect(screen.getAllByText(/Shuffle read:/)).toHaveLength(1);
     expect(screen.getAllByText(/Write:/)).toHaveLength(2);
     expect(screen.getByText('join at A.scala:1')).toBeInTheDocument();
+    expect(screen.getAllByText(/tasks read a median of/)).toHaveLength(1);
   });
 
   it('renders no pill row when every finding is stated', () => {
@@ -127,6 +128,7 @@ describe('ShuffleIO in an evidence panel', () => {
       // One pill and one header chip per stage.
       expect(screen.getAllByRole('button', { name: 'Open details for Stage 1' })).toHaveLength(2);
       expect(screen.getAllByText(/Shuffle read:/)).toHaveLength(2);
+      expect(screen.queryByText(/tasks read a median of/)).not.toBeInTheDocument();
       unmount();
     }
   });
@@ -350,10 +352,11 @@ describe('SpeculationWaste in an evidence panel', () => {
     expect(screen.getByText('5 of 200 tasks ran speculatively; 6 attempts were discarded.')).toBeInTheDocument();
   });
 
-  it('keeps everything outside a panel', () => {
-    run(null);
+  it('keeps everything outside a panel, without the speculative task count', () => {
+    run(null, { 1: { name: 'map at A.scala:1', taskCount: 200, speculativeTasks: 5, speculationWastedAttempts: 6 }, 2: { name: 'map at B.scala:2' } });
     expect(stageButton(1)).toBeInTheDocument();
     expect(screen.getByText(formatDuration(120_000))).toBeInTheDocument();
+    expect(screen.queryByText(/tasks ran speculatively/)).not.toBeInTheDocument();
   });
 });
 

@@ -58,7 +58,7 @@ function ShuffleRow({ entry, appModel }: { entry: StageEntry; appModel: WidgetPr
           Write: {formatBytes(writeBytes)}
         </p>
       )}
-      {stage?.taskCount ? (
+      {stated && stage?.taskCount ? (
         <p className="text-xs text-muted-foreground">
           {stage.taskCount} tasks read a median of {formatBytes(stage.shuffleReadP50)} each, the largest {formatBytes(stage.shuffleReadMax)}.
         </p>

@@ -45,9 +45,11 @@ function SmallFilesRow({ finding }: { finding: FindingOf<'smallFiles'> }) {
           {recommendationParts(finding.recommendation ?? '').measured ?? finding.recommendation} <ImpactEstimate finding={finding} />
         </p>
       )}
-      <p className="text-xs text-muted-foreground">
-        Average file size {formatBytes(averageBytes)}, about {formatBytes(averageBytes * finding.fileCount)} {finding.direction === 'write' ? 'written' : 'read'} in total.
-      </p>
+      {stated ? (
+        <p className="text-xs text-muted-foreground">
+          Average file size {formatBytes(averageBytes)}, about {formatBytes(averageBytes * finding.fileCount)} {finding.direction === 'write' ? 'written' : 'read'} in total.
+        </p>
+      ) : null}
     </li>
   );
 }
