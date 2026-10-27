@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { buildPlanGraphModel } from '../src/plan-graph-model.js';
+import { buildDurationMap } from '../src/plan-node-detail.ts';
+
+vi.mock('../src/plan-node-detail.ts', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, buildDurationMap: vi.fn(actual.buildDurationMap) };
+});
 
 let nextTestId = 0;
 function node(name, children = [], metrics = [], overrides = {}) {
@@ -447,18 +453,18 @@ describe('buildPlanGraphModel', () => {
   });
 
   it('adds nothing to a stage total from an inherited segment', () => {
-    const leaf = node('Scan parquet', [], [{ name: 'time', metricType: 'timing', value: 10 }]);
+    const leaf = node('Scan parquet');
     const exchange = splitExchange('Exchange hashpartitioning', [leaf]);
-    const root = node('SortMergeJoin', [exchange], [{ name: 'time', metricType: 'timing', value: 90 }]);
-    const appModel = makeAppModel({
-      planTree: root,
-      stageId: 1,
-      stageIds: [1],
-      stages: { 1: { submittedAt: 0, completedAt: 500 } },
-    });
+    const root = node('SortMergeJoin', [exchange]);
+    const appModel = makeAppModel({ planTree: root, stageId: 1, stageIds: [1] });
+    // The inherited root segment carries a measured share here, so only its
+    // inherited mark keeps that share out of stage 1's total.
+    vi.mocked(buildDurationMap).mockReturnValueOnce(new Map([[root, 1000], [leaf, 500]]));
 
     const model = buildPlanGraphModel(root, { scope: 'full', stageId: 1, appModel });
 
+    expect(model.inheritedSegments).toEqual(new Set([0]));
+    expect(model.nodes.find((n) => n.label === 'SortMergeJoin').durationShare).toBe(1000);
     expect(model.stageDurations).toEqual(new Map([[1, 500]]));
   });
 

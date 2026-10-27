@@ -21,7 +21,7 @@ const GROUP_HEADER_HEIGHT = 32;
 // header, with room to wrap it onto a second row. PADDING_X (32px) stays small so
 // the box doesn't balloon sideways, and PADDING_BOTTOM (32px) matches it, as
 // nothing is painted below the nodes. HEADER stays 0: the header sits inside
-// PADDING_Y, or above the box when it wraps the whole graph.
+// PADDING_Y.
 export const STAGE_GROUP_PADDING_X = 32;
 export const STAGE_GROUP_PADDING_Y = 64;
 export const STAGE_GROUP_PADDING_BOTTOM = 32;

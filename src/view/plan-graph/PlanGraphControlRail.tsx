@@ -13,7 +13,7 @@ const flowData = (n: Node) => n.data as unknown as FlowData;
 export interface PlanGraphControlRailProps {
   /** Plan nodes, for the "Next worst duration" cycle. */
   planNodes: Node[];
-  /** Stage boxes carrying findings, pre-sorted worst-first, for "Next problem". */
+  /** Stage boxes and unmatched stage headers carrying findings, pre-sorted worst-first, for "Next problem". */
   problemNodes: Node[];
   filterMode: PlanGraphFilterMode;
   onFilterModeChange: (mode: PlanGraphFilterMode) => void;

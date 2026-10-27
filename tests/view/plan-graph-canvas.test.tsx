@@ -346,6 +346,57 @@ describe('compound stage-group containers', () => {
 
       expect(enclosed('rf__node-stage-5', ['write2', 'filter2', 'range2'])).not.toEqual([]);
     });
+
+    describe('a focal stage with findings and no paired segment', () => {
+      const findings = [{ type: 'skew' as const, stageId: 3, impactBand: 'critical' as const }];
+      const rectOf = (testId: string) => {
+        const el = screen.getByTestId(testId);
+        return { ...translateOf(testId), w: parseFloat(el.style.width), h: parseFloat(el.style.height) };
+      };
+      const overlaps = (a: ReturnType<typeof rectOf>, b: ReturnType<typeof rectOf>) =>
+        a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+      const renderUnpairedFocal = (select = vi.fn()) => render(
+        <StageSelectionProvider value={{ selectedStageId: null, select }}>
+          <PlanGraphCanvas model={reproduction(new Set([0]))} showMiniMap={false} stageId={3} findings={findings} segmentStageIds={segmentStageIds} />
+        </StageSelectionProvider>,
+      );
+
+      it('gets a header above the graph instead of a box, so no stage box encloses another stage\'s or an unmatched segment\'s node', () => {
+        renderUnpairedFocal();
+
+        expect(screen.getAllByTestId(/rf__node-stage-/).filter((el) => el.classList.contains('react-flow__node-stageGroup'))).toHaveLength(2);
+        expect(enclosed('rf__node-stage-5', planNodeIds.filter((id) => !['write1', 'range1'].includes(id)))).toEqual([]);
+        expect(enclosed('rf__node-stage-9', planNodeIds.filter((id) => !['write2', 'filter2', 'range2'].includes(id)))).toEqual([]);
+        expect(screen.getByTestId('rf__node-stage-3')).toHaveClass('react-flow__node-unmatchedStage');
+        expect(enclosed('rf__node-stage-3', planNodeIds)).toEqual([]);
+        const header = rectOf('rf__node-stage-3');
+        for (const box of ['rf__node-stage-5', 'rf__node-stage-9', 'rf__node-segment-0']) {
+          expect(overlaps(header, rectOf(box))).toBe(false);
+        }
+      });
+
+      it('shows the stage name, its finding chips and a note that it matches no part of the plan', async () => {
+        const select = vi.fn();
+        renderUnpairedFocal(select);
+
+        const header = within(screen.getByTestId('rf__node-stage-3'));
+        expect(header.getByRole('button', { name: 'Show the findings for stage 3' })).toHaveTextContent('Stage 3');
+        expect(header.getByText('Not matched to a part of this plan')).toBeInTheDocument();
+        const chip = header.getByRole('button', { name: 'SKEW' });
+        await userEvent.click(chip);
+        expect(select).toHaveBeenCalledWith(3, chip);
+      });
+
+      it('keeps the stage a "Next problem" target', async () => {
+        setCenterMock.mockClear();
+        renderUnpairedFocal();
+
+        await userEvent.click(screen.getByRole('button', { name: /next problem/i }));
+
+        const { x, y } = translateOf('rf__node-stage-3');
+        expect(setCenterMock).toHaveBeenCalledWith(x, y, expect.anything());
+      });
+    });
   });
 
   it('shows a stage\'s full summed duration in the single-stage view, not the shown segment\'s share', () => {
@@ -503,45 +554,6 @@ describe('compound stage-group containers', () => {
 
     expect(transformX('rf__node-a')).toBeCloseTo(compact.find((n) => n.id === 'a')!.position.x, 5);
     expect(transformX('rf__node-d')).toBeCloseTo(compact.find((n) => n.id === 'd')!.position.x, 5);
-  });
-
-  it('creates a focal finding box and Next problem target when full-scope fallback has no focal segment mapping', () => {
-    const fullFallback = model({
-      scope: 'full',
-      segmentStageIds: new Map([[0, 99]]),
-    });
-    const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
-
-    render(
-      <PlanGraphCanvas
-        model={fullFallback}
-        showMiniMap={false}
-        stageId={7}
-        findings={findings}
-        segmentStageIds={new Map([[0, 99]])}
-      />,
-    );
-
-    expect(within(screen.getByTestId('rf__node-stage-7')).getByText('SKEW')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /next problem/i })).toBeInTheDocument();
-  });
-
-  it('stacks the whole-graph focal fallback box under the stage boxes it wraps, so their titles stay clickable', () => {
-    const fullFallback = model({ scope: 'full', segmentStageIds: new Map([[0, 99]]) });
-    const findings = [{ type: 'skew' as const, stageId: 7, impactBand: 'critical' as const }];
-
-    render(
-      <PlanGraphCanvas
-        model={fullFallback}
-        showMiniMap={false}
-        stageId={7}
-        findings={findings}
-        segmentStageIds={new Map([[0, 99]])}
-      />,
-    );
-
-    const zIndexOf = (testId: string) => Number(screen.getByTestId(testId).style.zIndex);
-    expect(zIndexOf('rf__node-stage-7')).toBeLessThan(zIndexOf('rf__node-stage-99'));
   });
 
   it('paints a stage box that starts inside another stage box above it, so its title stays clickable', () => {

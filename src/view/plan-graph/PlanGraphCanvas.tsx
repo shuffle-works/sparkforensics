@@ -13,7 +13,7 @@ import { PlanGraphLegend } from './PlanGraphLegend';
 import { PlanGraphControlRail } from './PlanGraphControlRail';
 import { planGraphMiniMapNodeColor } from './plan-graph-minimap';
 import { PlanGraphSegmentGroupNode } from './PlanGraphSegmentGroupNode';
-import { PlanGraphStageGroupNode } from './PlanGraphStageGroupNode';
+import { PlanGraphStageGroupNode, PlanGraphUnmatchedStageNode } from './PlanGraphStageGroupNode';
 import { PlanGraphExchangeEdge } from './PlanGraphExchangeEdge';
 import { formatDuration } from '@sparkforensics/core/format-utils.ts';
 import { findingStageIds } from '@sparkforensics/core/findings-of-type.ts';
@@ -26,6 +26,7 @@ const nodeTypes = {
   planNode: PlanGraphNode,
   segmentGroup: PlanGraphSegmentGroupNode,
   stageGroup: PlanGraphStageGroupNode,
+  unmatchedStage: PlanGraphUnmatchedStageNode,
 };
 
 const edgeTypes = {
@@ -43,6 +44,11 @@ const NO_FLOW_EDGES: Edge[] = [];
 const SEGMENT_GROUP_Z = 1;
 const STAGE_GROUP_Z = 2;
 const PLAN_NODE_Z = 3;
+
+// Room above the graph for an unmatched focal stage's header row and its note,
+// and the gap between them and the graph.
+const UNMATCHED_STAGE_HEADER_HEIGHT = 40;
+const UNMATCHED_STAGE_HEADER_GAP = 8;
 
 // Node<T> requires T extends Record<string, unknown>, which PlanGraphNodeData (a
 // closed interface) doesn't satisfy; read data through this cast so `nodes` stays
@@ -351,12 +357,6 @@ export function PlanGraphCanvas({
       };
     });
 
-    // Stages with a segment box of their own inside them; a focal stage without
-    // one is drawn around the whole graph below.
-    const pairedStageIds = new Set(
-      [...new Set(model.nodes.map((n) => n.segmentIndex))].map(pairedStageOf).filter((id): id is number => id != null),
-    );
-
     // One stroked box per stage wrapping its paired segment, and the only place
     // the stage's name, duration and findings are painted. The padding constants
     // keep it strictly containing the segment's box.
@@ -367,22 +367,13 @@ export function PlanGraphCanvas({
       headerHeight: STAGE_GROUP_HEADER_HEIGHT,
     };
     const stageGroups = computeGroupBoundsWithFallback(stageGroupOf, [laidOutVisible, laidOutFull], groupOptions);
-    const focalGroupId = `stage-${stageId}`;
-    // Zipping can leave the focal stage unmapped (its segment loses the
-    // Math.min(segments, stages) slot); add a box so its findings and "Next
-    // problem" stay reachable.
-    if (findingsForStage(findings, stageId).length > 0 && !stageGroups.some((group) => group.id === focalGroupId)) {
-      const [focalGroup] = computeGroupBoundsWithFallback(() => focalGroupId, [laidOutVisible, laidOutFull], groupOptions);
-      if (focalGroup) stageGroups.push(focalGroup);
-    }
-    // The whole-graph box of a focal stage with no segment overlaps the stage
-    // boxes inside it. Each header sits at its box's top edge, so painting boxes
-    // in top-edge order keeps every header above the overlays of the boxes it
-    // starts inside.
+    // A stage box can start inside another (a stage paired with segments on
+    // both sides of another stage's). Each header sits at its box's top edge, so
+    // painting boxes in top-edge order keeps every header above the overlays of
+    // the boxes it starts inside.
     stageGroups.sort((a, b) => a.position.y - b.position.y || a.position.x - b.position.x);
     const stageGroupNodes: Node[] = stageGroups.map((group) => {
       const groupStageId = Number(group.id.replace('stage-', ''));
-      const wrapsGraph = !pairedStageIds.has(groupStageId);
       return {
         id: group.id,
         type: 'stageGroup',
@@ -391,10 +382,7 @@ export function PlanGraphCanvas({
         selectable: false,
         // Decorative wrapper; its inner "Focus stage N" button is the control.
         focusable: false,
-        // The fallback box wraps the whole graph, so it sits under the stage
-        // boxes inside it; otherwise its overlay button would take the clicks
-        // on their "Stage N" titles.
-        zIndex: wrapsGraph ? STAGE_GROUP_Z - 1 : STAGE_GROUP_Z,
+        zIndex: STAGE_GROUP_Z,
         style: { width: group.width, height: group.height },
         measured: { width: group.width, height: group.height },
         data: {
@@ -403,7 +391,6 @@ export function PlanGraphCanvas({
           stageId: groupStageId,
           findings: findingsForStage(findings, groupStageId),
           durationLabel: model.stageDurations.has(groupStageId) ? formatDuration(model.stageDurations.get(groupStageId)!) : null,
-          wrapsGraph,
           // Only the full plan has other stages to focus.
           onSelect: model.scope === 'full' && onSelectStage ? () => onSelectStage(groupStageId) : undefined,
         },
@@ -422,9 +409,35 @@ export function PlanGraphCanvas({
 
     // Within one z index, render order = paint order (React Flow renders last on top).
     const flowNodes = [...stageGroupNodes, ...groupNodes, ...planNodes];
-    const graphBounds = boundsOf(
-      flowNodes.map((n) => ({ x: n.position.x, y: n.position.y, width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 })),
-    );
+    const rectOf = (n: Node) => ({ x: n.position.x, y: n.position.y, width: n.measured?.width ?? 0, height: n.measured?.height ?? 0 });
+    // Zipping can leave the focal stage unpaired (its segment loses the
+    // Math.min(segments, stages) slot). Its findings stay reachable from a
+    // header above the graph, which encloses no node.
+    const focalFindings = findingsForStage(findings, stageId);
+    const contentBounds = boundsOf(flowNodes.map(rectOf));
+    if (focalFindings.length > 0 && contentBounds && !stageGroups.some((group) => group.id === `stage-${stageId}`)) {
+      const width = contentBounds.width;
+      const height = UNMATCHED_STAGE_HEADER_HEIGHT;
+      flowNodes.unshift({
+        id: `stage-${stageId}`,
+        type: 'unmatchedStage',
+        position: { x: contentBounds.x, y: contentBounds.y - UNMATCHED_STAGE_HEADER_GAP - height },
+        draggable: false,
+        selectable: false,
+        focusable: false,
+        zIndex: STAGE_GROUP_Z,
+        style: { width, height },
+        measured: { width, height },
+        data: {
+          width,
+          height,
+          stageId,
+          findings: focalFindings,
+          durationLabel: model.stageDurations.has(stageId) ? formatDuration(model.stageDurations.get(stageId)!) : null,
+        },
+      });
+    }
+    const graphBounds = boundsOf(flowNodes.map(rectOf));
     return { flowNodes, flowEdges, graphBounds };
   }, [model, findings, stageId, segmentStageIds, visibleEdges, onSelectStage, layoutPlan, layoutReady]);
 
@@ -462,7 +475,7 @@ export function PlanGraphCanvas({
   // Only the full-plan view has stages to step between.
   const problemNodes = orderByImpact(
     interpretation,
-    flowNodes.filter((n) => model.scope === 'full' && n.type === 'stageGroup' && ((n.data as { findings?: Finding[] }).findings?.length ?? 0) > 0),
+    flowNodes.filter((n) => model.scope === 'full' && (n.type === 'stageGroup' || n.type === 'unmatchedStage') && ((n.data as { findings?: Finding[] }).findings?.length ?? 0) > 0),
     (n) => (n.data as { findings?: Finding[] }).findings ?? [],
   );
 

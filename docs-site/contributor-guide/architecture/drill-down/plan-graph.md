@@ -205,11 +205,13 @@ Chips match a stage through `Finding.stageId` or `Finding.stageIds`. In the full
 plan, clicking a stage box ("Focus stage N") switches the route to that stage's
 segment view (`handleSelectStage` in `PlanGraphRoute.tsx`), with no reopen; the
 single-stage view draws no such click target. The header sits inside the box, in
-the room above its segment. A focal stage that lost the segment/stage pairing
-has no paired segment, so its box wraps every node on screen and its header sits
-above the top edge, clear of the headers of the stage boxes inside it. Stage boxes
-paint in top-edge order, so that box paints under those boxes and its click target
-doesn't take their title clicks.
+the room above its segment. Stage boxes paint in top-edge order, so a box that
+starts inside another paints above it and its title stays clickable. A focal
+stage with findings that lost the segment/stage pairing has no paired segment
+and no box. `PlanGraphUnmatchedStageNode` draws its header alone above the
+graph, with the same title, duration chip and finding chips plus a note that it
+is not matched to a part of the plan. It encloses no node, and "Next problem"
+cycles to it in the full plan.
 
 The stage box wraps its paired segment's plan nodes directly. `STAGE_GROUP_PADDING_Y`
 (64, no reserved header height) leaves room above the nodes for the header, with

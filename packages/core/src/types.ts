@@ -438,9 +438,9 @@ export interface PlanGraphStageGroupNodeData {
   /** The stage's strictly paired segment's duration, pre-formatted via
    * `formatDuration`; null when it has no attributed duration. */
   durationLabel: string | null;
-  /** True when no segment box is paired with this stage id (see
-   * PlanGraphCanvas.tsx's focal-stage fallback), so the box wraps the whole
-   * graph and paints its header above its top edge. */
-  wrapsGraph: boolean;
   onSelect?: () => void;
 }
+
+/** The focal stage when it has findings but no strictly paired segment: its
+ * header alone, drawn above the graph with no box around any node. */
+export type PlanGraphUnmatchedStageNodeData = Pick<PlanGraphStageGroupNodeData, 'width' | 'height' | 'stageId' | 'findings' | 'durationLabel'>;
