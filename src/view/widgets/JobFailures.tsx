@@ -1,6 +1,7 @@
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { TagBadge } from '@/view/ImpactBadge';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { WidgetCard } from '@/view/WidgetCard';
 import { WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -11,11 +12,12 @@ import type { FindingOf } from '@sparkforensics/core/types.ts';
  * StagePill), always one row (no pagination). */
 function JobFailuresRow({ finding }: { finding: FindingOf<'jobFailureRate'> }) {
   const { failedJobs, totalJobs, failedTasks, totalTasks, taskFailureRate, value } = finding;
+  const stated = useStatedAbove(finding);
 
   return (
     <div className="flex flex-col gap-1 transition-colors">
       <p>
-        Failure rate: <strong>{value}%</strong> ({failedJobs} of {totalJobs} completed jobs)
+        Failure rate: <strong>{value}%</strong>{stated ? null : <> ({failedJobs} of {totalJobs} completed jobs)</>}
       </p>
       <AdvancedOnly>
         <p className="text-xs text-muted-foreground">

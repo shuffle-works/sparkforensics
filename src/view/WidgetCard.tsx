@@ -12,6 +12,7 @@ import { coreFindingGenericRecommendation } from '@sparkforensics/core/finding-g
 import type { Finding, ImpactBand } from '@sparkforensics/core/types.ts';
 import { IMPACT_BORDER_CLASS } from '@/view/ImpactBadge';
 import { DisclosureOpenContext } from '@/view/DisclosureContext';
+import { useInlineEvidence } from '@/view/InlineEvidenceContext';
 import { useWidgetGridCard, WidgetGridCardBoundary } from '@/view/WidgetGrid';
 
 export interface WidgetCardProps {
@@ -65,23 +66,28 @@ export function WidgetCard({
   children,
   id,
 }: WidgetCardProps) {
-  const fixes = [...new Set(fixFor.map(coreFindingGenericRecommendation).filter((fix) => fix !== undefined))];
+  const gridCard = useWidgetGridCard();
+  const inlineEvidence = useInlineEvidence();
+  // A card in an in-place evidence panel is a flat, always-open panel.
+  const flat = inlineEvidence !== null;
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Reference-region tiles start collapsed and share a uniform collapsed height,
+  // overriding each widget's own `defaultCollapsed` so the grid stays even.
+  const collapsedTile = gridCard?.collapsedTile ?? false;
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(collapsedTile ? false : !defaultCollapsed);
+  const open = flat || (controlledOpen ?? uncontrolledOpen);
+  const coordinatorRouteFocused = routeFocused ?? gridCard?.routeFocused ?? false;
+  const [hasRouteFocus, setHasRouteFocus] = useState(coordinatorRouteFocused);
+  const handledOpenRequestRef = useRef(0);
+
+  // The line above an in-place evidence panel already states the fix.
+  const fixes = flat ? [] : [...new Set(fixFor.map(coreFindingGenericRecommendation).filter((fix) => fix !== undefined))];
   const body = (
     <>
       {fixes.length > 0 ? <div className="mb-3 space-y-1 text-sm">{fixes.map((fix) => <p key={fix}>{fix}</p>)}</div> : null}
       {children}
     </>
   );
-  const gridCard = useWidgetGridCard();
-  const cardRef = useRef<HTMLDivElement>(null);
-  // Reference-region tiles start collapsed and share a uniform collapsed height,
-  // overriding each widget's own `defaultCollapsed` so the grid stays even.
-  const collapsedTile = gridCard?.collapsedTile ?? false;
-  const [uncontrolledOpen, setUncontrolledOpen] = useState(collapsedTile ? false : !defaultCollapsed);
-  const open = controlledOpen ?? uncontrolledOpen;
-  const coordinatorRouteFocused = routeFocused ?? gridCard?.routeFocused ?? false;
-  const [hasRouteFocus, setHasRouteFocus] = useState(coordinatorRouteFocused);
-  const handledOpenRequestRef = useRef(0);
 
   useLayoutEffect(() => {
     gridCard?.reportOpen(open);
@@ -113,7 +119,7 @@ export function WidgetCard({
     else if (disclosureButtonRef) disclosureButtonRef.current = button;
   };
 
-  const handleDisclosureBlur = (e: React.FocusEvent<HTMLButtonElement>) => {
+  const handleDisclosureBlur = (e: React.FocusEvent<HTMLElement>) => {
     if (e.relatedTarget && cardRef.current?.contains(e.relatedTarget as Node)) return;
     setHasRouteFocus(false);
     gridCard?.onDisclosureBlur();
@@ -165,6 +171,29 @@ export function WidgetCard({
       <CardContent>{body}</CardContent>
     </WidgetGridCardBoundary>
   );
+
+  if (flat) {
+    const ruleBand = inlineEvidence.band ?? impactBand;
+    return (
+      <section ref={cardRef} id={id} className={cn('border-l-[3px] pl-3', ruleBand ? IMPACT_BORDER_CLASS[ruleBand] : 'border-border')}>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-tight">
+          <h3
+            ref={(heading) => gridCard?.setDisclosureButton(heading)}
+            tabIndex={-1}
+            data-route-focused={hasRouteFocus ? '' : undefined}
+            className={cn('rounded-sm font-heading text-sm leading-snug font-semibold outline-none', hasRouteFocus && 'ring-[3px] ring-ring/50')}
+            onBlur={handleDisclosureBlur}
+          >
+            {title}
+          </h3>
+          {badges}
+          {statusBadge}
+        </div>
+        {subtitle ? <p className="font-mono text-xs text-muted-foreground">{subtitle}</p> : null}
+        <div className="mt-2">{body}</div>
+      </section>
+    );
+  }
 
   return (
     <Card

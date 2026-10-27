@@ -129,3 +129,32 @@ wrapper or pagination, which still apply to all three:
   single-finding widget has no natural lead figure distinct from its
   title/badge, unlike every other Gold Standard widget, which leads with a
   percentage, duration, or count.
+
+## In-place evidence panel
+
+A widget opened from a verdict step or a Findings row renders inside
+`InlineEvidence` (`src/view/InlineEvidence.tsx`), which provides
+`InlineEvidenceContext` (`src/view/InlineEvidenceContext.ts`). The widget is
+mounted with `defaultCollapsed={false}`, and `WidgetCard` reads the context:
+
+- The card renders as a flat panel, not a card: a left rule in the stated
+  finding's impact color (`IMPACT_BORDER_CLASS`; the context's `band`, or the
+  widget's own band under a group row), the card's heading, no border, no
+  chevron and no collapsed summary. "Hide evidence" on the row is the only
+  control. The heading stays an `h3` and is the route focus target.
+- `TagBadge` renders nothing, and `WidgetCard` leaves out its `fixFor` sentence:
+  the line above carries the tag and the fix.
+- The line above states one finding per step (its lead) or per single-finding
+  row; a group row states none. The context lists those findings' ids, and
+  `useStatedAbove` / `useAnyStatedAbove` tell a widget row that its finding is
+  stated. A stated finding's row leaves out the stage chip (`StageHeader`'s
+  `stated` keeps the stage name), the savings (`ImpactEstimate` renders
+  nothing), and any figure the finding's sentence repeats. It keeps whatever
+  the line lacks: call sites, breakdowns, hints, charts, the status marker. A
+  row left empty renders nothing. A finding the line does not state keeps all
+  its facts, so one panel can hold both kinds. A panel whose line states
+  everything its widget shows stays short (the heading and any status marker);
+  it still opens in place.
+
+None of this applies in the grid, the Full app report or the stage dialog,
+where the context is absent and every widget renders in full.

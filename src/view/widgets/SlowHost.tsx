@@ -5,6 +5,7 @@ import { findingsOfType } from '@sparkforensics/core/findings-of-type.ts';
 import { SLOW_HOST_DIMENSION_LABEL } from '@sparkforensics/core/finding-generic-recommendation.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { StageHeader } from '@/view/StageHeader';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -35,8 +36,20 @@ function slowHostDetail(f: SlowHostFinding): string {
   return `${f.host}: ${formatMetricValue('ratio', value)} median task time (${formatMetricValue('pct', taskSharePct)} of tasks)`;
 }
 
+// What the line above an evidence panel leaves out of `slowHostDetail`: its sentence states the
+// executor deviation and a host's share of task time, but not a host's task-time ratio or its share of tasks.
+function slowHostUnstatedDetail(f: SlowHostFinding): string | null {
+  if (f.metric === 'execMaxMedianRatio') return null;
+  const taskSharePct = formatMetricValue('pct', Math.round((f.hostTaskShare ?? 0) * 100));
+  return f.metric === 'hostDurationShare' ? `${taskSharePct} of tasks ran on ${f.host}` : slowHostDetail(f);
+}
+
 function SlowHostRow({ finding, appModel }: { finding: SlowHostFinding; appModel: WidgetProps['appModel'] }) {
   const anchor = useAnchoredRow([finding]);
+  const stated = useStatedAbove(finding);
+  const hasStageName = finding.stageId != null && Boolean(appModel.stages.get(finding.stageId)?.name);
+  const detail = stated ? slowHostUnstatedDetail(finding) : slowHostDetail(finding);
+  if (stated && !hasStageName && !detail) return null;
   return (
     <li
       ref={anchor.ref}
@@ -44,11 +57,13 @@ function SlowHostRow({ finding, appModel }: { finding: SlowHostFinding; appModel
       data-flashed={anchor.dataFlashed}
       className={`space-y-1 text-sm transition-colors ${anchor.flashClassName}`}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <ImpactDot impactBand={finding.impactBand} />
-        {finding.stageId != null ? <StageHeader stageId={finding.stageId} appModel={appModel} /> : null}
-      </div>
-      <p className="text-xs text-muted-foreground">{slowHostDetail(finding)}</p>
+      {stated && !hasStageName ? null : (
+        <div className="flex flex-wrap items-center gap-2">
+          <ImpactDot impactBand={finding.impactBand} />
+          {finding.stageId != null ? <StageHeader stageId={finding.stageId} appModel={appModel} stated={stated} /> : null}
+        </div>
+      )}
+      {detail ? <p className="text-xs text-muted-foreground">{detail}</p> : null}
       <ImpactEstimate finding={finding} />
     </li>
   );

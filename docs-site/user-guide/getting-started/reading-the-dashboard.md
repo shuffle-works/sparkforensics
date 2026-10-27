@@ -20,7 +20,7 @@ The board opens with a verdict: one line saying where to start, a short
 summary of what was found, and up to three numbered next steps. Each step
 says what the finding measured and what to try, and has a
 **Show evidence** button that opens the finding's detail widget in place,
-under the step. Findings
+under the step, without repeating the stage, savings or figures the step already shows. Findings
 on the same stage are folded into one step, because they usually share a
 cause and their savings overlap rather than add up. Each savings figure says
 what it counts: a time such as "58.6s of run time" is how much sooner the run

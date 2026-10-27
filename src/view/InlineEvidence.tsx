@@ -1,5 +1,8 @@
-import { Suspense, useLayoutEffect, useState } from 'react';
+import { Suspense, useLayoutEffect, useMemo, useState } from 'react';
 
+import { worstImpactBand } from '@sparkforensics/core/format-utils.ts';
+import type { Finding } from '@sparkforensics/core/types.ts';
+import { InlineEvidenceContext } from '@/view/InlineEvidenceContext';
 import type { WidgetProps } from '@/view/detector-registry';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
 import { WidgetCardSkeleton } from '@/view/WidgetCard';
@@ -19,15 +22,31 @@ export function useEvidenceOpen(widgetId: string | null) {
   return { open: open || routedHere, toggle: () => setOpen((value) => !(value || routedHere)) };
 }
 
-/** A finding's evidence card, rendered open in the place that asked for it.
- * It registers as the widget's route target like any grid card. */
-export function InlineEvidence({ widget, widgetProps }: { widget: ActiveWidget; widgetProps: WidgetProps }) {
+/** A finding's evidence, rendered open in the place that asked for it: the
+ * widget's top card takes its flat panel form and leaves out what `stated`, the
+ * findings the line above it already describes, repeats. It registers as the
+ * widget's route target like any grid card. */
+export function InlineEvidence({
+  widget,
+  widgetProps,
+  stated = [],
+}: {
+  widget: ActiveWidget;
+  widgetProps: WidgetProps;
+  stated?: readonly Finding[];
+}) {
   const { component: Widget, widgetId, index } = widget;
+  const statedIds = stated.flatMap((finding) => (finding.id != null ? [finding.id] : []));
+  const band = worstImpactBand([...stated]);
+  const statedKey = statedIds.join('\n');
+  const state = useMemo(() => ({ stated: new Set(statedKey ? statedKey.split('\n') : []), band }), [statedKey, band]);
   return (
-    <WidgetGridItem cardId={`alert-${index}`} widgetId={widgetId}>
-      <Suspense fallback={<WidgetCardSkeleton />}>
-        <Widget {...widgetProps} />
-      </Suspense>
-    </WidgetGridItem>
+    <InlineEvidenceContext.Provider value={state}>
+      <WidgetGridItem cardId={`alert-${index}`} widgetId={widgetId}>
+        <Suspense fallback={<WidgetCardSkeleton />}>
+          <Widget {...widgetProps} defaultCollapsed={false} />
+        </Suspense>
+      </WidgetGridItem>
+    </InlineEvidenceContext.Provider>
   );
 }

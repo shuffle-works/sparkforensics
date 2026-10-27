@@ -6,6 +6,8 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { TagBadge } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { StageHeader } from '@/view/StageHeader';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
+import { useWidgetDensity } from '@/store/store';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { formatDuration, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { RowPagination } from '@/view/RowPagination';
@@ -35,8 +37,12 @@ function sortedByValue(findings: Finding[]): Finding[] {
  * card states the fix once, so rows repeat neither. */
 function GcStageRow({ finding, appModel }: { finding: Finding; appModel: AppModel }) {
   const anchor = useAnchoredRow([finding]);
+  const stated = useStatedAbove(finding);
+  const density = useWidgetDensity();
   const stage = finding.stageId != null ? appModel.stages.get(finding.stageId) : undefined;
   const runTime = stage?.executorRunTime;
+  // Under a line that names the stage and states the GC share, the header holds only what is left of it.
+  const showHeader = !stated || Boolean(stage?.name) || (density === 'advanced' && Boolean(finding.confidence) && finding.confidence !== 'high');
   return (
     <li
       ref={anchor.ref}
@@ -44,15 +50,21 @@ function GcStageRow({ finding, appModel }: { finding: Finding; appModel: AppMode
       data-flashed={anchor.dataFlashed}
       className={`space-y-2 ${ROW_SEPARATOR_CLASS} transition-colors ${anchor.flashClassName}`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <StageHeader stageId={finding.stageId as number} appModel={appModel} />
-        <AdvancedOnly>
-          <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} />
-        </AdvancedOnly>
-      </div>
+      {showHeader ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <StageHeader stageId={finding.stageId as number} appModel={appModel} stated={stated} />
+          <AdvancedOnly>
+            <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} />
+          </AdvancedOnly>
+        </div>
+      ) : null}
       <p className="text-xs text-muted-foreground">
-        GC: <strong>{finding.value}%</strong> &middot; Executor run time:{' '}
-        <strong>{formatDuration(runTime ?? 0)}</strong>
+        {stated ? null : (
+          <>
+            GC: <strong>{finding.value}%</strong> &middot;{' '}
+          </>
+        )}
+        Executor run time: <strong>{formatDuration(runTime ?? 0)}</strong>
       </p>
       <ImpactEstimate finding={finding} />
     </li>

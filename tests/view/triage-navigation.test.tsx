@@ -567,12 +567,12 @@ test('blur cleanup is ignored for unrelated widgets and clears only the route-fo
   const catalog = [asLead(spillFinding(90)), spillFinding(1, 'critical'), skewFinding(2, 'warning')];
   renderReady(catalog, [1, 2, 90]);
 
-  // Task Skew is the real Skew widget; open its card first so its chunk resolves before the route.
+  // Task Skew is the real Skew widget; open its panel first so its chunk resolves before the route.
   await user.click(stepEvidenceButton(2));
-  const skewTrigger = await screen.findByRole('button', { name: 'Task Skew' });
+  const skewTrigger = await screen.findByRole('heading', { name: 'Task Skew' });
   await user.click(stepEvidenceButton(1));
   // Spill.tsx is substituted with the (non-lazy) BareSpill double above.
-  const spillTrigger = screen.getByRole('button', { name: 'Spill' });
+  const spillTrigger = screen.getByRole('heading', { name: 'Spill' });
   await waitFor(() => expect(spillTrigger).toHaveAttribute('data-route-focused'));
 
   fireEvent.blur(skewTrigger);

@@ -114,9 +114,11 @@ Top to bottom, in `Dashboard.tsx`'s `FilteredBoard`:
    by core `recommendationParts`; a step that merged other types at its
    location adds "Also flagged here, likely the same cause: ...", and the
    summary says once that same-stage findings are grouped. A step's stage
-   label opens its stage details, and its one **Show evidence** expands the
-   evidence card the step owns in place (`verdictEvidenceOwners` in
-   `src/view/verdict-evidence.ts`, rendered through `InlineEvidence`) or
+   label opens its stage details, and its one **Show evidence** opens the
+   evidence panel the step owns in place (`verdictEvidenceOwners` in
+   `src/view/verdict-evidence.ts`, rendered through `InlineEvidence`; see
+   "In-place evidence panel" in
+   [row-expand-contract](./widget-rendering/row-expand-contract.md)) or
    routes to the card that holds it. The steps' lead findings
    (`verdictLeadFindings`) and owned cards are left out of the Findings tab,
    and a **More findings (n)** link shows that tab, with `n` the tab's own
@@ -206,8 +208,11 @@ absent. Every widget self-wraps in `WidgetCard` (`src/view/WidgetCard.tsx`: an
 document outline, except Scorecard, which renders its own header band, and
 RunVerdict, a plain `<section>` with its own `<h2>` title.
 
-Every card is collapsible: the title sits in a `CollapsibleTrigger` button
-with a chevron (`WidgetCard.tsx`), and each widget sets its own
+Every card is collapsible, except in an in-place evidence panel (see
+"In-place evidence panel" in
+[row-expand-contract](./widget-rendering/row-expand-contract.md)): the
+title sits in a `CollapsibleTrigger` button with a chevron (`WidgetCard.tsx`),
+and each widget sets its own
 `defaultCollapsed` (most default to `true`; `ImpactBoard`'s action-region grid
 forces `defaultCollapsed` on every `REGISTRY` widget instance it mounts, so a
 marginal finding doesn't default open). Route navigation ("jump to this

@@ -10,7 +10,7 @@ export function verdictLeadFindings(interpretation: InterpretationState): Findin
     .filter((finding): finding is Finding => finding != null);
 }
 
-/** Which step shows which evidence card in place: step index to widget id.
+/** Which step shows which evidence panel in place: step index to widget id.
  * A card renders once, so the first step that targets a widget owns it; a
  * later step on the same widget routes to the owner's card. Only widgets in
  * `available` (the cards the Findings board could show) are claimed. */

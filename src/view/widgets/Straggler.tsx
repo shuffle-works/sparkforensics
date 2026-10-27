@@ -6,6 +6,8 @@ import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
 import { RowStatusCluster } from '@/view/RowStatusCluster';
 import { StageHeader } from '@/view/StageHeader';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
+import { useWidgetDensity } from '@/store/store';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import type { WidgetProps } from '@/view/detector-registry';
@@ -33,6 +35,13 @@ function stragglerDetail(f: StragglerFinding): string {
 
 function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appModel: WidgetProps['appModel'] }) {
   const anchor = useAnchoredRow([finding]);
+  const stated = useStatedAbove(finding);
+  const density = useWidgetDensity();
+  const hasStageName = finding.stageId != null && Boolean(appModel.stages.get(finding.stageId)?.name);
+  const hasStatus = density === 'advanced' && Boolean(finding.confidence) && finding.confidence !== 'high';
+  // The line above an evidence panel states the stage, the straggler figure and its cause: the name and the status are left.
+  if (stated && !hasStageName && !hasStatus) return null;
+  const causeSummary = stated ? null : stragglerCauseSummary(finding);
   return (
     <li
       ref={anchor.ref}
@@ -41,16 +50,18 @@ function StragglerRow({ finding, appModel }: { finding: StragglerFinding; appMod
       className={`space-y-1 text-sm transition-colors ${anchor.flashClassName}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <ImpactDot impactBand={finding.impactBand} />
-          {finding.stageId != null ? <StageHeader stageId={finding.stageId} appModel={appModel} /> : null}
-        </div>
+        {stated && !hasStageName ? null : (
+          <div className="flex flex-wrap items-center gap-2">
+            <ImpactDot impactBand={finding.impactBand} />
+            {finding.stageId != null ? <StageHeader stageId={finding.stageId} appModel={appModel} stated={stated} /> : null}
+          </div>
+        )}
         <AdvancedOnly>
           <RowStatusCluster confidence={finding.confidence} validationRequired={finding.validationRequired} />
         </AdvancedOnly>
       </div>
-      <p className="text-xs text-muted-foreground">{stragglerDetail(finding)}</p>
-      {stragglerCauseSummary(finding) ? <p className="text-xs text-muted-foreground">{stragglerCauseSummary(finding)}</p> : null}
+      {stated ? null : <p className="text-xs text-muted-foreground">{stragglerDetail(finding)}</p>}
+      {causeSummary ? <p className="text-xs text-muted-foreground">{causeSummary}</p> : null}
       <ImpactEstimate finding={finding} />
     </li>
   );

@@ -1,12 +1,15 @@
 import { useId } from 'react';
 import type { Finding } from '@sparkforensics/core/types.ts';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { useFindingSavings } from '@/view/interpretation';
 
 export function ImpactEstimate({ finding }: { finding: Finding }) {
   const estimateMethodId = useId();
   const savings = useFindingSavings(finding);
+  // The savings figure on the line above an evidence panel already covers this finding.
+  const statedAbove = useStatedAbove(finding);
   const estimate = finding.impactEstimate;
-  if (!estimate) return null;
+  if (!estimate || statedAbove) return null;
 
   // The range is the recoverable-time claim; rawWaste (the pre-clip figure)
   // is only shown as a fallback when there's no wall-clock range at all

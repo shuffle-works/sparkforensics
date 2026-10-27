@@ -159,9 +159,9 @@ function FilteredBoard({
     [interpretation, evidenceWidgets],
   );
   const verdictWidgetIds = useMemo(() => new Set(evidenceOwners.values()), [evidenceOwners]);
-  const renderVerdictEvidence = useCallback((widgetId: string) => {
+  const renderVerdictEvidence = useCallback((widgetId: string, lead: Finding) => {
     const widget = evidenceWidgets.find((candidate) => candidate.widgetId === widgetId);
-    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} /> : null;
+    return widget ? <InlineEvidence widget={widget} widgetProps={{ appModel, catalog, configFindings, getTaskData, activeFileId }} stated={[lead]} /> : null;
   }, [evidenceWidgets, appModel, catalog, configFindings, getTaskData, activeFileId]);
   const showMoreFindings = useCallback(() => {
     onActiveTabChange('findings');

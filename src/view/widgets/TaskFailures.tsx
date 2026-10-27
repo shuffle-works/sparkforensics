@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { IMPACT_BAND_ORDER, formatMetricValue, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { StagePill } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
@@ -49,6 +50,7 @@ function FailureGroupList({ groups, otherFailedTasks }: { groups: TaskFailureGro
 
 function TaskFailureRow({ finding }: { finding: FindingOf<'failures'> & { stageId: number } }) {
   const anchor = useAnchoredRow([finding]);
+  const stated = useStatedAbove(finding);
   const dominantError = finding.dominantError ?? finding.dominantReason;
   return (
     <li
@@ -57,13 +59,22 @@ function TaskFailureRow({ finding }: { finding: FindingOf<'failures'> & { stageI
       data-flashed={anchor.dataFlashed}
       className={`flex flex-col gap-1 transition-colors ${anchor.flashClassName}`}
     >
-      <div className="flex items-center gap-2">
-        <StagePill stageId={finding.stageId} />
-        <ImpactDot impactBand={finding.impactBand} />
-      </div>
+      {stated ? null : (
+        <div className="flex items-center gap-2">
+          <StagePill stageId={finding.stageId} />
+          <ImpactDot impactBand={finding.impactBand} />
+        </div>
+      )}
+      {/* The line above states the rate and the dominant error; only the task count is new. */}
       <p className="text-xs text-muted-foreground">
-        Failure rate: <strong>{finding.value}%</strong> ({finding.failedTasks} tasks) &middot; Dominant
-        error: <strong className="break-words">{dominantError ?? '—'}</strong>
+        {stated ? (
+          <><strong>{finding.failedTasks}</strong> failed tasks</>
+        ) : (
+          <>
+            Failure rate: <strong>{finding.value}%</strong> ({finding.failedTasks} tasks) &middot; Dominant
+            error: <strong className="break-words">{dominantError ?? '—'}</strong>
+          </>
+        )}
       </p>
       <FailureGroupList
         groups={finding.failureGroups}

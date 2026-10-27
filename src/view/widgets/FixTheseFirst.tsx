@@ -23,6 +23,9 @@ import { selectTriageTarget, selectTriageTargetForFinding, type TriageTarget } f
 
 const PAGE_SIZE = 10;
 
+// A group row states only the group's total, so its panel keeps every finding's own stage and savings.
+const NOTHING_STATED: readonly Finding[] = [];
+
 // Below `sm` a three-column row leaves the recommendation too little width and
 // pushes the right-hand stage/savings column off screen. The row turns into a
 // wrapping flex line instead: tag and text share the first line, and the
@@ -149,14 +152,29 @@ function EvidenceButton({
   );
 }
 
-/** The expanded evidence card, as a full-width table row under its finding. */
-function EvidencePanelRow({ evidence, panelId, open }: { evidence: RowEvidence | undefined; panelId: string; open: boolean }): ReactNode {
+/** The expanded evidence panel, as a table row under its finding. It starts at
+ * the finding text column (an empty cell takes the tag column's width) and, below
+ * `sm`, stacks full width like the rows around it. `stated` lists the findings
+ * the line above it already describes. */
+function EvidencePanelRow({
+  evidence,
+  panelId,
+  open,
+  stated,
+}: {
+  evidence: RowEvidence | undefined;
+  panelId: string;
+  open: boolean;
+  stated: readonly Finding[];
+}): ReactNode {
   if (!open || !evidence?.widget) return null;
   return (
-    <TableRow className="hover:bg-transparent">
-      <TableCell colSpan={3} className="whitespace-normal">
-        <div id={panelId}>
-          <InlineEvidence widget={evidence.widget} widgetProps={evidence.widgetProps} />
+    <TableRow className="hover:bg-transparent max-sm:flex">
+      <TableCell className="w-px p-0 max-sm:hidden" />
+      <TableCell colSpan={2} className="whitespace-normal max-sm:w-full">
+        {/* w-0 min-w-full: a wide table or chart in the panel scrolls inside it instead of stretching the row. */}
+        <div id={panelId} className="w-0 min-w-full">
+          <InlineEvidence widget={evidence.widget} widgetProps={evidence.widgetProps} stated={stated} />
         </div>
       </TableCell>
     </TableRow>
@@ -211,7 +229,7 @@ export function FindingRow({
         </span>
       </TableCell>
     </TableRow>
-    <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} />
+    <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} stated={[finding]} />
     </>
   );
 }
@@ -359,7 +377,7 @@ export function TypeGroupRow({
           </span>
         </TableCell>
       </TableRow>
-      <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} />
+      <EvidencePanelRow evidence={evidence} panelId={panelId} open={evidenceState.open} stated={NOTHING_STATED} />
       {expanded && pageItems.map((finding, index) => (
         <FindingInstanceRow
           key={finding.id}

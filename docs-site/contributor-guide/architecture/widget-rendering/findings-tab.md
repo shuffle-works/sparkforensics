@@ -73,9 +73,10 @@ wrapping rather than truncating, then one **Show evidence** button); and a right
 reference + impact figure (e.g. `St.49 · 20.1s`, via the shared
 `formatWallClockRange`/`formatRawWaste` in `packages/core/src/format-utils.ts`). The
 **Show evidence** button (`EvidenceButton`), not the row, is the click
-target. The first row of a widget's type in a band owns that widget's card
-and expands it in place as a full-width row below (`EvidencePanelRow`,
-`InlineEvidence`); any other row routes via `selectTriageTargetForFinding`
+target. The first row of a widget's type in a band owns that widget's
+evidence and opens it in place as a table row below (`EvidencePanelRow`,
+`InlineEvidence`): the panel starts at the text column, and stacks full
+width below `sm`. Any other row routes via `selectTriageTargetForFinding`
 (`src/view/triage-target.ts`), the same per-finding resolver Stage Summary
 Table's own control uses (see "First investigation routing" below), to the
 card another row or the verdict owns. A route that targets an owned card

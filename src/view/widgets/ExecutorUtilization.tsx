@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from 'react';
 
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { ImpactEstimate } from '../ImpactEstimate.tsx';
 import { RowPagination } from '@/view/RowPagination';
 import { useActiveRouteTarget } from '@/view/TriageNavigationContext';
@@ -16,6 +17,9 @@ export type ExecutorUtilizationProps = Pick<WidgetProps, 'catalog' | 'defaultCol
 
 function UtilizationRow({ finding }: { finding: Finding }) {
   const anchor = useAnchoredRow([finding]);
+  const stated = useStatedAbove(finding);
+  // The average utilization is the whole row, and the line above states it.
+  if (stated) return null;
 
   return (
     <div

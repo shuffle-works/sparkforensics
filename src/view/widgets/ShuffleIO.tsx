@@ -6,6 +6,7 @@ import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
 import { TagBadge } from '@/view/ImpactBadge';
 import { StagePillGroup } from '@/view/StagePill';
 import { StageHeader } from '@/view/StageHeader';
+import { useInlineEvidence, useStatedAbove } from '@/view/InlineEvidenceContext';
 import { formatBytes, recommendPartitions, IMPACT_BAND_ORDER, numericValue, VISIBLE_LIMIT, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import type { WidgetProps } from '@/view/detector-registry';
 import type { Finding, ImpactBand, StageId } from '@sparkforensics/core/types.ts';
@@ -31,7 +32,9 @@ interface StageEntry {
 function ShuffleRow({ entry, appModel }: { entry: StageEntry; appModel: WidgetProps['appModel'] }) {
   const density = useWidgetDensity();
   const anchor = useAnchoredRow([entry.shuffle]);
+  const stated = useStatedAbove(entry.shuffle);
   const stage = appModel.stages.get(entry.stageId);
+  const writeBytes = stage?.shuffleWriteBytes ?? 0;
   const partitionHint = stage ? recommendPartitions(stage) : null;
   const showPlanExplorer = density === 'advanced' && resolvePlanTree(entry.stageId, appModel);
 
@@ -42,12 +45,19 @@ function ShuffleRow({ entry, appModel }: { entry: StageEntry; appModel: WidgetPr
       data-flashed={anchor.dataFlashed}
       className={`space-y-2 ${ROW_SEPARATOR_CLASS} transition-colors ${anchor.flashClassName}`}
     >
-      <StageHeader stageId={entry.stageId} appModel={appModel} />
-      <p className="text-sm">
-        Shuffle read: <strong>{formatBytes(numericValue(entry.shuffle))}</strong>
-        {' · '}
-        Write: {formatBytes(stage?.shuffleWriteBytes ?? 0)}
-      </p>
+      <StageHeader stageId={entry.stageId} appModel={appModel} stated={stated} />
+      {stated && writeBytes === 0 ? null : (
+        <p className="text-sm">
+          {/* The line above an evidence panel states the shuffle read. */}
+          {stated ? null : (
+            <>
+              Shuffle read: <strong>{formatBytes(numericValue(entry.shuffle))}</strong>
+              {' · '}
+            </>
+          )}
+          Write: {formatBytes(writeBytes)}
+        </p>
+      )}
       <ImpactEstimate finding={entry.shuffle} />
       {partitionHint || showPlanExplorer ? (
         <div className="space-y-2 pt-1">
@@ -65,6 +75,7 @@ export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCol
   const [cardOpen, setCardOpen] = useState(!defaultCollapsed);
   const { sortMode, setSortMode, orderBy, canToggleSort } = useSortMode();
   const activeRouteTarget = useActiveRouteTarget();
+  const inline = useInlineEvidence();
 
   const { shuffleFindings, sorted, orderedEntries } = useMemo(() => {
     const shuffleFindings = catalog.filter((f) => f.type === 'shuffle');
@@ -105,7 +116,10 @@ export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCol
   }
 
   const combinedImpactBand = worstImpactBand(shuffleFindings);
-  const pills = orderedEntries.map((e) => ({ id: e.stageId }));
+  // A stage the line above an evidence panel names needs no pill.
+  const pills = orderedEntries
+    .filter((e) => e.shuffle.id == null || !inline?.stated.has(e.shuffle.id))
+    .map((e) => ({ id: e.stageId }));
   const canSortByImpact = canToggleSort(shuffleFindings, sorted.length, cardOpen);
 
   return (
@@ -137,7 +151,7 @@ export const ShuffleIO = memo(function ShuffleIO({ appModel, catalog, defaultCol
       }
     >
       <div className="space-y-4">
-        <StagePillGroup pills={pills} />
+        {pills.length > 0 || !inline ? <StagePillGroup pills={pills} /> : null}
         {visible.map((entry) => (
           <ShuffleRow key={entry.stageId} entry={entry} appModel={appModel} />
         ))}

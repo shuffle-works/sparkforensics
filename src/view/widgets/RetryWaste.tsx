@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 
 import { IMPACT_BAND_ORDER, formatDuration, numericValue, worstImpactBand } from '@sparkforensics/core/format-utils.ts';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
+import { useWidgetDensity } from '@/store/store';
 import { ImpactDot, TagBadge } from '@/view/ImpactBadge';
+import { useStatedAbove } from '@/view/InlineEvidenceContext';
 import { StagePill } from '@/view/StagePill';
 import { WidgetCard } from '@/view/WidgetCard';
 import { findingCount, WidgetLeadSummary } from '@/view/WidgetLeadSummary';
@@ -33,6 +35,10 @@ function retryWasteAdvancedExtension(f: FindingOf<'retryWaste'>): string {
 
 function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stageId: number } }) {
   const anchor = useAnchoredRow([finding]);
+  const stated = useStatedAbove(finding);
+  const advanced = useWidgetDensity() === 'advanced';
+  // The line above states the wasted time, so only the Advanced extension remains.
+  if (stated && !(advanced && finding.extended)) return null;
   return (
     <li
       ref={anchor.ref}
@@ -40,12 +46,14 @@ function RetryWasteRow({ finding }: { finding: FindingOf<'retryWaste'> & { stage
       data-flashed={anchor.dataFlashed}
       className={`flex flex-col gap-1 transition-colors ${anchor.flashClassName}`}
     >
-      <div className="flex items-center gap-2">
-        <StagePill stageId={finding.stageId} />
-        <ImpactDot impactBand={finding.impactBand} />
-      </div>
+      {stated ? null : (
+        <div className="flex items-center gap-2">
+          <StagePill stageId={finding.stageId} />
+          <ImpactDot impactBand={finding.impactBand} />
+        </div>
+      )}
       <p className="text-xs text-muted-foreground">
-        Wasted <strong>{formatDuration(numericValue(finding))}</strong> of executor time.
+        {stated ? null : <>Wasted <strong>{formatDuration(numericValue(finding))}</strong> of executor time.</>}
         {finding.extended ? <AdvancedOnly> {retryWasteAdvancedExtension(finding)}</AdvancedOnly> : null}
       </p>
       <ImpactEstimate finding={finding} />

@@ -9,6 +9,7 @@ import type { ImpactBand } from '@sparkforensics/core/types.ts';
 import { typeTag } from '@sparkforensics/core/format-utils.ts';
 import { useOptionalDocs } from '@/view/DocsContext';
 import { TAG_HELP } from '@/view/finding-tag-help';
+import { useInlineEvidence } from '@/view/InlineEvidenceContext';
 import { useInterpretation } from '@/view/interpretation';
 import { AdvancedOnly } from '@/view/AdvancedOnly';
 import { useStore, useWidgetDensity } from '@/store/store';
@@ -126,6 +127,9 @@ export function TagBadge({ type, impactBand, className, plainBadge, docAnchor }:
   // link nowhere.
   const exportMode = useStore((s) => s.exportMode);
   const typeAnchor = useInterpretation()?.data.detectors[type]?.docAnchor ?? undefined;
+  // An in-place evidence panel sits under a line that already carries the tag.
+  const inEvidencePanel = useInlineEvidence() !== null;
+  if (inEvidencePanel) return null;
   const tag = typeTag(type);
   const help = TAG_HELP[tag];
   const title = plainBadge ? undefined : (help ? `${help.expansion}: ${help.description}` : undefined);
