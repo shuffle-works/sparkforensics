@@ -78,15 +78,20 @@ describe('spill advice from execution memory per task slot', () => {
     const f = analyze(app, new Map([[1, stage]]), [], [], new Map(), sql).find((x) => x.type === 'spill');
     expect(f.recommendation).toContain('set spark.sql.adaptive.coalescePartitions.minPartitionNum to 320, lower spark.executor.cores to 2');
     expect(f.remediation).toContainEqual({ kind: 'conf', key: 'spark.sql.adaptive.coalescePartitions.minPartitionNum', direction: 'set', suggested: 320 });
+    expect(FINDING_PRESENTATION.spill.genericRecommendation(f)).toContain('or raise spark.sql.adaptive.coalescePartitions.minPartitionNum');
   });
 
-  it('caps the coalesce floor at the configured count and raises that count when it is too low', () => {
+  it('raises the configured count instead of the coalesce floor when the count is too low', () => {
     const sql = new Map([[3, { id: 3, planTree: { name: 'AdaptiveSparkPlan', detail: 'isFinalPlan=true', metrics: [], children: [] } }]]);
     const app = makeApp({ config: { ...FOUR_CORES, 'spark.sql.shuffle.partitions': '200' }, sparkVersion: '3.5.0', resources: { executor: { cores: 4, memoryMB: 4096 } } });
     const stage = makeStage({ id: 1, sqlExecutionId: 3, ...VOLUME, taskCount: 100 });
     const f = analyze(app, new Map([[1, stage]]), [], [], new Map(), sql).find((x) => x.type === 'spill');
-    expect(f.recommendation).toContain('set spark.sql.adaptive.coalescePartitions.minPartitionNum to 200, raise spark.sql.shuffle.partitions to 320, lower spark.executor.cores to 2');
-    expect(f.remediation).toContainEqual({ kind: 'conf', key: 'spark.sql.adaptive.coalescePartitions.minPartitionNum', direction: 'set', suggested: 200 });
+    expect(f.recommendation).toContain('so each partition is smaller, raise spark.sql.shuffle.partitions to 320, lower spark.executor.cores to 2');
+    expect(keys(f)).toEqual(['spark.sql.adaptive.advisoryPartitionSizeInBytes', 'spark.sql.shuffle.partitions', 'spark.executor.cores', 'spark.executor.memory']);
     expect(f.remediation).toContainEqual({ kind: 'conf', key: 'spark.sql.shuffle.partitions', direction: 'increase', suggested: 320 });
+    const generic = FINDING_PRESENTATION.spill.genericRecommendation(f);
+    expect(generic).toContain('lower spark.sql.adaptive.advisoryPartitionSizeInBytes');
+    expect(generic).toContain('raise spark.sql.shuffle.partitions');
+    expect(generic).not.toContain('minPartitionNum');
   });
 });
