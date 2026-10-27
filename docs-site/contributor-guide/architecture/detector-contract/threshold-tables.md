@@ -91,6 +91,9 @@ plus `shuffleReadBytes`, and sets `wideRows` from `wideRowRatio` = 10. A stage
 with under `wideRowMinInputMB` = 64 MiB of input gets no ratio. Neither
 threshold changes the band or the magnitude.
 
+A volume spill adds a `spark.executor.cores` fix when `peakExecutionMemoryMax`
+is at least `peakNearShareRatio` = 0.8 of the execution memory per task slot.
+
 ### Full threshold table (never wallClock-derived)
 
 | Rule | Warning | Critical |

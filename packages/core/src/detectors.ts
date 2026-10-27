@@ -30,6 +30,7 @@ import { indexStagesBySqlExecution } from './sql-stages.ts';
 import { attributeSpill, describeSpillCause, spillToInputRatio } from './spill-attribution.ts';
 import { cyrb53 } from './string-hash.ts';
 import { codeFix, decreaseConf, increaseConf, setConf } from './remediation.ts';
+import { parseSparkMemoryMB } from './spark-memory.ts';
 import { effectiveSparkConf, executorOverheadSettings, overlayModifiedConfigs, parseSparkBytes } from './spark-conf.ts';
 import { MAX_FAILURE_GROUPS, describeTaskFailure, type TaskFailureGroup } from './task-failure.ts';
 import type { Finding, PlanNode, FixEffort, ImpactEstimate, RawWasteFigure, TailAttribution } from './types.ts';
@@ -84,6 +85,7 @@ export interface DetectorStage {
   shuffleReadP50: number;
   shuffleReadMax: number;
   memoryBytesSpilled: number;
+  peakExecutionMemoryMax?: number;
   spillClassification: 'skew' | 'volume' | 'unclassified';
   spillDiskMax?: number;
   spillMemMax?: number;
@@ -1259,28 +1261,70 @@ function tinyShuffleFix(stage: DetectorStage, ctx: DetectorCtx, coalesceTo: numb
   return { text: `lowering ${key} or using .coalesce(${coalesceTo})${note}`, remediation: [decreaseConf(key)] };
 }
 
-// spill's fix on a stage that reads a shuffle and spills for volume: smaller partitions or more
-// memory. Raising spark.sql.shuffle.partitions only helps while the property sized the stage, never
-// when the stage reads the job's own repartition(n) (`userPartitioned`), whatever its count.
-function spillShuffleFix(stage: DetectorStage, ctx: DetectorCtx, userPartitioned: boolean): { text: string; remediation: Remediation[] } {
+const EXECUTOR_CORES_KEY = 'spark.executor.cores';
+const COALESCE_MIN_PARTITIONS_KEY = 'spark.sql.adaptive.coalescePartitions.minPartitionNum';
+const MEMORY_FRACTION_KEY = 'spark.memory.fraction';
+const DEFAULT_MEMORY_FRACTION = 0.6;
+// Spark keeps this much of the executor heap out of its unified memory region (UnifiedMemoryManager).
+const RESERVED_MEMORY_BYTES = 300 * MB;
+
+type SpillCoresFix = { text: string; remediation: Remediation[] };
+
+// The lever for a volume spill whose tasks fill their slot: execution memory per task slot is the
+// executor's unified region (heap less the reserve, times spark.memory.fraction) over its cores. When
+// a task's peak is near that share, halving the cores doubles it. Cores are the logged
+// spark.executor.cores, else the one core count every added executor reports. Null in local mode,
+// when the cores are unknown or differ between executors, the executor has one core, or the peak is
+// well under the share.
+function spillCoresFix(stage: DetectorStage, ctx: DetectorCtx, nearShareRatio: number): SpillCoresFix | null {
+  const app = ctx.app;
+  const reported = new Set(ctx.executorsAdded.map((e) => e.totalCores));
+  const cores = app?.resources?.executor?.cores ?? (reported.size === 1 ? [...reported][0] : undefined);
+  const memoryMB = parseSparkMemoryMB(effectiveConf(app, 'spark.executor.memory'));
+  if (stage.spillClassification !== 'volume' || effectiveConf(app, 'spark.master')?.startsWith('local') || !memoryMB || !cores || cores < 2) return null;
+  const fraction = Number.parseFloat(effectiveConf(app, MEMORY_FRACTION_KEY) ?? '');
+  const region = (memoryMB * MB - RESERVED_MEMORY_BYTES) * (Number.isFinite(fraction) ? fraction : DEFAULT_MEMORY_FRACTION);
+  const share = region / cores;
+  const peak = stage.peakExecutionMemoryMax ?? 0;
+  if (share <= 0 || peak < nearShareRatio * share) return null;
+  const fewer = Math.floor(cores / 2);
+  return {
+    text: `lower ${EXECUTOR_CORES_KEY} to ${fewer} (each of the ${cores} task slots gets ${formatBytes(share)} of execution memory and a task peaked at ${formatBytes(peak)})`,
+    remediation: [decreaseConf(EXECUTOR_CORES_KEY, fewer)],
+  };
+}
+
+// spill's fix on a stage that reads a shuffle and spills for volume: smaller partitions, fewer cores
+// per executor when the tasks fill their memory slot, or more memory. Raising
+// spark.sql.shuffle.partitions only helps while the property sized the stage, never when the stage
+// reads the job's own repartition(n) (`userPartitioned`), whatever its count.
+function spillShuffleFix(stage: DetectorStage, ctx: DetectorCtx, userPartitioned: boolean, cores: SpillCoresFix | null): { text: string; remediation: Remediation[] } {
   const memory = increaseConf('spark.executor.memory');
+  const coresText = cores ? `, ${cores.text}` : '';
+  const coresRemediation = cores?.remediation ?? [];
+  const needed = Math.ceil(stage.shuffleReadBytes / IDEAL_BYTES_PER_PARTITION_TASK);
   if (userPartitioned) {
     const hint = "raise the partition count of the job's own repartition(n) so each partition is smaller";
-    return { text: `${hint}, or increase executor memory`, remediation: [codeFix(hint), memory] };
+    return { text: `${hint}${coresText}, or increase executor memory`, remediation: [codeFix(hint), ...coresRemediation, memory] };
   }
   const { lever, count, key, explicitRepartition } = partitionLever(stage, ctx);
   if (lever === 'aqeCoalesced') {
+    const raisesFloor = needed > stage.taskCount;
     return {
-      text: `AQE coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks: lower ${ADVISORY_PARTITION_SIZE_KEY} so each partition is smaller, or increase executor memory`,
-      remediation: [decreaseConf(ADVISORY_PARTITION_SIZE_KEY), memory],
+      text: `AQE coalesced the ${count} configured shuffle partitions into ${stage.taskCount} tasks: lower ${ADVISORY_PARTITION_SIZE_KEY} so each partition is smaller${raisesFloor ? `, set ${COALESCE_MIN_PARTITIONS_KEY} to ${needed}` : ''}${coresText}, or increase executor memory`,
+      remediation: [decreaseConf(ADVISORY_PARTITION_SIZE_KEY), ...(raisesFloor ? [setConf(COALESCE_MIN_PARTITIONS_KEY, needed)] : []), ...coresRemediation, memory],
     };
   }
   if (lever === 'ownPartitioning') {
     const hint = "raise this stage's own partition count (its repartition(n) or RDD parallelism) so each partition is smaller";
-    return { text: `the configured shuffle partition count is ${count} but this stage ran ${stage.taskCount} tasks, so ${hint}, or increase executor memory`, remediation: [codeFix(hint), memory] };
+    return { text: `the configured shuffle partition count is ${count} but this stage ran ${stage.taskCount} tasks, so ${hint}${coresText}, or increase executor memory`, remediation: [codeFix(hint), ...coresRemediation, memory] };
   }
   const note = lever === 'aqeAdjusted' ? aqeAdjustedNote(stage, count, explicitRepartition) : '';
-  return { text: `raise ${key} or increase executor memory${note}`, remediation: [increaseConf(key), memory] };
+  const sized = cores != null && count != null && needed > count;
+  return {
+    text: `raise ${key}${sized ? ` to ${needed}` : ''}${coresText} or increase executor memory${note}`,
+    remediation: [increaseConf(key, sized ? needed : null), ...coresRemediation, memory],
+  };
 }
 
 // stageSlowness's fix on a stage that reads a shuffle: more tasks. spark.default.parallelism sizes
@@ -2056,7 +2100,9 @@ export const DETECTORS = [
     // stageFloorPct: the 0.5% runtime floor, as for shuffle.
     thresholds: { singleTaskDiskGiB: 1, singleTaskMemGiB: 4, highDiskGiB: 1, highTaskDiskMB: 512, highMemGiB: 4, medDiskMB: 256, medMemGiB: 1, skewRatio: 5, skewDiskFloorMB: 128, skewMemFloorMB: 256, skewMinTasks: 10, stageFloorPct: 0.005,
       // The spill-to-input ratio from which rows are called wide, and the input below which it is not reported.
-      wideRowRatio: 10, wideRowMinInputMB: 64 },
+      wideRowRatio: 10, wideRowMinInputMB: 64,
+      // The share of a task slot's execution memory a task's peak must reach for the cores lever.
+      peakNearShareRatio: 0.8 },
     detect(stage, ctx, thresholds): Finding | null {
       if (stage.memoryBytesSpilled === 0) return null;
       if (stageBelowRuntimeFloor(stage, ctx, thresholds.stageFloorPct)) return null;
@@ -2068,14 +2114,15 @@ export const DETECTORS = [
       const reads = stageReads(stage);
       const execution = stage.sqlExecutionId != null ? ctx.sql.get(stage.sqlExecutionId) : undefined;
       const { operators, exchanges } = attributeSpill(execution?.planTree, stage.id);
-      const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, ctx, exchanges[0]?.origin === 'REPARTITION_BY_NUM') : null;
+      const cores = spillCoresFix(stage, ctx, thresholds.peakNearShareRatio);
+      const shuffleFix = reads === 'shuffle' ? spillShuffleFix(stage, ctx, exchanges[0]?.origin === 'REPARTITION_BY_NUM', cores) : null;
       const ratio = spillToInputRatio(stage.memoryBytesSpilled, stage.inputBytes, stage.shuffleReadBytes, thresholds.wideRowMinInputMB * MB);
       const wide = ratio !== null && ratio >= thresholds.wideRowRatio;
       const advice = cls === 'skew'
         ? `${formatBytes(stage.memoryBytesSpilled)} spilled, skew-driven: fix task skew first; adding memory will not help.`
         : shuffleFix
           ? `${formatBytes(stage.memoryBytesSpilled)} spilled: ${shuffleFix.text}.`
-          : `${formatBytes(stage.memoryBytesSpilled)} spilled: this stage reads no shuffle, so increase executor memory or process less data per task.`;
+          : `${formatBytes(stage.memoryBytesSpilled)} spilled: this stage reads no shuffle, so ${cores ? `${cores.text}, increase executor memory, or` : 'increase executor memory or'} process less data per task.`;
       const cause = describeSpillCause(operators, ratio, wide, reads === 'input', exchanges[0]);
       const sqlDescription = clipAtWord(execution?.description?.trim() ?? '', 200);
       return {
@@ -2091,7 +2138,7 @@ export const DETECTORS = [
           ? 'Spill cause is inferred from the share of tasks that spilled: confirm against per-task spill metrics in the Spark UI.'
           : 'Spill cause could not be classified: inspect per-task spill metrics in the Spark UI before acting.',
         recommendation: cause ? `${advice} ${cause}` : advice,
-        remediation: cls === 'skew' ? [] : shuffleFix?.remediation ?? [increaseConf('spark.executor.memory')],
+        remediation: cls === 'skew' ? [] : shuffleFix?.remediation ?? [...(cores?.remediation ?? []), increaseConf('spark.executor.memory')],
       };
     },
     estimate(finding, ctx): ImpactEstimate | null {

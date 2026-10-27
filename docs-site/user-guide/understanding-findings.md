@@ -111,8 +111,19 @@ stage that reads a shuffle; `evidence.reads` says what the stage reads
 `spark.sql.shuffle.partitions` when the stage ran that many tasks,
 `spark.sql.adaptive.advisoryPartitionSizeInBytes` when AQE coalesced them, and
 the stage's own `repartition(n)` or RDD parallelism otherwise, or when the stage
-reads a `REPARTITION_BY_NUM` exchange. Only flagged on stages that take at
-least 0.5% of the run.
+reads a `REPARTITION_BY_NUM` exchange. Under AQE coalescing, a stage whose
+shuffle would need more tasks to reach 128 MiB per partition also gets
+`spark.sql.adaptive.coalescePartitions.minPartitionNum` set to that count. Only
+flagged on stages that take at least 0.5% of the run.
+
+A volume spill also checks the memory each task slot has: the executor's
+unified region (heap less 300 MiB, times `spark.memory.fraction`, 0.6 unless
+logged) over its cores, taken from `spark.executor.cores` or the cores every
+executor reports. When the stage's `peakExecutionMemoryMax` reaches 80% of that
+share, the finding also advises lowering `spark.executor.cores` to half, which
+doubles each task's share, and names the shuffle partition count that gives
+128 MiB per partition when the configured count is below it. It is left out in
+local mode, for a one-core executor and when executors differ in cores.
 
 `evidence.operators` lists up to five operators that reported a `spill size`
 (`Sort`, `HashAggregate`, `ObjectHashAggregate`, `Window`), largest first, with
