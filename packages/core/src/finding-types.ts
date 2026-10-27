@@ -456,9 +456,11 @@ export interface MergeRewriteEvidence extends PlanFindingEvidence {
 }
 export interface MergeRewriteFinding extends NumericFinding<'mergeRewrite'>, MergeRewriteEvidence, PlanNodeOrigin {}
 
-/** A scan of a partitioned table that filters the rows it reads but has no partition filter. `value` is the bytes read. The plan does not name the partition columns, so the finding asks
+/** A scan of a partitioned table that filters the rows it reads but has no partition filter, one finding per table in an
+ * execution. `value` is the bytes all its flagged scans read. The plan does not name the partition columns, so the finding asks
  * for confirmation. */
 export interface UnprunedScanEvidence extends PlanFindingEvidence {
+  /** The most partitions one scan read: scans of one table read the same partitions. */
   partitionsRead: number;
   /** The scan's row filters, without the null checks Spark adds. */
   dataFilters: string[];

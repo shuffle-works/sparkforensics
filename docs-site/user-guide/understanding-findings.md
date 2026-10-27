@@ -507,8 +507,9 @@ this tag:
   so this is an informational, low-confidence finding: confirm which columns
   the table is partitioned by. The scan's filters are on other columns; add a
   filter on a partition column, for example the date the table is partitioned
-  by. The card names each scan's table, the bytes and partitions it read, and
-  its filters.
+  by. The card has one row per table in a query: the bytes all its flagged
+  scans read (a self-join counts each scan), the most partitions one scan
+  read, and the filters of those scans.
 - Row-at-a-time Python UDF: a plan runs `BatchEvalPython`, which pickles
   every row to a Python worker and back. Flagged when its stages sent at
   least 64 MiB to the workers (`data sent to Python workers`) and ran for at
