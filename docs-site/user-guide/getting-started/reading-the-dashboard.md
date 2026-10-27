@@ -68,9 +68,9 @@ Below it, two tabs split the rest of the board:
    band, a recommendation row for a bottleneck type collapses into a summary
    row when it fires more than once; clicking the summary row expands its
    full list. Each row has one **Show evidence** button that opens its
-   detail widget (the chart and per-stage numbers behind it) in place, or
-   takes you to that widget when another row or the verdict already shows
-   it. Widgets that found nothing fold away into a "Clean checks"
+   detail widget (the chart and per-stage numbers behind it) in place,
+   showing only that row's findings. A row inside an expanded summary row
+   opens the summary row's panel. Widgets that found nothing fold away into a "Clean checks"
    disclosure. A check the log lacked the data for is listed there under
    **Not checked on this log**, not as a pass, with the reason and the
    setting to turn on: for example every per-stage check when no stage
