@@ -493,8 +493,13 @@ this tag:
   The finding is informational, since a cast between small integer types is
   harmless. It names the join, its cast keys and the exchange, and its value
   is the data size of that exchange. The advice is to give both join columns
-  the same type before the join. A broadcast join, a join with no exchange
-  after it, and an exchange on the cast expression itself are not flagged.
+  the same type before the join. Not flagged: a broadcast join, a join with no
+  exchange after it, an exchange on the cast expression itself, an exchange
+  the job asked for (a repartition or rebalance), an exchange whose keys do
+  not cover every key of the cast side (it would stay without the cast), a
+  full outer join, and a cast only on the side whose partitioning the join
+  does not keep (the right side of a left outer, semi or anti join, the left
+  side of a right outer join).
 - MERGE rewrite: a Delta `MERGE` whose command node reports one of two
   patterns, each its own informational finding. Rewritten rows: at least
   100,000 unmodified target rows rewritten (`number of target rows rewritten

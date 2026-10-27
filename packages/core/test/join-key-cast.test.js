@@ -161,6 +161,14 @@ describe('joinKeyCast finding', () => {
     const first = exchange('hashpartitioning(k#2, 4)', joinOf(DECIMAL_JOIN), 2);
     expect(findingsFor(node('Union', 'Union', [first, second]))).toHaveLength(2);
   });
+
+  it('keeps two cast joins of one operator apart when their exchanges report no size', () => {
+    const second = exchange('hashpartitioning(k#2, 4)', joinOf('SortMergeJoin [cast(k#2 as bigint)], [k#8L], Inner'), 0);
+    const first = exchange('hashpartitioning(k#2, 4)', joinOf(DECIMAL_JOIN), 0);
+    const findings = findingsFor(node('Union', 'Union', [first, second]));
+    expect(findings).toHaveLength(2);
+    expect(new Set(findings.map((f) => f.id)).size).toBe(2);
+  });
 });
 
 describe('joinKeyCast on a local Spark run', () => {

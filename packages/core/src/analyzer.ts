@@ -42,7 +42,10 @@ const DISCRIMINATOR_SLOTS = [
   'direction', 'nodeName', 'rootName', 'subtreeSize', 'groupIndex', 'largerSideBytes',
   'rddId', 'relation', 'format', 'operator', 'executionIds',
 ] as const;
-type DiscriminatorSlot = (typeof DISCRIMINATOR_SLOTS)[number];
+// Slots joined after DISCRIMINATOR_SLOTS only for the types that list them, so adding one leaves
+// every other finding id unchanged.
+const APPENDED_SLOTS = ['planNodeIds'] as const;
+type DiscriminatorSlot = (typeof DISCRIMINATOR_SLOTS)[number] | (typeof APPENDED_SLOTS)[number];
 
 // Per type, the fields that tell apart sibling findings sharing one location and metric; without
 // them those siblings hash to one id (see detector-contract.md, Finding ids). Notes:
@@ -60,7 +63,7 @@ const ID_DISCRIMINATORS: { [T in FindingType]: readonly (DiscriminatorSlot & key
   jobFailureRate: [], configAudit: [],
   duplicatePlanSubtree: ['rootName', 'subtreeSize', 'groupIndex'], smallFiles: ['direction', 'nodeName'], mergeRewrite: ['rule'],
   pythonUdf: [],
-  nestedLoopJoin: ['nodeName'], joinKeyCast: ['nodeName'],
+  nestedLoopJoin: ['nodeName'], joinKeyCast: ['nodeName', 'planNodeIds'],
   underBroadcast: ['largerSideBytes'], overBroadcast: [],
 };
 
@@ -80,7 +83,8 @@ function locationKey(f: Finding): number | string {
 export function findingId(f: Finding): string {
   const fields = f as unknown as Partial<Record<DiscriminatorSlot, unknown>>;
   const listed = ID_DISCRIMINATOR_SETS.get(f.type);
-  const disc = DISCRIMINATOR_SLOTS.map((slot) => {
+  const slots = [...DISCRIMINATOR_SLOTS, ...APPENDED_SLOTS.filter((slot) => listed?.has(slot))];
+  const disc = slots.map((slot) => {
     const v = listed?.has(slot) ? fields[slot] : undefined;
     return Array.isArray(v) ? v.join(',') : v ?? '';
   }).join('|');
