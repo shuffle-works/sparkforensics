@@ -131,8 +131,7 @@ describe('failure findings carry the advice', () => {
 
   it('retryWaste names the memory overhead fix when the retried attempts were memory kills', () => {
     const finding = findingOf('retryWaste', makeStage({
-      wastedAttempts: 5, retryWasteMs: 60000, failedTasks: 5,
-      failureReasons: [{ reason: 'ExecutorLostFailure', count: 5 }], failureGroups: [{ ...killed, count: 5 }],
+      wastedAttempts: 5, retryWasteMs: 60000, retryFailureGroups: [{ ...killed, count: 5 }],
     }));
     expect(finding.remediation).toEqual(OVERHEAD);
     expect(finding.recommendation).toMatch(/spark\.executor\.memoryOverhead/);
@@ -141,7 +140,7 @@ describe('failure findings carry the advice', () => {
 
 // Hand-built SparkListener events through the parser, which fills lossReason and stageFailureReason.
 describe('failure advice from parsed events', () => {
-  function parseStage({ lostTasks = 0, failureReason }) {
+  function parseStage({ lostTasks = 0, failureReason, retrySucceeds = false, lossReason = CONTAINER_KILL }) {
     const s = createState();
     processEvent({ Event: 'SparkListenerStageSubmitted', 'Stage Info': { 'Stage ID': 1, 'Submission Time': 0 } }, s);
     let taskId = 0;
@@ -149,14 +148,14 @@ describe('failure advice from parsed events', () => {
       Event: 'SparkListenerTaskEnd', 'Stage ID': 1, 'Stage Attempt ID': 0,
       'Task Info': { 'Task ID': taskId++, Index: index, 'Launch Time': 0, 'Finish Time': 10000, Failed: failed },
       'Task End Reason': failed
-        ? { Reason: 'ExecutorLostFailure', 'Executor ID': '3', 'Exit Caused By App': true, 'Loss Reason': CONTAINER_KILL }
+        ? { Reason: 'ExecutorLostFailure', 'Executor ID': '3', 'Exit Caused By App': true, 'Loss Reason': lossReason }
         : { Reason: 'Success' },
       'Task Metrics': {},
     }, s);
-    // Each lost task fails twice: the retry is wasted and the task stays failed.
+    // Each lost task fails, then its retry fails too (the task stays failed) or succeeds.
     for (let i = 0; i < lostTasks; i++) taskEnd(i, true);
-    if (lostTasks) processEvent({ Event: 'SparkListenerExecutorRemoved', Timestamp: 10000, 'Executor ID': '3', 'Removed Reason': CONTAINER_KILL }, s);
-    for (let i = 0; i < lostTasks; i++) taskEnd(i, true);
+    if (lostTasks) processEvent({ Event: 'SparkListenerExecutorRemoved', Timestamp: 10000, 'Executor ID': '3', 'Removed Reason': lossReason }, s);
+    for (let i = 0; i < lostTasks; i++) taskEnd(i, !retrySucceeds);
     for (let i = lostTasks; i < 20; i++) taskEnd(i, false);
     const info = { 'Stage ID': 1, 'Completion Time': 20000, ...(failureReason && { 'Failure Reason': failureReason }) };
     const stage = processEvent({ Event: 'SparkListenerStageCompleted', 'Stage Info': info }, s).data;
@@ -172,6 +171,18 @@ describe('failure advice from parsed events', () => {
       expect(coreFindingGenericRecommendation(finding)).toMatch(/spark\.executor\.memoryOverhead/);
     }
     expect(findings.find((f) => f.type === 'failures').failureGroups[0].lossReason).toBe(CONTAINER_KILL);
+  });
+
+  it.each([
+    CONTAINER_KILL,
+    'The executor with id 3 exited with exit code 137(SIGKILL, possible container OOM). Pod state: OOMKilled',
+  ])('names the memory overhead fix on retryWaste when the retries succeed (%j)', (lossReason) => {
+    const findings = parseStage({ lostTasks: 5, retrySucceeds: true, lossReason });
+    expect(findings.find((f) => f.type === 'failures')).toBeUndefined();
+    const finding = findings.find((f) => f.type === 'retryWaste');
+    expect(finding.remediation).toEqual(OVERHEAD);
+    expect(finding.recommendation).toMatch(/spark\.executor\.memoryOverhead/);
+    expect(coreFindingGenericRecommendation(finding)).toMatch(/spark\.executor\.memoryOverhead/);
   });
 
   // Spark's FetchFailed path: the failing stage closes with its last attempt's fetch failure, then

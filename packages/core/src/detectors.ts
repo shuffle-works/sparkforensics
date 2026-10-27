@@ -103,6 +103,8 @@ export interface DetectorStage {
   executorMetrics: Map<string, DetectorExecutorMetricsSnapshot>;
   failureReasons?: DetectorFailureReason[];
   failureGroups?: TaskFailureGroup[];
+  // Failures of the attempts a retry superseded, most frequent first.
+  retryFailureGroups?: TaskFailureGroup[];
   localityStats?: DetectorLocalityStat[];
   stragglerCount: number;
   stragglerExcessMs?: number;
@@ -2593,7 +2595,8 @@ export const DETECTORS = [
       const wasted = stage.wastedAttempts ?? 0;
       const wastedMs = stage.retryWasteMs ?? 0;
       if (wasted < thresholds.minWasted || wastedMs < thresholds.minWasteMs) return null;
-      const advice = adviseFailureGroup(dominantFailureGroup(stage));
+      // From the retried attempts themselves: when the retries succeed, no failure stays on the stage.
+      const advice = adviseFailureGroup(stage.retryFailureGroups?.[0]);
       return {
         type: 'retryWaste', stageId: stage.id,
         impactBand: 'warning',

@@ -189,6 +189,10 @@ export function finalizeStage(
   const failureGroupsArr: TaskFailureGroup[] = [...failureGroups.entries()]
     .map(([detail, count]) => ({ ...detail, count }))
     .sort((a, b) => b.count - a.count);
+  const retryFailures = (stage as unknown as { retryFailures?: Map<TaskFailureDetail, number> }).retryFailures;
+  const retryFailureGroups: TaskFailureGroup[] = [...(retryFailures ?? new Map<TaskFailureDetail, number>()).entries()]
+    .map(([detail, count]) => ({ ...detail, count }))
+    .sort((a, b) => b.count - a.count);
   const localityStatsArr = [...localityStats.entries()].map(
     ([locality, count]) => ({ locality, count })
   );
@@ -199,6 +203,7 @@ export function finalizeStage(
     tailReplayRecoveryMs,
     failedTaskSamples,
     failureGroups: failureGroupsArr,
+    retryFailureGroups,
     peakExecutionMemoryMax,
     taskActiveMs: computeTaskActiveMs(arr),
     peakConcurrentTasks,
@@ -215,6 +220,7 @@ export function finalizeStage(
   };
   delete data.taskAttempts; // internal-only field, already nulled above; never part of the public message
   delete data.failureDetails; // internal-only intern table, summarized by failureGroups
+  delete data.retryFailures; // summarized by retryFailureGroups
   delete data.speculativeWinners; // internal-only late-TaskEnd pairing state, kept worker-side
   delete data.lateSpeculationWaste;
   delete data.stageAttemptId;

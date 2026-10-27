@@ -242,7 +242,7 @@ export function analyze(
   stages: Map<number, Stage>,
   executorsAdded: ExecutorEvent[],
   executorsRemoved: ExecutorEvent[],
-  jobs: Map<number, Job>,
+  jobs: Map<number, Job> = new Map(),
   sql: Map<number, SqlExecution> = new Map(),
   runAggregates: RunAggregates | null = null,
   { thresholds }: AnalyzeOptions = {},

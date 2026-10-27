@@ -107,13 +107,13 @@ function collectHostFields(node: unknown, hosts: Set<string>): void {
 
 // A failed-task error's message and stack text can carry file paths and data values that no
 // host/app-id pattern recognizes, so they are dropped rather than pseudonymized: every array under
-// a key named `failureGroups` gets redactTaskFailureGroup applied. Returns a fresh tree.
+// a key named `failureGroups` or `retryFailureGroups` gets redactTaskFailureGroup applied. Returns a fresh tree.
 function redactFailureGroups<T>(node: T): T {
   if (Array.isArray(node)) return node.map((n) => redactFailureGroups(n)) as T;
   if (node && typeof node === 'object') {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(node)) {
-      out[k] = k === 'failureGroups' && Array.isArray(v)
+      out[k] = (k === 'failureGroups' || k === 'retryFailureGroups') && Array.isArray(v)
         ? v.map((g) => (g && typeof g === 'object' ? redactTaskFailureGroup(g as TaskFailureDetail) : g))
         : redactFailureGroups(v);
     }
