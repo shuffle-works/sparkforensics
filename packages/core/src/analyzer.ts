@@ -184,12 +184,14 @@ function reconcileExecutorMemoryAdvice(out: Finding[]): Finding[] {
 }
 
 // A single-key shuffle stage whose join was also not broadcast: say the missed broadcast is the
-// cheapest fix, since the broadcast removes the shuffle that the key skews.
+// cheapest fix, since the broadcast removes the shuffle that the key skews. The join's stage ids
+// also list the stages that write its inputs; the join reads them in the latest one.
 function linkSingleKeyToBroadcast(findings: Finding[]): Finding[] {
   const missed = new Map<number, Finding>();
   for (const f of findings) {
-    if (f.type !== 'underBroadcast' || isExecutionWideStageIds(f.stageIds)) continue;
-    for (const id of f.stageIds) if (!missed.has(id)) missed.set(id, f);
+    if (f.type !== 'underBroadcast' || f.stageIds.length === 0 || isExecutionWideStageIds(f.stageIds)) continue;
+    const joinStage = Math.max(...f.stageIds);
+    if (!missed.has(joinStage)) missed.set(joinStage, f);
   }
   if (missed.size === 0) return findings;
   return findings.map((f) => {

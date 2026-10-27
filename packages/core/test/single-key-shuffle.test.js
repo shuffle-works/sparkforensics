@@ -46,9 +46,9 @@ describe('single-key shuffle next to a missed broadcast', () => {
     name: 'SortMergeJoin', detail: 'SortMergeJoin [a#1L], [b#2L], Inner', metrics: [],
     children: [exchange(small, 'L', stageIds), exchange(large, 'R', stageIds)],
   });
-  const findings = (config, joinStageIds = [1]) => {
-    const stages = new Map([[1, makeStage({ shuffleReadP50: 0, shuffleReadMax: 400 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50, sqlExecutionId: 1 })]]);
-    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [1], planTree: plan(joinStageIds) }]]);
+  const findings = (config, joinStageIds = [1], skewStage = 1) => {
+    const stages = new Map([[skewStage, makeStage({ id: skewStage, shuffleReadP50: 0, shuffleReadMax: 400 * MiB, shuffleReadBytes: 400 * MiB, taskCount: 50, sqlExecutionId: 1 })]]);
+    const sql = new Map([[1, { id: 1, description: '', startTime: 0, endTime: 100, stageIds: [skewStage], planTree: plan(joinStageIds) }]]);
     return analyze(makeApp({ config, sparkVersion: '3.5.3' }), stages, [], [], new Map(), sql);
   };
 
@@ -65,6 +65,11 @@ describe('single-key shuffle next to a missed broadcast', () => {
   });
   it('does not link a join whose stages are unknown, so only the whole execution is known', () => {
     const all = findings(undefined, null);
+    expect(all.some((f) => f.type === 'underBroadcast')).toBe(true);
+    expect(skewOf(all).recommendation).not.toContain('missed broadcast');
+  });
+  it('does not link a stage that only writes the join\'s input', () => {
+    const all = findings(undefined, [0, 1], 0);
     expect(all.some((f) => f.type === 'underBroadcast')).toBe(true);
     expect(skewOf(all).recommendation).not.toContain('missed broadcast');
   });
